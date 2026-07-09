@@ -1,0 +1,192 @@
+// SQLite + FTS5 persistence. Port of Swift Store.swift, MVP schema only:
+// history(FTS, recall_memory) + conversations + turns + memories.
+// better-sqlite3 is synchronous — no dispatch-queue locking needed (unlike the Swift port).
+import Database from 'better-sqlite3';
+import path from 'node:path';
+import { app } from 'electron';
+import type { ChatMsg, Conversation, EngineKind, Turn } from '../shared/types';
+import { newTurn } from '../shared/types';
+
+let db: Database.Database;
+
+function dbFile(): string {
+  return path.join(app.getPath('userData'), 'history.db');
+}
+
+// Mirror Swift hasColumn(): check before ALTER so re-runs don't spam errors.
+function hasColumn(table: string, column: string): boolean {
+  const rows = db.prepare(`PRAGMA table_info(${table});`).all() as Array<{ name: string }>;
+  return rows.some((r) => r.name === column);
+}
+
+export function initStore(): void {
+  db = new Database(dbFile());
+  db.pragma('journal_mode = WAL');
+  // ponytail: multi-statement .exec runs the whole batch (like sqlite3_exec) —
+  // .prepare would only run the first statement and silently skip the rest.
+  db.exec(`
+    CREATE VIRTUAL TABLE IF NOT EXISTS history USING fts5(role, content);
+    CREATE TABLE IF NOT EXISTS conversations(
+      id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY, conv_id TEXT, data TEXT, created_at REAL);
+    CREATE INDEX IF NOT EXISTS turns_conv ON turns(conv_id);
+    CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, content TEXT, created_at REAL);
+  `);
+  for (const [col, def] of [
+    ['custom_title', 'TEXT'],
+    ['direct_history', 'TEXT'],
+    ['engine_session_id', 'TEXT'],
+  ] as const) {
+    if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
+  }
+}
+
+// MARK: message-level FTS (recall_memory searches this)
+export function appendMessage(role: string, content: string): void {
+  db.prepare('INSERT INTO history(role, content) VALUES (?, ?);').run(role, content);
+}
+
+export function search(q: string, limit = 20): Array<{ role: string; content: string }> {
+  const fts = sanitize(q);
+  if (!fts) return [];
+  return db
+    .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+    .all(fts, limit) as Array<{ role: string; content: string }>;
+}
+
+// FTS5: wrap each whitespace-separated token in double-quotes. Same as Swift sanitize().
+function sanitize(q: string): string {
+  return q
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((t) => `"${t.replace(/"/g, '""')}"`)
+    .join(' ');
+}
+
+// MARK: conversations + turns (restart recovery)
+type ConvRow = {
+  id: string;
+  engine: string;
+  cwd: string;
+  created_at: number;
+  custom_title: string | null;
+  direct_history: string | null;
+  engine_session_id: string | null;
+};
+
+export function saveConversation(c: Conversation): void {
+  db.prepare(
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id)
+     VALUES(?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
+       custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id;`,
+  ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId);
+}
+
+export function updateConversationMeta(c: Conversation): void {
+  db.prepare('UPDATE conversations SET custom_title=? WHERE id=?;').run(c.customTitle, c.id);
+}
+
+export function updateConversationCwd(c: Conversation): void {
+  db.prepare('UPDATE conversations SET cwd=? WHERE id=?;').run(c.cwd, c.id);
+}
+
+export function updateConversationSession(c: Conversation): void {
+  db.prepare('UPDATE conversations SET engine_session_id=? WHERE id=?;').run(c.engineSessionId, c.id);
+}
+
+export function saveDirectHistory(c: Conversation): void {
+  db.prepare('UPDATE conversations SET direct_history=? WHERE id=?;').run(
+    JSON.stringify(c.directHistory ?? []),
+    c.id,
+  );
+}
+
+export function saveTurn(convId: string, t: Turn): void {
+  db.prepare(
+    `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
+  ).run(t.id, convId, JSON.stringify(t), t.ts);
+}
+
+export function deleteConversation(id: string): void {
+  db.prepare('DELETE FROM turns WHERE conv_id=?;').run(id);
+  db.prepare('DELETE FROM conversations WHERE id=?;').run(id);
+}
+
+export function deleteTurns(convId: string): void {
+  db.prepare('DELETE FROM turns WHERE conv_id=?;').run(convId);
+}
+
+function loadTurns(convId: string): Turn[] {
+  const rows = db.prepare('SELECT data FROM turns WHERE conv_id=? ORDER BY created_at;').all(convId) as Array<{
+    data: string;
+  }>;
+  return rows.map((r) => parseTurn(r.data));
+}
+
+// Tolerant decode — old blobs may miss cost/token fields (mirrors Swift init(from:)).
+function parseTurn(data: string): Turn {
+  try {
+    const o = JSON.parse(data) as Partial<Turn> & { prompt: string };
+    const t = newTurn(o.prompt ?? '');
+    return { ...t, ...o, id: o.id ?? t.id, ts: o.ts ?? t.ts, error: o.error ?? null };
+  } catch {
+    return newTurn('(unparseable turn)');
+  }
+}
+
+export function loadConversations(): Conversation[] {
+  const rows = db
+    .prepare(
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id FROM conversations ORDER BY created_at DESC;',
+    )
+    .all() as ConvRow[];
+  return rows.map((r) => {
+    let directHistory: ChatMsg[] = [];
+    try {
+      const parsed = JSON.parse(r.direct_history ?? '[]');
+      if (Array.isArray(parsed)) directHistory = parsed as ChatMsg[];
+    } catch {
+      /* leave empty */
+    }
+    const turns = loadTurns(r.id);
+    const engine: EngineKind = (['direct', 'claudeCode', 'codex'] as const).includes(r.engine as EngineKind)
+      ? (r.engine as EngineKind)
+      : 'direct';
+    const conv: Conversation = {
+      id: r.id,
+      engine,
+      cwd: r.cwd || '',
+      createdAt: r.created_at ?? 0,
+      customTitle: r.custom_title || null,
+      directHistory,
+      engineSessionId: r.engine_session_id || null,
+      turns,
+      status: 'ready',
+      statusNote: null,
+      // Backfill aggregate cost/tokens on load — turns persist the real numbers.
+      cost: turns.reduce((s, t) => s + (t.costUSD ?? 0), 0),
+      tokens: turns.reduce((s, t) => s + (t.tokensIn ?? 0) + (t.tokensOut ?? 0), 0),
+    };
+    return conv;
+  });
+}
+
+// MARK: long-term memory (injected into the system prompt)
+export function loadMemories(): Array<{ id: string; content: string }> {
+  return db.prepare('SELECT id, content FROM memories ORDER BY created_at DESC;').all() as Array<{
+    id: string;
+    content: string;
+  }>;
+}
+
+export function allMemoryContents(): string[] {
+  return (db.prepare('SELECT content FROM memories;').all() as Array<{ content: string }>).map((r) => r.content);
+}
+
+export function addMemory(content: string): string {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare('INSERT INTO memories(id, content, created_at) VALUES(?,?,?);').run(id, content, Date.now() / 1000);
+  return id;
+}

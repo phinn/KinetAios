@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>KinetAios</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <aside id="sidebar">
+      <div class="sb-head">
+        <div class="brand"><span class="spark">✨</span> KinetAios</div>
+        <div class="sb-actions">
+          <button class="ghost" id="btn-new" title="新建会话">＋</button>
+          <button class="ghost" id="btn-settings" title="设置">⚙</button>
+        </div>
+      </div>
+      <ul id="conv-list"></ul>
+      <div class="sb-foot" id="sb-foot">Direct · GLM</div>
+    </aside>
+
+    <main id="main">
+      <!-- chat view -->
+      <div id="chat-view" class="view active">
+        <div class="chat-head">
+          <span class="dot ready" id="head-dot"></span>
+          <span class="t" id="head-title">KinetAios</span>
+          <select id="engine-select" class="engine" title="引擎">
+            <option value="direct">Kaios (Direct)</option>
+            <option value="claudeCode">Claude Code</option>
+            <option value="codex">Codex</option>
+          </select>
+          <input class="cwd" id="cwd-input" title="工作目录(回车应用)" placeholder="工作目录" />
+          <span class="stat" id="head-stat"></span>
+          <button class="ghost" id="btn-clear" title="清空当前会话">清空</button>
+          <button class="ghost" id="btn-del" title="删除会话">删除</button>
+        </div>
+        <div id="turns"></div>
+        <div id="input">
+          <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送, Shift+Enter 换行)"></textarea>
+          <button class="primary send" id="btn-send">发送</button>
+        </div>
+      </div>
+
+      <!-- settings view -->
+      <div id="settings-view" class="view">
+        <div id="settings"></div>
+      </div>
+    </main>
+  </div>
+
+  <!-- shell confirm modal -->
+  <div id="modal">
+    <div class="modal-card">
+      <h3>要执行 shell 命令?</h3>
+      <pre id="modal-cmd"></pre>
+      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" />不再询问(之后自动放行所有 shell 命令)</label>
+      <div class="actions">
+        <button id="modal-cancel">取消</button>
+        <button class="primary" id="modal-ok">执行</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>

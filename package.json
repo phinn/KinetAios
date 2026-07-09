@@ -1,0 +1,49 @@
+{
+  "name": "kinetaios-win",
+  "version": "0.1.0",
+  "description": "KinetAios — Windows 11 port. AI agent dashboard (Electron + TypeScript).",
+  "author": "Kinet",
+  "main": "dist/main/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.main.json && esbuild src/renderer/app.ts src/renderer/quick.ts --bundle --format=iife --outdir=dist/renderer && node -e \"const fs=require('fs');fs.cpSync('src/renderer','dist/renderer',{recursive:true,filter:f=>f==='src/renderer'||!f.endsWith('.ts')})\"",
+    "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
+    "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
+    "start": "electron .",
+    "dev": "npm run build && electron .",
+    "pack": "npm run build && electron-builder --win --dir",
+    "dist": "npm run build && electron-builder --win"
+  },
+  "build": {
+    "appId": "com.kinet.kietaios",
+    "productName": "KinetAios",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "asar": false,
+    "win": {
+      "target": ["nsis"]
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^20.14.0",
+    "electron": "^31.0.0",
+    "electron-builder": "^25.0.0",
+    "esbuild": "^0.23.0",
+    "typescript": "^5.5.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.1.0"
+  }
+}
