@@ -42,7 +42,13 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // Report cost each LLM call — multi-turn tool-calling totals sum across calls.
     if (completion.tokensIn + completion.tokensOut > 0) {
       const usd = priceUSD(snapshot.model, completion.tokensIn, completion.tokensOut);
-      onEvent({ type: 'cost', usd, tokens: completion.tokensIn + completion.tokensOut });
+      onEvent({
+        type: 'cost',
+        usd,
+        tokens: completion.tokensIn + completion.tokensOut,
+        tokensIn: completion.tokensIn,
+        tokensOut: completion.tokensOut,
+      });
     }
 
     messages.push(completion.rawAssistant);

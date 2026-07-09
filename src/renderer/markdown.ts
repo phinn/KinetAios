@@ -96,7 +96,7 @@ function esc(s: string): string {
 function inline(s: string): string {
   return s
     .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
-    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u}" target="_blank" rel="noreferrer">${t}</a>`)
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
     .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/(^|\W)_([^_]+)_/g, '$1<em>$2</em>');

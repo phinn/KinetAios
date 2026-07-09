@@ -29,6 +29,7 @@ api.onConversation((c) => {
 });
 
 input.addEventListener('keydown', (e) => {
+  if (e.isComposing || e.keyCode === 229) return; // IME 组合输入中:交给输入法,不发送
   if (e.key === 'Enter' && !e.shiftKey) {
     e.preventDefault();
     void submit();

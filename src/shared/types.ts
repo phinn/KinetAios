@@ -35,9 +35,20 @@ export type AppSettings = {
   approval: ApprovalPolicy;
   sandbox: SandboxMode;
   planMode: boolean;
+  // Claude Code + Codex shell out to locally-installed CLIs. Off by default — turn on only after
+  // installing the CLI, else the engine just errors "找不到 CLI". Direct never needs this.
+  enableCliEngines: boolean;
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default
   priceOutPerMTok: number;
   presetId: string;
+};
+
+// A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
+// menu lists these; the Direct engine injects the body when the user invokes /<name>.
+export type SkillInfo = {
+  name: string;
+  description: string;
+  source: 'claude' | 'codex';
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).
@@ -53,7 +64,7 @@ export type ConfigSnapshot = {
 export type AgentEvent =
   | { type: 'token'; text: string }
   | { type: 'tool'; name: string; args: string; result: string }
-  | { type: 'cost'; usd: number; tokens: number }
+  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
   | { type: 'done' }
@@ -85,6 +96,7 @@ export type ConvStatus = 'ready' | 'running';
 export type Conversation = {
   id: string;
   engine: EngineKind;
+  model: string; // Direct 引擎用的模型,每会话独立;claudeCode/codex 由各自 CLI 配置
   cwd: string;
   createdAt: number;
   customTitle: string | null;
@@ -108,9 +120,12 @@ export interface KinetAPI {
   rename(id: string, title: string): Promise<boolean>;
   setCwd(id: string, cwd: string): Promise<boolean>;
   setEngine(id: string, engine: EngineKind): Promise<boolean>;
+  setModel(id: string, model: string): Promise<boolean>;
   getSettings(): Promise<AppSettings>;
   saveSettings(s: AppSettings): Promise<boolean>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
+  listSkills(): Promise<SkillInfo[]>;
+  pickDirectory(): Promise<string>;
   quickSubmit(text: string): Promise<string>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
@@ -156,10 +171,11 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       conv.cost += ev.usd;
       conv.tokens += ev.tokens;
       t.costUSD += ev.usd;
-      // tokens is input+output sum (see AgentLoop priceUSD call site); split 70/30 like Swift.
+      // Prefer the real in/out split carried on the event (Direct + Codex usage path). Engines
+      // that only know the sum (Claude, which reports cost but no per-turn tokens) leave both 0.
       if (ev.tokens > 0) {
-        t.tokensIn += Math.floor(ev.tokens * 0.7);
-        t.tokensOut += Math.floor(ev.tokens * 0.3);
+        t.tokensIn += ev.tokensIn ?? 0;
+        t.tokensOut += ev.tokensOut ?? 0;
       }
       break;
     case 'status':

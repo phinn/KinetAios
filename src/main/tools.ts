@@ -26,7 +26,8 @@ export function toolDef(t: Tool): ToolDef {
 
 // Shared shell runner (the shell tool uses it). exec picks the platform shell automatically:
 // process.env.ComSpec (cmd.exe) on Windows, /bin/sh on unix. Raised maxBuffer so big outputs survive.
-export function shellExec(command: string, cwd: string, timeoutMs = 30_000): Promise<string> {
+// 120s default — 30s killed real work (npm install / builds). Still bounded so a runaway can't hang.
+export function shellExec(command: string, cwd: string, timeoutMs = 120_000): Promise<string> {
   return new Promise((resolve) => {
     exec(
       command,

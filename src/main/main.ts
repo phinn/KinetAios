@@ -1,11 +1,13 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, globalShortcut, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain } from 'electron';
 import path from 'node:path';
 import os from 'node:os';
 import { initStore } from './store';
 import { getSettings, saveSettings } from './settings';
 import { currentProvider } from './glm';
+import { listSkills } from './skills';
+import { mcp } from './mcp';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind } from '../shared/types';
 
@@ -26,17 +28,34 @@ function confirm(cmd: string): Promise<boolean> {
   return new Promise((resolve) => pendingConfirms.set(id, resolve));
 }
 
+// Resolve every pending confirm as denied — used on cancel/delete so a parked Direct tool call
+// (await ctx.confirm) doesn't hang forever on an unresolved Promise.
+function drainConfirms(): void {
+  for (const resolve of pendingConfirms.values()) resolve(false);
+  pendingConfirms.clear();
+}
+
+// Send to a window that may be mid-destroy: ?. only guards a null win, not a destroyed webContents.
+function safeSend(win: BrowserWindow | null, channel: string, data: unknown): void {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.webContents.send(channel, data);
+  } catch {
+    /* webContents torn down between the two checks */
+  }
+}
+
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
-    dashboardWin?.webContents.send('agent-event', { convId, ev });
-    quickWin?.webContents.send('agent-event', { convId, ev });
+    safeSend(dashboardWin, 'agent-event', { convId, ev });
+    safeSend(quickWin, 'agent-event', { convId, ev });
   },
   emitConversation(conv: Conversation) {
-    dashboardWin?.webContents.send('conversation', conv);
-    quickWin?.webContents.send('conversation', conv);
+    safeSend(dashboardWin, 'conversation', conv);
+    safeSend(quickWin, 'conversation', conv);
   },
   emitRemoved(convId) {
-    dashboardWin?.webContents.send('conversation-removed', convId);
+    safeSend(dashboardWin, 'conversation-removed', convId);
   },
   confirm,
 };
@@ -53,7 +72,7 @@ function createDashboard(): BrowserWindow {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false, // preload uses require(better-sqlite3)? no — preload only bridges; keep false for contextBridge simplicity
+      sandbox: true, // preload only uses contextBridge + ipcRenderer — both available sandboxed.
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -73,7 +92,7 @@ function createQuick(): BrowserWindow {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
-      sandbox: false,
+      sandbox: true,
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'quick.html'));
@@ -98,13 +117,23 @@ function registerIpc(): void {
     taskManager.send(id, text);
     return true;
   });
-  ipcMain.handle('cancel', (_e, id: string) => taskManager.cancel(id));
-  ipcMain.handle('delete-conversation', (_e, id: string) => taskManager.deleteConversation(id));
+  ipcMain.handle('cancel', (_e, id: string) => {
+    drainConfirms();
+    return taskManager.cancel(id);
+  });
+  ipcMain.handle('delete-conversation', (_e, id: string) => {
+    drainConfirms();
+    return taskManager.deleteConversation(id);
+  });
   ipcMain.handle('clear-conversation', (_e, id: string) => taskManager.clearConversation(id));
   ipcMain.handle('rename', (_e, id: string, title: string) => taskManager.rename(id, title));
   ipcMain.handle('set-cwd', (_e, id: string, cwd: string) => taskManager.setCwd(id, cwd));
   ipcMain.handle('set-engine', (_e, id: string, engine: EngineKind) => {
     taskManager.setEngine(id, engine);
+    return true;
+  });
+  ipcMain.handle('set-model', (_e, id: string, model: string) => {
+    taskManager.setModel(id, model);
     return true;
   });
 
@@ -113,6 +142,17 @@ function registerIpc(): void {
     saveSettings(s);
     return true;
   });
+  ipcMain.handle('list-skills', () => listSkills());
+
+  // 系统文件夹选择器(renderer 无 Node,只能走 main 的 dialog)。
+  ipcMain.handle('pick-directory', async () => {
+    const win = dashboardWin && !dashboardWin.isDestroyed() ? dashboardWin : undefined;
+    const r = win
+      ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
+      : await dialog.showOpenDialog({ properties: ['openDirectory'] });
+    return r.canceled ? '' : r.filePaths[0] ?? '';
+  });
+
   ipcMain.handle('test-connection', async (_e, s?: AppSettings) => {
     const snap: ConfigSnapshot = s
       ? { baseURL: s.baseURL, model: s.model, apiKey: s.apiKey, apiProtocol: s.apiProtocol, reasoning: 'none' }
@@ -172,6 +212,7 @@ if (!gotLock) {
     taskManager = new TaskManager(emitter);
     taskManager.load();
     registerIpc();
+    mcp.connectAll(); // 后台连 MCP server(不阻塞首屏;Direct 引擎首轮会等 ≤2s)
     dashboardWin = createDashboard();
 
     // Ctrl+Alt+Space on Windows (Cmd/Ctrl+Alt+Space cross-platform).
@@ -187,4 +228,6 @@ if (!gotLock) {
     globalShortcut.unregisterAll();
     app.quit();
   });
+
+  app.on('before-quit', () => mcp.dispose()); // 关掉所有 MCP 子进程
 }

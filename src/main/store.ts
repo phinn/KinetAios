@@ -36,6 +36,7 @@ export function initStore(): void {
     ['custom_title', 'TEXT'],
     ['direct_history', 'TEXT'],
     ['engine_session_id', 'TEXT'],
+    ['model', 'TEXT'],
   ] as const) {
     if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
   }
@@ -72,15 +73,16 @@ type ConvRow = {
   custom_title: string | null;
   direct_history: string | null;
   engine_session_id: string | null;
+  model: string | null;
 };
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id)
-     VALUES(?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model)
+     VALUES(?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
-       custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id;`,
-  ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId);
+       custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model;`,
+  ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model);
 }
 
 export function updateConversationMeta(c: Conversation): void {
@@ -139,7 +141,7 @@ function parseTurn(data: string): Turn {
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
-      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id FROM conversations ORDER BY created_at DESC;',
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
   return rows.map((r) => {
@@ -157,6 +159,7 @@ export function loadConversations(): Conversation[] {
     const conv: Conversation = {
       id: r.id,
       engine,
+      model: r.model || '',
       cwd: r.cwd || '',
       createdAt: r.created_at ?? 0,
       customTitle: r.custom_title || null,

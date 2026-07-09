@@ -28,18 +28,24 @@
           <span class="t" id="head-title">KinetAios</span>
           <select id="engine-select" class="engine" title="引擎">
             <option value="direct">Kaios (Direct)</option>
-            <option value="claudeCode">Claude Code</option>
-            <option value="codex">Codex</option>
           </select>
-          <input class="cwd" id="cwd-input" title="工作目录(回车应用)" placeholder="工作目录" />
+          <input class="model" id="model-input" list="model-list" title="模型(Direct 引擎用,每会话独立;回车应用)" placeholder="模型" />
+          <datalist id="model-list"></datalist>
+          <input class="cwd" id="cwd-input" title="工作目录(回车应用或点 📁 选)" placeholder="工作目录" />
+          <button class="ghost cwd-pick" id="btn-cwd" title="选择目录">📁</button>
           <span class="stat" id="head-stat"></span>
+          <span class="status" id="head-status"></span>
           <button class="ghost" id="btn-clear" title="清空当前会话">清空</button>
           <button class="ghost" id="btn-del" title="删除会话">删除</button>
         </div>
         <div id="turns"></div>
         <div id="input">
-          <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送, Shift+Enter 换行)"></textarea>
+          <div id="slash-menu" class="slash-menu" hidden></div>
+          <div id="attach-row" class="attach-row"></div>
+          <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送, Shift+Enter 换行;Direct 引擎下输入 / 选 skill;可 📎 添加或拖入文件)"></textarea>
+          <button class="ghost" id="btn-attach" title="添加文件(可多选)">📎</button>
           <button class="primary send" id="btn-send">发送</button>
+          <input type="file" id="file-input" multiple hidden />
         </div>
       </div>
 

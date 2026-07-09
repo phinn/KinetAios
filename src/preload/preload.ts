@@ -13,9 +13,12 @@ const api: KinetAPI = {
   rename: (id, title) => ipcRenderer.invoke('rename', id, title),
   setCwd: (id, cwd) => ipcRenderer.invoke('set-cwd', id, cwd),
   setEngine: (id, engine) => ipcRenderer.invoke('set-engine', id, engine),
+  setModel: (id, model) => ipcRenderer.invoke('set-model', id, model),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   testConnection: (s) => ipcRenderer.invoke('test-connection', s),
+  listSkills: () => ipcRenderer.invoke('list-skills'),
+  pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
 
   onAgentEvent: (cb) => {

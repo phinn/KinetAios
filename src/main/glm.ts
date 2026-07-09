@@ -50,6 +50,12 @@ export function priceUSD(model: string, tokensIn: number, tokensOut: number): nu
   return tokensIn * inRate + tokensOut * outRate;
 }
 
+// Output cap by model family. GLM-4.6 supports 16K; most OpenAI-compatible endpoints
+// (DeepSeek / Qwen-max 8192) 400 on larger. Unknown → 8192 (safe default). GLM keeps 16K.
+function maxTokensFor(model: string): number {
+  return model.toLowerCase().startsWith('glm') ? 16384 : 8192;
+}
+
 // Split a streamed response body into SSE data lines.
 async function* sseLines(resp: Response): AsyncGenerator<string> {
   const reader = resp.body!.getReader();
@@ -101,8 +107,7 @@ class OpenAICompatibleProvider implements Provider {
     if (!snap.apiKey) throw new GLMError('noKey');
 
     const body: Record<string, unknown> = { model: snap.model, messages, stream: true };
-    // 16K output — GLM-4.6 / Sonnet both support it; default 4K truncates mid tool-args.
-    body.max_tokens = 16384;
+    body.max_tokens = maxTokensFor(snap.model);
     // Streaming usually omits usage unless include_usage is set (final chunk then carries it).
     body.stream_options = { include_usage: true };
     if (tools.length) {
@@ -223,7 +228,7 @@ class AnthropicProvider implements Provider {
       }
     }
 
-    const body: Record<string, unknown> = { model: snap.model, messages: anth, max_tokens: 16384, stream: true };
+    const body: Record<string, unknown> = { model: snap.model, messages: anth, max_tokens: maxTokensFor(snap.model), stream: true };
     const system = systemParts.join('\n');
     if (system) body.system = system;
     if (tools.length) body.tools = tools.map((t) => this.anthTool(t));

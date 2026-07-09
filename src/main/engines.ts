@@ -14,6 +14,7 @@ import { runAgentLoop, trimHistoryToTokenBudget } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
+import { mcp } from './mcp';
 
 export const baseSystemPrompt = `你是 KinetAios,运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、抓网页、搜索历史记忆来帮用户完成任务。
 该用工具就果断用,不要只给步骤。需要回忆过去做过/聊过的事,用 recall_memory 搜历史。
@@ -30,6 +31,7 @@ export const baseSystemPrompt = `你是 KinetAios,运行在用户 Windows 电脑
 export interface EngineRunOpts {
   conv: Conversation;
   memoryBlock: string;
+  skillBlock?: string; // Direct only: body of a /<skill> the user invoked this turn
   signal: AbortSignal;
   onEvent: (e: AgentEvent) => void;
 }
@@ -43,14 +45,20 @@ export interface Engine {
 class DirectEngine implements Engine {
   readonly name = 'direct' as const;
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
-  async run({ conv, memoryBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
+  async run({ conv, memoryBlock, skillBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
-    const snap = snapshot();
+    // Per-conversation model (Direct only). Falls back to the global setting for old convs.
+    const base = snapshot();
+    const snap = { ...base, model: conv.model || base.model };
     const ctx: ToolCtx = { cwd: conv.cwd, confirm: this.confirm };
+    // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
+    const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
+    const tools = [...allTools(), ...(await mcp.directTools(2000))];
     const updated = await runAgentLoop({
       provider: currentProvider(snap),
-      tools: allTools(),
-      systemPrompt: baseSystemPrompt + memoryBlock,
+      tools,
+      systemPrompt: baseSystemPrompt + skillSection + memoryBlock,
       snapshot: snap,
       userInput: prompt,
       history: conv.directHistory,
@@ -146,7 +154,13 @@ function runBin(
     child.stderr?.on('data', onChunk);
     const onAbort = (): void => {
       try {
-        child.kill();
+        if (process.platform === 'win32' && child.pid != null) {
+          // .cmd shims spawn cmd.exe as the direct child; child.kill() only kills cmd.exe and
+          // leaves the underlying claude/codex process running (and billable). /T kills the tree.
+          execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+        } else {
+          child.kill();
+        }
       } catch {
         /* already gone */
       }
@@ -234,6 +248,9 @@ class ClaudeCodeEngine implements Engine {
             }
       } else if (type === 'result') {
         sawResult = true;
+        // total_cost_usd is the cost of THIS `claude -p` invocation (one per turn, even with
+        // --resume), so += accumulates correctly across turns. No per-turn token breakdown is
+        // reported here, so the turn's tokensIn/Out stay 0 (only the $ total is known).
         const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
         if (!Number.isNaN(c)) onEvent({ type: 'cost', usd: c, tokens: 0 });
         const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
@@ -271,6 +288,15 @@ class CodexEngine implements Engine {
 
     let sawTurnEnd = false;
     const stderrTail: string[] = [];
+    // codex emits agent_message both as a top-level event and inside item.completed (same text).
+    // Dedup by text so the answer isn't doubled. Token fragments differ, so this only catches repeats.
+    const seenAgentText = new Set<string>();
+    const emitMsg = (text: string): void => {
+      if (text && !seenAgentText.has(text)) {
+        seenAgentText.add(text);
+        onEvent({ type: 'token', text });
+      }
+    };
     const onLine = (line: string): void => {
       let obj: any;
       try {
@@ -293,7 +319,7 @@ class CodexEngine implements Engine {
         case 'item.completed': {
           const item = obj.item;
           const it = item?.type;
-          if (it === 'agent_message' && typeof item.text === 'string') onEvent({ type: 'token', text: item.text });
+          if (it === 'agent_message' && typeof item.text === 'string') emitMsg(item.text);
           else if (it === 'command_execution')
             onEvent({
               type: 'tool',
@@ -305,7 +331,7 @@ class CodexEngine implements Engine {
           break;
         }
         case 'agent_message':
-          if (typeof obj.message === 'string') onEvent({ type: 'token', text: obj.message });
+          if (typeof obj.message === 'string') emitMsg(obj.message);
           break;
         case 'command_executed': {
           const argv = obj.command?.argv;
@@ -320,11 +346,17 @@ class CodexEngine implements Engine {
           break;
         case 'turn.completed': {
           sawTurnEnd = true;
+          const num = (v: unknown): number => (typeof v === 'number' ? v : parseInt(String(v), 10) || 0);
           const cost = obj.total_cost_usd ?? obj.cost_usd;
-          if (typeof cost === 'number') onEvent({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? 0 });
-          else if (obj.usage && obj.usage.input_tokens + obj.usage.output_tokens > 0) {
-            const usd = priceUSD(getSettings().model, obj.usage.input_tokens, obj.usage.output_tokens);
-            onEvent({ type: 'cost', usd, tokens: obj.usage.input_tokens + obj.usage.output_tokens });
+          const inT = num(obj.usage?.input_tokens);
+          const outT = num(obj.usage?.output_tokens);
+          if (typeof cost === 'number') {
+            onEvent({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT });
+          } else if (obj.usage && inT + outT > 0) {
+            // No cost field → estimate from token counts. Codex's own model isn't known here, so
+            // this falls back to the Direct model's rate (rough — prefer when Codex reports cost).
+            const usd = priceUSD(getSettings().model, inT, outT);
+            onEvent({ type: 'cost', usd, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
           }
           onEvent({ type: 'done' });
           break;

@@ -1,7 +1,7 @@
 // Dashboard renderer. Vanilla TS — no framework. Holds a local copy of conversations,
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
-import { applyEvent } from '../shared/types';
-import type { AppSettings, Conversation, EngineKind, KinetAPI } from '../shared/types';
+import { applyEvent, ENGINE_LABELS } from '../shared/types';
+import type { AppSettings, Conversation, EngineKind, KinetAPI, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 
 declare global {
@@ -14,6 +14,12 @@ const api: KinetAPI = window.kinet;
 const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
+let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
+const slashMenu = document.getElementById('slash-menu')!;
+let skills: SkillInfo[] = []; // lazily fetched on first /
+let slashItems: SkillInfo[] = []; // current filtered view
+let slashIndex = 0;
+let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
 
 // ---------- bootstrap ----------
 (async function init() {
@@ -23,6 +29,7 @@ let selectedId: string | null = null;
     order.push(c.id);
   }
   if (order.length) selectedId = order[0];
+  cliEnabled = (await api.getSettings()).enableCliEngines;
 
   api.onConversation((conv) => {
     const isNew = !convs.has(conv.id);
@@ -50,6 +57,7 @@ let selectedId: string | null = null;
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
 
+  fillModelHints();
   wireUi();
   renderSidebar();
   renderMain();
@@ -104,14 +112,22 @@ function renderHead(conv: Conversation | undefined) {
   const dot = document.getElementById('head-dot')!;
   const title = document.getElementById('head-title')!;
   const cwd = document.getElementById('cwd-input') as HTMLInputElement;
+  const model = document.getElementById('model-input') as HTMLInputElement;
   const eng = document.getElementById('engine-select') as HTMLSelectElement;
   const stat = document.getElementById('head-stat')!;
+  const status = document.getElementById('head-status')!;
+  const sendBtn = document.getElementById('btn-send')!;
   if (!conv) {
     dot.className = 'dot ready';
     title.textContent = 'KinetAios';
     cwd.value = '';
+    model.value = '';
+    model.style.display = 'none';
     eng.value = 'direct';
     stat.textContent = '';
+    status.textContent = '';
+    sendBtn.textContent = '发送';
+    sendBtn.classList.remove('stop');
     return;
   }
   const last = conv.turns[conv.turns.length - 1];
@@ -119,11 +135,33 @@ function renderHead(conv: Conversation | undefined) {
   dot.className = `dot ${cls}`;
   title.textContent = conv.customTitle || conv.turns[0]?.prompt.slice(0, 60) || '新会话';
   if (document.activeElement !== cwd) cwd.value = conv.cwd;
-  if (document.activeElement !== eng) eng.value = conv.engine;
+  // Model picker only matters for Direct (claudeCode/codex use their own CLI models) → hide otherwise.
+  model.style.display = conv.engine === 'direct' ? '' : 'none';
+  if (document.activeElement !== model) model.value = conv.model;
+  syncEngineSelect(conv);
   const parts: string[] = [];
   if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
   stat.textContent = parts.join(' · ');
+  status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
+  sendBtn.textContent = conv.status === 'running' ? '停止' : '发送';
+  sendBtn.classList.toggle('stop', conv.status === 'running');
+}
+
+// Rebuild the engine dropdown from the toggle. Direct is always present; Claude/Codex only when
+// enabled. If the active conversation is already on a CLI engine while disabled, keep showing it
+// (read-only-ish) so the value isn't blanked — switching away is still allowed, back is not.
+function syncEngineSelect(conv: Conversation | undefined) {
+  const sel = document.getElementById('engine-select') as HTMLSelectElement;
+  const current = conv?.engine ?? 'direct';
+  const want: EngineKind[] = cliEnabled ? ['direct', 'claudeCode', 'codex'] : ['direct'];
+  if (!want.includes(current)) want.push(current);
+  const have = [...sel.options].map((o) => o.value);
+  const same = have.length === want.length && have.every((v, i) => v === want[i]);
+  if (!same) {
+    sel.innerHTML = want.map((e) => `<option value="${e}">${esc(ENGINE_LABELS[e])}</option>`).join('');
+  }
+  if (document.activeElement !== sel) sel.value = current;
 }
 
 function renderTurn(conv: Conversation, i: number): HTMLElement {
@@ -133,12 +171,28 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'turn';
 
-  const prompt = document.createElement('div');
-  prompt.innerHTML = `<div class="role">你</div><div class="prompt"></div>`;
-  prompt.querySelector('.prompt')!.textContent = t.prompt;
-  wrap.appendChild(prompt);
+  // 用户消息:头像在右、气泡在左(行内靠右)
+  const userMsg = document.createElement('div');
+  userMsg.className = 'msg user';
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.textContent = t.prompt;
+  userMsg.appendChild(bubble);
+  userMsg.appendChild(avatarEl('🧑'));
+  wrap.appendChild(userMsg);
 
+  // AI 回复:头像在左、正文在右(无内容且非流式时不渲染)
   if (t.steps.length || t.answer || streaming || t.error) {
+    const aiMsg = document.createElement('div');
+    aiMsg.className = 'msg ai';
+    const body = document.createElement('div');
+    body.className = 'ai-body';
+    if (t.steps.length) {
+      const steps = document.createElement('div');
+      steps.className = 'steps';
+      for (const s of t.steps) steps.appendChild(renderStep(s));
+      body.appendChild(steps);
+    }
     const ans = document.createElement('div');
     ans.className = 'answer';
     if (streaming) {
@@ -148,21 +202,25 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     } else if (t.answer) {
       ans.innerHTML = md(t.answer);
     }
-    if (t.steps.length) {
-      const steps = document.createElement('div');
-      steps.className = 'steps';
-      for (const s of t.steps) steps.appendChild(renderStep(s));
-      wrap.appendChild(steps);
-    }
-    wrap.appendChild(ans);
+    body.appendChild(ans);
     if (t.error) {
       const e = document.createElement('div');
       e.className = 'err';
       e.textContent = '⚠️ ' + t.error;
-      wrap.appendChild(e);
+      body.appendChild(e);
     }
+    aiMsg.appendChild(avatarEl('✨'));
+    aiMsg.appendChild(body);
+    wrap.appendChild(aiMsg);
   }
   return wrap;
+}
+
+function avatarEl(emoji: string): HTMLElement {
+  const a = document.createElement('div');
+  a.className = 'avatar';
+  a.textContent = emoji;
+  return a;
 }
 
 function renderStep(s: { name: string; args: string; result: string }): HTMLElement {
@@ -235,6 +293,7 @@ async function showSettings() {
         <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>完全访问</option>
       </select></div>
       <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />计划模式(只规划不执行)</label></div>
+      <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />启用 Claude Code / Codex 引擎(需本地装好 CLI,默认关)</label></div>
       <div class="field"><label>价格(USD / 1M tokens)·0=内置默认</label>
         <div class="row"><input id="s-pin" type="number" step="0.01" value="${s.priceInPerMTok}" /><input id="s-pout" type="number" step="0.01" value="${s.priceOutPerMTok}" /></div>
       </div>
@@ -257,26 +316,36 @@ async function showSettings() {
   document.getElementById('s-back')!.onclick = () => showChat();
   document.getElementById('s-preset')!.onchange = apply;
   document.getElementById('s-save')!.onclick = async () => {
-    const ns: AppSettings = {
-      presetId: (document.getElementById('s-preset') as HTMLSelectElement).value,
-      apiKey: (document.getElementById('s-key') as HTMLInputElement).value,
-      baseURL: (document.getElementById('s-base') as HTMLInputElement).value,
-      model: (document.getElementById('s-model') as HTMLInputElement).value,
-      apiProtocol: (document.getElementById('s-proto') as HTMLSelectElement).value as AppSettings['apiProtocol'],
-      reasoning: (document.getElementById('s-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
-      approval: (document.getElementById('s-approval') as HTMLSelectElement).value as AppSettings['approval'],
-      sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
-      planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
-      priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
-      priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
-    };
+    const ns = readSettingsForm();
     await api.saveSettings(ns);
+    cliEnabled = ns.enableCliEngines;
+    renderMain(); // refresh the engine dropdown for the new toggle state
     showMsg('已保存', true);
   };
   document.getElementById('s-test')!.onclick = async () => {
     showMsg('测试中…', false);
-    const r = await api.testConnection();
+    // Test the in-form values, not the last-saved ones (kills the "edit key, test, still old key" trap).
+    const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
+  };
+}
+
+// Read the settings form into AppSettings. Shared by Save and Test so Test validates the in-form
+// config rather than whatever was last persisted.
+function readSettingsForm(): AppSettings {
+  return {
+    presetId: (document.getElementById('s-preset') as HTMLSelectElement).value,
+    apiKey: (document.getElementById('s-key') as HTMLInputElement).value,
+    baseURL: (document.getElementById('s-base') as HTMLInputElement).value,
+    model: (document.getElementById('s-model') as HTMLInputElement).value,
+    apiProtocol: (document.getElementById('s-proto') as HTMLSelectElement).value as AppSettings['apiProtocol'],
+    reasoning: (document.getElementById('s-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
+    approval: (document.getElementById('s-approval') as HTMLSelectElement).value as AppSettings['approval'],
+    sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
+    planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
+    enableCliEngines: (document.getElementById('s-cli') as HTMLInputElement).checked,
+    priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
+    priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
   };
 }
 
@@ -333,27 +402,100 @@ function wireUi() {
   cwd.addEventListener('change', () => {
     if (selectedId) api.setCwd(selectedId, cwd.value.trim());
   });
+  document.getElementById('btn-cwd')!.onclick = async () => {
+    if (!selectedId) return;
+    const dir = await api.pickDirectory();
+    if (dir) {
+      api.setCwd(selectedId, dir);
+      cwd.value = dir;
+    }
+  };
+
+  const model = document.getElementById('model-input') as HTMLInputElement;
+  model.addEventListener('change', () => {
+    if (selectedId) api.setModel(selectedId, model.value.trim());
+  });
 
   const eng = document.getElementById('engine-select') as HTMLSelectElement;
   eng.addEventListener('change', () => {
-    if (selectedId) api.setEngine(selectedId, eng.value as EngineKind);
+    if (!selectedId) return;
+    closeSlash();
+    const conv = convs.get(selectedId);
+    const next = eng.value as EngineKind;
+    // Switching wipes cross-engine context (Direct history + the CLI session id used for --resume).
+    // Only confirm when there's actually something to lose.
+    const hasContext = !!(conv && (conv.directHistory.length || conv.engineSessionId || conv.turns.length));
+    if (next !== conv?.engine && hasContext && !confirm('切换引擎会清空当前上下文(Direct 对话历史 / Claude·Codex 的会话续接)。继续?')) {
+      syncEngineSelect(conv); // revert the dropdown
+      return;
+    }
+    api.setEngine(selectedId, next);
   });
 
   const composer = document.getElementById('composer') as HTMLTextAreaElement;
   composer.addEventListener('keydown', (e) => {
+    // IME 组合输入中(中文/日文等还没确认候选):按键交给输入法,避免 Enter 确认词被误当成发送。
+    if (e.isComposing || e.keyCode === 229) return;
+    if (!slashMenu.hidden) {
+      if (e.key === 'ArrowDown') { e.preventDefault(); moveSlash(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); moveSlash(-1); return; }
+      if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSlash(); return; }
+      if (e.key === 'Escape') { e.preventDefault(); closeSlash(); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       send();
     }
   });
-  composer.addEventListener('input', () => autosize(composer));
+  composer.addEventListener('input', () => {
+    autosize(composer);
+    handleSlash(composer);
+  });
+  composer.addEventListener('blur', () => setTimeout(closeSlash, 150));
+
+  // 文件附件:📎 选 / 拖入多个
+  const fileInput = document.getElementById('file-input') as HTMLInputElement;
+  document.getElementById('btn-attach')!.onclick = () => fileInput.click();
+  fileInput.addEventListener('change', () => {
+    const files = Array.from(fileInput.files ?? []);
+    if (files.length) void addFiles(files);
+    fileInput.value = ''; // 允许重复选同一文件
+  });
+  const dropZone = document.getElementById('input')!;
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('drag');
+  });
+  dropZone.addEventListener('dragleave', (e) => {
+    if (!dropZone.contains(e.relatedTarget as Node | null)) dropZone.classList.remove('drag');
+  });
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('drag');
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    if (files.length) void addFiles(files);
+  });
 }
 
 async function send() {
   if (!selectedId) return;
+  // Running → the same button acts as Stop (cancel the in-flight task).
+  if (convs.get(selectedId)?.status === 'running') {
+    await api.cancel(selectedId);
+    return;
+  }
+  closeSlash();
   const composer = document.getElementById('composer') as HTMLTextAreaElement;
-  const text = composer.value;
-  if (!text.trim()) return;
+  const typed = composer.value;
+  if (!typed.trim() && !attachments.length) return;
+  // 附件内容拼到正文前(代码块包裹,模型可直接读取)。
+  let text = typed;
+  if (attachments.length) {
+    const files = attachments.map((a) => `📎 文件 ${a.name}:\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n');
+    text = files + '\n\n---\n\n' + typed;
+    attachments = [];
+    renderAttach();
+  }
   composer.value = '';
   autosize(composer);
   showChat();
@@ -370,6 +512,140 @@ function showChat() {
 function autosize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
   el.style.height = Math.min(el.scrollHeight, 140) + 'px';
+}
+
+// ---------- slash skill menu (Direct only) ----------
+// Typing /<name> in the composer opens a filterable list of skills from ~/.claude/skills +
+// ~/.codex/skills. Pick (Enter/click) inserts "/name " — sending it makes the Direct engine
+// inject that skill's body. Non-Direct conversations never show the menu.
+async function ensureSkills(): Promise<SkillInfo[]> {
+  if (!skills.length) skills = await api.listSkills();
+  return skills;
+}
+
+function handleSlash(composer: HTMLTextAreaElement): void {
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  const v = composer.value;
+  // Only while the user is still typing the name token (no space yet) and only for Direct.
+  if (conv?.engine !== 'direct' || !v.startsWith('/') || /\s/.test(v.slice(1))) {
+    closeSlash();
+    return;
+  }
+  void openSlash(v.slice(1).toLowerCase());
+}
+
+async function openSlash(q: string): Promise<void> {
+  const all = await ensureSkills();
+  slashItems = all
+    .filter((s) => s.name.toLowerCase().includes(q))
+    .sort((a, b) => {
+      const ai = a.name.toLowerCase().startsWith(q) ? 0 : 1;
+      const bi = b.name.toLowerCase().startsWith(q) ? 0 : 1;
+      return ai - bi || a.name.localeCompare(b.name);
+    })
+    .slice(0, 50);
+  slashIndex = 0;
+  renderSlash();
+}
+
+function renderSlash(): void {
+  if (!slashItems.length) {
+    slashMenu.innerHTML = '<div class="slash-empty">无匹配 skill</div>';
+    slashMenu.hidden = false;
+    return;
+  }
+  slashMenu.innerHTML = slashItems
+    .map(
+      (s, i) =>
+        `<div class="slash-item${i === slashIndex ? ' active' : ''}" data-i="${i}">` +
+        `<span class="slash-name">${esc(s.name)}<span class="slash-tag">${s.source}</span></span>` +
+        `<span class="slash-desc">${esc(s.description)}</span></div>`,
+    )
+    .join('');
+  slashMenu.hidden = false;
+  slashMenu.querySelectorAll<HTMLElement>('.slash-item').forEach((el) => {
+    el.onclick = () => {
+      const s = slashItems[Number(el.dataset.i)];
+      if (s) pickSlash(s.name);
+    };
+  });
+}
+
+function moveSlash(delta: number): void {
+  if (!slashItems.length) return;
+  slashIndex = (slashIndex + delta + slashItems.length) % slashItems.length;
+  renderSlash();
+  slashMenu.querySelector<HTMLElement>('.slash-item.active')?.scrollIntoView({ block: 'nearest' });
+}
+
+function pickSlash(name?: string): void {
+  const pick = name ?? slashItems[slashIndex]?.name;
+  if (!pick) return;
+  const composer = document.getElementById('composer') as HTMLTextAreaElement;
+  composer.value = `/${pick} `;
+  closeSlash();
+  composer.focus();
+  composer.setSelectionRange(composer.value.length, composer.value.length);
+  autosize(composer);
+}
+
+function closeSlash(): void {
+  slashMenu.hidden = true;
+}
+
+// ---------- 文件附件(📎 选 / 拖入多个)----------
+// ponytail: 只读文本文件,内容用代码块拼进 prompt。二进制(图片/PDF/压缩包/音视频等)按扩展名跳过 ——
+// 非 UTF-8 / 二进制无法纯文本喂模型;要支持图片得走多模态消息,标 TODO。
+const BIN_EXT = /\.(png|jpe?g|gif|webp|bmp|ico|pdf|zip|gz|tar|rar|7z|exe|dll|so|dylib|class|jar|mp[34]|mov|avi|wav|flac|ogg|webm|ttf|otf|woff2?|eot|psd|ai|sketch|app|dmg|iso|db|sqlite?|node)$/i;
+
+function isTextFile(name: string): boolean {
+  return !BIN_EXT.test(name);
+}
+
+function readTextTruncated(f: File, max: number): Promise<string> {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => {
+      const text = String(r.result ?? '');
+      resolve(text.length > max ? text.slice(0, max) + '\n…[截断]' : text);
+    };
+    r.onerror = () => resolve('[读取失败]');
+    r.readAsText(f);
+  });
+}
+
+async function addFiles(files: File[]): Promise<void> {
+  for (const f of files) {
+    if (!isTextFile(f.name)) continue; // 二进制跳过
+    attachments.push({ name: f.name, content: await readTextTruncated(f, 20000) });
+  }
+  renderAttach();
+}
+
+function renderAttach(): void {
+  const row = document.getElementById('attach-row')!;
+  row.innerHTML = attachments
+    .map((a, i) => `<span class="chip"><span>${esc(a.name)}</span><span class="chip-x" data-i="${i}">×</span></span>`)
+    .join('');
+  row.querySelectorAll<HTMLElement>('.chip-x').forEach((x) => {
+    x.onclick = () => {
+      attachments.splice(Number(x.dataset.i), 1);
+      renderAttach();
+    };
+  });
+}
+
+// Suggestions for the model picker's datalist (Direct only). Free-typing any id still works.
+const MODEL_HINTS = [
+  'glm-5.2', 'glm-4.6', 'glm-4-plus',
+  'deepseek-chat', 'deepseek-reasoner',
+  'qwen-max', 'qwen-plus', 'qwen-long',
+  'claude-sonnet-5', 'claude-haiku-4-5-20251001',
+];
+
+function fillModelHints(): void {
+  const dl = document.getElementById('model-list')!;
+  dl.innerHTML = MODEL_HINTS.map((m) => `<option value="${esc(m)}"></option>`).join('');
 }
 
 function esc(s: string): string {

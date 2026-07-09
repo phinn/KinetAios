@@ -14,6 +14,7 @@ const DEFAULTS: AppSettings = {
   approval: 'always',
   sandbox: 'workspaceWrite',
   planMode: false,
+  enableCliEngines: false,
   priceInPerMTok: 0.07, // GLM ¥0.5/1M in ≈ $0.07
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',
