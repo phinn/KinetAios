@@ -81,10 +81,6 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
-  // 关窗不退出 → 隐藏到托盘(quitting=true 时才真关)。
-  win.on('close', (e) => {
-    if (!quitting) { e.preventDefault(); win.hide(); }
-  });
   return win;
 }
 
@@ -313,12 +309,15 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
-    // 有托盘:窗口全关也不退出,留在托盘 + 全局热键常驻。
+    // 关窗即退出(close 真退)。托盘不再常驻 —— 全局热键只在 app 运行时生效。
+    globalShortcut.unregisterAll();
+    app.quit();
   });
 
   app.on('before-quit', () => {
     quitting = true; // 让 dashboard 的 close handler 放行 —— 否则 Cmd+Q / 系统退出会被 hide 拦截,退不出来
     globalShortcut.unregisterAll();
     mcp.dispose(); // 关掉所有 MCP 子进程
+    tray?.destroy(); // 销毁托盘,否则 macOS 上进程残留、退不干净
   });
 }
