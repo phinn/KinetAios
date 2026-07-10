@@ -92,14 +92,64 @@ function renderSidebar() {
     const last = c.turns[c.turns.length - 1];
     const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || '新会话';
     const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-    li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span>`;
+    li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="改名">✎</button><button class="ca-btn" data-act="delete" title="删除">🗑</button></span>`;
     li.onclick = () => {
       selectedId = id;
       renderSidebar();
       renderMain();
     };
+    li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        if (btn.dataset.act === 'rename') void renameConv(id);
+        else if (btn.dataset.act === 'delete') void deleteConv(id);
+      };
+    });
     ul.appendChild(li);
   }
+}
+
+// Electron renderer 不支持 window.prompt(),用自定义输入 modal 替代。
+function showPrompt(title: string, def: string): Promise<string | null> {
+  const modal = document.getElementById('prompt-modal')!;
+  document.getElementById('prompt-title')!.textContent = title;
+  const input = document.getElementById('prompt-input') as HTMLInputElement;
+  input.value = def;
+  modal.classList.add('show');
+  input.focus();
+  input.select();
+  return new Promise((resolve) => {
+    const ok = document.getElementById('prompt-ok')!;
+    const cancel = document.getElementById('prompt-cancel')!;
+    const done = (v: string | null) => {
+      ok.onclick = null;
+      cancel.onclick = null;
+      input.onkeydown = null;
+      modal.classList.remove('show');
+      resolve(v);
+    };
+    ok.onclick = () => done(input.value);
+    cancel.onclick = () => done(null);
+    input.onkeydown = (e) => {
+      if (e.key === 'Enter') done(input.value);
+      else if (e.key === 'Escape') done(null);
+    };
+  });
+}
+
+// 侧栏会话改名 / 删除(✎/🗑 按钮)。
+async function renameConv(id: string) {
+  const c = convs.get(id);
+  if (!c) return;
+  const cur = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '';
+  const name = await showPrompt('会话名(留空用首条消息)', cur);
+  if (name != null) await api.rename(id, name);
+}
+async function deleteConv(id: string) {
+  const c = convs.get(id);
+  if (!c) return;
+  const t = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '此会话';
+  if (confirm(`删除「${t}」?不可恢复。`)) await api.deleteConversation(id);
 }
 
 // ---------- main pane ----------

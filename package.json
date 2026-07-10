@@ -12,8 +12,9 @@
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "start": "electron .",
     "dev": "npm run build && electron .",
-    "pack": "npm run build && electron-builder --win --dir",
-    "dist": "npm run build && electron-builder --win"
+    "pack": "node scripts/pack.js dir",
+    "dist": "node scripts/pack.js win",
+    "dist:mac": "node scripts/pack.js mac"
   },
   "build": {
     "appId": "com.kinet.kietaios",

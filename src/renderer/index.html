@@ -79,6 +79,18 @@
     </div>
   </div>
 
+  <!-- 输入对话框(Electron 不支持 window.prompt(),用自定义 modal)-->
+  <div id="prompt-modal">
+    <div class="modal-card">
+      <h3 id="prompt-title">改名</h3>
+      <input id="prompt-input" />
+      <div class="actions">
+        <button id="prompt-cancel">取消</button>
+        <button class="primary" id="prompt-ok">确定</button>
+      </div>
+    </div>
+  </div>
+
   <script src="app.js"></script>
 </body>
 </html>

@@ -20,7 +20,8 @@ export interface RunOpts {
 // Runs one turn. Returns the accumulated messages (minus the system prompt) for next-turn history.
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, snapshot, userInput, history, ctx, signal, onEvent } = opts;
-  const maxTurns = opts.maxTurns ?? 50;
+  // 默认不限制轮数(原来是 50)。模型不收敛(一直 tool_call)会持续消耗 token,需手动点停止。
+  const maxTurns = opts.maxTurns ?? Infinity;
   const defs: ToolDef[] = tools.map(toolDef);
 
   let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...history];

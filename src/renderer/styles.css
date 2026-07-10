@@ -61,6 +61,12 @@ a { color: var(--accent); }
 #conv-list li:hover { background: var(--bg-elev); }
 #conv-list li.active { background: var(--bg-elev); }
 #conv-list li.active .title { color: var(--accent); }
+#conv-list li { position: relative; }
+#conv-list li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
+#conv-list li:hover .conv-actions { display: inline-flex; }
+.ca-btn { background: transparent; border: none; color: var(--text-dim); padding: 2px 5px; font-size: 12px; line-height: 1; cursor: pointer; }
+.ca-btn:hover { color: var(--text); }
+.ca-btn[data-act="delete"]:hover { color: var(--err); }
 #conv-list .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
@@ -187,8 +193,9 @@ a { color: var(--accent); }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
 
 /* confirm modal */
-#modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; }
-#modal.show { display: flex; }
+#modal, #prompt-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; }
+#modal.show, #prompt-modal.show { display: flex; }
+#prompt-input { margin: 10px 0; }
 .modal-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 18px; width: 560px; max-width: 90vw; }
 .modal-card h3 { margin: 0 0 6px; }
 .modal-card pre { background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 12px; user-select: text; }
