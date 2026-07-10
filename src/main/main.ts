@@ -90,8 +90,8 @@ function createDashboard(): BrowserWindow {
 function createQuick(): BrowserWindow {
   const win = new BrowserWindow({
     width: 640,
-    height: 160,
-    resizable: false,
+    height: 240,
+    resizable: true,
     minimizable: false,
     maximizable: false,
     backgroundColor: '#1b1b1f',

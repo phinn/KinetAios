@@ -55,7 +55,7 @@ let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入�
     if (!conv) return;
     applyEvent(conv, ev);
     if (convId === selectedId) {
-      if (ev.type === 'token') streamPatch(conv);
+      if (ev.type === 'token') streamAppend(ev.text);
       else renderMain();
     }
     if (ev.type !== 'token') renderSidebar();
@@ -242,16 +242,17 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   return el;
 }
 
-// Streaming token — patch the live answer node directly (no full re-render).
-function streamPatch(conv: Conversation) {
+// 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
+function streamAppend(text: string) {
   let el = document.getElementById('streaming-answer');
   if (!el) {
     renderMain();
     el = document.getElementById('streaming-answer');
   }
-  const last = conv.turns[conv.turns.length - 1];
-  if (el && last) el.textContent = last.answer;
-  scrollDown();
+  if (el) {
+    el.appendChild(document.createTextNode(text));
+    scrollDown();
+  }
 }
 
 function empty(text: string): HTMLElement {
@@ -532,14 +533,15 @@ async function send() {
   if (!typed.trim() && !attachments.length) return;
   // @文件引用 + 📎 附件:内容拼到正文前(代码块包裹,模型可直接读取)。
   const cwd = convs.get(selectedId)?.cwd ?? '';
-  const atFiles = cwd ? await resolveAtFiles(typed, cwd) : [];
-  const files = [...attachments, ...atFiles];
+  const at = cwd ? await resolveAtFiles(typed, cwd) : { files: [], missing: [] };
+  const files = [...attachments, ...at.files];
   let text = typed;
   if (files.length) {
     text = files.map((a) => `📎 文件 ${a.name}:\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n') + '\n\n---\n\n' + typed;
     attachments = [];
     renderAttach();
   }
+  if (at.missing.length) alert(`这些 @文件 没读到(不存在 / 非文本 / 不在工作目录内):\n${at.missing.join('\n')}`);
   composer.value = '';
   autosize(composer);
   showChat();
@@ -680,16 +682,18 @@ function renderAttach(): void {
   });
 }
 
-// @文件引用:解析正文里的 @path,经 main 读 cwd 内文件(@ 前需非单词字符以避开 email)。
-async function resolveAtFiles(text: string, cwd: string): Promise<{ name: string; content: string }[]> {
+// @文件引用:解析正文里的 @path,经 main 读 cwd 内文件(@ 前需非单词字符以避开 email)。返回读到的 + 失败的。
+async function resolveAtFiles(text: string, cwd: string): Promise<{ files: { name: string; content: string }[]; missing: string[] }> {
   const rels = [...new Set([...text.matchAll(/(?<![\w@])@([\w./\\-]+)/g)].map((m) => m[1]))];
-  const out: { name: string; content: string }[] = [];
+  const files: { name: string; content: string }[] = [];
+  const missing: string[] = [];
   for (const rel of rels) {
     if (!isTextFile(rel)) continue;
     const r = await api.readFile(rel, cwd);
-    if (r.ok && r.content != null) out.push({ name: rel, content: r.content });
+    if (r.ok && r.content != null) files.push({ name: rel, content: r.content });
+    else missing.push(rel);
   }
-  return out;
+  return { files, missing };
 }
 
 // Suggestions for the model picker's datalist (Direct only). Free-typing any id still works.

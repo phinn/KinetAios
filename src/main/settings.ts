@@ -1,7 +1,7 @@
 // Runtime config, persisted to a JSON file in userData. Port of Swift AppSettings.
 import path from 'node:path';
 import fs from 'node:fs';
-import { app } from 'electron';
+import { app, safeStorage } from 'electron';
 import type { AppSettings, ConfigSnapshot } from '../shared/types';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
@@ -29,7 +29,16 @@ function file(): string {
 export function getSettings(): AppSettings {
   if (cache) return cache;
   try {
-    cache = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) } as AppSettings;
+    const s = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) } as AppSettings;
+    // 旧明文 key 不以 @enc: 开头 → 按原样用(向后兼容);加密的解回明文进内存。
+    if (typeof s.apiKey === 'string' && s.apiKey.startsWith('@enc:') && safeStorage.isEncryptionAvailable()) {
+      try {
+        s.apiKey = safeStorage.decryptString(Buffer.from(s.apiKey.slice(5), 'base64'));
+      } catch {
+        /* 解密失败留原值 */
+      }
+    }
+    cache = s;
   } catch {
     cache = { ...DEFAULTS };
   }
@@ -38,9 +47,13 @@ export function getSettings(): AppSettings {
 
 export function saveSettings(s: AppSettings): void {
   cache = { ...s };
-  // ponytail: apiKey stored in plaintext JSON. Fine for a local single-user dev tool;
-  // move to Windows Credential Manager (CredRead/CredWrite) before any real distribution.
-  fs.writeFileSync(file(), JSON.stringify(s, null, 2));
+  // apiKey 用系统密钥加密(mac Keychain / Win DPAPI / Linux libsecret)再落盘,不再明文。
+  // safeStorage 不可用(极少数环境)时回退明文。
+  const toWrite: AppSettings = { ...s };
+  if (s.apiKey && safeStorage.isEncryptionAvailable()) {
+    toWrite.apiKey = '@enc:' + safeStorage.encryptString(s.apiKey).toString('base64');
+  }
+  fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2));
 }
 
 // Snapshot for one request — reads live settings so a settings change takes effect next task.

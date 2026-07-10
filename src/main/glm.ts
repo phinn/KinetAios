@@ -19,8 +19,22 @@ export type Completion = {
 };
 
 export class GLMError extends Error {
-  constructor(public kind: 'noKey' | 'http', public code = 0) {
-    super(kind === 'noKey' ? 'no API key' : `HTTP ${code}`);
+  constructor(public kind: 'noKey' | 'http', public code = 0, public detail = '') {
+    super(kind === 'noKey' ? 'no API key' : `HTTP ${code}${detail ? `: ${detail}` : ''}`);
+  }
+}
+
+// 读 HTTP 错误响应里的可读信息(400 时点明原因 —— max_tokens 过大 / reasoning 不支持 / 模型 id 错 等)。
+async function readErr(resp: Response): Promise<string> {
+  try {
+    const j: any = await resp.json();
+    return j?.error?.message || j?.message || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
+  } catch {
+    try {
+      return (await resp.text()).slice(0, 300);
+    } catch {
+      return '';
+    }
   }
 }
 
@@ -126,7 +140,7 @@ class OpenAICompatibleProvider implements Provider {
       body: JSON.stringify(body),
       signal,
     });
-    if (resp.status !== 200) throw new GLMError('http', resp.status);
+    if (resp.status !== 200) throw new GLMError('http', resp.status, await readErr(resp));
 
     let content = '';
     const calls = new Map<number, { id: string; name: string; args: string }>();
@@ -244,7 +258,7 @@ class AnthropicProvider implements Provider {
       body: JSON.stringify(body),
       signal,
     });
-    if (resp.status !== 200) throw new GLMError('http', resp.status);
+    if (resp.status !== 200) throw new GLMError('http', resp.status, await readErr(resp));
 
     // 2) parse Anthropic SSE: text_delta → onToken; input_json_delta → stitch tool args
     let content = '';

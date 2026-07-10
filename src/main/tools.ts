@@ -59,7 +59,8 @@ const shell: Tool = {
     const cmd = (args.command as string) ?? '';
     const ok = await ctx.confirm(cmd);
     if (!ok) return `❌ 用户拒绝执行: ${cmd}`;
-    return shellExec(cmd, ctx.cwd);
+    const out = await shellExec(cmd, ctx.cwd);
+    return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
   },
 };
 

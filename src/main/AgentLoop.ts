@@ -88,9 +88,9 @@ function dropSystem(messages: ChatMsg[]): ChatMsg[] {
 }
 
 function errMsg(e: unknown): string {
-  const err = e as { kind?: string; code?: number; message?: string };
+  const err = e as { kind?: string; code?: number; message?: string; detail?: string };
   if (err && err.kind === 'noKey') return '未设置 API Key — 打开设置填入 key。';
-  if (err && err.kind === 'http') return `HTTP ${err.code} — 检查 API key / 模型 id / 网络。`;
+  if (err && err.kind === 'http') return `HTTP ${err.code}${err.detail ? ` — ${err.detail}` : ''} — 检查 API key / 模型 id / 网络。`;
   return `出错: ${(e as Error)?.message ?? e}`;
 }
 
