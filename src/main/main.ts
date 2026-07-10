@@ -1,7 +1,9 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron';
 import path from 'node:path';
+import fs from 'node:fs';
+import zlib from 'node:zlib';
 import os from 'node:os';
 import { initStore } from './store';
 import { getSettings, saveSettings } from './settings';
@@ -14,6 +16,8 @@ import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind 
 let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
+let tray: Tray | null = null;
+let quitting = false;
 
 // MARK: shell-confirm bridge (main asks the dashboard window; user answers in a modal)
 const pendingConfirms = new Map<string, (approved: boolean) => void>();
@@ -76,6 +80,10 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // 关窗不退出 → 隐藏到托盘(quitting=true 时才真关)。
+  win.on('close', (e) => {
+    if (!quitting) { e.preventDefault(); win.hide(); }
+  });
   return win;
 }
 
@@ -106,6 +114,72 @@ function toggleQuick(): void {
   }
   quickWin = createQuick();
   quickWin.on('closed', () => (quickWin = null));
+}
+
+// MARK: 托盘(程序生成的金色圆 icon,无需图标资源;关窗留托盘,全局热键常驻)
+const CRC_TABLE = (() => {
+  const t = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    t[n] = c >>> 0;
+  }
+  return t;
+})();
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) c = CRC_TABLE[(c ^ buf[i]) & 0xff] ^ (c >>> 8);
+  return (c ^ 0xffffffff) >>> 0;
+}
+function num32(n: number): Buffer {
+  const b = Buffer.alloc(4);
+  b.writeUInt32BE(n >>> 0);
+  return b;
+}
+function pngChunk(type: string, data: Buffer): Buffer {
+  const t = Buffer.from(type, 'ascii');
+  return Buffer.concat([num32(data.length), t, data, num32(crc32(Buffer.concat([t, data])))]);
+}
+// 16×16 金色圆 PNG(运行时用 zlib 编码,免去图标资源文件)。
+function makeTrayIcon() {
+  const S = 16;
+  const raw = Buffer.alloc((S * 4 + 1) * S);
+  for (let y = 0; y < S; y++) {
+    raw[y * (S * 4 + 1)] = 0; // PNG filter: none
+    for (let x = 0; x < S; x++) {
+      const o = y * (S * 4 + 1) + 1 + x * 4;
+      const dx = x - 7.5, dy = y - 7.5;
+      const inside = dx * dx + dy * dy <= 36; // 半径 6 的圆
+      raw[o] = 0xe8; raw[o + 1] = 0xb3; raw[o + 2] = 0x39; raw[o + 3] = inside ? 0xff : 0; // 金 #e8b339
+    }
+  }
+  const sig = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+  const ihdr = pngChunk('IHDR', Buffer.concat([num32(S), num32(S), Buffer.from([8, 6, 0, 0, 0])])); // 8-bit RGBA
+  const idat = pngChunk('IDAT', zlib.deflateSync(raw));
+  const iend = pngChunk('IEND', Buffer.alloc(0));
+  return nativeImage.createFromBuffer(Buffer.concat([sig, ihdr, idat, iend]), { width: S, height: S });
+}
+
+function showDashboard(): void {
+  if (!dashboardWin || dashboardWin.isDestroyed()) dashboardWin = createDashboard();
+  if (dashboardWin.isMinimized()) dashboardWin.restore();
+  dashboardWin.show();
+  dashboardWin.focus();
+}
+
+function createTray(): Tray {
+  const t = new Tray(makeTrayIcon());
+  t.setToolTip('KinetAios');
+  t.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: '显示主窗口', click: () => showDashboard() },
+      { label: 'Quick 面板', click: () => toggleQuick() },
+      { type: 'separator' },
+      { label: '退出', click: () => { quitting = true; app.quit(); } },
+    ]),
+  );
+  t.on('click', () => showDashboard());
+  return t;
 }
 
 function registerIpc(): void {
@@ -143,6 +217,7 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.handle('list-skills', () => listSkills());
+  ipcMain.handle('list-mcp', () => mcp.snapshot());
 
   // 系统文件夹选择器(renderer 无 Node,只能走 main 的 dialog)。
   ipcMain.handle('pick-directory', async () => {
@@ -151,6 +226,19 @@ function registerIpc(): void {
       ? await dialog.showOpenDialog(win, { properties: ['openDirectory'] })
       : await dialog.showOpenDialog({ properties: ['openDirectory'] });
     return r.canceled ? '' : r.filePaths[0] ?? '';
+  });
+
+  // 读 cwd 内的文件(@文件 引用用)。限工作目录内,防 ../ 越界。
+  ipcMain.handle('read-file', (_e, rel: string, cwd: string) => {
+    const base = path.resolve(cwd || process.cwd());
+    const full = path.resolve(base, rel || '');
+    if (!full.startsWith(base)) return { ok: false, error: '路径必须在工作目录内' };
+    try {
+      const body = fs.readFileSync(full, 'utf8');
+      return { ok: true, name: rel, content: body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
   });
 
   ipcMain.handle('test-connection', async (_e, s?: AppSettings) => {
@@ -214,6 +302,7 @@ if (!gotLock) {
     registerIpc();
     mcp.connectAll(); // 后台连 MCP server(不阻塞首屏;Direct 引擎首轮会等 ≤2s)
     dashboardWin = createDashboard();
+    tray = createTray();
 
     // Ctrl+Alt+Space on Windows (Cmd/Ctrl+Alt+Space cross-platform).
     globalShortcut.register('CommandOrControl+Alt+Space', toggleQuick);
@@ -224,10 +313,11 @@ if (!gotLock) {
   });
 
   app.on('window-all-closed', () => {
-    // ponytail: quit on close everywhere (no mac dock-stays-open behavior on Windows).
-    globalShortcut.unregisterAll();
-    app.quit();
+    // 有托盘:窗口全关也不退出,留在托盘 + 全局热键常驻。
   });
 
-  app.on('before-quit', () => mcp.dispose()); // 关掉所有 MCP 子进程
+  app.on('before-quit', () => {
+    globalShortcut.unregisterAll();
+    mcp.dispose(); // 关掉所有 MCP 子进程
+  });
 }

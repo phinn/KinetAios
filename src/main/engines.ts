@@ -41,6 +41,19 @@ export interface Engine {
   run(opts: EngineRunOpts): Promise<void>;
 }
 
+// 项目规则文件(AGENTS.md / CLAUDE.md)注入 system prompt —— 约定大于配置。
+function loadProjectRules(cwd: string): string {
+  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+    try {
+      const body = fs.readFileSync(path.join(cwd, name), 'utf8');
+      if (body.trim()) return `\n\n# 项目规则(${name})\n${body.slice(0, 8000)}`;
+    } catch {
+      /* 不存在 → 试下一个 */
+    }
+  }
+  return '';
+}
+
 // Direct = the built-in ReAct loop (AgentLoop) talking to the GLM/OpenAI/Anthropic provider.
 class DirectEngine implements Engine {
   readonly name = 'direct' as const;
@@ -53,12 +66,13 @@ class DirectEngine implements Engine {
     const ctx: ToolCtx = { cwd: conv.cwd, confirm: this.confirm };
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    const rulesSection = loadProjectRules(conv.cwd);
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
     const updated = await runAgentLoop({
       provider: currentProvider(snap),
       tools,
-      systemPrompt: baseSystemPrompt + skillSection + memoryBlock,
+      systemPrompt: baseSystemPrompt + skillSection + rulesSection + memoryBlock,
       snapshot: snap,
       userInput: prompt,
       history: conv.directHistory,

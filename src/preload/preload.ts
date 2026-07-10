@@ -18,7 +18,9 @@ const api: KinetAPI = {
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   testConnection: (s) => ipcRenderer.invoke('test-connection', s),
   listSkills: () => ipcRenderer.invoke('list-skills'),
+  listMcp: () => ipcRenderer.invoke('list-mcp'),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
+  readFile: (rel, cwd) => ipcRenderer.invoke('read-file', rel, cwd),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
 
   onAgentEvent: (cb) => {

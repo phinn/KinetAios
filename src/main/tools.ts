@@ -161,8 +161,157 @@ const recallMemory: Tool = {
   },
 };
 
+// MARK: grep / glob / edit_file —— 代码导航与精确编辑
+
+const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'release', 'build', '.next', 'target', '.cache', '__pycache__', 'venv', '.venv']);
+
+// 递归列出文件(限深度 + 跳过依赖/构建目录),返回绝对路径。
+async function walkFiles(root: string, limit: number): Promise<string[]> {
+  const out: string[] = [];
+  async function rec(dir: string, depth: number): Promise<void> {
+    if (out.length >= limit || depth > 8) return;
+    let ents: fs.Dirent[];
+    try {
+      ents = await fs.promises.readdir(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const ent of ents) {
+      if (ent.name === '.DS_Store' || ent.name === 'Thumbs.db') continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        if (SKIP_DIRS.has(ent.name)) continue;
+        await rec(full, depth + 1);
+      } else if (ent.isFile()) {
+        out.push(full);
+        if (out.length >= limit) return;
+      }
+    }
+  }
+  await rec(root, 0);
+  return out;
+}
+
+// 简单 glob → regex(** 跨目录、* 单段、? 单字符)。
+function globToRegex(pat: string): RegExp {
+  const s = pat
+    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
+    .replace(/\*\*/g, '\x01')
+    .replace(/\*/g, '[^/]*')
+    .replace(/\?/g, '[^/]')
+    .replace(/\x01/g, '.*');
+  return new RegExp('^' + s + '$');
+}
+
+const grep: Tool = {
+  name: 'grep',
+  description: '在当前工作目录递归搜索文件内容(正则,大小写不敏感),返回「文件:行号: 内容」。自动排除 node_modules/.git/dist 等。需要找代码/字符串在哪时用,比 shell grep 干净。',
+  parameters: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: '正则表达式' },
+      glob: { type: 'string', description: '可选:只搜匹配此 glob 的文件(如 *.ts)' },
+    },
+    required: ['pattern'],
+  },
+  async run(args, ctx) {
+    const pattern = String(args.pattern ?? '');
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern, 'i');
+    } catch {
+      return `非法正则: ${pattern}`;
+    }
+    const filter = args.glob ? globToRegex(String(args.glob)) : null;
+    const files = await walkFiles(ctx.cwd, 2000);
+    const hits: string[] = [];
+    for (const f of files) {
+      const rel = path.relative(ctx.cwd, f);
+      if (filter && !filter.test(rel) && !filter.test(path.basename(f))) continue;
+      try {
+        const body = fs.readFileSync(f, 'utf8');
+        for (const [i, line] of body.split('\n').entries()) {
+          if (re.test(line)) {
+            hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 200)}`);
+            if (hits.length >= 200) break;
+          }
+        }
+      } catch {
+        /* 二进制/无权限 → 跳过 */
+      }
+      if (hits.length >= 200) break;
+    }
+    if (!hits.length) return `无匹配「${pattern}」`;
+    return `命中 ${hits.length} 条:\n${hits.join('\n')}`;
+  },
+};
+
+const glob: Tool = {
+  name: 'glob',
+  description: '按 glob 模式列出当前工作目录下的文件(如 **/*.ts、src/**/*.json),返回相对路径(前 200 个)。需要知道有哪些文件时用。',
+  parameters: {
+    type: 'object',
+    properties: { pattern: { type: 'string', description: 'glob 模式' } },
+    required: ['pattern'],
+  },
+  async run(args, ctx) {
+    const pat = String(args.pattern ?? '');
+    const re = globToRegex(pat);
+    const files = await walkFiles(ctx.cwd, 500);
+    const matched = files.map((f) => path.relative(ctx.cwd, f)).filter((rel) => re.test(rel)).slice(0, 200);
+    if (!matched.length) return `无匹配「${pat}」`;
+    return matched.join('\n');
+  },
+};
+
+// edit_file:精确替换文件中的一段(比 write_file 安全 —— 只改指定片段,不动其它)。
+const editFile: Tool = {
+  name: 'edit_file',
+  description: '把文件里 old_string 那段精确替换为 new_string。old_string 必须与文件完全一致(含缩进/换行)。默认只替换第一处,replace_all=true 替换全部。找不到 old_string 时不改动并报错。改代码首选这个,不要用 write_file 整体覆盖。',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '文件绝对或相对路径' },
+      old_string: { type: 'string', description: '要替换的原文本(必须精确匹配)' },
+      new_string: { type: 'string', description: '替换成的新文本' },
+      replace_all: { type: 'boolean', description: '是否替换所有匹配处(默认 false,只第一处)' },
+    },
+    required: ['path', 'old_string', 'new_string'],
+  },
+  async run(args, ctx) {
+    const p = expandPath(String(args.path ?? ''), ctx.cwd);
+    const oldS = String(args.old_string ?? '');
+    const newS = String(args.new_string ?? '');
+    if (!p) return '缺少 path';
+    if (!oldS) return '缺少 old_string';
+    let body: string;
+    try {
+      body = fs.readFileSync(p, 'utf8');
+    } catch {
+      return `读不到: ${p}`;
+    }
+    if (!body.includes(oldS)) return `未找到要替换的片段(检查缩进/空格是否完全一致)。文件 ${body.length} 字节,未改动。`;
+    let out: string;
+    let count: number;
+    if (args.replace_all === true) {
+      count = body.split(oldS).length - 1;
+      out = body.split(oldS).join(newS);
+    } else {
+      const i = body.indexOf(oldS);
+      out = body.slice(0, i) + newS + body.slice(i + oldS.length);
+      count = 1;
+    }
+    try {
+      fs.writeFileSync(p, out, 'utf8');
+      return `已替换 ${count} 处 → ${p}`;
+    } catch (e) {
+      return `写入失败: ${e}`;
+    }
+  },
+};
+
 export function allTools(): Tool[] {
-  return [shell, readFile, writeFile, webFetch, recallMemory];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory];
 }
 
 // Resolve a (possibly relative / ~ / %USERPROFILE%) path against cwd.

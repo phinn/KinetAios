@@ -125,7 +125,9 @@ export interface KinetAPI {
   saveSettings(s: AppSettings): Promise<boolean>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
   listSkills(): Promise<SkillInfo[]>;
+  listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   pickDirectory(): Promise<string>;
+  readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
   quickSubmit(text: string): Promise<string>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;

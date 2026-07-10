@@ -276,6 +276,11 @@ class McpRegistry {
     return out;
   }
 
+  // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性)。
+  snapshot(): Array<{ source: string; name: string; tools: string[] }> {
+    return this.clients.map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
+  }
+
   dispose(): void {
     this.clients.forEach((c) => c.dispose());
     this.clients = [];
