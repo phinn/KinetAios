@@ -479,6 +479,16 @@ function wireUi() {
   dropZone.addEventListener('drop', (e) => {
     e.preventDefault();
     dropZone.classList.remove('drag');
+    // 检测文件夹(暂不支持递归读)→ 提示
+    const items = e.dataTransfer?.items;
+    let hasDir = false;
+    if (items) {
+      for (const it of Array.from(items)) {
+        const ent = it.webkitGetAsEntry?.() as { isDirectory?: boolean } | null | undefined;
+        if (ent?.isDirectory) { hasDir = true; break; }
+      }
+    }
+    if (hasDir) alert('暂不支持文件夹,请拖单个文件(可多选),或用 📎 选择。');
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length) void addFiles(files);
   });

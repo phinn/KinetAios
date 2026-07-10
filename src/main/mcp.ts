@@ -122,8 +122,12 @@ class StdioClient {
   private seq = 0;
   private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void }>();
   private buf = '';
+  private everConnected = false; // initialize 成功过(exit 才值得重连)
+  private reconnectCount = 0;
+  private reconnectTimer: NodeJS.Timeout | null = null;
   readonly tools: McpTool[] = [];
   readonly ready: Promise<void>;
+  alive = true; // false = 进程已死且放弃重连(directTools / snapshot 跳过)
 
   constructor(readonly cfg: McpServerConfig) {
     this.ready = this.start();
@@ -135,22 +139,44 @@ class StdioClient {
       try {
         this.child = spawn(this.cfg.command, this.cfg.args, opts);
       } catch {
-        resolveReady(); // spawn 同步抛(极少)→ 当作连不上
+        this.alive = false; // spawn 同步抛 → 连不上,不重连
+        resolveReady();
         return;
       }
       this.child.stdout?.on('data', (d) => this.onData(d));
       this.child.stderr?.on('data', (d) => console.error(`[mcp/${this.cfg.name}]`, d.toString().trimEnd()));
-      this.child.on('error', () => this.failAll());
-      this.child.on('exit', () => this.failAll());
+      this.child.on('error', () => this.handleExit());
+      this.child.on('exit', () => this.handleExit());
       this.initialize().then(
-        () => resolveReady(),
+        () => {
+          this.everConnected = true; // 连上过 → 之后意外退出值得重连
+          this.reconnectCount = 0;
+          resolveReady();
+        },
         (e) => {
           console.error(`[mcp/${this.cfg.name}] 连接失败:`, (e as Error)?.message);
+          this.alive = false; // initialize 失败 → 配置/握手问题,不重连
           this.dispose();
-          resolveReady(); // 不抛 —— 连不上就当没这个 server
+          resolveReady();
         },
       );
     });
+  }
+
+  // 进程退出:曾连上过就延迟重连(最多 5 次),否则放弃。
+  private handleExit(): void {
+    this.failAll();
+    this.child = null;
+    if (this.everConnected && this.alive && this.reconnectCount < 5) {
+      this.reconnectCount++;
+      console.log(`[mcp/${this.cfg.name}] 进程退出,3s 后重连(${this.reconnectCount}/5)…`);
+      this.reconnectTimer = setTimeout(() => {
+        this.reconnectTimer = null;
+        void this.start();
+      }, 3000);
+    } else {
+      this.alive = false;
+    }
   }
 
   private onData(d: Buffer | string): void {
@@ -221,6 +247,8 @@ class StdioClient {
   }
 
   dispose(): void {
+    if (this.reconnectTimer) { clearTimeout(this.reconnectTimer); this.reconnectTimer = null; }
+    this.alive = false;
     this.failAll();
     try {
       this.child?.kill();
@@ -264,6 +292,7 @@ class McpRegistry {
     }
     const out: Tool[] = [];
     for (const c of this.clients) {
+      if (!c.alive) continue; // 失效(进程死且放弃重连)→ 不暴露工具
       for (const t of c.tools) {
         out.push({
           name: `mcp__${c.cfg.name}__${t.name}`,
@@ -278,7 +307,7 @@ class McpRegistry {
 
   // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性)。
   snapshot(): Array<{ source: string; name: string; tools: string[] }> {
-    return this.clients.map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
+    return this.clients.filter((c) => c.alive).map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
   }
 
   dispose(): void {
