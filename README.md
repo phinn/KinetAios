@@ -16,12 +16,12 @@
 ## 功能
 
 ### 三个引擎(每会话可切,切换清跨引擎上下文)
-- **Direct(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider。
+- **Direct(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
 - **Claude Code**:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex**:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
 
-### Direct 工具(8 个)
-`shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`、`recall_memory`。Claude/Codex 用各自 CLI 的工具体系。
+### Direct 工具(9 个)
+`shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`、`recall_memory`、`dispatch_agent`(只读子 agent —— 复用 ReAct 循环、独立上下文)。Claude/Codex 用各自 CLI 的工具体系。
 
 ### MCP
 Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop),stdio 客户端,工具并入 ReAct;意外断开自动重连。🔌 按钮可查看已连服务/工具。
@@ -30,6 +30,7 @@ Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~
 扫描 Claude Code 的 skills + commands + agents(含已装 plugin 的内容)和 Codex 的 skills,`/` 菜单或 ⚡ 按钮调用,body 注入 Direct。
 
 ### 其它
+- **四语言 UI**:English / 简体中文 / 繁體中文 / 日本語,设置里切换(给模型看的字符串仍中文)
 - **每会话独立模型**(可编辑下拉,OpenAI 兼容 + Anthropic 双协议)
 - **文件附件**:📎 选 / 拖入多个文本文件(大文件只读开头),`@路径` 引用 cwd 内文件
 - **AGENTS.md / CLAUDE.md**:cwd 下的规则文件自动注入 system prompt
@@ -61,18 +62,19 @@ KinetAiosWin/
   package.json
   src/
     shared/types.ts         # 类型 + applyEvent(主/渲染共用,单一事实源)
+    shared/i18n.ts          # 四语言字符串表 + t()
     main/
       main.ts               # 窗口 / 托盘 / 热键 / IPC / shell 确认桥
       TaskManager.ts        # 会话管理 + 引擎分派 + 记忆抽取
       engines.ts            # Engine 接口 + Direct/ClaudeCode/Codex + 跨平台 CLI spawn
-      AgentLoop.ts          # ReAct 循环(Direct 用)
-      glm.ts                # Provider + OpenAI/Anthropic SSE 流式
-      tools.ts              # 8 个工具 + 跨平台 shell(cmd.exe / sh)
+      AgentLoop.ts          # ReAct 循环(Direct)+ 历史压缩 + 超长自缩
+      glm.ts                # Provider + OpenAI/Anthropic SSE 流式 + 重试
+      tools.ts              # 9 个工具 + 跨平台 shell(cmd.exe / sh)+ dispatch_agent
       mcp.ts                # MCP 客户端(扫描 + stdio + 重连)
       skills.ts             # skills/commands/agents/plugin 扫描
       brand.ts              # 品牌配置读取
       store.ts              # better-sqlite3 + FTS5
-      settings.ts           # 配置(API key 加密落盘)
+      settings.ts           # 配置(API key 加密落盘,lang)
     preload/preload.ts      # contextBridge 暴露的窄 API
     renderer/
       index.html quick.html styles.css
