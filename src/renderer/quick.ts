@@ -10,6 +10,9 @@ declare global {
 }
 
 const api = window.kinet;
+api.getBrand().then((b) => {
+  document.title = `${b.productName} · Quick`;
+});
 let activeId: string | null = null;
 let conv: Conversation | null = null;
 

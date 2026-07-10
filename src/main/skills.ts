@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import type { SkillInfo, SkillType } from '../shared/types';
 
-type Skill = SkillInfo & { body: string };
+type Skill = SkillInfo & { body: string; dir: string };
 
 type ScanRoot = {
   dir: string;
@@ -63,10 +63,10 @@ let cache: Map<string, Skill> | null = null;
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  const add = (name: string, description: string, source: 'claude' | 'codex', type: SkillType, body: string): void => {
+  const add = (name: string, description: string, source: 'claude' | 'codex', type: SkillType, body: string, dir: string): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
-    map.set(key, { name, description, source, type, body });
+    map.set(key, { name, description, source, type, body, dir });
   };
   for (const { dir, source, type, mode } of [...roots(), ...pluginRoots()]) {
     let ents: fs.Dirent[];
@@ -80,7 +80,7 @@ function scan(): Map<string, Skill> {
         if (!ent.isFile() || !ent.name.endsWith('.md')) continue;
         try {
           const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name), 'utf8'), ent.name.replace(/\.md$/, ''));
-          add(parsed.name, parsed.description, source, type, parsed.body);
+          add(parsed.name, parsed.description, source, type, parsed.body, dir);
         } catch {
           /* 跳过读不了的 */
         }
@@ -88,9 +88,10 @@ function scan(): Map<string, Skill> {
     } else {
       for (const ent of ents) {
         if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
+        const skillDir = path.join(dir, ent.name);
         try {
-          const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name, 'SKILL.md'), 'utf8'), ent.name);
-          add(parsed.name, parsed.description, source, type, parsed.body);
+          const parsed = parseSkill(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), ent.name);
+          add(parsed.name, parsed.description, source, type, parsed.body, skillDir);
         } catch {
           /* 非 skill 目录(无 SKILL.md)→ 跳过 */
         }
@@ -112,6 +113,10 @@ export function listSkills(): SkillInfo[] {
 }
 
 // 返回 body 用于注入;没有该 name 则 null(→ 不是 skill/command/agent 调用)。
+// 开头带上 skill 的绝对目录 —— skill 内的 scripts / 资源用绝对路径引用,否则模型按相对 cwd 找
+// (glob/where 递归)会找不到甚至超时。
 export function loadSkillBody(name: string): string | null {
-  return ensure().get(name.toLowerCase())?.body ?? null;
+  const s = ensure().get(name.toLowerCase());
+  if (!s) return null;
+  return `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用,例如执行其下的 scripts/xxx):\n${s.dir}\n\n${s.body}`;
 }
