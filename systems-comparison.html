@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>三套 Agent 系统对比 · 优缺点与 Token 消耗</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:#070a12; --card:rgba(255,255,255,.035); --card2:rgba(255,255,255,.055);
+    --border:rgba(255,255,255,.09); --border2:rgba(255,255,255,.16);
+    --text:#eef1f7; --muted:#9aa4b6; --muted2:#6b7488;
+    --cc:#d97757; --direct:#3b82f6; --codex:#10a37f;
+    --ok:#34d399; --bad:#f87171; --warn:#fbbf24;
+    --grad:linear-gradient(120deg,#7c5cff,#3b82f6 50%,#22d3ee);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    background:var(--bg);color:var(--text);
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;
+    line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+  }
+  .bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+  .orb{position:absolute;border-radius:50%;filter:blur(100px);opacity:.45;animation:float 20s ease-in-out infinite}
+  .orb.a{width:520px;height:520px;background:#7c5cff;top:-180px;left:-120px}
+  .orb.b{width:460px;height:460px;background:#22d3ee;top:25%;right:-160px;animation-delay:-7s}
+  .orb.c{width:420px;height:420px;background:#3b82f6;bottom:-200px;left:35%;animation-delay:-13s}
+  @keyframes float{0%,100%{transform:translate(0,0) scale(1)}50%{transform:translate(40px,-30px) scale(1.1)}}
+
+  .wrap{max-width:1200px;margin:0 auto;padding:56px 24px 96px}
+  header{text-align:center;margin-bottom:56px}
+  .eyebrow{display:inline-block;font-size:12px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+    color:var(--muted);background:var(--card);border:1px solid var(--border);padding:6px 14px;border-radius:999px;margin-bottom:20px}
+  h1{font-size:clamp(30px,5vw,52px);font-weight:800;letter-spacing:-.025em;line-height:1.1;margin-bottom:16px}
+  h1 .g{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .sub{font-size:17px;color:var(--muted);max-width:680px;margin:0 auto}
+  code,.mono{font-family:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.92em}
+
+  section{margin-top:64px}
+  .sec-title{font-size:13px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--muted2);margin-bottom:20px;display:flex;align-items:center;gap:12px}
+  .sec-title::after{content:"";flex:1;height:1px;background:var(--border)}
+
+  /* pros/cons 3 columns */
+  .systems{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+  .sys{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:0;overflow:hidden;transition:.25s}
+  .sys:hover{transform:translateY(-4px);border-color:var(--border2);background:var(--card2)}
+  .sys .top{padding:22px 22px 16px;border-bottom:1px solid var(--border)}
+  .sys .bar{height:4px}
+  .sys.cc .bar{background:linear-gradient(90deg,#d97757,#ff7ab6)}
+  .sys.direct .bar{background:linear-gradient(90deg,#3b82f6,#22d3ee)}
+  .sys.codex .bar{background:linear-gradient(90deg,#10a37f,#22d3ee)}
+  .sys h3{font-size:19px;margin-bottom:4px;display:flex;align-items:center;gap:9px}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .sys.cc .dot{background:var(--cc)} .sys.direct .dot{background:var(--direct)} .sys.codex .dot{background:var(--codex)}
+  .sys .role{font-size:13px;color:var(--muted);font-weight:500}
+  .pc{padding:16px 22px 22px}
+  .pc h4{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:7px}
+  .pc h4.pros{color:var(--ok)} .pc h4.cons{color:var(--bad);margin-top:18px}
+  .pc ul{list-style:none}
+  .pc li{font-size:13.5px;color:var(--text);padding:5px 0 5px 22px;position:relative;line-height:1.5}
+  .pc li::before{position:absolute;left:0;top:5px;font-weight:700;font-size:13px}
+  .pc .pros li::before{content:"✓";color:var(--ok)}
+  .pc .cons li::before{content:"✗";color:var(--bad)}
+  .pc li b{color:var(--text);font-weight:600}
+  .pc li .dim{color:var(--muted)}
+
+  /* token section */
+  .tok-grid{display:grid;grid-template-columns:1fr;gap:18px}
+  .bars{background:var(--card);border:1px solid var(--border);border-radius:18px;padding:26px}
+  .bars h3{font-size:15px;margin-bottom:6px}
+  .bars .cap{font-size:13px;color:var(--muted);margin-bottom:22px}
+  .barrow{margin-bottom:20px}
+  .barrow:last-child{margin-bottom:0}
+  .barrow .lbl{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:7px}
+  .barrow .name{font-weight:600;display:flex;align-items:center;gap:7px}
+  .barrow .name .dot{width:9px;height:9px}
+  .barrow .val{color:var(--muted);font-size:12px}
+  .track{height:14px;background:rgba(255,255,255,.05);border-radius:7px;overflow:hidden;position:relative}
+  .fill{height:100%;border-radius:7px;transition:width 1s cubic-bezier(.2,.7,.2,1)}
+  .barrow.less .fill{background:linear-gradient(90deg,#10a37f,#34d399)}
+  .barrow.mid .fill{background:linear-gradient(90deg,#fbbf24,#f59e0b)}
+  .barrow.more .fill{background:linear-gradient(90deg,#f87171,#ef4444)}
+  .note{font-size:11.5px;color:var(--muted2);margin-top:6px}
+
+  .insight{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:18px}
+  .ins{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px}
+  .ins .ic{font-size:22px;margin-bottom:10px}
+  .ins h4{font-size:13.5px;margin-bottom:6px}
+  .ins p{font-size:13px;color:var(--muted);line-height:1.55}
+
+  .mech{background:var(--card);border:1px solid var(--border);border-radius:18px;overflow:hidden;margin-top:18px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th,td{padding:13px 16px;text-align:left;border-bottom:1px solid var(--border);vertical-align:top}
+  thead th{background:rgba(255,255,255,.025);font-size:12px;color:var(--muted);font-weight:600}
+  tbody tr:last-child td{border-bottom:none}
+  td.dim{color:var(--muted)}
+  td .tag{display:inline-block;font-size:11px;padding:2px 8px;border-radius:6px;font-weight:600;margin-right:4px}
+  .tag.good{background:rgba(52,211,153,.14);color:var(--ok)}
+  .tag.mid{background:rgba(251,191,36,.14);color:var(--warn)}
+  .tag.weak{background:rgba(248,113,113,.14);color:var(--bad)}
+  th.cc{color:var(--cc)} th.direct{color:var(--direct)} th.codex{color:var(--codex)}
+
+  .verdict{margin-top:64px;background:var(--grad);border-radius:24px;padding:40px;position:relative;overflow:hidden;text-align:center}
+  .verdict::after{content:"";position:absolute;inset:0;background:radial-gradient(circle at 25% 15%,rgba(255,255,255,.22),transparent 55%)}
+  .verdict h2{position:relative;font-size:clamp(22px,3.4vw,32px);font-weight:800;color:#fff;letter-spacing:-.02em;margin-bottom:14px}
+  .verdict p{position:relative;color:rgba(255,255,255,.92);font-size:15.5px;max-width:720px;margin:0 auto;line-height:1.7}
+  .verdict .three{display:flex;gap:12px;justify-content:center;margin-top:22px;flex-wrap:wrap;position:relative}
+  .verdict .pill{background:rgba(0,0,0,.3);border:1px solid rgba(255,255,255,.2);color:#fff;padding:8px 16px;border-radius:999px;font-size:13px;font-weight:600}
+  .verdict .pill b{color:#fff}
+
+  footer{text-align:center;margin-top:56px;color:var(--muted2);font-size:12.5px}
+  @media(max-width:880px){
+    .systems,.insight{grid-template-columns:1fr}
+    .verdict{padding:28px}
+  }
+</style>
+</head>
+<body>
+<div class="bg"><div class="orb a"></div><div class="orb b"></div><div class="orb c"></div></div>
+
+<div class="wrap">
+  <header>
+    <span class="eyebrow">Agent Systems · 2026</span>
+    <h1>三套 Agent 系统的<span class="g">优缺点与 Token 消耗</span></h1>
+    <p class="sub">Claude Code(CC-rev 重构)· Direct(KinetAios)· Codex —— 同一 ReAct 骨架,差异在执行安全、上下文管理与成本三条副线。</p>
+  </header>
+
+  <section>
+    <div class="sec-title">优缺点对比</div>
+    <div class="systems">
+
+      <div class="sys cc">
+        <div class="bar"></div>
+        <div class="top"><h3><span class="dot"></span>Claude Code</h3><div class="role">最完备的 agent 抽象</div></div>
+        <div class="pc">
+          <h4 class="pros">优点</h4>
+          <ul class="pros">
+            <li><b>五级上下文压缩</b>:autocompact + microcompact + snip + collapse + reactive,长任务信息不丢</li>
+            <li><b>prompt cache 最强</b>:静态/动态分段 + <code>DYNAMIC_BOUNDARY</code> + <code>cache_control</code></li>
+            <li><b>subagent 全家桶</b>:递归 query + <code>run_in_background</code> + team / swarm</li>
+            <li>工具最全(数十个:Bash / Edit / Agent / Task…),<b>流式边执行</b></li>
+          </ul>
+          <h4 class="cons">缺点</h4>
+          <ul class="cons">
+            <li><b>抽象最重</b>:泛型 <code>Tool&lt;I,O,P&gt;</code> + Zod + 巨型 <code>ToolUseContext</code>,上手/维护成本高</li>
+            <li>Claude 模型单价高($3 / $15+ per 1M),<b>$ 成本最贵</b></li>
+            <li>代码量大,定制改造门槛高</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="sys direct">
+        <div class="bar"></div>
+        <div class="top"><h3><span class="dot"></span>Direct · KinetAios</h3><div class="role">最精简的同构骨架</div></div>
+        <div class="pc">
+          <h4 class="pros">优点</h4>
+          <ul class="pros">
+            <li>与 CC <b>概念同构但去尽复杂度</b>,~500 行核心,易读易改</li>
+            <li><b>GLM 直连</b> + OpenAI↔Anthropic <b>双协议</b>,模型选择最灵活</li>
+            <li><b>启动扫描用户环境</b>(skills / MCP / CLI 预检),首次请求即准 → 减少试错重试,省 token</li>
+            <li><b>工具精简</b>(9 个)+ system 紧凑,每轮 schema 小 —— 实测 token 比 CC/Codex 少</li>
+            <li>补齐后压缩 / 并行+subagent / 重试 / prompt cache 全有</li>
+          </ul>
+          <h4 class="cons">缺点</h4>
+          <ul class="cons">
+            <li><b>无流式边执行</b>(先收完 tool_calls 再跑);压缩层级少(两级 vs CC 五级)</li>
+            <li>无 fallback model;<b>token 估算粗糙</b>(<code>length×0.6</code>)</li>
+            <li><b>无 OS 级沙盒</b>(靠 shell 确认桥拦截)</li>
+          </ul>
+        </div>
+      </div>
+
+      <div class="sys codex">
+        <div class="bar"></div>
+        <div class="top"><h3><span class="dot"></span>Codex</h3><div class="role">最硬核的安全执行工程</div></div>
+        <div class="pc">
+          <h4 class="pros">优点</h4>
+          <ul class="pros">
+            <li><b>唯一 OS 级沙盒</b>:mac seatbelt / linux landlock+bubblewrap / win 受限令牌</li>
+            <li><b>Guardian 自动审查</b> + 批准→沙盒→拒绝则升级重试</li>
+            <li>Responses API + <b>WebSocket</b> + 粘性路由;远程 <code>/responses/compact</code> + WorldState 增量</li>
+            <li>prompt caching(<code>comp_hash</code>)+ 多 agent(继承式)</li>
+          </ul>
+          <h4 class="cons">缺点</h4>
+          <ul class="cons">
+            <li><b>Rust 多 crate 最重</b>(~90 crate),构建/贡献门槛最高</li>
+            <li>无通用 model fallback</li>
+            <li>行为在<b>工具层非 prompt 层</b>,调试靠工具日志而非提示词</li>
+            <li>OpenAI 单价中高</li>
+          </ul>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <div class="sec-title">Token 消耗</div>
+    <div class="bars">
+      <h3>实测视角(用户测:Excel 分析数据 → HTML)</h3>
+      <p class="cap">同样任务下,Direct 的 token 消耗<b>实测比 CC、Codex 都少</b> —— 推翻了纯机制"压缩强就省"的推断。</p>
+
+      <div class="barrow less">
+        <div class="lbl"><span class="name"><span class="dot" style="background:var(--direct)"></span>Direct</span><span class="val">实测最省 · 工具少 + system 紧凑 + 扫描减重试</span></div>
+        <div class="track"><div class="fill" style="width:42%"></div></div>
+      </div>
+      <div class="barrow mid">
+        <div class="lbl"><span class="name"><span class="dot" style="background:var(--cc)"></span>Claude Code</span><span class="val">较多 · 数十工具 schema + 多层 system + thinking/frc 等额外 block</span></div>
+        <div class="track"><div class="fill" style="width:80%"></div></div>
+      </div>
+      <div class="barrow mid">
+        <div class="lbl"><span class="name"><span class="dot" style="background:var(--codex)"></span>Codex</span><span class="val">较多 · 模型专属 prompt + 多 agent 开销</span></div>
+        <div class="track"><div class="fill" style="width:84%"></div></div>
+      </div>
+
+      <div style="height:22px"></div>
+      <h3 style="margin-top:8px">但任务足够长时,机制会反超</h3>
+      <p class="cap">轮次极多时,CC 的五级压缩 + 强 cache 把旧消息摘要掉、每轮更轻;Direct 两级压缩会先丢细节 —— 长任务 CC 可能追上反超。<b>中短任务里 Direct 的精简优势主导</b>。</p>
+    </div>
+
+    <div class="insight">
+      <div class="ins"><div class="ic">🔎</div><h4>扫描减重试(Direct 独有)</h4><p>启动扫描 skills / MCP / <code>resolveBin</code> 预检 CLI,首次请求就知道有哪些工具可用 —— 不会因"工具缺失 / 配置错"失败重试(失败重试 = 双倍 token)。CC/Codex 是被 spawn 的 CLI,没这层聚合预扫描。</p></div>
+      <div class="ins"><div class="ic">📦</div><h4>精简省每轮</h4><p>Direct 9 个工具 vs CC 数十个;system 一段紧凑中文 vs CC 多层 dynamic sections(memory/scratchpad/frc…)。每轮的 tools schema + system 都更小,轮次越多累积越省。</p></div>
+      <div class="ins"><div class="ic">⚖️</div><h4>同模型下看效率</h4><p>三者都接 GLM 时单价相同,$ = token 量。这时 Direct 的精简 + 扫描让它实测更省 —— "便宜只因 GLM"的说法在同模型场景不成立,Direct 靠的是真实 token 效率。</p></div>
+    </div>
+
+    <div class="mech">
+      <table>
+        <thead><tr><th>机制</th><th class="cc">Claude Code</th><th class="direct">Direct</th><th class="codex">Codex</th></tr></thead>
+        <tbody>
+          <tr><td>上下文压缩</td><td><span class="tag good">五级</span> autocompact+microcompact+snip+collapse+reactive</td><td><span class="tag mid">两级</span> compactHistory 摘要 + sanitize + reactive</td><td><span class="tag good">多级</span> autocompact(内联/远程)+ WorldState 增量</td></tr>
+          <tr><td>prompt cache</td><td><span class="tag good">最强</span> 分段 + DYNAMIC_BOUNDARY + cache_control</td><td><span class="tag mid">补齐</span> GLM 自动 + Anthropic cache_control</td><td><span class="tag good">有</span> comp_hash + Responses 有状态</td></tr>
+          <tr><td>subagent 独立上下文</td><td><span class="tag good">有</span> 递归 query + background + team</td><td><span class="tag good">有</span> dispatch_agent 复用 loop</td><td><span class="tag good">有</span> 继承式 spawn_agent</td></tr>
+          <tr><td>流式边执行工具</td><td><span class="tag good">有</span></td><td><span class="tag weak">无</span></td><td><span class="tag good">有</span></td></tr>
+          <tr><td>token 估算</td><td><span class="tag good">精确</span> Haiku fallback</td><td><span class="tag weak">粗糙</span> length×0.6</td><td><span class="tag good">精确</span> context_window</td></tr>
+          <tr><td>工具 / system 规模</td><td><span class="tag weak">大</span> 数十工具 + 多层 system</td><td><span class="tag good">小</span> 9 工具 + 紧凑 system</td><td><span class="tag mid">中</span> 模型专属 prompt</td></tr>
+          <tr><td>启动环境扫描</td><td class="dim">无</td><td><span class="tag good">有</span> skills/MCP/CLI 预检 → 减重试</td><td class="dim">无</td></tr>
+          <tr><td>OS 级沙盒</td><td class="dim">无(权限确认)</td><td class="dim">无(shell 确认桥)</td><td><span class="tag good">唯一</span> seatbelt/landlock/win</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="verdict">
+    <h2>怎么选</h2>
+    <p>三者 ReAct 骨架完全一致,差异全在执行安全、上下文管理、成本三条副线。没有"最好",只有"最合适你的约束"。</p>
+    <div class="three">
+      <span class="pill">要完备 + 预算足 → <b>Claude Code</b></span>
+      <span class="pill">要省钱 + 易改造 → <b>Direct</b></span>
+      <span class="pill">要安全执行 → <b>Codex</b></span>
+    </div>
+  </div>
+
+  <footer>KinetAios · 三套 Agent 系统对比 · 基于源码机制推断,非实测 benchmark</footer>
+</div>
+</body>
+</html>
