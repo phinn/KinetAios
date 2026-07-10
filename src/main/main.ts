@@ -14,6 +14,19 @@ import { getBrand } from './brand';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind } from '../shared/types';
 
+// 兜底:未捕获异常/拒绝都记到 crash.log + stderr,避免 app 静默退出无从排查。
+function logFatal(kind: string, e: unknown): void {
+  const msg = `[${new Date().toISOString()}] ${kind}: ${(e as Error)?.stack ?? e}\n`;
+  console.error(msg);
+  try {
+    fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), msg);
+  } catch {
+    /* app 未就绪时 getPath 会抛,忽略 */
+  }
+}
+process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
+process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
+
 let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
 let taskManager: TaskManager;

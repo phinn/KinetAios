@@ -76,6 +76,9 @@ const readFile: Tool = {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     if (!p) return '缺少 path';
     try {
+      const stat = fs.statSync(p);
+      // 防止 read_file 大文件(PDF/图片等二进制)把主进程读 OOM —— 之前没限制是崩溃主因。
+      if (stat.size > 512 * 1024) return `文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB),read_file 上限 512KB。改用 shell 按需读(如 pdftotext/head/grep)。`;
       const body = fs.readFileSync(p, 'utf8');
       return body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body;
     } catch {
