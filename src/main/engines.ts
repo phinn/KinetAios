@@ -10,10 +10,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { AgentEvent, Conversation, EngineKind, SandboxMode } from '../shared/types';
-import { runAgentLoop, trimHistoryToTokenBudget } from './AgentLoop';
+import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
-import { allTools, type ToolCtx } from './tools';
+import { allTools, readOnlyTools, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
+import { t } from '../shared/i18n';
 import { mcp } from './mcp';
 import { getBrand } from './brand';
 
@@ -28,6 +29,11 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 
 【输出路径】生成的文件(HTML / CSV / 报告等)默认写到当前工作目录(cwd)或其子目录。
 执行 shell 前会请求用户确认。Windows 上 shell 走 cmd.exe。回复用中文,简洁。`;
+
+// 子 agent 系统提示(Direct 的 dispatch_agent 用)。只读工具,完成后文本汇报。
+const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
+你只有只读工具(read_file / grep / glob / web_fetch / recall_memory)—— 不能写文件、不能起 shell、不能再派发子任务。
+聚焦完成给定目标,结束后用简洁中文文本汇报结果(结论 / 找到的东西 / 关键路径),不要寒暄。`;
 
 export interface EngineRunOpts {
   conv: Conversation;
@@ -64,14 +70,44 @@ class DirectEngine implements Engine {
     // Per-conversation model (Direct only). Falls back to the global setting for old convs.
     const base = snapshot();
     const snap = { ...base, model: conv.model || base.model };
-    const ctx: ToolCtx = { cwd: conv.cwd, confirm: this.confirm };
+    const provider = currentProvider(snap);
+    // ctx.spawn:dispatch_agent 起子任务 —— 复用 runAgentLoop,独立 history、只读工具、maxTurns 限 8。
+    // 子任务事件只转发 cost(也花钱)+ tool(带前缀供 UI 观感),吞掉 token 防刷屏。
+    const ctx: ToolCtx = {
+      cwd: conv.cwd,
+      confirm: this.confirm,
+      signal,
+      spawn: async ({ prompt: sub, signal: childSignal }) => {
+        const out = await runAgentLoop({
+          provider,
+          tools: readOnlyTools(),
+          systemPrompt: SUBAGENT_PROMPT,
+          snapshot: snap,
+          userInput: sub,
+          history: [],
+          ctx: { cwd: conv.cwd, confirm: this.confirm },
+          signal: childSignal,
+          maxTurns: 8,
+          onEvent: (e) => {
+            if (e.type === 'cost') onEvent(e);
+            else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+          },
+        });
+        const text = out
+          .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
+          .map((m) => m.content)
+          .join('\n')
+          .trim();
+        return text || '(子任务无文本输出)';
+      },
+    };
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
     const rulesSection = loadProjectRules(conv.cwd);
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
     const updated = await runAgentLoop({
-      provider: currentProvider(snap),
+      provider,
       tools,
       systemPrompt: baseSystemPrompt + skillSection + rulesSection + memoryBlock,
       snapshot: snap,
@@ -81,7 +117,7 @@ class DirectEngine implements Engine {
       signal,
       onEvent,
     });
-    conv.directHistory = trimHistoryToTokenBudget(updated, 30_000);
+    conv.directHistory = await compactHistory(updated, 30_000, provider, snap, signal);
   }
 }
 
@@ -208,7 +244,7 @@ class ClaudeCodeEngine implements Engine {
     const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
     const bin = resolveBin('claude');
     if (!bin.found) {
-      onEvent({ type: 'error', message: '找不到 claude CLI。装 Claude Code(npm i -g @anthropic-ai/claude-code)或把它加进 PATH。' });
+      onEvent({ type: 'error', message: t(s.lang, 'eng.claudeNotFound') });
       return;
     }
     const args = [
@@ -235,8 +271,8 @@ class ClaudeCodeEngine implements Engine {
         const sub = obj.subtype;
         if (sub === 'init' && obj.session_id) onEvent({ type: 'sessionStarted', id: obj.session_id });
         else if (sub === 'api_retry')
-          onEvent({ type: 'status', text: `模型 ${obj.error ?? ''}(HTTP ${obj.error_status ?? ''}),重试 ${obj.attempt ?? 0}/${obj.max_retries ?? 0}…` });
-        else if (sub === 'status' && obj.status === 'requesting') onEvent({ type: 'status', text: '请求中…' });
+          onEvent({ type: 'status', text: t(s.lang, 'eng.apiRetry', { error: obj.error ?? '', status: obj.error_status ?? '', attempt: obj.attempt ?? 0, max: obj.max_retries ?? 0 }) });
+        else if (sub === 'status' && obj.status === 'requesting') onEvent({ type: 'status', text: t(s.lang, 'eng.requesting') });
       } else if (type === 'stream_event') {
         const delta = obj.event?.delta;
         if (delta?.type === 'text_delta' && delta.text) onEvent({ type: 'token', text: delta.text });
@@ -269,14 +305,14 @@ class ClaudeCodeEngine implements Engine {
         const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
         if (!Number.isNaN(c)) onEvent({ type: 'cost', usd: c, tokens: 0 });
         const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
-        if (isErr) onEvent({ type: 'error', message: obj.result ?? obj.subtype ?? 'claude 执行出错' });
+        if (isErr) onEvent({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
         else onEvent({ type: 'done' });
       }
     };
 
     await runBin(bin, args, { cwd, signal, onLine });
     if (signal.aborted) return; // user cancelled — not an error
-    if (!sawResult) onEvent({ type: 'error', message: 'claude 未返回结果(被中断 / 超时 / 或 flags 不被当前版本支持)' });
+    if (!sawResult) onEvent({ type: 'error', message: t(s.lang, 'eng.claudeNoResult') });
   }
 }
 
@@ -290,7 +326,7 @@ class CodexEngine implements Engine {
     const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;
     const bin = resolveBin('codex');
     if (!bin.found) {
-      onEvent({ type: 'error', message: '找不到 codex CLI。装 OpenAI Codex 或加进 PATH。' });
+      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNotFound') });
       return;
     }
     // codex has no --append-system-prompt flag → memoryBlock prepended to the prompt.
@@ -329,7 +365,7 @@ class CodexEngine implements Engine {
           if (obj.thread_id) onEvent({ type: 'sessionStarted', id: obj.thread_id });
           break;
         case 'turn.started':
-          onEvent({ type: 'status', text: '请求中…' });
+          onEvent({ type: 'status', text: t(s.lang, 'eng.requesting') });
           break;
         case 'item.completed': {
           const item = obj.item;
@@ -378,10 +414,10 @@ class CodexEngine implements Engine {
         }
         case 'turn.failed':
           sawTurnEnd = true;
-          onEvent({ type: 'error', message: obj.error?.message ?? (typeof obj.error === 'string' ? obj.error : 'codex 轮失败') });
+          onEvent({ type: 'error', message: obj.error?.message ?? (typeof obj.error === 'string' ? obj.error : t(s.lang, 'eng.codexFailed')) });
           break;
         case 'error':
-          if (obj.message) onEvent({ type: 'status', text: `codex: ${obj.message}` });
+          if (obj.message) onEvent({ type: 'status', text: t(s.lang, 'eng.codexMsg', { msg: obj.message }) });
           break;
       }
     };
@@ -390,7 +426,7 @@ class CodexEngine implements Engine {
     if (signal.aborted) return;
     if (!sawTurnEnd) {
       const tail = stderrTail.length ? ' — ' + stderrTail.join(' | ') : '';
-      onEvent({ type: 'error', message: `codex 未返回结果(status=${code})${tail}` });
+      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNoResult', { code, tail }) });
     }
   }
 }

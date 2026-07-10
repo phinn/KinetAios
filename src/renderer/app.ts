@@ -1,6 +1,7 @@
 // Dashboard renderer. Vanilla TS — no framework. Holds a local copy of conversations,
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS } from '../shared/types';
+import { t, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, Conversation, EngineKind, KinetAPI, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 
@@ -21,6 +22,18 @@ let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
+let lang: Lang = 'zh-CN'; // UI 语言(启动从 settings 读,切语言后更新 + applyI18nDOM)
+function tr(key: string, params?: Record<string, string | number>): string {
+  return t(lang, key, params);
+}
+// 刷 index.html 里的静态文本([data-i18n] 元素)+ <html lang>。init 和切语言后调。
+// 运行时注入的字符串(app.ts 各 render 函数)直接调 tr(),它们每次重建 innerHTML 自动跟随。
+function applyI18nDOM(): void {
+  document.documentElement.lang = lang;
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(lang, el.dataset.i18n!); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => { el.title = t(lang, el.dataset.i18nTitle!); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => { (el as HTMLInputElement).placeholder = t(lang, el.dataset.i18nPlaceholder!); });
+}
 
 // ---------- bootstrap ----------
 (async function init() {
@@ -29,12 +42,16 @@ let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
 
-  // 产品名从 brand.json 读,覆盖所有「KinetAios」显示处。
+  // 配置(语言 + CLI 引擎开关)和产品名都启动时读一次。语言切走后 lang 会更新。
+  const settings = await api.getSettings();
+  lang = settings.lang;
+  cliEnabled = settings.enableCliEngines;
   PRODUCT = (await api.getBrand()).productName;
   document.title = PRODUCT;
   const brandEl = document.getElementById('brand');
   if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
-  (document.getElementById('composer') as HTMLTextAreaElement).placeholder = `给 ${PRODUCT} 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)`;
+  (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
+  applyI18nDOM();
 
   const list = await api.getConversations();
   for (const c of list) {
@@ -42,7 +59,6 @@ let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处
     order.push(c.id);
   }
   if (order.length) selectedId = order[0];
-  cliEnabled = (await api.getSettings()).enableCliEngines;
 
   api.onConversation((conv) => {
     const isNew = !convs.has(conv.id);
@@ -81,7 +97,7 @@ function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
   ul.innerHTML = '';
   if (!order.length) {
-    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">还没有会话 — 点 ＋ 新建</li>';
+    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(tr('sidebar.empty')) + '</li>';
     return;
   }
   for (const id of order) {
@@ -90,9 +106,9 @@ function renderSidebar() {
     const li = document.createElement('li');
     if (id === selectedId) li.classList.add('active');
     const last = c.turns[c.turns.length - 1];
-    const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || '新会话';
+    const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
     const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-    li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="改名">✎</button><button class="ca-btn" data-act="delete" title="删除">🗑</button></span>`;
+    li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
     li.onclick = () => {
       selectedId = id;
       renderSidebar();
@@ -142,14 +158,14 @@ async function renameConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
   const cur = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '';
-  const name = await showPrompt('会话名(留空用首条消息)', cur);
+  const name = await showPrompt(tr('prompt.nameTitle'), cur);
   if (name != null) await api.rename(id, name);
 }
 async function deleteConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
-  const t = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '此会话';
-  if (confirm(`删除「${t}」?不可恢复。`)) await api.deleteConversation(id);
+  const name = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || tr('prompt.deleteFallback');
+  if (confirm(tr('prompt.deleteConfirm', { name }))) await api.deleteConversation(id);
 }
 
 // ---------- main pane ----------
@@ -159,11 +175,11 @@ function renderMain() {
   const turns = document.getElementById('turns')!;
   turns.innerHTML = '';
   if (!conv) {
-    turns.appendChild(empty('选择一个会话,或点 ＋ 新建'));
+    turns.appendChild(empty(tr('empty.noConv')));
     return;
   }
   if (!conv.turns.length) {
-    turns.appendChild(empty('输入任务开始'));
+    turns.appendChild(empty(tr('empty.noTurns')));
   }
   for (let i = 0; i < conv.turns.length; i++) {
     turns.appendChild(renderTurn(conv, i));
@@ -189,14 +205,14 @@ function renderHead(conv: Conversation | undefined) {
     eng.value = 'direct';
     stat.textContent = '';
     status.textContent = '';
-    sendBtn.textContent = '发送';
+    sendBtn.textContent = tr('common.send');
     sendBtn.classList.remove('stop');
     return;
   }
   const last = conv.turns[conv.turns.length - 1];
   const cls = conv.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
   dot.className = `dot ${cls}`;
-  title.textContent = conv.customTitle || conv.turns[0]?.prompt.slice(0, 60) || '新会话';
+  title.textContent = conv.customTitle || conv.turns[0]?.prompt.slice(0, 60) || tr('head.newConv');
   if (document.activeElement !== cwd) cwd.value = conv.cwd;
   // Model picker only matters for Direct (claudeCode/codex use their own CLI models) → hide otherwise.
   model.style.display = conv.engine === 'direct' ? '' : 'none';
@@ -207,7 +223,7 @@ function renderHead(conv: Conversation | undefined) {
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
   stat.textContent = parts.join(' · ');
   status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
-  sendBtn.textContent = conv.status === 'running' ? '停止' : '发送';
+  sendBtn.textContent = conv.status === 'running' ? tr('common.stop') : tr('common.send');
   sendBtn.classList.toggle('stop', conv.status === 'running');
 }
 
@@ -334,39 +350,42 @@ async function showSettings() {
   const root = document.getElementById('settings')!;
   root.innerHTML = `
     <div class="card">
-      <button id="s-back" class="ghost" style="margin-bottom:14px">← 返回对话</button>
-      <h2>设置</h2>
-      <div class="sub">Direct 引擎走 OpenAI 兼容或 Anthropic 协议的端点。</div>
-      <div class="field"><label>Provider 预设</label><select id="s-preset">
-        ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${p.label}</option>`).join('')}
+      <button id="s-back" class="ghost" style="margin-bottom:14px">${tr('settings.back')}</button>
+      <h2>${tr('settings.title')}</h2>
+      <div class="sub">${tr('settings.sub')}</div>
+      <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
+        ${LANGS.map((l) => `<option value="${l.id}" ${l.id === s.lang ? 'selected' : ''}>${l.label}</option>`).join('')}
+      </select></div>
+      <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
+        ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
       </select></div>
       <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /></div>
       <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
-      <div class="field"><label>模型 ID</label><input id="s-model" value="${esc(s.model)}" /></div>
-      <div class="field"><label>协议</label><select id="s-proto">
-        <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>OpenAI 兼容</option>
+      <div class="field"><label>${tr('settings.modelId')}</label><input id="s-model" value="${esc(s.model)}" /></div>
+      <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
+        <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>${tr('settings.proto.openai')}</option>
         <option value="anthropic" ${s.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic</option>
       </select></div>
       <div class="field"><label>Reasoning effort</label><select id="s-reason">${REASONS.map(
         (r) => `<option value="${r}" ${r === s.reasoning ? 'selected' : ''}>${r}</option>`,
       ).join('')}</select></div>
-      <div class="field"><label>shell 执行确认</label><select id="s-approval">
-        <option value="always" ${s.approval === 'always' ? 'selected' : ''}>每次确认</option>
-        <option value="never" ${s.approval === 'never' ? 'selected' : ''}>从不(自动放行)</option>
+      <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
+        <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
+        <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
       </select></div>
-      <div class="field"><label>Claude Code / Codex 沙盒</label><select id="s-sandbox">
-        <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>只读(规划)</option>
-        <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>工作区写入</option>
-        <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>完全访问</option>
+      <div class="field"><label>${tr('settings.sandbox')}</label><select id="s-sandbox">
+        <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>${tr('settings.sandbox.readOnly')}</option>
+        <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
+        <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
       </select></div>
-      <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />计划模式(只规划不执行)</label></div>
-      <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />启用 Claude Code / Codex 引擎(需本地装好 CLI,默认关)</label></div>
-      <div class="field"><label>价格(USD / 1M tokens)·0=内置默认</label>
+      <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.plan')}</label></div>
+      <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.cli')}</label></div>
+      <div class="field"><label>${tr('settings.price')}</label>
         <div class="row"><input id="s-pin" type="number" step="0.01" value="${s.priceInPerMTok}" /><input id="s-pout" type="number" step="0.01" value="${s.priceOutPerMTok}" /></div>
       </div>
       <div style="display:flex;gap:8px;align-items:center">
-        <button class="primary" id="s-save">保存</button>
-        <button id="s-test">测试连接</button>
+        <button class="primary" id="s-save">${tr('settings.save')}</button>
+        <button id="s-test">${tr('settings.test')}</button>
         <span class="test-msg" id="s-msg"></span>
       </div>
     </div>`;
@@ -386,11 +405,15 @@ async function showSettings() {
     const ns = readSettingsForm();
     await api.saveSettings(ns);
     cliEnabled = ns.enableCliEngines;
-    renderMain(); // refresh the engine dropdown for the new toggle state
-    showMsg('已保存', true);
+    lang = ns.lang; // 语言切了 → 刷静态文本 + 重渲(侧栏/主区/设置面板自身)
+    applyI18nDOM();
+    renderSidebar();
+    renderMain();
+    showSettings(); // 重开设置面板,让所有 label/option 跟随新语言
+    showMsg(tr('settings.saved'), true);
   };
   document.getElementById('s-test')!.onclick = async () => {
-    showMsg('测试中…', false);
+    showMsg(tr('settings.testing'), false);
     // Test the in-form values, not the last-saved ones (kills the "edit key, test, still old key" trap).
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
@@ -413,6 +436,7 @@ function readSettingsForm(): AppSettings {
     enableCliEngines: (document.getElementById('s-cli') as HTMLInputElement).checked,
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
+    lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
   };
 }
 
@@ -492,7 +516,7 @@ function wireUi() {
     // Switching wipes cross-engine context (Direct history + the CLI session id used for --resume).
     // Only confirm when there's actually something to lose.
     const hasContext = !!(conv && (conv.directHistory.length || conv.engineSessionId || conv.turns.length));
-    if (next !== conv?.engine && hasContext && !confirm('切换引擎会清空当前上下文(Direct 对话历史 / Claude·Codex 的会话续接)。继续?')) {
+    if (next !== conv?.engine && hasContext && !confirm(tr('engine.switchConfirm'))) {
       syncEngineSelect(conv); // revert the dropdown
       return;
     }
@@ -548,7 +572,7 @@ function wireUi() {
         if (ent?.isDirectory) { hasDir = true; break; }
       }
     }
-    if (hasDir) alert('暂不支持文件夹,请拖单个文件(可多选),或用 📎 选择。');
+    if (hasDir) alert(tr('attach.dirAlert'));
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length) void addFiles(files);
   });
@@ -568,9 +592,9 @@ function wireUi() {
     const list = await api.listMcp();
     menu.innerHTML = list.length
       ? list.map((s) => `<div class="mcp-srv"><div class="mcp-srv-name">🔌 ${esc(s.name)}<span class="mcp-src">${s.source}</span></div><div class="mcp-tools">${
-          s.tools.length ? s.tools.map((t) => `<span class="mcp-tool">${esc(t)}</span>`).join('') : '<i>(无工具)</i>'
+          s.tools.length ? s.tools.map((tool) => `<span class="mcp-tool">${esc(tool)}</span>`).join('') : '<i>' + esc(tr('mcp.noTools')) + '</i>'
         }</div></div>`).join('')
-      : '<div class="mcp-empty">未连接 MCP 服务。<br>在 ~/.claude.json / ~/.codex/config.toml 配置后,启动时自动接入。</div>';
+      : '<div class="mcp-empty">' + tr('mcp.empty') + '</div>';
     menu.hidden = false;
   };
   document.addEventListener('click', (e) => {
@@ -600,7 +624,7 @@ async function send() {
     attachments = [];
     renderAttach();
   }
-  if (at.missing.length) alert(`这些 @文件 没读到(不存在 / 非文本 / 不在工作目录内):\n${at.missing.join('\n')}`);
+  if (at.missing.length) alert(tr('attach.missingAlert', { list: at.missing.join('\n') }));
   composer.value = '';
   autosize(composer);
   showChat();
@@ -655,7 +679,7 @@ async function openSlash(q: string): Promise<void> {
 
 function renderSlash(): void {
   if (!slashItems.length) {
-    slashMenu.innerHTML = '<div class="slash-empty">无匹配 skill</div>';
+    slashMenu.innerHTML = '<div class="slash-empty">' + esc(tr('skill.noMatch')) + '</div>';
     slashMenu.hidden = false;
     return;
   }
@@ -773,9 +797,9 @@ function esc(s: string): string {
 }
 
 const PRESETS = [
-  { id: 'glm', label: 'GLM 智谱', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.2', proto: 'openai', pin: 0.07, pout: 0.21 },
-  { id: 'deepseek', label: 'DeepSeek', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat', proto: 'openai', pin: 0.27, pout: 1.1 },
-  { id: 'qwen', label: '阿里通义 (DashScope)', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-max', proto: 'openai', pin: 0.29, pout: 0.86 },
-  { id: 'custom', label: '自定义', baseURL: '', model: '', proto: 'openai', pin: 0, pout: 0 },
+  { id: 'glm', labelKey: 'preset.glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.2', proto: 'openai', pin: 0.07, pout: 0.21 },
+  { id: 'deepseek', labelKey: 'preset.deepseek', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat', proto: 'openai', pin: 0.27, pout: 1.1 },
+  { id: 'qwen', labelKey: 'preset.qwen', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-max', proto: 'openai', pin: 0.29, pout: 0.86 },
+  { id: 'custom', labelKey: 'preset.custom', baseURL: '', model: '', proto: 'openai', pin: 0, pout: 0 },
 ];
 const REASONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];

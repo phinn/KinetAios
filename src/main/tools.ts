@@ -7,15 +7,20 @@ import type { ToolDef } from './glm';
 import * as store from './store';
 
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
+// spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
+// every other tool ignores them.
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
+  spawn?: (a: { prompt: string; signal: AbortSignal }) => Promise<string>;
+  signal?: AbortSignal;
 }
 
 export interface Tool {
   name: string;
   description: string;
   parameters: Record<string, unknown>;
+  readOnly?: boolean; // 只读工具可同轮并发执行;写工具(shell/write_file/edit_file)留空 → 串行
   run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string>;
 }
 
@@ -66,6 +71,7 @@ const shell: Tool = {
 
 const readFile: Tool = {
   name: 'read_file',
+  readOnly: true,
   description: '读取本地文件内容(UTF-8 文本)。',
   parameters: {
     type: 'object',
@@ -116,6 +122,7 @@ const writeFile: Tool = {
 
 const webFetch: Tool = {
   name: 'web_fetch',
+  readOnly: true,
   description: '抓取一个 http(s) URL 的文本内容(GET)。',
   parameters: {
     type: 'object',
@@ -144,6 +151,7 @@ const webFetch: Tool = {
 
 const recallMemory: Tool = {
   name: 'recall_memory',
+  readOnly: true,
   description: '全文搜索用户的历史(shell 输出、读过的文件、之前的问答)。需要回忆过去做过/聊过什么时用。',
   parameters: {
     type: 'object',
@@ -210,6 +218,7 @@ function globToRegex(pat: string): RegExp {
 
 const grep: Tool = {
   name: 'grep',
+  readOnly: true,
   description: '在当前工作目录递归搜索文件内容(正则,大小写不敏感),返回「文件:行号: 内容」。自动排除 node_modules/.git/dist 等。需要找代码/字符串在哪时用,比 shell grep 干净。',
   parameters: {
     type: 'object',
@@ -254,6 +263,7 @@ const grep: Tool = {
 
 const glob: Tool = {
   name: 'glob',
+  readOnly: true,
   description: '按 glob 模式列出当前工作目录下的文件(如 **/*.ts、src/**/*.json),返回相对路径(前 200 个)。需要知道有哪些文件时用。',
   parameters: {
     type: 'object',
@@ -316,8 +326,36 @@ const editFile: Tool = {
   },
 };
 
+// dispatch_agent:派发独立子任务给子 agent(复用 runAgentLoop,独立上下文 + 只读工具集)。
+// 对应 CC 的 AgentTool 最小版。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
+const dispatchAgent: Tool = {
+  name: 'dispatch_agent',
+  description:
+    '派发一个独立子任务给子 agent(独立上下文、只读工具集:read_file/grep/glob/web_fetch/recall_memory)。用于并行探索或大任务分解。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。返回子 agent 的最终文本。',
+  parameters: {
+    type: 'object',
+    properties: { prompt: { type: 'string', description: '给子 agent 的详细任务描述(目标 + 约束)' } },
+    required: ['prompt'],
+  },
+  async run(args, ctx) {
+    if (!ctx.spawn) return '该引擎不支持子任务派发。';
+    const prompt = String(args.prompt ?? '').trim();
+    if (!prompt) return '缺少 prompt';
+    try {
+      return await ctx.spawn({ prompt, signal: ctx.signal ?? new AbortController().signal });
+    } catch (e) {
+      return `子任务出错: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 export function allTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory, dispatchAgent];
+}
+
+// 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
+export function readOnlyTools(): Tool[] {
+  return [readFile, grep, glob, webFetch, recallMemory];
 }
 
 // Resolve a (possibly relative / ~ / %USERPROFILE%) path against cwd.

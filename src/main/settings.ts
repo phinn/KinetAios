@@ -18,6 +18,7 @@ const DEFAULTS: AppSettings = {
   priceInPerMTok: 0.07, // GLM ¥0.5/1M in ≈ $0.07
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',
+  lang: 'zh-CN',
 };
 
 let cache: AppSettings | null = null;

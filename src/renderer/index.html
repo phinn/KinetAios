@@ -12,8 +12,8 @@
       <div class="sb-head">
         <div class="brand" id="brand"><span class="spark">✨</span> KinetAios</div>
         <div class="sb-actions">
-          <button class="ghost" id="btn-new" title="新建会话">＋</button>
-          <button class="ghost" id="btn-settings" title="设置">⚙</button>
+          <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" title="新建会话">＋</button>
+          <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置">⚙</button>
         </div>
       </div>
       <ul id="conv-list"></ul>
@@ -29,15 +29,15 @@
             <span class="t" id="head-title">KinetAios</span>
             <span class="stat" id="head-stat"></span>
             <span class="status" id="head-status"></span>
-            <button class="ghost" id="btn-clear" title="清空当前会话">清空</button>
-            <button class="ghost" id="btn-del" title="删除会话">删除</button>
+            <button class="ghost" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话" data-i18n="head.clearBtn">清空</button>
+            <button class="ghost" id="btn-del" data-i18n-title="head.delete" title="删除会话" data-i18n="head.deleteBtn">删除</button>
           </div>
           <div class="ch-row ch-config">
-            <select id="engine-select" class="engine" title="引擎">
+            <select id="engine-select" class="engine" data-i18n-title="head.engine" title="引擎">
               <option value="direct">Kaios (Direct)</option>
             </select>
-            <input class="cwd" id="cwd-input" title="工作目录(回车应用或点 📁 选)" placeholder="工作目录" />
-            <button class="ghost cwd-pick" id="btn-cwd" title="选择目录">📁</button>
+            <input class="cwd" id="cwd-input" data-i18n-title="head.cwdTitle" title="工作目录(回车应用或点 📁 选)" data-i18n-placeholder="head.cwdPh" placeholder="工作目录" />
+            <button class="ghost cwd-pick" id="btn-cwd" data-i18n-title="head.pickDir" title="选择目录">📁</button>
           </div>
         </div>
         <div id="turns"></div>
@@ -45,11 +45,11 @@
           <div id="attach-row" class="attach-row"></div>
           <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)"></textarea>
           <div class="composer-bar">
-            <button class="tool" id="btn-attach" title="添加文件(可多选 / 可拖入)">📎<span class="lbl">附件</span></button>
-            <input class="model-pill" id="model-input" list="model-list" title="模型(Direct 引擎,每会话独立;回车应用)" placeholder="模型" />
+            <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)">📎<span class="lbl" data-i18n="attach.lbl">附件</span></button>
+            <input class="model-pill" id="model-input" list="model-list" data-i18n-title="model.title" title="模型(Direct 引擎,每会话独立;回车应用)" data-i18n-placeholder="model.ph" placeholder="模型" />
             <datalist id="model-list"></datalist>
-            <button class="tool" id="btn-skill" title="选择 Skill(Direct)">⚡<span class="lbl">Skill</span></button>
-            <button class="tool" id="btn-mcp" title="MCP 服务与工具">🔌<span class="lbl">MCP</span></button>
+            <button class="tool" id="btn-skill" data-i18n-title="skill.title" title="选择 Skill(Direct)">⚡<span class="lbl" data-i18n="skill.lbl">Skill</span></button>
+            <button class="tool" id="btn-mcp" data-i18n-title="mcp.title" title="MCP 服务与工具">🔌<span class="lbl" data-i18n="mcp.lbl">MCP</span></button>
             <span class="bar-spacer"></span>
             <button class="primary send" id="btn-send">发送</button>
           </div>
@@ -69,12 +69,12 @@
   <!-- shell confirm modal -->
   <div id="modal">
     <div class="modal-card">
-      <h3>要执行 shell 命令?</h3>
+      <h3 data-i18n="modal.title">要执行 shell 命令?</h3>
       <pre id="modal-cmd"></pre>
-      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" />不再询问(之后自动放行所有 shell 命令)</label>
+      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" /><span data-i18n="modal.noask">不再询问(之后自动放行所有 shell 命令)</span></label>
       <div class="actions">
-        <button id="modal-cancel">取消</button>
-        <button class="primary" id="modal-ok">执行</button>
+        <button id="modal-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary" id="modal-ok" data-i18n="modal.ok">执行</button>
       </div>
     </div>
   </div>
@@ -85,8 +85,8 @@
       <h3 id="prompt-title">改名</h3>
       <input id="prompt-input" />
       <div class="actions">
-        <button id="prompt-cancel">取消</button>
-        <button class="primary" id="prompt-ok">确定</button>
+        <button id="prompt-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary" id="prompt-ok" data-i18n="common.ok">确定</button>
       </div>
     </div>
   </div>

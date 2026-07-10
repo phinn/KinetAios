@@ -2,6 +2,7 @@
 // The full conversation also lands in the dashboard window.
 import { applyEvent } from '../shared/types';
 import type { Conversation, KinetAPI } from '../shared/types';
+import { t, type Lang } from '../shared/i18n';
 
 declare global {
   interface Window {
@@ -10,8 +11,18 @@ declare global {
 }
 
 const api = window.kinet;
-api.getBrand().then((b) => {
+let lang: Lang = 'zh-CN';
+// 刷 quick.html 静态文本([data-i18n] / [data-i18n-placeholder])+ <html lang>。
+function applyI18nDOM(): void {
+  document.documentElement.lang = lang;
+  document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(lang, el.dataset.i18n!); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => { (el as HTMLTextAreaElement).placeholder = t(lang, el.dataset.i18nPlaceholder!); });
+}
+// 读品牌名 + 语言:设 title + 刷静态文本。
+Promise.all([api.getBrand(), api.getSettings()]).then(([b, s]) => {
+  lang = s.lang;
   document.title = `${b.productName} · Quick`;
+  applyI18nDOM();
 });
 let activeId: string | null = null;
 let conv: Conversation | null = null;

@@ -1,5 +1,6 @@
 // Shared types + pure state logic. Imported by main (CJS) and renderer (bundled).
 // Type-only and pure-function — no Node- or DOM-only APIs in here.
+import type { Lang } from './i18n';
 
 // OpenAI chat-message shape (loose — tool_calls / tool_call_id optional). Both
 // providers normalize to this so AgentLoop history is protocol-agnostic.
@@ -41,6 +42,7 @@ export type AppSettings = {
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default
   priceOutPerMTok: number;
   presetId: string;
+  lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash

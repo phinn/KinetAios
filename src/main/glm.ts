@@ -38,6 +38,46 @@ async function readErr(resp: Response): Promise<string> {
   }
 }
 
+// Retry:只覆盖"建连 → 拿到 200 响应"这一段。SSE 流一旦开始就不能重试(会重复 token),
+// 所以 stream 解析不在重试范围内。网络异常 / 429 / 5xx 指数退避重试 MAX_RETRY 次。
+const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 529]);
+const MAX_RETRY = 3;
+
+function backoffMs(attempt: number): number {
+  const base = 1000 * 2 ** attempt; // 1s / 2s / 4s
+  return Math.min(base * (0.75 + Math.random() * 0.5), 30_000); // ±25% jitter(主进程 Math.random 可用)
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error('aborted'));
+    let t: ReturnType<typeof setTimeout>;
+    const onAbort = (): void => { clearTimeout(t); reject(new Error('aborted')); };
+    t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
+// 建连 + 拿到 200:可重试状态码/网络错退避重试;不可重试(400/401/404 等)或耗尽则抛 GLMError。
+async function fetchUntil200(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    let resp: Response;
+    try {
+      resp = await fetch(url, init);
+    } catch (e) {
+      if (attempt < MAX_RETRY && !signal.aborted) { await sleep(backoffMs(attempt), signal); continue; }
+      throw e;
+    }
+    if (resp.status === 200) return resp;
+    const detail = await readErr(resp);
+    if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal.aborted) {
+      await sleep(backoffMs(attempt), signal);
+      continue;
+    }
+    throw new GLMError('http', resp.status, detail);
+  }
+}
+
 export interface Provider {
   streamComplete(
     messages: ChatMsg[],
@@ -130,7 +170,7 @@ class OpenAICompatibleProvider implements Provider {
     }
     if (snap.reasoning !== 'none') body.reasoning_effort = snap.reasoning;
 
-    const resp = await fetch(`${snap.baseURL}/chat/completions`, {
+    const resp = await fetchUntil200(`${snap.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${snap.apiKey}`,
@@ -139,8 +179,9 @@ class OpenAICompatibleProvider implements Provider {
       },
       body: JSON.stringify(body),
       signal,
-    });
-    if (resp.status !== 200) throw new GLMError('http', resp.status, await readErr(resp));
+    },
+      signal,
+    );
 
     let content = '';
     const calls = new Map<number, { id: string; name: string; args: string }>();
@@ -247,7 +288,7 @@ class AnthropicProvider implements Provider {
     if (system) body.system = system;
     if (tools.length) body.tools = tools.map((t) => this.anthTool(t));
 
-    const resp = await fetch(`${snap.baseURL}/v1/messages`, {
+    const resp = await fetchUntil200(`${snap.baseURL}/v1/messages`, {
       method: 'POST',
       headers: {
         'x-api-key': snap.apiKey,
@@ -257,8 +298,9 @@ class AnthropicProvider implements Provider {
       },
       body: JSON.stringify(body),
       signal,
-    });
-    if (resp.status !== 200) throw new GLMError('http', resp.status, await readErr(resp));
+    },
+      signal,
+    );
 
     // 2) parse Anthropic SSE: text_delta → onToken; input_json_delta → stitch tool args
     let content = '';

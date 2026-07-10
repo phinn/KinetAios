@@ -7,6 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { initStore } from './store';
 import { getSettings, saveSettings } from './settings';
+import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
 import { mcp } from './mcp';
@@ -177,19 +178,24 @@ function showDashboard(): void {
   dashboardWin.focus();
 }
 
+function buildTrayMenu(lang: Lang): Menu {
+  return Menu.buildFromTemplate([
+    { label: t(lang, 'tray.show'), click: () => showDashboard() },
+    { label: t(lang, 'tray.quick'), click: () => toggleQuick() },
+    { type: 'separator' },
+    { label: t(lang, 'tray.quit'), click: () => { quitting = true; app.quit(); } },
+  ]);
+}
 function createTray(): Tray {
-  const t = new Tray(makeTrayIcon());
-  t.setToolTip(getBrand().productName);
-  t.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: '显示主窗口', click: () => showDashboard() },
-      { label: 'Quick 面板', click: () => toggleQuick() },
-      { type: 'separator' },
-      { label: '退出', click: () => { quitting = true; app.quit(); } },
-    ]),
-  );
-  t.on('click', () => showDashboard());
-  return t;
+  const tr = new Tray(makeTrayIcon());
+  tr.setToolTip(getBrand().productName);
+  tr.setContextMenu(buildTrayMenu(getSettings().lang));
+  tr.on('click', () => showDashboard());
+  return tr;
+}
+// 切语言后重建托盘菜单(save-settings 后调 —— 菜单是启动时 build 的,不重建不会跟随)。
+function rebuildTrayMenu(): void {
+  if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu(getSettings().lang));
 }
 
 function registerIpc(): void {
@@ -224,6 +230,7 @@ function registerIpc(): void {
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('save-settings', (_e, s: AppSettings) => {
     saveSettings(s);
+    rebuildTrayMenu(); // 语言切换后托盘菜单跟随
     return true;
   });
   ipcMain.handle('list-skills', () => listSkills());
@@ -243,7 +250,7 @@ function registerIpc(): void {
   ipcMain.handle('read-file', (_e, rel: string, cwd: string) => {
     const base = path.resolve(cwd || process.cwd());
     const full = path.resolve(base, rel || '');
-    if (!full.startsWith(base)) return { ok: false, error: '路径必须在工作目录内' };
+    if (!full.startsWith(base)) return { ok: false, error: t(getSettings().lang, 'readfile.outOfPath') };
     try {
       const body = fs.readFileSync(full, 'utf8');
       return { ok: true, name: rel, content: body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body };
@@ -273,7 +280,7 @@ function registerIpc(): void {
         AbortSignal.timeout(20_000),
         () => {},
       );
-      return { ok: true, message: '连接成功' };
+      return { ok: true, message: t(getSettings().lang, 'testConn.ok') };
     } catch (e) {
       return { ok: false, message: (e as Error)?.message ?? String(e) };
     }

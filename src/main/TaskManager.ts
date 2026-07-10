@@ -5,6 +5,7 @@ import type { AgentEvent, Conversation, EngineKind } from '../shared/types';
 import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
+import { t } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { buildEngines, type Engine } from './engines';
 import { loadSkillBody } from './skills';
@@ -133,11 +134,12 @@ export class TaskManager {
     }
     const conv = this.convs.get(id);
     if (conv && conv.status === 'running') {
-      const t = conv.turns[conv.turns.length - 1];
-      if (t && !t.done) {
-        t.done = true;
-        if (!t.answer) t.error = '已取消';
-        else conv.statusNote = '已停止';
+      const turn = conv.turns[conv.turns.length - 1];
+      if (turn && !turn.done) {
+        turn.done = true;
+        const lang = getSettings().lang;
+        if (!turn.answer) turn.error = t(lang, 'tmgr.cancelled');
+        else conv.statusNote = t(lang, 'tmgr.stopped');
       }
       conv.status = 'ready';
       this.emit.emitConversation(conv);
@@ -154,11 +156,11 @@ export class TaskManager {
     // an opaque "未返回结果". Fail fast with a clear message instead.
     if (!isUsableCwd(conv.cwd)) {
       conv.turns.push(newTurn(prompt));
-      const t = conv.turns[conv.turns.length - 1];
-      t.error = `工作目录不存在或不是目录: ${conv.cwd || '(空)'}`;
-      t.done = true;
+      const turn = conv.turns[conv.turns.length - 1];
+      turn.error = t(getSettings().lang, 'tmgr.badCwd', { cwd: conv.cwd || '(空)' });
+      turn.done = true;
       store.appendMessage('user', prompt);
-      store.saveTurn(conv.id, t);
+      store.saveTurn(conv.id, turn);
       this.emit.emitConversation(conv);
       return;
     }
@@ -166,7 +168,7 @@ export class TaskManager {
     // CLI engines need the toggle on (and the CLI installed). Guard here so a stale renderer
     // dropdown can't dispatch into a disabled engine.
     if (isCliEngine(conv.engine) && !getSettings().enableCliEngines) {
-      this.failTurn(conv, prompt, '未启用该引擎 — 在设置里打开「启用 Claude Code / Codex」。');
+      this.failTurn(conv, prompt, t(getSettings().lang, 'tmgr.engineDisabled'));
       return;
     }
 
@@ -180,7 +182,7 @@ export class TaskManager {
     this.aborts.set(id, ac);
     const engine = this.engines.get(conv.engine);
     if (!engine) {
-      this.applyAndPersist(conv, id, { type: 'error', message: `未知引擎: ${conv.engine}` }, prompt, ac.signal);
+      this.applyAndPersist(conv, id, { type: 'error', message: t(getSettings().lang, 'tmgr.unknownEngine', { engine: conv.engine }) }, prompt, ac.signal);
       this.aborts.delete(id);
       return;
     }
@@ -195,7 +197,7 @@ export class TaskManager {
         const body = loadSkillBody(m[1]);
         if (body != null) {
           skillBlock = body;
-          this.emit.emitEvent(id, { type: 'status', text: `已加载 skill: ${m[1]}` });
+          this.emit.emitEvent(id, { type: 'status', text: t(getSettings().lang, 'tmgr.skillLoaded', { name: m[1] }) });
         }
       }
     }
