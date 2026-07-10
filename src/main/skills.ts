@@ -1,26 +1,54 @@
-// Skill discovery: scans ~/.claude/skills and ~/.codex/skills for SKILL.md files.
-// Each skill is a dir with a SKILL.md whose YAML frontmatter holds name + description and whose
-// body is the instruction text. The slash menu lists them; the Direct engine injects the body.
-// No YAML dep — we only need name + description, so a 2-line frontmatter scan is enough (ponytail).
+// 扫描 Claude Code / Codex 的 skills + commands + agents(含已装 plugin 的内容)。
+// 每项是 frontmatter(name/description)+ body 的 .md。slash 菜单列出,Direct 引擎注入 body。
+// ponytail: 不真正起 subagent(那要独立 AgentLoop + 独立上下文);agent 的 body 当指令注入,和 skill/command 同处理。
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { SkillInfo } from '../shared/types';
+import type { SkillInfo, SkillType } from '../shared/types';
 
 type Skill = SkillInfo & { body: string };
 
-// Roots scanned in order; first one wins on a name clash (so Claude's user skills beat Codex's).
-function roots(): Array<{ dir: string; source: 'claude' | 'codex' }> {
+type ScanRoot = {
+  dir: string;
+  source: 'claude' | 'codex';
+  type: SkillType;
+  mode: 'file' | 'skill-dir'; // file=目录下 *.md(name=文件名);skill-dir=<name>/SKILL.md
+};
+
+// 用户级根:Claude Code 的 skills/commands/agents + Codex 的 skills。
+function roots(): ScanRoot[] {
   const home = os.homedir();
   return [
-    { dir: path.join(home, '.claude', 'skills'), source: 'claude' as const },
-    { dir: path.join(home, '.codex', 'skills'), source: 'codex' as const },
-    // Codex's built-in skills ship one level deeper, under a hidden .system dir.
-    { dir: path.join(home, '.codex', 'skills', '.system'), source: 'codex' as const },
+    { dir: path.join(home, '.claude', 'skills'), source: 'claude', type: 'skill', mode: 'skill-dir' },
+    { dir: path.join(home, '.claude', 'commands'), source: 'claude', type: 'command', mode: 'file' },
+    { dir: path.join(home, '.claude', 'agents'), source: 'claude', type: 'agent', mode: 'file' },
+    { dir: path.join(home, '.codex', 'skills'), source: 'codex', type: 'skill', mode: 'skill-dir' },
+    // Codex 的内置 skills 在 .system 子目录。
+    { dir: path.join(home, '.codex', 'skills', '.system'), source: 'codex', type: 'skill', mode: 'skill-dir' },
   ];
 }
 
-// Parse just name + description out of YAML frontmatter; body = everything after the closing ---.
+// 已装 plugin(installed_plugins.json 的 installPath)下的 commands/agents/skills 目录。
+function pluginRoots(): ScanRoot[] {
+  const file = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
+  let installed: any;
+  try {
+    installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return []; // 没装 plugin / 文件缺失
+  }
+  const out: ScanRoot[] = [];
+  for (const entries of Object.values(installed?.plugins ?? {}) as any[][]) {
+    const p = entries?.[0]?.installPath;
+    if (typeof p !== 'string') continue;
+    out.push({ dir: path.join(p, 'commands'), source: 'claude', type: 'command', mode: 'file' });
+    out.push({ dir: path.join(p, 'agents'), source: 'claude', type: 'agent', mode: 'file' });
+    out.push({ dir: path.join(p, 'skills'), source: 'claude', type: 'skill', mode: 'skill-dir' });
+  }
+  return out;
+}
+
+// 解析 frontmatter 的 name + description;body = 闭合 --- 后的全部。
 function parseSkill(content: string, fallbackName: string): { name: string; description: string; body: string } {
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
   if (!m) return { name: fallbackName, description: '', body: content };
@@ -35,25 +63,38 @@ let cache: Map<string, Skill> | null = null;
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  for (const { dir, source } of roots()) {
-    let entries: fs.Dirent[] = [];
+  const add = (name: string, description: string, source: 'claude' | 'codex', type: SkillType, body: string): void => {
+    const key = (name || '').toLowerCase();
+    if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
+    map.set(key, { name, description, source, type, body });
+  };
+  for (const { dir, source, type, mode } of [...roots(), ...pluginRoots()]) {
+    let ents: fs.Dirent[];
     try {
-      entries = fs.readdirSync(dir, { withFileTypes: true });
+      ents = fs.readdirSync(dir, { withFileTypes: true });
     } catch {
-      continue; // dir missing — normal if the CLI isn't installed
+      continue; // 目录不存在 → 跳过
     }
-    for (const ent of entries) {
-      if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
-      const file = path.join(dir, ent.name, 'SKILL.md');
-      let content: string;
-      try {
-        content = fs.readFileSync(file, 'utf8'); // follows symlinks (some skills are links)
-      } catch {
-        continue; // not a skill dir (no SKILL.md)
+    if (mode === 'file') {
+      for (const ent of ents) {
+        if (!ent.isFile() || !ent.name.endsWith('.md')) continue;
+        try {
+          const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name), 'utf8'), ent.name.replace(/\.md$/, ''));
+          add(parsed.name, parsed.description, source, type, parsed.body);
+        } catch {
+          /* 跳过读不了的 */
+        }
       }
-      const parsed = parseSkill(content, ent.name);
-      const key = parsed.name.toLowerCase();
-      if (!map.has(key)) map.set(key, { name: parsed.name, description: parsed.description, source, body: parsed.body });
+    } else {
+      for (const ent of ents) {
+        if (!ent.isDirectory() && !ent.isSymbolicLink()) continue;
+        try {
+          const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name, 'SKILL.md'), 'utf8'), ent.name);
+          add(parsed.name, parsed.description, source, type, parsed.body);
+        } catch {
+          /* 非 skill 目录(无 SKILL.md)→ 跳过 */
+        }
+      }
     }
   }
   return map;
@@ -70,7 +111,7 @@ export function listSkills(): SkillInfo[] {
     .sort((a, b) => a.name.localeCompare(b.name));
 }
 
-// Returns the skill body for injection, or null if no skill by that name (→ not a skill invocation).
+// 返回 body 用于注入;没有该 name 则 null(→ 不是 skill/command/agent 调用)。
 export function loadSkillBody(name: string): string | null {
   return ensure().get(name.toLowerCase())?.body ?? null;
 }

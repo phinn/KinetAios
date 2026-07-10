@@ -15,8 +15,9 @@ import { currentProvider, priceUSD } from './glm';
 import { allTools, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
 import { mcp } from './mcp';
+import { getBrand } from './brand';
 
-export const baseSystemPrompt = `你是 KinetAios,运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、抓网页、搜索历史记忆来帮用户完成任务。
+export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、抓网页、搜索历史记忆来帮用户完成任务。
 该用工具就果断用,不要只给步骤。需要回忆过去做过/聊过的事,用 recall_memory 搜历史。
 
 【重要】写文件的唯一正确方式是 write_file 工具(path + content 直传)。

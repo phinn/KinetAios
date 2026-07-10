@@ -7,6 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { Tool } from './tools';
+import { getBrand } from './brand';
 
 type McpSource = 'claude' | 'codex' | 'desktop';
 type McpServerConfig = {
@@ -151,6 +152,7 @@ class StdioClient {
         () => {
           this.everConnected = true; // 连上过 → 之后意外退出值得重连
           this.reconnectCount = 0;
+          this.alive = true; // 重连成功,恢复工具暴露
           resolveReady();
         },
         (e) => {
@@ -169,6 +171,7 @@ class StdioClient {
     this.child = null;
     if (this.everConnected && this.alive && this.reconnectCount < 5) {
       this.reconnectCount++;
+      this.alive = false; // 重连期间不暴露失效工具(start 成功后会设回 true)
       console.log(`[mcp/${this.cfg.name}] 进程退出,3s 后重连(${this.reconnectCount}/5)…`);
       this.reconnectTimer = setTimeout(() => {
         this.reconnectTimer = null;
@@ -229,9 +232,10 @@ class StdioClient {
   }
 
   private async initialize(): Promise<void> {
-    await this.send('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'KinetAios', version: '0.1.0' } }, 15_000);
+    await this.send('initialize', { protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: getBrand().productName, version: '0.1.0' } }, 15_000);
     this.notify('notifications/initialized', {});
     const res = await this.send('tools/list', {}, 15_000);
+    this.tools.length = 0; // 重连时先清,避免旧工具残留/重复
     this.tools.push(...(res?.tools ?? []));
   }
 

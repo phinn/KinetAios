@@ -45,10 +45,12 @@ export type AppSettings = {
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
 // menu lists these; the Direct engine injects the body when the user invokes /<name>.
+export type SkillType = 'skill' | 'command' | 'agent';
 export type SkillInfo = {
   name: string;
   description: string;
   source: 'claude' | 'codex';
+  type: SkillType;
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).
@@ -128,6 +130,7 @@ export interface KinetAPI {
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   pickDirectory(): Promise<string>;
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
+  getBrand(): Promise<{ productName: string }>;
   quickSubmit(text: string): Promise<string>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;

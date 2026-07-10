@@ -1,0 +1,4 @@
+{
+  "productName": "KinetAios",
+  "_comment": "改 productName 即可改所有界面显示的应用名。启动时读取。"
+}

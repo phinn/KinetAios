@@ -21,6 +21,7 @@ const api: KinetAPI = {
   listMcp: () => ipcRenderer.invoke('list-mcp'),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   readFile: (rel, cwd) => ipcRenderer.invoke('read-file', rel, cwd),
+  getBrand: () => ipcRenderer.invoke('get-brand'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
 
   onAgentEvent: (cb) => {

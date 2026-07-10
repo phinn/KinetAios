@@ -10,6 +10,7 @@ import { getSettings, saveSettings } from './settings';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
 import { mcp } from './mcp';
+import { getBrand } from './brand';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind } from '../shared/types';
 
@@ -71,7 +72,7 @@ function createDashboard(): BrowserWindow {
     minWidth: 760,
     minHeight: 480,
     backgroundColor: '#1b1b1f',
-    title: 'KinetAios',
+    title: getBrand().productName,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
@@ -95,7 +96,7 @@ function createQuick(): BrowserWindow {
     minimizable: false,
     maximizable: false,
     backgroundColor: '#1b1b1f',
-    title: 'KinetAios · Quick',
+    title: `${getBrand().productName} · Quick`,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
@@ -169,7 +170,7 @@ function showDashboard(): void {
 
 function createTray(): Tray {
   const t = new Tray(makeTrayIcon());
-  t.setToolTip('KinetAios');
+  t.setToolTip(getBrand().productName);
   t.setContextMenu(
     Menu.buildFromTemplate([
       { label: '显示主窗口', click: () => showDashboard() },
@@ -218,6 +219,7 @@ function registerIpc(): void {
   });
   ipcMain.handle('list-skills', () => listSkills());
   ipcMain.handle('list-mcp', () => mcp.snapshot());
+  ipcMain.handle('get-brand', () => getBrand());
 
   // 系统文件夹选择器(renderer 无 Node,只能走 main 的 dialog)。
   ipcMain.handle('pick-directory', async () => {

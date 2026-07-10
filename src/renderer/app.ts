@@ -20,6 +20,7 @@ let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
+let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
 
 // ---------- bootstrap ----------
 (async function init() {
@@ -27,6 +28,13 @@ let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入�
   // 只有 #input 的 drop 真正接收文件(见 wireUi)。
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
+
+  // 产品名从 brand.json 读,覆盖所有「KinetAios」显示处。
+  PRODUCT = (await api.getBrand()).productName;
+  document.title = PRODUCT;
+  const brandEl = document.getElementById('brand');
+  if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
+  (document.getElementById('composer') as HTMLTextAreaElement).placeholder = `给 ${PRODUCT} 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)`;
 
   const list = await api.getConversations();
   for (const c of list) {
@@ -124,7 +132,7 @@ function renderHead(conv: Conversation | undefined) {
   const sendBtn = document.getElementById('btn-send')!;
   if (!conv) {
     dot.className = 'dot ready';
-    title.textContent = 'KinetAios';
+    title.textContent = PRODUCT;
     cwd.value = '';
     model.value = '';
     model.style.display = 'none';
@@ -250,6 +258,7 @@ function streamAppend(text: string) {
     el = document.getElementById('streaming-answer');
   }
   if (el) {
+    if (el.querySelector('.typing')) el.textContent = ''; // 首个 token:清掉思考三点
     el.appendChild(document.createTextNode(text));
     scrollDown();
   }
@@ -604,7 +613,7 @@ function renderSlash(): void {
     .map(
       (s, i) =>
         `<div class="slash-item${i === slashIndex ? ' active' : ''}" data-i="${i}">` +
-        `<span class="slash-name">${esc(s.name)}<span class="slash-tag">${s.source}</span></span>` +
+        `<span class="slash-name">${esc(s.name)}<span class="slash-tag">${s.source}·${s.type}</span></span>` +
         `<span class="slash-desc">${esc(s.description)}</span></div>`,
     )
     .join('');
