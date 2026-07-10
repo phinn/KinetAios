@@ -160,6 +160,8 @@ class OpenAICompatibleProvider implements Provider {
   ): Promise<Completion> {
     if (!snap.apiKey) throw new GLMError('noKey');
 
+    // OpenAI 兼容端点(GLM 智谱 / DeepSeek / Qwen / OpenAI)均为自动前缀缓存:messages 开头的
+    // system + 早期 history 每轮不变 → 命中缓存、低价计费。无需额外参数(只有 Anthropic 要 cache_control)。
     const body: Record<string, unknown> = { model: snap.model, messages, stream: true };
     body.max_tokens = maxTokensFor(snap.model);
     // Streaming usually omits usage unless include_usage is set (final chunk then carries it).
@@ -284,9 +286,15 @@ class AnthropicProvider implements Provider {
     }
 
     const body: Record<string, unknown> = { model: snap.model, messages: anth, max_tokens: maxTokensFor(snap.model), stream: true };
+    // Anthropic prompt cache:system + tools 是每轮稳定重复的大块 → 标 cache_control 命中缓存(读 ~10% 价)。
+    // messages 动态变化不缓存。免费 4 断点,这里用 2 个(system + 末个 tool 覆盖整个 tools 数组)。
     const system = systemParts.join('\n');
-    if (system) body.system = system;
-    if (tools.length) body.tools = tools.map((t) => this.anthTool(t));
+    if (system) body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
+    if (tools.length) {
+      const tt = tools.map((t) => this.anthTool(t));
+      tt[tt.length - 1].cache_control = { type: 'ephemeral' }; // 标在最后一个 tool → 整个 tools 数组进缓存
+      body.tools = tt;
+    }
 
     const resp = await fetchUntil200(`${snap.baseURL}/v1/messages`, {
       method: 'POST',
@@ -319,7 +327,10 @@ class AnthropicProvider implements Provider {
       const type = obj.type as string | undefined;
       if (!type) continue;
       if (type === 'message_start') {
-        tokensIn = intFrom(obj.message?.usage?.input_tokens) || 0;
+        // input_tokens 不含缓存;cache_read(读,~10% 价)/ cache_creation(写,~125% 价)单列。
+        // 全计入 tokensIn(按 input 价统计 → cache_read 高估,但不漏算,比漏掉缓存消耗更接近真实)。
+        const u = obj.message?.usage ?? {};
+        tokensIn = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
       } else if (type === 'message_delta') {
         tokensOut = intFrom(obj.usage?.output_tokens) || tokensOut;
       } else if (type === 'content_block_start') {
