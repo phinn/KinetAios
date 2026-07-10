@@ -1,5 +1,7 @@
 # KinetAios
 
+[English](README.en.md) | 简体中文
+
 本地 AI agent 仪表盘,**跨平台(Windows 11 + macOS)**。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 记忆、全局热键、每会话独立模型。
 
 > 产品名可在 `brand.json` 里改(`productName`),所有界面显示处启动时读取。
