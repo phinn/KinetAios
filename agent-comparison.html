@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>三方 Agent 对比 · Claude Code / Direct / Codex</title>
+<style>
+  :root {
+    --bg: #f6f7f9;
+    --card: #ffffff;
+    --ink: #1f2328;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --dim-bg: #f1f5f9;
+    --cc: #d97757;   /* Anthropic 橙 */
+    --direct: #2563eb; /* 蓝 */
+    --codex: #10a37f;  /* OpenAI 绿 */
+    --star: #fef3c7;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
+      "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; padding: 40px 24px 80px; }
+  header h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
+  header p.sub { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
+
+  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; border-top: 3px solid var(--cc); }
+  .card.direct { border-top-color: var(--direct); }
+  .card.codex { border-top-color: var(--codex); }
+  .card h3 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cc); display: inline-block; }
+  .card.direct .dot { background: var(--direct); }
+  .card.codex .dot { background: var(--codex); }
+  .card .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); word-break: break-all; margin: 2px 0 8px; }
+  .card .blurb { font-size: 13px; color: var(--ink); margin: 0; }
+
+  .table-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
+  table { border-collapse: collapse; width: 100%; min-width: 980px; font-size: 13px; }
+  thead th {
+    position: sticky; top: 0; z-index: 3; background: var(--card);
+    text-align: left; padding: 12px 14px; border-bottom: 2px solid var(--line);
+    font-size: 13px; white-space: nowrap;
+  }
+  thead th.h-cc { color: var(--cc); }
+  thead th.h-direct { color: var(--direct); }
+  thead th.h-codex { color: var(--codex); }
+  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover td { background: #fafbfc; }
+  td.dim {
+    position: sticky; left: 0; z-index: 2; background: var(--dim-bg);
+    font-weight: 600; white-space: nowrap; border-right: 1px solid var(--line);
+  }
+  tbody tr:hover td.dim { background: #eef2f7; }
+  tr.star td { background: var(--star); }
+  tr.star:hover td { background: #fde68a; }
+  tr.star td.dim { background: #fde68a; }
+  .star-tag { color: #b45309; font-weight: 700; margin-left: 4px; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12px; background: #eef1f4; padding: 1px 5px; border-radius: 4px;
+    color: #24292f; word-break: break-word;
+  }
+  .yes { color: #047857; font-weight: 600; }
+  .no { color: #b91c1c; font-weight: 600; }
+
+  section.features { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .feat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
+  .feat h4 { margin: 0 0 8px; font-size: 14px; }
+  .feat.f-cc h4 { color: var(--cc); } .feat.f-direct h4 { color: var(--direct); } .feat.f-codex h4 { color: var(--codex); }
+  .feat p { margin: 0; font-size: 13px; color: var(--ink); }
+  footer { margin-top: 32px; padding: 18px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
+  footer strong { color: var(--ink); }
+  @media (max-width: 820px) {
+    .cards, section.features { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>三方 Agent 实现对比</h1>
+    <p class="sub">Claude Code(CC-rev) · Direct v2(KinetAios,补齐后) · Codex(OpenAI)—— 同一 ReAct 骨架,差异在执行安全 / 上下文管理 / 子任务三条副线</p>
+  </header>
+
+  <div class="cards">
+    <div class="card">
+      <h3><span class="dot"></span>CC-rev · Claude Code</h3>
+      <div class="path">agent-code-rev-main</div>
+      <p class="blurb">TypeScript,Claude Code 源码级重构。最完备的 agent 抽象,subagent 全家桶,prompt-cache 友好的分段 system prompt。</p>
+    </div>
+    <div class="card direct">
+      <h3><span class="dot"></span>Direct v2 · KinetAios</h3>
+      <div class="path">KinetAiosWin/src/main</div>
+      <p class="blurb">TypeScript / Electron。概念同构的最小实现,独有 GLM 直连 + OpenAI↔Anthropic 双向;v2 补齐压缩 / 并行+subagent / 重试。</p>
+    </div>
+    <div class="card codex">
+      <h3><span class="dot"></span>Codex · OpenAI</h3>
+      <div class="path">codex-main (codex-rs, Rust)</div>
+      <p class="blurb">Rust 工作区(~90 crate)。唯一带 OS 级沙盒执行 + Guardian 自动审查 + Responses API WebSocket 传输。</p>
+    </div>
+  </div>
+
+  <div class="table-shell">
+  <table>
+    <thead>
+      <tr>
+        <th class="dim">维度</th>
+        <th class="h-cc">CC-rev · Claude Code</th>
+        <th class="h-direct">Direct v2 · KinetAios</th>
+        <th class="h-codex">Codex · OpenAI</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td class="dim">语言 / 形态</td>
+        <td>TS,REPL / SDK 库</td>
+        <td>TS,Electron 后端</td>
+        <td>Rust 工作区 + TS npm 壳</td>
+      </tr>
+      <tr>
+        <td class="dim">主循环</td>
+        <td>两层:<code>QueryEngine.submitMessage</code> → <code>queryLoop</code>(<code>query.ts:241</code>)</td>
+        <td>一层:<code>runAgentLoop</code>(<code>AgentLoop.ts:21</code>)</td>
+        <td>三层:<code>Op</code> 通道 → <code>submission_loop</code> → <code>run_turn</code> ReAct(<code>turn.rs:225</code>)</td>
+      </tr>
+      <tr>
+        <td class="dim">停止判定</td>
+        <td>无 tool_use → <code>stopHooks</code> + 多种恢复,<code>reason</code> 状态机</td>
+        <td>无 tool_calls → <code>done</code>;<code>Infinity</code> 轮靠停止;reactive 超长自缩重试本轮</td>
+        <td>无 tool_use → <code>run_turn_stop_hooks</code>(可重入),否则 break;token 超限 → autocompact 后 continue</td>
+      </tr>
+      <tr>
+        <td class="dim">流式边执行工具</td>
+        <td class="yes">有 · <code>StreamingToolExecutor</code> 模型边吐边跑</td>
+        <td class="no">无 · 先收完 tool_calls 再执行</td>
+        <td class="yes">有 · <code>FuturesOrdered</code> 工具产出即 spawn,流不停</td>
+      </tr>
+      <tr>
+        <td class="dim">工具并行</td>
+        <td>有 · <code>runTools</code> 按 <code>isConcurrencySafe</code> 分批(只读并发 10)</td>
+        <td>有 · <code>runToolBatch</code>(连续只读 <code>Promise.all</code> / 写串行)</td>
+        <td>有 · <code>RwLock</code> 门控(<code>parallel.rs</code>):并行读锁、独占写锁</td>
+      </tr>
+      <tr>
+        <td class="dim">工具清单(特色)</td>
+        <td>Bash / FileEdit / Glob / Grep / <strong>Agent</strong> / Task …(数十个,feature flag 展开)</td>
+        <td>shell / read_file / write_file / edit_file / grep / glob / web_fetch / recall_memory / <strong>dispatch_agent</strong></td>
+        <td>shell、<strong>unified_exec</strong>(后台进程)、<strong>apply_patch</strong>、plan、tool_search、<strong>spawn_agent</strong> 系列、MCP</td>
+      </tr>
+      <tr>
+        <td class="dim">工具结果回传</td>
+        <td><code>mapToolResultToToolResultBlockParam</code> → tool_result block</td>
+        <td><code>{role:'tool', tool_call_id, content}</code>,原序回填</td>
+        <td><code>ResponseItem::FunctionCallOutput</code> 追加进 ContextManager</td>
+      </tr>
+      <tr>
+        <td class="dim">事件流</td>
+        <td><code>Message</code> union + SDKMessage(多态丰富)</td>
+        <td>统一 <code>AgentEvent</code> 7 类,<code>applyEvent</code> 单点 fold</td>
+        <td><code>EventMsg</code> 枚举(~380 行)经 <code>Session::send_event</code></td>
+      </tr>
+      <tr>
+        <td class="dim">上下文压缩</td>
+        <td>五级:toolResultBudget→snip→microcompact→contextCollapse→autocompact + reactive</td>
+        <td>两级:<code>sanitizeToolPairs</code> 修配对 + <code>compactHistory</code> 摘要 + reactive 超长自缩</td>
+        <td>autocompact(内联摘要或<strong>远程 <code>/responses/compact</code></strong>)+ pre-sampling + rollout 截断 + WorldState 增量 diff</td>
+      </tr>
+      <tr>
+        <td class="dim">token 预算</td>
+        <td><code>taskBudget</code> 跨 compact 边界 + max_output_tokens 三段恢复</td>
+        <td>30000(<code>length*0.6</code> 估算);reactive 砍半 15000</td>
+        <td><code>context_window.rs</code> / <code>token_budget.rs</code> 追踪 limit,溢出触发 autocompact</td>
+      </tr>
+      <tr>
+        <td class="dim">Subagent / 多 agent</td>
+        <td><code>AgentTool</code>→<code>runAgent</code> 递归调 <code>query()</code>,支持 background / team / swarm</td>
+        <td><code>dispatch_agent</code> 复用 <code>runAgentLoop</code>(只读子集,maxTurns 8),同步最小版</td>
+        <td><code>spawn_agent</code> 系列(<code>AgentControl</code>),子线程<strong>继承 provider/批准/沙盒</strong>,有深度限制</td>
+      </tr>
+      <tr>
+        <td class="dim">Provider / 传输</td>
+        <td>Anthropic(含 Bedrock / Vertex)</td>
+        <td>GLM / OpenAI / Anthropic <strong>双向</strong></td>
+        <td>Responses API,<strong>HTTP/SSE 或 WebSocket</strong>(粘性路由);可选 Bedrock / Ollama / LMStudio</td>
+      </tr>
+      <tr>
+        <td class="dim">Retry / 恢复</td>
+        <td><code>withRetry</code>(429/500/529)+ fallback model + 非流式兜底 + VCR</td>
+        <td><code>fetchUntil200</code>(429/5xx/网络错退避 3 次,只覆盖建连→200)</td>
+        <td><code>responses_retry</code> 指数退避 → <strong>传输回退(WS→HTTPS)</strong>;无通用 model fallback</td>
+      </tr>
+      <tr class="star">
+        <td class="dim">★ 沙盒执行<span class="star-tag">差异核心</span></td>
+        <td class="no">无 · 靠 permission 确认拦截</td>
+        <td class="no">无 · shell 确认桥 <code>confirm()</code></td>
+        <td class="yes">OS 级 · macOS Seatbelt / Linux bubblewrap+landlock / Windows 受限令牌;<code>ToolOrchestrator</code> 批准→沙盒→拒绝则升级</td>
+      </tr>
+      <tr>
+        <td class="dim">System prompt</td>
+        <td>静态可缓存段 + 动态段,<code>DYNAMIC_BOUNDARY</code> cache</td>
+        <td>单字符串拼接:base(中文)+ skill + AGENTS.md + memory;子 agent <code>SUBAGENT_PROMPT</code></td>
+        <td>三层:模型专属 <code>.md</code> + 权限/沙盒模板 + AGENTS.md;行为在工具层非 prompt 层</td>
+      </tr>
+      <tr>
+        <td class="dim">Permission / 批准</td>
+        <td>5 种 mode + auto classifier 旁路</td>
+        <td>二值 <code>approval</code> + shell 确认模态</td>
+        <td><code>AskForApproval</code> + PermissionProfile + <strong>Guardian 自动审查</strong></td>
+      </tr>
+      <tr>
+        <td class="dim">MCP</td>
+        <td><code>MCPConnectionManager</code> 全 transport</td>
+        <td><code>McpRegistry</code> 只 stdio,3 处 config</td>
+        <td><code>McpManager</code> + rmcp-client / codex-mcp crate</td>
+      </tr>
+      <tr>
+        <td class="dim">Memory 长期记忆</td>
+        <td>CLAUDE.md + typed memory(<code>memdir</code>,分文件 append-only)</td>
+        <td>SQLite <code>memories</code>,done 后 LLM 抽"用户事实",注入 strip shell 元字符</td>
+        <td><code>memories/read</code> + <code>write</code>,经 <code>/memories/trace_summarize</code> 远程生成</td>
+      </tr>
+      <tr>
+        <td class="dim">持久化 / resume</td>
+        <td>transcript JSONL,subagent 走 sidechain</td>
+        <td>SQLite(conversations / turns / history FTS5 / memories)</td>
+        <td><code>codex-rollout</code>:磁盘 + SQLite,支持 <code>--resume</code> / fork / archive</td>
+      </tr>
+    </tbody>
+  </table>
+  </div>
+
+  <section class="features">
+    <div class="feat f-cc">
+      <h4>CC-rev 的差异化</h4>
+      <p>工程完备度最高 + prompt-cache 友好的分段 system prompt + subagent 全家桶。抽象最重(<code>Tool&lt;I,O,P&gt;</code> 泛型 + Zod + 巨型 <code>ToolUseContext</code>)。</p>
+    </div>
+    <div class="feat f-direct">
+      <h4>Direct v2 的差异化</h4>
+      <p>概念同构的最小实现,骨架与 CC 一致但去尽复杂度;独有的 GLM 直连 + 协议双向。v2 补齐三块后核心能力已追平,只是深度浅。</p>
+    </div>
+    <div class="feat f-codex">
+      <h4>Codex 的差异化</h4>
+      <p>唯一带 OS 级沙盒执行 + Guardian 自动审查 + WebSocket 传输 + 远程 compact。Rust 多 crate 架构最重,把"安全执行"做成一等公民。</p>
+    </div>
+  </section>
+
+  <footer>
+    <strong>一句话定位:</strong>CC-rev = 最完备的 agent 抽象;Direct v2 = 最精简的同构骨架(够用、可读、易改);Codex = 最硬核的安全执行工程。三者 ReAct 骨架完全一致,差异全在<strong>执行安全、上下文管理、子任务</strong>三条副线。
+  </footer>
+</div>
+</body>
+</html>
