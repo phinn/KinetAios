@@ -307,9 +307,7 @@ if (!gotLock) {
     // Ctrl+Alt+Space on Windows (Cmd/Ctrl+Alt+Space cross-platform).
     globalShortcut.register('CommandOrControl+Alt+Space', toggleQuick);
 
-    app.on('activate', () => {
-      if (BrowserWindow.getAllWindows().length === 0) dashboardWin = createDashboard();
-    });
+    app.on('activate', () => showDashboard()); // mac Dock 点击:显示(或重建)主窗口
   });
 
   app.on('window-all-closed', () => {
@@ -317,6 +315,7 @@ if (!gotLock) {
   });
 
   app.on('before-quit', () => {
+    quitting = true; // 让 dashboard 的 close handler 放行 —— 否则 Cmd+Q / 系统退出会被 hide 拦截,退不出来
     globalShortcut.unregisterAll();
     mcp.dispose(); // 关掉所有 MCP 子进程
   });

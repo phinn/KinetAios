@@ -192,14 +192,15 @@ async function walkFiles(root: string, limit: number): Promise<string[]> {
   return out;
 }
 
-// 简单 glob → regex(** 跨目录、* 单段、? 单字符)。
+// 简单 glob → regex(**/ 匹配 0 或多目录段、** 跨目录、* 单段、? 单字符)。
 function globToRegex(pat: string): RegExp {
   const s = pat
     .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*/g, '\x01')
+    .replace(/\*\*\//g, '\x02') // **/ → 0 或多目录前缀(让 **/*.ts 也能匹配根目录文件)
+    .replace(/\*\*/g, '.*')
     .replace(/\*/g, '[^/]*')
     .replace(/\?/g, '[^/]')
-    .replace(/\x01/g, '.*');
+    .replace(/\x02/g, '(?:.*/)?');
   return new RegExp('^' + s + '$');
 }
 
@@ -229,7 +230,8 @@ const grep: Tool = {
       const rel = path.relative(ctx.cwd, f);
       if (filter && !filter.test(rel) && !filter.test(path.basename(f))) continue;
       try {
-        const body = fs.readFileSync(f, 'utf8');
+        if ((await fs.promises.stat(f)).size > 512 * 1024) continue; // 跳大文件(>512KB)
+        const body = await fs.promises.readFile(f, 'utf8'); // 异步读,不阻塞主进程(否则扫大项目时 UI/token 流卡住)
         for (const [i, line] of body.split('\n').entries()) {
           if (re.test(line)) {
             hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 200)}`);
