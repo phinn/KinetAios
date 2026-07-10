@@ -63,6 +63,8 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         tokensOut: completion.tokensOut,
       });
     }
+    // 用这轮真实 prompt_tokens 校准 token 估算系数(给 trimHistoryToTokenBudget / compactHistory 用)。
+    calibrateTokens(completion.tokensIn, messages);
 
     messages.push(completion.rawAssistant);
     if (completion.toolCalls.length === 0) {
@@ -105,7 +107,25 @@ function errMsg(e: unknown): string {
   return t(lang, 'al.err', { msg: (e as Error)?.message ?? String(e) });
 }
 
-// Keep the tail of history within a token budget (chars × 0.6 estimate). Mirrors Swift DirectEngine.
+// Token estimation, calibrated from real API usage.
+// ponytail: GLM/Claude/OpenAI 的 tokenizer 各不同且不公开 → 不上 tiktoken(加 ~1MB 依赖、打包变大)。
+// 改用「字符数 × 校准系数」:每轮拿 API 真实 prompt_tokens 反推 token/char 比,滑动平均,自动贴合实际模型。
+let tokenCoef = 0.6; // 初始 0.6(中英混合经验值),每轮按真实 usage 校准
+// 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
+function estMsgChars(m: ChatMsg): number {
+  const content = typeof m.content === 'string' ? m.content : '';
+  const tc = Array.isArray(m.tool_calls) ? JSON.stringify(m.tool_calls).length : 0;
+  return content.length + tc;
+}
+// 用这批 messages 的真实 prompt_tokens 校准 tokenCoef(滑动平均 0.5/0.5,抗单轮抖动)。
+function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
+  const chars = msgs.reduce((s, m) => s + estMsgChars(m), 0);
+  if (realPromptTokens > 0 && chars > 0) {
+    tokenCoef = tokenCoef * 0.5 + (realPromptTokens / chars) * 0.5;
+  }
+}
+
+// Keep the tail of history within a token budget. Mirrors Swift DirectEngine.
 // Sanitize after trimming: a hard byte-cut can split an assistant(tool_calls) ↔ tool pair, leaving
 // an "orphan" tool message whose assistant was dropped — both OpenAI and Anthropic reject that.
 export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatMsg[] {
@@ -113,8 +133,7 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatM
   let total = 0;
   const kept: ChatMsg[] = [];
   for (const m of [...msgs].reverse()) {
-    const content = typeof m.content === 'string' ? m.content : '';
-    const tokens = Math.floor(content.length * 0.6) + 20; // +20 per-message overhead
+    const tokens = Math.floor(estMsgChars(m) * tokenCoef) + 20; // +20 per-message overhead
     if (total + tokens > budget && kept.length) break;
     total += tokens;
     kept.push(m);
