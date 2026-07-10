@@ -23,6 +23,7 @@ const api: KinetAPI = {
   readFile: (rel, cwd) => ipcRenderer.invoke('read-file', rel, cwd),
   getBrand: () => ipcRenderer.invoke('get-brand'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
+  openDashboard: () => ipcRenderer.invoke('open-dashboard'),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

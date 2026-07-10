@@ -134,6 +134,7 @@ export interface KinetAPI {
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
   getBrand(): Promise<{ productName: string }>;
   quickSubmit(text: string): Promise<string>;
+  openDashboard(): Promise<void>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;

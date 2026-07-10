@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>KinetAios · Dashboard</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="dash">
+  <div id="dash">
+    <div class="dash-head">
+      <h2 data-i18n="dash.title">仪表盘</h2>
+      <span class="dash-brand" id="dash-brand"></span>
+    </div>
+    <div class="dash-overview" id="dash-overview"></div>
+    <h3 data-i18n="dash.byEngine">按引擎</h3>
+    <div class="dash-engines" id="dash-engines"></div>
+    <h3 data-i18n="dash.sessions">会话</h3>
+    <div class="dash-table-wrap">
+      <table class="dash-table" id="dash-table"></table>
+    </div>
+  </div>
+  <script src="dashboard.js"></script>
+</body>
+</html>

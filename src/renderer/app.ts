@@ -483,6 +483,7 @@ function wireUi() {
     if (document.getElementById('settings-view')!.classList.contains('active')) showChat();
     else showSettings();
   };
+  document.getElementById('btn-dashboard')!.onclick = () => void api.openDashboard();
   document.getElementById('btn-clear')!.onclick = () => selectedId && api.clearConversation(selectedId);
   document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);
   document.getElementById('btn-send')!.onclick = send;

@@ -30,6 +30,7 @@ process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
 let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
+let metricsWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
 let tray: Tray | null = null;
 let quitting = false;
@@ -127,6 +128,35 @@ function toggleQuick(): void {
   quickWin.on('closed', () => (quickWin = null));
 }
 
+// Metrics 窗口(token 消耗 + agent 状态仪表盘)。已开则聚焦,不重复开。
+// 名字刻意避开 dashboardWin/createDashboard —— 那是本 app 的主窗口。
+function createMetricsWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 920,
+    height: 640,
+    minWidth: 640,
+    minHeight: 420,
+    backgroundColor: '#1b1b1f',
+    title: `${getBrand().productName} · Dashboard`,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'dashboard.html'));
+  return win;
+}
+function toggleMetricsWindow(): void {
+  if (metricsWin && !metricsWin.isDestroyed()) {
+    metricsWin.focus();
+    return;
+  }
+  metricsWin = createMetricsWindow();
+  metricsWin.on('closed', () => (metricsWin = null));
+}
+
 // MARK: 托盘(程序生成的金色圆 icon,无需图标资源;关窗留托盘,全局热键常驻)
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
@@ -182,6 +212,7 @@ function buildTrayMenu(lang: Lang): Menu {
   return Menu.buildFromTemplate([
     { label: t(lang, 'tray.show'), click: () => showDashboard() },
     { label: t(lang, 'tray.quick'), click: () => toggleQuick() },
+    { label: t(lang, 'dash.title'), click: () => toggleMetricsWindow() },
     { type: 'separator' },
     { label: t(lang, 'tray.quit'), click: () => { quitting = true; app.quit(); } },
   ]);
@@ -298,6 +329,10 @@ function registerIpc(): void {
     const conv = taskManager.newConversation(os.homedir());
     taskManager.send(conv.id, text);
     return conv.id;
+  });
+  ipcMain.handle('open-dashboard', () => {
+    toggleMetricsWindow();
+    return true;
   });
 }
 
