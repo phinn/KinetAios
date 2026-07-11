@@ -24,6 +24,14 @@ const api: KinetAPI = {
   getBrand: () => ipcRenderer.invoke('get-brand'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
   openDashboard: () => ipcRenderer.invoke('open-dashboard'),
+  openFiles: (cwd) => ipcRenderer.invoke('open-files', cwd),
+  listDir: (absPath) => ipcRenderer.invoke('list-dir', absPath),
+  gitSnapshot: (cwd) => ipcRenderer.invoke('git-snapshot', cwd),
+  gitDiff: (cwd, opts) => ipcRenderer.invoke('git-diff', cwd, opts),
+  readRules: (cwd) => ipcRenderer.invoke('read-rules', cwd),
+  writeRules: (cwd, content) => ipcRenderer.invoke('write-rules', cwd, content),
+  readContext: (cwd) => ipcRenderer.invoke('read-context', cwd),
+  writeContext: (cwd, content) => ipcRenderer.invoke('write-context', cwd, content),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));
@@ -33,6 +41,9 @@ const api: KinetAPI = {
   },
   onConversationRemoved: (cb) => {
     ipcRenderer.on('conversation-removed', (_e: IpcRendererEvent, id) => cb(id));
+  },
+  onFilesCwd: (cb) => {
+    ipcRenderer.on('files-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));
   },
   onConfirmRequest: (cb) => {
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));

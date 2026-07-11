@@ -7,7 +7,7 @@ import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { currentProvider } from './glm';
-import { buildEngines, type Engine } from './engines';
+import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 
 export interface TaskManagerEmitter {
@@ -205,6 +205,8 @@ export class TaskManager {
     await engine.run({
       conv,
       memoryBlock: this.memoryBlock(conv),
+      rulesBlock: loadRulesBlock(conv.cwd),
+      contextBlock: loadContextBlock(conv.cwd),
       skillBlock,
       signal: ac.signal,
       onEvent: (ev) => this.applyAndPersist(conv, id, ev, prompt, ac.signal),

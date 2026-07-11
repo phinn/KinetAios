@@ -13,12 +13,18 @@
         <div class="brand" id="brand"><span class="spark">✨</span> KinetAios</div>
         <div class="sb-actions">
           <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" title="新建会话">＋</button>
+          <button class="ghost" id="btn-wb" data-i18n-title="wb.open" title="工作台">📂</button>
           <button class="ghost" id="btn-dashboard" data-i18n-title="dash.open" title="打开仪表盘">📊</button>
+          <button class="ghost" id="btn-files" data-i18n-title="files.open" title="文件与预览">🌐</button>
           <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置">⚙</button>
         </div>
       </div>
       <ul id="conv-list"></ul>
-      <div class="sb-foot" id="sb-foot">Direct · GLM</div>
+      <div class="sb-foot" id="sb-foot">
+        <span class="sb-foot-info">Direct · GLM</span>
+        <span class="sb-foot-spacer"></span>
+        <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表">▤</button>
+      </div>
     </aside>
 
     <main id="main">
@@ -32,6 +38,12 @@
             <span class="status" id="head-status"></span>
             <button class="ghost" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话" data-i18n="head.clearBtn">清空</button>
             <button class="ghost" id="btn-del" data-i18n-title="head.delete" title="删除会话" data-i18n="head.deleteBtn">删除</button>
+            <span class="ch-tabs">
+              <button class="cht active" id="tab-chat" data-i18n="tabs.chat">对话</button>
+              <button class="cht" id="tab-files" data-i18n="tabs.files">文件</button>
+              <button class="cht" id="tab-git" data-i18n="tabs.git">Git</button>
+              <button class="cht" id="tab-rules" data-i18n="tabs.rules">规则</button>
+            </span>
           </div>
           <div class="ch-row ch-config">
             <select id="engine-select" class="engine" data-i18n-title="head.engine" title="引擎">
@@ -41,28 +53,82 @@
             <button class="ghost cwd-pick" id="btn-cwd" data-i18n-title="head.pickDir" title="选择目录">📁</button>
           </div>
         </div>
-        <div id="turns"></div>
-        <div id="input">
-          <div id="attach-row" class="attach-row"></div>
-          <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)"></textarea>
-          <div class="composer-bar">
-            <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)">📎<span class="lbl" data-i18n="attach.lbl">附件</span></button>
-            <input class="model-pill" id="model-input" list="model-list" data-i18n-title="model.title" title="模型(Direct 引擎,每会话独立;回车应用)" data-i18n-placeholder="model.ph" placeholder="模型" />
-            <datalist id="model-list"></datalist>
-            <button class="tool" id="btn-skill" data-i18n-title="skill.title" title="选择 Skill(Direct)">⚡<span class="lbl" data-i18n="skill.lbl">Skill</span></button>
-            <button class="tool" id="btn-mcp" data-i18n-title="mcp.title" title="MCP 服务与工具">🔌<span class="lbl" data-i18n="mcp.lbl">MCP</span></button>
-            <span class="bar-spacer"></span>
-            <button class="primary send" id="btn-send">发送</button>
+        <div id="chat-content" class="chat-content">
+          <div id="turns"></div>
+          <div id="input">
+            <div id="attach-row" class="attach-row"></div>
+            <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)"></textarea>
+            <div class="composer-bar">
+              <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)">📎<span class="lbl" data-i18n="attach.lbl">附件</span></button>
+              <input class="model-pill" id="model-input" list="model-list" data-i18n-title="model.title" title="模型(Direct 引擎,每会话独立;回车应用)" data-i18n-placeholder="model.ph" placeholder="模型" />
+              <datalist id="model-list"></datalist>
+              <button class="tool" id="btn-skill" data-i18n-title="skill.title" title="选择 Skill(Direct)">⚡<span class="lbl" data-i18n="skill.lbl">Skill</span></button>
+              <button class="tool" id="btn-mcp" data-i18n-title="mcp.title" title="MCP 服务与工具">🔌<span class="lbl" data-i18n="mcp.lbl">MCP</span></button>
+              <span class="bar-spacer"></span>
+              <button class="primary send" id="btn-send">发送</button>
+            </div>
+            <div id="slash-menu" class="slash-menu" hidden></div>
+            <div id="mcp-menu" class="mcp-menu" hidden></div>
+            <input type="file" id="file-input" multiple hidden />
           </div>
-          <div id="slash-menu" class="slash-menu" hidden></div>
-          <div id="mcp-menu" class="mcp-menu" hidden></div>
-          <input type="file" id="file-input" multiple hidden />
+        </div>
+        <div id="chat-files-pane" class="chat-files-pane" hidden>
+          <div class="files-head">
+            <button class="ghost" id="btn-pick" data-i18n-title="files.pickDir" title="切换目录">📁</button>
+            <span class="files-cwd" id="files-cwd"></span>
+            <span class="files-spacer"></span>
+            <button class="ghost" id="btn-back" data-i18n-title="files.back" title="后退">←</button>
+            <button class="ghost" id="btn-reload" data-i18n-title="files.reload" title="刷新">⟳</button>
+            <input class="files-addr" id="files-addr" data-i18n-placeholder="files.addrPh" placeholder="file:// 或 https:// 或 localhost:8000" />
+          </div>
+          <div class="files-body">
+            <div class="files-tree" id="files-tree"></div>
+            <div class="files-view">
+              <webview id="files-webview" src="about:blank" partition="persist:files"></webview>
+            </div>
+          </div>
+          <div id="files-menu" class="files-menu" hidden>
+            <div class="fm-item" id="fm-open" data-i18n="files.openInBrowser">在浏览器中打开</div>
+            <div class="fm-item" id="fm-copy" data-i18n="files.copyPath">复制路径</div>
+          </div>
+        </div>
+        <div id="chat-git-pane" class="chat-git-pane" hidden>
+          <div class="git-head">
+            <span class="git-branch" id="git-branch"></span>
+            <span class="git-spacer"></span>
+            <button class="ghost" id="btn-git-refresh" data-i18n-title="git.refresh" title="刷新">⟳</button>
+          </div>
+          <div class="git-body">
+            <div class="git-col git-changes">
+              <div class="gb-title" data-i18n="git.changes">更改</div>
+              <div class="gb-list" id="git-changes-list"></div>
+            </div>
+            <div class="git-col git-side">
+              <div class="gb-title" id="git-side-title" data-i18n="git.history">历史</div>
+              <div class="gb-list" id="git-side-list"></div>
+            </div>
+          </div>
+        </div>
+        <div id="chat-rules-pane" class="chat-rules-pane" hidden>
+          <div class="rules-head">
+            <span class="rules-title" data-i18n="rules.title">项目规则(KINET.md)</span>
+            <span class="rules-spacer"></span>
+            <span class="rules-status" id="rules-status"></span>
+            <button class="ghost" id="btn-rules-reload" data-i18n-title="rules.reload" title="重新加载">⟳</button>
+            <button class="primary" id="btn-rules-save" data-i18n="rules.save">保存</button>
+          </div>
+          <textarea class="rules-editor" id="rules-editor" data-i18n-placeholder="rules.ph" placeholder="写在这里的规则会拼到每个会话的 system prompt..."></textarea>
         </div>
       </div>
 
       <!-- settings view -->
       <div id="settings-view" class="view">
         <div id="settings"></div>
+      </div>
+
+      <!-- workbench view(项目卡片总览,每个 cwd 一个项目)-->
+      <div id="workbench-view" class="view">
+        <div id="workbench"></div>
       </div>
     </main>
   </div>
@@ -88,6 +154,21 @@
       <div class="actions">
         <button id="prompt-cancel" data-i18n="common.cancel">取消</button>
         <button class="primary" id="prompt-ok" data-i18n="common.ok">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 项目背景编辑器(workbench 卡片「背景」按钮弹出;写 cwd/KINET-CONTEXT.md)-->
+  <div id="context-modal">
+    <div class="modal-card cm-card">
+      <h3 id="cm-title" data-i18n="wb.contextTitle">项目背景(KINET-CONTEXT.md)</h3>
+      <div class="cm-cwd" id="cm-cwd"></div>
+      <textarea class="cm-editor" id="cm-editor" data-i18n-placeholder="wb.contextPh"></textarea>
+      <div class="actions">
+        <span class="cm-status" id="cm-status"></span>
+        <span class="cm-spacer"></span>
+        <button id="cm-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary" id="cm-save" data-i18n="rules.save">保存</button>
       </div>
     </div>
   </div>

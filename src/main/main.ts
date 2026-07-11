@@ -5,6 +5,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import os from 'node:os';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { initStore } from './store';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
@@ -12,8 +14,11 @@ import { currentProvider } from './glm';
 import { listSkills } from './skills';
 import { mcp } from './mcp';
 import { getBrand } from './brand';
+import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
-import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind } from '../shared/types';
+import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind, GitChange, GitCommit, GitDiffResult, GitSnapshot } from '../shared/types';
+
+const execFileAsync = promisify(execFile);
 
 // 兜底:未捕获异常/拒绝都记到 crash.log + stderr,避免 app 静默退出无从排查。
 function logFatal(kind: string, e: unknown): void {
@@ -31,6 +36,7 @@ process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
 let metricsWin: BrowserWindow | null = null;
+let filesWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
 let tray: Tray | null = null;
 let quitting = false;
@@ -93,6 +99,7 @@ function createDashboard(): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       sandbox: true, // preload only uses contextBridge + ipcRenderer — both available sandboxed.
+      webviewTag: true, // 主窗口聊天 tab 嵌文件浏览器,需要 <webview> 加载 file:///https:// 预览。
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
@@ -155,6 +162,110 @@ function toggleMetricsWindow(): void {
   }
   metricsWin = createMetricsWindow();
   metricsWin.on('closed', () => (metricsWin = null));
+}
+
+// Files & Preview 窗口(cwd 文件树 + <webview> 浏览器,左右分屏)。
+// webviewTag 必须显式开 —— 父页面要用 <webview> 加载 file:// / https:// 预览 agent 产物。
+// 已开则聚焦并向 renderer 推 cwd(切目录);首开则 did-finish-load 后推一次。
+function createFilesWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 700,
+    minWidth: 700,
+    minHeight: 420,
+    backgroundColor: '#1b1b1f',
+    title: `${getBrand().productName} · ${t(getSettings().lang, 'files.title')}`,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'files.html'));
+  return win;
+}
+function toggleFilesWindow(cwd?: string): void {
+  const push = () => { if (cwd) safeSend(filesWin, 'files-cwd', cwd); };
+  if (filesWin && !filesWin.isDestroyed()) {
+    filesWin.focus();
+    push();
+    return;
+  }
+  filesWin = createFilesWindow();
+  filesWin.webContents.once('did-finish-load', push);
+  filesWin.on('closed', () => (filesWin = null));
+}
+
+// 文件树 readdir:一次一层,黑名单目录跳过(常见巨型/无关目录)。size 不返回(用不到,省一次 stat)。
+function listDirAbs(absPath: string): { ok: boolean; entries?: import('../shared/types').DirEntry[]; error?: string } {
+  try {
+    const ents = fs.readdirSync(absPath, { withFileTypes: true });
+    const out: import('../shared/types').DirEntry[] = [];
+    for (const e of ents) {
+      if (e.isSymbolicLink()) continue; // 防环 + 权限怪问题
+      if (e.name.startsWith('.') && e.name !== '.') continue; // dotfiles 隐藏(.git/.vscode/.DS_Store…)
+      if (DIR_BLACKLIST.has(e.name)) continue;
+      out.push({ name: e.name, path: path.resolve(absPath, e.name), isDir: e.isDirectory() });
+    }
+    out.sort((a, b) => (a.isDir === b.isDir ? a.name.localeCompare(b.name) : a.isDir ? -1 : 1));
+    return { ok: true, entries: out };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
+const DIR_BLACKLIST = new Set(['node_modules', 'dist', 'build', '.next', '.cache', 'target', 'venv', '__pycache__', '.gradle']);
+
+// Git 浏览:status + log 一次抓全(execFile 无 shell,binEnv 兜底 GUI 启动的稀疏 PATH)。
+// ponytail: 不做缓存,renderer 每次切到 git tab 主动 refresh。大仓库也 <100ms。
+async function runGit(args: string[], cwd: string): Promise<string> {
+  const { stdout } = await execFileAsync('git', args, { cwd, env: binEnv(), maxBuffer: 5 * 1024 * 1024 });
+  return stdout;
+}
+async function gitSnapshotAsync(cwd: string): Promise<GitSnapshot> {
+  try {
+    const [branchOut, statusOut, logOut] = await Promise.all([
+      runGit(['rev-parse', '--abbrev-ref', 'HEAD'], cwd),
+      runGit(['status', '--porcelain=v1', '-b', '-uall'], cwd),
+      runGit(['log', '-n', '30', '--pretty=format:%h|%an|%ad|%s', '--date=short'], cwd).catch(() => ''),
+    ]);
+    const branch = branchOut.trim();
+    const changes: GitChange[] = [];
+    for (const line of statusOut.split('\n')) {
+      if (!line || line.startsWith('## ')) continue;
+      const xy = line.slice(0, 2);
+      const rest = line.slice(3);
+      const filePath = rest.includes(' -> ') ? rest.split(' -> ')[1] : rest; // R  old -> new 取新名
+      const staged = xy[0] !== ' ' && xy[0] !== '?';
+      const code = xy[1] !== ' ' ? xy[1] : xy[0]; // 工作区状态优先,否则索引状态
+      changes.push({ path: filePath, code, staged });
+    }
+    const log: GitCommit[] = logOut
+      .split('\n')
+      .filter(Boolean)
+      .map((line) => {
+        const [hash, author, date, ...rest] = line.split('|');
+        return { hash: hash ?? '', author: author ?? '', date: date ?? '', subject: rest.join('|') };
+      });
+    return { ok: true, branch, changes, log };
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    // 不是 git 仓库时 rev-parse 会非零退出。
+    return { ok: false, error: /not a git repository|unknown revision/i.test(msg) ? t(getSettings().lang, 'git.errRepo') : msg };
+  }
+}
+async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string }): Promise<GitDiffResult> {
+  try {
+    let args: string[];
+    if (opts.hash) args = ['show', opts.hash];
+    else if (opts.file) args = ['diff', 'HEAD', '--', opts.file];
+    else args = ['diff', 'HEAD'];
+    const diff = await runGit(args, cwd);
+    return { ok: true, diff };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
 }
 
 // MARK: 托盘(程序生成的金色圆 icon,无需图标资源;关窗留托盘,全局热键常驻)
@@ -333,6 +444,53 @@ function registerIpc(): void {
   ipcMain.handle('open-dashboard', () => {
     toggleMetricsWindow();
     return true;
+  });
+  ipcMain.handle('open-files', (_e, cwd?: string) => {
+    toggleFilesWindow(cwd && cwd.trim() ? cwd.trim() : undefined);
+    return true;
+  });
+  ipcMain.handle('list-dir', (_e, absPath: string) => listDirAbs(absPath));
+  ipcMain.handle('git-snapshot', (_e, cwd: string) => gitSnapshotAsync(cwd));
+  ipcMain.handle('git-diff', (_e, cwd: string, opts: { file?: string; hash?: string }) =>
+    gitDiffAsync(cwd, opts),
+  );
+  // KINET.md 读写:rules tab 用。固定读 cwd/KINET.md,不接受相对路径(避免越界)。
+  ipcMain.handle('read-rules', (_e, cwd: string) => {
+    try {
+      const full = path.join(cwd, 'KINET.md');
+      const body = fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
+      return { ok: true, content: body };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('write-rules', (_e, cwd: string, content: string) => {
+    try {
+      if (!cwd || !fs.statSync(cwd).isDirectory()) return { ok: false, error: 'bad cwd' };
+      fs.writeFileSync(path.join(cwd, 'KINET.md'), content ?? '', 'utf8');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // KINET-CONTEXT.md(项目级背景知识)读写:workbench 卡片「背景」按钮用。同 rules 路径约束。
+  ipcMain.handle('read-context', (_e, cwd: string) => {
+    try {
+      const full = path.join(cwd, 'KINET-CONTEXT.md');
+      const body = fs.existsSync(full) ? fs.readFileSync(full, 'utf8') : '';
+      return { ok: true, content: body };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('write-context', (_e, cwd: string, content: string) => {
+    try {
+      if (!cwd || !fs.statSync(cwd).isDirectory()) return { ok: false, error: 'bad cwd' };
+      fs.writeFileSync(path.join(cwd, 'KINET-CONTEXT.md'), content ?? '', 'utf8');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
   });
 }
 

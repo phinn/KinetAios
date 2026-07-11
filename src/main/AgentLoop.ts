@@ -202,6 +202,8 @@ async function runToolBatch(
   onEvent: (e: AgentEvent) => void,
 ): Promise<ChatMsg[]> {
   const results: ChatMsg[] = [];
+  // 执行前发个 status → 聊天框 streaming 区显示「执行 X, Y…」,让用户知道在跑工具(不只三点)。
+  if (calls.length) onEvent({ type: 'status', text: t(getSettings().lang, 'al.executing', { tools: calls.map((c) => c.name).join(', ') }) });
   let i = 0;
   while (i < calls.length) {
     if (signal.aborted) {

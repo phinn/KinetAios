@@ -2,8 +2,9 @@
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS } from '../shared/types';
 import { t, LANGS, type Lang } from '../shared/i18n';
-import type { AppSettings, Conversation, EngineKind, KinetAPI, SkillInfo } from '../shared/types';
+import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
+import { mountFilesPane, type FilesPaneController } from './files-pane';
 
 declare global {
   interface Window {
@@ -16,6 +17,10 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
+let currentView: 'chat' | 'settings' | 'workbench' = 'chat';
+// 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
+let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
+const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashItems: SkillInfo[] = []; // current filtered view
@@ -23,6 +28,16 @@ let slashIndex = 0;
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
 let lang: Lang = 'zh-CN'; // UI 语言(启动从 settings 读,切语言后更新 + applyI18nDOM)
+let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
+let activeTab: 'chat' | 'files' | 'git' | 'rules' = 'chat';
+// git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
+// view.contentHTML 是已转义 + 按行包好 .d-add/.d-del/.d-hunk 的安全 HTML。
+let gitState: { snapshot?: GitSnapshot; view: { kind: 'history' } | { kind: 'diff'; title: string; contentHTML: string }; lastCwd: string } = {
+  view: { kind: 'history' },
+  lastCwd: '',
+};
+// rules tab:工作目录下的 KINET.md。rulesCwd 跟踪当前加载的 cwd,切会话且 cwd 变了就重载。
+let rulesCwd = '';
 function tr(key: string, params?: Record<string, string | number>): string {
   return t(lang, key, params);
 }
@@ -33,6 +48,8 @@ function applyI18nDOM(): void {
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(lang, el.dataset.i18n!); });
   document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => { el.title = t(lang, el.dataset.i18nTitle!); });
   document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => { (el as HTMLInputElement).placeholder = t(lang, el.dataset.i18nPlaceholder!); });
+  // 模式按钮的 title 跟随当前模式(不是静态 key),applyI18nDOM 会重写 title,这里补回去。
+  syncSidebarModeBtn();
 }
 
 // ---------- bootstrap ----------
@@ -66,6 +83,7 @@ function applyI18nDOM(): void {
     if (isNew) order.unshift(conv.id);
     renderSidebar();
     if (conv.id === selectedId) renderMain();
+    if (currentView === 'workbench') renderWorkbench();
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
@@ -73,6 +91,7 @@ function applyI18nDOM(): void {
     if (selectedId === id) selectedId = order[0] ?? null;
     renderSidebar();
     renderMain();
+    if (currentView === 'workbench') renderWorkbench();
   });
   api.onAgentEvent((convId, ev) => {
     const conv = convs.get(convId);
@@ -82,17 +101,25 @@ function applyI18nDOM(): void {
       if (ev.type === 'token') streamAppend(ev.text);
       else renderMain();
     }
-    if (ev.type !== 'token') renderSidebar();
+    if (ev.type !== 'token') {
+      renderSidebar();
+      if (currentView === 'workbench' && (ev.type === 'cost' || ev.type === 'done' || ev.type === 'error')) {
+        renderWorkbench();
+      }
+    }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
 
   fillModelHints();
   wireUi();
+  syncSidebarModeBtn();
+  syncViewButtons();
   renderSidebar();
   renderMain();
 })();
 
 // ---------- sidebar ----------
+// 两种模式:grouped(按 cwd 分项目)和 flat(原始平铺)。底部按钮切换。
 function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
   ul.innerHTML = '';
@@ -100,29 +127,94 @@ function renderSidebar() {
     ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(tr('sidebar.empty')) + '</li>';
     return;
   }
+  // flat 模式 = 原始平铺;grouped = 按 cwd 分项目(默认)。
+  if (sidebarMode === 'flat') {
+    for (const id of order) {
+      const c = convs.get(id);
+      if (!c) continue;
+      ul.appendChild(flatTaskLi(id));
+    }
+    return;
+  }
+  // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
+  const groups = new Map<string, string[]>();
   for (const id of order) {
     const c = convs.get(id);
     if (!c) continue;
-    const li = document.createElement('li');
-    if (id === selectedId) li.classList.add('active');
-    const last = c.turns[c.turns.length - 1];
-    const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
-    const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-    li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
-    li.onclick = () => {
-      selectedId = id;
-      renderSidebar();
-      renderMain();
-    };
-    li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
-      btn.onclick = (e) => {
-        e.stopPropagation();
-        if (btn.dataset.act === 'rename') void renameConv(id);
-        else if (btn.dataset.act === 'delete') void deleteConv(id);
-      };
-    });
-    ul.appendChild(li);
+    const key = c.cwd || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(id);
   }
+  for (const [cwd, ids] of groups) {
+    const projLi = document.createElement('li');
+    projLi.className = 'sb-proj';
+    const head = document.createElement('div');
+    head.className = 'sb-proj-head';
+    const collapsed = collapsedProjects.has(cwd);
+    const name = projName(cwd);
+    head.innerHTML =
+      `<span class="sb-chevron">${collapsed ? '▶' : '▼'}</span>` +
+      `<span class="sb-pico">📁</span>` +
+      `<span class="sb-pname">${esc(name)}</span>` +
+      `<span class="sb-pcount">${ids.length}</span>` +
+      `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
+    head.onclick = (e) => {
+      if ((e.target as HTMLElement)?.closest('[data-act]')) return;
+      if (collapsedProjects.has(cwd)) collapsedProjects.delete(cwd);
+      else collapsedProjects.add(cwd);
+      renderSidebar();
+    };
+    head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
+      e.stopPropagation();
+      void newTaskInProject(cwd);
+    };
+    head.title = cwd || tr('wb.ungrouped');
+    projLi.appendChild(head);
+    if (!collapsed) {
+      const tasksUl = document.createElement('ul');
+      tasksUl.className = 'sb-proj-tasks';
+      for (const id of ids) tasksUl.appendChild(taskLi(id, cwd));
+      projLi.appendChild(tasksUl);
+    }
+    ul.appendChild(projLi);
+  }
+}
+
+// 单条任务条目(原 renderSidebar 主体抽出,作为分组的子项)。
+function taskLi(id: string, _cwd: string): HTMLElement {
+  const li = flatTaskLi(id);
+  return li;
+}
+
+// flat 模式下的单条条目(不挂分组头)。与 taskLi 共享 markup/事件,只是被加到顶层 ul。
+function flatTaskLi(id: string): HTMLElement {
+  const c = convs.get(id)!;
+  const li = document.createElement('li');
+  if (id === selectedId) li.classList.add('active');
+  const last = c.turns[c.turns.length - 1];
+  const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
+  const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+  li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
+  li.onclick = () => {
+    selectedId = id;
+    showChat();
+    renderSidebar();
+  };
+  li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      if (btn.dataset.act === 'rename') void renameConv(id);
+      else if (btn.dataset.act === 'delete') void deleteConv(id);
+    };
+  });
+  return li;
+}
+
+// 项目名 = cwd basename;无 cwd 走「未分类」(homedir 兜底场景)。
+function projName(cwd: string): string {
+  if (!cwd) return tr('wb.ungrouped');
+  const base = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  return base || cwd;
 }
 
 // Electron renderer 不支持 window.prompt(),用自定义输入 modal 替代。
@@ -169,6 +261,238 @@ async function deleteConv(id: string) {
 }
 
 // ---------- main pane ----------
+// 聊天 tab 切换(对话 / 文件 / Git / 规则)。文件 tab 首次点才挂 mountFilesPane;切会话后切回任一 tab 都同步 cwd。
+function showTab(tab: 'chat' | 'files' | 'git' | 'rules'): void {
+  if (activeTab === tab) return;
+  activeTab = tab;
+  document.getElementById('tab-chat')!.classList.toggle('active', tab === 'chat');
+  document.getElementById('tab-files')!.classList.toggle('active', tab === 'files');
+  document.getElementById('tab-git')!.classList.toggle('active', tab === 'git');
+  document.getElementById('tab-rules')!.classList.toggle('active', tab === 'rules');
+  document.getElementById('chat-content')!.hidden = tab !== 'chat';
+  document.getElementById('chat-files-pane')!.hidden = tab !== 'files';
+  document.getElementById('chat-git-pane')!.hidden = tab !== 'git';
+  document.getElementById('chat-rules-pane')!.hidden = tab !== 'rules';
+  if (tab === 'files') {
+    if (!filesController) {
+      const pane = document.getElementById('chat-files-pane')!;
+      // files-pane.ts 的 querySelector 都基于 root(pane),不会越界。
+      // ponytail: 用当前 lang 挂载;切语言后需要重挂(简化:暂不处理,首次挂载语言固定)。
+      filesController = mountFilesPane(pane, lang);
+    }
+    const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+    filesController.setCwd(cwd);
+  }
+  if (tab === 'git') {
+    const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+    if (cwd && cwd !== gitState.lastCwd) void refreshGit(cwd);
+    else renderGit();
+  }
+  if (tab === 'rules') {
+    const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+    if (cwd && cwd !== rulesCwd) void loadRules(cwd);
+  }
+}
+
+// 加载当前 cwd 的 KINET.md 到 editor。空文件 → 空白 textarea(保存就创建文件)。
+async function loadRules(cwd: string): Promise<void> {
+  rulesCwd = cwd;
+  const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
+  const status = document.getElementById('rules-status')!;
+  status.textContent = '';
+  if (!cwd) {
+    editor.value = '';
+    editor.disabled = true;
+    return;
+  }
+  editor.disabled = false;
+  editor.value = '…';
+  const r = await api.readRules(cwd);
+  editor.value = r.ok ? r.content ?? '' : '';
+  if (!r.ok) status.textContent = r.error ?? '';
+}
+
+async function saveRules(): Promise<void> {
+  if (!rulesCwd) return;
+  const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
+  const status = document.getElementById('rules-status')!;
+  status.textContent = '…';
+  const r = await api.writeRules(rulesCwd, editor.value);
+  status.textContent = r.ok ? tr('rules.saved') : tr('rules.saveErr', { msg: r.error ?? '' });
+}
+
+// Git tab:抓 snapshot + 渲染。cwd 切换 / 手动刷新时调;切回 history 视图。
+async function refreshGit(cwd: string): Promise<void> {
+  gitState.lastCwd = cwd;
+  gitState.view = { kind: 'history' };
+  gitState.snapshot = undefined;
+  renderGit();
+  const r = await api.gitSnapshot(cwd);
+  gitState.snapshot = r;
+  renderGit();
+}
+
+// 单字符状态码 → i18n 标签 key 后缀(M/A/D/R → 自身,其它 ??/! → U)。
+function gitCodeSuffix(code: string): string {
+  return ['M', 'A', 'D', 'R'].includes(code) ? code : 'U';
+}
+
+function renderGit(): void {
+  const branchEl = document.getElementById('git-branch')!;
+  const changesEl = document.getElementById('git-changes-list')!;
+  const sideTitleEl = document.getElementById('git-side-title')!;
+  const sideListEl = document.getElementById('git-side-list')!;
+  const snap = gitState.snapshot;
+  if (!snap) {
+    branchEl.textContent = '…';
+    changesEl.innerHTML = '';
+    sideTitleEl.textContent = tr('git.history');
+    sideListEl.innerHTML = '';
+    return;
+  }
+  if (!snap.ok) {
+    branchEl.textContent = snap.error ?? '';
+    changesEl.innerHTML = '';
+    sideListEl.innerHTML = '';
+    return;
+  }
+  branchEl.textContent = `🌿 ${snap.branch ?? ''} · ${snap.changes?.length ?? 0} ${tr('git.changes')}`;
+  // changes
+  if (!snap.changes?.length) {
+    changesEl.innerHTML = `<div class="git-empty">${esc(tr('git.empty'))}</div>`;
+  } else {
+    changesEl.innerHTML = snap.changes
+      .map(
+        (c) =>
+          `<div class="gc-row" data-path="${esc(c.path)}"><span class="gc-code ${esc(gitCodeSuffix(c.code))}">${esc(c.code)}</span><span class="gc-label">${esc(tr('git.stat' + gitCodeSuffix(c.code)))}</span><span class="gc-path">${esc(c.path)}</span></div>`,
+      )
+      .join('');
+    changesEl.querySelectorAll<HTMLElement>('.gc-row').forEach((row) => {
+      row.onclick = () => void showGitDiff({ file: row.dataset.path! });
+    });
+  }
+  // side:history 或 diff
+  if (gitState.view.kind === 'history') {
+    sideTitleEl.textContent = tr('git.history');
+    if (!snap.log?.length) {
+      sideListEl.innerHTML = `<div class="git-empty">${esc(tr('git.empty'))}</div>`;
+    } else {
+      sideListEl.innerHTML = snap.log
+        .map(
+          (c) =>
+            `<div class="gl-row" data-hash="${esc(c.hash)}"><span class="gl-hash">${esc(c.hash)}</span><span class="gl-date">${esc(c.date)}</span><span class="gl-subject">${esc(c.subject)}</span><span class="gl-author">${esc(c.author)}</span></div>`,
+        )
+        .join('');
+      sideListEl.querySelectorAll<HTMLElement>('.gl-row').forEach((row) => {
+        row.onclick = () => void showGitDiff({ hash: row.dataset.hash! });
+      });
+    }
+  } else {
+    sideTitleEl.innerHTML = `<button class="ghost git-back" id="git-back">← ${esc(tr('git.history'))}</button><span class="git-diff-title">${esc(gitState.view.title)}</span>`;
+    sideListEl.innerHTML = gitState.view.contentHTML;
+    document.getElementById('git-back')!.onclick = () => {
+      gitState.view = { kind: 'history' };
+      renderGit();
+    };
+  }
+}
+
+async function showGitDiff(opts: { file?: string; hash?: string }): Promise<void> {
+  const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+  if (!cwd) return;
+  const title = opts.hash
+    ? `${tr('git.history')}: ${opts.hash}`
+    : `${tr('git.diff')}: ${opts.file ?? ''}`;
+  // 先占位再异步加载,体感更快。
+  gitState.view = { kind: 'diff', title, contentHTML: '<pre class="git-diff"><span class="d-hunk">…</span></pre>' };
+  renderGit();
+  const r = await api.gitDiff(cwd, opts);
+  // 文件 diff 走左右对比(看修改点更直观);commit show 涉及多文件,保留统一格式。
+  const html = !r.ok
+    ? `<pre class="git-diff"><span class="d-del">${esc(r.error ?? '')}</span></pre>`
+    : opts.file
+      ? renderSideBySide(r.diff || '')
+      : colorGitDiff(r.diff || '');
+  gitState.view = { kind: 'diff', title, contentHTML: html };
+  renderGit();
+}
+
+// Diff 按行着色(统一格式,commit show 用)。+/-/@@/+++ --- 不同色;每行独立 esc。
+function colorGitDiff(s: string): string {
+  if (!s) return '<pre class="git-diff"><span class="d-hunk">(empty)</span></pre>';
+  const body = s
+    .split('\n')
+    .map((line) => {
+      const e = esc(line);
+      if (line.startsWith('+++') || line.startsWith('---')) return `<span class="d-hunk">${e}</span>`;
+      if (line.startsWith('+')) return `<span class="d-add">${e}</span>`;
+      if (line.startsWith('-')) return `<span class="d-del">${e}</span>`;
+      if (line.startsWith('@@')) return `<span class="d-hunk">${e}</span>`;
+      return e;
+    })
+    .join('\n');
+  return `<pre class="git-diff">${body}</pre>`;
+}
+
+// 文件 diff 的左右对比:把 unified diff 解析成对齐的「左旧 / 右新」行。
+// ponytail: 同一 hunk 内连续的 - 与 + 按行配对(逐对对齐),多出来的用空行垫;不做 token 级 diff,够直观。
+type SSRow =
+  | { kind: 'hunk'; text: string }
+  | { kind: 'ctx'; ln: number; rn: number; text: string }
+  | { kind: 'pair'; ln: number | null; lt: string; rn: number | null; rt: string; cls: string };
+function renderSideBySide(diff: string): string {
+  if (!diff || !diff.includes('@@')) return '<span class="d-hunk">(无差异)</span>';
+  const rows: SSRow[] = [];
+  let ln = 0;
+  let rn = 0;
+  let delRun: string[] = [];
+  let addRun: string[] = [];
+  const flushRuns = () => {
+    const len = Math.max(delRun.length, addRun.length);
+    for (let i = 0; i < len; i++) {
+      const lTxt = i < delRun.length ? delRun[i] : '';
+      const rTxt = i < addRun.length ? addRun[i] : '';
+      const cls = lTxt && rTxt ? 'ss-mod' : lTxt ? 'ss-del' : 'ss-add';
+      rows.push({ kind: 'pair', ln: lTxt ? ln++ : null, lt: lTxt, rn: rTxt ? rn++ : null, rt: rTxt, cls });
+    }
+    delRun = [];
+    addRun = [];
+  };
+  let inHunk = false;
+  for (const line of diff.split('\n')) {
+    if (line.startsWith('@@')) {
+      flushRuns();
+      const m = line.match(/@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+      if (m) {
+        ln = parseInt(m[1], 10);
+        rn = parseInt(m[2], 10);
+      }
+      rows.push({ kind: 'hunk', text: line });
+      inHunk = true;
+      continue;
+    }
+    if (!inHunk) continue; // skip "diff --git" / "index" / "---" / "+++" 文件头
+    if (line.startsWith('-')) delRun.push(line.slice(1));
+    else if (line.startsWith('+')) addRun.push(line.slice(1));
+    else {
+      flushRuns();
+      const txt = line.startsWith(' ') ? line.slice(1) : '';
+      rows.push({ kind: 'ctx', ln: ln++, rn: rn++, text: txt });
+    }
+  }
+  flushRuns();
+  const body = rows
+    .map((r) => {
+      if (r.kind === 'hunk') return `<tr class="ss-hunk"><td colspan="4">${esc(r.text)}</td></tr>`;
+      if (r.kind === 'ctx')
+        return `<tr><td class="ss-num">${r.ln}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td><td class="ss-num">${r.rn}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td></tr>`;
+      return `<tr class="${r.cls}"><td class="ss-num">${r.ln ?? ''}</td><td class="ss-txt">${esc(r.lt) || '&nbsp;'}</td><td class="ss-num">${r.rn ?? ''}</td><td class="ss-txt">${esc(r.rt) || '&nbsp;'}</td></tr>`;
+    })
+    .join('');
+  return `<table class="git-ss"><thead><tr><th class="ss-num"></th><th>${esc(tr('git.before'))}</th><th class="ss-num"></th><th>${esc(tr('git.after'))}</th></tr></thead><tbody>${body}</tbody></table>`;
+}
+
+
 function renderMain() {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   renderHead(conv);
@@ -185,6 +509,12 @@ function renderMain() {
     turns.appendChild(renderTurn(conv, i));
   }
   scrollDown();
+  // 切会话后,文件 tab 若已挂,跟着换 cwd(切到当前会话的 cwd)。
+  if (activeTab === 'files' && filesController) filesController.setCwd(conv.cwd);
+  // git tab:cwd 变了就重抓 snapshot(切会话是最常见的触发)。
+  if (activeTab === 'git' && conv.cwd !== gitState.lastCwd) void refreshGit(conv.cwd);
+  // rules tab:cwd 变了就重载 KINET.md。
+  if (activeTab === 'rules' && conv.cwd !== rulesCwd) void loadRules(conv.cwd);
 }
 
 function renderHead(conv: Conversation | undefined) {
@@ -277,8 +607,9 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (streaming) {
       ans.id = 'streaming-answer';
       ans.classList.add('streaming');
-      // 接口还没返回首个 token → 头像旁显示三点"思考中"反馈;token 一到 streamPatch 会用正文覆盖。
+      // 首 token 前:显示当前动作(statusNote,如「请求中…/执行 shell…」)让用户知道在干嘛;无则三点。
       if (t.answer) ans.textContent = t.answer;
+      else if (conv.statusNote) ans.innerHTML = '<span class="typing-note"><span class="typing"><i></i><i></i><i></i></span>' + esc(conv.statusNote) + '</span>';
       else ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       ans.innerHTML = md(t.answer);
@@ -344,8 +675,11 @@ function scrollDown() {
 
 // ---------- settings ----------
 async function showSettings() {
+  currentView = 'settings';
   document.getElementById('chat-view')!.classList.remove('active');
+  document.getElementById('workbench-view')!.classList.remove('active');
   document.getElementById('settings-view')!.classList.add('active');
+  syncViewButtons();
   const s = await api.getSettings();
   const root = document.getElementById('settings')!;
   root.innerHTML = `
@@ -483,12 +817,45 @@ function wireUi() {
     if (document.getElementById('settings-view')!.classList.contains('active')) showChat();
     else showSettings();
   };
+  document.getElementById('btn-wb')!.onclick = () => {
+    if (document.getElementById('workbench-view')!.classList.contains('active')) showChat();
+    else showWorkbench();
+  };
+  // 侧栏底部按钮:grouped ↔ flat 切换。图标和 title 跟随当前模式(显示「下一个会变成的」)。
+  document.getElementById('sb-mode-toggle')!.onclick = () => {
+    sidebarMode = sidebarMode === 'grouped' ? 'flat' : 'grouped';
+    localStorage.setItem('sb-mode', sidebarMode);
+    syncSidebarModeBtn();
+    renderSidebar();
+  };
   document.getElementById('btn-dashboard')!.onclick = () => void api.openDashboard();
+  document.getElementById('btn-files')!.onclick = () => {
+    // 拿当前选中会话的 cwd 开 files 窗口;无选中会话则让 main 兜底用 os.homedir()。
+    const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
+    void api.openFiles(c);
+  };
+
+  // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
+  document.getElementById('tab-chat')!.onclick = () => showTab('chat');
+  document.getElementById('tab-files')!.onclick = () => showTab('files');
+  document.getElementById('tab-git')!.onclick = () => showTab('git');
+  document.getElementById('btn-git-refresh')!.onclick = () => {
+    const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+    if (cwd) void refreshGit(cwd);
+  };
+  document.getElementById('tab-rules')!.onclick = () => showTab('rules');
+  document.getElementById('btn-rules-save')!.onclick = () => void saveRules();
+  document.getElementById('btn-rules-reload')!.onclick = () => {
+    if (rulesCwd) void loadRules(rulesCwd);
+  };
   document.getElementById('btn-clear')!.onclick = () => selectedId && api.clearConversation(selectedId);
   document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);
   document.getElementById('btn-send')!.onclick = send;
   document.getElementById('modal-ok')!.onclick = () => closeConfirm(true);
   document.getElementById('modal-cancel')!.onclick = () => closeConfirm(false);
+  // 项目背景编辑器(workbench 卡片「背景」按钮触发)。
+  document.getElementById('cm-cancel')!.onclick = () => closeContextModal();
+  document.getElementById('cm-save')!.onclick = () => void saveContext();
 
   const cwd = document.getElementById('cwd-input') as HTMLInputElement;
   cwd.addEventListener('change', () => {
@@ -634,9 +1001,190 @@ async function send() {
 }
 
 function showChat() {
+  currentView = 'chat';
   document.getElementById('settings-view')!.classList.remove('active');
+  document.getElementById('workbench-view')!.classList.remove('active');
   document.getElementById('chat-view')!.classList.add('active');
+  syncViewButtons();
   renderMain();
+}
+
+function showWorkbench() {
+  currentView = 'workbench';
+  document.getElementById('chat-view')!.classList.remove('active');
+  document.getElementById('settings-view')!.classList.remove('active');
+  document.getElementById('workbench-view')!.classList.add('active');
+  syncViewButtons();
+  renderWorkbench();
+}
+
+// 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
+function syncViewButtons(): void {
+  document.getElementById('btn-wb')!.classList.toggle('active', currentView === 'workbench');
+  document.getElementById('btn-settings')!.classList.toggle('active', currentView === 'settings');
+}
+
+// 侧栏底部模式按钮:grouped 时显示 ▤(下一步变 flat);flat 时显示 ▦(下一步变 grouped)。
+// 图标始终代表「点一下会变成什么」,与播放/暂停按钮同理。
+function syncSidebarModeBtn(): void {
+  const btn = document.getElementById('sb-mode-toggle')!;
+  if (sidebarMode === 'grouped') {
+    btn.textContent = '▤';
+    btn.title = tr('sidebar.modeFlat');
+    btn.dataset.i18nTitle = 'sidebar.modeFlat';
+  } else {
+    btn.textContent = '▦';
+    btn.title = tr('sidebar.modeGrouped');
+    btn.dataset.i18nTitle = 'sidebar.modeGrouped';
+  }
+}
+
+// ---------- workbench(项目卡片总览)----------
+// 项目 = cwd,卡片显示项目下所有任务聚合的 token / 费用 / 最近活动。
+function renderWorkbench() {
+  const root = document.getElementById('workbench')!;
+  const groups = new Map<string, string[]>();
+  for (const id of order) {
+    const c = convs.get(id);
+    if (!c) continue;
+    const key = c.cwd || '';
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key)!.push(id);
+  }
+  const items = [...groups.entries()];
+  // 项目排序:最近有活动的在前(用项目内最新 conv 的 createdAt)。
+  items.sort((a, b) => {
+    const la = a[1][0] ? convs.get(a[1][0])?.createdAt ?? 0 : 0;
+    const lb = b[1][0] ? convs.get(b[1][0])?.createdAt ?? 0 : 0;
+    return lb - la;
+  });
+  root.innerHTML =
+    `<div class="wb-head">
+      <div class="wb-title">${esc(tr('wb.title'))}</div>
+      <div class="wb-sub">${esc(tr('wb.sub'))}</div>
+      <span class="wb-spacer"></span>
+      <button class="primary" id="wb-new-proj">${esc(tr('wb.newProject'))}</button>
+    </div>` +
+    (items.length === 0
+      ? `<div class="empty">${esc(tr('wb.empty'))}</div>`
+      : `<div class="wb-grid">${items.map(([cwd, ids]) => projCard(cwd, ids)).join('')}</div>`);
+  document.getElementById('wb-new-proj')!.onclick = () => void newProject();
+  root.querySelectorAll<HTMLElement>('.wb-card').forEach((card) => {
+    const cwd = card.dataset.cwd!;
+    card.querySelector<HTMLElement>('.wb-newtask')!.onclick = (e) => { e.stopPropagation(); void newTaskInProject(cwd); };
+    card.querySelector<HTMLElement>('.wb-ctx')!.onclick = (e) => { e.stopPropagation(); void openContextModal(cwd); };
+    card.onclick = () => void openProject(cwd);
+  });
+}
+
+function projCard(cwd: string, ids: string[]): string {
+  let tokens = 0;
+  let cost = 0;
+  let lastTs = 0;
+  let running = false;
+  for (const id of ids) {
+    const c = convs.get(id);
+    if (!c) continue;
+    tokens += c.tokens;
+    cost += c.cost;
+    const t = c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
+    if (t > lastTs) lastTs = t;
+    if (c.status === 'running') running = true;
+  }
+  const stats: string[] = [tr('wb.tasks', { n: ids.length })];
+  if (tokens) stats.push(`${(tokens / 1000).toFixed(1)}k tok`);
+  if (cost) stats.push(`$${cost.toFixed(4)}`);
+  const when = lastTs ? timeAgo(lastTs) : tr('wb.noActivity');
+  return `<div class="wb-card" data-cwd="${esc(cwd)}">
+    <div class="wb-card-head">
+      <span class="wb-picon">${running ? '⚡' : '📁'}</span>
+      <span class="wb-pname">${esc(projName(cwd))}</span>
+      <span class="wb-spacer"></span>
+      <button class="ghost wb-newtask" title="${esc(tr('wb.newTask'))}">＋</button>
+    </div>
+    <div class="wb-cwd">${esc(cwd || tr('wb.ungrouped'))}</div>
+    <div class="wb-stats">${esc(stats.join(' · '))}</div>
+    <div class="wb-last">${esc(tr('wb.last', { when }))}</div>
+    <div class="wb-card-actions">
+      <span class="wb-spacer"></span>
+      <button class="ghost wb-ctx">${esc(tr('wb.context'))}</button>
+    </div>
+  </div>`;
+}
+
+// 选项目里最近一个任务,切到 chat 视图。空项目(理论不会出现,卡片总是至少 1 个)兜底新建。
+async function openProject(cwd: string): Promise<void> {
+  const ids = order.filter((id) => convs.get(id)?.cwd === cwd);
+  if (!ids.length) {
+    void newTaskInProject(cwd);
+    return;
+  }
+  selectedId = ids[0];
+  showChat();
+  renderSidebar();
+}
+
+// 新建项目:挑目录 → 在该目录建首个任务。
+async function newProject(): Promise<void> {
+  const dir = await api.pickDirectory();
+  if (!dir) return;
+  const conv = await api.newConversation(dir);
+  selectedId = conv.id;
+  showChat();
+  renderSidebar();
+  document.getElementById('composer')!.focus();
+}
+
+// 在已有项目下加任务(沿用 cwd,不重新挑目录)。
+async function newTaskInProject(cwd: string): Promise<void> {
+  const conv = await api.newConversation(cwd || undefined);
+  selectedId = conv.id;
+  showChat();
+  renderSidebar();
+  document.getElementById('composer')!.focus();
+}
+
+// 简易相对时间(<1m 刚刚,<1h N 分钟前,<1d N 小时前,否则 N 天前)。
+function timeAgo(ts: number): string {
+  const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return s + 's';
+  if (s < 3600) return Math.floor(s / 60) + 'm';
+  if (s < 86400) return Math.floor(s / 3600) + 'h';
+  return Math.floor(s / 86400) + 'd';
+}
+
+// ---------- 项目背景编辑器(KINET-CONTEXT.md)----------
+// 用 modal:textarea 全屏 + 保存/取消。空 cwd 不允许(workbench 卡片总是带 cwd)。
+let contextCwd = '';
+async function openContextModal(cwd: string): Promise<void> {
+  if (!cwd) return;
+  contextCwd = cwd;
+  const modal = document.getElementById('context-modal')!;
+  const editor = document.getElementById('cm-editor') as HTMLTextAreaElement;
+  const cwdLabel = document.getElementById('cm-cwd')!;
+  const status = document.getElementById('cm-status')!;
+  cwdLabel.textContent = cwd;
+  status.textContent = '';
+  editor.value = '…';
+  modal.classList.add('show');
+  const r = await api.readContext(cwd);
+  editor.value = r.ok ? r.content ?? '' : '';
+  if (!r.ok) status.textContent = r.error ?? '';
+  editor.focus();
+}
+
+async function saveContext(): Promise<void> {
+  if (!contextCwd) return;
+  const editor = document.getElementById('cm-editor') as HTMLTextAreaElement;
+  const status = document.getElementById('cm-status')!;
+  status.textContent = '…';
+  const r = await api.writeContext(contextCwd, editor.value);
+  status.textContent = r.ok ? tr('wb.saved') : tr('wb.saveErr', { msg: r.error ?? '' });
+}
+
+function closeContextModal(): void {
+  contextCwd = '';
+  document.getElementById('context-modal')!.classList.remove('show');
 }
 
 function autosize(el: HTMLTextAreaElement) {

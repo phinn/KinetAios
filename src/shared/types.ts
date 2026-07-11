@@ -113,6 +113,21 @@ export type Conversation = {
   tokens: number;
 };
 
+// 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
+export type DirEntry = { name: string; path: string; isDir: boolean };
+
+// Git 快照(状态 + 最近提交),git tab 用。code 是单字符状态码(M/A/D/R/?/…)。
+export type GitChange = { path: string; code: string; staged: boolean };
+export type GitCommit = { hash: string; author: string; date: string; subject: string };
+export type GitSnapshot = {
+  ok: boolean;
+  branch?: string;
+  changes?: GitChange[];
+  log?: GitCommit[];
+  error?: string;
+};
+export type GitDiffResult = { ok: boolean; diff?: string; error?: string };
+
 // The API the preload exposes to the renderer via contextBridge (window.kinet).
 export interface KinetAPI {
   getConversations(): Promise<Conversation[]>;
@@ -135,7 +150,16 @@ export interface KinetAPI {
   getBrand(): Promise<{ productName: string }>;
   quickSubmit(text: string): Promise<string>;
   openDashboard(): Promise<void>;
+  openFiles(cwd?: string): Promise<void>;
+  listDir(absPath: string): Promise<{ ok: boolean; entries?: DirEntry[]; error?: string }>;
+  gitSnapshot(cwd: string): Promise<GitSnapshot>;
+  gitDiff(cwd: string, opts: { file?: string; hash?: string }): Promise<GitDiffResult>;
+  readRules(cwd: string): Promise<{ ok: boolean; content?: string; error?: string }>;
+  writeRules(cwd: string, content: string): Promise<{ ok: boolean; error?: string }>;
+  readContext(cwd: string): Promise<{ ok: boolean; content?: string; error?: string }>;
+  writeContext(cwd: string, content: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
+  onFilesCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string }) => void): void;
