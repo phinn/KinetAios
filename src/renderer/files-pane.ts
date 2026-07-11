@@ -109,9 +109,8 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
     } else {
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
-      // 单击只选中(高亮,告知当前文件);双击才打开(预览/编辑按后缀)。和系统文件管理器一致。
-      row.onclick = () => selectRow(row);
-      row.ondblclick = () => {
+      // 单击 = 选中 + 立即打开(按后缀选预览或编辑器)。保留选中态视觉,但不再强制双击。
+      row.onclick = () => {
         selectRow(row);
         if (isPreviewExt(e.path)) { setTab('preview'); loadFile(e.path); }
         else void loadEditor(e.path);
