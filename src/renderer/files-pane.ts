@@ -166,8 +166,13 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
   function loadFile(abs: string): void {
     currentAbs = abs;
-    const url = 'file://' + abs;
-    webview.loadURL(url);
+    // encodeURI 把空格/中文/特殊字符转义(file:// URL 里这些会断),
+    // 但保留 : / ? # @ 等 URL 结构字符。Windows 路径的反斜杠也顺手转成 /。
+    const absenc = abs.replace(/\\/g, '/');
+    const url = 'file://' + encodeURI(absenc);
+    // ponytail: 直接赋 src 比 loadURL 在「同 webview 切换不同 file://」更可靠 ——
+    // loadURL 在前一次 load 未结束时会偶发被吞,src 赋值 Electron 总是会触发 reload。
+    webview.src = url;
     addr.value = url;
   }
 
