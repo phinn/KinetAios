@@ -26,7 +26,11 @@
       "dist/**/*",
       "package.json"
     ],
-    "asar": false,
+    "asar": true,
+    "asarUnpack": [
+      "**/better-sqlite3/**",
+      "**/*.node"
+    ],
     "win": {
       "target": ["nsis"]
     },
