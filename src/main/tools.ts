@@ -326,6 +326,39 @@ const editFile: Tool = {
   },
 };
 
+// git_diff:看工作区/暂存区/某次提交的文件 diff。比 shell + git diff 干净(无确认、自动截断)。
+// readOnly → 同轮可并发(常与 read_file/grep 一起查代码)。
+// ponytail: 走 shellExec(过 cmd.exe/sh),靠 shellQuote 兜住空格/特殊字符;若 LLM 塞复杂 ref
+// 仍可能被 shell 解释,但 git ref 字符集窄(字母数字/~/^/.),实操不会出问题。
+function shellQuote(s: string): string {
+  return '"' + String(s).replace(/(["$`\\])/g, '\\$1') + '"';
+}
+const gitDiff: Tool = {
+  name: 'git_diff',
+  readOnly: true,
+  description:
+    '看 git 仓库里的文件 diff。三种模式:(1) 不传参 = 工作区相对 HEAD 的所有改动;(2) 传 file = 单个文件;(3) 传 ref = 与某个提交/分支比较(如 ref=HEAD~1 看上次提交后的变化,cached=true 看已 staged 的)。需要先看改动再决定怎么改代码时用,比 shell git diff 干净(自动跳过确认)。',
+  parameters: {
+    type: 'object',
+    properties: {
+      file: { type: 'string', description: '可选:只看这个文件(相对路径)' },
+      ref: { type: 'string', description: '可选:git ref(commit hash / 分支 / HEAD~N)。默认 HEAD' },
+      cached: { type: 'boolean', description: '可选:true = 看 staged 的 diff(--cached)。默认 false' },
+    },
+  },
+  async run(args, ctx) {
+    if (!ctx.cwd) return '❌ 当前会话没有 cwd,无法跑 git';
+    const parts = ['git', 'diff', '--no-color'];
+    if (args.cached) parts.push('--cached');
+    parts.push(String(args.ref ?? 'HEAD'));
+    if (args.file) parts.push('--', String(args.file));
+    // 直接 shellExec,绕过 ctx.confirm(只读命令没必要问)。
+    const out = await shellExec(parts.map(shellQuote).join(' '), ctx.cwd);
+    if (!out.trim() || out.includes('[exit')) return out;
+    return out.length > 20000 ? out.slice(0, 20000) + '\n…[diff 过长,已截断;缩小范围(传 file)看完整]' : out;
+  },
+};
+
 // dispatch_agent:派发独立子任务给子 agent(复用 runAgentLoop,独立上下文 + 只读工具集)。
 // 对应 CC 的 AgentTool 最小版。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
 const dispatchAgent: Tool = {
@@ -350,12 +383,12 @@ const dispatchAgent: Tool = {
 };
 
 export function allTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory, dispatchAgent];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory, gitDiff, dispatchAgent];
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
 export function readOnlyTools(): Tool[] {
-  return [readFile, grep, glob, webFetch, recallMemory];
+  return [readFile, grep, glob, webFetch, recallMemory, gitDiff];
 }
 
 // Resolve a (possibly relative / ~ / %USERPROFILE%) path against cwd.
