@@ -34,6 +34,8 @@ const api: KinetAPI = {
   writeRules: (cwd, content) => ipcRenderer.invoke('write-rules', cwd, content),
   readContext: (cwd) => ipcRenderer.invoke('read-context', cwd),
   writeContext: (cwd, content) => ipcRenderer.invoke('write-context', cwd, content),
+  memoryExport: () => ipcRenderer.invoke('memory-export'),
+  memoryImport: () => ipcRenderer.invoke('memory-import'),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

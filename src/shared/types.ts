@@ -161,6 +161,9 @@ export interface KinetAPI {
   writeRules(cwd: string, content: string): Promise<{ ok: boolean; error?: string }>;
   readContext(cwd: string): Promise<{ ok: boolean; content?: string; error?: string }>;
   writeContext(cwd: string, content: string): Promise<{ ok: boolean; error?: string }>;
+  // 长期记忆导入/导出(JSON 文件;main 进程走原生 dialog 选路径)
+  memoryExport(): Promise<{ ok: boolean; path?: string; count?: number; error?: string }>;
+  memoryImport(): Promise<{ ok: boolean; imported?: number; skipped?: number; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;

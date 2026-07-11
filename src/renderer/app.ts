@@ -763,6 +763,18 @@ async function showSettings() {
         </select></div>
       </div>
 
+      <div class="s-section">
+        <h3>${tr('settings.sec.memory')}</h3>
+        <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
+          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.mem.desc')}</span>
+          <div style="display:flex;gap:8px">
+            <button id="s-mem-exp">${tr('settings.mem.export')}</button>
+            <button id="s-mem-imp">${tr('settings.mem.import')}</button>
+            <span class="test-msg" id="s-mem-msg"></span>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
         <button id="s-test">${tr('settings.test')}</button>
@@ -800,6 +812,24 @@ async function showSettings() {
     // Test the in-form values, not the last-saved ones (kills the "edit key, test, still old key" trap).
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
+  };
+  // 长期记忆导出/导入。结果写入 s-mem-msg(用与 showMsg 同款样式,但不抢 s-msg 通道)。
+  const showMemMsg = (text: string, ok: boolean): void => {
+    const el = document.getElementById('s-mem-msg')!;
+    el.textContent = text;
+    el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
+  };
+  document.getElementById('s-mem-exp')!.onclick = async () => {
+    const r = await api.memoryExport();
+    if (r.ok && r.path) showMemMsg(tr('settings.mem.expOk', { count: r.count ?? 0, path: r.path }), true);
+    else if (r.error === 'canceled') showMemMsg(tr('settings.mem.canceled'), false);
+    else showMemMsg(r.error ?? 'error', false);
+  };
+  document.getElementById('s-mem-imp')!.onclick = async () => {
+    const r = await api.memoryImport();
+    if (r.ok) showMemMsg(tr('settings.mem.impOk', { imported: r.imported ?? 0, skipped: r.skipped ?? 0 }), true);
+    else if (r.error === 'canceled') showMemMsg(tr('settings.mem.canceled'), false);
+    else showMemMsg(r.error ?? 'error', false);
   };
 }
 

@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory } from './store';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -507,6 +507,85 @@ function registerIpc(): void {
       if (!cwd || !fs.statSync(cwd).isDirectory()) return { ok: false, error: 'bad cwd' };
       fs.writeFileSync(path.join(cwd, 'KINET-CONTEXT.md'), content ?? '', 'utf8');
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // 长期记忆导出:让用户选保存路径,写 JSON(version + memories[])。
+  ipcMain.handle('memory-export', async () => {
+    try {
+      const mems = loadMemories().map((m) => ({ content: m.content }));
+      const ts = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-');
+      const win = BrowserWindow.getFocusedWindow();
+      const r = win
+        ? await dialog.showSaveDialog(win, {
+            defaultPath: `kinet-memory-${ts}.json`,
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+          })
+        : await dialog.showSaveDialog({
+            defaultPath: `kinet-memory-${ts}.json`,
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+          });
+      if (r.canceled || !r.filePath) return { ok: false, error: 'canceled' };
+      const payload = JSON.stringify({ version: 1, exportedAt: new Date().toISOString(), memories: mems }, null, 2);
+      fs.writeFileSync(r.filePath, payload, 'utf8');
+      return { ok: true, path: r.filePath, count: mems.length };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // 长期记忆导入:让用户选 JSON 文件,读 → 容错解析(支持 {memories:[{content}]} 或字符串数组)
+  // → 去重(已有 content 跳过)→ 逐条 addMemory。
+  ipcMain.handle('memory-import', async () => {
+    try {
+      const win = BrowserWindow.getFocusedWindow();
+      const r = win
+        ? await dialog.showOpenDialog(win, {
+            properties: ['openFile'],
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+          })
+        : await dialog.showOpenDialog({
+            properties: ['openFile'],
+            filters: [{ name: 'JSON', extensions: ['json'] }],
+          });
+      if (r.canceled || !r.filePaths.length) return { ok: false, error: 'canceled' };
+      const raw = fs.readFileSync(r.filePaths[0], 'utf8');
+      const parsed = JSON.parse(raw) as unknown;
+      const incoming: string[] = [];
+      if (Array.isArray(parsed)) {
+        for (const it of parsed) {
+          if (typeof it === 'string') incoming.push(it);
+          else if (it && typeof it === 'object' && typeof (it as { content?: unknown }).content === 'string')
+            incoming.push((it as { content: string }).content);
+        }
+      } else if (parsed && typeof parsed === 'object' && Array.isArray((parsed as { memories?: unknown }).memories)) {
+        for (const it of (parsed as { memories: unknown[] }).memories) {
+          if (it && typeof it === 'object' && typeof (it as { content?: unknown }).content === 'string')
+            incoming.push((it as { content: string }).content);
+        }
+      } else {
+        return { ok: false, error: 'unrecognized format' };
+      }
+      const existing = new Set(allMemoryContents());
+      let imported = 0;
+      let skipped = 0;
+      for (const c of incoming) {
+        const trimmed = c.trim();
+        if (!trimmed) {
+          skipped++;
+          continue;
+        }
+        if (existing.has(trimmed)) {
+          skipped++;
+          continue;
+        }
+        addMemory(trimmed);
+        existing.add(trimmed);
+        imported++;
+      }
+      return { ok: true, imported, skipped };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
