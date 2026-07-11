@@ -40,6 +40,9 @@ export function initStore(): void {
   ] as const) {
     if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
   }
+  // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
+  if (!hasColumn('memories', 'conversation_id'))
+    db.exec(`ALTER TABLE memories ADD COLUMN conversation_id TEXT;`);
 }
 
 // MARK: message-level FTS (recall_memory searches this)
@@ -177,10 +180,19 @@ export function loadConversations(): Conversation[] {
 }
 
 // MARK: long-term memory (injected into the system prompt)
-export function loadMemories(): Array<{ id: string; content: string }> {
-  return db.prepare('SELECT id, content FROM memories ORDER BY created_at DESC;').all() as Array<{
+// convId 过滤:有值只返回该频道产生的;undefined 返回全部。
+export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null }> {
+  if (convId === undefined) {
+    return db.prepare('SELECT id, content, conversation_id FROM memories ORDER BY created_at DESC;').all() as Array<{
+      id: string;
+      content: string;
+      conversation_id: string | null;
+    }>;
+  }
+  return db.prepare('SELECT id, content, conversation_id FROM memories WHERE conversation_id=? ORDER BY created_at DESC;').all(convId) as Array<{
     id: string;
     content: string;
+    conversation_id: string | null;
   }>;
 }
 
@@ -188,8 +200,21 @@ export function allMemoryContents(): string[] {
   return (db.prepare('SELECT content FROM memories;').all() as Array<{ content: string }>).map((r) => r.content);
 }
 
-export function addMemory(content: string): string {
+export function addMemory(content: string, convId?: string): string {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
-  db.prepare('INSERT INTO memories(id, content, created_at) VALUES(?,?,?);').run(id, content, Date.now() / 1000);
+  db.prepare('INSERT INTO memories(id, content, created_at, conversation_id) VALUES(?,?,?,?);').run(
+    id,
+    content,
+    Date.now() / 1000,
+    convId ?? null,
+  );
   return id;
+}
+
+export function updateMemory(id: string, content: string): void {
+  db.prepare('UPDATE memories SET content=? WHERE id=?;').run(content, id);
+}
+
+export function deleteMemory(id: string): void {
+  db.prepare('DELETE FROM memories WHERE id=?;').run(id);
 }

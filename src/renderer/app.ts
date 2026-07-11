@@ -914,6 +914,7 @@ function wireUi() {
     const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
     void api.openFiles(c);
   };
+  document.getElementById('btn-memory')!.onclick = () => void openMemoryPanel();
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
@@ -936,6 +937,17 @@ function wireUi() {
   // 项目背景编辑器(workbench 卡片「背景」按钮触发)。
   document.getElementById('cm-cancel')!.onclick = () => closeContextModal();
   document.getElementById('cm-save')!.onclick = () => void saveContext();
+
+  // 长期记忆面板(🧠)。
+  document.getElementById('mm-close')!.onclick = () => closeMemoryPanel();
+  document.getElementById('mm-scope-this')!.onclick = async () => {
+    mmScope = 'this';
+    await renderMemoryList();
+  };
+  document.getElementById('mm-scope-all')!.onclick = async () => {
+    mmScope = 'all';
+    await renderMemoryList();
+  };
 
   // 全局:Escape 关 modal + 点 backdrop 关 modal(三个 modal 都安全,等同 cancel)。
   document.addEventListener('keydown', (e) => {
@@ -1468,6 +1480,88 @@ function fillModelHints(): void {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 长期记忆面板:modal 形态(不开新 BrowserWindow —— 列表轻量,modal 够用)。
+// scope:this = 当前选中频道产生的记忆;all = 全部(包括 conversation_id 为 NULL 的历史/导入行)。
+// 每行:文本 + 编辑(行内 textarea)+ 删除。来源频道显示 conv 的 customTitle 或 cwd 末段。
+let mmScope: 'this' | 'all' = 'this';
+async function openMemoryPanel(): Promise<void> {
+  mmScope = selectedId ? 'this' : 'all';
+  document.getElementById('memory-modal')!.classList.add('show');
+  await renderMemoryList();
+}
+function closeMemoryPanel(): void {
+  document.getElementById('memory-modal')!.classList.remove('show');
+}
+async function renderMemoryList(): Promise<void> {
+  const listEl = document.getElementById('mm-list')!;
+  // scope 按钮态
+  document.getElementById('mm-scope-this')!.classList.toggle('active', mmScope === 'this');
+  document.getElementById('mm-scope-all')!.classList.toggle('active', mmScope === 'all');
+  // this 模式必须有选中会话;否则强制 all
+  const convId = mmScope === 'this' && selectedId ? selectedId : undefined;
+  const r = await api.memoryList(convId);
+  if (!r.ok || !r.items) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
+    return;
+  }
+  if (!r.items.length) {
+    listEl.innerHTML = `<div class="mm-empty">${tr('mem.empty')}</div>`;
+    return;
+  }
+  listEl.innerHTML = r.items
+    .map((m) => {
+      const fromLabel = m.conversation_id
+        ? convLabel(m.conversation_id)
+        : '';
+      return `<div class="mm-row" data-id="${esc(m.id)}">
+        <div class="mm-text">${esc(m.content)}</div>
+        ${fromLabel ? `<div class="mm-from">${esc(tr('mem.from'))}: ${esc(fromLabel)}</div>` : ''}
+        <div class="mm-actions">
+          <button class="ghost mm-edit" data-i18n="mem.edit">${esc(tr('mem.edit'))}</button>
+          <button class="ghost mm-del" data-i18n="mem.del">${esc(tr('mem.del'))}</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+  listEl.querySelectorAll<HTMLElement>('.mm-row').forEach((row) => {
+    const id = row.dataset.id!;
+    row.querySelector<HTMLElement>('.mm-edit')!.onclick = () => memEdit(row, id);
+    row.querySelector<HTMLElement>('.mm-del')!.onclick = async () => {
+      if (!confirm(tr('mem.delConfirm'))) return;
+      await api.memoryDelete(id);
+      await renderMemoryList();
+    };
+  });
+}
+// 把某行变成 textarea + 保存/取消。
+function memEdit(row: HTMLElement, id: string): void {
+  const original = row.querySelector<HTMLElement>('.mm-text')!.textContent ?? '';
+  row.innerHTML = `<textarea class="mm-input"></textarea>
+    <div class="mm-actions">
+      <button class="primary mm-save">${esc(tr('mem.save'))}</button>
+      <button class="ghost mm-cancel">${esc(tr('mem.cancel'))}</button>
+    </div>`;
+  const ta = row.querySelector<HTMLTextAreaElement>('.mm-input')!;
+  ta.value = original;
+  ta.focus();
+  ta.select();
+  row.querySelector<HTMLElement>('.mm-save')!.onclick = async () => {
+    const v = ta.value.trim();
+    if (!v) return;
+    await api.memoryUpdate(id, v);
+    await renderMemoryList();
+  };
+  row.querySelector<HTMLElement>('.mm-cancel')!.onclick = () => void renderMemoryList();
+}
+// 来源频道显示:customTitle > cwd 末段 > 兜底文案
+function convLabel(convId: string): string {
+  const c = convs.get(convId);
+  if (!c) return tr('mem.unknownConv');
+  if (c.customTitle) return c.customTitle;
+  if (c.cwd) return c.cwd.split(/[\\/]/).pop() ?? c.cwd;
+  return tr('mem.unknownConv');
 }
 
 const PRESETS = [

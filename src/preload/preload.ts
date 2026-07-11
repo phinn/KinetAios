@@ -36,6 +36,9 @@ const api: KinetAPI = {
   writeContext: (cwd, content) => ipcRenderer.invoke('write-context', cwd, content),
   memoryExport: () => ipcRenderer.invoke('memory-export'),
   memoryImport: () => ipcRenderer.invoke('memory-import'),
+  memoryList: (convId) => ipcRenderer.invoke('memory-list', convId),
+  memoryUpdate: (id, content) => ipcRenderer.invoke('memory-update', id, content),
+  memoryDelete: (id) => ipcRenderer.invoke('memory-delete', id),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

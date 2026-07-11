@@ -164,6 +164,10 @@ export interface KinetAPI {
   // 长期记忆导入/导出(JSON 文件;main 进程走原生 dialog 选路径)
   memoryExport(): Promise<{ ok: boolean; path?: string; count?: number; error?: string }>;
   memoryImport(): Promise<{ ok: boolean; imported?: number; skipped?: number; error?: string }>;
+  // 长期记忆面板:列出 / 编辑 / 删除单条。convId 省略 = 全部。
+  memoryList(convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; content: string; conversation_id: string | null }>; error?: string }>;
+  memoryUpdate(id: string, content: string): Promise<{ ok: boolean; error?: string }>;
+  memoryDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;

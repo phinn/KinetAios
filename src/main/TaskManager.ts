@@ -235,7 +235,7 @@ export class TaskManager {
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);
     const t = conv.turns[conv.turns.length - 1];
-    if (ev.type === 'done' && t?.answer) this.extractMemories(t, prompt, signal).catch(() => {});
+    if (ev.type === 'done' && t?.answer) this.extractMemories(t, prompt, conv.id, signal).catch(() => {});
   }
 
   private persist(conv: Conversation, ev: AgentEvent): void {
@@ -279,7 +279,7 @@ export class TaskManager {
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
   // Bound by the turn's abort signal (cancel stops it) + a 30s timeout so it can't hang or run away.
-  private async extractMemories(turn: Conversation['turns'][number], prompt: string, parentSignal: AbortSignal): Promise<void> {
+  private async extractMemories(turn: Conversation['turns'][number], prompt: string, convId: string, parentSignal: AbortSignal): Promise<void> {
     if (!turn.answer || turn.answer.length <= 15) return;
     const snap = snapshot();
     const sys = `你是记忆提取器。从下面这轮对话里提取【关于用户本人】的持久事实 —— 身份、职业、偏好、习惯、技术栈、家庭/宠物、所在城市、工具链、长期项目、价值观。
@@ -305,7 +305,7 @@ export class TaskManager {
       );
       const existing = new Set(store.allMemoryContents());
       for (const f of parseFacts(comp.content)) {
-        if (f && !existing.has(f)) store.addMemory(f);
+        if (f && !existing.has(f)) store.addMemory(f, convId);
       }
     } catch (e) {
       console.error('[memory] extract failed:', (e as Error)?.message);

@@ -476,3 +476,22 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .cm-status { font-size: 12px; color: var(--text-dim); }
 .cm-spacer { flex: 1; }
 
+/* 长期记忆面板(🧠):modal 形态,头(scope 切换 + 关闭)+ 列表(每行 文本/来源/编辑/删除)。 */
+#memory-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; }
+#memory-modal.show { display: flex; }
+.mm-card { width: 720px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; }
+.mm-head { display: flex; align-items: center; gap: 10px; }
+.mm-head h3 { margin: 0; flex: 0 0 auto; }
+.mm-scope { display: flex; gap: 4px; flex: 1; }
+.mm-scope button { padding: 4px 10px; font-size: 12px; }
+.mm-scope button.active { background: var(--accent); color: var(--bg-elev); border-color: var(--accent); }
+#mm-close { padding: 4px 10px; font-size: 18px; line-height: 1; }
+.mm-list { flex: 1; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.mm-empty { color: var(--text-dim); font-size: 13px; padding: 24px; text-align: center; }
+.mm-row { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
+.mm-text { font-size: 13px; line-height: 1.5; user-select: text; white-space: pre-wrap; word-break: break-word; }
+.mm-from { font-size: 11px; color: var(--text-faint); }
+.mm-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.mm-actions button { padding: 3px 10px; font-size: 12px; }
+.mm-input { width: 100%; min-height: 60px; resize: vertical; font: inherit; font-size: 13px; padding: 8px; user-select: text; }
+

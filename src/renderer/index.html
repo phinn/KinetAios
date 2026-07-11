@@ -16,6 +16,7 @@
           <button class="ghost" id="btn-wb" data-i18n-title="wb.open" title="工作台">📂</button>
           <button class="ghost" id="btn-dashboard" data-i18n-title="dash.open" title="打开仪表盘">📊</button>
           <button class="ghost" id="btn-files" data-i18n-title="files.open" title="文件与预览">🌐</button>
+          <button class="ghost" id="btn-memory" data-i18n-title="mem.open" title="长期记忆">🧠</button>
           <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置">⚙</button>
         </div>
       </div>
@@ -183,6 +184,21 @@
         <button id="cm-cancel" data-i18n="common.cancel">取消</button>
         <button class="primary" id="cm-save" data-i18n="rules.save">保存</button>
       </div>
+    </div>
+  </div>
+
+  <!-- 长期记忆面板(🧠 按钮):列表 + scope 切换 + 行内编辑/删除 -->
+  <div id="memory-modal">
+    <div class="modal-card mm-card">
+      <div class="mm-head">
+        <h3 data-i18n="mem.title">长期记忆</h3>
+        <div class="mm-scope">
+          <button class="ghost active" id="mm-scope-this" data-i18n="mem.scope.this">当前频道</button>
+          <button class="ghost" id="mm-scope-all" data-i18n="mem.scope.all">全部</button>
+        </div>
+        <button class="ghost" id="mm-close">×</button>
+      </div>
+      <div class="mm-list" id="mm-list"></div>
     </div>
   </div>
 

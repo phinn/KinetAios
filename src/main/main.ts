@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory } from './store';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -586,6 +586,31 @@ function registerIpc(): void {
         imported++;
       }
       return { ok: true, imported, skipped };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // 长期记忆面板:列出(可按 convId 过滤) / 改单条 / 删单条。
+  ipcMain.handle('memory-list', (_e, convId?: string) => {
+    try {
+      return { ok: true, items: loadMemories(convId) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-update', (_e, id: string, content: string) => {
+    try {
+      updateMemory(id, content);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-delete', (_e, id: string) => {
+    try {
+      deleteMemory(id);
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

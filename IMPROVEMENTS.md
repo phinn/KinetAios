@@ -29,9 +29,9 @@
 | 9 | `compactHistory` 已通但从未被调用 | engines.ts:147 `conv.directHistory = await compactHistory(...)` 已接通 | ✅(原本误判为死代码,实查已通) |
 | 10 | GLM/MiniMax 不支持 Anthropic `cache_control`,但代码里还有 cache 分支 | 保留代码(防御性),Provider 自检探测能力,不支持就跳过 cache_control 添加 | ✅(Provider 自动按 base URL 判断是否打 cache) |
 | 11 | 每轮 `extractMemories` 都跑一次 LLM,小会话也付费 | 设阈值:单轮 user input < 100 字符或全短指令跳过 extract | ⬜ |
-| 12 | FTS 检索无 cwd 隔离,跨项目搜索混在一起 | `recall_memory` 加可选 cwd 过滤,schema 加 `cwd` 列并索引 | ⬜ |
+| 12 | FTS 检索无 cwd 隔离,跨项目搜索混在一起 | `recall_memory` 加可选 cwd 过滤,schema 加 `cwd` 列并索引 | ⬜(memories 表已加 conversation_id,面板可按频道过滤;FTS recall 隔离未做) |
 | 13 | 无 memory 过期/遗忘机制,长期使用后噪声多 | 加 `last_accessed_at`,定期 GC 30 天未命中的 memory | ⬜ |
-| 14 | 无 memory 人工策展 UI(误提取无法删) | 设置页加 memory 列表 + 删除/编辑 | ⬜ |
+| 14 | 无 memory 人工策展 UI(误提取无法删) | 设置页加 memory 列表 + 删除/编辑 | ✅(🧠 面板:列表 + 行内编辑 + 删除 + scope 切换) |
 | 15 | `history` FTS 表未按 conversation 索引,跨会话搜索性能随规模下降 | 加 `conversation_id` unindexed 列,先按 conv 缩窄再 FTS | ⬜ |
 
 ---
