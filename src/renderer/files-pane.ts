@@ -33,12 +33,20 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   const api = window.kinet;
   let cwd = '';
   let menuTarget: DirEntry | null = null;
+  // 当前编辑器/预览加载的文件绝对路径(空 = 未加载)。两视图共用一份"当前文件"。
+  let currentAbs = '';
+  let editorDirty = false;
 
   const webview = root.querySelector<HTMLElement>('#files-webview') as unknown as WebviewLike;
   const addr = root.querySelector<HTMLInputElement>('#files-addr')!;
   const treeEl = root.querySelector<HTMLElement>('#files-tree')!;
   const cwdLabel = root.querySelector<HTMLElement>('#files-cwd')!;
   const menu = root.querySelector<HTMLElement>('#files-menu')!;
+  const editorPane = root.querySelector<HTMLElement>('#files-editor-pane')!;
+  const editor = root.querySelector<HTMLTextAreaElement>('#files-editor')!;
+  const feStatus = root.querySelector<HTMLElement>('#fe-status')!;
+  const ftabPreview = root.querySelector<HTMLElement>('#ftab-preview')!;
+  const ftabEdit = root.querySelector<HTMLElement>('#ftab-edit')!;
 
   const tr = (key: string, params?: Record<string, string | number>) => t(lang, key, params);
 
@@ -101,7 +109,11 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
     } else {
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
-      row.ondblclick = () => loadFile(e.path);
+      // 双击:HTML/图/PDF 预览,其他开编辑器。
+      row.ondblclick = () => {
+        if (isPreviewExt(e.path)) { setTab('preview'); loadFile(e.path); }
+        else void loadEditor(e.path);
+      };
     }
     return div;
   }
@@ -138,10 +150,52 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     return 'https://' + s;
   }
 
+  // 按后缀决定默认视图:HTML/图片/PDF 走预览,其他走编辑器。
+  function isPreviewExt(p: string): boolean {
+    return /\.(html?|svg|png|jpe?g|gif|webp|bmp|ico|pdf|css)$/i.test(p);
+  }
+
   function loadFile(abs: string): void {
+    currentAbs = abs;
     const url = 'file://' + abs;
     webview.loadURL(url);
     addr.value = url;
+  }
+
+  async function loadEditor(abs: string): Promise<void> {
+    currentAbs = abs;
+    const r = await api.fileRead(abs);
+    if (!r.ok || r.content == null) {
+      editor.value = '';
+      editor.placeholder = tr('files.errRead', { msg: r.error ?? '' });
+      feStatus.textContent = r.error ?? '';
+      return;
+    }
+    editor.value = r.content;
+    editorDirty = false;
+    feStatus.textContent = abs;
+    setTab('edit');
+    addr.value = 'file://' + abs;
+  }
+
+  // 切右侧视图:preview = 显示 webview,隐藏 editor;反之亦然。
+  function setTab(mode: 'preview' | 'edit'): void {
+    const isEdit = mode === 'edit';
+    editorPane.hidden = !isEdit;
+    (webview as unknown as HTMLElement).style.display = isEdit ? 'none' : '';
+    ftabPreview.classList.toggle('active', !isEdit);
+    ftabEdit.classList.toggle('active', isEdit);
+  }
+
+  async function save(): Promise<void> {
+    if (!currentAbs || !editorDirty) return;
+    const r = await api.fileWrite(currentAbs, editor.value);
+    if (r.ok) {
+      editorDirty = false;
+      feStatus.textContent = tr('files.saved', { path: currentAbs });
+    } else {
+      feStatus.textContent = tr('files.errSave', { msg: r.error ?? '' });
+    }
   }
 
   // 头部按钮 + 地址栏 + webview 事件
@@ -157,9 +211,22 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   webview.addEventListener('did-navigate', (e) => (addr.value = e.url));
   webview.addEventListener('did-navigate-in-page', (e) => (addr.value = e.url));
 
+  // tab 切换 + 编辑器保存 + dirty 标志
+  ftabPreview.onclick = () => setTab('preview');
+  ftabEdit.onclick = () => setTab('edit');
+  editor.addEventListener('input', () => { editorDirty = true; feStatus.textContent = (currentAbs || '') + ' · 未保存'; });
+  root.querySelector<HTMLElement>('#btn-save')!.onclick = () => void save();
+  editor.addEventListener('keydown', (ev) => {
+    if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); void save(); }
+  });
+
   // 右键菜单(只作用在 root 范围内)
   root.querySelector<HTMLElement>('#fm-open')!.onclick = () => {
-    if (menuTarget) loadFile(menuTarget.path);
+    if (menuTarget) { setTab('preview'); loadFile(menuTarget.path); }
+    hideMenu();
+  };
+  root.querySelector<HTMLElement>('#fm-edit')!.onclick = () => {
+    if (menuTarget) void loadEditor(menuTarget.path);
     hideMenu();
   };
   root.querySelector<HTMLElement>('#fm-copy')!.onclick = () => {

@@ -147,7 +147,9 @@ export interface KinetAPI {
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   pickDirectory(): Promise<string>;
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
-  getBrand(): Promise<{ productName: string }>;
+  fileRead(abs: string): Promise<{ ok: boolean; content?: string; error?: string }>;
+  fileWrite(abs: string, content: string): Promise<{ ok: boolean; error?: string }>;
+  getBrand(): Promise<{ productName: string; homeDir: string }>;
   quickSubmit(text: string): Promise<string>;
   openDashboard(): Promise<void>;
   openFiles(cwd?: string): Promise<void>;

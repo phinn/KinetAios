@@ -77,6 +77,10 @@
             <button class="ghost" id="btn-pick" data-i18n-title="files.pickDir" title="切换目录">📁</button>
             <span class="files-cwd" id="files-cwd"></span>
             <span class="files-spacer"></span>
+            <div class="files-tabs" id="files-tabs">
+              <button class="ftab active" id="ftab-preview" data-i18n="files.tabPreview">预览</button>
+              <button class="ftab" id="ftab-edit" data-i18n="files.tabEdit">编辑</button>
+            </div>
             <button class="ghost" id="btn-back" data-i18n-title="files.back" title="后退">←</button>
             <button class="ghost" id="btn-reload" data-i18n-title="files.reload" title="刷新">⟳</button>
             <input class="files-addr" id="files-addr" data-i18n-placeholder="files.addrPh" placeholder="file:// 或 https:// 或 localhost:8000" />
@@ -85,10 +89,19 @@
             <div class="files-tree" id="files-tree"></div>
             <div class="files-view">
               <webview id="files-webview" src="about:blank" partition="persist:files"></webview>
+              <div class="files-editor" id="files-editor-pane" hidden>
+                <textarea id="files-editor" spellcheck="false" data-i18n-placeholder="files.editorPh" placeholder="选个文本文件开始编辑…(Ctrl+S 保存)"></textarea>
+                <div class="files-editor-bar">
+                  <span class="fe-status" id="fe-status"></span>
+                  <span class="files-spacer"></span>
+                  <button class="primary" id="btn-save" data-i18n="files.save">保存</button>
+                </div>
+              </div>
             </div>
           </div>
           <div id="files-menu" class="files-menu" hidden>
             <div class="fm-item" id="fm-open" data-i18n="files.openInBrowser">在浏览器中打开</div>
+            <div class="fm-item" id="fm-edit" data-i18n="files.openInEditor">在编辑器中打开</div>
             <div class="fm-item" id="fm-copy" data-i18n="files.copyPath">复制路径</div>
           </div>
         </div>

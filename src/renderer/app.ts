@@ -27,6 +27,7 @@ let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
+let HOME_DIR = ''; // 用户主目录(brand API 同步拿到);cwd === HOME_DIR 时显示「未分类」
 let lang: Lang = 'zh-CN'; // UI 语言(启动从 settings 读,切语言后更新 + applyI18nDOM)
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
 let activeTab: 'chat' | 'files' | 'git' | 'rules' = 'chat';
@@ -63,7 +64,9 @@ function applyI18nDOM(): void {
   const settings = await api.getSettings();
   lang = settings.lang;
   cliEnabled = settings.enableCliEngines;
-  PRODUCT = (await api.getBrand()).productName;
+  const brand = await api.getBrand();
+  PRODUCT = brand.productName;
+  HOME_DIR = brand.homeDir;
   document.title = PRODUCT;
   const brandEl = document.getElementById('brand');
   if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
@@ -104,7 +107,8 @@ function applyI18nDOM(): void {
     if (ev.type !== 'token') {
       renderSidebar();
       if (currentView === 'workbench' && (ev.type === 'cost' || ev.type === 'done' || ev.type === 'error')) {
-        renderWorkbench();
+        // ponytail: 增量刷新单卡;新任务/删除走 onConversation → 全量 renderWorkbench,这里只更新统计/时间/图标。
+        refreshWbCard(conv.cwd || '');
       }
     }
   });
@@ -132,7 +136,7 @@ function renderSidebar() {
     for (const id of order) {
       const c = convs.get(id);
       if (!c) continue;
-      ul.appendChild(flatTaskLi(id));
+      ul.appendChild(taskLi(id));
     }
     return;
   }
@@ -173,28 +177,23 @@ function renderSidebar() {
     if (!collapsed) {
       const tasksUl = document.createElement('ul');
       tasksUl.className = 'sb-proj-tasks';
-      for (const id of ids) tasksUl.appendChild(taskLi(id, cwd));
+      for (const id of ids) tasksUl.appendChild(taskLi(id));
       projLi.appendChild(tasksUl);
     }
     ul.appendChild(projLi);
   }
 }
 
-// 单条任务条目(原 renderSidebar 主体抽出,作为分组的子项)。
-function taskLi(id: string, _cwd: string): HTMLElement {
-  const li = flatTaskLi(id);
-  return li;
-}
-
-// flat 模式下的单条条目(不挂分组头)。与 taskLi 共享 markup/事件,只是被加到顶层 ul。
-function flatTaskLi(id: string): HTMLElement {
+// 单条任务条目(grouped 模式作 .sb-proj-tasks 子项;flat 模式作 #conv-list 顶层 li)。
+// flat 模式下额外渲染一行 cwd basename(因为没了项目头),CSS 控制只在 flat 显示。
+function taskLi(id: string): HTMLElement {
   const c = convs.get(id)!;
   const li = document.createElement('li');
   if (id === selectedId) li.classList.add('active');
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
   const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-  li.innerHTML = `<span class="dot ${cls}"></span><span class="title">${esc(title)}</span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
+  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
   li.onclick = () => {
     selectedId = id;
     showChat();
@@ -210,14 +209,16 @@ function flatTaskLi(id: string): HTMLElement {
   return li;
 }
 
-// 项目名 = cwd basename;无 cwd 走「未分类」(homedir 兜底场景)。
+// 项目名 = cwd basename;无 cwd 或 cwd === homedir(默认新建会话的兜底)走「未分类」。
 function projName(cwd: string): string {
-  if (!cwd) return tr('wb.ungrouped');
+  if (!cwd || cwd === HOME_DIR) return tr('wb.ungrouped');
   const base = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   return base || cwd;
 }
 
 // Electron renderer 不支持 window.prompt(),用自定义输入 modal 替代。
+// 全局 Escape / backdrop 关闭时通过 activePromptDone 触发同一个 resolver。
+let activePromptDone: ((v: string | null) => void) | null = null;
 function showPrompt(title: string, def: string): Promise<string | null> {
   const modal = document.getElementById('prompt-modal')!;
   document.getElementById('prompt-title')!.textContent = title;
@@ -233,9 +234,11 @@ function showPrompt(title: string, def: string): Promise<string | null> {
       ok.onclick = null;
       cancel.onclick = null;
       input.onkeydown = null;
+      activePromptDone = null;
       modal.classList.remove('show');
       resolve(v);
     };
+    activePromptDone = done;
     ok.onclick = () => done(input.value);
     cancel.onclick = () => done(null);
     input.onkeydown = (e) => {
@@ -244,6 +247,7 @@ function showPrompt(title: string, def: string): Promise<string | null> {
     };
   });
 }
+function dismissPrompt(): void { activePromptDone?.(null); }
 
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
 async function renameConv(id: string) {
@@ -607,14 +611,21 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (streaming) {
       ans.id = 'streaming-answer';
       ans.classList.add('streaming');
-      // 首 token 前:显示当前动作(statusNote,如「请求中…/执行 shell…」)让用户知道在干嘛;无则三点。
+      // streaming 区只放 answer 文本(streamAppend 直接 appendChild text node,不能混入别的元素)。
       if (t.answer) ans.textContent = t.answer;
-      else if (conv.statusNote) ans.innerHTML = '<span class="typing-note"><span class="typing"><i></i><i></i><i></i></span>' + esc(conv.statusNote) + '</span>';
-      else ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
+      else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       ans.innerHTML = md(t.answer);
     }
     body.appendChild(ans);
+    // 工具执行中:在 answer 下面单独显示「●●● 执行 X…」(statusNote)。作为兄弟元素,
+    // 不污染 #streaming-answer 的文本追加路径。token 来时 applyEvent 清 statusNote,本块自动消失。
+    if (streaming && conv.statusNote) {
+      const ns = document.createElement('div');
+      ns.className = 'streaming-status';
+      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
+      body.appendChild(ns);
+    }
     if (t.error) {
       const e = document.createElement('div');
       e.className = 'err';
@@ -856,6 +867,23 @@ function wireUi() {
   // 项目背景编辑器(workbench 卡片「背景」按钮触发)。
   document.getElementById('cm-cancel')!.onclick = () => closeContextModal();
   document.getElementById('cm-save')!.onclick = () => void saveContext();
+
+  // 全局:Escape 关 modal + 点 backdrop 关 modal(三个 modal 都安全,等同 cancel)。
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    if (document.getElementById('modal')!.classList.contains('show')) closeConfirm(false);
+    else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
+    else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
+  });
+  for (const id of ['modal', 'prompt-modal', 'context-modal']) {
+    document.getElementById(id)!.addEventListener('click', (e) => {
+      if (e.target === e.currentTarget) {
+        if (id === 'modal') closeConfirm(false);
+        else if (id === 'prompt-modal') dismissPrompt();
+        else closeContextModal();
+      }
+    });
+  }
 
   const cwd = document.getElementById('cwd-input') as HTMLInputElement;
   cwd.addEventListener('change', () => {
@@ -1112,7 +1140,35 @@ function projCard(cwd: string, ids: string[]): string {
   </div>`;
 }
 
-// 选项目里最近一个任务,切到 chat 视图。空项目(理论不会出现,卡片总是至少 1 个)兜底新建。
+// 单卡增量:cost/done/error 事件时只改这一张卡的统计/时间/图标,不重建网格,保留滚动位置。
+// 找不到卡(新 cwd 的首条事件先到 onConversation 之前)就 noop,下次 renderWorkbench 兜底。
+function refreshWbCard(cwd: string): void {
+  const card = document.querySelector<HTMLElement>(`.wb-card[data-cwd="${cssEsc(cwd)}"]`);
+  if (!card) return;
+  const ids = order.filter((id) => convs.get(id)?.cwd === cwd);
+  let tokens = 0, cost = 0, lastTs = 0, running = false;
+  for (const id of ids) {
+    const c = convs.get(id);
+    if (!c) continue;
+    tokens += c.tokens; cost += c.cost;
+    const t = c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
+    if (t > lastTs) lastTs = t;
+    if (c.status === 'running') running = true;
+  }
+  const stats: string[] = [tr('wb.tasks', { n: ids.length })];
+  if (tokens) stats.push(`${(tokens / 1000).toFixed(1)}k tok`);
+  if (cost) stats.push(`$${cost.toFixed(4)}`);
+  card.querySelector<HTMLElement>('.wb-stats')!.textContent = stats.join(' · ');
+  card.querySelector<HTMLElement>('.wb-last')!.textContent =
+    tr('wb.last', { when: lastTs ? timeAgo(lastTs) : tr('wb.noActivity') });
+  card.querySelector<HTMLElement>('.wb-picon')!.textContent = running ? '⚡' : '📁';
+}
+
+// attribute selector escaping: cwd may contain quotes / ] / backslash — escape for querySelector.
+function cssEsc(s: string): string {
+  return s.replace(/["\\\]]/g, '\\$&');
+}
+
 async function openProject(cwd: string): Promise<void> {
   const ids = order.filter((id) => convs.get(id)?.cwd === cwd);
   if (!ids.length) {
@@ -1144,13 +1200,13 @@ async function newTaskInProject(cwd: string): Promise<void> {
   document.getElementById('composer')!.focus();
 }
 
-// 简易相对时间(<1m 刚刚,<1h N 分钟前,<1d N 小时前,否则 N 天前)。
+// 相对时间(本地化):刚刚 / N 分钟前 / N 小时前 / N 天前。
 function timeAgo(ts: number): string {
-  const s = Math.max(1, Math.floor((Date.now() - ts) / 1000));
-  if (s < 60) return s + 's';
-  if (s < 3600) return Math.floor(s / 60) + 'm';
-  if (s < 86400) return Math.floor(s / 3600) + 'h';
-  return Math.floor(s / 86400) + 'd';
+  const s = Math.max(0, Math.floor((Date.now() - ts) / 1000));
+  if (s < 60) return tr('time.justNow');
+  if (s < 3600) return tr('time.minutesAgo', { n: Math.floor(s / 60) });
+  if (s < 86400) return tr('time.hoursAgo', { n: Math.floor(s / 3600) });
+  return tr('time.daysAgo', { n: Math.floor(s / 86400) });
 }
 
 // ---------- 项目背景编辑器(KINET-CONTEXT.md)----------

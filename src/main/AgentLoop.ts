@@ -226,8 +226,8 @@ async function runToolBatch(
         batch.map(async (c) => {
           if (signal.aborted) return { c, result: '[已停止]' as string };
           const result = await execute(c, tools, ctx);
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result });
-          return { c, result };
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result }); // UI 拿原文(可点开看全)
+          return { c, result: truncateForModel(result) }; // 模型拿截断版
         }),
       );
       for (const { c, result } of outs) results.push({ role: 'tool', tool_call_id: c.id, content: result });
@@ -235,11 +235,22 @@ async function runToolBatch(
       // 写工具:串行单个执行。
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       onEvent({ type: 'tool', name: call.name, args: call.arguments, result });
-      results.push({ role: 'tool', tool_call_id: call.id, content: result });
+      results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result) });
       i++;
     }
   }
   return results;
+}
+
+// 长 tool result 截断喂模型(不影响 UI 看完整原文)。read_file 一个 4MB 文件 / shell 几 MB 输出
+// / web_fetch 全页如果不截,下一轮全字面进 input → 爆 input token。模型基本只需头尾(路径/错误/概要)。
+// ponytail: 头尾各 3000、中间省略号,简单粗暴;真要全文可加 follow-up 让 read_file 偏移读。
+const MODEL_RESULT_MAX = 8192;
+const MODEL_RESULT_EDGE = 3000;
+function truncateForModel(s: string): string {
+  if (s.length <= MODEL_RESULT_MAX) return s;
+  const omitted = s.length - 2 * MODEL_RESULT_EDGE;
+  return `${s.slice(0, MODEL_RESULT_EDGE)}\n\n…[省略 ${omitted} 字符;UI 步骤详情可见完整结果]…\n\n${s.slice(-MODEL_RESULT_EDGE)}`;
 }
 
 // Detect "context too long" from a provider error (GLMError or raw). ponytail: OpenAI-compatible

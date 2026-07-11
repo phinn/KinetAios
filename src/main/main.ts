@@ -401,6 +401,25 @@ function registerIpc(): void {
     }
   });
 
+  // Files 窗口编辑器:绝对路径读全文(无 20KB 截断、无 cwd 越界检查 —— 用户主动挑的文件)。
+  ipcMain.handle('file-read', (_e, abs: string) => {
+    try {
+      const content = fs.readFileSync(abs, 'utf8');
+      return { ok: true, content };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // Files 窗口编辑器:绝对路径写全文。
+  ipcMain.handle('file-write', (_e, abs: string, content: string) => {
+    try {
+      fs.writeFileSync(abs, content, 'utf8');
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   ipcMain.handle('test-connection', async (_e, s?: AppSettings) => {
     const snap: ConfigSnapshot = s
       ? { baseURL: s.baseURL, model: s.model, apiKey: s.apiKey, apiProtocol: s.apiProtocol, reasoning: 'none' }
@@ -507,6 +526,9 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
+    // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
+    Menu.setApplicationMenu(null);
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
