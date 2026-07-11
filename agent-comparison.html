@@ -171,13 +171,13 @@
       <tr>
         <td class="dim">上下文压缩</td>
         <td>五级:toolResultBudget→snip→microcompact→contextCollapse→autocompact + reactive</td>
-        <td>两级:<code>sanitizeToolPairs</code> 修配对 + <code>compactHistory</code> 摘要 + reactive 超长自缩</td>
+        <td>三级:<code>sanitizeToolPairs</code> 修配对 + <code>compactHistory</code> LLM摘要 + reactive 超长砍预算15K重试</td>
         <td>autocompact(内联摘要或<strong>远程 <code>/responses/compact</code></strong>)+ pre-sampling + rollout 截断 + WorldState 增量 diff</td>
       </tr>
       <tr>
         <td class="dim">token 预算</td>
         <td><code>taskBudget</code> 跨 compact 边界 + max_output_tokens 三段恢复</td>
-        <td>30000(<code>length*0.6</code> 估算);reactive 砍半 15000</td>
+        <td>30000(<code>length*0.6</code> 初始估算 + 每轮 API 真实 prompt_tokens 滑动平均自校准);reactive 砍半 15000</td>
         <td><code>context_window.rs</code> / <code>token_budget.rs</code> 追踪 limit,溢出触发 autocompact</td>
       </tr>
       <tr>

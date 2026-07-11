@@ -165,8 +165,8 @@
           </ul>
           <h4 class="cons">缺点</h4>
           <ul class="cons">
-            <li><b>无流式边执行</b>(先收完 tool_calls 再跑);压缩层级少(两级 vs CC 五级)</li>
-            <li>无 fallback model;<b>token 估算粗糙</b>(<code>length×0.6</code>)</li>
+            <li><b>无流式边执行</b>(先收完 tool_calls 再跑);压缩层级少(三级 vs CC 五级)</li>
+            <li>无 fallback model;<b>token 估算初始粗糙</b>(<code>length×0.6</code>)<b>但有滑动平均自校准</b>(每轮拿 API 真实 prompt_tokens 反推,0.5/0.5 加权)</li>
             <li><b>无 OS 级沙盒</b>(靠 shell 确认桥拦截)</li>
           </ul>
         </div>
@@ -217,7 +217,7 @@
 
       <div style="height:22px"></div>
       <h3 style="margin-top:8px">但任务足够长时,机制会反超</h3>
-      <p class="cap">轮次极多时,CC 的五级压缩 + 强 cache 把旧消息摘要掉、每轮更轻;Direct 两级压缩会先丢细节 —— 长任务 CC 可能追上反超。<b>中短任务里 Direct 的精简优势主导</b>。</p>
+      <p class="cap">轮次极多时,CC 的五级压缩 + 强 cache 把旧消息摘要掉、每轮更轻;Direct 三级压缩(trim→LLM摘要→超长兜底)会先丢细节 —— 长任务 CC 可能追上反超。<b>中短任务里 Direct 的精简优势主导</b>。</p>
     </div>
 
     <div class="insight">
@@ -230,11 +230,11 @@
       <table>
         <thead><tr><th>机制</th><th class="cc">Claude Code</th><th class="direct">Direct</th><th class="codex">Codex</th></tr></thead>
         <tbody>
-          <tr><td>上下文压缩</td><td><span class="tag good">五级</span> autocompact+microcompact+snip+collapse+reactive</td><td><span class="tag mid">两级</span> compactHistory 摘要 + sanitize + reactive</td><td><span class="tag good">多级</span> autocompact(内联/远程)+ WorldState 增量</td></tr>
+          <tr><td>上下文压缩</td><td><span class="tag good">五级</span> autocompact+microcompact+snip+collapse+reactive</td><td><span class="tag mid">三级</span> ① 尾部 trim(coef自校准) ② compactHistory LLM摘要 ③ 超长砍预算15K重试</td><td><span class="tag good">多级</span> autocompact(内联/远程)+ WorldState 增量</td></tr>
           <tr><td>prompt cache</td><td><span class="tag good">最强</span> 分段 + DYNAMIC_BOUNDARY + cache_control</td><td><span class="tag mid">补齐</span> GLM 自动 + Anthropic cache_control</td><td><span class="tag good">有</span> comp_hash + Responses 有状态</td></tr>
           <tr><td>subagent 独立上下文</td><td><span class="tag good">有</span> 递归 query + background + team</td><td><span class="tag good">有</span> dispatch_agent 复用 loop</td><td><span class="tag good">有</span> 继承式 spawn_agent</td></tr>
           <tr><td>流式边执行工具</td><td><span class="tag good">有</span></td><td><span class="tag weak">无</span></td><td><span class="tag good">有</span></td></tr>
-          <tr><td>token 估算</td><td><span class="tag good">精确</span> Haiku fallback</td><td><span class="tag weak">粗糙</span> length×0.6</td><td><span class="tag good">精确</span> context_window</td></tr>
+          <tr><td>token 估算</td><td><span class="tag good">精确</span> Haiku fallback</td><td><span class="tag mid">自校准</span> 初始 length×0.6,每轮 API 真实值滑动平均校准</td><td><span class="tag good">精确</span> context_window</td></tr>
           <tr><td>工具 / system 规模</td><td><span class="tag weak">大</span> 数十工具 + 多层 system</td><td><span class="tag good">小</span> 9 工具 + 紧凑 system</td><td><span class="tag mid">中</span> 模型专属 prompt</td></tr>
           <tr><td>启动环境扫描</td><td class="dim">无</td><td><span class="tag good">有</span> skills/MCP/CLI 预检 → 减重试</td><td class="dim">无</td></tr>
           <tr><td>OS 级沙盒</td><td class="dim">无(权限确认)</td><td class="dim">无(shell 确认桥)</td><td><span class="tag good">唯一</span> seatbelt/landlock/win</td></tr>

@@ -1,6 +1,6 @@
 # KinetAiosWin 全面分析报告
 
-> 基于 KinetAiosWin 全部源码(4835 行 TS)+ 主流 AI 编程工具横向对比,2026-07
+> 基于 KinetAiosWin 全部源码(~3300 行 TS,20 个源文件)+ 主流 AI 编程工具横向对比,2026-07
 
 ---
 
@@ -10,7 +10,7 @@
 |------|------|
 | **定位** | 本地优先(local-first)的 AI Agent 桌面面板,跨平台(Windows 11 + macOS) |
 | **技术栈** | Electron + TypeScript,better-sqlite3(FTS5),无前端框架(vanilla TS + esbuild) |
-| **代码量** | ~4835 行 TypeScript(22 个源文件),非 test 框架 |
+| **代码量** | ~3300 行 TypeScript(20 个源文件,含 i18n ~610 行),无 test 框架 |
 | **版本** | 0.1.0(MVP 阶段) |
 | **核心理念** | 一个面板调度多家引擎(Direct + Claude Code + Codex)+ 每会话独立模型 + 本地数据 |
 
@@ -23,10 +23,13 @@
 ```
 ┌─────────────────────────────────────────────────────┐
 │  Renderer (vanilla TS, 无 Node 访问)                  │
-│  ├─ app.ts (807行) — 主面板:会话列表/聊天/设置         │
-│  ├─ quick.ts (69行) — 全局热键 Quick 面板              │
-│  ├─ dashboard.ts (128行) — Token/费用仪表盘           │
-│  └─ markdown.ts (103行) — 轻量 Markdown 渲染           │
+│  ├─ app.ts (~750行) — 主面板:会话列表/聊天/设置/Git/Files/Workbench │
+│  ├─ quick.ts (~60行) — 全局热键 Quick 面板              │
+│  ├─ dashboard.ts (~130行) — Token/费用仪表盘           │
+│  ├─ files-pane.ts (~175行) — 文件树 + webview 浏览器   │
+│  ├─ files.ts (~15行) — 独立 Files 窗口入口             │
+│  ├─ markdown.ts (~100行) — 轻量 Markdown 渲染           │
+│  └─ i18n.ts (~610行) — 四语言(en/zh-CN/zh-TW/ja)      │
 │          ↕ contextBridge (preload.ts, 43行)            │
 ├─────────────────────────────────────────────────────┤
 │  Preload (sandbox: true, contextIsolation: true)      │
@@ -34,16 +37,17 @@
 │          ↕ IPC                                         │
 ├─────────────────────────────────────────────────────┤
 │  Main Process (完整 Node 访问)                         │
-│  ├─ main.ts (378行) — 窗口/托盘/热键/IPC/确认桥        │
-│  ├─ TaskManager.ts (347行) — 会话管理/引擎调度/记忆    │
-│  ├─ engines.ts (440行) — 三引擎 + CLI spawn            │
-│  ├─ AgentLoop.ts (252行) — ReAct 循环 + 压缩           │
-│  ├─ glm.ts (376行) — OpenAI/Anthropic 双协议 Provider  │
-│  ├─ tools.ts (370行) — 9 个内置工具                    │
-│  ├─ mcp.ts (323行) — MCP 客户端(stdio + 自动发现)     │
-│  ├─ skills.ts (122行) — Skills/Commands/Agents 扫描    │
-│  ├─ store.ts (195行) — SQLite + FTS5                   │
-│  └─ settings.ts (70行) — 配置 + 加密存储               │
+│  ├─ main.ts (~435行) — 窗口/托盘/热键/IPC/确认桥/Git浏览  │
+│  ├─ TaskManager.ts (~270行) — 会话管理/引擎调度/记忆    │
+│  ├─ engines.ts (~345行) — 三引擎 + CLI spawn            │
+│  ├─ AgentLoop.ts (~275行) — ReAct 循环 + 三级压缩       │
+│  ├─ glm.ts (~310行) — OpenAI/Anthropic 双协议 Provider  │
+│  ├─ tools.ts (~305行) — 9 个内置工具                    │
+│  ├─ mcp.ts (~320行) — MCP 客户端(stdio + 自动发现)     │
+│  ├─ skills.ts (~130行) — Skills/Commands/Agents 扫描    │
+│  ├─ store.ts (~220行) — SQLite + FTS5                   │
+│  ├─ settings.ts (~85行) — 配置 + safeStorage 加密存储   │
+│  └─ brand.ts (~25行) — 品牌定制(productName)           │
 └─────────────────────────────────────────────────────┘
 ```
 
@@ -83,7 +87,7 @@ User Input → [System Prompt + Memory + Rules]
               │   有 tool_call?
               │     ├─ 是 → 执行工具(只读并发/写串行) → 回填结果 → 回到┌
               │     └─ 否 → done,返回
-              └─ 上下文超长? → compactHistory(LLM 摘要) → 重试
+              └─ 上下文超长? → 三级压缩降级(见下)LM 摘要) → 重试
 ```
 
 **工程细节亮点**:
@@ -223,7 +227,7 @@ recall_memory 工具 → FTS5 全文搜索历史
 4. **跨平台处理精细**: `.cmd` shim 的 shell:true 绕过、Windows taskkill /T /F 杀进程树、binEnv() PATH 增强
 5. **注释双语且详尽**: 每个设计决策都有中英双语注释,"ponytail:" 标记已知 MVP 债务和升级路径
 6. **零依赖哲学**: 不引 tokenizer(tiktoken +1MB)、不引 TOML 库(手写最小解析器)、无前端框架
-7. **上下文管理成熟**: token 预算 trim → LLM 摘要压缩 → reactive 重试,三级降级
+7. **上下文管理成熟**: 三级降级——① 尾部 trim(tokenCoef 滑动平均自校准估算) → ② LLM 摘要压缩头部(compactHistory,30K 预算) → ③ API 报超长时砍预算到 15K 兜底重试
 
 ### 4.2 风险/技术债
 
@@ -277,16 +281,28 @@ recall_memory 工具 → FTS5 全文搜索历史
 
 #### 🎯 建议优先做的(高性价比)
 
-| 优先级 | 功能 | 工作量 | 价值 |
-|--------|------|--------|------|
-| P0 | **图片输入(多模态)** | 中(改消息格式) | 几乎所有竞品都有,不补会显得功能缺失 |
-| P0 | **Git 工具**(diff/log/commit) | 低(几个工具函数) | 开发场景高频需求 |
-| P1 | **会话导出/分享** | 低 | 可分享 AI 对话,传播价值 |
-| P1 | **Ollama/本地模型接入** | 中 | 差异化:隐私 + 免费 |
-| P1 | **跨引擎对比模式** | 中 | 独特卖点:同一问题多引擎对比 |
-| P2 | **@文件/@符号引用** | 中 | 精准注入上下文,比附件更好用 |
-| P2 | **TODO 清单/任务跟踪** | 中 | 复杂任务可视化 |
-| P2 | **命令面板(Cmd+K)** | 中 | 键盘流体验 |
+| 优先级 | 功能 | 工作量 | 价值 | 状态 |
+|--------|------|--------|------|------|
+| P0 | **图片输入(多模态)** | 中(改消息格式) | 几乎所有竞品都有,不补会显得功能缺失 | ❌ 未实现 |
+| P0 | **Git 工具**(diff/log/commit) | 低(几个工具函数) | 开发场景高频需求 | ⚠️ UI 层已有 Git tab(status/log/diff 渲染),缺 Agent 可调用工具 |
+| P1 | **会话导出/分享** | 低 | 可分享 AI 对话,传播价值 | ❌ 未实现 |
+| P1 | **Ollama/本地模型接入** | 中 | 差异化:隐私 + 免费 | ❌ 未实现 |
+| P1 | **跨引擎对比模式** | 中 | 独特卖点:同一问题多引擎对比 | ❌ 未实现 |
+| P2 | **@文件/@符号引用** | 中 | 精准注入上下文,比附件更好用 | ⚠️ 已有附件系统(📎 选择/拖入文件),缺 @ 符号触发 |
+| P2 | **TODO 清单/任务跟踪** | 中 | 复杂任务可视化 | ❌ 未实现 |
+| P2 | **命令面板(Cmd+K)** | 中 | 键盘流体验 | ❌ 未实现 |
+
+#### ✅ 已实现的分析报告曾遗漏的功能
+
+| 功能 | 实现位置 | 说明 |
+|------|---------|------|
+| **Git 标签页** | app.ts + main.ts | status/log/diff 含左右对比渲染,`git status --porcelain` + `git log -n 30` + `git diff` |
+| **文件浏览器** | files-pane.ts + main.ts | 懒加载文件树 + webview 预览(file:///https/localhost),独立 Files 窗口 + 主窗口 Files tab |
+| **附件系统** | app.ts | 📎 选择/拖入文件,注入到消息上下文 |
+| **Slash Menu** | app.ts | `/` 触发 skill 选择菜单,选 skill 注入 body |
+| **Workbench 视图** | app.ts | 项目卡片式 Workbench 视图,按 cwd 分组 |
+| **品牌定制** | brand.ts + brand.json | 打包时自定义 productName |
+| **托盘图标(代码生成)** | main.ts | 16×16 金色 PNG,zlib 实时编码,不依赖图标资源文件 |
 
 ---
 
@@ -294,7 +310,7 @@ recall_memory 工具 → FTS5 全文搜索历史
 
 ### KinetAios 是什么
 
-一个**工程品质极高的 MVP**——4835 行代码实现了三引擎切换、双 LLM 协议、9 工具 + MCP、记忆系统、多会话并发、四语言 UI,且每个模块都有清晰的边界和详尽的设计注释。
+一个**工程品质极高的 MVP**——~3300 行代码实现了三引擎切换、双 LLM 协议、9 工具 + MCP、记忆系统、多会话并发、四语言 UI、Git/文件浏览器/附件/Workbench,且每个模块都有清晰的边界和详尽的设计注释。
 
 ### KinetAios 不是什么
 
@@ -314,4 +330,4 @@ recall_memory 工具 → FTS5 全文搜索历史
 
 ### 一句话评价
 
-> **KinetAios 是 AI Agent 领域的「Unified Remote」——不试图替代任何单个引擎,而是做一个优秀的编排层,让多个引擎、工具、记忆在同一面板协作。代码质量在 MVP 中属于上乘,架构可扩展性强。如果能补上图片输入 + Git 工具 + 代码语义检索,将成为非常有竞争力的桌面 AI 工作站。**
+> **KinetAios 是 AI Agent 领域的「Unified Remote」——不试图替代任何单个引擎,而是做一个优秀的编排层,让多个引擎、工具、记忆在同一面板协作。代码质量在 MVP 中属于上乘,架构可扩展性强。已内置 Git 视图、文件浏览器、附件系统和 Workbench,如果再补上图片输入 + Agent 可调用的 Git 工具 + 代码语义检索,将成为非常有竞争力的桌面 AI 工作站。**
