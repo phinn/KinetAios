@@ -109,13 +109,23 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
     } else {
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
-      // 双击:HTML/图/PDF 预览,其他开编辑器。
+      // 单击只选中(高亮,告知当前文件);双击才打开(预览/编辑按后缀)。和系统文件管理器一致。
+      row.onclick = () => selectRow(row);
       row.ondblclick = () => {
+        selectRow(row);
         if (isPreviewExt(e.path)) { setTab('preview'); loadFile(e.path); }
         else void loadEditor(e.path);
       };
     }
     return div;
+  }
+
+  // 文件树选中态:点过的行高亮(其他清掉)。目录展开/收起不参与"选中"。
+  let selectedRow: HTMLElement | null = null;
+  function selectRow(row: HTMLElement): void {
+    if (selectedRow) selectedRow.classList.remove('selected');
+    row.classList.add('selected');
+    selectedRow = row;
   }
 
   async function toggleDir(kids: HTMLElement): Promise<void> {
@@ -164,9 +174,14 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
   async function loadEditor(abs: string): Promise<void> {
     currentAbs = abs;
+    // 立即切到编辑器视图并显示「加载中」(避免双击后 UI 静止,看上去卡)。
+    setTab('edit');
+    addr.value = 'file://' + abs;
+    editor.value = '';
+    editor.placeholder = tr('files.loading');
+    feStatus.textContent = abs + ' · …';
     const r = await api.fileRead(abs);
     if (!r.ok || r.content == null) {
-      editor.value = '';
       editor.placeholder = tr('files.errRead', { msg: r.error ?? '' });
       feStatus.textContent = r.error ?? '';
       return;
@@ -174,8 +189,6 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     editor.value = r.content;
     editorDirty = false;
     feStatus.textContent = abs;
-    setTab('edit');
-    addr.value = 'file://' + abs;
   }
 
   // 切右侧视图:preview = 显示 webview,隐藏 editor;反之亦然。

@@ -60,10 +60,11 @@ function applyI18nDOM(): void {
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
 
-  // 配置(语言 + CLI 引擎开关)和产品名都启动时读一次。语言切走后 lang 会更新。
+  // 配置(语言 + 主题 + CLI 引擎开关)和产品名都启动时读一次。语言/主题切走后同步更新。
   const settings = await api.getSettings();
   lang = settings.lang;
   cliEnabled = settings.enableCliEngines;
+  applyTheme(settings.theme);
   const brand = await api.getBrand();
   PRODUCT = brand.productName;
   HOME_DIR = brand.homeDir;
@@ -424,8 +425,16 @@ async function showGitDiff(opts: { file?: string; hash?: string }): Promise<void
 // Diff 按行着色(统一格式,commit show 用)。+/-/@@/+++ --- 不同色;每行独立 esc。
 function colorGitDiff(s: string): string {
   if (!s) return '<pre class="git-diff"><span class="d-hunk">(empty)</span></pre>';
-  const body = s
-    .split('\n')
+  // git show 输出 = commit metadata + message + diff body。必须分离:message 里的 "- list 项"
+  // 会被误判为 diff 删除行渲染成红色 → 乱。从首个 "diff --git" 行开始才算 diff body。
+  const lines = s.split('\n');
+  const diffStart = lines.findIndex((l) => l.startsWith('diff --git'));
+  const meta = diffStart >= 0 ? lines.slice(0, diffStart) : [];
+  const body = diffStart >= 0 ? lines.slice(diffStart) : lines;
+  const metaHtml = meta.length
+    ? meta.map((l) => `<span class="d-meta">${esc(l) || '&nbsp;'}</span>`).join('\n')
+    : '';
+  const bodyHtml = body
     .map((line) => {
       const e = esc(line);
       if (line.startsWith('+++') || line.startsWith('---')) return `<span class="d-hunk">${e}</span>`;
@@ -435,7 +444,7 @@ function colorGitDiff(s: string): string {
       return e;
     })
     .join('\n');
-  return `<pre class="git-diff">${body}</pre>`;
+  return `<pre class="git-diff">${metaHtml}${metaHtml && bodyHtml ? '\n' : ''}${bodyHtml}</pre>`;
 }
 
 // 文件 diff 的左右对比:把 unified diff 解析成对齐的「左旧 / 右新」行。
@@ -685,6 +694,11 @@ function scrollDown() {
 }
 
 // ---------- settings ----------
+// 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
+function applyTheme(theme: 'dark' | 'light'): void {
+  document.documentElement.dataset.theme = theme;
+}
+
 async function showSettings() {
   currentView = 'settings';
   document.getElementById('chat-view')!.classList.remove('active');
@@ -698,42 +712,65 @@ async function showSettings() {
       <button id="s-back" class="ghost" style="margin-bottom:14px">${tr('settings.back')}</button>
       <h2>${tr('settings.title')}</h2>
       <div class="sub">${tr('settings.sub')}</div>
-      <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
-        ${LANGS.map((l) => `<option value="${l.id}" ${l.id === s.lang ? 'selected' : ''}>${l.label}</option>`).join('')}
-      </select></div>
-      <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
-        ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
-      </select></div>
-      <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /></div>
-      <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
-      <div class="field"><label>${tr('settings.modelId')}</label><input id="s-model" value="${esc(s.model)}" /></div>
-      <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
-        <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>${tr('settings.proto.openai')}</option>
-        <option value="anthropic" ${s.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic</option>
-      </select></div>
-      <div class="field"><label>Reasoning effort</label><select id="s-reason">${REASONS.map(
-        (r) => `<option value="${r}" ${r === s.reasoning ? 'selected' : ''}>${r}</option>`,
-      ).join('')}</select></div>
-      <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
-        <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
-        <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
-      </select></div>
-      <div class="field"><label>${tr('settings.sandbox')}</label><select id="s-sandbox">
-        <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>${tr('settings.sandbox.readOnly')}</option>
-        <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
-        <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
-      </select></div>
-      <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.plan')}</label></div>
-      <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.cli')}</label></div>
-      <div class="field"><label>${tr('settings.price')}</label>
-        <div class="row"><input id="s-pin" type="number" step="0.01" value="${s.priceInPerMTok}" /><input id="s-pout" type="number" step="0.01" value="${s.priceOutPerMTok}" /></div>
+
+      <div class="s-section">
+        <h3>${tr('settings.sec.api')}</h3>
+        <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
+          ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /></div>
+        <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
+        <div class="field"><label>${tr('settings.modelId')}</label><input id="s-model" value="${esc(s.model)}" /></div>
+        <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
+          <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>${tr('settings.proto.openai')}</option>
+          <option value="anthropic" ${s.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic</option>
+        </select></div>
+        <div class="field"><label>Reasoning effort</label><select id="s-reason">${REASONS.map(
+          (r) => `<option value="${r}" ${r === s.reasoning ? 'selected' : ''}>${r}</option>`,
+        ).join('')}</select></div>
       </div>
-      <div style="display:flex;gap:8px;align-items:center">
+
+      <div class="s-section">
+        <h3>${tr('settings.sec.behavior')}</h3>
+        <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
+          <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
+          <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
+        </select></div>
+        <div class="field"><label>${tr('settings.sandbox')}</label><select id="s-sandbox">
+          <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>${tr('settings.sandbox.readOnly')}</option>
+          <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
+          <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
+        </select></div>
+        <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.plan')}</label></div>
+        <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.cli')}</label></div>
+      </div>
+
+      <div class="s-section">
+        <h3>${tr('settings.sec.price')}</h3>
+        <div class="field"><label>${tr('settings.price')}</label>
+          <div class="row"><input id="s-pin" type="number" step="0.01" value="${s.priceInPerMTok}" /><input id="s-pout" type="number" step="0.01" value="${s.priceOutPerMTok}" /></div>
+        </div>
+      </div>
+
+      <div class="s-section">
+        <h3>${tr('settings.sec.ui')}</h3>
+        <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
+          ${LANGS.map((l) => `<option value="${l.id}" ${l.id === s.lang ? 'selected' : ''}>${l.label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>${tr('settings.theme')}</label><select id="s-theme">
+          <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>${tr('settings.theme.dark')}</option>
+          <option value="light" ${s.theme === 'light' ? 'selected' : ''}>${tr('settings.theme.light')}</option>
+        </select></div>
+      </div>
+
+      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
         <button id="s-test">${tr('settings.test')}</button>
         <span class="test-msg" id="s-msg"></span>
       </div>
     </div>`;
+  // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
+  document.getElementById('s-theme')!.onchange = () => applyTheme(readSettingsForm().theme);
   const apply = () => {
     const preset = PRESETS.find((p) => p.id === (document.getElementById('s-preset') as HTMLSelectElement).value);
     if (preset && preset.id !== 'custom') {
@@ -751,6 +788,7 @@ async function showSettings() {
     await api.saveSettings(ns);
     cliEnabled = ns.enableCliEngines;
     lang = ns.lang; // 语言切了 → 刷静态文本 + 重渲(侧栏/主区/设置面板自身)
+    applyTheme(ns.theme);
     applyI18nDOM();
     renderSidebar();
     renderMain();
@@ -782,6 +820,7 @@ function readSettingsForm(): AppSettings {
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
+    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light',
   };
 }
 

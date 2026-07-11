@@ -9,10 +9,26 @@
   --text-faint: #6c6c76;
   --accent: #e8b339;
   --accent-dim: #6b5320;
+  --accent-fg: #1b1b1f;
   --ok: #4ec27a;
   --err: #e2614c;
   --run: #e8b339;
   --code-bg: #131316;
+}
+/* 淡色主题:在 <html data-theme="light"> 生效。颜色对齐 macOS System Light。 */
+[data-theme="light"] {
+  --bg: #f6f6f9;
+  --bg-side: #ececf0;
+  --bg-elev: #ffffff;
+  --bg-input: #ffffff;
+  --border: #d9d9e0;
+  --text: #1b1b1f;
+  --text-dim: #55555f;
+  --text-faint: #8a8a93;
+  --accent: #b88200;
+  --accent-dim: #d9a840;
+  --accent-fg: #ffffff;
+  --code-bg: #f0f0f4;
 }
 #head-status { color: var(--text-dim); font-size: 12px; margin-left: 6px; }
 .send.stop { background: #9c3a3a; border-color: #9c3a3a; }
@@ -207,6 +223,7 @@ a { color: var(--accent); }
 .git-diff .d-add { color: #50c878; }
 .git-diff .d-del { color: #dc5050; }
 .git-diff .d-hunk { color: var(--text-faint); }
+.git-diff .d-meta { color: var(--text-dim); display: block; }
 
 /* 文件 diff 左右对比表(修改前 / 修改后)。表行同高天然对齐,无需 JS 同步滚动。 */
 .git-ss { width: 100%; border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
@@ -325,6 +342,10 @@ a { color: var(--accent); }
 .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
 .field .row { display: flex; gap: 8px; }
 .field .row > * { flex: 1; }
+/* 设置页分组:每个 s-section 是一组同类字段(接口/行为/价格/界面),顶部 h3 标题。 */
+.s-section { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
+.s-section:first-of-type { border-top: none; margin-top: 14px; padding-top: 0; }
+.s-section h3 { margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
 .test-msg { font-size: 12px; margin-top: 6px; }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
 
@@ -412,6 +433,9 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 
 .fe-row { display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: default; font-size: 12.5px; }
 .fe-row:hover { background: var(--bg-elev); }
+/* 选中态:左竖线 + accent 文字 + elev 底,跟系统文件管理器一致(单击选中、双击打开)。 */
+.fe-row.selected { background: var(--bg-elev); color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.fe-row.selected .fe-name { color: var(--accent); }
 .fe-ico { width: 14px; text-align: center; flex-shrink: 0; }
 .fe-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fe.file .fe-name { color: var(--text-dim); }

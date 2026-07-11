@@ -19,6 +19,7 @@ const DEFAULTS: AppSettings = {
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',
   lang: 'zh-CN',
+  theme: 'dark',
 };
 
 let cache: AppSettings | null = null;

@@ -43,6 +43,7 @@ export type AppSettings = {
   priceOutPerMTok: number;
   presetId: string;
   lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
+  theme: 'dark' | 'light'; // 暗 / 淡色主题
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
