@@ -20,12 +20,12 @@ English | [简体中文](README.zh-CN.md)
 
 Most AI clients lock you into one provider, lose context when you switch engines, and route your conversations through a relay server. KinetAios runs **three engines from one window**, with cross-engine long-term memory and **no account**.
 
-|  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex CLI |
+|  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
 | Three-engine switch (Direct / Claude Code / Codex) | ✅ | — | — | — | — |
 | Local SQLite + automatic long-term memory | ✅ | — | — | — | — |
 | Cross-engine memory (one user profile, all engines) | ✅ | — | — | — | — |
-| Multiple parallel sessions | ✅ | — | ✅ | — | — |
+| Multiple parallel sessions | ✅ | — | ✅ | — | ✅ |
 | Global hotkey + quick panel | ✅ | — | — | — | — |
 | Auto-scan MCP / Skills / Agents | ✅ | ✅ | — | — | — |
 | Project rules (AGENTS / CLAUDE / KINET) | ✅ | — | — | ✅ | ✅ |
