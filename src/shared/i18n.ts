@@ -159,6 +159,12 @@ const ZH_CN: Dict = {
   'arena.waiting': '运行中…',
   'arena.noCwd': '未指定 cwd',
 
+  'voice.mic': '语音输入(说,自动转文字;再点结束)',
+  'voice.lbl': '语音',
+  'voice.listening': '正在听…(再点结束)',
+  'voice.speak': '朗读 / 再点取消',
+  'voice.unsupported': '此环境不支持语音识别(Web Speech API 不可用)',
+
   'snap.open': '快照与回滚',
   'snap.title': '快照与回滚',
   'snap.scope.this': '当前频道',
@@ -428,6 +434,12 @@ const EN: Dict = {
   'arena.waiting': 'Running…',
   'arena.noCwd': 'No cwd set',
 
+  'voice.mic': 'Voice input (speak, auto-transcribed; click again to finish)',
+  'voice.lbl': 'Voice',
+  'voice.listening': 'Listening… (click again to finish)',
+  'voice.speak': 'Read aloud / click again to cancel',
+  'voice.unsupported': 'Voice recognition unavailable (Web Speech API not supported)',
+
   'snap.open': 'Snapshots & Rollback',
   'snap.title': 'Snapshots & Rollback',
   'snap.scope.this': 'Current channel',
@@ -696,6 +708,12 @@ const ZH_TW: Dict = {
   'arena.waiting': '執行中…',
   'arena.noCwd': '未指定 cwd',
 
+  'voice.mic': '語音輸入(說,自動轉文字;再點結束)',
+  'voice.lbl': '語音',
+  'voice.listening': '正在聽…(再點結束)',
+  'voice.speak': '朗讀 / 再點取消',
+  'voice.unsupported': '此環境不支援語音辨識(Web Speech API 不可用)',
+
   'snap.open': '快照與回滾',
   'snap.title': '快照與回滾',
   'snap.scope.this': '當前頻道',
@@ -963,6 +981,12 @@ const JA: Dict = {
   'arena.idle': '「同時実行」をクリック',
   'arena.waiting': '実行中…',
   'arena.noCwd': 'cwd 未設定',
+
+  'voice.mic': '音声入力(話す、自動で文字起こし;もう一度クリックで終了)',
+  'voice.lbl': '音声',
+  'voice.listening': '聞いています…(もう一度クリックで終了)',
+  'voice.speak': '読み上げ / もう一度クリックでキャンセル',
+  'voice.unsupported': 'この環境では音声認識を使用できません(Web Speech API が無効)',
 
   'snap.open': 'スナップショット & ロールバック',
   'snap.title': 'スナップショット & ロールバック',

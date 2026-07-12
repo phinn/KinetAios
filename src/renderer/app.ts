@@ -643,6 +643,18 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     }
     aiMsg.appendChild(avatarEl('✨'));
     aiMsg.appendChild(body);
+    // 非流式时给 AI 回复挂一个 🔊 朗读按钮(speechSynthesis 系统级 TTS,零依赖)。
+    if (!streaming && t.answer) {
+      const bar = document.createElement('div');
+      bar.className = 'ai-actions';
+      const speak = document.createElement('button');
+      speak.className = 'ghost ai-speak';
+      speak.title = tr('voice.speak');
+      speak.textContent = '🔊';
+      speak.onclick = () => speakText(t.answer ?? '');
+      bar.appendChild(speak);
+      body.appendChild(bar);
+    }
     wrap.appendChild(aiMsg);
   }
   return wrap;
@@ -1159,6 +1171,91 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     const menu = document.getElementById('mcp-menu')!;
     if (!menu.hidden && !(e.target as HTMLElement)?.closest('#btn-mcp, #mcp-menu')) menu.hidden = true;
   });
+  // Voice in/out —— Web Speech API(Chromium 内置,零依赖)。STT 走 webkitSpeechRecognition,
+  // 进 interim 结果直接拼到 composer;TTS 走 speechSynthesis,每条 AI 回复自带 🔊 按钮(见 renderTurn)。
+  // ponytail: STT 在线版用 Google 服务,与 local-first 叙事有冲突 —— ceiling 标在这,后续换 whisper.cpp 离线。
+  wireVoice();
+}
+
+// 全局 STT 状态。webkitSpeechRecognition 在 .d.ts 里没类型,用 any 兜。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let rec: any = null;
+let recActive = false;
+function wireVoice(): void {
+  const btn = document.getElementById('btn-voice')!;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const SRC = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SRC) {
+    btn.title = tr('voice.unsupported');
+    btn.classList.add('disabled');
+    btn.onclick = () => alert(tr('voice.unsupported'));
+    return;
+  }
+  btn.onclick = () => {
+    if (recActive && rec) {
+      rec.stop();
+      return;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec = new SRC();
+    rec.lang = lang === 'en' ? 'en-US' : lang === 'ja' ? 'ja-JP' : lang === 'zh-TW' ? 'zh-TW' : 'zh-CN';
+    rec.continuous = true;
+    rec.interimResults = true;
+    const composer = document.getElementById('composer') as HTMLTextAreaElement;
+    const base = composer.value;
+    let committed = base ? base + (base.endsWith('\n') ? '' : ' ') : '';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onresult = (e: any) => {
+      let interim = '';
+      for (let i = e.resultIndex; i < e.results.length; i++) {
+        const r = e.results[i];
+        if (r.isFinal) committed += r[0].transcript + ' ';
+        else interim += r[0].transcript;
+      }
+      composer.value = committed + interim;
+      composer.dispatchEvent(new Event('input'));
+    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    rec.onerror = (e: any) => {
+      recActive = false;
+      btn.classList.remove('listening');
+      btn.title = tr('voice.mic');
+      console.warn('speech error', e.error);
+    };
+    rec.onend = () => {
+      recActive = false;
+      btn.classList.remove('listening');
+      btn.title = tr('voice.mic');
+    };
+    rec.start();
+    recActive = true;
+    btn.classList.add('listening');
+    btn.title = tr('voice.listening');
+    composer.focus();
+  };
+}
+
+// TTS:speechSynthesis 系统级,零依赖。再次点同一个正在读的消息 → 取消。
+let lastUtterance: SpeechSynthesisUtterance | null = null;
+function speakText(text: string): void {
+  if (window.speechSynthesis.speaking) {
+    window.speechSynthesis.cancel();
+    if (lastUtterance && lastUtterance.text === text) {
+      lastUtterance = null;
+      return;
+    }
+  }
+  // strip markdown 噪声(代码块/链接),让朗读顺一点。ponytail:粗暴 replace,够用。
+  const clean = text
+    .replace(/```[\s\S]*?```/g, '(code)')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[#*_>]/g, '')
+    .slice(0, 2000);
+  const u = new SpeechSynthesisUtterance(clean);
+  u.lang = lang === 'en' ? 'en-US' : lang === 'ja' ? 'ja-JP' : lang === 'zh-TW' ? 'zh-TW' : 'zh-CN';
+  lastUtterance = u;
+  window.speechSynthesis.speak(u);
 }
 
 async function send() {
