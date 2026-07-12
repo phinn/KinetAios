@@ -154,6 +154,7 @@ export interface KinetAPI {
   quickSubmit(text: string): Promise<string>;
   openDashboard(): Promise<void>;
   openFiles(cwd?: string): Promise<void>;
+  shellOpen(url: string): Promise<void>;
   listDir(absPath: string): Promise<{ ok: boolean; entries?: DirEntry[]; error?: string }>;
   gitSnapshot(cwd: string): Promise<GitSnapshot>;
   gitDiff(cwd: string, opts: { file?: string; hash?: string }): Promise<GitDiffResult>;

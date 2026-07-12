@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -469,6 +469,8 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.handle('list-dir', (_e, absPath: string) => listDirAbs(absPath));
+  // 在用户默认浏览器里打开 URL(file:// / https:// 都行)。文件树右键「在浏览器中打开」用。
+  ipcMain.handle('shell-open', (_e, url: string) => shell.openExternal(url));
   ipcMain.handle('git-snapshot', (_e, cwd: string) => gitSnapshotAsync(cwd));
   ipcMain.handle('git-diff', (_e, cwd: string, opts: { file?: string; hash?: string }) =>
     gitDiffAsync(cwd, opts),

@@ -166,13 +166,15 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
   function loadFile(abs: string): void {
     currentAbs = abs;
-    // encodeURI 把空格/中文/特殊字符转义(file:// URL 里这些会断),
-    // 但保留 : / ? # @ 等 URL 结构字符。Windows 路径的反斜杠也顺手转成 /。
-    const absenc = abs.replace(/\\/g, '/');
-    const url = 'file://' + encodeURI(absenc);
-    // ponytail: 直接赋 src 比 loadURL 在「同 webview 切换不同 file://」更可靠 ——
-    // loadURL 在前一次 load 未结束时会偶发被吞,src 赋值 Electron 总是会触发 reload。
+    // 三斜杠:Unix /x → 'file:///x';Windows C:\x → 'file:///C:/x'。
+    // 反斜杠先转 /,encodeURI 转义空格/中文(保留 URL 结构字符)。
+    const absenc = abs.replace(/\\/g, '/').replace(/^\/+/, '');
+    const url = 'file:///' + encodeURI(absenc);
+    // loadURL 触发渲染;src 赋值同步属性让后续 did-navigate / 地址栏对得上。
+    // 两个都设是为了:(a) loadURL 在 src 已是同 URL 时不会重载,src 赋值确保下一次不同 URL 必重载;
+    // (b) 单独 src = url 在某些 Electron 版本对 file:// 不触发实际 navigation。
     webview.src = url;
+    webview.loadURL(url);
     addr.value = url;
   }
 
@@ -237,9 +239,12 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); void save(); }
   });
 
-  // 右键菜单(只作用在 root 范围内)
+  // 右键「在浏览器中打开」= 调起系统默认浏览器(不再灌进内置 webview —— 那是左键单击的行为)。
   root.querySelector<HTMLElement>('#fm-open')!.onclick = () => {
-    if (menuTarget) { setTab('preview'); loadFile(menuTarget.path); }
+    if (menuTarget) {
+      const absenc = menuTarget.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      void api.shellOpen('file:///' + encodeURI(absenc));
+    }
     hideMenu();
   };
   root.querySelector<HTMLElement>('#fm-edit')!.onclick = () => {
