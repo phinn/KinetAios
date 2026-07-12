@@ -31,10 +31,10 @@ Scans Claude Code skills + commands + agents (including installed plugin content
 
 ### Sidebar actions (left to right)
 - **＋** — new session.
-- **📂 Workbench** — project cards grouped by cwd. Each card shows recent activity + cost; click to switch. 「背景」edits that project's `KINET-CONTEXT.md` (extra context injected when the agent runs in that cwd).
+- **📂 Workbench** — project cards grouped by cwd. Each card shows recent activity + cost; click to switch. The **Context** button edits that project's `KINET-CONTEXT.md` (extra context injected when the agent runs in that cwd).
 - **📊 Dashboard** — standalone window: live token usage, cost stats, engine distribution across all sessions.
 - **🌐 Files** — standalone Files window. Left: cwd file tree (lazy-expanded, click to open). Right: `<webview>` preview for HTML/SVG/PNG/JPG/PDF/CSS, or textarea editor for everything else (`Ctrl/Cmd+S` saves). Address bar accepts `file://`, `http(s)://`, and `localhost:<port>`.
-- **🧠 Memory** — long-term memory panel. Toggle **当前频道 / 全部** to scope. Each row shows the fact + source channel; inline **edit** + **delete** per row.
+- **🧠 Memory** — long-term memory panel. Toggle **Current channel / All** to scope. Each row shows the fact + source channel; inline **edit** + **delete** per row.
 - **⚙️ Settings** — see below.
 
 ### Main window tabs (chat / files / git / rules)
