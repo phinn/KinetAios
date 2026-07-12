@@ -158,7 +158,8 @@ class OpenAICompatibleProvider implements Provider {
     signal: AbortSignal,
     onToken: (t: string) => void,
   ): Promise<Completion> {
-    if (!snap.apiKey) throw new GLMError('noKey');
+    // ponytail: 允许空 key —— Ollama(localhost:11434)不需 auth,其它服务会 401 自报错。
+    // if (!snap.apiKey) throw new GLMError('noKey');
 
     // OpenAI 兼容端点(GLM 智谱 / DeepSeek / Qwen / OpenAI)均为自动前缀缓存:messages 开头的
     // system + 早期 history 每轮不变 → 命中缓存、低价计费。无需额外参数(只有 Anthropic 要 cache_control)。
@@ -177,7 +178,8 @@ class OpenAICompatibleProvider implements Provider {
     const resp = await fetchUntil200(`${snap.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
-        Authorization: `Bearer ${snap.apiKey}`,
+        // Ollama(11434)不需要 key;留空就发 dummy,服务器忽略。其它服务一律 Bearer。
+        Authorization: `Bearer ${snap.apiKey || 'ollama'}`,
         'Content-Type': 'application/json',
         Accept: 'text/event-stream',
       },

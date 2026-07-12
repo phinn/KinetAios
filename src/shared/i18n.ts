@@ -276,6 +276,7 @@ const ZH_CN: Dict = {
 
   'preset.glm': 'GLM 智谱',
   'preset.qwen': '阿里通义 (DashScope)',
+  'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
   'preset.custom': '自定义',
   'preset.deepseek': 'DeepSeek',
 
@@ -568,6 +569,7 @@ const EN: Dict = {
 
   'preset.glm': 'GLM (Zhipu)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
+  'preset.ollama': 'Local Ollama (llama3.2 / qwen2.5 etc.)',
   'preset.custom': 'Custom',
   'preset.deepseek': 'DeepSeek',
 
@@ -859,6 +861,7 @@ const ZH_TW: Dict = {
 
   'preset.glm': 'GLM 智譜',
   'preset.qwen': '阿里通義 (DashScope)',
+  'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
   'preset.custom': '自訂',
   'preset.deepseek': 'DeepSeek',
 
@@ -1150,6 +1153,7 @@ const JA: Dict = {
 
   'preset.glm': 'GLM (Zhipu)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
+  'preset.ollama': 'ローカル Ollama (llama3.2 / qwen2.5 等)',
   'preset.custom': 'カスタム',
   'preset.deepseek': 'DeepSeek',
 
