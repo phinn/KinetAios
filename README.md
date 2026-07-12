@@ -1,11 +1,62 @@
 # KinetAios
 
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
+[![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#install)
+
+> 🚀 **We're live on Product Hunt today** — [upvote & say hi](https://www.producthunt.com/posts/kinetaios)
+> <!-- TODO: replace the URL above with your actual PH post URL once you have it -->
+
+<!-- TODO: drop a 1440×900 screenshot or 30s GIF at docs/hero.png, then remove this note -->
+![KinetAios hero screenshot](docs/hero.png)
+
+**A local-first, multi-engine AI agent dashboard.** Run Claude Code, Codex, and a built-in ReAct loop side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
+
 English | [简体中文](README.zh-CN.md)
 
-A local-first AI agent dashboard, **cross-platform (Windows 11 + macOS)**. Run multiple sessions concurrently, stream answers, use shell/file/search/MCP tools, keep SQLite history + memory, summon a global hotkey, and pick a model per session.
+---
 
-> The product name is configurable in `brand.json` (`productName`); all UI surfaces read it at startup.
-> The macOS original (native SwiftUI) lives one level up at `../KinetAios`. The two projects **share no code** — this is a behavior-aligned TypeScript rewrite (Electron).
+## Why KinetAios?
+
+Most AI clients lock you into one provider, lose context when you switch engines, and route your conversations through a relay server. KinetAios runs **three engines from one window**, with cross-engine long-term memory and **no account**.
+
+|  | KinetAios | Claude Desktop | Cherry Studio | Cursor |
+|---|---|---|---|---|
+| Three-engine switch (Direct / Claude Code / Codex) | ✅ | — | — | — |
+| Local SQLite + automatic long-term memory | ✅ | — | — | — |
+| Cross-engine memory (one user profile, all engines) | ✅ | — | — | — |
+| Multiple parallel sessions | ✅ | — | ✅ | — |
+| Global hotkey + quick panel | ✅ | — | — | — |
+| Auto-scan MCP / Skills / Agents | ✅ | ✅ | — | — |
+| Project rules (AGENTS / CLAUDE / KINET) | ✅ | — | — | ✅ |
+| Local-first, no account | ✅ | ✅ | ✅ | — |
+
+## Install
+
+Download the latest release:
+
+- **Windows** — [`KinetAios-Setup-1.0.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer)
+- **macOS** — see [releases](https://github.com/phinn/KinetAios/releases/latest)
+
+> Unsigned build → Windows SmartScreen / macOS Gatekeeper will warn; allow manually.
+
+**First launch**: click ⚙ top-right → fill in **API Key** (+ Base URL / model; default GLM Zhipu) → once "Test connection" passes, send a task.
+
+### Run from source
+
+Requires **Node.js 18+** and internet (the `better-sqlite3` native module needs to compile).
+
+```sh
+cd KinetAiosWin
+npm install      # postinstall rebuilds better-sqlite3 for Electron
+npm run build
+npm start
+```
+
+> On a CN network `npm install` may time out fetching the Electron binary — `.npmrc` is already configured with the npmmirror mirror; on failure you can also run `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`.
+
+---
 
 ## Tech stack
 
@@ -58,21 +109,6 @@ Five sections:
 - **Long-term memory** — each turn extracts durable facts about the user in the background, stored in SQLite, injected into the next turn's system prompt. Cross-engine (Direct / Claude Code / Codex) and cross-session by design.
 - **Tray + global hotkey** — `Ctrl/Cmd+Alt+Space` summons the quick panel (closing the window quits; the hotkey is active while the app runs).
 - **Configurable brand** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI).
-
-## Run it (Windows 11 / macOS)
-
-Requires **Node.js 18+** and internet (the `better-sqlite3` native module needs to compile).
-
-```sh
-cd KinetAiosWin
-npm install      # postinstall rebuilds better-sqlite3 for Electron
-npm run build
-npm start
-```
-
-> On a CN network `npm install` may time out fetching the Electron binary — `.npmrc` is already configured with the npmmirror mirror; on failure you can also run `ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/ node node_modules/electron/install.js`.
-
-First launch: click ⚙ top-right → fill in the **API Key** (+ Base URL / model; default GLM Zhipu) → once "Test connection" passes, send a task.
 
 ## Directory layout
 
