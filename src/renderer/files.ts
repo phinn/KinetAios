@@ -12,6 +12,7 @@ declare global {
 
 (async () => {
   const [settings, brand] = await Promise.all([window.kinet.getSettings(), window.kinet.getBrand()]);
+  document.documentElement.dataset.theme = settings.theme; // 与主窗 data-theme 同步
   document.title = `${brand.productName} · ${t(settings.lang, 'files.title')}`;
   mountFilesPane(document.body, settings.lang);
 })();

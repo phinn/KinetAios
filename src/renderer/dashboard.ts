@@ -110,6 +110,7 @@ function renderDashboard(): void {
 (async () => {
   const [settings, brand] = await Promise.all([api.getSettings(), api.getBrand()]);
   lang = settings.lang;
+  document.documentElement.dataset.theme = settings.theme; // 与主窗的 data-theme 同步,淡色主题才生效
   document.title = `${brand.productName} · ${t(lang, 'dash.title')}`;
   const b = document.getElementById('dash-brand');
   if (b) b.textContent = brand.productName;

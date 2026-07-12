@@ -21,6 +21,7 @@ function applyI18nDOM(): void {
 // 读品牌名 + 语言:设 title + 刷静态文本。
 Promise.all([api.getBrand(), api.getSettings()]).then(([b, s]) => {
   lang = s.lang;
+  document.documentElement.dataset.theme = s.theme; // 与主窗 data-theme 同步
   document.title = `${b.productName} · Quick`;
   applyI18nDOM();
 });
