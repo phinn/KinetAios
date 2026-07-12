@@ -6,7 +6,7 @@ import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
-import { currentProvider } from './glm';
+import { currentProvider, embed } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 
@@ -309,8 +309,13 @@ export class TaskManager {
       );
       const { facts, triples } = parseExtraction(comp.content);
       const existingFacts = new Set(store.allMemoryContents());
+      const added: string[] = [];
       for (const f of facts) {
-        if (f && !existingFacts.has(f)) store.addMemory(f, convId);
+        if (f && !existingFacts.has(f)) {
+          store.addMemory(f, convId);
+          existingFacts.add(f);
+          added.push(f);
+        }
       }
       // triples 去重按小写 s|p|o,跨频道也去重(全局知识图谱语义)。
       const existingTriples = store.allMemoryTripleKeys();
@@ -319,6 +324,26 @@ export class TaskManager {
         if (!existingTriples.has(key)) {
           store.addMemoryTriple(t.s, t.p, t.o, convId);
           existingTriples.add(key);
+        }
+      }
+      // 给新插入的 fact 算 embedding。失败不阻塞主流程,recall_memory 会回退 FTS5。
+      // ponytail: addMemory 不返回 id,靠内容反查最新行;新 fact 量小,逐条 embed 够用。
+      if (added.length) {
+        try {
+          const recent = store.loadMemories(undefined);
+          const byContent = new Map(recent.map((r) => [r.content, r.id]));
+          for (const f of added) {
+            const id = byContent.get(f);
+            if (!id) continue;
+            try {
+              const vecs = await embed([f], snap, ac.signal);
+              if (vecs[0]?.length) store.setMemoryEmbedding(id, vecs[0], snap.baseURL.includes('localhost:11434') ? 'nomic-embed-text' : 'embedding-3');
+            } catch (embErr) {
+              console.warn('[memory] embed failed (non-blocking):', (embErr as Error)?.message);
+            }
+          }
+        } catch {
+          /* embeddings 全失败也无所谓,recall 回退 FTS5 */
         }
       }
     } catch (e) {

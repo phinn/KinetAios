@@ -37,6 +37,8 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS cron_tasks(
       id TEXT PRIMARY KEY, cron TEXT, prompt TEXT, cwd TEXT,
       enabled INTEGER DEFAULT 1, last_run INTEGER, created_at INTEGER);
+    CREATE TABLE IF NOT EXISTS memory_embeddings(
+      memory_id TEXT PRIMARY KEY, vec BLOB, model TEXT, created_at REAL);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -297,4 +299,40 @@ export function deleteCronTask(id: string): void {
 }
 export function touchCronLastRun(id: string, ts: number): void {
   db.prepare('UPDATE cron_tasks SET last_run=? WHERE id=?;').run(ts, id);
+}
+
+// MARK: memory_embeddings —— Float32Array 存 BLOB。recall_memory 用 cosine 暴力 top-K。
+export interface MemoryEmbeddingRow {
+  memoryId: string;
+  content: string;
+  vec: Float32Array;
+}
+export function setMemoryEmbedding(memoryId: string, vec: number[], model: string): void {
+  const buf = Buffer.from(new Float32Array(vec).buffer);
+  db.prepare('INSERT OR REPLACE INTO memory_embeddings(memory_id, vec, model, created_at) VALUES(?,?,?,?);')
+    .run(memoryId, buf, model, Date.now());
+}
+export function deleteMemoryEmbedding(memoryId: string): void {
+  db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(memoryId);
+}
+export function listMemoryEmbeddings(): MemoryEmbeddingRow[] {
+  const rows = db.prepare(
+    'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
+  ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string }>;
+  return rows.map((r) => ({
+    memoryId: r.memoryId,
+    content: r.content,
+    vec: new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4),
+  }));
+}
+// cosine similarity,两个向量必须同维度。ponytail: 暴力 O(n),记忆规模(~几百条)够用。
+export function cosine(a: Float32Array, b: Float32Array): number {
+  let dot = 0, na = 0, nb = 0;
+  for (let i = 0; i < a.length; i++) {
+    dot += a[i] * b[i];
+    na += a[i] * a[i];
+    nb += b[i] * b[i];
+  }
+  if (na === 0 || nb === 0) return 0;
+  return dot / (Math.sqrt(na) * Math.sqrt(nb));
 }

@@ -162,14 +162,47 @@ const webFetch: Tool = {
 const recallMemory: Tool = {
   name: 'recall_memory',
   readOnly: true,
-  description: '全文搜索用户的历史(shell 输出、读过的文件、之前的问答)。需要回忆过去做过/聊过什么时用。',
+  description: '语义搜索用户的历史(长期记忆 + 历史对话)。先走 embedding cosine 召回(语义近似),无 embedding 时回退 FTS5 关键词。需要回忆过去做过/聊过什么时用。',
   parameters: {
     type: 'object',
-    properties: { query: { type: 'string', description: '搜索关键词' } },
+    properties: { query: { type: 'string', description: '搜索关键词或语义描述' } },
     required: ['query'],
   },
   async run(args) {
     const q = (args.query as string) ?? '';
+    // 先试语义召回:embed query → cosine top-K over memory_embeddings(只覆盖 facts)。
+    // 失败 / 无 embedding → 回退 FTS5(覆盖 history 表,即对话历史)。
+    // ponytail ceiling:embedding 只覆盖 memories 表(facts),history 表(对话原文)仍走 FTS5;
+    // 后续要全量语义召回需把每轮对话也 embed,数量级会涨,先做 fact 这一档。
+    try {
+      const { embed } = await import('./glm');
+      const { snapshot } = await import('./settings');
+      const snap = snapshot();
+      const qVecArr = await embed([q], snap);
+      if (qVecArr[0]?.length) {
+        const qVec = new Float32Array(qVecArr[0]);
+        const rows = store.listMemoryEmbeddings();
+        if (rows.length) {
+          const scored = rows
+            .map((r) => ({ content: r.content, score: store.cosine(qVec, r.vec) }))
+            .filter((r) => r.score > 0.2)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 20);
+          if (scored.length) {
+            const body = scored
+              .map((m, i) => {
+                const cut = m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content;
+                return `[${i + 1}] (score ${m.score.toFixed(2)}) ${cut}`;
+              })
+              .join('\n');
+            return `语义命中 ${scored.length} 条记忆:\n${body}`;
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('[recall] embed path failed, fallback to FTS5:', (e as Error)?.message);
+    }
+    // FTS5 fallback —— 覆盖对话历史(role/content 全文索引)。
     const hits = store.search(q, 20);
     if (!hits.length) return `没有匹配「${q}」的历史。`;
     const body = hits

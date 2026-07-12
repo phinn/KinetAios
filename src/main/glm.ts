@@ -92,6 +92,29 @@ export function currentProvider(snap: ConfigSnapshot): Provider {
   return snap.apiProtocol === 'anthropic' ? new AnthropicProvider() : new OpenAICompatibleProvider();
 }
 
+// MARK: embeddings —— OpenAI 兼容 /v1/embeddings。GLM 用 embedding-3(2048 维),Ollama 走 nomic-embed-text。
+// ponytail: 默认 model 硬编码 embedding-3,后续可加 settings 字段。Anthropic 协议无 embedding 端点 → 抛错。
+// 失败时上层(TaskManager / recall_memory)兜底走 FTS5,不阻塞主流程。
+export async function embed(texts: string[], snap: ConfigSnapshot, signal?: AbortSignal): Promise<number[][]> {
+  if (snap.apiProtocol === 'anthropic') throw new Error('Anthropic 协议不支持 embeddings');
+  const model = snap.baseURL.includes('localhost:11434') ? 'nomic-embed-text' : 'embedding-3';
+  const resp = await fetch(`${snap.baseURL}/embeddings`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${snap.apiKey || 'ollama'}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ model, input: texts }),
+    signal: signal ?? AbortSignal.timeout(30_000),
+  });
+  if (!resp.ok) {
+    const txt = await resp.text().catch(() => '');
+    throw new Error(`embeddings HTTP ${resp.status}: ${txt.slice(0, 200)}`);
+  }
+  const json = (await resp.json()) as { data: Array<{ embedding: number[] }> };
+  return json.data.map((d) => d.embedding);
+}
+
 // MARK: cost — rough USD price table. Same logic as Swift AgentLoop.priceUSD.
 export function priceUSD(model: string, tokensIn: number, tokensOut: number): number {
   const s = getSettings();
