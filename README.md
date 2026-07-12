@@ -20,8 +20,8 @@ A local-first AI agent dashboard, **cross-platform (Windows 11 + macOS)**. Run m
 - **Claude Code** — spawns `claude -p --output-format stream-json`, parses NDJSON, resumes with `--resume`.
 - **Codex** — spawns `codex exec --json`, parses JSONL, resumes past sessions.
 
-### Direct tools (9)
-`shell` (asks for confirmation before running), `read_file`, `write_file`, `edit_file` (precise replace), `grep` (recursive content search), `glob` (list files), `web_fetch`, `recall_memory`, and `dispatch_agent` (a read-only sub-agent — reuses the ReAct loop with its own context). Claude/Codex use their own CLI tool systems.
+### Direct tools (10)
+`shell` (asks for confirmation before running), `read_file`, `write_file`, `edit_file` (precise replace), `grep` (recursive content search), `glob` (list files), `web_fetch`, `recall_memory`, `git_diff` (read-only, no confirmation; args: `file`, `ref`, `cached`), and `dispatch_agent` (a read-only sub-agent — reuses the ReAct loop with its own context). Claude/Codex use their own CLI tool systems.
 
 ### MCP
 The Direct engine auto-connects to MCP services configured on the system (scans `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop) over a stdio client; tools are merged into the ReAct loop; dropped connections auto-reconnect. The 🔌 button lists connected services/tools.
@@ -29,15 +29,35 @@ The Direct engine auto-connects to MCP services configured on the system (scans 
 ### Skills / Commands / Agents
 Scans Claude Code skills + commands + agents (including installed plugin content) and Codex skills; invoke via the `/` menu or the ⚡ button; the body is injected into Direct.
 
+### Sidebar actions (left to right)
+- **＋** — new session.
+- **📂 Workbench** — project cards grouped by cwd. Each card shows recent activity + cost; click to switch. 「背景」edits that project's `KINET-CONTEXT.md` (extra context injected when the agent runs in that cwd).
+- **📊 Dashboard** — standalone window: live token usage, cost stats, engine distribution across all sessions.
+- **🌐 Files** — standalone Files window. Left: cwd file tree (lazy-expanded, click to open). Right: `<webview>` preview for HTML/SVG/PNG/JPG/PDF/CSS, or textarea editor for everything else (`Ctrl/Cmd+S` saves). Address bar accepts `file://`, `http(s)://`, and `localhost:<port>`.
+- **🧠 Memory** — long-term memory panel. Toggle **当前频道 / 全部** to scope. Each row shows the fact + source channel; inline **edit** + **delete** per row.
+- **⚙️ Settings** — see below.
+
+### Main window tabs (chat / files / git / rules)
+- **Chat** — conversation with streaming, tool-step folds, left/right bubbles, live token counter.
+- **Files** — same engine as the 🌐 window, mounted inline on first click; follows the current session's cwd.
+- **Git** — `git status` (left) + `git log` (right). Click a changed file → side-by-side diff. Click a commit → unified `git show` (metadata and diff body styled separately).
+- **Rules** — edits cwd's `KINET.md` (project-level rules injected into the system prompt).
+
+### Settings (⚙️)
+Five sections:
+- **API** — provider, base URL, model, key. Presets for GLM / DeepSeek / OpenAI / Anthropic; **Test** before saving.
+- **Behavior** — shell approval mode, sandbox level, engine enable flags.
+- **Pricing** — input/output prices per model for cost calculation.
+- **Interface** — language (English / 简体中文 / 繁體中文 / 日本語), **theme (dark / light, live preview)**.
+- **Long-term memory** — **Export to JSON** (backup or migrate; structured `{version, exportedAt, memories[]}`), **Import from JSON** (accepts structured or plain array, dedupes by content, reports `imported/skipped`).
+
 ### Other
-- **Four-language UI** — English / 简体中文 / 繁體中文 / 日本語, switchable in Settings (model-facing strings stay Chinese)
-- **Per-session model** (editable dropdown; OpenAI-compatible + Anthropic dual protocol)
-- **File attachments** — 📎 pick / drop multiple text files (large files read only the head); `@path` references files in cwd
-- **AGENTS.md / CLAUDE.md** — rule files in cwd are auto-injected into the system prompt
-- **Long-term memory** — each turn extracts durable facts about the user in the background and recalls them next turn
-- **Tray + global hotkey** — `Ctrl/Cmd+Alt+Space` summons the quick panel (closing the window quits; the hotkey is active while the app runs)
-- **Configurable brand** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI)
-- Chat with left/right bubbles + avatars, streaming + "thinking" feedback, cost/token stats
+- **Per-session model** (editable dropdown; OpenAI-compatible + Anthropic dual protocol).
+- **File attachments** — 📎 pick / drop multiple text files (large files read only the head); `@path` references files in cwd.
+- **AGENTS.md / CLAUDE.md / KINET.md** — rule files in cwd are auto-injected into the system prompt.
+- **Long-term memory** — each turn extracts durable facts about the user in the background, stored in SQLite, injected into the next turn's system prompt. Cross-engine (Direct / Claude Code / Codex) and cross-session by design.
+- **Tray + global hotkey** — `Ctrl/Cmd+Alt+Space` summons the quick panel (closing the window quits; the hotkey is active while the app runs).
+- **Configurable brand** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI).
 
 ## Run it (Windows 11 / macOS)
 
@@ -69,7 +89,7 @@ KinetAiosWin/
       engines.ts            # Engine interface + Direct/ClaudeCode/Codex + cross-platform CLI spawn
       AgentLoop.ts          # ReAct loop (Direct) + history compaction + reactive trim
       glm.ts                # Provider + OpenAI/Anthropic SSE streaming + retry
-      tools.ts              # 9 tools + cross-platform shell (cmd.exe / sh) + dispatch_agent
+      tools.ts              # 10 tools + cross-platform shell (cmd.exe / sh) + dispatch_agent
       mcp.ts                # MCP client (scan + stdio + reconnect)
       skills.ts             # skills/commands/agents/plugin scan
       brand.ts              # brand config reader
@@ -107,4 +127,5 @@ npm run dist         # current platform's default target
 ## Known constraints
 
 - **Closing the window quits** (no background persistence); the global hotkey only works while the app runs. If you want "close-to-tray + always-on hotkey", switch back to hide-on-close.
-- Codebase indexing / semantic retrieval, image multimodality, IDE plugins, etc. are on the `FEATURES.md` roadmap (not done).
+- Codebase indexing / semantic retrieval, image multimodality, IDE plugins, etc. are on the `IMPROVEMENTS.md` roadmap (not done).
+- Mac→Windows cross-build of the native module is unreliable — build Windows installers on a Windows machine or via `windows-latest` GitHub Actions.

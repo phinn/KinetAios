@@ -20,8 +20,8 @@
 - **Claude Code**:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex**:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
 
-### Direct 工具(9 个)
-`shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`、`recall_memory`、`dispatch_agent`(只读子 agent —— 复用 ReAct 循环、独立上下文)。Claude/Codex 用各自 CLI 的工具体系。
+### Direct 工具(10 个)
+`shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`、`recall_memory`、`git_diff`(只读、免确认;参数 `file` / `ref` / `cached`)、`dispatch_agent`(只读子 agent —— 复用 ReAct 循环、独立上下文)。Claude/Codex 用各自 CLI 的工具体系。
 
 ### MCP
 Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop),stdio 客户端,工具并入 ReAct;意外断开自动重连。🔌 按钮可查看已连服务/工具。
@@ -29,15 +29,35 @@ Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~
 ### Skills / Commands / Agents
 扫描 Claude Code 的 skills + commands + agents(含已装 plugin 的内容)和 Codex 的 skills,`/` 菜单或 ⚡ 按钮调用,body 注入 Direct。
 
+### 侧边栏按钮(从左到右)
+- **＋** 新建会话。
+- **📂 工作台(Workbench)** —— 按 cwd 分组的项目卡片,每张显示近期活动 + 成本;点卡片切过去。「背景」按钮编辑该项目的 `KINET-CONTEXT.md`(在该 cwd 跑 agent 时注入的补充上下文)。
+- **📊 仪表盘(Dashboard)** —— 独立窗口,实时 token 用量、成本统计、引擎分布(所有会话汇总)。
+- **🌐 文件(Files)** —— 独立 Files 窗口。左:cwd 文件树(点目录展开,点文件即开)。右:`<webview>` 预览 HTML/SVG/PNG/JPG/PDF/CSS,其它文件落 textarea 编辑器(`Ctrl/Cmd+S` 保存)。地址栏支持 `file://` / `http(s)://` / `localhost:<port>`(agent 起的本地服务也能预览)。
+- **🧠 长期记忆(Memory)** —— 记忆面板。**当前频道 / 全部** 切换 scope。每行显示文本 + 来源频道;行内 **编辑** / **删除**。
+- **⚙️ 设置** —— 见下。
+
+### 主窗口 Tab(对话 / 文件 / Git / 规则)
+- **对话** —— 聊天界面,流式输出、工具步骤折叠、左右气泡头像、实时 token 计数。
+- **文件** —— 与 🌐 独立窗口同一套(首次点才懒挂载),跟随当前会话 cwd。
+- **Git** —— `git status`(左)+ `git log`(右)。点改动文件 → 左右对比 diff;点提交 → 统一格式 `git show`(metadata 和 diff body 分色)。
+- **规则** —— 编辑 cwd 的 `KINET.md`(项目级规则,注入 system prompt)。
+
+### 设置(⚙️)
+五个分区:
+- **接口**:provider、base URL、模型、key。GLM / DeepSeek / OpenAI / Anthropic 预设;保存前先 **测试连接**。
+- **行为**:shell 确认模式、sandbox 级别、引擎启用开关。
+- **价格**:每个模型的输入/输出价,用于成本计算。
+- **界面**:语言(English / 简体中文 / 繁體中文 / 日本語)、**主题(暗色 / 淡色,实时预览)**。
+- **长期记忆**:**导出为 JSON**(备份或迁移,格式 `{version, exportedAt, memories[]}`)、**从 JSON 导入**(接受 structured 或纯数组,按 content 去重,报告 `imported/skipped`)。
+
 ### 其它
-- **四语言 UI**:English / 简体中文 / 繁體中文 / 日本語,设置里切换(给模型看的字符串仍中文)
-- **每会话独立模型**(可编辑下拉,OpenAI 兼容 + Anthropic 双协议)
-- **文件附件**:📎 选 / 拖入多个文本文件(大文件只读开头),`@路径` 引用 cwd 内文件
-- **AGENTS.md / CLAUDE.md**:cwd 下的规则文件自动注入 system prompt
-- **长期记忆**:每轮后台抽取「关于用户的持久事实」注入下轮
-- **托盘 + 全局热键** `Ctrl/Cmd+Alt+Space` 唤出快速面板(关窗即退出,热键运行时生效)
-- **可配置品牌**(`brand.json`)、**API key 加密存储**(safeStorage:mac Keychain / Win DPAPI)
-- 聊天左右气泡 + 头像、流式 + 思考中反馈、成本/token 统计
+- **每会话独立模型**(可编辑下拉,OpenAI 兼容 + Anthropic 双协议)。
+- **文件附件**:📎 选 / 拖入多个文本文件(大文件只读开头),`@路径` 引用 cwd 内文件。
+- **AGENTS.md / CLAUDE.md / KINET.md**:cwd 下的规则文件自动注入 system prompt。
+- **长期记忆**:每轮后台抽取「关于用户的持久事实」,落 SQLite,注入下轮 system prompt。**跨引擎**(Direct / Claude Code / Codex)、**跨会话** 共享。
+- **托盘 + 全局热键** `Ctrl/Cmd+Alt+Space` 唤出快速面板(关窗即退出,热键运行时生效)。
+- **可配置品牌**(`brand.json`)、**API key 加密存储**(safeStorage:mac Keychain / Win DPAPI)。
 
 ## 跑起来(Windows 11 / macOS)
 
@@ -69,7 +89,7 @@ KinetAiosWin/
       engines.ts            # Engine 接口 + Direct/ClaudeCode/Codex + 跨平台 CLI spawn
       AgentLoop.ts          # ReAct 循环(Direct)+ 历史压缩 + 超长自缩
       glm.ts                # Provider + OpenAI/Anthropic SSE 流式 + 重试
-      tools.ts              # 9 个工具 + 跨平台 shell(cmd.exe / sh)+ dispatch_agent
+      tools.ts              # 10 个工具 + 跨平台 shell(cmd.exe / sh)+ dispatch_agent + git_diff
       mcp.ts                # MCP 客户端(扫描 + stdio + 重连)
       skills.ts             # skills/commands/agents/plugin 扫描
       brand.ts              # 品牌配置读取
@@ -107,4 +127,5 @@ npm run dist         # 当前平台默认目标
 ## 已知约束
 
 - **关窗即退出**(不再后台常驻);全局热键只在 app 运行时生效。想要「关窗后台 + 热键常驻」可改回隐藏模式。
-- 代码库索引/语义检索、子 agent、图片多模态、IDE 插件等见 `FEATURES.md` 路线图(未做)。
+- 代码库索引/语义检索、图片多模态、IDE 插件等见 `IMPROVEMENTS.md` 路线图(未做)。
+- mac→Windows 跨平台编译 native 模块不可靠 —— Windows 安装包请在 Windows 机器或 GitHub Actions `windows-latest` runner 上打。
