@@ -20,7 +20,9 @@ const env = useMirror
       ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/',
     }
   : { ...process.env };
-const ebArgs = arg === 'dir' ? ['--win', '--dir'] : [`--${arg}`];
+// --publish never: electron-builder 检测到 CI=true 时会试图自动发 GH Release,
+// 没 GH_TOKEN 就会 fail。我们用 softprops/action-gh-release 单独贴 Release。
+const ebArgs = arg === 'dir' ? ['--win', '--dir'] : [`--${arg}`, '--publish', 'never'];
 
 console.log(`[pack] build → electron-builder ${ebArgs.join(' ')}(${useMirror ? 'npmmirror 镜像' : '官方源'})`);
 
