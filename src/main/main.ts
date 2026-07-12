@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
+import { pluginListSnap, invalidatePluginCache } from './plugins';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -682,6 +683,23 @@ function registerIpc(): void {
   ipcMain.handle('snapshot-restore', (_e, cwd: string, id: string) => {
     try {
       return restoreSnapshot(cwd, id);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // Plugin SDK —— 用户扩展(<userData>/plugins/*):列出 / 强制重载(改完文件后刷一次)。
+  ipcMain.handle('plugin-list', () => {
+    try {
+      return { ok: true, items: pluginListSnap() };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('plugin-reload', () => {
+    try {
+      invalidatePluginCache();
+      const items = pluginListSnap();
+      return { ok: true, count: items.length };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

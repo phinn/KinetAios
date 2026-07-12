@@ -1,0 +1,6 @@
+{
+  "name": "echo",
+  "version": "1.0.0",
+  "description": "示例插件 —— 加一个 echo_args 工具,把收到的参数原样返回。复制本目录改造即可。",
+  "author": "KinetAios"
+}

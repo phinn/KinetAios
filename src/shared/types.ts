@@ -176,6 +176,9 @@ export interface KinetAPI {
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
+  // Plugin SDK:<userData>/plugins/* 下的扩展,贡献 Tool[]。列出 + 强制重载。
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; toolCount: number; error?: string; dir: string }>; error?: string }>;
+  pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

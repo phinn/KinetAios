@@ -403,8 +403,18 @@ const dispatchAgent: Tool = {
   },
 };
 
-export function allTools(): Tool[] {
+export function builtinTools(): Tool[] {
   return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory, gitDiff, dispatchAgent];
+}
+
+// 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
+// ponytail: pluginTools() 内部有缓存,每次 Direct run 调用是 O(plugins) 浅遍历,不疼。
+// 子 agent 的 readOnlyTools() 不含插件 —— 子 agent 只信内置只读集,沙箱边界明确。
+export function allTools(): Tool[] {
+  // 延迟 require:plugins.ts 引用了 app.getPath,只在 main 进程跑;renderer 不会走到这。
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { pluginTools } = require('./plugins') as typeof import('./plugins');
+  return [...builtinTools(), ...pluginTools()];
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。

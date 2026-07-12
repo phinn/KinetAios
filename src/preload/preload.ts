@@ -45,6 +45,8 @@ const api: KinetAPI = {
   memoryTripleDelete: (id) => ipcRenderer.invoke('memory-triple-delete', id),
   snapshotList: (cwd, convId) => ipcRenderer.invoke('snapshot-list', cwd, convId),
   snapshotRestore: (cwd, id) => ipcRenderer.invoke('snapshot-restore', cwd, id),
+  pluginList: () => ipcRenderer.invoke('plugin-list'),
+  pluginReload: () => ipcRenderer.invoke('plugin-reload'),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

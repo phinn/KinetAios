@@ -775,6 +775,18 @@ async function showSettings() {
         </div>
       </div>
 
+      <div class="s-section">
+        <h3>${tr('settings.sec.plugins')}</h3>
+        <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
+          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.plugins.desc')}</span>
+          <div id="s-plugins" class="s-plugin-list"></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="s-plugins-reload">${tr('settings.plugins.reload')}</button>
+            <span class="test-msg" id="s-plugins-msg"></span>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
         <button id="s-test">${tr('settings.test')}</button>
@@ -831,6 +843,40 @@ async function showSettings() {
     else if (r.error === 'canceled') showMemMsg(tr('settings.mem.canceled'), false);
     else showMemMsg(r.error ?? 'error', false);
   };
+  // Plugin SDK:列出已加载插件 + 重载按钮。点重载 → invalidate cache → 再拉一遍。
+  const renderPlugins = async (): Promise<void> => {
+    const el = document.getElementById('s-plugins')!;
+    const msg = document.getElementById('s-plugins-msg')!;
+    const r = await api.pluginList();
+    if (!r.ok || !r.items) {
+      el.innerHTML = `<div class="s-plugin-empty">${esc(r.error ?? 'error')}</div>`;
+      return;
+    }
+    if (!r.items.length) {
+      el.innerHTML = `<div class="s-plugin-empty">${tr('settings.plugins.empty')}</div>`;
+      return;
+    }
+    el.innerHTML = r.items
+      .map((p) => {
+        const errBadge = p.error ? `<span class="s-plugin-err" title="${esc(p.error)}">⚠ ${esc(tr('settings.plugins.loadFailed'))}</span>` : '';
+        return `<div class="s-plugin-row">
+          <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
+          <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${p.author ? ' · ' + esc(p.author) : ''}</div>
+          ${errBadge}
+        </div>`;
+      })
+      .join('');
+    msg.textContent = '';
+  };
+  document.getElementById('s-plugins-reload')!.onclick = async () => {
+    const msg = document.getElementById('s-plugins-msg')!;
+    const r = await api.pluginReload();
+    if (r.ok) msg.style.color = 'var(--ok)';
+    else msg.style.color = 'var(--danger)';
+    msg.textContent = r.ok ? tr('settings.plugins.reloaded', { count: r.count ?? 0 }) : (r.error ?? 'error');
+    renderPlugins();
+  };
+  renderPlugins();
 }
 
 // Read the settings form into AppSettings. Shared by Save and Test so Test validates the in-form

@@ -349,6 +349,14 @@ a { color: var(--accent); }
 .s-section h3 { margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
 .test-msg { font-size: 12px; margin-top: 6px; }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
+/* plugin list in settings */
+.s-plugin-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
+.s-plugin-row { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
+.s-plugin-name { font-size: 13px; font-weight: 600; }
+.s-plugin-ver { font-size: 11px; color: var(--muted, var(--text-dim)); font-weight: 400; margin-left: 6px; }
+.s-plugin-meta { font-size: 11px; color: var(--muted, var(--text-dim)); margin-top: 2px; }
+.s-plugin-err { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--err, var(--danger)); }
+.s-plugin-empty { font-size: 12px; color: var(--muted, var(--text-dim)); padding: 8px 0; font-style: italic; }
 
 /* confirm modal */
 #modal, #prompt-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 50; }
