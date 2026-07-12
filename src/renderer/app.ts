@@ -980,6 +980,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     void api.openArena(c);
   };
   document.getElementById('m-memory')!.onclick = () => { closeMoreMenu(); void openMemoryPanel(); };
+  document.getElementById('m-cron')!.onclick = () => { closeMoreMenu(); void openCronPanel(); };
   document.getElementById('m-snap')!.onclick = () => { closeMoreMenu(); void openSnapshotPanel(); };
 
   // ⋯ 更多菜单:点击切换 open,点外部收起
@@ -1863,3 +1864,107 @@ const PRESETS = [
   { id: 'custom', labelKey: 'preset.custom', baseURL: '', model: '', proto: 'openai', pin: 0, pout: 0 },
 ];
 const REASONS = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
+
+// MARK: 定时任务面板(cron)—— 「⋯ → 📅」入口
+type CronItem = { id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number };
+async function openCronPanel(): Promise<void> {
+  document.getElementById('cron-modal')!.classList.add('show');
+  document.getElementById('cron-close')!.onclick = () => document.getElementById('cron-modal')!.classList.remove('show');
+  document.getElementById('cron-new')!.onclick = () => editCronItem(null);
+  await renderCronList();
+}
+async function renderCronList(): Promise<void> {
+  const listEl = document.getElementById('cron-list')!;
+  const r = await api.cronList();
+  if (!r.ok || !r.items) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
+    return;
+  }
+  if (!r.items.length) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('cron.empty'))}</div>`;
+    return;
+  }
+  listEl.innerHTML = r.items
+    .map((t) => {
+      const last = t.lastRun ? new Date(t.lastRun).toLocaleString() : '—';
+      return `<div class="mm-row cron-row" data-id="${esc(t.id)}">
+        <div class="cron-row-head">
+          <span class="cron-expr ${t.enabled ? '' : 'disabled'}">${esc(t.cron)}</span>
+          <span class="cron-toggle">${t.enabled ? '✓' : '✗'}</span>
+        </div>
+        <div class="cron-prompt">${esc(t.prompt.slice(0, 200))}${t.prompt.length > 200 ? '…' : ''}</div>
+        <div class="cron-meta">${esc(t.cwd ?? tr('cron.noCwd'))} · ${esc(tr('cron.lastRun'))}: ${esc(last)}</div>
+        <div class="mm-actions">
+          <button class="ghost cron-edit">${esc(tr('cron.edit'))}</button>
+          <button class="ghost cron-toggle-btn">${t.enabled ? esc(tr('cron.pause')) : esc(tr('cron.enable'))}</button>
+          <button class="ghost cron-del">${esc(tr('cron.delete'))}</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+  listEl.querySelectorAll<HTMLElement>('.cron-row').forEach((row) => {
+    const id = row.dataset.id!;
+    row.querySelector('.cron-edit')!.addEventListener('click', () => editCronItem(id));
+    row.querySelector('.cron-del')!.addEventListener('click', async () => {
+      if (!confirm(tr('cron.delConfirm'))) return;
+      await api.cronDelete(id);
+      renderCronList();
+    });
+    row.querySelector('.cron-toggle-btn')!.addEventListener('click', async () => {
+      const item = (r.items ?? []).find((x) => x.id === id);
+      if (!item) return;
+      await api.cronUpdate(id, { enabled: !item.enabled });
+      renderCronList();
+    });
+  });
+}
+function editCronItem(id: string | null): void {
+  // 用 prompt-modal 改 cron / prompt / cwd,简单粗暴(没有自定义弹窗的工程量)。
+  // ponytail: 用 prompt() 三连问,后续可换专门的编辑表单。
+  const overlay = document.getElementById('cron-modal')!;
+  // 直接在 cron-modal 上叠一个内联编辑卡。复用现有 DOM 不开新 modal。
+  let existing = document.getElementById('cron-edit-card');
+  if (existing) existing.remove();
+  const card = document.createElement('div');
+  card.id = 'cron-edit-card';
+  card.className = 'cron-edit-card';
+  // 先 load 现有值(编辑模式)。新建模式默认 cron=每分钟、cwd=当前会话 cwd。
+  const cur = id ? null : { cron: '0 * * * *', prompt: '', cwd: selectedId ? convs.get(selectedId)?.cwd ?? '' : '' };
+  card.innerHTML = `
+    <h4>${id ? esc(tr('cron.editTitle')) : esc(tr('cron.newTitle'))}</h4>
+    <label>${esc(tr('cron.cronLabel'))} <input id="ce-cron" value="${id ? '' : esc(cur!.cron)}" placeholder="分 时 日 月 周 (如 0 9 * * 1 = 每周一 9 点)"/></label>
+    <label>${esc(tr('cron.promptLabel'))} <textarea id="ce-prompt" rows="3" placeholder="要自动执行的任务描述…"></textarea></label>
+    <label>${esc(tr('cron.cwdLabel'))} <input id="ce-cwd" value="${id ? '' : esc(cur!.cwd)}" placeholder="(可选)工作目录"/></label>
+    <div class="cron-edit-actions">
+      <button class="ghost" id="ce-cancel">${esc(tr('common.cancel'))}</button>
+      <button class="primary" id="ce-save">${esc(tr('common.ok'))}</button>
+    </div>
+  `;
+  overlay.querySelector('.modal-card')!.appendChild(card);
+  // 编辑模式:异步拉详情回填
+  if (id) {
+    api.cronList().then((r) => {
+      const item = (r.items ?? []).find((x) => x.id === id);
+      if (!item) return;
+      (document.getElementById('ce-cron') as HTMLInputElement).value = item.cron;
+      (document.getElementById('ce-prompt') as HTMLTextAreaElement).value = item.prompt;
+      (document.getElementById('ce-cwd') as HTMLInputElement).value = item.cwd ?? '';
+    });
+  }
+  document.getElementById('ce-cancel')!.onclick = () => card.remove();
+  document.getElementById('ce-save')!.onclick = async () => {
+    const cron = (document.getElementById('ce-cron') as HTMLInputElement).value.trim();
+    const prompt = (document.getElementById('ce-prompt') as HTMLTextAreaElement).value.trim();
+    const cwd = (document.getElementById('ce-cwd') as HTMLInputElement).value.trim();
+    if (!cron || !prompt) return;
+    const v = await api.cronValidate(cron);
+    if (!v.ok) { alert(v.error); return; }
+    if (id) {
+      await api.cronUpdate(id, { cron, prompt, cwd: cwd || undefined });
+    } else {
+      await api.cronAdd({ id: crypto.randomUUID(), cron, prompt, cwd: cwd || undefined });
+    }
+    card.remove();
+    renderCronList();
+  };
+}

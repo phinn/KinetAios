@@ -10,6 +10,8 @@ import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
+import { setCronTasks, setDispatcher, startCronScheduler, validateCron } from './cron';
+import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -704,6 +706,49 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
+  // Cron —— 定时任务:list/add/update/delete/validate/runNow。
+  ipcMain.handle('cron-list', () => {
+    try {
+      return { ok: true, items: listCronTasks() };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('cron-add', (_e, t: { id: string; cron: string; prompt: string; cwd?: string }) => {
+    const v = validateCron(t.cron);
+    if (!v.ok) return { ok: false, error: v.error };
+    try {
+      addCronTask(t);
+      // 拉一遍内存态,跟 store 同步。
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('cron-update', (_e, id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }) => {
+    if (patch.cron) {
+      const v = validateCron(patch.cron);
+      if (!v.ok) return { ok: false, error: v.error };
+    }
+    try {
+      updateCronTask(id, patch);
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('cron-delete', (_e, id: string) => {
+    try {
+      deleteCronTask(id);
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('cron-validate', (_e, expr: string) => validateCron(expr));
 }
 
 // single instance — second launch just focuses the existing window.
@@ -725,6 +770,21 @@ if (!gotLock) {
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。dispatcher 起新会话并发 prompt。
+    setCronTasks(listCronTasks().map((r) => ({
+      id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled,
+      lastRun: r.lastRun ?? undefined, createdAt: r.createdAt,
+    })));
+    setDispatcher((task) => {
+      try {
+        const conv = taskManager.newConversation(task.cwd || os.homedir());
+        taskManager.send(conv.id, task.prompt);
+        touchCronLastRun(task.id, Date.now());
+      } catch (e) {
+        console.warn('cron dispatch failed', e);
+      }
+    });
+    startCronScheduler();
     registerIpc();
     mcp.connectAll(); // 后台连 MCP server(不阻塞首屏;Direct 引擎首轮会等 ≤2s)
     dashboardWin = createDashboard();

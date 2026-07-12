@@ -179,6 +179,12 @@ export interface KinetAPI {
   // Plugin SDK:<userData>/plugins/* 下的扩展,贡献 Tool[]。列出 + 强制重载。
   pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; toolCount: number; error?: string; dir: string }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
+  // Cron 定时任务:每分钟 tick,匹配的自动起会话发 prompt。
+  cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
+  cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;
+  cronUpdate(id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  cronDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  cronValidate(expr: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

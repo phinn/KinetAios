@@ -47,6 +47,11 @@ const api: KinetAPI = {
   snapshotRestore: (cwd, id) => ipcRenderer.invoke('snapshot-restore', cwd, id),
   pluginList: () => ipcRenderer.invoke('plugin-list'),
   pluginReload: () => ipcRenderer.invoke('plugin-reload'),
+  cronList: () => ipcRenderer.invoke('cron-list'),
+  cronAdd: (t) => ipcRenderer.invoke('cron-add', t),
+  cronUpdate: (id, patch) => ipcRenderer.invoke('cron-update', id, patch),
+  cronDelete: (id) => ipcRenderer.invoke('cron-delete', id),
+  cronValidate: (expr) => ipcRenderer.invoke('cron-validate', expr),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

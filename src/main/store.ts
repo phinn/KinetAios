@@ -34,6 +34,9 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS memory_triples(
       id TEXT PRIMARY KEY, subject TEXT, predicate TEXT, object TEXT,
       conversation_id TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS cron_tasks(
+      id TEXT PRIMARY KEY, cron TEXT, prompt TEXT, cwd TEXT,
+      enabled INTEGER DEFAULT 1, last_run INTEGER, created_at INTEGER);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -255,4 +258,43 @@ export function addMemoryTriple(subject: string, predicate: string, object: stri
 
 export function deleteMemoryTriple(id: string): void {
   db.prepare('DELETE FROM memory_triples WHERE id=?;').run(id);
+}
+
+// MARK: cron_tasks —— 定时任务调度器持久化(每分钟 tick 一遍,匹配 cron 字段就派发)
+export interface CronRow {
+  id: string;
+  cron: string;
+  prompt: string;
+  cwd: string | null;
+  enabled: boolean;
+  lastRun: number | null;
+  createdAt: number;
+}
+export function listCronTasks(): CronRow[] {
+  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
+    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number;
+  }>;
+  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at }));
+}
+export function addCronTask(t: { id: string; cron: string; prompt: string; cwd?: string }): void {
+  db.prepare('INSERT INTO cron_tasks(id, cron, prompt, cwd, enabled, created_at) VALUES(?,?,?,?,1,?);')
+    .run(t.id, t.cron, t.prompt, t.cwd ?? null, Date.now());
+}
+export function updateCronTask(id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }): void {
+  const cur = db.prepare('SELECT * FROM cron_tasks WHERE id=?;').get(id) as { cron: string; prompt: string; cwd: string | null; enabled: number } | undefined;
+  if (!cur) return;
+  const next = {
+    cron: patch.cron ?? cur.cron,
+    prompt: patch.prompt ?? cur.prompt,
+    cwd: patch.cwd !== undefined ? (patch.cwd || null) : cur.cwd,
+    enabled: patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : cur.enabled,
+  };
+  db.prepare('UPDATE cron_tasks SET cron=?, prompt=?, cwd=?, enabled=? WHERE id=?;')
+    .run(next.cron, next.prompt, next.cwd, next.enabled, id);
+}
+export function deleteCronTask(id: string): void {
+  db.prepare('DELETE FROM cron_tasks WHERE id=?;').run(id);
+}
+export function touchCronLastRun(id: string, ts: number): void {
+  db.prepare('UPDATE cron_tasks SET last_run=? WHERE id=?;').run(ts, id);
 }

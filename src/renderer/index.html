@@ -23,6 +23,7 @@
               <button class="sb-more-item" id="m-arena"><span class="sb-mi-ico">⚔</span><span class="sb-mi-label" data-i18n="sidebar.moreArena">Arena 三引擎并跑</span></button>
               <div class="sb-more-sep"></div>
               <button class="sb-more-item" id="m-memory"><span class="sb-mi-ico">🧠</span><span class="sb-mi-label" data-i18n="sidebar.moreMemory">长期记忆</span></button>
+              <button class="sb-more-item" id="m-cron"><span class="sb-mi-ico">📅</span><span class="sb-mi-label" data-i18n="sidebar.moreCron">定时任务</span></button>
               <button class="sb-more-item" id="m-snap"><span class="sb-mi-ico">⏪</span><span class="sb-mi-label" data-i18n="sidebar.moreSnapshot">快照与回滚</span></button>
             </div>
           </div>
@@ -227,6 +228,18 @@
         <button class="ghost" id="snap-close">×</button>
       </div>
       <div class="mm-list" id="snap-list"></div>
+    </div>
+  </div>
+
+  <!-- 定时任务面板(📅):cron 表达式 + prompt,匹配时自动起会话 -->
+  <div id="cron-modal">
+    <div class="modal-card mm-card cron-card">
+      <div class="mm-head">
+        <h3 data-i18n="cron.title">定时任务</h3>
+        <button class="ghost" id="cron-new" data-i18n="cron.new">＋ 新任务</button>
+        <button class="ghost" id="cron-close">×</button>
+      </div>
+      <div class="mm-list" id="cron-list"></div>
     </div>
   </div>
 
