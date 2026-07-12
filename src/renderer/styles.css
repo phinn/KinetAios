@@ -76,10 +76,28 @@ a { color: var(--accent); }
 .sb-head { padding: 12px; display: flex; align-items: center; gap: 8px; }
 .sb-head .brand { font-weight: 700; font-size: 14px; flex: 1; }
 .sb-head .brand .spark { color: var(--accent); }
-.sb-actions { display: flex; gap: 2px; }
-/* icon-only 按钮(emoji):6 个按钮(＋📂📊🌐🧠⚙)+ brand 在 256px sidebar 里挤一行,
-   padding/gap 都压到最小,Windows 字体更宽也不溢出。再加按钮就得考虑换行或下拉菜单。 */
-.sb-actions .ghost { padding: 5px 5px; font-size: 13px; }
+.sb-actions { display: flex; gap: 2px; align-items: center; }
+/* 高频按钮(＋ 📂 ⚙)+ 更多菜单(⋯):4 个按钮在 256px sidebar 里宽敞不挤。
+   低频功能(仪表盘/文件/Arena/记忆/快照)收纳进 ⋯ 下拉,需要时点开。 */
+.sb-actions .ghost { padding: 5px 6px; font-size: 13px; }
+
+/* 下拉菜单 ⋯ — 点击展开,点外部收起 */
+.sb-more-wrap { position: relative; }
+.sb-more-menu {
+  display: none; position: absolute; top: calc(100% + 4px); right: 0; z-index: 100;
+  background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px;
+  padding: 4px; min-width: 160px; box-shadow: 0 6px 20px rgba(0,0,0,.4);
+}
+.sb-more-menu.open { display: block; }
+.sb-more-item {
+  display: flex; align-items: center; gap: 8px; width: 100%;
+  background: transparent; border: none; border-radius: 5px;
+  padding: 7px 10px; font: inherit; color: var(--text); cursor: pointer; text-align: left;
+}
+.sb-more-item:hover { background: var(--bg-input); }
+.sb-mi-ico { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
+.sb-mi-label { font-size: 12px; }
+.sb-more-sep { height: 1px; background: var(--border); margin: 4px 6px; }
 #conv-list { list-style: none; margin: 0; padding: 0 6px; overflow-y: auto; flex: 1; }
 /* ponytail: 用 > 限定直接子项,避免 .sb-proj-tasks 里的嵌套 li 继承 flex-direction:column。 */
 #conv-list > li {

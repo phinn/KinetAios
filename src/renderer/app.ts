@@ -943,6 +943,9 @@ function wireUi() {
     if (document.getElementById('settings-view')!.classList.contains('active')) showChat();
     else showSettings();
   };
+
+// 收起 ⋯ 更多菜单
+function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.remove('open'); }
   document.getElementById('btn-wb')!.onclick = () => {
     if (document.getElementById('workbench-view')!.classList.contains('active')) showChat();
     else showWorkbench();
@@ -954,19 +957,26 @@ function wireUi() {
     syncSidebarModeBtn();
     renderSidebar();
   };
-  document.getElementById('btn-dashboard')!.onclick = () => void api.openDashboard();
-  document.getElementById('btn-files')!.onclick = () => {
-    // 拿当前选中会话的 cwd 开 files 窗口;无选中会话则让 main 兜底用 os.homedir()。
+  // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)
+  document.getElementById('m-dashboard')!.onclick = () => { closeMoreMenu(); void api.openDashboard(); };
+  document.getElementById('m-files')!.onclick = () => { closeMoreMenu();
     const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
     void api.openFiles(c);
   };
-  document.getElementById('btn-arena')!.onclick = () => {
-    // 拿当前选中会话的 cwd;无则 main 兜底 homedir。Arena 在该 cwd 下三引擎并跑。
+  document.getElementById('m-arena')!.onclick = () => { closeMoreMenu();
     const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
     void api.openArena(c);
   };
-  document.getElementById('btn-memory')!.onclick = () => void openMemoryPanel();
-  document.getElementById('btn-snap')!.onclick = () => void openSnapshotPanel();
+  document.getElementById('m-memory')!.onclick = () => { closeMoreMenu(); void openMemoryPanel(); };
+  document.getElementById('m-snap')!.onclick = () => { closeMoreMenu(); void openSnapshotPanel(); };
+
+  // ⋯ 更多菜单:点击切换 open,点外部收起
+  const moreMenu = document.getElementById('sb-more-menu')!;
+  const moreBtn = document.getElementById('btn-more')!;
+  moreBtn.onclick = (e) => { e.stopPropagation(); moreMenu.classList.toggle('open'); };
+  document.addEventListener('click', (e) => {
+    if (!moreMenu.contains(e.target as Node) && e.target !== moreBtn) moreMenu.classList.remove('open');
+  });
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');

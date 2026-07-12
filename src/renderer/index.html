@@ -14,12 +14,18 @@
         <div class="sb-actions">
           <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" title="新建会话">＋</button>
           <button class="ghost" id="btn-wb" data-i18n-title="wb.open" title="工作台">📂</button>
-          <button class="ghost" id="btn-dashboard" data-i18n-title="dash.open" title="打开仪表盘">📊</button>
-          <button class="ghost" id="btn-files" data-i18n-title="files.open" title="文件与预览">🌐</button>
-          <button class="ghost" id="btn-arena" data-i18n-title="arena.open" title="Arena 三引擎并跑">⚔</button>
-          <button class="ghost" id="btn-memory" data-i18n-title="mem.open" title="长期记忆">🧠</button>
-          <button class="ghost" id="btn-snap" data-i18n-title="snap.open" title="快照与回滚">⏪</button>
           <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置">⚙</button>
+          <div class="sb-more-wrap">
+            <button class="ghost" id="btn-more" data-i18n-title="sidebar.more" title="更多">⋯</button>
+            <div class="sb-more-menu" id="sb-more-menu">
+              <button class="sb-more-item" id="m-dashboard"><span class="sb-mi-ico">📊</span><span class="sb-mi-label" data-i18n="sidebar.moreDashboard">仪表盘</span></button>
+              <button class="sb-more-item" id="m-files"><span class="sb-mi-ico">🌐</span><span class="sb-mi-label" data-i18n="sidebar.moreFiles">文件与预览</span></button>
+              <button class="sb-more-item" id="m-arena"><span class="sb-mi-ico">⚔</span><span class="sb-mi-label" data-i18n="sidebar.moreArena">Arena 三引擎并跑</span></button>
+              <div class="sb-more-sep"></div>
+              <button class="sb-more-item" id="m-memory"><span class="sb-mi-ico">🧠</span><span class="sb-mi-label" data-i18n="sidebar.moreMemory">长期记忆</span></button>
+              <button class="sb-more-item" id="m-snap"><span class="sb-mi-ico">⏪</span><span class="sb-mi-label" data-i18n="sidebar.moreSnapshot">快照与回滚</span></button>
+            </div>
+          </div>
         </div>
       </div>
       <ul id="conv-list"></ul>
