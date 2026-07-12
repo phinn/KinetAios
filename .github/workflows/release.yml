@@ -8,6 +8,10 @@ on:
       - 'v*'
   workflow_dispatch:
 
+# GH Actions 默认 GITHUB_TOKEN 只读 → softprops/action-gh-release 建 Release 要 contents: write
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
