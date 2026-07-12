@@ -30,7 +30,8 @@ jobs:
           cache: npm
 
       # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台跑。
-      - run: npm install
+      # --no-audit --no-fund 跳过 audit/fund 检查加速。
+      - run: npm install --no-audit --no-fund
 
       # dist / dist:mac 内部已经先 build 再 electron-builder(pack.js)
       - run: ${{ matrix.run_dist }}

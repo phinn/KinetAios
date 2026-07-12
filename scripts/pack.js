@@ -1,5 +1,6 @@
 #!/usr/bin/env node
-// 打包脚本:设国内镜像(Electron + electron-builder 二进制都走 npmmirror,避免 GitHub 下载超时)
+// 打包脚本:本地默认走 npmmirror 镜像(避免国内拉 GitHub 超时);
+// CI(GH Actions 等)环境变量 CI=true 时改走默认源(GH 机房连官方源更快)。
 // 然后 build + electron-builder。
 //
 // 用法:
@@ -11,14 +12,17 @@
 const { spawnSync } = require('node:child_process');
 
 const arg = process.argv[2] || 'win';
-const env = {
-  ...process.env,
-  ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/',
-  ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/',
-};
+const useMirror = !process.env.CI; // CI=true 时(GH Actions 等会自动设)不走镜像
+const env = useMirror
+  ? {
+      ...process.env,
+      ELECTRON_MIRROR: 'https://npmmirror.com/mirrors/electron/',
+      ELECTRON_BUILDER_BINARIES_MIRROR: 'https://npmmirror.com/mirrors/electron-builder-binaries/',
+    }
+  : { ...process.env };
 const ebArgs = arg === 'dir' ? ['--win', '--dir'] : [`--${arg}`];
 
-console.log(`[pack] build → electron-builder ${ebArgs.join(' ')}(走 npmmirror 镜像)`);
+console.log(`[pack] build → electron-builder ${ebArgs.join(' ')}(${useMirror ? 'npmmirror 镜像' : '官方源'})`);
 
 const r1 = spawnSync('npm', ['run', 'build'], { stdio: 'inherit', shell: true });
 if (r1.status !== 0) {
