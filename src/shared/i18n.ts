@@ -145,6 +145,14 @@ const ZH_CN: Dict = {
   'files.editorPh': '选个文本文件开始编辑…(Ctrl+S 保存)',
   'files.loading': '加载中…',
 
+  'arena.open': 'Arena 三引擎并跑',
+  'arena.title': 'Arena — 三引擎并跑',
+  'arena.run': '⚔ 并跑',
+  'arena.ph': '输入 prompt,三引擎并跑对比…',
+  'arena.idle': '点「并跑」开始',
+  'arena.waiting': '运行中…',
+  'arena.noCwd': '未指定 cwd',
+
   'mcp.title': 'MCP 服务与工具',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(无工具)',
@@ -380,6 +388,14 @@ const EN: Dict = {
   'files.editorPh': 'Pick a text file to edit… (Ctrl+S to save)',
   'files.loading': 'Loading…',
 
+  'arena.open': 'Arena (3-engine race)',
+  'arena.title': 'Arena — 3-engine race',
+  'arena.run': '⚔ Run',
+  'arena.ph': 'Enter a prompt, race it across 3 engines…',
+  'arena.idle': 'Click Run to start',
+  'arena.waiting': 'Running…',
+  'arena.noCwd': 'No cwd set',
+
   'mcp.title': 'MCP services & tools',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(no tools)',
@@ -614,6 +630,14 @@ const ZH_TW: Dict = {
   'files.editorPh': '選個文字檔開始編輯…(Ctrl+S 儲存)',
   'files.loading': '載入中…',
 
+  'arena.open': 'Arena 三引擎並跑',
+  'arena.title': 'Arena — 三引擎並跑',
+  'arena.run': '⚔ 並跑',
+  'arena.ph': '輸入 prompt,三引擎並跑對比…',
+  'arena.idle': '點「並跑」開始',
+  'arena.waiting': '執行中…',
+  'arena.noCwd': '未指定 cwd',
+
   'mcp.title': 'MCP 服務與工具',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(無工具)',
@@ -847,6 +871,14 @@ const JA: Dict = {
   'files.errSave': '保存失敗:{msg}',
   'files.editorPh': 'テキストファイルを選んで編集…(Ctrl+S で保存)',
   'files.loading': '読み込み中…',
+
+  'arena.open': 'Arena 3エンジン同時実行',
+  'arena.title': 'Arena — 3エンジン同時実行',
+  'arena.run': '⚔ 同時実行',
+  'arena.ph': 'プロンプトを入力、3エンジンで同時実行…',
+  'arena.idle': '「同時実行」をクリック',
+  'arena.waiting': '実行中…',
+  'arena.noCwd': 'cwd 未設定',
 
   'mcp.title': 'MCP サービスとツール',
   'mcp.lbl': 'MCP',

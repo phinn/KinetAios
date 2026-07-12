@@ -1,0 +1,18 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>KinetAios · Arena</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="arena">
+  <div class="arena-head">
+    <span class="arena-cwd" id="arena-cwd"></span>
+    <input class="arena-input" id="arena-input" data-i18n-placeholder="arena.ph" placeholder="输入 prompt,三引擎并跑对比…" />
+    <button class="primary" id="arena-run" data-i18n="arena.run">⚔ 并跑</button>
+  </div>
+  <div class="arena-cols" id="arena-cols"></div>
+  <script src="arena.js"></script>
+</body>
+</html>

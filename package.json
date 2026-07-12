@@ -5,7 +5,7 @@
   "author": "Kinet",
   "main": "dist/main/main.js",
   "scripts": {
-    "build": "tsc -p tsconfig.main.json && esbuild src/renderer/app.ts src/renderer/quick.ts src/renderer/dashboard.ts src/renderer/files.ts --bundle --format=iife --outdir=dist/renderer && node -e \"const fs=require('fs');fs.cpSync('src/renderer','dist/renderer',{recursive:true,filter:f=>f==='src/renderer'||!f.endsWith('.ts')})\" && node -e \"try{require('fs').copyFileSync('brand.json','dist/brand.json')}catch(e){}\"",
+    "build": "tsc -p tsconfig.main.json && esbuild src/renderer/app.ts src/renderer/quick.ts src/renderer/dashboard.ts src/renderer/files.ts src/renderer/arena.ts --bundle --format=iife --outdir=dist/renderer && node -e \"const fs=require('fs');fs.cpSync('src/renderer','dist/renderer',{recursive:true,filter:f=>f==='src/renderer'||!f.endsWith('.ts')})\" && node -e \"try{require('fs').copyFileSync('brand.json','dist/brand.json')}catch(e){}\"",
     "rebuild": "electron-rebuild -f -w better-sqlite3",
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",

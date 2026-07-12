@@ -27,6 +27,7 @@ const api: KinetAPI = {
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
   openDashboard: () => ipcRenderer.invoke('open-dashboard'),
   openFiles: (cwd) => ipcRenderer.invoke('open-files', cwd),
+  openArena: (cwd) => ipcRenderer.invoke('open-arena', cwd),
   shellOpen: (url) => ipcRenderer.invoke('shell-open', url),
   listDir: (absPath) => ipcRenderer.invoke('list-dir', absPath),
   gitSnapshot: (cwd) => ipcRenderer.invoke('git-snapshot', cwd),
@@ -52,6 +53,9 @@ const api: KinetAPI = {
   },
   onFilesCwd: (cb) => {
     ipcRenderer.on('files-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));
+  },
+  onArenaCwd: (cb) => {
+    ipcRenderer.on('arena-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));
   },
   onConfirmRequest: (cb) => {
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));

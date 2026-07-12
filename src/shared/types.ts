@@ -154,6 +154,7 @@ export interface KinetAPI {
   quickSubmit(text: string): Promise<string>;
   openDashboard(): Promise<void>;
   openFiles(cwd?: string): Promise<void>;
+  openArena(cwd?: string): Promise<void>;
   shellOpen(url: string): Promise<void>;
   listDir(absPath: string): Promise<{ ok: boolean; entries?: DirEntry[]; error?: string }>;
   gitSnapshot(cwd: string): Promise<GitSnapshot>;
@@ -171,6 +172,7 @@ export interface KinetAPI {
   memoryDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
+  onArenaCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string }) => void): void;

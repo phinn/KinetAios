@@ -914,6 +914,11 @@ function wireUi() {
     const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
     void api.openFiles(c);
   };
+  document.getElementById('btn-arena')!.onclick = () => {
+    // 拿当前选中会话的 cwd;无则 main 兜底 homedir。Arena 在该 cwd 下三引擎并跑。
+    const c = selectedId ? convs.get(selectedId)?.cwd : undefined;
+    void api.openArena(c);
+  };
   document.getElementById('btn-memory')!.onclick = () => void openMemoryPanel();
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。

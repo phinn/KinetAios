@@ -37,6 +37,7 @@ let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
 let metricsWin: BrowserWindow | null = null;
 let filesWin: BrowserWindow | null = null;
+let arenaWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
 let tray: Tray | null = null;
 let quitting = false;
@@ -75,13 +76,16 @@ const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
     safeSend(dashboardWin, 'agent-event', { convId, ev });
     safeSend(quickWin, 'agent-event', { convId, ev });
+    safeSend(arenaWin, 'agent-event', { convId, ev });
   },
   emitConversation(conv: Conversation) {
     safeSend(dashboardWin, 'conversation', conv);
     safeSend(quickWin, 'conversation', conv);
+    safeSend(arenaWin, 'conversation', conv);
   },
   emitRemoved(convId) {
     safeSend(dashboardWin, 'conversation-removed', convId);
+    safeSend(arenaWin, 'conversation-removed', convId);
   },
   confirm,
 };
@@ -196,6 +200,37 @@ function toggleFilesWindow(cwd?: string): void {
   filesWin = createFilesWindow();
   filesWin.webContents.once('did-finish-load', push);
   filesWin.on('closed', () => (filesWin = null));
+}
+
+// Arena 窗口(同一 prompt 三引擎并跑对比)。已开则聚焦 + 推 cwd 换目录;首开 did-finish-load 后推一次。
+function createArenaWindow(): BrowserWindow {
+  const win = new BrowserWindow({
+    width: 1200,
+    height: 720,
+    minWidth: 800,
+    minHeight: 460,
+    backgroundColor: '#1b1b1f',
+    title: `${getBrand().productName} · ${t(getSettings().lang, 'arena.title')}`,
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'arena.html'));
+  return win;
+}
+function toggleArenaWindow(cwd?: string): void {
+  const push = () => { if (cwd) safeSend(arenaWin, 'arena-cwd', cwd); };
+  if (arenaWin && !arenaWin.isDestroyed()) {
+    arenaWin.focus();
+    push();
+    return;
+  }
+  arenaWin = createArenaWindow();
+  arenaWin.webContents.once('did-finish-load', push);
+  arenaWin.on('closed', () => (arenaWin = null));
 }
 
 // 文件树 readdir:一次一层,黑名单目录跳过(常见巨型/无关目录)。size 不返回(用不到,省一次 stat)。
@@ -466,6 +501,10 @@ function registerIpc(): void {
   });
   ipcMain.handle('open-files', (_e, cwd?: string) => {
     toggleFilesWindow(cwd && cwd.trim() ? cwd.trim() : undefined);
+    return true;
+  });
+  ipcMain.handle('open-arena', (_e, cwd?: string) => {
+    toggleArenaWindow(cwd && cwd.trim() ? cwd.trim() : undefined);
     return true;
   });
   ipcMain.handle('list-dir', (_e, absPath: string) => listDirAbs(absPath));
