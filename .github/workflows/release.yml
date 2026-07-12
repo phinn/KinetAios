@@ -38,7 +38,18 @@ jobs:
       - run: npm install --no-audit --no-fund
 
       # dist / dist:mac 内部已经先 build 再 electron-builder(pack.js)
-      - run: ${{ matrix.run_dist }}
+      # tee 到日志文件,失败时上传成 artifact 方便诊断(不必看 step 内层)
+      - shell: bash
+        run: |
+          set -o pipefail
+          ${{ matrix.run_dist }} 2>&1 | tee dist.log
+
+      - name: Upload dist log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-log-${{ runner.os }}
+          path: dist.log
 
       # 上传到 Actions 的 artifact(手动 dispatch 也能下)
       - uses: actions/upload-artifact@v4
