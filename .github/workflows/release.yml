@@ -1,0 +1,52 @@
+name: release
+
+# 触发:打 v* 开头的 tag(如 v0.1.0)→ 自动构建 win + mac 并发 Release;
+# 或 Actions 页面手动 dispatch(只产 artifact,不发 Release)。
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false  # 一个 OS 失败不连累另一个
+      matrix:
+        include:
+          - os: windows-latest
+            run_dist: npm run dist
+            artifact_glob: release/KinetAios*Setup*.exe
+          - os: macos-latest
+            run_dist: npm run dist:mac
+            artifact_glob: release/KinetAios-*.dmg
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台跑。
+      - run: npm install
+
+      # dist / dist:mac 内部已经先 build 再 electron-builder(pack.js)
+      - run: ${{ matrix.run_dist }}
+
+      # 上传到 Actions 的 artifact(手动 dispatch 也能下)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: KinetAios-${{ runner.os }}-${{ github.ref_name }}
+          path: ${{ matrix.artifact_glob }}
+          if-no-files-found: warn
+
+      # 打 tag 时:把构建产物贴到 GH Release(softprops/action-gh-release@v2 会自动建 Release)
+      - name: Attach to Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact_glob }}
+          generate_release_notes: true
+          fail_on_unmatched_files: false
