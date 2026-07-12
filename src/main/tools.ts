@@ -10,10 +10,11 @@ import { takeSnapshot } from './snapshots';
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
 // every other tool ignores them。convId 用作快照 scope(write_file/edit_file 改前存原文)。
+export type SubEngine = 'direct' | 'claudeCode' | 'codex';
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
-  spawn?: (a: { prompt: string; signal: AbortSignal }) => Promise<string>;
+  spawn?: (a: { prompt: string; signal: AbortSignal; engine?: SubEngine }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
 }
@@ -370,23 +371,32 @@ const gitDiff: Tool = {
   },
 };
 
-// dispatch_agent:派发独立子任务给子 agent(复用 runAgentLoop,独立上下文 + 只读工具集)。
-// 对应 CC 的 AgentTool 最小版。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
+// dispatch_agent:派发独立子任务给子 agent。Direct 默认走 runAgentLoop(只读工具集);
+// engine=claudeCode / codex 时跨引擎:走对应 CLI 的 one-shot 模式,只读、不递归。
+// 对应 CC 的 AgentTool 最小版 + 跨引擎扩展。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
 const dispatchAgent: Tool = {
   name: 'dispatch_agent',
   description:
-    '派发一个独立子任务给子 agent(独立上下文、只读工具集:read_file/grep/glob/web_fetch/recall_memory)。用于并行探索或大任务分解。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。返回子 agent 的最终文本。',
+    '派发一个独立子任务给子 agent(独立上下文)。默认走 Direct 引擎(只读工具集:read_file/grep/glob/web_fetch/recall_memory)。设 engine=claudeCode 或 codex 跨引擎:走对应 CLI 的 one-shot(同样只读)。用于并行探索或大任务分解,可以借力更强的模型完成子任务。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。',
   parameters: {
     type: 'object',
-    properties: { prompt: { type: 'string', description: '给子 agent 的详细任务描述(目标 + 约束)' } },
+    properties: {
+      prompt: { type: 'string', description: '给子 agent 的详细任务描述(目标 + 约束)' },
+      engine: {
+        type: 'string',
+        enum: ['direct', 'claudeCode', 'codex'],
+        description: "子任务用的引擎。默认 'direct'(本地 ReAct + GLM)。'claudeCode' / 'codex' 走对应 CLI one-shot。",
+      },
+    },
     required: ['prompt'],
   },
   async run(args, ctx) {
     if (!ctx.spawn) return '该引擎不支持子任务派发。';
     const prompt = String(args.prompt ?? '').trim();
     if (!prompt) return '缺少 prompt';
+    const engine = (args.engine as SubEngine) ?? 'direct';
     try {
-      return await ctx.spawn({ prompt, signal: ctx.signal ?? new AbortController().signal });
+      return await ctx.spawn({ prompt, signal: ctx.signal ?? new AbortController().signal, engine });
     } catch (e) {
       return `子任务出错: ${(e as Error)?.message ?? e}`;
     }

@@ -5,14 +5,15 @@
 // directly (CVE-2024-27980), so .cmd/.bat go through shell:true. Direct .exe / unix bins spawn
 // without a shell → clean argv, no prompt-injection surface. ponytail: prompt-arg via shell:true
 // on Windows isn't bulletproof against cmd metachars; user authors the prompt, acceptable for MVP.
-import { spawn, execSync } from 'node:child_process';
+import { spawn, execSync, execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { AgentEvent, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
-import { allTools, readOnlyTools, type ToolCtx } from './tools';
+import { allTools, readOnlyTools, type ToolCtx, type SubEngine } from './tools';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
@@ -104,7 +105,12 @@ class DirectEngine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
-      spawn: async ({ prompt: sub, signal: childSignal }) => {
+      spawn: async ({ prompt: sub, signal: childSignal, engine }) => {
+        // 跨引擎子任务:claudeCode / codex 走 CLI one-shot(只读,不递归)。
+        // ponytail: 不复用 ClaudeCodeEngine/CodexEngine 的 stream-json 解析,直接 execFile + 取 stdout。
+        if (engine === 'claudeCode' || engine === 'codex') {
+          return await runCliOneShot(engine, sub, conv.cwd, childSignal);
+        }
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
@@ -174,6 +180,31 @@ export function binEnv(): NodeJS.ProcessEnv {
       : ['/opt/homebrew/bin', '/usr/local/bin', path.join(home, '.npm-global', 'bin'), path.join(home, '.local', 'bin')];
   const base = process.env.PATH || '';
   return { ...process.env, PATH: base + path.delimiter + extra.join(path.delimiter) };
+}
+
+const execFileAsync = promisify(execFile);
+
+// 跨引擎子任务(dispatch_agent engine=claudeCode/codex)的 one-shot CLI 调用:
+// 不走 stream-json 解析,直接 execFile + 全量 stdout。CLI 失败/超时返回错误文本而非抛错(子任务不应阻塞主流程)。
+// ponytail: maxBuffer 10MB;再大就走流式(目前没遇到)。codex exec 默认输出 JSON,模型自己解析。
+async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd: string, signal: AbortSignal): Promise<string> {
+  const bin = resolveBin(engine === 'claudeCode' ? 'claude' : 'codex');
+  if (!bin.found) return `(${engine} CLI 不在 PATH,跳过子任务)`;
+  const args = engine === 'claudeCode' ? ['-p', prompt] : ['exec', prompt];
+  try {
+    const { stdout } = await execFileAsync(bin.cmd, args, {
+      cwd,
+      env: binEnv(),
+      signal,
+      maxBuffer: 10 * 1024 * 1024,
+      ...(bin.shell ? { shell: true } : {}),
+    });
+    const text = stdout.trim();
+    return text || '(子任务无文本输出)';
+  } catch (e) {
+    const msg = (e as Error)?.message ?? String(e);
+    return `(子任务出错: ${msg})`;
+  }
 }
 
 type ResolvedBin = { cmd: string; shell: boolean; found: boolean };
