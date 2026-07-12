@@ -1,147 +1,149 @@
-# 工具系统 + MCP
+> 🌐 Language: **English** | [中文](Tools-and-MCP.zh-CN.md)
 
-Direct 引擎内置 10 个工具 + 自动接入系统配置的 MCP 服务。Claude Code / Codex 用各自 CLI 的工具,不走这套。
+# Tools + MCP
 
-## 10 个内置工具
+The Direct engine has 10 built-in tools + auto-connects to MCP services configured on the system. Claude Code / Codex use their own CLI tooling, not this layer.
 
-| 工具 | 类型 | 用途 |
+## 10 built-in tools
+
+| Tool | Type | Purpose |
 |---|---|---|
-| `shell` | 写 | 跑 shell 命令(Windows 走 cmd.exe,Unix 走 sh)。**会先弹确认 modal**(除非 setting `approval: 'never'`) |
-| `read_file` | 只读 | 读文件内容。返回 UTF-8 文本 |
-| `write_file` | 写 | 写文件(path + content 直传,**唯一正确方式**;几 KB ~ 几百 KB 一次到位) |
-| `edit_file` | 写 | 精准替换(`old_string` → `new_string`,`replace_all` 可选) |
-| `grep` | 只读 | 递归内容搜索。返回匹配行 + 行号 |
-| `glob` | 只读 | 按模式列文件(`**/*.ts`) |
-| `web_fetch` | 只读 | 抓 URL,返回 markdown 化的正文 |
-| `recall_memory` | 只读 | FTS5 全文搜历史(`history` 表) |
-| `git_diff` | 只读 | 读 git diff(file / ref / cached 参数)。**不弹确认**(只读) |
-| `dispatch_agent` | 写 | 派发只读子 agent(独立 history,见 [[Direct-Engine]]) |
+| `shell` | write | Run a shell command (cmd.exe on Windows, sh on Unix). **Asks for confirmation first** (unless setting `approval: 'never'`) |
+| `read_file` | read-only | Read file contents. Returns UTF-8 text |
+| `write_file` | write | Write a file (path + content direct, **the only correct way**; from a few KB to a few hundred KB in one shot) |
+| `edit_file` | write | Precise replace (`old_string` → `new_string`, optional `replace_all`) |
+| `grep` | read-only | Recursive content search. Returns matching lines + line numbers |
+| `glob` | read-only | List files by pattern (`**/*.ts`) |
+| `web_fetch` | read-only | Fetch a URL, return markdown-ized body |
+| `recall_memory` | read-only | FTS5 full-text search of history (`history` table) |
+| `git_diff` | read-only | Read git diff (args: `file`, `ref`, `cached`). **No confirmation** (read-only) |
+| `dispatch_agent` | write | Dispatch a read-only sub-agent (own history, see [[Direct-Engine]]) |
 
-## `shell` 工具
+## `shell` tool
 
 ```
 shell({ cmd: string, cwd?: string }) → string
 ```
 
-- Windows 走 `cmd.exe /c <cmd>`
-- Unix 走 `sh -c <cmd>`
-- 输出合并 stdout + stderr,加 exit code
-- **默认要确认**:renderer 弹 modal 显示命令,用户点确定才执行
-- `approval: 'never'` 直接放行(不弹)
+- Windows: `cmd.exe /c <cmd>`
+- Unix: `sh -c <cmd>`
+- Output merges stdout + stderr, plus exit code
+- **Confirms by default**: renderer shows a modal with the command, only runs on user approval
+- `approval: 'never'` short-circuits (no modal)
 
-确认桥的细节见 [[Architecture]] 的「Shell-confirm 桥」。
+Confirm bridge details in [[Architecture]] under "Shell-confirm bridge".
 
-## `write_file` 工具(重点)
+## `write_file` tool (emphasis)
 
-baseSystemPrompt 反复强调:
+baseSystemPrompt repeats this:
 
-> 写文件的唯一正确方式是 write_file 工具(path + content 直传)。
-> write_file 没有长度限制,几 KB、几十 KB、几百 KB 都可以一次性写入。
-> 永远不要因为「内容太长」而改用 shell echo/cat/heredoc,或 powershell Set-Content,或 base64 decode。
-> 那些 shell/powershell 方式在 JSON+shell 双层转义下几乎必崩。
+> The only correct way to write a file is the write_file tool (path + content direct).
+> write_file has no length limit — a few KB, tens of KB, hundreds of KB all write in one shot.
+> Never switch to shell echo/cat/heredoc, powershell Set-Content, or base64 decode "because the content is too long".
+> Those shell/powershell forms almost always break under JSON+shell double-escaping.
 
-模型偶尔会想偷懒走 shell heredoc(看起来一行命令更短),系统提示明确禁止。理由:JSON arg 转义 + shell 引号转义 双层叠加,几乎必出错。
+Models occasionally try to be clever with shell heredocs (looks shorter as a one-liner). The system prompt forbids it. Reason: JSON arg escaping + shell quote escaping compound, and almost always corrupt content.
 
-## `edit_file` 工具
+## `edit_file` tool
 
 ```
 edit_file({ path: string, old_string: string, new_string: string, replace_all?: boolean })
 ```
 
-精准字符串替换。`old_string` 必须唯一(不唯一 + 没 `replace_all: true` → 失败,提示模型加更多上下文)。
+Precise string replacement. `old_string` must be unique (not unique + no `replace_all: true` → fails, tells the model to add more context).
 
-适合小改;大改用 `write_file` 整个重写。
+Good for small edits; for large changes use `write_file` to rewrite wholesale.
 
-## `git_diff` 工具
+## `git_diff` tool
 
 ```
 git_diff({ file?: string, ref?: string, cached?: boolean })
 ```
 
-参数组合:
-- `{}` —— 整个 working tree 的 diff
-- `{ file: "src/x.ts" }` —— 单文件 diff
-- `{ ref: "main" }` —— 和分支比
-- `{ cached: true }` —— 已 staged 的 diff(`--cached`)
-- `{ file, ref }` —— 单文件和分支比
+Arg combinations:
+- `{}` — whole working tree diff
+- `{ file: "src/x.ts" }` — single-file diff
+- `{ ref: "main" }` — diff against a branch
+- `{ cached: true }` — staged diff (`--cached`)
+- `{ file, ref }` — single file vs branch
 
-**只读,不弹确认**。是 Direct 引擎 v1.0 加的。
+**Read-only, no confirmation modal**. Added in v1.0.
 
-## 工具定义 + ToolCtx
+## Tool definition + ToolCtx
 
-工具定义在 `src/main/tools.ts`:
+Defined in `src/main/tools.ts`:
 
 ```ts
 interface Tool {
   name: string;
   description: string;
-  readOnly?: boolean;       // 决定能否并发
+  readOnly?: boolean;       // determines parallel eligibility
   parameters: JSONSchema;   // OpenAI/Anthropic tool schema
   run(args, ctx: ToolCtx): Promise<string>;
 }
 ```
 
-`ToolCtx` 是工具运行时上下文:`cwd`、`confirm`、`signal`、`spawn`(供 dispatch_agent 派子 agent)。
+`ToolCtx` is the runtime context: `cwd`, `confirm`, `signal`, `spawn` (for dispatch_agent sub-agents).
 
-## 工具调用执行:并发 vs 串行
+## Tool execution: parallel vs serial
 
-`runToolBatch`(`AgentLoop.ts:197`):
+`runToolBatch` (`AgentLoop.ts:197`):
 
-- 收集连续的只读段(`readOnly: true`)→ `Promise.all` 并发
-- 遇到写工具 → 串行单个执行
-- 结果按原 `toolCalls` 顺序回填(`tool_call_id` 配对)
+- Collect consecutive read-only segments (`readOnly: true`) → `Promise.all` parallel
+- Hit a write tool → run serially, one at a time
+- Backfill results in original `toolCalls` order (`tool_call_id` matching)
 
-为什么这样设计:
-- 只读无副作用,并发跑省时间(读 5 个文件 = 5x 加速)
-- 写工具有顺序依赖(shell 改了文件再 read_file 才能看见)→ 必须串行
+Why:
+- Read-only has no side effects, parallel saves time (5 file reads = 5x speedup)
+- Write tools have ordering dependencies (shell changes a file, then read_file should see it) → must serialize
 
-## MCP(Model Context Protocol)
+## MCP (Model Context Protocol)
 
-`src/main/mcp.ts`。
+`src/main/mcp.ts`.
 
-### 自动发现
+### Auto-discovery
 
-启动时扫:
-- `~/.claude.json`(Claude Desktop 配置)
-- `~/.codex/config.toml`(Codex 配置)
-- Claude Code 的 plugin 配置
+On startup, scans:
+- `~/.claude.json` (Claude Desktop config)
+- `~/.codex/config.toml` (Codex config)
+- Claude Code's plugin config
 
-提取所有 stdio MCP 服务配置(`command` + `args` + `env`),给每个起一个 client。
+Extracts all stdio MCP service configs (`command` + `args` + `env`), spins up a client for each.
 
-### 接入
+### Integration
 
-- 每个 client 走 stdio(spawn 子进程,JSON-RPC 通信)
-- 启动时调 `tools/list` 拿工具清单
-- Direct 引擎每轮等最多 2s 让连接就绪,然后把所有 MCP 工具 merge 进 `tools` 数组
-- 工具名前缀服务名(防冲突):`mcp__<server>__<tool>`
-- 调用走 `tools/call`,结果 normalize 成字符串
+- Each client uses stdio (spawns a subprocess, JSON-RPC over stdin/stdout)
+- Calls `tools/list` on connect to discover tools
+- The Direct engine waits up to 2s on each turn for connections to be ready, then merges all MCP tools into the `tools` array
+- Tool names are prefixed with the service name (to avoid collisions): `mcp__<server>__<tool>`
+- Calls go through `tools/call`, results normalized to strings
 
-### 自动重连
+### Auto-reconnect
 
-stdio 子进程挂了 → 自动重启 + 重新 `tools/list`。下一个 turn 又能用。
+If a stdio subprocess dies → auto-restart + re-`tools/list`. Available again on the next turn.
 
-### 🔌 按钮
+### 🔌 button
 
-主窗口底部 **🔌 MCP** 按钮点开:列出当前连接的 MCP 服务 + 每个服务暴露的工具。**只读展示**,不能在这里改配置(改 `~/.claude.json` / `~/.codex/config.toml`,重启 app)。
+Main window's **🔌 MCP** button: lists connected services + each one's exposed tools. **Read-only display** — you can't edit configs here (edit `~/.claude.json` / `~/.codex/config.toml`, restart the app).
 
-## 工具结果截断
+## Tool result truncation
 
-`truncateForModel`(`AgentLoop.ts:250`):
+`truncateForModel` (`AgentLoop.ts:250`):
 
-- 头尾各 3000 字符
-- 中间 `…[省略 N 字符]…`
-- 阈值 8192
+- Head + tail: 3000 chars each
+- Middle: `…[omitted N chars]…`
+- Threshold: 8192
 
-**只截喂给模型的版本,UI 拿完整原文**(点步骤详情可见全)。详见 [[Direct-Engine]]。
+**Only the model-facing version is truncated; the UI gets the full original** (clickable in step details). See [[Direct-Engine]].
 
-## 何时扩展工具
+## When to extend tools
 
-加新工具:
+Adding a new tool:
 
-1. `src/main/tools.ts` 加 `Tool` 实现(name / description / parameters / run)
-2. 加进 `allTools()` 或 `readOnlyTools()`(看是否只读)
+1. Implement the `Tool` interface in `src/main/tools.ts` (name / description / parameters / run)
+2. Add to `allTools()` or `readOnlyTools()` (depending on read-only-ness)
 3. typecheck → ship
 
-不需要改 AgentLoop、不改 glm、不改 IPC。ReAct loop 自动发现。
+No need to touch AgentLoop, glm, or IPC. The ReAct loop auto-discovers.
 
-加 MCP 工具:**不用改代码**。装在本机的 MCP 服务自动被扫到。
+Adding MCP tools: **no code changes**. Locally-installed MCP services are auto-discovered.

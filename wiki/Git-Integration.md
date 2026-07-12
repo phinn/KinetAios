@@ -1,125 +1,128 @@
-# Git 集成
+> 🌐 Language: **English** | [中文](Git-Integration.zh-CN.md)
 
-主窗口「Git」tab。分两列:左 changes(working tree),右 history(默认)/ diff(点文件或 commit 后)。
+# Git Integration
 
-## 布局
+Main window "Git" tab. Two columns: left changes (working tree), right history (default) / diff (after clicking a file or commit).
+
+## Layout
 
 ```
 ┌────────────────────────────────────────────────────────────┐
 │ .git-head                                                  │
-│ 🌿 <branch> · N 更改          [⟳ 刷新]                    │
+│ 🌿 <branch> · N changes        [⟳ refresh]                 │
 ├──────────────────────┬─────────────────────────────────────┤
 │                      │                                     │
 │ .git-changes         │ .git-side                           │
-│ 更改(working tree) │ ├─ 默认:历史(commit log)         │
-│                      │ └─ 点文件/commit:diff(带 ← 返回)│
-│ M  修改  src/x.ts    │                                     │
-│ A  新增  README.md   │  abc123  2026-07-12  fix: ...  me   │
-│ ?? 未跟  foo.txt     │  def456  2026-07-11  feat: ...  me   │
+│ Changes (working     │ ├─ Default: History (commit log)    │
+│ tree)                │ └─ Click file/commit: diff (with ←) │
+│                      │                                     │
+│ M  modified src/x.ts │  abc123  2026-07-12  fix: ...   me  │
+│ A  added   README.md │  def456  2026-07-11  feat: ...   me  │
+│ ?? untracked foo.txt │                                     │
 │                      │                                     │
 └──────────────────────┴─────────────────────────────────────┘
 ```
 
-## 数据来源
+## Data source
 
-`api.gitSnapshot(cwd)`(`src/shared/types.ts:160`)返回 `GitSnapshot`:
+`api.gitSnapshot(cwd)` (`src/shared/types.ts:160`) returns `GitSnapshot`:
 
 ```ts
 {
   ok: boolean;
-  branch?: string;          // 当前分支名
-  changes?: GitChange[];    // git status --short 解析
-  log?: GitCommit[];        // git log --pretty=format:...
+  branch?: string;          // current branch name
+  changes?: GitChange[];    // parsed from `git status --short`
+  log?: GitCommit[];        // from `git log --pretty=format:...`
   error?: string;
 }
 ```
 
-`GitChange`:`{ path, code, staged }`(`code` 是单字符 `M/A/D/R/?/!`…)。
+`GitChange`: `{ path, code, staged }` (`code` is a single char `M/A/D/R/?/!`…).
 
-main 进程直接 spawn `git` 命令(走 `tools.ts` 的 spawn 逻辑,但不在 Direct 工具链里 —— 这给 renderer tab 用)。
+The main process spawns `git` directly (using `tools.ts`'s spawn logic but outside the Direct tool chain — this is for the renderer tab).
 
-## 左列:changes
+## Left column: changes
 
-`git status --short` 解析。每行一个文件:
+Parsed from `git status --short`. One row per file:
 
-- **code**(单字符 + 颜色):M(修改)/ A(新增)/ D(删除)/ R(重命名)/ ??(未跟踪)/ !(忽略)等
-- **label**(i18n):「修改 / 新增 / 删除 / 重命名 / 未跟」
-- **path**:相对 cwd 的路径
+- **code** (single char + color): M (modified) / A (added) / D (deleted) / R (renamed) / ?? (untracked) / ! (ignored), etc.
+- **label** (i18n): "Modified / Added / Deleted / Renamed / Untracked"
+- **path**: relative to cwd
 
-**点击行** → `showGitDiff({ file: path })` → 右列切到 diff 视图。
+**Click a row** → `showGitDiff({ file: path })` → right column switches to diff view.
 
-## 右列:history(默认)
+## Right column: history (default)
 
-`git log -20 --pretty=format:"%h|%cd|%s|%an"`。每条:
+From `git log -20 --pretty=format:"%h|%cd|%s|%an"`. Each entry:
 
-- **hash** 前 7 位(等宽字体)
-- **date**(`%cd`,short format)
-- **subject**(`%s`,commit message 首行)
-- **author**(`%an`)
+- **hash** first 7 chars (monospace)
+- **date** (`%cd`, short format)
+- **subject** (`%s`, commit message first line)
+- **author** (`%an`)
 
-**点击行** → `showGitDiff({ hash })` → 右列切到 commit show。
+**Click a row** → `showGitDiff({ hash })` → right column switches to commit show.
 
-## 右列:diff 视图
+## Right column: diff view
 
-两种渲染方式:
+Two render modes:
 
-### 文件 diff(左右对比)
+### File diff (side-by-side)
 
-`renderSideBySide`(`src/renderer/app.ts:456`)—— 把 unified diff 解析成对齐的「左旧 / 右新」行。
+`renderSideBySide` (`src/renderer/app.ts:456`) — parses unified diff into aligned "left old / right new" rows.
 
-- 同一 hunk 内连续的 `-` 与 `+` 按行配对(逐对对齐)
-- 多出来的用空行垫
-- 不做 token 级 diff(够直观,ponytail:同段字级 diff 算法可后续加)
+- Consecutive `-` and `+` lines in the same hunk are paired (aligned pair by pair)
+- Overflow padded with blank rows
+- No token-level diff (visually sufficient; ponytail: word-level diff can be added later)
 
-视觉:左侧删除行红、右侧新增行绿、共同行灰。
+Visual: left deleted lines red, right added lines green, common lines grey.
 
-### commit show(unified)
+### Commit show (unified)
 
-`colorGitDiff`(`src/renderer/app.ts:426`)—— git show 的统一格式按行着色。
+`colorGitDiff` (`src/renderer/app.ts:426`) — colorizes git show's unified format line by line.
 
-- 从首个 `diff --git` 行开始才算 diff body(commit message 里的 `- list 项` 不该被误判为删除行)
-- meta(commit metadata + message)单独显示
-- `+` 绿、`-` 红、`@@` hunk header 蓝、`+++`/`---` 文件名蓝
+- The diff body only starts at the first `diff --git` line (so a `- list item` in the commit message isn't mistaken for a deleted line)
+- Meta (commit metadata + message) displayed separately
+- `+` green, `-` red, `@@` hunk header blue, `+++`/`---` filename blue
 
-### 返回 history
+### Back to history
 
-diff 视图顶部有 **← 历史** 按钮,点回 history 列表。
+The diff view has a **← History** button at the top to return to the history list.
 
-## 点文件 / 点 commit 后的状态机
+## State machine after clicking file / commit
 
-`gitState`(`src/renderer/app.ts:36`):
+`gitState` (`src/renderer/app.ts:36`):
 
 ```ts
 {
-  snapshot?: GitSnapshot;                       // 最近一次抓的快照
-  view: { kind: 'history' }                     // 默认
+  snapshot?: GitSnapshot;                       // last fetched snapshot
+  view: { kind: 'history' }                     // default
       | { kind: 'diff'; title: string; contentHTML: string };
-  lastCwd: string;                              // 上次抓的 cwd(切了重抓)
+  lastCwd: string;                              // last cwd fetched (refetch on change)
 }
 ```
 
-- 切 cwd / 手动刷新 → 重置 view 到 history + 重抓 snapshot
-- 点文件 / commit → view 切到 diff,占位先渲染「…」+ 异步加载真实 diff
+- Switch cwd / manual refresh → reset view to history + refetch snapshot
+- Click file / commit → view switches to diff, a "…" placeholder renders first, then async-loads the real diff
 
-## 刷新
+## Refresh
 
-`.git-head` 右侧 **⟳** 按钮 → 重抓 snapshot。
+The **⟳** button on the right of `.git-head` → refetches snapshot.
 
-切会话(不同 cwd)→ 自动重抓。tab 切走再切回 → 用已有 snapshot(不重抓)。
+Switching sessions (different cwd) → auto-refetch. Tab switching away and back → uses the existing snapshot (no refetch).
 
-## 限制
+## Limitations
 
-- **只读**:这里不能 stage / commit / push。要操作 git → 用聊天框让 agent 调 `shell` 工具,或开 Files 窗口走系统 git GUI
-- **不支持 submodule / worktree 视图**:只看当前仓库根
-- **commit log 固定 20 条**:不看完整 history(改 main 进程 `git log -20` 改数字)
-- **diff 不支持二进制**:图片改、音频改等只显示「Binary files differ」
+- **Read-only**: you can't stage / commit / push here. To operate on git → ask the agent to use the `shell` tool in chat, or open the Files window to use system git GUI
+- **No submodule / worktree view**: only the current repo root
+- **commit log is capped at 20**: edit the main process `git log -20` number to see more
+- **Diff doesn't support binaries**: image changes, audio changes, etc. just show "Binary files differ"
 
-## 关键源文件
+## Key source files
 
-- `src/renderer/app.ts:329` —— `refreshGit`
-- `src/renderer/app.ts:345` —— `renderGit`(列渲染 + 事件绑定)
-- `src/renderer/app.ts:405` —— `showGitDiff`
-- `src/renderer/app.ts:426` —— `colorGitDiff`(commit show)
-- `src/renderer/app.ts:456` —— `renderSideBySide`(文件 diff)
-- `src/main/main.ts` —— `git-snapshot` / `git-diff` IPC handler
-- `src/renderer/index.html`(内联)—— `#chat-git-pane`
+- `src/renderer/app.ts:329` — `refreshGit`
+- `src/renderer/app.ts:345` — `renderGit` (column rendering + event binding)
+- `src/renderer/app.ts:405` — `showGitDiff`
+- `src/renderer/app.ts:426` — `colorGitDiff` (commit show)
+- `src/renderer/app.ts:456` — `renderSideBySide` (file diff)
+- `src/main/main.ts` — `git-snapshot` / `git-diff` IPC handlers
+- `src/renderer/index.html` (inline) — `#chat-git-pane`

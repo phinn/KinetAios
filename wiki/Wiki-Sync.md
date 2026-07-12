@@ -1,95 +1,118 @@
-# 把 wiki 推到 GitHub
+> 🌐 Language: **English** | [中文](Wiki-Sync.zh-CN.md)
 
-本 wiki 的 markdown 源在主 repo 的 `wiki/` 目录里。GitHub wiki 是**独立 git 仓库**(`*.wiki.git`),不在主 repo 里 —— 必须手动同步。
+# Pushing the wiki to GitHub
 
-## 一次性初始化
+The markdown source for this wiki lives in the main repo's `wiki/` directory. GitHub wiki is a **separate git repo** (`*.wiki.git`), not part of the main repo — sync is manual.
 
-GitHub wiki 必须先在 web UI 创建首页,才会开 `*.wiki.git` 仓库:
+## One-time init
 
-1. 浏览器打开 `https://github.com/phinn/KinetAios/wiki`
-2. 点 「Create the first page」
-3. 随便填点内容(`Home` 作为页面名就行)→ Save
+GitHub wiki must be initialized via web UI before its `*.wiki.git` exists:
 
-完成后 `https://github.com/phinn/KinetAios.wiki.git` 才能 clone。
+1. Open `https://github.com/phinn/KinetAios/wiki` in a browser
+2. Click "Create the first page"
+3. Put anything in (`Home` as page name is fine) → Save
 
-## 同步步骤
+After that, `https://github.com/phinn/KinetAios.wiki.git` becomes cloneable.
+
+## Sync steps
 
 ```sh
-# 1. clone wiki 仓库(注意 .wiki 后缀)
+# 1. clone the wiki repo (note the .wiki suffix)
 git clone https://github.com/phinn/KinetAios.wiki.git /tmp/kinet-wiki
 
-# 2. 把主 repo 的 wiki/ 内容复制进去
+# 2. copy the main repo's wiki/ contents in
 cp wiki/*.md /tmp/kinet-wiki/
 
 # 3. commit + push
 cd /tmp/kinet-wiki
 git add .
 git commit -m "sync wiki from main repo"
-git push origin master  # GitHub wiki 默认 master 分支
+git push origin master  # GitHub wiki defaults to master
 ```
 
-完成后刷新 `https://github.com/phinn/KinetAios/wiki`,所有页面就出现了。
+Refresh `https://github.com/phinn/KinetAios/wiki` — all pages appear.
 
-## 后续维护
+## Ongoing maintenance
 
-两种做法:
+Two approaches:
 
-### A. 主 repo 改 → 同步到 wiki(推荐)
+### A. Edit main repo → sync to wiki (recommended)
 
-继续在主 repo 的 `wiki/` 改,定期同步过去(重复上面 cp 步骤)。好处:
+Keep editing `wiki/` in the main repo; periodically re-run the cp steps. Benefits:
 
-- wiki 内容跟着代码一起 PR review
-- 历史和代码 history 在一起
-- 主 repo 是真理源,wiki 是 mirror
+- Wiki content goes through PR review alongside code
+- History lives with the code history
+- Main repo is source of truth, GitHub wiki is mirror
 
-### B. 直接在 wiki 仓库改
+### B. Edit the wiki repo directly
 
-跳过主 repo,直接编辑 wiki 仓库。注意:之后主 repo 的 `wiki/` 会过时,要反向同步(`cp /tmp/kinet-wiki/*.md wiki/`)。
+Skip the main repo, edit the wiki repo in place. Note: the main repo's `wiki/` will then be stale — reverse-sync with `cp /tmp/kinet-wiki/*.md wiki/`.
 
-## 文件名约定
+## Filename conventions
 
-GitHub wiki 的页面 URL = 文件名(去掉 .md)。空格在 URL 里转 `-`。
+GitHub wiki page URL = filename (minus `.md`). Spaces become `-` in the URL.
 
-本 wiki 用 **英文 kebab-case** 文件名,内容中文:
+This wiki uses **English kebab-case filenames** with bilingual content:
 
-| 文件 | URL |
+| File | URL |
 |---|---|
 | `Home.md` | `/wiki/Home` |
 | `Direct-Engine.md` | `/wiki/Direct-Engine` |
 | `Long-Term-Memory.md` | `/wiki/Long-Term-Memory` |
 
-中文文件名也能用,但 URL 会编码成 `%E4%B...` 难看。
+Chinese filenames work but URL-encode to `%E4%B...` — ugly.
 
-## 侧边栏(可选)
+## Bilingual structure
 
-GitHub wiki 右侧自动生成页面列表,顺序按字母。想要自定义顺序 / 分组 → 在 wiki 仓库加 `_Sidebar.md`:
+Each page has two files:
+
+- `PageName.md` — English (primary)
+- `PageName.zh-CN.md` — Chinese mirror
+
+Both files carry a language header at the top:
+
+```markdown
+> 🌐 Language: **English** | [中文](PageName.zh-CN.md)
+```
+
+or
+
+```markdown
+> 🌐 Language: [English](PageName) | **中文**
+```
+
+So readers can flip between them. English-primary because the goal is global reach; Chinese stays as a first-class alternative.
+
+## Sidebar (optional)
+
+GitHub wiki auto-generates the right-side page list alphabetically. For custom ordering / grouping, add `_Sidebar.md` to the wiki repo:
 
 ```markdown
 - [[Home]]
 - [[Getting-Started]]
-- **引擎**
+- **Engines**
   - [[Engines]]
   - [[Direct-Engine]]
-- **工具与记忆**
+- **Tools & Memory**
   - [[Tools-and-MCP]]
   - [[Long-Term-Memory]]
 - ...
 ```
 
-GitHub wiki 自动把 `_Sidebar.md` 注入每页右侧。
+GitHub injects `_Sidebar.md` into every page's right pane.
 
-## Footer(可选)
+## Footer (optional)
 
-`_Footer.md` 同理,注入每页底部。一般放「最后更新于 ...」「编辑请看主 repo 的 wiki/ 目录」之类。
+`_Footer.md` works the same way, injected at page bottom. Typical content: "Last updated …" / "Edit these in the main repo's `wiki/` directory."
 
-## 链接语法
+## Link syntax
 
-GitHub wiki 的 `[[Page-Name]]` 自动渲染成链接。`Page-Name` 对应文件名(去 `.md`)。
+GitHub wiki's `[[Page-Name]]` auto-renders as a link. `Page-Name` matches the filename (minus `.md`).
 
-本 wiki 大量使用 `[[Direct-Engine]]` 这种内部跳转。同步到 GitHub 后自动可点。
+This wiki uses `[[Direct-Engine]]`-style cross-references heavily. After sync they all become clickable.
 
-## 不能做什么
+## What you can't do
 
-- **GitHub 没有 wiki API** —— 不能用 gh CLI 直接改
-- **首次创建必须在 web UI** —— CLI 不能初始化 wiki 仓库
-- **图片附件**:可以拖到 wiki 编辑器里上传,GitHub 自动存到 wiki 仓库的 `assets/` 子目录;markdown 里写相对路径
+- **GitHub has no wiki API** — can't edit via `gh` CLI directly
+- **First creation must be in the web UI** — CLI can't initialize the wiki repo
+- **Image attachments**: drag into the wiki editor to upload; GitHub stores them under the wiki repo's `assets/` subdirectory, markdown references by relative path

@@ -1,17 +1,19 @@
-# 规则与背景
+> 🌐 Language: **English** | [中文](Rules-and-Context.zh-CN.md)
 
-KinetAios 把 4 种「指导材料」自动注入到 agent 的 prompt。**约定大于配置**——文件在 cwd 根,自动被读;不需要在 setting 里勾选。
+# Rules & Context
 
-## 4 种文件
+KinetAios auto-injects 4 kinds of "guidance material" into the agent's prompt. **Convention over configuration** — files at the cwd root are auto-read; no setting toggles needed.
 
-| 文件 | 来源 | 谁读 | 注入位置 |
+## The 4 files
+
+| File | Source | Who reads it | Injection point |
 |---|---|---|---|
-| `AGENTS.md` | cwd 根 | Direct 引擎自动读 | systemPrompt 拼接 |
-| `CLAUDE.md` | cwd 根 | Direct 引擎自动读(作为 AGENTS.md 的 fallback) | systemPrompt 拼接 |
-| `KINET.md` | cwd 根,app UI「规则」tab 维护 | 三套引擎都注入 | Direct:systemPrompt;Claude:`--append-system-prompt`;Codex:prompt 头 |
-| `KINET-CONTEXT.md` | cwd 根,Workbench 卡片「背景」按钮维护 | 三套引擎都注入 | 同 KINET.md |
+| `AGENTS.md` | cwd root | Direct engine auto-reads | systemPrompt concatenation |
+| `CLAUDE.md` | cwd root | Direct engine auto-reads (fallback for AGENTS.md) | systemPrompt concatenation |
+| `KINET.md` | cwd root, maintained via the app's "Rules" tab | All three engines inject | Direct: systemPrompt; Claude: `--append-system-prompt`; Codex: prompt head |
+| `KINET-CONTEXT.md` | cwd root, maintained via Workbench card's "Context" button | All three engines inject | Same as KINET.md |
 
-## AGENTS.md / CLAUDE.md(项目规则,外部工具约定)
+## AGENTS.md / CLAUDE.md (project rules, external-tool convention)
 
 `src/main/engines.ts:54`:
 
@@ -20,148 +22,148 @@ function loadProjectRules(cwd: string): string {
   for (const name of ['AGENTS.md', 'CLAUDE.md']) {
     try {
       const body = fs.readFileSync(path.join(cwd, name), 'utf8');
-      if (body.trim()) return `\n\n# 项目规则(${name})\n${body.slice(0, 8000)}`;
-    } catch { /* 不存在 → 试下一个 */ }
+      if (body.trim()) return `\n\n# Project rules (${name})\n${body.slice(0, 8000)}`;
+    } catch { /* not present → try next */ }
   }
   return '';
 }
 ```
 
-- **Direct 独享**(只有 DirectEngine 调 `loadProjectRules`)
-- 优先级 `AGENTS.md` > `CLAUDE.md`(都有则只读前者)
-- 截断 8000 字符
-- 适合:**团队/工具约定的硬规则**(代码风格、commit 格式、安全限制)
+- **Direct-only** (only `DirectEngine` calls `loadProjectRules`)
+- Priority: `AGENTS.md` > `CLAUDE.md` (if both exist, only the first is read)
+- Truncated at 8000 chars
+- Good for: **team/tool convention hard rules** (code style, commit format, security limits)
 
-Claude Code / Codex 不需要这里读,因为它们各自的 CLI 已经会读(走 Claude Code 的 `CLAUDE.md` 自动加载 / Codex 的 `AGENTS.md` 自动加载)。
+Claude Code / Codex don't need this here because their respective CLIs already auto-load them (Claude Code auto-loads `CLAUDE.md`; Codex auto-loads `AGENTS.md`).
 
-## KINET.md(项目规则,app 维护)
+## KINET.md (project rules, app-maintained)
 
 `src/main/engines.ts:68`:
 
 ```ts
 export function loadRulesBlock(cwd: string): string {
   const body = fs.readFileSync(path.join(cwd, 'KINET.md'), 'utf8');
-  return body.trim() ? `\n\n# 项目规则(KINET.md)\n${body.slice(0, 8000)}` : '';
+  return body.trim() ? `\n\n# Project rules (KINET.md)\n${body.slice(0, 8000)}` : '';
 }
 ```
 
-- **三套引擎都注入**
-- 在 `TaskManager.runTurn` 里加载,通过 `EngineRunOpts.rulesBlock` 传给引擎
-- Direct 跟在 `loadProjectRules` 后面;Claude 走 `--append-system-prompt`;Codex 拼到 prompt 头
-- 截断 8000
+- **All three engines inject this**
+- Loaded in `TaskManager.runTurn`, passed to engines via `EngineRunOpts.rulesBlock`
+- Direct appends after `loadProjectRules`; Claude passes via `--append-system-prompt`; Codex prepends to the prompt
+- Truncated at 8000
 
-**和 AGENTS.md/CLAUDE.md 区分**:后者是外部工具约定(直接读文件就能用,不依赖 KinetAios);前者是本 app 的「规则 tab」写的,要主动注入到 CC/Codex。
+**Difference from AGENTS.md/CLAUDE.md**: the latter are external-tool conventions (work without KinetAios); KINET.md is written by this app's "Rules" tab and explicitly injected into CC/Codex.
 
-### 编辑:主窗口「规则」tab
+### Editing: main window "Rules" tab
 
-主窗口 → 「规则」tab:
+Main window → "Rules" tab:
 
-- 左上:标题「项目规则(KINET.md)」
-- 中间:`<textarea>` 编辑内容
-- 右上:**⟳ 重新加载**(从磁盘读,覆盖 textarea) / **保存**(写回磁盘)
-- 底部状态栏:当前 cwd / 已保存 / 未保存 / 错误
+- Top-left: title "Project rules (KINET.md)"
+- Middle: `<textarea>` for editing
+- Top-right: **⟳ Reload** (read from disk, overwrites textarea) / **Save** (writes to disk)
+- Bottom status: current cwd / saved / unsaved / error
 
-切 cwd → 自动读新 cwd 的 `KINET.md`(空就显示空 textarea)。
+Switching cwd → reads the new cwd's `KINET.md` (empty if absent).
 
-## KINET-CONTEXT.md(项目背景知识)
+## KINET-CONTEXT.md (project background knowledge)
 
 `src/main/engines.ts:80`:
 
 ```ts
 export function loadContextBlock(cwd: string): string {
   const body = fs.readFileSync(path.join(cwd, 'KINET-CONTEXT.md'), 'utf8');
-  return body.trim() ? `\n\n# 项目背景(KINET-CONTEXT.md)\n${body.slice(0, 12000)}` : '';
+  return body.trim() ? `\n\n# Project context (KINET-CONTEXT.md)\n${body.slice(0, 12000)}` : '';
 }
 ```
 
-- **三套引擎都注入**
-- 截断 **12000**(比 KINET.md 多 —— 背景知识一般更长)
-- 通过 `EngineRunOpts.contextBlock` 传
+- **All three engines inject this**
+- Truncated at **12000** (more than KINET.md — context is usually longer)
+- Passed via `EngineRunOpts.contextBlock`
 
-**和 KINET.md 区分**:
-- `KINET.md` = 「必须遵守的规则」(代码风格、不能做的事、安全限制)
-- `KINET-CONTEXT.md` = 「关于这个项目的事实」(架构、技术栈、关键文件、约定来源)
+**Difference from KINET.md**:
+- `KINET.md` = "rules you must follow" (code style, things not to do, security limits)
+- `KINET-CONTEXT.md` = "facts about this project" (architecture, tech stack, key files, where conventions come from)
 
-### 编辑:Workbench 卡片「背景」按钮
+### Editing: Workbench card "Context" button
 
-侧边栏 📂 → Workbench → 找到 cwd 对应的卡片 → 「背景」按钮 → 弹 modal:
+Sidebar 📂 → Workbench → find the card for the cwd → "Context" button → modal:
 
-- 标题:项目背景(KINET-CONTEXT.md)
-- 显示当前 cwd
-- `<textarea>` 编辑
-- 保存 / 取消
+- Title: Project context (KINET-CONTEXT.md)
+- Shows current cwd
+- `<textarea>` for editing
+- Save / Cancel
 
-## 注入顺序(Direct)
+## Injection order (Direct)
 
-`engines.ts:139`(`DirectEngine.run`)拼 systemPrompt:
+`engines.ts:139` (`DirectEngine.run`) builds systemPrompt:
 
 ```
-baseSystemPrompt              ← KinetAios 内置 system(写文件规则、cwd 提示等)
-  + skillSection              ← 用户用 /<name> 调用的 skill body
-  + loadProjectRules          ← AGENTS.md / CLAUDE.md(截断 8000)
-  + rulesBlock                ← KINET.md(截断 8000)
-  + contextBlock              ← KINET-CONTEXT.md(截断 12000)
+baseSystemPrompt              ← KinetAios built-in system (write-file rules, cwd hint, etc.)
+  + skillSection              ← body of the /<name> skill the user invoked
+  + loadProjectRules          ← AGENTS.md / CLAUDE.md (truncated 8000)
+  + rulesBlock                ← KINET.md (truncated 8000)
+  + contextBlock              ← KINET-CONTEXT.md (truncated 12000)
 ```
 
-memoryBlock **不在这里**(从 v1.0 起走 history[0],见 [[Long-Term-Memory]])。
+memoryBlock is **not here** (as of v1.0 it goes through history[0], see [[Long-Term-Memory]]).
 
-## 注入顺序(Claude Code / Codex)
+## Injection order (Claude Code / Codex)
 
-不读 AGENTS.md/CLAUDE.md(它们各自 CLI 自己读)。
+Don't read AGENTS.md/CLAUDE.md (their CLIs do that themselves).
 
-`engines.ts` 的 CC/Codex.run:
+In `engines.ts`'s CC/Codex.run:
 
 ```
 append = (rulesBlock ?? '')    ← KINET.md
        + (contextBlock ?? '')  ← KINET-CONTEXT.md
-       + memoryBlock;          ← 长期记忆
+       + memoryBlock;          ← long-term memory
 ```
 
-- CC:`--append-system-prompt <append>`
-- Codex:append + 当前 prompt 拼接(`codex` 没 `--append-system-prompt` flag)
+- CC: `--append-system-prompt <append>`
+- Codex: append + current prompt concatenated (`codex` has no `--append-system-prompt` flag)
 
-## 推荐怎么用
+## Recommended usage
 
-| 你想表达 | 写哪里 |
+| What you want to express | Where to write it |
 |---|---|
-| 团队所有人都该遵守的代码风格、commit 规则 | `AGENTS.md`(团队 repo 入库) |
-| 个人对该项目的硬性约束(不许 push main、必须 typecheck 过) | `KINET.md`(本地,不入库或入库都行) |
-| 这个项目的架构、技术栈、关键文件 | `KINET-CONTEXT.md` |
-| 用户长期偏好(我爱简洁回复、Go 后端) | 长期记忆(🧠 自动抽,或手动改) |
+| Code style / commit rules everyone on the team should follow | `AGENTS.md` (committed to team repo) |
+| Personal hard constraints for this project (don't push main, must typecheck) | `KINET.md` (local, commit or not) |
+| This project's architecture, tech stack, key files | `KINET-CONTEXT.md` |
+| User long-term preferences (concise replies, Go backend dev) | Long-term memory (auto-extracted via 🧠, or hand-edit) |
 
-## 例子
+## Examples
 
-### KINET.md 例子
+### KINET.md example
 
 ```markdown
-- 提交前必须 `npm run typecheck`
-- 不许 push main,开分支
-- 回复用中文
-- 写文件用 write_file 工具,不要 shell heredoc
+- Must `npm run typecheck` before committing
+- Don't push main, open a branch
+- Reply in Chinese
+- Use the write_file tool to write files, not shell heredoc
 ```
 
-### KINET-CONTEXT.md 例子
+### KINET-CONTEXT.md example
 
 ```markdown
-# 项目结构
-- src/main/* —— 主进程(Node 全访问)
-- src/renderer/* —— 渲染进程(无 Node)
-- src/shared/types.ts —— 单一真理源
+# Project structure
+- src/main/* — main process (full Node access)
+- src/renderer/* — renderer (no Node)
+- src/shared/types.ts — single source of truth
 
-# 技术栈
+# Tech stack
 - Electron + TypeScript
 - better-sqlite3 + FTS5
-- vanilla TS + HTML/CSS,无前端框架
+- vanilla TS + HTML/CSS, no frontend framework
 
-# 关键约定
-- KinetAPI 是三层契约,加方法要同步改 3 处
-- 三引擎统一发 AgentEvent
+# Key conventions
+- KinetAPI is a three-layer contract — adding a method requires 3 synced edits
+- All three engines emit the same AgentEvent union
 ```
 
-## 关键源文件
+## Key source files
 
-- `src/main/engines.ts:54` —— `loadProjectRules`(AGENTS/CLAUDE)
-- `src/main/engines.ts:68` —— `loadRulesBlock`(KINET.md)
-- `src/main/engines.ts:80` —— `loadContextBlock`(KINET-CONTEXT.md)
-- `src/renderer/app.ts` —— 「规则」tab 逻辑
-- `src/main/main.ts` —— `read-rules` / `write-rules` / `read-context` / `write-context` IPC
+- `src/main/engines.ts:54` — `loadProjectRules` (AGENTS/CLAUDE)
+- `src/main/engines.ts:68` — `loadRulesBlock` (KINET.md)
+- `src/main/engines.ts:80` — `loadContextBlock` (KINET-CONTEXT.md)
+- `src/renderer/app.ts` — "Rules" tab logic
+- `src/main/main.ts` — `read-rules` / `write-rules` / `read-context` / `write-context` IPC

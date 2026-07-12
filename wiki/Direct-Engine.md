@@ -1,154 +1,156 @@
-# Direct 引擎
+> 🌐 Language: **English** | [中文](Direct-Engine.zh-CN.md)
 
-内置 ReAct loop。`src/main/AgentLoop.ts` 是核心,搭配 `src/main/glm.ts`(provider)、`src/main/tools.ts`(工具)。
+# Direct Engine
 
-## 核心循环
+The built-in ReAct loop. `src/main/AgentLoop.ts` is the core, paired with `src/main/glm.ts` (provider) and `src/main/tools.ts` (tools).
 
-`runAgentLoop(opts)`(`AgentLoop.ts:23`):
+## Core loop
+
+`runAgentLoop(opts)` (`AgentLoop.ts:23`):
 
 ```
 messages = [system, ...memMsg?, ...history, userInput]
 loop:
   1. provider.streamComplete(messages, tools)
-  2. push assistant 回应
-  3. 没有 tool_calls → done,return
-  4. 跑工具(runToolBatch),push tool 结果
-  5. 回到 1
+  2. push assistant response
+  3. no tool_calls → done, return
+  4. run tools (runToolBatch), push tool results
+  5. go to 1
 ```
 
-**默认 maxTurns = ∞**(`AgentLoop.ts:26`)。模型不收敛(一直 tool_call)会持续消耗,需手动点停止。原来是 50,改成 ∞ 是为了让复杂任务不被中途砍断。
+**Default `maxTurns = ∞`** (`AgentLoop.ts:26`). A non-converging model (keeps calling tools) keeps consuming tokens until the user hits stop. Used to be 50; changed to ∞ so complex tasks aren't cut off mid-flight.
 
-## 系统提示拼装
+## System prompt assembly
 
-`DirectEngine.run`(`engines.ts:91`)拼 `systemPrompt`:
+`DirectEngine.run` (`engines.ts:91`) builds `systemPrompt`:
 
 ```
 baseSystemPrompt
-  + skillSection(用户用 / 调用的 skill body)
-  + loadProjectRules(AGENTS.md / CLAUDE.md)
-  + rulesBlock(KINET.md,app 维护)
-  + contextBlock(KINET-CONTEXT.md)
+  + skillSection (skill body the user invoked via /)
+  + loadProjectRules (AGENTS.md / CLAUDE.md)
+  + rulesBlock (KINET.md, app-maintained)
+  + contextBlock (KINET-CONTEXT.md)
 ```
 
-**注意:memoryBlock 不在 systemPrompt 里**。从 v1.0 起改走 `history[0]` 注入(见下)。
+**Note: memoryBlock is NOT in systemPrompt**. As of v1.0 it goes through `history[0]` instead (see below).
 
-## memoryBlock 走 history[0](重要)
+## memoryBlock via history[0] (important)
 
-长期记忆块作为一条 user 消息插在 history 头部,带 `_memory: true` 标记。理由:
+The long-term memory block is injected as a user message at the head of history, marked with `_memory: true`. Reasoning:
 
-- Anthropic 的 `cache_control` 标在整个 system 上。memory 拼进 system 时,记忆每变一次就打穿整个 base+rules+context 系统缓存。
-- 拆出来后,system 跨轮稳定,缓存命中;记忆只在自身变化时失效(本来就少量 token)。
+- Anthropic's `cache_control` is set on the whole system. When memory is in system, every memory change busts the entire base+rules+context system cache.
+- Splitting it out keeps system stable across turns, so the cache hits; memory only invalidates when memory itself changes (a small amount of tokens anyway).
 
-代码:
-- `AgentLoop.ts:36-39` —— `memMsg` 仅在当轮 `messages` 里出现
-- `dropTransient`(`AgentLoop.ts:98`)—— 在 return 时过滤 system + `_memory`,**不写回 `directHistory`**(否则会跨轮堆积、变陈旧)
-- `trimHistoryToTokenBudget`(`AgentLoop.ts:131`)—— `_memory` 消息永远保留,不参与预算裁剪
-- `compactHistory`(`AgentLoop.ts:158`)—— `_memory` 不参与头部摘要
-- `glm.ts` OpenAI provider 序列化前剥掉 `_memory`(避免发到 API);Anthropic provider 合并连续 user 消息(满足严格交替)
+Code:
+- `AgentLoop.ts:36-39` — `memMsg` only exists in the current turn's `messages`
+- `dropTransient` (`AgentLoop.ts:98`) — filters system + `_memory` on return; **does not write back to `directHistory`** (otherwise it'd pile up across turns and go stale)
+- `trimHistoryToTokenBudget` (`AgentLoop.ts:131`) — `_memory` messages are always preserved, never trimmed
+- `compactHistory` (`AgentLoop.ts:158`) — `_memory` is excluded from head summarization
+- `glm.ts` OpenAI provider strips `_memory` before serialization (so the marker doesn't hit the API); Anthropic provider merges consecutive user messages (satisfies strict alternation)
 
-详见 [[Long-Term-Memory]]。
+See [[Long-Term-Memory]].
 
-## 工具调用执行
+## Tool call execution
 
-`runToolBatch`(`AgentLoop.ts:197`):
+`runToolBatch` (`AgentLoop.ts:197`):
 
-- **连续只读工具并发**(read_file / grep / glob / web_fetch / recall_memory / git_diff / dispatch_agent)—— `Promise.all` 一起跑
-- **写工具串行**(shell / write_file / edit_file)—— 防竞态
-- 结果按原 `toolCalls` 顺序回填(`tool_call_id` 配对)
-- abort 时补「[已停止]」占位以维持配对(OpenAI 和 Anthropic 都拒绝孤儿 tool 消息)
-- UI 拿完整原文;模型拿截断版(见下)
+- **Consecutive read-only tools run in parallel** (read_file / grep / glob / web_fetch / recall_memory / git_diff / dispatch_agent) — `Promise.all`
+- **Write tools run serially** (shell / write_file / edit_file) — prevents races
+- Results backfill in original `toolCalls` order (`tool_call_id` matching)
+- On abort, a "[stopped]" placeholder fills in to keep pairs valid (OpenAI and Anthropic both reject orphan tool messages)
+- UI gets the full original; model gets a truncated version (see below)
 
-## 长 tool result 截断
+## Long tool result truncation
 
-`truncateForModel`(`AgentLoop.ts:250`):
+`truncateForModel` (`AgentLoop.ts:250`):
 
-- 头尾各 3000 字符
-- 中间替换成 `…[省略 N 字符;UI 步骤详情可见完整结果]…`
-- 阈值 8192 字符
+- Head and tail: 3000 chars each
+- Middle replaced with `…[omitted N chars; full result visible in UI step details]…`
+- Threshold: 8192 chars
 
-为什么:一个 4MB 文件 / 几 MB shell 输出 / web_fetch 全页不截的话,下一轮全字面进 input token,爆。模型基本只需头尾(路径/错误/概要)。真要全文可加 follow-up 让 read_file 偏移读。
+Why: a 4MB file / multi-MB shell output / full web_fetch page, if not truncated, goes literally into the next turn's input tokens and explodes. The model basically needs head + tail (path/error/summary). If full text is needed, the model can issue a follow-up with `read_file` at an offset.
 
-## Token 估算与校准
+## Token estimation and calibration
 
-`tokenCoef`(`AgentLoop.ts:113`):初始 0.6(中英混合经验值)。
+`tokenCoef` (`AgentLoop.ts:113`): initial 0.6 (empirical for mixed CN/EN).
 
-每轮拿 API 真实 `prompt_tokens` 反推 token/char 比,滑动平均 0.5/0.5(`calibrateTokens`)。**自动贴合实际模型**(GLM/Claude/OpenAI 的 tokenizer 各不同且不公开 → 不上 tiktoken,加 ~1MB 依赖、打包变大)。
+Each turn, the real API `prompt_tokens` is used to reverse-derive the token/char ratio, with a 0.5/0.5 moving average (`calibrateTokens`). **Auto-adapts to the actual model** (GLM/Claude/OpenAI tokenizers differ and aren't public — adding ~1MB of tiktoken dependency isn't worth it).
 
-`estMsgChars`:`content.length + JSON.stringify(tool_calls).length`。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
+`estMsgChars`: `content.length + JSON.stringify(tool_calls).length`. Previously missed tool_calls → large tool results caused over-estimation of headroom.
 
-## 超长兜底
+## Context-too-long fallback
 
-API 报 context-too-long 时(`AgentLoop.ts:44`):
+When the API reports context-too-long (`AgentLoop.ts:44`):
 
 ```
-isContextTooLong(e) → 砍半预算(15K)trim history → 重试本轮一次
+isContextTooLong(e) → halve budget (15K) trim history → retry this turn once
 ```
 
-`isContextTooLong` 是 best-effort:match `context length|too long|maximum context|上下文|exceed|prompt is too` 等关键字 + HTTP 413。**只重试一次**(ponytail:没做更激进的递归回退,够用)。
+`isContextTooLong` is best-effort: matches `context length|too long|maximum context|上下文|exceed|prompt is too` + HTTP 413. **Retries only once** (ponytail: no recursive fallback, sufficient).
 
-## 摘要压缩(compactHistory)
+## Compaction (compactHistory)
 
-`compactHistory`(`AgentLoop.ts:158`):
+`compactHistory` (`AgentLoop.ts:158`):
 
-- turn 末尾按需(超 30K token)调一次
-- tail 保留完整轮次(`trimHistoryToTokenBudget`)
-- head 调一次 LLM 压成「[早期对话摘要]」user 消息
-- 摘要 prompt 保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈
-- 失败 → 回退纯尾部 trim(不丢功能)
+- Runs at end of turn when over 30K tokens
+- Tail keeps complete recent turns (`trimHistoryToTokenBudget`)
+- Head is summarized by an LLM into a "[early conversation summary]" user message
+- Summary prompt preserves: task goal, key decisions, settled conclusions, important file paths/commands/tech stack
+- Failure → falls back to pure tail trim (no functionality lost)
 
-`ponytail:`:① 每 turn 末尾按需摘一次,未做摘要缓存(同段历史可能被反复摘要);② head 只取 `slice(0, 12_000)` 字符(超长历史头部摘要不全)。
+`ponytail:`: ① summarized every turn end on demand, no summary cache (the same head may get summarized repeatedly); ② head only takes `slice(0, 12_000)` chars (very long histories get partial head summary).
 
-## 子 agent(dispatch_agent)
+## Sub-agent (dispatch_agent)
 
-工具 `dispatch_agent`(`tools.ts`)派发一个子任务:
+The `dispatch_agent` tool (`tools.ts`) dispatches a sub-task:
 
-- 复用 `runAgentLoop`,独立 history
-- 只读工具(`readOnlyTools()`)
-- maxTurns 限 8
-- 事件只转发 cost(也花钱)+ tool(带前缀供 UI 观感),吞掉 token 防刷屏
-- 返回值 = 子 agent 的 assistant 文本输出
+- Reuses `runAgentLoop` with its own history
+- Read-only tools only (`readOnlyTools()`)
+- maxTurns capped at 8
+- Events forwarded: only cost (it costs money) + tool (prefixed for UI), tokens swallowed to prevent flooding
+- Return value = sub-agent's assistant text output
 
-主 agent 不看到子 agent 的中间过程,只看到最终文本 —— 隔离上下文,避免主对话被刷屏。
+The main agent does not see the sub-agent's intermediate steps — only the final text. This isolates context and keeps the main conversation clean.
 
-## Provider 双协议
+## Provider dual protocol
 
 `src/main/glm.ts`:
 
-- **OpenAICompatibleProvider** —— `/chat/completions` + Bearer,自动前缀缓存(GLM 智谱 / DeepSeek / Qwen / OpenAI 端点都自动)
-- **AnthropicProvider** —— `/v1/messages` + x-api-key + anthropic-version,显式 `cache_control` 断点(system + 末个 tool,覆盖整个 tools 数组)
+- **OpenAICompatibleProvider** — `/chat/completions` + Bearer, automatic prefix cache (GLM Zhipu / DeepSeek / Qwen / OpenAI endpoints all auto-cache)
+- **AnthropicProvider** — `/v1/messages` + x-api-key + anthropic-version, explicit `cache_control` breakpoints (on system + on the last tool, covering the entire tools array)
 
-两个 provider 都把响应 normalize 成同一个 `Completion`:
+Both providers normalize the response into the same `Completion`:
 
 ```ts
 { content: string; toolCalls: ToolCall[]; rawAssistant: ChatMsg; tokensIn: number; tokensOut: number }
 ```
 
-`rawAssistant` 是 OpenAI-format,无论原始协议是什么 → AgentLoop history 协议无关。
+`rawAssistant` is OpenAI-format regardless of the source protocol → AgentLoop history is protocol-agnostic.
 
-## Retry 策略
+## Retry strategy
 
-`fetchUntil200`(`glm.ts:62`):
+`fetchUntil200` (`glm.ts:62`):
 
-- 可重试状态码:`429 / 500 / 502 / 503 / 529`
-- 指数退避:1s / 2s / 4s,±25% jitter
-- 最多 3 次
-- **SSE 流一旦开始就不能重试**(会重复 token),所以重试只覆盖「建连 → 拿到 200 响应」这一段
+- Retryable status codes: `429 / 500 / 502 / 503 / 529`
+- Exponential backoff: 1s / 2s / 4s, ±25% jitter
+- Max 3 attempts
+- **SSE streams can't retry once started** (would duplicate tokens), so retry only covers "connect → get 200 response"
 
-## 成本计算
+## Cost calculation
 
-`priceUSD(model, tokensIn, tokensOut)`(`glm.ts:96`):
+`priceUSD(model, tokensIn, tokensOut)` (`glm.ts:96`):
 
-- GLM 系列用 GLM 价(`0.00000007 / token` in)
-- 其他用 OpenAI 默认价(`0.000003 / token` in)
-- ⚙ → 价格 可以覆盖(API key 旁边)
+- GLM family uses GLM price (`0.00000007 / token` in)
+- Others use OpenAI default (`0.000003 / token` in)
+- ⚙ → Pricing can override (next to API key)
 
-Anthropic cache token 计费:`cache_read_input_tokens` 按 input 价算(实际 ~10%,高估但比漏掉好);`cache_creation_input_tokens` 按 input 价算(实际 ~125%)。
+Anthropic cache token billing: `cache_read_input_tokens` charged at input rate (actually ~10%, over-estimate but better than under); `cache_creation_input_tokens` at input rate (actually ~125%).
 
-## 关键源文件
+## Key source files
 
-- `src/main/AgentLoop.ts` —— ReAct loop + trim + compact
-- `src/main/engines.ts:91` —— `DirectEngine.run`
-- `src/main/glm.ts` —— provider + 流式
-- `src/main/tools.ts` —— 10 个工具
+- `src/main/AgentLoop.ts` — ReAct loop + trim + compact
+- `src/main/engines.ts:91` — `DirectEngine.run`
+- `src/main/glm.ts` — provider + streaming
+- `src/main/tools.ts` — the 10 tools
 
-详见 [[Tools-and-MCP]]、[[Long-Term-Memory]]。
+See [[Tools-and-MCP]], [[Long-Term-Memory]].
