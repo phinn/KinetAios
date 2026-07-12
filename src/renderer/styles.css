@@ -488,6 +488,9 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-head { display: flex; align-items: center; gap: 10px; }
 .mm-head h3 { margin: 0; flex: 0 0 auto; }
 .mm-scope { display: flex; gap: 4px; flex: 1; }
+.mm-view { display: flex; gap: 4px; flex: 0 0 auto; }
+.mm-view button { padding: 4px 10px; font-size: 12px; }
+.mm-view button.active { background: var(--accent); color: var(--bg-elev); border-color: var(--accent); }
 .mm-scope button { padding: 4px 10px; font-size: 12px; }
 .mm-scope button.active { background: var(--accent); color: var(--bg-elev); border-color: var(--accent); }
 #mm-close { padding: 4px 10px; font-size: 18px; line-height: 1; }
@@ -499,6 +502,11 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-actions { display: flex; gap: 6px; justify-content: flex-end; }
 .mm-actions button { padding: 3px 10px; font-size: 12px; }
 .mm-input { width: 100%; min-height: 60px; resize: vertical; font: inherit; font-size: 13px; padding: 8px; user-select: text; }
+
+/* Memory Graph 三元组行:[s] → predicate → [o] */
+.mm-triple-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; user-select: text; }
+.mm-triple-node { padding: 2px 8px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; }
+.mm-triple-arrow { color: var(--accent); font-size: 12px; }
 
 /* Arena 窗口(⚔):同一 prompt 三引擎并跑,三栏并排。 */
 body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; background: var(--bg); color: var(--text); font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }

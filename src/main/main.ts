@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
@@ -652,6 +652,21 @@ function registerIpc(): void {
   ipcMain.handle('memory-delete', (_e, id: string) => {
     try {
       deleteMemory(id);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-triples', (_e, convId?: string) => {
+    try {
+      return { ok: true, items: loadMemoryTriples(convId) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-triple-delete', (_e, id: string) => {
+    try {
+      deleteMemoryTriple(id);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };

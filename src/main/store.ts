@@ -31,6 +31,9 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY, conv_id TEXT, data TEXT, created_at REAL);
     CREATE INDEX IF NOT EXISTS turns_conv ON turns(conv_id);
     CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, content TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS memory_triples(
+      id TEXT PRIMARY KEY, subject TEXT, predicate TEXT, object TEXT,
+      conversation_id TEXT, created_at REAL);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -217,4 +220,39 @@ export function updateMemory(id: string, content: string): void {
 
 export function deleteMemory(id: string): void {
   db.prepare('DELETE FROM memories WHERE id=?;').run(id);
+}
+
+// MARK: memory graph(实体关系三元组;与 memories 并行,不互依)
+// 提取器从对话里抽 (subject, predicate, object),例:(用户, 偏好, Tailwind) / (用户, 在做, Halo 项目)。
+// ponytail: 不做 entity 字典/归一化 —— 直接存原文,模型自己处理同义;后续可加规范化层。
+export function loadMemoryTriples(convId?: string): Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }> {
+  if (convId === undefined) {
+    return db
+      .prepare('SELECT id, subject, predicate, object, conversation_id FROM memory_triples ORDER BY created_at DESC;')
+      .all() as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>;
+  }
+  return db
+    .prepare('SELECT id, subject, predicate, object, conversation_id FROM memory_triples WHERE conversation_id=? ORDER BY created_at DESC;')
+    .all(convId) as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>;
+}
+
+export function allMemoryTripleKeys(): Set<string> {
+  const rows = db.prepare('SELECT subject, predicate, object FROM memory_triples;').all() as Array<{
+    subject: string;
+    predicate: string;
+    object: string;
+  }>;
+  return new Set(rows.map((r) => `${r.subject}|${r.predicate}|${r.object}`.toLowerCase()));
+}
+
+export function addMemoryTriple(subject: string, predicate: string, object: string, convId?: string): string {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare(
+    'INSERT INTO memory_triples(id, subject, predicate, object, conversation_id, created_at) VALUES(?,?,?,?,?,?);',
+  ).run(id, subject, predicate, object, convId ?? null, Date.now() / 1000);
+  return id;
+}
+
+export function deleteMemoryTriple(id: string): void {
+  db.prepare('DELETE FROM memory_triples WHERE id=?;').run(id);
 }

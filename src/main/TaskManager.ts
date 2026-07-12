@@ -278,14 +278,18 @@ export class TaskManager {
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
-  // Bound by the turn's abort signal (cancel stops it) + a 30s timeout so it can't hang or run away.
+  // Bound by the turn's abort signal (cancel stops it) + a 30s timeout so it can't hang or run away。
+  // 输出两部分:facts(原有,自由文本记忆)+ triples(Phase 4 新增,主谓宾三元组,Memory Graph 用)。
   private async extractMemories(turn: Conversation['turns'][number], prompt: string, convId: string, parentSignal: AbortSignal): Promise<void> {
     if (!turn.answer || turn.answer.length <= 15) return;
     const snap = snapshot();
     const sys = `你是记忆提取器。从下面这轮对话里提取【关于用户本人】的持久事实 —— 身份、职业、偏好、习惯、技术栈、家庭/宠物、所在城市、工具链、长期项目、价值观。
-哪怕只透出一点点信号也提取,宁可多提取不要漏。每条 ≤ 18 字,陈述句,主语是「用户」(可省略)。
+哪怕只透出一点点信号也提取,宁可多提取不要漏。
+输出 JSON 对象,两个字段:
+- "facts": 字符串数组,每条 ≤ 18 字陈述句,主语「用户」(可省略)。
+- "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"用户","p":"在做","o":"Halo 项目"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节、纯时间敏感(今天/这次)。
-只输出 JSON 字符串数组,无持久事实才输出 []。只输出 JSON,不要解释。`;
+无持久事实就输出 {"facts":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
@@ -303,9 +307,19 @@ export class TaskManager {
         ac.signal,
         () => {},
       );
-      const existing = new Set(store.allMemoryContents());
-      for (const f of parseFacts(comp.content)) {
-        if (f && !existing.has(f)) store.addMemory(f, convId);
+      const { facts, triples } = parseExtraction(comp.content);
+      const existingFacts = new Set(store.allMemoryContents());
+      for (const f of facts) {
+        if (f && !existingFacts.has(f)) store.addMemory(f, convId);
+      }
+      // triples 去重按小写 s|p|o,跨频道也去重(全局知识图谱语义)。
+      const existingTriples = store.allMemoryTripleKeys();
+      for (const t of triples) {
+        const key = `${t.s}|${t.p}|${t.o}`.toLowerCase();
+        if (!existingTriples.has(key)) {
+          store.addMemoryTriple(t.s, t.p, t.o, convId);
+          existingTriples.add(key);
+        }
       }
     } catch (e) {
       console.error('[memory] extract failed:', (e as Error)?.message);
@@ -335,8 +349,40 @@ function shellSafeMemory(s: string): string {
   return s.replace(/[\x00-\x1f\x7f&|<>{}()^%!'"`\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
-// Pull a JSON string array out of an LLM response that may have surrounding prose.
-function parseFacts(s: string): string[] {
+// Pull a JSON object {facts:string[], triples:[{s,p,o}]} out of an LLM response that may have surrounding prose.
+// 兼容老格式(纯 string[]):没匹配到 {} 时尝试匹配 []。
+function parseExtraction(s: string): { facts: string[]; triples: Array<{ s: string; p: string; o: string }> } {
+  const empty = { facts: [], triples: [] };
+  const lo = s.indexOf('{');
+  const hi = s.lastIndexOf('}');
+  if (lo >= 0 && hi > lo) {
+    try {
+      const obj = JSON.parse(s.slice(lo, hi + 1)) as Record<string, unknown>;
+      const facts = Array.isArray(obj.facts)
+        ? obj.facts.filter((x): x is string => typeof x === 'string').map((x) => x.trim())
+        : [];
+      const triples = Array.isArray(obj.triples)
+        ? obj.triples
+            .map((t) => {
+              if (!t || typeof t !== 'object') return null;
+              const r = t as Record<string, unknown>;
+              const s = typeof r.s === 'string' ? r.s.trim() : '';
+              const p = typeof r.p === 'string' ? r.p.trim() : '';
+              const o = typeof r.o === 'string' ? r.o.trim() : '';
+              return s && p && o ? { s, p, o } : null;
+            })
+            .filter((t): t is { s: string; p: string; o: string } => t !== null)
+        : [];
+      return { facts, triples };
+    } catch {
+      return empty;
+    }
+  }
+  // 兼容老格式(纯 facts [])
+  return { facts: parseFactsLegacy(s), triples: [] };
+}
+
+function parseFactsLegacy(s: string): string[] {
   const lo = s.indexOf('[');
   const hi = s.lastIndexOf(']');
   if (lo < 0 || hi <= lo) return [];

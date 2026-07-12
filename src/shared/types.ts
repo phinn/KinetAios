@@ -170,6 +170,9 @@ export interface KinetAPI {
   memoryList(convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; content: string; conversation_id: string | null }>; error?: string }>;
   memoryUpdate(id: string, content: string): Promise<{ ok: boolean; error?: string }>;
   memoryDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // Memory Graph(主谓宾三元组):列出 / 删除。convId 省略 = 全部。
+  memoryTriples(convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>; error?: string }>;
+  memoryTripleDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;

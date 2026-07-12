@@ -954,6 +954,14 @@ function wireUi() {
     mmScope = 'all';
     await renderMemoryList();
   };
+  document.getElementById('mm-view-facts')!.onclick = async () => {
+    mmView = 'facts';
+    await renderMemoryList();
+  };
+  document.getElementById('mm-view-graph')!.onclick = async () => {
+    mmView = 'graph';
+    await renderMemoryList();
+  };
 
   // 快照面板(⏪)。
   document.getElementById('snap-close')!.onclick = () => closeSnapshotPanel();
@@ -1503,6 +1511,7 @@ function esc(s: string): string {
 // scope:this = 当前选中频道产生的记忆;all = 全部(包括 conversation_id 为 NULL 的历史/导入行)。
 // 每行:文本 + 编辑(行内 textarea)+ 删除。来源频道显示 conv 的 customTitle 或 cwd 末段。
 let mmScope: 'this' | 'all' = 'this';
+let mmView: 'facts' | 'graph' = 'facts';
 async function openMemoryPanel(): Promise<void> {
   mmScope = selectedId ? 'this' : 'all';
   document.getElementById('memory-modal')!.classList.add('show');
@@ -1513,9 +1522,13 @@ function closeMemoryPanel(): void {
 }
 async function renderMemoryList(): Promise<void> {
   const listEl = document.getElementById('mm-list')!;
-  // scope 按钮态
+  // scope / view 按钮态(两条渲染路径都要刷,提到分流前)
   document.getElementById('mm-scope-this')!.classList.toggle('active', mmScope === 'this');
   document.getElementById('mm-scope-all')!.classList.toggle('active', mmScope === 'all');
+  document.getElementById('mm-view-facts')!.classList.toggle('active', mmView === 'facts');
+  document.getElementById('mm-view-graph')!.classList.toggle('active', mmView === 'graph');
+  // view 分流:graph → 三元组列表;facts → 原有文本列表
+  if (mmView === 'graph') return renderMemoryGraph();
   // this 模式必须有选中会话;否则强制 all
   const convId = mmScope === 'this' && selectedId ? selectedId : undefined;
   const r = await api.memoryList(convId);
@@ -1549,6 +1562,48 @@ async function renderMemoryList(): Promise<void> {
       if (!confirm(tr('mem.delConfirm'))) return;
       await api.memoryDelete(id);
       await renderMemoryList();
+    };
+  });
+}
+// Memory Graph 视图:渲染三元组 [s] → [p] → [o],按当前 scope 过滤。
+async function renderMemoryGraph(): Promise<void> {
+  const listEl = document.getElementById('mm-list')!;
+  document.getElementById('mm-scope-this')!.classList.toggle('active', mmScope === 'this');
+  document.getElementById('mm-scope-all')!.classList.toggle('active', mmScope === 'all');
+  document.getElementById('mm-view-facts')!.classList.toggle('active', mmView === 'facts');
+  document.getElementById('mm-view-graph')!.classList.toggle('active', mmView === 'graph');
+  const convId = mmScope === 'this' && selectedId ? selectedId : undefined;
+  const r = await api.memoryTriples(convId);
+  if (!r.ok || !r.items) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
+    return;
+  }
+  if (!r.items.length) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('graph.empty'))}</div>`;
+    return;
+  }
+  listEl.innerHTML = r.items
+    .map((t) => {
+      const from = t.conversation_id ? convLabel(t.conversation_id) : '';
+      return `<div class="mm-row mm-triple" data-id="${esc(t.id)}">
+        <div class="mm-triple-line">
+          <span class="mm-triple-node">${esc(t.subject)}</span>
+          <span class="mm-triple-arrow">${esc(t.predicate)} →</span>
+          <span class="mm-triple-node">${esc(t.object)}</span>
+        </div>
+        ${from ? `<div class="mm-from">${esc(from)}</div>` : ''}
+        <div class="mm-actions">
+          <button class="ghost mm-del" data-i18n="mem.del">${esc(tr('mem.del'))}</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+  listEl.querySelectorAll<HTMLElement>('.mm-triple').forEach((row) => {
+    const id = row.dataset.id!;
+    row.querySelector<HTMLElement>('.mm-del')!.onclick = async () => {
+      if (!confirm(tr('graph.delConfirm'))) return;
+      await api.memoryTripleDelete(id);
+      await renderMemoryGraph();
     };
   });
 }
