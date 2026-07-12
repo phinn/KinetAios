@@ -29,6 +29,10 @@ jobs:
           node-version: 20
           cache: npm
 
+      # .npmrc 强制走 npmmirror(国内拉 electron 用),GH Actions 机房连官方源更快 → 删之。
+      # 用 node 而非 rm,跨 Windows/macOS 通用。
+      - run: node -e "require('fs').rmSync('.npmrc',{force:true})"
+
       # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台跑。
       # --no-audit --no-fund 跳过 audit/fund 检查加速。
       - run: npm install --no-audit --no-fund
