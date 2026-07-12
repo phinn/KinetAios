@@ -230,9 +230,10 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   webview.addEventListener('did-navigate', (e) => (addr.value = e.url));
   webview.addEventListener('did-navigate-in-page', (e) => (addr.value = e.url));
 
-  // tab 切换 + 编辑器保存 + dirty 标志
-  ftabPreview.onclick = () => setTab('preview');
-  ftabEdit.onclick = () => setTab('edit');
+  // tab 切换:切到目标 tab 时,若已有当前文件,用对应 loader 重新加载内容
+  // (loadFile 只灌 webview / loadEditor 只灌编辑器,切 tab 时对面是空的,得重灌)。
+  ftabPreview.onclick = () => { setTab('preview'); if (currentAbs && isPreviewExt(currentAbs)) loadFile(currentAbs); };
+  ftabEdit.onclick = () => { if (currentAbs) void loadEditor(currentAbs); };
   editor.addEventListener('input', () => { editorDirty = true; feStatus.textContent = (currentAbs || '') + ' · 未保存'; });
   root.querySelector<HTMLElement>('#btn-save')!.onclick = () => void save();
   editor.addEventListener('keydown', (ev) => {
