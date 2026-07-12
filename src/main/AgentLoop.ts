@@ -10,6 +10,10 @@ export interface RunOpts {
   provider: Provider;
   tools: Tool[];
   systemPrompt: string;
+  // 长期记忆块:每轮注入到 history 头部一条 user 消息(标 _memory),不进 systemPrompt。
+  // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿;
+  // 该消息 trim/compact 时永远保留,且不写回 directHistory(dropTransient 过滤)。
+  memoryBlock?: string;
   snapshot: import('../shared/types').ConfigSnapshot;
   userInput: string;
   history: ChatMsg[]; // prior turns (already without the system prompt)
@@ -19,14 +23,20 @@ export interface RunOpts {
   onEvent: (e: AgentEvent) => void;
 }
 
-// Runs one turn. Returns the accumulated messages (minus the system prompt) for next-turn history.
+// Runs one turn. Returns the accumulated messages (minus the system prompt and the transient
+// memory message) for next-turn history.
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
-  const { provider, tools, systemPrompt, snapshot, userInput, history, ctx, signal, onEvent } = opts;
+  const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
   // 默认不限制轮数(原来是 50)。模型不收敛(一直 tool_call)会持续消耗 token,需手动点停止。
   const maxTurns = opts.maxTurns ?? Infinity;
   const defs: ToolDef[] = tools.map(toolDef);
 
-  let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...history];
+  // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
+  const memMsg: ChatMsg[] = memoryBlock && memoryBlock.trim()
+    ? [{ role: 'user', content: memoryBlock, _memory: true }]
+    : [];
+
+  let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...memMsg, ...history];
   messages.push({ role: 'user', content: userInput });
 
   // reactive trim 用:上下文超长报错时砍半预算重试本轮一次(见下方 catch)。ponytail:错误格式不统一,best-effort。
@@ -39,17 +49,17 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       );
     } catch (e) {
       const name = (e as Error)?.name;
-      if (name === 'AbortError' || signal.aborted) return dropSystem(messages); // user hit stop
+      if (name === 'AbortError' || signal.aborted) return dropTransient(messages); // user hit stop
       // 超长兜底:API 报上下文过长时,更激进 trim(预算砍半)后重试本轮一次。
       if (!retriedAfterShrink && isContextTooLong(e)) {
         retriedAfterShrink = true;
-        messages = [{ role: 'system', content: systemPrompt }, ...trimHistoryToTokenBudget(dropSystem(messages), 15_000)];
+        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), 15_000)];
         onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
         i--; // 本轮重试(抵消 for 的 i++)
         continue;
       }
       onEvent({ type: 'error', message: errMsg(e) });
-      return dropSystem(messages);
+      return dropTransient(messages);
     }
 
     // Report cost each LLM call — multi-turn tool-calling totals sum across calls.
@@ -69,14 +79,14 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     messages.push(completion.rawAssistant);
     if (completion.toolCalls.length === 0) {
       onEvent({ type: 'done' });
-      return dropSystem(messages);
+      return dropTransient(messages);
     }
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
     messages.push(...(await runToolBatch(completion.toolCalls, tools, ctx, signal, onEvent)));
   }
   onEvent({ type: 'error', message: t(getSettings().lang, 'al.maxTurns', { max: maxTurns }) });
-  return dropSystem(messages);
+  return dropTransient(messages);
 }
 
 async function execute(tc: { name: string; arguments: string }, tools: Tool[], ctx: ToolCtx): Promise<string> {
@@ -95,8 +105,11 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
   }
 }
 
-function dropSystem(messages: ChatMsg[]): ChatMsg[] {
-  return messages.filter((m) => m.role !== 'system');
+// Drop transient messages (system prompt + the in-flight memory marker msg) before persisting
+// history. The memory msg is re-injected fresh every turn by runAgentLoop, so it must not write
+// back to directHistory (otherwise it'd stack up across turns and go stale).
+function dropTransient(messages: ChatMsg[]): ChatMsg[] {
+  return messages.filter((m) => m.role !== 'system' && !m._memory);
 }
 
 function errMsg(e: unknown): string {
@@ -128,17 +141,22 @@ function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
 // Keep the tail of history within a token budget. Mirrors Swift DirectEngine.
 // Sanitize after trimming: a hard byte-cut can split an assistant(tool_calls) ↔ tool pair, leaving
 // an "orphan" tool message whose assistant was dropped — both OpenAI and Anthropic reject that.
+// 标了 _memory 的消息(长期记忆块)永远保留:它是参考材料,不是对话历史,不该被裁掉。
 export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatMsg[] {
   if (!msgs.length) return [];
+  const memoryMsgs = msgs.filter((m) => m._memory);
+  const rest = msgs.filter((m) => !m._memory);
+  if (!rest.length) return memoryMsgs;
   let total = 0;
   const kept: ChatMsg[] = [];
-  for (const m of [...msgs].reverse()) {
+  for (const m of [...rest].reverse()) {
     const tokens = Math.floor(estMsgChars(m) * tokenCoef) + 20; // +20 per-message overhead
     if (total + tokens > budget && kept.length) break;
     total += tokens;
     kept.push(m);
   }
-  return sanitizeToolPairs(kept.reverse());
+  // 记忆消息本就处于头部,直接 prepend 还原位置。
+  return [...memoryMsgs, ...sanitizeToolPairs(kept.reverse())];
 }
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
@@ -154,6 +172,7 @@ function sanitizeToolPairs(msgs: ChatMsg[]): ChatMsg[] {
 
 // 摘要压缩:历史超 budget 时,把将被丢弃的头部调一次 LLM 压成一条摘要,保留尾部完整轮次。
 // 长 conversation 不再丢早期上下文。失败 → 回退纯尾部 trim(不丢功能)。
+// _memory 消息不参与摘要(它是参考,不是对话),摘要后照旧 prepend 回头部。
 // ponytail: ① 每 turn 末尾按需摘一次,未做摘要缓存;② token 估算仍 length*0.6。
 export async function compactHistory(
   msgs: ChatMsg[],
@@ -162,10 +181,12 @@ export async function compactHistory(
   snap: ConfigSnapshot,
   signal: AbortSignal,
 ): Promise<ChatMsg[]> {
-  const tail = trimHistoryToTokenBudget(msgs, budget);
-  if (tail.length === msgs.length) return tail; // 没超预算,无需摘要
-  const head = msgs.slice(0, msgs.length - tail.length);
-  if (!head.length) return tail;
+  const memoryMsgs = msgs.filter((m) => m._memory);
+  const rest = msgs.filter((m) => !m._memory);
+  const tail = trimHistoryToTokenBudget(rest, budget);
+  if (tail.length === rest.length) return [...memoryMsgs, ...tail]; // 没超预算,无需摘要
+  const head = rest.slice(0, rest.length - tail.length);
+  if (!head.length) return [...memoryMsgs, ...tail];
   try {
     const sys =
       '你是对话摘要器。把下面这段早期对话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
@@ -185,10 +206,10 @@ export async function compactHistory(
       () => {},
     );
     const summary = comp.content.trim();
-    if (!summary) return tail;
-    return [{ role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
+    if (!summary) return [...memoryMsgs, ...tail];
+    return [...memoryMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
   } catch {
-    return tail; // 摘要失败 → 纯尾部,不丢功能
+    return [...memoryMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
   }
 }
 

@@ -133,10 +133,13 @@ class DirectEngine implements Engine {
     // KINET.md(app UI 维护的项目规则)紧跟 loadProjectRules 之后,与 AGENTS.md/CLAUDE.md 并列。
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
+    // memoryBlock 走 history[0] 注入(见 runAgentLoop 的 memMsg),不拼进 systemPrompt ——
+    // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿。
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock,
+      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? ''),
+      memoryBlock,
       snapshot: snap,
       userInput: prompt,
       history: conv.directHistory,

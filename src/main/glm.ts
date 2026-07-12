@@ -162,7 +162,9 @@ class OpenAICompatibleProvider implements Provider {
 
     // OpenAI 兼容端点(GLM 智谱 / DeepSeek / Qwen / OpenAI)均为自动前缀缓存:messages 开头的
     // system + 早期 history 每轮不变 → 命中缓存、低价计费。无需额外参数(只有 Anthropic 要 cache_control)。
-    const body: Record<string, unknown> = { model: snap.model, messages, stream: true };
+    // 剥掉内部用的 _memory 标记字段 —— 它是 AgentLoop 用来保护记忆消息不被 trim 的标记,不该发到 API。
+    const wireMsgs = messages.map(({ _memory, ...rest }) => rest);
+    const body: Record<string, unknown> = { model: snap.model, messages: wireMsgs, stream: true };
     body.max_tokens = maxTokensFor(snap.model);
     // Streaming usually omits usage unless include_usage is set (final chunk then carries it).
     body.stream_options = { include_usage: true };
@@ -254,7 +256,18 @@ class AnthropicProvider implements Provider {
       const role = m.role;
       const content = (typeof m.content === 'string' ? m.content : '') ?? '';
       if (role === 'system') systemParts.push(content);
-      else if (role === 'user') anth.push({ role: 'user', content });
+      else if (role === 'user') {
+        // Anthropic 要求 user/assistant 严格交替。memoryBlock 头部消息(_memory)紧跟 history[0]
+        // 的首个用户输入会构成连续 user —— 合并进上一条 user(纯文本直接拼,tool_result 数组追加 text block)。
+        const last = anth[anth.length - 1];
+        if (last && last.role === 'user') {
+          if (typeof last.content === 'string') last.content = last.content + '\n\n' + content;
+          else if (Array.isArray(last.content)) last.content = [...last.content, { type: 'text', text: content }];
+          else anth.push({ role: 'user', content });
+        } else {
+          anth.push({ role: 'user', content });
+        }
+      }
       else if (role === 'assistant') {
         const blocks: any[] = [];
         if (content) blocks.push({ type: 'text', text: content });
