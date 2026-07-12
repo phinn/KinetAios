@@ -100,7 +100,7 @@
     <div class="card direct">
       <h3><span class="dot"></span>Direct v2 · KinetAios</h3>
       <div class="path">KinetAiosWin/src/main</div>
-      <p class="blurb">TypeScript / Electron。概念同构的最小实现,独有 GLM 直连 + OpenAI↔Anthropic 双向;v2 补齐压缩 / 并行+subagent / 重试。</p>
+      <p class="blurb">TypeScript / Electron。概念同构的最小实现,独有 GLM 直连 + OpenAI↔Anthropic 双向;v2 补齐压缩 / 并行+subagent / 重试。v1.0 后追加 git_diff 工具、长 tool 结果自动截断、🧠 Memory 面板。</p>
     </div>
     <div class="card codex">
       <h3><span class="dot"></span>Codex · OpenAI</h3>
@@ -153,13 +153,13 @@
       <tr>
         <td class="dim">工具清单(特色)</td>
         <td>Bash / FileEdit / Glob / Grep / <strong>Agent</strong> / Task …(数十个,feature flag 展开)</td>
-        <td>shell / read_file / write_file / edit_file / grep / glob / web_fetch / recall_memory / <strong>dispatch_agent</strong></td>
+        <td>shell / read_file / write_file / edit_file / grep / glob / web_fetch / recall_memory / <strong>git_diff</strong>(只读免确认) / <strong>dispatch_agent</strong> —— 共 10 个</td>
         <td>shell、<strong>unified_exec</strong>(后台进程)、<strong>apply_patch</strong>、plan、tool_search、<strong>spawn_agent</strong> 系列、MCP</td>
       </tr>
       <tr>
         <td class="dim">工具结果回传</td>
         <td><code>mapToolResultToToolResultBlockParam</code> → tool_result block</td>
-        <td><code>{role:'tool', tool_call_id, content}</code>,原序回填</td>
+        <td><code>{role:'tool', tool_call_id, content}</code>,原序回填;长结果(&gt;8192 字符)头尾 3K + 中间省略</td>
         <td><code>ResponseItem::FunctionCallOutput</code> 追加进 ContextManager</td>
       </tr>
       <tr>
@@ -225,7 +225,7 @@
       <tr>
         <td class="dim">Memory 长期记忆</td>
         <td>CLAUDE.md + typed memory(<code>memdir</code>,分文件 append-only)</td>
-        <td>SQLite <code>memories</code>,done 后 LLM 抽"用户事实",注入 strip shell 元字符</td>
+        <td>SQLite <code>memories</code>(加 <code>conversation_id</code> 列)done 后 LLM 抽"用户事实",注入 strip shell 元字符;<strong>🧠 面板 UI</strong>(按频道过滤 / 行内编辑 / 删除 / JSON 导入导出)</td>
         <td><code>memories/read</code> + <code>write</code>,经 <code>/memories/trace_summarize</code> 远程生成</td>
       </tr>
       <tr>
@@ -245,7 +245,7 @@
     </div>
     <div class="feat f-direct">
       <h4>Direct v2 的差异化</h4>
-      <p>概念同构的最小实现,骨架与 CC 一致但去尽复杂度;独有的 GLM 直连 + 协议双向。v2 补齐三块后核心能力已追平,只是深度浅。</p>
+      <p>概念同构的最小实现,骨架与 CC 一致但去尽复杂度;独有的 GLM 直连 + 协议双向。v2 补齐三块后核心能力已追平,只是深度浅。v1.0 后追加:git_diff 工具、长 tool 结果自动截断、Memory 面板(per-conv 标签 + 行内编辑 + JSON 导入导出)。</p>
     </div>
     <div class="feat f-codex">
       <h4>Codex 的差异化</h4>
