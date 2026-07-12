@@ -13,8 +13,8 @@
 | **停止判定** | 无 tool_use → `stopHooks` + prompt-too-long/max_output_tokens/budget 恢复,`reason` 状态机 | 无 tool_calls → `done`;轮数 `Infinity`,靠停止;**新增 reactive trim**(超长报错→预算砍半重试本轮一次,`AgentLoop.isContextTooLong`) |
 | **流式执行工具** | `StreamingToolExecutor` 边收边执行 | 无(先收完 tool_calls 再执行) |
 | **工具并行** | `runTools` 按 `isConcurrencySafe` 分批,只读并发 10 | **有**(`runToolBatch`:连续只读工具 `Promise.all` 并发,写工具串行;`Tool.readOnly` 标记) |
-| **Tool 抽象** | 泛型 `Tool<I,O,P>` + Zod + `checkPermissions`/`isReadOnly`/... | `interface Tool` 加 `readOnly?`;**工具增至 9 个**(+`dispatch_agent`) |
-| **工具结果回传** | `mapToolResultToToolResultBlockParam` | `{role:'tool', tool_call_id, content}`,按原序回填 |
+| **Tool 抽象** | 泛型 `Tool<I,O,P>` + Zod + `checkPermissions`/`isReadOnly`/... | `interface Tool` 加 `readOnly?`;**工具增至 10 个**(+`dispatch_agent` +`git_diff`) |
+| **工具结果回传** | `mapToolResultToToolResultBlockParam` | `{role:'tool', tool_call_id, content}`,按原序回填;长结果(>8192 字符)头尾 3K + 中间省略回流 |
 | **事件流** | `Message` union + SDKMessage | 统一 `AgentEvent` 7 类,`applyEvent` fold(subagent 转发 cost + tool-status,吞 token) |
 | **上下文压缩** | 五级:toolResultBudget→snip→microcompact→contextCollapse→autocompact + reactive compact | **sanitize 尾部 trim**(修 tool 配对切断 bug)+ **`compactHistory` 摘要压缩**(超 30000 时把头部调 LLM 压成一条)+ reactive 超长自缩 |
 | **token 预算** | `taskBudget` + max_output_tokens 三段恢复 | 30000 字符预算(`length*0.6` 估算);摘要触发阈值同;reactive 砍半到 15000 |
