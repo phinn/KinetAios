@@ -41,6 +41,8 @@ const api: KinetAPI = {
   memoryList: (convId) => ipcRenderer.invoke('memory-list', convId),
   memoryUpdate: (id, content) => ipcRenderer.invoke('memory-update', id, content),
   memoryDelete: (id) => ipcRenderer.invoke('memory-delete', id),
+  snapshotList: (cwd, convId) => ipcRenderer.invoke('snapshot-list', cwd, convId),
+  snapshotRestore: (cwd, id) => ipcRenderer.invoke('snapshot-restore', cwd, id),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

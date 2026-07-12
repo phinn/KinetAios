@@ -920,6 +920,7 @@ function wireUi() {
     void api.openArena(c);
   };
   document.getElementById('btn-memory')!.onclick = () => void openMemoryPanel();
+  document.getElementById('btn-snap')!.onclick = () => void openSnapshotPanel();
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
@@ -952,6 +953,17 @@ function wireUi() {
   document.getElementById('mm-scope-all')!.onclick = async () => {
     mmScope = 'all';
     await renderMemoryList();
+  };
+
+  // 快照面板(⏪)。
+  document.getElementById('snap-close')!.onclick = () => closeSnapshotPanel();
+  document.getElementById('snap-scope-this')!.onclick = async () => {
+    snapScope = 'this';
+    await renderSnapshotList();
+  };
+  document.getElementById('snap-scope-all')!.onclick = async () => {
+    snapScope = 'all';
+    await renderSnapshotList();
   };
 
   // 全局:Escape 关 modal + 点 backdrop 关 modal(三个 modal 都安全,等同 cancel)。
@@ -1567,6 +1579,73 @@ function convLabel(convId: string): string {
   if (c.customTitle) return c.customTitle;
   if (c.cwd) return c.cwd.split(/[\\/]/).pop() ?? c.cwd;
   return tr('mem.unknownConv');
+}
+
+// 快照面板(⏪):write_file/edit_file 写前自动存原文到 <cwd>/.kinet-snapshots/,这里列出 + 一键 restore。
+// scope:this = 当前选中频道的快照;all = 当前 cwd 下全部频道的快照。
+let snapScope: 'this' | 'all' = 'this';
+async function openSnapshotPanel(): Promise<void> {
+  snapScope = selectedId ? 'this' : 'all';
+  document.getElementById('snapshot-modal')!.classList.add('show');
+  await renderSnapshotList();
+}
+function closeSnapshotPanel(): void {
+  document.getElementById('snapshot-modal')!.classList.remove('show');
+}
+async function renderSnapshotList(): Promise<void> {
+  const listEl = document.getElementById('snap-list')!;
+  document.getElementById('snap-scope-this')!.classList.toggle('active', snapScope === 'this');
+  document.getElementById('snap-scope-all')!.classList.toggle('active', snapScope === 'all');
+  const sel = selectedId ? convs.get(selectedId) : undefined;
+  const cwd = sel?.cwd ?? '';
+  if (!cwd) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('snap.noCwd'))}</div>`;
+    return;
+  }
+  const convId = snapScope === 'this' && selectedId ? selectedId : undefined;
+  const r = await api.snapshotList(cwd, convId);
+  if (!r.ok || !r.items) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
+    return;
+  }
+  if (!r.items.length) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('snap.empty'))}</div>`;
+    return;
+  }
+  listEl.innerHTML = r.items
+    .map((s) => {
+      const rel = relativize(s.absPath, cwd);
+      const when = new Date(s.ts).toLocaleString();
+      const from = convLabel(s.convId);
+      return `<div class="mm-row" data-id="${esc(s.id)}">
+        <div class="mm-text snap-path">${esc(rel)}</div>
+        <div class="mm-from">${esc(s.tool)} · ${esc(when)} · ${esc(from)}</div>
+        <div class="mm-actions">
+          <button class="ghost snap-restore" data-i18n="snap.restore">${esc(tr('snap.restore'))}</button>
+        </div>
+      </div>`;
+    })
+    .join('');
+  listEl.querySelectorAll<HTMLElement>('.mm-row').forEach((row) => {
+    const id = row.dataset.id!;
+    row.querySelector<HTMLElement>('.snap-restore')!.onclick = async () => {
+      if (!confirm(tr('snap.restoreConfirm'))) return;
+      const res = await api.snapshotRestore(cwd, id);
+      if (!res.ok) {
+        alert(res.error ?? 'restore failed');
+        return;
+      }
+      await renderSnapshotList();
+    };
+  });
+}
+// abs 路径相对化(只显示项目内相对路径,项目外保留绝对)。 Ponytail: 简单前缀匹配。
+function relativize(abs: string, cwd: string): string {
+  if (abs.startsWith(cwd)) {
+    const rel = abs.slice(cwd.length).replace(/^[\\/]+/, '');
+    return rel || abs;
+  }
+  return abs;
 }
 
 const PRESETS = [

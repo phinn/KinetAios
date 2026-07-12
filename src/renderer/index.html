@@ -18,6 +18,7 @@
           <button class="ghost" id="btn-files" data-i18n-title="files.open" title="文件与预览">🌐</button>
           <button class="ghost" id="btn-arena" data-i18n-title="arena.open" title="Arena 三引擎并跑">⚔</button>
           <button class="ghost" id="btn-memory" data-i18n-title="mem.open" title="长期记忆">🧠</button>
+          <button class="ghost" id="btn-snap" data-i18n-title="snap.open" title="快照与回滚">⏪</button>
           <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置">⚙</button>
         </div>
       </div>
@@ -200,6 +201,21 @@
         <button class="ghost" id="mm-close">×</button>
       </div>
       <div class="mm-list" id="mm-list"></div>
+    </div>
+  </div>
+
+  <!-- 快照面板(⏪ 按钮):write_file/edit_file 写前自动存原文,这里 list + restore -->
+  <div id="snapshot-modal">
+    <div class="modal-card mm-card snap-card">
+      <div class="mm-head">
+        <h3 data-i18n="snap.title">快照与回滚</h3>
+        <div class="mm-scope">
+          <button class="ghost active" id="snap-scope-this" data-i18n="snap.scope.this">当前频道</button>
+          <button class="ghost" id="snap-scope-all" data-i18n="snap.scope.all">本目录全部</button>
+        </div>
+        <button class="ghost" id="snap-close">×</button>
+      </div>
+      <div class="mm-list" id="snap-list"></div>
     </div>
   </div>
 

@@ -170,6 +170,9 @@ export interface KinetAPI {
   memoryList(convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; content: string; conversation_id: string | null }>; error?: string }>;
   memoryUpdate(id: string, content: string): Promise<{ ok: boolean; error?: string }>;
   memoryDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
+  snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
+  snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

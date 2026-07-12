@@ -103,6 +103,7 @@ class DirectEngine implements Engine {
       cwd: conv.cwd,
       confirm: this.confirm,
       signal,
+      convId: conv.id,
       spawn: async ({ prompt: sub, signal: childSignal }) => {
         const out = await runAgentLoop({
           provider,
@@ -111,7 +112,7 @@ class DirectEngine implements Engine {
           snapshot: snap,
           userInput: sub,
           history: [],
-          ctx: { cwd: conv.cwd, confirm: this.confirm },
+          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
           signal: childSignal,
           maxTurns: 8,
           onEvent: (e) => {

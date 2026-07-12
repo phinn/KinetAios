@@ -8,6 +8,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory } from './store';
+import { listSnapshots, restoreSnapshot } from './snapshots';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -652,6 +653,20 @@ function registerIpc(): void {
     try {
       deleteMemory(id);
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('snapshot-list', (_e, cwd: string, convId?: string) => {
+    try {
+      return { ok: true, items: listSnapshots(cwd, convId) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('snapshot-restore', (_e, cwd: string, id: string) => {
+    try {
+      return restoreSnapshot(cwd, id);
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

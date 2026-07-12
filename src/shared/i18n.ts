@@ -153,6 +153,15 @@ const ZH_CN: Dict = {
   'arena.waiting': '运行中…',
   'arena.noCwd': '未指定 cwd',
 
+  'snap.open': '快照与回滚',
+  'snap.title': '快照与回滚',
+  'snap.scope.this': '当前频道',
+  'snap.scope.all': '本目录全部',
+  'snap.restore': '还原',
+  'snap.restoreConfirm': '把这个文件还原到改动前的内容?当前内容会被覆盖。',
+  'snap.empty': '还没有快照。Direct 引擎用 write_file / edit_file 改文件时会自动存原文。',
+  'snap.noCwd': '未选中会话 — 选一个会话再开快照面板',
+
   'mcp.title': 'MCP 服务与工具',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(无工具)',
@@ -396,6 +405,15 @@ const EN: Dict = {
   'arena.waiting': 'Running…',
   'arena.noCwd': 'No cwd set',
 
+  'snap.open': 'Snapshots & Rollback',
+  'snap.title': 'Snapshots & Rollback',
+  'snap.scope.this': 'Current channel',
+  'snap.scope.all': 'All in this cwd',
+  'snap.restore': 'Restore',
+  'snap.restoreConfirm': "Restore this file to its pre-edit content? Current content will be overwritten.",
+  'snap.empty': 'No snapshots yet. The Direct engine auto-saves the original when write_file / edit_file modifies a file.',
+  'snap.noCwd': 'No conversation selected — pick one first',
+
   'mcp.title': 'MCP services & tools',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(no tools)',
@@ -638,6 +656,15 @@ const ZH_TW: Dict = {
   'arena.waiting': '執行中…',
   'arena.noCwd': '未指定 cwd',
 
+  'snap.open': '快照與回滾',
+  'snap.title': '快照與回滾',
+  'snap.scope.this': '當前頻道',
+  'snap.scope.all': '本目錄全部',
+  'snap.restore': '還原',
+  'snap.restoreConfirm': '把這個檔案還原到改動前的內容?當前內容會被覆蓋。',
+  'snap.empty': '還沒有快照。Direct 引擎用 write_file / edit_file 改檔案時會自動存原文。',
+  'snap.noCwd': '未選中會話 — 選一個會話再開快照面板',
+
   'mcp.title': 'MCP 服務與工具',
   'mcp.lbl': 'MCP',
   'mcp.noTools': '(無工具)',
@@ -879,6 +906,15 @@ const JA: Dict = {
   'arena.idle': '「同時実行」をクリック',
   'arena.waiting': '実行中…',
   'arena.noCwd': 'cwd 未設定',
+
+  'snap.open': 'スナップショット & ロールバック',
+  'snap.title': 'スナップショット & ロールバック',
+  'snap.scope.this': '現在のチャンネル',
+  'snap.scope.all': 'この cwd のすべて',
+  'snap.restore': '復元',
+  'snap.restoreConfirm': 'このファイルを編集前の内容に戻しますか?現在の内容は上書きされます。',
+  'snap.empty': 'スナップショットはまだありません。Direct エンジンが write_file / edit_file で変更する際、元の内容を自動保存します。',
+  'snap.noCwd': '会話未選択 — 先に会話を選んでください',
 
   'mcp.title': 'MCP サービスとツール',
   'mcp.lbl': 'MCP',

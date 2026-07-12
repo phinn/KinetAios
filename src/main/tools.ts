@@ -5,15 +5,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { ToolDef } from './glm';
 import * as store from './store';
+import { takeSnapshot } from './snapshots';
 
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
-// every other tool ignores them.
+// every other tool ignores them。convId 用作快照 scope(write_file/edit_file 改前存原文)。
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
   spawn?: (a: { prompt: string; signal: AbortSignal }) => Promise<string>;
   signal?: AbortSignal;
+  convId?: string;
 }
 
 export interface Tool {
@@ -111,6 +113,13 @@ const writeFile: Tool = {
     const content = (args.content as string) ?? '';
     if (!p) return '缺少 path';
     try {
+      // 写前快照(仅当文件已存在,新文件没东西可存)。best-effort,失败不阻塞。
+      if (ctx.convId && fs.existsSync(p)) {
+        try {
+          const before = fs.readFileSync(p, 'utf8');
+          takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'write_file', contentBefore: before });
+        } catch { /* snapshot 失败不影响主流程 */ }
+      }
       fs.mkdirSync(path.dirname(p), { recursive: true });
       fs.writeFileSync(p, content, 'utf8');
       return `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
@@ -306,6 +315,8 @@ const editFile: Tool = {
     } catch {
       return `读不到: ${p}`;
     }
+    // 读到原文后立刻快照,在替换/写入之前。哪怕后续 oldS 找不到也不会丢回滚点。
+    if (ctx.convId) takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'edit_file', contentBefore: body });
     if (!body.includes(oldS)) return `未找到要替换的片段(检查缩进/空格是否完全一致)。文件 ${body.length} 字节,未改动。`;
     let out: string;
     let count: number;
