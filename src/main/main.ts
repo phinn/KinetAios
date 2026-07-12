@@ -12,6 +12,7 @@ import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
+import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -381,9 +382,12 @@ function rebuildTrayMenu(): void {
 
 function registerIpc(): void {
   ipcMain.handle('get-conversations', () => taskManager.list());
-  ipcMain.handle('new-conversation', (_e, cwd?: string, engine?: EngineKind) =>
-    taskManager.newConversation(cwd || os.homedir(), engine),
-  );
+  ipcMain.handle('new-conversation', (_e, cwd?: string, engine?: EngineKind) => {
+    const conv = taskManager.newConversation(cwd || os.homedir(), engine);
+    // 新会话:自动检测该 cwd 的 .kinet-watch.json,有就起 watcher。
+    if (conv.cwd) ensureWatcher(conv.cwd);
+    return conv;
+  });
   ipcMain.handle('send', (_e, id: string, text: string) => {
     taskManager.send(id, text);
     return true;
@@ -749,6 +753,24 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle('cron-validate', (_e, expr: string) => validateCron(expr));
+  // Watch 模式:list/start/stop cwd 级 watcher。自动 ensure 走 new-conversation 路径。
+  ipcMain.handle('watch-list', () => ({ ok: true, items: listWatchers() }));
+  ipcMain.handle('watch-start', (_e, cwd: string) => {
+    try {
+      const ok = startWatcher(cwd);
+      return { ok, error: ok ? undefined : 'No .kinet-watch.json or already running' };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('watch-stop', (_e, cwd: string) => {
+    try {
+      stopWatcher(cwd);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -770,6 +792,9 @@ if (!gotLock) {
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // Watch 模式:把 taskManager 注入 watcher(触发时起会话)+ 给所有现存会话的 cwd 起 watcher(若 .kinet-watch.json 存在)。
+    setTaskManagerForWatchers(taskManager);
+    for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);
     // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。dispatcher 起新会话并发 prompt。
     setCronTasks(listCronTasks().map((r) => ({
       id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled,

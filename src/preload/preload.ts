@@ -52,6 +52,9 @@ const api: KinetAPI = {
   cronUpdate: (id, patch) => ipcRenderer.invoke('cron-update', id, patch),
   cronDelete: (id) => ipcRenderer.invoke('cron-delete', id),
   cronValidate: (expr) => ipcRenderer.invoke('cron-validate', expr),
+  watchList: () => ipcRenderer.invoke('watch-list'),
+  watchStart: (cwd) => ipcRenderer.invoke('watch-start', cwd),
+  watchStop: (cwd) => ipcRenderer.invoke('watch-stop', cwd),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

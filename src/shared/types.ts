@@ -185,6 +185,10 @@ export interface KinetAPI {
   cronUpdate(id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
   cronDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   cronValidate(expr: string): Promise<{ ok: boolean; error?: string }>;
+  // Watch 模式:<cwd>/.kinet-watch.json 配置 glob + prompt,自动触发会话。
+  watchList(): Promise<{ ok: boolean; items?: string[]; error?: string }>;
+  watchStart(cwd: string): Promise<{ ok: boolean; error?: string }>;
+  watchStop(cwd: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;
