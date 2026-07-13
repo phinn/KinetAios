@@ -215,6 +215,8 @@ export class TaskManager {
     this.aborts.delete(id);
     // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
     if (conv.engine === 'direct') store.saveDirectHistory(conv);
+    // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
+    if (conv.cost > 0) store.logCost(conv.id, conv.engine, conv.cost, conv.tokens);
     this.emit.emitConversation(conv); // final flush
   }
 

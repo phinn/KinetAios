@@ -20,7 +20,7 @@ type Dict = Record<string, string>;
 // 简体中文是源(=现有文案),其它语言以此为基准翻译。
 const ZH_CN: Dict = {
   'common.cancel': '取消',
-  'common.ok': '确定',
+  'common.edit': '编辑',
   'common.send': '发送',
   'common.stop': '停止',
   'common.loading': '加载中…',
@@ -460,7 +460,7 @@ const ZH_CN: Dict = {
 
 const EN: Dict = {
   'common.cancel': 'Cancel',
-  'common.ok': 'OK',
+  'common.edit': 'Edit',
   'common.send': 'Send',
   'common.stop': 'Stop',
   'common.loading': 'Loading…',
@@ -899,7 +899,7 @@ const EN: Dict = {
 
 const ZH_TW: Dict = {
   'common.cancel': '取消',
-  'common.ok': '確定',
+  'common.edit': '編輯',
   'common.send': '傳送',
   'common.stop': '停止',
   'common.loading': '載入中…',
@@ -1338,6 +1338,7 @@ const ZH_TW: Dict = {
 
 const JA: Dict = {
   'common.cancel': 'キャンセル',
+  'common.edit': '編集',
   'common.ok': 'OK',
   'common.send': '送信',
   'common.stop': '停止',

@@ -2736,12 +2736,13 @@ function renderCost(): void {
   root.innerHTML = `<div class="cost-loading">${esc(tr('common.loading'))}</div>`;
   Promise.all([api.getCostStats(), api.getBudget()]).then(([stats, budget]) => {
     budgetCache = budget;
-    const totalAll = stats.today + stats.week; // 近似
+    const hasData = stats.today > 0 || stats.week > 0 || stats.month > 0 || Object.keys(stats.byEngine).length > 0;
     root.innerHTML = `
       <div class="cost-head">
         <div class="cost-title">${esc(tr('cost.title'))}</div>
         <div class="cost-sub">${esc(tr('cost.sub'))}</div>
       </div>
+      ${!hasData ? `<div class="cost-empty">${esc(tr('cost.noData'))}</div>` : `
       <div class="cost-overview">
         <div class="cost-card"><div class="cc-num">$${stats.today.toFixed(4)}</div><div class="cc-lbl">${esc(tr('cost.today'))}</div></div>
         <div class="cost-card"><div class="cc-num">$${stats.week.toFixed(4)}</div><div class="cc-lbl">${esc(tr('cost.week'))}</div></div>
@@ -2764,7 +2765,7 @@ function renderCost(): void {
             </div>`;
           }).join('') || `<div class="cost-empty">${esc(tr('cost.noData'))}</div>`}
         </div>
-      </div>
+      </div>`}
       <div class="cost-budget-section">
         <h3>${esc(tr('cost.budget'))}</h3>
         <div class="cost-budget-form">
@@ -2786,8 +2787,8 @@ function renderCost(): void {
         </div>
       </div>
     `;
-    // 画趋势图
-    drawCostChart(stats.byDay);
+    // 画趋势图(仅在有数据时)
+    if (hasData) drawCostChart(stats.byDay);
     // 保存预算
     document.getElementById('cb-save')!.onclick = async () => {
       const b = {
@@ -2953,13 +2954,15 @@ async function renderCTools(): Promise<void> {
     listEl.innerHTML = items.map((it) => `
       <div class="ctool-card" data-id="${it.id}">
         <div class="ctool-head">
-          <strong>${esc(it.name)}</strong>
+          <div class="ctool-title-row">
+            <strong>${esc(it.name)}</strong>
+          </div>
           <span class="ctool-actions">
-            <button class="ghost sm ct-edit">${tr('ctool.test')}</button>
+            <button class="ghost sm ct-edit" data-id="${it.id}">${tr('common.edit')}</button>
             <button class="ghost sm ct-del">${tr('ctool.delete')}</button>
           </span>
         </div>
-        <div class="ctool-desc">${esc(it.description)}</div>
+        ${it.description ? `<div class="ctool-desc">${esc(it.description)}</div>` : ''}
         <div class="ctool-cmd"><code>${esc(it.commandTpl)}</code></div>
       </div>
     `).join('');
@@ -2969,6 +2972,12 @@ async function renderCTools(): Promise<void> {
         await api.customToolDelete(card.dataset.id!);
         showMsg(tr('ctool.deleted'), true);
         renderCTools();
+      };
+    });
+    listEl.querySelectorAll<HTMLElement>('.ct-edit').forEach((btn) => {
+      btn.onclick = () => {
+        const item = items.find((i) => i.id === btn.dataset.id);
+        if (item) openCToolEditor(item);
       };
     });
   }
@@ -3035,16 +3044,17 @@ async function renderTimeline(): Promise<void> {
     listEl.innerHTML = `<div class="empty-hint">No memories yet</div>`;
   } else {
     listEl.innerHTML = sorted.map((m) => {
-      const date = new Date(m.created_at).toLocaleDateString();
+      const date = new Date(m.created_at).toLocaleString();
       const w = Math.round(m.weight * 100);
       const wColor = w > 60 ? '#4caf50' : w > 30 ? '#e8b339' : '#f44336';
-      return `<div class="mem-tl-item">
-        <div class="mem-tl-bar" style="width:${w}%;background:${wColor}"></div>
-        <div class="mem-tl-content">
+      const wLabel = w > 60 ? '高' : w > 30 ? '中' : '低';
+      return `<div class="mem-tl-item" style="border-left-color:${wColor}">
+        <div class="mem-tl-row">
+          <span class="mem-tl-badge" style="background:${wColor}1a;color:${wColor}">${wLabel} ${w}%</span>
           <span class="mem-tl-date">${date}</span>
-          <span class="mem-tl-text">${esc(m.content)}</span>
-          <span class="mem-tl-meta">${tr('mem.weight')}: ${w}% · ${tr('mem.used', { n: m.useCount })}</span>
+          <span class="mem-tl-used">使用 ${m.useCount} 次</span>
         </div>
+        <div class="mem-tl-text">${esc(m.content)}</div>
       </div>`;
     }).join('');
   }

@@ -638,7 +638,7 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 .ce-bar { flex: 1; height: 20px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
 .ce-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .3s; }
 .ce-val { width: 80px; text-align: right; font-size: 12px; color: var(--text-dim); font-family: ui-monospace, monospace; }
-.cost-empty { color: var(--text-faint); font-style: italic; padding: 12px; }
+.cost-empty { color: var(--text-faint); font-style: italic; padding: 24px; text-align: center; }
 .cost-budget-section { margin-top: 20px; }
 .cost-budget-form { background: var(--bg-elev); border-radius: 10px; padding: 16px; }
 .cost-budget-form .field { margin-bottom: 10px; }
@@ -646,6 +646,9 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 
 /* ── 规则生成器 modal ── */
 .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.modal-box { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 18px; width: 560px; max-width: 90vw; max-height: 80vh; overflow-y: auto; }
+.modal-box h3 { margin: 0 0 12px; }
+.modal-box .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 .rg-body { max-height: 60vh; overflow-y: auto; }
 .rg-body .field { margin-bottom: 10px; }
 .rg-body label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
@@ -656,21 +659,24 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 .img-chip .chip-x { position: absolute; top: -4px; right: -4px; background: var(--err); color: #fff; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
 
 /* ── 自定义工具视图 ── */
-.ctool-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; background: var(--bg-elev); }
+.ctool-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; background: var(--bg-elev); transition: border-color .2s; }
+.ctool-card:hover { border-color: var(--accent); }
 .ctool-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
-.ctool-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.ctool-title-row { display: flex; align-items: center; gap: 6px; }
+.ctool-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
 .ctool-cmd { font-size: 11px; }
-.ctool-cmd code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, monospace; color: var(--accent); }
+.ctool-cmd code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, monospace; color: var(--accent); display: inline-block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ctool-actions { display: flex; gap: 4px; }
 button.sm { padding: 3px 8px; font-size: 11px; }
 
 /* ── 记忆时间线 ── */
-.mem-tl-item { position: relative; border-left: 3px solid var(--border); margin-bottom: 6px; padding: 0 0 0 12px; }
-.mem-tl-bar { position: absolute; left: -3px; top: 0; bottom: 0; width: 3px; border-radius: 2px; }
-.mem-tl-content { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.mem-tl-item { border-left: 3px solid var(--border); margin-bottom: 4px; padding: 8px 0 8px 12px; border-radius: 0 6px 6px 0; }
+.mem-tl-item:hover { background: var(--bg-elev); }
+.mem-tl-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.mem-tl-badge { font-size: 10px; font-weight: 600; padding: 1px 6px; border-radius: 4px; white-space: nowrap; }
 .mem-tl-date { font-size: 11px; color: var(--text-faint); }
-.mem-tl-text { font-size: 12px; }
-.mem-tl-meta { font-size: 11px; color: var(--text-faint); }
+.mem-tl-used { font-size: 11px; color: var(--text-faint); margin-left: auto; }
+.mem-tl-text { font-size: 13px; line-height: 1.5; word-break: break-word; }
 
 /* ── 回放模态框 ── */
 .replay-header { display: flex; justify-content: space-between; align-items: center; }
