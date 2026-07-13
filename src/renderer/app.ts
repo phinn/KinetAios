@@ -1383,11 +1383,7 @@ async function send() {
 
 function showChat() {
   currentView = 'chat';
-  document.getElementById('settings-view')!.classList.remove('active');
-  document.getElementById('workbench-view')!.classList.remove('active');
-  document.getElementById('pipeline-view')!.classList.remove('active');
-  document.getElementById('templates-view')!.classList.remove('active');
-  document.getElementById('cost-view')!.classList.remove('active');
+  hideAllViews();
   document.getElementById('chat-view')!.classList.add('active');
   syncViewButtons();
   renderMain();
