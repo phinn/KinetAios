@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, shell, Tray } from 'electron';
+import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -789,6 +789,13 @@ if (!gotLock) {
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
     Menu.setApplicationMenu(null);
+    // mic 权限放行 —— webkitSpeechRecognition 需要 media。Electron 默认拒绝会导致
+    // onerror('not-allowed') → onend 立刻 fire,UI 上的 listening 态一闪就没。
+    // 信任模型:本应用本地,用户自己点 🎤 才触发请求,放行 mic 即可。
+    session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => {
+      // media 涵盖 mic + camera;webkitSpeechRecognition 只触发 media。
+      cb(perm === 'media');
+    });
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
