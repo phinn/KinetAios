@@ -274,7 +274,7 @@ export interface KinetAPI {
   shellOpen(url: string): Promise<void>;
   listDir(absPath: string): Promise<{ ok: boolean; entries?: DirEntry[]; error?: string }>;
   gitSnapshot(cwd: string): Promise<GitSnapshot>;
-  gitDiff(cwd: string, opts: { file?: string; hash?: string }): Promise<GitDiffResult>;
+  gitDiff(cwd: string, opts: { file?: string; hash?: string; staged?: boolean }): Promise<GitDiffResult>;
   readRules(cwd: string): Promise<{ ok: boolean; content?: string; error?: string }>;
   writeRules(cwd: string, content: string): Promise<{ ok: boolean; error?: string }>;
   readContext(cwd: string): Promise<{ ok: boolean; content?: string; error?: string }>;

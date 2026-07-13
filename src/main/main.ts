@@ -319,11 +319,16 @@ async function gitSnapshotAsync(cwd: string): Promise<GitSnapshot> {
     return { ok: false, error: /not a git repository|unknown revision/i.test(msg) ? t(getSettings().lang, 'git.errRepo') : msg };
   }
 }
-async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string }): Promise<GitDiffResult> {
+async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string; staged?: boolean }): Promise<GitDiffResult> {
   try {
     let args: string[];
     if (opts.hash) args = ['show', opts.hash];
-    else if (opts.file) args = ['diff', 'HEAD', '--', opts.file];
+    else if (opts.file) {
+      // 单文件:staged 看 index vs HEAD,unstaged 看 working tree vs index
+      args = opts.staged
+        ? ['diff', '--cached', '--', opts.file]
+        : ['diff', '--', opts.file];
+    }
     else args = ['diff', 'HEAD'];
     const diff = await runGit(args, cwd);
     return { ok: true, diff };
@@ -573,7 +578,7 @@ function registerIpc(): void {
   // 在用户默认浏览器里打开 URL(file:// / https:// 都行)。文件树右键「在浏览器中打开」用。
   ipcMain.handle('shell-open', (_e, url: string) => shell.openExternal(url));
   ipcMain.handle('git-snapshot', (_e, cwd: string) => gitSnapshotAsync(cwd));
-  ipcMain.handle('git-diff', (_e, cwd: string, opts: { file?: string; hash?: string }) =>
+  ipcMain.handle('git-diff', (_e, cwd: string, opts: { file?: string; hash?: string; staged?: boolean }) =>
     gitDiffAsync(cwd, opts),
   );
   // KINET.md 读写:rules tab 用。固定读 cwd/KINET.md,不接受相对路径(避免越界)。

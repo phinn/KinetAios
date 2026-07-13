@@ -352,6 +352,42 @@ function gitCodeSuffix(code: string): string {
   return ['M', 'A', 'D', 'R'].includes(code) ? code : 'U';
 }
 
+// ── word-level diff:对一对修改行(旧/新)做字符级 LCS,标记变化部分 ──
+// 返回 [leftHtml, rightHtml],变化部分用 <mark> 包裹。
+function wordDiff(oldText: string, newText: string): [string, string] {
+  if (!oldText || !newText) return [esc(oldText), esc(newText)];
+  // 简单字符级 LCS(短行够用,长行走 token 粗粒度)
+  const a = [...oldText], b = [...newText];
+  const n = a.length, m = b.length;
+  // 超长行降级:直接返回不做 word-diff(避免 O(n*m) 爆炸)
+  if (n * m > 50000) return [esc(oldText), esc(newText)];
+  // LCS DP
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  // 回溯:收集相等/不等段
+  let leftHtml = '', rightHtml = '';
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      leftHtml += esc(a[i]); rightHtml += esc(b[j]);
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      leftHtml += `<mark>${esc(a[i])}</mark>`;
+      i++;
+    } else {
+      rightHtml += `<mark>${esc(b[j])}</mark>`;
+      j++;
+    }
+  }
+  while (i < n) { leftHtml += `<mark>${esc(a[i])}</mark>`; i++; }
+  while (j < m) { rightHtml += `<mark>${esc(b[j])}</mark>`; j++; }
+  return [leftHtml, rightHtml];
+}
+
 function renderGit(): void {
   const branchEl = document.getElementById('git-branch')!;
   const changesEl = document.getElementById('git-changes-list')!;
@@ -371,20 +407,30 @@ function renderGit(): void {
     sideListEl.innerHTML = '';
     return;
   }
-  branchEl.textContent = `🌿 ${snap.branch ?? ''} · ${snap.changes?.length ?? 0} ${tr('git.changes')}`;
-  // changes
+  const staged = snap.changes?.filter((c) => c.staged) ?? [];
+  const unstaged = snap.changes?.filter((c) => !c.staged) ?? [];
+  branchEl.innerHTML = `🌿 <strong>${esc(snap.branch ?? '')}</strong> · ${snap.changes?.length ?? 0} ${tr('git.changes')}`;
+  // changes — 分 staged / unstaged 两组
+  const renderGroup = (label: string, items: typeof snap.changes) => {
+    if (!items?.length) return '';
+    const rows = items.map((c) => {
+      const suf = gitCodeSuffix(c.code);
+      return `<div class="gc-row" data-path="${esc(c.path)}" data-staged="${c.staged ? '1' : '0'}"><span class="gc-code ${esc(suf)}">${esc(c.code)}</span><span class="gc-label">${esc(tr('git.stat' + suf))}</span><span class="gc-path">${esc(c.path)}</span></div>`;
+    }).join('');
+    return `<div class="gc-group-label">${esc(label)} <span class="gc-group-count">${items.length}</span></div>${rows}`;
+  };
   if (!snap.changes?.length) {
     changesEl.innerHTML = `<div class="git-empty">${esc(tr('git.empty'))}</div>`;
   } else {
-    changesEl.innerHTML = snap.changes
-      .map(
-        (c) =>
-          `<div class="gc-row" data-path="${esc(c.path)}"><span class="gc-code ${esc(gitCodeSuffix(c.code))}">${esc(c.code)}</span><span class="gc-label">${esc(tr('git.stat' + gitCodeSuffix(c.code)))}</span><span class="gc-path">${esc(c.path)}</span></div>`,
-      )
-      .join('');
+    changesEl.innerHTML =
+      `<button class="gc-all-diff" id="gc-all-diff">${tr('git.allDiff')} (${snap.changes.length})</button>` +
+      renderGroup(tr('git.staged'), staged) +
+      renderGroup(tr('git.unstaged'), unstaged);
     changesEl.querySelectorAll<HTMLElement>('.gc-row').forEach((row) => {
-      row.onclick = () => void showGitDiff({ file: row.dataset.path! });
+      row.onclick = () => void showGitDiff({ file: row.dataset.path!, staged: row.dataset.staged === '1' });
     });
+    const allBtn = document.getElementById('gc-all-diff');
+    if (allBtn) allBtn.onclick = () => void showGitDiff({});
   }
   // side:history 或 diff
   if (gitState.view.kind === 'history') {
@@ -412,17 +458,19 @@ function renderGit(): void {
   }
 }
 
-async function showGitDiff(opts: { file?: string; hash?: string }): Promise<void> {
+async function showGitDiff(opts: { file?: string; hash?: string; staged?: boolean }): Promise<void> {
   const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
   if (!cwd) return;
   const title = opts.hash
     ? `${tr('git.history')}: ${opts.hash}`
-    : `${tr('git.diff')}: ${opts.file ?? ''}`;
+    : opts.file
+      ? `${tr('git.diff')}: ${opts.file}${opts.staged ? ` (${tr('git.staged')})` : ''}`
+      : tr('git.allDiff');
   // 先占位再异步加载,体感更快。
   gitState.view = { kind: 'diff', title, contentHTML: '<pre class="git-diff"><span class="d-hunk">…</span></pre>' };
   renderGit();
   const r = await api.gitDiff(cwd, opts);
-  // 文件 diff 走左右对比(看修改点更直观);commit show 涉及多文件,保留统一格式。
+  // 单文件 → 左右对比;commit show / 全量 → 按文件分段的统一格式
   const html = !r.ok
     ? `<pre class="git-diff"><span class="d-del">${esc(r.error ?? '')}</span></pre>`
     : opts.file
@@ -432,39 +480,77 @@ async function showGitDiff(opts: { file?: string; hash?: string }): Promise<void
   renderGit();
 }
 
-// Diff 按行着色(统一格式,commit show 用)。+/-/@@/+++ --- 不同色;每行独立 esc。
+// Diff 按行着色(统一格式,commit show / 全量 diff 用)。
+// 按文件分段:每个 "diff --git" 块提取文件名做标题栏 + stat(+xx -yy)。
 function colorGitDiff(s: string): string {
   if (!s) return '<pre class="git-diff"><span class="d-hunk">(empty)</span></pre>';
-  // git show 输出 = commit metadata + message + diff body。必须分离:message 里的 "- list 项"
-  // 会被误判为 diff 删除行渲染成红色 → 乱。从首个 "diff --git" 行开始才算 diff body。
   const lines = s.split('\n');
+  // commit show:metadata(message)在 diff --git 之前
   const diffStart = lines.findIndex((l) => l.startsWith('diff --git'));
   const meta = diffStart >= 0 ? lines.slice(0, diffStart) : [];
   const body = diffStart >= 0 ? lines.slice(diffStart) : lines;
   const metaHtml = meta.length
-    ? meta.map((l) => `<span class="d-meta">${esc(l) || '&nbsp;'}</span>`).join('\n')
+    ? `<div class="d-commit-meta">${meta.map((l) => `<span>${esc(l) || '&nbsp;'}</span>`).join('')}</div>`
     : '';
-  const bodyHtml = body
-    .map((line) => {
+  // 按文件分段
+  const segments: { header: string; stat: string; lines: string[] }[] = [];
+  let cur: { header: string; stat: string; lines: string[] } | null = null;
+  let addCount = 0, delCount = 0;
+  for (const line of body) {
+    if (line.startsWith('diff --git')) {
+      if (cur) { cur.stat = `+${addCount} -${delCount}`; segments.push(cur); }
+      // 提取文件名:diff --git a/foo.ts b/foo.ts
+      const m = line.match(/^diff --git a\/(.+?) b\/(.+)$/);
+      const fname = m ? m[2] : line;
+      cur = { header: fname, stat: '', lines: [] };
+      addCount = 0; delCount = 0;
+    } else if (cur) {
+      cur.lines.push(line);
+      if (line.startsWith('+') && !line.startsWith('+++')) addCount++;
+      if (line.startsWith('-') && !line.startsWith('---')) delCount++;
+    }
+  }
+  if (cur) { cur.stat = `+${addCount} -${delCount}`; segments.push(cur); }
+  if (!segments.length) {
+    // 没有文件分段(纯 diff),整体着色
+    const html = body.map((line) => {
       const e = esc(line);
       if (line.startsWith('+++') || line.startsWith('---')) return `<span class="d-hunk">${e}</span>`;
       if (line.startsWith('+')) return `<span class="d-add">${e}</span>`;
       if (line.startsWith('-')) return `<span class="d-del">${e}</span>`;
       if (line.startsWith('@@')) return `<span class="d-hunk">${e}</span>`;
       return e;
-    })
-    .join('\n');
-  return `<pre class="git-diff">${metaHtml}${metaHtml && bodyHtml ? '\n' : ''}${bodyHtml}</pre>`;
+    }).join('\n');
+    return `${metaHtml}<pre class="git-diff">${html}</pre>`;
+  }
+  // 每个文件段:文件名标题栏 + stat + diff body
+  const segHtml = segments.map((seg) => {
+    const bodyHtml = seg.lines
+      .filter((l) => !l.startsWith('diff --git') && !l.startsWith('index '))
+      .map((line) => {
+        const e = esc(line);
+        if (line.startsWith('+++') || line.startsWith('---')) return `<span class="d-hunk">${e}</span>`;
+        if (line.startsWith('+')) return `<span class="d-add">${e}</span>`;
+        if (line.startsWith('-')) return `<span class="d-del">${e}</span>`;
+        if (line.startsWith('@@')) return `<span class="d-hunk">${e}</span>`;
+        return e;
+      })
+      .join('\n');
+    const addN = seg.stat.match(/\+(\d+)/)?.[1] ?? '0';
+    const delN = seg.stat.match(/-(\d+)/)?.[1] ?? '0';
+    return `<div class="d-file-header"><span class="d-file-name">${esc(seg.header)}</span><span class="d-file-stat"><span class="d-add-count">+${addN}</span> <span class="d-del-count">-${delN}</span></span></div><pre class="git-diff">${bodyHtml}</pre>`;
+  }).join('');
+  return `${metaHtml}${segHtml}`;
 }
 
 // 文件 diff 的左右对比:把 unified diff 解析成对齐的「左旧 / 右新」行。
-// ponytail: 同一 hunk 内连续的 - 与 + 按行配对(逐对对齐),多出来的用空行垫;不做 token 级 diff,够直观。
+// 修改行做 word-level diff(字符级 LCS),变化部分用 <mark> 高亮。
 type SSRow =
   | { kind: 'hunk'; text: string }
   | { kind: 'ctx'; ln: number; rn: number; text: string }
   | { kind: 'pair'; ln: number | null; lt: string; rn: number | null; rt: string; cls: string };
 function renderSideBySide(diff: string): string {
-  if (!diff || !diff.includes('@@')) return '<span class="d-hunk">(无差异)</span>';
+  if (!diff || !diff.includes('@@')) return '<div class="git-empty">(无差异)</div>';
   const rows: SSRow[] = [];
   let ln = 0;
   let rn = 0;
@@ -509,10 +595,12 @@ function renderSideBySide(diff: string): string {
       if (r.kind === 'hunk') return `<tr class="ss-hunk"><td colspan="4">${esc(r.text)}</td></tr>`;
       if (r.kind === 'ctx')
         return `<tr><td class="ss-num">${r.ln}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td><td class="ss-num">${r.rn}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td></tr>`;
-      return `<tr class="${r.cls}"><td class="ss-num">${r.ln ?? ''}</td><td class="ss-txt">${esc(r.lt) || '&nbsp;'}</td><td class="ss-num">${r.rn ?? ''}</td><td class="ss-txt">${esc(r.rt) || '&nbsp;'}</td></tr>`;
+      // 修改行:做 word-level diff
+      const [lh, rh] = r.cls === 'ss-mod' ? wordDiff(r.lt, r.rt) : [esc(r.lt), esc(r.rt)];
+      return `<tr class="${r.cls}"><td class="ss-num">${r.ln ?? ''}</td><td class="ss-txt">${lh || '&nbsp;'}</td><td class="ss-num">${r.rn ?? ''}</td><td class="ss-txt">${rh || '&nbsp;'}</td></tr>`;
     })
     .join('');
-  return `<table class="git-ss"><thead><tr><th class="ss-num"></th><th>${esc(tr('git.before'))}</th><th class="ss-num"></th><th>${esc(tr('git.after'))}</th></tr></thead><tbody>${body}</tbody></table>`;
+  return `<div class="git-ss-wrap"><table class="git-ss"><thead><tr><th class="ss-num"></th><th>${esc(tr('git.before'))}</th><th class="ss-num"></th><th>${esc(tr('git.after'))}</th></tr></thead><tbody>${body}</tbody></table></div>`;
 }
 
 
