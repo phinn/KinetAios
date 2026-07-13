@@ -235,6 +235,9 @@ export function updateMemory(id: string, content: string): void {
 
 export function deleteMemory(id: string): void {
   db.prepare('DELETE FROM memories WHERE id=?;').run(id);
+  // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
+  db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(id);
+  db.prepare('DELETE FROM memory_meta WHERE memory_id=?;').run(id);
 }
 
 // MARK: memory graph(实体关系三元组;与 memories 并行,不互依)

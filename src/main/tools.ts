@@ -90,7 +90,13 @@ const readFile: Tool = {
       const stat = fs.statSync(p);
       // 防止 read_file 大文件(PDF/图片等二进制)把主进程读 OOM —— 之前没限制是崩溃主因。
       if (stat.size > 512 * 1024) return `文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB),read_file 上限 512KB。改用 shell 按需读(如 pdftotext/head/grep)。`;
-      const body = fs.readFileSync(p, 'utf8');
+      // 二进制检测:先读 Buffer,前 8KB 有 null byte → 拒绝(避免 utf8 解码二进制产生乱码)。
+      const buf = fs.readFileSync(p);
+      const checkLen = Math.min(buf.length, 8192);
+      for (let i = 0; i < checkLen; i++) {
+        if (buf[i] === 0) return `二进制文件(非文本),read_file 不支持。改用 shell 工具(如 xxd/head/strings)。`;
+      }
+      const body = buf.toString('utf8');
       return body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body;
     } catch {
       return `读不到: ${p}`;
@@ -194,6 +200,11 @@ const recallMemory: Tool = {
             .sort((a, b) => b.score - a.score)
             .slice(0, 20);
           if (scored.length) {
+            // 命中的记忆 touch 一下(更新 lastUsed + useCount → 衰减权重 / 时间线统计才有数据)。
+            for (const s of scored) {
+              const row = rows.find((r) => r.content === s.content);
+              if (row) try { store.touchMemoryUsed(row.memoryId); } catch { /* non-blocking */ }
+            }
             const body = scored
               .map((m, i) => {
                 const cut = m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content;
@@ -494,10 +505,12 @@ export function customTools(): Tool[] {
       parameters: params,
       readOnly: true, // 自定义工具标记为只读(可并发),实际通过 shell 执行用户定义的命令
       async run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
-        // 将 $ARG_<param> 替换为实际参数值
+        // 将 $ARG_<param> 替换为实际参数值。
+        // 安全:对参数值做 shell 转义(双引号包裹 + 转义特殊字符),防止 LLM 注入 shell 命令。
         let cmd = r.commandTpl;
         for (const [k, v] of Object.entries(args)) {
-          cmd = cmd.replace(new RegExp(`\\$ARG_${k}`, 'g'), String(v ?? ''));
+          const safeVal = shellQuote(String(v ?? ''));
+          cmd = cmd.replace(new RegExp(`\\$ARG_${k}`, 'g'), safeVal);
         }
         const out = await shellExec(cmd, ctx.cwd, r.timeoutMs * 1000 || 120_000);
         return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out;

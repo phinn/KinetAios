@@ -1416,7 +1416,14 @@ function wireVoice(): void {
         btn.classList.add('loading');
         // base64 编码
         const buf = await blob.arrayBuffer();
-        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        // 分块编码,避免展开运算符在 >64KB 时栈溢出(V8 参数上限)。
+        const bytes = new Uint8Array(buf);
+        let b64 = '';
+        const CHUNK = 0x8000;
+        for (let i = 0; i < bytes.length; i += CHUNK) {
+          b64 += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK) as unknown as number[]);
+        }
+        b64 = btoa(b64);
         const r = await api.transcribeAudio(b64, mime);
         btn.classList.remove('loading');
         if (!r.ok || !r.text) {
@@ -3178,7 +3185,7 @@ async function renderTimeline(): Promise<void> {
   `;
   const listEl = document.getElementById('mem-tl-list')!;
   if (!sorted.length) {
-    listEl.innerHTML = `<div class="empty-hint">No memories yet</div>`;
+    listEl.innerHTML = `<div class="empty-hint">${esc(tr('mem.empty'))}</div>`;
   } else {
     listEl.innerHTML = sorted.map((m) => {
       const date = new Date(m.created_at).toLocaleString();

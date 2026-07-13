@@ -406,8 +406,8 @@ export class TaskManager {
       if (!prevOutput) break;
     }
 
-    // 记录总成本
-    store.logCost(conv.id, conv.engine, conv.cost, conv.tokens);
+    // 记录总成本 —— pipeline 的每个 stage 已在 send() 里按 turn 增量记过 cost_log,
+    // 这里不再重复记(之前记 conv.cost 累计值会导致重复)。
     return conv.id;
   }
 

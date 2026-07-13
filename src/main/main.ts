@@ -484,7 +484,7 @@ function registerIpc(): void {
       // 二进制检测:前 8KB 有 null byte → 拒绝
       const checkLen = Math.min(buf.length, 8192);
       for (let i = 0; i < checkLen; i++) {
-        if (buf[i] === 0) return { ok: false, error: 'Binary file (not text)' };
+        if (buf[i] === 0) return { ok: false, error: t(getSettings().lang, 'common.binary') };
       }
       const body = buf.toString('utf8');
       return { ok: true, name: rel, content: body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body };
@@ -501,7 +501,7 @@ function registerIpc(): void {
       const buf = fs.readFileSync(abs);
       const checkLen = Math.min(buf.length, 8192);
       for (let i = 0; i < checkLen; i++) {
-        if (buf[i] === 0) return { ok: false, error: 'Binary file (not text)' };
+        if (buf[i] === 0) return { ok: false, error: t(getSettings().lang, 'common.binary') };
       }
       const content = buf.toString('utf8');
       // 超大文件截断(避免渲染器卡死/OOM)—— 1MB 上限。
@@ -951,7 +951,7 @@ function registerIpc(): void {
   ipcMain.handle('export-conversation', async (_e, convId: string, format: string) => {
     try {
       const conv = taskManager.get(convId);
-      if (!conv) return { ok: false, error: 'Conversation not found' };
+      if (!conv) return { ok: false, error: t(getSettings().lang, 'common.convNotFound') };
       const brand = getBrand();
       let content = '';
       let ext = '';
@@ -969,7 +969,7 @@ function registerIpc(): void {
       const r = win
         ? await dialog.showSaveDialog(win, { defaultPath: `${conv.customTitle || conv.turns[0]?.prompt.slice(0, 30) || 'session'}.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] })
         : await dialog.showSaveDialog({ defaultPath: `session.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] });
-      if (r.canceled || !r.filePath) return { ok: false, error: 'cancelled' };
+      if (r.canceled || !r.filePath) return { ok: false, error: t(getSettings().lang, 'common.cancelled') };
       fs.writeFileSync(r.filePath, content, 'utf8');
       return { ok: true, path: r.filePath };
     } catch (e) {
@@ -982,7 +982,7 @@ function registerIpc(): void {
     try {
       const left = taskManager.get(leftConvId);
       const right = taskManager.get(rightConvId);
-      if (!left || !right) return { ok: false, error: 'Conversation not found' };
+      if (!left || !right) return { ok: false, error: t(getSettings().lang, 'common.convNotFound') };
       const leftText = left.turns[left.turns.length - 1]?.answer ?? '';
       const rightText = right.turns[right.turns.length - 1]?.answer ?? '';
       const diff = computeLineDiff(leftText, rightText);
@@ -998,12 +998,12 @@ function registerIpc(): void {
   ipcMain.handle('capture-screen', async () => {
     try {
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
-      if (!sources.length) return { ok: false, error: 'No screen found' };
+      if (!sources.length) return { ok: false, error: t(getSettings().lang, 'common.noScreen') };
       // 取整个虚拟桌面(包含多显示器)或第一个源
       const source = sources.find((s) => s.display_id === '') || sources[0];
       const thumb = source.thumbnail;
       const dataUrl = thumb.toDataURL();
-      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: 'Empty capture (screen permission?)' };
+      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
       return { ok: true, dataUrl };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
