@@ -49,6 +49,7 @@ export type AppSettings = {
   embedBaseURL: string;    // '' = 复用主 baseURL
   embedApiKey: string;     // '' = 复用主 apiKey
   embedModel: string;      // 'embedding-3' 等 OpenAI 兼容模型 id
+  budget: BudgetAlert;     // 成本预算 / 熔断
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
@@ -111,6 +112,62 @@ export type Turn = {
 
 export type ConvStatus = 'ready' | 'running';
 
+// ── Pipeline 跨引擎编排 ──
+// 一个 pipeline 由多个 stage 组成,每个 stage 指定引擎 + prompt。
+// 上一个 stage 的输出自动拼到下一个 stage 的 prompt 前面(链式传递)。
+export type PipelineStage = {
+  engine: EngineKind;
+  prompt: string;
+  label?: string; // 可选 stage 名称(显示用)
+};
+
+export type Pipeline = {
+  id: string;
+  name: string;
+  stages: PipelineStage[];
+  cwd: string;
+  createdAt: number;
+};
+
+// ── 会话分支 ──
+// 从任意历史 turn 分叉出新会话(类似 git branch)。
+export type BranchInfo = {
+  id: string;
+  sourceConvId: string;
+  sourceTurnIdx: number; // 从哪个 turn 分叉(0-based)
+  createdAt: number;
+};
+
+// ── 成本预算 ──
+export type BudgetAlert = {
+  enabled: boolean;
+  perSessionLimit: number; // 单次会话上限(USD),0 = 不限
+  dailyLimit: number;      // 日上限(USD),0 = 不限
+};
+
+// ── 模板 ──
+export type PromptTemplate = {
+  id: string;
+  name: string;
+  description: string;
+  engine: EngineKind;
+  systemPrompt?: string;
+  prompt: string;
+  category: string;
+  icon: string;
+  builtin: boolean;
+};
+
+// ── 可视化规则 ──
+export type RuleConfig = {
+  codeStyle: string;     // 'typescript' | 'python' | 'rust' | ...
+  namingConvention: string; // 'camelCase' | 'snake_case' | ...
+  commentStyle: 'bilingual' | 'chinese' | 'english' | 'none';
+  indent: 'tabs' | '2spaces' | '4spaces';
+  bannedApis: string;    // 禁用的 API(逗号分隔)
+  extraRules: string;    // 自定义额外规则
+};
+
 export type Conversation = {
   id: string;
   engine: EngineKind;
@@ -125,6 +182,8 @@ export type Conversation = {
   statusNote: string | null;
   cost: number;
   tokens: number;
+  branchInfo?: BranchInfo | null; // 分支来源(null/undefined = 原创会话)
+  pipelineId?: string | null; // 如果由 pipeline 创建,记录 pipeline id
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
@@ -202,6 +261,23 @@ export interface KinetAPI {
   watchList(): Promise<{ ok: boolean; items?: string[]; error?: string }>;
   watchStart(cwd: string): Promise<{ ok: boolean; error?: string }>;
   watchStop(cwd: string): Promise<{ ok: boolean; error?: string }>;
+  // ── Pipeline 跨引擎编排 ──
+  pipelineRun(p: { name: string; stages: PipelineStage[]; cwd: string }): Promise<{ ok: boolean; convId?: string; error?: string }>;
+  pipelineTemplates(): Promise<Pipeline[]>;
+  pipelineSave(p: Pipeline): Promise<{ ok: boolean; error?: string }>;
+  pipelineDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // ── 会话分支 ──
+  branchFromTurn(convId: string, turnIdx: number): Promise<{ ok: boolean; convId?: string; error?: string }>;
+  // ── 成本预算 ──
+  getBudget(): Promise<BudgetAlert>;
+  saveBudget(b: BudgetAlert): Promise<{ ok: boolean; error?: string }>;
+  getCostStats(): Promise<{ today: number; week: number; month: number; byEngine: Record<string, number>; byDay: Array<{ date: string; cost: number }> }>;
+  // ── Prompt 模板 ──
+  templateList(): Promise<PromptTemplate[]>;
+  templateSave(t: PromptTemplate): Promise<{ ok: boolean; error?: string }>;
+  templateDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // ── 可视化规则生成 ──
+  rulesGenerate(cfg: RuleConfig): Promise<{ ok: boolean; content?: string; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

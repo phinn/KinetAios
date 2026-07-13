@@ -355,6 +355,85 @@ export class TaskManager {
       parentSignal.removeEventListener('abort', onParentAbort);
     }
   }
+
+  // ── Pipeline 跨引擎编排 ──
+  // 串行执行多个 stage,每个 stage 用不同引擎。上一步输出拼到下一步 prompt 前。
+  // 所有 stage 共用一个会话(用户在 UI 上可以看到每步的执行过程)。
+  // ponytail: MVP 只做串行链;并行扇出 / 条件分支后续加。
+  async runPipeline(stages: Array<{ engine: EngineKind; prompt: string; label?: string }>, cwd: string, name: string): Promise<string> {
+    if (!stages.length) throw new Error('Pipeline 至少需要一个 stage');
+    // 创建会话
+    const conv = this.newConversation(cwd, stages[0].engine);
+    conv.pipelineId = name;
+    store.saveConversation(conv);
+
+    let prevOutput = '';
+    for (let i = 0; i < stages.length; i++) {
+      const stage = stages[i];
+      const label = stage.label || `Step ${i + 1}`;
+      const stepPrompt = prevOutput
+        ? `【Pipeline · ${name} · ${label}】\n\n上一阶段(${stages[i - 1].label || 'Step ' + i})的输出:\n\n---\n${prevOutput}\n---\n\n${stage.prompt}`
+        : `【Pipeline · ${name} · ${label}】\n\n${stage.prompt}`;
+
+      // 切引擎(非第一个 stage)
+      if (i > 0) this.setEngine(conv.id, stage.engine);
+
+      // 等待执行完成
+      await this.send(conv.id, stepPrompt);
+      // 等 done
+      const maxWait = 120_000; // 单 stage 超时 2 分钟
+      const start = Date.now();
+      while (conv.status === 'running') {
+        if (Date.now() - start > maxWait) {
+          this.cancel(conv.id);
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+
+      // 提取最后一个 turn 的 answer 作为下一步输入
+      const lastTurn = conv.turns[conv.turns.length - 1];
+      if (lastTurn?.error) {
+        throw new Error(`Pipeline 在 ${label} 失败: ${lastTurn.error}`);
+      }
+      prevOutput = lastTurn?.answer ?? '';
+      if (!prevOutput) break;
+    }
+
+    // 记录总成本
+    store.logCost(conv.id, conv.engine, conv.cost, conv.tokens);
+    return conv.id;
+  }
+
+  // ── 会话分支 ──
+  // 从指定 turn 的位置创建新会话,复制该 turn 及之前所有 turn。
+  // 新会话引擎/模型/cwd 与源会话一致,但 directHistory 清空(新上下文)。
+  branchFrom(srcConvId: string, turnIdx: number): Conversation | null {
+    const src = this.convs.get(srcConvId);
+    if (!src || turnIdx < 0 || turnIdx >= src.turns.length) return null;
+    const conv: Conversation = {
+      id: rid(),
+      engine: src.engine,
+      model: src.model,
+      cwd: src.cwd,
+      createdAt: Date.now(),
+      customTitle: `${src.customTitle || src.turns[0]?.prompt.slice(0, 20) || 'Session'} (分支)`,
+      directHistory: [],
+      engineSessionId: null,
+      turns: src.turns.slice(0, turnIdx + 1).map((t) => ({ ...t, id: rid() })),
+      status: 'ready',
+      statusNote: null,
+      cost: 0,
+      tokens: 0,
+      branchInfo: { id: rid(), sourceConvId: srcConvId, sourceTurnIdx: turnIdx, createdAt: Date.now() },
+    };
+    store.saveConversation(conv);
+    for (const t of conv.turns) store.saveTurn(conv.id, t);
+    this.convs.set(conv.id, conv);
+    this.order.unshift(conv.id);
+    this.emit.emitConversation(conv);
+    return conv;
+  }
 }
 
 function isCliEngine(e: EngineKind): boolean {

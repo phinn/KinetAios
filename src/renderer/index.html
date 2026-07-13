@@ -25,6 +25,10 @@
               <button class="sb-more-item" id="m-memory"><span class="sb-mi-ico">🧠</span><span class="sb-mi-label" data-i18n="sidebar.moreMemory">长期记忆</span></button>
               <button class="sb-more-item" id="m-cron"><span class="sb-mi-ico">📅</span><span class="sb-mi-label" data-i18n="sidebar.moreCron">定时任务</span></button>
               <button class="sb-more-item" id="m-snap"><span class="sb-mi-ico">⏪</span><span class="sb-mi-label" data-i18n="sidebar.moreSnapshot">快照与回滚</span></button>
+              <div class="sb-more-sep"></div>
+              <button class="sb-more-item" id="m-pipeline"><span class="sb-mi-ico">🔗</span><span class="sb-mi-label" data-i18n="sidebar.morePipeline">Pipeline 编排</span></button>
+              <button class="sb-more-item" id="m-templates"><span class="sb-mi-ico">📋</span><span class="sb-mi-label" data-i18n="sidebar.moreTemplates">模板库</span></button>
+              <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico">💰</span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
             </div>
           </div>
         </div>
@@ -139,6 +143,7 @@
             <span class="rules-spacer"></span>
             <span class="rules-status" id="rules-status"></span>
             <button class="ghost" id="btn-rules-reload" data-i18n-title="rules.reload" title="重新加载">⟳</button>
+            <button class="ghost" id="btn-rules-gen" title="规则生成器">⚙✨</button>
             <button class="primary" id="btn-rules-save" data-i18n="rules.save">保存</button>
           </div>
           <textarea class="rules-editor" id="rules-editor" data-i18n-placeholder="rules.ph" placeholder="写在这里的规则会拼到每个会话的 system prompt..."></textarea>
@@ -153,6 +158,21 @@
       <!-- workbench view(项目卡片总览,每个 cwd 一个项目)-->
       <div id="workbench-view" class="view">
         <div id="workbench"></div>
+      </div>
+
+      <!-- pipeline view(跨引擎编排)-->
+      <div id="pipeline-view" class="view">
+        <div id="pipeline-root"></div>
+      </div>
+
+      <!-- templates view(Prompt 模板库)-->
+      <div id="templates-view" class="view">
+        <div id="templates-root"></div>
+      </div>
+
+      <!-- cost view(成本看板)-->
+      <div id="cost-view" class="view">
+        <div id="cost-root"></div>
       </div>
     </main>
   </div>

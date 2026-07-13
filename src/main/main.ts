@@ -808,6 +808,71 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
+
+  // ── Pipeline 跨引擎编排 ──
+  ipcMain.handle('pipeline-run', async (_e, p: { name: string; stages: Array<{ engine: EngineKind; prompt: string; label?: string }>; cwd: string }) => {
+    try {
+      const id = await taskManager.runPipeline(p.stages, p.cwd, p.name);
+      return { ok: true, convId: id };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('pipeline-templates', () => {
+    const { loadPipelines } = require('./store');
+    return loadPipelines().map((r: any) => ({ id: r.id, name: r.name, stages: JSON.parse(r.data), cwd: r.cwd, createdAt: r.createdAt }));
+  });
+  ipcMain.handle('pipeline-save', (_e, p: any) => {
+    const { savePipeline } = require('./store');
+    savePipeline({ id: p.id, name: p.name, data: JSON.stringify(p.stages), cwd: p.cwd });
+    return { ok: true };
+  });
+  ipcMain.handle('pipeline-delete', (_e, id: string) => {
+    const { deletePipeline } = require('./store');
+    deletePipeline(id);
+    return { ok: true };
+  });
+
+  // ── 会话分支 ──
+  ipcMain.handle('branch-from-turn', (_e, convId: string, turnIdx: number) => {
+    const conv = taskManager.branchFrom(convId, turnIdx);
+    return conv ? { ok: true, convId: conv.id } : { ok: false, error: '无法分支' };
+  });
+
+  // ── 成本预算 ──
+  ipcMain.handle('get-budget', () => getSettings().budget);
+  ipcMain.handle('save-budget', (_e, b: any) => {
+    const s = getSettings();
+    saveSettings({ ...s, budget: b });
+    return { ok: true };
+  });
+  ipcMain.handle('cost-stats', () => {
+    const { costStats } = require('./store');
+    return costStats();
+  });
+
+  // ── Prompt 模板 ──
+  ipcMain.handle('template-list', () => {
+    const { loadTemplates } = require('./store');
+    const builtin = builtinTemplates();
+    const custom = loadTemplates().map((r: any) => { try { return JSON.parse(r.data); } catch { return null; } }).filter(Boolean);
+    return [...builtin, ...custom];
+  });
+  ipcMain.handle('template-save', (_e, t: any) => {
+    const { saveTemplate } = require('./store');
+    saveTemplate({ id: t.id, name: t.name, data: JSON.stringify(t) });
+    return { ok: true };
+  });
+  ipcMain.handle('template-delete', (_e, id: string) => {
+    const { deleteTemplate } = require('./store');
+    deleteTemplate(id);
+    return { ok: true };
+  });
+
+  // ── 可视化规则生成 ──
+  ipcMain.handle('rules-generate', (_e, cfg: any) => {
+    return { ok: true, content: generateRules(cfg) };
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -883,4 +948,59 @@ if (!gotLock) {
     mcp.dispose(); // 关掉所有 MCP 子进程
     tray?.destroy(); // 销毁托盘,否则 macOS 上进程残留、退不干净
   });
+}
+
+// MARK: 内置 Prompt 模板
+// ponytail: 硬编码 10 个高频场景模板,覆盖代码审查/Bug 修复/文档/测试/重构等。
+function builtinTemplates(): any[] {
+  return [
+    { id: 'tpl-review', name: '代码审查', description: '审查当前文件的代码质量、安全性和最佳实践', engine: 'direct', prompt: '请审查以下代码,关注:\n1. 代码质量与可读性\n2. 潜在 Bug\n3. 安全漏洞\n4. 性能问题\n5. 最佳实践建议\n\n请用中文给出具体、可操作的反馈。', category: '代码质量', icon: '🔍', builtin: true },
+    { id: 'tpl-bugfix', name: 'Bug 修复', description: '分析并修复 Bug', engine: 'direct', prompt: '请分析以下 Bug 描述,找到根因并给出修复方案:\n\nBug 描述:\n\n复现步骤:\n\n预期行为:\n\n实际行为:', category: '开发', icon: '🐛', builtin: true },
+    { id: 'tpl-doc', name: '文档生成', description: '为代码生成中文文档注释', engine: 'direct', prompt: '请为以下代码生成完整的中英双语文档注释:\n1. 函数/类的功能说明\n2. 参数说明\n3. 返回值说明\n4. 使用示例\n5. 注意事项', category: '文档', icon: '📝', builtin: true },
+    { id: 'tpl-test', name: '测试编写', description: '为代码生成单元测试', engine: 'direct', prompt: '请为以下代码编写单元测试:\n1. 覆盖正常路径\n2. 覆盖边界条件\n3. 覆盖异常情况\n4. 每个测试用例都有清晰的名称和断言', category: '测试', icon: '🧪', builtin: true },
+    { id: 'tpl-refactor', name: '重构', description: '改善代码结构而不改变行为', engine: 'claudeCode', prompt: '请重构这段代码,目标:\n1. 提高可读性和可维护性\n2. 消除重复\n3. 改善命名\n4. 简化复杂逻辑\n\n约束:不改变外部行为,保持所有测试通过。', category: '代码质量', icon: '🔨', builtin: true },
+    { id: 'tpl-explain', name: '代码解释', description: '用中文逐行解释代码', engine: 'direct', prompt: '请逐段解释以下代码的工作原理,用通俗易懂的中文:\n1. 整体功能是什么\n2. 关键逻辑的执行流程\n3. 重要设计决策的原因', category: '学习', icon: '📖', builtin: true },
+    { id: 'tpl-optimize', name: '性能优化', description: '分析性能瓶颈并优化', engine: 'direct', prompt: '请分析以下代码的性能瓶颈:\n1. 时间复杂度分析\n2. 空间复杂度分析\n3. 具体优化建议(附改写后的代码)\n4. 预估提升幅度', category: '性能', icon: '⚡', builtin: true },
+    { id: 'tpl-security', name: '安全审计', description: '检查代码安全问题', engine: 'direct', prompt: '请对以下代码进行安全审计:\n1. 注入漏洞(SQL/命令/XSS)\n2. 认证与授权问题\n3. 敏感信息泄露\n4. 不安全的依赖\n5. 修复建议', category: '安全', icon: '🛡️', builtin: true },
+    { id: 'tpl-migrate', name: '类型迁移', description: 'JavaScript → TypeScript 迁移', engine: 'codex', prompt: '请将以下 JavaScript 代码迁移到 TypeScript:\n1. 添加完整的类型标注\n2. 定义必要的 interface/type\n3. 修复类型错误\n4. 保持运行时行为不变', category: '迁移', icon: '🔄', builtin: true },
+    { id: 'tpl-arch', name: '架构分析', description: '分析项目架构并给出改进建议', engine: 'claudeCode', prompt: '请分析当前项目的架构:\n1. 当前架构模式(单体/微服务/分层/...)\n2. 模块依赖关系\n3. 架构优缺点\n4. 可扩展性评估\n5. 改进建议', category: '架构', icon: '🏗️', builtin: true },
+  ];
+}
+
+// MARK: 可视化规则生成器 — 根据 UI 配置生成 KINET.md 内容
+function generateRules(cfg: any): string {
+  const lines: string[] = [];
+  lines.push('# 项目规则 (KINET.md)');
+  lines.push('');
+  lines.push('## 代码风格');
+  if (cfg.codeStyle) lines.push(`- 语言: ${cfg.codeStyle}`);
+  if (cfg.namingConvention) lines.push(`- 命名规范: ${cfg.namingConvention}`);
+  if (cfg.indent) {
+    const indentDesc = cfg.indent === 'tabs' ? 'Tab 缩进' : cfg.indent === '2spaces' ? '2 空格缩进' : '4 空格缩进';
+    lines.push(`- ${indentDesc}`);
+  }
+  if (cfg.commentStyle) {
+    const commentDesc = { bilingual: '中英双语注释', chinese: '中文注释', english: '英文注释', none: '尽量少加注释' }[cfg.commentStyle as string] || cfg.commentStyle;
+    lines.push(`- 注释风格: ${commentDesc}`);
+  }
+  lines.push('');
+  if (cfg.bannedApis) {
+    lines.push('## 禁止使用');
+    for (const api of String(cfg.bannedApis).split(',').map((s) => s.trim()).filter(Boolean)) {
+      lines.push(`- 禁止使用 \`${api}\``);
+    }
+    lines.push('');
+  }
+  lines.push('## 通用规则');
+  lines.push('- 改完代码必须自查(typecheck / build)');
+  lines.push('- 每次修改完提交 git');
+  lines.push('- 不破坏已有测试');
+  if (cfg.extraRules) {
+    lines.push('');
+    lines.push('## 额外规则');
+    for (const rule of String(cfg.extraRules).split('\n').filter(Boolean)) {
+      lines.push(`- ${rule}`);
+    }
+  }
+  return lines.join('\n') + '\n';
 }

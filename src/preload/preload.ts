@@ -55,6 +55,23 @@ const api: KinetAPI = {
   watchList: () => ipcRenderer.invoke('watch-list'),
   watchStart: (cwd) => ipcRenderer.invoke('watch-start', cwd),
   watchStop: (cwd) => ipcRenderer.invoke('watch-stop', cwd),
+  // Pipeline
+  pipelineRun: (p) => ipcRenderer.invoke('pipeline-run', p),
+  pipelineTemplates: () => ipcRenderer.invoke('pipeline-templates'),
+  pipelineSave: (p) => ipcRenderer.invoke('pipeline-save', p),
+  pipelineDelete: (id) => ipcRenderer.invoke('pipeline-delete', id),
+  // 会话分支
+  branchFromTurn: (convId, turnIdx) => ipcRenderer.invoke('branch-from-turn', convId, turnIdx),
+  // 成本预算
+  getBudget: () => ipcRenderer.invoke('get-budget'),
+  saveBudget: (b) => ipcRenderer.invoke('save-budget', b),
+  getCostStats: () => ipcRenderer.invoke('cost-stats'),
+  // Prompt 模板
+  templateList: () => ipcRenderer.invoke('template-list'),
+  templateSave: (t) => ipcRenderer.invoke('template-save', t),
+  templateDelete: (id) => ipcRenderer.invoke('template-delete', id),
+  // 可视化规则生成
+  rulesGenerate: (cfg) => ipcRenderer.invoke('rules-generate', cfg),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

@@ -588,4 +588,67 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 .arena-err { color: #f87171; white-space: pre-wrap; user-select: text; }
 .arena-col-foot { padding: 4px 12px; font-size: 11px; color: var(--text-faint); border-top: 1px solid var(--border); background: var(--bg-elev); }
 
+/* ── Pipeline 编排 ── */
+#pipeline-root, #templates-root, #cost-root { padding: 20px; overflow-y: auto; height: 100%; }
+.pl-head, .tpl-head, .cost-head { margin-bottom: 20px; }
+.pl-title, .tpl-title, .cost-title { font-size: 18px; font-weight: 700; }
+.pl-sub, .tpl-sub, .cost-sub { color: var(--text-dim); font-size: 12px; margin-top: 4px; }
+.pl-editor { background: var(--bg-elev); border-radius: 10px; padding: 16px; margin-bottom: 20px; }
+.pl-field { margin-bottom: 12px; }
+.pl-field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.pl-field .row { display: flex; gap: 6px; }
+.pl-field .row input { flex: 1; }
+.pl-stages-label { font-size: 13px; font-weight: 600; color: var(--text); margin: 12px 0 8px; }
+.pl-stage { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 8px; }
+.pl-stage-head { display: flex; gap: 6px; align-items: center; margin-bottom: 6px; }
+.pl-stage-label { width: 120px; flex: 0 0 120px; }
+.pl-stage-engine { width: 160px; flex: 0 0 160px; }
+.pl-stage-del { padding: 4px 8px; }
+.pl-stage-prompt { resize: vertical; min-height: 60px; }
+.pl-add-stage { margin: 8px 0; }
+.pl-actions { display: flex; gap: 8px; align-items: center; margin-top: 12px; }
+.pl-templates h3 { font-size: 14px; margin: 0 0 10px; }
+.pl-saved-item { background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px; padding: 10px; margin-bottom: 6px; }
+.pl-saved-name { font-weight: 600; }
+.pl-saved-meta { font-size: 11px; color: var(--text-dim); margin: 2px 0 6px; }
+.pl-saved-actions { display: flex; gap: 6px; }
+.pl-empty { color: var(--text-faint); font-style: italic; }
+.pl-loading { color: var(--text-dim); padding: 20px; }
 
+/* ── 模板库 ── */
+.tpl-body { display: flex; flex-direction: column; gap: 20px; }
+.tpl-cat h3 { font-size: 14px; margin: 0 0 10px; color: var(--text-dim); }
+.tpl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.tpl-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 14px; display: flex; flex-direction: column; gap: 4px; }
+.tpl-card:hover { border-color: var(--accent-dim); }
+.tpl-card-icon { font-size: 24px; }
+.tpl-card-name { font-weight: 600; font-size: 14px; }
+.tpl-card-desc { font-size: 11px; color: var(--text-dim); flex: 1; }
+.tpl-card-engine { font-size: 10px; color: var(--accent); font-family: ui-monospace, monospace; }
+.tpl-card-actions { display: flex; gap: 6px; margin-top: 6px; }
+
+/* ── 成本看板 ── */
+.cost-overview { display: flex; gap: 12px; margin-bottom: 20px; }
+.cost-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 16px; flex: 1; text-align: center; }
+.cc-num { font-size: 22px; font-weight: 700; color: var(--accent); }
+.cc-lbl { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.cost-chart-section { margin-bottom: 20px; }
+.cost-chart-section h3, .cost-engine-section h3, .cost-budget-section h3 { font-size: 14px; margin: 0 0 10px; }
+#cost-canvas { width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+.cost-engines { display: flex; flex-direction: column; gap: 8px; }
+.cost-eng { display: flex; align-items: center; gap: 10px; }
+.ce-name { width: 140px; font-size: 12px; }
+.ce-bar { flex: 1; height: 20px; background: var(--bg-input); border-radius: 4px; overflow: hidden; }
+.ce-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width .3s; }
+.ce-val { width: 80px; text-align: right; font-size: 12px; color: var(--text-dim); font-family: ui-monospace, monospace; }
+.cost-empty { color: var(--text-faint); font-style: italic; padding: 12px; }
+.cost-budget-section { margin-top: 20px; }
+.cost-budget-form { background: var(--bg-elev); border-radius: 10px; padding: 16px; }
+.cost-budget-form .field { margin-bottom: 10px; }
+.cost-loading { color: var(--text-dim); padding: 20px; }
+
+/* ── 规则生成器 modal ── */
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: flex; align-items: center; justify-content: center; z-index: 9999; }
+.rg-body { max-height: 60vh; overflow-y: auto; }
+.rg-body .field { margin-bottom: 10px; }
+.rg-body label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }

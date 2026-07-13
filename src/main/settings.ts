@@ -24,6 +24,7 @@ const DEFAULTS: AppSettings = {
   embedBaseURL: '',
   embedApiKey: '',
   embedModel: 'embedding-3',
+  budget: { enabled: false, perSessionLimit: 0, dailyLimit: 0 },
 };
 
 let cache: AppSettings | null = null;

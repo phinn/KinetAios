@@ -17,7 +17,7 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
-let currentView: 'chat' | 'settings' | 'workbench' = 'chat';
+let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' = 'chat';
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
@@ -29,6 +29,8 @@ let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入�
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
 let HOME_DIR = ''; // 用户主目录(brand API 同步拿到);cwd === HOME_DIR 时显示「未分类」
 let lang: Lang = 'zh-CN'; // UI 语言(启动从 settings 读,切语言后更新 + applyI18nDOM)
+// 成本预算缓存(设置页 load 时从 main 读,save 时原样回写,避免 async readSettingsForm)
+let budgetCache: AppSettings['budget'] = { enabled: false, perSessionLimit: 0, dailyLimit: 0 };
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
 let activeTab: 'chat' | 'files' | 'git' | 'rules' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
@@ -653,6 +655,13 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       speak.textContent = '🔊';
       speak.onclick = () => speakText(t.answer ?? '');
       bar.appendChild(speak);
+      // 分支按钮:从此 turn 分叉出新会话(类似 git branch)
+      const branch = document.createElement('button');
+      branch.className = 'ghost ai-branch';
+      branch.title = tr('branch.from');
+      branch.textContent = '🌿';
+      branch.onclick = () => void branchFromTurn(conv.id, i);
+      bar.appendChild(branch);
       body.appendChild(bar);
     }
     wrap.appendChild(aiMsg);
@@ -713,11 +722,11 @@ function applyTheme(theme: 'dark' | 'light'): void {
 
 async function showSettings() {
   currentView = 'settings';
-  document.getElementById('chat-view')!.classList.remove('active');
-  document.getElementById('workbench-view')!.classList.remove('active');
+  hideAllViews();
   document.getElementById('settings-view')!.classList.add('active');
   syncViewButtons();
   const s = await api.getSettings();
+  budgetCache = s.budget ?? { enabled: false, perSessionLimit: 0, dailyLimit: 0 };
   const root = document.getElementById('settings')!;
   root.innerHTML = `
     <div class="card">
@@ -920,6 +929,7 @@ function readSettingsForm(): AppSettings {
     embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
     embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
     embedModel: (document.getElementById('s-embed-model') as HTMLInputElement).value.trim() || 'embedding-3',
+    budget: budgetCache,
   };
 }
 
@@ -993,6 +1003,9 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('m-memory')!.onclick = () => { closeMoreMenu(); void openMemoryPanel(); };
   document.getElementById('m-cron')!.onclick = () => { closeMoreMenu(); void openCronPanel(); };
   document.getElementById('m-snap')!.onclick = () => { closeMoreMenu(); void openSnapshotPanel(); };
+  document.getElementById('m-pipeline')!.onclick = () => { closeMoreMenu(); showPipeline(); };
+  document.getElementById('m-templates')!.onclick = () => { closeMoreMenu(); showTemplates(); };
+  document.getElementById('m-cost')!.onclick = () => { closeMoreMenu(); showCost(); };
 
   // ⋯ 更多菜单:点击切换 open,点外部收起
   const moreMenu = document.getElementById('sb-more-menu')!;
@@ -1015,6 +1028,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('btn-rules-reload')!.onclick = () => {
     if (rulesCwd) void loadRules(rulesCwd);
   };
+  document.getElementById('btn-rules-gen')!.onclick = () => openRuleGenerator();
   document.getElementById('btn-clear')!.onclick = () => selectedId && api.clearConversation(selectedId);
   document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);
   document.getElementById('btn-send')!.onclick = send;
@@ -1303,15 +1317,47 @@ function showChat() {
   currentView = 'chat';
   document.getElementById('settings-view')!.classList.remove('active');
   document.getElementById('workbench-view')!.classList.remove('active');
+  document.getElementById('pipeline-view')!.classList.remove('active');
+  document.getElementById('templates-view')!.classList.remove('active');
+  document.getElementById('cost-view')!.classList.remove('active');
   document.getElementById('chat-view')!.classList.add('active');
   syncViewButtons();
   renderMain();
 }
 
+function showPipeline() {
+  currentView = 'pipeline';
+  hideAllViews();
+  document.getElementById('pipeline-view')!.classList.add('active');
+  syncViewButtons();
+  renderPipeline();
+}
+
+function showTemplates() {
+  currentView = 'templates';
+  hideAllViews();
+  document.getElementById('templates-view')!.classList.add('active');
+  syncViewButtons();
+  renderTemplates();
+}
+
+function showCost() {
+  currentView = 'cost';
+  hideAllViews();
+  document.getElementById('cost-view')!.classList.add('active');
+  syncViewButtons();
+  renderCost();
+}
+
+function hideAllViews(): void {
+  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view']) {
+    document.getElementById(id)!.classList.remove('active');
+  }
+}
+
 function showWorkbench() {
   currentView = 'workbench';
-  document.getElementById('chat-view')!.classList.remove('active');
-  document.getElementById('settings-view')!.classList.remove('active');
+  hideAllViews();
   document.getElementById('workbench-view')!.classList.add('active');
   syncViewButtons();
   renderWorkbench();
@@ -2329,5 +2375,449 @@ function editCronItem(id: string | null): void {
     }
     card.remove();
     renderCronList();
+  };
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: Pipeline 跨引擎编排 UI
+// ──────────────────────────────────────────────────────────────────────
+
+// pipeline 编辑器状态
+let pipelineStages: Array<{ engine: EngineKind; prompt: string; label: string }> = [];
+let pipelineName = '';
+
+function renderPipeline(): void {
+  const root = document.getElementById('pipeline-root')!;
+  const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+  root.innerHTML = `
+    <div class="pl-head">
+      <div class="pl-title">${esc(tr('pipeline.title'))}</div>
+      <div class="pl-sub">${esc(tr('pipeline.sub'))}</div>
+    </div>
+    <div class="pl-editor">
+      <div class="pl-field">
+        <label>${esc(tr('pipeline.name'))}</label>
+        <input id="pl-name" value="${esc(pipelineName)}" placeholder="${esc(tr('pipeline.namePh'))}" />
+      </div>
+      <div class="pl-field">
+        <label>${esc(tr('pipeline.cwd'))}</label>
+        <div class="row">
+          <input id="pl-cwd" value="${esc(cwd)}" placeholder="${esc(tr('head.cwdPh'))}" />
+          <button class="ghost" id="pl-pick">${esc(tr('head.pickDir'))}</button>
+        </div>
+      </div>
+      <div class="pl-stages-label">${esc(tr('pipeline.stages'))}</div>
+      <div id="pl-stages"></div>
+      <div class="pl-add-stage">
+        <button class="ghost" id="pl-add">${esc(tr('pipeline.addStage'))}</button>
+      </div>
+      <div class="pl-actions">
+        <button class="primary" id="pl-run">${esc(tr('pipeline.run'))}</button>
+        <button class="ghost" id="pl-save">${esc(tr('pipeline.save'))}</button>
+        <span class="test-msg" id="pl-msg"></span>
+      </div>
+    </div>
+    <div class="pl-templates">
+      <h3>${esc(tr('pipeline.saved'))}</h3>
+      <div id="pl-saved-list"></div>
+    </div>
+  `;
+
+  // 初始 stage 列表
+  if (!pipelineStages.length) {
+    pipelineStages = [
+      { engine: 'direct', prompt: '', label: 'Step 1' },
+    ];
+  }
+  renderPipelineStages();
+  renderPipelineSaved();
+
+  document.getElementById('pl-add')!.onclick = () => {
+    pipelineStages.push({ engine: 'direct', prompt: '', label: `Step ${pipelineStages.length + 1}` });
+    renderPipelineStages();
+  };
+  document.getElementById('pl-pick')!.onclick = async () => {
+    const dir = await api.pickDirectory();
+    if (dir) (document.getElementById('pl-cwd') as HTMLInputElement).value = dir;
+  };
+  document.getElementById('pl-run')!.onclick = async () => {
+    const name = (document.getElementById('pl-name') as HTMLInputElement).value.trim() || 'Pipeline';
+    const cwdVal = (document.getElementById('pl-cwd') as HTMLInputElement).value.trim();
+    if (!cwdVal) { showPlMsg(tr('pipeline.noCwd'), false); return; }
+    // 从 DOM 读回所有 stage 数据
+    collectPipelineStages();
+    const valid = pipelineStages.filter((s) => s.prompt.trim());
+    if (!valid.length) { showPlMsg(tr('pipeline.empty'), false); return; }
+    showPlMsg(tr('pipeline.running'), true);
+    const r = await api.pipelineRun({ name, stages: valid, cwd: cwdVal });
+    if (r.ok && r.convId) {
+      showPlMsg(tr('pipeline.done'), true);
+      selectedId = r.convId;
+      showChat();
+      renderSidebar();
+    } else {
+      showPlMsg(r.error ?? 'error', false);
+    }
+  };
+  document.getElementById('pl-save')!.onclick = async () => {
+    const name = (document.getElementById('pl-name') as HTMLInputElement).value.trim();
+    if (!name) { showPlMsg(tr('pipeline.nameRequired'), false); return; }
+    const cwdVal = (document.getElementById('pl-cwd') as HTMLInputElement).value.trim();
+    collectPipelineStages();
+    await api.pipelineSave({ id: crypto.randomUUID(), name, stages: pipelineStages, cwd: cwdVal, createdAt: Date.now() });
+    showPlMsg(tr('pipeline.savedOk'), true);
+    renderPipelineSaved();
+  };
+}
+
+function showPlMsg(text: string, ok: boolean): void {
+  const el = document.getElementById('pl-msg')!;
+  el.textContent = text;
+  el.className = 'test-msg ' + (ok ? 'ok' : 'bad');
+}
+
+function renderPipelineStages(): void {
+  const container = document.getElementById('pl-stages')!;
+  container.innerHTML = pipelineStages.map((s, i) => `
+    <div class="pl-stage" data-idx="${i}">
+      <div class="pl-stage-head">
+        <input class="pl-stage-label" value="${esc(s.label)}" placeholder="Step ${i + 1}" />
+        <select class="pl-stage-engine">
+          <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
+          ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>Claude Code</option>` : ''}
+          ${cliEnabled ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
+        </select>
+        ${pipelineStages.length > 1 ? `<button class="ghost pl-stage-del" data-idx="${i}">✕</button>` : ''}
+      </div>
+      <textarea class="pl-stage-prompt" placeholder="${esc(tr('pipeline.stagePrompt'))}">${esc(s.prompt)}</textarea>
+    </div>
+  `).join('');
+  // 绑定删除
+  container.querySelectorAll<HTMLElement>('.pl-stage-del').forEach((btn) => {
+    btn.onclick = () => {
+      const idx = Number(btn.dataset.idx);
+      pipelineStages.splice(idx, 1);
+      renderPipelineStages();
+    };
+  });
+}
+
+function collectPipelineStages(): void {
+  const stages = document.querySelectorAll<HTMLElement>('.pl-stage');
+  pipelineStages = Array.from(stages).map((el, i) => ({
+    engine: (el.querySelector('.pl-stage-engine') as HTMLSelectElement).value as EngineKind,
+    prompt: (el.querySelector('.pl-stage-prompt') as HTMLTextAreaElement).value,
+    label: (el.querySelector('.pl-stage-label') as HTMLInputElement).value || `Step ${i + 1}`,
+  }));
+}
+
+async function renderPipelineSaved(): Promise<void> {
+  const list = document.getElementById('pl-saved-list');
+  if (!list) return;
+  const templates = await api.pipelineTemplates();
+  if (!templates.length) {
+    list.innerHTML = `<div class="pl-empty">${esc(tr('pipeline.noSaved'))}</div>`;
+    return;
+  }
+  list.innerHTML = templates.map((t) => `
+    <div class="pl-saved-item" data-id="${esc(t.id)}">
+      <div class="pl-saved-name">${esc(t.name)}</div>
+      <div class="pl-saved-meta">${t.stages.length} steps · ${esc(t.stages.map((s: any) => s.label || s.engine).join(' → '))}</div>
+      <div class="pl-saved-actions">
+        <button class="ghost pl-load" data-id="${esc(t.id)}">${esc(tr('pipeline.load'))}</button>
+        <button class="ghost pl-del-saved" data-id="${esc(t.id)}">${esc(tr('pipeline.delete'))}</button>
+      </div>
+    </div>
+  `).join('');
+  list.querySelectorAll<HTMLElement>('.pl-load').forEach((btn) => {
+    btn.onclick = () => {
+      const tpl = templates.find((t) => t.id === btn.dataset.id);
+      if (!tpl) return;
+      pipelineName = tpl.name;
+      pipelineStages = tpl.stages.map((s: any) => ({ ...s }));
+      (document.getElementById('pl-name') as HTMLInputElement).value = tpl.name;
+      if (tpl.cwd) (document.getElementById('pl-cwd') as HTMLInputElement).value = tpl.cwd;
+      renderPipelineStages();
+    };
+  });
+  list.querySelectorAll<HTMLElement>('.pl-del-saved').forEach((btn) => {
+    btn.onclick = async () => {
+      await api.pipelineDelete(btn.dataset.id!);
+      renderPipelineSaved();
+    };
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 模板库 UI
+// ──────────────────────────────────────────────────────────────────────
+
+function renderTemplates(): void {
+  const root = document.getElementById('templates-root')!;
+  root.innerHTML = `<div class="tpl-loading">${esc(tr('common.loading'))}</div>`;
+  api.templateList().then((templates) => {
+    // 按 category 分组
+    const groups = new Map<string, typeof templates>();
+    for (const tpl of templates) {
+      const cat = tpl.category || '其他';
+      if (!groups.has(cat)) groups.set(cat, []);
+      groups.get(cat)!.push(tpl);
+    }
+    root.innerHTML = `
+      <div class="tpl-head">
+        <div class="tpl-title">${esc(tr('templates.title'))}</div>
+        <div class="tpl-sub">${esc(tr('templates.sub'))}</div>
+      </div>
+      <div class="tpl-body">
+        ${[...groups.entries()].map(([cat, items]) => `
+          <div class="tpl-cat">
+            <h3>${esc(cat)}</h3>
+            <div class="tpl-grid">
+              ${items.map((tpl) => `
+                <div class="tpl-card" data-id="${esc(tpl.id)}">
+                  <div class="tpl-card-icon">${tpl.icon || '📋'}</div>
+                  <div class="tpl-card-name">${esc(tpl.name)}</div>
+                  <div class="tpl-card-desc">${esc(tpl.description)}</div>
+                  <div class="tpl-card-engine">${esc(ENGINE_LABELS[tpl.engine])}</div>
+                  <div class="tpl-card-actions">
+                    <button class="primary tpl-use" data-id="${esc(tpl.id)}">${esc(tr('templates.use'))}</button>
+                    ${tpl.builtin ? '' : `<button class="ghost tpl-del" data-id="${esc(tpl.id)}">✕</button>`}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+    // 绑定使用按钮
+    root.querySelectorAll<HTMLElement>('.tpl-use').forEach((btn) => {
+      btn.onclick = async () => {
+        const tpl = templates.find((t) => t.id === btn.dataset.id);
+        if (!tpl) return;
+        const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+        const conv = await api.newConversation(cwd || undefined, tpl.engine);
+        selectedId = conv.id;
+        showChat();
+        renderSidebar();
+        // 填入 prompt
+        const composer = document.getElementById('composer') as HTMLTextAreaElement;
+        composer.value = tpl.prompt;
+        autosize(composer);
+        composer.focus();
+      };
+    });
+    root.querySelectorAll<HTMLElement>('.tpl-del').forEach((btn) => {
+      btn.onclick = async () => {
+        await api.templateDelete(btn.dataset.id!);
+        renderTemplates();
+      };
+    });
+  });
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 成本看板 UI — Canvas 趋势图 + 预算熔断
+// ──────────────────────────────────────────────────────────────────────
+
+function renderCost(): void {
+  const root = document.getElementById('cost-root')!;
+  root.innerHTML = `<div class="cost-loading">${esc(tr('common.loading'))}</div>`;
+  Promise.all([api.getCostStats(), api.getBudget()]).then(([stats, budget]) => {
+    budgetCache = budget;
+    const totalAll = stats.today + stats.week; // 近似
+    root.innerHTML = `
+      <div class="cost-head">
+        <div class="cost-title">${esc(tr('cost.title'))}</div>
+        <div class="cost-sub">${esc(tr('cost.sub'))}</div>
+      </div>
+      <div class="cost-overview">
+        <div class="cost-card"><div class="cc-num">$${stats.today.toFixed(4)}</div><div class="cc-lbl">${esc(tr('cost.today'))}</div></div>
+        <div class="cost-card"><div class="cc-num">$${stats.week.toFixed(4)}</div><div class="cc-lbl">${esc(tr('cost.week'))}</div></div>
+        <div class="cost-card"><div class="cc-num">$${stats.month.toFixed(4)}</div><div class="cc-lbl">${esc(tr('cost.month'))}</div></div>
+      </div>
+      <div class="cost-chart-section">
+        <h3>${esc(tr('cost.trend'))}</h3>
+        <canvas id="cost-canvas" width="800" height="200"></canvas>
+      </div>
+      <div class="cost-engine-section">
+        <h3>${esc(tr('cost.byEngine'))}</h3>
+        <div class="cost-engines">
+          ${Object.entries(stats.byEngine).map(([eng, cost]) => {
+            const maxC = Math.max(0.0001, ...Object.values(stats.byEngine));
+            const pct = Math.round((cost / maxC) * 100);
+            return `<div class="cost-eng">
+              <span class="ce-name">${esc(ENGINE_LABELS[eng as EngineKind] || eng)}</span>
+              <div class="ce-bar"><div class="ce-fill" style="width:${pct}%"></div></div>
+              <span class="ce-val">$${cost.toFixed(4)}</span>
+            </div>`;
+          }).join('') || `<div class="cost-empty">${esc(tr('cost.noData'))}</div>`}
+        </div>
+      </div>
+      <div class="cost-budget-section">
+        <h3>${esc(tr('cost.budget'))}</h3>
+        <div class="cost-budget-form">
+          <div class="field">
+            <label><input type="checkbox" id="cb-enabled" ${budget.enabled ? 'checked' : ''} style="width:auto;margin-right:6px" />${esc(tr('cost.budgetEnable'))}</label>
+          </div>
+          <div class="field">
+            <label>${esc(tr('cost.perSession'))}</label>
+            <input id="cb-session" type="number" step="0.01" value="${budget.perSessionLimit}" placeholder="0 = 不限" />
+          </div>
+          <div class="field">
+            <label>${esc(tr('cost.dailyLimit'))}</label>
+            <input id="cb-daily" type="number" step="0.01" value="${budget.dailyLimit}" placeholder="0 = 不限" />
+          </div>
+          <div class="field">
+            <button class="primary" id="cb-save">${esc(tr('cost.saveBudget'))}</button>
+            <span class="test-msg" id="cb-msg"></span>
+          </div>
+        </div>
+      </div>
+    `;
+    // 画趋势图
+    drawCostChart(stats.byDay);
+    // 保存预算
+    document.getElementById('cb-save')!.onclick = async () => {
+      const b = {
+        enabled: (document.getElementById('cb-enabled') as HTMLInputElement).checked,
+        perSessionLimit: Number((document.getElementById('cb-session') as HTMLInputElement).value) || 0,
+        dailyLimit: Number((document.getElementById('cb-daily') as HTMLInputElement).value) || 0,
+      };
+      const r = await api.saveBudget(b);
+      const msg = document.getElementById('cb-msg')!;
+      msg.textContent = r.ok ? tr('cost.budgetSaved') : 'error';
+      msg.className = 'test-msg ' + (r.ok ? 'ok' : 'bad');
+      if (r.ok) budgetCache = b;
+    };
+  });
+}
+
+// Canvas 画 14 天成本趋势柱状图(零依赖)
+function drawCostChart(data: Array<{ date: string; cost: number }>): void {
+  const canvas = document.getElementById('cost-canvas') as HTMLCanvasElement;
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d')!;
+  const dpr = window.devicePixelRatio || 1;
+  const cw = canvas.clientWidth || 800;
+  const ch = 200;
+  canvas.width = cw * dpr;
+  canvas.height = ch * dpr;
+  ctx.scale(dpr, dpr);
+  const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg-elev').trim() || '#242429';
+  const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#e8b339';
+  const border = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#34343c';
+  const textDim = getComputedStyle(document.documentElement).getPropertyValue('--text-dim').trim() || '#9a9aa4';
+  // 背景
+  ctx.fillStyle = bg;
+  ctx.fillRect(0, 0, cw, ch);
+  const maxCost = Math.max(0.001, ...data.map((d) => d.cost));
+  const barW = (cw - 40) / data.length;
+  const chartH = ch - 50;
+  // 轴线
+  ctx.strokeStyle = border;
+  ctx.beginPath();
+  ctx.moveTo(30, 10);
+  ctx.lineTo(30, chartH + 10);
+  ctx.lineTo(cw - 10, chartH + 10);
+  ctx.stroke();
+  // 柱状
+  data.forEach((d, i) => {
+    const h = maxCost > 0 ? (d.cost / maxCost) * chartH : 0;
+    const x = 32 + i * barW;
+    const y = chartH + 10 - h;
+    ctx.fillStyle = accent;
+    ctx.fillRect(x, y, barW - 3, h);
+    // x 轴日期(只显示 月/日)
+    if (i % 2 === 0) {
+      ctx.fillStyle = textDim;
+      ctx.font = '10px sans-serif';
+      const label = d.date.slice(5); // MM-DD
+      ctx.fillText(label, x, chartH + 22);
+    }
+  });
+  // y 轴最大值标注
+  ctx.fillStyle = textDim;
+  ctx.font = '10px sans-serif';
+  ctx.fillText(`$${maxCost.toFixed(4)}`, 2, 15);
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 会话分支 — 在 turn 菜单中添加"从此处分叉"
+// ──────────────────────────────────────────────────────────────────────
+
+async function branchFromTurn(convId: string, turnIdx: number): Promise<void> {
+  const r = await api.branchFromTurn(convId, turnIdx);
+  if (r.ok && r.convId) {
+    selectedId = r.convId;
+    showChat();
+    renderSidebar();
+  }
+}
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 可视化规则生成器 — 在 rules tab 中添加
+// ──────────────────────────────────────────────────────────────────────
+
+function openRuleGenerator(): void {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.id = 'rule-gen-modal';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width:560px">
+      <h3>${esc(tr('rules.gen.title'))}</h3>
+      <div class="rg-body">
+        <div class="field"><label>${esc(tr('rules.gen.lang'))}</label><select id="rg-lang">
+          <option value="typescript">TypeScript</option>
+          <option value="javascript">JavaScript</option>
+          <option value="python">Python</option>
+          <option value="rust">Rust</option>
+          <option value="go">Go</option>
+          <option value="swift">Swift</option>
+        </select></div>
+        <div class="field"><label>${esc(tr('rules.gen.naming'))}</label><select id="rg-naming">
+          <option value="camelCase">camelCase</option>
+          <option value="PascalCase">PascalCase</option>
+          <option value="snake_case">snake_case</option>
+          <option value="SCREAMING_SNAKE">SCREAMING_SNAKE (常量)</option>
+        </select></div>
+        <div class="field"><label>${esc(tr('rules.gen.indent'))}</label><select id="rg-indent">
+          <option value="2spaces">2 空格</option>
+          <option value="4spaces">4 空格</option>
+          <option value="tabs">Tab</option>
+        </select></div>
+        <div class="field"><label>${esc(tr('rules.gen.comment'))}</label><select id="rg-comment">
+          <option value="bilingual">中英双语</option>
+          <option value="chinese">仅中文</option>
+          <option value="english">仅英文</option>
+          <option value="none">不加注释</option>
+        </select></div>
+        <div class="field"><label>${esc(tr('rules.gen.banned'))}</label><input id="rg-banned" placeholder="eval, exec, ..." /></div>
+        <div class="field"><label>${esc(tr('rules.gen.extra'))}</label><textarea id="rg-extra" rows="3" placeholder="${esc(tr('rules.gen.extraPh'))}"></textarea></div>
+      </div>
+      <div class="actions">
+        <button id="rg-cancel">${esc(tr('common.cancel'))}</button>
+        <button class="primary" id="rg-gen">${esc(tr('rules.gen.generate'))}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('rg-cancel')!.onclick = () => modal.remove();
+  document.getElementById('rg-gen')!.onclick = async () => {
+    const cfg = {
+      codeStyle: (document.getElementById('rg-lang') as HTMLSelectElement).value,
+      namingConvention: (document.getElementById('rg-naming') as HTMLSelectElement).value,
+      indent: (document.getElementById('rg-indent') as HTMLSelectElement).value as 'tabs' | '2spaces' | '4spaces',
+      commentStyle: (document.getElementById('rg-comment') as HTMLSelectElement).value as 'bilingual' | 'chinese' | 'english' | 'none',
+      bannedApis: (document.getElementById('rg-banned') as HTMLInputElement).value,
+      extraRules: (document.getElementById('rg-extra') as HTMLTextAreaElement).value,
+    };
+    const r = await api.rulesGenerate(cfg);
+    if (r.ok && r.content) {
+      // 写入 rules editor
+      const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
+      if (editor) editor.value = r.content;
+      modal.remove();
+    }
   };
 }

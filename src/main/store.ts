@@ -39,6 +39,12 @@ export function initStore(): void {
       enabled INTEGER DEFAULT 1, last_run INTEGER, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS memory_embeddings(
       memory_id TEXT PRIMARY KEY, vec BLOB, model TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS pipelines(
+      id TEXT PRIMARY KEY, name TEXT, data TEXT, cwd TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS prompt_templates(
+      id TEXT PRIMARY KEY, name TEXT, data TEXT, created_at REAL);
+    CREATE TABLE IF NOT EXISTS cost_log(
+      id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -335,4 +341,62 @@ export function cosine(a: Float32Array, b: Float32Array): number {
   }
   if (na === 0 || nb === 0) return 0;
   return dot / (Math.sqrt(na) * Math.sqrt(nb));
+}
+
+// MARK: pipelines — 跨引擎编排流水线持久化
+export function savePipeline(p: { id: string; name: string; data: string; cwd: string }): void {
+  db.prepare('INSERT OR REPLACE INTO pipelines(id, name, data, cwd, created_at) VALUES(?,?,?,?,?);')
+    .run(p.id, p.name, p.data, p.cwd, Date.now());
+}
+export function loadPipelines(): Array<{ id: string; name: string; data: string; cwd: string; createdAt: number }> {
+  return (db.prepare('SELECT id, name, data, cwd, created_at AS createdAt FROM pipelines ORDER BY created_at DESC;').all()) as any;
+}
+export function deletePipeline(id: string): void {
+  db.prepare('DELETE FROM pipelines WHERE id=?;').run(id);
+}
+
+// MARK: prompt templates
+export function saveTemplate(t: { id: string; name: string; data: string }): void {
+  db.prepare('INSERT OR REPLACE INTO prompt_templates(id, name, data, created_at) VALUES(?,?,?,?);')
+    .run(t.id, t.name, t.data, Date.now());
+}
+export function loadTemplates(): Array<{ id: string; name: string; data: string }> {
+  return (db.prepare('SELECT id, name, data FROM prompt_templates ORDER BY created_at DESC;').all()) as any;
+}
+export function deleteTemplate(id: string): void {
+  db.prepare('DELETE FROM prompt_templates WHERE id=?;').run(id);
+}
+
+// MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
+export function logCost(convId: string, engine: string, amount: number, tokens: number): void {
+  db.prepare('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts) VALUES(?,?,?,?,?,?);')
+    .run(rid2(), convId, engine, amount, tokens, Date.now());
+}
+export function costStats(): { today: number; week: number; month: number; byEngine: Record<string, number>; byDay: Array<{ date: string; cost: number }> } {
+  const now = Date.now();
+  const dayMs = 86400_000;
+  const all = (db.prepare('SELECT engine, amount, ts FROM cost_log ORDER BY ts ASC;').all()) as Array<{ engine: string; amount: number; ts: number }>;
+  let today = 0, week = 0, month = 0;
+  const byEngine: Record<string, number> = {};
+  const dayMap = new Map<string, number>();
+  for (const r of all) {
+    byEngine[r.engine] = (byEngine[r.engine] ?? 0) + r.amount;
+    if (r.ts >= now - dayMs) today += r.amount;
+    if (r.ts >= now - 7 * dayMs) week += r.amount;
+    if (r.ts >= now - 30 * dayMs) month += r.amount;
+    const d = new Date(r.ts).toISOString().slice(0, 10);
+    dayMap.set(d, (dayMap.get(d) ?? 0) + r.amount);
+  }
+  // 取最近 14 天
+  const byDay: Array<{ date: string; cost: number }> = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = new Date(now - i * dayMs).toISOString().slice(0, 10);
+    byDay.push({ date: d, cost: dayMap.get(d) ?? 0 });
+  }
+  return { today, week, month, byEngine, byDay };
+}
+
+// 轻量 id 生成(不导入 shared 避免循环)
+function rid2(): string {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
