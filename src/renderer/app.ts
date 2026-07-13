@@ -17,7 +17,7 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
-let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' = 'chat';
+let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' = 'chat';
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
@@ -26,6 +26,7 @@ let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
+let imageAttachments: { name: string; dataUrl: string }[] = []; // 🖼️ 图片附件(base64 data URL)
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
 let HOME_DIR = ''; // 用户主目录(brand API 同步拿到);cwd === HOME_DIR 时显示「未分类」
 let lang: Lang = 'zh-CN'; // UI 语言(启动从 settings 读,切语言后更新 + applyI18nDOM)
@@ -662,6 +663,22 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       branch.textContent = '🌿';
       branch.onclick = () => void branchFromTurn(conv.id, i);
       bar.appendChild(branch);
+      // 回放按钮:逐步回放工具调用
+      if (t.steps.length > 0) {
+        const replay = document.createElement('button');
+        replay.className = 'ghost ai-replay';
+        replay.title = tr('replay.title');
+        replay.textContent = '🎬';
+        replay.onclick = () => openReplay(i);
+        bar.appendChild(replay);
+      }
+      // 导出按钮:导出整个会话
+      const exportBtn = document.createElement('button');
+      exportBtn.className = 'ghost ai-export';
+      exportBtn.title = tr('export.title');
+      exportBtn.textContent = '📤';
+      exportBtn.onclick = () => openExportMenu(conv.id);
+      bar.appendChild(exportBtn);
       body.appendChild(bar);
     }
     wrap.appendChild(aiMsg);
@@ -1006,6 +1023,8 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('m-pipeline')!.onclick = () => { closeMoreMenu(); showPipeline(); };
   document.getElementById('m-templates')!.onclick = () => { closeMoreMenu(); showTemplates(); };
   document.getElementById('m-cost')!.onclick = () => { closeMoreMenu(); showCost(); };
+  document.getElementById('m-ctools')!.onclick = () => { closeMoreMenu(); showCTools(); };
+  document.getElementById('m-timeline')!.onclick = () => { closeMoreMenu(); showTimeline(); };
 
   // ⋯ 更多菜单:点击切换 open,点外部收起
   const moreMenu = document.getElementById('sb-more-menu')!;
@@ -1173,6 +1192,32 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     if (files.length) void addFiles(files);
   });
 
+  // 🖼️ 粘贴图片(Ctrl+V):直接从剪贴板读图片 → base64 附件。
+  composer.addEventListener('paste', (e: ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (const it of Array.from(items)) {
+      if (it.type.startsWith('image/')) {
+        const f = it.getAsFile();
+        if (f) {
+          e.preventDefault();
+          void addFiles([f]);
+        }
+      }
+    }
+  });
+
+  // 📷 截图按钮:调主进程截全屏 → base64 附件。
+  const captureBtn = document.getElementById('btn-capture');
+  if (captureBtn) {
+    captureBtn.onclick = async () => {
+      const r = await api.captureScreen();
+      if (!r.ok || !r.dataUrl) { alert(tr('vision.captureErr', { msg: r.error ?? '' })); return; }
+      imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: r.dataUrl });
+      renderAttach();
+    };
+  }
+
   // Skill 按钮:打开 skill 菜单(复用 / 的逻辑)。Direct 才有意义。
   document.getElementById('btn-skill')!.onclick = () => {
     if (selectedId && convs.get(selectedId)?.engine !== 'direct') return;
@@ -1294,7 +1339,7 @@ async function send() {
   closeSlash();
   const composer = document.getElementById('composer') as HTMLTextAreaElement;
   const typed = composer.value;
-  if (!typed.trim() && !attachments.length) return;
+  if (!typed.trim() && !attachments.length && !imageAttachments.length) return;
   // @文件引用 + 📎 附件:内容拼到正文前(代码块包裹,模型可直接读取)。
   const cwd = convs.get(selectedId)?.cwd ?? '';
   const at = cwd ? await resolveAtFiles(typed, cwd) : { files: [], missing: [] };
@@ -1305,10 +1350,26 @@ async function send() {
     attachments = [];
     renderAttach();
   }
+  // 🖼️ 图片附件:发给 Direct 引擎时,标记 prompt 含图片(主进程 send 把 imageAttachments 拼进 ChatMsg content parts)。
+  // ponytail: 非 Direct 引擎不支持图片,图片描述只在 Direct 路径生效。退而求其次:附一个文字说明。
+  if (imageAttachments.length) {
+    const imgNote = imageAttachments.length === 1 ? `\n\n[📷 1 张图片已附加]` : `\n\n[📷 ${imageAttachments.length} 张图片已附加]`;
+    text += imgNote;
+  }
   if (at.missing.length) alert(tr('attach.missingAlert', { list: at.missing.join('\n') }));
   composer.value = '';
   autosize(composer);
   showChat();
+  // 把图片信息存在全局,send IPC 之后 main 进程取用(ponytail: 当前 send 只接受 text,
+  // 图片通过隐藏 DOM 存 base64 → main 进程读。为简单起见,把 dataURL 拼进 text 的特殊标记,
+  // Direct 引擎在 AgentLoop 拆出。)
+  if (imageAttachments.length) {
+    // 将图片 base64 作为特殊 JSON 块附加到 text 末尾,Direct 引擎的 send 拆解。
+    const imgs = imageAttachments.map((a) => JSON.stringify(a));
+    text += `\n\x00IMAGES${JSON.stringify(imgs)}\x00`;
+    imageAttachments = [];
+    renderAttach();
+  }
   await api.send(selectedId, text);
   document.getElementById('composer')!.focus();
 }
@@ -1349,8 +1410,24 @@ function showCost() {
   renderCost();
 }
 
+function showCTools() {
+  currentView = 'ctools';
+  hideAllViews();
+  document.getElementById('ctools-view')!.classList.add('active');
+  syncViewButtons();
+  renderCTools();
+}
+
+function showTimeline() {
+  currentView = 'timeline';
+  hideAllViews();
+  document.getElementById('timeline-view')!.classList.add('active');
+  syncViewButtons();
+  renderTimeline();
+}
+
 function hideAllViews(): void {
-  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view']) {
+  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view']) {
     document.getElementById(id)!.classList.remove('active');
   }
 }
@@ -1668,20 +1745,42 @@ function readTextTruncated(f: File, max: number): Promise<string> {
 
 async function addFiles(files: File[]): Promise<void> {
   for (const f of files) {
-    if (!isTextFile(f.name)) continue; // 二进制跳过
-    attachments.push({ name: f.name, content: await readTextTruncated(f, 20000) });
+    if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) {
+      // 图片附件 → base64 data URL(多模态)
+      if (f.size > 10 * 1024 * 1024) { alert(tr('vision.tooLarge', { mb: 10 })); continue; }
+      const dataUrl = await fileToDataUrl(f);
+      imageAttachments.push({ name: f.name, dataUrl });
+    } else if (isTextFile(f.name)) {
+      attachments.push({ name: f.name, content: await readTextTruncated(f, 20000) });
+    }
   }
   renderAttach();
 }
 
+// File → base64 data URL(用于图片附件)
+function fileToDataUrl(f: File): Promise<string> {
+  return new Promise((resolve) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result ?? ''));
+    r.onerror = () => resolve('');
+    r.readAsDataURL(f);
+  });
+}
+
 function renderAttach(): void {
   const row = document.getElementById('attach-row')!;
-  row.innerHTML = attachments
-    .map((a, i) => `<span class="chip"><span>${esc(a.name)}</span><span class="chip-x" data-i="${i}">×</span></span>`)
+  const fileChips = attachments
+    .map((a, i) => `<span class="chip"><span>📄 ${esc(a.name)}</span><span class="chip-x" data-kind="file" data-i="${i}">×</span></span>`)
     .join('');
+  const imgChips = imageAttachments
+    .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
+    .join('');
+  row.innerHTML = fileChips + imgChips;
   row.querySelectorAll<HTMLElement>('.chip-x').forEach((x) => {
     x.onclick = () => {
-      attachments.splice(Number(x.dataset.i), 1);
+      const idx = Number(x.dataset.i);
+      if (x.dataset.kind === 'img') imageAttachments.splice(idx, 1);
+      else attachments.splice(idx, 1);
       renderAttach();
     };
   });
@@ -2820,4 +2919,227 @@ function openRuleGenerator(): void {
       modal.remove();
     }
   };
+}
+
+// ── Custom Tools 视图 ──
+// 用户通过 UI 注册自定义工具(name + JSON Schema + shell 命令模板),Direct 引擎自动加载。
+async function renderCTools(): Promise<void> {
+  const root = document.getElementById('ctools-view')!;
+  const r = await api.customToolList();
+  const items = r.ok ? r.items ?? [] : [];
+  root.innerHTML = `
+    <div class="card">
+      <h2>${tr('ctool.title')}</h2>
+      <div class="sub">${tr('ctool.sub')}</div>
+      <button id="ct-add" class="primary" style="margin:12px 0">${tr('ctool.add')}</button>
+      <div id="ct-list"></div>
+    </div>
+  `;
+  const listEl = document.getElementById('ct-list')!;
+  if (!items.length) {
+    listEl.innerHTML = `<div class="empty-hint">${tr('ctool.empty')}</div>`;
+  } else {
+    listEl.innerHTML = items.map((it) => `
+      <div class="ctool-card" data-id="${it.id}">
+        <div class="ctool-head">
+          <strong>${esc(it.name)}</strong>
+          <span class="ctool-actions">
+            <button class="ghost sm ct-edit">${tr('ctool.test')}</button>
+            <button class="ghost sm ct-del">${tr('ctool.delete')}</button>
+          </span>
+        </div>
+        <div class="ctool-desc">${esc(it.description)}</div>
+        <div class="ctool-cmd"><code>${esc(it.commandTpl)}</code></div>
+      </div>
+    `).join('');
+    listEl.querySelectorAll<HTMLElement>('.ct-del').forEach((btn) => {
+      btn.onclick = async () => {
+        const card = btn.closest('.ctool-card') as HTMLElement;
+        await api.customToolDelete(card.dataset.id!);
+        showMsg(tr('ctool.deleted'), true);
+        renderCTools();
+      };
+    });
+  }
+  document.getElementById('ct-add')!.onclick = () => openCToolEditor(null);
+}
+
+function openCToolEditor(existing: { id: string; name: string; description: string; parameters: Record<string, unknown>; commandTpl: string; timeoutMs: number } | null): void {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:560px">
+      <h3>${tr('ctool.title')}</h3>
+      <div class="settings-grid">
+        <div class="field"><label>${tr('ctool.name')}</label><input id="ct-name" placeholder="${esc(tr('ctool.namePh'))}" value="${existing?.name ?? ''}" /></div>
+        <div class="field"><label>${tr('ctool.desc')}</label><input id="ct-desc" placeholder="${esc(tr('ctool.descPh'))}" value="${existing?.description ?? ''}" /></div>
+        <div class="field"><label>${tr('ctool.cmd')}</label><input id="ct-cmd" placeholder="${esc(tr('ctool.cmdPh'))}" value="${existing?.commandTpl ?? ''}" /></div>
+        <div class="field"><label>${tr('ctool.timeout')}</label><input id="ct-timeout" type="number" value="${existing?.timeoutMs ?? 120}" /></div>
+        <div class="field" style="grid-column:1/-1"><label>${tr('ctool.params')}</label><textarea id="ct-params" rows="4" placeholder="${esc(tr('ctool.paramsPh'))}">${existing ? esc(JSON.stringify(existing.parameters, null, 2)) : ''}</textarea></div>
+      </div>
+      <div class="actions">
+        <button id="ct-cancel">${tr('common.cancel')}</button>
+        <button class="primary" id="ct-save">${tr('ctool.save')}</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  document.getElementById('ct-cancel')!.onclick = () => modal.remove();
+  document.getElementById('ct-save')!.onclick = async () => {
+    const name = (document.getElementById('ct-name') as HTMLInputElement).value.trim();
+    if (!name) { alert(tr('ctool.nameRequired')); return; }
+    await api.customToolSave({
+      id: existing?.id ?? '',
+      name,
+      description: (document.getElementById('ct-desc') as HTMLInputElement).value,
+      parameters: JSON.parse((document.getElementById('ct-params') as HTMLTextAreaElement).value || '{}'),
+      commandTpl: (document.getElementById('ct-cmd') as HTMLInputElement).value,
+      timeoutMs: Number((document.getElementById('ct-timeout') as HTMLInputElement).value) || 120,
+    });
+    modal.remove();
+    showMsg(tr('ctool.saved'), true);
+    renderCTools();
+  };
+}
+
+// ── 记忆时间线视图 ──
+async function renderTimeline(): Promise<void> {
+  const root = document.getElementById('timeline-view')!;
+  const r = await api.memoryTimeline();
+  const items = r.ok ? r.items ?? [] : [];
+  const sorted = [...items].sort((a, b) => b.created_at - a.created_at);
+  root.innerHTML = `
+    <div class="card">
+      <h2>${tr('mem.timeline')}</h2>
+      <div class="sub">${tr('mem.timelineSub')}</div>
+      <div style="margin:10px 0">
+        <button id="mem-decay-btn" class="ghost">${tr('mem.decay')}</button>
+        <span class="sub" style="margin-left:8px">${tr('mem.pruneThreshold')}</span>
+      </div>
+      <div id="mem-tl-list"></div>
+    </div>
+  `;
+  const listEl = document.getElementById('mem-tl-list')!;
+  if (!sorted.length) {
+    listEl.innerHTML = `<div class="empty-hint">No memories yet</div>`;
+  } else {
+    listEl.innerHTML = sorted.map((m) => {
+      const date = new Date(m.created_at).toLocaleDateString();
+      const w = Math.round(m.weight * 100);
+      const wColor = w > 60 ? '#4caf50' : w > 30 ? '#e8b339' : '#f44336';
+      return `<div class="mem-tl-item">
+        <div class="mem-tl-bar" style="width:${w}%;background:${wColor}"></div>
+        <div class="mem-tl-content">
+          <span class="mem-tl-date">${date}</span>
+          <span class="mem-tl-text">${esc(m.content)}</span>
+          <span class="mem-tl-meta">${tr('mem.weight')}: ${w}% · ${tr('mem.used', { n: m.useCount })}</span>
+        </div>
+      </div>`;
+    }).join('');
+  }
+  document.getElementById('mem-decay-btn')!.onclick = async () => {
+    const dr = await api.memoryDecay();
+    if (dr.ok) showMsg(tr('mem.decayDone', { n: dr.pruned ?? 0 }), true);
+    renderTimeline();
+  };
+}
+
+// ── 会话导出 ──
+function openExportMenu(convId: string): void {
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-box" style="max-width:360px;text-align:center">
+      <h3>${tr('export.title')}</h3>
+      <div style="display:flex;gap:8px;justify-content:center;margin:16px 0">
+        <button class="primary" id="ex-md">📝 ${tr('export.md')}</button>
+        <button class="primary" id="ex-html">🌐 ${tr('export.html')}</button>
+        <button class="primary" id="ex-json">{ } ${tr('export.json')}</button>
+      </div>
+      <button class="ghost" id="ex-cancel">${tr('common.cancel')}</button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+  const close = () => modal.remove();
+  document.getElementById('ex-cancel')!.onclick = close;
+  document.getElementById('ex-md')!.onclick = async () => { close(); await doExport(convId, 'markdown'); };
+  document.getElementById('ex-html')!.onclick = async () => { close(); await doExport(convId, 'html'); };
+  document.getElementById('ex-json')!.onclick = async () => { close(); await doExport(convId, 'json'); };
+}
+
+async function doExport(convId: string, format: 'markdown' | 'html' | 'json'): Promise<void> {
+  const r = await api.exportConversation(convId, format);
+  if (r.ok && r.path) showMsg(tr('export.saved', { path: r.path }), true);
+  else if (!r.ok && r.error !== 'cancelled') showMsg(tr('export.failed', { msg: r.error ?? '' }), false);
+}
+
+// ── Agent 行为回放模态框 ──
+// 逐步展示某 turn 的工具调用(steps),高亮当前步骤,显示 args 和 result。
+function openReplay(turnIdx: number): void {
+  if (!selectedId) return;
+  const conv = convs.get(selectedId);
+  if (!conv) return;
+  const turn = conv.turns[turnIdx];
+  if (!turn || !turn.steps.length) { alert(tr('replay.noSteps')); return; }
+  let stepIdx = 0;
+  let playing = false;
+  let timer: ReturnType<typeof setInterval> | null = null;
+
+  const modal = document.createElement('div');
+  modal.className = 'modal-overlay';
+  document.body.appendChild(modal);
+
+  function render(): void {
+    const step = turn.steps[stepIdx];
+    const progress = `${stepIdx + 1} / ${turn.steps.length}`;
+    modal.innerHTML = `
+      <div class="modal-box" style="max-width:680px">
+        <div class="replay-header">
+          <h3>${tr('replay.title')} — ${tr('replay.step', { n: stepIdx + 1 })} (${progress})</h3>
+        </div>
+        <div class="replay-progress">
+          ${turn.steps.map((_, i) => `<div class="replay-dot ${i < stepIdx ? 'done' : i === stepIdx ? 'active' : ''}"></div>`).join('')}
+        </div>
+        <div class="replay-body">
+          <div class="replay-step">
+            <div class="replay-tool">🔧 ${esc(step.name)}</div>
+            ${step.durationMs != null ? `<span class="replay-dur">${tr('replay.duration', { ms: step.durationMs })}</span>` : ''}
+            <div class="replay-section">
+              <div class="replay-label">${tr('replay.toolCall')}</div>
+              <pre class="replay-args">${esc(step.args)}</pre>
+            </div>
+            <div class="replay-section">
+              <div class="replay-label">${tr('replay.result')}</div>
+              <pre class="replay-result">${esc(step.result.slice(0, 3000))}</pre>
+            </div>
+          </div>
+        </div>
+        <div class="replay-controls">
+          <button id="rp-prev" class="ghost" ${stepIdx === 0 ? 'disabled' : ''}>${tr('replay.prev')}</button>
+          <button id="rp-play" class="primary">${playing ? tr('replay.pause') : tr('replay.play')}</button>
+          <button id="rp-next" class="ghost" ${stepIdx === turn.steps.length - 1 ? 'disabled' : ''}>${tr('replay.next')}</button>
+          <button id="rp-close" class="ghost">${tr('common.cancel')}</button>
+        </div>
+      </div>
+    `;
+    document.getElementById('rp-close')!.onclick = () => { stop(); modal.remove(); };
+    document.getElementById('rp-prev')!.onclick = () => { stop(); if (stepIdx > 0) { stepIdx--; render(); } };
+    document.getElementById('rp-next')!.onclick = () => { stop(); if (stepIdx < turn.steps.length - 1) { stepIdx++; render(); } };
+    document.getElementById('rp-play')!.onclick = () => {
+      if (playing) { stop(); render(); return; }
+      playing = true;
+      timer = setInterval(() => {
+        if (stepIdx < turn.steps.length - 1) { stepIdx++; render(); }
+        else { stop(); showMsg(tr('replay.done'), true); }
+      }, 1500);
+      render();
+    };
+  }
+
+  function stop(): void {
+    playing = false;
+    if (timer) { clearInterval(timer); timer = null; }
+  }
+
+  render();
 }

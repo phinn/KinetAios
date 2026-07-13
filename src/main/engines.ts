@@ -105,6 +105,7 @@ class DirectEngine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
+      sandbox: getSettings().sandbox,
       spawn: async ({ prompt: sub, signal: childSignal, engine }) => {
         // 跨引擎子任务:claudeCode / codex 走 CLI one-shot(只读,不递归)。
         // ponytail: 不复用 ClaudeCodeEngine/CodexEngine 的 stream-json 解析,直接 execFile + 取 stdout。

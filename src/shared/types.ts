@@ -4,9 +4,14 @@ import type { Lang } from './i18n';
 
 // OpenAI chat-message shape (loose — tool_calls / tool_call_id optional). Both
 // providers normalize to this so AgentLoop history is protocol-agnostic.
+// content 支持 string(纯文本) 或 ContentPart[](多模态:文本+图片)。
+export type ContentPart =
+  | { type: 'text'; text: string }
+  | { type: 'image_url'; image_url: { url: string; detail?: 'auto' | 'low' | 'high' } };
+
 export type ChatMsg = {
   role: string;
-  content: string | null;
+  content: string | ContentPart[] | null;
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
   [k: string]: unknown;
@@ -82,7 +87,7 @@ export type EmbedSnapshot = {
 // The unified event model — every engine emits these; the dashboard renders them.
 export type AgentEvent =
   | { type: 'token'; text: string }
-  | { type: 'tool'; name: string; args: string; result: string }
+  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number }
   | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
@@ -95,6 +100,7 @@ export type TaskStep = {
   args: string;
   result: string;
   ts: number;
+  durationMs?: number; // 工具执行耗时(回放用)
 };
 
 export type Turn = {
@@ -166,6 +172,44 @@ export type RuleConfig = {
   indent: 'tabs' | '2spaces' | '4spaces';
   bannedApis: string;    // 禁用的 API(逗号分隔)
   extraRules: string;    // 自定义额外规则
+};
+
+// ── 自定义工具(用户通过 UI 注册,持久化到 SQLite)──
+// name: 工具名(英文+下划线),description: 给模型看的描述,
+// parameters: JSON Schema,commandTpl: shell 命令模板(支持 $ARG_<param> 占位)
+export type CustomTool = {
+  id: string;
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>; // JSON Schema
+  commandTpl: string; // e.g. "echo $ARG_text" — $ARG_<param_name> 替换为实际参数值
+  timeoutMs: number;
+  createdAt?: number;
+};
+
+// ── 记忆时间线 + 衰减 ──
+// 每条 memory 带权重(久未引用 → 权重低),recall 时按权重排序。
+export type MemoryWithMeta = {
+  id: string;
+  content: string;
+  conversation_id: string | null;
+  created_at: number;
+  weight: number;    // 衰减权重 0~1,新 fact = 1.0
+  lastUsed: number;  // 最后一次被 recall 命中的时间戳
+  useCount: number;  // 累计命中次数
+};
+
+// ── 会话导出 ──
+export type ExportFormat = 'markdown' | 'html' | 'json';
+
+// ── Arena Diff 对比 ──
+export type ArenaDiffResult = {
+  leftEngine: EngineKind;
+  rightEngine: EngineKind;
+  leftText: string;
+  rightText: string;
+  leftConvId: string;
+  rightConvId: string;
 };
 
 export type Conversation = {
@@ -278,6 +322,19 @@ export interface KinetAPI {
   templateDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   // ── 可视化规则生成 ──
   rulesGenerate(cfg: RuleConfig): Promise<{ ok: boolean; content?: string; error?: string }>;
+  // ── 自定义工具 ──
+  customToolList(): Promise<{ ok: boolean; items?: CustomTool[]; error?: string }>;
+  customToolSave(t: CustomTool): Promise<{ ok: boolean; error?: string }>;
+  customToolDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // ── 记忆时间线 ──
+  memoryTimeline(): Promise<{ ok: boolean; items?: MemoryWithMeta[]; error?: string }>;
+  memoryDecay(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
+  // ── 会话导出 ──
+  exportConversation(convId: string, format: ExportFormat): Promise<{ ok: boolean; path?: string; error?: string }>;
+  // ── Arena Diff ──
+  arenaDiff(leftConvId: string, rightConvId: string): Promise<{ ok: boolean; diff?: string; leftEngine?: string; rightEngine?: string; error?: string }>;
+  // ── 系统级截图(main 进程截屏 → base64)──
+  captureScreen(): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;
@@ -318,7 +375,7 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       t.answer += ev.text;
       break;
     case 'tool':
-      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now() });
+      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs });
       break;
     case 'cost':
       conv.cost += ev.usd;

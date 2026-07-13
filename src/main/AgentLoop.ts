@@ -1,6 +1,6 @@
 // ReAct loop: model ↔ tools until the model answers without a tool_call, or max turns hit.
 // Verbatim port of Swift AgentLoop.run. DirectEngine's trim-history logic lives here too.
-import type { AgentEvent, ChatMsg, ConfigSnapshot } from '../shared/types';
+import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart } from '../shared/types';
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
@@ -37,7 +37,25 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     : [];
 
   let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...memMsg, ...history];
-  messages.push({ role: 'user', content: userInput });
+  // 多模态:解析 \x00IMAGES[...]\\x00 标记,将图片转为 OpenAI vision content parts。
+  const imgMatch = userInput.match(/\x00IMAGES(\[.+?\])\x00/s);
+  let userContent: string | ContentPart[] = userInput;
+  if (imgMatch) {
+    const cleanText = userInput.replace(/\x00IMAGES\[.+?\]\x00/s, '').trim();
+    try {
+      const imgs = JSON.parse(imgMatch[1]) as string[];
+      const parsed = imgs.map((s) => JSON.parse(s) as { name: string; dataUrl: string });
+      const parts: ContentPart[] = [{ type: 'text', text: cleanText }];
+      for (const img of parsed) {
+        parts.push({ type: 'image_url', image_url: { url: img.dataUrl, detail: 'auto' } });
+      }
+      userContent = parts;
+    } catch {
+      // 解析失败 → 纯文本(去标记)
+      userContent = cleanText;
+    }
+  }
+  messages.push({ role: 'user', content: userContent });
 
   // reactive trim 用:上下文超长报错时砍半预算重试本轮一次(见下方 catch)。ponytail:错误格式不统一,best-effort。
   let retriedAfterShrink = false;
@@ -109,7 +127,19 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
 // history. The memory msg is re-injected fresh every turn by runAgentLoop, so it must not write
 // back to directHistory (otherwise it'd stack up across turns and go stale).
 function dropTransient(messages: ChatMsg[]): ChatMsg[] {
-  return messages.filter((m) => m.role !== 'system' && !m._memory);
+  return messages
+    .filter((m) => m.role !== 'system' && !m._memory)
+    .map((m) => {
+      // 持久化前清理:image content parts 转回纯文本(base64 太大不存 directHistory)。
+      if (typeof m.content === 'string' && m.content.includes('\x00IMAGES')) {
+        return { ...m, content: m.content.replace(/\x00IMAGES\[.+?\]\x00/s, '').trim() };
+      }
+      if (Array.isArray(m.content)) {
+        const textPart = m.content.find((p) => p.type === 'text');
+        return { ...m, content: textPart?.text ?? '' };
+      }
+      return m;
+    });
 }
 
 function errMsg(e: unknown): string {
@@ -126,7 +156,9 @@ function errMsg(e: unknown): string {
 let tokenCoef = 0.6; // 初始 0.6(中英混合经验值),每轮按真实 usage 校准
 // 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
 function estMsgChars(m: ChatMsg): number {
-  const content = typeof m.content === 'string' ? m.content : '';
+  let content = '';
+  if (typeof m.content === 'string') content = m.content;
+  else if (Array.isArray(m.content)) content = m.content.map((p) => { const tp = p as { text?: string }; return tp.text ?? ''; }).join('');
   const tc = Array.isArray(m.tool_calls) ? JSON.stringify(m.tool_calls).length : 0;
   return content.length + tc;
 }
@@ -193,7 +225,7 @@ export async function compactHistory(
     const transcript = head
       .map((m) => {
         const role = m.role === 'tool' ? '工具结果' : m.role;
-        const text = typeof m.content === 'string' ? m.content : JSON.stringify(m.tool_calls ?? '');
+        const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((p: any) => p.text ?? '').join('') : JSON.stringify(m.tool_calls ?? '');
         return `[${role}] ${text}`;
       })
       .join('\n')
@@ -245,17 +277,21 @@ async function runToolBatch(
       const batch = calls.slice(start, i);
       const outs = await Promise.all(
         batch.map(async (c) => {
-          if (signal.aborted) return { c, result: '[已停止]' as string };
+          if (signal.aborted) return { c, result: '[已停止]' as string, dur: 0 };
+          const t0 = Date.now();
           const result = await execute(c, tools, ctx);
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result }); // UI 拿原文(可点开看全)
-          return { c, result: truncateForModel(result) }; // 模型拿截断版
+          const dur = Date.now() - t0;
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result, durationMs: dur }); // UI 拿原文(可点开看全)
+          return { c, result: truncateForModel(result), dur }; // 模型拿截断版
         }),
       );
       for (const { c, result } of outs) results.push({ role: 'tool', tool_call_id: c.id, content: result });
     } else {
       // 写工具:串行单个执行。
+      const t0 = Date.now();
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result });
+      const dur = Date.now() - t0;
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result, durationMs: dur });
       results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result) });
       i++;
     }

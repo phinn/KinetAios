@@ -6,6 +6,7 @@ import path from 'node:path';
 import type { ToolDef } from './glm';
 import * as store from './store';
 import { takeSnapshot } from './snapshots';
+import type { SandboxMode } from '../shared/types';
 
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
@@ -17,6 +18,7 @@ export interface ToolCtx {
   spawn?: (a: { prompt: string; signal: AbortSignal; engine?: SubEngine }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
+  sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
 }
 
 export interface Tool {
@@ -113,6 +115,9 @@ const writeFile: Tool = {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     const content = (args.content as string) ?? '';
     if (!p) return '缺少 path';
+    // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
+    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd);
+    if (guard) return guard;
     try {
       // 写前快照(仅当文件已存在,新文件没东西可存)。best-effort,失败不阻塞。
       if (ctx.convId && fs.existsSync(p)) {
@@ -343,6 +348,9 @@ const editFile: Tool = {
     const newS = String(args.new_string ?? '');
     if (!p) return '缺少 path';
     if (!oldS) return '缺少 old_string';
+    // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
+    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd);
+    if (guard) return guard;
     let body: string;
     try {
       body = fs.readFileSync(p, 'utf8');
@@ -447,12 +455,55 @@ export function allTools(): Tool[] {
   // 延迟 require:plugins.ts 引用了 app.getPath,只在 main 进程跑;renderer 不会走到这。
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { pluginTools } = require('./plugins') as typeof import('./plugins');
-  return [...builtinTools(), ...pluginTools()];
+  return [...builtinTools(), ...pluginTools(), ...customTools()];
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
 export function readOnlyTools(): Tool[] {
   return [readFile, grep, glob, webFetch, recallMemory, gitDiff];
+}
+
+// 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。
+function sandboxCheck(sandbox: SandboxMode | undefined, filePath: string, cwd: string): string | null {
+  if (!sandbox || sandbox === 'fullAccess') return null; // 不限或未设
+  if (sandbox === 'readOnly') return '🚫 沙箱模式 [readOnly]: 写操作被禁止。请在设置中切换到 workspaceWrite 或 fullAccess。';
+  if (sandbox === 'workspaceWrite') {
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(cwd || process.cwd());
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+      return `🚫 沙箱模式 [workspaceWrite]: 只能在工作目录内写入。\n工作目录: ${base}\n尝试写入: ${resolved}`;
+    }
+  }
+  return null;
+}
+
+// 从 SQLite 加载自定义工具,包装成 Tool 接口(运行时注入到 allTools)。
+export function customTools(): Tool[] {
+  let rows: Array<{ id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number }>;
+  try {
+    rows = store.loadCustomTools();
+  } catch {
+    return []; // store 未初始化时优雅降级
+  }
+  return rows.map((r) => {
+    let params: Record<string, unknown> = {};
+    try { params = JSON.parse(r.parameters || '{}'); } catch { /* 留空 */ }
+    return {
+      name: r.name,
+      description: r.description || `(自定义工具 ${r.name})`,
+      parameters: params,
+      readOnly: true, // 自定义工具标记为只读(可并发),实际通过 shell 执行用户定义的命令
+      async run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+        // 将 $ARG_<param> 替换为实际参数值
+        let cmd = r.commandTpl;
+        for (const [k, v] of Object.entries(args)) {
+          cmd = cmd.replace(new RegExp(`\\$ARG_${k}`, 'g'), String(v ?? ''));
+        }
+        const out = await shellExec(cmd, ctx.cwd, r.timeoutMs * 1000 || 120_000);
+        return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out;
+      },
+    };
+  });
 }
 
 // Resolve a (possibly relative / ~ / %USERPROFILE%) path against cwd.

@@ -29,6 +29,8 @@
               <button class="sb-more-item" id="m-pipeline"><span class="sb-mi-ico">🔗</span><span class="sb-mi-label" data-i18n="sidebar.morePipeline">Pipeline 编排</span></button>
               <button class="sb-more-item" id="m-templates"><span class="sb-mi-ico">📋</span><span class="sb-mi-label" data-i18n="sidebar.moreTemplates">模板库</span></button>
               <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico">💰</span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
+              <button class="sb-more-item" id="m-ctools"><span class="sb-mi-ico">🔧</span><span class="sb-mi-label" data-i18n="sidebar.moreCTools">自定义工具</span></button>
+              <button class="sb-more-item" id="m-timeline"><span class="sb-mi-ico">📅</span><span class="sb-mi-label" data-i18n="sidebar.moreTimeline">记忆时间线</span></button>
             </div>
           </div>
         </div>
@@ -78,6 +80,7 @@
               <datalist id="model-list"></datalist>
               <button class="tool" id="btn-skill" data-i18n-title="skill.title" title="选择 Skill(Direct)">⚡<span class="lbl" data-i18n="skill.lbl">Skill</span></button>
               <button class="tool" id="btn-mcp" data-i18n-title="mcp.title" title="MCP 服务与工具">🔌<span class="lbl" data-i18n="mcp.lbl">MCP</span></button>
+              <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图">📷<span class="lbl" data-i18n="vision.capture">截图</span></button>
               <button class="tool" id="btn-voice" data-i18n-title="voice.mic" title="语音输入(说,自动转文字)">🎤<span class="lbl" data-i18n="voice.lbl">语音</span></button>
               <span class="bar-spacer"></span>
               <button class="primary send" id="btn-send">发送</button>
@@ -174,6 +177,8 @@
       <div id="cost-view" class="view">
         <div id="cost-root"></div>
       </div>
+      <div id="ctools-view" class="view"></div>
+      <div id="timeline-view" class="view"></div>
     </main>
   </div>
 

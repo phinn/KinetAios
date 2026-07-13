@@ -287,15 +287,31 @@ class AnthropicProvider implements Provider {
       const content = (typeof m.content === 'string' ? m.content : '') ?? '';
       if (role === 'system') systemParts.push(content);
       else if (role === 'user') {
+        // 多模态:content 可能是 ContentPart[](含 image_url)。转 Anthropic 格式(image_url→image,source)。
+        let anthContent: any[];
+        if (Array.isArray(m.content)) {
+          anthContent = (m.content as Array<{ type: string; text?: string; image_url?: { url: string } }>).map((p) => {
+            if (p.type === 'text') return { type: 'text', text: p.text ?? '' };
+            if (p.type === 'image_url' && p.image_url) {
+              const url = p.image_url.url;
+              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+              if (match) return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
+              return { type: 'image', source: { type: 'url', url } };
+            }
+            return { type: 'text', text: '' };
+          });
+        } else {
+          anthContent = [{ type: 'text', text: content }];
+        }
         // Anthropic 要求 user/assistant 严格交替。memoryBlock 头部消息(_memory)紧跟 history[0]
         // 的首个用户输入会构成连续 user —— 合并进上一条 user(纯文本直接拼,tool_result 数组追加 text block)。
         const last = anth[anth.length - 1];
         if (last && last.role === 'user') {
-          if (typeof last.content === 'string') last.content = last.content + '\n\n' + content;
-          else if (Array.isArray(last.content)) last.content = [...last.content, { type: 'text', text: content }];
-          else anth.push({ role: 'user', content });
+          if (Array.isArray(last.content)) last.content.push(...anthContent);
+          else if (typeof last.content === 'string') last.content = last.content + '\n\n' + anthContent.map((b: any) => b.text ?? '').join('');
+          else anth.push({ role: 'user', content: anthContent });
         } else {
-          anth.push({ role: 'user', content });
+          anth.push({ role: 'user', content: anthContent });
         }
       }
       else if (role === 'assistant') {

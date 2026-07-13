@@ -72,6 +72,19 @@ const api: KinetAPI = {
   templateDelete: (id) => ipcRenderer.invoke('template-delete', id),
   // 可视化规则生成
   rulesGenerate: (cfg) => ipcRenderer.invoke('rules-generate', cfg),
+  // 自定义工具
+  customToolList: () => ipcRenderer.invoke('custom-tool-list'),
+  customToolSave: (t) => ipcRenderer.invoke('custom-tool-save', t),
+  customToolDelete: (id) => ipcRenderer.invoke('custom-tool-delete', id),
+  // 记忆时间线
+  memoryTimeline: () => ipcRenderer.invoke('memory-timeline'),
+  memoryDecay: () => ipcRenderer.invoke('memory-decay'),
+  // 会话导出
+  exportConversation: (convId, format) => ipcRenderer.invoke('export-conversation', convId, format),
+  // Arena Diff
+  arenaDiff: (leftConvId, rightConvId) => ipcRenderer.invoke('arena-diff', leftConvId, rightConvId),
+  // 系统级截图
+  captureScreen: () => ipcRenderer.invoke('capture-screen'),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

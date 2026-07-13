@@ -45,6 +45,10 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, name TEXT, data TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS cost_log(
       id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL);
+    CREATE TABLE IF NOT EXISTS custom_tools(
+      id TEXT PRIMARY KEY, name TEXT, description TEXT, parameters TEXT, command_tpl TEXT, timeout_ms INTEGER, created_at REAL);
+    CREATE TABLE IF NOT EXISTS memory_meta(
+      memory_id TEXT PRIMARY KEY, weight REAL DEFAULT 1.0, last_used REAL DEFAULT 0, use_count INTEGER DEFAULT 0);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -399,4 +403,61 @@ export function costStats(): { today: number; week: number; month: number; byEng
 // 轻量 id 生成(不导入 shared 避免循环)
 function rid2(): string {
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+}
+
+// MARK: custom_tools — 用户通过 UI 注册的自定义工具
+export function saveCustomTool(t: { id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number }): void {
+  db.prepare('INSERT OR REPLACE INTO custom_tools(id, name, description, parameters, command_tpl, timeout_ms, created_at) VALUES(?,?,?,?,?,?,?);')
+    .run(t.id, t.name, t.description, t.parameters, t.commandTpl, t.timeoutMs, Date.now());
+}
+export function loadCustomTools(): Array<{ id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number; createdAt: number }> {
+  return (db.prepare('SELECT id, name, description, parameters, command_tpl AS commandTpl, timeout_ms AS timeoutMs, created_at AS createdAt FROM custom_tools ORDER BY created_at DESC;').all()) as any;
+}
+export function deleteCustomTool(id: string): void {
+  db.prepare('DELETE FROM custom_tools WHERE id=?;').run(id);
+}
+
+// MARK: memory_meta — 记忆权重/衰减/时间线
+export function loadMemoryTimeline(): Array<{ id: string; content: string; conversation_id: string | null; created_at: number; weight: number; lastUsed: number; useCount: number }> {
+  const mems = (db.prepare('SELECT id, content, conversation_id, created_at FROM memories ORDER BY created_at DESC;').all()) as Array<{ id: string; content: string; conversation_id: string | null; created_at: number }>;
+  const metas = new Map<string, { weight: number; last_used: number; use_count: number }>();
+  for (const m of (db.prepare('SELECT memory_id, weight, last_used, use_count FROM memory_meta;').all()) as Array<{ memory_id: string; weight: number; last_used: number; use_count: number }>) {
+    metas.set(m.memory_id, { weight: m.weight, last_used: m.last_used, use_count: m.use_count });
+  }
+  return mems.map((m) => {
+    const meta = metas.get(m.id) ?? { weight: 1.0, last_used: 0, use_count: 0 };
+    return { ...m, weight: meta.weight, lastUsed: meta.last_used, useCount: meta.use_count };
+  });
+}
+
+// 触摸一条记忆的 lastUsed(被 recall 命中时调用)
+export function touchMemoryUsed(id: string): void {
+  const existing = (db.prepare('SELECT use_count FROM memory_meta WHERE memory_id=?;').get(id)) as { use_count: number } | undefined;
+  if (existing) {
+    db.prepare('UPDATE memory_meta SET last_used=?, use_count=use_count+1 WHERE memory_id=?;').run(Date.now(), id);
+  } else {
+    db.prepare('INSERT INTO memory_meta(memory_id, weight, last_used, use_count) VALUES(?,?,?,?);').run(id, 1.0, Date.now(), 1);
+  }
+}
+
+// 执行衰减:weight *= 0.95^(days_since_last_used),weight < 0.1 的连同 memory 一起删除。
+// 返回被清除的条数。
+export function decayMemories(): number {
+  const now = Date.now();
+  const dayMs = 86400_000;
+  const all = (db.prepare('SELECT memory_id, weight, last_used FROM memory_meta;').all()) as Array<{ memory_id: string; weight: number; last_used: number }>;
+  let pruned = 0;
+  for (const m of all) {
+    const days = m.last_used > 0 ? (now - m.last_used) / dayMs : (now - 0) / dayMs;
+    const decayed = m.weight * Math.pow(0.95, days);
+    if (decayed < 0.1) {
+      db.prepare('DELETE FROM memories WHERE id=?;').run(m.memory_id);
+      db.prepare('DELETE FROM memory_meta WHERE memory_id=?;').run(m.memory_id);
+      db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(m.memory_id);
+      pruned++;
+    } else {
+      db.prepare('UPDATE memory_meta SET weight=? WHERE memory_id=?;').run(decayed, m.memory_id);
+    }
+  }
+  return pruned;
 }

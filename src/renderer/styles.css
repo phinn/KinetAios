@@ -652,3 +652,58 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 .rg-body { max-height: 60vh; overflow-y: auto; }
 .rg-body .field { margin-bottom: 10px; }
 .rg-body label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+
+/* ── 图片附件 chips ── */
+.img-chip { position: relative; padding: 2px; display: inline-flex; align-items: center; }
+.img-chip img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; pointer-events: none; }
+.img-chip .chip-x { position: absolute; top: -4px; right: -4px; background: var(--err); color: #fff; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
+
+/* ── 自定义工具视图 ── */
+.ctool-card { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; background: var(--bg-elev); }
+.ctool-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+.ctool-desc { font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.ctool-cmd { font-size: 11px; }
+.ctool-cmd code { background: var(--code-bg); padding: 2px 6px; border-radius: 4px; font-family: ui-monospace, monospace; color: var(--accent); }
+.ctool-actions { display: flex; gap: 4px; }
+button.sm { padding: 3px 8px; font-size: 11px; }
+
+/* ── 记忆时间线 ── */
+.mem-tl-item { position: relative; border-left: 3px solid var(--border); margin-bottom: 6px; padding: 0 0 0 12px; }
+.mem-tl-bar { position: absolute; left: -3px; top: 0; bottom: 0; width: 3px; border-radius: 2px; }
+.mem-tl-content { display: flex; flex-direction: column; gap: 2px; padding: 6px 0; }
+.mem-tl-date { font-size: 11px; color: var(--text-faint); }
+.mem-tl-text { font-size: 12px; }
+.mem-tl-meta { font-size: 11px; color: var(--text-faint); }
+
+/* ── 回放模态框 ── */
+.replay-header { display: flex; justify-content: space-between; align-items: center; }
+.replay-header h3 { margin: 0; }
+.replay-progress { display: flex; gap: 4px; margin: 12px 0; }
+.replay-dot { flex: 1; height: 4px; border-radius: 2px; background: var(--border); transition: background .2s; }
+.replay-dot.done { background: var(--ok); }
+.replay-dot.active { background: var(--accent); }
+.replay-body { max-height: 50vh; overflow-y: auto; }
+.replay-tool { font-weight: 600; color: var(--accent); margin-bottom: 6px; }
+.replay-dur { font-size: 11px; color: var(--text-faint); }
+.replay-section { margin-bottom: 10px; }
+.replay-label { font-size: 11px; color: var(--text-dim); margin-bottom: 3px; }
+.replay-args, .replay-result { background: var(--code-bg); padding: 8px; border-radius: 4px; font-family: ui-monospace, monospace; font-size: 11px; white-space: pre-wrap; word-break: break-word; max-height: 200px; overflow-y: auto; user-select: text; }
+.replay-controls { display: flex; gap: 6px; justify-content: center; margin-top: 14px; }
+
+/* ── Arena Diff ── */
+.arena-toolbar { padding: 8px 16px; text-align: center; }
+.arena-diff-panel { padding: 12px 16px; border-top: 1px solid var(--border); max-height: 40vh; overflow-y: auto; }
+.arena-diff-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.arena-diff-head h3 { margin: 0; font-size: 14px; }
+.arena-diff-body { font-family: ui-monospace, monospace; font-size: 12px; white-space: pre-wrap; word-break: break-word; user-select: text; }
+.arena-diff-body .d-add { color: var(--ok); display: block; }
+.arena-diff-body .d-del { color: var(--err); display: block; }
+
+/* ── 导出/回放按钮(turn 工具栏) ── */
+.ai-branch, .ai-replay, .ai-export { font-size: 13px; padding: 2px 6px; }
+
+/* ── 视图通用 ── */
+.empty-hint { color: var(--text-faint); font-size: 13px; padding: 20px 0; text-align: center; }
+.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.settings-grid .field { margin-bottom: 8px; }
+.settings-grid label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }

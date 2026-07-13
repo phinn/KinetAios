@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -8,6 +8,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple } from './store';
+import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, validateCron } from './cron';
@@ -873,6 +874,117 @@ function registerIpc(): void {
   ipcMain.handle('rules-generate', (_e, cfg: any) => {
     return { ok: true, content: generateRules(cfg) };
   });
+
+  // ── 自定义工具 ──
+  ipcMain.handle('custom-tool-list', () => {
+    try {
+      const items = loadCustomTools();
+      return { ok: true, items };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('custom-tool-save', (_e, t: any) => {
+    try {
+      saveCustomTool({
+        id: t.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)),
+        name: t.name,
+        description: t.description || '',
+        parameters: typeof t.parameters === 'string' ? t.parameters : JSON.stringify(t.parameters || {}),
+        commandTpl: t.commandTpl || '',
+        timeoutMs: t.timeoutMs || 120,
+      });
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('custom-tool-delete', (_e, id: string) => {
+    try {
+      deleteCustomTool(id);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 记忆时间线 ──
+  ipcMain.handle('memory-timeline', () => {
+    try {
+      const items = loadMemoryTimeline();
+      return { ok: true, items };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-decay', () => {
+    try {
+      const pruned = decayMemories();
+      return { ok: true, pruned };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 会话导出 ──
+  ipcMain.handle('export-conversation', async (_e, convId: string, format: string) => {
+    try {
+      const conv = taskManager.get(convId);
+      if (!conv) return { ok: false, error: 'Conversation not found' };
+      const brand = getBrand();
+      let content = '';
+      let ext = '';
+      if (format === 'json') {
+        content = JSON.stringify(conv, null, 2);
+        ext = 'json';
+      } else if (format === 'html') {
+        content = exportHTML(conv, brand.productName);
+        ext = 'html';
+      } else {
+        content = exportMarkdown(conv);
+        ext = 'md';
+      }
+      const win = dashboardWin && !dashboardWin.isDestroyed() ? dashboardWin : undefined;
+      const r = win
+        ? await dialog.showSaveDialog(win, { defaultPath: `${conv.customTitle || conv.turns[0]?.prompt.slice(0, 30) || 'session'}.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] })
+        : await dialog.showSaveDialog({ defaultPath: `session.${ext}`, filters: [{ name: format.toUpperCase(), extensions: [ext] }] });
+      if (r.canceled || !r.filePath) return { ok: false, error: 'cancelled' };
+      fs.writeFileSync(r.filePath, content, 'utf8');
+      return { ok: true, path: r.filePath };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── Arena Diff ──
+  ipcMain.handle('arena-diff', (_e, leftConvId: string, rightConvId: string) => {
+    try {
+      const left = taskManager.get(leftConvId);
+      const right = taskManager.get(rightConvId);
+      if (!left || !right) return { ok: false, error: 'Conversation not found' };
+      const leftText = left.turns[left.turns.length - 1]?.answer ?? '';
+      const rightText = right.turns[right.turns.length - 1]?.answer ?? '';
+      const diff = computeLineDiff(leftText, rightText);
+      return { ok: true, diff, leftEngine: left.engine, rightEngine: right.engine };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 系统级截图 ──
+  ipcMain.handle('capture-screen', async () => {
+    try {
+      // Electron desktopCapturer 在 main 进程可用。
+      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
+      if (!sources.length) return { ok: false, error: 'No screen found' };
+      const thumb = sources[0].thumbnail;
+      const dataUrl = thumb.toDataURL();
+      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: 'Empty capture' };
+      return { ok: true, dataUrl };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -1003,4 +1115,120 @@ function generateRules(cfg: any): string {
     }
   }
   return lines.join('\n') + '\n';
+}
+
+// MARK: 会话导出 — Markdown
+function exportMarkdown(conv: Conversation): string {
+  const lines: string[] = [];
+  lines.push(`# ${conv.customTitle || conv.turns[0]?.prompt?.slice(0, 50) || 'Session'}`);
+  lines.push('');
+  lines.push(`> Engine: ${conv.engine} | Model: ${conv.model} | Created: ${new Date(conv.createdAt).toLocaleString()}`);
+  lines.push(`> Cost: $${conv.cost.toFixed(4)} | Tokens: ${conv.tokens}`);
+  if (conv.branchInfo) lines.push(`> Branched from: ${conv.branchInfo.sourceConvId} (turn ${conv.branchInfo.sourceTurnIdx})`);
+  lines.push('');
+  for (const t of conv.turns) {
+    lines.push('---');
+    lines.push('');
+    lines.push(`## 🧑 ${t.prompt}`);
+    lines.push('');
+    if (t.steps.length) {
+      for (const s of t.steps) {
+        lines.push(`<details><summary>🔧 ${s.name}</summary>`);
+        lines.push('');
+        lines.push('```');
+        lines.push(`args: ${s.args}`);
+        lines.push(`result: ${s.result}`);
+        lines.push('```');
+        lines.push('</details>');
+        lines.push('');
+      }
+    }
+    lines.push(`### 🤖 ${t.error ? '❌ ' + t.error : ''}`);
+    lines.push('');
+    lines.push(t.answer || '_(empty)_');
+    lines.push('');
+    if (t.costUSD > 0) lines.push(`<sub>💰 $${t.costUSD.toFixed(4)} · 📊 ${t.tokensIn + t.tokensOut} tokens</sub>`);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+// MARK: 会话导出 — 自包含 HTML(可离线打开)
+function exportHTML(conv: Conversation, productName: string): string {
+  const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 50) || 'Session';
+  const turnsHtml = conv.turns.map((t) => {
+    const steps = t.steps.map((s) =>
+      `<details><summary>🔧 ${esc4(s.name)}</summary><pre><code>args: ${esc4(s.args)}\n\nresult: ${esc4(s.result)}</code></pre></details>`
+    ).join('');
+    return `<div class="turn">
+      <div class="user">🧑 ${esc4(t.prompt)}</div>
+      ${steps}
+      <div class="assistant">${esc4(t.answer || (t.error ? '❌ ' + t.error : ''))}</div>
+      ${t.costUSD > 0 ? `<sub>💰 $${t.costUSD.toFixed(4)} · 📊 ${t.tokensIn + t.tokensOut} tokens</sub>` : ''}
+    </div>`;
+  }).join('');
+  return `<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${esc4(title)} — ${esc4(productName)}</title>
+<style>
+  body{font-family:system-ui,sans-serif;max-width:820px;margin:0 auto;padding:20px;background:#1a1a2e;color:#e0e0e0}
+  .header{border-bottom:1px solid #333;padding-bottom:12px;margin-bottom:20px}
+  .header h1{margin:0 0 4px;font-size:1.4em;color:#e8b339}
+  .meta{color:#888;font-size:.85em}
+  .turn{margin:16px 0;padding:14px;border:1px solid #333;border-radius:8px}
+  .user{color:#e8b339;font-weight:600;margin-bottom:8px}
+  .assistant{white-space:pre-wrap;margin-top:8px;line-height:1.6}
+  details{margin:4px 0;color:#aaa}
+  pre{background:#111;padding:8px;border-radius:4px;overflow-x:auto;font-size:.85em}
+  sub{color:#666}
+</style>
+</head>
+<body>
+<div class="header">
+  <h1>${esc4(title)}</h1>
+  <div class="meta">Engine: ${conv.engine} | Model: ${conv.model} | ${new Date(conv.createdAt).toLocaleString()} | Cost: $${conv.cost.toFixed(4)}</div>
+</div>
+${turnsHtml}
+</body>
+</html>`;
+}
+
+function esc4(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// MARK: Arena Diff — 逐行 diff(Myers 简化版:LCS DP)
+function computeLineDiff(leftText: string, rightText: string): string {
+  const a = leftText.split('\n');
+  const b = rightText.split('\n');
+  const n = a.length;
+  const m = b.length;
+  // DP 表求 LCS
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  // 回溯生成 unified diff
+  const lines: string[] = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) {
+      lines.push(`  ${a[i]}`);
+      i++; j++;
+    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+      lines.push(`- ${a[i]}`);
+      i++;
+    } else {
+      lines.push(`+ ${b[j]}`);
+      j++;
+    }
+  }
+  while (i < n) { lines.push(`- ${a[i++]}`); }
+  while (j < m) { lines.push(`+ ${b[j++]}`); }
+  return lines.join('\n');
 }

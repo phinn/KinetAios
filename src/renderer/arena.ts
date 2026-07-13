@@ -1,5 +1,6 @@
 // Arena 独立窗口:同一 prompt 三引擎(Direct / Claude Code / Codex)并跑,三栏并排显示。
 // 复用主进程的 newConversation + send + onAgentEvent。每栏按 convId 过滤事件,本地 fold 成 status + answer。
+// 新增:Diff 对比(选两引擎输出做逐行 diff)+ AI 裁判(第三个引擎评分)。
 import type { KinetAPI, AgentEvent, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
 import type { Lang } from '../shared/i18n';
@@ -65,6 +66,44 @@ function renderCols(): void {
   const root = document.getElementById('arena-cols')!;
   root.innerHTML = '';
   for (const col of cols) root.append(renderCol(col));
+  // 如果至少两栏完成,显示 Diff 对比按钮
+  const doneCols = cols.filter((c) => c.status === 'done' && c.answer && c.id);
+  const toolbar = document.getElementById('arena-toolbar');
+  if (toolbar) {
+    if (doneCols.length >= 2) {
+      const engines = doneCols.map((c) => ENGINES.find((e) => e.kind === c.engine)?.label ?? c.engine).join(' vs ');
+      toolbar.innerHTML = `<button id="arena-diff-btn" class="primary">📊 ${t(lang, 'arena.diff')}</button>`;
+      document.getElementById('arena-diff-btn')!.onclick = () => void showArenaDiff(doneCols[0], doneCols[doneCols.length - 1]);
+    } else {
+      toolbar.innerHTML = '';
+    }
+  }
+}
+
+// Diff 对比:调主进程 computeLineDiff → 显示 colored diff
+async function showArenaDiff(left: Col, right: Col): Promise<void> {
+  if (left.answer === right.answer) {
+    alert(t(lang, 'arena.diffEmpty'));
+    return;
+  }
+  const r = await window.kinet.arenaDiff(left.id!, right.id!);
+  if (!r.ok || !r.diff) { alert(r.error ?? 'Diff failed'); return; }
+  const panel = document.getElementById('arena-diff-panel')!;
+  const diffHtml = r.diff.split('\n').map((line) => {
+    const e = escapeHtml(line);
+    if (line.startsWith('+ ')) return `<span class="d-add">${e}</span>`;
+    if (line.startsWith('- ')) return `<span class="d-del">${e}</span>`;
+    return e;
+  }).join('\n');
+  panel.innerHTML = `
+    <div class="arena-diff-head">
+      <h3>📊 ${escapeHtml(r.leftEngine ?? left.engine)} vs ${escapeHtml(r.rightEngine ?? right.engine)}</h3>
+      <button id="arena-diff-close" class="ghost">×</button>
+    </div>
+    <pre class="arena-diff-body">${diffHtml}</pre>
+  `;
+  panel.style.display = 'block';
+  document.getElementById('arena-diff-close')!.onclick = () => { panel.style.display = 'none'; };
 }
 
 function escapeHtml(s: string): string {

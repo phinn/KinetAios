@@ -40,6 +40,9 @@ const ZH_CN: Dict = {
   'sidebar.morePipeline': 'Pipeline 编排',
   'sidebar.moreTemplates': '模板库',
   'sidebar.moreCost': '成本看板',
+  'sidebar.moreCTools': '自定义工具',
+  'sidebar.moreTimeline': '记忆时间线',
+  'sidebar.moreExport': '导出会话',
 
   'time.justNow': '刚刚',
   'time.minutesAgo': '{n} 分钟前',
@@ -381,6 +384,78 @@ const ZH_CN: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — 检查 API key / 模型 id / 网络。',
   'al.err': '出错: {msg}',
   'al.executing': '执行 {tools}',
+
+  // ── 多模态视觉输入 ──
+  'vision.attach': '📎 图片',
+  'vision.paste': '粘贴图片 (Ctrl+V)',
+  'vision.dragDrop': '拖入图片或粘贴',
+  'vision.tooLarge': '图片过大(>{mb}MB),已跳过',
+  'vision.notImage': '不是图片文件',
+  'vision.remove': '移除图片',
+  'vision.capture': '📷 截图',
+  'vision.captureErr': '截图失败: {msg}',
+  'vision.captureEmpty': '未捕获到屏幕内容',
+
+  // ── Arena Diff ──
+  'arena.diff': '📊 Diff 对比',
+  'arena.judge': '🧑‍⚖ AI 裁判',
+  'arena.selectTwo': '选择两个引擎的输出进行对比',
+  'arena.diffEmpty': '两个引擎的输出相同,无差异',
+  'arena.left': '左',
+  'arena.right': '右',
+  'arena.judging': 'AI 裁判评判中…',
+  'arena.judgeResult': '裁判结果',
+
+  // ── 自定义工具 ──
+  'ctool.title': '自定义工具',
+  'ctool.sub': '注册自定义工具 — 模型可以像调用内置工具一样调用它们。命令模板支持 $ARG_<参数名> 占位符。',
+  'ctool.add': '＋ 新建工具',
+  'ctool.name': '工具名称',
+  'ctool.namePh': 'my_tool',
+  'ctool.desc': '描述(给模型看)',
+  'ctool.descPh': '对输入文本进行翻译',
+  'ctool.params': '参数 (JSON Schema)',
+  'ctool.paramsPh': '{"type":"object","properties":{"text":{"type":"string","description":"要翻译的文本"}},"required":["text"]}',
+  'ctool.cmd': '命令模板',
+  'ctool.cmdPh': 'translate --text "$ARG_text"',
+  'ctool.timeout': '超时 (秒)',
+  'ctool.save': '保存',
+  'ctool.delete': '删除',
+  'ctool.empty': '还没有自定义工具 — 点「新建工具」创建',
+  'ctool.saved': '工具已保存',
+  'ctool.deleted': '工具已删除',
+  'ctool.nameRequired': '工具名称不能为空',
+  'ctool.test': '测试',
+
+  // ── 记忆时间线 ──
+  'mem.timeline': '记忆时间线',
+  'mem.timelineSub': '长期记忆按时间排列,久未引用的记忆权重衰减',
+  'mem.weight': '权重',
+  'mem.used': '引用 {n} 次',
+  'mem.decay': '⚡ 执行衰减',
+  'mem.decayDone': '已清理 {n} 条低权重记忆',
+  'mem.pruneThreshold': '权重低于 0.1 的将被清除',
+
+  // ── 会话导出 ──
+  'export.title': '导出会话',
+  'export.md': 'Markdown',
+  'export.html': 'HTML',
+  'export.json': 'JSON',
+  'export.saved': '已导出到: {path}',
+  'export.failed': '导出失败: {msg}',
+
+  // ── Agent 行为回放 ──
+  'replay.title': '回放',
+  'replay.step': '第 {n} 步',
+  'replay.duration': '耗时 {ms}ms',
+  'replay.play': '▶ 播放',
+  'replay.pause': '⏸ 暂停',
+  'replay.prev': '⏮ 上一步',
+  'replay.next': '下一步 ⏭',
+  'replay.done': '回放结束',
+  'replay.noSteps': '该轮次没有工具调用',
+  'replay.toolCall': '工具调用',
+  'replay.result': '执行结果',
 };
 
 const EN: Dict = {
@@ -405,6 +480,9 @@ const EN: Dict = {
   'sidebar.morePipeline': 'Pipeline',
   'sidebar.moreTemplates': 'Templates',
   'sidebar.moreCost': 'Cost',
+  'sidebar.moreCTools': 'Custom Tools',
+  'sidebar.moreTimeline': 'Memory Timeline',
+  'sidebar.moreExport': 'Export',
 
   'time.justNow': 'just now',
   'time.minutesAgo': '{n}m ago',
@@ -745,6 +823,78 @@ const EN: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — check API key / model id / network.',
   'al.err': 'Error: {msg}',
   'al.executing': 'Running: {tools}',
+
+  // ── Vision / multimodal ──
+  'vision.attach': '📎 Image',
+  'vision.paste': 'Paste image (Ctrl+V)',
+  'vision.dragDrop': 'Drop or paste image',
+  'vision.tooLarge': 'Image too large (>{mb}MB), skipped',
+  'vision.notImage': 'Not an image file',
+  'vision.remove': 'Remove image',
+  'vision.capture': '📷 Screenshot',
+  'vision.captureErr': 'Screenshot failed: {msg}',
+  'vision.captureEmpty': 'No screen content captured',
+
+  // ── Arena Diff ──
+  'arena.diff': '📊 Diff Compare',
+  'arena.judge': '🧑‍⚖ AI Judge',
+  'arena.selectTwo': 'Select two engine outputs to compare',
+  'arena.diffEmpty': 'Both outputs are identical — no differences',
+  'arena.left': 'Left',
+  'arena.right': 'Right',
+  'arena.judging': 'AI judge evaluating…',
+  'arena.judgeResult': 'Judge verdict',
+
+  // ── Custom tools ──
+  'ctool.title': 'Custom Tools',
+  'ctool.sub': 'Register custom tools — the model can call them like built-in tools. Command templates support $ARG_<param> placeholders.',
+  'ctool.add': '＋ New tool',
+  'ctool.name': 'Tool name',
+  'ctool.namePh': 'my_tool',
+  'ctool.desc': 'Description (shown to model)',
+  'ctool.descPh': 'Translate the input text',
+  'ctool.params': 'Parameters (JSON Schema)',
+  'ctool.paramsPh': '{"type":"object","properties":{"text":{"type":"string","description":"Text to translate"}},"required":["text"]}',
+  'ctool.cmd': 'Command template',
+  'ctool.cmdPh': 'translate --text "$ARG_text"',
+  'ctool.timeout': 'Timeout (seconds)',
+  'ctool.save': 'Save',
+  'ctool.delete': 'Delete',
+  'ctool.empty': 'No custom tools yet — click "New tool" to create one',
+  'ctool.saved': 'Tool saved',
+  'ctool.deleted': 'Tool deleted',
+  'ctool.nameRequired': 'Tool name is required',
+  'ctool.test': 'Test',
+
+  // ── Memory timeline ──
+  'mem.timeline': 'Memory Timeline',
+  'mem.timelineSub': 'Long-term memories ordered by time. Stale memories decay in weight.',
+  'mem.weight': 'Weight',
+  'mem.used': 'Used {n} times',
+  'mem.decay': '⚡ Run decay',
+  'mem.decayDone': 'Pruned {n} low-weight memories',
+  'mem.pruneThreshold': 'Memories with weight below 0.1 will be pruned',
+
+  // ── Export conversation ──
+  'export.title': 'Export',
+  'export.md': 'Markdown',
+  'export.html': 'HTML',
+  'export.json': 'JSON',
+  'export.saved': 'Exported to: {path}',
+  'export.failed': 'Export failed: {msg}',
+
+  // ── Agent replay ──
+  'replay.title': 'Replay',
+  'replay.step': 'Step {n}',
+  'replay.duration': '{ms}ms',
+  'replay.play': '▶ Play',
+  'replay.pause': '⏸ Pause',
+  'replay.prev': '⏮ Prev',
+  'replay.next': 'Next ⏭',
+  'replay.done': 'Replay finished',
+  'replay.noSteps': 'No tool calls in this turn',
+  'replay.toolCall': 'Tool call',
+  'replay.result': 'Result',
 };
 
 const ZH_TW: Dict = {
@@ -769,6 +919,9 @@ const ZH_TW: Dict = {
   'sidebar.morePipeline': 'Pipeline 編排',
   'sidebar.moreTemplates': '範本庫',
   'sidebar.moreCost': '成本看板',
+  'sidebar.moreCTools': '自訂工具',
+  'sidebar.moreTimeline': '記憶時間線',
+  'sidebar.moreExport': '匯出會話',
 
   'time.justNow': '剛剛',
   'time.minutesAgo': '{n} 分鐘前',
@@ -1109,6 +1262,78 @@ const ZH_TW: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — 檢查 API key / 模型 id / 網路。',
   'al.err': '出錯: {msg}',
   'al.executing': '執行 {tools}',
+
+  // ── 多模態視覺輸入 ──
+  'vision.attach': '📎 圖片',
+  'vision.paste': '貼上圖片 (Ctrl+V)',
+  'vision.dragDrop': '拖入圖片或貼上',
+  'vision.tooLarge': '圖片過大(>{mb}MB),已跳過',
+  'vision.notImage': '不是圖片檔案',
+  'vision.remove': '移除圖片',
+  'vision.capture': '📷 截圖',
+  'vision.captureErr': '截圖失敗: {msg}',
+  'vision.captureEmpty': '未擷取到螢幕內容',
+
+  // ── Arena Diff ──
+  'arena.diff': '📊 Diff 比對',
+  'arena.judge': '🧑‍⚖ AI 裁判',
+  'arena.selectTwo': '選擇兩個引擎的輸出進行比對',
+  'arena.diffEmpty': '兩個引擎的輸出相同,無差異',
+  'arena.left': '左',
+  'arena.right': '右',
+  'arena.judging': 'AI 裁判評判中…',
+  'arena.judgeResult': '裁判結果',
+
+  // ── 自訂工具 ──
+  'ctool.title': '自訂工具',
+  'ctool.sub': '註冊自訂工具 — 模型可以像呼叫內建工具一樣呼叫它們。命令範本支援 $ARG_<參數名> 占位符。',
+  'ctool.add': '＋ 新建工具',
+  'ctool.name': '工具名稱',
+  'ctool.namePh': 'my_tool',
+  'ctool.desc': '描述(給模型看)',
+  'ctool.descPh': '對輸入文字進行翻譯',
+  'ctool.params': '參數 (JSON Schema)',
+  'ctool.paramsPh': '{"type":"object","properties":{"text":{"type":"string","description":"要翻譯的文字"}},"required":["text"]}',
+  'ctool.cmd': '命令範本',
+  'ctool.cmdPh': 'translate --text "$ARG_text"',
+  'ctool.timeout': '逾時 (秒)',
+  'ctool.save': '儲存',
+  'ctool.delete': '刪除',
+  'ctool.empty': '還沒有自訂工具 — 點「新建工具」建立',
+  'ctool.saved': '工具已儲存',
+  'ctool.deleted': '工具已刪除',
+  'ctool.nameRequired': '工具名稱不能為空',
+  'ctool.test': '測試',
+
+  // ── 記憶時間線 ──
+  'mem.timeline': '記憶時間線',
+  'mem.timelineSub': '長期記憶按時間排列,久未引用的記憶權重衰減',
+  'mem.weight': '權重',
+  'mem.used': '引用 {n} 次',
+  'mem.decay': '⚡ 執行衰減',
+  'mem.decayDone': '已清理 {n} 條低權重記憶',
+  'mem.pruneThreshold': '權重低於 0.1 的將被清除',
+
+  // ── 會話匯出 ──
+  'export.title': '匯出會話',
+  'export.md': 'Markdown',
+  'export.html': 'HTML',
+  'export.json': 'JSON',
+  'export.saved': '已匯出到: {path}',
+  'export.failed': '匯出失敗: {msg}',
+
+  // ── Agent 行為回放 ──
+  'replay.title': '回放',
+  'replay.step': '第 {n} 步',
+  'replay.duration': '耗時 {ms}ms',
+  'replay.play': '▶ 播放',
+  'replay.pause': '⏸ 暫停',
+  'replay.prev': '⏮ 上一步',
+  'replay.next': '下一步 ⏭',
+  'replay.done': '回放結束',
+  'replay.noSteps': '該輪次沒有工具呼叫',
+  'replay.toolCall': '工具呼叫',
+  'replay.result': '執行結果',
 };
 
 const JA: Dict = {
@@ -1133,6 +1358,9 @@ const JA: Dict = {
   'sidebar.morePipeline': 'パイプライン',
   'sidebar.moreTemplates': 'テンプレート',
   'sidebar.moreCost': 'コスト',
+  'sidebar.moreCTools': 'カスタムツール',
+  'sidebar.moreTimeline': 'メモリタイムライン',
+  'sidebar.moreExport': 'エクスポート',
 
   'time.justNow': 'たった今',
   'time.minutesAgo': '{n} 分前',
@@ -1473,6 +1701,78 @@ const JA: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — API キー / モデル id / ネットワークを確認してください。',
   'al.err': 'エラー: {msg}',
   'al.executing': '実行中: {tools}',
+
+  // ── マルチモーダル視覚入力 ──
+  'vision.attach': '📎 画像',
+  'vision.paste': '画像を貼り付け (Ctrl+V)',
+  'vision.dragDrop': '画像をドロップまたは貼り付け',
+  'vision.tooLarge': '画像が大きすぎます(>{mb}MB)、スキップしました',
+  'vision.notImage': '画像ファイルではありません',
+  'vision.remove': '画像を削除',
+  'vision.capture': '📷 スクリーンショット',
+  'vision.captureErr': 'スクリーンショット失敗: {msg}',
+  'vision.captureEmpty': '画面内容が取得できませんでした',
+
+  // ── Arena Diff ──
+  'arena.diff': '📊 Diff 比較',
+  'arena.judge': '🧑‍⚖ AI 審査',
+  'arena.selectTwo': '比較する2つのエンジン出力を選択',
+  'arena.diffEmpty': '両エンジンの出力が同一です、差異なし',
+  'arena.left': '左',
+  'arena.right': '右',
+  'arena.judging': 'AI 審査評価中…',
+  'arena.judgeResult': '審査結果',
+
+  // ── カスタムツール ──
+  'ctool.title': 'カスタムツール',
+  'ctool.sub': 'カスタムツールを登録 — モデルは内蔵ツールと同様に呼び出せます。コマンドテンプレートは $ARG_<パラメータ名> プレースホルダをサポート。',
+  'ctool.add': '＋ 新規ツール',
+  'ctool.name': 'ツール名',
+  'ctool.namePh': 'my_tool',
+  'ctool.desc': '説明(モデル向け)',
+  'ctool.descPh': '入力テキストを翻訳',
+  'ctool.params': 'パラメータ (JSON Schema)',
+  'ctool.paramsPh': '{"type":"object","properties":{"text":{"type":"string","description":"翻訳するテキスト"}},"required":["text"]}',
+  'ctool.cmd': 'コマンドテンプレート',
+  'ctool.cmdPh': 'translate --text "$ARG_text"',
+  'ctool.timeout': 'タイムアウト (秒)',
+  'ctool.save': '保存',
+  'ctool.delete': '削除',
+  'ctool.empty': 'カスタムツールがありません — 「新規ツール」をクリックして作成',
+  'ctool.saved': 'ツールを保存しました',
+  'ctool.deleted': 'ツールを削除しました',
+  'ctool.nameRequired': 'ツール名は必須です',
+  'ctool.test': 'テスト',
+
+  // ── メモリタイムライン ──
+  'mem.timeline': 'メモリタイムライン',
+  'mem.timelineSub': '長期メモリを時系列表示。長期間参照されていないメモリは重みが減衰します。',
+  'mem.weight': '重み',
+  'mem.used': '{n} 回参照',
+  'mem.decay': '⚡ 減衰を実行',
+  'mem.decayDone': '低重みメモリ {n} 件を削除',
+  'mem.pruneThreshold': '重み 0.1 未満のメモリが削除されます',
+
+  // ── セッションエクスポート ──
+  'export.title': 'エクスポート',
+  'export.md': 'Markdown',
+  'export.html': 'HTML',
+  'export.json': 'JSON',
+  'export.saved': 'エクスポート先: {path}',
+  'export.failed': 'エクスポート失敗: {msg}',
+
+  // ── Agent 行動リプレイ ──
+  'replay.title': 'リプレイ',
+  'replay.step': 'ステップ {n}',
+  'replay.duration': '{ms}ms',
+  'replay.play': '▶ 再生',
+  'replay.pause': '⏸ 一時停止',
+  'replay.prev': '⏮ 前へ',
+  'replay.next': '次へ ⏭',
+  'replay.done': 'リプレイ終了',
+  'replay.noSteps': 'このターンにツール呼び出しはありません',
+  'replay.toolCall': 'ツール呼び出し',
+  'replay.result': '実行結果',
 };
 
 export const STRINGS: Record<Lang, Dict> = {
