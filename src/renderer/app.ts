@@ -5,6 +5,7 @@ import { t, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
+import { CodeEditor } from './code-editor';
 
 declare global {
   interface Window {
@@ -42,6 +43,7 @@ let gitState: { snapshot?: GitSnapshot; view: { kind: 'history' } | { kind: 'dif
 };
 // rules tab:工作目录下的 KINET.md。rulesCwd 跟踪当前加载的 cwd,切会话且 cwd 变了就重载。
 let rulesCwd = '';
+let rulesEditor: CodeEditor | null = null;
 function tr(key: string, params?: Record<string, string | number>): string {
   return t(lang, key, params);
 }
@@ -302,30 +304,35 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules'): void {
   }
 }
 
-// 加载当前 cwd 的 KINET.md 到 editor。空文件 → 空白 textarea(保存就创建文件)。
+// 加载当前 cwd 的 KINET.md 到 CodeEditor。空文件 → 空白编辑器(保存就创建文件)。
+function ensureRulesEditor(): CodeEditor {
+  if (!rulesEditor) {
+    const host = document.getElementById('rules-editor-host')!;
+    rulesEditor = new CodeEditor(host, { lang: 'markdown', autoHeight: false });
+  }
+  return rulesEditor;
+}
+
 async function loadRules(cwd: string): Promise<void> {
   rulesCwd = cwd;
-  const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
+  const ed = ensureRulesEditor();
   const status = document.getElementById('rules-status')!;
   status.textContent = '';
   if (!cwd) {
-    editor.value = '';
-    editor.disabled = true;
+    ed.value = '';
     return;
   }
-  editor.disabled = false;
-  editor.value = '…';
+  ed.value = '…';
   const r = await api.readRules(cwd);
-  editor.value = r.ok ? r.content ?? '' : '';
+  ed.value = r.ok ? r.content ?? '' : '';
   if (!r.ok) status.textContent = r.error ?? '';
 }
 
 async function saveRules(): Promise<void> {
-  if (!rulesCwd) return;
-  const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
+  if (!rulesCwd || !rulesEditor) return;
   const status = document.getElementById('rules-status')!;
   status.textContent = '…';
-  const r = await api.writeRules(rulesCwd, editor.value);
+  const r = await api.writeRules(rulesCwd, rulesEditor.value);
   status.textContent = r.ok ? tr('rules.saved') : tr('rules.saveErr', { msg: r.error ?? '' });
 }
 
@@ -1604,31 +1611,36 @@ function timeAgo(ts: number): string {
 }
 
 // ---------- 项目背景编辑器(KINET-CONTEXT.md)----------
-// 用 modal:textarea 全屏 + 保存/取消。空 cwd 不允许(workbench 卡片总是带 cwd)。
+// 用 modal + CodeEditor 全屏 + 保存/取消。空 cwd 不允许(workbench 卡片总是带 cwd)。
 let contextCwd = '';
+let contextEditor: CodeEditor | null = null;
+
 async function openContextModal(cwd: string): Promise<void> {
   if (!cwd) return;
   contextCwd = cwd;
   const modal = document.getElementById('context-modal')!;
-  const editor = document.getElementById('cm-editor') as HTMLTextAreaElement;
+  const host = document.getElementById('cm-editor-host')!;
   const cwdLabel = document.getElementById('cm-cwd')!;
   const status = document.getElementById('cm-status')!;
   cwdLabel.textContent = cwd;
   status.textContent = '';
-  editor.value = '…';
+
+  // 每次打开重建编辑器（确保干净状态）
+  if (contextEditor) { contextEditor.destroy(); contextEditor = null; }
+  contextEditor = new CodeEditor(host, { lang: 'markdown', autoHeight: false });
+  contextEditor.value = '…';
   modal.classList.add('show');
   const r = await api.readContext(cwd);
-  editor.value = r.ok ? r.content ?? '' : '';
+  contextEditor.value = r.ok ? r.content ?? '' : '';
   if (!r.ok) status.textContent = r.error ?? '';
-  editor.focus();
+  contextEditor.focus();
 }
 
 async function saveContext(): Promise<void> {
-  if (!contextCwd) return;
-  const editor = document.getElementById('cm-editor') as HTMLTextAreaElement;
+  if (!contextCwd || !contextEditor) return;
   const status = document.getElementById('cm-status')!;
   status.textContent = '…';
-  const r = await api.writeContext(contextCwd, editor.value);
+  const r = await api.writeContext(contextCwd, contextEditor.value);
   status.textContent = r.ok ? tr('wb.saved') : tr('wb.saveErr', { msg: r.error ?? '' });
 }
 
@@ -2914,8 +2926,7 @@ function openRuleGenerator(): void {
     const r = await api.rulesGenerate(cfg);
     if (r.ok && r.content) {
       // 写入 rules editor
-      const editor = document.getElementById('rules-editor') as HTMLTextAreaElement;
-      if (editor) editor.value = r.content;
+      if (rulesEditor) rulesEditor.value = r.content;
       modal.remove();
     }
   };

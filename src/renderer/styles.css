@@ -202,9 +202,8 @@ a { color: var(--accent); }
 .rules-title { font-size: 12.5px; color: var(--text-dim); }
 .rules-spacer { flex: 1; }
 .rules-status { font-size: 11.5px; color: var(--text-faint); }
-.rules-editor { flex: 1; width: 100%; resize: none; border: none; outline: none; padding: 14px 16px; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; color: var(--text); background: var(--bg); user-select: text; }
-.rules-editor::placeholder { color: var(--text-faint); white-space: pre-wrap; }
-.rules-editor:disabled { color: var(--text-faint); font-style: italic; }
+.rules-editor-host { flex: 1; min-height: 0; overflow: hidden; }
+.rules-editor-host .ce-wrap.ce-full { border-radius: 0; }
 
 /* Git tab:头 + 两栏(左 changes,右 history/diff) */
 .git-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
@@ -482,9 +481,8 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 
 /* 编辑器铺满 .files-view,文本框 + 底部状态条 */
 .files-editor { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
-.files-editor textarea { flex: 1; width: 100%; resize: none; border: none; border-radius: 0; padding: 12px 16px; font: 13px/1.6 "JetBrains Mono", "Cascadia Code", Consolas, "PingFang SC", monospace; color: var(--text); background: var(--bg); }
-.files-editor textarea:focus { outline: none; }
-.files-editor-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--bg-side); }
+.files-editor > div:first-child { flex: 1; overflow: hidden; min-height: 0; }
+.files-editor-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--bg-side); flex-shrink: 0; }
 .fe-status { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
 
 .fe-row { display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: default; font-size: 12.5px; }
@@ -526,8 +524,7 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 #context-modal.show { display: flex; }
 .cm-card { width: 720px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; }
 .cm-cwd { font-size: 11px; color: var(--text-faint); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin: 2px 0 10px; word-break: break-all; }
-.cm-editor { flex: 1; min-height: 320px; resize: none; font: inherit; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; line-height: 1.6; padding: 12px; user-select: text; }
-.cm-editor::placeholder { color: var(--text-faint); white-space: pre-wrap; }
+.cm-editor-host { flex: 1; min-height: 320px; overflow: hidden; }
 .cm-card .actions { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
 .cm-status { font-size: 12px; color: var(--text-dim); }
 .cm-spacer { flex: 1; }
@@ -707,3 +704,169 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
 .settings-grid .field { margin-bottom: 8px; }
 .settings-grid label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 3px; }
+
+/* ════════════════════════════════════════════════════════════════════════════
+   CodeEditor:自研轻量代码编辑器 / Lightweight code editor component
+   双层叠加:底 pre(高亮) + 上 textarea(透明文字),行号槽在左。
+   ════════════════════════════════════════════════════════════════════════════ */
+
+/* 宿主容器 / Host container */
+.ce-host { display: block; position: relative; height: 100%; }
+
+/* 全屏模式:撑满父容器 */
+.ce-wrap.ce-full {
+  display: flex;
+  height: 100%;
+  overflow: hidden;
+  background: var(--code-bg);
+  border-radius: 6px;
+}
+
+/* 行号槽 / Line number gutter */
+.ce-gutter {
+  flex-shrink: 0;
+  padding: 12px 0;
+  text-align: right;
+  user-select: none;
+  pointer-events: none;
+  overflow: hidden;
+  background: rgba(0,0,0,.18);
+  border-right: 1px solid var(--border);
+  min-width: 40px;
+}
+.ce-ln {
+  font: 12px/1.65 "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+  color: var(--text-faint);
+  padding: 0 10px;
+  height: calc(1.65 * 13px);
+}
+
+/* 滚动区 / Scroll area */
+.ce-scroll {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* 高亮层 / Highlight layer */
+.ce-highlight {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 16px;
+  font: 13px/1.65 "JetBrains Mono", "Cascadia Code", Consolas, "PingFang SC", monospace;
+  white-space: pre;
+  overflow: auto;
+  pointer-events: none;
+  color: var(--text);
+  background: transparent;
+  word-break: normal;
+  tab-size: 2;
+}
+
+/* 透明输入层 / Transparent input layer */
+.ce-input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  padding: 12px 16px;
+  font: 13px/1.65 "JetBrains Mono", "Cascadia Code", Consolas, "PingFang SC", monospace;
+  white-space: pre;
+  background: transparent;
+  color: transparent;
+  caret-color: var(--accent);
+  border: none;
+  outline: none;
+  resize: none;
+  overflow: auto;
+  tab-size: 2;
+  width: 100%;
+  height: 100%;
+}
+.ce-input::placeholder {
+  color: var(--text-faint);
+  opacity: 0.6;
+}
+/* 滚动条美化 / Custom scrollbar */
+.ce-input::-webkit-scrollbar,
+.ce-highlight::-webkit-scrollbar { width: 8px; height: 8px; }
+.ce-input::-webkit-scrollbar-thumb,
+.ce-highlight::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+.ce-input::-webkit-scrollbar-thumb:hover,
+.ce-highlight::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
+/* ── autoHeight 模式(内联编辑器) ── */
+.ce-wrap.ce-auto {
+  position: relative;
+  background: var(--code-bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  min-height: calc(var(--ce-lines, 3) * calc(13px * 1.65) + 24px);
+  transition: border-color .15s;
+}
+.ce-wrap.ce-auto:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-dim);
+}
+.ce-wrap.ce-auto .ce-scroll {
+  overflow: visible;
+}
+.ce-wrap.ce-auto .ce-highlight {
+  position: relative;
+  overflow: visible;
+}
+.ce-wrap.ce-auto .ce-input {
+  position: absolute;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* ═══ Token 颜色 / Token colors ═══════════════════════════════════════════════ */
+/* 深色主题:参考 VS Code Dark+ 微调，与品牌色协调 */
+.tok-keyword   { color: #c586c0; }          /* 紫粉 */
+.tok-string    { color: #ce9178; }          /* 橙棕 */
+.tok-comment   { color: #6a9955; font-style: italic; } /* 绿 */
+.tok-number    { color: #b5cea8; }          /* 浅绿 */
+.tok-function  { color: #dcdcaa; }          /* 黄 */
+.tok-builtin   { color: #4ec9b0; }          /* 青绿 */
+.tok-decorator { color: #dcdcaa; }          /* 黄 */
+.tok-tag       { color: #569cd6; }          /* 蓝 */
+.tok-attr      { color: #9cdcfe; }          /* 浅蓝 */
+.tok-variable  { color: #9cdcfe; }          /* 浅蓝 */
+.tok-property  { color: #9cdcfe; }          /* 浅蓝 */
+.tok-selector  { color: #d7ba7d; }          /* 金棕 */
+.tok-atrule    { color: #c586c0; }          /* 紫粉 */
+.tok-header    { color: #569cd6; font-weight: 700; }
+.tok-list      { color: #6a9955; }
+.tok-codeblock { color: #ce9178; background: rgba(255,255,255,.03); display: block; }
+.tok-inlinecode{ color: #ce9178; background: rgba(255,255,255,.05); padding: 0 3px; border-radius: 3px; }
+.tok-bold      { color: var(--text); font-weight: 700; }
+.tok-italic    { color: var(--text-dim); font-style: italic; }
+.tok-link      { color: #3794ff; text-decoration: underline; }
+.tok-key       { color: #9cdcfe; }          /* JSON/YAML key */
+
+/* ── 淡色主题 / Light theme tokens ── */
+[data-theme="light"] .tok-keyword   { color: #af00db; }
+[data-theme="light"] .tok-string    { color: #a31515; }
+[data-theme="light"] .tok-comment   { color: #008000; }
+[data-theme="light"] .tok-number    { color: #098658; }
+[data-theme="light"] .tok-function  { color: #795e26; }
+[data-theme="light"] .tok-builtin   { color: #267f99; }
+[data-theme="light"] .tok-decorator { color: #795e26; }
+[data-theme="light"] .tok-tag       { color: #800000; }
+[data-theme="light"] .tok-attr      { color: #ff0000; }
+[data-theme="light"] .tok-variable  { color: #001080; }
+[data-theme="light"] .tok-property  { color: #001080; }
+[data-theme="light"] .tok-selector  { color: #800000; }
+[data-theme="light"] .tok-atrule    { color: #af00db; }
+[data-theme="light"] .tok-header    { color: #0000ff; }
+[data-theme="light"] .tok-codeblock { color: #a31515; }
+[data-theme="light"] .tok-inlinecode{ color: #a31515; }
+[data-theme="light"] .tok-key       { color: #0451a5; }
+[data-theme="light"] .tok-link      { color: #0000ee; }

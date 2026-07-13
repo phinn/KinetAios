@@ -6,6 +6,7 @@
 // 主进程切 cwd 时通过 onFilesCwd 推送(独立窗口场景);内联场景由 app.ts 主动调 setCwd。
 import type { DirEntry, KinetAPI } from '../shared/types';
 import { t, type Lang } from '../shared/i18n';
+import { CodeEditor, detectLang } from './code-editor';
 
 declare global {
   interface Window {
@@ -43,7 +44,12 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   const cwdLabel = root.querySelector<HTMLElement>('#files-cwd')!;
   const menu = root.querySelector<HTMLElement>('#files-menu')!;
   const editorPane = root.querySelector<HTMLElement>('#files-editor-pane')!;
-  const editor = root.querySelector<HTMLTextAreaElement>('#files-editor')!;
+  // CodeEditor 的宿主 div:动态创建,放在 editorPane 内部(在 editor-bar 之前)。
+  // 这样 CodeEditor 撑满 editor-bar 以上的空间,不破坏 bar。
+  const editorHost = document.createElement('div');
+  editorHost.style.cssText = 'flex:1;min-height:0;overflow:hidden';
+  editorPane.insertBefore(editorHost, editorPane.firstChild);
+  let codeEditor: CodeEditor | null = null;
   const feStatus = root.querySelector<HTMLElement>('#fe-status')!;
   const ftabPreview = root.querySelector<HTMLElement>('#ftab-preview')!;
   const ftabEdit = root.querySelector<HTMLElement>('#ftab-edit')!;
@@ -183,16 +189,21 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     // 立即切到编辑器视图并显示「加载中」(避免双击后 UI 静止,看上去卡)。
     setTab('edit');
     addr.value = 'file://' + abs;
-    editor.value = '';
-    editor.placeholder = tr('files.loading');
     feStatus.textContent = abs + ' · …';
+
+    // 销毁旧实例,按文件扩展名创建对应语言的编辑器。
+    if (codeEditor) { codeEditor.destroy(); codeEditor = null; }
+    const lang = detectLang(abs);
+    codeEditor = new CodeEditor(editorHost, { lang, autoHeight: false });
+    codeEditor.value = ''; // 占位（loading 状态）
+    codeEditor.onChange = (v) => { editorDirty = true; feStatus.textContent = (currentAbs || '') + ' · 未保存'; };
+
     const r = await api.fileRead(abs);
     if (!r.ok || r.content == null) {
-      editor.placeholder = tr('files.errRead', { msg: r.error ?? '' });
       feStatus.textContent = r.error ?? '';
       return;
     }
-    editor.value = r.content;
+    codeEditor.value = r.content;
     editorDirty = false;
     feStatus.textContent = abs;
   }
@@ -207,8 +218,8 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   }
 
   async function save(): Promise<void> {
-    if (!currentAbs || !editorDirty) return;
-    const r = await api.fileWrite(currentAbs, editor.value);
+    if (!currentAbs || !editorDirty || !codeEditor) return;
+    const r = await api.fileWrite(currentAbs, codeEditor.value);
     if (r.ok) {
       editorDirty = false;
       feStatus.textContent = tr('files.saved', { path: currentAbs });
@@ -234,9 +245,9 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   // (loadFile 只灌 webview / loadEditor 只灌编辑器,切 tab 时对面是空的,得重灌)。
   ftabPreview.onclick = () => { setTab('preview'); if (currentAbs && isPreviewExt(currentAbs)) loadFile(currentAbs); };
   ftabEdit.onclick = () => { if (currentAbs) void loadEditor(currentAbs); };
-  editor.addEventListener('input', () => { editorDirty = true; feStatus.textContent = (currentAbs || '') + ' · 未保存'; });
   root.querySelector<HTMLElement>('#btn-save')!.onclick = () => void save();
-  editor.addEventListener('keydown', (ev) => {
+  // Ctrl+S 在 editorPane 上委托（CodeEditor 内部不拦截 Ctrl+S）
+  editorPane.addEventListener('keydown', (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); void save(); }
   });
 

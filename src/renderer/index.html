@@ -108,7 +108,6 @@
             <div class="files-view">
               <webview id="files-webview" src="about:blank" partition="persist:files"></webview>
               <div class="files-editor" id="files-editor-pane" hidden>
-                <textarea id="files-editor" spellcheck="false" data-i18n-placeholder="files.editorPh" placeholder="选个文本文件开始编辑…(Ctrl+S 保存)"></textarea>
                 <div class="files-editor-bar">
                   <span class="fe-status" id="fe-status"></span>
                   <span class="files-spacer"></span>
@@ -149,7 +148,7 @@
             <button class="ghost" id="btn-rules-gen" title="规则生成器">⚙✨</button>
             <button class="primary" id="btn-rules-save" data-i18n="rules.save">保存</button>
           </div>
-          <textarea class="rules-editor" id="rules-editor" data-i18n-placeholder="rules.ph" placeholder="写在这里的规则会拼到每个会话的 system prompt..."></textarea>
+          <div class="rules-editor-host" id="rules-editor-host"></div>
         </div>
       </div>
 
@@ -212,7 +211,7 @@
     <div class="modal-card cm-card">
       <h3 id="cm-title" data-i18n="wb.contextTitle">项目背景(KINET-CONTEXT.md)</h3>
       <div class="cm-cwd" id="cm-cwd"></div>
-      <textarea class="cm-editor" id="cm-editor" data-i18n-placeholder="wb.contextPh"></textarea>
+      <div class="cm-editor-host" id="cm-editor-host"></div>
       <div class="actions">
         <span class="cm-status" id="cm-status"></span>
         <span class="cm-spacer"></span>
