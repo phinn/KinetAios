@@ -826,6 +826,12 @@ if (!gotLock) {
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
     Menu.setApplicationMenu(null);
+    // macOS Dock 图标:BrowserWindow({icon}) 在 mac 上对 Dock 无效,需显式设 dock icon。
+    // Windows/Linux 上 BrowserWindow icon 已生效,dock 仅 mac 有。
+    const dockIcon = appIcon();
+    if (dockIcon && process.platform === 'darwin') {
+      try { app.dock?.setIcon(dockIcon); } catch { /* 非 mac 或 dock 不可用 */ }
+    }
     // mic 权限放行 —— webkitSpeechRecognition 需要 media。Electron 默认拒绝会导致
     // onerror('not-allowed') → onend 立刻 fire,UI 上的 listening 态一闪就没。
     // 信任模型:本应用本地,用户自己点 🎤 才触发请求,放行 mic 即可。
