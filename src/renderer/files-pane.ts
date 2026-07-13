@@ -200,7 +200,9 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
     const r = await api.fileRead(abs);
     if (!r.ok || r.content == null) {
-      feStatus.textContent = r.error ?? '';
+      // 二进制文件或读取失败:显示错误而不是崩溃。
+      codeEditor.value = '';
+      feStatus.textContent = `${abs} · ${r.error ?? 'read error'}`;
       return;
     }
     codeEditor.value = r.content;

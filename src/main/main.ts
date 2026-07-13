@@ -475,7 +475,13 @@ function registerIpc(): void {
     const full = path.resolve(base, rel || '');
     if (!full.startsWith(base)) return { ok: false, error: t(getSettings().lang, 'readfile.outOfPath') };
     try {
-      const body = fs.readFileSync(full, 'utf8');
+      const buf = fs.readFileSync(full);
+      // 二进制检测:前 8KB 有 null byte → 拒绝
+      const checkLen = Math.min(buf.length, 8192);
+      for (let i = 0; i < checkLen; i++) {
+        if (buf[i] === 0) return { ok: false, error: 'Binary file (not text)' };
+      }
+      const body = buf.toString('utf8');
       return { ok: true, name: rel, content: body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -485,8 +491,18 @@ function registerIpc(): void {
   // Files 窗口编辑器:绝对路径读全文(无 20KB 截断、无 cwd 越界检查 —— 用户主动挑的文件)。
   ipcMain.handle('file-read', (_e, abs: string) => {
     try {
-      const content = fs.readFileSync(abs, 'utf8');
-      return { ok: true, content };
+      // 先读 Buffer 检测二进制:前 8KB 内有 null byte → 二进制文件,拒绝打开。
+      // 否则 toString('utf8') 返回文本(避免直接 utf8 读二进制导致乱码/崩溃)。
+      const buf = fs.readFileSync(abs);
+      const checkLen = Math.min(buf.length, 8192);
+      for (let i = 0; i < checkLen; i++) {
+        if (buf[i] === 0) return { ok: false, error: 'Binary file (not text)' };
+      }
+      const content = buf.toString('utf8');
+      // 超大文件截断(避免渲染器卡死/OOM)—— 1MB 上限。
+      const MAX = 1_000_000;
+      const truncated = content.length > MAX ? content.slice(0, MAX) + '\n\n… [truncated]' : content;
+      return { ok: true, content: truncated };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
@@ -972,14 +988,17 @@ function registerIpc(): void {
   });
 
   // ── 系统级截图 ──
+  // desktopCapturer 在 main 进程可用,但 macOS 需要屏幕录制权限。
+  // 如果 main 进程拿不到(权限/版本差异),回退到 renderer 的 getUserMedia。
   ipcMain.handle('capture-screen', async () => {
     try {
-      // Electron desktopCapturer 在 main 进程可用。
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
       if (!sources.length) return { ok: false, error: 'No screen found' };
-      const thumb = sources[0].thumbnail;
+      // 取整个虚拟桌面(包含多显示器)或第一个源
+      const source = sources.find((s) => s.display_id === '') || sources[0];
+      const thumb = source.thumbnail;
       const dataUrl = thumb.toDataURL();
-      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: 'Empty capture' };
+      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: 'Empty capture (screen permission?)' };
       return { ok: true, dataUrl };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -1012,9 +1031,12 @@ if (!gotLock) {
     // mic 权限放行 —— webkitSpeechRecognition 需要 media。Electron 默认拒绝会导致
     // onerror('not-allowed') → onend 立刻 fire,UI 上的 listening 态一闪就没。
     // 信任模型:本应用本地,用户自己点 🎤 才触发请求,放行 mic 即可。
+    // 同时设置 check handler(某些 Electron 版本只 check 不 request)。
     session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => {
-      // media 涵盖 mic + camera;webkitSpeechRecognition 只触发 media。
       cb(perm === 'media');
+    });
+    session.defaultSession.setPermissionCheckHandler((_wc, perm) => {
+      return perm === 'media';
     });
     initStore();
     taskManager = new TaskManager(emitter);

@@ -1218,8 +1218,18 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   const captureBtn = document.getElementById('btn-capture');
   if (captureBtn) {
     captureBtn.onclick = async () => {
+      captureBtn.classList.add('loading');
       const r = await api.captureScreen();
-      if (!r.ok || !r.dataUrl) { alert(tr('vision.captureErr', { msg: r.error ?? '' })); return; }
+      captureBtn.classList.remove('loading');
+      if (!r.ok || !r.dataUrl) {
+        // macOS 屏幕录制权限缺失时,给用户明确指引。
+        const msg = r.error ?? '';
+        const hint = msg.includes('permission') || msg.includes('Empty') || msg.includes('denied')
+          ? tr('vision.captureErr', { msg: '需要屏幕录制权限(系统设置 → 隐私 → 屏幕录制)' })
+          : tr('vision.captureErr', { msg });
+        alert(hint);
+        return;
+      }
       imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: r.dataUrl });
       renderAttach();
     };
@@ -1298,7 +1308,14 @@ function wireVoice(): void {
       recActive = false;
       btn.classList.remove('listening');
       btn.title = tr('voice.mic');
-      console.warn('speech error', e.error);
+      const err = e?.error ?? 'unknown';
+      if (err === 'not-allowed') {
+        alert(tr('voice.unsupported') + '\n(mic permission denied)');
+      } else if (err === 'no-speech') {
+        // 正常:用户没说话就停了,不弹窗。
+      } else if (err !== 'aborted') {
+        console.warn('speech error', err);
+      }
     };
     rec.onend = () => {
       recActive = false;
