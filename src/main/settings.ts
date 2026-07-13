@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, safeStorage } from 'electron';
-import type { AppSettings, ConfigSnapshot } from '../shared/types';
+import type { AppSettings, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
 const DEFAULTS: AppSettings = {
@@ -20,6 +20,10 @@ const DEFAULTS: AppSettings = {
   presetId: 'glm',
   lang: 'zh-CN',
   theme: 'dark',
+  // Embedding 接口默认值:留空 = 跟随主接口,model 默认 embedding-3(GLM 智谱)。
+  embedBaseURL: '',
+  embedApiKey: '',
+  embedModel: 'embedding-3',
 };
 
 let cache: AppSettings | null = null;
@@ -33,13 +37,14 @@ export function getSettings(): AppSettings {
   try {
     const s = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) } as AppSettings;
     // 旧明文 key 不以 @enc: 开头 → 按原样用(向后兼容);加密的解回明文进内存。
-    if (typeof s.apiKey === 'string' && s.apiKey.startsWith('@enc:') && safeStorage.isEncryptionAvailable()) {
-      try {
-        s.apiKey = safeStorage.decryptString(Buffer.from(s.apiKey.slice(5), 'base64'));
-      } catch {
-        /* 解密失败留原值 */
+    const decryptIfEnc = (v: string): string => {
+      if (typeof v === 'string' && v.startsWith('@enc:') && safeStorage.isEncryptionAvailable()) {
+        try { return safeStorage.decryptString(Buffer.from(v.slice(5), 'base64')); } catch { return v; }
       }
-    }
+      return v;
+    };
+    s.apiKey = decryptIfEnc(s.apiKey);
+    s.embedApiKey = decryptIfEnc(s.embedApiKey);
     cache = s;
   } catch {
     cache = { ...DEFAULTS };
@@ -49,11 +54,14 @@ export function getSettings(): AppSettings {
 
 export function saveSettings(s: AppSettings): void {
   cache = { ...s };
-  // apiKey 用系统密钥加密(mac Keychain / Win DPAPI / Linux libsecret)再落盘,不再明文。
+  // apiKey / embedApiKey 用系统密钥加密(mac Keychain / Win DPAPI / Linux libsecret)再落盘,不再明文。
   // safeStorage 不可用(极少数环境)时回退明文。
   const toWrite: AppSettings = { ...s };
   if (s.apiKey && safeStorage.isEncryptionAvailable()) {
     toWrite.apiKey = '@enc:' + safeStorage.encryptString(s.apiKey).toString('base64');
+  }
+  if (s.embedApiKey && safeStorage.isEncryptionAvailable()) {
+    toWrite.embedApiKey = '@enc:' + safeStorage.encryptString(s.embedApiKey).toString('base64');
   }
   fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2));
 }
@@ -68,4 +76,15 @@ export function snapshot(): ConfigSnapshot {
     apiProtocol: s.apiProtocol,
     reasoning: s.reasoning,
   };
+}
+
+// Embedding 接口快照:优先用 embedBaseURL/embedApiKey;空则回退主接口配置。
+// model 优先 embedModel,默认 embedding-3。Ollama 走 nomic-embed-text。
+export function embedSnapshot(): EmbedSnapshot {
+  const s = getSettings();
+  const baseURL = s.embedBaseURL || s.baseURL;
+  const apiKey = s.embedApiKey || s.apiKey;
+  let model = s.embedModel || 'embedding-3';
+  if (baseURL.includes('localhost:11434')) model = 'nomic-embed-text';
+  return { baseURL, apiKey, model };
 }

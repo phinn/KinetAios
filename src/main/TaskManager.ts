@@ -330,6 +330,8 @@ export class TaskManager {
       // ponytail: addMemory 不返回 id,靠内容反查最新行;新 fact 量小,逐条 embed 够用。
       if (added.length) {
         try {
+          const { embedSnapshot } = await import('./settings');
+          const esnap = embedSnapshot();
           const recent = store.loadMemories(undefined);
           const byContent = new Map(recent.map((r) => [r.content, r.id]));
           for (const f of added) {
@@ -337,7 +339,7 @@ export class TaskManager {
             if (!id) continue;
             try {
               const vecs = await embed([f], snap, ac.signal);
-              if (vecs[0]?.length) store.setMemoryEmbedding(id, vecs[0], snap.baseURL.includes('localhost:11434') ? 'nomic-embed-text' : 'embedding-3');
+              if (vecs[0]?.length) store.setMemoryEmbedding(id, vecs[0], esnap.model);
             } catch (embErr) {
               console.warn('[memory] embed failed (non-blocking):', (embErr as Error)?.message);
             }

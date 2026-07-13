@@ -1,6 +1,6 @@
 // LLM providers — SSE streaming over OpenAI-compatible and Anthropic protocols.
 // Verbatim port of Swift GLMProvider.swift. Node global fetch + a web ReadableStream reader.
-import type { ChatMsg, ConfigSnapshot } from '../shared/types';
+import type { ChatMsg, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
 import { getSettings } from './settings';
 
 export type ToolDef = {
@@ -92,19 +92,24 @@ export function currentProvider(snap: ConfigSnapshot): Provider {
   return snap.apiProtocol === 'anthropic' ? new AnthropicProvider() : new OpenAICompatibleProvider();
 }
 
-// MARK: embeddings —— OpenAI 兼容 /v1/embeddings。GLM 用 embedding-3(2048 维),Ollama 走 nomic-embed-text。
-// ponytail: 默认 model 硬编码 embedding-3,后续可加 settings 字段。Anthropic 协议无 embedding 端点 → 抛错。
-// 失败时上层(TaskManager / recall_memory)兜底走 FTS5,不阻塞主流程。
+// MARK: embeddings —— OpenAI 兼容 /v1/embeddings。走独立的 EmbedSnapshot(embedBaseURL/embedApiKey/embedModel)。
+// 默认:留空时自动跟随主接口,model=embedding-3(GLM 智谱),Ollama 自动切 nomic-embed-text。
+// Anthropic 协议无 embedding 端点 → 抛错。失败时上层(TaskManager / recall_memory)兜底走 FTS5,不阻塞主流程。
 export async function embed(texts: string[], snap: ConfigSnapshot, signal?: AbortSignal): Promise<number[][]> {
-  if (snap.apiProtocol === 'anthropic') throw new Error('Anthropic 协议不支持 embeddings');
-  const model = snap.baseURL.includes('localhost:11434') ? 'nomic-embed-text' : 'embedding-3';
-  const resp = await fetch(`${snap.baseURL}/embeddings`, {
+  // 读独立 embedding 配置
+  const { embedSnapshot } = await import('./settings');
+  const esnap: EmbedSnapshot = embedSnapshot();
+  // Anthropic 主协议:如果 embedding 也指向 anthropic 端点则不支持
+  if (snap.apiProtocol === 'anthropic' && !esnap.baseURL.includes('/v1') && !esnap.baseURL.includes(':11434')) {
+    throw new Error('Anthropic 协议不支持 embeddings,请在设置中配置独立的 Embedding 接口');
+  }
+  const resp = await fetch(`${esnap.baseURL}/embeddings`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${snap.apiKey || 'ollama'}`,
+      Authorization: `Bearer ${esnap.apiKey || 'ollama'}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ model, input: texts }),
+    body: JSON.stringify({ model: esnap.model, input: texts }),
     signal: signal ?? AbortSignal.timeout(30_000),
   });
   if (!resp.ok) {

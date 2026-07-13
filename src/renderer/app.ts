@@ -765,6 +765,14 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
+        <h3>${tr('settings.sec.embed')}</h3>
+        <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">${tr('settings.embed.desc')}</div>
+        <div class="field"><label>${tr('settings.embed.model')}</label><input id="s-embed-model" value="${esc(s.embedModel || 'embedding-3')}" /></div>
+        <div class="field"><label>${tr('settings.embed.baseURL')}</label><input id="s-embed-base" value="${esc(s.embedBaseURL || '')}" placeholder="${esc(tr('settings.embed.baseURLPh'))}" /></div>
+        <div class="field"><label>${tr('settings.embed.apiKey')}</label><input id="s-embed-key" type="password" value="${esc(s.embedApiKey || '')}" placeholder="${esc(tr('settings.embed.apiKeyPh'))}" /></div>
+      </div>
+
+      <div class="s-section">
         <h3>${tr('settings.sec.ui')}</h3>
         <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
           ${LANGS.map((l) => `<option value="${l.id}" ${l.id === s.lang ? 'selected' : ''}>${l.label}</option>`).join('')}
@@ -909,6 +917,9 @@ function readSettingsForm(): AppSettings {
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
     theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light',
+    embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
+    embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
+    embedModel: (document.getElementById('s-embed-model') as HTMLInputElement).value.trim() || 'embedding-3',
   };
 }
 

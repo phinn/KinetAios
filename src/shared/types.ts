@@ -44,6 +44,11 @@ export type AppSettings = {
   presetId: string;
   lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
   theme: 'dark' | 'light'; // 暗 / 淡色主题
+  // ── Embedding 接口配置(独立于主 LLM 接口)──
+  // 默认留空 = 跟随主接口(baseURL/apiKey 复用主 LLM 的),填了则独立走自己的 endpoint。
+  embedBaseURL: string;    // '' = 复用主 baseURL
+  embedApiKey: string;     // '' = 复用主 apiKey
+  embedModel: string;      // 'embedding-3' 等 OpenAI 兼容模型 id
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
@@ -63,6 +68,14 @@ export type ConfigSnapshot = {
   apiKey: string; // '' = none
   apiProtocol: APIProtocol;
   reasoning: ReasoningEffort;
+};
+
+// Embedding 接口快照 —— embed() 用这个,字段解析优先于主 ConfigSnapshot。
+// embedBaseURL / embedApiKey 为空时回退到主接口。model 默认 embedding-3。
+export type EmbedSnapshot = {
+  baseURL: string;
+  apiKey: string;
+  model: string;
 };
 
 // The unified event model — every engine emits these; the dashboard renders them.
