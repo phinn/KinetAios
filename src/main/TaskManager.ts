@@ -216,7 +216,11 @@ export class TaskManager {
     // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
     if (conv.engine === 'direct') store.saveDirectHistory(conv);
     // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
-    if (conv.cost > 0) store.logCost(conv.id, conv.engine, conv.cost, conv.tokens);
+    // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
+    const lastTurn = conv.turns[conv.turns.length - 1];
+    if (lastTurn && lastTurn.costUSD > 0) {
+      store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0));
+    }
     this.emit.emitConversation(conv); // final flush
   }
 

@@ -151,6 +151,10 @@ a { color: var(--accent); }
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .view { flex: 1; display: none; flex-direction: column; min-height: 0; }
 .view.active { display: flex; }
+/* 需要自身滚动的视图(无内层滚动容器的) */
+#timeline-view, #ctools-view, #cost-view, #pipeline-view, #templates-view, #settings-view, #workbench-view { overflow-y: auto; }
+/* chat-view 不滚动 — 内部 #turns 自己滚 */
+#chat-view { overflow: hidden; }
 
 /* sidebar 项目分组(按 cwd 聚合):.sb-proj 是单条 li,含 head + 嵌套 ul。 */
 #conv-list li.sb-proj { padding: 0; cursor: default; }

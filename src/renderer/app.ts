@@ -1435,7 +1435,10 @@ function showTimeline() {
 
 function hideAllViews(): void {
   for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view']) {
-    document.getElementById(id)!.classList.remove('active');
+    const el = document.getElementById(id)!;
+    el.classList.remove('active');
+    // 切走时重置滚动位置,避免回来时停在底部 / 布局错乱
+    el.scrollTop = 0;
   }
 }
 

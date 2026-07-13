@@ -426,7 +426,8 @@ export function loadMemoryTimeline(): Array<{ id: string; content: string; conve
   }
   return mems.map((m) => {
     const meta = metas.get(m.id) ?? { weight: 1.0, last_used: 0, use_count: 0 };
-    return { ...m, weight: meta.weight, lastUsed: meta.last_used, useCount: meta.use_count };
+    // created_at 存的是 Unix 秒,前端 new Date() 需要毫秒 → ×1000
+    return { ...m, created_at: m.created_at * 1000, weight: meta.weight, lastUsed: meta.last_used, useCount: meta.use_count };
   });
 }
 
