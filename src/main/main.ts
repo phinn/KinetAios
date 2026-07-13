@@ -1004,6 +1004,48 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
+
+  // ── 语音转写 ──
+  // renderer 录音(WebM/Opus)→ base64 发来 → 调 OpenAI-compatible /audio/transcriptions
+  ipcMain.handle('transcribe-audio', async (_e, base64: string, mime: string) => {
+    try {
+      const s = getSettings();
+      if (!s.apiKey) return { ok: false, error: 'API key not set' };
+      // base64 → Buffer
+      const buf = Buffer.from(base64, 'base64');
+      const ext = mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : 'm4a';
+      const filename = `audio.${ext}`;
+      // multipart/form-data — 手拼 boundary(零依赖,不引 form-data)
+      const boundary = '----KinetAios' + Math.random().toString(36).slice(2);
+      const parts: Buffer[] = [];
+      // file 字段
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
+      parts.push(buf);
+      parts.push(Buffer.from('\r\n'));
+      // model 字段
+      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
+      parts.push(Buffer.from(`--${boundary}--\r\n`));
+      const body = Buffer.concat(parts);
+
+      const url = s.baseURL.replace(/\/$/, '') + '/audio/transcriptions';
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${s.apiKey}`,
+          'Content-Type': `multipart/form-data; boundary=${boundary}`,
+        },
+        body,
+      });
+      if (!res.ok) {
+        const txt = await res.text();
+        return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+      }
+      const data = await res.json() as { text?: string };
+      return { ok: true, text: data.text ?? '' };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -1028,15 +1070,26 @@ if (!gotLock) {
     if (dockIcon && process.platform === 'darwin') {
       try { app.dock?.setIcon(dockIcon); } catch { /* 非 mac 或 dock 不可用 */ }
     }
-    // mic 权限放行 —— webkitSpeechRecognition 需要 media。Electron 默认拒绝会导致
-    // onerror('not-allowed') → onend 立刻 fire,UI 上的 listening 态一闪就没。
-    // 信任模型:本应用本地,用户自己点 🎤 才触发请求,放行 mic 即可。
-    // 同时设置 check handler(某些 Electron 版本只 check 不 request)。
+    // mic 权限放行 —— MediaRecorder 需要 media。
+    // 信任模型:本应用本地,用户自己点按钮才触发,放行即可。
     session.defaultSession.setPermissionRequestHandler((_wc, perm, cb) => {
       cb(perm === 'media');
     });
     session.defaultSession.setPermissionCheckHandler((_wc, perm) => {
       return perm === 'media';
+    });
+    // getDisplayMedia(截图)的权限处理器 —— 提供 desktopCapturer 源给 renderer。
+    // renderer 调 navigator.mediaDevices.getDisplayMedia 时触发,
+    // main 进程弹屏幕选择器(macOS 原生)或直接给第一个屏幕源。
+    session.defaultSession.setDisplayMediaRequestHandler(async (_req, cb) => {
+      try {
+        const sources = await desktopCapturer.getSources({ types: ['screen'] });
+        if (!sources.length) { cb({}); return; }
+        // 直接给主屏幕(不弹选择器,简单粗暴)
+        cb({ video: sources[0] });
+      } catch {
+        cb({});
+      }
     });
     initStore();
     taskManager = new TaskManager(emitter);

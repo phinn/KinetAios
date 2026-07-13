@@ -1214,24 +1214,52 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     }
   });
 
-  // 📷 截图按钮:调主进程截全屏 → base64 附件。
+  // 📷 截图按钮:renderer 端 getDisplayMedia → canvas 截帧 → base64 附件。
+  // 比 desktopCapturer 更可靠:macOS 弹屏幕共享权限,截到真实画面。
   const captureBtn = document.getElementById('btn-capture');
   if (captureBtn) {
     captureBtn.onclick = async () => {
       captureBtn.classList.add('loading');
-      const r = await api.captureScreen();
-      captureBtn.classList.remove('loading');
-      if (!r.ok || !r.dataUrl) {
-        // macOS 屏幕录制权限缺失时,给用户明确指引。
-        const msg = r.error ?? '';
-        const hint = msg.includes('permission') || msg.includes('Empty') || msg.includes('denied')
-          ? tr('vision.captureErr', { msg: '需要屏幕录制权限(系统设置 → 隐私 → 屏幕录制)' })
-          : tr('vision.captureErr', { msg });
-        alert(hint);
-        return;
+      try {
+        // 优先 getDisplayMedia(Chromium 原生,弹权限弹窗,截真实屏幕)
+        let dataUrl: string | null = null;
+        try {
+          const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
+          const track = stream.getVideoTracks()[0];
+          // ImageCapture API(如果可用)更快 —— 否则用 video+canvas
+          const video = document.createElement('video');
+          video.srcObject = stream;
+          video.muted = true;
+          await new Promise<void>((resolve, reject) => {
+            video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
+            setTimeout(() => reject(new Error('video timeout')), 3000);
+          });
+          // 等一帧渲染
+          await new Promise((r) => requestAnimationFrame(r));
+          await new Promise((r) => setTimeout(r, 100));
+          const canvas = document.createElement('canvas');
+          canvas.width = video.videoWidth || 1920;
+          canvas.height = video.videoHeight || 1080;
+          const ctx = canvas.getContext('2d')!;
+          ctx.drawImage(video, 0, 0);
+          dataUrl = canvas.toDataURL('image/png');
+          // 清理
+          track.stop();
+          stream.getTracks().forEach((t) => t.stop());
+          video.srcObject = null;
+        } catch {
+          // getDisplayMedia 失败(用户取消/不支持)→ 回退到 main 进程 desktopCapturer
+          const r = await api.captureScreen();
+          if (r.ok && r.dataUrl) dataUrl = r.dataUrl;
+        }
+        captureBtn.classList.remove('loading');
+        if (!dataUrl) return; // 用户取消
+        imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl });
+        renderAttach();
+      } catch (e) {
+        captureBtn.classList.remove('loading');
+        alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
       }
-      imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: r.dataUrl });
-      renderAttach();
     };
   }
 
@@ -1259,74 +1287,79 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     const menu = document.getElementById('mcp-menu')!;
     if (!menu.hidden && !(e.target as HTMLElement)?.closest('#btn-mcp, #mcp-menu')) menu.hidden = true;
   });
-  // Voice in/out —— Web Speech API(Chromium 内置,零依赖)。STT 走 webkitSpeechRecognition,
-  // 进 interim 结果直接拼到 composer;TTS 走 speechSynthesis,每条 AI 回复自带 🔊 按钮(见 renderTurn)。
-  // ponytail: STT 在线版用 Google 服务,与 local-first 叙事有冲突 —— ceiling 标在这,后续换 whisper.cpp 离线。
+  // Voice in/out —— MediaRecorder 录音 → main 进程 /audio/transcriptions → 文字填入 composer。
+  // TTS 走 speechSynthesis(系统级,零依赖),每条 AI 回复自带 🔊 按钮(见 renderTurn)。
+  // ponytail: STT 需要联网调 API,后续可换 whisper.cpp 离线。
   wireVoice();
 }
 
-// 全局 STT 状态。webkitSpeechRecognition 在 .d.ts 里没类型,用 any 兜。
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let rec: any = null;
+// 录音状态:MediaRecorder → chunks → base64 → main 转写
+let mediaRec: MediaRecorder | null = null;
 let recActive = false;
+let recChunks: Blob[] = [];
 function wireVoice(): void {
   const btn = document.getElementById('btn-voice')!;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const SRC = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SRC) {
-    btn.title = tr('voice.unsupported');
-    btn.classList.add('disabled');
-    btn.onclick = () => alert(tr('voice.unsupported'));
-    return;
-  }
-  btn.onclick = () => {
-    if (recActive && rec) {
-      rec.stop();
+  btn.onclick = async () => {
+    // 正在录音 → 停止 + 转写
+    if (recActive && mediaRec) {
+      mediaRec.stop();
       return;
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec = new SRC();
-    rec.lang = lang === 'en' ? 'en-US' : lang === 'ja' ? 'ja-JP' : lang === 'zh-TW' ? 'zh-TW' : 'zh-CN';
-    rec.continuous = true;
-    rec.interimResults = true;
-    const composer = document.getElementById('composer') as HTMLTextAreaElement;
-    const base = composer.value;
-    let committed = base ? base + (base.endsWith('\n') ? '' : ' ') : '';
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onresult = (e: any) => {
-      let interim = '';
-      for (let i = e.resultIndex; i < e.results.length; i++) {
-        const r = e.results[i];
-        if (r.isFinal) committed += r[0].transcript + ' ';
-        else interim += r[0].transcript;
-      }
-      composer.value = committed + interim;
-      composer.dispatchEvent(new Event('input'));
-    };
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    rec.onerror = (e: any) => {
+    // 开始录音
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      recChunks = [];
+      // 优先 audio/webm;Safari 给 audio/mp4
+      const mime = MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm'
+        : MediaRecorder.isTypeSupported('audio/ogg') ? 'audio/ogg'
+        : 'audio/mp4';
+      mediaRec = new MediaRecorder(stream, { mimeType: mime });
+      mediaRec.ondataavailable = (e) => { if (e.data.size > 0) recChunks.push(e.data); };
+      mediaRec.onstop = async () => {
+        // 清理轨道
+        stream.getTracks().forEach((t) => t.stop());
+        recActive = false;
+        btn.classList.remove('listening');
+        btn.title = tr('voice.mic');
+        if (!recChunks.length) return;
+        const blob = new Blob(recChunks, { type: mime });
+        // 太短(<0.3s)忽略
+        if (blob.size < 1000) return;
+        btn.classList.add('loading');
+        // base64 编码
+        const buf = await blob.arrayBuffer();
+        const b64 = btoa(String.fromCharCode(...new Uint8Array(buf)));
+        const r = await api.transcribeAudio(b64, mime);
+        btn.classList.remove('loading');
+        if (!r.ok || !r.text) {
+          if (r.error) alert(tr('voice.transcribeErr', { msg: r.error }));
+          return;
+        }
+        const text = r.text.trim();
+        if (!text) return;
+        const composer = document.getElementById('composer') as HTMLTextAreaElement;
+        const cur = composer.value;
+        composer.value = cur + (cur && !cur.endsWith(' ') ? ' ' : '') + text + ' ';
+        composer.dispatchEvent(new Event('input'));
+        autosize(composer);
+        composer.focus();
+      };
+      mediaRec.start();
+      recActive = true;
+      btn.classList.add('listening');
+      btn.title = tr('voice.listening');
+      const composer = document.getElementById('composer') as HTMLTextAreaElement;
+      composer.focus();
+    } catch (e) {
       recActive = false;
       btn.classList.remove('listening');
-      btn.title = tr('voice.mic');
-      const err = e?.error ?? 'unknown';
-      if (err === 'not-allowed') {
-        alert(tr('voice.unsupported') + '\n(mic permission denied)');
-      } else if (err === 'no-speech') {
-        // 正常:用户没说话就停了,不弹窗。
-      } else if (err !== 'aborted') {
-        console.warn('speech error', err);
+      const err = (e as Error)?.message ?? String(e);
+      if (err.includes('Permission') || err.includes('NotAllowed') || err.includes('denied')) {
+        alert(tr('voice.micDenied'));
+      } else {
+        alert(tr('voice.transcribeErr', { msg: err }));
       }
-    };
-    rec.onend = () => {
-      recActive = false;
-      btn.classList.remove('listening');
-      btn.title = tr('voice.mic');
-    };
-    rec.start();
-    recActive = true;
-    btn.classList.add('listening');
-    btn.title = tr('voice.listening');
-    composer.focus();
+    }
   };
 }
 

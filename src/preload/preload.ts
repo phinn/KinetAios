@@ -85,6 +85,8 @@ const api: KinetAPI = {
   arenaDiff: (leftConvId, rightConvId) => ipcRenderer.invoke('arena-diff', leftConvId, rightConvId),
   // 系统级截图
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  // 语音转写
+  transcribeAudio: (base64: string, mime: string) => ipcRenderer.invoke('transcribe-audio', base64, mime),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));

@@ -333,8 +333,10 @@ export interface KinetAPI {
   exportConversation(convId: string, format: ExportFormat): Promise<{ ok: boolean; path?: string; error?: string }>;
   // ── Arena Diff ──
   arenaDiff(leftConvId: string, rightConvId: string): Promise<{ ok: boolean; diff?: string; leftEngine?: string; rightEngine?: string; error?: string }>;
-  // ── 系统级截图(main 进程截屏 → base64)──
+  // ── 系统级截图(renderer getDisplayMedia → canvas 截帧)──
   captureScreen(): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
+  // ── 语音转写(renderer 录音 → main 调 /audio/transcriptions)──
+  transcribeAudio(base64: string, mime: string): Promise<{ ok: boolean; text?: string; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;
