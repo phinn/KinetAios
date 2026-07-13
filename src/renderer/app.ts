@@ -1719,24 +1719,48 @@ async function renderMemoryList(): Promise<void> {
     };
   });
 }
-// Memory Graph 视图:渲染三元组 [s] → [p] → [o],按当前 scope 过滤。
+// Memory Graph 视图:力导向图(默认) / 三元组列表(可切换)。按当前 scope 过滤。
+let mmGraphMode: 'viz' | 'list' = 'viz';
+let mmGraphAnim = 0; // requestAnimationFrame id(0 = 未运行)
 async function renderMemoryGraph(): Promise<void> {
   const listEl = document.getElementById('mm-list')!;
   document.getElementById('mm-scope-this')!.classList.toggle('active', mmScope === 'this');
   document.getElementById('mm-scope-all')!.classList.toggle('active', mmScope === 'all');
   document.getElementById('mm-view-facts')!.classList.toggle('active', mmView === 'facts');
   document.getElementById('mm-view-graph')!.classList.toggle('active', mmView === 'graph');
+  // 图谱视图下显示「图/列表」切换按钮
+  const vizBtn = document.getElementById('mm-graph-viz')!;
+  vizBtn.style.display = mmView === 'graph' ? '' : 'none';
+  vizBtn.textContent = mmGraphMode === 'viz' ? '📋' : '🕸️';
+  vizBtn.title = mmGraphMode === 'viz' ? '切换列表' : '切换力导向图';
+  vizBtn.onclick = async () => {
+    mmGraphMode = mmGraphMode === 'viz' ? 'list' : 'viz';
+    stopGraphAnim();
+    await renderMemoryGraph();
+  };
   const convId = mmScope === 'this' && selectedId ? selectedId : undefined;
   const r = await api.memoryTriples(convId);
   if (!r.ok || !r.items) {
+    stopGraphAnim();
     listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
     return;
   }
   if (!r.items.length) {
+    stopGraphAnim();
     listEl.innerHTML = `<div class="mm-empty">${esc(tr('graph.empty'))}</div>`;
     return;
   }
-  listEl.innerHTML = r.items
+  if (mmGraphMode === 'viz') return renderGraphViz(listEl, r.items);
+  return renderGraphList(listEl, r.items);
+}
+
+// 列表模式:[s] → predicate → [o](原有格式)
+async function renderGraphList(
+  listEl: HTMLElement,
+  items: Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>,
+): Promise<void> {
+  stopGraphAnim();
+  listEl.innerHTML = items
     .map((t) => {
       const from = t.conversation_id ? convLabel(t.conversation_id) : '';
       return `<div class="mm-row mm-triple" data-id="${esc(t.id)}">
@@ -1760,6 +1784,333 @@ async function renderMemoryGraph(): Promise<void> {
       await renderMemoryGraph();
     };
   });
+}
+
+// ── 力导向图可视化(纯 Canvas,零依赖) ──
+// 节点 = 去重实体(subject + object 合并),边 = predicate 关系。
+// 力模型:库仑排斥 + 弹簧吸引 + 中心引力 + 阻尼。
+interface GNode { label: string; x: number; y: number; vx: number; vy: number; r: number; degree: number; fixed: boolean; }
+interface GEdge { from: string; to: string; label: string; tripleId: string; }
+function stopGraphAnim(): void {
+  if (mmGraphAnim) { cancelAnimationFrame(mmGraphAnim); mmGraphAnim = 0; }
+}
+
+async function renderGraphViz(
+  listEl: HTMLElement,
+  items: Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>,
+): Promise<void> {
+  // 构建去重节点和边
+  const nodeMap = new Map<string, GNode>();
+  const edges: GEdge[] = [];
+  for (const t of items) {
+    const sKey = t.subject, oKey = t.object;
+    if (!nodeMap.has(sKey)) nodeMap.set(sKey, makeNode(sKey));
+    if (!nodeMap.has(oKey)) nodeMap.set(oKey, makeNode(oKey));
+    nodeMap.get(sKey)!.degree++;
+    nodeMap.get(oKey)!.degree++;
+    edges.push({ from: sKey, to: oKey, label: t.predicate, tripleId: t.id });
+  }
+  const nodes = [...nodeMap.values()];
+  // 半径根据 degree 分级
+  for (const n of nodes) n.r = 14 + Math.min(n.degree, 6) * 3;
+
+  // 构建 DOM:canvas + 浮层 toolbar
+  listEl.innerHTML = '';
+  const wrap = document.createElement('div');
+  wrap.className = 'mm-graph-wrap';
+  const canvas = document.createElement('canvas');
+  canvas.className = 'mm-graph-canvas';
+  const tipBar = document.createElement('div');
+  tipBar.className = 'mm-graph-tip';
+  tipBar.innerHTML = `<span>拖拽节点 · 滚轮缩放 · ${esc(tr('graph.tip'))}</span>`;
+  wrap.appendChild(canvas);
+  wrap.appendChild(tipBar);
+  listEl.appendChild(wrap);
+
+  // 等一帧让 layout 生效,拿容器尺寸
+  requestAnimationFrame(() => runForceGraph(canvas, nodes, edges, tipBar));
+}
+
+function makeNode(label: string): GNode {
+  const angle = Math.random() * Math.PI * 2;
+  const dist = 80 + Math.random() * 80;
+  return {
+    label,
+    x: Math.cos(angle) * dist,
+    y: Math.sin(angle) * dist,
+    vx: 0, vy: 0,
+    r: 18, degree: 0, fixed: false,
+  };
+}
+
+function runForceGraph(canvas: HTMLCanvasElement, nodes: GNode[], edges: GEdge[], tipBar: HTMLElement): void {
+  const ctx = canvas.getContext('2d')!;
+  const dpr = window.devicePixelRatio || 1;
+
+  // 视口状态:平移 + 缩放
+  let panX = 0, panY = 0, zoom = 1;
+  let dragging: GNode | null = null;
+  let hoverNode: GNode | null = null;
+  let mouseDown = false;
+  let lastMX = 0, lastMY = 0;
+
+  function resize(): void {
+    const rect = canvas.getBoundingClientRect();
+    canvas.width = rect.width * dpr;
+    canvas.height = rect.height * dpr;
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    // 初始居中
+    panX = rect.width / 2;
+    panY = rect.height / 2;
+  }
+  resize();
+  const ro = new ResizeObserver(resize);
+  ro.observe(canvas);
+
+  // 屏幕坐标 → 世界坐标
+  function s2w(sx: number, sy: number): [number, number] {
+    return [(sx - panX) / zoom, (sy - panY) / zoom];
+  }
+  // 命中测试
+  function hitTest(sx: number, sy: number): GNode | null {
+    const [wx, wy] = s2w(sx, sy);
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      const dx = wx - n.x, dy = wy - n.y;
+      if (dx * dx + dy * dy <= n.r * n.r) return n;
+    }
+    return null;
+  }
+
+  // ── 力模拟一步 ──
+  function simulate(): void {
+    const REPULSION = 6000;    // 库仑排斥常数
+    const SPRING_K = 0.04;     // 弹簧弹力系数
+    const SPRING_LEN = 120;    // 弹簧自然长度
+    const CENTER_K = 0.005;    // 中心引力
+    const DAMPING = 0.85;      // 阻尼
+
+    // 排斥力(节点对)
+    for (let i = 0; i < nodes.length; i++) {
+      for (let j = i + 1; j < nodes.length; j++) {
+        const a = nodes[i], b = nodes[j];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let dist2 = dx * dx + dy * dy;
+        if (dist2 < 1) { dist2 = 1; dx = Math.random() - 0.5; dy = Math.random() - 0.5; }
+        const dist = Math.sqrt(dist2);
+        const force = REPULSION / dist2;
+        const fx = (dx / dist) * force, fy = (dy / dist) * force;
+        if (!a.fixed) { a.vx -= fx; a.vy -= fy; }
+        if (!b.fixed) { b.vx += fx; b.vy += fy; }
+      }
+    }
+    // 弹簧力(边)
+    const nodeMap = new Map(nodes.map((n) => [n.label, n]));
+    for (const e of edges) {
+      const a = nodeMap.get(e.from)!, b = nodeMap.get(e.to)!;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+      const force = SPRING_K * (dist - SPRING_LEN);
+      const fx = (dx / dist) * force, fy = (dy / dist) * force;
+      if (!a.fixed) { a.vx += fx; a.vy += fy; }
+      if (!b.fixed) { b.vx -= fx; b.vy -= fy; }
+    }
+    // 中心引力 + 阻尼 + 位置更新
+    for (const n of nodes) {
+      if (n.fixed || n === dragging) { n.vx = 0; n.vy = 0; continue; }
+      n.vx += -n.x * CENTER_K;
+      n.vy += -n.y * CENTER_K;
+      n.vx *= DAMPING; n.vy *= DAMPING;
+      n.x += n.vx; n.y += n.vy;
+    }
+  }
+
+  // ── 渲染 ──
+  function render(): void {
+    const rect = canvas.getBoundingClientRect();
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    ctx.save();
+    ctx.translate(panX, panY);
+    ctx.scale(zoom, zoom);
+
+    // 边
+    const nodeMap = new Map(nodes.map((n) => [n.label, n]));
+    for (const e of edges) {
+      const a = nodeMap.get(e.from), b = nodeMap.get(e.to);
+      if (!a || !b) continue;
+      const isHL = hoverNode && (hoverNode === a || hoverNode === b);
+      // 线
+      ctx.strokeStyle = isHL ? 'rgba(232,179,57,0.6)' : 'rgba(120,120,130,0.3)';
+      ctx.lineWidth = isHL ? 2 : 1;
+      ctx.beginPath();
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.stroke();
+      // 箭头
+      drawArrow(ctx, a.x, a.y, b.x, b.y, b.r);
+      // 边标签(predicate)
+      const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      ctx.font = '10px system-ui';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      const tw = ctx.measureText(e.label).width;
+      ctx.fillStyle = isHL ? 'rgba(232,179,57,0.9)' : 'rgba(160,160,170,0.7)';
+      ctx.fillText(e.label, mx, my - 7);
+    }
+
+    // 节点
+    for (const n of nodes) {
+      const isHL = n === hoverNode;
+      const isConnected = hoverNode && edges.some((e) =>
+        (nodeMap.get(e.from) === hoverNode && nodeMap.get(e.to) === n) ||
+        (nodeMap.get(e.to) === hoverNode && nodeMap.get(e.from) === n));
+      const dim = hoverNode && !isHL && !isConnected;
+
+      // 外圈光晕(hover 时)
+      if (isHL) {
+        ctx.beginPath();
+        ctx.arc(n.x, n.y, n.r + 6, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(232,179,57,0.15)';
+        ctx.fill();
+      }
+      // 节点圆
+      ctx.beginPath();
+      ctx.arc(n.x, n.y, n.r, 0, Math.PI * 2);
+      const grad = ctx.createRadialGradient(n.x - n.r * 0.3, n.y - n.r * 0.3, 0, n.x, n.y, n.r);
+      if (dim) {
+        grad.addColorStop(0, '#4a4a52');
+        grad.addColorStop(1, '#333338');
+      } else {
+        grad.addColorStop(0, '#f0c860');
+        grad.addColorStop(1, '#b88200');
+      }
+      ctx.fillStyle = grad;
+      ctx.fill();
+      ctx.strokeStyle = dim ? 'rgba(60,60,65,0.5)' : 'rgba(232,179,57,0.8)';
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+
+      // 标签文字
+      ctx.font = `${Math.max(10, Math.min(14, n.r * 0.6))}px system-ui`;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // 文字描边(可读性)
+      ctx.strokeStyle = 'rgba(20,20,23,0.9)';
+      ctx.lineWidth = 3;
+      ctx.strokeText(n.label, n.x, n.y);
+      ctx.fillStyle = dim ? '#777' : '#fff';
+      ctx.fillText(n.label, n.x, n.y);
+    }
+    ctx.restore();
+  }
+
+  function drawArrow(ctx: CanvasRenderingContext2D, x1: number, y1: number, x2: number, y2: number, targetR: number): void {
+    const angle = Math.atan2(y2 - y1, x2 - x1);
+    const tipX = x2 - Math.cos(angle) * (targetR + 2);
+    const tipY = y2 - Math.sin(angle) * (targetR + 2);
+    const aSize = 6;
+    ctx.beginPath();
+    ctx.moveTo(tipX, tipY);
+    ctx.lineTo(tipX - aSize * Math.cos(angle - 0.4), tipY - aSize * Math.sin(angle - 0.4));
+    ctx.lineTo(tipX - aSize * Math.cos(angle + 0.4), tipY - aSize * Math.sin(angle + 0.4));
+    ctx.closePath();
+    ctx.fillStyle = 'rgba(120,120,130,0.5)';
+    ctx.fill();
+  }
+
+  // ── 动画循环 ──
+  let frame = 0;
+  function tick(): void {
+    simulate();
+    render();
+    frame++;
+    // 收敛后降帧(省 CPU):速度都很小了 → 每 3 帧才模拟一次
+    const totalV = nodes.reduce((s, n) => s + Math.abs(n.vx) + Math.abs(n.vy), 0);
+    if (totalV < 0.5 && frame > 300) {
+      // 基本稳定了,降到 ~10fps
+      mmGraphAnim = requestAnimationFrame(() => { mmGraphAnim = requestAnimationFrame(tick) as unknown as number; }) as unknown as number;
+      return;
+    }
+    mmGraphAnim = requestAnimationFrame(tick);
+  }
+
+  // ── 交互事件 ──
+  canvas.addEventListener('mousedown', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    mouseDown = true;
+    lastMX = sx; lastMY = sy;
+    const hit = hitTest(sx, sy);
+    if (hit) {
+      dragging = hit;
+      canvas.style.cursor = 'grabbing';
+    }
+  });
+  canvas.addEventListener('mousemove', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    if (dragging) {
+      const [wx, wy] = s2w(sx, sy);
+      dragging.x = wx; dragging.y = wy;
+      // 拖拽时重新激活模拟
+      frame = 0;
+    } else if (mouseDown) {
+      // 拖拽画布 → 平移
+      panX += sx - lastMX;
+      panY += sy - lastMY;
+      lastMX = sx; lastMY = sy;
+    } else {
+      // hover 检测
+      const hit = hitTest(sx, sy);
+      if (hit !== hoverNode) {
+        hoverNode = hit;
+        canvas.style.cursor = hit ? 'pointer' : 'default';
+        // tip 栏显示关联信息
+        if (hit) {
+          const rels = edges.filter((e) => e.from === hit.label || e.to === hit.label);
+          tipBar.querySelector('span')!.textContent = `${hit.label} · ${rels.length} 条关系`;
+        } else {
+          tipBar.querySelector('span')!.textContent = `拖拽节点 · 滚轮缩放 · ${tr('graph.tip')}`;
+        }
+      }
+    }
+  });
+  canvas.addEventListener('mouseup', () => {
+    dragging = null;
+    mouseDown = false;
+    canvas.style.cursor = hoverNode ? 'pointer' : 'default';
+  });
+  canvas.addEventListener('mouseleave', () => {
+    dragging = null;
+    mouseDown = false;
+    hoverNode = null;
+  });
+  // 滚轮缩放
+  canvas.addEventListener('wheel', (ev) => {
+    ev.preventDefault();
+    const rect = canvas.getBoundingClientRect();
+    const sx = ev.clientX - rect.left, sy = ev.clientY - rect.top;
+    const delta = ev.deltaY > 0 ? 0.9 : 1.1;
+    // 以鼠标位置为中心缩放
+    const [wx, wy] = s2w(sx, sy);
+    zoom = Math.max(0.3, Math.min(3, zoom * delta));
+    panX = sx - wx * zoom;
+    panY = sy - wy * zoom;
+  }, { passive: false });
+  // 双击节点 → 删除关联三元组
+  canvas.addEventListener('dblclick', (ev) => {
+    const rect = canvas.getBoundingClientRect();
+    const hit = hitTest(ev.clientX - rect.left, ev.clientY - rect.top);
+    if (hit && confirm(tr('graph.delNode').replace('{n}', hit.label))) {
+      // 删除该节点相关的所有三元组
+      const rels = edges.filter((e) => e.from === hit.label || e.to === hit.label);
+      Promise.all(rels.map((r) => api.memoryTripleDelete(r.tripleId))).then(() => renderMemoryGraph());
+    }
+  });
+
+  // 启动动画
+  stopGraphAnim();
+  mmGraphAnim = requestAnimationFrame(tick);
 }
 // 把某行变成 textarea + 保存/取消。
 function memEdit(row: HTMLElement, id: string): void {

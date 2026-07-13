@@ -545,7 +545,9 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-scope button { padding: 4px 10px; font-size: 12px; }
 .mm-scope button.active { background: var(--accent); color: var(--bg-elev); border-color: var(--accent); }
 #mm-close { padding: 4px 10px; font-size: 18px; line-height: 1; }
-.mm-list { flex: 1; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.mm-list { flex: 1; overflow-y: auto; margin-top: 12px; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+/* graph viz 模式:mm-list 撑满可用空间给 canvas */
+.mm-list:has(.mm-graph-wrap) { flex: 1 1 400px; overflow: hidden; }
 .mm-empty { color: var(--text-dim); font-size: 13px; padding: 24px; text-align: center; }
 .mm-row { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; background: var(--bg); }
 .mm-text { font-size: 13px; line-height: 1.5; user-select: text; white-space: pre-wrap; word-break: break-word; }
@@ -558,6 +560,12 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-triple-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; user-select: text; }
 .mm-triple-node { padding: 2px 8px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; }
 .mm-triple-arrow { color: var(--accent); font-size: 12px; }
+
+/* Memory Graph 力导向图可视化 / Force-directed graph visualization */
+.mm-graph-wrap { position: relative; width: 100%; height: 100%; min-height: 360px; overflow: hidden; border-radius: 8px; background: #161619; }
+.mm-graph-canvas { display: block; width: 100%; height: 100%; cursor: default; }
+.mm-graph-tip { position: absolute; bottom: 8px; left: 12px; font-size: 11px; color: var(--text-faint); pointer-events: none; background: rgba(22,22,25,0.7); padding: 3px 8px; border-radius: 4px; }
+#mm-graph-viz { font-size: 15px; padding: 2px 8px; }
 
 /* Arena 窗口(⚔):同一 prompt 三引擎并跑,三栏并排。 */
 body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; background: var(--bg); color: var(--text); font: 13px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
