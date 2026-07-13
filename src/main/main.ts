@@ -103,6 +103,7 @@ function createDashboard(): BrowserWindow {
     minHeight: 480,
     backgroundColor: '#1b1b1f',
     title: getBrand().productName,
+    icon: appIcon(), // dev 模式下显示在任务栏/标题栏(打包后由 .exe 内嵌的 ico 接管)
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
@@ -113,6 +114,28 @@ function createDashboard(): BrowserWindow {
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
   return win;
+}
+
+// 应用图标:build/icon.png(512×512 master)。dev 跑 npm start 时给 BrowserWindow 用,
+// 打包后由 .exe/.app 内嵌的 icon 接管。missing 时不报错(返回 undefined)。
+let _appIcon: ReturnType<typeof nativeImage.createFromPath> | undefined;
+function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
+  if (_appIcon) return _appIcon;
+  // dev 跑 dist/main/main.js,从仓库根 build/icon.png 加载;打包后路径不可达 → 静默放弃。
+  for (const candidate of [
+    path.join(__dirname, '..', '..', 'build', 'icon.png'),
+    path.join(__dirname, '..', '..', 'build', 'icon.ico'),
+  ]) {
+    try {
+      if (fs.existsSync(candidate)) {
+        _appIcon = nativeImage.createFromPath(candidate);
+        if (!_appIcon.isEmpty()) return _appIcon;
+      }
+    } catch {
+      /* 路径不可达,试下一个 */
+    }
+  }
+  return undefined;
 }
 
 function createQuick(): BrowserWindow {
@@ -308,7 +331,7 @@ async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string })
   }
 }
 
-// MARK: 托盘(程序生成的金色圆 icon,无需图标资源;关窗留托盘,全局热键常驻)
+// MARK: 托盘(优先用应用图标;关窗留托盘,全局热键常驻)
 const CRC_TABLE = (() => {
   const t = new Uint32Array(256);
   for (let n = 0; n < 256; n++) {
@@ -332,8 +355,22 @@ function pngChunk(type: string, data: Buffer): Buffer {
   const t = Buffer.from(type, 'ascii');
   return Buffer.concat([num32(data.length), t, data, num32(crc32(Buffer.concat([t, data])))]);
 }
-// 16×16 金色圆 PNG(运行时用 zlib 编码,免去图标资源文件)。
+// 托盘图标:优先用 build/icon.png resize 到 16×16(和应用图标统一);
+// 打包后路径不可达 → 回退到运行时生成的金色圆 PNG(无需图标资源文件)。
 function makeTrayIcon() {
+  // 尝试从图标文件加载
+  for (const candidate of [
+    path.join(__dirname, '..', '..', 'build', 'icon.png'),
+    path.join(__dirname, '..', '..', 'build', 'icon.ico'),
+  ]) {
+    try {
+      if (fs.existsSync(candidate)) {
+        const full = nativeImage.createFromPath(candidate);
+        if (!full.isEmpty()) return full.resize({ width: 16, height: 16 });
+      }
+    } catch { /* 回退到程序生成 */ }
+  }
+  // 回退:16×16 金色圆 PNG(运行时用 zlib 编码,免去图标资源文件)。
   const S = 16;
   const raw = Buffer.alloc((S * 4 + 1) * S);
   for (let y = 0; y < S; y++) {
