@@ -240,14 +240,49 @@ class SseClient {
   }
 
   async call(name: string, args: Record<string, unknown>): Promise<string> {
-    if (!this.alive) return `MCP server 不可用: ${this.cfg.name}`;
+    // 如果已标记失效,先尝试重连(不重连就直接放弃会导致永久死亡)。
+    if (!this.alive) {
+      if (!this.reconnecting) await this.reconnect();
+      if (!this.alive) return `MCP server 不可用(重连失败): ${this.cfg.name}`;
+    }
     try {
-      const res = await this.request('tools/call', { name, arguments: args }, 120_000);
+      // run_agent 可能跑数分钟 → 超时放到 10 分钟。
+      const timeout = name === 'run_agent' ? 10 * 60 * 1000 : 120_000;
+      const res = await this.request('tools/call', { name, arguments: args }, timeout);
       const text = (res?.content ?? []).map((c: any) => (c?.type === 'text' ? c.text : JSON.stringify(c))).join('\n').trim();
       return res?.isError ? `MCP 工具报错: ${text}` : text || '(无输出)';
     } catch (e) {
-      this.alive = false; // 远程 server 不可达 → 标记失效
-      return `MCP 远程调用失败: ${(e as Error).message}`;
+      // 不永久死亡 —— 尝试重连一次,如果连上了就还能用。
+      const msg = (e as Error).message;
+      console.warn(`[mcp/${this.cfg.name}] call ${name} 失败,尝试重连: ${msg}`);
+      this.alive = false;
+      // 后台重连(不阻塞当前调用返回错误文本)。
+      void this.reconnect();
+      return `MCP 远程调用失败: ${msg}`;
+    }
+  }
+
+  /** 后台重连:重新 initialize + tools/list,成功后恢复 alive。 */
+  private reconnecting = false;
+  private async reconnect(): Promise<void> {
+    if (this.reconnecting) return;
+    this.reconnecting = true;
+    try {
+      await this.request('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: getBrand().productName, version: '0.1.0' },
+      }, 10_000);
+      const res = await this.request('tools/list', {}, 10_000);
+      this.tools.length = 0;
+      this.tools.push(...(res?.tools ?? []));
+      this.alive = true;
+      console.log(`[mcp/${this.cfg.name}] 重连成功,${this.tools.length} 个工具可用`);
+    } catch {
+      console.warn(`[mcp/${this.cfg.name}] 重连失败,将在下次调用时重试`);
+      // 保持 alive=false,下次 call 直接返回错误,但 reconnect 会在 dispose 前持续尝试。
+    } finally {
+      this.reconnecting = false;
     }
   }
 

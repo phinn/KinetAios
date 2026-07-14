@@ -98,6 +98,11 @@ export class LocalMcpServer {
         return;
       }
       this.server = http.createServer((req, res) => this.handle(req, res));
+      // run_agent 可能跑数分钟 → 关闭 Node 默认 2min 超时,改为 10 分钟。
+      this.server.timeout = 10 * 60 * 1000;
+      this.server.requestTimeout = 10 * 60 * 1000;
+      this.server.headersTimeout = 10 * 60 * 1000;
+      this.server.keepAliveTimeout = 30_000;
       this.server.on('error', (e) => {
         reject(e);
       });
@@ -249,7 +254,10 @@ export class LocalMcpServer {
         return {};
 
       case 'tools/list':
-        return { tools: [...this.tools.map(toolToMcp), RUN_AGENT_TOOL_MCP] };
+        // 多机协作核心:远程节点只暴露 run_agent 一个工具。
+        // 不暴露细粒度工具(shell/read_file/...)——远程文件路径、cwd、上下文都在远程机器上,
+        // 让本地 LLM 逐条调远程工具极不稳定且容易出错。正确做法是远程起完整 Agent 自主完成任务。
+        return { tools: [RUN_AGENT_TOOL_MCP] };
 
       case 'tools/call': {
         const name = String((msg.params as any)?.name ?? '');

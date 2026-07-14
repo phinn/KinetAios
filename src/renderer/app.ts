@@ -1275,63 +1275,104 @@ async function closeConfirm(approved: boolean) {
 
 // ---------- 远程 Agent 状态条 ----------
 // 当远程机器通过 MCP 调用本机 run_agent 时,在底部显示浮动状态条。
+// 远程机立即看到"有一个 Agent 被调起来了""在干什么""完成了/出错了"。
 let remoteBannerEl: HTMLDivElement | null = null;
 let remoteBannerTimer: ReturnType<typeof setTimeout> | null = null;
 
-function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): void {
-  // 确保 banner 元素存在
-  if (!remoteBannerEl) {
-    remoteBannerEl = document.createElement('div');
-    remoteBannerEl.id = 'remote-agent-banner';
-    remoteBannerEl.style.cssText = `
-      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
-      max-width: 420px; padding: 12px 16px; border-radius: 12px;
-      background: var(--bg-card, #1e1e2e); color: var(--text-primary, #cdd6f4);
-      border: 1px solid var(--accent, #e8b339); box-shadow: 0 4px 24px rgba(0,0,0,0.3);
-      font-size: 13px; line-height: 1.5; display: flex; align-items: center; gap: 10px;
-      transition: opacity 0.3s; backdrop-filter: blur(12px);
+function ensureRemoteBanner(): void {
+  if (remoteBannerEl) return;
+  remoteBannerEl = document.createElement('div');
+  remoteBannerEl.id = 'remote-agent-banner';
+  remoteBannerEl.innerHTML = `
+    <span class="ra-icon" style="font-size:18px;flex-shrink:0"></span>
+    <span class="ra-text" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+    <span class="ra-detail" style="font-size:11px;opacity:0.6;margin-left:8px;flex-shrink:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
+  `;
+  remoteBannerEl.style.cssText = `
+    position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+    max-width: 480px; padding: 14px 18px; border-radius: 14px;
+    background: var(--bg-card, #1e1e2e); color: var(--text-primary, #cdd6f4);
+    border: 1.5px solid var(--accent, #e8b339);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    font-size: 13px; line-height: 1.5; display: none; align-items: center; gap: 10px;
+    transition: opacity 0.3s; backdrop-filter: blur(16px);
+    opacity: 0;
+  `;
+  document.body.appendChild(remoteBannerEl);
+  // 注入脉动动画 CSS(只注入一次)。
+  if (!document.getElementById('remote-pulse-style')) {
+    const style = document.createElement('style');
+    style.id = 'remote-pulse-style';
+    style.textContent = `
+      @keyframes remote-pulse {
+        0%, 100% { box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 0 rgba(232,179,57,0.4); }
+        50% { box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 8px rgba(232,179,57,0); }
+      }
     `;
-    document.body.appendChild(remoteBannerEl);
+    document.head.appendChild(style);
   }
+}
 
+function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): void {
+  ensureRemoteBanner();
+  if (!remoteBannerEl) return;
+
+  const iconEl = remoteBannerEl.querySelector('.ra-icon') as HTMLSpanElement;
+  const textEl = remoteBannerEl.querySelector('.ra-text') as HTMLSpanElement;
+  const detailEl = remoteBannerEl.querySelector('.ra-detail') as HTMLSpanElement;
   let icon = '⚡';
   let text = '';
+  let detail = '';
   let autoHide = false;
+  let pulse = false; // 脉动动画 = 正在执行中
 
   switch (ev.type) {
     case 'start':
       icon = '🔌';
-      text = `远程 Agent 已启动: ${ev.prompt.slice(0, 80)}${ev.prompt.length > 80 ? '…' : ''}`;
+      text = `远程 Agent 已启动`;
+      detail = ev.prompt.slice(0, 100) + (ev.prompt.length > 100 ? '…' : '');
+      pulse = true;
       break;
     case 'tool':
       icon = '🔧';
-      text = `远程 Agent 正在调用工具: ${ev.name}`;
+      text = `远程 Agent 正在工作`;
+      detail = `工具: ${ev.name}`;
+      pulse = true;
       break;
     case 'token':
-      // token 事件太频繁,只在 banner 里追加少量文本
-      return;
+      return; // 太频繁,不更新 banner
     case 'status':
       icon = '📋';
       text = ev.text;
+      pulse = true;
       break;
     case 'cost':
       icon = '💰';
-      text = `远程 Agent 消耗: $${ev.usd.toFixed(4)} / ${ev.tokens} tokens`;
+      text = `远程 Agent 产生费用`;
+      detail = `$${ev.usd.toFixed(4)} / ${ev.tokens} tokens`;
+      pulse = true;
       break;
     case 'done':
       icon = '✅';
-      text = `远程 Agent 完成: ${ev.summary.slice(0, 100)}${ev.summary.length > 100 ? '…' : ''}`;
+      text = `远程 Agent 已完成`;
+      detail = ev.summary.slice(0, 120) + (ev.summary.length > 120 ? '…' : '');
       autoHide = true;
       break;
     case 'error':
       icon = '❌';
-      text = `远程 Agent 出错: ${ev.message}`;
+      text = `远程 Agent 出错`;
+      detail = ev.message;
       autoHide = true;
       break;
   }
 
-  remoteBannerEl.innerHTML = `<span style="font-size:16px">${icon}</span><span>${text}</span>`;
+  iconEl.textContent = icon;
+  textEl.textContent = text;
+  detailEl.textContent = detail;
+  remoteBannerEl.style.display = 'flex';
+  void remoteBannerEl.offsetHeight; // force reflow for transition
   remoteBannerEl.style.opacity = '1';
+  remoteBannerEl.style.animation = pulse ? 'remote-pulse 2s ease-in-out infinite' : 'none';
 
   if (remoteBannerTimer) {
     clearTimeout(remoteBannerTimer);
@@ -1339,8 +1380,11 @@ function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): 
   }
   if (autoHide) {
     remoteBannerTimer = setTimeout(() => {
-      if (remoteBannerEl) remoteBannerEl.style.opacity = '0';
-    }, 6000);
+      if (!remoteBannerEl) return;
+      remoteBannerEl.style.opacity = '0';
+      remoteBannerEl.style.animation = 'none';
+      setTimeout(() => { if (remoteBannerEl) remoteBannerEl.style.display = 'none'; }, 300);
+    }, 8000);
   }
 }
 
