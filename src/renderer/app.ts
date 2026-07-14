@@ -963,29 +963,35 @@ async function showSettings() {
         <h3>🔗 多机协作 (MCP Bridge)</h3>
         <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
 
-        <div class="field" style="flex-direction:column;align-items:flex-start;gap:6px">
-          <label><input type="checkbox" id="s-mcp-enabled" ${s.localMcpServer?.enabled ? 'checked' : ''} style="width:auto;margin-right:6px" />启用本机 MCP Server(允许其它机器调用我的工具)</label>
+        <label class="switch-label">
+          <span class="switch"><input type="checkbox" id="s-mcp-enabled" ${s.localMcpServer?.enabled ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
+          启用本机 MCP Server
+        </label>
+        <div style="color:var(--muted);font-size:11px;margin:-4px 0 10px 46px">开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)</div>
+
+        <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px;margin-left:0">
           <div style="display:flex;gap:8px;align-items:center">
-            <label style="min-width:60px">端口</label>
+            <label style="min-width:50px;font-size:12px;color:var(--muted)">端口</label>
             <input id="s-mcp-port" type="number" value="${s.localMcpServer?.port ?? 18109}" style="width:80px" />
-            <label style="min-width:60px">Token</label>
-            <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权(仅信任网络)" style="flex:1" />
+            <label style="min-width:50px;font-size:12px;color:var(--muted)">Token</label>
+            <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权" style="flex:1" />
           </div>
           <div style="display:flex;gap:8px;align-items:center">
-            <button id="s-mcp-start">立即启动</button>
-            <button id="s-mcp-stop">停止</button>
+            <button id="s-mcp-start" class="primary" style="padding:4px 14px;font-size:12px">立即启动</button>
+            <button id="s-mcp-stop" style="padding:4px 14px;font-size:12px">停止</button>
             <span class="test-msg" id="s-mcp-msg"></span>
           </div>
         </div>
 
-        <div class="field" style="flex-direction:column;align-items:flex-start;gap:6px;margin-top:12px">
-          <label style="font-weight:600">远程节点(把别的 KinetAios 当工具用)</label>
-          <div id="s-remote-list" style="width:100%;display:flex;flex-direction:column;gap:4px"></div>
-          <div style="display:flex;gap:8px;align-items:center">
+        <div style="border-top:1px dashed var(--border);margin:14px 0;padding-top:10px">
+          <label style="font-weight:600;font-size:13px">远程节点</label>
+          <span style="color:var(--muted);font-size:11px;margin-left:8px">把别的 KinetAios 当工具用</span>
+          <div id="s-remote-list" style="width:100%;display:flex;flex-direction:column;gap:4px;margin-top:8px"></div>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
             <input id="s-remote-name" placeholder="名称(如 macbook-pro)" style="width:140px" />
             <input id="s-remote-url" placeholder="http://192.168.1.100:18109/mcp" style="flex:1" />
             <input id="s-remote-token" type="password" placeholder="token" style="width:100px" />
-            <button id="s-remote-add">添加</button>
+            <button id="s-remote-add" style="padding:4px 12px;font-size:12px">添加</button>
           </div>
         </div>
       </div>

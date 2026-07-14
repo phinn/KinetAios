@@ -409,6 +409,14 @@ a { color: var(--accent); }
 .s-section h3 { margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
 .test-msg { font-size: 12px; margin-top: 6px; }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
+/* iOS 风格开关(settings 页 toggle) */
+.switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
+.switch input { opacity: 0; width: 0; height: 0; }
+.switch .track { position: absolute; inset: 0; border-radius: 22px; background: var(--border); transition: background .2s; cursor: pointer; }
+.switch .thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.3); }
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track .thumb { transform: translateX(16px); }
+.switch-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 13px; }
 /* plugin list in settings */
 .s-plugin-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
 .s-plugin-row { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
