@@ -6,7 +6,7 @@ import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, Skil
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
-import { setTownLang, setTownHomeDir, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
+import { setTownLang, setTownHomeDir, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, setTownSkin, setTownSkinCallback, type TownCallbacks, type TownSkin } from './town';
 
 declare global {
   interface Window {
@@ -115,6 +115,14 @@ function applyI18nDOM(): void {
       order: () => order,
     };
     setTownCallbacks(townCallbacks);
+    // 小镇皮肤持久化(用 localStorage,避免改 AppSettings 类型) / Persist town skin via localStorage
+    setTownSkinCallback((skin: TownSkin) => {
+      try { localStorage.setItem('townSkin', skin); } catch { /* ignore */ }
+    });
+    try {
+      const savedSkin = localStorage.getItem('townSkin') as TownSkin | null;
+      if (savedSkin) setTownSkin(savedSkin);
+    } catch { /* ignore */ }
     const brandEl = document.getElementById('brand');
     if (brandEl) brandEl.innerHTML = '<span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span> ' + esc(PRODUCT);
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });

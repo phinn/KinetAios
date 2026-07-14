@@ -2,6 +2,7 @@
  * Town View — 游戏风格小镇视图样式
  * Town View — Game-style town visualization styles
  * 零依赖:纯 CSS + SVG + DOM,无游戏引擎。
+ * 支持 3 套皮肤:data-town-skin="cozy|forest|neon"
  * ═══════════════════════════════════════════════════ */
 
 /* 小镇容器 / Town container */
@@ -20,19 +21,37 @@
   flex-direction: column;
 }
 
-/* 天空层(渐变背景,跟主题联动) / Sky layer (gradient, theme-linked) */
+/* 天空层(渐变背景,跟皮肤联动) / Sky layer */
 .town-sky {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-  background: radial-gradient(ellipse at 50% 0%, var(--town-sky-top, #1a1a2e) 0%, var(--town-sky-bottom, var(--bg)) 70%);
 }
 
-/* 地面纹理(isometric 网格) / Ground texture (isometric grid) */
+/* 星星/月亮装饰层 / Star/moon decoration */
+.town-sky-deco {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 地面纹理 / Ground */
+.town-ground {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* 滚动区域 / Scrollable body */
 .town-body {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -42,9 +61,9 @@
 /* 小镇顶部栏 / Town header bar */
 .town-header {
   position: relative;
-  z-index: 2;
+  z-index: 3;
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: 12px;
   padding: 20px 24px 12px;
   flex-wrap: wrap;
@@ -63,6 +82,39 @@
   line-height: 1.5;
 }
 .town-spacer { flex: 1; }
+
+/* 皮肤切换器 / Skin selector */
+.town-skin-selector {
+  display: inline-flex;
+  gap: 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+}
+.town-skin-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 7px;
+  border: 2px solid transparent;
+  cursor: pointer;
+  transition: border-color .2s, transform .15s;
+  position: relative;
+  overflow: hidden;
+}
+.town-skin-btn:hover { transform: scale(1.1); }
+.town-skin-btn.active {
+  border-color: var(--accent);
+}
+.town-skin-btn[data-skin="cozy"] {
+  background: linear-gradient(135deg, #ff9a56 0%, #ff6a88 50%, #4a3a5c 100%);
+}
+.town-skin-btn[data-skin="forest"] {
+  background: linear-gradient(135deg, #7eb56e 0%, #2d6a4f 50%, #1b4332 100%);
+}
+.town-skin-btn[data-skin="neon"] {
+  background: linear-gradient(135deg, #0f0f23 0%, #7c3aed 50%, #f43f5e 100%);
+}
 
 /* ── 房子网格 / House grid ── */
 .town-grid {
@@ -104,11 +156,11 @@
 
 /* 房子 SVG 容器 / House SVG container */
 .house-svg {
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.2));
   transition: transform .2s;
 }
 .town-house:hover .house-svg {
-  transform: translateY(-2px) scale(1.02);
+  transform: translateY(-3px) scale(1.03);
 }
 
 /* 路牌(统计信息) / Sign post (stats) */
@@ -228,12 +280,111 @@
   line-height: 1.6;
 }
 
-/* ── 居中弹出面板 / Centered modal panel ── */
+/* ═══════════════════════════════════════════════════
+ * 皮肤系统 / Skin System
+ * ═══════════════════════════════════════════════════ */
+
+/* ── Cozy 温馨日落(默认) ── */
+[data-town-skin="cozy"] .town-sky {
+  background: linear-gradient(180deg,
+    #2a1f3d 0%,
+    #5d3a6e 20%,
+    #c2604f 45%,
+    #f0916a 65%,
+    #fbc4ab 85%,
+    #ffd5a5 100%);
+}
+[data-town-skin="cozy"] .town-ground {
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(80,50,60,0.3) 30%,
+    rgba(60,35,45,0.6) 100%);
+}
+[data-town-skin="cozy"] {
+  --town-hover: rgba(255,180,120,0.06);
+  --town-card-bg: rgba(42,31,61,0.35);
+  --town-card-border: rgba(255,180,120,0.15);
+}
+
+/* ── Forest 森林秘境 ── */
+[data-town-skin="forest"] .town-sky {
+  background: linear-gradient(180deg,
+    #1a2e1f 0%,
+    #2d4a3a 25%,
+    #527862 50%,
+    #74a582 75%,
+    #a8c8a0 100%);
+}
+[data-town-skin="forest"] .town-ground {
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(30,60,40,0.4) 30%,
+    rgba(20,45,30,0.7) 100%);
+}
+[data-town-skin="forest"] {
+  --town-hover: rgba(120,200,140,0.06);
+  --town-card-bg: rgba(26,46,31,0.35);
+  --town-card-border: rgba(120,200,140,0.15);
+}
+
+/* ── Neon 赛博霓虹 ── */
+[data-town-skin="neon"] .town-sky {
+  background: linear-gradient(180deg,
+    #0a0a1a 0%,
+    #14142b 30%,
+    #1a1040 55%,
+    #2a0f4e 80%,
+    #1a0828 100%);
+}
+[data-town-skin="neon"] .town-ground {
+  background: linear-gradient(180deg,
+    transparent 0%,
+    rgba(124,58,237,0.08) 30%,
+    rgba(15,15,35,0.6) 100%);
+}
+[data-town-skin="neon"] {
+  --town-hover: rgba(124,58,237,0.08);
+  --town-card-bg: rgba(20,20,43,0.45);
+  --town-card-border: rgba(124,58,237,0.2);
+}
+
+/* Neon 专属:网格地面 */
+[data-town-skin="neon"] .town-ground::before {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 120px;
+  background-image:
+    linear-gradient(90deg, rgba(124,58,237,0.12) 1px, transparent 1px),
+    linear-gradient(0deg, rgba(124,58,237,0.12) 1px, transparent 1px);
+  background-size: 40px 40px;
+  transform: perspective(200px) rotateX(60deg);
+  transform-origin: bottom;
+  mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 50%);
+  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 50%);
+}
+
+/* ═══════════════════════════════════════════════════
+ * 星星 / 月亮装饰 (静态 SVG,嵌入 town-sky-deco)
+ * ═══════════════════════════════════════════════════ */
+.town-star {
+  position: absolute;
+  border-radius: 50%;
+  animation: town-twinkle 3s ease-in-out infinite;
+}
+@keyframes town-twinkle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
+}
+
+/* ═══════════════════════════════════════════════════
+ * 居中弹出面板 / Centered modal panel
+ * ═══════════════════════════════════════════════════ */
 #town-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.25);
-  backdrop-filter: blur(2px);
+  background: rgba(0,0,0,0.3);
+  backdrop-filter: blur(3px);
   z-index: 1000;
   opacity: 0;
   pointer-events: none;
@@ -269,18 +420,22 @@
   pointer-events: auto;
 }
 
-/* 面板头部 / Panel header */
+/* 面板头 / Panel head */
 .tp-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px;
+  padding: 14px 16px 10px;
   border-bottom: 1px solid var(--border);
-  border-radius: 14px 14px 0 0;
   flex-shrink: 0;
 }
 .tp-villager {
   flex-shrink: 0;
+  width: 28px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 .tp-info {
   flex: 1;
@@ -340,7 +495,7 @@
 }
 .tp-label {
   font-size: 11px;
-  color: var(--text-daint);
+  color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   margin-bottom: 4px;
@@ -456,27 +611,10 @@
   cursor: not-allowed;
 }
 
-/* ── 主题联动天空配色 / Theme-linked sky colors ── */
-[data-theme="dark"] {
-  --town-sky-top: #1a1a2e;
-  --town-sky-bottom: #0d0d14;
-  --town-hover: rgba(255,255,255,0.03);
-}
-[data-theme="light"] {
-  --town-sky-top: #b3d9f2;
-  --town-sky-bottom: #e8f0f5;
-  --town-hover: rgba(0,0,0,0.03);
-}
-[data-theme="aurora"] {
-  --town-sky-top: #1a1530;
-  --town-sky-bottom: #0d0e14;
-  --town-hover: rgba(196,167,255,0.05);
-}
-[data-theme="serene"] {
-  --town-sky-top: #ede4d9;
-  --town-sky-bottom: #f5f1ec;
-  --town-hover: rgba(183,110,121,0.04);
-}
+/* ═══════════════════════════════════════════════════
+ * 旧主题联动天空配色(向后兼容)
+ * Legacy theme-linked sky colors (backward compat)
+ * ═══════════════════════════════════════════════════ */
 
 /* ── 响应式 / Responsive ── */
 @media (max-width: 700px) {
@@ -487,4 +625,15 @@
     width: 95vw;
     max-height: 90vh;
   }
+}
+
+/* 用户偏好减少动画 / Respect reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .villager-wrap.vs-idle .villager-svg,
+  .villager-wrap.vs-working .villager-svg,
+  .villager-wrap.vs-error .villager-svg,
+  .villager-wrap.vs-done .villager-svg {
+    animation: none;
+  }
+  .town-star { animation: none; }
 }
