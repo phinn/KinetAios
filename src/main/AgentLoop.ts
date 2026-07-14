@@ -67,7 +67,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       );
     } catch (e) {
       const name = (e as Error)?.name;
-      if (name === 'AbortError' || signal.aborted) return dropTransient(messages); // user hit stop
+      if (name === 'AbortError' || signal.aborted) return finalizeAbortedMessages(messages); // user hit stop
       // 超长兜底:API 报上下文过长时,更激进 trim(预算砍半)后重试本轮一次。
       if (!retriedAfterShrink && isContextTooLong(e)) {
         retriedAfterShrink = true;
@@ -102,6 +102,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
     messages.push(...(await runToolBatch(completion.toolCalls, tools, ctx, signal, onEvent)));
+    // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
+    // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
+    if (signal.aborted) return finalizeAbortedMessages(messages);
   }
   onEvent({ type: 'error', message: t(getSettings().lang, 'al.maxTurns', { max: maxTurns }) });
   return dropTransient(messages);
@@ -141,6 +144,32 @@ function dropTransient(messages: ChatMsg[]): ChatMsg[] {
       }
       return m;
     });
+}
+
+// 用户中断后,确保 messages 以合法的 assistant 消息结尾(否则下一轮 send 时 API 会收到
+// 连续两个 user 消息或 tool 后面直接跟 user → 模型不知道之前做了什么)。
+// 三种需要补尾的情况:
+//   1. 最后一条是 user      → abort 发生在首轮 LLM 回复前(还没 push assistant)
+//   2. 最后一条是 tool       → abort 发生在工具执行后、下一轮 LLM 回复前
+//   3. 最后一条是 assistant 且有 tool_calls → 缺 tool result 配对(API 要求 assistant.tool_calls 后必须跟 tool)
+function finalizeAbortedMessages(raw: ChatMsg[]): ChatMsg[] {
+  const msgs = dropTransient(raw);
+  if (!msgs.length) return msgs;
+  const last = msgs[msgs.length - 1];
+  if (last.role === 'user') {
+    // 情况 1:补一条占位 assistant(让下一轮 API 看到正常的 user→assistant 交替)
+    msgs.push({ role: 'assistant', content: '[已中断]' });
+  } else if (last.role === 'tool') {
+    // 情况 2:tool 后面缺 assistant 回复 → 补占位
+    msgs.push({ role: 'assistant', content: '[已中断]' });
+  } else if (last.role === 'assistant' && Array.isArray(last.tool_calls) && last.tool_calls.length > 0) {
+    // 情况 3:assistant 要求调工具但还没执行 → 补假 tool results 配对
+    for (const tc of last.tool_calls) {
+      msgs.push({ role: 'tool', tool_call_id: tc.id, content: '[已停止]' });
+    }
+    msgs.push({ role: 'assistant', content: '[已中断]' });
+  }
+  return msgs;
 }
 
 function errMsg(e: unknown): string {
