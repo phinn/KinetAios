@@ -8,7 +8,6 @@
 #town-view {
   position: relative;
   overflow: hidden;
-  display: flex;
   flex-direction: column;
 }
 
