@@ -877,6 +877,14 @@ async function showSettings() {
       <h2>${tr('settings.title')}</h2>
       <div class="sub">${tr('settings.sub')}</div>
 
+      <div class="s-tabs">
+        <button class="s-tab active" data-stab="model">模型</button>
+        <button class="s-tab" data-stab="behavior">行为</button>
+        <button class="s-tab" data-stab="advanced">高级</button>
+        <button class="s-tab" data-stab="mesh">多机协作</button>
+      </div>
+
+      <div class="s-tab-panel" data-panel="model">
       <div class="s-section">
         <h3>${tr('settings.sec.api')}</h3>
         <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
@@ -923,7 +931,9 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.embed.baseURL')}</label><input id="s-embed-base" value="${esc(s.embedBaseURL || '')}" placeholder="${esc(tr('settings.embed.baseURLPh'))}" /></div>
         <div class="field"><label>${tr('settings.embed.apiKey')}</label><input id="s-embed-key" type="password" value="${esc(s.embedApiKey || '')}" placeholder="${esc(tr('settings.embed.apiKeyPh'))}" /></div>
       </div>
+      </div><!-- /model panel -->
 
+      <div class="s-tab-panel" data-panel="behavior" style="display:none">
       <div class="s-section">
         <h3>${tr('settings.sec.ui')}</h3>
         <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
@@ -934,7 +944,9 @@ async function showSettings() {
           <option value="light" ${s.theme === 'light' ? 'selected' : ''}>${tr('settings.theme.light')}</option>
         </select></div>
       </div>
+      </div><!-- /behavior panel -->
 
+      <div class="s-tab-panel" data-panel="advanced" style="display:none">
       <div class="s-section">
         <h3>${tr('settings.sec.memory')}</h3>
         <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
@@ -958,7 +970,9 @@ async function showSettings() {
           </div>
         </div>
       </div>
+      </div><!-- /advanced panel -->
 
+      <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
         <h3>🔗 多机协作 (MCP Bridge)</h3>
         <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
@@ -975,6 +989,7 @@ async function showSettings() {
             <input id="s-mcp-port" type="number" value="${s.localMcpServer?.port ?? 18109}" style="width:80px" />
             <label style="min-width:50px;font-size:12px;color:var(--muted)">Token</label>
             <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权" style="flex:1" />
+            <button id="s-mcp-gentoken" title="生成随机 Token" style="padding:4px 10px;font-size:12px">🎲</button>
           </div>
           <div style="display:flex;gap:8px;align-items:center">
             <button id="s-mcp-start" class="primary" style="padding:4px 14px;font-size:12px">立即启动</button>
@@ -995,6 +1010,7 @@ async function showSettings() {
           </div>
         </div>
       </div>
+      </div><!-- /mesh panel -->
 
       <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
@@ -1014,6 +1030,26 @@ async function showSettings() {
       (document.getElementById('s-pout') as HTMLInputElement).value = String(preset.pout);
     }
   };
+  // ── 设置页 tab 切换 ──
+  root.querySelectorAll('.s-tab').forEach((btn) => {
+    (btn as HTMLElement).onclick = () => {
+      const target = (btn as HTMLElement).dataset.stab!;
+      root.querySelectorAll('.s-tab').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      root.querySelectorAll('.s-tab-panel').forEach((p) => {
+        (p as HTMLElement).style.display = (p as HTMLElement).dataset.panel === target ? '' : 'none';
+      });
+    };
+  });
+
+  // ── Token 随机生成 ──
+  document.getElementById('s-mcp-gentoken')!.onclick = () => {
+    const buf = new Uint8Array(24);
+    crypto.getRandomValues(buf);
+    const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    (document.getElementById('s-mcp-token') as HTMLInputElement).value = token;
+  };
+
   document.getElementById('s-back')!.onclick = () => showChat();
   document.getElementById('s-preset')!.onchange = apply;
 
