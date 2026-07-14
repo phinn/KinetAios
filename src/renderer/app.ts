@@ -709,6 +709,13 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   bubble.textContent = t.prompt;
+  // 用户气泡悬浮复制按钮
+  const uCopy = document.createElement('button');
+  uCopy.className = 'ghost bubble-copy';
+  uCopy.title = tr('copy.text');
+  uCopy.textContent = '📋';
+  uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt, uCopy); };
+  bubble.appendChild(uCopy);
   userMsg.appendChild(bubble);
   userMsg.appendChild(avatarEl('🧑'));
   wrap.appendChild(userMsg);
@@ -763,6 +770,13 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       speak.textContent = '🔊';
       speak.onclick = () => speakText(t.answer ?? '');
       bar.appendChild(speak);
+      // 复制按钮:复制 AI 回复纯文本
+      const copy = document.createElement('button');
+      copy.className = 'ghost ai-copy';
+      copy.title = tr('copy.text');
+      copy.textContent = '📋';
+      copy.onclick = () => copyText(t.answer ?? '', copy);
+      bar.appendChild(copy);
       // 分支按钮:从此 turn 分叉出新会话(类似 git branch)
       const branch = document.createElement('button');
       branch.className = 'ghost ai-branch';
@@ -1472,6 +1486,17 @@ function wireVoice(): void {
 
 // TTS:speechSynthesis 系统级,零依赖。再次点同一个正在读的消息 → 取消。
 let lastUtterance: SpeechSynthesisUtterance | null = null;
+// 复制文本到剪贴板,带短暂"已复制"反馈
+function copyText(text: string, btn?: HTMLElement): void {
+  navigator.clipboard.writeText(text).then(() => {
+    if (btn) {
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = orig; }, 1200);
+    }
+  }).catch(() => {});
+}
+
 function speakText(text: string): void {
   if (window.speechSynthesis.speaking) {
     window.speechSynthesis.cancel();

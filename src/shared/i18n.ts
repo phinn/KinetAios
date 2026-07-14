@@ -180,6 +180,8 @@ const ZH_CN: Dict = {
   'voice.lbl': '语音',
   'voice.listening': '正在听…(再点结束)',
   'voice.speak': '朗读 / 再点取消',
+  'copy.text': '复制',
+  'copy.done': '已复制',
   'voice.transcribeErr': '语音转写失败: {msg}',
   'voice.micDenied': '麦克风权限被拒绝,请在系统设置中允许',
 
@@ -628,6 +630,8 @@ const EN: Dict = {
   'voice.lbl': 'Voice',
   'voice.listening': 'Listening… (click again to finish)',
   'voice.speak': 'Read aloud / click again to cancel',
+  'copy.text': 'Copy',
+  'copy.done': 'Copied',
   'voice.transcribeErr': 'Transcription failed: {msg}',
   'voice.micDenied': 'Microphone permission denied. Please allow in system settings.',
 
@@ -1077,6 +1081,8 @@ const ZH_TW: Dict = {
   'voice.lbl': '語音',
   'voice.listening': '正在聽…(再點結束)',
   'voice.speak': '朗讀 / 再點取消',
+  'copy.text': '複製',
+  'copy.done': '已複製',
   'voice.transcribeErr': '語音轉寫失敗: {msg}',
   'voice.micDenied': '麥克風權限被拒絕,請在系統設定中允許',
 
@@ -1527,6 +1533,8 @@ const JA: Dict = {
   'voice.lbl': '音声',
   'voice.listening': '聞いています…(もう一度クリックで終了)',
   'voice.speak': '読み上げ / もう一度クリックでキャンセル',
+  'copy.text': 'コピー',
+  'copy.done': 'コピー済み',
   'voice.transcribeErr': '文字起こし失敗: {msg}',
   'voice.micDenied': 'マイク権限が拒否されました。システム設定で許可してください。',
 

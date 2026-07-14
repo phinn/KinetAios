@@ -338,10 +338,19 @@ a { color: var(--accent); }
 .composer-bar .tool.disabled { opacity: 0.4; cursor: not-allowed; }
 .composer-bar .tool.loading { opacity: 0.5; pointer-events: none; }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 50, 50, 0.4); } 50% { box-shadow: 0 0 0 4px rgba(220, 50, 50, 0); } }
-/* AI 回复底部的小操作条(目前只有 🔊 朗读)。ponytail: 直接复用 .ghost,加点边距 */
+/* AI 回复底部的小操作条(🔊 朗读 / 📋 复制 / 🌿 分支…)。ponytail: 直接复用 .ghost,加点边距 */
 .ai-actions { margin-top: 6px; display: flex; gap: 6px; opacity: 0.7; }
 .ai-actions .ghost { padding: 2px 8px; font-size: 12px; }
 .ai-body:hover .ai-actions { opacity: 1; }
+/* 用户气泡悬浮复制按钮 — 默认隐藏,hover 才显示 */
+.bubble { position: relative; }
+.bubble-copy {
+  position: absolute; top: 2px; right: 2px;
+  padding: 2px 5px; font-size: 11px; line-height: 1;
+  opacity: 0; transition: opacity 0.15s; cursor: pointer;
+}
+.bubble:hover .bubble-copy { opacity: 0.6; }
+.bubble-copy:hover { opacity: 1 !important; }
 .composer-bar .send { flex-shrink: 0; }
 .attach-row { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 .attach-row:empty { display: none; }
