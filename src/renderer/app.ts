@@ -65,26 +65,36 @@ function applyI18nDOM(): void {
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
 
-  // 配置(语言 + 主题 + CLI 引擎开关)和产品名都启动时读一次。语言/主题切走后同步更新。
-  const settings = await api.getSettings();
-  lang = settings.lang;
-  cliEnabled = settings.enableCliEngines;
-  applyTheme(settings.theme);
-  const brand = await api.getBrand();
-  PRODUCT = brand.productName;
-  HOME_DIR = brand.homeDir;
-  document.title = PRODUCT;
-  const brandEl = document.getElementById('brand');
-  if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
-  (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
-  applyI18nDOM();
+  try {
+    // 配置(语言 + 主题 + CLI 引擎开关)和产品名都启动时读一次。语言/主题切走后同步更新。
+    const settings = await api.getSettings();
+    lang = settings.lang;
+    cliEnabled = settings.enableCliEngines;
+    applyTheme(settings.theme);
+    const brand = await api.getBrand();
+    PRODUCT = brand.productName;
+    HOME_DIR = brand.homeDir;
+    document.title = PRODUCT;
+    const brandEl = document.getElementById('brand');
+    if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
+    (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
+    applyI18nDOM();
 
-  const list = await api.getConversations();
-  for (const c of list) {
-    convs.set(c.id, c);
-    order.push(c.id);
+    const list = await api.getConversations();
+    for (const c of list) {
+      convs.set(c.id, c);
+      order.push(c.id);
+    }
+    if (order.length) selectedId = order[0];
+  } catch (e) {
+    console.error('init failed', e);
+    document.body.innerHTML = `<div style="padding:48px;text-align:center;color:#f44336;font-family:system-ui">
+      <h2>⚠ 初始化失败</h2>
+      <p>${esc(String(e))}</p>
+      <p>请重启应用。如问题持续,检查 userData/history.db 是否损坏。</p>
+    </div>`;
+    return;
   }
-  if (order.length) selectedId = order[0];
 
   api.onConversation((conv) => {
     const isNew = !convs.has(conv.id);
@@ -236,6 +246,8 @@ function showPrompt(title: string, def: string): Promise<string | null> {
   return new Promise((resolve) => {
     const ok = document.getElementById('prompt-ok')!;
     const cancel = document.getElementById('prompt-cancel')!;
+    // 如果有上一个未完成的 prompt,先 resolve null(避免 Promise 永挂)
+    if (activePromptDone) activePromptDone(null);
     const done = (v: string | null) => {
       ok.onclick = null;
       cancel.onclick = null;
@@ -1499,30 +1511,34 @@ async function send() {
   let text = typed;
   if (files.length) {
     text = files.map((a) => `📎 文件 ${a.name}:\n\`\`\`\n${a.content}\n\`\`\``).join('\n\n') + '\n\n---\n\n' + typed;
-    attachments = [];
-    renderAttach();
   }
   // 🖼️ 图片附件:发给 Direct 引擎时,标记 prompt 含图片(主进程 send 把 imageAttachments 拼进 ChatMsg content parts)。
-  // ponytail: 非 Direct 引擎不支持图片,图片描述只在 Direct 路径生效。退而求其次:附一个文字说明。
   if (imageAttachments.length) {
     const imgNote = imageAttachments.length === 1 ? `\n\n[📷 1 张图片已附加]` : `\n\n[📷 ${imageAttachments.length} 张图片已附加]`;
     text += imgNote;
-  }
-  if (at.missing.length) alert(tr('attach.missingAlert', { list: at.missing.join('\n') }));
-  composer.value = '';
-  autosize(composer);
-  showChat();
-  // 把图片信息存在全局,send IPC 之后 main 进程取用(ponytail: 当前 send 只接受 text,
-  // 图片通过隐藏 DOM 存 base64 → main 进程读。为简单起见,把 dataURL 拼进 text 的特殊标记,
-  // Direct 引擎在 AgentLoop 拆出。)
-  if (imageAttachments.length) {
     // 将图片 base64 作为特殊 JSON 块附加到 text 末尾,Direct 引擎的 send 拆解。
     const imgs = imageAttachments.map((a) => JSON.stringify(a));
     text += `\n\x00IMAGES${JSON.stringify(imgs)}\x00`;
-    imageAttachments = [];
-    renderAttach();
   }
-  await api.send(selectedId, text);
+  if (at.missing.length) alert(tr('attach.missingAlert', { list: at.missing.join('\n') }));
+  showChat();
+  // 先发送,成功后再清空(IPC 失败时用户数据不丢失)
+  try {
+    await api.send(selectedId, text);
+  } catch (e) {
+    alert(tr('send.failed', { msg: (e as Error)?.message ?? String(e) }));
+    return; // 不清空,用户可重试
+  }
+  // 发送成功 → 清空 composer + 附件
+  if (files.length) {
+    attachments = [];
+  }
+  if (imageAttachments.length) {
+    imageAttachments = [];
+  }
+  renderAttach();
+  composer.value = '';
+  autosize(composer);
   document.getElementById('composer')!.focus();
 }
 
@@ -1985,6 +2001,8 @@ async function openMemoryPanel(): Promise<void> {
 }
 function closeMemoryPanel(): void {
   document.getElementById('memory-modal')!.classList.remove('show');
+  // 停止力导向图动画,释放 CPU(之前漏了 → 关面板后 rAF 继续跑)
+  stopGraphAnim();
 }
 async function renderMemoryList(): Promise<void> {
   const listEl = document.getElementById('mm-list')!;
@@ -2830,7 +2848,7 @@ function renderTemplates(): void {
             <div class="tpl-grid">
               ${items.map((tpl) => `
                 <div class="tpl-card" data-id="${esc(tpl.id)}">
-                  <div class="tpl-card-icon">${tpl.icon || '📋'}</div>
+                  <div class="tpl-card-icon">${esc(tpl.icon || '📋')}</div>
                   <div class="tpl-card-name">${esc(tpl.name)}</div>
                   <div class="tpl-card-desc">${esc(tpl.description)}</div>
                   <div class="tpl-card-engine">${esc(ENGINE_LABELS[tpl.engine])}</div>

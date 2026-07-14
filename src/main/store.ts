@@ -133,8 +133,13 @@ export function saveTurn(convId: string, t: Turn): void {
 }
 
 export function deleteConversation(id: string): void {
-  db.prepare('DELETE FROM turns WHERE conv_id=?;').run(id);
-  db.prepare('DELETE FROM conversations WHERE id=?;').run(id);
+  // 事务保证原子性 —— 崩溃不会留孤儿 turns
+  db.transaction(() => {
+    db.prepare('DELETE FROM turns WHERE conv_id=?;').run(id);
+    db.prepare('DELETE FROM cost_log WHERE conv_id=?;').run(id);
+    db.prepare('DELETE FROM memory_triples WHERE conversation_id=?;').run(id);
+    db.prepare('DELETE FROM conversations WHERE id=?;').run(id);
+  })();
 }
 
 export function deleteTurns(convId: string): void {
@@ -234,10 +239,13 @@ export function updateMemory(id: string, content: string): void {
 }
 
 export function deleteMemory(id: string): void {
-  db.prepare('DELETE FROM memories WHERE id=?;').run(id);
   // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
-  db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(id);
-  db.prepare('DELETE FROM memory_meta WHERE memory_id=?;').run(id);
+  // 事务保证原子性。
+  db.transaction(() => {
+    db.prepare('DELETE FROM memories WHERE id=?;').run(id);
+    db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(id);
+    db.prepare('DELETE FROM memory_meta WHERE memory_id=?;').run(id);
+  })();
 }
 
 // MARK: memory graph(实体关系三元组;与 memories 并行,不互依)
@@ -340,6 +348,8 @@ export function listMemoryEmbeddings(): MemoryEmbeddingRow[] {
 }
 // cosine similarity,两个向量必须同维度。ponytail: 暴力 O(n),记忆规模(~几百条)够用。
 export function cosine(a: Float32Array, b: Float32Array): number {
+  // 维度不匹配(换 embedding 模型后常见)→ 返回 0 而非 NaN
+  if (a.length !== b.length) return 0;
   let dot = 0, na = 0, nb = 0;
   for (let i = 0; i < a.length; i++) {
     dot += a[i] * b[i];
@@ -435,24 +445,30 @@ export function loadMemoryTimeline(): Array<{ id: string; content: string; conve
 }
 
 // 触摸一条记忆的 lastUsed(被 recall 命中时调用)
+// 使用 INSERT ... ON CONFLICT 避免 read-then-write 竞态
 export function touchMemoryUsed(id: string): void {
-  const existing = (db.prepare('SELECT use_count FROM memory_meta WHERE memory_id=?;').get(id)) as { use_count: number } | undefined;
-  if (existing) {
-    db.prepare('UPDATE memory_meta SET last_used=?, use_count=use_count+1 WHERE memory_id=?;').run(Date.now(), id);
-  } else {
-    db.prepare('INSERT INTO memory_meta(memory_id, weight, last_used, use_count) VALUES(?,?,?,?);').run(id, 1.0, Date.now(), 1);
-  }
+  db.prepare(`INSERT INTO memory_meta(memory_id, weight, last_used, use_count)
+    VALUES(?, 1.0, ?, 1)
+    ON CONFLICT(memory_id) DO UPDATE SET last_used=excluded.last_used, use_count=use_count+1;`)
+    .run(id, Date.now());
 }
 
 // 执行衰减:weight *= 0.95^(days_since_last_used),weight < 0.1 的连同 memory 一起删除。
 // 返回被清除的条数。
+// 未被 recall 命中过(last_used=0)的记忆用 created_at 做 fallback,而非当成 1970 年。
 export function decayMemories(): number {
   const now = Date.now();
   const dayMs = 86400_000;
   const all = (db.prepare('SELECT memory_id, weight, last_used FROM memory_meta;').all()) as Array<{ memory_id: string; weight: number; last_used: number }>;
   let pruned = 0;
   for (const m of all) {
-    const days = m.last_used > 0 ? (now - m.last_used) / dayMs : (now - 0) / dayMs;
+    // last_used=0 → 用 created_at 做 fallback(从 memories 表取)
+    let refTs = m.last_used;
+    if (!refTs) {
+      const mem = (db.prepare('SELECT created_at FROM memories WHERE id=?;').get(m.memory_id)) as { created_at: number } | undefined;
+      refTs = mem?.created_at ?? now;
+    }
+    const days = (now - refTs) / dayMs;
     const decayed = m.weight * Math.pow(0.95, days);
     if (decayed < 0.1) {
       db.prepare('DELETE FROM memories WHERE id=?;').run(m.memory_id);

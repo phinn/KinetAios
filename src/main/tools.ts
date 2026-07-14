@@ -37,9 +37,9 @@ export function toolDef(t: Tool): ToolDef {
 // Shared shell runner (the shell tool uses it). exec picks the platform shell automatically:
 // process.env.ComSpec (cmd.exe) on Windows, /bin/sh on unix. Raised maxBuffer so big outputs survive.
 // 120s default — 30s killed real work (npm install / builds). Still bounded so a runaway can't hang.
-export function shellExec(command: string, cwd: string, timeoutMs = 120_000): Promise<string> {
+export function shellExec(command: string, cwd: string, timeoutMs = 120_000, signal?: AbortSignal): Promise<string> {
   return new Promise((resolve) => {
-    exec(
+    const child = exec(
       command,
       { cwd: cwd || undefined, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 },
       (err, stdout, stderr) => {
@@ -48,12 +48,17 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000): Pr
           return;
         }
         let out = (stdout || '') + (stderr || '');
-        const code = err ? (err as NodeJS.ErrnoException & { code?: number }).code ?? 1 : 0;
-        if (err && code !== 0) out = `[exit ${code}] ${out}`; // surface non-zero exit like the Swift version
+        const code = err ? (err as NodeJS.ErrnoException & { code?: number | string }).code ?? 1 : 0;
+        if (err && code !== 0) out = `[exit ${code}] ${out}`;
         if (!out.trim()) out = '(无输出)\n';
         resolve(out);
       },
     );
+    // 支持 abort:用户点"停止"时杀掉正在跑的子进程
+    if (signal) {
+      if (signal.aborted) child.kill('SIGKILL');
+      else signal.addEventListener('abort', () => child.kill('SIGKILL'), { once: true });
+    }
   });
 }
 
@@ -69,7 +74,7 @@ const shell: Tool = {
     const cmd = (args.command as string) ?? '';
     const ok = await ctx.confirm(cmd);
     if (!ok) return `❌ 用户拒绝执行: ${cmd}`;
-    const out = await shellExec(cmd, ctx.cwd);
+    const out = await shellExec(cmd, ctx.cwd, 120_000, ctx.signal);
     return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
   },
 };
@@ -150,7 +155,7 @@ const webFetch: Tool = {
     properties: { url: { type: 'string', description: '要抓取的 http(s) URL' } },
     required: ['url'],
   },
-  async run(args) {
+  async run(args, ctx) {
     const s = (args.url as string) ?? '';
     let url: URL;
     try {
@@ -159,9 +164,20 @@ const webFetch: Tool = {
       return `非法 URL: ${s}`;
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return `非法 URL: ${s}`;
+    // SSRF 防护:阻止访问内网/本地地址(LLM 被诱导时不会探测内部服务)
+    const host = url.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
+      || host.startsWith('10.') || host.startsWith('192.168.')
+      || host.startsWith('169.254.') // 云 metadata
+      || /^172\.(1[6-9]|2\d|3[01])\./.test(host) // 172.16/12
+      || host.endsWith('.local')) {
+      return `安全限制:不允许访问内网地址(${host})`;
+    }
     try {
-      const resp = await fetch(s, { headers: { 'User-Agent': 'KinetAios/0.2' }, signal: AbortSignal.timeout(20_000) });
-      const body = await resp.text();
+      const resp = await fetch(s, { headers: { 'User-Agent': 'KinetAios/0.2' }, signal: ctx?.signal ?? AbortSignal.timeout(20_000) });
+      // body 上限:避免 OOM(截断到 500KB 后 toString)
+      const text = await resp.text();
+      const body = text.length > 500_000 ? text.slice(0, 500_000) + '\n…[截断]' : text;
       const trimmed = body.length > 8000 ? body.slice(0, 8000) + '\n…[截断]' : body;
       return `[HTTP ${resp.status}]\n${trimmed}`;
     } catch (e) {
@@ -219,7 +235,14 @@ const recallMemory: Tool = {
       console.warn('[recall] embed path failed, fallback to FTS5:', (e as Error)?.message);
     }
     // FTS5 fallback —— 覆盖对话历史(role/content 全文索引)。
-    const hits = store.search(q, 20);
+    // FTS5 特殊字符(" * NEAR 等)可能导致语法错误 → try/catch
+    let hits: Array<{ role: string; content: string }> = [];
+    try {
+      hits = store.search(q, 20);
+    } catch {
+      // FTS5 语法错误 → 用转义后的查询重试
+      hits = store.search(q.replace(/["*]/g, ' '), 20);
+    }
     if (!hits.length) return `没有匹配「${q}」的历史。`;
     const body = hits
       .map((m, i) => {
@@ -512,7 +535,7 @@ export function customTools(): Tool[] {
           const safeVal = shellQuote(String(v ?? ''));
           cmd = cmd.replace(new RegExp(`\\$ARG_${k}`, 'g'), safeVal);
         }
-        const out = await shellExec(cmd, ctx.cwd, r.timeoutMs * 1000 || 120_000);
+        const out = await shellExec(cmd, ctx.cwd, r.timeoutMs * 1000 || 120_000, ctx.signal);
         return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out;
       },
     };

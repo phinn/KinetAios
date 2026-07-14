@@ -27,8 +27,8 @@ export interface RunOpts {
 // memory message) for next-turn history.
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
-  // 默认不限制轮数(原来是 50)。模型不收敛(一直 tool_call)会持续消耗 token,需手动点停止。
-  const maxTurns = opts.maxTurns ?? Infinity;
+  // 默认上限 30 轮(防 tool_call 死循环无限烧 token;用户可手动覆盖)。
+  const maxTurns = opts.maxTurns ?? 30;
   const defs: ToolDef[] = tools.map(toolDef);
 
   // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
@@ -119,6 +119,7 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
   try {
     return await tool.run(args, ctx);
   } catch (e) {
+    if (ctx.signal?.aborted) return '[已停止]';
     return `工具出错: ${e}`;
   }
 }
@@ -193,13 +194,28 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatM
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
 function sanitizeToolPairs(msgs: ChatMsg[]): ChatMsg[] {
-  const visible = new Set<string>();
+  // 收集所有 tool 消息的 tool_call_id(有结果的 call)
+  const answeredCalls = new Set<string>();
   for (const m of msgs) {
-    if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
-      for (const tc of m.tool_calls) visible.add(tc.id);
-    }
+    if (m.role === 'tool' && m.tool_call_id) answeredCalls.add(m.tool_call_id);
   }
-  return msgs.filter((m) => m.role !== 'tool' || visible.has((m.tool_call_id as string) ?? ''));
+  // 第一遍:删除"孤儿 assistant"(tool_calls 里至少一个没对应 tool 结果,且无文本内容)
+  // 同时收集存活的 assistant 的 tool_call_id
+  const liveCallIds = new Set<string>();
+  const afterAssistant = msgs.filter((m) => {
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0) {
+      const allAnswered = m.tool_calls.every((tc) => answeredCalls.has(tc.id));
+      const hasText = typeof m.content === 'string' && m.content.trim().length > 0;
+      if (!allAnswered && !hasText) return false; // 孤儿 → 删
+      for (const tc of m.tool_calls) liveCallIds.add(tc.id);
+    }
+    return true;
+  });
+  // 第二遍:删除"孤儿 tool 消息"(对应的 assistant 在上一遍被删了)
+  return afterAssistant.filter((m) => {
+    if (m.role === 'tool' && m.tool_call_id) return liveCallIds.has(m.tool_call_id);
+    return true;
+  });
 }
 
 // 摘要压缩:历史超 budget 时,把将被丢弃的头部调一次 LLM 压成一条摘要,保留尾部完整轮次。
@@ -212,6 +228,7 @@ export async function compactHistory(
   provider: Provider,
   snap: ConfigSnapshot,
   signal: AbortSignal,
+  onEvent?: (e: AgentEvent) => void,
 ): Promise<ChatMsg[]> {
   const memoryMsgs = msgs.filter((m) => m._memory);
   const rest = msgs.filter((m) => !m._memory);
@@ -237,6 +254,10 @@ export async function compactHistory(
       signal,
       () => {},
     );
+    // 摘要 LLM 调用的 cost 也要上报(否则长对话压缩成本漏报)
+    if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+    }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...tail];
     return [...memoryMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];

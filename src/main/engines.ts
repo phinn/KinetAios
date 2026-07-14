@@ -155,7 +155,7 @@ class DirectEngine implements Engine {
       signal,
       onEvent,
     });
-    conv.directHistory = await compactHistory(updated, 30_000, provider, snap, signal);
+    conv.directHistory = await compactHistory(updated, 30_000, provider, snap, signal, onEvent);
   }
 }
 

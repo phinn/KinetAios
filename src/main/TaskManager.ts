@@ -210,9 +210,14 @@ export class TaskManager {
       skillBlock,
       signal: ac.signal,
       onEvent: (ev) => this.applyAndPersist(conv, id, ev, prompt, ac.signal),
+    }).catch((e) => {
+      // 引擎抛错 → 确保不会永久卡在 running 状态
+      const msg = e instanceof Error ? e.message : String(e);
+      this.applyAndPersist(conv, id, { type: 'error', message: msg }, prompt, ac.signal);
+    }).finally(() => {
+      this.aborts.delete(id);
     });
 
-    this.aborts.delete(id);
     // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
     if (conv.engine === 'direct') store.saveDirectHistory(conv);
     // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
@@ -426,7 +431,7 @@ export class TaskManager {
       customTitle: `${src.customTitle || src.turns[0]?.prompt.slice(0, 20) || 'Session'} (分支)`,
       directHistory: [],
       engineSessionId: null,
-      turns: src.turns.slice(0, turnIdx + 1).map((t) => ({ ...t, id: rid() })),
+      turns: src.turns.slice(0, turnIdx + 1).map((t) => ({ ...t, id: rid(), steps: (t.steps ?? []).map((s) => ({ ...s })) })),
       status: 'ready',
       statusNote: null,
       cost: 0,

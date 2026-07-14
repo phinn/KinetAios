@@ -143,18 +143,24 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
   const reader = resp.body!.getReader();
   const dec = new TextDecoder();
   let buf = '';
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    let idx: number;
-    while ((idx = buf.indexOf('\n')) >= 0) {
-      const line = buf.slice(0, idx).replace(/\r$/, '');
-      buf = buf.slice(idx + 1);
-      if (line) yield line;
+  try {
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx: number;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).replace(/\r$/, '');
+        buf = buf.slice(idx + 1);
+        if (line) yield line;
+      }
     }
+    if (buf.trim()) yield buf;
+  } finally {
+    // 确保释放 reader(abort/异常/break 时也清理,避免 TCP 连接泄漏)
+    reader.cancel().catch(() => {});
+    reader.releaseLock();
   }
-  if (buf.trim()) yield buf;
 }
 
 function intFrom(v: unknown): number {
