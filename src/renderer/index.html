@@ -5,6 +5,7 @@
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; frame-src file: http: https:; style-src 'self' 'unsafe-inline'; script-src 'self';" />
   <title>KinetAios</title>
   <link rel="stylesheet" href="styles.css" />
+ <link rel="stylesheet" href="town.css" />
 </head>
 <body>
   <div id="app">
@@ -28,6 +29,7 @@
               <div class="sb-more-sep"></div>
               <button class="sb-more-item" id="m-pipeline"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.morePipeline">Pipeline 编排</span></button>
               <button class="sb-more-item" id="m-templates"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTemplates">模板库</span></button>
+              <button class="sb-more-item" id="m-town"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTown">小镇</span></button>
               <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
               <button class="sb-more-item" id="m-ctools"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCTools">自定义工具</span></button>
               <button class="sb-more-item" id="m-timeline"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTimeline">记忆时间线</span></button>
@@ -180,6 +182,12 @@
       </div>
       <div id="ctools-view" class="view"></div>
       <div id="timeline-view" class="view"></div>
+
+      <!-- town view(游戏风格小镇:项目=房子,Agent=村民)-->
+      <div id="town-view" class="view">
+        <div id="town-canvas"></div>
+        <div id="town-panel"></div>
+      </div>
     </main>
   </div>
 

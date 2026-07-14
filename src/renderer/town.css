@@ -1,0 +1,460 @@
+/* ═══════════════════════════════════════════════════
+ * Town View — 游戏风格小镇视图样式
+ * Town View — Game-style town visualization styles
+ * 零依赖:纯 CSS + SVG + DOM,无游戏引擎。
+ * ═══════════════════════════════════════════════════ */
+
+/* 小镇容器 / Town container */
+#town-view {
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 天空层(渐变背景,跟主题联动) / Sky layer (gradient, theme-linked) */
+.town-sky {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, var(--town-sky-top, #1a1a2e) 0%, var(--town-sky-bottom, var(--bg)) 70%);
+}
+
+/* 地面纹理(isometric 网格) / Ground texture (isometric grid) */
+.town-body {
+  position: relative;
+  z-index: 1;
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 0 24px 48px;
+}
+
+/* 小镇顶部栏 / Town header bar */
+.town-header {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 20px 24px 12px;
+  flex-wrap: wrap;
+}
+.town-title {
+  font-size: 18px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.town-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  flex: 1 1 320px;
+  line-height: 1.5;
+}
+.town-spacer { flex: 1; }
+
+/* ── 房子网格 / House grid ── */
+.town-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--town-cols, 3), 1fr);
+  gap: 28px 32px;
+  max-width: 900px;
+  margin: 0 auto;
+  padding-bottom: 48px;
+}
+
+/* 单栋房子 / Individual house */
+.town-house {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  position: relative;
+  padding: 16px 12px 12px;
+  border-radius: 14px;
+  transition: background .2s, transform .15s;
+  cursor: default;
+}
+.town-house:hover {
+  background: var(--town-hover, rgba(255,255,255,0.03));
+}
+
+/* 屋顶标签(项目名) / Roof label (project name) */
+.house-roof-label {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+}
+
+/* 房子 SVG 容器 / House SVG container */
+.house-svg {
+  filter: drop-shadow(0 4px 8px rgba(0,0,0,0.15));
+  transition: transform .2s;
+}
+.town-house:hover .house-svg {
+  transform: translateY(-2px) scale(1.02);
+}
+
+/* 路牌(统计信息) / Sign post (stats) */
+.house-sign {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  margin-top: 6px;
+}
+.house-stats {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.house-last {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+.house-last.running {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* ── 村民排 / Villagers row ── */
+.house-villagers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  justify-content: center;
+  margin-top: 10px;
+  max-width: 160px;
+}
+
+/* 单个村民包装 / Single villager wrapper */
+.villager-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  position: relative;
+  transition: transform .12s;
+}
+.villager-wrap:hover {
+  transform: scale(1.15);
+}
+.villager-name {
+  font-size: 9px;
+  color: var(--text-faint);
+  max-width: 48px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: center;
+  margin-top: 1px;
+}
+
+/* ── 村民动画 / Villager animations ── */
+
+/* idle: 缓慢上下浮动(打瞌睡) / gentle bob */
+.villager-wrap.vs-idle .villager-svg {
+  animation: town-idle-bob 2.5s ease-in-out infinite;
+}
+@keyframes town-idle-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
+}
+
+/* working: 快速弹跳 / fast bounce */
+.villager-wrap.vs-working .villager-svg {
+  animation: town-working-bounce 0.4s ease-in-out infinite;
+}
+@keyframes town-working-bounce {
+  0%, 100% { transform: translateY(0) rotate(-2deg); }
+  50% { transform: translateY(-5px) rotate(2deg); }
+}
+
+/* error: 抖动 / shake */
+.villager-wrap.vs-error .villager-svg {
+  animation: town-shake 0.3s ease-in-out infinite;
+}
+@keyframes town-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-2px); }
+  75% { transform: translateX(2px); }
+}
+
+/* done: 放大消失(星星弹出后回归 idle) / star pop */
+.villager-wrap.vs-done .villager-svg {
+  animation: town-done-pop 0.5s ease-out;
+}
+@keyframes town-done-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.2); }
+  100% { transform: scale(1); }
+}
+
+/* ── 房子操作按钮 / House action buttons ── */
+.house-actions {
+  margin-top: 6px;
+  opacity: 0;
+  transition: opacity .15s;
+}
+.town-house:hover .house-actions {
+  opacity: 1;
+}
+.town-newtask {
+  font-size: 11px;
+  padding: 2px 10px;
+}
+
+/* ── 空状态 / Empty state ── */
+.town-empty {
+  text-align: center;
+  padding: 80px 24px;
+  color: var(--text-dim);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+/* ── 侧滑面板 / Slide panel ── */
+#town-panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  max-width: 90%;
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
+  box-shadow: -8px 0 24px rgba(0,0,0,0.15);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform .25s ease-out;
+}
+#town-panel.open {
+  transform: translateX(0);
+}
+
+/* 面板头部 / Panel header */
+.tp-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tp-villager {
+  flex-shrink: 0;
+}
+.tp-info {
+  flex: 1;
+  min-width: 0;
+}
+.tp-name {
+  font-size: 14px;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-engine {
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.tp-state {
+  font-weight: 600;
+}
+.tp-state.vs-idle { color: var(--text-faint); }
+.tp-state.vs-working { color: var(--accent); }
+.tp-state.vs-error { color: #ff5252; }
+.tp-state.vs-done { color: #4caf50; }
+.tp-cwd {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tp-close {
+  font-size: 16px;
+  padding: 4px 8px;
+  line-height: 1;
+}
+
+/* 状态说明 / Status note */
+.tp-status-note {
+  padding: 6px 16px;
+  font-size: 11px;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+/* 面板主体 / Panel body (scrollable) */
+.tp-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+}
+
+/* 区块 / Section */
+.tp-section {
+  margin-bottom: 14px;
+}
+.tp-label {
+  font-size: 11px;
+  color: var(--text-daint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 4px;
+  font-weight: 600;
+}
+.tp-prompt {
+  font-size: 13px;
+  color: var(--text);
+  line-height: 1.5;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+.tp-answer {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+
+/* 工具步骤 / Tool steps */
+.tp-step {
+  background: var(--bg);
+  border-radius: 6px;
+  padding: 6px 10px;
+  margin-bottom: 4px;
+  font-size: 11px;
+}
+.tp-step-tool {
+  font-weight: 600;
+  color: var(--accent);
+}
+.tp-dur {
+  color: var(--text-faint);
+  margin-left: 4px;
+}
+.tp-step-args, .tp-step-result {
+  margin: 4px 0 0;
+  padding: 0;
+  font-size: 10px;
+  color: var(--text-dim);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 80px;
+  overflow: hidden;
+}
+.tp-step-result {
+  color: var(--text-faint);
+  border-left: 2px solid var(--border);
+  padding-left: 6px;
+  margin-left: 2px;
+}
+
+/* 错误 / Error */
+.tp-error {
+  background: rgba(255,82,82,0.1);
+  border: 1px solid rgba(255,82,82,0.3);
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 12px;
+  color: #ff5252;
+  margin-bottom: 14px;
+}
+
+/* 面板底部 / Panel footer */
+.tp-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.tp-input-wrap {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+.tp-input {
+  flex: 1;
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  outline: none;
+}
+.tp-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-dim);
+}
+.tp-send {
+  padding: 7px 14px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.tp-actions {
+  display: flex;
+  gap: 6px;
+}
+.tp-actions button {
+  font-size: 11px;
+  padding: 5px 10px;
+}
+.tp-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 主题联动天空配色 / Theme-linked sky colors ── */
+[data-theme="dark"] {
+  --town-sky-top: #1a1a2e;
+  --town-sky-bottom: #0d0d14;
+  --town-hover: rgba(255,255,255,0.03);
+}
+[data-theme="light"] {
+  --town-sky-top: #b3d9f2;
+  --town-sky-bottom: #e8f0f5;
+  --town-hover: rgba(0,0,0,0.03);
+}
+[data-theme="aurora"] {
+  --town-sky-top: #1a1530;
+  --town-sky-bottom: #0d0e14;
+  --town-hover: rgba(196,167,255,0.05);
+}
+[data-theme="serene"] {
+  --town-sky-top: #ede4d9;
+  --town-sky-bottom: #f5f1ec;
+  --town-hover: rgba(183,110,121,0.04);
+}
+
+/* ── 响应式 / Responsive ── */
+@media (max-width: 700px) {
+  .town-grid {
+    grid-template-columns: 1fr;
+  }
+  #town-panel {
+    width: 100%;
+  }
+}

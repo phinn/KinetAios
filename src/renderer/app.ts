@@ -6,6 +6,7 @@ import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, Skil
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
+import { setTownLang, setTownHomeDir, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
 
 declare global {
   interface Window {
@@ -18,7 +19,7 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
-let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' = 'chat';
+let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' = 'chat';
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
@@ -99,6 +100,21 @@ function applyI18nDOM(): void {
     PRODUCT = brand.productName;
     HOME_DIR = brand.homeDir;
     document.title = PRODUCT;
+
+    // 初始化小镇视图的依赖 / Init town view deps
+    setTownLang(lang);
+    setTownHomeDir(HOME_DIR);
+    const townCallbacks: TownCallbacks = {
+      send: (id, text) => { void api.send(id, text); },
+      cancel: (id) => { api.cancel(id); },
+      selectChat: (id) => { selectedId = id; showChat(); renderSidebar(); },
+      newTask: (cwd) => { void newTaskInProject(cwd); },
+      newProject: () => { void newProject(); },
+      showWorkbench: () => showWorkbench(),
+      convs: () => convs,
+      order: () => order,
+    };
+    setTownCallbacks(townCallbacks);
     const brandEl = document.getElementById('brand');
     if (brandEl) brandEl.innerHTML = '<span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span> ' + esc(PRODUCT);
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
@@ -127,6 +143,7 @@ function applyI18nDOM(): void {
     renderSidebar();
     if (conv.id === selectedId) renderMain();
     if (currentView === 'workbench') renderWorkbench();
+    if (currentView === 'town') townOnConversationChanged();
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
@@ -135,6 +152,7 @@ function applyI18nDOM(): void {
     renderSidebar();
     renderMain();
     if (currentView === 'workbench') renderWorkbench();
+    if (currentView === 'town') townOnConversationChanged();
   });
   api.onAgentEvent((convId, ev) => {
     const conv = convs.get(convId);
@@ -150,6 +168,7 @@ function applyI18nDOM(): void {
         // ponytail: 增量刷新单卡;新任务/删除走 onConversation → 全量 renderWorkbench,这里只更新统计/时间/图标。
         refreshWbCard(conv.cwd || '');
       }
+      if (currentView === 'town') refreshTownVillager(conv);
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
@@ -1145,6 +1164,7 @@ async function showSettings() {
     await api.saveSettings(ns);
     cliEnabled = ns.enableCliEngines;
     lang = ns.lang; // 语言切了 → 刷静态文本 + 重渲(侧栏/主区/设置面板自身)
+    setTownLang(lang); // 同步小镇视图语言 / sync town view lang
     applyTheme(ns.theme);
     applyI18nDOM();
     renderSidebar();
@@ -1431,6 +1451,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('m-snap')!.onclick = () => { closeMoreMenu(); void openSnapshotPanel(); };
   document.getElementById('m-pipeline')!.onclick = () => { closeMoreMenu(); showPipeline(); };
   document.getElementById('m-templates')!.onclick = () => { closeMoreMenu(); showTemplates(); };
+  document.getElementById('m-town')!.onclick = () => { closeMoreMenu(); showTown(); };
   document.getElementById('m-cost')!.onclick = () => { closeMoreMenu(); showCost(); };
   document.getElementById('m-ctools')!.onclick = () => { closeMoreMenu(); showCTools(); };
   document.getElementById('m-timeline')!.onclick = () => { closeMoreMenu(); showTimeline(); };
@@ -1919,7 +1940,7 @@ function showTimeline() {
 }
 
 function hideAllViews(): void {
-  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view']) {
+  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view', 'town-view']) {
     const el = document.getElementById(id)!;
     el.classList.remove('active');
     // 切走时重置滚动位置,避免回来时停在底部 / 布局错乱
@@ -1933,6 +1954,14 @@ function showWorkbench() {
   document.getElementById('workbench-view')!.classList.add('active');
   syncViewButtons();
   renderWorkbench();
+}
+
+function showTown() {
+  currentView = 'town';
+  hideAllViews();
+  document.getElementById('town-view')!.classList.add('active');
+  syncViewButtons();
+  renderTown();
 }
 
 // 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
@@ -1958,6 +1987,9 @@ function syncSidebarModeBtn(): void {
 
 // ---------- workbench(项目卡片总览)----------
 // 项目 = cwd,卡片显示项目下所有任务聚合的 token / 费用 / 最近活动。
+// 小镇图标(Workbench 切换按钮用) / Town icon for Workbench switch button
+const ICON_TOWN_BTN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
+
 function renderWorkbench() {
   const root = document.getElementById('workbench')!;
   const groups = new Map<string, string[]>();
@@ -1980,12 +2012,15 @@ function renderWorkbench() {
       <div class="wb-title">${esc(tr('wb.title'))}</div>
       <div class="wb-sub">${esc(tr('wb.sub'))}</div>
       <span class="wb-spacer"></span>
+      <button class="ghost" id="wb-goto-town" title="${esc(tr('town.title'))}">${ICON_TOWN_BTN}</button>
       <button class="primary" id="wb-new-proj">${esc(tr('wb.newProject'))}</button>
     </div>` +
     (items.length === 0
       ? `<div class="empty">${esc(tr('wb.empty'))}</div>`
       : `<div class="wb-grid">${items.map(([cwd, ids]) => projCard(cwd, ids)).join('')}</div>`);
   document.getElementById('wb-new-proj')!.onclick = () => void newProject();
+  const townBtn = document.getElementById('wb-goto-town');
+  if (townBtn) townBtn.onclick = () => showTown();
   root.querySelectorAll<HTMLElement>('.wb-card').forEach((card) => {
     const cwd = card.dataset.cwd!;
     card.querySelector<HTMLElement>('.wb-newtask')!.onclick = (e) => { e.stopPropagation(); void newTaskInProject(cwd); };
