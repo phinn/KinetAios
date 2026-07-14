@@ -21,6 +21,7 @@ import { currentProvider, type Provider } from './glm';
 import { baseSystemPrompt } from './engines';
 import { snapshot, getSettings } from './settings';
 import { allTools } from './tools';
+import type { AgentEvent, RemoteAgentEvent } from '../shared/types';
 
 type McpJsonRpcRequest = {
   jsonrpc: '2.0';
@@ -61,12 +62,16 @@ const RUN_AGENT_TOOL_MCP: Record<string, unknown> = {
   },
 };
 
+/** 远程 Agent 事件类型从 shared/types.ts 导入(主进程与 renderer 共享)。 */
+
 const PROTOCOL_VERSION = '2024-11-05';
 
 export class LocalMcpServer {
   private server: http.Server | null = null;
   private tools: Tool[] = [];
   private token: string = '';
+  // 远程 Agent 事件回调:main.ts 注册后,转发到 dashboard 窗口显示远程任务进度。
+  private onRemoteEvent: ((ev: RemoteAgentEvent) => void) | null = null;
 
   setTools(tools: Tool[]): void {
     this.tools = tools;
@@ -74,6 +79,11 @@ export class LocalMcpServer {
 
   setToken(token: string): void {
     this.token = token;
+  }
+
+  /** main.ts 注册此回调,将远程 Agent 事件转发到 dashboard UI。 */
+  setRemoteEventHandler(handler: ((ev: RemoteAgentEvent) => void) | null): void {
+    this.onRemoteEvent = handler;
   }
 
   isRunning(): boolean {
@@ -308,6 +318,9 @@ export class LocalMcpServer {
       signal: ac.signal,
     };
 
+    // 通知本机 UI:远程 Agent 开始工作。
+    this.onRemoteEvent?.({ type: 'start', prompt: prompt.slice(0, 200) });
+
     try {
       const messages = await runAgentLoop({
         provider,
@@ -319,14 +332,41 @@ export class LocalMcpServer {
         ctx,
         signal: ac.signal,
         maxTurns: (args.maxTurns as number) || undefined, // undefined → 读 settings.maxTurns
-        onEvent: () => {}, // 远程 Agent 事件不转发(无通道;结果文本即返回值)
+        onEvent: (e: AgentEvent) => {
+          // 转发到本机 dashboard,让用户看到远程 Agent 正在做什么。
+          if (!this.onRemoteEvent) return;
+          switch (e.type) {
+            case 'token':
+              this.onRemoteEvent({ type: 'token', text: e.text });
+              break;
+            case 'tool':
+              this.onRemoteEvent({ type: 'tool', name: e.name });
+              break;
+            case 'status':
+              this.onRemoteEvent({ type: 'status', text: e.text });
+              break;
+            case 'cost':
+              this.onRemoteEvent({ type: 'cost', usd: e.usd, tokens: e.tokens });
+              break;
+            case 'error':
+              this.onRemoteEvent({ type: 'error', message: e.message });
+              break;
+            case 'done':
+              break; // done 在 finally 后单独发
+          }
+        },
       });
       const text = messages
         .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
         .map((m) => m.content)
         .join('\n')
         .trim();
-      return text || '(远程 Agent 无文本输出)';
+      const result = text || '(远程 Agent 无文本输出)';
+      this.onRemoteEvent?.({ type: 'done', summary: result.slice(0, 500) });
+      return result;
+    } catch (e) {
+      this.onRemoteEvent?.({ type: 'error', message: (e as Error).message });
+      throw e;
     } finally {
       clearTimeout(timer);
     }

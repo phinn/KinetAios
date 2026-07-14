@@ -100,6 +100,16 @@ export type AgentEvent =
   | { type: 'done' }
   | { type: 'error'; message: string };
 
+/** 远程 Agent 事件 —— 当本机 MCP Server 被远程调用 run_agent 时,转发到 dashboard UI。 */
+export type RemoteAgentEvent =
+  | { type: 'start'; prompt: string }
+  | { type: 'status'; text: string }
+  | { type: 'tool'; name: string }
+  | { type: 'token'; text: string }
+  | { type: 'cost'; usd: number; tokens: number }
+  | { type: 'done'; summary: string }
+  | { type: 'error'; message: string };
+
 export type TaskStep = {
   id: string;
   name: string;
@@ -353,6 +363,7 @@ export interface KinetAPI {
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string }) => void): void;
+  onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;
   confirmResponse(id: string, approved: boolean): void;
 }
 

@@ -109,6 +109,9 @@ const api: KinetAPI = {
   onConfirmRequest: (cb) => {
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));
   },
+  onRemoteAgentEvent: (cb) => {
+    ipcRenderer.on('remote-agent-event', (_e: IpcRendererEvent, ev) => cb(ev));
+  },
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),
 };
 

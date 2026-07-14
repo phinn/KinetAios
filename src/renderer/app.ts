@@ -154,6 +154,11 @@ function applyI18nDOM(): void {
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
 
+  // 远程 Agent 事件:别的机器正在调本机 Agent 干活 → 显示浮动状态条。
+  api.onRemoteAgentEvent((ev) => {
+    showRemoteAgentBanner(ev);
+  });
+
   fillModelHints();
   wireUi();
   syncSidebarModeBtn();
@@ -1265,6 +1270,77 @@ async function closeConfirm(approved: boolean) {
     const s = await api.getSettings();
     s.approval = 'never';
     await api.saveSettings(s);
+  }
+}
+
+// ---------- 远程 Agent 状态条 ----------
+// 当远程机器通过 MCP 调用本机 run_agent 时,在底部显示浮动状态条。
+let remoteBannerEl: HTMLDivElement | null = null;
+let remoteBannerTimer: ReturnType<typeof setTimeout> | null = null;
+
+function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): void {
+  // 确保 banner 元素存在
+  if (!remoteBannerEl) {
+    remoteBannerEl = document.createElement('div');
+    remoteBannerEl.id = 'remote-agent-banner';
+    remoteBannerEl.style.cssText = `
+      position: fixed; bottom: 16px; right: 16px; z-index: 9999;
+      max-width: 420px; padding: 12px 16px; border-radius: 12px;
+      background: var(--bg-card, #1e1e2e); color: var(--text-primary, #cdd6f4);
+      border: 1px solid var(--accent, #e8b339); box-shadow: 0 4px 24px rgba(0,0,0,0.3);
+      font-size: 13px; line-height: 1.5; display: flex; align-items: center; gap: 10px;
+      transition: opacity 0.3s; backdrop-filter: blur(12px);
+    `;
+    document.body.appendChild(remoteBannerEl);
+  }
+
+  let icon = '⚡';
+  let text = '';
+  let autoHide = false;
+
+  switch (ev.type) {
+    case 'start':
+      icon = '🔌';
+      text = `远程 Agent 已启动: ${ev.prompt.slice(0, 80)}${ev.prompt.length > 80 ? '…' : ''}`;
+      break;
+    case 'tool':
+      icon = '🔧';
+      text = `远程 Agent 正在调用工具: ${ev.name}`;
+      break;
+    case 'token':
+      // token 事件太频繁,只在 banner 里追加少量文本
+      return;
+    case 'status':
+      icon = '📋';
+      text = ev.text;
+      break;
+    case 'cost':
+      icon = '💰';
+      text = `远程 Agent 消耗: $${ev.usd.toFixed(4)} / ${ev.tokens} tokens`;
+      break;
+    case 'done':
+      icon = '✅';
+      text = `远程 Agent 完成: ${ev.summary.slice(0, 100)}${ev.summary.length > 100 ? '…' : ''}`;
+      autoHide = true;
+      break;
+    case 'error':
+      icon = '❌';
+      text = `远程 Agent 出错: ${ev.message}`;
+      autoHide = true;
+      break;
+  }
+
+  remoteBannerEl.innerHTML = `<span style="font-size:16px">${icon}</span><span>${text}</span>`;
+  remoteBannerEl.style.opacity = '1';
+
+  if (remoteBannerTimer) {
+    clearTimeout(remoteBannerTimer);
+    remoteBannerTimer = null;
+  }
+  if (autoHide) {
+    remoteBannerTimer = setTimeout(() => {
+      if (remoteBannerEl) remoteBannerEl.style.opacity = '0';
+    }, 6000);
   }
 }
 

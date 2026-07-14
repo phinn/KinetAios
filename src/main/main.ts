@@ -481,6 +481,11 @@ function registerIpc(): void {
   ipcMain.handle('get-brand', () => getBrand());
 
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──
+  // 远程 Agent 事件 → 转发到 dashboard,让用户看到"远程正在调我的 Agent 干活"。
+  localMcpServer.setRemoteEventHandler((ev) => {
+    safeSend(dashboardWin, 'remote-agent-event', ev);
+  });
+
   ipcMain.handle('start-mcp-server', async (_e, port: number, token: string) => {
     try {
       // 把当前所有内置工具 + 自定义工具暴露给远程调用者。
