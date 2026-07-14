@@ -187,10 +187,10 @@
       <div id="town-view" class="view">
         <div id="town-canvas"></div>
       </div>
-      <!-- town panel(居中弹出,放在 main 下不受 view overflow 裁剪)-->
-      <div id="town-backdrop"></div>
-      <div id="town-panel"></div>
     </main>
+    <!-- town panel(居中弹出,放在 #app 下避免被 main flex 布局干扰)-->
+    <div id="town-backdrop"></div>
+    <div id="town-panel"></div>
   </div>
 
   <!-- shell confirm modal -->

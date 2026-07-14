@@ -251,7 +251,8 @@
   left: 50%;
   width: 480px;
   max-width: 90vw;
-  max-height: 80vh;
+  height: 600px;
+  max-height: 85vh;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 14px;
