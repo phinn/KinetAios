@@ -16,6 +16,11 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import os from 'node:os';
 import type { Tool, ToolCtx } from './tools';
 import { getBrand } from './brand';
+import { runAgentLoop } from './AgentLoop';
+import { currentProvider, type Provider } from './glm';
+import { baseSystemPrompt } from './engines';
+import { snapshot, getSettings } from './settings';
+import { allTools } from './tools';
 
 type McpJsonRpcRequest = {
   jsonrpc: '2.0';
@@ -39,6 +44,22 @@ function toolToMcp(t: Tool): Record<string, unknown> {
     inputSchema: t.parameters,
   };
 }
+
+// ── run_agent:远程节点调此工具 → 本机起完整 AgentLoop 执行任务 ──
+// 这是"多机协作方案 A"的核心:不只是代理基础工具,而是在远程机器上跑一整个自主 Agent。
+// 远程调用方只需传入 prompt,本机 Agent 会自主使用 shell/read_file/write_file 等工具完成任务并返回文本。
+const RUN_AGENT_TOOL_MCP: Record<string, unknown> = {
+  name: 'run_agent',
+  description: '[远程 Agent] 在此机器上启动一个完整的自主 Agent 执行任务。Agent 拥有 shell/read_file/write_file/web_fetch 等全部工具,会自主推理-行动-观察直到完成。传入自然语言任务描述,返回 Agent 的最终文本结果。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      prompt: { type: 'string', description: '要在此机器上执行的任务描述(自然语言)' },
+      maxTurns: { type: 'number', description: '可选:最大 ReAct 循环轮数(默认用本机设置值)' },
+    },
+    required: ['prompt'],
+  },
+};
 
 const PROTOCOL_VERSION = '2024-11-05';
 
@@ -218,11 +239,22 @@ export class LocalMcpServer {
         return {};
 
       case 'tools/list':
-        return { tools: this.tools.map(toolToMcp) };
+        return { tools: [...this.tools.map(toolToMcp), RUN_AGENT_TOOL_MCP] };
 
       case 'tools/call': {
         const name = String((msg.params as any)?.name ?? '');
         const args = ((msg.params as any)?.arguments ?? {}) as Record<string, unknown>;
+
+        // ── run_agent:在本机启动完整 AgentLoop ──
+        if (name === 'run_agent') {
+          try {
+            const result = await this.runRemoteAgent(args);
+            return { content: [{ type: 'text', text: result }], isError: false };
+          } catch (e) {
+            return { content: [{ type: 'text', text: `远程 Agent 执行失败: ${(e as Error).message}` }], isError: true };
+          }
+        }
+
         const tool = this.tools.find((t) => t.name === name);
         if (!tool) {
           return { content: [{ type: 'text', text: `未知工具: ${name}` }], isError: true };
@@ -244,6 +276,59 @@ export class LocalMcpServer {
 
       default:
         throw new Error(`未知 method: ${msg.method}`);
+    }
+  }
+
+  /**
+   * 远程 Agent 执行:在本机启动一个完整的 AgentLoop(ReAct 循环 + 全部工具)。
+   * 远程调用方传入 prompt,本机 Agent 自主完成,返回最终文本。
+   * - 不含 dispatch_agent(防远程递归:远程 Agent 不应再派发子 agent 起更多远程调用)
+   * - 不含 confirm(安全边界靠 token:只有信任的机器能连)
+   * - 用本机的 API key / model / baseURL
+   */
+  private async runRemoteAgent(args: Record<string, unknown>): Promise<string> {
+    const prompt = String(args.prompt ?? '').trim();
+    if (!prompt) return '错误:缺少 prompt 参数';
+
+    const s = getSettings();
+    const base = snapshot();
+    const snap = { ...base, model: s.model };
+    const provider: Provider = currentProvider(snap);
+    const ac = new AbortController();
+    // 超时保护:默认 5 分钟,防止远程 Agent 无限运行。
+    const timeoutMs = 5 * 60 * 1000;
+    const timer = setTimeout(() => ac.abort(), timeoutMs);
+
+    // 远程 Agent 拥有完整工具(shell/read_file/write_file/...),但不包含 dispatch_agent(防递归)。
+    const tools = allTools().filter((t) => t.name !== 'dispatch_agent');
+    const ctx: ToolCtx = {
+      cwd: process.env.KINET_MCP_CWD || os.homedir(),
+      confirm: async () => true, // token 已验证 → 信任远程调用
+      sandbox: s.sandbox,
+      signal: ac.signal,
+    };
+
+    try {
+      const messages = await runAgentLoop({
+        provider,
+        tools,
+        systemPrompt: baseSystemPrompt,
+        snapshot: snap,
+        userInput: prompt,
+        history: [],
+        ctx,
+        signal: ac.signal,
+        maxTurns: (args.maxTurns as number) || undefined, // undefined → 读 settings.maxTurns
+        onEvent: () => {}, // 远程 Agent 事件不转发(无通道;结果文本即返回值)
+      });
+      const text = messages
+        .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
+        .map((m) => m.content)
+        .join('\n')
+        .trim();
+      return text || '(远程 Agent 无文本输出)';
+    } finally {
+      clearTimeout(timer);
     }
   }
 
