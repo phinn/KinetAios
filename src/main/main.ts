@@ -1002,8 +1002,11 @@ function registerIpc(): void {
       // 取整个虚拟桌面(包含多显示器)或第一个源
       const source = sources.find((s) => s.display_id === '') || sources[0];
       const thumb = source.thumbnail;
+      // macOS 无屏幕录制权限时 thumbnail 为空 nativeImage → isEmpty() = true
+      if (thumb.isEmpty()) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
       const dataUrl = thumb.toDataURL();
-      if (!dataUrl || dataUrl.length < 100) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
+      // 空图也会产生 ~100 字节的 PNG,真正截图至少几万字节
+      if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
       return { ok: true, dataUrl };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };

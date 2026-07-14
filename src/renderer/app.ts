@@ -1335,39 +1335,54 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     captureBtn.onclick = async () => {
       captureBtn.classList.add('loading');
       try {
-        // 优先 getDisplayMedia(Chromium 原生,弹权限弹窗,截真实屏幕)
+        // 优先 main 进程 desktopCapturer —— 比 renderer getDisplayMedia 更可靠:
+        // macOS 上 getDisplayMedia 经常拿到 0×0 的空 track(canvas 画出空白 PNG)。
         let dataUrl: string | null = null;
+
+        // 路径 1:desktopCapturer(main 进程)
         try {
-          const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
-          const track = stream.getVideoTracks()[0];
-          // ImageCapture API(如果可用)更快 —— 否则用 video+canvas
-          const video = document.createElement('video');
-          video.srcObject = stream;
-          video.muted = true;
-          await new Promise<void>((resolve, reject) => {
-            video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
-            setTimeout(() => reject(new Error('video timeout')), 3000);
-          });
-          // 等一帧渲染
-          await new Promise((r) => requestAnimationFrame(r));
-          await new Promise((r) => setTimeout(r, 100));
-          const canvas = document.createElement('canvas');
-          canvas.width = video.videoWidth || 1920;
-          canvas.height = video.videoHeight || 1080;
-          const ctx = canvas.getContext('2d')!;
-          ctx.drawImage(video, 0, 0);
-          dataUrl = canvas.toDataURL('image/png');
-          // 清理
-          track.stop();
-          stream.getTracks().forEach((t) => t.stop());
-          video.srcObject = null;
-        } catch {
-          // getDisplayMedia 失败(用户取消/不支持)→ 回退到 main 进程 desktopCapturer
           const r = await api.captureScreen();
-          if (r.ok && r.dataUrl) dataUrl = r.dataUrl;
+          if (r.ok && r.dataUrl && r.dataUrl.length > 1000) dataUrl = r.dataUrl;
+        } catch { /* 忽略,走回退 */ }
+
+        // 路径 2:getDisplayMedia(renderer 端,某些场景更清晰)
+        if (!dataUrl) {
+          try {
+            const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
+            const track = stream.getVideoTracks()[0];
+            const video = document.createElement('video');
+            video.srcObject = stream;
+            video.muted = true;
+            await new Promise<void>((resolve, reject) => {
+              video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
+              setTimeout(() => reject(new Error('video timeout')), 3000);
+            });
+            // 等一帧渲染
+            await new Promise((r) => requestAnimationFrame(r));
+            await new Promise((r) => setTimeout(r, 100));
+            const w = video.videoWidth;
+            const h = video.videoHeight;
+            if (w > 0 && h > 0) {
+              const canvas = document.createElement('canvas');
+              canvas.width = w;
+              canvas.height = h;
+              const ctx = canvas.getContext('2d')!;
+              ctx.drawImage(video, 0, 0);
+              const url = canvas.toDataURL('image/png');
+              // 校验:空 canvas 也会产生 ~100 字节的 PNG,真正截图至少几万字节
+              if (url.length > 1000) dataUrl = url;
+            }
+            // 清理
+            track.stop();
+            stream.getTracks().forEach((t) => t.stop());
+            video.srcObject = null;
+          } catch {
+            // getDisplayMedia 失败(用户取消/不支持)→ dataUrl 保持 null
+          }
         }
+
         captureBtn.classList.remove('loading');
-        if (!dataUrl) return; // 用户取消
+        if (!dataUrl) return; // 用户取消或两条路径都失败
         imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl });
         renderAttach();
       } catch (e) {
