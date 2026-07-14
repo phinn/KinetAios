@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KinetAios — 你的 Mac 的 AI 总机</title>
+<title>KinetAios — Windows & macOS 的 AI 总机</title>
 <style>
 :root{
   --bg:#0B0F14; --surface:#141B22; --surface2:#1E2731; --line:#2A3540;
@@ -218,7 +218,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <!-- ===== HERO ===== -->
 <header class="hero">
   <div class="wrap">
-    <div class="badge"><span class="dot"></span><span data-i18n="badge">原生 macOS · 多 AI 引擎并发的 AI 总机</span></div>
+    <div class="badge"><span class="dot"></span><span data-i18n="badge">Windows & macOS · 多 AI 引擎并发的 AI 总机</span></div>
     <h1 data-i18n-html="h1"></h1>
     <p class="sub" data-i18n="sub"></p>
     <div class="hero-cta">
@@ -488,12 +488,12 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <p class="h-sub" data-i18n="pr_sub"></p>
       </div>
       <div class="priv-card">
-<span class="k">api_key</span>     <span class="arrow">→</span> <span class="v">macOS Keychain</span>
+<span class="k">api_key</span>     <span class="arrow">→</span> <span class="v">OS Keychain (DPAPI / Keychain)</span>
 <span class="k">history</span>     <span class="arrow">→</span> <span class="v">local SQLite (FTS5)</span>
 <span class="k">memory</span>      <span class="arrow">→</span> <span class="v">local SQLite</span>
 <span class="k">telemetry</span>   <span class="arrow">→</span> <span class="v">none</span>
 <span class="k">upload</span>      <span class="arrow">→</span> <span class="v">never</span>
-<span class="k">runtime</span>     <span class="arrow">→</span> <span class="v">native SwiftUI, not Electron</span>
+<span class="k">runtime</span>     <span class="arrow">→</span> <span class="v">Electron + TypeScript, cross-platform</span>
       </div>
     </div>
   </div>
@@ -526,10 +526,10 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 
 <footer>
   <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;width:100%;align-items:center">
-    <div>© 2026 KinetAios · <span data-i18n="foot_tag">你的 Mac 的 AI 总机</span></div>
+    <div>© 2026 KinetAios · <span data-i18n="foot_tag">Windows & macOS 的 AI 总机</span></div>
     <div style="display:flex;align-items:center;gap:16px">
       <a href="mailto:phinn@outlook.com" style="color:var(--mint);font-size:13px">✉ phinn@outlook.com</a>
-      <span style="color:var(--dim)">macOS 13+ · Apple Silicon / Intel</span>
+      <span style="color:var(--dim)">Windows 10+ · macOS 13+ · 64-bit</span>
     </div>
   </div>
 </footer>
@@ -537,7 +537,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <script>
 const I18N = {
   "zh-Hans": {
-    badge:"原生 macOS · 多 AI 引擎并发的 AI 总机",
+    badge:"Windows & macOS · 多 AI 引擎并发的 AI 总机",
     h1:'你的 Mac 的 <span class="grad">AI 总机</span><br>一个面板,多个 AI 同时干活',
     sub:"Claude Code、Codex、Kaios,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
     dl:"下载试用", learn:"了解更多",
@@ -572,20 +572,20 @@ const I18N = {
     f_5t:"长期记忆", f_5:"每轮后台抽用户事实入库,下次自动注入,不用反复说偏好。",
     f_6t:"工作区", f_6:"终端、文件、对话三 tab 绑定 cwd,改完直接在 app 内验证。",
     pr_title:"隐私在你手里",
-    pr_sub:"API key 走系统 Keychain,对话存本地 SQLite,不上传任何后台。原生 SwiftUI,资源占用低。",
+    pr_sub:"API key 走系统 Keychain,对话存本地 SQLite,不上传任何后台。跨平台 Electron,资源占用低。",
     fq_title:"常见问题",
     q_1:"这跟 Raycast / Alfred 是一回事吗?", a_1:"不一样。Raycast 是启动器,KinetAios 是 AI 总机——多 agent 引擎并发的运行时,重点不是「快速启动 app」而是「让多个 AI 同时帮你干活、状态全可见」。可以共存。",
     q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是单引擎。KinetAios 把 Claude Code / Codex / Kaios 装进同一面板,并发跑、状态全可见、跨引擎 resume——同时管多个 agent 是它做不了的。",
-    q_3:"数据去哪了?", a_3:"API key 在 macOS Keychain;对话和记忆在本地 SQLite;不上传任何后台。你的引擎、你的 key、你的数据。",
+    q_3:"数据去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);对话和记忆在本地 SQLite;不上传任何后台。你的引擎、你的 key、你的数据。",
     q_4:"Claude Code / Codex 怎么用?需要自己配?", a_4:"KinetAios 自动发现已装的 claude / codex CLI。没装的话,设置页有引导。Kaios 只需 API key。",
     q_5:"支持什么模型?", a_5:"Kaios 看你接的 key(默认 glm-5.2 系列);Claude Code / Codex 看你本机 CLI 配置(可走任何它们支持的模型)。引擎 ≠ 模型。",
     fin_h:"把所有 AI 装进一个面板",
     fin_p:"⌘⌥Space 唤出,下达任务,看 agent 干活。",
-    foot_tag:"你的 Mac 的 AI 总机",
+    foot_tag:"Windows & macOS 的 AI 总机",
     foot_contact:"联系我们"
   },
   "zh-Hant": {
-    badge:"原生 macOS · 多 AI 引擎併發的 AI 總機",
+    badge:"Windows & macOS · 多 AI 引擎併發的 AI 總機",
     h1:'你的 Mac 的 <span class="grad">AI 總機</span><br>一個面板,多個 AI 同時幹活',
     sub:"Claude Code、Codex、Kaios,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
     dl:"下載試用", learn:"了解更多",
@@ -620,11 +620,11 @@ const I18N = {
     f_5t:"長期記憶", f_5:"每輪後台抽使用者事實入庫,下次自動注入,不用反覆說偏好。",
     f_6t:"工作區", f_6:"終端、檔案、對話三 tab 綁定 cwd,改完直接在 app 內驗證。",
     pr_title:"隱私在你手裡",
-    pr_sub:"API key 走系統 Keychain,對話存本地 SQLite,不上傳任何後台。原生 SwiftUI,資源佔用低。",
+    pr_sub:"API key 走系統 Keychain,對話存本地 SQLite,不上傳任何後台。跨平台 Electron,資源佔用低。",
     fq_title:"常見問題",
     q_1:"這跟 Raycast / Alfred 是一回事嗎?", a_1:"不一樣。Raycast 是啟動器,KinetAios 是 AI 總機——多 agent 引擎併發的執行時,重點不是「快速啟動 app」而是「讓多個 AI 同時幫你幹活、狀態全可見」。可以共存。",
     q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Claude Code / Codex / Kaios 裝進同一面板,併發跑、狀態全可見、跨引擎 resume——同時管多個 agent 是它做不了的。",
-    q_3:"資料去哪了?", a_3:"API key 在 macOS Keychain;對話和記憶在本地 SQLite;不上傳任何後台。你的引擎、你的 key、你的資料。",
+    q_3:"資料去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);對話和記憶在本地 SQLite;不上傳任何後台。你的引擎、你的 key、你的資料。",
     q_4:"Claude Code / Codex 怎麼用?需要自己配?", a_4:"KinetAios 自動發現已裝的 claude / codex CLI。沒裝的話,設定頁有引導。Kaios 只需 API key。",
     q_5:"支援什麼模型?", a_5:"Kaios 看你接的 key(預設 glm-5.2 系列);Claude Code / Codex 看你本機 CLI 配置(可走任何它們支援的模型)。引擎 ≠ 模型。",
     fin_h:"把所有 AI 裝進一個面板",
@@ -633,7 +633,7 @@ const I18N = {
     foot_contact:"聯絡我們"
   },
   "en": {
-    badge:"Native macOS · Multi-engine AI switchboard",
+    badge:"Windows & macOS · Multi-engine AI switchboard",
     h1:'Your Mac\'s <span class="grad">AI Switchboard</span><br>One panel, multiple AIs working at once',
     sub:"Claude Code, Codex, Kaios — each running independently, all status visible. Code, copy, research, each engine has its strength.",
     dl:"Download", learn:"Learn more",
@@ -668,11 +668,11 @@ const I18N = {
     f_5t:"Long-term memory", f_5:"Background fact extraction each turn, auto-injected next time. No repeating yourself.",
     f_6t:"Workspace", f_6:"Terminal, files, chat tabs bound to cwd. Edit and verify within the app.",
     pr_title:"Privacy in your hands",
-    pr_sub:"API keys in macOS Keychain, conversations in local SQLite, no backend upload. Native SwiftUI, low footprint.",
+    pr_sub:"API keys in OS Keychain (DPAPI / Keychain), conversations in local SQLite, no backend upload. Cross-platform Electron, low footprint.",
     fq_title:"FAQ",
     q_1:"Is this like Raycast / Alfred?", a_1:"No. Raycast is a launcher; KinetAios is an AI switchboard — a multi-agent concurrent runtime. The point isn't 'quick app launch' but 'multiple AIs working for you simultaneously, all visible.' They coexist fine.",
     q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Claude Code / Codex / Kaios in one panel — concurrent, all-visible, cross-engine resume. Managing multiple agents at once is what they can't do.",
-    q_3:"Where does my data go?", a_3:"API key in macOS Keychain; conversations and memory in local SQLite; no backend upload. Your engines, your keys, your data.",
+    q_3:"Where does my data go?", a_3:"API key in OS Keychain (DPAPI / Keychain); conversations and memory in local SQLite; no backend upload. Your engines, your keys, your data.",
     q_4:"How do Claude Code / Codex work? Do I need to configure them?", a_4:"KinetAios auto-discovers installed claude / codex CLIs. If not installed, settings page has a guide. Kaios only needs an API key.",
     q_5:"Which models are supported?", a_5:"Kaios depends on your key (default glm-5.2 family); Claude Code / Codex follow your local CLI config (any model they support). Engine ≠ model.",
     fin_h:"All your AIs in one panel",
@@ -681,7 +681,7 @@ const I18N = {
     foot_contact:"Contact"
   },
   "ja": {
-    badge:"ネイティブ macOS · マルチエンジン AI 総合受付",
+    badge:"Windows & macOS · マルチエンジン AI 総合受付",
     h1:'Mac の <span class="grad">AI 総合受付</span><br>1 パネルで複数 AI が同時に稼働',
     sub:"Claude Code、Codex、Kaiosを直結。それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
     dl:"ダウンロード", learn:"詳細",
@@ -716,11 +716,11 @@ const I18N = {
     f_5t:"長期記憶", f_5:"毎ターン背景でユーザー事実を抽出・保存、次回自動注入。設定を繰り返す必要なし。",
     f_6t:"ワークスペース", f_6:"ターミナル、ファイル、チャットの3 tab が cwd にバインド。編集後 app 内で検証。",
     pr_title:"プライバシーはあなたの手に",
-    pr_sub:"API key は macOS Keychain、対話はローカル SQLite、バックエンド送信なし。ネイティブ SwiftUI、低リソース。",
+    pr_sub:"API key は OS Keychain (DPAPI / Keychain)、対話はローカル SQLite、バックエンド送信なし。クロスプラットフォーム Electron、低リソース。",
     fq_title:"よくある質問",
     q_1:"Raycast / Alfred と同じですか?", a_1:"違います。Raycast はランチャー、KinetAios は AI 総合受付——マルチ agent エンジンの並行ランタイム。「アプリの高速起動」ではなく「複数 AI が同時に作業、ステータスすべて可視」が目的。共存可能です。",
     q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Claude Code / Codex / Kaios を1パネルに。並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理は他にはできない機能です。",
-    q_3:"データはどこへ?", a_3:"API key は macOS Keychain、対話と記憶はローカル SQLite、バックエンド送信なし。あなたのエンジン、あなたの key、あなたのデータ。",
+    q_3:"データはどこへ?", a_3:"API key は OS Keychain (DPAPI / Keychain)、対話と記憶はローカル SQLite、バックエンド送信なし。あなたのエンジン、あなたの key、あなたのデータ。",
     q_4:"Claude Code / Codex の使い方は? 自分で設定?", a_4:"KinetAios がインストール済みの claude / codex CLI を自動検出。未インストールの場合は設定ページにガイド。Kaios は API key のみ。",
     q_5:"対応モデルは?", a_5:"Kaios は鍵次第(デフォルト glm-5.2 系)、Claude Code / Codex はローカル CLI 設定に従う(対応する任意のモデル)。エンジン ≠ モデル。",
     fin_h:"すべての AI を 1 パネルに",
