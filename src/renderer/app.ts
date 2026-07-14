@@ -50,6 +50,27 @@ let rulesEditor: CodeEditor | null = null;
 function tr(key: string, params?: Record<string, string | number>): string {
   return t(lang, key, params);
 }
+
+// SVG 图标库 / SVG icon set (统一替代 emoji / unified emoji replacement)
+const ICON = {
+  copy: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+  speak: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4z"/><path d="M15.5 8.5a5 5 0 010 7M19 5a9 9 0 010 14"/></svg>',
+  branch: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 5v14M18 8v2a4 4 0 01-4 4H6"/></svg>',
+  replay: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9 9 0 00-7.5 4"/><path d="M3 4v4h4"/><path d="M10 9l5 3-5 3z"/></svg>',
+  export: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>',
+  wrench: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg>',
+  plug: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg>',
+  link: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/></svg>',
+  bolt: '<svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/></svg>',
+  folder: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>',
+  doc: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M8 8h8M8 12h8M8 16h5"/></svg>',
+  globe: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3a14 14 0 010 18M12 3a14 14 0 000 18"/></svg>',
+  graph: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11L6.5 17M12 11l5.5 6"/></svg>',
+  list: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M8 6h13M8 12h13M8 18h13M3 6h.01M3 12h.01M3 18h.01"/></svg>',
+  branch2: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 5v14M18 8v2a4 4 0 01-4 4H6"/></svg>',
+  edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>',
+  del: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg>',
+} as const;
 // 刷 index.html 里的静态文本([data-i18n] 元素)+ <html lang>。init 和切语言后调。
 // 运行时注入的字符串(app.ts 各 render 函数)直接调 tr(),它们每次重建 innerHTML 自动跟随。
 function applyI18nDOM(): void {
@@ -92,7 +113,7 @@ function applyI18nDOM(): void {
   } catch (e) {
     console.error('init failed', e);
     document.body.innerHTML = `<div style="padding:48px;text-align:center;color:#f44336;font-family:system-ui">
-      <h2>⚠ 初始化失败</h2>
+      <h2><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-4px;margin-right:6px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> 初始化失败</h2>
       <p>${esc(String(e))}</p>
       <p>请重启应用。如问题持续,检查 userData/history.db 是否损坏。</p>
     </div>`;
@@ -176,8 +197,8 @@ function renderSidebar() {
     const collapsed = collapsedProjects.has(cwd);
     const name = projName(cwd);
     head.innerHTML =
-      `<span class="sb-chevron">${collapsed ? '▶' : '▼'}</span>` +
-      `<span class="sb-pico">📁</span>` +
+      `<span class="sb-chevron">${collapsed ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'}</span>` +
+      `<span class="sb-pico">${ICON.folder}</span>` +
       `<span class="sb-pname">${esc(name)}</span>` +
       `<span class="sb-pcount">${ids.length}</span>` +
       `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
@@ -212,7 +233,7 @@ function taskLi(id: string): HTMLElement {
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
   const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}">✎</button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}">🗑</button></span>`;
+  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     selectedId = id;
     showChat();
@@ -424,7 +445,7 @@ function renderGit(): void {
   }
   const staged = snap.changes?.filter((c) => c.staged) ?? [];
   const unstaged = snap.changes?.filter((c) => !c.staged) ?? [];
-  branchEl.innerHTML = `🌿 <strong>${esc(snap.branch ?? '')}</strong> · ${snap.changes?.length ?? 0} ${tr('git.changes')}`;
+  branchEl.innerHTML = `${ICON.branch2} <strong>${esc(snap.branch ?? '')}</strong> · ${snap.changes?.length ?? 0} ${tr('git.changes')}`;
   // changes — 分 staged / unstaged 两组
   const renderGroup = (label: string, items: typeof snap.changes) => {
     if (!items?.length) return '';
@@ -464,7 +485,7 @@ function renderGit(): void {
       });
     }
   } else {
-    sideTitleEl.innerHTML = `<button class="ghost git-back" id="git-back">← ${esc(tr('git.history'))}</button><span class="git-diff-title">${esc(gitState.view.title)}</span>`;
+    sideTitleEl.innerHTML = `<button class="ghost git-back" id="git-back"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M15 18l-6-6 6-6"/></svg> ${esc(tr('git.history'))}</button><span class="git-diff-title">${esc(gitState.view.title)}</span>`;
     sideListEl.innerHTML = gitState.view.contentHTML;
     document.getElementById('git-back')!.onclick = () => {
       gitState.view = { kind: 'history' };
@@ -716,7 +737,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const uCopy = document.createElement('button');
   uCopy.className = 'ghost bubble-copy';
   uCopy.title = tr('copy.text');
-  uCopy.textContent = '📋';
+  uCopy.innerHTML = ICON.copy;
   uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt, uCopy); };
   bubble.appendChild(uCopy);
   userMsg.appendChild(bubble);
@@ -758,10 +779,10 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (t.error) {
       const e = document.createElement('div');
       e.className = 'err';
-      e.textContent = '⚠️ ' + t.error;
+      e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
       body.appendChild(e);
     }
-    aiMsg.appendChild(avatarEl('✨'));
+    aiMsg.appendChild(avatarEl('ai'));
     aiMsg.appendChild(body);
     // 非流式时给 AI 回复挂一个 🔊 朗读按钮(speechSynthesis 系统级 TTS,零依赖)。
     if (!streaming && t.answer) {
@@ -770,21 +791,21 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       const speak = document.createElement('button');
       speak.className = 'ghost ai-speak';
       speak.title = tr('voice.speak');
-      speak.textContent = '🔊';
+      speak.innerHTML = ICON.speak;
       speak.onclick = () => speakText(t.answer ?? '');
       bar.appendChild(speak);
       // 复制按钮:复制 AI 回复纯文本
       const copy = document.createElement('button');
       copy.className = 'ghost ai-copy';
       copy.title = tr('copy.text');
-      copy.textContent = '📋';
+      copy.innerHTML = ICON.copy;
       copy.onclick = () => copyText(t.answer ?? '', copy);
       bar.appendChild(copy);
       // 分支按钮:从此 turn 分叉出新会话(类似 git branch)
       const branch = document.createElement('button');
       branch.className = 'ghost ai-branch';
       branch.title = tr('branch.from');
-      branch.textContent = '🌿';
+      branch.innerHTML = ICON.branch;
       branch.onclick = () => void branchFromTurn(conv.id, i);
       bar.appendChild(branch);
       // 回放按钮:逐步回放工具调用
@@ -792,7 +813,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         const replay = document.createElement('button');
         replay.className = 'ghost ai-replay';
         replay.title = tr('replay.title');
-        replay.textContent = '🎬';
+        replay.innerHTML = ICON.replay;
         replay.onclick = () => openReplay(i);
         bar.appendChild(replay);
       }
@@ -800,7 +821,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       const exportBtn = document.createElement('button');
       exportBtn.className = 'ghost ai-export';
       exportBtn.title = tr('export.title');
-      exportBtn.textContent = '📤';
+      exportBtn.innerHTML = ICON.export;
       exportBtn.onclick = () => openExportMenu(conv.id);
       bar.appendChild(exportBtn);
       body.appendChild(bar);
@@ -825,7 +846,7 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   const el = document.createElement('div');
   el.className = 'step';
   const det = document.createElement('details');
-  det.innerHTML = `<summary><span class="name">🔧 ${esc(s.name)}</span></summary><pre></pre><pre></pre>`;
+  det.innerHTML = `<summary><span class="name">${ICON.wrench} ${esc(s.name)}</span></summary><pre></pre><pre></pre>`;
   const pres = det.querySelectorAll('pre');
   pres[0].textContent = s.args;
   pres[1].textContent = s.result.slice(0, 4000);
@@ -984,7 +1005,7 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
-        <h3>🔗 多机协作 (MCP Bridge)</h3>
+        <h3>${ICON.link} 多机协作 (MCP Bridge)</h3>
         <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:12px">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
 
         <!-- 本机 MCP Server -->
@@ -998,7 +1019,7 @@ async function showSettings() {
           <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;margin-left:46px">
             <label style="font-size:12px;color:var(--muted)">端口</label>
             <input id="s-mcp-port" type="number" value="${s.localMcpServer?.port ?? 18109}" style="width:100px" />
-            <button id="s-mcp-gentoken" title="生成随机 Token" style="padding:4px 10px;font-size:12px">🎲</button>
+            <button id="s-mcp-gentoken" title="生成随机 Token" style="padding:4px 10px;font-size:12px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
 
             <label style="font-size:12px;color:var(--muted)">Token</label>
             <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权" style="grid-column:2/4" />
@@ -1164,7 +1185,7 @@ async function showSettings() {
     }
     el.innerHTML = r.items
       .map((p) => {
-        const errBadge = p.error ? `<span class="s-plugin-err" title="${esc(p.error)}">⚠ ${esc(tr('settings.plugins.loadFailed'))}</span>` : '';
+        const errBadge = p.error ? `<span class="s-plugin-err" title="${esc(p.error)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>` : '';
         return `<div class="s-plugin-row">
           <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
           <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${p.author ? ' · ' + esc(p.author) : ''}</div>
@@ -1552,7 +1573,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     if (!menu.hidden) { menu.hidden = true; return; }
     const list = await api.listMcp();
     menu.innerHTML = list.length
-      ? list.map((s) => `<div class="mcp-srv"><div class="mcp-srv-name">🔌 ${esc(s.name)}<span class="mcp-src">${s.source}</span></div><div class="mcp-tools">${
+      ? list.map((s) => `<div class="mcp-srv"><div class="mcp-srv-name">${ICON.plug} ${esc(s.name)}<span class="mcp-src">${s.source}</span></div><div class="mcp-tools">${
           s.tools.length ? s.tools.map((tool) => `<span class="mcp-tool">${esc(tool)}</span>`).join('') : '<i>' + esc(tr('mcp.noTools')) + '</i>'
         }</div></div>`).join('')
       : '<div class="mcp-empty">' + tr('mcp.empty') + '</div>';
@@ -1872,7 +1893,7 @@ function projCard(cwd: string, ids: string[]): string {
   const when = lastTs ? timeAgo(lastTs) : tr('wb.noActivity');
   return `<div class="wb-card" data-cwd="${esc(cwd)}">
     <div class="wb-card-head">
-      <span class="wb-picon">${running ? '⚡' : '📁'}</span>
+      <span class="wb-picon">${running ? ICON.bolt : ICON.folder}</span>
       <span class="wb-pname">${esc(projName(cwd))}</span>
       <span class="wb-spacer"></span>
       <button class="ghost wb-newtask" title="${esc(tr('wb.newTask'))}">＋</button>
@@ -1908,7 +1929,7 @@ function refreshWbCard(cwd: string): void {
   card.querySelector<HTMLElement>('.wb-stats')!.textContent = stats.join(' · ');
   card.querySelector<HTMLElement>('.wb-last')!.textContent =
     tr('wb.last', { when: lastTs ? timeAgo(lastTs) : tr('wb.noActivity') });
-  card.querySelector<HTMLElement>('.wb-picon')!.textContent = running ? '⚡' : '📁';
+  card.querySelector<HTMLElement>('.wb-picon')!.innerHTML = running ? ICON.bolt : ICON.folder;
 }
 
 // attribute selector escaping: cwd may contain quotes / ] / backslash — escape for querySelector.
@@ -2128,7 +2149,7 @@ function fileToDataUrl(f: File): Promise<string> {
 function renderAttach(): void {
   const row = document.getElementById('attach-row')!;
   const fileChips = attachments
-    .map((a, i) => `<span class="chip"><span>📄 ${esc(a.name)}</span><span class="chip-x" data-kind="file" data-i="${i}">×</span></span>`)
+    .map((a, i) => `<span class="chip"><span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> ${esc(a.name)}</span><span class="chip-x" data-kind="file" data-i="${i}">×</span></span>`)
     .join('');
   const imgChips = imageAttachments
     .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
@@ -2247,7 +2268,7 @@ async function renderMemoryGraph(): Promise<void> {
   // 图谱视图下显示「图/列表」切换按钮
   const vizBtn = document.getElementById('mm-graph-viz')!;
   vizBtn.style.display = mmView === 'graph' ? '' : 'none';
-  vizBtn.textContent = mmGraphMode === 'viz' ? '📋' : '🕸️';
+  vizBtn.innerHTML = mmGraphMode === 'viz' ? ICON.list : ICON.graph;
   vizBtn.title = mmGraphMode === 'viz' ? '切换列表' : '切换力导向图';
   vizBtn.onclick = async () => {
     mmGraphMode = mmGraphMode === 'viz' ? 'list' : 'viz';
@@ -3421,8 +3442,8 @@ function openExportMenu(convId: string): void {
     <div class="modal-box" style="max-width:360px;text-align:center">
       <h3>${tr('export.title')}</h3>
       <div style="display:flex;gap:8px;justify-content:center;margin:16px 0">
-        <button class="primary" id="ex-md">📝 ${tr('export.md')}</button>
-        <button class="primary" id="ex-html">🌐 ${tr('export.html')}</button>
+        <button class="primary" id="ex-md">${ICON.doc} ${tr('export.md')}</button>
+        <button class="primary" id="ex-html">${ICON.globe} ${tr('export.html')}</button>
         <button class="primary" id="ex-json">{ } ${tr('export.json')}</button>
       </div>
       <button class="ghost" id="ex-cancel">${tr('common.cancel')}</button>
@@ -3471,7 +3492,7 @@ function openReplay(turnIdx: number): void {
         </div>
         <div class="replay-body">
           <div class="replay-step">
-            <div class="replay-tool">🔧 ${esc(step.name)}</div>
+            <div class="replay-tool">${ICON.wrench} ${esc(step.name)}</div>
             ${step.durationMs != null ? `<span class="replay-dur">${tr('replay.duration', { ms: step.durationMs })}</span>` : ''}
             <div class="replay-section">
               <div class="replay-label">${tr('replay.toolCall')}</div>

@@ -100,7 +100,9 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     row.className = 'fe-row';
     const ico = document.createElement('span');
     ico.className = 'fe-ico';
-    ico.textContent = e.isDir ? '📁' : '📄';
+    ico.innerHTML = e.isDir
+      ? '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg>'
+      : '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg>';
     const name = document.createElement('span');
     name.className = 'fe-name';
     name.textContent = e.name;

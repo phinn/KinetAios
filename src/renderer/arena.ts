@@ -20,10 +20,10 @@ type Col = {
   usd: number;
 };
 
-const ENGINES: Array<{ kind: EngineKind; label: string; emoji: string }> = [
-  { kind: 'direct', label: 'Direct', emoji: '🤖' },
-  { kind: 'claudeCode', label: 'Claude Code', emoji: ' anthropic' },
-  { kind: 'codex', label: 'Codex', emoji: '🧬' },
+const ENGINES: Array<{ kind: EngineKind; label: string; icon: string }> = [
+  { kind: 'direct', label: 'Direct', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="8" width="16" height="12" rx="2"/><circle cx="9" cy="14" r="1.2"/><circle cx="15" cy="14" r="1.2"/><path d="M12 8V4M9 4h6"/><circle cx="12" cy="3" r="1"/></svg>' },
+  { kind: 'claudeCode', label: 'Claude Code', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6L2 12l6 6M16 6l6 6-6 6"/></svg>' },
+  { kind: 'codex', label: 'Codex', icon: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8 12l3 3 5-6"/></svg>' },
 ];
 
 let lang: Lang = 'zh-CN';
@@ -38,7 +38,7 @@ function renderCol(col: Col): HTMLElement {
   const head = document.createElement('div');
   head.className = 'arena-col-head';
   const status = col.status === 'running' ? '· 运行中…' : col.status === 'done' ? '· 完成' : col.status === 'error' ? '· 出错' : '';
-  head.innerHTML = `<span class="arena-col-engine">${meta.emoji} ${meta.label}</span><span class="arena-col-status ${col.status}">${status}</span>`;
+  head.innerHTML = `<span class="arena-col-engine">${meta.icon} ${meta.label}</span><span class="arena-col-status ${col.status}">${status}</span>`;
   const body = document.createElement('div');
   body.className = 'arena-col-body';
   if (col.error) {
@@ -72,7 +72,7 @@ function renderCols(): void {
   if (toolbar) {
     if (doneCols.length >= 2) {
       const engines = doneCols.map((c) => ENGINES.find((e) => e.kind === c.engine)?.label ?? c.engine).join(' vs ');
-      toolbar.innerHTML = `<button id="arena-diff-btn" class="primary">📊 ${t(lang, 'arena.diff')}</button>`;
+      toolbar.innerHTML = `<button id="arena-diff-btn" class="primary"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 4-4"/></svg> ${t(lang, 'arena.diff')}</button>`;
       document.getElementById('arena-diff-btn')!.onclick = () => void showArenaDiff(doneCols[0], doneCols[doneCols.length - 1]);
     } else {
       toolbar.innerHTML = '';
@@ -97,7 +97,7 @@ async function showArenaDiff(left: Col, right: Col): Promise<void> {
   }).join('\n');
   panel.innerHTML = `
     <div class="arena-diff-head">
-      <h3>📊 ${escapeHtml(r.leftEngine ?? left.engine)} vs ${escapeHtml(r.rightEngine ?? right.engine)}</h3>
+      <h3><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px;margin-right:4px"><path d="M3 3v18h18"/><path d="M7 14l3-3 3 3 4-4"/></svg> ${escapeHtml(r.leftEngine ?? left.engine)} vs ${escapeHtml(r.rightEngine ?? right.engine)}</h3>
       <button id="arena-diff-close" class="ghost">×</button>
     </div>
     <pre class="arena-diff-body">${diffHtml}</pre>
