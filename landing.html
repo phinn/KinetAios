@@ -210,7 +210,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <button data-l="en">EN</button>
         <button data-l="ja">日</button>
       </div>
-      <button class="cta" data-cta data-i18n="dl">下载</button>
+      <a class="cta" data-cta data-i18n="dl" href="https://github.com/phinn/KinetAios/releases/tag/v1.0.0" target="_blank" rel="noopener">下载</a>
     </div>
   </div>
 </nav>
@@ -222,7 +222,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <h1 data-i18n-html="h1"></h1>
     <p class="sub" data-i18n="sub"></p>
     <div class="hero-cta">
-      <button class="btn-primary" data-cta><span data-i18n="dl">下载试用</span><span>→</span></button>
+      <a class="btn-primary" data-cta href="https://github.com/phinn/KinetAios/releases/tag/v1.0.0" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
       <button class="btn-ghost" data-i18n="learn">了解更多</button>
     </div>
 
@@ -520,7 +520,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
   <div class="wrap">
     <h2 data-i18n="fin_h"></h2>
     <p data-i18n="fin_p"></p>
-    <button class="btn-primary" data-cta><span data-i18n="dl">下载试用</span><span>→</span></button>
+    <a class="btn-primary" data-cta href="https://github.com/phinn/KinetAios/releases/tag/v1.0.0" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
   </div>
 </section>
 
@@ -750,12 +750,6 @@ function applyLang(l){
 
 document.querySelectorAll(".lang button").forEach(b => {
   b.addEventListener("click", () => applyLang(b.dataset.l));
-});
-
-document.querySelectorAll("[data-cta]").forEach(b => {
-  b.addEventListener("click", () => {
-    alert("下载链接待补:Mac App Store 上线后接 short link,或 DMG 直链。");
-  });
 });
 
 const urlLang = new URLSearchParams(location.search).get("lang");
