@@ -1,5 +1,47 @@
 # Release Notes
 
+## v1.1.0 — Town View & Cross-Platform Polish
+
+**Release Date:** 2026-07-14
+
+The first update after v1.0.0 — focused on a brand-new **Town View** (game-style project visualization) and cross-platform polish across Windows & macOS.
+
+---
+
+### 🏘️ Town View — Your Projects as a Living Village
+
+A whole new way to visualize and interact with your AI agents. Each project is a **house**, each conversation is a **villager** living in that house. Click any villager to see what they're working on, or talk to them directly.
+
+- **Isometric Game-Style Map** — All your projects rendered as little houses on a grid, with rooftops colored by project. Villagers wander between houses as animated sprites.
+- **Real-Time Agent States** — Each villager shows a live status badge: Idle 💤 / Working ⚙️ / Done ✅ / Error ⚠️. Watch your agents work at a glance.
+- **Inline Chat** — Click any villager to open a mini chat panel right on the map. Send a new task, stop a running agent, or jump to the full conversation — without leaving Town.
+- **New Project / New Task** — "New Project" picks a working directory and builds a new house. "New Task" spawns a new villager (conversation) inside an existing house.
+- **Cross-Engine** — Villagers can use any of the three engines (Kaios / Claude Code / Codex). The engine badge shows which one each villager is running.
+- **Step Inspector** — Expand any villager to see their reasoning steps (tool calls, outputs) in real time, or review after completion.
+- **Four-Language i18n** — Town UI fully localized: English / 简体中文 / 繁體中文 / 日本語.
+- **Workbench Integration** — One-click switch between Workbench (list view) and Town (visual view) for the same set of projects.
+
+---
+
+### 🔧 Cross-Platform & Branding Updates
+
+- **Windows & macOS** — Landing page and all marketing copy updated from "macOS only" to "Windows & macOS". Download buttons now point to [GitHub Releases v1.1.0](https://github.com/phinn/KinetAios/releases/tag/v1.1.0).
+- **Engine Rename** — "GLM Direct" unified to **"Kaios"** across the entire landing page (4 languages + SVG diagrams + FAQ).
+- **Version Bump** — `package.json` bumped to `1.1.0`; installers now correctly named `KinetAios-Setup-1.1.0.exe` / `KinetAios-1.1.0-arm64.dmg`.
+
+---
+
+### 📦 Download
+
+| Platform | Link |
+|---|---|
+| Windows (NSIS Installer) | [KinetAios-Setup-1.1.0.exe](https://github.com/phinn/KinetAios/releases/tag/v1.1.0) |
+| macOS (Apple Silicon) | [KinetAios-1.1.0-arm64.dmg](https://github.com/phinn/KinetAios/releases/tag/v1.1.0) |
+
+**Full changelog:** https://github.com/phinn/KinetAios/commits/main
+
+---
+
 ## v1.2.0 — 多机协作 & UX 全面改善
 
 **发布日期：** 2026-07-15
