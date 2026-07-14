@@ -2,7 +2,7 @@
  * Town View — 游戏风格小镇视图样式
  * Town View — Game-style town visualization styles
  * 零依赖:纯 CSS + SVG + DOM,无游戏引擎。
- * 支持 3 套皮肤:data-town-skin="cozy|forest|neon"
+ * 背景跟主题走(radial-gradient),房子用低饱和 SVG 渐变。
  * ═══════════════════════════════════════════════════ */
 
 /* 小镇容器 / Town container */
@@ -21,37 +21,19 @@
   flex-direction: column;
 }
 
-/* 天空层(渐变背景,跟皮肤联动) / Sky layer */
+/* 天空层(渐变背景,跟主题联动) / Sky layer (theme-linked gradient) */
 .town-sky {
   position: absolute;
   inset: 0;
   z-index: 0;
   pointer-events: none;
-}
-
-/* 星星/月亮装饰层 / Star/moon decoration */
-.town-sky-deco {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-/* 地面纹理 / Ground */
-.town-ground {
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 40%;
-  z-index: 0;
-  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 0%, var(--town-sky-top, #1a1a2e) 0%, var(--town-sky-bottom, var(--bg)) 70%);
 }
 
 /* 滚动区域 / Scrollable body */
 .town-body {
   position: relative;
-  z-index: 2;
+  z-index: 1;
   flex: 1;
   overflow-y: auto;
   overflow-x: hidden;
@@ -61,7 +43,7 @@
 /* 小镇顶部栏 / Town header bar */
 .town-header {
   position: relative;
-  z-index: 3;
+  z-index: 2;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -83,39 +65,6 @@
 }
 .town-spacer { flex: 1; }
 
-/* 皮肤切换器 / Skin selector */
-.town-skin-selector {
-  display: inline-flex;
-  gap: 4px;
-  padding: 3px;
-  border-radius: 10px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-}
-.town-skin-btn {
-  width: 28px;
-  height: 28px;
-  border-radius: 7px;
-  border: 2px solid transparent;
-  cursor: pointer;
-  transition: border-color .2s, transform .15s;
-  position: relative;
-  overflow: hidden;
-}
-.town-skin-btn:hover { transform: scale(1.1); }
-.town-skin-btn.active {
-  border-color: var(--accent);
-}
-.town-skin-btn[data-skin="cozy"] {
-  background: linear-gradient(135deg, #ff9a56 0%, #ff6a88 50%, #4a3a5c 100%);
-}
-.town-skin-btn[data-skin="forest"] {
-  background: linear-gradient(135deg, #7eb56e 0%, #2d6a4f 50%, #1b4332 100%);
-}
-.town-skin-btn[data-skin="neon"] {
-  background: linear-gradient(135deg, #0f0f23 0%, #7c3aed 50%, #f43f5e 100%);
-}
-
 /* ── 房子网格 / House grid ── */
 .town-grid {
   display: grid;
@@ -134,7 +83,7 @@
   position: relative;
   padding: 16px 12px 12px;
   border-radius: 14px;
-  transition: background .2s, transform .15s;
+  transition: background .25s ease, transform .2s ease;
   cursor: default;
 }
 .town-house:hover {
@@ -156,8 +105,8 @@
 
 /* 房子 SVG 容器 / House SVG container */
 .house-svg {
-  filter: drop-shadow(0 6px 12px rgba(0,0,0,0.2));
-  transition: transform .2s;
+  filter: drop-shadow(0 4px 10px rgba(0,0,0,0.18));
+  transition: transform .25s ease;
 }
 .town-house:hover .house-svg {
   transform: translateY(-3px) scale(1.03);
@@ -201,7 +150,7 @@
   align-items: center;
   cursor: pointer;
   position: relative;
-  transition: transform .12s;
+  transition: transform .15s ease;
 }
 .villager-wrap:hover {
   transform: scale(1.15);
@@ -213,229 +162,125 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: center;
   margin-top: 1px;
 }
 
-/* ── 村民动画 / Villager animations ── */
-
-/* idle: 缓慢上下浮动(打瞌睡) / gentle bob */
+/* idle 呼吸动画 / idle breathing */
 .villager-wrap.vs-idle .villager-svg {
-  animation: town-idle-bob 2.5s ease-in-out infinite;
+  animation: villager-breathe 3s ease-in-out infinite;
 }
-@keyframes town-idle-bob {
+/* working 振动 / working jiggle */
+.villager-wrap.vs-working .villager-svg {
+  animation: villager-work 0.6s ease-in-out infinite;
+}
+/* error 抖动 / error shake */
+.villager-wrap.vs-error .villager-svg {
+  animation: villager-shake 0.4s ease-in-out infinite;
+}
+/* done 浮起 / done float */
+.villager-wrap.vs-done .villager-svg {
+  animation: villager-float 2.5s ease-in-out infinite;
+}
+
+@keyframes villager-breathe {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1px); }
+}
+@keyframes villager-work {
+  0%, 100% { transform: translate(0, 0) rotate(0); }
+  25% { transform: translate(0.5px, -1px) rotate(2deg); }
+  75% { transform: translate(-0.5px, -1px) rotate(-2deg); }
+}
+@keyframes villager-shake {
+  0%, 100% { transform: translateX(0); }
+  25% { transform: translateX(-1.5px); }
+  75% { transform: translateX(1.5px); }
+}
+@keyframes villager-float {
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-2px); }
 }
 
-/* working: 快速弹跳 / fast bounce */
-.villager-wrap.vs-working .villager-svg {
-  animation: town-working-bounce 0.4s ease-in-out infinite;
-}
-@keyframes town-working-bounce {
-  0%, 100% { transform: translateY(0) rotate(-2deg); }
-  50% { transform: translateY(-5px) rotate(2deg); }
-}
-
-/* error: 抖动 / shake */
-.villager-wrap.vs-error .villager-svg {
-  animation: town-shake 0.3s ease-in-out infinite;
-}
-@keyframes town-shake {
-  0%, 100% { transform: translateX(0); }
-  25% { transform: translateX(-2px); }
-  75% { transform: translateX(2px); }
-}
-
-/* done: 放大消失(星星弹出后回归 idle) / star pop */
-.villager-wrap.vs-done .villager-svg {
-  animation: town-done-pop 0.5s ease-out;
-}
-@keyframes town-done-pop {
-  0% { transform: scale(1); }
-  40% { transform: scale(1.2); }
-  100% { transform: scale(1); }
-}
-
-/* ── 房子操作按钮 / House action buttons ── */
+/* ── 房子操作 / House actions ── */
 .house-actions {
-  margin-top: 6px;
+  margin-top: 8px;
   opacity: 0;
-  transition: opacity .15s;
+  transition: opacity .2s;
 }
 .town-house:hover .house-actions {
   opacity: 1;
 }
 .town-newtask {
   font-size: 11px;
-  padding: 2px 10px;
+  padding: 4px 10px;
 }
 
 /* ── 空状态 / Empty state ── */
 .town-empty {
   text-align: center;
-  padding: 80px 24px;
   color: var(--text-dim);
+  padding: 80px 20px;
   font-size: 14px;
-  line-height: 1.6;
-}
-
-/* ═══════════════════════════════════════════════════
- * 皮肤系统 / Skin System
- * ═══════════════════════════════════════════════════ */
-
-/* ── Cozy 温馨日落(默认) ── */
-[data-town-skin="cozy"] .town-sky {
-  background: linear-gradient(180deg,
-    #2a1f3d 0%,
-    #5d3a6e 20%,
-    #c2604f 45%,
-    #f0916a 65%,
-    #fbc4ab 85%,
-    #ffd5a5 100%);
-}
-[data-town-skin="cozy"] .town-ground {
-  background: linear-gradient(180deg,
-    transparent 0%,
-    rgba(80,50,60,0.3) 30%,
-    rgba(60,35,45,0.6) 100%);
-}
-[data-town-skin="cozy"] {
-  --town-hover: rgba(255,180,120,0.06);
-  --town-card-bg: rgba(42,31,61,0.35);
-  --town-card-border: rgba(255,180,120,0.15);
-}
-
-/* ── Forest 森林秘境 ── */
-[data-town-skin="forest"] .town-sky {
-  background: linear-gradient(180deg,
-    #1a2e1f 0%,
-    #2d4a3a 25%,
-    #527862 50%,
-    #74a582 75%,
-    #a8c8a0 100%);
-}
-[data-town-skin="forest"] .town-ground {
-  background: linear-gradient(180deg,
-    transparent 0%,
-    rgba(30,60,40,0.4) 30%,
-    rgba(20,45,30,0.7) 100%);
-}
-[data-town-skin="forest"] {
-  --town-hover: rgba(120,200,140,0.06);
-  --town-card-bg: rgba(26,46,31,0.35);
-  --town-card-border: rgba(120,200,140,0.15);
-}
-
-/* ── Neon 赛博霓虹 ── */
-[data-town-skin="neon"] .town-sky {
-  background: linear-gradient(180deg,
-    #0a0a1a 0%,
-    #14142b 30%,
-    #1a1040 55%,
-    #2a0f4e 80%,
-    #1a0828 100%);
-}
-[data-town-skin="neon"] .town-ground {
-  background: linear-gradient(180deg,
-    transparent 0%,
-    rgba(124,58,237,0.08) 30%,
-    rgba(15,15,35,0.6) 100%);
-}
-[data-town-skin="neon"] {
-  --town-hover: rgba(124,58,237,0.08);
-  --town-card-bg: rgba(20,20,43,0.45);
-  --town-card-border: rgba(124,58,237,0.2);
-}
-
-/* Neon 专属:网格地面 */
-[data-town-skin="neon"] .town-ground::before {
-  content: '';
-  position: absolute;
-  bottom: 0; left: 0; right: 0;
-  height: 120px;
-  background-image:
-    linear-gradient(90deg, rgba(124,58,237,0.12) 1px, transparent 1px),
-    linear-gradient(0deg, rgba(124,58,237,0.12) 1px, transparent 1px);
-  background-size: 40px 40px;
-  transform: perspective(200px) rotateX(60deg);
-  transform-origin: bottom;
-  mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 50%);
-  -webkit-mask-image: linear-gradient(180deg, transparent 0%, rgba(0,0,0,0.8) 50%);
-}
-
-/* ═══════════════════════════════════════════════════
- * 星星 / 月亮装饰 (静态 SVG,嵌入 town-sky-deco)
- * ═══════════════════════════════════════════════════ */
-.town-star {
-  position: absolute;
-  border-radius: 50%;
-  animation: town-twinkle 3s ease-in-out infinite;
-}
-@keyframes town-twinkle {
-  0%, 100% { opacity: 0.3; }
-  50% { opacity: 1; }
 }
 
 /* ═══════════════════════════════════════════════════
  * 居中弹出面板 / Centered modal panel
  * ═══════════════════════════════════════════════════ */
+
+/* 遮罩 / Backdrop */
 #town-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.3);
-  backdrop-filter: blur(3px);
-  z-index: 1000;
+  z-index: 200;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
   opacity: 0;
   pointer-events: none;
-  transition: opacity .25s ease-out;
+  transition: opacity .2s ease;
 }
 #town-backdrop.open {
   opacity: 1;
   pointer-events: auto;
 }
 
+/* 面板 / Panel */
 #town-panel {
   position: fixed;
   top: 50%;
   left: 50%;
+  transform: translate(-50%, -50%) scale(0.95);
+  z-index: 201;
   width: 480px;
   max-width: 90vw;
-  max-height: 600px;
+  max-height: 75vh;
   background: var(--bg-elev);
   border: 1px solid var(--border);
   border-radius: 14px;
-  box-shadow: 0 16px 48px rgba(0,0,0,0.28);
-  z-index: 1001;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.35);
   display: flex;
   flex-direction: column;
-  transform: translate(-50%, -50%) scale(0.92);
   opacity: 0;
   pointer-events: none;
-  transition: transform .25s ease-out, opacity .2s ease-out;
+  transition: opacity .2s ease, transform .2s ease;
 }
 #town-panel.open {
-  transform: translate(-50%, -50%) scale(1);
   opacity: 1;
   pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
 }
 
-/* 面板头 / Panel head */
+/* 面板头部 / Panel header */
 .tp-head {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 14px 16px 10px;
+  padding: 14px 16px;
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
 .tp-villager {
   flex-shrink: 0;
-  width: 28px;
-  height: 36px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
 }
 .tp-info {
   flex: 1;
@@ -444,6 +289,7 @@
 .tp-name {
   font-size: 14px;
   font-weight: 700;
+  color: var(--text);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -452,35 +298,25 @@
   font-size: 11px;
   color: var(--text-dim);
 }
-.tp-state {
-  font-weight: 600;
-}
-.tp-state.vs-idle { color: var(--text-faint); }
 .tp-state.vs-working { color: var(--accent); }
-.tp-state.vs-error { color: #ff5252; }
-.tp-state.vs-done { color: #4caf50; }
+.tp-state.vs-error { color: #ef4444; }
+.tp-state.vs-done { color: #22c55e; }
 .tp-cwd {
   font-size: 10px;
   color: var(--text-faint);
-  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 .tp-close {
-  font-size: 16px;
-  padding: 4px 8px;
-  line-height: 1;
+  flex-shrink: 0;
 }
-
-/* 状态说明 / Status note */
 .tp-status-note {
   padding: 6px 16px;
   font-size: 11px;
-  color: var(--accent);
-  background: var(--accent-dim);
+  color: var(--text-dim);
+  background: var(--bg);
   border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
 }
 
 /* 面板主体 / Panel body (scrollable) */
@@ -558,12 +394,12 @@
 
 /* 错误 / Error */
 .tp-error {
-  background: rgba(255,82,82,0.1);
-  border: 1px solid rgba(255,82,82,0.3);
+  background: rgba(239,68,68,0.1);
+  border: 1px solid rgba(239,68,68,0.3);
   border-radius: 6px;
   padding: 8px 10px;
   font-size: 12px;
-  color: #ff5252;
+  color: #ef4444;
   margin-bottom: 14px;
 }
 
@@ -612,9 +448,29 @@
 }
 
 /* ═══════════════════════════════════════════════════
- * 旧主题联动天空配色(向后兼容)
- * Legacy theme-linked sky colors (backward compat)
+ * 主题联动天空配色 / Theme-linked sky colors
  * ═══════════════════════════════════════════════════ */
+
+[data-theme="dark"] {
+  --town-sky-top: #1a1a2e;
+  --town-sky-bottom: #0d0d14;
+  --town-hover: rgba(255,255,255,0.03);
+}
+[data-theme="light"] {
+  --town-sky-top: #b3d9f2;
+  --town-sky-bottom: #e8f0f5;
+  --town-hover: rgba(0,0,0,0.03);
+}
+[data-theme="aurora"] {
+  --town-sky-top: #1a1530;
+  --town-sky-bottom: #0d0e14;
+  --town-hover: rgba(196,167,255,0.05);
+}
+[data-theme="serene"] {
+  --town-sky-top: #ede4d9;
+  --town-sky-bottom: #f5f1ec;
+  --town-hover: rgba(183,110,121,0.04);
+}
 
 /* ── 响应式 / Responsive ── */
 @media (max-width: 700px) {
@@ -635,5 +491,4 @@
   .villager-wrap.vs-done .villager-svg {
     animation: none;
   }
-  .town-star { animation: none; }
 }

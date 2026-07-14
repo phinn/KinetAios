@@ -2,7 +2,7 @@
 // 项目 = 房子(house),会话 = 村民(villager)。与 Workbench 平行,同一数据两种看法。
 // Town View — game-style isometric town: projects = houses, conversations = villagers.
 // Parallel to Workbench — same data, different view. Zero-dependency (pure SVG + CSS + DOM).
-// 支持 3 套皮肤: cozy(日落) / forest(森林) / neon(霓虹)。
+// 设计理念:背景跟主题走(radial-gradient),房子用低饱和+多层光影做出精致等距感。
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
 import type { Lang } from '../shared/i18n';
@@ -14,37 +14,14 @@ let homeDir = '';
 export function setTownLang(l: Lang): void { lang = l; }
 export function setTownHomeDir(d: string): void { homeDir = d; }
 
-// 引擎颜色 / Engine colors
+// 引擎颜色 / Engine colors (muted, sophisticated tones)
 const ENGINE_COLORS: Record<EngineKind, string> = {
   direct: '#e8b339',
   claudeCode: '#d97757',
   codex: '#10a37f',
 };
 
-// ── 皮肤系统 / Skin system ──
-export type TownSkin = 'cozy' | 'forest' | 'neon';
-let currentSkin: TownSkin = 'cozy';
-let onSkinChange: ((skin: TownSkin) => void) | null = null;
-
-export function setTownSkin(skin: TownSkin): void {
-  currentSkin = skin;
-  const canvas = document.getElementById('town-canvas');
-  if (canvas) {
-    canvas.setAttribute('data-town-skin', skin);
-  }
-  // 更新皮肤按钮高亮
-  document.querySelectorAll('.town-skin-btn').forEach((btn) => {
-    btn.classList.toggle('active', (btn as HTMLElement).dataset.skin === skin);
-  });
-  // 重新渲染天空装饰
-  renderSkyDeco();
-}
-
-export function getTownSkin(): TownSkin { return currentSkin; }
-
-// ═══════════════════════════════════════════════════
-// 工具函数 / Utility
-// ═══════════════════════════════════════════════════
+// ── 工具函数 / Utility ──
 
 function tr(key: string, params?: Record<string, string | number>): string {
   return t(lang, key, params);
@@ -93,17 +70,24 @@ function villagerState(conv: Conversation): VillagerState {
 
 /**
  * 等距小房子 SVG / Isometric house SVG
- * 宽 140 高 130。比原来更大更精致。
- * 窗户按 agent 数动态排列,窗户颜色映射 agent 状态。
+ * 宽 130 高 125。低饱和墙面 + 多层光影 + 精致细节。
+ * 高级感来源: SVG <defs> 渐变定义,墙面/屋顶都有暗→亮渐变;
+ * 窗户用暖光发光 + 圆角窗框;烟囱有立体砖纹。
  */
 export function houseSVG(cwd: string, agents: Conversation[], _accentHue?: number): string {
   const hue = hashHue(cwd);
-  const wallLight = `hsl(${hue}, 38%, 66%)`;
-  const wallColor = `hsl(${hue}, 35%, 56%)`;
-  const wallDark = `hsl(${hue}, 35%, 44%)`;
-  const roofColor = `hsl(${hue}, 48%, 40%)`;
-  const roofDark = `hsl(${hue}, 48%, 32%)`;
-  const roofHi = `hsl(${hue}, 50%, 48%)`;
+  // 低饱和度配色,整体偏灰调 / Low-saturation, muted palette
+  const s = 22;   // saturation %
+  const wallL = 62, wallM = 52, wallD = 40;  // lightness for 3 walls
+  const roofL = 38, roofM = 30, roofD = 24;
+  const cWallRight = `hsl(${hue}, ${s}%, ${wallL}%)`;
+  const cWallLeft  = `hsl(${hue}, ${s}%, ${wallD}%)`;
+  const cWallMid   = `hsl(${hue}, ${s}%, ${wallM}%)`;
+  const cRoofRight = `hsl(${hue}, ${s + 8}%, ${roofL}%)`;
+  const cRoofLeft  = `hsl(${hue}, ${s + 8}%, ${roofD}%)`;
+  const cRoofMid   = `hsl(${hue}, ${s + 8}%, ${roofM}%)`;
+  const cTrim      = `hsl(${hue}, ${s}%, ${wallD - 8}%)`;
+
   const hasRunning = agents.some((c) => c.status === 'running');
   const hasError = agents.some((c) => villagerState(c) === 'error');
 
@@ -112,83 +96,94 @@ export function houseSVG(cwd: string, agents: Conversation[], _accentHue?: numbe
   const shown = agents.slice(0, maxWindows);
   const overflow = agents.length - shown.length;
 
+  // ── 窗户 / Windows ──
   let windows = '';
   shown.forEach((conv, i) => {
     const col = i % 2;
     const row = Math.floor(i / 2);
-    // 右墙面的窗户坐标 / window positions on right wall
-    const wx = 72 + col * 26;
-    const wy = 54 + row * 18;
+    const wx = 74 + col * 24;
+    const wy = 50 + row * 18;
     const vs = villagerState(conv);
-    // 窗户灯光颜色 / window light color by state
-    const lightColor = vs === 'error' ? '#ff5252' : vs === 'done' ? '#66bb6a' : '#ffeb3b';
+    // 暖色调窗户灯光 / warm window glow
+    const lightColor = vs === 'error' ? '#ef4444' : vs === 'done' ? '#22c55e' : '#fbbf24';
     const lit = vs === 'working' || vs === 'done';
-    const darkFill = vs === 'error' ? '#aa3333' : wallDark;
-    // 光晕效果 / glow
-    const glow = lit ? `<circle cx="${wx + 10}" cy="${wy + 6}" r="12" fill="${lightColor}" opacity="0.12"/>` : '';
-    // 窗框 / window frame
-    windows += `${glow}<rect x="${wx}" y="${wy}" width="20" height="12" rx="1.5" fill="${lit ? lightColor : darkFill}" stroke="${wallDark}" stroke-width="0.6" opacity="${lit ? 0.92 : 0.7}"/>`;
-    // 窗户十字格 / window cross
-    windows += `<line x1="${wx + 10}" y1="${wy}" x2="${wx + 10}" y2="${wy + 12}" stroke="${wallDark}" stroke-width="0.4" opacity="0.5"/>`;
-    windows += `<line x1="${wx}" y1="${wy + 6}" x2="${wx + 20}" y2="${wy + 6}" stroke="${wallDark}" stroke-width="0.4" opacity="0.5"/>`;
-    // 窗户里的小人剪影头部(引擎色) / tiny head silhouette
-    const headColor = ENGINE_COLORS[conv.engine];
-    windows += `<circle cx="${wx + 10}" cy="${wy + 6}" r="2.5" fill="${headColor}" opacity="${lit ? 0.9 : 0.35}"/>`;
+    const darkFill = vs === 'error' ? '#7f1d1d' : `hsl(${hue}, ${s}%, ${wallD - 12}%)`;
+    // 光晕 / glow halo
+    const glow = lit
+      ? `<ellipse cx="${wx + 10}" cy="${wy + 6}" rx="16" ry="10" fill="${lightColor}" opacity="0.08"/>`
+      : '';
+    // 窗框 + 玻璃 / frame + glass
+    windows += `${glow}<rect x="${wx}" y="${wy}" width="20" height="12" rx="1.5" fill="${lit ? lightColor : darkFill}" opacity="${lit ? 0.85 : 0.65}"/>`;
+    // 窗框描边 / window border
+    windows += `<rect x="${wx}" y="${wy}" width="20" height="12" rx="1.5" fill="none" stroke="${cTrim}" stroke-width="0.7"/>`;
+    // 窗户十字格 / mullion cross
+    windows += `<line x1="${wx + 10}" y1="${wy}" x2="${wx + 10}" y2="${wy + 12}" stroke="${cTrim}" stroke-width="0.5" opacity="0.6"/>`;
+    windows += `<line x1="${wx}" y1="${wy + 6}" x2="${wx + 20}" y2="${wy + 6}" stroke="${cTrim}" stroke-width="0.5" opacity="0.6"/>`;
+    // 引擎色小人头部剪影 / tiny engine-colored head silhouette
+    windows += `<circle cx="${wx + 10}" cy="${wy + 6}" r="2.2" fill="${ENGINE_COLORS[conv.engine]}" opacity="${lit ? 0.85 : 0.3}"/>`;
   });
 
   if (overflow > 0) {
-    windows += `<text x="96" y="112" font-size="9" fill="rgba(160,160,170,0.7)" font-family="system-ui" font-weight="600">+${overflow}</text>`;
+    windows += `<text x="95" y="110" font-size="9" fill="rgba(140,140,150,0.55)" font-family="system-ui" font-weight="600">+${overflow}</text>`;
   }
 
-  // 烟囱冒烟(有 running agent 时) / chimney smoke when agents running
-  const chimney = `
-    <rect x="86" y="18" width="9" height="16" fill="${roofDark}" rx="0.5"/>
-    <rect x="84" y="16" width="13" height="4" fill="${roofColor}" rx="0.5"/>`;
-  const smoke = hasRunning ? `
-    <circle cx="90" cy="12" r="3.5" fill="rgba(200,200,210,0.35)">
-      <animate attributeName="cy" values="12;0;12" dur="2.5s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.35;0;0.35" dur="2.5s" repeatCount="indefinite"/>
-      <animate attributeName="r" values="3.5;5;3.5" dur="2.5s" repeatCount="indefinite"/>
+  // ── 烟囱(有 running agent 时冒烟) / Chimney with smoke ──
+  const chimney = hasRunning ? `
+    <rect x="88" y="16" width="8" height="14" fill="${cRoofLeft}" rx="0.5"/>
+    <rect x="86" y="14" width="12" height="4" fill="${cRoofMid}" rx="0.5"/>
+    <circle cx="92" cy="10" r="3" fill="rgba(180,180,190,0.18)">
+      <animate attributeName="cy" values="10;-2;10" dur="2.8s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.18;0;0.18" dur="2.8s" repeatCount="indefinite"/>
+      <animate attributeName="r" values="3;4.5;3" dur="2.8s" repeatCount="indefinite"/>
     </circle>
-    <circle cx="92" cy="15" r="2.5" fill="rgba(200,200,210,0.25)">
-      <animate attributeName="cy" values="15;3;15" dur="3s" repeatCount="indefinite"/>
-      <animate attributeName="opacity" values="0.25;0;0.25" dur="3s" repeatCount="indefinite"/>
+    <circle cx="94" cy="13" r="2" fill="rgba(180,180,190,0.12)">
+      <animate attributeName="cy" values="13;1;13" dur="3.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.12;0;0.12" dur="3.2s" repeatCount="indefinite"/>
     </circle>` : '';
 
-  // 错误时的闪电 / error lightning
+  // ── 错误指示 / Error indicator ──
   const errorFx = hasError ? `
-    <path d="M30 20 L35 30 L32 30 L38 42" stroke="#ff5252" stroke-width="1.5" fill="none" opacity="0.7">
-      <animate attributeName="opacity" values="0;0.7;0;0.7;0" dur="2s" repeatCount="indefinite"/>
-    </path>` : '';
+    <circle cx="20" cy="25" r="4" fill="#ef4444" opacity="0.7">
+      <animate attributeName="opacity" values="0.3;0.7;0.3" dur="1.8s" repeatCount="indefinite"/>
+    </circle>` : '';
 
-  // 门牌号(项目首字母) / door plate (project initial)
+  // 门牌首字母 / Door plate initial
   const initial = projName(cwd).charAt(0).toUpperCase();
 
-  return `<svg width="140" height="130" viewBox="0 0 140 130" xmlns="http://www.w3.org/2000/svg">
+  return `<svg width="130" height="125" viewBox="0 0 130 125" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <linearGradient id="wall-r-${hue}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${cWallRight}"/>
+        <stop offset="100%" stop-color="${cWallMid}"/>
+      </linearGradient>
+      <linearGradient id="roof-r-${hue}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${cRoofRight}"/>
+        <stop offset="100%" stop-color="${cRoofMid}"/>
+      </linearGradient>
+    </defs>
     <!-- 地基阴影 / ground shadow -->
-    <ellipse cx="70" cy="120" rx="54" ry="7" fill="rgba(0,0,0,0.18)"/>
-    <!-- 左墙(暗面) / left wall (dark side) -->
-    <polygon points="14,60 70,88 70,118 14,90" fill="${wallDark}"/>
-    <!-- 右墙(亮面) / right wall (light side) -->
-    <polygon points="70,88 126,60 126,90 70,118" fill="${wallColor}"/>
-    <!-- 右墙高光 / right wall highlight -->
-    <polygon points="70,88 126,60 126,64 70,92" fill="${wallLight}" opacity="0.3"/>
+    <ellipse cx="65" cy="116" rx="50" ry="6" fill="rgba(0,0,0,0.12)"/>
+    <!-- 左墙(暗面) / left wall (shadow side) -->
+    <polygon points="12,58 65,84 65,112 12,86" fill="${cWallLeft}"/>
+    <!-- 右墙(亮面,渐变) / right wall (lit, gradient) -->
+    <polygon points="65,84 118,58 118,86 65,112" fill="url(#wall-r-${hue})"/>
+    <!-- 右墙顶部高光 / right wall top highlight -->
+    <polygon points="65,84 118,58 118,61 65,87" fill="rgba(255,255,255,0.04)"/>
     <!-- 左屋顶 / left roof -->
-    <polygon points="14,60 70,32 70,88 14,60" fill="${roofDark}"/>
-    <!-- 右屋顶 / right roof -->
-    <polygon points="70,32 126,60 70,88" fill="${roofColor}"/>
-    <!-- 屋顶高光线 / roof highlight line -->
-    <polygon points="70,32 126,60 70,88" fill="none" stroke="${roofHi}" stroke-width="0.8" opacity="0.4"/>
-    <!-- 屋脊盖瓦 / roof ridge cap -->
-    <polygon points="66,30 74,30 76,34 64,34" fill="${roofDark}"/>
-    <!-- 门 / door -->
-    <polygon points="52,86 52,104 58,107 58,89" fill="${wallDark}" stroke="${roofDark}" stroke-width="0.5"/>
-    <circle cx="56" cy="96" r="0.8" fill="${roofHi}"/>
+    <polygon points="12,58 65,30 65,84" fill="${cRoofLeft}"/>
+    <!-- 右屋顶(渐变) / right roof (gradient) -->
+    <polygon points="65,30 118,58 65,84" fill="url(#roof-r-${hue})"/>
+    <!-- 屋顶折线高光 / roof edge highlight -->
+    <line x1="65" y1="30" x2="65" y2="84" stroke="rgba(255,255,255,0.06)" stroke-width="0.8"/>
+    <!-- 屋脊盖 / roof ridge cap -->
+    <polygon points="61,28 69,28 71,32 59,32" fill="${cRoofLeft}"/>
+    <!-- 门 / door (recessed) -->
+    <polygon points="48,82 48,98 54,101 54,85" fill="${cTrim}" stroke="${cRoofLeft}" stroke-width="0.4"/>
+    <circle cx="52" cy="92" r="0.7" fill="rgba(255,255,255,0.15)"/>
     <!-- 门牌 / door plate -->
-    <rect x="60" y="88" width="8" height="8" rx="1" fill="${wallDark}" stroke="${roofDark}" stroke-width="0.4"/>
-    <text x="64" y="94" text-anchor="middle" font-size="6" fill="${wallLight}" font-family="system-ui" font-weight="700">${esc(initial)}</text>
+    <rect x="57" y="84" width="7" height="7" rx="1" fill="${cTrim}" opacity="0.6"/>
+    <text x="60.5" y="89.5" text-anchor="middle" font-size="5.5" fill="rgba(255,255,255,0.35)" font-family="system-ui" font-weight="700">${esc(initial)}</text>
     ${chimney}
-    ${smoke}
     ${errorFx}
     ${windows}
   </svg>`;
@@ -196,136 +191,63 @@ export function houseSVG(cwd: string, agents: Conversation[], _accentHue?: numbe
 
 /**
  * 村民小人 SVG / Villager (isometric character) SVG
- * 宽 24 高 36。头部颜色由引擎决定,更可爱的圆头小人。
+ * 宽 24 高 36。头部颜色由引擎决定。简洁可爱的等距小人。
  */
 export function villagerSVG(engine: EngineKind, state: VillagerState): string {
   const headColor = ENGINE_COLORS[engine];
-  const bodyColor = `hsl(${hashHue(engine)}, 30%, 45%)`;
+  const bodyHue = hashHue(engine);
+  const bodyColor = `hsl(${bodyHue}, 20%, 42%)`;
+  const bodyDark = `hsl(${bodyHue}, 20%, 34%)`;
   const idle = state === 'idle';
   const working = state === 'working';
   const isError = state === 'error';
 
   // 眼睛 / eyes
   const eyes = idle
-    ? '<path d="M9 8 Q10 7.5 11 8 M13 8 Q14 7.5 15 8" stroke="#333" stroke-width="0.8" stroke-linecap="round" fill="none"/>' // 闭眼(眯眯眼)
-    : '<circle cx="10" cy="8" r="1" fill="#333"/><circle cx="14" cy="8" r="1" fill="#333"/>'; // 睁眼
+    ? '<path d="M9 8 Q10 7.5 11 8 M13 8 Q14 7.5 15 8" stroke="#2a2a2a" stroke-width="0.7" stroke-linecap="round" fill="none"/>'
+    : '<circle cx="10" cy="8" r="0.9" fill="#2a2a2a"/><circle cx="14" cy="8" r="0.9" fill="#2a2a2a"/>';
 
-  // 小腮红 / blush marks
-  const blush = !isError ? '<circle cx="8" cy="9.5" r="1" fill="rgba(255,150,150,0.4)"/><circle cx="16" cy="9.5" r="1" fill="rgba(255,150,150,0.4)"/>' : '';
+  // 小腮红 / subtle blush
+  const blush = !isError
+    ? '<circle cx="8" cy="9.5" r="0.8" fill="rgba(255,140,140,0.25)"/><circle cx="16" cy="9.5" r="0.8" fill="rgba(255,140,140,0.25)"/>'
+    : '';
 
   // 错误时的 ! 气泡 / error bubble
   const errBubble = isError
-    ? `<circle cx="12" cy="-2" r="5" fill="#ff5252"/><text x="12" y="0" text-anchor="middle" font-size="6" fill="white" font-weight="bold">!</text>`
+    ? `<circle cx="12" cy="-2" r="4.5" fill="#ef4444"/><text x="12" y="0" text-anchor="middle" font-size="5.5" fill="white" font-weight="bold">!</text>`
     : '';
 
   // 工作时的气泡(...) / working bubble
   const workBubble = working
-    ? `<circle cx="6" cy="-1" r="1.5" fill="#888"/><circle cx="10" cy="-1" r="1.5" fill="#888"/><circle cx="14" cy="-1" r="1.5" fill="#888"/>`
+    ? `<circle cx="6" cy="-1" r="1.2" fill="rgba(120,120,130,0.6)"/><circle cx="10" cy="-1" r="1.2" fill="rgba(120,120,130,0.6)"/><circle cx="14" cy="-1" r="1.2" fill="rgba(120,120,130,0.6)"/>`
     : '';
 
   // done 时的星星 / done star
   const doneStar = state === 'done'
-    ? `<text x="12" y="-1" text-anchor="middle" font-size="9" fill="#FFD700">✦</text>`
+    ? `<text x="12" y="-1" text-anchor="middle" font-size="8" fill="#e8b339" opacity="0.8">✦</text>`
     : '';
-
-  // 手臂 / arms
-  const arms = working
-    ? '<rect x="3" y="16" width="3" height="7" rx="1.5" fill="${bodyColor}" transform="rotate(-20 4 16)"/><rect x="18" y="16" width="3" height="7" rx="1.5" fill="${bodyColor}" transform="rotate(20 20 16)"/>'
-    : '<rect x="3" y="16" width="3" height="8" rx="1.5" fill="${bodyColor}"/><rect x="18" y="16" width="3" height="8" rx="1.5" fill="${bodyColor}"/>';
 
   return `<svg width="24" height="36" viewBox="-2 -6 28 42" xmlns="http://www.w3.org/2000/svg" class="villager-svg state-${state}">
     ${doneStar}${errBubble}${workBubble}
     <!-- 脚 / feet -->
-    <ellipse cx="9" cy="32" rx="2.5" ry="1.8" fill="${bodyColor}"/>
-    <ellipse cx="15" cy="32" rx="2.5" ry="1.8" fill="${bodyColor}"/>
+    <ellipse cx="9" cy="31" rx="2" ry="1.5" fill="${bodyDark}"/>
+    <ellipse cx="15" cy="31" rx="2" ry="1.5" fill="${bodyDark}"/>
     <!-- 身体 / body -->
-    <rect x="6" y="14" width="12" height="16" rx="4" fill="${bodyColor}"/>
-    ${arms}
+    <rect x="6" y="14" width="12" height="16" rx="3.5" fill="${bodyColor}"/>
+    <!-- 身体底部暗影 / body bottom shadow -->
+    <rect x="6" y="26" width="12" height="4" rx="3.5" fill="${bodyDark}"/>
     <!-- 头 / head -->
-    <circle cx="12" cy="8" r="5" fill="${headColor}" stroke="${bodyColor}" stroke-width="0.5"/>
+    <circle cx="12" cy="8" r="5" fill="${headColor}" stroke="${bodyDark}" stroke-width="0.4"/>
     ${eyes}
     ${blush}
   </svg>`;
 }
 
 // ═══════════════════════════════════════════════════
-// 天空装饰 / Sky decorations
-// ═══════════════════════════════════════════════════
-
-/** 根据皮肤渲染天空装饰(太阳/月亮/星星) / Render sky decorations based on skin */
-function renderSkyDeco(): string {
-  if (currentSkin === 'cozy') {
-    // 温馨日落:大太阳 + 云 / sunset: sun + clouds
-    return `
-      <div class="town-sky-deco">
-        <!-- 太阳 / sun -->
-        <svg style="position:absolute;top:8%;right:10%;width:80px;height:80px" viewBox="0 0 80 80">
-          <defs>
-            <radialGradient id="sun-glow">
-              <stop offset="0%" stop-color="#ffd5a5" stop-opacity="0.4"/>
-              <stop offset="100%" stop-color="#ffd5a5" stop-opacity="0"/>
-            </radialGradient>
-          </defs>
-          <circle cx="40" cy="40" r="36" fill="url(#sun-glow)"/>
-          <circle cx="40" cy="40" r="18" fill="#ffe0b2" opacity="0.9"/>
-          <circle cx="40" cy="40" r="14" fill="#ffcc80"/>
-        </svg>
-        <!-- 云 / clouds -->
-        <svg style="position:absolute;top:15%;left:12%;width:100px;height:40px;opacity:0.3" viewBox="0 0 100 40">
-          <ellipse cx="30" cy="20" rx="25" ry="12" fill="#fff"/>
-          <ellipse cx="55" cy="18" rx="20" ry="10" fill="#fff"/>
-          <ellipse cx="75" cy="22" rx="18" ry="8" fill="#fff"/>
-        </svg>
-      </div>`;
-  } else if (currentSkin === 'forest') {
-    // 森林:穿透树梢的光柱 + 飘浮萤火 / forest: light shafts + fireflies
-    return `
-      <div class="town-sky-deco">
-        <!-- 光柱 / light shaft -->
-        <div style="position:absolute;top:0;left:30%;width:60px;height:100%;background:linear-gradient(180deg,rgba(255,255,200,0.06),transparent 60%);transform:rotate(8deg);pointer-events:none"></div>
-        <div style="position:absolute;top:0;left:65%;width:40px;height:100%;background:linear-gradient(180deg,rgba(180,255,180,0.04),transparent 50%);transform:rotate(-5deg);pointer-events:none"></div>
-        <!-- 萤火虫 / fireflies -->
-        ${Array.from({ length: 8 }, (_, i) => {
-          const x = 5 + (i * 12) % 90;
-          const y = 20 + (i * 37) % 50;
-          const delay = (i * 0.5) % 3;
-          const size = 2 + (i % 3);
-          return `<div class="town-star" style="left:${x}%;top:${y}%;width:${size}px;height:${size}px;background:#aaffaa;box-shadow:0 0 6px #aaffaa;animation-delay:${delay}s"></div>`;
-        }).join('')}
-      </div>`;
-  } else {
-    // 霓虹:网格地面 + 闪烁星星 / neon: grid floor + twinkling stars
-    return `
-      <div class="town-sky-deco">
-        <!-- 远处霓虹建筑剪影 / distant neon skyline -->
-        <svg style="position:absolute;bottom:35%;left:0;width:100%;height:80px;opacity:0.15" viewBox="0 0 400 80" preserveAspectRatio="none">
-          <rect x="10" y="30" width="30" height="50" fill="#7c3aed"/>
-          <rect x="50" y="20" width="40" height="60" fill="#6d28d9"/>
-          <rect x="100" y="40" width="25" height="40" fill="#5b21b6"/>
-          <rect x="135" y="15" width="50" height="65" fill="#7c3aed"/>
-          <rect x="200" y="35" width="35" height="45" fill="#6d28d9"/>
-          <rect x="250" y="25" width="45" height="55" fill="#5b21b6"/>
-          <rect x="310" y="10" width="30" height="70" fill="#7c3aed"/>
-          <rect x="350" y="30" width="40" height="50" fill="#6d28d9"/>
-        </svg>
-        <!-- 闪烁星星 / twinkling stars -->
-        ${Array.from({ length: 15 }, (_, i) => {
-          const x = (i * 7) % 100;
-          const y = (i * 13) % 35;
-          const delay = (i * 0.3) % 3;
-          const size = 1 + (i % 3);
-          const color = i % 3 === 0 ? '#7c3aed' : i % 3 === 1 ? '#f43f5e' : '#a78bfa';
-          return `<div class="town-star" style="left:${x}%;top:${y}%;width:${size}px;height:${size}px;background:${color};box-shadow:0 0 4px ${color};animation-delay:${delay}s"></div>`;
-        }).join('')}
-      </div>`;
-  }
-}
-
-// ═══════════════════════════════════════════════════
 // 主渲染 / Main rendering
 // ═══════════════════════════════════════════════════
 
-let selectedConvId: string | null = null; // 当前在侧滑面板查看的 agent
+let selectedConvId: string | null = null; // 当前在面板查看的 agent
 let onSend: ((id: string, text: string) => void) | null = null;
 let onCancel: ((id: string) => void) | null = null;
 let onSelectChat: ((id: string) => void) | null = null;
@@ -357,10 +279,8 @@ export function setTownCallbacks(cb: TownCallbacks): void {
   getOrder = cb.order;
 }
 
-/** 设置皮肤变更回调(用于持久化) / Set skin change callback (for persistence) */
-export function setTownSkinCallback(cb: (skin: TownSkin) => void): void {
-  onSkinChange = cb;
-}
+const ICON_TOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
+const ICON_GRID = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
 
 /** 全量渲染小镇 / Full render of the town */
 export function renderTown(): void {
@@ -369,9 +289,6 @@ export function renderTown(): void {
   if (!getConvs || !getOrder) return;
   const convsMap = getConvs();
   const orderList = getOrder();
-
-  // 确保 skin 属性已设置 / Ensure skin attribute is set
-  root.setAttribute('data-town-skin', currentSkin);
 
   // 按 cwd 分组(同 Workbench) / Group by cwd (same as Workbench)
   const groups = new Map<string, string[]>();
@@ -439,17 +356,10 @@ export function renderTown(): void {
   }
 
   root.innerHTML = `<div class="town-sky"></div>
-    ${renderSkyDeco()}
-    <div class="town-ground"></div>
     <div class="town-header">
       <div class="town-title">${ICON_TOWN} ${esc(tr('town.title'))}</div>
       <div class="town-sub">${esc(tr('town.sub'))}</div>
       <span class="town-spacer"></span>
-      <div class="town-skin-selector">
-        <button class="town-skin-btn ${currentSkin === 'cozy' ? 'active' : ''}" data-skin="cozy" title="Cozy"></button>
-        <button class="town-skin-btn ${currentSkin === 'forest' ? 'active' : ''}" data-skin="forest" title="Forest"></button>
-        <button class="town-skin-btn ${currentSkin === 'neon' ? 'active' : ''}" data-skin="neon" title="Neon"></button>
-      </div>
       <button class="ghost" id="town-goto-wb" title="${esc(tr('wb.title'))}">${ICON_GRID}</button>
       <button class="primary" id="town-new-proj">${esc(tr('town.newProject'))}</button>
     </div>
@@ -460,16 +370,6 @@ export function renderTown(): void {
   if (newProjBtn && onNewProject) newProjBtn.onclick = () => onNewProject!();
   const gotoWbBtn = document.getElementById('town-goto-wb');
   if (gotoWbBtn && onShowWorkbench) gotoWbBtn.onclick = () => onShowWorkbench!();
-
-  // 皮肤切换 / Skin switching
-  root.querySelectorAll<HTMLElement>('.town-skin-btn').forEach((btn) => {
-    btn.onclick = () => {
-      const skin = btn.dataset.skin as TownSkin;
-      if (!skin || skin === currentSkin) return;
-      setTownSkin(skin);
-      if (onSkinChange) onSkinChange(skin);
-    };
-  });
 
   root.querySelectorAll<HTMLElement>('.town-house').forEach((house) => {
     const cwd = house.dataset.cwd!;
@@ -493,9 +393,6 @@ export function renderTown(): void {
   }
 }
 
-const ICON_TOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
-const ICON_GRID = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
-
 // ═══════════════════════════════════════════════════
 // 居中弹出面板 / Centered modal panel
 // ═══════════════════════════════════════════════════
@@ -517,7 +414,7 @@ function closeTownPanel(): void {
   if (backdrop) backdrop.classList.remove('open');
 }
 
-/** 刷新侧滑面板内容(全量重建 innerHTML) / Refresh panel content */
+/** 刷新面板内容(全量重建 innerHTML) / Refresh panel content */
 function refreshTownPanel(): void {
   if (!selectedConvId || !getConvs) return;
   const conv = getConvs().get(selectedConvId);
@@ -598,7 +495,6 @@ function refreshTownPanel(): void {
 
   // 绑定事件 / Wire events
   panel.querySelector<HTMLElement>('.tp-close')!.onclick = () => closeTownPanel();
-  // 点击遮罩关闭 / Click backdrop to close
   const backdrop = document.getElementById('town-backdrop');
   if (backdrop) backdrop.onclick = () => closeTownPanel();
 
@@ -629,10 +525,8 @@ export function refreshTownVillager(conv: Conversation): void {
   if (!wrap) return;
   const vs = villagerState(conv);
   const engine = conv.engine;
-  // 更新 class / Update class
   wrap.className = `villager-wrap vs-${vs}`;
   wrap.dataset.engine = engine;
-  // 更新 SVG
   const label = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 16) || '…';
   wrap.title = label;
   wrap.querySelector('.villager-name')!.textContent = label;
@@ -647,10 +541,8 @@ export function refreshTownVillager(conv: Conversation): void {
     if (getConvs && getOrder) {
       const ids = getOrder().filter((id) => getConvs!().get(id)?.cwd === cwd);
       const agents = ids.map((id) => getConvs!().get(id)!).filter(Boolean);
-      // 更新房子 SVG(窗户灯光) / Update house SVG
       const houseSvgEl = house.querySelector('.house-svg');
       if (houseSvgEl) houseSvgEl.innerHTML = houseSVG(cwd, agents, hashHue(cwd));
-      // 更新统计 / Update stats
       let totalTokens = 0, totalCost = 0, lastTs = 0, running = false;
       for (const c of agents) {
         totalTokens += c.tokens; totalCost += c.cost;
