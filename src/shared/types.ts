@@ -55,6 +55,11 @@ export type AppSettings = {
   embedApiKey: string;     // '' = 复用主 apiKey
   embedModel: string;      // 'embedding-3' 等 OpenAI 兼容模型 id
   budget: BudgetAlert;     // 成本预算 / 熔断
+  // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──
+  // 开启后,局域网内其它机器可通过 SSE transport 连接,调用本机工具(shell / read_file / web_fetch 等)。
+  localMcpServer: { enabled: boolean; port: number; token: string };
+  // ── 多机协作:远程 MCP Server 列表(把别的 KinetAios 节点当工具用)──
+  remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
@@ -262,6 +267,10 @@ export interface KinetAPI {
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
   listSkills(): Promise<SkillInfo[]>;
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
+  // ── 多机协作:本机 MCP Server 启停 + 状态 ──
+  startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;
+  stopMcpServer(): Promise<{ ok: boolean }>;
+  mcpServerStatus(): Promise<{ running: boolean; port: number; url: string }>;
   pickDirectory(): Promise<string>;
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
   fileRead(abs: string): Promise<{ ok: boolean; content?: string; error?: string }>;

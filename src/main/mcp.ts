@@ -1,21 +1,26 @@
-// MCP (Model Context Protocol) 客户端:扫描配置 → stdio 连接 → 工具发现 → 接入 Direct 引擎。
+// MCP (Model Context Protocol) 客户端:扫描配置 → stdio / SSE 连接 → 工具发现 → 接入 Direct 引擎。
 // 让 Direct 引擎能用上系统里配置的 MCP 服务(Claude Code / Codex Desktop / Codex TOML),像内置工具一样调用。
-// ponytail: 只做 stdio transport + JSON/TOML 配置扫描。SSE/HTTP transport、MCP resources/prompts、
-// 项目级 .mcp.json(需按 cwd 重连)都标 TODO —— 先覆盖最常见的 stdio 全局 server。
+// 支持 stdio(本地子进程)和 SSE/HTTP(远程 MCP server,包括另一台机器上的 KinetAios)两种 transport。
+// ponytail: MCP resources/prompts、项目级 .mcp.json(需按 cwd 重连)标 TODO —— 先覆盖 stdio + SSE 全局 server。
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
+import http from 'node:http';
+import https from 'node:https';
 import type { Tool } from './tools';
 import { getBrand } from './brand';
 
-type McpSource = 'claude' | 'codex' | 'desktop';
+type McpSource = 'claude' | 'codex' | 'desktop' | 'remote';
 type McpServerConfig = {
   name: string;
   source: McpSource;
-  command: string;
+  command: string;       // stdio: 可执行文件路径;SSE: 远程 URL(http://host:port/mcp)
   args: string[];
   env: Record<string, string>;
+  // SSE transport 专用:
+  type?: 'stdio' | 'sse';     // 'sse' = 远程 HTTP/SSE server;省略 = stdio
+  token?: string;             // SSE: Authorization Bearer token
 };
 
 // MARK: 配置扫描
@@ -28,13 +33,21 @@ function readJson(file: string): any | null {
   }
 }
 
-// 从一个 mcpServers map({ name: {type?, command, args, env?} })提取 stdio server。
+// 从一个 mcpServers map({ name: {type?, command/url, args, env?, token?} })提取 server。
+// 支持两种 transport:type='sse' → SSE(远程);省略或 'stdio' → stdio(本地子进程)。
 function fromMap(map: Record<string, any> | undefined, source: McpSource): McpServerConfig[] {
   const out: McpServerConfig[] = [];
   for (const [name, raw] of Object.entries(map || {})) {
-    if (!raw?.command) continue;
-    if (raw.type && raw.type !== 'stdio') continue; // ponytail: SSE/HTTP → TODO
-    out.push({ name, source, command: raw.command, args: Array.isArray(raw.args) ? raw.args.map(String) : [], env: raw.env || {} });
+    const type = raw?.type === 'sse' ? 'sse' : 'stdio';
+    if (type === 'sse') {
+      // SSE: command 字段存 URL(http://host:port/mcp);token 存鉴权 Bearer。
+      const url = raw?.url || raw?.command;
+      if (!url) continue;
+      out.push({ name, source, type: 'sse', command: url, args: [], env: {}, token: raw?.token || '' });
+    } else {
+      if (!raw?.command) continue;
+      out.push({ name, source, type: 'stdio', command: raw.command, args: Array.isArray(raw.args) ? raw.args.map(String) : [], env: raw.env || {} });
+    }
   }
   return out;
 }
@@ -114,9 +127,141 @@ export function discoverServers(): McpServerConfig[] {
   return out.filter((s) => s.command && !seen.has(s.name) && seen.add(s.name));
 }
 
-// MARK: stdio JSON-RPC 客户端(MCP 消息以换行分隔的一条条 JSON)
+// MARK: SSE/HTTP 客户端(连接远程 MCP server —— 如另一台机器上的 KinetAios MCP Server)
+// MCP Streamable HTTP transport:POST JSON-RPC 到 server endpoint,响应是单条 JSON 或 SSE 流。
 
 type McpTool = { name: string; description?: string; inputSchema?: any };
+
+class SseClient {
+  private seq = 0;
+  private pending = new Map<number, { resolve: (v: any) => void; reject: (e: Error) => void; timer: NodeJS.Timeout }>();
+  alive = true;
+  readonly tools: McpTool[] = [];
+  readonly ready: Promise<void>;
+  private initialized = false;
+
+  constructor(readonly cfg: McpServerConfig) {
+    this.ready = this.connect();
+  }
+
+  private get url(): URL {
+    return new URL(this.cfg.command); // command 字段存完整 URL
+  }
+
+  private getHeaders(): Record<string, string> {
+    const h: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Accept: 'application/json, text/event-stream',
+    };
+    if (this.cfg.token) h.Authorization = `Bearer ${this.cfg.token}`;
+    return h;
+  }
+
+  // 发一条 JSON-RPC 请求,解析响应(支持纯 JSON 和 SSE 两种返回格式)。
+  private request(method: string, params: unknown, timeoutMs: number): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const id = ++this.seq;
+      const body = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+      const opts = {
+        method: 'POST',
+        hostname: this.url.hostname,
+        port: this.url.port || (this.url.protocol === 'https:' ? '443' : '80'),
+        path: this.url.pathname + this.url.search,
+        headers: { ...this.getHeaders(), 'Content-Length': Buffer.byteLength(body) },
+      };
+      const lib = this.url.protocol === 'https:' ? https : http;
+      const timer = setTimeout(() => {
+        this.pending.delete(id);
+        reject(new Error(`SSE MCP ${method} 超时(${timeoutMs}ms)`));
+      }, timeoutMs);
+
+      const req = lib.request(opts, (resp) => {
+        if (resp.statusCode && resp.statusCode >= 400) {
+          clearTimeout(timer);
+          let errBody = '';
+          resp.on('data', (d) => (errBody += d));
+          resp.on('end', () => reject(new Error(`HTTP ${resp.statusCode}: ${errBody.slice(0, 500)}`)));
+          return;
+        }
+        const ct = resp.headers['content-type'] ?? '';
+        let raw = '';
+        resp.on('data', (d) => (raw += d));
+        resp.on('end', () => {
+          clearTimeout(timer);
+          try {
+            if (ct.includes('text/event-stream')) {
+              // SSE: 从 data: 行提取 JSON
+              for (const line of raw.split('\n')) {
+                const m = line.match(/^data:\s*(.+)/);
+                if (m) {
+                  const obj = JSON.parse(m[1]);
+                  if (obj.error) reject(new Error(obj.error.message ?? 'MCP error'));
+                  else resolve(obj.result);
+                  return;
+                }
+              }
+              reject(new Error('SSE 响应无 data 行'));
+            } else {
+              // 纯 JSON
+              const obj = JSON.parse(raw);
+              if (obj.error) reject(new Error(obj.error.message ?? 'MCP error'));
+              else resolve(obj.result);
+            }
+          } catch (e) {
+            reject(new Error(`SSE MCP 响应解析失败: ${(e as Error).message}`));
+          }
+        });
+      });
+      req.on('error', (e) => {
+        clearTimeout(timer);
+        reject(new Error(`SSE MCP 连接失败: ${e.message}`));
+      });
+      req.write(body);
+      req.end();
+    });
+  }
+
+  private async connect(): Promise<void> {
+    try {
+      await this.request('initialize', {
+        protocolVersion: '2024-11-05',
+        capabilities: {},
+        clientInfo: { name: getBrand().productName, version: '0.1.0' },
+      }, 15_000);
+      // notifications/initialized 是 notification(无 id),用 fire-and-forget POST。
+      this.initialized = true;
+      const res = await this.request('tools/list', {}, 15_000);
+      this.tools.length = 0;
+      this.tools.push(...(res?.tools ?? []));
+    } catch (e) {
+      console.error(`[mcp/${this.cfg.name}] SSE 连接失败:`, (e as Error)?.message);
+      this.alive = false;
+    }
+  }
+
+  async call(name: string, args: Record<string, unknown>): Promise<string> {
+    if (!this.alive) return `MCP server 不可用: ${this.cfg.name}`;
+    try {
+      const res = await this.request('tools/call', { name, arguments: args }, 120_000);
+      const text = (res?.content ?? []).map((c: any) => (c?.type === 'text' ? c.text : JSON.stringify(c))).join('\n').trim();
+      return res?.isError ? `MCP 工具报错: ${text}` : text || '(无输出)';
+    } catch (e) {
+      this.alive = false; // 远程 server 不可达 → 标记失效
+      return `MCP 远程调用失败: ${(e as Error).message}`;
+    }
+  }
+
+  dispose(): void {
+    this.alive = false;
+    for (const p of this.pending.values()) {
+      clearTimeout(p.timer);
+      p.reject(new Error('MCP 连接关闭'));
+    }
+    this.pending.clear();
+  }
+}
+
+// MARK: stdio JSON-RPC 客户端(MCP 消息以换行分隔的一条条 JSON)
 
 class StdioClient {
   private child: ChildProcess | null = null;
@@ -263,18 +408,52 @@ class StdioClient {
   }
 }
 
+// MARK: 统一客户端接口(stdio + SSE 都实现这套)
+
+interface McpClient {
+  readonly cfg: McpServerConfig;
+  readonly tools: McpTool[];
+  readonly ready: Promise<void>;
+  alive: boolean;
+  call(name: string, args: Record<string, unknown>): Promise<string>;
+  dispose(): void;
+}
+
 // MARK: 注册表 —— 发现 + 渐进连接 + 聚合工具 + 生命周期
 
 class McpRegistry {
-  private clients: StdioClient[] = [];
+  private clients: McpClient[] = [];
   private connecting: Promise<void> | null = null;
+  // 额外的远程 server 配置(来自 settings.remoteMcpServers,运行时可动态增减)。
+  private extraConfigs: McpServerConfig[] = [];
 
-  // 后台连接所有 server,每连好一个就加入(失败静默跳过)。幂等。
-  connectAll(): Promise<void> {
-    if (this.connecting) return this.connecting;
+  // 设置/更新远程 SSE server 列表(从 settings.remoteMcpServers 加载)。每次调用会重建连接。
+  setRemoteServers(servers: Array<{ name: string; url: string; token?: string }>): void {
+    // 先 dispose 旧的 remote client
+    this.clients = this.clients.filter((c) => {
+      if (c.cfg.source === 'remote') {
+        c.dispose();
+        return false;
+      }
+      return true;
+    });
+    this.extraConfigs = servers
+      .filter((s) => s.url)
+      .map((s) => ({ name: s.name, source: 'remote' as McpSource, type: 'sse' as const, command: s.url, args: [], env: {}, token: s.token || '' }));
+    // 触发重连
+    this.connecting = null;
+    void this.connectAll(true);
+  }
+
+  // 后台连接所有 server,每连好一个就加入(失败静默跳过)。幂等;forceRemote=true 跳过 stdio 只连 remote。
+  connectAll(forceRemote = false): Promise<void> {
+    if (this.connecting && !forceRemote) return this.connecting;
     this.connecting = (async () => {
-      const configs = discoverServers();
-      const made = configs.map((cfg) => new StdioClient(cfg));
+      const configs = forceRemote ? this.extraConfigs : [...discoverServers(), ...this.extraConfigs];
+      const made: McpClient[] = configs.map((cfg) => {
+        if (cfg.type === 'sse') return new SseClient(cfg);
+        return new StdioClient(cfg);
+      });
       await Promise.allSettled(
         made.map(async (c) => {
           await c.ready;
@@ -309,7 +488,7 @@ class McpRegistry {
     return out;
   }
 
-  // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性)。
+  // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性)。source 保留 'remote' 标识远程节点。
   snapshot(): Array<{ source: string; name: string; tools: string[] }> {
     return this.clients.filter((c) => c.alive).map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
   }

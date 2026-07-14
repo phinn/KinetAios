@@ -19,6 +19,8 @@ import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
 import { mcp } from './mcp';
+import { localMcpServer } from './mcp-server';
+import { allTools } from './tools';
 import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
@@ -457,13 +459,51 @@ function registerIpc(): void {
 
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('save-settings', (_e, s: AppSettings) => {
+    const old = getSettings();
     saveSettings(s);
     rebuildTrayMenu(); // 语言切换后托盘菜单跟随
+    // 多机协作:remote server 配置变化 → 刷新 MCP 远程连接。
+    if (JSON.stringify(old.remoteMcpServers ?? []) !== JSON.stringify(s.remoteMcpServers ?? [])) {
+      mcp.setRemoteServers(s.remoteMcpServers ?? []);
+    }
+    // 本机 MCP Server:enabled 变化 → 启停。
+    if (s.localMcpServer?.enabled && !localMcpServer.isRunning()) {
+      localMcpServer.setTools(allTools());
+      localMcpServer.setToken(s.localMcpServer.token || '');
+      localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token || '').catch(() => {});
+    } else if (!s.localMcpServer?.enabled && localMcpServer.isRunning()) {
+      void localMcpServer.stop();
+    }
     return true;
   });
   ipcMain.handle('list-skills', () => listSkills());
   ipcMain.handle('list-mcp', () => mcp.snapshot());
   ipcMain.handle('get-brand', () => getBrand());
+
+  // ── 多机协作:本机 MCP Server 启停 + 状态 ──
+  ipcMain.handle('start-mcp-server', async (_e, port: number, token: string) => {
+    try {
+      // 把当前所有内置工具 + 自定义工具暴露给远程调用者。
+      localMcpServer.setTools(allTools());
+      localMcpServer.setToken(token || '');
+      await localMcpServer.start(port, token || '');
+      return { ok: true };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+  ipcMain.handle('stop-mcp-server', async () => {
+    await localMcpServer.stop();
+    return { ok: true };
+  });
+  ipcMain.handle('mcp-server-status', () => {
+    const s = getSettings();
+    return {
+      running: localMcpServer.isRunning(),
+      port: s.localMcpServer.port,
+      url: `http://${os.hostname()}:${s.localMcpServer.port}/mcp`,
+    };
+  });
 
   // 系统文件夹选择器(renderer 无 Node,只能走 main 的 dialog)。
   ipcMain.handle('pick-directory', async () => {
@@ -1121,7 +1161,20 @@ if (!gotLock) {
     });
     startCronScheduler();
     registerIpc();
+    // 从 settings 加载远程 MCP server 配置(多机协作),再连所有 server(stdio + remote SSE)。
+    mcp.setRemoteServers(getSettings().remoteMcpServers ?? []);
     mcp.connectAll(); // 后台连 MCP server(不阻塞首屏;Direct 引擎首轮会等 ≤2s)
+    // 如果 settings 里开启了本机 MCP Server,自动启动。
+    {
+      const s = getSettings();
+      if (s.localMcpServer?.enabled) {
+        localMcpServer.setTools(allTools());
+        localMcpServer.setToken(s.localMcpServer.token || '');
+        localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token || '').catch((e) => {
+          console.warn('[mcp-server] 自启动失败:', e.message);
+        });
+      }
+    }
     dashboardWin = createDashboard();
     tray = createTray();
 
@@ -1141,6 +1194,7 @@ if (!gotLock) {
     quitting = true; // 让 dashboard 的 close handler 放行 —— 否则 Cmd+Q / 系统退出会被 hide 拦截,退不出来
     globalShortcut.unregisterAll();
     mcp.dispose(); // 关掉所有 MCP 子进程
+    void localMcpServer.stop(); // 关掉本机 MCP HTTP server(多机协作)
     tray?.destroy(); // 销毁托盘,否则 macOS 上进程残留、退不干净
   });
 }
