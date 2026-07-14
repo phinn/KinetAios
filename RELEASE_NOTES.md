@@ -1,37 +1,110 @@
 # Release Notes
 
-## v1.1.0 — Town View & Cross-Platform Polish
+## v1.1.0 — Town, Multi-Machine Collaboration & UX Overhaul
 
 **Release Date:** 2026-07-14
 
-The first update after v1.0.0 — focused on a brand-new **Town View** (game-style project visualization) and cross-platform polish across Windows & macOS.
+69 commits since v1.0.0. Three major themes: **Town View** (game-style agent visualization), **MCP Bridge** (multi-machine agent collaboration), and **11 differentiating features** (Arena, Snapshots, Memory Graph, Voice, Ollama, and more). Plus a full UI/UX overhaul — four themes, SVG icons, custom code editor, and a reworked Git Diff.
 
 ---
 
-### 🏘️ Town View — Your Projects as a Living Village
+### 🏘️ Town View — Your Projects as a Living Village (New)
 
-A whole new way to visualize and interact with your AI agents. Each project is a **house**, each conversation is a **villager** living in that house. Click any villager to see what they're working on, or talk to them directly.
+A brand-new way to visualize and interact with your AI agents. Each project is a **house**; each conversation is a **villager** living in that house.
 
-- **Isometric Game-Style Map** — All your projects rendered as little houses on a grid, with rooftops colored by project. Villagers wander between houses as animated sprites.
-- **Real-Time Agent States** — Each villager shows a live status badge: Idle 💤 / Working ⚙️ / Done ✅ / Error ⚠️. Watch your agents work at a glance.
-- **Inline Chat** — Click any villager to open a mini chat panel right on the map. Send a new task, stop a running agent, or jump to the full conversation — without leaving Town.
+- **Isometric Game-Style Map** — Projects rendered as little houses on a grid. Villagers appear as animated sprites inside their house.
+- **Real-Time Agent States** — Each villager shows a live status badge: Idle / Working / Done / Error. Spot what your agents are doing at a glance.
+- **Inline Chat on the Map** — Click any villager to open a mini chat panel right on the map. Send a new task, stop a running agent, or jump to the full conversation — without leaving Town.
 - **New Project / New Task** — "New Project" picks a working directory and builds a new house. "New Task" spawns a new villager (conversation) inside an existing house.
-- **Cross-Engine** — Villagers can use any of the three engines (Kaios / Claude Code / Codex). The engine badge shows which one each villager is running.
-- **Step Inspector** — Expand any villager to see their reasoning steps (tool calls, outputs) in real time, or review after completion.
+- **Cross-Engine** — Villagers can use any engine (Kaios / Claude Code / Codex). An engine badge identifies which one each villager runs.
+- **Step Inspector** — Expand any villager to see their reasoning steps — tool calls and outputs — in real time or after completion.
+- **Workbench Integration** — One-click switch between Workbench (list view) and Town (visual view) for the same projects.
 - **Four-Language i18n** — Town UI fully localized: English / 简体中文 / 繁體中文 / 日本語.
-- **Workbench Integration** — One-click switch between Workbench (list view) and Town (visual view) for the same set of projects.
 
 ---
 
-### 🔧 Cross-Platform & Branding Updates
+### 🌐 Multi-Machine Collaboration — MCP Bridge (New)
 
-- **Windows & macOS** — Landing page and all marketing copy updated from "macOS only" to "Windows & macOS". Download buttons now point to [GitHub Releases v1.1.0](https://github.com/phinn/KinetAios/releases/tag/v1.1.0).
-- **Engine Rename** — "GLM Direct" unified to **"Kaios"** across the entire landing page (4 languages + SVG diagrams + FAQ).
-- **Version Bump** — `package.json` bumped to `1.1.0`; installers now correctly named `KinetAios-Setup-1.1.0.exe` / `KinetAios-1.1.0-arm64.dmg`.
+Connect multiple machines running KinetAios via MCP protocol (SSE/HTTP + JSON-RPC 2.0). Machine A's Agent can dispatch full computing tasks to Machine B.
+
+- **Local MCP Server** — Default port 18109, Bearer token auth, 30s ping keep-alive.
+- **Remote SSE Client** — Auto-discover and connect to remote nodes. Remote tools appear as `[MCP:remote/node-name]` in the Direct engine.
+- **`run_agent` Remote Dispatch** — Remote nodes expose only `run_agent` (not fine-grained tools), launching a complete ReAct loop on the callee side. Sandbox follows local settings, 5-minute timeout.
+- **Auto-Reconnect** — SSE connections recover automatically after network drops — no more permanent failure from a single jitter.
+- **Remote Agent Status Bar** — When this machine is called remotely, a gold pulsing status bar appears in the bottom-right corner, showing "Agent started / calling tool / completed" in real time.
+- **Settings Page** — iOS-style toggles, one-click MCP token generation, visual remote node management. Tabs: Model / Behavior / Advanced / Collaboration.
 
 ---
 
-### 📦 Download
+### 🚀 11 Differentiating Features (Phase 1–11)
+
+| Feature | Description |
+|---|---|
+| **Arena (Multi-Engine Parallel)** | Send the same prompt to multiple engines simultaneously, compare output quality side by side. |
+| **File Snapshots & Rollback** | Auto-snapshot files before an Agent modifies them. Roll back to any version with one click. |
+| **Cross-Engine Sub-Task Orchestration** | `dispatch_agent` spawns independent sub-agents (isolated context) for parallel exploration. |
+| **Memory Graph** | Long-term memory stored as triples (subject–relation–object), visualized as a force-directed graph on Canvas. |
+| **Plugin SDK v1** | Third-party plugin interface for custom tool extensions. |
+| **Voice Input / Output** | 🎤 Record voice → API transcription → send. AI replies can be read aloud. |
+| **Cron Scheduled Tasks** | Trigger Agents on a schedule for recurring tasks. |
+| **Watch Mode** | Monitor file changes and auto-trigger an Agent. |
+| **Ollama Local Models** | Connect to a local Ollama instance — fully offline capable. |
+| **Semantic Recall (Embeddings)** | Independent embedding endpoint (default: GLM embedding-3). Semantic similarity search complements FTS5 keyword search. |
+| **Knowledge Graph Visualization** | Canvas-based force-directed graph replaces plain text lists. Drag nodes, zoom the canvas. |
+
+---
+
+### 🎨 UI / UX Overhaul
+
+- **Four Themes** — Dark / Light / **Serene** (warm grey + rose gold, new) / Gold.
+- **All-SVG Icons** — Every emoji replaced with inline SVG for visual consistency.
+- **Custom Code Editor** — Lightweight in-house CodeEditor replaces all `<textarea>` elements. Syntax highlighting, auto-indent, multi-language support. Zero external dependencies — no Monaco.
+- **Git Diff Redesign** — Word-level diff, per-file sections, staged/unstaged grouping, clickable file rows.
+- **Sidebar Cleanup** — Header buttons tucked into a ⋯ dropdown menu for a cleaner layout.
+- **Message Copy Button** — One-click copy on every AI reply.
+- **Redesigned App Icon** — Dark squircle + gold "K" + spark element. macOS Dock icon now displays correctly.
+- **Landing Page Overhaul** — Major visual upgrade to index/landing pages with animated mockups, comparison tables, and SVG diagrams.
+
+---
+
+### ⚙️ Engine & Core Improvements
+
+- **Engine Rename** — "GLM Direct" unified to **"Kaios"** across the entire app and landing page (4 languages).
+- **maxTurns Configurable** — Settings control for maximum ReAct loop iterations. Default 50, 0 = unlimited.
+- **Token Estimation** — Now includes `tool_calls` in the count. Sliding-average self-calibration (initial coefficient 0.6).
+- **Prompt Cache** — Direct engine supports Anthropic prompt caching to reduce cost.
+- **Three-Level Context Compression** — trim → LLM summary → hard truncation fallback.
+- **File Encoding Auto-Detection** — `read_file` / `edit_file` / `grep` auto-detect UTF-8 / GBK / GB18030 and more.
+- **Memory Injection Refactor** — Moved from systemPrompt to `history[0]`, reducing repeated injection overhead.
+
+---
+
+### 🐛 Notable Bug Fixes
+
+- Binary file read crash → detection + skip
+- Screenshot blank image → switched to `getDisplayMedia`
+- Context break after interrupting a response then continuing the conversation
+- Duplicate cost records / memory 1970 timestamps / orphan data
+- Command injection hardening (`execFile` replacing `exec`)
+- Webview HTML preview showing source code → CSP `frame-src` fix
+- Light theme not applying in standalone windows (Dashboard / Quick / Files)
+- Packaging: `asar: true` + native module unpack — fixes "damaged app" on other Windows machines
+- Microphone permission not acquired — voice button fixed
+- Memory timeline display + custom tool UI corrections
+
+---
+
+### 📦 Packaging, CI & Docs
+
+- **GitHub Actions** — Auto-build Windows + macOS dual-platform releases.
+- **Cross-Platform Branding** — All marketing copy updated from "macOS only" to "Windows & macOS". Download buttons now point to [GitHub Releases](https://github.com/phinn/KinetAios/releases/tag/v1.1.0).
+- **README** — English first-screen overhaul: badges, comparison tables, download links, hero screenshot.
+- **GitHub Wiki** — Full 17-page wiki (English primary + Chinese mirror).
+- **Promotion Plan** — Comprehensive Chinese promotion action plan and marketing guidelines.
+
+---
+
+### Download
 
 | Platform | Link |
 |---|---|
@@ -39,96 +112,6 @@ A whole new way to visualize and interact with your AI agents. Each project is a
 | macOS (Apple Silicon) | [KinetAios-1.1.0-arm64.dmg](https://github.com/phinn/KinetAios/releases/tag/v1.1.0) |
 
 **Full changelog:** https://github.com/phinn/KinetAios/commits/main
-
----
-
-## v1.2.0 — 多机协作 & UX 全面改善
-
-**发布日期：** 2026-07-15
-
-v1.0 后 71 次提交，重点在两个方向：**多机远程协作**（MCP Bridge 成熟可用）和 **UX 体验打磨**（四主题、SVG 图标、自研编辑器、Git Diff 重做）。
-
----
-
-### 🌐 多机协作 MCP Bridge（核心新特性）
-
-多台安装 KinetAios 的电脑通过 MCP 协议（SSE/HTTP + JSON-RPC 2.0）实现跨机协同计算——A 机的 Agent 可以调度 B 机的完整算力。
-
-- **本机 MCP Server** — 默认端口 18109，Bearer token 鉴权，30s ping 保活
-- **远程 SSE Client** — 自动发现/连接远程节点，工具名带 `[MCP:remote/节点名]` 标识注入 Direct 引擎
-- **`run_agent` 远程调度** — 远程节点只暴露 `run_agent` 一个工具（不暴露细粒度工具），在被调用端启动完整 ReAct Agent 循环，沙箱跟随本机设置，5 分钟超时保护
-- **自动重连** — SSE 连接断开后自动重连恢复，不再一次网络抖动就永久失效
-- **远程 Agent 状态条** — 本机被远程调用时右下角即时弹出金色脉动状态条，实时显示「Agent 已启动 / 正在调用工具 / 已完成」
-- **设置页** — iOS 风格开关，MCP token 一键生成，远程节点列表可视化管理
-
----
-
-### 🚀 11 大差异化功能（Phase 1–11）
-
-| 功能 | 说明 |
-|---|---|
-| **Arena 多引擎并跑** | 同一 prompt 同时发给多个引擎，并排对比输出质量 |
-| **文件快照 + 回滚** | Agent 改文件前自动建快照，一键回滚到任意版本 |
-| **跨引擎子任务编排** | `dispatch_agent` 派发独立子任务给子 Agent（独立上下文），支持并行探索 |
-| **记忆图谱** | 长期记忆以三元组（主体-关系-客体）结构化存储，Canvas 力导向图可视化 |
-| **Plugin SDK v1** | 第三方插件接口，自定义工具扩展 |
-| **语音输入/输出** | 🎤 语音录制 → API 转写 → 发送；回复可朗读 |
-| **定时任务 (Cron)** | 定时触发 Agent 执行周期性任务 |
-| **Watch 模式** | 监控文件变化自动触发 Agent |
-| **Ollama 本地模型** | 接入本地 Ollama，离线可用 |
-| **语义召回 (Embeddings)** | Embedding 接口独立配置（默认 GLM embedding-3），语义近似搜索补充 FTS5 关键词 |
-| **知识图谱力导向可视化** | Canvas 力导向图替代纯文本列表，拖拽节点、缩放画布 |
-
----
-
-### 🎨 UI / UX 全面升级
-
-- **四种主题** — Dark / Light / Serene（暖灰 + 玫瑰金）/ Gold
-- **全量 SVG 图标** — 所有 emoji 替换为内联 SVG，视觉统一
-- **自研代码编辑器** — 轻量 CodeEditor 替换所有 textarea，支持语法高亮、自动缩进、多语言
-- **Git Diff 界面大改** — word-level diff、文件分段、staged/unstaged 分组
-- **侧栏头部收纳** — 按钮收纳进 ⋯ 下拉菜单，布局整洁
-- **消息复制按钮** — 每条 AI 回复可一键复制
-- **四语言 i18n** — en / zh-CN / zh-TW / ja，全面覆盖
-
----
-
-### ⚙️ 引擎与核心改进
-
-- **引擎改名** — `GLM Direct` → `Kaios`（品牌统一）
-- **maxTurns 可配置** — 设置项控制最大循环轮数，默认 50，支持 0=无限
-- **Token 估算优化** — 算上 tool_calls，滑动平均自校准系数（初始 0.6）
-- **Prompt Cache** — Direct 引擎支持 Anthropic prompt cache 降低成本
-- **三级上下文压缩** — trim → LLM 摘要 → 超长兜底
-- **文件编码自动检测** — read_file / edit_file / grep 自动识别 UTF-8 / GBK / GB18030 等
-- **记忆注入重构** — 从 systemPrompt 移到 history[0]，减少重复注入开销
-
----
-
-### 🐛 重要修复
-
-- 二进制文件读取崩溃 → 检测 + 跳过
-- 截图空白图 → 改用 `getDisplayMedia`
-- 中断后连续对话上下文断裂
-- cost 重复记录 / 记忆 1970 时间戳 / 孤儿数据
-- 命令注入风险加固（`execFile` 替代 `exec`）
-- webview HTML 预览显示源码 → CSP `frame-src` 修复
-- 淡色主题在独立窗口（Dashboard/Quick/Files）未生效
-- 打包用 `asar: true` + native module unpack，修复复制到其他 Windows 报「损坏」
-
----
-
-### 📦 打包 & CI
-
-- GitHub Actions 自动构建 Windows + macOS 双平台 release
-- 版本 1.0.0 → 1.1.0
-- Landing / index 页面可视化大幅升级
-- README 英文版第一屏改造（badges / 对比表 / 下载链接）
-- GitHub wiki 全套 17 页（英文为主 + 中文镜像）
-
----
-
-**完整 changelog：** https://github.com/phinn/KinetAios/commits/main
 
 ---
 
