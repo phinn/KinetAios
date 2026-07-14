@@ -3,6 +3,7 @@
 import { exec } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { TextDecoder } from 'node:util';
 import type { ToolDef } from './glm';
 import * as store from './store';
 import { takeSnapshot } from './snapshots';
@@ -79,6 +80,111 @@ const shell: Tool = {
   },
 };
 
+// ── 编码检测 ──
+// Windows 上大量文件是 GBK/GB18030/Big5/Shift_JIS 编码,直接 toString('utf8') 会产生乱码。
+// 用 BOM + 启发式判断,再通过 TextDecoder 转成 UTF-8 字符串。
+// TextDecoder 是 Node 内置(无需 iconv-lite),原生支持 gb18030/gbk/big5/shift_jis/euc-kr 等。
+function decodeBuffer(buf: Buffer): string {
+  // 1. BOM 检测(最可靠)
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) {
+    return buf.subarray(3).toString('utf8'); // UTF-8 BOM,跳过 3 字节
+  }
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    return new TextDecoder('utf-16le').decode(buf.subarray(2)); // UTF-16 LE BOM
+  }
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) {
+    return new TextDecoder('utf-16be').decode(buf.subarray(2)); // UTF-16 BE BOM
+  }
+
+  // 2. 纯 ASCII → 直接 toString
+  let isAscii = true;
+  for (let i = 0; i < buf.length; i++) {
+    if (buf[i] > 0x7f) { isAscii = false; break; }
+  }
+  if (isAscii) return buf.toString('utf8');
+
+  // 3. UTF-8 验证:逐字节检查是否符合 UTF-8 编码规则
+  if (isValidUtf8(buf)) return buf.toString('utf8');
+
+  // 4. 非 UTF-8 → 按平台猜编码
+  // GB18030 是 GBK/GB2312 超集,覆盖简体中文;Big5 覆盖繁体;Shift_JIS 覆盖日文。
+  // 启发式:看高频双字节区间分布(粗略,够用)。
+  const enc = guessEncoding(buf);
+  try {
+    return new TextDecoder(enc).decode(buf);
+  } catch {
+    // TextDecoder 不支持该编码 → 最后兜底当 utf8(可能有乱码但不崩溃)
+    return buf.toString('utf8');
+  }
+}
+
+// 严格 UTF-8 校验:逐字节验证多字节序列的合法范围。
+function isValidUtf8(buf: Buffer): boolean {
+  const len = buf.length;
+  let i = 0;
+  while (i < len) {
+    const b = buf[i];
+    if (b <= 0x7f) { i++; continue; }         // ASCII
+    if (b >= 0xc2 && b <= 0xdf) {              // 2-byte
+      if (i + 1 >= len) return false;
+      if ((buf[i + 1] & 0xc0) !== 0x80) return false;
+      i += 2;
+    } else if (b >= 0xe0 && b <= 0xef) {       // 3-byte
+      if (i + 2 >= len) return false;
+      if ((buf[i + 1] & 0xc0) !== 0x80 || (buf[i + 2] & 0xc0) !== 0x80) return false;
+      i += 3;
+    } else if (b >= 0xf0 && b <= 0xf4) {       // 4-byte
+      if (i + 3 >= len) return false;
+      if ((buf[i + 1] & 0xc0) !== 0x80 || (buf[i + 2] & 0xc0) !== 0x80 || (buf[i + 3] & 0xc0) !== 0x80) return false;
+      i += 4;
+    } else {
+      return false; // 非法 UTF-8 起始字节
+    }
+  }
+  return true;
+}
+
+// 启发式编码猜测:统计各编码特征字节的出现频率。
+// GBK/GB18030: 第一字节 0x81-0xFE,第二字节 0x40-0x7E 或 0x80-0xFE
+// Big5:        第一字节 0xA1-0xF9,第二字节 0x40-0x7E 或 0xA1-0xFE
+// Shift_JIS:   第一字节 0x81-0x9F 或 0xE0-0xFC,第二字节 0x40-0x7E 或 0x80-0xFC
+function guessEncoding(buf: Buffer): string {
+  let gbkScore = 0;
+  let big5Score = 0;
+  let sjisScore = 0;
+  const len = Math.min(buf.length, 8192); // 只看前 8KB
+  let i = 0;
+  while (i + 1 < len) {
+    const b0 = buf[i];
+    const b1 = buf[i + 1];
+    if (b0 <= 0x7f) { i++; continue; } // ASCII,跳过
+
+    // GBK/GB18030 匹配
+    if (b0 >= 0x81 && b0 <= 0xfe && ((b1 >= 0x40 && b1 <= 0x7e) || (b1 >= 0x80 && b1 <= 0xfe))) {
+      gbkScore++;
+      i += 2;
+      continue;
+    }
+    // Big5 匹配
+    if (b0 >= 0xa1 && b0 <= 0xf9 && ((b1 >= 0x40 && b1 <= 0x7e) || (b1 >= 0xa1 && b1 <= 0xfe))) {
+      big5Score++;
+      i += 2;
+      continue;
+    }
+    // Shift_JIS 匹配
+    if ((b0 >= 0x81 && b0 <= 0x9f || b0 >= 0xe0 && b0 <= 0xfc) && ((b1 >= 0x40 && b1 <= 0x7e) || (b1 >= 0x80 && b1 <= 0xfc))) {
+      sjisScore++;
+      i += 2;
+      continue;
+    }
+    i++;
+  }
+  // 取最高分,默认 GB18030(GBK 超集,最通用)
+  if (big5Score > gbkScore && big5Score > sjisScore) return 'big5';
+  if (sjisScore > gbkScore && sjisScore > big5Score) return 'shift_jis';
+  return 'gb18030';
+}
+
 const readFile: Tool = {
   name: 'read_file',
   readOnly: true,
@@ -101,7 +207,9 @@ const readFile: Tool = {
       for (let i = 0; i < checkLen; i++) {
         if (buf[i] === 0) return `二进制文件(非文本),read_file 不支持。改用 shell 工具(如 xxd/head/strings)。`;
       }
-      const body = buf.toString('utf8');
+      // 编码检测:BOM → ASCII → UTF-8 校验 → 启发式(GBK/Big5/Shift_JIS)。
+      // Windows 上大量文件是 GBK 编码,直接 toString('utf8') 会产生乱码。
+      const body = decodeBuffer(buf);
       return body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body;
     } catch {
       return `读不到: ${p}`;
@@ -133,7 +241,7 @@ const writeFile: Tool = {
       // 写前快照(仅当文件已存在,新文件没东西可存)。best-effort,失败不阻塞。
       if (ctx.convId && fs.existsSync(p)) {
         try {
-          const before = fs.readFileSync(p, 'utf8');
+          const before = decodeBuffer(fs.readFileSync(p));
           takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'write_file', contentBefore: before });
         } catch { /* snapshot 失败不影响主流程 */ }
       }
@@ -326,7 +434,8 @@ const grep: Tool = {
       if (filter && !filter.test(rel) && !filter.test(path.basename(f))) continue;
       try {
         if ((await fs.promises.stat(f)).size > 512 * 1024) continue; // 跳大文件(>512KB)
-        const body = await fs.promises.readFile(f, 'utf8'); // 异步读,不阻塞主进程(否则扫大项目时 UI/token 流卡住)
+        const buf = await fs.promises.readFile(f); // 读 Buffer,下面用 decodeBuffer 做编码检测
+        const body = decodeBuffer(buf); // 编码检测:BOM → UTF-8 → GBK/Big5/Shift_JIS 启发式
         for (const [i, line] of body.split('\n').entries()) {
           if (re.test(line)) {
             hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 200)}`);
@@ -387,7 +496,7 @@ const editFile: Tool = {
     if (guard) return guard;
     let body: string;
     try {
-      body = fs.readFileSync(p, 'utf8');
+      body = decodeBuffer(fs.readFileSync(p));
     } catch {
       return `读不到: ${p}`;
     }
