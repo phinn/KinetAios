@@ -334,12 +334,16 @@ function openTownPanel(convId: string): void {
   refreshTownPanel();
   const panel = document.getElementById('town-panel');
   if (panel) panel.classList.add('open');
+  const backdrop = document.getElementById('town-backdrop');
+  if (backdrop) backdrop.classList.add('open');
 }
 
 function closeTownPanel(): void {
   selectedConvId = null;
   const panel = document.getElementById('town-panel');
   if (panel) panel.classList.remove('open');
+  const backdrop = document.getElementById('town-backdrop');
+  if (backdrop) backdrop.classList.remove('open');
 }
 
 /** 刷新侧滑面板内容(全量重建 innerHTML) / Refresh panel content */
@@ -423,6 +427,9 @@ function refreshTownPanel(): void {
 
   // 绑定事件 / Wire events
   panel.querySelector<HTMLElement>('.tp-close')!.onclick = () => closeTownPanel();
+  // 点击遮罩关闭 / Click backdrop to close
+  const backdrop = document.getElementById('town-backdrop');
+  if (backdrop) backdrop.onclick = () => closeTownPanel();
 
   const input = panel.querySelector<HTMLInputElement>('.tp-input')!;
   const sendBtn = panel.querySelector<HTMLElement>('.tp-send')!;
