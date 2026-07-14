@@ -30,6 +30,143 @@
   --accent-fg: #ffffff;
   --code-bg: #f0f0f4;
 }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Aurora 极光主题 — 深空底色 + 渐变极光光晕 + 微妙毛玻璃质感
+   Premium dark with aurora gradient glow + subtle glassmorphism.
+   在 <html data-theme="aurora"> 生效。15 个核心变量 + 5 个极光专属变量。
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="aurora"] {
+  --bg:          #0d0e14;
+  --bg-side:     #0a0b10;
+  --bg-elev:     #161824;
+  --bg-input:    #1c1f2e;
+  --border:      #252839;
+  --text:        #e8eaf2;
+  --text-dim:    #8b8fa8;
+  --text-faint:  #5a5e78;
+  --accent:      #c4a7ff;
+  --accent-dim:  #6b5d9e;
+  --accent-fg:   #0d0e14;
+  --ok:          #7eeab5;
+  --err:         #f08a7a;
+  --run:         #c4a7ff;
+  --code-bg:     #0a0b10;
+
+  /* Aurora 专属:极光渐变色系 + 光晕参数 */
+  --aurora-1:    #c4a7ff;   /* 紫罗兰 */
+  --aurora-2:    #7eeab5;   /* 极光绿 */
+  --aurora-3:    #74c5ff;   /* 冰川蓝 */
+  --aurora-glow: 0 0 40px rgba(196,167,255,.15);
+  --glass-bg:    rgba(22,24,36,.65);
+  --glass-blur:  16px;
+}
+/* Aurora: body 极光背景动画 — 两团缓慢漂移的径向渐变模拟极光带 */
+[data-theme="aurora"] body {
+  background:
+    radial-gradient(ellipse 80% 50% at 15% 0%, rgba(196,167,255,.10), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 85% 100%, rgba(126,234,181,.06), transparent 60%),
+    radial-gradient(ellipse 50% 35% at 50% 50%, rgba(116,197,255,.04), transparent 70%),
+    var(--bg);
+}
+/* Aurora: 侧边栏顶部极光光带 */
+[data-theme="aurora"] #sidebar {
+  background: var(--bg-side);
+  position: relative;
+}
+[data-theme="aurora"] #sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--aurora-1), var(--aurora-2), var(--aurora-3));
+  opacity: .6;
+  z-index: 1;
+}
+/* Aurora: 卡片/面板毛玻璃效果 */
+[data-theme="aurora"] .msg .bubble,
+[data-theme="aurora"] .modal-card,
+[data-theme="aurora"] #settings-view,
+[data-theme="aurora"] .s-section,
+[data-theme="aurora"] #wb .card {
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur));
+  -webkit-backdrop-filter: blur(var(--glass-blur));
+}
+/* Aurora: 主按钮渐变 + 微光晕 */
+[data-theme="aurora"] button.primary {
+  background: linear-gradient(135deg, var(--aurora-1), var(--aurora-3));
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 12px rgba(196,167,255,.25);
+}
+[data-theme="aurora"] button.primary:hover {
+  filter: brightness(1.12);
+  box-shadow: 0 4px 18px rgba(196,167,255,.35);
+}
+/* Aurora: 焦点态用极光色辉光 */
+[data-theme="aurora"] input:focus,
+[data-theme="aurora"] textarea:focus,
+[data-theme="aurora"] select:focus {
+  border-color: var(--aurora-1);
+  box-shadow: 0 0 0 3px rgba(196,167,255,.12);
+}
+/* Aurora: accent 链接/高亮用渐变 */
+[data-theme="aurora"] a {
+  background: linear-gradient(90deg, var(--aurora-1), var(--aurora-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* Aurora: 用户气泡用极光渐变边框 */
+[data-theme="aurora"] .msg.user .bubble {
+  border-color: var(--accent-dim);
+  background: linear-gradient(135deg, rgba(196,167,255,.10), rgba(116,197,255,.08));
+}
+/* Aurora: 滚动条极光色 */
+[data-theme="aurora"] ::-webkit-scrollbar-thumb {
+  background: var(--accent-dim);
+}
+[data-theme="aurora"] ::-webkit-scrollbar-thumb:hover {
+  background: var(--aurora-1);
+}
+/* Aurora: dot 状态指示灯用极光绿 */
+[data-theme="aurora"] .dot.ready { background: var(--aurora-2); box-shadow: 0 0 8px rgba(126,234,181,.4); }
+[data-theme="aurora"] .dot.running { background: var(--aurora-1); box-shadow: 0 0 8px rgba(196,167,255,.4); }
+/* Aurora: 选中态 tab/会话用极光渐变下划线 */
+[data-theme="aurora"] .cht.active,
+[data-theme="aurora"] .conv-item.active {
+  color: var(--aurora-1);
+}
+[data-theme="aurora"] .cht.active::after,
+[data-theme="aurora"] .conv-item.active::after {
+  background: linear-gradient(90deg, var(--aurora-1), var(--aurora-3));
+}
+/* Aurora: 标题/brand 使用渐变文字 */
+[data-theme="aurora"] .brand {
+  background: linear-gradient(90deg, var(--aurora-1), var(--aurora-2), var(--aurora-3));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+/* Aurora: ghost 按钮 hover 带极光微光 */
+[data-theme="aurora"] button.ghost:hover {
+  color: var(--aurora-1);
+  background: rgba(196,167,255,.08);
+}
+/* Aurora: 输入框/textarea 微妙极光边框 */
+[data-theme="aurora"] input,
+[data-theme="aurora"] textarea,
+[data-theme="aurora"] select {
+  border-color: var(--border);
+  transition: border-color .2s, box-shadow .2s;
+}
+[data-theme="aurora"] input:hover,
+[data-theme="aurora"] textarea:hover,
+[data-theme="aurora"] select:hover {
+  border-color: var(--accent-dim);
+}
+
 #head-status { color: var(--text-dim); font-size: 12px; margin-left: 6px; }
 .send.stop { background: #9c3a3a; border-color: #9c3a3a; }
 #turns, #q-out { user-select: text; cursor: text; }

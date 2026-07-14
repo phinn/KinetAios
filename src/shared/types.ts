@@ -48,13 +48,14 @@ export type AppSettings = {
   priceOutPerMTok: number;
   presetId: string;
   lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
-  theme: 'dark' | 'light'; // 暗 / 淡色主题
+  theme: 'dark' | 'light' | 'aurora'; // 暗 / 淡色 / 极光主题
   // ── Embedding 接口配置(独立于主 LLM 接口)──
   // 默认留空 = 跟随主接口(baseURL/apiKey 复用主 LLM 的),填了则独立走自己的 endpoint。
   embedBaseURL: string;    // '' = 复用主 baseURL
   embedApiKey: string;     // '' = 复用主 apiKey
   embedModel: string;      // 'embedding-3' 等 OpenAI 兼容模型 id
   budget: BudgetAlert;     // 成本预算 / 熔断
+  maxTurns: number;        // Direct 引擎单轮对话最大 ReAct 循环数(防 tool_call 死循环;0 = 无限)
   // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──
   // 开启后,局域网内其它机器可通过 SSE transport 连接,调用本机工具(shell / read_file / web_fetch 等)。
   localMcpServer: { enabled: boolean; port: number; token: string };

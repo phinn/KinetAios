@@ -79,7 +79,7 @@ function applyI18nDOM(): void {
     HOME_DIR = brand.homeDir;
     document.title = PRODUCT;
     const brandEl = document.getElementById('brand');
-    if (brandEl) brandEl.innerHTML = '<span class="spark">✨</span> ' + esc(PRODUCT);
+    if (brandEl) brandEl.innerHTML = '<span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span> ' + esc(PRODUCT);
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
     applyI18nDOM();
 
@@ -720,7 +720,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt, uCopy); };
   bubble.appendChild(uCopy);
   userMsg.appendChild(bubble);
-  userMsg.appendChild(avatarEl('🧑'));
+  userMsg.appendChild(avatarEl('user'));
   wrap.appendChild(userMsg);
 
   // AI 回复:头像在左、正文在右(无内容且非流式时不渲染)
@@ -810,10 +810,14 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   return wrap;
 }
 
-function avatarEl(emoji: string): HTMLElement {
+function avatarEl(kind: 'user' | 'ai'): HTMLElement {
   const a = document.createElement('div');
   a.className = 'avatar';
-  a.textContent = emoji;
+  if (kind === 'user') {
+    a.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0116 0"/></svg>';
+  } else {
+    a.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg>';
+  }
   return a;
 }
 
@@ -857,7 +861,7 @@ function scrollDown() {
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
-function applyTheme(theme: 'dark' | 'light'): void {
+function applyTheme(theme: 'dark' | 'light' | 'aurora'): void {
   document.documentElement.dataset.theme = theme;
 }
 
@@ -942,7 +946,13 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.theme')}</label><select id="s-theme">
           <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>${tr('settings.theme.dark')}</option>
           <option value="light" ${s.theme === 'light' ? 'selected' : ''}>${tr('settings.theme.light')}</option>
+          <option value="aurora" ${s.theme === 'aurora' ? 'selected' : ''}>${tr('settings.theme.aurora')}</option>
         </select></div>
+      </div>
+      <div class="s-section">
+        <h3>${tr('settings.sec.agent')}</h3>
+        <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="width:80px" /></div>
+        <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
       </div>
       </div><!-- /behavior panel -->
 
@@ -1192,7 +1202,8 @@ function readSettingsForm(): AppSettings {
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
-    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light',
+    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora',
+    maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
     embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
     embedModel: (document.getElementById('s-embed-model') as HTMLInputElement).value.trim() || 'embedding-3',

@@ -27,8 +27,9 @@ export interface RunOpts {
 // memory message) for next-turn history.
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
-  // 默认上限 30 轮(防 tool_call 死循环无限烧 token;用户可手动覆盖)。
-  const maxTurns = opts.maxTurns ?? 30;
+  // 从设置读 maxTurns(0 = 无限);子 agent 调用时可通过 opts.maxTurns 显式覆盖。
+  const cfgMax = opts.maxTurns ?? getSettings().maxTurns ?? 50;
+  const maxTurns = cfgMax > 0 ? cfgMax : Infinity;
   const defs: ToolDef[] = tools.map(toolDef);
 
   // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
