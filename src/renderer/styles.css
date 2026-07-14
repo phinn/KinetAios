@@ -167,6 +167,126 @@
   border-color: var(--accent-dim);
 }
 
+/* ═══════════════════════════════════════════════════════════════════════
+   Serene 雅致主题 — 暖灰米底 + 玫瑰金强调 + 柔和投影 + 轻毛玻璃
+   Elegant warm-grey base + rose-gold accent + soft shadows + light glass.
+   在 <html data-theme="serene"> 生效。
+   ═══════════════════════════════════════════════════════════════════════ */
+[data-theme="serene"] {
+  --bg:          #f5f1ec;
+  --bg-side:     #efe9e2;
+  --bg-elev:     #ffffff;
+  --bg-input:    #faf7f3;
+  --border:      #e0d8cf;
+  --text:        #2d2a26;
+  --text-dim:    #6b655e;
+  --text-faint:  #9a938a;
+  --accent:      #b76e79;    /* 玫瑰金 rose gold */
+  --accent-dim:  #d4a5ab;
+  --accent-fg:   #ffffff;
+  --ok:          #6b9e7e;
+  --err:         #c17a6b;
+  --run:         #b76e79;
+  --code-bg:     #efe9e2;
+
+  /* Serene 专属:柔和投影 + 毛玻璃参数 */
+  --serene-shadow:    0 1px 3px rgba(139,119,99,.08), 0 4px 16px rgba(139,119,99,.06);
+  --serene-shadow-lg: 0 2px 8px rgba(139,119,99,.10), 0 8px 32px rgba(139,119,99,.08);
+  --serene-glass:     rgba(255,255,255,.72);
+  --serene-blur:      12px;
+}
+/* Serene: body 暖色径向渐变背景 — 微妙的暖光从顶部洒下 */
+[data-theme="serene"] body {
+  background:
+    radial-gradient(ellipse 70% 50% at 50% 0%, rgba(183,110,121,.05), transparent 60%),
+    radial-gradient(ellipse 50% 40% at 90% 100%, rgba(212,165,171,.04), transparent 60%),
+    var(--bg);
+}
+/* Serene: 侧边栏顶部玫瑰金光带 */
+[data-theme="serene"] #sidebar {
+  background: var(--bg-side);
+  position: relative;
+}
+[data-theme="serene"] #sidebar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--accent-dim), var(--accent));
+  opacity: .5;
+  z-index: 1;
+}
+/* Serene: 卡片/面板柔和投影 + 轻毛玻璃 */
+[data-theme="serene"] .msg .bubble,
+[data-theme="serene"] .modal-card,
+[data-theme="serene"] #settings-view,
+[data-theme="serene"] .s-section,
+[data-theme="serene"] #wb .card {
+  background: var(--serene-glass);
+  backdrop-filter: blur(var(--serene-blur));
+  -webkit-backdrop-filter: blur(var(--serene-blur));
+  box-shadow: var(--serene-shadow);
+}
+/* Serene: 主按钮玫瑰金渐变 */
+[data-theme="serene"] button.primary {
+  background: linear-gradient(135deg, var(--accent), #c8898f);
+  color: #fff;
+  border: none;
+  box-shadow: 0 2px 8px rgba(183,110,121,.2);
+}
+[data-theme="serene"] button.primary:hover {
+  filter: brightness(1.06);
+  box-shadow: 0 4px 14px rgba(183,110,121,.3);
+}
+/* Serene: 输入框聚焦玫瑰金边框 + 柔光 */
+[data-theme="serene"] input:focus,
+[data-theme="serene"] textarea:focus,
+[data-theme="serene"] select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(183,110,121,.12);
+}
+/* Serene: 链接颜色 */
+[data-theme="serene"] a {
+  color: var(--accent);
+}
+/* Serene: 用户气泡 */
+[data-theme="serene"] .msg.user .bubble {
+  background: linear-gradient(135deg, var(--accent), #c8898f);
+  color: #fff;
+}
+/* Serene: 滚动条 */
+[data-theme="serene"] ::-webkit-scrollbar-thumb {
+  background: rgba(183,110,121,.25);
+}
+[data-theme="serene"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(183,110,121,.4);
+}
+/* Serene: 状态指示点 */
+[data-theme="serene"] .dot.ready { background: var(--ok); }
+[data-theme="serene"] .dot.running { background: var(--accent); }
+/* Serene: 活跃 tab 微妙玫瑰金底色 */
+[data-theme="serene"] .cht.active,
+[data-theme="serene"] .conv-item.active {
+  color: var(--accent);
+  background: rgba(183,110,121,.06);
+}
+/* Serene: ghost 按钮悬停 */
+[data-theme="serene"] button.ghost:hover {
+  background: rgba(183,110,121,.06);
+  border-color: var(--accent-dim);
+}
+/* Serene: 输入框边框 */
+[data-theme="serene"] input,
+[data-theme="serene"] textarea,
+[data-theme="serene"] select {
+  border-color: var(--border);
+}
+[data-theme="serene"] input:hover,
+[data-theme="serene"] textarea:hover,
+[data-theme="serene"] select:hover {
+  border-color: var(--accent-dim);
+}
+
 #head-status { color: var(--text-dim); font-size: 12px; margin-left: 6px; }
 .send.stop { background: #9c3a3a; border-color: #9c3a3a; }
 #turns, #q-out { user-select: text; cursor: text; }
@@ -1063,3 +1183,22 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 [data-theme="light"] .tok-inlinecode{ color: #a31515; }
 [data-theme="light"] .tok-key       { color: #0451a5; }
 [data-theme="light"] .tok-link      { color: #0000ee; }
+/* Serene 复用 light 的浅色代码配色 — 避免多维护一套 */
+[data-theme="serene"] .tok-keyword   { color: #af00db; }
+[data-theme="serene"] .tok-string    { color: #a31515; }
+[data-theme="serene"] .tok-comment   { color: #008000; }
+[data-theme="serene"] .tok-number    { color: #098658; }
+[data-theme="serene"] .tok-function  { color: #795e26; }
+[data-theme="serene"] .tok-builtin   { color: #267f99; }
+[data-theme="serene"] .tok-decorator { color: #795e26; }
+[data-theme="serene"] .tok-tag       { color: #800000; }
+[data-theme="serene"] .tok-attr      { color: #ff0000; }
+[data-theme="serene"] .tok-variable  { color: #001080; }
+[data-theme="serene"] .tok-property  { color: #001080; }
+[data-theme="serene"] .tok-selector  { color: #800000; }
+[data-theme="serene"] .tok-atrule    { color: #af00db; }
+[data-theme="serene"] .tok-header    { color: #0000ff; }
+[data-theme="serene"] .tok-codeblock { color: #a31515; }
+[data-theme="serene"] .tok-inlinecode{ color: #a31515; }
+[data-theme="serene"] .tok-key       { color: #0451a5; }
+[data-theme="serene"] .tok-link      { color: #0000ee; }

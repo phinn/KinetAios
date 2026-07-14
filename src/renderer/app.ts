@@ -882,7 +882,7 @@ function scrollDown() {
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
-function applyTheme(theme: 'dark' | 'light' | 'aurora'): void {
+function applyTheme(theme: 'dark' | 'light' | 'aurora' | 'serene'): void {
   document.documentElement.dataset.theme = theme;
 }
 
@@ -968,6 +968,7 @@ async function showSettings() {
           <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>${tr('settings.theme.dark')}</option>
           <option value="light" ${s.theme === 'light' ? 'selected' : ''}>${tr('settings.theme.light')}</option>
           <option value="aurora" ${s.theme === 'aurora' ? 'selected' : ''}>${tr('settings.theme.aurora')}</option>
+          <option value="serene" ${s.theme === 'serene' ? 'selected' : ''}>${tr('settings.theme.serene')}</option>
         </select></div>
       </div>
       <div class="s-section">
@@ -1223,7 +1224,7 @@ function readSettingsForm(): AppSettings {
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
-    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora',
+    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora' | 'serene',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
     embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
