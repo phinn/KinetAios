@@ -1407,6 +1407,46 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 8px; cursor: pointer;
 }
+/* 搜索框 / Search input */
+.mgraph-search {
+  background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
+  border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 10px; width: 140px;
+  outline: none; transition: border-color .15s, width .15s;
+}
+.mgraph-search:focus { border-color: var(--accent); width: 180px; }
+.mgraph-search::placeholder { color: var(--text-dim); }
+
+/* 度数过滤滑块 / Degree filter slider */
+.mgraph-slider {
+  -webkit-appearance: none; appearance: none; width: 60px; height: 4px;
+  background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
+}
+.mgraph-slider::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none; width: 12px; height: 12px;
+  border-radius: 50%; background: var(--accent); cursor: pointer;
+}
+.mgraph-degree-val { font-size: 11px; color: var(--text-dim); min-width: 28px; }
+
+/* 缩放控制浮层 / Zoom control overlay */
+.mgraph-zoom-bar {
+  position: absolute; bottom: 12px; right: 12px;
+  display: flex; align-items: center; gap: 2px;
+  background: var(--bg-elev); border: 1px solid var(--border);
+  border-radius: 8px; padding: 2px; box-shadow: 0 2px 8px rgba(0,0,0,0.12);
+  z-index: 10;
+}
+.mgraph-zoom-btn {
+  width: 24px; height: 24px; border: none; background: transparent;
+  color: var(--text); font-size: 16px; cursor: pointer; border-radius: 4px;
+  display: flex; align-items: center; justify-content: center;
+  transition: background .12s;
+}
+.mgraph-zoom-btn:hover { background: var(--bg-input); color: var(--accent); }
+.mgraph-zoom-val {
+  font-size: 11px; color: var(--text-dim); min-width: 36px; text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
 .mgraph-stats {
   display: flex; gap: 16px; padding: 6px 20px; border-bottom: 1px solid var(--border);
   font-size: 12px; color: var(--text-dim);

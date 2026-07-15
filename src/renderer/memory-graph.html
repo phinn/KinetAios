@@ -12,6 +12,11 @@
       <h2 data-i18n="mgraph.title">记忆图谱</h2>
       <span class="mgraph-brand" id="mgraph-brand"></span>
       <div class="mgraph-controls">
+        <input type="text" id="mgraph-search" class="mgraph-search" placeholder="🔍 搜索节点…" />
+        <label class="mgraph-toggle">
+          <input type="range" id="mgraph-degree-slider" min="1" max="10" value="1" class="mgraph-slider" />
+          <span id="mgraph-degree-val" class="mgraph-degree-val">≥ 1</span>
+        </label>
         <label class="mgraph-toggle">
           <input type="checkbox" id="mgraph-show-labels" checked />
           <span data-i18n="mgraph.edgeLabels">关系标签</span>
@@ -20,12 +25,19 @@
           <option value="force">力导向</option>
           <option value="circle">环形</option>
         </select>
+        <button class="ghost" id="mgraph-fit" title="适应视图">⤢</button>
         <button class="ghost" id="mgraph-refresh" title="刷新">↻</button>
       </div>
     </div>
     <div class="mgraph-stats" id="mgraph-stats"></div>
     <div class="mgraph-canvas-wrap">
       <svg id="mgraph-svg" width="100%" height="100%"></svg>
+      <!-- 缩放控制浮层 -->
+      <div class="mgraph-zoom-bar">
+        <button class="mgraph-zoom-btn" id="mgraph-zoom-out" title="缩小">−</button>
+        <span class="mgraph-zoom-val" id="mgraph-zoom-val">100%</span>
+        <button class="mgraph-zoom-btn" id="mgraph-zoom-in" title="放大">+</button>
+      </div>
     </div>
     <div class="mgraph-detail" id="mgraph-detail"></div>
   </div>
