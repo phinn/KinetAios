@@ -390,7 +390,7 @@ a { color: var(--accent); }
 /* 同时显示 cwd basename(flat 模式无项目头,要标项目归属);grouped 模式 .sb-task-cwd 隐藏。 */
 #conv-list > li:not(.sb-proj) {
   padding: 8px 10px; border-radius: 7px; cursor: pointer; margin-bottom: 2px;
-  display: flex; align-items: center; gap: 7px; position: relative;
+  display: flex; flex-direction: row; align-items: center; gap: 7px; position: relative;
 }
 #conv-list > li:not(.sb-proj):hover { background: var(--bg-elev); }
 #conv-list > li:not(.sb-proj).active { background: var(--bg-elev); }
