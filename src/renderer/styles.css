@@ -884,9 +884,9 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-triple-arrow { color: var(--accent); font-size: 12px; }
 
 /* Memory Graph 力导向图可视化 / Force-directed graph visualization */
-.mm-graph-wrap { position: relative; width: 100%; height: 100%; min-height: 360px; overflow: hidden; border-radius: 8px; background: #161619; }
+.mm-graph-wrap { position: relative; width: 100%; height: 100%; min-height: 400px; overflow: hidden; border-radius: 8px; background: var(--code-bg); }
 .mm-graph-canvas { display: block; width: 100%; height: 100%; cursor: default; }
-.mm-graph-tip { position: absolute; bottom: 8px; left: 12px; font-size: 11px; color: var(--text-faint); pointer-events: none; background: rgba(22,22,25,0.7); padding: 3px 8px; border-radius: 4px; }
+.mm-graph-tip { position: absolute; bottom: 8px; left: 12px; font-size: 11px; color: var(--text-faint); pointer-events: none; background: rgba(0,0,0,0.5); padding: 3px 8px; border-radius: 4px; }
 #mm-graph-viz { font-size: 15px; padding: 2px 8px; }
 
 /* Arena 窗口(⚔):同一 prompt 三引擎并跑,三栏并排。 */
@@ -1329,7 +1329,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 .search-overlay-card {
   width: 600px; max-width: 90vw; max-height: 60vh; display: flex; flex-direction: column;
-  background: var(--bg-elevated, #2a2a30); border: 1px solid var(--border);
+  background: var(--bg-elev); border: 1px solid var(--border);
   border-radius: 12px; overflow: hidden; box-shadow: 0 20px 60px rgba(0,0,0,0.4);
 }
 .search-overlay-head { display: flex; align-items: center; padding: 12px 16px; gap: 8px; border-bottom: 1px solid var(--border); }
@@ -1359,7 +1359,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 /* ── 远程 Agent 直播面板 ── */
 .live-panel {
   position: fixed; bottom: 16px; right: 16px; width: 380px; max-height: 320px;
-  background: var(--bg-elevated, #2a2a30); border: 1px solid var(--border);
+  background: var(--bg-elev); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
   z-index: 1500; display: flex; flex-direction: column; overflow: hidden;
 }
