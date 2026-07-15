@@ -56,6 +56,8 @@ export type AppSettings = {
   embedModel: string;      // 'embedding-3' 等 OpenAI 兼容模型 id
   budget: BudgetAlert;     // 成本预算 / 熔断
   maxTurns: number;        // Direct 引擎单轮对话最大 ReAct 循环数(防 tool_call 死循环;0 = 无限)
+  // ── 窗口关闭行为 ── quit = 退出应用(默认);minimize = 最小化到任务栏;tray = 最小化到系统托盘。
+  closeBehavior: 'quit' | 'minimize' | 'tray';
   // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──
   // 开启后,局域网内其它机器可通过 SSE transport 连接,调用本机工具(shell / read_file / web_fetch 等)。
   localMcpServer: { enabled: boolean; port: number; token: string };

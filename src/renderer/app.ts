@@ -1000,6 +1000,15 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="width:80px" /></div>
         <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
       </div>
+      <div class="s-section">
+        <h3>${tr('settings.sec.window')}</h3>
+        <div class="field"><label>${tr('settings.closeBehavior')}</label><select id="s-close-behavior">
+          <option value="quit" ${s.closeBehavior === 'quit' ? 'selected' : ''}>${tr('settings.closeBehavior.quit')}</option>
+          <option value="minimize" ${s.closeBehavior === 'minimize' ? 'selected' : ''}>${tr('settings.closeBehavior.minimize')}</option>
+          <option value="tray" ${s.closeBehavior === 'tray' ? 'selected' : ''}>${tr('settings.closeBehavior.tray')}</option>
+        </select></div>
+        <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.closeBehavior.desc')}</div>
+      </div>
       </div><!-- /behavior panel -->
 
       <div class="s-tab-panel" data-panel="advanced" style="display:none">
@@ -1251,6 +1260,7 @@ function readSettingsForm(): AppSettings {
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
     theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora' | 'serene',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
+    closeBehavior: (document.getElementById('s-close-behavior') as HTMLSelectElement).value as AppSettings['closeBehavior'],
     embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
     embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
     embedModel: (document.getElementById('s-embed-model') as HTMLInputElement).value.trim() || 'embedding-3',

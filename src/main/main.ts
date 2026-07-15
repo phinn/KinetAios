@@ -116,6 +116,21 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+
+  // 窗口关闭行为:根据设置决定点 ✕ 时是退出、最小化到任务栏、还是隐藏到托盘。
+  win.on('close', (e) => {
+    if (quitting) return; // 正在退出(Cmd+Q / 托盘退出)→ 放行
+    const mode = getSettings().closeBehavior ?? 'quit';
+    if (mode === 'minimize') {
+      e.preventDefault();
+      win.minimize();
+    } else if (mode === 'tray') {
+      e.preventDefault();
+      win.hide();
+    }
+    // mode === 'quit' → 不拦截,正常走 window-all-closed → app.quit()
+  });
+
   return win;
 }
 
