@@ -1402,7 +1402,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .mgraph-head h2 { font-size: 16px; margin: 0; }
 .mgraph-brand { color: var(--text-dim); font-size: 12px; }
 .mgraph-controls { margin-left: auto; display: flex; align-items: center; gap: 10px; }
-.mgraph-toggle { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.mgraph-toggle { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); cursor: pointer; white-space: nowrap; }
 .mgraph-select {
   background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 8px; cursor: pointer;
