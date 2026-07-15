@@ -481,9 +481,10 @@ export function renderTown(): void {
   const gotoWbBtn = document.getElementById('town-goto-wb');
   if (gotoWbBtn && onShowWorkbench) gotoWbBtn.onclick = () => onShowWorkbench!();
 
-  root.querySelectorAll<HTMLElement>('.town-house').forEach((house) => {
+  root.querySelectorAll<HTMLElement>('.town-house:not(.town-remote)').forEach((house) => {
     const cwd = house.dataset.cwd!;
-    house.querySelector<HTMLElement>('.town-newtask')!.onclick = (e) => {
+    const taskBtn = house.querySelector<HTMLElement>('.town-newtask');
+    if (taskBtn) taskBtn.onclick = (e) => {
       e.stopPropagation();
       if (onNewTask) onNewTask(cwd);
     };
