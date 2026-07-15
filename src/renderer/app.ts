@@ -1743,6 +1743,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
 
         imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: croppedDataUrl });
         renderAttach();
+        (document.getElementById('composer') as HTMLTextAreaElement).focus();
       } catch (e) {
         captureBtn.classList.remove('loading');
         alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
@@ -1803,7 +1804,12 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
         let dragging = false;
         let startX = 0, startY = 0, endX = 0, endY = 0;
 
-        const cleanup = (): void => { overlay.remove(); };
+        const cleanup = (): void => {
+          document.removeEventListener('keydown', onKey);
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
+          overlay.remove();
+        };
 
         const onCancel = (): void => { cleanup(); resolve(null); };
 
@@ -1858,17 +1864,22 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
           hint.style.display = 'none';
         });
 
-        overlay.addEventListener('mousemove', (e) => {
+        // mousemove 绑在 document 上 —— 防止鼠标快速移出 overlay 后丢失
+        const onMouseMove = (e: MouseEvent): void => {
           if (!dragging) return;
           endX = e.clientX;
           endY = e.clientY;
           drawSelection(startX, startY, endX, endY);
-        });
+        };
+        document.addEventListener('mousemove', onMouseMove);
 
-        overlay.addEventListener('mouseup', (e) => {
+        // mouseup 绑在 document 上 —— 防止在 overlay 外释放鼠标导致永久遮挡
+        const onMouseUp = (e: MouseEvent): void => {
           if (!dragging) return;
           dragging = false;
           document.removeEventListener('keydown', onKey);
+          document.removeEventListener('mousemove', onMouseMove);
+          document.removeEventListener('mouseup', onMouseUp);
 
           const x = Math.min(startX, e.clientX);
           const y = Math.min(startY, e.clientY);
@@ -1893,7 +1904,8 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
           const croppedUrl = cropCanvas.toDataURL('image/png');
           cleanup();
           resolve(croppedUrl.length > 1000 ? croppedUrl : null);
-        });
+        };
+        document.addEventListener('mouseup', onMouseUp);
       };
       img.onerror = () => {
         console.error('[capture] 图片加载失败');
