@@ -201,6 +201,8 @@ const ZH_CN: Dict = {
   'files.errSave': '保存失败:{msg}',
   'files.editorPh': '选个文本文件开始编辑…(Ctrl+S 保存)',
   'files.loading': '加载中…',
+  'files.newPanel': '新建面板',
+  'files.panelDefault': '文件',
 
   'arena.open': 'Arena 三引擎并跑',
   'arena.title': 'Arena — 三引擎并跑',
@@ -696,6 +698,8 @@ const EN: Dict = {
   'files.errSave': 'Save failed: {msg}',
   'files.editorPh': 'Pick a text file to edit… (Ctrl+S to save)',
   'files.loading': 'Loading…',
+  'files.newPanel': 'New panel',
+  'files.panelDefault': 'Files',
 
   'arena.open': 'Arena (3-engine race)',
   'arena.title': 'Arena — 3-engine race',
@@ -1192,6 +1196,8 @@ const ZH_TW: Dict = {
   'files.errSave': '儲存失敗:{msg}',
   'files.editorPh': '選個文字檔開始編輯…(Ctrl+S 儲存)',
   'files.loading': '載入中…',
+  'files.newPanel': '新增面板',
+  'files.panelDefault': '檔案',
 
   'arena.open': 'Arena 三引擎並跑',
   'arena.title': 'Arena — 三引擎並跑',
@@ -1688,6 +1694,8 @@ const JA: Dict = {
   'files.errSave': '保存失敗:{msg}',
   'files.editorPh': 'テキストファイルを選んで編集…(Ctrl+S で保存)',
   'files.loading': '読み込み中…',
+  'files.newPanel': '新規パネル',
+  'files.panelDefault': 'ファイル',
 
   'arena.open': 'Arena 3エンジン同時実行',
   'arena.title': 'Arena — 3エンジン同時実行',

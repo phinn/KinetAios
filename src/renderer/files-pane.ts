@@ -4,6 +4,9 @@
 //
 // 文件树懒加载(点目录才 listDir 子层);右键「在浏览器中打开」→ webview.loadURL(file://)。
 // 主进程切 cwd 时通过 onFilesCwd 推送(独立窗口场景);内联场景由 app.ts 主动调 setCwd。
+//
+// 多面板(Multi-Pane):顶部标签栏可「+」新建面板,每个面板独立 cwd / 文件树 / 预览。
+// 面板状态(打开的文件、编辑器内容)在切换标签时保留。上限 MAX_PANELS 个。
 import type { DirEntry, KinetAPI } from '../shared/types';
 import { t, type Lang } from '../shared/i18n';
 import { CodeEditor, detectLang } from './code-editor';
@@ -28,31 +31,196 @@ export interface FilesPaneController {
   setCwd(cwd: string): void;
 }
 
-// root 必须含(files.html 同款)结构:.files-head / .files-tree / .files-view>webview / #files-menu。
-// 返回 controller,调用方用它来主动切 cwd(内联场景)。
-export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneController {
+// ─── 多面板管理层 ────────────────────────────────────────────
+// 容器结构(container 必须 #chat-files-pane 或 files.html body):
+//   .files-panel-bar       ← 面板标签栏(+按钮)
+//   .files-panel-host      ← 面板内容宿主(每次只显示一个)
+//   #files-menu            ← 右键菜单(所有面板共享)
+
+const MAX_PANELS = 5; // 面板上限 / Panel limit
+
+interface PanelState {
+  id: number;
+  el: HTMLElement;        // 面板内容 DOM(.files-panel)
+  controller: SinglePanelController;
+  cwd: string;            // 最后一次设置的 cwd / Last cwd set
+}
+
+let panelIdCounter = 0;
+
+/**
+ * 多面板入口:在 container 内挂载面板标签栏 + 面板宿主。
+ * container 需要含 .files-panel-bar / .files-panel-host / #files-menu。
+ */
+export function mountFilesPane(container: HTMLElement, lang: Lang): FilesPaneController {
+  const menu = container.querySelector<HTMLElement>('#files-menu')!;
+  const panelBar = container.querySelector<HTMLElement>('.files-panel-bar')!;
+  const panelHost = container.querySelector<HTMLElement>('.files-panel-host')!;
+
+  const panels: PanelState[] = [];
+  let activeIndex = 0;
+
+  // 全局右键菜单 target(所有面板共享一个 #files-menu)。
+  // 各面板的 showMenu 会把 target 写到这里,menu 按钮的 handler 也从这里读。
+  let globalMenuTarget: DirEntry | null = null;
+  const setMenuTarget = (e: DirEntry | null) => { globalMenuTarget = e; };
+
+  // 绑定右键菜单按钮(只绑一次,所有面板共享)。
+  // fm-edit 需要在当前活跃面板打开编辑器,所以在这里绑(闭包能访问 panels)。
+  bindMenuHandlers(menu, () => globalMenuTarget);
+  menu.querySelector<HTMLElement>('#fm-edit')!.onclick = () => {
+    const target = globalMenuTarget;
+    if (target && panels[activeIndex]) panels[activeIndex].controller.openEditor(target.path);
+    menu.hidden = true;
+  };
+
+  // 「+」按钮:新建面板 / Add button: create new panel
+  const addBtn = document.createElement('button');
+  addBtn.className = 'fp-add';
+  addBtn.title = t(lang, 'files.newPanel');
+  addBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>';
+  addBtn.onclick = () => addPanel('');
+
+  function renderBar(): void {
+    panelBar.innerHTML = '';
+
+    panels.forEach((p, i) => {
+      const tab = document.createElement('div');
+      tab.className = 'fp-tab' + (i === activeIndex ? ' active' : '');
+      const label = document.createElement('span');
+      label.className = 'fp-label';
+      const dirname = p.cwd ? p.cwd.replace(/\\/g, '/').split('/').pop() || p.cwd : t(lang, 'files.panelDefault');
+      label.textContent = dirname;
+      label.title = p.cwd || t(lang, 'files.panelDefault');
+      tab.appendChild(label);
+
+      // 关闭按钮(只有 >1 个面板时才显示)/ Close button (only when >1 panel)
+      if (panels.length > 1) {
+        const closeBtn = document.createElement('button');
+        closeBtn.className = 'fp-close';
+        closeBtn.innerHTML = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>';
+        closeBtn.onclick = (ev) => { ev.stopPropagation(); closePanel(i); };
+        tab.appendChild(closeBtn);
+      }
+
+      tab.onclick = () => switchPanel(i);
+      panelBar.appendChild(tab);
+    });
+
+    // 「+」按钮(达到上限时隐藏)/ Add button (hidden at cap)
+    if (panels.length < MAX_PANELS) panelBar.appendChild(addBtn);
+  }
+
+  function switchPanel(i: number): void {
+    if (i < 0 || i >= panels.length) return;
+    activeIndex = i;
+    panels.forEach((p, idx) => { p.el.style.display = idx === i ? '' : 'none'; });
+    renderBar();
+  }
+
+  function addPanel(cwd: string): void {
+    if (panels.length >= MAX_PANELS) return;
+    const el = document.createElement('div');
+    el.className = 'files-panel';
+    el.setAttribute('data-panel', '');
+    el.innerHTML = PANEL_HTML;
+    panelHost.appendChild(el);
+    const ctrl = mountSinglePanel(el, lang, menu, setMenuTarget);
+    const state: PanelState = { id: ++panelIdCounter, el, controller: ctrl, cwd: cwd || '' };
+    panels.push(state);
+    if (cwd) ctrl.setCwd(cwd);
+    switchPanel(panels.length - 1);
+  }
+
+  function closePanel(i: number): void {
+    if (panels.length <= 1) return;
+    const p = panels[i];
+    p.controller.destroy?.();
+    p.el.remove();
+    panels.splice(i, 1);
+    if (activeIndex >= panels.length) activeIndex = panels.length - 1;
+    switchPanel(activeIndex);
+  }
+
+  // 初始化:创建第一个面板 / Init: create first panel
+  addPanel('');
+
+  // 独立窗口场景:主进程会推 cwd;内联场景 app.ts 主动调 setCwd。
+  window.kinet.onFilesCwd((c: string) => {
+    if (panels[activeIndex]) {
+      panels[activeIndex].cwd = c;
+      panels[activeIndex].controller.setCwd(c);
+      renderBar();
+    }
+  });
+
+  return {
+    setCwd(cwd: string) {
+      if (panels[activeIndex]) {
+        panels[activeIndex].cwd = cwd;
+        panels[activeIndex].controller.setCwd(cwd);
+        renderBar();
+      }
+    },
+  };
+}
+
+// ─── 单面板逻辑 ──────────────────────────────────────────────
+
+interface SinglePanelController {
+  setCwd(cwd: string): void;
+  openEditor(abs: string): void;
+  destroy?(): void;
+}
+
+// 单面板 HTML 模板 / Single panel HTML template
+const PANEL_HTML = `
+  <div class="files-head">
+    <button class="ghost" data-btn="pick" data-i18n-title="files.pickDir" title="切换目录"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+    <span class="files-cwd" data-el="cwd"></span>
+    <span class="files-spacer"></span>
+    <div class="files-tabs">
+      <button class="ftab active" data-btn="tab-preview" data-i18n="files.tabPreview">预览</button>
+      <button class="ftab" data-btn="tab-edit" data-i18n="files.tabEdit">编辑</button>
+    </div>
+    <button class="ghost" data-btn="back" data-i18n-title="files.back" title="后退"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+    <button class="ghost" data-btn="reload" data-i18n-title="files.reload" title="刷新"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
+    <input class="files-addr" data-el="addr" data-i18n-placeholder="files.addrPh" placeholder="file:// 或 https:// 或 localhost:8000" />
+  </div>
+  <div class="files-body">
+    <div class="files-tree" data-el="tree"></div>
+    <div class="files-view">
+      <webview data-el="webview" src="about:blank" partition="persist:files"></webview>
+      <div class="files-editor" data-el="editor-pane" hidden>
+        <div class="files-editor-bar">
+          <span class="fe-status" data-el="fe-status"></span>
+          <span class="files-spacer"></span>
+          <button class="primary" data-btn="save" data-i18n="files.save">保存</button>
+        </div>
+      </div>
+    </div>
+  </div>
+`;
+
+function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setMenuTarget: (e: DirEntry | null) => void): SinglePanelController {
   const api = window.kinet;
   let cwd = '';
-  let menuTarget: DirEntry | null = null;
-  // 当前编辑器/预览加载的文件绝对路径(空 = 未加载)。两视图共用一份"当前文件"。
   let currentAbs = '';
   let editorDirty = false;
 
-  const webview = root.querySelector<HTMLElement>('#files-webview') as unknown as WebviewLike;
-  const addr = root.querySelector<HTMLInputElement>('#files-addr')!;
-  const treeEl = root.querySelector<HTMLElement>('#files-tree')!;
-  const cwdLabel = root.querySelector<HTMLElement>('#files-cwd')!;
-  const menu = root.querySelector<HTMLElement>('#files-menu')!;
-  const editorPane = root.querySelector<HTMLElement>('#files-editor-pane')!;
-  // CodeEditor 的宿主 div:动态创建,放在 editorPane 内部(在 editor-bar 之前)。
-  // 这样 CodeEditor 撑满 editor-bar 以上的空间,不破坏 bar。
+  const webview = root.querySelector<HTMLElement>('[data-el="webview"]') as unknown as WebviewLike;
+  const addr = root.querySelector<HTMLInputElement>('[data-el="addr"]')!;
+  const treeEl = root.querySelector<HTMLElement>('[data-el="tree"]')!;
+  const cwdLabel = root.querySelector<HTMLElement>('[data-el="cwd"]')!;
+  const editorPane = root.querySelector<HTMLElement>('[data-el="editor-pane"]')!;
+  // CodeEditor 宿主 div:动态创建,放在 editorPane 内部(bar 之前),撑满上方空间。
   const editorHost = document.createElement('div');
   editorHost.style.cssText = 'flex:1;min-height:0;overflow:hidden';
   editorPane.insertBefore(editorHost, editorPane.firstChild);
   let codeEditor: CodeEditor | null = null;
-  const feStatus = root.querySelector<HTMLElement>('#fe-status')!;
-  const ftabPreview = root.querySelector<HTMLElement>('#ftab-preview')!;
-  const ftabEdit = root.querySelector<HTMLElement>('#ftab-edit')!;
+  const feStatus = root.querySelector<HTMLElement>('[data-el="fe-status"]')!;
+  const ftabPreview = root.querySelector<HTMLElement>('[data-btn="tab-preview"]')!;
+  const ftabEdit = root.querySelector<HTMLElement>('[data-btn="tab-edit"]')!;
 
   const tr = (key: string, params?: Record<string, string | number>) => t(lang, key, params);
 
@@ -80,15 +248,15 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
       return;
     }
     const r = await api.listDir(cwd);
-    if (!r.ok || !r.entries) {
+    if (!r.ok) {
       treeEl.innerHTML = `<div class="files-empty">${tr('files.errRead', { msg: r.error ?? '' })}</div>`;
       return;
     }
-    treeEl.innerHTML = '';
-    if (!r.entries.length) {
+    if (!r.entries?.length) {
       treeEl.innerHTML = `<div class="files-empty">${tr('files.empty')}</div>`;
       return;
     }
+    treeEl.innerHTML = '';
     for (const e of r.entries) treeEl.appendChild(entryEl(e));
   }
 
@@ -117,7 +285,7 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
     } else {
       row.oncontextmenu = (ev) => { ev.preventDefault(); showMenu(ev, e); };
-      // 单击 = 选中 + 立即打开(按后缀选预览或编辑器)。保留选中态视觉,但不再强制双击。
+      // 单击 = 选中 + 立即打开(按后缀选预览或编辑器)。
       row.onclick = () => {
         selectRow(row);
         if (isPreviewExt(e.path)) { setTab('preview'); loadFile(e.path); }
@@ -127,7 +295,6 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     return div;
   }
 
-  // 文件树选中态:点过的行高亮(其他清掉)。目录展开/收起不参与"选中"。
   let selectedRow: HTMLElement | null = null;
   function selectRow(row: HTMLElement): void {
     if (selectedRow) selectedRow.classList.remove('selected');
@@ -151,7 +318,7 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   }
 
   function showMenu(ev: MouseEvent, e: DirEntry): void {
-    menuTarget = e;
+    setMenuTarget(e);
     menu.style.left = Math.min(ev.clientX, window.innerWidth - 180) + 'px';
     menu.style.top = Math.min(ev.clientY, window.innerHeight - 80) + 'px';
     menu.hidden = false;
@@ -167,20 +334,14 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     return 'https://' + s;
   }
 
-  // 按后缀决定默认视图:HTML/图片/PDF 走预览,其他走编辑器。
   function isPreviewExt(p: string): boolean {
     return /\.(html?|svg|png|jpe?g|gif|webp|bmp|ico|pdf|css)$/i.test(p);
   }
 
   function loadFile(abs: string): void {
     currentAbs = abs;
-    // 三斜杠:Unix /x → 'file:///x';Windows C:\x → 'file:///C:/x'。
-    // 反斜杠先转 /,encodeURI 转义空格/中文(保留 URL 结构字符)。
     const absenc = abs.replace(/\\/g, '/').replace(/^\/+/, '');
     const url = 'file:///' + encodeURI(absenc);
-    // loadURL 触发渲染;src 赋值同步属性让后续 did-navigate / 地址栏对得上。
-    // 两个都设是为了:(a) loadURL 在 src 已是同 URL 时不会重载,src 赋值确保下一次不同 URL 必重载;
-    // (b) 单独 src = url 在某些 Electron 版本对 file:// 不触发实际 navigation。
     webview.src = url;
     webview.loadURL(url);
     addr.value = url;
@@ -188,21 +349,18 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
   async function loadEditor(abs: string): Promise<void> {
     currentAbs = abs;
-    // 立即切到编辑器视图并显示「加载中」(避免双击后 UI 静止,看上去卡)。
     setTab('edit');
     addr.value = 'file://' + abs;
     feStatus.textContent = abs + ' · …';
 
-    // 销毁旧实例,按文件扩展名创建对应语言的编辑器。
     if (codeEditor) { codeEditor.destroy(); codeEditor = null; }
-    const lang = detectLang(abs);
-    codeEditor = new CodeEditor(editorHost, { lang, autoHeight: false });
-    codeEditor.value = ''; // 占位（loading 状态）
+    const detectedLang = detectLang(abs);
+    codeEditor = new CodeEditor(editorHost, { lang: detectedLang, autoHeight: false });
+    codeEditor.value = '';
     codeEditor.onChange = (v) => { editorDirty = true; feStatus.textContent = (currentAbs || '') + ' · 未保存'; };
 
     const r = await api.fileRead(abs);
     if (!r.ok || r.content == null) {
-      // 二进制文件或读取失败:显示错误而不是崩溃。
       codeEditor.value = '';
       feStatus.textContent = `${abs} · ${r.error ?? 'read error'}`;
       return;
@@ -212,7 +370,6 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     feStatus.textContent = abs;
   }
 
-  // 切右侧视图:preview = 显示 webview,隐藏 editor;反之亦然。
   function setTab(mode: 'preview' | 'edit'): void {
     const isEdit = mode === 'edit';
     editorPane.hidden = !isEdit;
@@ -233,44 +390,28 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
   }
 
   // 头部按钮 + 地址栏 + webview 事件
-  root.querySelector<HTMLElement>('#btn-pick')!.onclick = async () => {
+  root.querySelector<HTMLElement>('[data-btn="pick"]')!.onclick = async () => {
     const dir = await api.pickDirectory();
     if (dir) setCwd(dir);
   };
-  root.querySelector<HTMLElement>('#btn-back')!.onclick = () => webview.goBack();
-  root.querySelector<HTMLElement>('#btn-reload')!.onclick = () => webview.reload();
+  root.querySelector<HTMLElement>('[data-btn="back"]')!.onclick = () => webview.goBack();
+  root.querySelector<HTMLElement>('[data-btn="reload"]')!.onclick = () => webview.reload();
   addr.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') webview.loadURL(normalizeURL(addr.value));
   });
   webview.addEventListener('did-navigate', (e) => (addr.value = e.url));
   webview.addEventListener('did-navigate-in-page', (e) => (addr.value = e.url));
 
-  // tab 切换:切到目标 tab 时,若已有当前文件,用对应 loader 重新加载内容
-  // (loadFile 只灌 webview / loadEditor 只灌编辑器,切 tab 时对面是空的,得重灌)。
+  // tab 切换:切到目标 tab 时,若已有当前文件,用对应 loader 重新加载内容。
   ftabPreview.onclick = () => { setTab('preview'); if (currentAbs && isPreviewExt(currentAbs)) loadFile(currentAbs); };
   ftabEdit.onclick = () => { if (currentAbs) void loadEditor(currentAbs); };
-  root.querySelector<HTMLElement>('#btn-save')!.onclick = () => void save();
-  // Ctrl+S 在 editorPane 上委托（CodeEditor 内部不拦截 Ctrl+S）
+  root.querySelector<HTMLElement>('[data-btn="save"]')!.onclick = () => void save();
   editorPane.addEventListener('keydown', (ev) => {
     if ((ev.ctrlKey || ev.metaKey) && ev.key === 's') { ev.preventDefault(); void save(); }
   });
 
-  // 右键「在浏览器中打开」= 调起系统默认浏览器(不再灌进内置 webview —— 那是左键单击的行为)。
-  root.querySelector<HTMLElement>('#fm-open')!.onclick = () => {
-    if (menuTarget) {
-      const absenc = menuTarget.path.replace(/\\/g, '/').replace(/^\/+/, '');
-      void api.shellOpen('file:///' + encodeURI(absenc));
-    }
-    hideMenu();
-  };
-  root.querySelector<HTMLElement>('#fm-edit')!.onclick = () => {
-    if (menuTarget) void loadEditor(menuTarget.path);
-    hideMenu();
-  };
-  root.querySelector<HTMLElement>('#fm-copy')!.onclick = () => {
-    if (menuTarget) void window.kinet.clipboardWriteText(menuTarget.path);
-    hideMenu();
-  };
+  // 右键菜单的菜单按钮由多面板层统一绑定(bindMenuHandlers),
+  // 单面板只负责在 showMenu 中设置 target。这里只处理"点外面关闭菜单"。
   root.addEventListener('click', (ev) => {
     if (!(ev.target as HTMLElement)?.closest('.files-menu')) hideMenu();
   });
@@ -280,8 +421,36 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
 
   applyI18nDOM();
 
-  // 独立窗口场景:主进程会推 cwd(开窗时 did-finish-load → send 'files-cwd');内联场景 app.ts 主动调 setCwd。
-  api.onFilesCwd((c) => setCwd(c));
+  return {
+    setCwd,
+    openEditor: (abs: string) => void loadEditor(abs),
+    destroy() {
+      if (codeEditor) { codeEditor.destroy(); codeEditor = null; }
+    },
+  };
+}
 
-  return { setCwd };
+// ─── 右键菜单(多面板共享,只绑一次) ──────────────────────────
+
+/**
+ * 绑定 #files-menu 的 fm-open / fm-copy(无面板依赖的操作)。
+ * fm-edit 需要在 mountFilesPane 闭包中单独绑(访问活跃面板的 controller)。
+ */
+function bindMenuHandlers(menu: HTMLElement, getTarget: () => DirEntry | null): void {
+  const api = window.kinet;
+
+  menu.querySelector<HTMLElement>('#fm-open')!.onclick = () => {
+    const target = getTarget();
+    if (target) {
+      const absenc = target.path.replace(/\\/g, '/').replace(/^\/+/, '');
+      void api.shellOpen('file:///' + encodeURI(absenc));
+    }
+    menu.hidden = true;
+  };
+
+  menu.querySelector<HTMLElement>('#fm-copy')!.onclick = () => {
+    const target = getTarget();
+    if (target) void api.clipboardWriteText(target.path);
+    menu.hidden = true;
+  };
 }

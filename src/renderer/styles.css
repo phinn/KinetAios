@@ -453,6 +453,21 @@ a { color: var(--accent); }
 .chat-content[hidden] { display: none; }
 .chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-files-pane[hidden] { display: none; }
+
+/* 多面板标签栏 / Multi-panel tab bar */
+.files-panel-bar { display: flex; align-items: center; gap: 0; padding: 0 6px; border-bottom: 1px solid var(--border); background: var(--bg-side); min-height: 32px; flex-shrink: 0; }
+.fp-tab { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px 5px 12px; cursor: pointer; font-size: 12px; color: var(--text-dim); border-right: 1px solid var(--border); border-radius: 0; transition: background .1s, color .1s; white-space: nowrap; }
+.fp-tab:hover { background: var(--bg-elev); color: var(--text); }
+.fp-tab.active { background: var(--bg); color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
+.fp-label { max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+.fp-close { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: none; background: transparent; color: var(--text-faint); cursor: pointer; border-radius: 4px; padding: 0; flex-shrink: 0; }
+.fp-close:hover { background: var(--bg-input); color: var(--text); }
+.fp-add { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; margin-left: 4px; border-radius: 4px; padding: 0; flex-shrink: 0; }
+.fp-add:hover { background: var(--bg-elev); color: var(--accent); }
+/* 面板宿主 + 单个面板 / Panel host + individual panel */
+.files-panel-host { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.files-panel { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.files-panel[style*="display: none"], .files-panel[style*="display:none"] { display: none !important; }
 .chat-git-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-git-pane[hidden] { display: none; }
 .chat-rules-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
