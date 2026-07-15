@@ -14,7 +14,7 @@ export type ChatMsg = {
   content: string | ContentPart[] | null;
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
-  [k: string]: unknown;
+  [k: string]: unknown; // _memory, _pinned 等标记字段
 };
 
 export type APIProtocol = 'openai' | 'anthropic';
@@ -99,6 +99,7 @@ export type AgentEvent =
   | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
+  | { type: 'context'; action: 'compacted' | 'trimmed'; beforeTokens: number; afterTokens: number } // 上下文压缩事件 → renderer 可视化
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -132,6 +133,7 @@ export type Turn = {
   costUSD: number;
   tokensIn: number;
   tokensOut: number;
+  pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
 };
 
 export type ConvStatus = 'ready' | 'running';
@@ -371,6 +373,21 @@ export interface KinetAPI {
   exportConversation(convId: string, format: ExportFormat): Promise<{ ok: boolean; path?: string; error?: string }>;
   // ── Arena Diff ──
   arenaDiff(leftConvId: string, rightConvId: string): Promise<{ ok: boolean; diff?: string; leftEngine?: string; rightEngine?: string; error?: string }>;
+  // ── 上下文压缩可视化 ──
+  // 估算指定会话的当前 token 使用量(用校准系数,和 trim/compact 同源)。
+  estContextTokens(convId: string): Promise<{ tokens: number; modelMax: number; pct: number }>;
+  // 锁定/解锁一个 turn → pinned turn 在 compact 时永远保留(不被摘要压缩)。
+  pinTurn(convId: string, turnId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>;
+  // ── 跨会话引用 + Agent 任务图 ──
+  // 任务图:返回所有会话间的 DAG 关系(分支/引用/pipeline)。
+  taskGraph(): Promise<{ nodes: Array<{ id: string; engine: string; cwd: string; createdAt: number; customTitle: string | null; turns: number; cost: number }>; edges: Array<{ from: string; to: string; type: string; meta?: Record<string, unknown> }> }>;
+  // 搜索会话(按标题/prompt 内容模糊匹配,给 @conv: 引用补全用)。
+  searchConversations(query: string): Promise<Array<{ id: string; title: string; engine: string; turns: number; lastActive: number }>>;
+  // ── 会话交接(多机协作)──
+  exportSessionState(convId: string): Promise<{ ok: boolean; json?: string; error?: string }>;
+  importSessionState(sessionJson: string): Promise<{ ok: boolean; convId?: string; error?: string }>;
+  // ── 记忆同步(多机共享记忆)──
+  syncMemoriesWithRemote(serverName: string): Promise<{ ok: boolean; added?: number; total?: number; error?: string }>;
   // ── 系统级截图(renderer getDisplayMedia → canvas 截帧)──
   captureScreen(): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   // ── 语音转写(renderer 录音 → main 调 /audio/transcriptions)──
@@ -448,6 +465,12 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       break;
     case 'status':
       conv.statusNote = ev.text;
+      break;
+    case 'context':
+      // 压缩事件:在 statusNote 里显示(可视化提示)。UI 可额外渲染进度条。
+      conv.statusNote = ev.action === 'compacted'
+        ? `已自动压缩 ${ev.beforeTokens} → ${ev.afterTokens} tokens(早期对话摘要)`
+        : `上下文过长,已裁剪 ${ev.beforeTokens} → ${ev.afterTokens} tokens`;
       break;
     case 'sessionStarted':
       conv.engineSessionId = ev.id;

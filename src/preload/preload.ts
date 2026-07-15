@@ -89,6 +89,17 @@ const api: KinetAPI = {
   exportConversation: (convId, format) => ipcRenderer.invoke('export-conversation', convId, format),
   // Arena Diff
   arenaDiff: (leftConvId, rightConvId) => ipcRenderer.invoke('arena-diff', leftConvId, rightConvId),
+  // 上下文压缩可视化
+  estContextTokens: (convId) => ipcRenderer.invoke('est-context-tokens', convId),
+  pinTurn: (convId, turnId, pinned) => ipcRenderer.invoke('pin-turn', convId, turnId, pinned),
+  // 跨会话引用 + Agent 任务图
+  taskGraph: () => ipcRenderer.invoke('task-graph'),
+  searchConversations: (query) => ipcRenderer.invoke('search-conversations', query),
+  // 会话交接
+  exportSessionState: (convId) => ipcRenderer.invoke('export-session-state', convId),
+  importSessionState: (sessionJson) => ipcRenderer.invoke('import-session-state', sessionJson),
+  // 记忆同步
+  syncMemoriesWithRemote: (serverName) => ipcRenderer.invoke('sync-memories-remote', serverName),
   // 系统级截图
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
   // 语音转写

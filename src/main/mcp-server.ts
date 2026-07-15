@@ -62,6 +62,51 @@ const RUN_AGENT_TOOL_MCP: Record<string, unknown> = {
   },
 };
 
+// ── export_session:导出本机指定会话的完整状态(给任务交接用)──
+// 机器 A 跑到一半 → export_session → 把 JSON 发给机器 B → B import_session 接着跑。
+const EXPORT_SESSION_TOOL_MCP: Record<string, unknown> = {
+  name: 'export_session',
+  description: '[远程 Agent] 导出指定会话的完整状态(turns + directHistory + engine + cwd),用于任务交接。返回 JSON 串。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      convId: { type: 'string', description: '要导出的会话 ID。省略 = 导出最近活跃的会话。' },
+    },
+  },
+};
+
+// ── import_session:导入一台远程机器导出的会话状态,在本机继续执行 ──
+// 接收 export_session 的 JSON → 在本机创建新会话 → 下一轮 send 时接续上下文。
+const IMPORT_SESSION_TOOL_MCP: Record<string, unknown> = {
+  name: 'import_session',
+  description: '[远程 Agent] 导入一台远程机器导出的会话状态,在本机创建对应会话。传入 export_session 的 JSON 串。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      sessionJson: { type: 'string', description: 'export_session 返回的 JSON 串' },
+    },
+    required: ['sessionJson'],
+  },
+};
+
+// ── sync_memories:同步记忆库(团队共享记忆)──
+// 远程机器把自己的 memories 发过来,本机合并去重存入;同时返回本机的全部 memories。
+// 实现"团队共享记忆":多台机器各自的记忆汇聚到一起。
+const SYNC_MEMORIES_TOOL_MCP: Record<string, unknown> = {
+  name: 'sync_memories',
+  description: '[远程 Agent] 双向同步记忆库:把远程 memories 合并到本机,同时返回本机的全部 memories。实现多机共享长期记忆。',
+  inputSchema: {
+    type: 'object',
+    properties: {
+      memories: {
+        type: 'array',
+        items: { type: 'string' },
+        description: '远程机器的记忆列表(字符串数组)',
+      },
+    },
+  },
+};
+
 /** 远程 Agent 事件类型从 shared/types.ts 导入(主进程与 renderer 共享)。 */
 
 const PROTOCOL_VERSION = '2024-11-05';
@@ -259,10 +304,10 @@ export class LocalMcpServer {
         return {};
 
       case 'tools/list':
-        // 多机协作核心:远程节点只暴露 run_agent 一个工具。
+        // 多机协作核心:远程节点暴露 run_agent + 会话交接 + 记忆同步工具。
         // 不暴露细粒度工具(shell/read_file/...)——远程文件路径、cwd、上下文都在远程机器上,
         // 让本地 LLM 逐条调远程工具极不稳定且容易出错。正确做法是远程起完整 Agent 自主完成任务。
-        return { tools: [RUN_AGENT_TOOL_MCP] };
+        return { tools: [RUN_AGENT_TOOL_MCP, EXPORT_SESSION_TOOL_MCP, IMPORT_SESSION_TOOL_MCP, SYNC_MEMORIES_TOOL_MCP] };
 
       case 'tools/call': {
         const params = msg.params as { name?: string; arguments?: Record<string, unknown> } ?? {};
@@ -276,6 +321,36 @@ export class LocalMcpServer {
             return { content: [{ type: 'text', text: result }], isError: false };
           } catch (e) {
             return { content: [{ type: 'text', text: `远程 Agent 执行失败: ${(e as Error).message}` }], isError: true };
+          }
+        }
+
+        // ── export_session:导出会话状态(任务交接)──
+        if (name === 'export_session') {
+          try {
+            const json = this.exportSession(args);
+            return { content: [{ type: 'text', text: json }], isError: false };
+          } catch (e) {
+            return { content: [{ type: 'text', text: `导出会话失败: ${(e as Error).message}` }], isError: true };
+          }
+        }
+
+        // ── import_session:导入会话状态(任务交接)──
+        if (name === 'import_session') {
+          try {
+            const result = this.importSession(args);
+            return { content: [{ type: 'text', text: result }], isError: false };
+          } catch (e) {
+            return { content: [{ type: 'text', text: `导入会话失败: ${(e as Error).message}` }], isError: true };
+          }
+        }
+
+        // ── sync_memories:双向同步记忆库 ──
+        if (name === 'sync_memories') {
+          try {
+            const result = this.syncMemories(args);
+            return { content: [{ type: 'text', text: result }], isError: false };
+          } catch (e) {
+            return { content: [{ type: 'text', text: `记忆同步失败: ${(e as Error).message}` }], isError: true };
           }
         }
 
@@ -386,6 +461,78 @@ export class LocalMcpServer {
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  // ── 导出会话状态(任务交接)──
+  // 把指定会话(默认最近活跃的)序列化成 JSON 串,包含 turns + directHistory + engine + cwd + model。
+  // 远程机器收到后 import_session 创建对应会话,接续上下文继续执行。
+  private exportSession(args: Record<string, unknown>): string {
+    const convId = String(args.convId ?? '');
+    // 需要访问 TaskManager —— 通过 dynamic import 避免循环依赖。
+    const { taskManager } = require('./main-instance') as { taskManager: import('./TaskManager').TaskManager };
+    const conv = convId ? taskManager.get(convId) : taskManager.list()[0];
+    if (!conv) throw new Error(convId ? `会话 ${convId} 不存在` : '无可用会话');
+    const state = {
+      version: 1,
+      conv: {
+        engine: conv.engine,
+        model: conv.model,
+        cwd: conv.cwd,
+        customTitle: conv.customTitle,
+        turns: conv.turns,
+        directHistory: conv.directHistory,
+        engineSessionId: conv.engineSessionId,
+        cost: conv.cost,
+        tokens: conv.tokens,
+      },
+      exportedAt: Date.now(),
+    };
+    return JSON.stringify(state);
+  }
+
+  // ── 导入会话状态(任务交接)──
+  // 接收 export_session 的 JSON → 在本机创建新会话 → turns + directHistory 恢复。
+  // 返回新会话 ID,远程方可用 run_agent 在这个会话上继续执行。
+  private importSession(args: Record<string, unknown>): string {
+    const json = String(args.sessionJson ?? '');
+    if (!json) throw new Error('缺少 sessionJson 参数');
+    const state = JSON.parse(json) as { version: number; conv: { engine: import('../shared/types').EngineKind; model: string; cwd: string; customTitle: string | null; turns: import('../shared/types').Turn[]; directHistory: import('../shared/types').ChatMsg[]; engineSessionId: string | null; cost: number; tokens: number } };
+    if (!state.conv) throw new Error('无效的会话 JSON');
+    const { taskManager } = require('./main-instance') as { taskManager: import('./TaskManager').TaskManager };
+    const c = state.conv;
+    const conv = taskManager.newConversation(c.cwd || process.cwd(), c.engine || 'direct');
+    conv.customTitle = `[交接] ${c.customTitle || c.turns[0]?.prompt.slice(0, 20) || 'Session'}`;
+    conv.turns = c.turns ?? [];
+    conv.directHistory = c.directHistory ?? [];
+    conv.engineSessionId = c.engineSessionId ?? null;
+    conv.cost = c.cost ?? 0;
+    conv.tokens = c.tokens ?? 0;
+    // 持久化导入的 turns
+    const { saveConversation, saveTurn } = require('./store') as typeof import('./store');
+    saveConversation(conv);
+    for (const t of conv.turns) saveTurn(conv.id, t);
+    return JSON.stringify({ ok: true, convId: conv.id, message: `已导入会话(${conv.turns.length} turns),可继续执行` });
+  }
+
+  // ── 双向同步记忆库 ──
+  // 远程机器的 memories 合并到本机(去重),同时返回本机的全部 memories。
+  // 多台机器各自跑 → 定期 sync_memories → 记忆库逐渐趋同。
+  private syncMemories(args: Record<string, unknown>): string {
+    const remoteMems = Array.isArray(args.memories) ? (args.memories as unknown[]).filter((x): x is string => typeof x === 'string') : [];
+    const { allMemoryContents, addMemory } = require('./store') as typeof import('./store');
+    // 合并:远程有但本地没有的 → 添加
+    const localSet = new Set(allMemoryContents());
+    let added = 0;
+    for (const m of remoteMems) {
+      if (m && !localSet.has(m)) {
+        addMemory(m);
+        localSet.add(m);
+        added++;
+      }
+    }
+    // 返回本机全量(远程方拿回去合并)
+    const all = allMemoryContents();
+    return JSON.stringify({ ok: true, addedCount: added, totalLocal: all.length, memories: all });
   }
 
   private jsonRpc(res: ServerResponse, status: number, body: McpJsonRpcResponse): void {

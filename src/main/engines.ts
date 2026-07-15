@@ -42,6 +42,7 @@ export interface EngineRunOpts {
   rulesBlock?: string; // KINET.md 内容(app UI 维护的项目规则,三套引擎都要遵守)
   contextBlock?: string; // KINET-CONTEXT.md(项目级背景知识,所有任务共享)
   skillBlock?: string; // Direct only: body of a /<skill> the user invoked this turn
+  refBlock?: string; // 跨会话引用内容(@conv:xxx 解析后的被引用会话输出)
   signal: AbortSignal;
   onEvent: (e: AgentEvent) => void;
 }
@@ -92,7 +93,7 @@ export function loadContextBlock(cwd: string): string {
 class DirectEngine implements Engine {
   readonly name = 'direct' as const;
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
-  async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
+  async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     // Per-conversation model (Direct only). Falls back to the global setting for old convs.
     const base = snapshot();
@@ -137,19 +138,22 @@ class DirectEngine implements Engine {
     };
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    const refSection = refBlock ?? '';
     const rulesSection = loadProjectRules(conv.cwd);
     // KINET.md(app UI 维护的项目规则)紧跟 loadProjectRules 之后,与 AGENTS.md/CLAUDE.md 并列。
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
     // memoryBlock 走 history[0] 注入(见 runAgentLoop 的 memMsg),不拼进 systemPrompt ——
     // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿。
+    // refBlock 拼到 userInput 后面(每轮动态,不进 systemPrompt → 不破坏缓存)。
+    const userInput = refSection ? prompt + refSection : prompt;
     const updated = await runAgentLoop({
       provider,
       tools,
       systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? ''),
       memoryBlock,
       snapshot: snap,
-      userInput: prompt,
+      userInput,
       history: conv.directHistory,
       ctx,
       signal,
@@ -306,8 +310,9 @@ function safeStringify(v: unknown): string {
 // MARK: Claude Code (claude -p --output-format stream-json). Verbatim port of the Swift parser.
 class ClaudeCodeEngine implements Engine {
   readonly name = 'claudeCode' as const;
-  async run({ conv, memoryBlock, rulesBlock, contextBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
-    const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
+  async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
+    const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
+    const prompt = refBlock ? basePrompt + refBlock : basePrompt;
     const cwd = conv.cwd;
     const s = getSettings();
     const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
@@ -390,8 +395,9 @@ class ClaudeCodeEngine implements Engine {
 // MARK: Codex (codex exec --json). Verbatim port of the Swift parser.
 class CodexEngine implements Engine {
   readonly name = 'codex' as const;
-  async run({ conv, memoryBlock, rulesBlock, contextBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
-    const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
+  async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
+    const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
+    const prompt = refBlock ? basePrompt + refBlock : basePrompt;
     const cwd = conv.cwd;
     const s = getSettings();
     const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;

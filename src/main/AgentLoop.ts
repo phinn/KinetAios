@@ -72,8 +72,13 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       // 超长兜底:API 报上下文过长时,更激进 trim(预算砍半)后重试本轮一次。
       if (!retriedAfterShrink && isContextTooLong(e)) {
         retriedAfterShrink = true;
+        const beforeMsgs = messages;
         messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), 15_000)];
+        // 发压缩事件:让用户知道上下文超长被自动裁剪了
+        const beforeTokens = estTokenCount(beforeMsgs);
+        const afterTokens = estTokenCount(messages);
         onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
+        onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens } as AgentEvent & { type: 'context' });
         i--; // 本轮重试(抵消 for 的 i++)
         continue;
       }
@@ -193,6 +198,18 @@ function estMsgChars(m: ChatMsg): number {
   const tc = Array.isArray(m.tool_calls) ? JSON.stringify(m.tool_calls).length : 0;
   return content.length + tc;
 }
+
+// 导出给 renderer / UI 用:估算一批消息的 token 总量(用当前校准系数)。
+// 用于上下文进度条 —— 用户实时看到当前对话大约用了多少 token。
+export function estTokenCount(msgs: ChatMsg[]): number {
+  if (!msgs.length) return 0;
+  return msgs.reduce((s, m) => s + Math.floor(estMsgChars(m) * tokenCoef) + 20, 0);
+}
+
+// 导出当前系数(UI 可选显示"估算精度")。
+export function getTokenCoef(): number {
+  return tokenCoef;
+}
 // 用这批 messages 的真实 prompt_tokens 校准 tokenCoef(滑动平均 0.5/0.5,抗单轮抖动)。
 function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
   const chars = msgs.reduce((s, m) => s + estMsgChars(m), 0);
@@ -205,11 +222,13 @@ function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
 // Sanitize after trimming: a hard byte-cut can split an assistant(tool_calls) ↔ tool pair, leaving
 // an "orphan" tool message whose assistant was dropped — both OpenAI and Anthropic reject that.
 // 标了 _memory 的消息(长期记忆块)永远保留:它是参考材料,不是对话历史,不该被裁掉。
+// 标了 _pinned 的消息(用户锁定的关键 turn)同样永远保留。
 export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatMsg[] {
   if (!msgs.length) return [];
   const memoryMsgs = msgs.filter((m) => m._memory);
-  const rest = msgs.filter((m) => !m._memory);
-  if (!rest.length) return memoryMsgs;
+  const pinnedMsgs = msgs.filter((m) => m._pinned);
+  const rest = msgs.filter((m) => !m._memory && !m._pinned);
+  if (!rest.length) return [...memoryMsgs, ...pinnedMsgs];
   let total = 0;
   const kept: ChatMsg[] = [];
   for (const m of [...rest].reverse()) {
@@ -218,8 +237,8 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatM
     total += tokens;
     kept.push(m);
   }
-  // 记忆消息本就处于头部,直接 prepend 还原位置。
-  return [...memoryMsgs, ...sanitizeToolPairs(kept.reverse())];
+  // 记忆消息本就处于头部,pinned 紧随其后,直接 prepend 还原位置。
+  return [...memoryMsgs, ...pinnedMsgs, ...sanitizeToolPairs(kept.reverse())];
 }
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
@@ -261,11 +280,12 @@ export async function compactHistory(
   onEvent?: (e: AgentEvent) => void,
 ): Promise<ChatMsg[]> {
   const memoryMsgs = msgs.filter((m) => m._memory);
-  const rest = msgs.filter((m) => !m._memory);
+  const pinnedMsgs = msgs.filter((m) => m._pinned);
+  const rest = msgs.filter((m) => !m._memory && !m._pinned);
   const tail = trimHistoryToTokenBudget(rest, budget);
-  if (tail.length === rest.length) return [...memoryMsgs, ...tail]; // 没超预算,无需摘要
+  if (tail.length === rest.length) return [...memoryMsgs, ...pinnedMsgs, ...tail]; // 没超预算,无需摘要
   const head = rest.slice(0, rest.length - tail.length);
-  if (!head.length) return [...memoryMsgs, ...tail];
+  if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...tail];
   try {
     const sys =
       '你是对话摘要器。把下面这段早期对话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
@@ -289,10 +309,19 @@ export async function compactHistory(
       onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
     }
     const summary = comp.content.trim();
-    if (!summary) return [...memoryMsgs, ...tail];
-    return [...memoryMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
+    if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...tail];
+    // 发压缩事件 → renderer 高亮提示「已自动压缩 headTokens → summaryTokens」。
+    if (onEvent) {
+      const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * tokenCoef) + 20, 0);
+      const summaryTokens = Math.floor(summary.length * tokenCoef) + 20;
+      onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话摘要)` });
+      // 用 cost 事件的 tokensIn/Out 上报压缩 LLM 调用成本(已有,上面 onEvent 里)
+      // 再用一个新的 context 事件报告压缩详情(不影响现有 status 显示)
+      onEvent({ type: 'context', action: 'compacted', beforeTokens: headTokens, afterTokens: summaryTokens } as AgentEvent & { type: 'context' });
+    }
+    return [...memoryMsgs, ...pinnedMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
   } catch {
-    return [...memoryMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
+    return [...memoryMsgs, ...pinnedMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
   }
 }
 

@@ -7,13 +7,14 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
+import { setTaskManager } from './main-instance';
 import { getSettings, saveSettings } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
@@ -24,7 +25,7 @@ import { allTools } from './tools';
 import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
-import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, CustomTool, EngineKind, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig } from '../shared/types';
+import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, CustomTool, EngineKind, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
 
@@ -1088,6 +1089,105 @@ function registerIpc(): void {
     }
   });
 
+  // ── 上下文压缩可视化:估算会话 token 使用量 ──
+  ipcMain.handle('est-context-tokens', (_e, convId: string) => {
+    return taskManager.estContextTokens(convId);
+  });
+
+  // ── Pin/Unpin Turn:锁定的 turn 不被 compact 压缩 ──
+  ipcMain.handle('pin-turn', (_e, convId: string, turnId: string, pinned: boolean) => {
+    return { ok: taskManager.pinTurn(convId, turnId, pinned) };
+  });
+
+  // ── 跨会话引用 + Agent 任务图 ──
+  ipcMain.handle('task-graph', () => {
+    return loadTaskGraph();
+  });
+
+  ipcMain.handle('search-conversations', (_e, query: string) => {
+    const q = (query ?? '').toLowerCase().trim();
+    const all = taskManager.list();
+    if (!q) return all.slice(0, 20).map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+    return all
+      .filter((c) => {
+        const title = (c.customTitle || '').toLowerCase();
+        const firstPrompt = (c.turns[0]?.prompt || '').toLowerCase();
+        return title.includes(q) || firstPrompt.includes(q) || c.id.toLowerCase().includes(q);
+      })
+      .slice(0, 20)
+      .map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+  });
+
+  // ── 会话交接:导出会话状态 ──
+  ipcMain.handle('export-session-state', (_e, convId: string) => {
+    try {
+      const conv = taskManager.get(convId);
+      if (!conv) return { ok: false, error: '会话不存在' };
+      const state = {
+        version: 1,
+        conv: {
+          engine: conv.engine,
+          model: conv.model,
+          cwd: conv.cwd,
+          customTitle: conv.customTitle,
+          turns: conv.turns,
+          directHistory: conv.directHistory,
+          engineSessionId: conv.engineSessionId,
+          cost: conv.cost,
+          tokens: conv.tokens,
+        },
+        exportedAt: Date.now(),
+      };
+      return { ok: true, json: JSON.stringify(state) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 会话交接:导入会话状态 ──
+  ipcMain.handle('import-session-state', (_e, sessionJson: string) => {
+    try {
+      const state = JSON.parse(sessionJson) as { conv: { engine: EngineKind; model: string; cwd: string; customTitle: string | null; turns: Turn[]; directHistory: ChatMsg[]; engineSessionId: string | null; cost: number; tokens: number } };
+      if (!state.conv) return { ok: false, error: '无效的会话 JSON' };
+      const c = state.conv;
+      const conv = taskManager.newConversation(c.cwd || os.homedir(), c.engine || 'direct');
+      conv.customTitle = `[交接] ${c.customTitle || c.turns[0]?.prompt.slice(0, 20) || 'Session'}`;
+      conv.turns = c.turns ?? [];
+      conv.directHistory = c.directHistory ?? [];
+      conv.engineSessionId = c.engineSessionId ?? null;
+      conv.cost = c.cost ?? 0;
+      conv.tokens = c.tokens ?? 0;
+      saveConversation(conv);
+      for (const t of conv.turns) saveTurn(conv.id, t);
+      return { ok: true, convId: conv.id };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 记忆同步:与远程节点双向合并记忆库 ──
+  ipcMain.handle('sync-memories-remote', async (_e, serverName: string) => {
+    try {
+      // 先把本机记忆推给远程,远程返回合并后的全量
+      const localMems = allMemoryContents();
+      const result = await mcp.callRemote(serverName, 'sync_memories', { memories: localMems });
+      const parsed = JSON.parse(result) as { addedCount?: number; totalLocal?: number; memories?: string[] };
+      // 再把远程返回的全量合并到本机(可能有远程有但本机没有的)
+      const localSet = new Set(localMems);
+      let added = 0;
+      for (const m of parsed.memories ?? []) {
+        if (m && !localSet.has(m)) {
+          addMemory(m);
+          localSet.add(m);
+          added++;
+        }
+      }
+      return { ok: true, added, total: localSet.size };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   // ── 系统级截图 ──
   // desktopCapturer 在 main 进程可用,但 macOS 需要屏幕录制权限。
   // 如果 main 进程拿不到(权限/版本差异),回退到 renderer 的 getUserMedia。
@@ -1231,6 +1331,8 @@ if (!gotLock) {
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // 把 taskManager 暴露给延迟加载模块(mcp-server 的 export/import session 等)。
+    setTaskManager(taskManager);
     // Watch 模式:把 taskManager 注入 watcher(触发时起会话)+ 给所有现存会话的 cwd 起 watcher(若 .kinet-watch.json 存在)。
     setTaskManagerForWatchers(taskManager);
     for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);

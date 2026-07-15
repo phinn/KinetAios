@@ -202,12 +202,42 @@ export class TaskManager {
       }
     }
 
+    // ── 跨会话引用:解析 @conv:xxx → 把被引用会话的最后一轮 answer 拼到 prompt 前面 ──
+    // 支持多种写法:@conv:abc123 / @session:abc123 / @对话:abc123。
+    // 被引用的会话必须存在,否则忽略(不报错,只发个 status 提示)。
+    const refRe = /@(?:conv|session|对话):([a-zA-Z0-9_-]{4,})/g;
+    const refIds = new Set<string>();
+    let refMatch: RegExpExecArray | null;
+    while ((refMatch = refRe.exec(prompt)) !== null) {
+      refIds.add(refMatch[1]);
+    }
+    let refBlock = '';
+    if (refIds.size > 0) {
+      const refContents: string[] = [];
+      for (const refId of refIds) {
+        const refConv = this.convs.get(refId);
+        if (refConv && refConv.turns.length > 0) {
+          const lastTurn = refConv.turns[refConv.turns.length - 1];
+          const title = refConv.customTitle || refConv.turns[0]?.prompt.slice(0, 30) || refId;
+          refContents.push(`### 引用会话: ${title} (${refId.slice(0, 8)})\n\n${lastTurn.answer.slice(0, 3000)}`);
+          // 记录引用关系到 conv_refs(用于任务图)
+          store.addConvRef(conv.id, refId, refConv.turns.length - 1);
+        } else {
+          this.emit.emitEvent(id, { type: 'status', text: `@conv:${refId.slice(0, 8)} 未找到,已跳过` });
+        }
+      }
+      if (refContents.length) {
+        refBlock = `\n\n# 跨会话引用(以下内容来自其他会话的输出,作为参考)\n${refContents.join('\n\n---\n\n')}\n`;
+      }
+    }
+
     await engine.run({
       conv,
       memoryBlock: this.memoryBlock(conv),
       rulesBlock: loadRulesBlock(conv.cwd),
       contextBlock: loadContextBlock(conv.cwd),
       skillBlock,
+      refBlock,
       signal: ac.signal,
       onEvent: (ev) => this.applyAndPersist(conv, id, ev, prompt, ac.signal),
     }).catch((e) => {
@@ -414,6 +444,47 @@ export class TaskManager {
     // 记录总成本 —— pipeline 的每个 stage 已在 send() 里按 turn 增量记过 cost_log,
     // 这里不再重复记(之前记 conv.cost 累计值会导致重复)。
     return conv.id;
+  }
+
+  // ── 搜索会话(给 @conv: 引用补全用)──
+  searchConversations(query: string): Array<{ id: string; title: string; engine: EngineKind; turns: number; lastActive: number }> {
+    const q = (query ?? '').toLowerCase().trim();
+    const all = this.list();
+    if (!q) return all.slice(0, 20).map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+    return all
+      .filter((c) => {
+        const title = (c.customTitle || '').toLowerCase();
+        const firstPrompt = (c.turns[0]?.prompt || '').toLowerCase();
+        return title.includes(q) || firstPrompt.includes(q) || c.id.toLowerCase().includes(q);
+      })
+      .slice(0, 20)
+      .map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+  }
+
+  // ── 上下文压缩可视化:估算会话 token 使用量 ──
+  // 用 AgentLoop 的校准系数(和 trim/compact 同源),给 UI 进度条用。
+  estContextTokens(convId: string): { tokens: number; modelMax: number; pct: number } {
+    const conv = this.convs.get(convId);
+    if (!conv) return { tokens: 0, modelMax: 128_000, pct: 0 };
+    // 只对 Direct 引擎有意义(CLI 引擎的上下文由各自的 CLI 管理)
+    const { estTokenCount } = require('./AgentLoop') as typeof import('./AgentLoop');
+    const tokens = estTokenCount(conv.directHistory);
+    // 常见模型上下文上限(GLM-4: 128K, Claude: 200K, GPT-4o: 128K)。
+    // ponytail: 硬编码 128K 默认值;后续可按 model 名查表。
+    const modelMax = 128_000;
+    return { tokens, modelMax, pct: Math.min(100, Math.round((tokens / modelMax) * 100)) };
+  }
+
+  // ── Pin/Unpin Turn:锁定的 turn 在 compact 时永远保留 ──
+  pinTurn(convId: string, turnId: string, pinned: boolean): boolean {
+    const conv = this.convs.get(convId);
+    if (!conv) return false;
+    const turn = conv.turns.find((t) => t.id === turnId);
+    if (!turn) return false;
+    turn.pinned = pinned;
+    store.saveTurn(convId, turn);
+    this.emit.emitConversation(conv);
+    return true;
   }
 
   // ── 会话分支 ──

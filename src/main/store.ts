@@ -49,6 +49,11 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, name TEXT, description TEXT, parameters TEXT, command_tpl TEXT, timeout_ms INTEGER, created_at REAL);
     CREATE TABLE IF NOT EXISTS memory_meta(
       memory_id TEXT PRIMARY KEY, weight REAL DEFAULT 1.0, last_used REAL DEFAULT 0, use_count INTEGER DEFAULT 0);
+    -- 跨会话引用:用户在一个会话里 @conv:xxx 引用另一个会话的结果。
+    -- ref_conv 是被引用的会话,source_conv 是引用方(可空 = 临时引用未持久化)。
+    CREATE TABLE IF NOT EXISTS conv_refs(
+      id TEXT PRIMARY KEY, source_conv TEXT, ref_conv TEXT, ref_turn_idx INTEGER,
+      created_at REAL);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -478,4 +483,73 @@ export function decayMemories(): number {
     }
   }
   return pruned;
+}
+
+// MARK: conv_refs — 跨会话引用记录 / Cross-conversation references
+// 用户用 @conv:xxx 引用另一个会话时,记录引用关系(用于任务图 / 可追溯性)。
+export function addConvRef(sourceConv: string | null, refConv: string, refTurnIdx?: number): string {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare('INSERT INTO conv_refs(id, source_conv, ref_conv, ref_turn_idx, created_at) VALUES(?,?,?,?,?);')
+    .run(id, sourceConv, refConv, refTurnIdx ?? null, Date.now() / 1000);
+  return id;
+}
+
+export function loadConvRefs(convId?: string): Array<{ id: string; sourceConv: string | null; refConv: string; refTurnIdx: number | null; createdAt: number }> {
+  if (convId === undefined) {
+    return (db.prepare('SELECT id, source_conv AS sourceConv, ref_conv AS refConv, ref_turn_idx AS refTurnIdx, created_at AS createdAt FROM conv_refs ORDER BY created_at DESC;').all()) as Array<{ id: string; sourceConv: string | null; refConv: string; refTurnIdx: number | null; createdAt: number }>;
+  }
+  return (db.prepare('SELECT id, source_conv AS sourceConv, ref_conv AS refConv, ref_turn_idx AS refTurnIdx, created_at AS createdAt FROM conv_refs WHERE source_conv=? OR ref_conv=? ORDER BY created_at DESC;').all(convId, convId)) as Array<{ id: string; sourceConv: string | null; refConv: string; refTurnIdx: number | null; createdAt: number }>;
+}
+
+export function deleteConvRef(id: string): void {
+  db.prepare('DELETE FROM conv_refs WHERE id=?;').run(id);
+}
+
+// MARK: 任务图(Task Graph)— 查询会话间的 DAG 关系
+// 一个会话可以:① 分支自另一个会话(branchInfo);② 引用另一个会话(conv_refs);
+// ③ 作为 pipeline 的一个 stage;④ 通过 dispatch_agent 派发子任务。
+// 这里提供查询会话间关系的函数,renderer 用它画 DAG 图。
+export interface TaskGraphNode {
+  id: string;
+  engine: string;
+  cwd: string;
+  createdAt: number;
+  customTitle: string | null;
+  turns: number;
+  cost: number;
+}
+
+export interface TaskGraphEdge {
+  from: string; // 源节点 conv id
+  to: string;   // 目标节点 conv id
+  type: 'branch' | 'reference' | 'pipeline' | 'dispatch';
+  meta?: Record<string, unknown>;
+}
+
+export function loadTaskGraph(): { nodes: TaskGraphNode[]; edges: TaskGraphEdge[] } {
+  // 节点:所有会话
+  const convs = loadConversations();
+  const nodes: TaskGraphNode[] = convs.map((c) => ({
+    id: c.id,
+    engine: c.engine,
+    cwd: c.cwd,
+    createdAt: c.createdAt,
+    customTitle: c.customTitle,
+    turns: c.turns.length,
+    cost: c.cost,
+  }));
+  // 边:分支 + 引用(pipeline/dispatch 从 branchInfo 和 conv_refs 推断)
+  const edges: TaskGraphEdge[] = [];
+  for (const c of convs) {
+    if (c.branchInfo) {
+      edges.push({ from: c.branchInfo.sourceConvId, to: c.id, type: 'branch', meta: { turnIdx: c.branchInfo.sourceTurnIdx } });
+    }
+  }
+  const refs = loadConvRefs();
+  for (const r of refs) {
+    if (r.sourceConv) {
+      edges.push({ from: r.sourceConv, to: r.refConv, type: 'reference', meta: { turnIdx: r.refTurnIdx } });
+    }
+  }
+  return { nodes, edges };
 }
