@@ -1478,6 +1478,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('m-cost')!.onclick = () => { closeMoreMenu(); showCost(); };
   document.getElementById('m-ctools')!.onclick = () => { closeMoreMenu(); showCTools(); };
   document.getElementById('m-timeline')!.onclick = () => { closeMoreMenu(); showTimeline(); };
+  document.getElementById('m-mgraph')!.onclick = () => { closeMoreMenu(); void api.openMemoryGraph(); };
 
   // ⋯ 更多菜单:点击切换 open,点外部收起
   const moreMenu = document.getElementById('sb-more-menu')!;
@@ -1542,7 +1543,14 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
 
   // 全局:Escape 关 modal + 点 backdrop 关 modal(三个 modal 都安全,等同 cancel)。
   document.addEventListener('keydown', (e) => {
+    // 全局搜索快捷键 Ctrl+Shift+F / Cmd+Shift+F
+    if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'F') {
+      e.preventDefault();
+      openSearch();
+      return;
+    }
     if (e.key !== 'Escape') return;
+    if (document.getElementById('search-overlay')!.style.display !== 'none') { closeSearch(); return; }
     if (document.getElementById('modal')!.classList.contains('show')) closeConfirm(false);
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
     else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
@@ -3756,3 +3764,141 @@ function openReplay(turnIdx: number): void {
 
   render();
 }
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 全局对话搜索(Ctrl+Shift+F)— 跨所有会话 FTS5 搜索历史对话
+// ──────────────────────────────────────────────────────────────────────
+const searchOverlay = document.getElementById('search-overlay')!;
+const searchInput = document.getElementById('search-input') as HTMLInputElement;
+const searchResults = document.getElementById('search-results')!;
+let searchDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function openSearch(): void {
+  searchOverlay.style.display = 'flex';
+  searchInput.value = '';
+  searchResults.innerHTML = '';
+  searchInput.focus();
+}
+function closeSearch(): void {
+  searchOverlay.style.display = 'none';
+}
+
+function escHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
+}
+
+searchInput.addEventListener('input', () => {
+  if (searchDebounce) clearTimeout(searchDebounce);
+  searchDebounce = setTimeout(async () => {
+    const q = searchInput.value.trim();
+    if (!q) { searchResults.innerHTML = ''; return; }
+    try {
+      const items = await api.searchHistory(q);
+      if (!items.length) {
+        searchResults.innerHTML = `<div class="search-empty">无匹配结果</div>`;
+        return;
+      }
+      searchResults.innerHTML = items.map((r) => {
+        const roleBadge = r.role === 'user' ? '<span class="search-role user">用户</span>' : '<span class="search-role ai">AI</span>';
+        const convBadge = r.convTitle ? `<span class="search-conv">${escHtml(r.convTitle)}</span>` : '';
+        const content = r.content.length > 200 ? r.content.slice(0, 200) + '…' : r.content;
+        const clickable = r.convId ? 'search-clickable' : '';
+        return `<div class="search-item ${clickable}" data-conv-id="${r.convId ?? ''}">${roleBadge}${convBadge}<div class="search-snippet">${escHtml(content)}</div></div>`;
+      }).join('');
+      searchResults.querySelectorAll<HTMLElement>('.search-item').forEach((el) => {
+        el.onclick = () => {
+          const convId = el.dataset.convId;
+          if (convId) {
+            closeSearch();
+            selectedId = convId;
+            showChat();
+            renderSidebar();
+          }
+        };
+      });
+    } catch { /* ignore */ }
+  }, 300);
+});
+
+searchInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape') closeSearch();
+});
+document.getElementById('search-close')!.onclick = closeSearch;
+searchOverlay.addEventListener('click', (e) => {
+  if (e.target === searchOverlay) closeSearch();
+});
+
+// ──────────────────────────────────────────────────────────────────────
+// MARK: 远程 Agent 直播面板 — 实时显示远程节点 Agent 的执行过程
+// ──────────────────────────────────────────────────────────────────────
+const livePanel = document.getElementById('live-panel')!;
+const liveBody = document.getElementById('live-body')!;
+const liveDot = document.getElementById('live-dot')!;
+const liveTitle = document.getElementById('live-title')!;
+let liveTokenBuf = '';
+
+// 远程 Agent 事件转发到直播面板
+window.kinet.onRemoteAgentEvent((ev) => {
+  appendLiveEvent(ev);
+});
+
+function liveEv(text: string, extraClass = ''): HTMLElement {
+  const d = document.createElement('div');
+  d.className = `live-event ${extraClass}`;
+  d.innerHTML = `<span class="live-ts">${fmtLiveTs()}</span>${text}`;
+  return d;
+}
+
+function fmtLiveTs(): string {
+  const d = new Date();
+  return d.getHours().toString().padStart(2, '0') + ':' + d.getMinutes().toString().padStart(2, '0') + ':' + d.getSeconds().toString().padStart(2, '0');
+}
+
+function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?: number; tokens?: number; message?: string; prompt?: string; summary?: string }): void {
+  livePanel.style.display = 'block';
+  switch (ev.type) {
+    case 'start':
+      liveTokenBuf = '';
+      liveDot.classList.add('active');
+      liveTitle.textContent = '远程协作直播 · 运行中';
+      liveBody.innerHTML = '';
+      liveBody.appendChild(liveEv(`🚀 任务启动:${escHtml(ev.prompt || '')}`, 'live-start'));
+      break;
+    case 'token':
+      liveTokenBuf += ev.text ?? '';
+      let tokenBox = liveBody.querySelector('.live-tokens') as HTMLElement | null;
+      if (!tokenBox) {
+        tokenBox = document.createElement('div');
+        tokenBox.className = 'live-event live-tokens';
+        liveBody.appendChild(tokenBox);
+      }
+      tokenBox.innerHTML = `<span class="live-ts">${fmtLiveTs()}</span><div class="live-token-text">${escHtml(liveTokenBuf)}</div>`;
+      liveBody.scrollTop = liveBody.scrollHeight;
+      break;
+    case 'tool':
+      liveTokenBuf = '';
+      liveBody.appendChild(liveEv(`🔧 调用工具:${escHtml(ev.name || '')}`));
+      break;
+    case 'status':
+      liveBody.appendChild(liveEv(`⏳ ${escHtml(ev.text || '')}`));
+      break;
+    case 'cost':
+      liveBody.appendChild(liveEv(`💰 $${(ev.usd ?? 0).toFixed(4)} · ${(ev.tokens ?? 0).toLocaleString()} tokens`));
+      break;
+    case 'done':
+      liveDot.classList.remove('active');
+      liveTitle.textContent = '远程协作直播 · 已完成';
+      liveBody.appendChild(liveEv(`✅ 完成:${escHtml((ev.summary || '').slice(0, 300))}`, 'live-done'));
+      break;
+    case 'error':
+      liveDot.classList.remove('active');
+      liveTitle.textContent = '远程协作直播 · 出错';
+      liveBody.appendChild(liveEv(`❌ 错误:${escHtml(ev.message || '')}`, 'live-error'));
+      break;
+  }
+  liveBody.scrollTop = liveBody.scrollHeight;
+}
+
+document.getElementById('live-close')!.onclick = () => {
+  livePanel.style.display = 'none';
+};

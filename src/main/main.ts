@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
@@ -47,6 +47,7 @@ let quickWin: BrowserWindow | null = null;
 let metricsWin: BrowserWindow | null = null;
 let filesWin: BrowserWindow | null = null;
 let arenaWin: BrowserWindow | null = null;
+let memoryGraphWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
 let tray: Tray | null = null;
 let quitting = false;
@@ -423,6 +424,30 @@ function showDashboard(): void {
   if (dashboardWin.isMinimized()) dashboardWin.restore();
   dashboardWin.show();
   dashboardWin.focus();
+}
+
+function showMemoryGraph(): void {
+  if (memoryGraphWin && !memoryGraphWin.isDestroyed()) {
+    memoryGraphWin.focus();
+    return;
+  }
+  const lang = getSettings().lang;
+  const win = new BrowserWindow({
+    width: 900, height: 680,
+    minWidth: 600, minHeight: 400,
+    backgroundColor: '#1b1b1f',
+    title: `${getBrand().productName} · ${t(lang, 'mgraph.title')}`,
+    icon: appIcon(),
+    webPreferences: {
+      preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  win.loadFile(path.join(__dirname, '..', 'renderer', 'memory-graph.html'));
+  memoryGraphWin = win;
+  win.on('closed', () => { memoryGraphWin = null; });
 }
 
 function buildTrayMenu(lang: Lang): Menu {
@@ -1116,6 +1141,43 @@ function registerIpc(): void {
       })
       .slice(0, 20)
       .map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+  });
+
+  // ── 全局对话搜索:FTS5 全文搜索 + 关联会话标题 ──
+  ipcMain.handle('search-history', (_e, query: string) => {
+    const results = searchEnriched(query, 50);
+    return results;
+  });
+
+  // ── 记忆图谱数据:返回三元组 + 节点列表(给 renderer 力导向图用)──
+  ipcMain.handle('memory-graph-data', () => {
+    const triples = loadMemoryTriples();
+    // 提取唯一节点(subject + object 去重)
+    const nodeSet = new Set<string>();
+    for (const t of triples) {
+      nodeSet.add(t.subject);
+      nodeSet.add(t.object);
+    }
+    const nodes = [...nodeSet].map((label, i) => ({ id: label, label, idx: i }));
+    const edges = triples.map((t) => ({ source: t.subject, target: t.object, predicate: t.predicate }));
+    return { nodes, edges, triples };
+  });
+
+  // ── Arena 深度统计:按引擎聚合 token/成本/耗时/工具调用数 ──
+  ipcMain.handle('arena-stats', () => {
+    return arenaAggregate();
+  });
+
+  // ── 记忆图谱独立窗口 ──
+  ipcMain.handle('open-memory-graph', () => {
+    showMemoryGraph();
+    return true;
+  });
+
+  // ── 实时协作直播:获取当前远程 Agent 事件流(前端轮询或 SSE 获取)──
+  // 返回最近 N 条远程事件 + 当前活跃远程任务状态。
+  ipcMain.handle('remote-agent-status', () => {
+    return localMcpServer.getLiveStatus();
   });
 
   // ── 会话交接:导出会话状态 ──

@@ -11,13 +11,42 @@
     <div class="dash-head">
       <h2 data-i18n="dash.title">仪表盘</h2>
       <span class="dash-brand" id="dash-brand"></span>
+      <button class="ghost" id="dash-refresh" title="刷新">↻</button>
     </div>
     <div class="dash-overview" id="dash-overview"></div>
-    <h3 data-i18n="dash.byEngine">按引擎</h3>
-    <div class="dash-engines" id="dash-engines"></div>
-    <h3 data-i18n="dash.sessions">会话</h3>
-    <div class="dash-table-wrap">
-      <table class="dash-table" id="dash-table"></table>
+
+    <!-- 引擎雷达图:token/成本/工具调用/会话数/平均耗时 五维对比 -->
+    <div class="dash-section">
+      <h3 data-i18n="dash.radar">引擎雷达图</h3>
+      <div class="dash-radar-wrap">
+        <svg id="dash-radar" width="320" height="320" viewBox="-160 -160 320 320"></svg>
+        <div class="dash-radar-legend" id="dash-radar-legend"></div>
+      </div>
+    </div>
+
+    <!-- 成本趋势线图:最近 7 天各引擎花费 -->
+    <div class="dash-section">
+      <h3 data-i18n="dash.trend">成本趋势(7天)</h3>
+      <svg id="dash-trend" width="100%" height="180" viewBox="0 0 700 180" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="dash-section">
+      <h3 data-i18n="dash.byEngine">按引擎</h3>
+      <div class="dash-engines" id="dash-engines"></div>
+    </div>
+    <div class="dash-section">
+      <h3 data-i18n="dash.sessions">会话</h3>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="dash-table"></table>
+      </div>
+    </div>
+
+    <!-- Arena 深度对比表 -->
+    <div class="dash-section">
+      <h3 data-i18n="dash.arena">引擎深度对比</h3>
+      <div class="dash-table-wrap">
+        <table class="dash-table" id="dash-arena-table"></table>
+      </div>
     </div>
   </div>
   <script src="dashboard.js"></script>

@@ -117,6 +117,10 @@ export class LocalMcpServer {
   private token: string = '';
   // 远程 Agent 事件回调:main.ts 注册后,转发到 dashboard 窗口显示远程任务进度。
   private onRemoteEvent: ((ev: RemoteAgentEvent) => void) | null = null;
+  // ── 实时直播:缓存最近的远程 Agent 事件,供 SSE 端点推送 ──
+  private liveEvents: Array<RemoteAgentEvent & { ts: number }> = [];
+  private liveBuffers: Array<{ res: ServerResponse; lastIdx: number }> = []; // 活跃 SSE 连接
+  private liveMax = 500; // 最多缓存 500 条
 
   setTools(tools: Tool[]): void {
     this.tools = tools;
@@ -128,7 +132,35 @@ export class LocalMcpServer {
 
   /** main.ts 注册此回调,将远程 Agent 事件转发到 dashboard UI。 */
   setRemoteEventHandler(handler: ((ev: RemoteAgentEvent) => void) | null): void {
-    this.onRemoteEvent = handler;
+    this.onRemoteHandler = handler;
+  }
+  private onRemoteHandler: ((ev: RemoteAgentEvent) => void) | null = null;
+
+  /** 内部:缓存事件 + 推送 SSE + 调用 handler。 */
+  private emitRemoteEvent(ev: RemoteAgentEvent): void {
+    const stamped = { ...ev, ts: Date.now() };
+    this.liveEvents.push(stamped);
+    if (this.liveEvents.length > this.liveMax) this.liveEvents.splice(0, this.liveEvents.length - this.liveMax);
+    // 推送到所有活跃 SSE 直播连接
+    for (const buf of this.liveBuffers) {
+      try {
+        buf.res.write(`data: ${JSON.stringify(stamped)}\n\n`);
+      } catch { /* 连接已断 */ }
+    }
+    // 转发到 dashboard UI
+    this.onRemoteHandler?.(ev);
+  }
+
+  /** 获取当前直播状态(前端轮询用)。 */
+  getLiveStatus(): { active: boolean; events: Array<RemoteAgentEvent & { ts: number }>; eventCount: number } {
+    const hasActive = this.liveEvents.length > 0 &&
+      this.liveEvents[this.liveEvents.length - 1].type !== 'done' &&
+      this.liveEvents[this.liveEvents.length - 1].type !== 'error';
+    return {
+      active: hasActive,
+      events: this.liveEvents.slice(-100), // 最近 100 条
+      eventCount: this.liveEvents.length,
+    };
   }
 
   isRunning(): boolean {
@@ -209,6 +241,43 @@ export class LocalMcpServer {
       // ponytail: 单 session 模式,DELETE 只需确认。
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ jsonrpc: '2.0', result: {} }));
+      return;
+    }
+
+    // GET /mcp/live → 实时直播 SSE:推送远程 Agent 事件流(token/tool/status/cost/done)。
+    // 远程方连此端点 → 实时看到本机 Agent 正在做什么(token 逐字、工具调用、状态变化)。
+    if (req.method === 'GET' && url === '/mcp/live') {
+      // 验 token(?token=xxx 或 Authorization header)
+      const qToken = new URL(url, 'http://localhost').searchParams.get('token') || '';
+      const authHeader = (req.headers.authorization ?? '').replace('Bearer ', '');
+      const tk = qToken || authHeader;
+      if (!tk || tk !== this.token) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '未授权:token 不匹配' }));
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream',
+        'Cache-Control': 'no-cache',
+        Connection: 'keep-alive',
+        'Access-Control-Allow-Origin': '*',
+      });
+      // 先发缓存的事件
+      const startIdx = Math.max(0, this.liveEvents.length - 100);
+      for (let i = startIdx; i < this.liveEvents.length; i++) {
+        res.write(`data: ${JSON.stringify(this.liveEvents[i])}\n\n`);
+      }
+      // 注册到活跃 SSE 连接列表 → emitRemoteEvent 会推送新事件
+      const buf = { res, lastIdx: this.liveEvents.length };
+      this.liveBuffers.push(buf);
+      // 保活 ping
+      const timer = setInterval(() => {
+        try { res.write(': ping\n\n'); } catch { clearInterval(timer); }
+      }, 30_000);
+      req.on('close', () => {
+        clearInterval(timer);
+        this.liveBuffers = this.liveBuffers.filter((b) => b !== buf);
+      });
       return;
     }
 
@@ -409,8 +478,8 @@ export class LocalMcpServer {
       signal: ac.signal,
     };
 
-    // 通知本机 UI:远程 Agent 开始工作。
-    this.onRemoteEvent?.({ type: 'start', prompt: prompt.slice(0, 200) });
+    // 通知本机 UI + SSE 直播:远程 Agent 开始工作。
+    this.emitRemoteEvent({ type: 'start', prompt: prompt.slice(0, 200) });
 
     try {
       const messages = await runAgentLoop({
@@ -424,23 +493,22 @@ export class LocalMcpServer {
         signal: ac.signal,
         maxTurns: (args.maxTurns as number) || undefined, // undefined → 读 settings.maxTurns
         onEvent: (e: AgentEvent) => {
-          // 转发到本机 dashboard,让用户看到远程 Agent 正在做什么。
-          if (!this.onRemoteEvent) return;
+          // 转发到本机 dashboard + SSE 直播,让用户看到远程 Agent 正在做什么。
           switch (e.type) {
             case 'token':
-              this.onRemoteEvent({ type: 'token', text: e.text });
+              this.emitRemoteEvent({ type: 'token', text: e.text });
               break;
             case 'tool':
-              this.onRemoteEvent({ type: 'tool', name: e.name });
+              this.emitRemoteEvent({ type: 'tool', name: e.name });
               break;
             case 'status':
-              this.onRemoteEvent({ type: 'status', text: e.text });
+              this.emitRemoteEvent({ type: 'status', text: e.text });
               break;
             case 'cost':
-              this.onRemoteEvent({ type: 'cost', usd: e.usd, tokens: e.tokens });
+              this.emitRemoteEvent({ type: 'cost', usd: e.usd, tokens: e.tokens });
               break;
             case 'error':
-              this.onRemoteEvent({ type: 'error', message: e.message });
+              this.emitRemoteEvent({ type: 'error', message: e.message });
               break;
             case 'done':
               break; // done 在 finally 后单独发
@@ -453,10 +521,10 @@ export class LocalMcpServer {
         .join('\n')
         .trim();
       const result = text || '(远程 Agent 无文本输出)';
-      this.onRemoteEvent?.({ type: 'done', summary: result.slice(0, 500) });
+      this.emitRemoteEvent({ type: 'done', summary: result.slice(0, 500) });
       return result;
     } catch (e) {
-      this.onRemoteEvent?.({ type: 'error', message: (e as Error).message });
+      this.emitRemoteEvent({ type: 'error', message: (e as Error).message });
       throw e;
     } finally {
       clearTimeout(timer);

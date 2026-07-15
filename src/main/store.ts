@@ -553,3 +553,104 @@ export function loadTaskGraph(): { nodes: TaskGraphNode[]; edges: TaskGraphEdge[
   }
   return { nodes, edges };
 }
+
+// MARK: searchEnriched — FTS5 全文搜索 + 关联会话信息
+// history 表没有 conv_id,通过 turns 表的 data JSON 反查会话。
+export function searchEnriched(q: string, limit = 50): Array<{ role: string; content: string; convId: string | null; convTitle: string | null }> {
+  const fts = sanitize(q);
+  if (!fts) return [];
+  const results = db
+    .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+    .all(fts, limit) as Array<{ role: string; content: string }>;
+  // 用 turns 表反查 conv_id:取 content 前 50 字符做 LIKE 匹配。
+  const stmtConv = db.prepare('SELECT conv_id FROM turns WHERE data LIKE ? LIMIT 1;');
+  const stmtTitle = db.prepare('SELECT engine, cwd, custom_title FROM conversations WHERE id=?;');
+  return results.map((r) => {
+    let convId: string | null = null;
+    let convTitle: string | null = null;
+    try {
+      const snippet = r.content.slice(0, 50).replace(/[%_]/g, (c) => '%' + c);
+      const row = stmtConv.get(`%${snippet}%`) as { conv_id: string } | undefined;
+      if (row) {
+        convId = row.conv_id;
+        const meta = stmtTitle.get(row.conv_id) as { engine: string; cwd: string; custom_title: string | null } | undefined;
+        if (meta?.custom_title) convTitle = meta.custom_title;
+      }
+    } catch { /* best-effort */ }
+    return { role: r.role, content: r.content, convId, convTitle };
+  });
+}
+
+// MARK: arenaAggregate — 按引擎聚合统计(给 Arena 深度仪表盘用)
+// 从 cost_log + conversations + turns 聚合:总成本/总 token/总耗时/工具调用数/会话数。
+export function arenaAggregate(): Array<{
+  engine: string;
+  sessions: number;
+  totalCost: number;
+  totalTokens: number;
+  totalTools: number;
+  avgCost: number;
+  avgTokens: number;
+  avgTools: number;
+  avgTurnDurationMs: number;
+  costByDay: Array<{ date: string; cost: number }>;
+}> {
+  // 1. cost_log 聚合
+  const costRows = db.prepare('SELECT engine, amount, tokens, ts FROM cost_log ORDER BY ts ASC;').all() as Array<{ engine: string; amount: number; tokens: number; ts: number }>;
+  // 2. turns 里的 steps(工具调用)统计
+  const convRows = db.prepare('SELECT id, engine FROM conversations;').all() as Array<{ id: string; engine: string }>;
+  const turnRows = db.prepare('SELECT conv_id, data FROM turns;').all() as Array<{ conv_id: string; data: string }>;
+  // 按 engine 聚合
+  const engines = new Set<string>(['direct', 'claudeCode', 'codex']);
+  for (const r of costRows) engines.add(r.engine);
+  for (const c of convRows) engines.add(c.engine);
+  const result: Array<{
+    engine: string; sessions: number; totalCost: number; totalTokens: number;
+    totalTools: number; avgCost: number; avgTokens: number; avgTools: number;
+    avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }>;
+  }> = [];
+  for (const engine of engines) {
+    const sessions = convRows.filter((c) => c.engine === engine).length;
+    const costs = costRows.filter((r) => r.engine === engine);
+    const totalCost = costs.reduce((s, r) => s + r.amount, 0);
+    const totalTokens = costs.reduce((s, r) => s + r.tokens, 0);
+    // 工具调用数:遍历该 engine 的 turns → 解析 data JSON → 统计 steps 数组长度
+    let totalTools = 0;
+    let totalDuration = 0;
+    let turnCount = 0;
+    const engineConvIds = new Set(convRows.filter((c) => c.engine === engine).map((c) => c.id));
+    for (const t of turnRows) {
+      if (!engineConvIds.has(t.conv_id)) continue;
+      try {
+        const parsed = JSON.parse(t.data) as { steps?: Array<{ durationMs?: number }> };
+        totalTools += parsed.steps?.length ?? 0;
+        for (const s of parsed.steps ?? []) totalDuration += s.durationMs ?? 0;
+        turnCount++;
+      } catch { /* skip */ }
+    }
+    // cost by day (最近 7 天)
+    const now = Date.now();
+    const dayMs = 86400_000;
+    const dayMap = new Map<string, number>();
+    for (const r of costs) {
+      if (r.ts >= now - 7 * dayMs) {
+        const d = new Date(r.ts).toISOString().slice(0, 10);
+        dayMap.set(d, (dayMap.get(d) ?? 0) + r.amount);
+      }
+    }
+    const costByDay: Array<{ date: string; cost: number }> = [];
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now - i * dayMs).toISOString().slice(0, 10);
+      costByDay.push({ date: d, cost: dayMap.get(d) ?? 0 });
+    }
+    result.push({
+      engine, sessions, totalCost, totalTokens, totalTools,
+      avgCost: sessions ? totalCost / sessions : 0,
+      avgTokens: sessions ? totalTokens / sessions : 0,
+      avgTools: sessions ? totalTools / sessions : 0,
+      avgTurnDurationMs: turnCount ? totalDuration / turnCount : 0,
+      costByDay,
+    });
+  }
+  return result;
+}

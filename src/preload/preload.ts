@@ -95,6 +95,16 @@ const api: KinetAPI = {
   // 跨会话引用 + Agent 任务图
   taskGraph: () => ipcRenderer.invoke('task-graph'),
   searchConversations: (query) => ipcRenderer.invoke('search-conversations', query),
+  // 全局对话搜索
+  searchHistory: (query: string) => ipcRenderer.invoke('search-history', query),
+  // 记忆图谱数据
+  memoryGraphData: () => ipcRenderer.invoke('memory-graph-data'),
+  // Arena 深度统计
+  arenaStats: () => ipcRenderer.invoke('arena-stats'),
+  // 记忆图谱窗口
+  openMemoryGraph: () => ipcRenderer.invoke('open-memory-graph'),
+  // 远程 Agent 直播状态
+  remoteAgentStatus: () => ipcRenderer.invoke('remote-agent-status'),
   // 会话交接
   exportSessionState: (convId) => ipcRenderer.invoke('export-session-state', convId),
   importSessionState: (sessionJson) => ipcRenderer.invoke('import-session-state', sessionJson),

@@ -383,6 +383,18 @@ export interface KinetAPI {
   taskGraph(): Promise<{ nodes: Array<{ id: string; engine: string; cwd: string; createdAt: number; customTitle: string | null; turns: number; cost: number }>; edges: Array<{ from: string; to: string; type: string; meta?: Record<string, unknown> }> }>;
   // 搜索会话(按标题/prompt 内容模糊匹配,给 @conv: 引用补全用)。
   searchConversations(query: string): Promise<Array<{ id: string; title: string; engine: string; turns: number; lastActive: number }>>;
+  // ── 全局对话搜索(跨所有会话搜内容)──
+  searchHistory(query: string): Promise<Array<{ role: string; content: string; convId?: string; convTitle?: string }>>;
+  // ── 全局对话搜索(跨所有会话搜内容)──
+  searchHistory(query: string): Promise<Array<{ role: string; content: string; convId: string | null; convTitle: string | null }>>;
+  // ── 记忆图谱数据(给力导向图渲染)──
+  memoryGraphData(): Promise<{ nodes: Array<{ id: string; label: string; idx: number }>; edges: Array<{ source: string; target: string; predicate: string }>; triples: Array<{ id: string; subject: string; predicate: string; object: string }> }>;
+  // ── Arena 深度统计 ──
+  arenaStats(): Promise<Array<{ engine: string; sessions: number; totalCost: number; totalTokens: number; totalTools: number; avgCost: number; avgTokens: number; avgTools: number; avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }> }>>;
+  // ── 记忆图谱窗口 ──
+  openMemoryGraph(): Promise<boolean>;
+  // ── 远程 Agent 直播状态 ──
+  remoteAgentStatus(): Promise<{ active: boolean; events: Array<{ type: string; ts: number; text?: string; name?: string; usd?: number; tokens?: number; message?: string; prompt?: string; summary?: string }>; eventCount: number }>;
   // ── 会话交接(多机协作)──
   exportSessionState(convId: string): Promise<{ ok: boolean; json?: string; error?: string }>;
   importSessionState(sessionJson: string): Promise<{ ok: boolean; convId?: string; error?: string }>;

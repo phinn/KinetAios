@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self';" />
+  <title>Memory Graph</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="mgraph">
+  <div id="mgraph-wrap">
+    <div class="mgraph-head">
+      <h2 data-i18n="mgraph.title">记忆图谱</h2>
+      <span class="mgraph-brand" id="mgraph-brand"></span>
+      <div class="mgraph-controls">
+        <label class="mgraph-toggle">
+          <input type="checkbox" id="mgraph-show-labels" checked />
+          <span data-i18n="mgraph.edgeLabels">关系标签</span>
+        </label>
+        <select id="mgraph-layout" class="mgraph-select">
+          <option value="force">力导向</option>
+          <option value="circle">环形</option>
+        </select>
+        <button class="ghost" id="mgraph-refresh" title="刷新">↻</button>
+      </div>
+    </div>
+    <div class="mgraph-stats" id="mgraph-stats"></div>
+    <div class="mgraph-canvas-wrap">
+      <svg id="mgraph-svg" width="100%" height="100%"></svg>
+    </div>
+    <div class="mgraph-detail" id="mgraph-detail"></div>
+  </div>
+  <script src="memory-graph.js"></script>
+</body>
+</html>
