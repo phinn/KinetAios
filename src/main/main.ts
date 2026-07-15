@@ -1323,14 +1323,20 @@ function registerIpc(): void {
   // 如果 main 进程拿不到(权限/版本差异),回退到 renderer 的 getUserMedia。
   ipcMain.handle('capture-screen', async () => {
     try {
+      console.log('[main] capture-screen: requesting desktopCapturer...');
       const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
+      console.log('[main] capture-screen: got', sources.length, 'sources');
       if (!sources.length) return { ok: false, error: t(getSettings().lang, 'common.noScreen') };
       // 取整个虚拟桌面(包含多显示器)或第一个源
       const source = sources.find((s) => s.display_id === '') || sources[0];
       const thumb = source.thumbnail;
       // macOS 无屏幕录制权限时 thumbnail 为空 nativeImage → isEmpty() = true
-      if (thumb.isEmpty()) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
+      if (thumb.isEmpty()) {
+        console.log('[main] capture-screen: thumbnail is EMPTY (screen permission not granted?)');
+        return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
+      }
       const dataUrl = thumb.toDataURL();
+      console.log('[main] capture-screen: dataUrl length =', dataUrl?.length);
       // 空图也会产生 ~100 字节的 PNG,真正截图至少几万字节
       if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
       return { ok: true, dataUrl };
@@ -1430,7 +1436,16 @@ if (!gotLock) {
   app.whenReady().then(() => {
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
+    // 但清空菜单后 Cmd/Ctrl+Shift+I 快捷键失效 → 手动注册。
     Menu.setApplicationMenu(null);
+    // 注册 DevTools 切换快捷键(macOS: Cmd+Option+I, Windows: Ctrl+Shift+I)
+    globalShortcut.register('CommandOrControl+Shift+I', () => {
+      const win = BrowserWindow.getFocusedWindow();
+      if (win) {
+        if (win.webContents.isDevToolsOpened()) win.webContents.closeDevTools();
+        else win.webContents.openDevTools({ mode: 'detach' });
+      }
+    });
     // macOS Dock 图标:BrowserWindow({icon}) 在 mac 上对 Dock 无效,需显式设 dock icon。
     // Windows/Linux 上 BrowserWindow icon 已生效,dock 仅 mac 有。
     const dockIcon = appIcon();

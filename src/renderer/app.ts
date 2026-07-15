@@ -1673,6 +1673,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   const captureBtn = document.getElementById('btn-capture');
   if (captureBtn) {
     captureBtn.onclick = async () => {
+      console.log('[capture] 按钮点击');
       captureBtn.classList.add('loading');
       try {
         // 步骤 1:拿全屏截图(main 进程 desktopCapturer 优先,回退 getDisplayMedia)
@@ -1681,8 +1682,10 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
         // 路径 1:desktopCapturer(main 进程)
         try {
           const r = await api.captureScreen();
+          console.log('[capture] desktopCapturer result:', r.ok, r.error ?? '', 'dataUrl len:', r.dataUrl?.length ?? 0);
           if (r.ok && r.dataUrl && r.dataUrl.length > 1000) fullDataUrl = r.dataUrl;
-        } catch { /* 忽略,走回退 */ }
+          else if (!r.ok) console.warn('[capture] desktopCapturer returned error:', r.error);
+        } catch (e) { console.warn('[capture] desktopCapturer exception:', e); /* 忽略,走回退 */ }
 
         // 路径 2:getDisplayMedia(renderer 端)
         if (!fullDataUrl) {
@@ -1719,13 +1722,20 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
             } finally {
               cleanupVideo();
             }
-          } catch {
+          } catch (e) {
+            console.warn('[capture] getDisplayMedia exception:', e);
             // 用户取消或不支持
           }
         }
 
         captureBtn.classList.remove('loading');
-        if (!fullDataUrl) return; // 两条路径都失败或用户取消
+        if (!fullDataUrl) {
+          // 两条路径都失败 → 弹提示而非静默
+          console.warn('[capture] 全屏截图失败:desktopCapturer 和 getDisplayMedia 都没拿到画面');
+          alert(tr('vision.captureErr', { msg: 'No screen capture (permission denied?)' }));
+          return;
+        }
+        console.log('[capture] 全屏截图成功, dataUrl length =', fullDataUrl.length);
 
         // 步骤 2:显示 overlay 让用户拖拽选区
         const croppedDataUrl = await pickRegionOverlay(fullDataUrl);
@@ -1747,6 +1757,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
       // 先加载图片获取自然尺寸
       const img = new Image();
       img.onload = () => {
+        console.log('[capture] 图片加载成功', img.naturalWidth, '×', img.naturalHeight);
         const imgW = img.naturalWidth;
         const imgH = img.naturalHeight;
         const winW = window.innerWidth;
@@ -1884,7 +1895,10 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
           resolve(croppedUrl.length > 1000 ? croppedUrl : null);
         });
       };
-      img.onerror = () => resolve(null);
+      img.onerror = () => {
+        console.error('[capture] 图片加载失败');
+        resolve(null);
+      };
       img.src = fullDataUrl;
     });
   }
