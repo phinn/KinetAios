@@ -370,7 +370,7 @@ a { color: var(--accent); }
 .ca-btn { background: transparent; border: none; color: var(--text-dim); padding: 2px 5px; font-size: 12px; line-height: 1; cursor: pointer; }
 .ca-btn:hover { color: var(--text); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
-#conv-list .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#conv-list .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.ready { background: var(--text-faint); }
@@ -395,13 +395,13 @@ a { color: var(--accent); }
 #conv-list > li:not(.sb-proj):hover { background: var(--bg-elev); }
 #conv-list > li:not(.sb-proj).active { background: var(--bg-elev); }
 #conv-list > li:not(.sb-proj).active .title { color: var(--accent); }
-#conv-list > li:not(.sb-proj) .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+#conv-list > li:not(.sb-proj) .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
 #conv-list > li:not(.sb-proj) .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 #conv-list > li:not(.sb-proj) .sb-task-cwd { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #conv-list > li:not(.sb-proj) .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
 #conv-list > li:not(.sb-proj):hover .conv-actions { display: inline-flex; }
 /* grouped 模式:任务条目不显示 cwd(已有项目头),title 直接横排。 */
-.sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; }
+.sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; justify-content: flex-start; }
 .sb-proj-tasks li .sb-task-cwd { display: none; }
 
 /* main */
