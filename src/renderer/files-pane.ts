@@ -422,11 +422,11 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
   // → 收集被选元素的 DOM 信息(outerHTML/computedStyle/domPath/rect)
   // → 弹出输入框让用户描述修改意图 → 组装 [文件路径 + 源码片段 + 元素信息 + 意图] 发给当前会话
   const inspectBtn = root.querySelector<HTMLElement>('[data-btn="inspect"]')!;
-  let inspecting = false; // 是否正在标注模式
+  let inspecting = false;
   inspectBtn.onclick = () => void toggleInspect();
 
   async function toggleInspect(): Promise<void> {
-    if (inspecting) return; // 已经在标注中,等用户完成或取消
+    if (inspecting) return;
     if (!currentAbs) { feStatus.textContent = tr('files.inspectNoFile'); return; }
     const gid = webview.getGuestInstanceId?.();
     if (gid == null) { feStatus.textContent = tr('files.inspectNoWebview'); return; }
@@ -434,27 +434,8 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     inspectBtn.classList.add('active');
     feStatus.textContent = tr('files.inspectDragging');
 
-    // 向 webview 注入框选脚本。
-    // 关键设计:不用 executeJavaScript 返回 Promise(会和 Electron 的 await 死锁),
-    // 而是脚本执行后立即返回 'PENDING',脚本内部在 mouseup/ESC 时用 ipcPostMessage 通知。
-    // 我们用 executeJavaScript 二次轮询 window.__kinetResult 来拿结果。
-    const script = buildInspectScript();
-    await api.webviewInspect(gid, script);
-
-    // 轮询结果 —— 脚本在 mouseup 或 ESC 时设置 window.__kinetResult
-    let elements: ElementInfo[] | null = null;
-    const deadline = Date.now() + 60000; // 60 秒超时保护
-    while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 150));
-      const r = await api.webviewInspect(gid, 'window.__kinetResult || null');
-      if (r.ok && r.result != null) {
-        if (r.result === 'CANCELLED') { elements = null; break; }
-        elements = r.result as ElementInfo[];
-        break;
-      }
-    }
-    // 清理 webview 中的残留状态
-    await api.webviewInspect(gid, 'delete window.__kinetResult; delete window.__kinetInspect').catch(() => {});
+    // ★ overlay 在 renderer 主页面(而非 webview 内部),避免 CSP/事件隔离问题
+    const elements = await doInspectOverlay(webview as unknown as HTMLElement);
 
     inspecting = false;
     inspectBtn.classList.remove('active');
@@ -526,106 +507,133 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     });
   }
 
-  // ── buildInspectScript:注入 webview 的框选脚本 ──
-  // 1) 添加全屏半透明遮罩层 + 十字准线光标
-  // 2) 鼠标按下(mousedown)开始记录起点,拖动(mousemove)绘制选择框
-  // 3) 鼠标松开(mouseup)计算选择框矩形 → 通过 elementsFromPoint 收集区域内所有元素
-  // 4) 对每个元素提取 tag/id/class/outerHTML/computedStyle/domPath/rect/textPreview
-  // 5) 返回 ElementInfo[](去重:同 tag+class+text 只保留最深层的一个)
-  function buildInspectScript(): string {
-    return `(function() {
-      // 防重复注入 / Prevent duplicate injection
-      if (window.__kinetInspect) { window.__kinetInspect.cleanup(); }
-      window.__kinetResult = null;
+  // ── doInspectOverlay:在 renderer 层(render 页面)创建 overlay 处理框选 ──
+  // 不把 overlay 注入到 webview 内部(容易受 CSP/事件隔离影响),
+  // 而是直接覆盖在 webview DOM 元素上,鼠标松开后用 executeJavaScript 采集元素。
+  function doInspectOverlay(webviewEl: HTMLElement): Promise<ElementInfo[] | null> {
+    return new Promise((resolve) => {
+      // 获取 webview 的位置和大小(相对于 dashboard 窗口)
+      const wvRect = webviewEl.getBoundingClientRect();
 
-      var overlay = document.createElement('div');
-      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:crosshair;background:rgba(232,179,57,0.03);';
-      var selBox = document.createElement('div');
-      selBox.style.cssText = 'position:fixed;border:2px dashed #e8b339;background:rgba(232,179,57,0.12);z-index:2147483647;pointer-events:none;display:none;box-shadow:0 0 0 9999px rgba(0,0,0,0.2);';
-      var hint = document.createElement('div');
-      hint.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1b1b1f;color:#e8b339;padding:8px 16px;border-radius:8px;font:13px system-ui,sans-serif;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+      // 创建全屏 overlay(覆盖整个 dashboard 窗口,但不影响顶部工具栏)
+      const overlay = document.createElement('div');
+      overlay.style.cssText = `position:fixed;left:${wvRect.left}px;top:${wvRect.top}px;width:${wvRect.width}px;height:${wvRect.height}px;z-index:99999;cursor:crosshair;background:rgba(0,0,0,0.15);`;
+
+      const selBox = document.createElement('div');
+      selBox.style.cssText = 'position:fixed;border:2px dashed #e8b339;background:rgba(232,179,57,0.12);z-index:100000;pointer-events:none;display:none;box-shadow:0 0 0 9999px rgba(0,0,0,0.3);';
+
+      const hint = document.createElement('div');
+      hint.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:100001;background:#1b1b1f;color:#e8b339;padding:8px 16px;border-radius:8px;font:13px system-ui,sans-serif;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
       hint.textContent = '拖拽框选要修改的区域 · 按 ESC 取消';
-      var startX = 0, startY = 0, isDown = false;
 
-      function cleanup() {
-        if (window.__kinetInspect) { window.__kinetInspect = null; }
+      document.body.appendChild(overlay);
+      document.body.appendChild(selBox);
+      document.body.appendChild(hint);
+
+      let startX = 0, startY = 0, isDown = false;
+      let done = false;
+
+      function finish(result: ElementInfo[] | null) {
+        if (done) return;
+        done = true;
         overlay.remove(); selBox.remove(); hint.remove();
         document.removeEventListener('keydown', onKey, true);
+        resolve(result);
       }
-      function onKey(e) { if (e.key === 'Escape') { cleanup(); window.__kinetResult = 'CANCELLED'; } }
 
-      window.__kinetInspect = { cleanup: cleanup };
+      function onKey(e: KeyboardEvent) { if (e.key === 'Escape') finish(null); }
       document.addEventListener('keydown', onKey, true);
 
-      overlay.addEventListener('mousedown', function(e) {
+      overlay.addEventListener('mousedown', (e) => {
         e.preventDefault();
         isDown = true;
         startX = e.clientX; startY = e.clientY;
         selBox.style.display = 'block';
-        selBox.style.left = startX + 'px'; selBox.style.top = startY + 'px';
-        selBox.style.width = '0px'; selBox.style.height = '0px';
+        selBox.style.left = startX + 'px';
+        selBox.style.top = startY + 'px';
+        selBox.style.width = '0px';
+        selBox.style.height = '0px';
         hint.style.display = 'none';
       });
 
-      overlay.addEventListener('mousemove', function(e) {
+      overlay.addEventListener('mousemove', (e) => {
         if (!isDown) return;
-        var x = Math.min(e.clientX, startX);
-        var y = Math.min(e.clientY, startY);
-        var w = Math.abs(e.clientX - startX);
-        var h = Math.abs(e.clientY - startY);
-        selBox.style.left = x + 'px'; selBox.style.top = y + 'px';
-        selBox.style.width = w + 'px'; selBox.style.height = h + 'px';
+        const x = Math.min(e.clientX, startX);
+        const y = Math.min(e.clientY, startY);
+        const w = Math.abs(e.clientX - startX);
+        const h = Math.abs(e.clientY - startY);
+        selBox.style.left = x + 'px';
+        selBox.style.top = y + 'px';
+        selBox.style.width = w + 'px';
+        selBox.style.height = h + 'px';
       });
 
-      overlay.addEventListener('mouseup', function(e) {
+      overlay.addEventListener('mouseup', async (e) => {
         if (!isDown) return;
         isDown = false;
-        var x1 = Math.min(e.clientX, startX), y1 = Math.min(e.clientY, startY);
-        var x2 = Math.max(e.clientX, startX), y2 = Math.max(e.clientY, startY);
-        var w = x2 - x1, h = y2 - y1;
-        cleanup();
+        const x1 = Math.min(e.clientX, startX);
+        const y1 = Math.min(e.clientY, startY);
+        const x2 = Math.max(e.clientX, startX);
+        const y2 = Math.max(e.clientY, startY);
+        const w = x2 - x1, h = y2 - y1;
 
-        // 太小的选择 = 取消 / Too small selection = cancel
-        if (w < 5 || h < 5) { window.__kinetResult = 'CANCELLED'; return; }
+        // 先移除 overlay,否则 executeJavaScript 的 elementsFromPoint 不会采到它
+        overlay.remove(); selBox.remove(); hint.remove();
+        document.removeEventListener('keydown', onKey, true);
 
-        // 收集选择框内的元素 / Collect elements in selection rect
-        var collected = [];
-        var seen = new Set();
-        var step = Math.min(20, Math.min(w, h) / 3);
-        for (var px = x1 + step/2; px < x2; px += step) {
-          for (var py = y1 + step/2; py < y2; py += step) {
-            var els = document.elementsFromPoint(px, py);
-            for (var i = 0; i < els.length; i++) {
-              var el = els[i];
-              if (el === overlay || el === selBox || el === hint) continue;
-              if (seen.has(el)) continue;
-              seen.add(el);
-              var r = el.getBoundingClientRect();
-              if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
-              if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
-              collected.push(extractInfo(el, r));
-            }
-          }
-        }
+        if (w < 5 || h < 5) { finish(null); return; }
 
-        // 去重 / Deduplicate
-        var deduped = {};
-        var result = [];
-        for (var j = 0; j < collected.length; j++) {
-          var c = collected[j];
-          var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
-          if (deduped[key]) {
-            if (c.outerHTML.length > deduped[key].outerHTML.length) {
-              var idx = result.indexOf(deduped[key]);
-              result[idx] = c; deduped[key] = c;
-            }
-          } else {
-            deduped[key] = c; result.push(c);
-          }
-        }
-        window.__kinetResult = result.length ? result : 'CANCELLED';
+        // 把 renderer 坐标转换为 webview 内部坐标(减去 webview 的偏移)
+        const inWvX1 = x1 - wvRect.left, inWvY1 = y1 - wvRect.top;
+        const inWvX2 = x2 - wvRect.left, inWvY2 = y2 - wvRect.top;
+
+        // 用 executeJavaScript 在 webview 内部一次性采集选择框内的元素
+        const collectScript = buildCollectScript(inWvX1, inWvY1, inWvX2, inWvY2);
+        const gid = (webviewEl as unknown as WebviewLike).getGuestInstanceId();
+        if (!gid) { done = true; resolve(null); return; }
+        const r = await api.webviewInspect(gid, collectScript);
+        done = true;
+        if (!r.ok || !r.result || !Array.isArray(r.result)) { resolve(null); return; }
+        resolve(r.result as ElementInfo[]);
       });
+    });
+  }
 
+  // buildCollectScript:生成一次性采集脚本,传入选择框坐标(webview 内部坐标)
+  function buildCollectScript(x1: number, y1: number, x2: number, y2: number): string {
+    return `(function() {
+      var x1 = ${x1}, y1 = ${y1}, x2 = ${x2}, y2 = ${y2};
+      var w = x2 - x1, h = y2 - y1;
+      if (w < 5 || h < 5) return null;
+      var collected = [];
+      var seen = new Set();
+      var step = Math.min(20, Math.min(w, h) / 3);
+      for (var px = x1 + step/2; px < x2; px += step) {
+        for (var py = y1 + step/2; py < y2; py += step) {
+          var els = document.elementsFromPoint(px, py);
+          for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            if (seen.has(el)) continue;
+            seen.add(el);
+            var r = el.getBoundingClientRect();
+            if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
+            if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
+            collected.push(extractInfo(el, r));
+          }
+        }
+      }
+      var deduped = {};
+      var result = [];
+      for (var j = 0; j < collected.length; j++) {
+        var c = collected[j];
+        var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
+        if (deduped[key]) {
+          if (c.outerHTML.length > deduped[key].outerHTML.length) {
+            var idx = result.indexOf(deduped[key]);
+            result[idx] = c; deduped[key] = c;
+          }
+        } else { deduped[key] = c; result.push(c); }
+      }
       function extractInfo(el, r) {
         var cs = window.getComputedStyle(el);
         var styles = {};
@@ -657,13 +665,10 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
           rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
         };
       }
-
-      document.body.appendChild(overlay);
-      document.body.appendChild(selBox);
-      document.body.appendChild(hint);
-      return 'INJECTED';
+      return result.length ? result : null;
     })();`;
   }
+
   addr.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') webview.loadURL(normalizeURL(addr.value));
   });

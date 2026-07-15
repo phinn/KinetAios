@@ -1167,12 +1167,19 @@ function registerIpc(): void {
   // 返回 { ok, result?, error? }。脚本内的 Promise 会被自动 await。
   ipcMain.handle('webview-inspect', async (_e, guestInstanceId: number, script: string) => {
     try {
+      console.log('[webview-inspect] guestInstanceId =', guestInstanceId, 'script length =', script.length);
       const wc = webContents.fromId(guestInstanceId);
-      if (!wc) return { ok: false, error: 'webview not found (guestInstanceId=' + guestInstanceId + ')' };
+      if (!wc) {
+        const all = webContents.getAllWebContents().map(w => w.id);
+        console.log('[webview-inspect] NOT FOUND. all ids:', all);
+        return { ok: false, error: 'webview not found (guestInstanceId=' + guestInstanceId + ')' };
+      }
+      console.log('[webview-inspect] wc URL =', wc.getURL());
       const result = await wc.executeJavaScript(script);
+      console.log('[webview-inspect] result =', typeof result, JSON.stringify(result).slice(0, 200));
       return { ok: true, result };
     } catch (e) {
-      console.error('[webview-inspect] error:', (e as Error)?.message ?? e);
+      console.error('[webview-inspect] ERROR:', (e as Error)?.message ?? e);
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
