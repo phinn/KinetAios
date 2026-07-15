@@ -499,6 +499,8 @@ const ZH_CN: Dict = {
   'vision.capture': '📷 截图',
   'vision.captureErr': '截图失败: {msg}',
   'vision.captureEmpty': '未捕获到屏幕内容',
+  'vision.captureHint': '拖拽选择截图区域 · ESC 取消',
+  'vision.captureSmall': '选区太小,已取消',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 对比',
@@ -1040,6 +1042,8 @@ const EN: Dict = {
   'vision.capture': '📷 Screenshot',
   'vision.captureErr': 'Screenshot failed: {msg}',
   'vision.captureEmpty': 'No screen content captured',
+  'vision.captureHint': 'Drag to select area · ESC to cancel',
+  'vision.captureSmall': 'Selection too small, cancelled',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff Compare',
@@ -1583,6 +1587,8 @@ const ZH_TW: Dict = {
   'vision.capture': '📷 截圖',
   'vision.captureErr': '截圖失敗: {msg}',
   'vision.captureEmpty': '未擷取到螢幕內容',
+  'vision.captureHint': '拖曳選擇截圖區域 · ESC 取消',
+  'vision.captureSmall': '選區太小,已取消',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 比對',
@@ -2126,6 +2132,8 @@ const JA: Dict = {
   'vision.capture': '📷 スクリーンショット',
   'vision.captureErr': 'スクリーンショット失敗: {msg}',
   'vision.captureEmpty': '画面内容が取得できませんでした',
+  'vision.captureHint': 'ドラッグで範囲選択 · ESC でキャンセル',
+  'vision.captureSmall': '選択範囲が小さすぎます',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 比較',

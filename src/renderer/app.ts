@@ -1668,32 +1668,30 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     }
   });
 
-  // 📷 截图按钮:renderer 端 getDisplayMedia → canvas 截帧 → base64 附件。
-  // 比 desktopCapturer 更可靠:macOS 弹屏幕共享权限,截到真实画面。
+  // 📷 区域截图:点按钮 → 全屏截图 → overlay 框选区域 → canvas 裁剪 → 附件。
+  // 流程:先调 captureScreen 拿全屏,再让用户在 overlay 上拖拽选区,裁剪后得到区域截图。
   const captureBtn = document.getElementById('btn-capture');
   if (captureBtn) {
     captureBtn.onclick = async () => {
       captureBtn.classList.add('loading');
       try {
-        // 优先 main 进程 desktopCapturer —— 比 renderer getDisplayMedia 更可靠:
-        // macOS 上 getDisplayMedia 经常拿到 0×0 的空 track(canvas 画出空白 PNG)。
-        let dataUrl: string | null = null;
+        // 步骤 1:拿全屏截图(main 进程 desktopCapturer 优先,回退 getDisplayMedia)
+        let fullDataUrl: string | null = null;
 
         // 路径 1:desktopCapturer(main 进程)
         try {
           const r = await api.captureScreen();
-          if (r.ok && r.dataUrl && r.dataUrl.length > 1000) dataUrl = r.dataUrl;
+          if (r.ok && r.dataUrl && r.dataUrl.length > 1000) fullDataUrl = r.dataUrl;
         } catch { /* 忽略,走回退 */ }
 
-        // 路径 2:getDisplayMedia(renderer 端,某些场景更清晰)
-        if (!dataUrl) {
+        // 路径 2:getDisplayMedia(renderer 端)
+        if (!fullDataUrl) {
           try {
             const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
             const track = stream.getVideoTracks()[0];
             const video = document.createElement('video');
             video.srcObject = stream;
             video.muted = true;
-            // 清理函数:timeout 或成功后都调用,确保 video 元素和 stream 不泄漏。
             const cleanupVideo = (): void => {
               track.stop();
               stream.getTracks().forEach((t) => t.stop());
@@ -1705,7 +1703,6 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
                 video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
                 setTimeout(() => reject(new Error('video timeout')), 3000);
               });
-              // 等一帧渲染
               await new Promise((r) => requestAnimationFrame(r));
               await new Promise((r) => setTimeout(r, 100));
               const w = video.videoWidth;
@@ -1717,26 +1714,179 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
                 const ctx = canvas.getContext('2d')!;
                 ctx.drawImage(video, 0, 0);
                 const url = canvas.toDataURL('image/png');
-                // 校验:空 canvas 也会产生 ~100 字节的 PNG,真正截图至少几万字节
-                if (url.length > 1000) dataUrl = url;
+                if (url.length > 1000) fullDataUrl = url;
               }
             } finally {
               cleanupVideo();
             }
           } catch {
-            // getDisplayMedia 失败(用户取消/不支持)→ dataUrl 保持 null
+            // 用户取消或不支持
           }
         }
 
         captureBtn.classList.remove('loading');
-        if (!dataUrl) return; // 用户取消或两条路径都失败
-        imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl });
+        if (!fullDataUrl) return; // 两条路径都失败或用户取消
+
+        // 步骤 2:显示 overlay 让用户拖拽选区
+        const croppedDataUrl = await pickRegionOverlay(fullDataUrl);
+        if (!croppedDataUrl) return; // 用户取消或选区太小
+
+        imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: croppedDataUrl });
         renderAttach();
       } catch (e) {
         captureBtn.classList.remove('loading');
         alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
       }
     };
+  }
+
+  // ── 区域截图 overlay:全屏显示截图 + 拖拽选区 → 裁剪返回 dataUrl ──
+  // 复用 inspect overlay 的模式:全屏遮罩 + crosshair + 选择框。
+  function pickRegionOverlay(fullDataUrl: string): Promise<string | null> {
+    return new Promise((resolve) => {
+      // 先加载图片获取自然尺寸
+      const img = new Image();
+      img.onload = () => {
+        const imgW = img.naturalWidth;
+        const imgH = img.naturalHeight;
+        const winW = window.innerWidth;
+        const winH = window.innerHeight;
+        // 计算图片在窗口内的等比缩放(contain)
+        const scale = Math.min(winW / imgW, winH / imgH);
+        const dispW = imgW * scale;
+        const dispH = imgH * scale;
+        const offX = (winW - dispW) / 2;
+        const offY = (winH - dispH) / 2;
+
+        // 创建全屏 overlay
+        const overlay = document.createElement('div');
+        overlay.style.cssText = `position:fixed;inset:0;z-index:99999;cursor:crosshair;background:#1a1a1a;`;
+        // 用 canvas 绘制截图(而不是 <img>,方便后续裁剪)
+        const bgCanvas = document.createElement('canvas');
+        bgCanvas.width = winW;
+        bgCanvas.height = winH;
+        bgCanvas.style.cssText = `position:absolute;inset:0;width:100%;height:100%;`;
+        const bctx = bgCanvas.getContext('2d')!;
+        // 暗化绘制(未选中区域效果)
+        bctx.drawImage(img, offX, offY, dispW, dispH);
+        bctx.fillStyle = 'rgba(0,0,0,0.5)';
+        bctx.fillRect(0, 0, winW, winH);
+        overlay.appendChild(bgCanvas);
+
+        // 选择框(另一个 canvas 叠在上面,画亮区 + 边框)
+        const selCanvas = document.createElement('canvas');
+        selCanvas.width = winW;
+        selCanvas.height = winH;
+        selCanvas.style.cssText = `position:absolute;inset:0;width:100%;height:100%;pointer-events:none;`;
+        const sctx = selCanvas.getContext('2d')!;
+        overlay.appendChild(selCanvas);
+
+        // 提示文字
+        const hint = document.createElement('div');
+        hint.textContent = tr('vision.captureHint');
+        hint.style.cssText = `position:absolute;top:20px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;background:rgba(0,0,0,0.7);padding:6px 16px;border-radius:8px;pointer-events:none;z-index:1;white-space:nowrap;`;
+        overlay.appendChild(hint);
+
+        document.body.appendChild(overlay);
+
+        let dragging = false;
+        let startX = 0, startY = 0, endX = 0, endY = 0;
+
+        const cleanup = (): void => { overlay.remove(); };
+
+        const onCancel = (): void => { cleanup(); resolve(null); };
+
+        const onKey = (e: KeyboardEvent): void => {
+          if (e.key === 'Escape') { document.removeEventListener('keydown', onKey); onCancel(); }
+        };
+        document.addEventListener('keydown', onKey);
+
+        const drawSelection = (sx: number, sy: number, ex: number, ey: number): void => {
+          sctx.clearRect(0, 0, winW, winH);
+          const x = Math.min(sx, ex), y = Math.min(sy, ey);
+          const w = Math.abs(ex - sx), h = Math.abs(ey - sy);
+          // 在选区内绘制亮版截图
+          sctx.save();
+          sctx.beginPath();
+          sctx.rect(x, y, w, h);
+          sctx.clip();
+          sctx.drawImage(img, offX, offY, dispW, dispH);
+          sctx.restore();
+          // 选区边框
+          sctx.strokeStyle = '#e8b339';
+          sctx.lineWidth = 2;
+          sctx.strokeRect(x, y, w, h);
+          // 四角标记
+          const cs = 8; // corner size
+          sctx.strokeStyle = '#e8b339';
+          sctx.lineWidth = 3;
+          // 左上
+          sctx.beginPath(); sctx.moveTo(x, y + cs); sctx.lineTo(x, y); sctx.lineTo(x + cs, y); sctx.stroke();
+          // 右上
+          sctx.beginPath(); sctx.moveTo(x + w - cs, y); sctx.lineTo(x + w, y); sctx.lineTo(x + w, y + cs); sctx.stroke();
+          // 左下
+          sctx.beginPath(); sctx.moveTo(x, y + h - cs); sctx.lineTo(x, y + h); sctx.lineTo(x + cs, y + h); sctx.stroke();
+          // 右下
+          sctx.beginPath(); sctx.moveTo(x + w - cs, y + h); sctx.lineTo(x + w, y + h); sctx.lineTo(x + w, y + h - cs); sctx.stroke();
+          // 尺寸标签
+          if (w > 30 && h > 20) {
+            const label = `${Math.round(w / scale)} × ${Math.round(h / scale)}`;
+            sctx.font = '12px ui-monospace, monospace';
+            const tw = sctx.measureText(label).width;
+            sctx.fillStyle = 'rgba(0,0,0,0.75)';
+            sctx.fillRect(x + w - tw - 12, y + h + 4, tw + 10, 20);
+            sctx.fillStyle = '#e8b339';
+            sctx.fillText(label, x + w - tw - 7, y + h + 18);
+          }
+        };
+
+        overlay.addEventListener('mousedown', (e) => {
+          dragging = true;
+          startX = endX = e.clientX;
+          startY = endY = e.clientY;
+          hint.style.display = 'none';
+        });
+
+        overlay.addEventListener('mousemove', (e) => {
+          if (!dragging) return;
+          endX = e.clientX;
+          endY = e.clientY;
+          drawSelection(startX, startY, endX, endY);
+        });
+
+        overlay.addEventListener('mouseup', (e) => {
+          if (!dragging) return;
+          dragging = false;
+          document.removeEventListener('keydown', onKey);
+
+          const x = Math.min(startX, e.clientX);
+          const y = Math.min(startY, e.clientY);
+          const w = Math.abs(e.clientX - startX);
+          const h = Math.abs(e.clientY - startY);
+
+          // 选区太小 → 取消
+          if (w < 5 || h < 5) { cleanup(); resolve(null); return; }
+
+          // 把窗口坐标映射回原图坐标
+          const srcX = (x - offX) / scale;
+          const srcY = (y - offY) / scale;
+          const srcW = w / scale;
+          const srcH = h / scale;
+
+          // 裁剪
+          const cropCanvas = document.createElement('canvas');
+          cropCanvas.width = Math.round(srcW);
+          cropCanvas.height = Math.round(srcH);
+          const cctx = cropCanvas.getContext('2d')!;
+          cctx.drawImage(img, srcX, srcY, srcW, srcH, 0, 0, cropCanvas.width, cropCanvas.height);
+          const croppedUrl = cropCanvas.toDataURL('image/png');
+          cleanup();
+          resolve(croppedUrl.length > 1000 ? croppedUrl : null);
+        });
+      };
+      img.onerror = () => resolve(null);
+      img.src = fullDataUrl;
+    });
   }
 
   // Skill 按钮:打开 skill 菜单(复用 / 的逻辑)。Direct 才有意义。
