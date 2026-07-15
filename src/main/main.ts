@@ -496,7 +496,7 @@ function registerIpc(): void {
   ipcMain.handle('get-brand', () => getBrand());
 
   // ── 多机协作:远程节点信息 + 远程任务调用 ──
-  ipcMain.handle('list-remote-nodes', () => mcp.remoteSnapshot());
+  ipcMain.handle('list-remote-nodes', async () => mcp.remoteSnapshot());
   ipcMain.handle('call-remote-agent', async (_e, serverName: string, prompt: string) => {
     try {
       return await mcp.callRemote(serverName, 'run_agent', { prompt });

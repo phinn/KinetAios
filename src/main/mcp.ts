@@ -492,7 +492,8 @@ class McpRegistry {
       await Promise.allSettled(
         made.map(async (c) => {
           await c.ready;
-          if (c.tools.length) {
+          // 连上就加入(alive=true 且完成握手);即使工具列表为空也保留,UI 展示为"在线、0 工具"。
+          if (c.alive) {
             this.clients.push(c);
             console.log(`[mcp] 已连 ${c.cfg.source}/${c.cfg.name}: ${c.tools.length} 个工具`);
           }
@@ -528,11 +529,15 @@ class McpRegistry {
     return this.clients.filter((c) => c.alive).map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
   }
 
-  // 给 Town UI 用的远程节点信息 / Remote node info for Town UI
-  remoteSnapshot(): Array<{ name: string; online: boolean; toolCount: number }> {
+  // 给 Town UI 用的远程节点信息(等连接完成后返回最新状态) / Remote node info for Town UI
+  async remoteSnapshot(waitMs = 3000): Promise<Array<{ name: string; online: boolean; toolCount: number }>> {
+    // 等连接完成(最多 waitMs 毫秒) / Wait for connection to finish (max waitMs)
+    if (this.connecting) {
+      await Promise.race([this.connecting, new Promise((r) => setTimeout(r, waitMs))]).catch(() => {});
+    }
     return this.clients
       .filter((c) => c.cfg.source === 'remote')
-      .map((c) => ({ name: c.cfg.name, online: c.alive && c.tools.length > 0, toolCount: c.tools.length }));
+      .map((c) => ({ name: c.cfg.name, online: c.alive, toolCount: c.tools.length }));
   }
 
   // 在指定远程节点上调用 run_agent / Call run_agent on a named remote node
