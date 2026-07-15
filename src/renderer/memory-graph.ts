@@ -1,6 +1,6 @@
 // 记忆图谱(Memory Graph):力导向图可视化 memory_triples 表中的 (subject, predicate, object) 三元组。
 // 纯 SVG + 物理模拟,零外部依赖。节点 = 实体,边 = 关系(predicate 标注在边上)。
-// 交互:拖拽节点 / 滚轮缩放 / 点击节点高亮关联边 / 双击展开详情。
+// 交互:拖拽节点 / 滚轮缩放 / 点击节点高亮关联边 / 点击空白取消 / 详情面板。
 import type { KinetAPI } from '../shared/types';
 import { t, type Lang } from '../shared/i18n';
 
@@ -28,10 +28,39 @@ const MAX_VELOCITY = 8;
 
 // ── 视口变换 ──
 let viewX = 0, viewY = 0, viewScale = 1;
-let isPanning = false, panStartX = 0, panStartY = 0, panStartVX = 0, panStartVY = 0;
+
+// ── 交互状态 ──
+let selectedNode: string | null = null;
+let draggingNode: GNode | null = null;
+let didDrag = false;         // 区分「点击」和「拖拽」
+let isPanning = false;
+let panStartX = 0, panStartY = 0, panStartVX = 0, panStartVY = 0;
 
 const svg = document.getElementById('mgraph-svg') as unknown as SVGElement;
 const detailEl = document.getElementById('mgraph-detail') as HTMLElement;
+
+// ── 屏幕坐标 → 世界坐标 / Screen → world coords ──
+function screenToWorld(sx: number, sy: number): { x: number; y: number } {
+  const rect = svg.getBoundingClientRect();
+  return {
+    x: (sx - rect.left - viewX) / viewScale,
+    y: (sy - rect.top - viewY) / viewScale,
+  };
+}
+
+// ── 命中测试:屏幕坐标 → 节点 / Hit test: screen → node ──
+function hitTest(sx: number, sy: number): GNode | null {
+  const wx = screenToWorld(sx, sy);
+  // 从后往前(后画的在上面)
+  for (let i = nodes.length - 1; i >= 0; i--) {
+    const n = nodes[i];
+    const maxDeg = Math.max(1, ...nodes.map((nd) => nd.degree));
+    const r = 8 + (n.degree / maxDeg) * 18;
+    const dx = wx.x - n.x, dy = wx.y - n.y;
+    if (dx * dx + dy * dy <= r * r) return n;
+  }
+  return null;
+}
 
 // ── 初始化数据 ──
 async function loadData(): Promise<void> {
@@ -67,6 +96,9 @@ async function loadData(): Promise<void> {
     <span class="mg-stat">${t(lang, 'mgraph.triples')}: <b>${triples.length}</b></span>
   `;
 
+  selectedNode = null;
+  detailEl.innerHTML = '';
+
   if (nodes.length === 0) {
     svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--text-dim)" font-size="14">${t(lang, 'mgraph.empty')}</text>`;
     return;
@@ -87,16 +119,14 @@ function layoutCircle(): void {
     n.x = cx + Math.cos(angle) * radius;
     n.y = cy + Math.sin(angle) * radius;
     n.vx = 0; n.vy = 0;
-    n.fixed = true;
   });
 }
 
-// ── 力导向模拟(Verlet 积分)──
-let animFrame: number | null = null;
+// ── 物理模拟 ──
+let animFrame = 0;
 let iterations = 0;
 
 function simulate(): void {
-  if (layoutMode === 'circle') { render(); animFrame = requestAnimationFrame(simulate); return; }
   iterations++;
   const rect = svg.getBoundingClientRect();
   const cx = rect.width / 2, cy = rect.height / 2;
@@ -159,11 +189,11 @@ function startSimulation(): void {
   simulate();
 }
 
-// ── 渲染 ──
-let selectedNode: string | null = null;
-
+// ── 渲染:重建 SVG DOM(无事件绑定,事件统一委托在 svg 上)──
 function render(): void {
+  if (nodes.length === 0) return;
   const ns = 'http://www.w3.org/2000/svg';
+
   svg.innerHTML = '';
 
   // 变换组
@@ -234,49 +264,12 @@ function render(): void {
     circle.setAttribute('cx', String(n.x));
     circle.setAttribute('cy', String(n.y));
     circle.setAttribute('r', String(r));
-    circle.setAttribute('fill', isSelected ? 'var(--accent)' : isConnected ? 'var(--accent-dim, rgba(232,179,57,0.3))' : 'var(--bg-elevated, #2a2a30)');
+    circle.setAttribute('fill', isSelected ? 'var(--accent)' : isConnected ? 'rgba(232,179,57,0.3)' : 'var(--bg-elev)');
     circle.setAttribute('stroke', isSelected ? 'var(--accent)' : 'var(--border)');
     circle.setAttribute('stroke-width', '1.5');
     circle.style.cursor = 'pointer';
-
-    // 拖拽 + 点击
-    let dragging = false;
-    let dragOffsetX = 0, dragOffsetY = 0;
-    circle.addEventListener('mousedown', (ev: MouseEvent) => {
-      ev.stopPropagation();
-      dragging = true;
-      n.fixed = true;
-      const pt = screenToWorld(ev.clientX, ev.clientY);
-      dragOffsetX = pt.x - n.x;
-      dragOffsetY = pt.y - n.y;
-      const onMove = (e2: MouseEvent) => {
-        if (!dragging) return;
-        const pt2 = screenToWorld(e2.clientX, e2.clientY);
-        n.x = pt2.x - dragOffsetX;
-        n.y = pt2.y - dragOffsetY;
-        n.vx = 0; n.vy = 0;
-        if (layoutMode === 'force' && iterations > 300) {
-          iterations = 200; // 重新启动物理
-          simulate();
-        }
-      };
-      const onUp = () => {
-        dragging = false;
-        n.fixed = false;
-        window.removeEventListener('mousemove', onMove);
-        window.removeEventListener('mouseup', onUp);
-      };
-      window.addEventListener('mousemove', onMove);
-      window.addEventListener('mouseup', onUp);
-    });
-
-    circle.addEventListener('click', (ev: MouseEvent) => {
-      ev.stopPropagation();
-      selectedNode = selectedNode === n.id ? null : n.id;
-      showNodeDetail(n);
-      render();
-    });
-
+    // data-id 用于事件委托命中 / data-id for event delegation
+    circle.setAttribute('data-id', n.id);
     g.appendChild(circle);
 
     // 节点标签
@@ -294,21 +287,7 @@ function render(): void {
     g.appendChild(text);
   }
 
-  // 点击空白取消选中
-  svg.onclick = () => {
-    if (selectedNode) { selectedNode = null; detailEl.innerHTML = ''; render(); }
-  };
-
-  svg.innerHTML = '';
   svg.appendChild(g);
-}
-
-function screenToWorld(sx: number, sy: number): { x: number; y: number } {
-  const rect = svg.getBoundingClientRect();
-  return {
-    x: (sx - rect.left - viewX) / viewScale,
-    y: (sy - rect.top - viewY) / viewScale,
-  };
 }
 
 // ── 节点详情面板 ──
@@ -329,11 +308,19 @@ function showNodeDetail(n: GNode): void {
   `;
 }
 
+function clearDetail(): void {
+  detailEl.innerHTML = '';
+}
+
 function escapeHtml(s: string): string {
   return s.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!);
 }
 
-// ── 缩放 + 平移 ──
+// ════════════════════════════════════════════════════════════════════
+// MARK: 事件处理(统一委托在 svg 上,不随 render 重建而丢失)
+// ════════════════════════════════════════════════════════════════════
+
+// ── 滚轮缩放 ──
 svg.addEventListener('wheel', (e: WheelEvent) => {
   e.preventDefault();
   const delta = e.deltaY > 0 ? 0.9 : 1.1;
@@ -347,24 +334,63 @@ svg.addEventListener('wheel', (e: WheelEvent) => {
   render();
 });
 
+// ── mousedown:节点拖拽 OR 画布平移 ──
 svg.addEventListener('mousedown', (e: MouseEvent) => {
-  if (e.target === svg) {
+  const hit = hitTest(e.clientX, e.clientY);
+  if (hit) {
+    // 点中节点 → 开始拖拽
+    draggingNode = hit;
+    didDrag = false;
+    hit.fixed = true;
+  } else {
+    // 点中空白 → 开始平移
     isPanning = true;
     panStartX = e.clientX; panStartY = e.clientY;
     panStartVX = viewX; panStartVY = viewY;
     svg.style.cursor = 'grabbing';
   }
 });
+
+// ── mousemove:拖拽节点 OR 平移画布 ──
 window.addEventListener('mousemove', (e: MouseEvent) => {
-  if (isPanning) {
+  if (draggingNode) {
+    didDrag = true;
+    const pt = screenToWorld(e.clientX, e.clientY);
+    draggingNode.x = pt.x;
+    draggingNode.y = pt.y;
+    draggingNode.vx = 0; draggingNode.vy = 0;
+    // 拖拽中重启物理(如果已停)
+    if (layoutMode === 'force' && iterations > 300) {
+      iterations = 250;
+      simulate();
+    } else {
+      render();
+    }
+  } else if (isPanning) {
     viewX = panStartVX + (e.clientX - panStartX);
     viewY = panStartVY + (e.clientY - panStartY);
     render();
   }
 });
-window.addEventListener('mouseup', () => {
-  isPanning = false;
-  svg.style.cursor = '';
+
+// ── mouseup:结束拖拽/平移 ──
+window.addEventListener('mouseup', (e: MouseEvent) => {
+  if (draggingNode) {
+    draggingNode.fixed = false;
+    // 如果没有拖动过 → 视为点击
+    if (!didDrag) {
+      const n = draggingNode;
+      selectedNode = selectedNode === n.id ? null : n.id;
+      if (selectedNode) showNodeDetail(n);
+      else clearDetail();
+      render();
+    }
+    draggingNode = null;
+  }
+  if (isPanning) {
+    isPanning = false;
+    svg.style.cursor = '';
+  }
 });
 
 // ── 控件 ──
