@@ -387,8 +387,15 @@ export interface KinetAPI {
   searchHistory(query: string): Promise<Array<{ role: string; content: string; convId?: string; convTitle?: string }>>;
   // ── 全局对话搜索(跨所有会话搜内容)──
   searchHistory(query: string): Promise<Array<{ role: string; content: string; convId: string | null; convTitle: string | null }>>;
-  // ── 记忆图谱数据(给力导向图渲染)──
-  memoryGraphData(): Promise<{ nodes: Array<{ id: string; label: string; idx: number }>; edges: Array<{ source: string; target: string; predicate: string }>; triples: Array<{ id: string; subject: string; predicate: string; object: string }> }>;
+  // ── 记忆图谱数据(给力导向图渲染,含溯源+冲突)──
+  memoryGraphData(): Promise<{
+    nodes: Array<{ id: string; label: string; idx: number }>;
+    edges: Array<{ source: string; target: string; predicate: string; tripleId: string; convId: string | null; createdAt: number }>;
+    triples: Array<{ id: string; subject: string; predicate: string; object: string; convId: string | null; createdAt: number; sourceEngine: string | null; sourcePrompt: string | null }>;
+    conflicts: Array<{ subject: string; predicate: string; entries: Array<{ tripleId: string; object: string; convId: string | null; createdAt: number }> }>;
+  }>;
+  // ── 删除记忆三元组 ──
+  deleteMemoryTriple(tripleId: string): Promise<{ ok: boolean }>;
   // ── Arena 深度统计 ──
   arenaStats(): Promise<Array<{ engine: string; sessions: number; totalCost: number; totalTokens: number; totalTools: number; avgCost: number; avgTokens: number; avgTools: number; avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }> }>>;
   // ── 记忆图谱窗口 ──

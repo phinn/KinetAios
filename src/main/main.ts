@@ -7,7 +7,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
@@ -1149,7 +1149,7 @@ function registerIpc(): void {
     return results;
   });
 
-  // ── 记忆图谱数据:返回三元组 + 节点列表(给 renderer 力导向图用)──
+  // ── 记忆图谱数据:返回三元组 + 节点列表(给 renderer 力导向图用) + 溯源 + 冲突 ──
   ipcMain.handle('memory-graph-data', () => {
     const triples = loadMemoryTriples();
     // 提取唯一节点(subject + object 去重)
@@ -1159,13 +1159,81 @@ function registerIpc(): void {
       nodeSet.add(t.object);
     }
     const nodes = [...nodeSet].map((label, i) => ({ id: label, label, idx: i }));
-    const edges = triples.map((t) => ({ source: t.subject, target: t.object, predicate: t.predicate }));
-    return { nodes, edges, triples };
+    const edges = triples.map((t) => ({
+      source: t.subject,
+      target: t.object,
+      predicate: t.predicate,
+      tripleId: t.id,
+      convId: t.conversation_id,
+      createdAt: t.created_at,
+    }));
+
+    // ── 记忆溯源:为每个三元组预查来源会话的 prompt / Provenance pre-lookup ──
+    // 按 conversation_id 批量查询(避免 N 次 DB call)
+    const provenanceMap = new Map<string, { engine: string | null; prompt: string | null }>();
+    const convIds = [...new Set(triples.map((t) => t.conversation_id).filter(Boolean))] as string[];
+    for (const cid of convIds) {
+      if (!provenanceMap.has(cid)) {
+        const p = tripleProvenance(cid);
+        provenanceMap.set(cid, { engine: p.engine, prompt: p.prompt });
+      }
+    }
+    const triplesWithSource = triples.map((t) => ({
+      id: t.id,
+      subject: t.subject,
+      predicate: t.predicate,
+      object: t.object,
+      convId: t.conversation_id,
+      createdAt: t.created_at,
+      sourceEngine: t.conversation_id ? provenanceMap.get(t.conversation_id)?.engine ?? null : null,
+      sourcePrompt: t.conversation_id ? provenanceMap.get(t.conversation_id)?.prompt ?? null : null,
+    }));
+
+    // ── 记忆冲突检测:同 subject + 同 predicate,不同 object / Conflict detection ──
+    // 例:(用户,使用系统,macOS) vs (用户,使用系统,Windows) → 冲突
+    const conflictMap = new Map<string, Array<{ tripleId: string; subject: string; predicate: string; object: string; convId: string | null; createdAt: number }>>();
+    const spKey = (s: string, p: string) => `${s}|${p}`.toLowerCase();
+    for (const t of triples) {
+      const key = spKey(t.subject, t.predicate);
+      if (!conflictMap.has(key)) conflictMap.set(key, []);
+      conflictMap.get(key)!.push({
+        tripleId: t.id,
+        subject: t.subject,
+        predicate: t.predicate,
+        object: t.object,
+        convId: t.conversation_id,
+        createdAt: t.created_at,
+      });
+    }
+    // 只保留有 >1 个不同 object 的组
+    const conflicts: Array<{
+      subject: string;
+      predicate: string;
+      entries: Array<{ tripleId: string; object: string; convId: string | null; createdAt: number }>;
+    }> = [];
+    for (const [, entries] of conflictMap) {
+      const uniqueObjects = new Set(entries.map((e) => e.object.toLowerCase()));
+      if (uniqueObjects.size > 1) {
+        conflicts.push({
+          subject: entries[0].subject,
+          predicate: entries[0].predicate,
+          entries: entries.map((e) => ({ tripleId: e.tripleId, object: e.object, convId: e.convId, createdAt: e.createdAt })),
+        });
+      }
+    }
+
+    return { nodes, edges, triples: triplesWithSource, conflicts };
   });
 
   // ── Arena 深度统计:按引擎聚合 token/成本/耗时/工具调用数 ──
   ipcMain.handle('arena-stats', () => {
     return arenaAggregate();
+  });
+
+  // ── 删除记忆三元组 ──
+  ipcMain.handle('delete-memory-triple', (_e, tripleId: string) => {
+    deleteMemoryTriple(tripleId);
+    return { ok: true };
   });
 
   // ── 记忆图谱独立窗口 ──

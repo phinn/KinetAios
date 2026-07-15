@@ -99,6 +99,8 @@ const api: KinetAPI = {
   searchHistory: (query: string) => ipcRenderer.invoke('search-history', query),
   // 记忆图谱数据
   memoryGraphData: () => ipcRenderer.invoke('memory-graph-data'),
+  // 删除记忆三元组
+  deleteMemoryTriple: (tripleId: string) => ipcRenderer.invoke('delete-memory-triple', tripleId),
   // Arena 深度统计
   arenaStats: () => ipcRenderer.invoke('arena-stats'),
   // 记忆图谱窗口

@@ -30,17 +30,21 @@
       </div>
     </div>
     <div class="mgraph-stats" id="mgraph-stats"></div>
-    <div class="mgraph-body">
-      <div class="mgraph-canvas-wrap">
-        <svg id="mgraph-svg" width="100%" height="100%"></svg>
-        <!-- 缩放控制浮层 -->
-        <div class="mgraph-zoom-bar">
-          <button class="mgraph-zoom-btn" id="mgraph-zoom-out" title="缩小">−</button>
-          <span class="mgraph-zoom-val" id="mgraph-zoom-val">100%</span>
-          <button class="mgraph-zoom-btn" id="mgraph-zoom-in" title="放大">+</button>
+    <div class="mgraph-main">
+      <!-- 左侧:图谱画布 + 溯源详情 -->
+      <div class="mgraph-canvas-section">
+        <div class="mgraph-canvas-wrap">
+          <svg id="mgraph-svg" width="100%" height="100%"></svg>
+          <div class="mgraph-zoom-bar">
+            <button class="mgraph-zoom-btn" id="mgraph-zoom-out" title="缩小">−</button>
+            <span class="mgraph-zoom-val" id="mgraph-zoom-val">100%</span>
+            <button class="mgraph-zoom-btn" id="mgraph-zoom-in" title="放大">+</button>
+          </div>
         </div>
+        <div class="mgraph-detail" id="mgraph-detail"></div>
       </div>
-      <aside class="mgraph-detail" id="mgraph-detail"></aside>
+      <!-- 右侧:冲突检测面板 -->
+      <div class="mgraph-conflict-panel" id="mgraph-conflict-panel"></div>
     </div>
   </div>
   <script src="memory-graph.js"></script>

@@ -1395,8 +1395,6 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 /* ── 记忆图谱 ── */
 .mgraph { margin: 0; height: 100vh; overflow: hidden; }
 .mgraph-wrap { display: flex; flex-direction: column; height: 100vh; }
-/* 左右布局:图谱在左,详情面板在右 / Left-right: graph on left, detail on right */
-.mgraph-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .mgraph-head {
   display: flex; align-items: center; gap: 12px; padding: 10px 20px;
   border-bottom: 1px solid var(--border);
@@ -1409,7 +1407,6 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 8px; cursor: pointer;
 }
-/* 搜索框 / Search input */
 .mgraph-search {
   background: var(--bg-input); color: var(--text); border: 1px solid var(--border);
   border-radius: 6px; font: inherit; font-size: 12px; padding: 4px 10px; width: 140px;
@@ -1417,8 +1414,6 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 .mgraph-search:focus { border-color: var(--accent); width: 180px; }
 .mgraph-search::placeholder { color: var(--text-dim); }
-
-/* 度数过滤滑块 / Degree filter slider */
 .mgraph-slider {
   -webkit-appearance: none; appearance: none; width: 60px; height: 4px;
   background: var(--border); border-radius: 2px; outline: none; cursor: pointer;
@@ -1429,7 +1424,16 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 .mgraph-degree-val { font-size: 11px; color: var(--text-dim); min-width: 28px; }
 
-/* 缩放控制浮层 / Zoom control overlay */
+/* ── 左右分栏:左=画布+溯源,右=冲突面板 ── */
+.mgraph-main { flex: 1; display: flex; overflow: hidden; }
+.mgraph-canvas-section { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+.mgraph-conflict-panel {
+  width: 320px; overflow-y: auto; border-left: 1px solid var(--border);
+  background: var(--bg-elev); flex-shrink: 0;
+}
+.mgraph-conflict-panel:empty { display: none; }
+
+/* ── 缩放控制浮层 ── */
 .mgraph-zoom-bar {
   position: absolute; bottom: 12px; right: 12px;
   display: flex; align-items: center; gap: 2px;
@@ -1451,27 +1455,91 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 
 .mgraph-stats {
   display: flex; gap: 16px; padding: 6px 20px; border-bottom: 1px solid var(--border);
-  font-size: 12px; color: var(--text-dim);
+  font-size: 12px; color: var(--text-dim); align-items: center;
 }
 .mgraph-stats b { color: var(--text); }
+.mg-conflict-badge {
+  color: #e85d5d; background: rgba(232,93,93,0.12); padding: 1px 8px;
+  border-radius: 10px; font-size: 11px; font-weight: 500;
+}
 .mgraph-canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: grab; min-width: 0; }
 .mgraph-canvas-wrap svg { cursor: grab; }
-/* 详情面板:右侧固定宽度,选中节点时展开,空时折叠为 0 */
+
+/* ── 溯源详情面板(底部) ── */
 .mgraph-detail {
-  width: 300px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid var(--border);
-  font-size: 12px; transition: width .2s; background: var(--bg-side);
+  max-height: 280px; overflow-y: auto; border-top: 1px solid var(--border);
+  padding: 0 20px; font-size: 12px; transition: max-height .2s, padding .2s;
 }
-/* 有内容时展开 / Expand when populated */
-.mgraph-detail:has(.mg-detail-head) { width: 300px; padding: 12px 16px; }
-/* 空状态折叠为 0 宽度 / Collapse to zero width when empty */
-.mgraph-detail:not(:has(.mg-detail-head)) { width: 0; padding: 0; border-left: none; overflow: hidden; }
-.mg-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
-.mg-detail-name { font-weight: 600; color: var(--accent); }
+.mgraph-detail:has(.mg-detail-head) { max-height: 280px; padding: 10px 20px; }
+.mgraph-detail:not(:has(.mg-detail-head)) { max-height: 0; padding: 0 20px; border-top: none; }
+.mg-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 8px; }
+.mg-detail-name { font-weight: 600; color: var(--accent); font-size: 14px; }
 .mg-detail-deg { color: var(--text-dim); font-size: 11px; }
-.mg-detail-row { padding: 3px 0; color: var(--text-dim); }
+.mg-detail-body { display: flex; flex-direction: column; gap: 2px; }
+.mg-detail-row {
+  padding: 6px 0; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 3px;
+}
+.mg-rel-row { display: flex; align-items: center; justify-content: space-between; }
+.mg-rel { color: var(--text); }
 .mg-arrow { color: var(--text-dim); margin: 0 4px; }
 .mg-pred { color: var(--accent); font-style: italic; }
+.mg-rel-meta { display: flex; align-items: center; gap: 8px; font-size: 10px; }
+.mg-time { color: var(--text-dim); }
+.mg-engine-badge {
+  padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 500;
+}
+.mg-engine-direct { background: rgba(232,179,57,0.15); color: #e8b339; }
+.mg-engine-claudeCode { background: rgba(217,119,87,0.15); color: #d97757; }
+.mg-engine-codex { background: rgba(99,181,59,0.15); color: #63b53b; }
+.mg-source-prompt {
+  color: var(--text-dim); font-size: 11px; background: var(--bg-input);
+  padding: 4px 8px; border-radius: 4px; margin-top: 2px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  cursor: help;
+}
+.mg-row-del {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 12px; padding: 2px 4px; border-radius: 3px; opacity: 0;
+  transition: opacity .15s, color .15s;
+}
+.mg-detail-row:hover .mg-row-del { opacity: 0.7; }
+.mg-row-del:hover { opacity: 1 !important; color: #e85d5d; }
 .mg-empty { color: var(--text-dim); }
+
+/* ── 冲突检测面板(右侧) ── */
+.mg-conflict-title {
+  padding: 12px 16px 6px; font-size: 13px; font-weight: 600; color: #e85d5d;
+  display: flex; flex-direction: column; gap: 2px;
+  position: sticky; top: 0; background: var(--bg-elev); z-index: 1;
+  border-bottom: 1px solid var(--border);
+}
+.mg-conflict-desc { font-size: 10px; font-weight: 400; color: var(--text-dim); }
+.mg-conflict-item {
+  padding: 10px 16px; border-bottom: 1px solid var(--border);
+}
+.mg-conflict-head { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; font-size: 12px; }
+.mg-conflict-subj { color: var(--text); font-weight: 500; }
+.mg-conflict-pred { color: var(--accent); font-style: italic; }
+.mg-conflict-vals { display: flex; flex-direction: column; gap: 4px; }
+.mg-conflict-obj {
+  display: flex; align-items: center; gap: 8px;
+  background: var(--bg-input); padding: 4px 8px; border-radius: 4px;
+}
+.mg-conflict-val { color: var(--text); font-size: 12px; font-weight: 500; flex: 1; }
+.mg-conflict-meta { color: var(--text-dim); font-size: 10px; }
+.mg-conflict-del {
+  background: none; border: none; color: var(--text-dim); cursor: pointer;
+  font-size: 12px; padding: 2px 4px; border-radius: 3px; opacity: 0.5;
+  transition: opacity .15s, color .15s;
+}
+.mg-conflict-del:hover { opacity: 1; color: #e85d5d; }
+
+/* 冲突边脉冲动画 */
+@keyframes mg-pulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 0.9; }
+}
 
 /* ── Dashboard 增强 ── */
 .dash-section { margin-top: 16px; }

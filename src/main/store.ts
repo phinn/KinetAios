@@ -256,15 +256,35 @@ export function deleteMemory(id: string): void {
 // MARK: memory graph(实体关系三元组;与 memories 并行,不互依)
 // 提取器从对话里抽 (subject, predicate, object),例:(用户, 偏好, Tailwind) / (用户, 在做, Halo 项目)。
 // ponytail: 不做 entity 字典/归一化 —— 直接存原文,模型自己处理同义;后续可加规范化层。
-export function loadMemoryTriples(convId?: string): Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }> {
+export function loadMemoryTriples(convId?: string): Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null; created_at: number }> {
   if (convId === undefined) {
     return db
-      .prepare('SELECT id, subject, predicate, object, conversation_id FROM memory_triples ORDER BY created_at DESC;')
-      .all() as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>;
+      .prepare('SELECT id, subject, predicate, object, conversation_id, created_at FROM memory_triples ORDER BY created_at DESC;')
+      .all() as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null; created_at: number }>;
   }
   return db
-    .prepare('SELECT id, subject, predicate, object, conversation_id FROM memory_triples WHERE conversation_id=? ORDER BY created_at DESC;')
-    .all(convId) as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>;
+    .prepare('SELECT id, subject, predicate, object, conversation_id, created_at FROM memory_triples WHERE conversation_id=? ORDER BY created_at DESC;')
+    .all(convId) as Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null; created_at: number }>;
+}
+
+// MARK: 记忆溯源 — 查找三元组来自哪次对话的哪条 turn / Provenance lookup
+// 返回会话 id、engine、原始 prompt(触发记忆提取的那条用户消息)。
+export function tripleProvenance(convId: string | null): { convId: string | null; engine: string | null; prompt: string | null; turnId: string | null } {
+  if (!convId) return { convId: null, engine: null, prompt: null, turnId: null };
+  // 拿会话 engine
+  const conv = db.prepare('SELECT engine FROM conversations WHERE id=?;').get(convId) as { engine: string } | undefined;
+  // 拿该会话的第一条 turn 的 prompt(通常是触发记忆提取的那条)
+  const turn = db.prepare('SELECT id, data FROM turns WHERE conv_id=? ORDER BY created_at ASC LIMIT 1;').get(convId) as { id: string; data: string } | undefined;
+  let prompt: string | null = null;
+  let turnId: string | null = null;
+  if (turn) {
+    turnId = turn.id;
+    try {
+      const parsed = JSON.parse(turn.data) as { prompt?: string };
+      prompt = parsed.prompt ?? null;
+    } catch { /* ignore */ }
+  }
+  return { convId, engine: conv?.engine ?? null, prompt, turnId };
 }
 
 export function allMemoryTripleKeys(): Set<string> {
