@@ -25,7 +25,8 @@ interface WebviewLike {
   goBack(): void;
   reload(): void;
   addEventListener(ev: string, cb: (e: { url: string }) => void): void;
-  getGuestInstanceId(): number | undefined;  // Visual Inspector 需要,拿 guestInstanceId 给 main 执行注入
+  getGuestInstanceId(): number | undefined;
+  executeJavaScript(script: string, userGesture?: boolean): Promise<unknown>;  // 直接在 renderer 层调用
 }
 
 export interface FilesPaneController {
@@ -428,8 +429,6 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
   async function toggleInspect(): Promise<void> {
     if (inspecting) return;
     if (!currentAbs) { feStatus.textContent = tr('files.inspectNoFile'); return; }
-    const gid = webview.getGuestInstanceId?.();
-    if (gid == null) { feStatus.textContent = tr('files.inspectNoWebview'); return; }
     inspecting = true;
     inspectBtn.classList.add('active');
     feStatus.textContent = tr('files.inspectDragging');
@@ -587,14 +586,20 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         const inWvX1 = x1 - wvRect.left, inWvY1 = y1 - wvRect.top;
         const inWvX2 = x2 - wvRect.left, inWvY2 = y2 - wvRect.top;
 
-        // 用 executeJavaScript 在 webview 内部一次性采集选择框内的元素
+        // ★ 直接在 renderer 层调用 webview.executeJavaScript,不走主进程 IPC
+        // 避免 getGuestInstanceId + webContents.fromId 的 "guest view manager call error"
         const collectScript = buildCollectScript(inWvX1, inWvY1, inWvX2, inWvY2);
-        const gid = (webviewEl as unknown as WebviewLike).getGuestInstanceId();
-        if (!gid) { done = true; resolve(null); return; }
-        const r = await api.webviewInspect(gid, collectScript);
-        done = true;
-        if (!r.ok || !r.result || !Array.isArray(r.result)) { resolve(null); return; }
-        resolve(r.result as ElementInfo[]);
+        try {
+          const wv = webviewEl as unknown as WebviewLike;
+          const result = await wv.executeJavaScript(collectScript, false);
+          done = true;
+          if (!result || !Array.isArray(result)) { resolve(null); return; }
+          resolve(result as ElementInfo[]);
+        } catch (err) {
+          console.error('[inspect] executeJavaScript failed:', err);
+          done = true;
+          resolve(null);
+        }
       });
     });
   }
