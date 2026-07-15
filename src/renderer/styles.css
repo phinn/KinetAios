@@ -795,11 +795,14 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .files-view webview { width: 100%; height: 100%; display: inline-flex; border: none; }
 .files-empty { color: var(--text-faint); font-size: 12px; padding: 14px 16px; }
 
-/* 预览 / 编辑 tab —— 贴在地址栏左边,active 高亮 */
-.files-tabs { display: inline-flex; gap: 0; background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
-.ftab { background: transparent; border: none; color: var(--text-dim); padding: 4px 12px; font-size: 12px; cursor: pointer; border-radius: 0; }
-.ftab:hover { color: var(--text); }
-.ftab.active { background: var(--accent); color: #1b1b1f; font-weight: 600; }
+/* 预览 / 编辑 分段控制器(segmented control)—— 克制内凹底 + 柔和高亮 */
+.seg { display: inline-flex; align-items: center; gap: 1px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 7px; padding: 2px; }
+.seg-btn { display: inline-flex; align-items: center; gap: 5px; background: transparent; border: none; color: var(--text-faint); padding: 4px 10px; font-size: 11.5px; font-weight: 500; cursor: pointer; border-radius: 5px; transition: color .15s, background .15s; white-space: nowrap; line-height: 1; }
+.seg-btn svg { opacity: .7; transition: opacity .15s; }
+.seg-btn:hover { color: var(--text-dim); }
+.seg-btn:hover svg { opacity: .85; }
+.seg-btn.active { background: var(--bg-elev); color: var(--text); box-shadow: 0 1px 2px rgba(0,0,0,.15); }
+.seg-btn.active svg { opacity: 1; color: var(--accent); }
 
 /* 编辑器铺满 .files-view,文本框 + 底部状态条 */
 .files-editor { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }

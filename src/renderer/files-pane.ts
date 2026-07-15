@@ -179,9 +179,15 @@ const PANEL_HTML = `
     <button class="ghost" data-btn="pick" data-i18n-title="files.pickDir" title="切换目录"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
     <span class="files-cwd" data-el="cwd"></span>
     <span class="files-spacer"></span>
-    <div class="files-tabs">
-      <button class="ftab active" data-btn="tab-preview" data-i18n="files.tabPreview">预览</button>
-      <button class="ftab" data-btn="tab-edit" data-i18n="files.tabEdit">编辑</button>
+    <div class="seg" role="tablist">
+      <button class="seg-btn active" data-btn="tab-preview" role="tab" data-i18n-title="files.tabPreview" title="预览">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        <span data-i18n="files.tabPreview">预览</span>
+      </button>
+      <button class="seg-btn" data-btn="tab-edit" role="tab" data-i18n-title="files.tabEdit" title="编辑">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.12 2.12 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+        <span data-i18n="files.tabEdit">编辑</span>
+      </button>
     </div>
     <button class="ghost" data-btn="back" data-i18n-title="files.back" title="后退"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
     <button class="ghost" data-btn="reload" data-i18n-title="files.reload" title="刷新"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
