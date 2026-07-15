@@ -284,6 +284,9 @@ export interface KinetAPI {
   startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;
   stopMcpServer(): Promise<{ ok: boolean }>;
   mcpServerStatus(): Promise<{ running: boolean; port: number; url: string }>;
+  // ── 多机协作:远程节点信息 + 远程任务调用 ──
+  listRemoteNodes(): Promise<Array<{ name: string; url?: string; online: boolean; toolCount: number }>>;
+  callRemoteAgent(serverName: string, prompt: string): Promise<string>;
   pickDirectory(): Promise<string>;
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
   fileRead(abs: string): Promise<{ ok: boolean; content?: string; error?: string }>;

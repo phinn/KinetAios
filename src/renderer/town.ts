@@ -14,6 +14,14 @@ let homeDir = '';
 export function setTownLang(l: Lang): void { lang = l; }
 export function setTownHomeDir(d: string): void { homeDir = d; }
 
+// 远程节点信息 / Remote node info (passed from app.ts)
+export type RemoteNodeInfo = {
+  name: string;
+  url?: string;
+  online: boolean;    // 是否已连上(从 listMcp 判断) / connected (from listMcp)
+  toolCount: number;  // 可用工具数 / available tools
+};
+
 // 引擎颜色 / Engine colors (muted, sophisticated tones)
 const ENGINE_COLORS: Record<EngineKind, string> = {
   direct: '#e8b339',
@@ -243,6 +251,72 @@ export function villagerSVG(engine: EngineKind, state: VillagerState): string {
   </svg>`;
 }
 
+/**
+ * 云端房子 SVG / Cloud house SVG (for remote MCP nodes)
+ * 与本地房子视觉区分:房子坐在一朵云上,配色偏冷蓝/紫调。
+ * 宽 130 高 150(含云朵底座)。
+ */
+export function cloudHouseSVG(name: string, online: boolean, toolCount: number): string {
+  const hue = hashHue(name);
+  // 远程房子用冷色调 / Remote houses use cool tones
+  const cWall = online ? `hsl(${hue}, 28%, 58%)` : `hsl(${hue}, 12%, 42%)`;
+  const cWallD = online ? `hsl(${hue}, 28%, 44%)` : `hsl(${hue}, 12%, 32%)`;
+  const cWallL = online ? `hsl(${hue}, 28%, 68%)` : `hsl(${hue}, 12%, 52%)`;
+  const cRoof = online ? `hsl(${hue}, 35%, 40%)` : `hsl(${hue}, 15%, 30%)`;
+  const cRoofD = online ? `hsl(${hue}, 35%, 30%)` : `hsl(${hue}, 15%, 22%)`;
+  // 窗户:在线时亮灯,离线时暗 / Windows: lit when online, dark when offline
+  const winColor = online ? '#7dd3fc' : '#444';
+  const winGlow = online ? `<circle cx="82" cy="62" r="14" fill="#7dd3fc" opacity="0.1"/>` : '';
+  // 云朵 / cloud base
+  const cloudOpacity = online ? '0.8' : '0.35';
+  const cloudFill = online ? 'rgba(180,200,220,0.6)' : 'rgba(100,100,110,0.3)';
+
+  // 信号波纹(在线时) / signal ripples when online
+  const signal = online ? `
+    <circle cx="100" cy="20" r="3" fill="none" stroke="#7dd3fc" stroke-width="0.8" opacity="0.6">
+      <animate attributeName="r" values="3;8;3" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <circle cx="100" cy="20" r="2" fill="#7dd3fc">
+      <animate attributeName="opacity" values="1;0.4;1" dur="1.5s" repeatCount="indefinite"/>
+    </circle>` : '<text x="100" y="24" text-anchor="middle" font-size="10" fill="#666">✕</text>';
+
+  return `<svg width="130" height="150" viewBox="0 0 130 150" xmlns="http://www.w3.org/2000/svg">
+    <!-- 信号 / signal indicator -->
+    ${signal}
+    <!-- 地基云朵阴影 / cloud ground shadow -->
+    <ellipse cx="65" cy="138" rx="50" ry="5" fill="rgba(0,0,0,0.08)"/>
+    <!-- 云朵底座 / cloud base -->
+    <ellipse cx="35" cy="128" rx="20" ry="10" fill="${cloudFill}" opacity="${cloudOpacity}"/>
+    <ellipse cx="65" cy="132" rx="30" ry="12" fill="${cloudFill}" opacity="${cloudOpacity}"/>
+    <ellipse cx="95" cy="128" rx="22" ry="10" fill="${cloudFill}" opacity="${cloudOpacity}"/>
+    <!-- 左墙(暗面) / left wall -->
+    <polygon points="14,60 65,86 65,118 14,92" fill="${cWallD}"/>
+    <!-- 右墙(亮面) / right wall -->
+    <polygon points="65,86 116,60 116,92 65,118" fill="${cWall}"/>
+    <!-- 右墙高光 / right wall highlight -->
+    <polygon points="65,86 116,60 116,64 65,90" fill="${cWallL}" opacity="0.25"/>
+    <!-- 左屋顶 / left roof -->
+    <polygon points="14,60 65,32 65,86 14,60" fill="${cRoofD}"/>
+    <!-- 右屋顶 / right roof -->
+    <polygon points="65,32 116,60 65,86" fill="${cRoof}"/>
+    <!-- 屋脊 / roof ridge -->
+    <polygon points="61,30 69,30 71,34 59,34" fill="${cRoofD}"/>
+    <!-- 天线(在线时亮) / antenna (glowing when online) -->
+    <line x1="65" y1="32" x2="65" y2="20" stroke="${cWallD}" stroke-width="1"/>
+    <circle cx="65" cy="19" r="1.5" fill="${online ? '#7dd3fc' : '#555'}"/>
+    <!-- 门 / door -->
+    <polygon points="48,86 48,104 54,107 54,89" fill="${cWallD}"/>
+    <!-- 窗户 / window -->
+    ${winGlow}
+    <rect x="72" y="54" width="20" height="14" rx="1.5" fill="${winColor}" opacity="${online ? '0.85' : '0.4'}" stroke="${cWallD}" stroke-width="0.5"/>
+    <line x1="82" y1="54" x2="82" y2="68" stroke="${cWallD}" stroke-width="0.4" opacity="0.4"/>
+    <line x1="72" y1="61" x2="92" y2="61" stroke="${cWallD}" stroke-width="0.4" opacity="0.4"/>
+    <!-- 工具数标签 / tool count badge -->
+    ${online && toolCount > 0 ? `<rect x="95" y="100" width="22" height="12" rx="6" fill="rgba(125,211,252,0.2)" stroke="#7dd3fc" stroke-width="0.5"/><text x="106" y="108" text-anchor="middle" font-size="7" fill="#7dd3fc" font-family="system-ui" font-weight="600">${toolCount}</text>` : ''}
+  </svg>`;
+}
+
 // ═══════════════════════════════════════════════════
 // 主渲染 / Main rendering
 // ═══════════════════════════════════════════════════
@@ -256,6 +330,9 @@ let onNewProject: (() => void) | null = null;
 let getConvs: (() => Map<string, Conversation>) | null = null;
 let getOrder: (() => string[]) | null = null;
 let onShowWorkbench: (() => void) | null = null;
+// 远程节点 / Remote nodes
+let getRemoteNodes: (() => RemoteNodeInfo[]) | null = null;
+let onRemoteTask: ((serverName: string, prompt: string) => Promise<string>) | null = null;
 
 export interface TownCallbacks {
   send: (id: string, text: string) => void;
@@ -266,6 +343,8 @@ export interface TownCallbacks {
   showWorkbench: () => void;
   convs: () => Map<string, Conversation>;
   order: () => string[];
+  remoteNodes: () => RemoteNodeInfo[];
+  remoteTask: (serverName: string, prompt: string) => Promise<string>;
 }
 
 export function setTownCallbacks(cb: TownCallbacks): void {
@@ -277,10 +356,15 @@ export function setTownCallbacks(cb: TownCallbacks): void {
   onShowWorkbench = cb.showWorkbench;
   getConvs = cb.convs;
   getOrder = cb.order;
+  getRemoteNodes = cb.remoteNodes;
+  onRemoteTask = cb.remoteTask;
 }
 
 const ICON_TOWN = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
 const ICON_GRID = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>';
+const ICON_CLOUD = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.5 2A4 4 0 006 19h11.5z"/></svg>';
+const ICON_CLOUD_SMALL = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.5 19a4.5 4.5 0 100-9 6 6 0 00-11.5 2A4 4 0 006 19h11.5z"/></svg>';
+const ICON_SEND = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
 
 /** 全量渲染小镇 / Full render of the town */
 export function renderTown(): void {
@@ -355,6 +439,32 @@ export function renderTown(): void {
     houses += '</div>';
   }
 
+  // ── 远程节点区块 / Remote nodes section ──
+  let remoteHTML = '';
+  const remoteNodes = getRemoteNodes ? getRemoteNodes() : [];
+  if (remoteNodes.length > 0) {
+    const remoteCols = Math.min(3, remoteNodes.length);
+    remoteHTML = `<div class="town-remote-header">${ICON_CLOUD} ${esc(tr('town.remoteSection'))}</div>
+      <div class="town-remote-sub">${esc(tr('town.remoteSub'))}</div>
+      <div class="town-grid town-remote-grid" style="--town-cols:${remoteCols}">`;
+    for (const node of remoteNodes) {
+      const statusCls = node.online ? 'online' : 'offline';
+      const statusText = node.online ? tr('town.remoteOnline') : tr('town.remoteOffline');
+      remoteHTML += `<div class="town-house town-remote ${statusCls}" data-remote-name="${esc(node.name)}">
+        <div class="house-roof-label">${ICON_CLOUD_SMALL} ${esc(node.name)}</div>
+        <div class="house-svg">${cloudHouseSVG(node.name, node.online, node.toolCount)}</div>
+        <div class="house-sign">
+          <span class="house-stats ${statusCls}">${esc(statusText)}</span>
+          <span class="house-last">${node.online ? esc(tr('town.remoteTools', { n: node.toolCount })) : esc(node.url || '')}</span>
+        </div>
+        <div class="house-actions">
+          <button class="ghost town-remote-task" ${node.online ? '' : 'disabled'} title="${esc(tr('town.remoteTask'))}">${ICON_SEND} ${esc(tr('town.remoteTask'))}</button>
+        </div>
+      </div>`;
+    }
+    remoteHTML += '</div>';
+  }
+
   root.innerHTML = `<div class="town-sky"></div>
     <div class="town-header">
       <div class="town-title">${ICON_TOWN} ${esc(tr('town.title'))}</div>
@@ -363,7 +473,7 @@ export function renderTown(): void {
       <button class="ghost" id="town-goto-wb" title="${esc(tr('wb.title'))}">${ICON_GRID}</button>
       <button class="primary" id="town-new-proj">${esc(tr('town.newProject'))}</button>
     </div>
-    <div class="town-body">${houses}</div>`;
+    <div class="town-body">${houses}${remoteHTML}</div>`;
 
   // 绑定事件 / Wire events
   const newProjBtn = document.getElementById('town-new-proj');
@@ -385,6 +495,18 @@ export function renderTown(): void {
         openTownPanel(cid);
       };
     });
+  });
+
+  // 远程节点:点击发起远程任务 / Remote nodes: click to send remote task
+  root.querySelectorAll<HTMLElement>('.town-remote').forEach((house) => {
+    const rName = house.dataset.remoteName!;
+    const taskBtn = house.querySelector<HTMLElement>('.town-remote-task');
+    if (taskBtn) {
+      taskBtn.onclick = (e) => {
+        e.stopPropagation();
+        openRemoteTaskPanel(rName);
+      };
+    }
   });
 
   // 如果有选中的 villager,刷新面板 / Refresh panel if a villager is selected
@@ -412,6 +534,73 @@ function closeTownPanel(): void {
   if (panel) panel.classList.remove('open');
   const backdrop = document.getElementById('town-backdrop');
   if (backdrop) backdrop.classList.remove('open');
+}
+
+// ── 远程任务面板 / Remote task panel ──
+// 远程节点不支持本地会话,用独立的居中面板发任务。
+let selectedRemote: string | null = null;
+
+function openRemoteTaskPanel(serverName: string): void {
+  selectedRemote = serverName;
+  const panel = document.getElementById('town-panel');
+  if (!panel) return;
+  const nodes = getRemoteNodes ? getRemoteNodes() : [];
+  const node = nodes.find((n) => n.name === serverName);
+
+  panel.innerHTML = `<div class="tp-head">
+    <span class="tp-villager">${ICON_CLOUD_SMALL}</span>
+    <div class="tp-info">
+      <div class="tp-name">${ICON_CLOUD_SMALL} ${esc(serverName)}</div>
+      <div class="tp-engine">${node ? esc(node.url || '') : ''}</div>
+    </div>
+    <button class="ghost tp-close" title="${esc(tr('common.close'))}">✕</button>
+  </div>
+  <div class="tp-body">
+    <div class="tp-section">
+      <div class="tp-label">${esc(tr('town.remoteTask'))}</div>
+      <textarea class="tp-remote-input" rows="3" placeholder="${esc(tr('town.remoteTaskPh'))}"></textarea>
+    </div>
+    <div class="tp-remote-result"></div>
+  </div>
+  <div class="tp-footer">
+    <div class="tp-actions">
+      <button class="primary tp-remote-run">${ICON_SEND} ${esc(tr('town.remoteRun'))}</button>
+      <button class="ghost tp-close-btn">${esc(tr('common.close'))}</button>
+    </div>
+  </div>`;
+  panel.classList.add('open');
+  const backdrop = document.getElementById('town-backdrop');
+  if (backdrop) {
+    backdrop.classList.add('open');
+    backdrop.onclick = () => closeTownPanel();
+  }
+
+  panel.querySelector<HTMLElement>('.tp-close')!.onclick = () => closeTownPanel();
+  panel.querySelector<HTMLElement>('.tp-close-btn')!.onclick = () => closeTownPanel();
+
+  const input = panel.querySelector<HTMLTextAreaElement>('.tp-remote-input')!;
+  const runBtn = panel.querySelector<HTMLButtonElement>('.tp-remote-run')!;
+  const resultEl = panel.querySelector<HTMLElement>('.tp-remote-result')!;
+
+  const doRun = async () => {
+    const prompt = input.value.trim();
+    if (!prompt || !onRemoteTask) return;
+    runBtn.disabled = true;
+    runBtn.innerHTML = `${ICON_SEND} ${esc(tr('town.remoteRunning'))}`;
+    resultEl.innerHTML = `<div class="tp-remote-running"><span class="tp-spinner"></span> ${esc(tr('town.remoteRunning'))}</div>`;
+    try {
+      const result = await onRemoteTask(serverName, prompt);
+      resultEl.innerHTML = `<div class="tp-section"><div class="tp-label">${esc(tr('town.remoteResult'))}</div><div class="tp-answer">${esc(result)}</div></div>`;
+    } catch (err) {
+      resultEl.innerHTML = `<div class="tp-error">${esc((err as Error).message || tr('town.remoteErr'))}</div>`;
+    } finally {
+      runBtn.disabled = false;
+      runBtn.innerHTML = `${ICON_SEND} ${esc(tr('town.remoteRun'))}`;
+    }
+  };
+  runBtn.onclick = doRun;
+  input.onkeydown = (e) => { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); void doRun(); } };
+  input.focus();
 }
 
 /** 刷新面板内容(全量重建 innerHTML) / Refresh panel content */

@@ -492,3 +492,90 @@
     animation: none;
   }
 }
+
+/* ═══════════════════════════════════════ */
+/* 远程节点区块 / Remote nodes section     */
+/* ═══════════════════════════════════════ */
+
+.town-remote-header {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  opacity: 0.7;
+  margin: 4px 0 2px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.town-remote-sub {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+
+/* 远程房子与本地房子风格统一,但加微妙的冷色调边框 / Remote house: subtle cool-tone border */
+.town-remote {
+  border-color: rgba(125, 211, 252, 0.12);
+}
+.town-remote.online {
+  border-color: rgba(125, 211, 252, 0.2);
+}
+.town-remote.offline {
+  opacity: 0.55;
+}
+
+/* 在线/离线状态标签 / Online/offline status badge */
+.house-stats.online {
+  color: #7dd3fc;
+}
+.house-stats.offline {
+  color: var(--muted);
+}
+
+/* 远程任务输入框 / Remote task textarea */
+.tp-remote-input {
+  width: 100%;
+  min-height: 60px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+  resize: vertical;
+  box-sizing: border-box;
+}
+.tp-remote-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+.tp-remote-result {
+  min-height: 0;
+}
+.tp-remote-result:empty {
+  display: none;
+}
+.tp-remote-running {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 0;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/* 小 spinner / Tiny spinner */
+.tp-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: tp-spin 0.8s linear infinite;
+}
+@keyframes tp-spin {
+  to { transform: rotate(360deg); }
+}

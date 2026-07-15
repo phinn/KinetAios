@@ -495,6 +495,16 @@ function registerIpc(): void {
   ipcMain.handle('list-mcp', () => mcp.snapshot());
   ipcMain.handle('get-brand', () => getBrand());
 
+  // ── 多机协作:远程节点信息 + 远程任务调用 ──
+  ipcMain.handle('list-remote-nodes', () => mcp.remoteSnapshot());
+  ipcMain.handle('call-remote-agent', async (_e, serverName: string, prompt: string) => {
+    try {
+      return await mcp.callRemote(serverName, 'run_agent', { prompt });
+    } catch (err) {
+      throw new Error((err as Error).message);
+    }
+  });
+
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──
   // 远程 Agent 事件 → 转发到 dashboard,让用户看到"远程正在调我的 Agent 干活"。
   localMcpServer.setRemoteEventHandler((ev) => {

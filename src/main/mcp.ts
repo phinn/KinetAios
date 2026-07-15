@@ -528,6 +528,21 @@ class McpRegistry {
     return this.clients.filter((c) => c.alive).map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
   }
 
+  // 给 Town UI 用的远程节点信息 / Remote node info for Town UI
+  remoteSnapshot(): Array<{ name: string; online: boolean; toolCount: number }> {
+    return this.clients
+      .filter((c) => c.cfg.source === 'remote')
+      .map((c) => ({ name: c.cfg.name, online: c.alive && c.tools.length > 0, toolCount: c.tools.length }));
+  }
+
+  // 在指定远程节点上调用 run_agent / Call run_agent on a named remote node
+  async callRemote(serverName: string, tool: string, args: Record<string, unknown>): Promise<string> {
+    const client = this.clients.find((c) => c.cfg.source === 'remote' && c.cfg.name === serverName);
+    if (!client) throw new Error(`远程节点「${serverName}」未连接`);
+    if (!client.alive) throw new Error(`远程节点「${serverName}」已断开`);
+    return client.call(tool, args);
+  }
+
   dispose(): void {
     this.clients.forEach((c) => c.dispose());
     this.clients = [];

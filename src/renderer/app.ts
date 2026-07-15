@@ -37,6 +37,8 @@ let budgetCache: AppSettings['budget'] = { enabled: false, perSessionLimit: 0, d
 // 多机协作:MCP Server + 远程节点配置缓存(同 budget 模式)
 let localMcpServerCache: AppSettings['localMcpServer'] = { enabled: false, port: 18109, token: '' };
 let remoteMcpServersCache: AppSettings['remoteMcpServers'] = [];
+// 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
+let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
 let activeTab: 'chat' | 'files' | 'git' | 'rules' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
@@ -113,6 +115,8 @@ function applyI18nDOM(): void {
       showWorkbench: () => showWorkbench(),
       convs: () => convs,
       order: () => order,
+      remoteNodes: () => remoteNodesCache,
+      remoteTask: async (serverName, prompt) => api.callRemoteAgent(serverName, prompt),
     };
     setTownCallbacks(townCallbacks);
     const brandEl = document.getElementById('brand');
@@ -1988,11 +1992,26 @@ function showWorkbench() {
   renderWorkbench();
 }
 
-function showTown() {
+async function showTown() {
   currentView = 'town';
   hideAllViews();
   document.getElementById('town-view')!.classList.add('active');
   syncViewButtons();
+  // 刷新远程节点状态(非阻塞) / Refresh remote node status (non-blocking)
+  try {
+    const raw = await api.listRemoteNodes();
+    // 合并 settings 中的 URL 信息 / Merge URL info from settings cache
+    remoteNodesCache = raw.map((n) => {
+      const cfg = remoteMcpServersCache.find((r) => r.name === n.name);
+      return { ...n, url: cfg?.url };
+    });
+    // 也把 settings 中配了但 main 进程还没连上的节点显示为离线 / Show offline nodes for configured-but-unconnected
+    for (const cfg of remoteMcpServersCache) {
+      if (!raw.find((r) => r.name === cfg.name)) {
+        remoteNodesCache.push({ name: cfg.name, url: cfg.url, online: false, toolCount: 0 });
+      }
+    }
+  } catch { /* ignore — main may not be ready yet */ }
   renderTown();
 }
 
