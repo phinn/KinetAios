@@ -1,0 +1,954 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios — 完整功能说明</title>
+<style>
+  :root {
+    --bg: #0d0d12;
+    --bg-elev: #16161e;
+    --bg-card: #1c1c28;
+    --border: #2a2a3a;
+    --gold: #e8b339;
+    --gold-dim: rgba(232,179,57,.15);
+    --text: #e4e4ea;
+    --text-dim: #8888a0;
+    --radius: 12px;
+    --serif: Georgia, 'Times New Roman', serif;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', Consolas, monospace;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, 'Segoe UI', sans-serif;
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ── HERO ── */
+  .hero {
+    position: relative;
+    overflow: hidden;
+    padding: 120px 24px 80px;
+    text-align: center;
+    background:
+      radial-gradient(ellipse 60% 50% at 50% 0%, rgba(232,179,57,.08), transparent),
+      radial-gradient(ellipse 40% 40% at 20% 100%, rgba(100,140,255,.06), transparent),
+      radial-gradient(ellipse 40% 40% at 80% 100%, rgba(200,100,200,.05), transparent);
+    border-bottom: 1px solid var(--border);
+  }
+  .hero-logo {
+    width: 88px; height: 88px;
+    margin: 0 auto 28px;
+    background: linear-gradient(135deg, var(--gold), #c8901e);
+    border-radius: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-family: var(--serif);
+    font-size: 48px; font-weight: bold;
+    color: #1a1a2e;
+    box-shadow: 0 8px 32px rgba(232,179,57,.25), inset 0 1px 0 rgba(255,255,255,.2);
+  }
+  .hero h1 {
+    font-size: 42px; font-weight: 700;
+    letter-spacing: -.02em;
+    margin-bottom: 12px;
+  }
+  .hero h1 span { color: var(--gold); }
+  .hero-sub {
+    font-size: 18px;
+    color: var(--text-dim);
+    max-width: 580px;
+    margin: 0 auto;
+  }
+  .hero-badges {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center;
+    margin-top: 32px;
+  }
+  .hero-badge {
+    padding: 6px 14px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    font-size: 13px;
+    color: var(--text-dim);
+  }
+  .hero-badge b { color: var(--gold); }
+
+  /* ── LAYOUT ── */
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  /* ── TOC ── */
+  .toc {
+    position: sticky; top: 0; z-index: 100;
+    background: rgba(13,13,18,.92);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 0;
+  }
+  .toc-inner {
+    max-width: 960px; margin: 0 auto; padding: 0 24px;
+    display: flex; gap: 6px; overflow-x: auto;
+    scrollbar-width: none;
+  }
+  .toc-inner::-webkit-scrollbar { display: none; }
+  .toc a {
+    flex-shrink: 0;
+    padding: 5px 12px;
+    font-size: 13px;
+    color: var(--text-dim);
+    text-decoration: none;
+    border-radius: 8px;
+    transition: all .15s;
+    white-space: nowrap;
+  }
+  .toc a:hover { background: var(--bg-card); color: var(--text); }
+
+  /* ── SECTION ── */
+  section { padding: 64px 0; border-bottom: 1px solid var(--border); }
+  section:last-child { border-bottom: none; }
+  .sec-icon {
+    width: 44px; height: 44px;
+    margin-bottom: 16px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px;
+    background: var(--gold-dim);
+    border: 1px solid rgba(232,179,57,.2);
+  }
+  .sec-icon svg { width: 24px; height: 24px; }
+  h2 {
+    font-size: 28px; font-weight: 700;
+    margin-bottom: 8px;
+    letter-spacing: -.01em;
+  }
+  .sec-desc {
+    color: var(--text-dim);
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+
+  /* ── CARDS ── */
+  .grid { display: grid; gap: 16px; }
+  .grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .grid-3 { grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 768px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    transition: border-color .2s, transform .2s;
+  }
+  .card:hover {
+    border-color: rgba(232,179,57,.3);
+    transform: translateY(-2px);
+  }
+  .card-icon {
+    font-size: 28px;
+    margin-bottom: 12px;
+    display: block;
+  }
+  .card h3 {
+    font-size: 17px;
+    margin-bottom: 6px;
+  }
+  .card p {
+    font-size: 14px;
+    color: var(--text-dim);
+    line-height: 1.6;
+  }
+  .card-tag {
+    display: inline-block;
+    padding: 2px 8px;
+    background: var(--gold-dim);
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--gold);
+    margin-bottom: 8px;
+    font-family: var(--mono);
+  }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    font-weight: 600;
+    color: var(--gold);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  td code {
+    font-family: var(--mono);
+    font-size: 13px;
+    color: var(--gold);
+    background: var(--gold-dim);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  tr:hover td { background: rgba(255,255,255,.02); }
+
+  /* ── FEATURE LIST ── */
+  .feat-list { list-style: none; }
+  .feat-list li {
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    font-size: 14px;
+  }
+  .feat-list li:last-child { border-bottom: none; }
+  .feat-list .feat-icon {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 8px;
+    background: var(--bg-elev);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .feat-list b { color: var(--text); }
+  .feat-list span { color: var(--text-dim); }
+
+  /* ── CALLOUT ── */
+  .callout {
+    background: linear-gradient(135deg, var(--gold-dim), transparent);
+    border: 1px solid rgba(232,179,57,.2);
+    border-radius: var(--radius);
+    padding: 20px 24px;
+    margin: 24px 0;
+  }
+  .callout p { font-size: 14px; color: var(--text-dim); }
+  .callout strong { color: var(--gold); }
+
+  /* ── ARCHITECTURE DIAGRAM ── */
+  .arch {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 32px 24px;
+    margin: 24px 0;
+  }
+  .arch-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .arch-node {
+    padding: 12px 20px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+    text-align: center;
+    min-width: 120px;
+  }
+  .arch-node b { display: block; color: var(--gold); font-size: 14px; }
+  .arch-node span { color: var(--text-dim); font-size: 12px; }
+  .arch-arrow { color: var(--text-dim); font-size: 20px; }
+
+  /* ── TOWN PREVIEW ── */
+  .town-preview {
+    background: linear-gradient(180deg, #1a1a2e 0%, var(--bg-card) 100%);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 40px 24px;
+    text-align: center;
+    margin: 24px 0;
+    position: relative;
+    overflow: hidden;
+  }
+  .town-houses {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+  }
+  .town-house {
+    width: 80px; height: 80px;
+    position: relative;
+  }
+  .town-cloud {
+    width: 80px; height: 60px;
+    position: relative;
+  }
+  .town-label {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+
+  /* ── FOOTER ── */
+  footer {
+    padding: 48px 24px;
+    text-align: center;
+    border-top: 1px solid var(--border);
+  }
+  footer p { font-size: 13px; color: var(--text-dim); }
+  footer a { color: var(--gold); text-decoration: none; }
+
+  /* ── CODE BLOCK ── */
+  .code-block {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 13px;
+    overflow-x: auto;
+    line-height: 1.5;
+    color: var(--text-dim);
+  }
+  .code-block b { color: var(--gold); }
+
+  /* ── STAT ── */
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin: 32px 0;
+  }
+  @media (max-width: 600px) { .stats { grid-template-columns: repeat(2, 1fr); } }
+  .stat {
+    text-align: center;
+    padding: 24px 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+  }
+  .stat-num {
+    font-size: 36px;
+    font-weight: 700;
+    color: var(--gold);
+    font-family: var(--serif);
+  }
+  .stat-label {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-top: 4px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ════════ HERO ════════ -->
+<div class="hero">
+  <div class="hero-logo">K</div>
+  <h1>Kinet<span>Aios</span></h1>
+  <p class="hero-sub">本地 AI Agent 仪表盘 — 三引擎架构、多机协作、游戏化小镇</p>
+  <div class="hero-badges">
+    <span class="hero-badge"><b>Electron</b> + TypeScript</span>
+    <span class="hero-badge"><b>better-sqlite3</b> + FTS5</span>
+    <span class="hero-badge"><b>零框架</b> 前端</span>
+    <span class="hero-badge"><b>v1.2.0</b></span>
+    <span class="hero-badge">Windows / macOS</span>
+  </div>
+</div>
+
+<!-- ════════ TOC ════════ -->
+<nav class="toc">
+  <div class="toc-inner">
+    <a href="#engines">三引擎</a>
+    <a href="#tools">内置工具</a>
+    <a href="#chat">对话</a>
+    <a href="#workbench">工作台</a>
+    <a href="#town">小镇</a>
+    <a href="#arena">竞技场</a>
+    <a href="#pipeline">流水线</a>
+    <a href="#memory">记忆系统</a>
+    <a href="#mcp">多机协作</a>
+    <a href="#cost">成本追踪</a>
+    <a href="#snapshots">快照回滚</a>
+    <a href="#ctools">自定义工具</a>
+    <a href="#skills">Skills</a>
+    <a href="#quick">快速面板</a>
+    <a href="#settings">设置</a>
+    <a href="#architecture">架构</a>
+  </div>
+</nav>
+
+<!-- ════════ STATS ════════ -->
+<div class="container">
+  <div class="stats">
+    <div class="stat"><div class="stat-num">3</div><div class="stat-label">AI 引擎</div></div>
+    <div class="stat"><div class="stat-num">9</div><div class="stat-label">内置工具</div></div>
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">UI 主题</div></div>
+    <div class="stat"><div class="stat-num">4</div><div class="stat-label">界面语言</div></div>
+  </div>
+</div>
+
+<!-- ════════ ENGINES ════════ -->
+<section id="engines">
+<div class="container">
+  <div class="sec-icon">⚙️</div>
+  <h2>三引擎架构</h2>
+  <p class="sec-desc">每个会话可独立切换引擎，切换时清除跨引擎上下文。三种引擎共享统一的 AgentEvent 事件流。</p>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <span class="card-tag">自研引擎</span>
+      <h3>Kaios (Direct)</h3>
+      <p>内置 ReAct 循环，直接调用 LLM API。唯一使用全部内置工具的引擎，支持子 Agent 派发、沙箱模式、上下文压缩。通过 OpenAI 兼容协议接入智谱 GLM、DeepSeek、通义千问、Ollama 等。</p>
+    </div>
+    <div class="card">
+      <span class="card-tag">CLI 集成</span>
+      <h3>Claude Code</h3>
+      <p>spawn <code style="color:var(--gold);font-family:var(--mono);font-size:12px">claude -p --output-format stream-json</code>，解析 NDJSON 流，通过 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">--resume</code> 恢复会话，注入记忆和项目规则到 system prompt。</p>
+    </div>
+    <div class="card">
+      <span class="card-tag">CLI 集成</span>
+      <h3>Codex</h3>
+      <p>spawn <code style="color:var(--gold);font-family:var(--mono);font-size:12px">codex exec --json</code>，解析 JSONL 流，支持 resume 和 sandbox 模式。记忆和规则注入到 prompt。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>跨平台 CLI spawn：</strong>npm-global CLI 在 Windows 上是 <code style="color:var(--gold)">.cmd</code> shim，Node 拒绝直接 spawn（CVE-2024-27980）。引擎自动将 <code style="color:var(--gold)">.cmd/.bat</code> 走 <code style="color:var(--gold)">shell:true</code>，直接 <code style="color:var(--gold)">.exe</code> 走 clean argv。还会增强 PATH，让 GUI 启动的 Electron 找到全局安装的 CLI。</p>
+  </div>
+</div>
+</section>
+
+<!-- ════════ TOOLS ════════ -->
+<section id="tools">
+<div class="container">
+  <div class="sec-icon">🔧</div>
+  <h2>内置工具（Direct 引擎）</h2>
+  <p class="sec-desc">9 个工具，只读工具可同轮并发执行，写工具串行。沙箱模式可限制写操作范围。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>工具</th><th>类别</th><th>功能</th></tr></thead>
+    <tbody>
+      <tr><td><code>shell</code></td><td>写</td><td>执行 shell 命令（Windows 走 cmd.exe），执行前请求用户确认，支持 AbortSignal 中断</td></tr>
+      <tr><td><code>read_file</code></td><td>只读</td><td>读取 UTF-8 文本文件，自动检测编码</td></tr>
+      <tr><td><code>write_file</code></td><td>写</td><td>写入文件（覆盖），无长度限制，写前自动快照</td></tr>
+      <tr><td><code>edit_file</code></td><td>写</td><td>精确替换文件中的片段，支持 replace_all，写前自动快照</td></tr>
+      <tr><td><code>grep</code></td><td>只读</td><td>正则搜索工作目录，返回文件:行号:内容，自动排除 node_modules/.git</td></tr>
+      <tr><td><code>glob</code></td><td>只读</td><td>按 glob 模式列出文件，返回相对路径</td></tr>
+      <tr><td><code>git_diff</code></td><td>只读</td><td>查看 git diff（工作区/staged/指定 ref），比 shell git diff 更干净</td></tr>
+      <tr><td><code>web_fetch</code></td><td>只读</td><td>抓取 HTTP(S) URL 的文本内容（GET）</td></tr>
+      <tr><td><code>recall_memory</code></td><td>只读</td><td>语义搜索历史记忆（FTS5 全文检索）</td></tr>
+      <tr><td><code>dispatch_agent</code></td><td>特殊</td><td>派发子 Agent 执行只读子任务，支持指定引擎（direct/claudeCode/codex）</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <p><strong>沙箱模式：</strong><code style="color:var(--gold)">readOnly</code> 拦截所有写工具 → <code style="color:var(--gold)">workspaceWrite</code> 限制写入在 cwd 内 → <code style="color:var(--gold)">fullAccess</code> 完全开放。Claude Code 和 Codex 引擎通过各自的 flag（<code style="color:var(--gold)">--permission-mode</code> / <code style="color:var(--gold)">-s</code>）传递沙箱级别。</p>
+  </div>
+</div>
+</section>
+
+<!-- ════════ CHAT ════════ -->
+<section id="chat">
+<div class="container">
+  <div class="sec-icon">💬</div>
+  <h2>对话视图</h2>
+  <p class="sec-desc">流式输出、工具调用可视化、Markdown 渲染、多模态附件。</p>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>📨 流式输出</h3>
+      <p>token 逐字流式渲染，工具调用实时显示参数和结果。支持中途停止（AbortSignal）。</p>
+    </div>
+    <div class="card">
+      <h3>📎 附件系统</h3>
+      <p>文本文件附件拼入 prompt；图片附件以 base64 data URL 发送给多模态模型。支持拖拽和选择。</p>
+    </div>
+    <div class="card">
+      <h3>📝 Markdown 渲染</h3>
+      <p>代码高亮、表格、列表、内联代码、链接。输出安全转义，防 XSS。</p>
+    </div>
+    <div class="card">
+      <h3>🔖 Slash Menu</h3>
+      <p>输入 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">/</code> 触发 Skill 菜单，键盘上下选择、Tab/Enter 确认，支持模糊搜索。</p>
+    </div>
+    <div class="card">
+      <h3>🎙️ 语音转写</h3>
+      <p>录音 → 调用 OpenAI 兼容 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">/audio/transcriptions</code> 接口 → 转写文本填入输入框。</p>
+    </div>
+    <div class="card">
+      <h3>📸 系统截图</h3>
+      <p>通过 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">desktopCapturer</code> 截取屏幕，作为图片附件发送给模型分析。</p>
+    </div>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:18px">对话内四标签页</h3>
+  <ul class="feat-list">
+    <li><div class="feat-icon">💬</div><div><b>对话</b> — <span>主聊天界面，流式输出 + 工具调用</span></div></li>
+    <li><div class="feat-icon">📂</div><div><b>文件</b> — <span>文件浏览器（懒加载），浏览 cwd 下的文件树</span></div></li>
+    <li><div class="feat-icon">🌿</div><div><b>Git</b> — <span>Git 快照：提交历史 + 文件 diff 查看，安全 HTML 渲染</span></div></li>
+    <li><div class="feat-icon">📋</div><div><b>规则</b> — <span>编辑 KINET.md 项目规则，三套引擎都遵守</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ WORKBENCH ════════ -->
+<section id="workbench">
+<div class="container">
+  <div class="sec-icon">📊</div>
+  <h2>工作台</h2>
+  <p class="sec-desc">所有会话的全局看板，按项目分组，实时刷新状态。</p>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3>🏠 项目分组</h3>
+      <p>按 cwd 自动分组，每个项目显示会话数、引擎、累计成本、最后活跃时间。</p>
+    </div>
+    <div class="card">
+      <h3>🔄 分组/平铺</h3>
+      <p>侧栏支持 grouped（按项目折叠）和 flat（原始平铺）两种模式，localStorage 持久化。</p>
+    </div>
+    <div class="card">
+      <h3>⚡ 实时刷新</h3>
+      <p>cost/done/error 事件触发单卡增量更新，不重建网格，保留滚动位置。</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════ TOWN ════════ -->
+<section id="town">
+<div class="container">
+  <div class="sec-icon">🏘️</div>
+  <h2>小镇视图（Town）</h2>
+  <p class="sec-desc">游戏化的项目管理 — 每栋房子是一个项目，每个村民是一个 Agent。等距像素风 SVG，四套主题。</p>
+
+  <div class="town-preview">
+    <div class="town-houses">
+      <div>
+        <svg class="town-house" viewBox="0 0 80 80" fill="none">
+          <!-- Roof -->
+          <path d="M10 38 L40 12 L70 38 Z" fill="#c8901e" stroke="#a07020" stroke-width="1.5"/>
+          <!-- Body -->
+          <rect x="16" y="38" width="48" height="36" fill="#2a2a3a" stroke="#3a3a4a" stroke-width="1"/>
+          <!-- Window -->
+          <rect x="24" y="46" width="12" height="12" fill="#e8b339" opacity="0.8" rx="1"/>
+          <rect x="44" y="46" width="12" height="12" fill="#e8b339" opacity="0.8" rx="1"/>
+          <!-- Door -->
+          <rect x="32" y="56" width="16" height="18" fill="#1a1a2e" rx="1"/>
+          <!-- Chimney -->
+          <rect x="52" y="18" width="8" height="16" fill="#3a3a4a"/>
+          <ellipse cx="56" cy="16" rx="6" ry="3" fill="rgba(255,255,255,0.1)"/>
+        </svg>
+        <div class="town-label">本地项目</div>
+      </div>
+      <div>
+        <svg class="town-cloud" viewBox="0 0 80 60" fill="none">
+          <!-- Cloud -->
+          <ellipse cx="40" cy="42" rx="30" ry="10" fill="rgba(100,140,255,0.15)" stroke="rgba(100,140,255,0.3)" stroke-width="1"/>
+          <!-- Mini house -->
+          <path d="M22 36 L32 24 L42 36 Z" fill="rgba(100,140,255,0.3)" stroke="rgba(100,140,255,0.5)" stroke-width="1"/>
+          <rect x="25" y="36" width="14" height="10" fill="rgba(100,140,255,0.2)" stroke="rgba(100,140,255,0.4)"/>
+          <rect x="43" cy="32" width="8" height="6" fill="rgba(100,140,255,0.4)"/>
+          <!-- Signal waves -->
+          <path d="M52 20 Q56 16 60 20" stroke="rgba(100,200,255,0.5)" stroke-width="1.5" fill="none">
+            <animate attributeName="opacity" values="0;1;0" dur="2s" repeatCount="indefinite"/>
+          </path>
+        </svg>
+        <div class="town-label">远程节点</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>🏠 项目房子</h3>
+      <p>等距 SVG 房子：瓦顶、高光、门牌字母、十字窗、烟囱烟雾、error 闪电。门牌字母 = 项目名首字母。工作中有烟雾动画，出错显示闪电。</p>
+    </div>
+    <div class="card">
+      <h3>🧑‍🌾 村民（Agent）</h3>
+      <p>每个会话是一个村民，有四种状态：休息中（idle 眨眼）、工作中（抬臂）、出错了（闪电）、已完成。点击村民打开居中模态面板。</p>
+    </div>
+    <div class="card">
+      <h3>☁️ 远程节点</h3>
+      <p>远程 MCP 服务器显示为云端的房子。在线时窗户亮灯 + 天线信号波纹动画 + 工具数 badge；离线时灰色暗淡 + 显示 URL。点击发送远程任务。</p>
+    </div>
+    <div class="card">
+      <h3>🎨 四套主题</h3>
+      <p>暗色（dark）、淡色（light）、极光（aurora）、高雅淡色（serene）。CSS 变量级切换，天空渐变、房子配色、村民外观全部跟随主题。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>居中模态面板：</strong>点击村民弹出居中面板 + backdrop 毛玻璃模糊。面板内可直接对 Agent 说话（发送消息）、查看工作步骤、停止运行中的任务。支持 <code style="color:var(--gold)">prefers-reduced-motion</code> 无障碍。</p>
+  </div>
+</div>
+</section>
+
+<!-- ════════ ARENA ════════ -->
+<section id="arena">
+<div class="container">
+  <div class="sec-icon">⚔️</div>
+  <h2>竞技场（Arena）</h2>
+  <p class="sec-desc">同一个 prompt，三个引擎同时跑，对比输出质量。</p>
+
+  <ul class="feat-list">
+    <li><div class="feat-icon">⚔️</div><div><b>三引擎并跑</b> — <span>输入一个 prompt，Kaios / Claude Code / Codex 同时执行，流式输出并排展示</span></div></li>
+    <li><div class="feat-icon">📊</div><div><b>Diff 对比</b> — <span>选择两个引擎的输出进行逐行 diff 对比，高亮增删行</span></div></li>
+    <li><div class="feat-icon">🧑‍⚖</div><div><b>AI 裁判</b> — <span>调用 LLM 自动评判三个引擎的输出，给出排名和评语</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ PIPELINE ════════ -->
+<section id="pipeline">
+<div class="container">
+  <div class="sec-icon">🔗</div>
+  <h2>跨引擎流水线</h2>
+  <p class="sec-desc">将多个 AI 引擎串联成 pipeline，上一步输出自动传入下一步。</p>
+
+  <div class="code-block">
+<b>示例：</b> Claude 分析架构 → Codex 实现代码 → GLM 审查质量
+
+<b>步骤配置：</b>
+  ├─ 步骤 1: [Claude Code] "分析项目架构,给出重构方案"
+  ├─ 步骤 2: [Codex]       "根据以下方案实现代码: {step1_output}"
+  └─ 步骤 3: [Kaios]       "审查以下代码改动,指出问题: {step2_output}"
+  </div>
+
+  <ul class="feat-list" style="margin-top:16px">
+    <li><div class="feat-icon">💾</div><div><b>保存 / 加载</b> — <span>流水线配置持久化，可命名保存，随时加载复用</span></div></li>
+    <li><div class="feat-icon">▶️</div><div><b>一键运行</b> — <span>从步骤 1 依次执行到结束，中间结果实时可见</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ MEMORY ════════ -->
+<section id="memory">
+<div class="container">
+  <div class="sec-icon">🧠</div>
+  <h2>长期记忆系统</h2>
+  <p class="sec-desc">Agent 从对话中自动提取关于用户的持久化事实，注入到后续会话中。FTS5 全文检索 + 权重衰减。</p>
+
+  <div class="arch">
+    <div class="arch-flow">
+      <div class="arch-node"><b>对话完成</b><span>Turn done</span></div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-node"><b>记忆提取</b><span>LLM 抽取事实</span></div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-node"><b>SQLite + FTS5</b><span>持久化 + 索引</span></div>
+      <span class="arch-arrow">→</span>
+      <div class="arch-node"><b>下轮注入</b><span>memoryBlock</span></div>
+    </div>
+  </div>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <h3>🔍 recall_memory</h3>
+      <p>工具调用，走 FTS5 关键词召回。Agent 需要回忆过去做过的事时主动调用。</p>
+    </div>
+    <div class="card">
+      <h3>📋 记忆面板</h3>
+      <p>查看全部记忆，支持编辑 / 删除。按来源频道筛选，显示来源会话。</p>
+    </div>
+    <div class="card">
+      <h3>⏰ 记忆时间线</h3>
+      <p>按时间排列全部记忆，显示权重和引用次数。支持一键衰减（清理低权重记忆）。</p>
+    </div>
+    <div class="card">
+      <h3>🌡️ 权重衰减</h3>
+      <p>久未引用的记忆权重逐渐降低，衰减时可批量清理低于阈值的条目。</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════ MCP ════════ -->
+<section id="mcp">
+<div class="container">
+  <div class="sec-icon">🌐</div>
+  <h2>多机协作（MCP）</h2>
+  <p class="sec-desc">MCP 协议（Model Context Protocol）— 把多台机器组成 Agent 协作网络。</p>
+
+  <div class="grid grid-2">
+    <div class="card">
+      <span class="card-tag">本机 Server</span>
+      <h3>📡 Local MCP Server</h3>
+      <p>把自己暴露为远程工具节点。开启后局域网内其他机器可通过 SSE transport 连接，调用本机工具（shell / read_file / web_fetch 等）。支持端口和 Token 认证。</p>
+    </div>
+    <div class="card">
+      <span class="card-tag">远程 Client</span>
+      <h3>🔗 Remote MCP Client</h3>
+      <p>在设置中添加远程 MCP Server 列表。SSE transport（POST JSON-RPC），支持 Token 认证。连接成功后工具自动暴露给 Direct 引擎。</p>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>渐进连接：</strong>后台异步连接所有 server，每连好一个就加入工具池（失败静默跳过）。远程节点支持后台重连（SSE 最多重试 5 次，超时 10 分钟）。</p>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:18px">Town 远程节点集成</h3>
+  <ul class="feat-list">
+    <li><div class="feat-icon">☁️</div><div><b>云端房子</b> — <span>远程节点在小镇中显示为漂浮在云端的房子，在线时亮灯 + 信号动画</span></div></li>
+    <li><div class="feat-icon">📤</div><div><b>远程任务</b> — <span>点击远程房子发送任务，通过 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">callRemote</code> 调用远程 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">run_agent</code>，结果实时返回</span></div></li>
+    <li><div class="feat-icon">🔄</div><div><b>实时状态</b> — <span><code style="color:var(--gold);font-family:var(--mono);font-size:12px">remoteSnapshot()</code> 异步等待连接完成后返回最新在线状态</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ COST ════════ -->
+<section id="cost">
+<div class="container">
+  <div class="sec-icon">💰</div>
+  <h2>成本追踪</h2>
+  <p class="sec-desc">跨引擎成本聚合 + 预算熔断。每个 turn 精确追踪 token 用量和 USD 成本。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>维度</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>今日</code></td><td>当日累计成本</td></tr>
+      <tr><td><code>本周</code></td><td>7 天累计成本</td></tr>
+      <tr><td><code>本月</code></td><td>当月累计成本</td></tr>
+      <tr><td><code>14 天趋势</code></td><td>折线图展示每日成本变化</td></tr>
+      <tr><td><code>按引擎</code></td><td>Kaios / Claude Code / Codex 分别统计</td></tr>
+      <tr><td><code>预算熔断</code></td><td>单次会话上限 + 日上限，超限自动停止</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <div class="callout">
+    <p><strong>Token 估算：</strong>滑动平均自校准，初始系数 0.6。支持手动配置每百万 token 价格（输入 / 输出分开），预设已内置 GLM / DeepSeek / 通义千问 / Ollama 的费率。</p>
+  </div>
+</div>
+</section>
+
+<!-- ════════ SNAPSHOTS ════════ -->
+<section id="snapshots">
+<div class="container">
+  <div class="sec-icon">📸</div>
+  <h2>快照与回滚</h2>
+  <p class="sec-desc">Direct 引擎用 write_file / edit_file 修改文件前自动保存原文快照，支持一键还原。</p>
+
+  <ul class="feat-list">
+    <li><div class="feat-icon">📸</div><div><b>自动快照</b> — <span>每次 write_file / edit_file 写入前，将文件原始内容存入快照（按 convId scope）</span></div></li>
+    <li><div class="feat-icon">📂</div><div><b>范围筛选</b> — <span>按「当前频道」或「本目录全部」筛选快照列表</span></div></li>
+    <li><div class="feat-icon">↩️</div><div><b>一键还原</b> — <span>选择任意快照，将文件内容恢复到改动前的状态（覆盖当前内容）</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ CUSTOM TOOLS ════════ -->
+<section id="ctools">
+<div class="container">
+  <div class="sec-icon">🛠️</div>
+  <h2>自定义工具</h2>
+  <p class="sec-desc">注册自定义命令工具 — 模型可以像调用内置工具一样调用它们。</p>
+
+  <div class="code-block">
+<b>工具定义示例：</b>
+{
+  <span style="color:var(--gold)">"name"</span>: "translate",
+  <span style="color:var(--gold)">"description"</span>: "对输入文本进行翻译",
+  <span style="color:var(--gold)">"params"</span>: { "type":"object", "properties": { "text": { "type":"string" } } },
+  <span style="color:var(--gold)">"command"</span>: "translate --text \"$ARG_text\"",
+  <span style="color:var(--gold)">"timeout"</span>: 30
+}
+
+<b>$ARG_&lt;参数名&gt;</b> 占位符在运行时替换为模型传入的参数值。
+  </div>
+
+  <ul class="feat-list" style="margin-top:16px">
+    <li><div class="feat-icon">🧪</div><div><b>内置测试</b> — <span>每个工具有测试按钮，填入参数直接运行验证</span></div></li>
+    <li><div class="feat-icon">📋</div><div><b>JSON Schema</b> — <span>参数定义遵循 JSON Schema 规范，模型自动理解参数结构</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ SKILLS ════════ -->
+<section id="skills">
+<div class="container">
+  <div class="sec-icon">✨</div>
+  <h2>Skills 系统</h2>
+  <p class="sec-desc">扫描 Claude Code 和 Codex 的 Skill / Command / Agent 定义，在 Direct 引擎中通过 Slash Menu 调用。</p>
+
+  <div class="grid grid-3">
+    <div class="card">
+      <h3>✅ Skill</h3>
+      <p>预定义的 Prompt 模板，输入 <code style="color:var(--gold);font-family:var(--mono);font-size:12px">/skill-name</code> 快速调用。</p>
+    </div>
+    <div class="card">
+      <h3>⌘ Command</h3>
+      <p>快捷命令，固定行为模式，减少重复输入。</p>
+    </div>
+    <div class="card">
+      <h3>🤖 Agent</h3>
+      <p>完整 Agent 定义，包含系统提示和行为约束。</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════ QUICK ════════ -->
+<section id="quick">
+<div class="container">
+  <div class="sec-icon">⚡</div>
+  <h2>快速面板</h2>
+  <p class="sec-desc">全局快捷键唤起的轻量对话窗口，无需打开主窗口即可提问。</p>
+
+  <div class="callout" style="text-align:center">
+    <p style="font-size:24px"><strong style="font-family:var(--mono);color:var(--gold)">Ctrl + Alt + Space</strong></p>
+    <p style="margin-top:8px">（macOS: Cmd + Alt + Space）</p>
+  </div>
+
+  <ul class="feat-list">
+    <li><div class="feat-icon">⚡</div><div><b>一键唤起</b> — <span>全局快捷键，任何应用前都能呼出</span></div></li>
+    <li><div class="feat-icon">💬</div><div><b>一次性对话</b> — <span>提交 → 流式回答 → 关闭，不创建持久会话</span></div></li>
+    <li><div class="feat-icon">🌐</div><div><b>独立窗口</b> — <span>独立 HTML 界面，语言和品牌跟随主应用同步</span></div></li>
+  </ul>
+</div>
+</section>
+
+<!-- ════════ SETTINGS ════════ -->
+<section id="settings">
+<div class="container">
+  <div class="sec-icon">⚙️</div>
+  <h2>完整设置项</h2>
+  <p class="sec-desc">从 LLM 接口到 UI 主题，全部可配置。设置页实时预览主题。</p>
+
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>分类</th><th>设置项</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td rowspan="6"><b>LLM 接口</b></td><td><code>API Key</code></td><td>safeStorage 加密存储</td></tr>
+      <tr><td><code>Base URL</code></td><td>OpenAI 兼容端点</td></tr>
+      <tr><td><code>Model</code></td><td>模型 ID（如 glm-5.2）</td></tr>
+      <tr><td><code>Protocol</code></td><td>openai / anthropic 双协议</td></tr>
+      <tr><td><code>Reasoning</code></td><td>none / minimal / low / medium / high / xhigh / max</td></tr>
+      <tr><td><code>Preset</code></td><td>GLM 智谱 / DeepSeek / 通义千问 / Ollama / 自定义</td></tr>
+      <tr><td rowspan="3"><b>安全</b></td><td><code>Approval</code></td><td>每次 shell 确认 / 从不确认</td></tr>
+      <tr><td><code>Sandbox</code></td><td>readOnly / workspaceWrite / fullAccess</td></tr>
+      <tr><td><code>Plan Mode</code></td><td>只读规划模式（不执行写操作）</td></tr>
+      <tr><td rowspan="2"><b>引擎</b></td><td><code>CLI Engines</code></td><td>启用 Claude Code / Codex CLI 集成</td></tr>
+      <tr><td><code>Max Turns</code></td><td>Direct 引擎单轮最大 ReAct 循环数</td></tr>
+      <tr><td rowspan="4"><b>Embedding</b></td><td><code>Embed Base URL</code></td><td>独立 Embedding 端点（空 = 复用主接口）</td></tr>
+      <tr><td><code>Embed API Key</code></td><td>独立 Embedding 密钥</td></tr>
+      <tr><td><code>Embed Model</code></td><td>如 embedding-3</td></tr>
+      <tr><td><code>Price In/Out</code></td><td>每百万 Token 价格（USD）</td></tr>
+      <tr><td rowspan="3"><b>界面</b></td><td><code>Language</code></td><td>简体中文 / English / 繁體中文 / 日本語</td></tr>
+      <tr><td><code>Theme</code></td><td>暗色 dark / 淡色 light / 极光 aurora / 高雅 serene</td></tr>
+      <tr><td><code>Close Behavior</code></td><td>退出 / 最小化 / 最小化到托盘</td></tr>
+      <tr><td rowspan="2"><b>预算</b></td><td><code>Per Session</code></td><td>单次会话成本上限（USD）</td></tr>
+      <tr><td><code>Daily Limit</code></td><td>每日成本上限（USD）</td></tr>
+      <tr><td rowspan="3"><b>多机协作</b></td><td><code>Local Server</code></td><td>启用本机 MCP Server + 端口 + Token</td></tr>
+      <tr><td><code>Remote Servers</code></td><td>远程 MCP Server 列表（名称 / URL / Token）</td></tr>
+      <tr><td><code>SSE Transport</code></td><td>POST JSON-RPC，支持 SSE 响应流</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+</section>
+
+<!-- ════════ ARCHITECTURE ════════ -->
+<section id="architecture">
+<div class="container">
+  <div class="sec-icon">🏗️</div>
+  <h2>技术架构</h2>
+  <p class="sec-desc">双进程 + 窄桥 + 零框架前端。</p>
+
+  <div class="arch">
+    <div class="arch-flow">
+      <div class="arch-node"><b>Renderer</b><span>Vanilla TS<br>零框架<br>esbuild 打包</span></div>
+      <span class="arch-arrow">↔</span>
+      <div class="arch-node"><b>Preload</b><span>contextBridge<br>contextIsolation<br>类型安全 KinetAPI</span></div>
+      <span class="arch-arrow">↔</span>
+      <div class="arch-node"><b>Main</b><span>Node.js 全能力<br>IPC handlers<br>引擎 / SQLite / MCP</span></div>
+    </div>
+  </div>
+
+  <div class="grid grid-2" style="margin-top:24px">
+    <div class="card">
+      <h3>🔒 安全边界</h3>
+      <p><code style="color:var(--gold)">contextIsolation: true</code> + <code style="color:var(--gold)">nodeIntegration: false</code>。Renderer 零 Node 访问，只能调 Preload 暴露的 KinetAPI。</p>
+    </div>
+    <div class="card">
+      <h3>📦 SQLite + FTS5</h3>
+      <p>better-sqlite3 同步引擎。FTS5 虚拟表驱动全文检索；conversations + turns 表存会话状态；memories 表存长期记忆。WAL 模式。</p>
+    </div>
+    <div class="card">
+      <h3>🔄 统一事件流</h3>
+      <p>所有引擎发同样的 AgentEvent（token / tool / cost / status / done / error）。<code style="color:var(--gold)">applyEvent()</code> 是纯函数，Main 和 Renderer 各调一次，改一处生效。</p>
+    </div>
+    <div class="card">
+      <h3>🧩 Shell 确认桥</h3>
+      <p>Main 不能弹 UI → 发 confirm-request 到 Dashboard → Renderer 显示模态 → 回传 confirm-response。<code style="color:var(--gold)">approval: 'never'</code> 可跳过。</p>
+    </div>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:18px">项目结构</h3>
+  <div class="code-block">
+<span style="color:var(--gold)">src/</span>
+├── <span style="color:var(--gold)">main/</span>
+│   ├── main.ts          <span style="color:var(--text-dim)"># IPC handlers + lifecycle + hotkey</span>
+│   ├── engines.ts        <span style="color:var(--text-dim)"># 三引擎抽象 + CLI spawn</span>
+│   ├── AgentLoop.ts      <span style="color:var(--text-dim)"># Direct ReAct 循环</span>
+│   ├── tools.ts          <span style="color:var(--text-dim)"># 9 个内置工具</span>
+│   ├── TaskManager.ts    <span style="color:var(--text-dim)"># 会话管理 + 记忆提取</span>
+│   ├── store.ts          <span style="color:var(--text-dim)"># SQLite schema + 查询</span>
+│   ├── mcp.ts            <span style="color:var(--text-dim)"># MCP Registry (stdio + SSE)</span>
+│   ├── local-mcp.ts      <span style="color:var(--text-dim)"># 本机 MCP Server</span>
+│   ├── glm.ts            <span style="color:var(--text-dim)"># LLM Provider + 价格</span>
+│   ├── snapshots.ts      <span style="color:var(--text-dim)"># 文件快照 + 回滚</span>
+│   └── settings.ts       <span style="color:var(--text-dim)"># 设置读写 + safeStorage</span>
+├── <span style="color:var(--gold)">renderer/</span>
+│   ├── app.ts            <span style="color:var(--text-dim)"># Dashboard 主逻辑</span>
+│   ├── town.ts / town.css <span style="color:var(--text-dim)"># 小镇视图</span>
+│   ├── arena.ts          <span style="color:var(--text-dim)"># 三引擎并跑</span>
+│   ├── quick.ts          <span style="color:var(--text-dim)"># 快速面板</span>
+│   ├── dashboard.ts      <span style="color:var(--text-dim)"># Dashboard 窗口</span>
+│   ├── files.ts / files-pane.ts <span style="color:var(--text-dim)"># 文件浏览器</span>
+│   ├── code-editor.ts    <span style="color:var(--text-dim)"># 自研代码编辑器</span>
+│   └── markdown.ts       <span style="color:var(--text-dim)"># Markdown 渲染</span>
+├── <span style="color:var(--gold)">preload/</span>
+│   └── preload.ts        <span style="color:var(--text-dim)"># contextBridge → KinetAPI</span>
+└── <span style="color:var(--gold)">shared/</span>
+    ├── types.ts          <span style="color:var(--text-dim)"># 类型 + applyEvent 纯函数</span>
+    └── i18n.ts           <span style="color:var(--text-dim)"># 四语言翻译表</span>
+  </div>
+
+  <h3 style="margin:32px 0 16px;font-size:18px">NPC 命令</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th>命令</th><th>说明</th></tr></thead>
+    <tbody>
+      <tr><td><code>npm install</code></td><td>安装 + 编译 better-sqlite3 原生模块</td></tr>
+      <tr><td><code>npm run build</code></td><td>tsc + esbuild + 复制静态资源</td></tr>
+      <tr><td><code>npm run typecheck</code></td><td>类型检查（主要验证步骤）</td></tr>
+      <tr><td><code>npm start</code></td><td>启动 Electron（需先 build）</td></tr>
+      <tr><td><code>npm run dev</code></td><td>build + start</td></tr>
+      <tr><td><code>npm run pack</code></td><td>构建 Windows 免安装版</td></tr>
+      <tr><td><code>npm run dist</code></td><td>构建 Windows NSIS 安装包</td></tr>
+      <tr><td><code>npm run dist:mac</code></td><td>构建 macOS DMG</td></tr>
+    </tbody>
+  </table>
+  </div>
+</div>
+</section>
+
+<!-- ════════ FOOTER ════════ -->
+<footer>
+  <p>KinetAios v1.2.0 — Electron + TypeScript + better-sqlite3</p>
+  <p style="margin-top:8px">三引擎 · 九工具 · 四主题 · 四语言 · 多机协作 · 零框架</p>
+</footer>
+
+</body>
+</html>
