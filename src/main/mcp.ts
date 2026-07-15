@@ -369,7 +369,7 @@ class StdioClient {
       const line = this.buf.slice(0, nl).replace(/\r$/, '').trim();
       this.buf = this.buf.slice(nl + 1);
       if (!line) continue;
-      let obj: any;
+      let obj: Record<string, any>;
       try {
         obj = JSON.parse(line);
       } catch {

@@ -387,7 +387,7 @@ export function deleteTemplate(id: string): void {
 // MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
 export function logCost(convId: string, engine: string, amount: number, tokens: number): void {
   db.prepare('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts) VALUES(?,?,?,?,?,?);')
-    .run(rid2(), convId, engine, amount, tokens, Date.now());
+    .run(rid(), convId, engine, amount, tokens, Date.now());
 }
 export function costStats(): { today: number; week: number; month: number; byEngine: Record<string, number>; byDay: Array<{ date: string; cost: number }> } {
   const now = Date.now();
@@ -413,11 +413,8 @@ export function costStats(): { today: number; week: number; month: number; byEng
   return { today, week, month, byEngine, byDay };
 }
 
-// 轻量 id 生成(用 crypto.randomUUID,不导入 shared 避免循环)
-import { randomUUID as cryptoUUID } from 'node:crypto';
-function rid2(): string {
-  return cryptoUUID();
-}
+// 轻量 id 生成 —— 复用 shared/types 的 rid()。
+import { rid } from '../shared/types';
 
 // MARK: custom_tools — 用户通过 UI 注册的自定义工具
 export function saveCustomTool(t: { id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number }): void {

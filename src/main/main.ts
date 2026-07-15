@@ -338,9 +338,14 @@ async function gitSnapshotAsync(cwd: string): Promise<GitSnapshot> {
 }
 async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string; staged?: boolean }): Promise<GitDiffResult> {
   try {
+    // git ref / path 安全字符校验:防 argument injection(如 --upload-pack)
+    const safeRef = (s: string): boolean => /^[\w./~^@{}\[\]:\-]+$/.test(s);
     let args: string[];
-    if (opts.hash) args = ['show', opts.hash];
-    else if (opts.file) {
+    if (opts.hash) {
+      if (!safeRef(opts.hash)) return { ok: false, error: `不安全的 git ref: "${opts.hash}"` };
+      args = ['show', opts.hash];
+    } else if (opts.file) {
+      if (!safeRef(opts.file)) return { ok: false, error: `不安全的文件路径: "${opts.file}"` };
       // 单文件:staged 看 index vs HEAD,unstaged 看 working tree vs index
       args = opts.staged
         ? ['diff', '--cached', '--', opts.file]
@@ -656,7 +661,18 @@ function registerIpc(): void {
   });
   ipcMain.handle('list-dir', (_e, absPath: string) => listDirAbs(absPath));
   // 在用户默认浏览器里打开 URL(file:// / https:// 都行)。文件树右键「在浏览器中打开」用。
-  ipcMain.handle('shell-open', (_e, url: string) => shell.openExternal(url));
+  // 只允许 http(s) 协议打开外部浏览器,防止 file:///、smb://、恶意协议打开本地程序。
+  ipcMain.handle('shell-open', (_e, url: string) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
+        return { ok: false, error: `不允许的协议: ${u.protocol}` };
+      }
+      return shell.openExternal(u.href);
+    } catch {
+      return { ok: false, error: '非法 URL' };
+    }
+  });
   ipcMain.handle('git-snapshot', (_e, cwd: string) => gitSnapshotAsync(cwd));
   ipcMain.handle('git-diff', (_e, cwd: string, opts: { file?: string; hash?: string; staged?: boolean }) =>
     gitDiffAsync(cwd, opts),

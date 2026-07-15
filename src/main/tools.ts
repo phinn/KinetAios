@@ -28,6 +28,36 @@ function shellQuote(s: string): string {
   return '"' + String(s).replace(/(["$`\\])/g, '\\$1') + '"';
 }
 
+// SSRF 防护:判断 hostname 是否为内网/本地/保留地址。
+// 覆盖:IPv4 私有段(10/8、172.16/12、192.168/16)、loopback(127/8)、link-local(169.254/16)、
+// CGNAT(100.64/10)、0.0.0.0/8、IPv6 loopback/ULA、.local mDNS、metadata 元数据端点。
+function isPrivateHost(host: string): boolean {
+  // IPv6 方括号剥离
+  const h = host.replace(/^\[|\]$/g, '');
+  // IPv4 数字提取(去掉 IPv6 映射前缀 ::ffff:)
+  const v4Match = h.match(/^(?:::ffff:)?(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (v4Match) {
+    const ip = v4Match[1];
+    const [a, b] = ip.split('.').map(Number);
+    if (a === 0 || a === 127) return true;                         // 0.0.0.0/8、127.0.0.0/8 (loopback)
+    if (a === 10) return true;                                      // 10.0.0.0/8
+    if (a === 172 && b >= 16 && b <= 31) return true;              // 172.16.0.0/12
+    if (a === 192 && b === 168) return true;                       // 192.168.0.0/16
+    if (a === 169 && b === 254) return true;                       // 169.254.0.0/16 (link-local + cloud metadata)
+    if (a === 100 && b >= 64 && b <= 127) return true;             // 100.64.0.0/10 (CGNAT)
+    return false;
+  }
+  // IPv6 loopback / ULA
+  if (h === '::1' || h === '::' || h === '0:0:0:0:0:0:0:1') return true;
+  if (h.startsWith('fc') || h.startsWith('fd')) return true;       // IPv6 ULA fc00::/7
+  if (h.startsWith('fe80')) return true;                            // IPv6 link-local
+  // 主机名
+  if (h === 'localhost') return true;
+  if (h.endsWith('.local')) return true;
+  if (h.endsWith('.internal')) return true;
+  return false;
+}
+
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
 // every other tool ignores them。convId 用作快照 scope(write_file/edit_file 改前存原文)。
@@ -293,11 +323,7 @@ const webFetch: Tool = {
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return `非法 URL: ${s}`;
     // SSRF 防护:阻止访问内网/本地地址(LLM 被诱导时不会探测内部服务)
     const host = url.hostname.toLowerCase();
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1' || host === '[::1]'
-      || host.startsWith('10.') || host.startsWith('192.168.')
-      || host.startsWith('169.254.') // 云 metadata
-      || /^172\.(1[6-9]|2\d|3[01])\./.test(host) // 172.16/12
-      || host.endsWith('.local')) {
+    if (isPrivateHost(host)) {
       return `安全限制:不允许访问内网地址(${host})`;
     }
     try {
@@ -669,10 +695,12 @@ export function customTools(): Tool[] {
       async run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
         // 将 $ARG_<param> 替换为实际参数值。
         // 安全:对参数值做 shell 转义(双引号包裹 + 转义特殊字符),防止 LLM 注入 shell 命令。
+        // 参数名(k)转义正则特殊字符,防 RegExp injection。
         let cmd = r.commandTpl;
         for (const [k, v] of Object.entries(args)) {
           const safeVal = shellQuote(String(v ?? ''));
-          cmd = cmd.replace(new RegExp(`\\$ARG_${k}`, 'g'), safeVal);
+          const safeKey = k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          cmd = cmd.replace(new RegExp(`\\$ARG_${safeKey}`, 'g'), safeVal);
         }
         const out = await shellExec(cmd, ctx.cwd, r.timeoutMs * 1000 || 120_000, ctx.signal);
         return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out;
