@@ -769,13 +769,14 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   userMsg.className = 'msg user';
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
-  bubble.textContent = t.prompt;
+  // 隐藏 \x00IMAGES...\x00 base64 块,只显示用户可见的文本
+  bubble.textContent = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
   // 用户气泡悬浮复制按钮
   const uCopy = document.createElement('button');
   uCopy.className = 'ghost bubble-copy';
   uCopy.title = tr('copy.text');
   uCopy.innerHTML = ICON.copy;
-  uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt, uCopy); };
+  uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd(), uCopy); };
   bubble.appendChild(uCopy);
   userMsg.appendChild(bubble);
   userMsg.appendChild(avatarEl('user'));

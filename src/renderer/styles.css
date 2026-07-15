@@ -597,7 +597,7 @@ a { color: var(--accent); }
 .turn .err { color: var(--err); }
 
 /* input */
-#input { border-top: 1px solid var(--border); padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 8px; position: relative; }
+#input { border-top: 1px solid var(--border); padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 8px; position: relative; flex-shrink: 0; }
 #input textarea { resize: none; width: 100%; min-height: 60px; max-height: 180px; }
 .composer-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .composer-bar .tool { background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 5px 10px; border-radius: 16px; font-size: 12px; display: inline-flex; align-items: center; gap: 5px; }
