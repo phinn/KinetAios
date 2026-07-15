@@ -26,7 +26,7 @@ const DEFAULTS: AppSettings = {
   embedModel: 'embedding-3',
   budget: { enabled: false, perSessionLimit: 0, dailyLimit: 0 },
   maxTurns: 50,            // Direct 引擎单轮最大 ReAct 循环数(默认 50;0 = 无限)
-  closeBehavior: 'quit',   // 窗口关闭行为:quit 退出 / minimize 最小化到任务栏 / tray 最小化到托盘
+  closeBehavior: 'minimize', // 窗口关闭行为:quit 退出 / minimize 最小化到任务栏 / tray 最小化到托盘
   // 多机协作:默认关闭 MCP Server;端口 18109;token 空 = 不鉴权(仅局域网内信任环境用)。
   localMcpServer: { enabled: false, port: 18109, token: '' },
   // 远程 MCP server 列表默认为空(用户在设置里添加其它机器)。
