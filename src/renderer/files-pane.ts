@@ -433,14 +433,35 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     inspecting = true;
     inspectBtn.classList.add('active');
     feStatus.textContent = tr('files.inspectDragging');
-    // 向 webview 注入框选脚本。脚本完成后返回一个 Promise,resolve 出 ElementInfo[]。
+
+    // 向 webview 注入框选脚本。
+    // 关键设计:不用 executeJavaScript 返回 Promise(会和 Electron 的 await 死锁),
+    // 而是脚本执行后立即返回 'PENDING',脚本内部在 mouseup/ESC 时用 ipcPostMessage 通知。
+    // 我们用 executeJavaScript 二次轮询 window.__kinetResult 来拿结果。
     const script = buildInspectScript();
-    const r = await api.webviewInspect(gid, script);
+    await api.webviewInspect(gid, script);
+
+    // 轮询结果 —— 脚本在 mouseup 或 ESC 时设置 window.__kinetResult
+    let elements: ElementInfo[] | null = null;
+    const deadline = Date.now() + 60000; // 60 秒超时保护
+    while (Date.now() < deadline) {
+      await new Promise(r => setTimeout(r, 150));
+      const r = await api.webviewInspect(gid, 'window.__kinetResult || null');
+      if (r.ok && r.result != null) {
+        if (r.result === 'CANCELLED') { elements = null; break; }
+        elements = r.result as ElementInfo[];
+        break;
+      }
+    }
+    // 清理 webview 中的残留状态
+    await api.webviewInspect(gid, 'delete window.__kinetResult; delete window.__kinetInspect').catch(() => {});
+
     inspecting = false;
     inspectBtn.classList.remove('active');
-    if (!r.ok) { feStatus.textContent = tr('files.inspectFail', { msg: r.error ?? '' }); return; }
-    const elements = r.result as ElementInfo[] | null;
-    if (!elements || elements.length === 0) { feStatus.textContent = tr('files.inspectCancelled'); return; }
+    if (!elements || elements.length === 0) {
+      feStatus.textContent = tr('files.inspectCancelled');
+      return;
+    }
     // 弹出输入框 / Show intent input modal
     const intent = await showInspectModal(elements);
     if (!intent) { feStatus.textContent = tr('files.inspectCancelled'); return; }
@@ -515,6 +536,7 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     return `(function() {
       // 防重复注入 / Prevent duplicate injection
       if (window.__kinetInspect) { window.__kinetInspect.cleanup(); }
+      window.__kinetResult = null;
 
       var overlay = document.createElement('div');
       overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:crosshair;background:rgba(232,179,57,0.03);';
@@ -526,18 +548,17 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
       var startX = 0, startY = 0, isDown = false;
 
       function cleanup() {
-        window.__kinetInspect = null;
+        if (window.__kinetInspect) { window.__kinetInspect = null; }
         overlay.remove(); selBox.remove(); hint.remove();
         document.removeEventListener('keydown', onKey, true);
       }
-      function onKey(e) { if (e.key === 'Escape') { cleanup(); window.__kinetResolve(null); } }
+      function onKey(e) { if (e.key === 'Escape') { cleanup(); window.__kinetResult = 'CANCELLED'; } }
 
-      window.__kinetResolve = null;
       window.__kinetInspect = { cleanup: cleanup };
-
       document.addEventListener('keydown', onKey, true);
 
       overlay.addEventListener('mousedown', function(e) {
+        e.preventDefault();
         isDown = true;
         startX = e.clientX; startY = e.clientY;
         selBox.style.display = 'block';
@@ -565,12 +586,11 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         cleanup();
 
         // 太小的选择 = 取消 / Too small selection = cancel
-        if (w < 5 || h < 5) { window.__kinetResolve(null); return; }
+        if (w < 5 || h < 5) { window.__kinetResult = 'CANCELLED'; return; }
 
         // 收集选择框内的元素 / Collect elements in selection rect
         var collected = [];
         var seen = new Set();
-        // 用 elementsFromPoint 在矩形内网格采样,找到所有元素
         var step = Math.min(20, Math.min(w, h) / 3);
         for (var px = x1 + step/2; px < x2; px += step) {
           for (var py = y1 + step/2; py < y2; py += step) {
@@ -581,7 +601,6 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
               if (seen.has(el)) continue;
               seen.add(el);
               var r = el.getBoundingClientRect();
-              // 元素中心点必须在选择框内(排除仅边缘触碰的元素)
               if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
               if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
               collected.push(extractInfo(el, r));
@@ -589,15 +608,13 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
           }
         }
 
-        // 去重:同 tag + 同 class + 同 text 前 50 字 → 只留最深嵌套层的一个
+        // 去重 / Deduplicate
         var deduped = {};
         var result = [];
         for (var j = 0; j < collected.length; j++) {
           var c = collected[j];
           var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
           if (deduped[key]) {
-            // 已有同 key → 比较哪个更内层(outerHTML 更长 = 更外层 → 跳过)
-            // 留外层那个(包含更完整结构)
             if (c.outerHTML.length > deduped[key].outerHTML.length) {
               var idx = result.indexOf(deduped[key]);
               result[idx] = c; deduped[key] = c;
@@ -606,7 +623,7 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
             deduped[key] = c; result.push(c);
           }
         }
-        window.__kinetResolve(result.length ? result : null);
+        window.__kinetResult = result.length ? result : 'CANCELLED';
       });
 
       function extractInfo(el, r) {
@@ -614,7 +631,6 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         var styles = {};
         var keys = ['color','background-color','font-size','font-weight','font-family','width','height','padding','margin','border','border-radius','display','position','text-align','line-height','letter-spacing','opacity','flex-direction','justify-content','align-items','gap'];
         for (var k = 0; k < keys.length; k++) { styles[keys[k]] = cs.getPropertyValue(keys[k]); }
-        // DOM path
         var path = [];
         var cur = el;
         while (cur && cur.nodeType === 1 && cur !== document.body) {
@@ -645,11 +661,7 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
       document.body.appendChild(overlay);
       document.body.appendChild(selBox);
       document.body.appendChild(hint);
-
-      // 返回一个 Promise,resolve 在 mouseup 或 ESC 触发
-      return new Promise(function(resolve) {
-        window.__kinetResolve = resolve;
-      });
+      return 'INJECTED';
     })();`;
   }
   addr.addEventListener('keydown', (ev) => {

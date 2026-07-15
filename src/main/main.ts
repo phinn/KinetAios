@@ -1172,6 +1172,7 @@ function registerIpc(): void {
       const result = await wc.executeJavaScript(script);
       return { ok: true, result };
     } catch (e) {
+      console.error('[webview-inspect] error:', (e as Error)?.message ?? e);
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
