@@ -359,16 +359,8 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules'): void {
         if (!conv) return; // 无活跃会话时静默忽略 / Silently ignore if no active conversation
         // 自动切回聊天 tab 让用户看到 AI 正在处理 / Switch to chat tab
         showTab('chat');
-        const inputEl = document.getElementById('input') as HTMLTextAreaElement | null;
-        if (inputEl) {
-          // 把 prompt 填入输入框,让用户确认后发送 / Put prompt in input for user review
-          inputEl.value = prompt;
-          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
-          inputEl.focus();
-        } else {
-          // 兜底:直接发送 / Fallback: send directly
-          void api.send(conv.id, prompt);
-        }
+        // 直接发送 prompt 到当前活跃会话 / Send prompt directly to active conversation
+        void api.send(conv.id, prompt);
       };
     }
     const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';

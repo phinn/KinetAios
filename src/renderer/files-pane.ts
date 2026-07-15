@@ -492,7 +492,7 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         resolve(v);
       };
 
-      overlay.querySelector<HTMLElement>('[data-act="cancel"]')!.onclick = close;
+      overlay.querySelectorAll<HTMLElement>('[data-act="cancel"]').forEach(el => el.onclick = close);
       overlay.querySelector<HTMLElement>('[data-act="send"]')!.onclick = send;
       textarea.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
@@ -540,8 +540,12 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         resolve(result);
       }
 
-      function onKey(e: KeyboardEvent) { if (e.key === 'Escape') finish(null); }
+      function onKey(e: KeyboardEvent) { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); finish(null); } }
       document.addEventListener('keydown', onKey, true);
+      // overlay 也直接监听 keydown(防止焦点在 webview 内时 document 收不到)
+      overlay.tabIndex = -1;
+      overlay.addEventListener('keydown', onKey);
+      overlay.focus();
 
       overlay.addEventListener('mousedown', (e) => {
         e.preventDefault();
