@@ -1220,3 +1220,102 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 [data-theme="serene"] .tok-inlinecode{ color: #a31515; }
 [data-theme="serene"] .tok-key       { color: #0451a5; }
 [data-theme="serene"] .tok-link      { color: #0000ee; }
+
+/* ═══════════════════════════════════════════════════════════════════════
+   Visual Inspector — 圈选标注模态框 / Inspect annotation modal
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* 标注按钮激活态 / Inspect button active state */
+.files-head .ghost[data-btn="inspect"].active {
+  color: var(--accent);
+  background: var(--bg-elev);
+  box-shadow: 0 0 0 2px rgba(232,179,57,.2);
+}
+
+/* 模态遮罩 / Modal overlay — 居中弹窗,暗色半透明背景 */
+.inspect-modal-overlay {
+  position: fixed; inset: 0; z-index: 10000;
+  background: rgba(0,0,0,.55);
+  backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+  display: flex; align-items: center; justify-content: center;
+  animation: inspect-fade-in .15s ease;
+}
+@keyframes inspect-fade-in { from { opacity: 0; } to { opacity: 1; } }
+
+/* 模态主体 / Modal body — 克制暗色卡片,金色强调 */
+.inspect-modal {
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  width: 520px; max-width: 90vw;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5);
+  overflow: hidden;
+  animation: inspect-slide-up .2s cubic-bezier(.16,1,.3,1);
+}
+@keyframes inspect-slide-up { from { transform: translateY(16px) scale(.97); opacity: 0; } to { transform: none; opacity: 1; } }
+
+.inspect-modal-head {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px 10px;
+}
+.inspect-modal-title { font-size: 14px; font-weight: 600; color: var(--text); }
+.inspect-modal-close {
+  border: none; background: transparent; color: var(--text-faint);
+  font-size: 22px; line-height: 1; cursor: pointer; padding: 2px 6px; border-radius: 4px;
+}
+.inspect-modal-close:hover { color: var(--text); background: var(--bg-input); }
+
+.inspect-modal-body { padding: 0 18px 14px; }
+
+/* 被选中元素信息条 / Selected elements info */
+.inspect-selected-info { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+.inspect-badge {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--accent-dim); color: var(--accent);
+  font-size: 11px; font-weight: 600; padding: 3px 8px; border-radius: 10px;
+}
+.inspect-el-tag {
+  font: 11px ui-monospace, SFMono-Regular, Menlo, monospace;
+  background: var(--bg-input); color: var(--text-dim);
+  padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+}
+.inspect-more { font-size: 11px; color: var(--text-faint); }
+
+/* 文本预览 / Text preview */
+.inspect-preview {
+  font-size: 12px; color: var(--text-faint);
+  background: var(--code-bg); border-radius: 6px; padding: 8px 10px;
+  margin-bottom: 10px; max-height: 60px; overflow: hidden;
+  line-height: 1.5; white-space: pre-wrap; word-break: break-word;
+}
+
+/* 意图输入框 / Intent textarea */
+.inspect-input {
+  width: 100%; box-sizing: border-box;
+  font: inherit; font-size: 13px; color: var(--text);
+  background: var(--bg-input); border: 1px solid var(--border); border-radius: 8px;
+  padding: 10px 12px; resize: vertical; min-height: 72px;
+  transition: border-color .15s, box-shadow .15s;
+}
+.inspect-input:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px rgba(232,179,57,.15); }
+.inspect-input::placeholder { color: var(--text-faint); }
+
+.inspect-hint { font-size: 11px; color: var(--text-faint); margin-top: 6px; }
+
+/* 底部按钮栏 / Footer buttons */
+.inspect-modal-foot {
+  display: flex; align-items: center; justify-content: flex-end; gap: 8px;
+  padding: 10px 18px 14px; border-top: 1px solid var(--border);
+}
+.inspect-modal-foot button.primary {
+  background: var(--accent); color: var(--accent-fg); border: none;
+  font: inherit; font-size: 12px; font-weight: 600;
+  padding: 7px 18px; border-radius: 7px; cursor: pointer;
+  transition: filter .15s;
+}
+.inspect-modal-foot button.primary:hover { filter: brightness(1.1); }
+.inspect-modal-foot button.ghost {
+  background: transparent; color: var(--text-dim); border: 1px solid var(--border);
+  font: inherit; font-size: 12px; padding: 7px 14px; border-radius: 7px; cursor: pointer;
+}
+.inspect-modal-foot button.ghost:hover { color: var(--text); background: var(--bg-input); }

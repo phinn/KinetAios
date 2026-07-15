@@ -353,6 +353,23 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules'): void {
       // files-pane.ts 的 querySelector 都基于 root(pane),不会越界。
       // ponytail: 用当前 lang 挂载;切语言后需要重挂(简化:暂不处理,首次挂载语言固定)。
       filesController = mountFilesPane(pane, lang);
+      // Visual Inspector:用户在预览中圈选+输入意图后,发给当前活跃会话
+      filesController.onInspect = (prompt: string) => {
+        const conv = selectedId ? convs.get(selectedId) : undefined;
+        if (!conv) return; // 无活跃会话时静默忽略 / Silently ignore if no active conversation
+        // 自动切回聊天 tab 让用户看到 AI 正在处理 / Switch to chat tab
+        showTab('chat');
+        const inputEl = document.getElementById('input') as HTMLTextAreaElement | null;
+        if (inputEl) {
+          // 把 prompt 填入输入框,让用户确认后发送 / Put prompt in input for user review
+          inputEl.value = prompt;
+          inputEl.dispatchEvent(new Event('input', { bubbles: true }));
+          inputEl.focus();
+        } else {
+          // 兜底:直接发送 / Fallback: send directly
+          void api.send(conv.id, prompt);
+        }
+      };
     }
     const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
     filesController.setCwd(cwd);

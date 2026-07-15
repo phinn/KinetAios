@@ -7,7 +7,7 @@
 //
 // 多面板(Multi-Pane):顶部标签栏可「+」新建面板,每个面板独立 cwd / 文件树 / 预览。
 // 面板状态(打开的文件、编辑器内容)在切换标签时保留。上限 MAX_PANELS 个。
-import type { DirEntry, KinetAPI } from '../shared/types';
+import type { DirEntry, KinetAPI, ElementInfo } from '../shared/types';
 import { t, type Lang } from '../shared/i18n';
 import { CodeEditor, detectLang } from './code-editor';
 
@@ -25,10 +25,13 @@ interface WebviewLike {
   goBack(): void;
   reload(): void;
   addEventListener(ev: string, cb: (e: { url: string }) => void): void;
+  getGuestInstanceId(): number | undefined;  // Visual Inspector 需要,拿 guestInstanceId 给 main 执行注入
 }
 
 export interface FilesPaneController {
   setCwd(cwd: string): void;
+  // Visual Inspector:当用户完成圈选+输入意图后触发,app.ts 负责发给当前活跃会话
+  onInspect?: (prompt: string) => void;
 }
 
 // ─── 多面板管理层 ────────────────────────────────────────────
@@ -59,6 +62,9 @@ export function mountFilesPane(container: HTMLElement, lang: Lang): FilesPaneCon
 
   const panels: PanelState[] = [];
   let activeIndex = 0;
+
+  // Visual Inspector 回调 —— 由外部 FilesPaneController.onInspect 设置
+  let inspectHandler: ((prompt: string) => void) | null = null;
 
   // 全局右键菜单 target(所有面板共享一个 #files-menu)。
   // 各面板的 showMenu 会把 target 写到这里,menu 按钮的 handler 也从这里读。
@@ -125,7 +131,11 @@ export function mountFilesPane(container: HTMLElement, lang: Lang): FilesPaneCon
     el.setAttribute('data-panel', '');
     el.innerHTML = PANEL_HTML;
     panelHost.appendChild(el);
-    const ctrl = mountSinglePanel(el, lang, menu, setMenuTarget);
+    const ctrl = mountSinglePanel(el, lang, menu, setMenuTarget, (prompt: string) => {
+      // 优先用外部注册的 handler,否则回退到剪贴板
+      if (inspectHandler) inspectHandler(prompt);
+      else void window.kinet.clipboardWriteText(prompt);
+    });
     const state: PanelState = { id: ++panelIdCounter, el, controller: ctrl, cwd: cwd || '' };
     panels.push(state);
     if (cwd) ctrl.setCwd(cwd);
@@ -162,6 +172,9 @@ export function mountFilesPane(container: HTMLElement, lang: Lang): FilesPaneCon
         renderBar();
       }
     },
+    set onInspect(fn: ((prompt: string) => void) | undefined) {
+      inspectHandler = fn ?? null;
+    },
   };
 }
 
@@ -190,6 +203,7 @@ const PANEL_HTML = `
       </button>
     </div>
     <button class="ghost" data-btn="back" data-i18n-title="files.back" title="后退"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg></button>
+    <button class="ghost" data-btn="inspect" data-i18n-title="files.inspect" title="圈选标注"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" stroke-dasharray="4 2"><path d="M3 3h6M3 3v6M21 3h-6M21 3v6M3 21h6M3 21v-6M21 21h-6M21 21v-6"/></svg></button>
     <button class="ghost" data-btn="reload" data-i18n-title="files.reload" title="刷新"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
     <input class="files-addr" data-el="addr" data-i18n-placeholder="files.addrPh" placeholder="file:// 或 https:// 或 localhost:8000" />
   </div>
@@ -208,7 +222,7 @@ const PANEL_HTML = `
   </div>
 `;
 
-function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setMenuTarget: (e: DirEntry | null) => void): SinglePanelController {
+function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setMenuTarget: (e: DirEntry | null) => void, onInspectPrompt?: (prompt: string) => void): SinglePanelController {
   const api = window.kinet;
   let cwd = '';
   let currentAbs = '';
@@ -402,6 +416,242 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
   };
   root.querySelector<HTMLElement>('[data-btn="back"]')!.onclick = () => webview.goBack();
   root.querySelector<HTMLElement>('[data-btn="reload"]')!.onclick = () => webview.reload();
+
+  // ── Visual Inspector:圈选标注 → AI 改代码 ──
+  // 点击「圈选」按钮 → 向 webview 注入选择脚本 → 用户拖拽框选页面元素
+  // → 收集被选元素的 DOM 信息(outerHTML/computedStyle/domPath/rect)
+  // → 弹出输入框让用户描述修改意图 → 组装 [文件路径 + 源码片段 + 元素信息 + 意图] 发给当前会话
+  const inspectBtn = root.querySelector<HTMLElement>('[data-btn="inspect"]')!;
+  let inspecting = false; // 是否正在标注模式
+  inspectBtn.onclick = () => void toggleInspect();
+
+  async function toggleInspect(): Promise<void> {
+    if (inspecting) return; // 已经在标注中,等用户完成或取消
+    if (!currentAbs) { feStatus.textContent = tr('files.inspectNoFile'); return; }
+    const gid = webview.getGuestInstanceId?.();
+    if (gid == null) { feStatus.textContent = tr('files.inspectNoWebview'); return; }
+    inspecting = true;
+    inspectBtn.classList.add('active');
+    feStatus.textContent = tr('files.inspectDragging');
+    // 向 webview 注入框选脚本。脚本完成后返回一个 Promise,resolve 出 ElementInfo[]。
+    const script = buildInspectScript();
+    const r = await api.webviewInspect(gid, script);
+    inspecting = false;
+    inspectBtn.classList.remove('active');
+    if (!r.ok) { feStatus.textContent = tr('files.inspectFail', { msg: r.error ?? '' }); return; }
+    const elements = r.result as ElementInfo[] | null;
+    if (!elements || elements.length === 0) { feStatus.textContent = tr('files.inspectCancelled'); return; }
+    // 弹出输入框 / Show intent input modal
+    const intent = await showInspectModal(elements);
+    if (!intent) { feStatus.textContent = tr('files.inspectCancelled'); return; }
+    // 组装 prompt 发送 / Assemble prompt and send to conversation
+    const prompt = buildInspectPrompt(currentAbs, elements, intent);
+    feStatus.textContent = tr('files.inspectSent');
+    // 通过回调把 prompt 发给当前活跃会话(由 app.ts 的 onInspect 处理)
+    if (onInspectPrompt) onInspectPrompt(prompt);
+    else { void api.clipboardWriteText(prompt); feStatus.textContent = tr('files.inspectCopied'); }
+  }
+
+  // 标注意图输入模态框 / Inspect intent input modal
+  function showInspectModal(elements: ElementInfo[]): Promise<string | null> {
+    return new Promise((resolve) => {
+      // 创建模态遮罩 / Create modal overlay
+      const overlay = document.createElement('div');
+      overlay.className = 'inspect-modal-overlay';
+      overlay.innerHTML = `
+        <div class="inspect-modal">
+          <div class="inspect-modal-head">
+            <span class="inspect-modal-title">${tr('files.inspectTitle')}</span>
+            <button class="inspect-modal-close" data-act="cancel">&times;</button>
+          </div>
+          <div class="inspect-modal-body">
+            <div class="inspect-selected-info">
+              <span class="inspect-badge">${elements.length} ${tr('files.inspectElements')}</span>
+              ${elements.slice(0, 3).map((el) => `<code class="inspect-el-tag">&lt;${el.tag}${el.id ? ' id="' + el.id + '"' : ''}${el.className ? ' class="' + el.className + '"' : ''}&gt;</code>`).join('')}
+              ${elements.length > 3 ? `<span class="inspect-more">+${elements.length - 3}</span>` : ''}
+            </div>
+            <div class="inspect-preview">${escapeHtml(elements[0]?.textPreview || '').slice(0, 100)}</div>
+            <textarea class="inspect-input" data-el="intent" placeholder="${tr('files.inspectPlaceholder')}" rows="4"></textarea>
+            <div class="inspect-hint">${tr('files.inspectHint')}</div>
+          </div>
+          <div class="inspect-modal-foot">
+            <button class="ghost" data-act="cancel">${tr('common.cancel')}</button>
+            <button class="primary" data-act="send">${tr('files.inspectSend')}</button>
+          </div>
+        </div>
+      `;
+      document.body.appendChild(overlay);
+
+      const textarea = overlay.querySelector<HTMLTextAreaElement>('[data-el="intent"]')!;
+      const close = () => { overlay.remove(); resolve(null); };
+      const send = () => {
+        const v = textarea.value.trim();
+        if (!v) { textarea.focus(); return; }
+        overlay.remove();
+        resolve(v);
+      };
+
+      overlay.querySelector<HTMLElement>('[data-act="cancel"]')!.onclick = close;
+      overlay.querySelector<HTMLElement>('[data-act="send"]')!.onclick = send;
+      textarea.addEventListener('keydown', (ev) => {
+        if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); send(); }
+        if (ev.key === 'Escape') { ev.preventDefault(); close(); }
+      });
+
+      // 遮罩点击关闭(点模态框本身不关)
+      overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+
+      setTimeout(() => textarea.focus(), 50);
+    });
+  }
+
+  // ── buildInspectScript:注入 webview 的框选脚本 ──
+  // 1) 添加全屏半透明遮罩层 + 十字准线光标
+  // 2) 鼠标按下(mousedown)开始记录起点,拖动(mousemove)绘制选择框
+  // 3) 鼠标松开(mouseup)计算选择框矩形 → 通过 elementsFromPoint 收集区域内所有元素
+  // 4) 对每个元素提取 tag/id/class/outerHTML/computedStyle/domPath/rect/textPreview
+  // 5) 返回 ElementInfo[](去重:同 tag+class+text 只保留最深层的一个)
+  function buildInspectScript(): string {
+    return `(function() {
+      // 防重复注入 / Prevent duplicate injection
+      if (window.__kinetInspect) { window.__kinetInspect.cleanup(); }
+
+      var overlay = document.createElement('div');
+      overlay.style.cssText = 'position:fixed;inset:0;z-index:2147483646;cursor:crosshair;background:rgba(232,179,57,0.03);';
+      var selBox = document.createElement('div');
+      selBox.style.cssText = 'position:fixed;border:2px dashed #e8b339;background:rgba(232,179,57,0.12);z-index:2147483647;pointer-events:none;display:none;box-shadow:0 0 0 9999px rgba(0,0,0,0.2);';
+      var hint = document.createElement('div');
+      hint.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1b1b1f;color:#e8b339;padding:8px 16px;border-radius:8px;font:13px system-ui,sans-serif;pointer-events:none;box-shadow:0 4px 16px rgba(0,0,0,0.4);';
+      hint.textContent = '拖拽框选要修改的区域 · 按 ESC 取消';
+      var startX = 0, startY = 0, isDown = false;
+
+      function cleanup() {
+        window.__kinetInspect = null;
+        overlay.remove(); selBox.remove(); hint.remove();
+        document.removeEventListener('keydown', onKey, true);
+      }
+      function onKey(e) { if (e.key === 'Escape') { cleanup(); window.__kinetResolve(null); } }
+
+      window.__kinetResolve = null;
+      window.__kinetInspect = { cleanup: cleanup };
+
+      document.addEventListener('keydown', onKey, true);
+
+      overlay.addEventListener('mousedown', function(e) {
+        isDown = true;
+        startX = e.clientX; startY = e.clientY;
+        selBox.style.display = 'block';
+        selBox.style.left = startX + 'px'; selBox.style.top = startY + 'px';
+        selBox.style.width = '0px'; selBox.style.height = '0px';
+        hint.style.display = 'none';
+      });
+
+      overlay.addEventListener('mousemove', function(e) {
+        if (!isDown) return;
+        var x = Math.min(e.clientX, startX);
+        var y = Math.min(e.clientY, startY);
+        var w = Math.abs(e.clientX - startX);
+        var h = Math.abs(e.clientY - startY);
+        selBox.style.left = x + 'px'; selBox.style.top = y + 'px';
+        selBox.style.width = w + 'px'; selBox.style.height = h + 'px';
+      });
+
+      overlay.addEventListener('mouseup', function(e) {
+        if (!isDown) return;
+        isDown = false;
+        var x1 = Math.min(e.clientX, startX), y1 = Math.min(e.clientY, startY);
+        var x2 = Math.max(e.clientX, startX), y2 = Math.max(e.clientY, startY);
+        var w = x2 - x1, h = y2 - y1;
+        cleanup();
+
+        // 太小的选择 = 取消 / Too small selection = cancel
+        if (w < 5 || h < 5) { window.__kinetResolve(null); return; }
+
+        // 收集选择框内的元素 / Collect elements in selection rect
+        var collected = [];
+        var seen = new Set();
+        // 用 elementsFromPoint 在矩形内网格采样,找到所有元素
+        var step = Math.min(20, Math.min(w, h) / 3);
+        for (var px = x1 + step/2; px < x2; px += step) {
+          for (var py = y1 + step/2; py < y2; py += step) {
+            var els = document.elementsFromPoint(px, py);
+            for (var i = 0; i < els.length; i++) {
+              var el = els[i];
+              if (el === overlay || el === selBox || el === hint) continue;
+              if (seen.has(el)) continue;
+              seen.add(el);
+              var r = el.getBoundingClientRect();
+              // 元素中心点必须在选择框内(排除仅边缘触碰的元素)
+              if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
+              if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
+              collected.push(extractInfo(el, r));
+            }
+          }
+        }
+
+        // 去重:同 tag + 同 class + 同 text 前 50 字 → 只留最深嵌套层的一个
+        var deduped = {};
+        var result = [];
+        for (var j = 0; j < collected.length; j++) {
+          var c = collected[j];
+          var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
+          if (deduped[key]) {
+            // 已有同 key → 比较哪个更内层(outerHTML 更长 = 更外层 → 跳过)
+            // 留外层那个(包含更完整结构)
+            if (c.outerHTML.length > deduped[key].outerHTML.length) {
+              var idx = result.indexOf(deduped[key]);
+              result[idx] = c; deduped[key] = c;
+            }
+          } else {
+            deduped[key] = c; result.push(c);
+          }
+        }
+        window.__kinetResolve(result.length ? result : null);
+      });
+
+      function extractInfo(el, r) {
+        var cs = window.getComputedStyle(el);
+        var styles = {};
+        var keys = ['color','background-color','font-size','font-weight','font-family','width','height','padding','margin','border','border-radius','display','position','text-align','line-height','letter-spacing','opacity','flex-direction','justify-content','align-items','gap'];
+        for (var k = 0; k < keys.length; k++) { styles[keys[k]] = cs.getPropertyValue(keys[k]); }
+        // DOM path
+        var path = [];
+        var cur = el;
+        while (cur && cur.nodeType === 1 && cur !== document.body) {
+          var sel = cur.tagName.toLowerCase();
+          if (cur.id) sel += '#' + cur.id;
+          else if (cur.className && typeof cur.className === 'string') {
+            var cls = cur.className.trim().split(/\\s+/).slice(0, 2).join('.');
+            if (cls) sel += '.' + cls;
+          }
+          var sib = cur, nth = 1;
+          while ((sib = sib.previousElementSibling)) nth++;
+          if (nth > 1) sel += ':nth-child(' + nth + ')';
+          path.unshift(sel);
+          cur = cur.parentElement;
+        }
+        return {
+          tag: el.tagName.toLowerCase(),
+          id: el.id || '',
+          className: (typeof el.className === 'string' ? el.className : ''),
+          textPreview: (el.textContent || '').trim().slice(0, 300),
+          outerHTML: el.outerHTML.slice(0, 2000),
+          computedStyle: styles,
+          domPath: path.join(' > '),
+          rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+        };
+      }
+
+      document.body.appendChild(overlay);
+      document.body.appendChild(selBox);
+      document.body.appendChild(hint);
+
+      // 返回一个 Promise,resolve 在 mouseup 或 ESC 触发
+      return new Promise(function(resolve) {
+        window.__kinetResolve = resolve;
+      });
+    })();`;
+  }
   addr.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') webview.loadURL(normalizeURL(addr.value));
   });
@@ -424,6 +674,46 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
   root.addEventListener('contextmenu', (ev) => {
     if (!(ev.target as HTMLElement)?.closest('.fe-row')) hideMenu();
   });
+
+  // ── buildInspectPrompt:把文件路径 + 元素信息 + 用户意图组装成 AI prompt ──
+  // AI 拿到后可以调 read_file 读源码 → 理解结构 → edit_file 精确修改。
+  function buildInspectPrompt(abs: string, elements: ElementInfo[], intent: string): string {
+    const parts: string[] = [];
+    parts.push(`## 视觉标注修改请求`);
+    parts.push('');
+    parts.push(`**文件路径**: \`${abs}\``);
+    parts.push(`**修改意图**: ${intent}`);
+    parts.push('');
+    parts.push(`### 用户在预览中框选了以下元素(共 ${elements.length} 个):`);
+    parts.push('');
+    for (let i = 0; i < elements.length; i++) {
+      const el = elements[i];
+      parts.push(`#### 元素 ${i + 1}: \`<${el.tag}${el.id ? '#' + el.id : ''}${el.className ? '.' + el.className.split(/\s+/).join('.') : ''}>\``);
+      parts.push(`- **DOM 路径**: \`${el.domPath}\``);
+      parts.push(`- **位置**: x=${el.rect.x}, y=${el.rect.y}, ${el.rect.w}×${el.rect.h}px`);
+      parts.push(`- **可见文本**: ${el.textPreview.slice(0, 150) || '(无文本)'}`);
+      // 精选关键 computed style(只保留非默认值的)
+      const cs = el.computedStyle;
+      const styleParts: string[] = [];
+      for (const [k, v] of Object.entries(cs)) {
+        if (v && v !== 'normal' && v !== 'none' && v !== 'auto' && v !== '0' && v !== '0px') {
+          styleParts.push(`${k}: ${v}`);
+        }
+      }
+      if (styleParts.length) parts.push(`- **关键样式**: ${styleParts.slice(0, 8).join(' | ')}`);
+      parts.push(`- **outerHTML**:`);
+      parts.push('```html');
+      parts.push(el.outerHTML.slice(0, 1000));
+      parts.push('```');
+      parts.push('');
+    }
+    parts.push(`### 请按以下步骤操作:`);
+    parts.push(`1. 先用 read_file 读取 \`${abs}\` 的完整内容`);
+    parts.push(`2. 根据 DOM 路径和 outerHTML 定位到对应源码片段`);
+    parts.push(`3. 按照用户的修改意图,用 edit_file 精确修改`);
+    parts.push(`4. 如果意图不明确或需要确认,先说明你的理解再修改`);
+    return parts.join('\n');
+  }
 
   applyI18nDOM();
 
@@ -459,4 +749,9 @@ function bindMenuHandlers(menu: HTMLElement, getTarget: () => DirEntry | null): 
     if (target) void api.clipboardWriteText(target.path);
     menu.hidden = true;
   };
+}
+
+// ── HTML 转义(展示用户内容时防 XSS) / Escape HTML for safe display ──
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }

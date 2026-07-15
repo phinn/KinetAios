@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -1156,6 +1156,21 @@ function registerIpc(): void {
     try {
       clipboard.writeText(text);
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── Visual Inspector:向 <webview> 的 guest contents 注入并执行 JS ──
+  // webview 的 executeJavaScript 只能在主进程通过 guestInstanceId 拿到 webContents 后调用。
+  // renderer 传 guestInstanceId(由 <webview>.getGuestInstanceId() 获得)+ 要执行的脚本。
+  // 返回 { ok, result?, error? }。脚本内的 Promise 会被自动 await。
+  ipcMain.handle('webview-inspect', async (_e, guestInstanceId: number, script: string) => {
+    try {
+      const wc = webContents.fromId(guestInstanceId);
+      if (!wc) return { ok: false, error: 'webview not found (guestInstanceId=' + guestInstanceId + ')' };
+      const result = await wc.executeJavaScript(script);
+      return { ok: true, result };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

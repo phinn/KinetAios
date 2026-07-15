@@ -251,6 +251,19 @@ export type Conversation = {
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
 export type DirEntry = { name: string; path: string; isDir: boolean };
 
+// ── Visual Inspector:圈选标注后从 webview 内收集的元素信息 ──
+// 由注入的 inspect 脚本通过 executeJavaScript 返回,用于构建 AI prompt。
+export interface ElementInfo {
+  tag: string;               // 标签名(div / span / h1 …)
+  id: string;                // #id(空则 '')
+  className: string;         // .class1.class2(空则 '')
+  textPreview: string;       // 元素内可见文本(截断 300 字)
+  outerHTML: string;         // 元素 + 子节点的 HTML(截断 2000 字,给 AI 看结构)
+  computedStyle: Record<string, string>; // 关键 computed style(color/font-size/width/height/…)
+  domPath: string;           // CSS 选择器路径(如 div.card > h3.title)
+  rect: { x: number; y: number; w: number; h: number }; // 视口坐标 + 尺寸
+}
+
 // Git 快照(状态 + 最近提交),git tab 用。code 是单字符状态码(M/A/D/R/?/…)。
 export type GitChange = { path: string; code: string; staged: boolean };
 export type GitCommit = { hash: string; author: string; date: string; subject: string };
@@ -364,6 +377,13 @@ export interface KinetAPI {
   transcribeAudio(base64: string, mime: string): Promise<{ ok: boolean; text?: string; error?: string }>;
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
   clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
+  // ── Visual Inspector:向 webview 注入 inspect 脚本,执行后返回元素信息 ──
+  // files-pane 拿不到 webview 的 webContents(只有 main 进程能),所以走 IPC。
+  // renderer 传 webview 的 guestInstanceId → main 通过 WebContents.fromId 拿到 guest contents → executeJavaScript。
+  webviewInspect(guestInstanceId: number, script: string): Promise<{ ok: boolean; result?: unknown; error?: string }>;
+  // ── Visual Inspector:获取 webview 的 guestInstanceId ──
+  // webview 嵌在 renderer,但 guestInstanceId 只有通过 Electron webview API 才能拿到。
+  // preload 直接暴露无返回值的桥即可,renderer 自己 webview.getGuestInstanceId()。
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;
