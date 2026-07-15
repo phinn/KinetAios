@@ -268,7 +268,7 @@ export function mountFilesPane(root: HTMLElement, lang: Lang): FilesPaneControll
     hideMenu();
   };
   root.querySelector<HTMLElement>('#fm-copy')!.onclick = () => {
-    if (menuTarget) void navigator.clipboard.writeText(menuTarget.path);
+    if (menuTarget) void window.kinet.clipboardWriteText(menuTarget.path);
     hideMenu();
   };
   root.addEventListener('click', (ev) => {

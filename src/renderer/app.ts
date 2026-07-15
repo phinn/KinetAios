@@ -1821,14 +1821,36 @@ function wireVoice(): void {
 // TTS:speechSynthesis 系统级,零依赖。再次点同一个正在读的消息 → 取消。
 let lastUtterance: SpeechSynthesisUtterance | null = null;
 // 复制文本到剪贴板,带短暂"已复制"反馈
-function copyText(text: string, btn?: HTMLElement): void {
-  navigator.clipboard.writeText(text).then(() => {
-    if (btn) {
-      const orig = btn.textContent;
-      btn.textContent = '✓';
-      setTimeout(() => { btn.textContent = orig; }, 1200);
-    }
-  }).catch(() => {});
+// Electron contextIsolation 下 navigator.clipboard 经常静默失效 → 走 IPC 主进程 clipboard 模块
+async function copyText(text: string, btn?: HTMLElement): Promise<void> {
+  let ok = false;
+  // 路径 1:IPC → 主进程 Electron clipboard(最可靠)
+  try {
+    const r = await api.clipboardWriteText(text);
+    ok = !!r.ok;
+  } catch { /* fall through */ }
+  // 路径 2:navigator.clipboard(某些 Electron 版本/平台仍可用)
+  if (!ok) {
+    try { await navigator.clipboard.writeText(text); ok = true; } catch { /* fall through */ }
+  }
+  // 路径 3:execCommand 兜底(老旧 Chromium)
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch { /* give up */ }
+  }
+  if (ok && btn) {
+    const orig = btn.innerHTML;
+    btn.textContent = '✓';
+    setTimeout(() => { btn.innerHTML = orig; }, 1200);
+  }
 }
 
 function speakText(text: string): void {

@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -1110,6 +1110,16 @@ function registerIpc(): void {
       }
       const data = await res.json() as { text?: string };
       return { ok: true, text: data.text ?? '' };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // 剪贴板写入 — 走主进程 clipboard 模块,绕过 renderer contextIsolation 下 navigator.clipboard 失效问题
+  ipcMain.handle('clipboard-write-text', (_e, text: string) => {
+    try {
+      clipboard.writeText(text);
+      return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

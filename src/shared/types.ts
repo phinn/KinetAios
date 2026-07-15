@@ -359,6 +359,8 @@ export interface KinetAPI {
   captureScreen(): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   // ── 语音转写(renderer 录音 → main 调 /audio/transcriptions)──
   transcribeAudio(base64: string, mime: string): Promise<{ ok: boolean; text?: string; error?: string }>;
+  // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
+  clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

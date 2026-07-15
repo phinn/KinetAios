@@ -90,6 +90,8 @@ const api: KinetAPI = {
   captureScreen: () => ipcRenderer.invoke('capture-screen'),
   // 语音转写
   transcribeAudio: (base64: string, mime: string) => ipcRenderer.invoke('transcribe-audio', base64, mime),
+  // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)
+  clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
 
   onAgentEvent: (cb) => {
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));
