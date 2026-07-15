@@ -295,10 +295,17 @@ export async function compactHistory(
         const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((p) => p.type === 'text' ? p.text : '').join('') : JSON.stringify(m.tool_calls ?? '');
         return `[${role}] ${text}`;
       })
-      .join('\n')
-      .slice(0, 12_000);
+      .join('\n');
+    // 截断到 12K 字符,但在行边界截(避免截在消息中间导致摘要 LLM 看到半截)
+    const MAX_TRANSCRIPT = 12_000;
+    let trimmed = transcript;
+    if (transcript.length > MAX_TRANSCRIPT) {
+      const cut = transcript.slice(0, MAX_TRANSCRIPT);
+      const lastNl = cut.lastIndexOf('\n');
+      trimmed = (lastNl > MAX_TRANSCRIPT * 0.5 ? cut.slice(0, lastNl) : cut) + '\n…[截断]';
+    }
     const comp = await provider.streamComplete(
-      [{ role: 'system', content: sys }, { role: 'user', content: transcript }],
+      [{ role: 'system', content: sys }, { role: 'user', content: trimmed }],
       [],
       snap,
       signal,

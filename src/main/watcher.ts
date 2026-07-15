@@ -21,6 +21,7 @@ interface WatcherEntry {
   config: WatchConfig;
   // debounce per (ruleIndex + file),防止编辑器保存连发多次。
   timers: Map<string, NodeJS.Timeout>;
+  _mtime?: number; // 配置文件的 mtime(ensureWatcher 用它检测变更 → 重建)
 }
 
 const watchers = new Map<string, WatcherEntry>();
@@ -59,7 +60,9 @@ export function startWatcher(cwd: string): boolean {
     console.warn('watch start failed', cwd, e);
     return false;
   }
-  const entry: WatcherEntry = { fw, config, timers: new Map() };
+  let configMtime: number | undefined;
+  try { configMtime = fs.statSync(path.join(cwd, '.kinet-watch.json')).mtimeMs; } catch { /* ignore */ }
+  const entry: WatcherEntry = { fw, config, timers: new Map(), _mtime: configMtime };
   fw.on('change', (eventType: string, filename: string | null) => {
     if (!filename) return;
     // 跳 node_modules 等(虽然 recursive 也会上报,这里兜底过滤)。
@@ -126,14 +129,22 @@ export function listWatchers(): string[] {
 }
 
 // 启动时 / 创建新会话时调,自动检测 .kinet-watch.json 并起 watcher。
+// 检测配置文件变更(mtime 变化)→ 关闭旧 watcher 用新配置重建。
 export function ensureWatcher(cwd: string): void {
   if (!cwd) return;
+  const p = path.join(cwd, '.kinet-watch.json');
   if (watchers.has(cwd)) {
-    // 已有 watcher,但配置可能改了 —— 重新读一遍(关闭重开)。
-    const p = path.join(cwd, '.kinet-watch.json');
-    if (!fs.existsSync(p)) {
+    // 已有 watcher —— 检查配置文件是否变化(mtime),变了就重建。
+    try {
+      const mtime = fs.statSync(p).mtimeMs;
+      const entry = watchers.get(cwd)!;
+      if ((entry as WatcherEntry & { _mtime?: number })._mtime !== mtime) {
+        stopWatcher(cwd);
+        startWatcher(cwd);
+      }
+    } catch {
+      // 配置文件不存在了 → 关闭 watcher
       stopWatcher(cwd);
-      return;
     }
   } else {
     startWatcher(cwd);

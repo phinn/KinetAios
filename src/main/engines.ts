@@ -291,8 +291,12 @@ function runBin(
     };
     if (opts.signal.aborted) onAbort();
     else opts.signal.addEventListener('abort', onAbort, { once: true });
-    child.on('error', () => resolve(-1));
+    child.on('error', () => {
+      opts.signal.removeEventListener('abort', onAbort);
+      resolve(-1);
+    });
     child.on('close', (code) => {
+      opts.signal.removeEventListener('abort', onAbort); // 清理 listener,防止 AbortSignal 上堆积 dead listeners
       if (buf.trim()) opts.onLine(buf);
       resolve(code ?? 0);
     });

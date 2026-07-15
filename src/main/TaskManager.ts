@@ -248,6 +248,9 @@ export class TaskManager {
       this.aborts.delete(id);
     });
 
+    // 如果会话在引擎运行期间被删除(cancel→deleteConversation),跳过所有持久化。
+    if (!this.convs.has(id)) return;
+
     // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
     if (conv.engine === 'direct') store.saveDirectHistory(conv);
     // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
@@ -311,8 +314,15 @@ export class TaskManager {
     // (shell:true). Strip shell/shell-expansion metacharacters so a planted memory can't inject a
     // command. Short user facts don't legitimately need these chars.
     const mems = store.loadMemories().map((m) => shellSafeMemory(m.content));
-    if (mems.length) {
-      out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + mems.map((m) => `- ${m}`).join('\n');
+    // 限制注入条数:长期使用后记忆可能几百条,全量注入会占大量 token。
+    // 按创建时间倒序取最近 50 条(最新的最相关)。
+    const MEM_LIMIT = 50;
+    const limited = mems.length > MEM_LIMIT ? mems.slice(0, MEM_LIMIT) : mems;
+    if (limited.length) {
+      out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + limited.map((m) => `- ${m}`).join('\n');
+      if (mems.length > MEM_LIMIT) {
+        out += `\n…(共 ${mems.length} 条记忆,仅显示最近 ${MEM_LIMIT} 条)`;
+      }
     }
     if (conv.cwd) out += `\n\n## 当前工作目录\n${conv.cwd}`;
     return out;

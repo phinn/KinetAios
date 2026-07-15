@@ -11,7 +11,7 @@ import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, de
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache } from './plugins';
-import { setCronTasks, setDispatcher, startCronScheduler, validateCron } from './cron';
+import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
@@ -1531,6 +1531,8 @@ if (!gotLock) {
     globalShortcut.unregisterAll();
     mcp.dispose(); // 关掉所有 MCP 子进程
     void localMcpServer.stop(); // 关掉本机 MCP HTTP server(多机协作)
+    stopCronScheduler(); // 停掉 cron 定时器,否则进程延迟退出
+    for (const cwd of listWatchers()) stopWatcher(cwd); // 关闭所有文件监听器
     tray?.destroy(); // 销毁托盘,否则 macOS 上进程残留、退不干净
   });
 }

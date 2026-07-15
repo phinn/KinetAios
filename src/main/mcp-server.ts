@@ -13,6 +13,7 @@
 
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import crypto from 'node:crypto';
 import os from 'node:os';
 import type { Tool, ToolCtx } from './tools';
 import { getBrand } from './brand';
@@ -110,6 +111,15 @@ const SYNC_MEMORIES_TOOL_MCP: Record<string, unknown> = {
 /** 远程 Agent 事件类型从 shared/types.ts 导入(主进程与 renderer 共享)。 */
 
 const PROTOCOL_VERSION = '2024-11-05';
+
+// 恒定时间字符串比较 —— 防止时序攻击逐字节爆破 token。
+// Constant-time string comparison to prevent timing attacks on token verification.
+function timingSafeStr(a: string, b: string): boolean {
+  const ab = Buffer.from(a);
+  const bb = Buffer.from(b);
+  if (ab.length !== bb.length) return false;
+  return crypto.timingSafeEqual(ab, bb);
+}
 
 export class LocalMcpServer {
   private server: http.Server | null = null;
@@ -220,11 +230,11 @@ export class LocalMcpServer {
       return;
     }
 
-    // Token 鉴权:Authorization: Bearer <token>
+    // Token 鉴权:Authorization: Bearer <token>(恒定时间比较,防时序攻击)
     if (this.token) {
       const auth = req.headers.authorization ?? '';
       const got = auth.startsWith('Bearer ') ? auth.slice(7) : '';
-      if (got !== this.token) {
+      if (!timingSafeStr(got, this.token)) {
         this.jsonRpc(res, 401, { jsonrpc: '2.0', error: { code: -32001, message: '未授权:token 不匹配' } });
         return;
       }
@@ -246,12 +256,10 @@ export class LocalMcpServer {
 
     // GET /mcp/live → 实时直播 SSE:推送远程 Agent 事件流(token/tool/status/cost/done)。
     // 远程方连此端点 → 实时看到本机 Agent 正在做什么(token 逐字、工具调用、状态变化)。
-    if (req.method === 'GET' && url === '/mcp/live') {
-      // 验 token(?token=xxx 或 Authorization header)
-      const qToken = new URL(url, 'http://localhost').searchParams.get('token') || '';
+    if (req.method === 'GET' && url.startsWith('/mcp/live')) {
+      // 只从 Authorization header 验 token(不从 URL query 接收 —— 避免 token 泄露到日志/代理)
       const authHeader = (req.headers.authorization ?? '').replace('Bearer ', '');
-      const tk = qToken || authHeader;
-      if (!tk || tk !== this.token) {
+      if (!authHeader || !timingSafeStr(authHeader, this.token)) {
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: '未授权:token 不匹配' }));
         return;

@@ -4,6 +4,8 @@ import { exec } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
+import dns from 'node:dns/promises';
+import crypto from 'node:crypto';
 import type { ToolDef } from './glm';
 import * as store from './store';
 import { takeSnapshot } from './snapshots';
@@ -56,6 +58,58 @@ function isPrivateHost(host: string): boolean {
   if (h.endsWith('.local')) return true;
   if (h.endsWith('.internal')) return true;
   return false;
+}
+
+// 检查一个已解析的 IP 地址字符串是否为私有/保留地址。
+// 与 isPrivateHost 不同,此函数接收 DNS 解析后的实际 IP,防止 DNS rebinding 攻击。
+function isPrivateIP(ip: string): boolean {
+  // IPv4
+  const v4Match = ip.match(/^(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (v4Match) {
+    const [a, b] = [Number(v4Match[1]), Number(v4Match[2])];
+    if (a === 0 || a === 127) return true;
+    if (a === 10) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true;
+    return false;
+  }
+  // IPv6
+  const lower = ip.toLowerCase();
+  if (lower === '::1' || lower === '::') return true;
+  if (lower.startsWith('fc') || lower.startsWith('fd')) return true;
+  if (lower.startsWith('fe80')) return true;
+  // IPv6 表达的 IPv4 地址(::ffff:x.x.x.x)
+  const mapped = lower.match(/::ffff:(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})$/);
+  if (mapped) return isPrivateIP(mapped[1]);
+  return false;
+}
+
+// SSRF 强化检查:解析 DNS → 验证所有解析结果 IP 都不是内网地址。
+// 防止 DNS rebinding:攻击者第一次解析为公网 IP(通过 hostname 检查),实际 fetch 时解析到内网。
+async function assertSafeHost(hostname: string): Promise<{ ok: boolean; reason?: string }> {
+  const h = hostname.toLowerCase();
+  // 第一层:hostname 字符串检查(快速路径)
+  if (isPrivateHost(h)) return { ok: false, reason: `安全限制:不允许访问内网地址(${h})` };
+  // 如果是 IP 字面量,不需要 DNS 解析
+  if (/^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(h) || h.includes(':')) {
+    if (isPrivateIP(h)) return { ok: false, reason: `安全限制:不允许访问内网地址(${h})` };
+    return { ok: true };
+  }
+  // 第二层:DNS 解析 → 检查所有 A/AAAA 记录
+  try {
+    const addrs = await dns.resolve4(h).catch(() => [] as string[]);
+    const addrs6 = await dns.resolve6(h).catch(() => [] as string[]);
+    const all = [...addrs, ...addrs6];
+    if (all.length === 0) return { ok: true }; // 解析不到 → 让 fetch 自己报错
+    for (const ip of all) {
+      if (isPrivateIP(ip)) return { ok: false, reason: `安全限制:${h} 解析到内网地址(${ip}),拒绝访问` };
+    }
+  } catch {
+    // DNS 解析失败 → 让 fetch 处理(不是 SSRF,只是域名不存在)
+  }
+  return { ok: true };
 }
 
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
@@ -246,6 +300,11 @@ const readFile: Tool = {
   async run(args, ctx) {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     if (!p) return '缺少 path';
+    // 沙箱检查:readOnly 模式限制读取范围在 cwd 内(防止 LLM 读 ~/.ssh/id_rsa 等)
+    if (ctx.sandbox === 'readOnly') {
+      const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, false);
+      if (guard) return guard;
+    }
     try {
       const stat = fs.statSync(p);
       // 防止 read_file 大文件(PDF/图片等二进制)把主进程读 OOM —— 之前没限制是崩溃主因。
@@ -284,7 +343,7 @@ const writeFile: Tool = {
     const content = (args.content as string) ?? '';
     if (!p) return '缺少 path';
     // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
-    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd);
+    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, true);
     if (guard) return guard;
     try {
       // 写前快照(仅当文件已存在,新文件没东西可存)。best-effort,失败不阻塞。
@@ -322,9 +381,11 @@ const webFetch: Tool = {
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return `非法 URL: ${s}`;
     // SSRF 防护:阻止访问内网/本地地址(LLM 被诱导时不会探测内部服务)
+    // 两层检查:① hostname 字符串 ② DNS 解析后验证实际 IP(防 DNS rebinding)
     const host = url.hostname.toLowerCase();
-    if (isPrivateHost(host)) {
-      return `安全限制:不允许访问内网地址(${host})`;
+    const safe = await assertSafeHost(host);
+    if (!safe.ok) {
+      return safe.reason ?? `安全限制:不允许访问内网地址(${host})`;
     }
     try {
       const resp = await fetch(s, { headers: { 'User-Agent': 'KinetAios/0.2' }, signal: ctx?.signal ?? AbortSignal.timeout(20_000) });
@@ -528,7 +589,7 @@ const editFile: Tool = {
     if (!p) return '缺少 path';
     if (!oldS) return '缺少 old_string';
     // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
-    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd);
+    const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, true);
     if (guard) return guard;
     let body: string;
     try {
@@ -663,10 +724,21 @@ export function readOnlyTools(): Tool[] {
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。
-function sandboxCheck(sandbox: SandboxMode | undefined, filePath: string, cwd: string): string | null {
+// readOnly 模式:block 写操作;读操作限制在 cwd 内(防 LLM 读敏感文件)。
+// workspaceWrite 模式:限制写操作在 cwd 内;读不限。
+function sandboxCheck(sandbox: SandboxMode | undefined, filePath: string, cwd: string, isWrite = false): string | null {
   if (!sandbox || sandbox === 'fullAccess') return null; // 不限或未设
-  if (sandbox === 'readOnly') return '🚫 沙箱模式 [readOnly]: 写操作被禁止。请在设置中切换到 workspaceWrite 或 fullAccess。';
-  if (sandbox === 'workspaceWrite') {
+  if (sandbox === 'readOnly') {
+    if (isWrite) return '🚫 沙箱模式 [readOnly]: 写操作被禁止。请在设置中切换到 workspaceWrite 或 fullAccess。';
+    // 读操作也限制在 cwd 内
+    const resolved = path.resolve(filePath);
+    const base = path.resolve(cwd || process.cwd());
+    if (!resolved.startsWith(base + path.sep) && resolved !== base) {
+      return `🚫 沙箱模式 [readOnly]: 只能在工作目录内读取。\n工作目录: ${base}\n尝试读取: ${resolved}`;
+    }
+    return null;
+  }
+  if (sandbox === 'workspaceWrite' && isWrite) {
     const resolved = path.resolve(filePath);
     const base = path.resolve(cwd || process.cwd());
     if (!resolved.startsWith(base + path.sep) && resolved !== base) {
@@ -691,7 +763,7 @@ export function customTools(): Tool[] {
       name: r.name,
       description: r.description || `(自定义工具 ${r.name})`,
       parameters: params,
-      readOnly: true, // 自定义工具标记为只读(可并发),实际通过 shell 执行用户定义的命令
+      readOnly: false, // 自定义工具通过 shell 执行,不能保证只读 → 串行执行(避免并发写冲突)
       async run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
         // 将 $ARG_<param> 替换为实际参数值。
         // 安全:对参数值做 shell 转义(双引号包裹 + 转义特殊字符),防止 LLM 注入 shell 命令。

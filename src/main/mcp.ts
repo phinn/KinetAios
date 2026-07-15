@@ -236,7 +236,24 @@ class SseClient {
     } catch (e) {
       console.error(`[mcp/${this.cfg.name}] SSE 连接失败:`, (e as Error)?.message);
       this.alive = false;
+      // 启动自动重连定时器 —— 否则远程节点启动时离线就永久死亡,只在 call() 时才尝试恢复。
+      this.scheduleAutoReconnect();
     }
+  }
+
+  /** 自动重连:远程节点离线时每 30s 尝试恢复(同 StdioClient 的 handleExit 重连逻辑)。 */
+  private reconnectTimer: NodeJS.Timeout | null = null;
+  private scheduleAutoReconnect(): void {
+    if (this.reconnectTimer) return; // 已在重连中
+    this.reconnectTimer = setInterval(async () => {
+      if (this.alive) {
+        if (this.reconnectTimer) { clearInterval(this.reconnectTimer); this.reconnectTimer = null; }
+        return;
+      }
+      if (!this.reconnecting) {
+        await this.reconnect();
+      }
+    }, 30_000);
   }
 
   async call(name: string, args: Record<string, unknown>): Promise<string> {
@@ -277,6 +294,8 @@ class SseClient {
       this.tools.length = 0;
       this.tools.push(...(res?.tools ?? []));
       this.alive = true;
+      // 重连成功 → 停掉自动重连定时器
+      if (this.reconnectTimer) { clearInterval(this.reconnectTimer); this.reconnectTimer = null; }
       console.log(`[mcp/${this.cfg.name}] 重连成功,${this.tools.length} 个工具可用`);
     } catch {
       console.warn(`[mcp/${this.cfg.name}] 重连失败,将在下次调用时重试`);
@@ -288,6 +307,7 @@ class SseClient {
 
   dispose(): void {
     this.alive = false;
+    if (this.reconnectTimer) { clearInterval(this.reconnectTimer); this.reconnectTimer = null; }
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
       p.reject(new Error('MCP 连接关闭'));
