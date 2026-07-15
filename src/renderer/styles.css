@@ -1395,6 +1395,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 /* ── 记忆图谱 ── */
 .mgraph { margin: 0; height: 100vh; overflow: hidden; }
 .mgraph-wrap { display: flex; flex-direction: column; height: 100vh; }
+/* 左右布局:图谱在左,详情面板在右 / Left-right: graph on left, detail on right */
+.mgraph-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
 .mgraph-head {
   display: flex; align-items: center; gap: 12px; padding: 10px 20px;
   border-bottom: 1px solid var(--border);
@@ -1452,16 +1454,17 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   font-size: 12px; color: var(--text-dim);
 }
 .mgraph-stats b { color: var(--text); }
-.mgraph-canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: grab; }
+.mgraph-canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: grab; min-width: 0; }
 .mgraph-canvas-wrap svg { cursor: grab; }
+/* 详情面板:右侧固定宽度,选中节点时展开,空时折叠为 0 */
 .mgraph-detail {
-  max-height: 160px; overflow-y: auto; border-top: 1px solid var(--border);
-  padding: 0 20px; font-size: 12px; transition: max-height .2s, padding .2s;
+  width: 300px; flex-shrink: 0; overflow-y: auto; border-left: 1px solid var(--border);
+  font-size: 12px; transition: width .2s; background: var(--bg-side);
 }
 /* 有内容时展开 / Expand when populated */
-.mgraph-detail:has(.mg-detail-head) { max-height: 160px; padding: 8px 20px; }
-/* 空状态折叠为 0 高度 / Collapse when empty */
-.mgraph-detail:not(:has(.mg-detail-head)) { max-height: 0; padding: 0 20px; border-top: none; }
+.mgraph-detail:has(.mg-detail-head) { width: 300px; padding: 12px 16px; }
+/* 空状态折叠为 0 宽度 / Collapse to zero width when empty */
+.mgraph-detail:not(:has(.mg-detail-head)) { width: 0; padding: 0; border-left: none; overflow: hidden; }
 .mg-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .mg-detail-name { font-weight: 600; color: var(--accent); }
 .mg-detail-deg { color: var(--text-dim); font-size: 11px; }
