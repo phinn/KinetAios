@@ -1,5 +1,6 @@
 // Preload: exposes a narrow, typed API to the renderer via contextBridge.
 // Renderer has no Node access — it can only call these and listen to these events.
+// 每个 on* 方法先 removeAllListeners 再注册,防止多次调用导致回调叠加(hot-reload / 窗口重建场景)。
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
 import type { KinetAPI } from '../shared/types';
 
@@ -96,24 +97,31 @@ const api: KinetAPI = {
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
 
   onAgentEvent: (cb) => {
+    ipcRenderer.removeAllListeners('agent-event');
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));
   },
   onConversation: (cb) => {
+    ipcRenderer.removeAllListeners('conversation');
     ipcRenderer.on('conversation', (_e: IpcRendererEvent, conv) => cb(conv));
   },
   onConversationRemoved: (cb) => {
+    ipcRenderer.removeAllListeners('conversation-removed');
     ipcRenderer.on('conversation-removed', (_e: IpcRendererEvent, id) => cb(id));
   },
   onFilesCwd: (cb) => {
+    ipcRenderer.removeAllListeners('files-cwd');
     ipcRenderer.on('files-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));
   },
   onArenaCwd: (cb) => {
+    ipcRenderer.removeAllListeners('arena-cwd');
     ipcRenderer.on('arena-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));
   },
   onConfirmRequest: (cb) => {
+    ipcRenderer.removeAllListeners('confirm-request');
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));
   },
   onRemoteAgentEvent: (cb) => {
+    ipcRenderer.removeAllListeners('remote-agent-event');
     ipcRenderer.on('remote-agent-event', (_e: IpcRendererEvent, ev) => cb(ev));
   },
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),

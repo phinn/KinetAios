@@ -27,8 +27,9 @@ export class GLMError extends Error {
 // 读 HTTP 错误响应里的可读信息(400 时点明原因 —— max_tokens 过大 / reasoning 不支持 / 模型 id 错 等)。
 async function readErr(resp: Response): Promise<string> {
   try {
-    const j: any = await resp.json();
-    return j?.error?.message || j?.message || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
+    const j = await resp.json() as Record<string, any>;
+    const err = j?.error as Record<string, unknown> | undefined;
+    return (err?.message as string) || (j?.message as string) || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
   } catch {
     try {
       return (await resp.text()).slice(0, 300);
@@ -234,16 +235,12 @@ class OpenAICompatibleProvider implements Provider {
         if (payload === '[DONE]') break;
         continue;
       }
-      let obj: any;
       try {
-        obj = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      if (obj.usage) {
-        tokensIn = intFrom(obj.usage.prompt_tokens) || tokensIn;
-        tokensOut = intFrom(obj.usage.completion_tokens) || tokensOut;
-      }
+        const obj = JSON.parse(payload) as Record<string, any>;
+        if (obj.usage) {
+          tokensIn = intFrom(obj.usage.prompt_tokens) || tokensIn;
+          tokensOut = intFrom(obj.usage.completion_tokens) || tokensOut;
+        }
       const delta = obj.choices?.[0]?.delta;
       if (!delta) continue;
       if (typeof delta.content === 'string' && delta.content) {
@@ -262,6 +259,9 @@ class OpenAICompatibleProvider implements Provider {
           else if (fn.arguments && typeof fn.arguments === 'object') entry.args = JSON.stringify(fn.arguments);
           calls.set(idx, entry);
         }
+      }
+      } catch {
+        continue;
       }
     }
 
@@ -383,7 +383,7 @@ class AnthropicProvider implements Provider {
 
     for await (const line of sseLines(resp)) {
       if (!line.startsWith('data:')) continue;
-      let obj: any;
+      let obj: Record<string, any>;
       try {
         obj = JSON.parse(line.slice(5).trim());
       } catch {

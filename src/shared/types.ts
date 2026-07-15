@@ -389,8 +389,16 @@ export function newTurn(prompt: string): Turn {
   };
 }
 
-// ponytail: Math.random id — step/turn ids only need uniqueness within a session, not crypto.
+// ponytail: 用 crypto.randomUUID() 如果可用(Node/main 进程),否则回退 Math.random(renderer)。
+// shared/types.ts 是纯模块,不能 import node:crypto —— 两边都用,运行时检测。
 export function rid(): string {
+  try {
+    // Node 环境(Electron main)有 globalThis.crypto.randomUUID
+    if (typeof globalThis !== 'undefined' && globalThis.crypto?.randomUUID) {
+      return globalThis.crypto.randomUUID();
+    }
+  } catch { /* fallthrough */ }
+  // renderer / 旧环境回退
   return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
 }
 

@@ -366,7 +366,7 @@ export function savePipeline(p: { id: string; name: string; data: string; cwd: s
     .run(p.id, p.name, p.data, p.cwd, Date.now());
 }
 export function loadPipelines(): Array<{ id: string; name: string; data: string; cwd: string; createdAt: number }> {
-  return (db.prepare('SELECT id, name, data, cwd, created_at AS createdAt FROM pipelines ORDER BY created_at DESC;').all()) as any;
+  return db.prepare('SELECT id, name, data, cwd, created_at AS createdAt FROM pipelines ORDER BY created_at DESC;').all() as Array<{ id: string; name: string; data: string; cwd: string; createdAt: number }>;
 }
 export function deletePipeline(id: string): void {
   db.prepare('DELETE FROM pipelines WHERE id=?;').run(id);
@@ -378,7 +378,7 @@ export function saveTemplate(t: { id: string; name: string; data: string }): voi
     .run(t.id, t.name, t.data, Date.now());
 }
 export function loadTemplates(): Array<{ id: string; name: string; data: string }> {
-  return (db.prepare('SELECT id, name, data FROM prompt_templates ORDER BY created_at DESC;').all()) as any;
+  return db.prepare('SELECT id, name, data FROM prompt_templates ORDER BY created_at DESC;').all() as Array<{ id: string; name: string; data: string }>;
 }
 export function deleteTemplate(id: string): void {
   db.prepare('DELETE FROM prompt_templates WHERE id=?;').run(id);
@@ -413,9 +413,10 @@ export function costStats(): { today: number; week: number; month: number; byEng
   return { today, week, month, byEngine, byDay };
 }
 
-// 轻量 id 生成(不导入 shared 避免循环)
+// 轻量 id 生成(用 crypto.randomUUID,不导入 shared 避免循环)
+import { randomUUID as cryptoUUID } from 'node:crypto';
 function rid2(): string {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
+  return cryptoUUID();
 }
 
 // MARK: custom_tools — 用户通过 UI 注册的自定义工具
@@ -424,7 +425,7 @@ export function saveCustomTool(t: { id: string; name: string; description: strin
     .run(t.id, t.name, t.description, t.parameters, t.commandTpl, t.timeoutMs, Date.now());
 }
 export function loadCustomTools(): Array<{ id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number; createdAt: number }> {
-  return (db.prepare('SELECT id, name, description, parameters, command_tpl AS commandTpl, timeout_ms AS timeoutMs, created_at AS createdAt FROM custom_tools ORDER BY created_at DESC;').all()) as any;
+  return db.prepare('SELECT id, name, description, parameters, command_tpl AS commandTpl, timeout_ms AS timeoutMs, created_at AS createdAt FROM custom_tools ORDER BY created_at DESC;').all() as Array<{ id: string; name: string; description: string; parameters: string; commandTpl: string; timeoutMs: number; createdAt: number }>;
 }
 export function deleteCustomTool(id: string): void {
   db.prepare('DELETE FROM custom_tools WHERE id=?;').run(id);

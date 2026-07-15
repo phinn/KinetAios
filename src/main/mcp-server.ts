@@ -92,6 +92,11 @@ export class LocalMcpServer {
 
   start(port: number, token: string): Promise<void> {
     return new Promise((resolve, reject) => {
+      // 安全:空 token 时拒绝启动 —— 0.0.0.0 绑定 + 无鉴权 = 局域网内任何人可调本机 Agent。
+      if (!token) {
+        reject(new Error('安全限制:MCP Server 必须设置 token,否则局域网内任何机器都能调用本机工具。请先在设置里填写访问令牌。'));
+        return;
+      }
       this.token = token;
       if (this.server?.listening) {
         resolve();
@@ -260,8 +265,9 @@ export class LocalMcpServer {
         return { tools: [RUN_AGENT_TOOL_MCP] };
 
       case 'tools/call': {
-        const name = String((msg.params as any)?.name ?? '');
-        const args = ((msg.params as any)?.arguments ?? {}) as Record<string, unknown>;
+        const params = msg.params as { name?: string; arguments?: Record<string, unknown> } ?? {};
+        const name = String(params.name ?? '');
+        const args = (params.arguments ?? {}) as Record<string, unknown>;
 
         // ── run_agent:在本机启动完整 AgentLoop ──
         if (name === 'run_agent') {
@@ -321,8 +327,10 @@ export class LocalMcpServer {
     const tools = allTools().filter((t) => t.name !== 'dispatch_agent');
     const ctx: ToolCtx = {
       cwd: process.env.KINET_MCP_CWD || os.homedir(),
-      confirm: async () => true, // token 已验证 → 信任远程调用
-      sandbox: s.sandbox,
+      // 远程 Agent 的 shell/写操作不需手动确认(靠 token 鉴权),
+      // 但强制限制为 workspaceWrite —— 远程调用者不应获得 fullAccess 级别权限。
+      confirm: async () => true,
+      sandbox: s.sandbox === 'fullAccess' ? 'workspaceWrite' : s.sandbox,
       signal: ac.signal,
     };
 

@@ -331,7 +331,7 @@ class ClaudeCodeEngine implements Engine {
     let sawResult = false;
     const pending = new Map<string, { name: string; args: string }>();
     const onLine = (line: string): void => {
-      let obj: any;
+      let obj: Record<string, any>;
       try {
         obj = JSON.parse(line);
       } catch {
@@ -358,7 +358,7 @@ class ClaudeCodeEngine implements Engine {
           for (const b of content)
             if (b.type === 'tool_result') {
               const txt = Array.isArray(b.content)
-                ? b.content.map((x: any) => x.text || '').join('')
+                ? b.content.map((x: Record<string, any>) => x.text || '').join('')
                 : typeof b.content === 'string'
                   ? b.content
                   : '';
@@ -421,7 +421,7 @@ class CodexEngine implements Engine {
       }
     };
     const onLine = (line: string): void => {
-      let obj: any;
+      let obj: Record<string, any>;
       try {
         obj = JSON.parse(line);
       } catch {
@@ -498,7 +498,11 @@ class CodexEngine implements Engine {
     if (signal.aborted) return;
     if (!sawTurnEnd) {
       const tail = stderrTail.length ? ' — ' + stderrTail.join(' | ') : '';
-      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNoResult', { code, tail }) });
+      // CLI 版本不兼容时的友好提示(flag 改名/移除等)。
+      const versionHint = /unknown flag|unrecognized|unexpected argument/i.test(tail)
+        ? '\n💡 可能是 Codex CLI 版本不兼容,请检查并更新 codex 后重试。'
+        : '';
+      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNoResult', { code, tail }) + versionHint });
     }
   }
 }

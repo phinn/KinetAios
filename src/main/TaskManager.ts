@@ -461,9 +461,10 @@ function isUsableCwd(cwd: string): boolean {
   }
 }
 
-// Strip shell / shell-expansion metacharacters + control chars from a memory string (see memoryBlock).
+// Strip shell metacharacters that could cause prompt injection or shell expansion from memory strings.
+// 只去 shell 控制字符(&|<>`^)和 \x00-\x1f 控制符,保留括号/引号/百分号(代码片段需要)。
 function shellSafeMemory(s: string): string {
-  return s.replace(/[\x00-\x1f\x7f&|<>{}()^%!'"`\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
+  return s.replace(/[\x00-\x1f\x7f&|<>`\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
 }
 
 // Pull a JSON object {facts:string[], triples:[{s,p,o}]} out of an LLM response that may have surrounding prose.

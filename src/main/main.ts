@@ -24,7 +24,7 @@ import { allTools } from './tools';
 import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
-import type { AgentEvent, AppSettings, ConfigSnapshot, Conversation, EngineKind, GitChange, GitCommit, GitDiffResult, GitSnapshot } from '../shared/types';
+import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, CustomTool, EngineKind, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
 
@@ -481,11 +481,17 @@ function registerIpc(): void {
     if (JSON.stringify(old.remoteMcpServers ?? []) !== JSON.stringify(s.remoteMcpServers ?? [])) {
       mcp.setRemoteServers(s.remoteMcpServers ?? []);
     }
-    // 本机 MCP Server:enabled 变化 → 启停。
+    // 本机 MCP Server:enabled 变化 → 启停。空 token 时拒绝启动(mcp-server.start 会 reject)。
     if (s.localMcpServer?.enabled && !localMcpServer.isRunning()) {
-      localMcpServer.setTools(allTools());
-      localMcpServer.setToken(s.localMcpServer.token || '');
-      localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token || '').catch(() => {});
+      if (!s.localMcpServer.token?.trim()) {
+        console.warn('[settings] MCP Server 启动被拒:token 为空');
+      } else {
+        localMcpServer.setTools(allTools());
+        localMcpServer.setToken(s.localMcpServer.token);
+        localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token).catch((e) => {
+          console.warn('[settings] MCP Server 启动失败:', (e as Error).message);
+        });
+      }
     } else if (!s.localMcpServer?.enabled && localMcpServer.isRunning()) {
       void localMcpServer.stop();
     }
@@ -513,10 +519,14 @@ function registerIpc(): void {
 
   ipcMain.handle('start-mcp-server', async (_e, port: number, token: string) => {
     try {
+      // 安全:空 token 拒绝启动 —— mcp-server.ts 的 start() 也会拦,这里提前给 UI 友好提示。
+      if (!token || !token.trim()) {
+        return { ok: false, error: '安全限制:必须设置访问令牌(token),否则局域网内任何机器都能调用本机工具。' };
+      }
       // 把当前所有内置工具 + 自定义工具暴露给远程调用者。
       localMcpServer.setTools(allTools());
-      localMcpServer.setToken(token || '');
-      await localMcpServer.start(port, token || '');
+      localMcpServer.setToken(token);
+      await localMcpServer.start(port, token);
       return { ok: true };
     } catch (err) {
       return { ok: false, error: (err as Error).message };
@@ -912,9 +922,9 @@ function registerIpc(): void {
   });
   ipcMain.handle('pipeline-templates', () => {
     const { loadPipelines } = require('./store');
-    return loadPipelines().map((r: any) => ({ id: r.id, name: r.name, stages: JSON.parse(r.data), cwd: r.cwd, createdAt: r.createdAt }));
+    return loadPipelines().map((r: { id: string; name: string; data: string; cwd: string; createdAt: number }) => ({ id: r.id, name: r.name, stages: JSON.parse(r.data), cwd: r.cwd, createdAt: r.createdAt }));
   });
-  ipcMain.handle('pipeline-save', (_e, p: any) => {
+  ipcMain.handle('pipeline-save', (_e, p: Pipeline) => {
     const { savePipeline } = require('./store');
     savePipeline({ id: p.id, name: p.name, data: JSON.stringify(p.stages), cwd: p.cwd });
     return { ok: true };
@@ -933,7 +943,7 @@ function registerIpc(): void {
 
   // ── 成本预算 ──
   ipcMain.handle('get-budget', () => getSettings().budget);
-  ipcMain.handle('save-budget', (_e, b: any) => {
+  ipcMain.handle('save-budget', (_e, b: BudgetAlert) => {
     const s = getSettings();
     saveSettings({ ...s, budget: b });
     return { ok: true };
@@ -947,10 +957,10 @@ function registerIpc(): void {
   ipcMain.handle('template-list', () => {
     const { loadTemplates } = require('./store');
     const builtin = builtinTemplates();
-    const custom = loadTemplates().map((r: any) => { try { return JSON.parse(r.data); } catch { return null; } }).filter(Boolean);
+    const custom = loadTemplates().map((r: { id: string; name: string; data: string }) => { try { return JSON.parse(r.data); } catch { return null; } }).filter(Boolean);
     return [...builtin, ...custom];
   });
-  ipcMain.handle('template-save', (_e, t: any) => {
+  ipcMain.handle('template-save', (_e, t: PromptTemplate) => {
     const { saveTemplate } = require('./store');
     saveTemplate({ id: t.id, name: t.name, data: JSON.stringify(t) });
     return { ok: true };
@@ -962,7 +972,7 @@ function registerIpc(): void {
   });
 
   // ── 可视化规则生成 ──
-  ipcMain.handle('rules-generate', (_e, cfg: any) => {
+  ipcMain.handle('rules-generate', (_e, cfg: RuleConfig) => {
     return { ok: true, content: generateRules(cfg) };
   });
 
@@ -975,7 +985,7 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
-  ipcMain.handle('custom-tool-save', (_e, t: any) => {
+  ipcMain.handle('custom-tool-save', (_e, t: CustomTool) => {
     try {
       saveCustomTool({
         id: t.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 10)),
@@ -1241,7 +1251,7 @@ if (!gotLock) {
 
 // MARK: 内置 Prompt 模板
 // ponytail: 硬编码 10 个高频场景模板,覆盖代码审查/Bug 修复/文档/测试/重构等。
-function builtinTemplates(): any[] {
+function builtinTemplates(): PromptTemplate[] {
   return [
     { id: 'tpl-review', name: '代码审查', description: '审查当前文件的代码质量、安全性和最佳实践', engine: 'direct', prompt: '请审查以下代码,关注:\n1. 代码质量与可读性\n2. 潜在 Bug\n3. 安全漏洞\n4. 性能问题\n5. 最佳实践建议\n\n请用中文给出具体、可操作的反馈。', category: '代码质量', icon: '🔍', builtin: true },
     { id: 'tpl-bugfix', name: 'Bug 修复', description: '分析并修复 Bug', engine: 'direct', prompt: '请分析以下 Bug 描述,找到根因并给出修复方案:\n\nBug 描述:\n\n复现步骤:\n\n预期行为:\n\n实际行为:', category: '开发', icon: '🐛', builtin: true },
@@ -1257,7 +1267,7 @@ function builtinTemplates(): any[] {
 }
 
 // MARK: 可视化规则生成器 — 根据 UI 配置生成 KINET.md 内容
-function generateRules(cfg: any): string {
+function generateRules(cfg: RuleConfig): string {
   const lines: string[] = [];
   lines.push('# 项目规则 (KINET.md)');
   lines.push('');

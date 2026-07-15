@@ -31,14 +31,15 @@ function roots(): ScanRoot[] {
 // 已装 plugin(installed_plugins.json 的 installPath)下的 commands/agents/skills 目录。
 function pluginRoots(): ScanRoot[] {
   const file = path.join(os.homedir(), '.claude', 'plugins', 'installed_plugins.json');
-  let installed: any;
+  let installed: Record<string, unknown>;
   try {
-    installed = JSON.parse(fs.readFileSync(file, 'utf8'));
+    installed = JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, unknown>;
   } catch {
     return []; // 没装 plugin / 文件缺失
   }
   const out: ScanRoot[] = [];
-  for (const entries of Object.values(installed?.plugins ?? {}) as any[][]) {
+  const plugins = installed.plugins as Record<string, Array<{ installPath?: string }>> | undefined;
+  for (const entries of Object.values(plugins ?? {})) {
     const p = entries?.[0]?.installPath;
     if (typeof p !== 'string') continue;
     out.push({ dir: path.join(p, 'commands'), source: 'claude', type: 'command', mode: 'file' });

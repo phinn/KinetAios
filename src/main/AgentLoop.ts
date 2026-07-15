@@ -272,7 +272,7 @@ export async function compactHistory(
     const transcript = head
       .map((m) => {
         const role = m.role === 'tool' ? '工具结果' : m.role;
-        const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((p: any) => p.text ?? '').join('') : JSON.stringify(m.tool_calls ?? '');
+        const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((p) => p.type === 'text' ? p.text : '').join('') : JSON.stringify(m.tool_calls ?? '');
         return `[${role}] ${text}`;
       })
       .join('\n')

@@ -27,6 +27,9 @@ function genId(): string {
 }
 
 // 快照是 best-effort:任何 IO 失败都吞掉,绝不阻塞 agent 写文件。
+// 数量上限:超过 MAX_SNAPSHOTS 删最旧的,防止目录无限增长。
+const MAX_SNAPSHOTS = 200;
+
 export function takeSnapshot(opts: {
   convId: string;
   cwd: string;
@@ -38,9 +41,34 @@ export function takeSnapshot(opts: {
     const snap: Snapshot = { id: genId(), ...opts, ts: Date.now() };
     fs.mkdirSync(dir(opts.cwd), { recursive: true });
     fs.writeFileSync(file(opts.cwd, snap.id), JSON.stringify(snap), 'utf8');
+    // 写完后清理超额快照(保留最新的 MAX_SNAPSHOTS 条)。
+    pruneSnapshots(opts.cwd);
     return snap;
   } catch {
     return null;
+  }
+}
+
+// 按时间倒序保留最新 MAX_SNAPSHOTS 条,删多余的。
+function pruneSnapshots(cwd: string): void {
+  try {
+    const files = fs.readdirSync(dir(cwd)).filter((f) => f.endsWith('.json'));
+    if (files.length <= MAX_SNAPSHOTS) return;
+    const metas: Array<{ name: string; ts: number }> = [];
+    for (const f of files) {
+      try {
+        const s = JSON.parse(fs.readFileSync(path.join(dir(cwd), f), 'utf8')) as Snapshot;
+        metas.push({ name: f, ts: s.ts ?? 0 });
+      } catch {
+        metas.push({ name: f, ts: 0 }); // 损坏文件优先删
+      }
+    }
+    metas.sort((a, b) => b.ts - a.ts);
+    for (const m of metas.slice(MAX_SNAPSHOTS)) {
+      try { fs.unlinkSync(path.join(dir(cwd), m.name)); } catch { /* best-effort */ }
+    }
+  } catch {
+    /* best-effort */
   }
 }
 

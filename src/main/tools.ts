@@ -9,6 +9,25 @@ import * as store from './store';
 import { takeSnapshot } from './snapshots';
 import type { SandboxMode } from '../shared/types';
 
+// Sanitize error messages before returning to the LLM — strip absolute paths and stack traces
+// that could leak system info. The LLM only needs the gist (permission denied / not found / etc.).
+// 错误信息脱敏:去掉绝对路径(可能含用户名/目录结构)和堆栈,只留可读部分。
+function sanitizeError(e: unknown): string {
+  const msg = (e as Error)?.message ?? String(e);
+  return msg
+    .replace(/(?:\/[\w.@-]+)+\/?/g, '<path>') // 绝对路径 → <path>
+    .replace(/(?:[A-Z]:\\[^<>:"|?*\r\n]*)/g, '<path>') // Windows 路径
+    .replace(/at .+:\d+:\d+/g, '') // 堆栈行
+    .trim()
+    .slice(0, 300);
+}
+
+// Shell-quote a string for safe interpolation into a command (used by custom tools).
+// 双引号包裹 + 转义特殊字符,防止 LLM 注入 shell 命令。
+function shellQuote(s: string): string {
+  return '"' + String(s).replace(/(["$`\\])/g, '\\$1') + '"';
+}
+
 // Context threaded into every tool.run — cwd for relative paths + the shell confirm callback.
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
 // every other tool ignores them。convId 用作快照 scope(write_file/edit_file 改前存原文)。
@@ -249,7 +268,7 @@ const writeFile: Tool = {
       fs.writeFileSync(p, content, 'utf8');
       return `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
     } catch (e) {
-      return `写入失败: ${e}`;
+      return `写入失败: ${sanitizeError(e)}`;
     }
   },
 };
@@ -289,7 +308,7 @@ const webFetch: Tool = {
       const trimmed = body.length > 8000 ? body.slice(0, 8000) + '\n…[截断]' : body;
       return `[HTTP ${resp.status}]\n${trimmed}`;
     } catch (e) {
-      return `抓取失败: ${e}`;
+      return `抓取失败: ${sanitizeError(e)}`;
     }
   },
 };
@@ -394,17 +413,8 @@ async function walkFiles(root: string, limit: number): Promise<string[]> {
   return out;
 }
 
-// 简单 glob → regex(**/ 匹配 0 或多目录段、** 跨目录、* 单段、? 单字符)。
-function globToRegex(pat: string): RegExp {
-  const s = pat
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '\x02') // **/ → 0 或多目录前缀(让 **/*.ts 也能匹配根目录文件)
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-    .replace(/\x02/g, '(?:.*/)?');
-  return new RegExp('^' + s + '$');
-}
+// glob → regex 逻辑已提取到 shared/glob.ts,两处(tools.ts + watcher.ts)共用一份。
+import { globToRegex } from '../shared/glob';
 
 const grep: Tool = {
   name: 'grep',
@@ -517,18 +527,24 @@ const editFile: Tool = {
       fs.writeFileSync(p, out, 'utf8');
       return `已替换 ${count} 处 → ${p}`;
     } catch (e) {
-      return `写入失败: ${e}`;
+      return `写入失败: ${sanitizeError(e)}`;
     }
   },
 };
 
 // git_diff:看工作区/暂存区/某次提交的文件 diff。比 shell + git diff 干净(无确认、自动截断)。
 // readOnly → 同轮可并发(常与 read_file/grep 一起查代码)。
-// ponytail: 走 shellExec(过 cmd.exe/sh),靠 shellQuote 兜住空格/特殊字符;若 LLM 塞复杂 ref
-// 仍可能被 shell 解释,但 git ref 字符集窄(字母数字/~/^/.),实操不会出问题。
-function shellQuote(s: string): string {
-  return '"' + String(s).replace(/(["$`\\])/g, '\\$1') + '"';
+// 用 execFile 而非 shellExec —— argv 直传 git,不经 shell,消除命令注入面。
+// git ref 白名单:只允许字母/数字 / - . _ / ~ ^ 等安全字符,拦掉 ; & | $ ` 等 shell 元字符。
+function safeGitRef(ref: string): boolean {
+  // git ref 安全字符集:字母、数字、/ - . _ ~ ^ 以及 HEAD/FETCH_HEAD 等常见 ref
+  return /^[\w./~^_-]+$/.test(ref);
 }
+
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
+const execFileAsync = promisify(execFile);
+
 const gitDiff: Tool = {
   name: 'git_diff',
   readOnly: true,
@@ -544,14 +560,28 @@ const gitDiff: Tool = {
   },
   async run(args, ctx) {
     if (!ctx.cwd) return '❌ 当前会话没有 cwd,无法跑 git';
-    const parts = ['git', 'diff', '--no-color'];
-    if (args.cached) parts.push('--cached');
-    parts.push(String(args.ref ?? 'HEAD'));
-    if (args.file) parts.push('--', String(args.file));
-    // 直接 shellExec,绕过 ctx.confirm(只读命令没必要问)。
-    const out = await shellExec(parts.map(shellQuote).join(' '), ctx.cwd);
-    if (!out.trim() || out.includes('[exit')) return out;
-    return out.length > 20000 ? out.slice(0, 20000) + '\n…[diff 过长,已截断;缩小范围(传 file)看完整]' : out;
+    const ref = String(args.ref ?? 'HEAD');
+    if (!safeGitRef(ref)) return `❌ 不安全的 git ref: "${ref}"(只允许字母/数字/./-/~/^/_)`;
+    // 构建 argv,直传 execFile —— 不经 shell,无注入风险。
+    const gitArgs = ['diff', '--no-color'];
+    if (args.cached) gitArgs.push('--cached');
+    gitArgs.push(ref);
+    if (args.file) gitArgs.push('--', String(args.file));
+    try {
+      const { stdout, stderr } = await execFileAsync('git', gitArgs, {
+        cwd: ctx.cwd,
+        maxBuffer: 10 * 1024 * 1024,
+        timeout: 30_000,
+      });
+      const out = (stdout || '') + (stderr || '');
+      if (!out.trim()) return '(无改动)';
+      return out.length > 20000 ? out.slice(0, 20000) + '\n…[diff 过长,已截断;缩小范围(传 file)看完整]' : out;
+    } catch (e) {
+      const err = e as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string };
+      const out = (err.stdout || '') + (err.stderr || '');
+      const code = err.code ?? 1;
+      return out ? `[exit ${code}] ${out}` : `git diff 失败: ${err.message}`;
+    }
   },
 };
 

@@ -32,17 +32,8 @@ export function setTaskManagerForWatchers(tm: TaskManager): void {
 
 const SKIP_DIRS = ['node_modules', '.git', 'dist', 'release', 'build', '.next', 'target', '.cache', '__pycache__', 'venv', '.venv'];
 
-// 简单 glob → regex,与 tools.ts 同款逻辑(没共享是因为 renderer/tools 已经各自够小)。
-function globToRegex(pat: string): RegExp {
-  const s = pat
-    .replace(/[.+^${}()|[\]\\]/g, '\\$&')
-    .replace(/\*\*\//g, '\x02')
-    .replace(/\*\*/g, '.*')
-    .replace(/\*/g, '[^/]*')
-    .replace(/\?/g, '[^/]')
-    .replace(/\x02/g, '(?:.*/)?');
-  return new RegExp('^' + s + '$');
-}
+// glob → regex 逻辑已提取到 shared/glob.ts,与 tools.ts 共用一份。
+import { globToRegex } from '../shared/glob';
 
 function loadConfig(cwd: string): WatchConfig | null {
   const p = path.join(cwd, '.kinet-watch.json');

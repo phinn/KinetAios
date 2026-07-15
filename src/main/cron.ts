@@ -88,6 +88,7 @@ export function startCronScheduler(): void {
   // 每分钟 tick,对齐到下一分钟边界附近(setInterval drift 不影响,匹配的是绝对时间)。
   timer = setInterval(() => tick(new Date()), 60_000);
   // 启动立刻 tick 一次,补上 app 关闭期间错过的时间(只跑最近 1 分钟内的)。
+  tick(new Date());
 }
 
 function tick(now: Date): void {

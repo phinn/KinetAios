@@ -2,7 +2,7 @@
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS } from '../shared/types';
 import { t, LANGS, type Lang } from '../shared/i18n';
-import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, SkillInfo } from '../shared/types';
+import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
@@ -1676,29 +1676,36 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
             const video = document.createElement('video');
             video.srcObject = stream;
             video.muted = true;
-            await new Promise<void>((resolve, reject) => {
-              video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
-              setTimeout(() => reject(new Error('video timeout')), 3000);
-            });
-            // 等一帧渲染
-            await new Promise((r) => requestAnimationFrame(r));
-            await new Promise((r) => setTimeout(r, 100));
-            const w = video.videoWidth;
-            const h = video.videoHeight;
-            if (w > 0 && h > 0) {
-              const canvas = document.createElement('canvas');
-              canvas.width = w;
-              canvas.height = h;
-              const ctx = canvas.getContext('2d')!;
-              ctx.drawImage(video, 0, 0);
-              const url = canvas.toDataURL('image/png');
-              // 校验:空 canvas 也会产生 ~100 字节的 PNG,真正截图至少几万字节
-              if (url.length > 1000) dataUrl = url;
+            // 清理函数:timeout 或成功后都调用,确保 video 元素和 stream 不泄漏。
+            const cleanupVideo = (): void => {
+              track.stop();
+              stream.getTracks().forEach((t) => t.stop());
+              video.srcObject = null;
+              video.remove();
+            };
+            try {
+              await new Promise<void>((resolve, reject) => {
+                video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
+                setTimeout(() => reject(new Error('video timeout')), 3000);
+              });
+              // 等一帧渲染
+              await new Promise((r) => requestAnimationFrame(r));
+              await new Promise((r) => setTimeout(r, 100));
+              const w = video.videoWidth;
+              const h = video.videoHeight;
+              if (w > 0 && h > 0) {
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d')!;
+                ctx.drawImage(video, 0, 0);
+                const url = canvas.toDataURL('image/png');
+                // 校验:空 canvas 也会产生 ~100 字节的 PNG,真正截图至少几万字节
+                if (url.length > 1000) dataUrl = url;
+              }
+            } finally {
+              cleanupVideo();
             }
-            // 清理
-            track.stop();
-            stream.getTracks().forEach((t) => t.stop());
-            video.srcObject = null;
           } catch {
             // getDisplayMedia 失败(用户取消/不支持)→ dataUrl 保持 null
           }
@@ -3070,7 +3077,7 @@ function editCronItem(id: string | null): void {
 // ──────────────────────────────────────────────────────────────────────
 
 // pipeline 编辑器状态
-let pipelineStages: Array<{ engine: EngineKind; prompt: string; label: string }> = [];
+let pipelineStages: PipelineStage[] = [];
 let pipelineName = '';
 
 function renderPipeline(): void {
@@ -3168,7 +3175,7 @@ function renderPipelineStages(): void {
   container.innerHTML = pipelineStages.map((s, i) => `
     <div class="pl-stage" data-idx="${i}">
       <div class="pl-stage-head">
-        <input class="pl-stage-label" value="${esc(s.label)}" placeholder="Step ${i + 1}" />
+        <input class="pl-stage-label" value="${esc(s.label || '')}" placeholder="Step ${i + 1}" />
         <select class="pl-stage-engine">
           <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
           ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>Claude Code</option>` : ''}
@@ -3209,7 +3216,7 @@ async function renderPipelineSaved(): Promise<void> {
   list.innerHTML = templates.map((t) => `
     <div class="pl-saved-item" data-id="${esc(t.id)}">
       <div class="pl-saved-name">${esc(t.name)}</div>
-      <div class="pl-saved-meta">${t.stages.length} steps · ${esc(t.stages.map((s: any) => s.label || s.engine).join(' → '))}</div>
+      <div class="pl-saved-meta">${t.stages.length} steps · ${t.stages.map((s: PipelineStage) => s.label || s.engine).join(' → ')}</div>
       <div class="pl-saved-actions">
         <button class="ghost pl-load" data-id="${esc(t.id)}">${esc(tr('pipeline.load'))}</button>
         <button class="ghost pl-del-saved" data-id="${esc(t.id)}">${esc(tr('pipeline.delete'))}</button>
@@ -3221,7 +3228,7 @@ async function renderPipelineSaved(): Promise<void> {
       const tpl = templates.find((t) => t.id === btn.dataset.id);
       if (!tpl) return;
       pipelineName = tpl.name;
-      pipelineStages = tpl.stages.map((s: any) => ({ ...s }));
+      pipelineStages = tpl.stages.map((s: PipelineStage) => ({ ...s }));
       (document.getElementById('pl-name') as HTMLInputElement).value = tpl.name;
       if (tpl.cwd) (document.getElementById('pl-cwd') as HTMLInputElement).value = tpl.cwd;
       renderPipelineStages();
