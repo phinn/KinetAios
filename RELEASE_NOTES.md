@@ -1,117 +1,135 @@
 # Release Notes
 
-## v1.1.0 — Town, Multi-Machine Collaboration & UX Overhaul
+## v1.3.0 — Town View & 安全加固
 
-**Release Date:** 2026-07-14
+**发布日期：** 2026-07-15
 
-69 commits since v1.0.0. Three major themes: **Town View** (game-style agent visualization), **MCP Bridge** (multi-machine agent collaboration), and **11 differentiating features** (Arena, Snapshots, Memory Graph, Voice, Ollama, and more). Plus a full UI/UX overhaul — four themes, SVG icons, custom code editor, and a reworked Git Diff.
-
----
-
-### 🏘️ Town View — Your Projects as a Living Village (New)
-
-A brand-new way to visualize and interact with your AI agents. Each project is a **house**; each conversation is a **villager** living in that house.
-
-- **Isometric Game-Style Map** — Projects rendered as little houses on a grid. Villagers appear as animated sprites inside their house.
-- **Real-Time Agent States** — Each villager shows a live status badge: Idle / Working / Done / Error. Spot what your agents are doing at a glance.
-- **Inline Chat on the Map** — Click any villager to open a mini chat panel right on the map. Send a new task, stop a running agent, or jump to the full conversation — without leaving Town.
-- **New Project / New Task** — "New Project" picks a working directory and builds a new house. "New Task" spawns a new villager (conversation) inside an existing house.
-- **Cross-Engine** — Villagers can use any engine (Kaios / Claude Code / Codex). An engine badge identifies which one each villager runs.
-- **Step Inspector** — Expand any villager to see their reasoning steps — tool calls and outputs — in real time or after completion.
-- **Workbench Integration** — One-click switch between Workbench (list view) and Town (visual view) for the same projects.
-- **Four-Language i18n** — Town UI fully localized: English / 简体中文 / 繁體中文 / 日本語.
+v1.2.0 后 24 次提交。两个方向：**Town View 小镇可视化**（等距像素风 Agent 地图 + 远程节点可视化）和**安全加固**（SSRF / shell-open / 正则注入 / argument injection 两轮审查修复）。
 
 ---
 
-### 🌐 Multi-Machine Collaboration — MCP Bridge (New)
+### 🏘️ Town View — 等距像素风 Agent 小镇（新）
 
-Connect multiple machines running KinetAios via MCP protocol (SSE/HTTP + JSON-RPC 2.0). Machine A's Agent can dispatch full computing tasks to Machine B.
+把项目和 Agent 可视化为一个等距像素风小镇——每个项目是一栋房子，每个会话是一个村民，远程节点是云端房子。
 
-- **Local MCP Server** — Default port 18109, Bearer token auth, 30s ping keep-alive.
-- **Remote SSE Client** — Auto-discover and connect to remote nodes. Remote tools appear as `[MCP:remote/node-name]` in the Direct engine.
-- **`run_agent` Remote Dispatch** — Remote nodes expose only `run_agent` (not fine-grained tools), launching a complete ReAct loop on the callee side. Sandbox follows local settings, 5-minute timeout.
-- **Auto-Reconnect** — SSE connections recover automatically after network drops — no more permanent failure from a single jitter.
-- **Remote Agent Status Bar** — When this machine is called remotely, a gold pulsing status bar appears in the bottom-right corner, showing "Agent started / calling tool / completed" in real time.
-- **Settings Page** — iOS-style toggles, one-click MCP token generation, visual remote node management. Tabs: Model / Behavior / Advanced / Collaboration.
+- **等距像素地图** — 项目渲染为等距网格上的小房子，村民作为精致 SVG 角色住在里面
+- **实时 Agent 状态** — 每个村民头顶显示状态徽章：空闲 / 工作中 / 完成 / 出错，一眼掌握全局
+- **地图内聊天** — 点击村民直接在地图上打开迷你聊天面板，发任务、停 Agent、跳转完整对话
+- **远程节点可视化** — 已连接的远程 MCP 节点显示为云端房子，在线/离线状态实时同步
+- **新建项目 / 新建任务** — 新建项目 = 选目录盖房子；新建任务 = 在已有房子里生成新村民
+- **跨引擎** — 村民可用任意引擎（Kaios / Claude Code / Codex），引擎徽章标识
+- **四语言 i18n** — Town UI 全部本地化：English / 简体中文 / 繁體中文 / 日本語
+- **主题联动** — Town 背景跟随当前主题切换，回归克制配色（去掉花哨皮肤系统）
 
 ---
 
-### 🚀 11 Differentiating Features (Phase 1–11)
+### 🔒 安全加固（两轮审查）
 
-| Feature | Description |
+- **SSRF 防护** — `web_fetch` 禁止访问内网地址（127.0.0.1 / 10.x / 172.16-31.x / 192.168.x / IPv6 ULA）
+- **shell-open 防护** — 阻止 `shell:` / `file:` 协议的外部链接打开（防 RCE）
+- **正则注入防护** — `grep` 工具的正则参数转义，防 ReDoS
+- **argument injection 防护** — CLI spawn 参数严格校验，防注入
+- **类型修复** — TypeScript 类型安全加固
+- **剪贴板修复** — contextIsolation 下剪贴板复制不工作 → 改用 IPC 通道
+
+---
+
+### 🎨 UX 改善
+
+- **关闭按钮行为设置** — 关闭窗口时：退出 / 最小化到托盘 / 最小化（默认最小化）
+- **Town 面板居中弹出** — 毛玻璃背景遮罩，居中显示，高度自适应
+- **对比页面** — 新增 KinetAios vs Claude Code vs Codex 三方对比页（15 项改进迭代）
+- **功能说明 HTML** — 完整功能说明页面
+- **Product Hunt 发布文案** — 英文版营销文案
+
+---
+
+**完整 changelog：** https://github.com/phinn/KinetAios/commits/main
+
+---
+
+## v1.2.0 — 多机协作 & UX 全面改善
+
+**发布日期：** 2026-07-15
+
+v1.0 后 71 次提交，重点在两个方向：**多机远程协作**（MCP Bridge 成熟可用）和 **UX 体验打磨**（四主题、SVG 图标、自研编辑器、Git Diff 重做）。
+
+---
+
+### 🌐 多机协作 MCP Bridge（核心新特性）
+
+多台安装 KinetAios 的电脑通过 MCP 协议（SSE/HTTP + JSON-RPC 2.0）实现跨机协同计算——A 机的 Agent 可以调度 B 机的完整算力。
+
+- **本机 MCP Server** — 默认端口 18109，Bearer token 鉴权，30s ping 保活
+- **远程 SSE Client** — 自动发现/连接远程节点，工具名带 `[MCP:remote/节点名]` 标识注入 Direct 引擎
+- **`run_agent` 远程调度** — 远程节点只暴露 `run_agent` 一个工具（不暴露细粒度工具），在被调用端启动完整 ReAct Agent 循环，沙箱跟随本机设置，5 分钟超时保护
+- **自动重连** — SSE 连接断开后自动重连恢复，不再一次网络抖动就永久失效
+- **远程 Agent 状态条** — 本机被远程调用时右下角即时弹出金色脉动状态条，实时显示「Agent 已启动 / 正在调用工具 / 已完成」
+- **设置页** — iOS 风格开关，MCP token 一键生成，远程节点列表可视化管理
+
+---
+
+### 🚀 11 大差异化功能（Phase 1–11）
+
+| 功能 | 说明 |
 |---|---|
-| **Arena (Multi-Engine Parallel)** | Send the same prompt to multiple engines simultaneously, compare output quality side by side. |
-| **File Snapshots & Rollback** | Auto-snapshot files before an Agent modifies them. Roll back to any version with one click. |
-| **Cross-Engine Sub-Task Orchestration** | `dispatch_agent` spawns independent sub-agents (isolated context) for parallel exploration. |
-| **Memory Graph** | Long-term memory stored as triples (subject–relation–object), visualized as a force-directed graph on Canvas. |
-| **Plugin SDK v1** | Third-party plugin interface for custom tool extensions. |
-| **Voice Input / Output** | 🎤 Record voice → API transcription → send. AI replies can be read aloud. |
-| **Cron Scheduled Tasks** | Trigger Agents on a schedule for recurring tasks. |
-| **Watch Mode** | Monitor file changes and auto-trigger an Agent. |
-| **Ollama Local Models** | Connect to a local Ollama instance — fully offline capable. |
-| **Semantic Recall (Embeddings)** | Independent embedding endpoint (default: GLM embedding-3). Semantic similarity search complements FTS5 keyword search. |
-| **Knowledge Graph Visualization** | Canvas-based force-directed graph replaces plain text lists. Drag nodes, zoom the canvas. |
+| **Arena 多引擎并跑** | 同一 prompt 同时发给多个引擎，并排对比输出质量 |
+| **文件快照 + 回滚** | Agent 改文件前自动建快照，一键回滚到任意版本 |
+| **跨引擎子任务编排** | `dispatch_agent` 派发独立子任务给子 Agent（独立上下文），支持并行探索 |
+| **记忆图谱** | 长期记忆以三元组（主体-关系-客体）结构化存储，Canvas 力导向图可视化 |
+| **Plugin SDK v1** | 第三方插件接口，自定义工具扩展 |
+| **语音输入/输出** | 🎤 语音录制 → API 转写 → 发送；回复可朗读 |
+| **定时任务 (Cron)** | 定时触发 Agent 执行周期性任务 |
+| **Watch 模式** | 监控文件变化自动触发 Agent |
+| **Ollama 本地模型** | 接入本地 Ollama，离线可用 |
+| **语义召回 (Embeddings)** | Embedding 接口独立配置（默认 GLM embedding-3），语义近似搜索补充 FTS5 关键词 |
+| **知识图谱力导向可视化** | Canvas 力导向图替代纯文本列表，拖拽节点、缩放画布 |
 
 ---
 
-### 🎨 UI / UX Overhaul
+### 🎨 UI / UX 全面升级
 
-- **Four Themes** — Dark / Light / **Serene** (warm grey + rose gold, new) / Gold.
-- **All-SVG Icons** — Every emoji replaced with inline SVG for visual consistency.
-- **Custom Code Editor** — Lightweight in-house CodeEditor replaces all `<textarea>` elements. Syntax highlighting, auto-indent, multi-language support. Zero external dependencies — no Monaco.
-- **Git Diff Redesign** — Word-level diff, per-file sections, staged/unstaged grouping, clickable file rows.
-- **Sidebar Cleanup** — Header buttons tucked into a ⋯ dropdown menu for a cleaner layout.
-- **Message Copy Button** — One-click copy on every AI reply.
-- **Redesigned App Icon** — Dark squircle + gold "K" + spark element. macOS Dock icon now displays correctly.
-- **Landing Page Overhaul** — Major visual upgrade to index/landing pages with animated mockups, comparison tables, and SVG diagrams.
-
----
-
-### ⚙️ Engine & Core Improvements
-
-- **Engine Rename** — "GLM Direct" unified to **"Kaios"** across the entire app and landing page (4 languages).
-- **maxTurns Configurable** — Settings control for maximum ReAct loop iterations. Default 50, 0 = unlimited.
-- **Token Estimation** — Now includes `tool_calls` in the count. Sliding-average self-calibration (initial coefficient 0.6).
-- **Prompt Cache** — Direct engine supports Anthropic prompt caching to reduce cost.
-- **Three-Level Context Compression** — trim → LLM summary → hard truncation fallback.
-- **File Encoding Auto-Detection** — `read_file` / `edit_file` / `grep` auto-detect UTF-8 / GBK / GB18030 and more.
-- **Memory Injection Refactor** — Moved from systemPrompt to `history[0]`, reducing repeated injection overhead.
+- **四种主题** — Dark / Light / Serene（暖灰 + 玫瑰金）/ Gold
+- **全量 SVG 图标** — 所有 emoji 替换为内联 SVG，视觉统一
+- **自研代码编辑器** — 轻量 CodeEditor 替换所有 textarea，支持语法高亮、自动缩进、多语言
+- **Git Diff 界面大改** — word-level diff、文件分段、staged/unstaged 分组
+- **侧栏头部收纳** — 按钮收纳进 ⋯ 下拉菜单，布局整洁
+- **消息复制按钮** — 每条 AI 回复可一键复制
+- **四语言 i18n** — en / zh-CN / zh-TW / ja，全面覆盖
 
 ---
 
-### 🐛 Notable Bug Fixes
+### ⚙️ 引擎与核心改进
 
-- Binary file read crash → detection + skip
-- Screenshot blank image → switched to `getDisplayMedia`
-- Context break after interrupting a response then continuing the conversation
-- Duplicate cost records / memory 1970 timestamps / orphan data
-- Command injection hardening (`execFile` replacing `exec`)
-- Webview HTML preview showing source code → CSP `frame-src` fix
-- Light theme not applying in standalone windows (Dashboard / Quick / Files)
-- Packaging: `asar: true` + native module unpack — fixes "damaged app" on other Windows machines
-- Microphone permission not acquired — voice button fixed
-- Memory timeline display + custom tool UI corrections
+- **引擎改名** — `GLM Direct` → `Kaios`（品牌统一）
+- **maxTurns 可配置** — 设置项控制最大循环轮数，默认 50，支持 0=无限
+- **Token 估算优化** — 算上 tool_calls，滑动平均自校准系数（初始 0.6）
+- **Prompt Cache** — Direct 引擎支持 Anthropic prompt cache 降低成本
+- **三级上下文压缩** — trim → LLM 摘要 → 超长兜底
+- **文件编码自动检测** — read_file / edit_file / grep 自动识别 UTF-8 / GBK / GB18030 等
+- **记忆注入重构** — 从 systemPrompt 移到 history[0]，减少重复注入开销
 
 ---
 
-### 📦 Packaging, CI & Docs
+### 🐛 重要修复
 
-- **GitHub Actions** — Auto-build Windows + macOS dual-platform releases.
-- **Cross-Platform Branding** — All marketing copy updated from "macOS only" to "Windows & macOS". Download buttons now point to [GitHub Releases](https://github.com/phinn/KinetAios/releases/tag/v1.1.0).
-- **README** — English first-screen overhaul: badges, comparison tables, download links, hero screenshot.
-- **GitHub Wiki** — Full 17-page wiki (English primary + Chinese mirror).
-- **Promotion Plan** — Comprehensive Chinese promotion action plan and marketing guidelines.
+- 二进制文件读取崩溃 → 检测 + 跳过
+- 截图空白图 → 改用 `getDisplayMedia`
+- 中断后连续对话上下文断裂
+- cost 重复记录 / 记忆 1970 时间戳 / 孤儿数据
+- 命令注入风险加固（`execFile` 替代 `exec`）
+- webview HTML 预览显示源码 → CSP `frame-src` 修复
+- 淡色主题在独立窗口（Dashboard/Quick/Files）未生效
+- 打包用 `asar: true` + native module unpack，修复复制到其他 Windows 报「损坏」
 
 ---
 
-### Download
+### 📦 打包 & CI
 
-| Platform | Link |
-|---|---|
-| Windows (NSIS Installer) | [KinetAios-Setup-1.1.0.exe](https://github.com/phinn/KinetAios/releases/tag/v1.1.0) |
-| macOS (Apple Silicon) | [KinetAios-1.1.0-arm64.dmg](https://github.com/phinn/KinetAios/releases/tag/v1.1.0) |
-
-**Full changelog:** https://github.com/phinn/KinetAios/commits/main
+- GitHub Actions 自动构建 Windows + macOS 双平台 release
+- Landing / index 页面可视化大幅升级
+- README 英文版第一屏改造（badges / 对比表 / 下载链接）
+- GitHub wiki 全套 17 页（英文为主 + 中文镜像）
 
 ---
 
