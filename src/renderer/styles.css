@@ -1415,9 +1415,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .mgraph-canvas-wrap { flex: 1; position: relative; overflow: hidden; cursor: grab; }
 .mgraph-canvas-wrap svg { cursor: grab; }
 .mgraph-detail {
-  max-height: 150px; overflow-y: auto; border-top: 1px solid var(--border);
-  padding: 8px 20px; font-size: 12px;
+  max-height: 160px; overflow-y: auto; border-top: 1px solid var(--border);
+  padding: 0 20px; font-size: 12px; transition: max-height .2s, padding .2s;
 }
+/* 有内容时展开 / Expand when populated */
+.mgraph-detail:has(.mg-detail-head) { max-height: 160px; padding: 8px 20px; }
+/* 空状态折叠为 0 高度 / Collapse when empty */
+.mgraph-detail:not(:has(.mg-detail-head)) { max-height: 0; padding: 0 20px; border-top: none; }
 .mg-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 6px; }
 .mg-detail-name { font-weight: 600; color: var(--accent); }
 .mg-detail-deg { color: var(--text-dim); font-size: 11px; }
