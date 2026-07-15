@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>KinetAios vs Claude Code vs Codex · Agent Engine Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#080b14;
+  --surface:rgba(255,255,255,.035);
+  --surface2:rgba(255,255,255,.06);
+  --surface3:rgba(255,255,255,.09);
+  --border:rgba(255,255,255,.08);
+  --border2:rgba(255,255,255,.14);
+  --text:#eef1f7; --muted:#9aa4b6; --muted2:#6b7488; --dim:#4a5263;
+  --kaios:#e8b339; --kaios-glow:rgba(232,179,57,.15);
+  --cc:#d97757; --cc-glow:rgba(217,119,87,.12);
+  --codex:#10a37f; --codex-glow:rgba(16,163,127,.12);
+  --ok:#34d399; --bad:#f87171; --warn:#fbbf24; --info:#60a5fa;
+  --grad-k:linear-gradient(135deg,#e8b339,#f0d488 40%,#fff4cf);
+  --grad-bg:linear-gradient(120deg,#7c5cff22,#3b82f622 50%,#22d3ee22);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  background:var(--bg);color:var(--text);
+  font-family:'Inter',-apple-system,BlinkMacSystemFont,'PingFang SC',sans-serif;
+  line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden;
+}
+code,.mono{font-family:'JetBrains Mono',ui-monospace,Menlo,monospace;font-size:.88em}
+
+/* ── Ambient orbs ── */
+.bg{position:fixed;inset:0;z-index:-1;overflow:hidden;pointer-events:none}
+.orb{position:absolute;border-radius:50%;filter:blur(120px);opacity:.4;animation:drift 24s ease-in-out infinite}
+.orb.a{width:600px;height:600px;background:#7c5cff;top:-200px;left:-150px}
+.orb.b{width:500px;height:500px;background:#22d3ee;top:20%;right:-180px;animation-delay:-8s}
+.orb.c{width:450px;height:450px;background:#e8b339;bottom:-200px;left:30%;animation-delay:-16s;opacity:.2}
+@keyframes drift{0%,100%{transform:translate(0,0) scale(1)}33%{transform:translate(50px,-40px) scale(1.12)}66%{transform:translate(-30px,30px) scale(.95)}}
+
+/* ── Layout ── */
+.wrap{max-width:1180px;margin:0 auto;padding:48px 24px 100px}
+
+/* ── Header ── */
+header{text-align:center;margin-bottom:72px;padding-top:24px}
+.eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;
+  color:var(--muted);background:var(--surface);border:1px solid var(--border);padding:7px 16px;border-radius:999px;margin-bottom:24px}
+.eyebrow .dot-k{width:7px;height:7px;border-radius:50%;background:var(--kaios);box-shadow:0 0 8px var(--kaios)}
+h1{font-size:clamp(28px,5.2vw,54px);font-weight:900;letter-spacing:-.03em;line-height:1.08;margin-bottom:20px}
+h1 .g{background:var(--grad-k);-webkit-background-clip:text;background-clip:text;color:transparent}
+h1 .g2{background:linear-gradient(135deg,#d97757,#10a37f);-webkit-background-clip:text;background-clip:text;color:transparent}
+.sub{font-size:17px;color:var(--muted);max-width:620px;margin:0 auto;line-height:1.65}
+.verdict-line{margin-top:28px;font-size:14px;color:var(--dim);font-weight:500}
+.verdict-line b{color:var(--text)}
+
+/* ── Section ── */
+section{margin-top:72px}
+.sec-head{display:flex;align-items:center;gap:14px;margin-bottom:28px}
+.sec-num{font-family:'JetBrains Mono',monospace;font-size:13px;font-weight:600;color:var(--kaios);
+  background:var(--kaios-glow);border:1px solid rgba(232,179,57,.2);padding:4px 10px;border-radius:8px}
+.sec-title{font-size:22px;font-weight:700;letter-spacing:-.01em}
+.sec-line{flex:1;height:1px;background:linear-gradient(90deg,var(--border2),transparent)}
+
+/* ── 1. Hero cards ── */
+.heroes{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+.hero{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:28px 24px;position:relative;overflow:hidden;transition:.3s}
+.hero::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+.hero.k::before{background:var(--kaios)}
+.hero.c::before{background:var(--cc)}
+.hero.x::before{background:var(--codex)}
+.hero:hover{transform:translateY(-4px);border-color:var(--border2);background:var(--surface2)}
+.hero.k:hover{box-shadow:0 20px 60px -20px var(--kaios-glow)}
+.hero.c:hover{box-shadow:0 20px 60px -20px var(--cc-glow)}
+.hero.x:hover{box-shadow:0 20px 60px -20px var(--codex-glow)}
+
+.hero .badge{display:inline-flex;align-items:center;gap:6px;font-size:11px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+  padding:4px 10px;border-radius:6px;margin-bottom:16px}
+.hero.k .badge{background:var(--kaios-glow);color:var(--kaios);border:1px solid rgba(232,179,57,.2)}
+.hero.c .badge{background:var(--cc-glow);color:var(--cc);border:1px solid rgba(217,119,87,.2)}
+.hero.x .badge{background:var(--codex-glow);color:var(--codex);border:1px solid rgba(16,163,127,.2)}
+
+.hero h3{font-size:20px;font-weight:700;margin-bottom:6px}
+.hero .tagline{font-size:13px;color:var(--muted);margin-bottom:18px;line-height:1.5}
+.hero .price{display:flex;align-items:baseline;gap:6px;margin-bottom:16px}
+.hero .price .amt{font-size:28px;font-weight:800;font-family:'JetBrains Mono',monospace}
+.hero .price .unit{font-size:12px;color:var(--dim)}
+.hero .feat-list{list-style:none;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:7px}
+.hero .feat-list li{display:flex;align-items:flex-start;gap:8px}
+.hero .feat-list svg{flex-shrink:0;margin-top:3px;opacity:.7}
+
+/* ── 2. Feature matrix ── */
+.matrix-shell{border:1px solid var(--border);border-radius:16px;overflow:hidden;background:var(--surface)}
+.matrix-scroll{overflow-x:auto}
+table.mx{border-collapse:collapse;width:100%;min-width:900px;font-size:13.5px}
+.mx thead th{position:sticky;top:0;z-index:3;background:rgba(8,11,20,.95);backdrop-filter:blur(8px);
+  text-align:left;padding:14px 16px;border-bottom:1px solid var(--border2);font-size:13px;font-weight:600;white-space:nowrap}
+.mx thead th.k{color:var(--kaios)}
+.mx thead th.c{color:var(--cc)}
+.mx thead th.x{color:var(--codex)}
+.mx tbody td{padding:13px 16px;border-bottom:1px solid var(--border);vertical-align:top;line-height:1.5}
+.mx tbody tr:last-child td{border-bottom:none}
+.mx tbody tr:hover td{background:rgba(255,255,255,.02)}
+.mx td.label{font-weight:600;color:var(--text);white-space:nowrap;position:sticky;left:0;z-index:2;
+  background:rgba(8,11,20,.9);backdrop-filter:blur(4px);border-right:1px solid var(--border)}
+.mx tbody tr:hover td.label{background:rgba(20,24,40,.9)}
+.mx tr.highlight td{background:rgba(232,179,57,.03)}
+.mx tr.highlight td.label{background:rgba(232,179,57,.06)}
+
+/* quality tags */
+.qt{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:5px;font-size:11px;font-weight:600;white-space:nowrap}
+.qt.s-best{background:rgba(52,211,153,.12);color:var(--ok);border:1px solid rgba(52,211,153,.2)}
+.qt.s-good{background:rgba(96,165,250,.1);color:var(--info);border:1px solid rgba(96,165,250,.18)}
+.qt.s-mid{background:rgba(251,191,36,.1);color:var(--warn);border:1px solid rgba(251,191,36,.18)}
+.qt.s-weak{background:rgba(248,113,113,.08);color:var(--bad);border:1px solid rgba(248,113,113,.15)}
+.qt.s-none{background:rgba(107,116,136,.08);color:var(--dim);border:1px solid rgba(107,116,136,.12)}
+
+/* ── 3. Radar chart ── */
+.radar-wrap{display:grid;grid-template-columns:1fr 1fr;gap:40px;align-items:center}
+@media(max-width:820px){.radar-wrap{grid-template-columns:1fr}}
+.radar-container{display:flex;justify-content:center}
+.radar-container svg{width:100%;max-width:420px;height:auto}
+.radar-legend{display:flex;flex-direction:column;gap:16px}
+.legend-item{display:flex;align-items:center;gap:12px;font-size:14px}
+.legend-swatch{width:14px;height:14px;border-radius:4px;flex-shrink:0}
+.legend-swatch.k{background:var(--kaios);box-shadow:0 0 10px rgba(232,179,57,.3)}
+.legend-swatch.c{background:var(--cc)}
+.legend-swatch.x{background:var(--codex)}
+.legend-item .desc{color:var(--muted);font-size:12px}
+
+/* ── 4. Pros / Cons ── */
+.proscons{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+@media(max-width:820px){.proscons{grid-template-columns:1fr}}
+.pc-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:24px;transition:.25s}
+.pc-card:hover{border-color:var(--border2);background:var(--surface2)}
+.pc-card.k{border-top:2px solid var(--kaios)}
+.pc-card.c{border-top:2px solid var(--cc)}
+.pc-card.x{border-top:2px solid var(--codex)}
+.pc-card h4{font-size:16px;font-weight:700;margin-bottom:16px;display:flex;align-items:center;gap:8px}
+.pc-card .pc-section{margin-bottom:14px}
+.pc-card .pc-label{font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:8px}
+.pc-card .pc-label.pro{color:var(--ok)}
+.pc-card .pc-label.con{color:var(--bad)}
+.pc-card ul{list-style:none;font-size:13px;color:var(--muted);display:flex;flex-direction:column;gap:6px;line-height:1.5}
+.pc-card ul li{display:flex;align-items:flex-start;gap:7px}
+.pc-card ul li .ic{flex-shrink:0;margin-top:2px}
+
+/* ── 5. Token / cost ── */
+.token-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-bottom:24px}
+.token-card{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;text-align:center}
+.token-card .t-label{font-size:12px;color:var(--muted);margin-bottom:8px;font-weight:500}
+.token-card .t-value{font-size:32px;font-weight:800;font-family:'JetBrains Mono',monospace;margin-bottom:4px}
+.token-card .t-value.k{color:var(--kaios)}
+.token-card .t-value.c{color:var(--cc)}
+.token-card .t-value.x{color:var(--codex)}
+.token-card .t-note{font-size:11px;color:var(--dim)}
+
+.token-chart{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:28px}
+.token-chart h4{font-size:15px;font-weight:600;margin-bottom:6px}
+.token-chart .tc-sub{font-size:12px;color:var(--muted);margin-bottom:24px}
+.bar-row{display:grid;grid-template-columns:100px 1fr 80px;align-items:center;gap:14px;margin-bottom:14px}
+.bar-name{font-size:13px;font-weight:600;display:flex;align-items:center;gap:8px}
+.bar-track{height:28px;background:rgba(255,255,255,.04);border-radius:8px;overflow:hidden;position:relative}
+.bar-fill{height:100%;border-radius:8px;transition:width 1.2s cubic-bezier(.4,0,.2,1);display:flex;align-items:center;padding-left:10px;font-size:11px;font-weight:600;color:rgba(0,0,0,.5)}
+.bar-fill.k{background:linear-gradient(90deg,#e8b339,#f0d488)}
+.bar-fill.c{background:linear-gradient(90deg,#d97757,#e89870)}
+.bar-fill.x{background:linear-gradient(90deg,#10a37f,#34d399)}
+.bar-value{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--muted);text-align:right}
+
+/* ── 6. KinetAios exclusive ── */
+.exclusives{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}
+@media(max-width:820px){.exclusives{grid-template-columns:1fr}}
+.excl{background:var(--surface);border:1px solid var(--border);border-radius:14px;padding:20px;display:flex;gap:14px;transition:.25s}
+.excl:hover{border-color:rgba(232,179,57,.2);background:var(--surface2)}
+.excl .ex-icon{flex-shrink:0;width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;
+  background:var(--kaios-glow);border:1px solid rgba(232,179,57,.15)}
+.excl h4{font-size:14px;font-weight:600;margin-bottom:4px}
+.excl p{font-size:12.5px;color:var(--muted);line-height:1.5}
+
+/* ── Verdict ── */
+.verdict-box{background:var(--surface);border:1px solid var(--border);border-radius:20px;padding:36px;text-align:center;margin-top:72px}
+.verdict-box h2{font-size:24px;font-weight:700;margin-bottom:8px}
+.verdict-box .vsub{font-size:14px;color:var(--muted);margin-bottom:28px}
+.verdict-pills{display:flex;flex-wrap:wrap;justify-content:center;gap:12px}
+.pill{display:inline-flex;align-items:center;gap:8px;padding:10px 18px;border-radius:999px;font-size:14px;
+  background:var(--surface2);border:1px solid var(--border);font-weight:500}
+.pill b{font-weight:700}
+.pill.k{border-color:rgba(232,179,57,.25);background:var(--kaios-glow)}
+.pill.k b{color:var(--kaios)}
+.pill.c{border-color:rgba(217,119,87,.2);background:var(--cc-glow)}
+.pill.c b{color:var(--cc)}
+.pill.x{border-color:rgba(16,163,127,.2);background:var(--codex-glow)}
+.pill.x b{color:var(--codex)}
+
+/* ── Footer ── */
+footer{text-align:center;margin-top:64px;padding-top:32px;border-top:1px solid var(--border);font-size:12px;color:var(--dim)}
+footer a{color:var(--kaios);text-decoration:none}
+footer a:hover{text-decoration:underline}
+
+/* ── Responsive ── */
+@media(max-width:820px){
+  .heroes{grid-template-columns:1fr}
+  .token-grid{grid-template-columns:1fr}
+  .bar-row{grid-template-columns:80px 1fr 60px;gap:10px}
+}
+</style>
+</head>
+<body>
+
+<div class="bg">
+  <div class="orb a"></div>
+  <div class="orb b"></div>
+  <div class="orb c"></div>
+</div>
+
+<div class="wrap">
+
+<!-- ════════ HEADER ════════ -->
+<header>
+  <div class="eyebrow"><span class="dot-k"></span> Agent Engine Showdown · v1.2.0</div>
+  <h1><span class="g">KinetAios</span> vs <span class="g2">Claude Code</span> vs Codex</h1>
+  <p class="sub">Three agent engines, one dashboard. Side-by-side comparison of architecture, capabilities, token efficiency and unique features — as of KinetAios v1.2.0.</p>
+  <div class="verdict-line">
+    <b>Kaios</b> = built-in engine ·
+    <b>Claude Code</b> = CLI subprocess ·
+    <b>Codex</b> = CLI subprocess
+  </div>
+</header>
+
+<!-- ════════ 1. HERO CARDS ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">01</span>
+    <span class="sec-title">At a Glance</span>
+    <span class="sec-line"></span>
+  </div>
+  <div class="heroes">
+
+    <!-- KAIOS -->
+    <div class="hero k">
+      <div class="badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+        Built-in Engine
+      </div>
+      <h3>Kaios</h3>
+      <p class="tagline">Native ReAct loop. GLM / Anthropic dual-protocol. Zero external CLI dependency — runs inside the Electron process.</p>
+      <div class="price">
+        <span class="amt" style="color:var(--kaios)">9</span>
+        <span class="unit">built-in tools</span>
+      </div>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> SQLite + FTS5 full-text memory</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> MCP Bridge (local server + remote SSE)</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> Game-style Town View visualization</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> 4 themes · 4 languages i18n</li>
+      </ul>
+    </div>
+
+    <!-- CLAUDE CODE -->
+    <div class="hero c">
+      <div class="badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 8l-3 4 3 4M15 8l3 4-3 4"/></svg>
+        CLI Subprocess
+      </div>
+      <h3>Claude Code</h3>
+      <p class="tagline">Anthropic's full CLI agent. Spawned via <code>claude -p --output-format stream-json</code>. Industry's most complete agent abstraction.</p>
+      <div class="price">
+        <span class="amt" style="color:var(--cc)">30+</span>
+        <span class="unit">tools &amp; growing</span>
+      </div>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> Prompt cache (segmented + cache_control)</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> Recursive subagent dispatch</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> Five-level context compression</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> No OS-level sandbox</li>
+      </ul>
+    </div>
+
+    <!-- CODEX -->
+    <div class="hero x">
+      <div class="badge">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 2L2 7v10l10 5 10-5V7z"/><polyline points="2,7 12,12 22,7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
+        CLI Subprocess
+      </div>
+      <h3>Codex</h3>
+      <p class="tagline">OpenAI's Rust-powered agent. Spawned via <code>codex exec --json</code>. Only engine with true OS-level sandboxing.</p>
+      <div class="price">
+        <span class="amt" style="color:var(--codex)">Rust</span>
+        <span class="unit">multi-crate</span>
+      </div>
+      <ul class="feat-list">
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> OS sandbox (Seatbelt / landlock / Win token)</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> Guardian automated review</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--ok)" stroke-width="2"><polyline points="20,6 9,17 4,12"/></svg> WebSocket + HTTPS transport fallback</li>
+        <li><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--warn)" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg> Heaviest abstraction layer</li>
+      </ul>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════ 2. FEATURE MATRIX ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">02</span>
+    <span class="sec-title">Capability Matrix</span>
+    <span class="sec-line"></span>
+  </div>
+  <div class="matrix-shell">
+    <div class="matrix-scroll">
+      <table class="mx">
+        <thead>
+          <tr>
+            <th>Feature</th>
+            <th class="k">Kaios (Built-in)</th>
+            <th class="c">Claude Code</th>
+            <th class="x">Codex</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="label">Core architecture</td>
+            <td>ReAct loop · <code>AgentLoop.ts</code></td>
+            <td>ReAct loop · TypeScript CLI</td>
+            <td>ReAct loop · Rust multi-crate</td>
+          </tr>
+          <tr>
+            <td class="label">Model provider</td>
+            <td><span class="qt s-best">Dual</span> GLM (OpenAI-compat) + Anthropic</td>
+            <td><span class="qt s-good">Anthropic</span> native + multi-provider</td>
+            <td><span class="qt s-good">Responses API</span></td>
+          </tr>
+          <tr>
+            <td class="label">Process model</td>
+            <td><span class="qt s-best">In-process</span> no subprocess overhead</td>
+            <td>CLI spawn (<code>.cmd</code> shim on Windows)</td>
+            <td>CLI spawn (<code>.cmd</code> shim on Windows)</td>
+          </tr>
+          <tr class="highlight">
+            <td class="label">Context compression</td>
+            <td><span class="qt s-mid">3-level</span> trim → LLM summary → hard cutoff</td>
+            <td><span class="qt s-best">5-level</span> autocompact + micro + snip + collapse + reactive</td>
+            <td><span class="qt s-best">Multi-level</span> autocompact + remote compact</td>
+          </tr>
+          <tr>
+            <td class="label">Token estimation</td>
+            <td><span class="qt s-mid">Self-calibrating</span> sliding avg, init coef 0.6</td>
+            <td><span class="qt s-best">Precise</span> Haiku fallback</td>
+            <td><span class="qt s-best">Precise</span> context_window</td>
+          </tr>
+          <tr>
+            <td class="label">Prompt cache</td>
+            <td><span class="qt s-good">Dual</span> GLM auto + Anthropic <code>cache_control</code></td>
+            <td><span class="qt s-best">Best</span> segmented + DYNAMIC_BOUNDARY</td>
+            <td><span class="qt s-good">Yes</span> comp_hash + stateful</td>
+          </tr>
+          <tr>
+            <td class="label">Subagent / dispatch</td>
+            <td><span class="qt s-good">Yes</span> <code>dispatch_agent</code> reuses loop</td>
+            <td><span class="qt s-best">Full</span> recursive query + background + team</td>
+            <td><span class="qt s-good">Yes</span> inherited spawn_agent</td>
+          </tr>
+          <tr>
+            <td class="label">Streaming + tool exec</td>
+            <td><span class="qt s-weak">Sequential</span> stream then execute</td>
+            <td><span class="qt s-best">Parallel</span> stream + execute simultaneously</td>
+            <td><span class="qt s-best">Parallel</span> stream + execute simultaneously</td>
+          </tr>
+          <tr class="highlight">
+            <td class="label">OS-level sandbox</td>
+            <td><span class="qt s-none">No</span> shell-confirm bridge</td>
+            <td><span class="qt s-none">No</span> permission modes only</td>
+            <td><span class="qt s-best">Only</span> Seatbelt / landlock / Win restricted token</td>
+          </tr>
+          <tr>
+            <td class="label">Long-term memory</td>
+            <td><span class="qt s-best">SQLite+FTS5</span> with 🧠 panel UI (filter / edit / export)</td>
+            <td><span class="qt s-good">Typed memory</span> CLAUDE.md + append-only files</td>
+            <td><span class="qt s-mid">Remote</span> <code>trace_summarize</code></td>
+          </tr>
+          <tr>
+            <td class="label">MCP support</td>
+            <td><span class="qt s-best">Full</span> local server + remote SSE + multi-machine bridge</td>
+            <td><span class="qt s-good">All transports</span> stdio + SSE + HTTP</td>
+            <td><span class="qt s-mid">Partial</span> rmcp-client crate</td>
+          </tr>
+          <tr>
+            <td class="label">Custom tools</td>
+            <td><span class="qt s-best">Yes</span> user-defined via UI</td>
+            <td><span class="qt s-none">No</span> fixed toolset</td>
+            <td><span class="qt s-none">No</span> fixed toolset</td>
+          </tr>
+          <tr>
+            <td class="label">Multi-agent concurrent</td>
+            <td><span class="qt s-best">Yes</span> unlimited parallel conversations</td>
+            <td><span class="qt s-mid">Limited</span> one session per CLI invocation</td>
+            <td><span class="qt s-mid">Limited</span> one session per CLI invocation</td>
+          </tr>
+          <tr>
+            <td class="label">Session resume</td>
+            <td><span class="qt s-good">SQLite</span> conversations + turns (FTS5)</td>
+            <td><span class="qt s-good">JSONL</span> transcript + <code>--resume</code></td>
+            <td><span class="qt s-good">Rollout</span> disk + SQLite + <code>--resume</code></td>
+          </tr>
+          <tr>
+            <td class="label">Cross-platform UI</td>
+            <td><span class="qt s-best">Native</span> Electron dashboard · 4 themes · 4 languages</td>
+            <td><span class="qt s-none">CLI only</span></td>
+            <td><span class="qt s-none">CLI only</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 3. RADAR CHART ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">03</span>
+    <span class="sec-title">Capability Radar</span>
+    <span class="sec-line"></span>
+  </div>
+  <div class="radar-wrap">
+    <div class="radar-container">
+      <svg viewBox="-220 -220 440 440" xmlns="http://www.w3.org/2000/svg">
+        <!-- grid hexagons -->
+        <g fill="none" stroke="rgba(255,255,255,.06)" stroke-width="1">
+          <polygon points="0,-200 173,-100 173,100 0,200 -173,100 -173,-100"/>
+          <polygon points="0,-160 139,-80 139,80 0,160 -139,80 -139,-80"/>
+          <polygon points="0,-120 104,-60 104,60 0,120 -104,60 -104,-60"/>
+          <polygon points="0,-80 69,-40 69,40 0,80 -69,40 -69,-40"/>
+          <polygon points="0,-40 35,-20 35,20 0,40 -35,20 -35,-20"/>
+        </g>
+        <!-- axes -->
+        <g stroke="rgba(255,255,255,.05)" stroke-width="1">
+          <line x1="0" y1="0" x2="0" y2="-200"/>
+          <line x1="0" y1="0" x2="173" y2="-100"/>
+          <line x1="0" y1="0" x2="173" y2="100"/>
+          <line x1="0" y1="0" x2="0" y2="200"/>
+          <line x1="0" y1="0" x2="-173" y2="100"/>
+          <line x1="0" y1="0" x2="-173" y2="-100"/>
+        </g>
+        <!-- axis labels -->
+        <g font-size="11" fill="#9aa4b6" font-family="Inter,sans-serif" font-weight="500" text-anchor="middle">
+          <text x="0" y="-212">Token Efficiency</text>
+          <text x="195" y="-110">Tool Richness</text>
+          <text x="195" y="118">Sandbox Safety</text>
+          <text x="0" y="224">UX &amp; Visual</text>
+          <text x="-195" y="118">Memory System</text>
+          <text x="-195" y="-110">Extensibility</text>
+        </g>
+
+        <!-- KAIOS polygon (gold) -->
+        <polygon points="0,-180 121,-70 52,30 0,180 -121,70 -104,-60"
+          fill="rgba(232,179,57,.12)" stroke="#e8b339" stroke-width="2.5" stroke-linejoin="round"/>
+        <!-- CLAUDE CODE polygon (orange) -->
+        <polygon points="0,-150 165,-95 35,20 0,120 -104,60 -156,-90"
+          fill="rgba(217,119,87,.08)" stroke="#d97757" stroke-width="2" stroke-linejoin="round" stroke-dasharray="5,3"/>
+        <!-- CODEX polygon (green) -->
+        <polygon points="0,-120 104,-60 173,100 0,100 -52,30 -87,-50"
+          fill="rgba(16,163,127,.08)" stroke="#10a37f" stroke-width="2" stroke-linejoin="round" stroke-dasharray="5,3"/>
+
+        <!-- vertex dots -->
+        <g>
+          <circle cx="0" cy="-180" r="3.5" fill="#e8b339"/>
+          <circle cx="121" cy="-70" r="3.5" fill="#e8b339"/>
+          <circle cx="52" cy="30" r="3.5" fill="#e8b339"/>
+          <circle cx="0" cy="180" r="3.5" fill="#e8b339"/>
+          <circle cx="-121" cy="70" r="3.5" fill="#e8b339"/>
+          <circle cx="-104" cy="-60" r="3.5" fill="#e8b339"/>
+        </g>
+      </svg>
+    </div>
+    <div class="radar-legend">
+      <div class="legend-item">
+        <div class="legend-swatch k"></div>
+        <div><strong>Kaios</strong><div class="desc">Excels in token efficiency, UX, memory &amp; extensibility</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch c"></div>
+        <div><strong>Claude Code</strong><div class="desc">Best tool richness &amp; overall engine maturity</div></div>
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch x"></div>
+        <div><strong>Codex</strong><div class="desc">Unmatched sandbox safety, compact elsewhere</div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 4. PROS / CONS ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">04</span>
+    <span class="sec-title">Strengths &amp; Trade-offs</span>
+    <span class="sec-line"></span>
+  </div>
+  <div class="proscons">
+
+    <!-- KAIOS -->
+    <div class="pc-card k">
+      <h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--kaios)" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+        Kaios
+      </h4>
+      <div class="pc-section">
+        <div class="pc-label pro">Strengths</div>
+        <ul>
+          <li><span class="ic" style="color:var(--ok)">+</span> Zero CLI dependency — runs in-process</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Smallest system prompt → cheapest per turn</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Pre-scans skills/MCP/CLI → fewer retry-wasted tokens</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Full GUI: Town View, 4 themes, 4 languages</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> User-defined custom tools</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> MCP Bridge: local server + remote multi-machine</li>
+        </ul>
+      </div>
+      <div class="pc-section">
+        <div class="pc-label con">Trade-offs</div>
+        <ul>
+          <li><span class="ic" style="color:var(--bad)">−</span> 3-level compression (vs CC's 5-level)</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> No streaming-while-executing tools</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> No OS-level sandbox (confirm bridge only)</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> Token estimation is approximate</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- CLAUDE CODE -->
+    <div class="pc-card c">
+      <h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--cc)" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 8l-3 4 3 4M15 8l3 4-3 4"/></svg>
+        Claude Code
+      </h4>
+      <div class="pc-section">
+        <div class="pc-label pro">Strengths</div>
+        <ul>
+          <li><span class="ic" style="color:var(--ok)">+</span> Most complete agent abstraction (30+ tools)</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Best prompt-cache implementation</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> 5-level context compression</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Full subagent suite (recursive/background/team)</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Stream + execute tools simultaneously</li>
+        </ul>
+      </div>
+      <div class="pc-section">
+        <div class="pc-label con">Trade-offs</div>
+        <ul>
+          <li><span class="ic" style="color:var(--bad)">−</span> Heaviest system prompt → most expensive per turn</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> No OS-level sandbox</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> Requires Anthropic API key</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> No custom user-defined tools</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> CLI-only — no native GUI</li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- CODEX -->
+    <div class="pc-card x">
+      <h4>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--codex)" stroke-width="2"><path d="M12 2L2 7v10l10 5 10-5V7z"/><polyline points="2,7 12,12 22,7"/><line x1="12" y1="22" x2="12" y2="12"/></svg>
+        Codex
+      </h4>
+      <div class="pc-section">
+        <div class="pc-label pro">Strengths</div>
+        <ul>
+          <li><span class="ic" style="color:var(--ok)">+</span> Only engine with OS-level sandbox</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Guardian automated security review</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> WebSocket + HTTPS transport fallback</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Stream + execute tools simultaneously</li>
+          <li><span class="ic" style="color:var(--ok)">+</span> Remote context compaction</li>
+        </ul>
+      </div>
+      <div class="pc-section">
+        <div class="pc-label con">Trade-offs</div>
+        <ul>
+          <li><span class="ic" style="color:var(--bad)">−</span> Heaviest architecture (Rust multi-crate)</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> Requires OpenAI API key</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> No custom user-defined tools</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> CLI-only — no native GUI</li>
+          <li><span class="ic" style="color:var(--bad)">−</span> Weakest in-app memory story</li>
+        </ul>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════ 5. TOKEN EFFICIENCY ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">05</span>
+    <span class="sec-title">Token Efficiency</span>
+    <span class="sec-line"></span>
+  </div>
+  <p style="color:var(--muted);font-size:14px;margin-bottom:24px;max-width:680px">
+    Estimated tokens consumed per single ReAct turn (system prompt + tool schemas + context window overhead). Lower is better. All three engines connect to the same GLM model for a fair comparison.
+  </p>
+
+  <div class="token-chart">
+    <h4>Per-turn token footprint (same model, same task)</h4>
+    <p class="tc-sub">Lower bar = fewer tokens consumed = cheaper. Values are mechanism-inferred estimates, not live benchmarks.</p>
+
+    <div class="bar-row">
+      <div class="bar-name">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--kaios);display:inline-block"></span>
+        Kaios
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill k" style="width:38%"></div>
+      </div>
+      <div class="bar-value">~3.2k</div>
+    </div>
+
+    <div class="bar-row">
+      <div class="bar-name">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--cc);display:inline-block"></span>
+        Claude Code
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill c" style="width:100%"></div>
+      </div>
+      <div class="bar-value">~8.5k</div>
+    </div>
+
+    <div class="bar-row">
+      <div class="bar-name">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--codex);display:inline-block"></span>
+        Codex
+      </div>
+      <div class="bar-track">
+        <div class="bar-fill x" style="width:68%"></div>
+      </div>
+      <div class="bar-value">~5.8k</div>
+    </div>
+  </div>
+
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:20px">
+    <div class="token-card">
+      <div class="t-label">Kaios · Why it's smallest</div>
+      <div class="t-value k">9</div>
+      <div class="t-note">tools + single compact Chinese system prompt + pre-scan reduces retries</div>
+    </div>
+    <div class="token-card">
+      <div class="t-label">Claude Code · Why it's largest</div>
+      <div class="t-value c">30+</div>
+      <div class="t-note">tools + multi-layer system (memory/scratchpad/frc sections) + large schemas</div>
+    </div>
+    <div class="token-card">
+      <div class="t-label">Codex · Middle ground</div>
+      <div class="t-value x">~18</div>
+      <div class="t-note">tools + model-specific prompt templates</div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════ 6. KINETAIOS EXCLUSIVE ════════ -->
+<section>
+  <div class="sec-head">
+    <span class="sec-num">06</span>
+    <span class="sec-title">Only in KinetAios</span>
+    <span class="sec-line"></span>
+  </div>
+  <p style="color:var(--muted);font-size:14px;margin-bottom:24px">Features that exist <strong style="color:var(--text)">nowhere else</strong> — not in Claude Code CLI, not in Codex CLI.</p>
+
+  <div class="exclusives">
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>
+      </div>
+      <div>
+        <h4>Town View</h4>
+        <p>Game-style isometric map: projects = houses, conversations = villagers, real-time agent status (Idle / Working / Done / Error). Chat inline on the map.</p>
+      </div>
+    </div>
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v6m0 6v6m11-7h-6m-6 0H1m17.5-7.5l-4.2 4.2m-6.6 6.6l-4.2 4.2m0-15l4.2 4.2m6.6 6.6l4.2 4.2"/></svg>
+      </div>
+      <div>
+        <h4>MCP Bridge (Multi-Machine)</h4>
+        <p>Run a local MCP Server to accept remote <code>run_agent</code> calls. Connect to other machines via SSE. Your agents become a distributed cluster.</p>
+      </div>
+    </div>
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M3 12h18M15 3v18"/></svg>
+      </div>
+      <div>
+        <h4>4 Themes &amp; 4 Languages</h4>
+        <p>Dark, Light, Aurora, Serene themes. English, Simplified Chinese, Traditional Chinese, Japanese — fully internationalized UI.</p>
+      </div>
+    </div>
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/></svg>
+      </div>
+      <div>
+        <h4>Custom Tools</h4>
+        <p>Define your own tools in the UI — name, description, schema, handler. Instantly available to the Kaios engine alongside the 9 built-ins.</p>
+      </div>
+    </div>
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+      </div>
+      <div>
+        <h4>Three-Engine Dashboard</h4>
+        <p>Switch between Kaios / Claude Code / Codex per conversation. Compare outputs side by side. All three share one unified event stream.</p>
+      </div>
+    </div>
+
+    <div class="excl">
+      <div class="ex-icon">
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/><line x1="8" y1="9" x2="16" y2="9"/><line x1="8" y1="13" x2="13" y2="13"/></svg>
+      </div>
+      <div>
+        <h4>Memory Panel + Timeline</h4>
+        <p>SQLite FTS5-backed memory with full UI: filter by channel, inline edit, delete, JSON import/export. Memory timeline with automatic decay.</p>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ════════ VERDICT ════════ -->
+<div class="verdict-box">
+  <h2>Which engine should you use?</h2>
+  <p class="vsub">All three share an identical ReAct skeleton. The difference is entirely in execution safety, context management, and cost.</p>
+  <div class="verdict-pills">
+    <span class="pill k">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#e8b339" stroke-width="2"><polygon points="13,2 3,14 12,14 11,22 21,10 12,10"/></svg>
+      Save tokens &amp; full visual control → <b>Kaios</b>
+    </span>
+    <span class="pill c">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#d97757" stroke-width="2"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 8l-3 4 3 4M15 8l3 4-3 4"/></svg>
+      Max completeness, budget OK → <b>Claude Code</b>
+    </span>
+    <span class="pill x">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10a37f" stroke-width="2"><path d="M12 2L2 7v10l10 5 10-5V7z"/><polyline points="2,7 12,12 22,7"/></svg>
+      Sandboxed secure execution → <b>Codex</b>
+    </span>
+  </div>
+</div>
+
+<footer>
+  KinetAios v1.2.0 · Agent Engine Comparison · Based on source-level mechanism analysis, not live benchmarks ·
+  <a href="https://github.com/phinn/KinetAios">GitHub</a>
+</footer>
+
+</div>
+</body>
+</html>
