@@ -53,9 +53,10 @@ export interface Engine {
   run(opts: EngineRunOpts): Promise<void>;
 }
 
-// 项目规则文件(AGENTS.md / CLAUDE.md)注入 system prompt —— 约定大于配置。
+// 项目规则文件注入 system prompt —— 约定大于配置。
+// 优先级: KinetAios.md > AGENTS.md > CLAUDE.md（第一个找到的即用，不合并）
 function loadProjectRules(cwd: string): string {
-  for (const name of ['AGENTS.md', 'CLAUDE.md']) {
+  for (const name of ['KinetAios.md', 'AGENTS.md', 'CLAUDE.md']) {
     try {
       const body = fs.readFileSync(path.join(cwd, name), 'utf8');
       if (body.trim()) return `\n\n# 项目规则(${name})\n${body.slice(0, 8000)}`;
