@@ -2526,7 +2526,9 @@ async function loadPluginPanels(): Promise<void> {
     if (!res.ok || !res.items || res.items.length === 0) return;
     pluginPanelRegistry = res.items;
 
-    // 注入 DOM: 每个面板一个 <div class="view plugin-panel-view" id="plugin-panel-<name>">
+    // 注入 DOM: 每个面板用 iframe (srcdoc) 隔离, 绕过主页面 CSP 限制
+    // Inject via iframe srcdoc: iframe has its own browsing context,
+    // inline <script> executes normally, external CDN scripts also work.
     const container = document.getElementById('plugin-panels-container')!;
     for (const panel of res.items) {
       const viewId = `plugin-panel-${panel.name}`;
@@ -2537,7 +2539,15 @@ async function loadPluginPanels(): Promise<void> {
         viewEl.className = 'view plugin-panel-view';
         container.appendChild(viewEl);
       }
-      viewEl.innerHTML = panel.html;
+      // iframe 方案: panel.html 作为一个完整文档注入 / iframe: panel.html as a full document
+      viewEl.innerHTML = '';
+      const iframe = document.createElement('iframe');
+      iframe.style.width = '100%';
+      iframe.style.height = '100%';
+      iframe.style.border = 'none';
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      iframe.srcdoc = panel.html;
+      viewEl.appendChild(iframe);
     }
   } catch { /* main 尚未就绪 / main not ready yet */ }
 }
@@ -2550,11 +2560,57 @@ function showPluginPanel(name: string): void {
   syncViewButtons();
 }
 
-// 插件 panel 可读取当前活动会话 ID (供 panel 内的 AI 操作使用)
-// Plugin panels can read the current active conversation ID via this global.
+// 插件面板通过 iframe srcdoc 运行, 需通过 postMessage 桥接 IPC
+// Plugin panels run in iframe (srcdoc) — bridge IPC via postMessage
 function getActiveConvId(): string | null { return selectedId; }
-// 暴露到 window, panel HTML 中的 <script> 可通过 window.__kinet.getActiveConvId() 获取
-;(window as unknown as { __kinet: unknown }).__kinet = { getActiveConvId };
+
+// 宿主主题 CSS 变量提取 — 传给 iframe 让面板跟主题 / Extract theme CSS vars for iframe
+function getThemeCssVars(): Record<string, string> {
+  const root = getComputedStyle(document.documentElement);
+  const keys = ['--bg-side', '--bg-elev', '--bg-input', '--border', '--text', '--text-dim',
+    '--text-faint', '--accent', '--accent-dim', '--danger'];
+  const vars: Record<string, string> = {};
+  for (const k of keys) {
+    const v = root.getPropertyValue(k).trim();
+    if (v) vars[k] = v;
+  }
+  return vars;
+}
+
+// 监听 iframe postMessage — 桥接到真实 KinetAPI
+// Listen for iframe postMessage — bridge to real KinetAPI
+window.addEventListener('message', async (ev: MessageEvent) => {
+  const data = ev.data;
+  if (!data || typeof data !== 'object') return;
+  // 只处理 plugin bridge 消息 / Only handle plugin bridge messages
+  if (data.source !== 'brainstorm') return;
+
+  const { id, method, args } = data;
+  const source = ev.source as (Window | null);
+  try {
+    let result: unknown;
+    switch (method) {
+      case 'getActiveConvId':
+        result = getActiveConvId();
+        break;
+      case 'getTheme':
+        result = getThemeCssVars();
+        break;
+      case 'send':
+        result = await api.send(args[0], args[1]);
+        break;
+      case 'getConversations':
+        result = await api.getConversations();
+        break;
+      default:
+        source?.postMessage({ target: 'brainstorm', id, error: `Unknown method: ${method}` }, '*');
+        return;
+    }
+    source?.postMessage({ target: 'brainstorm', id, result }, '*');
+  } catch (err) {
+    source?.postMessage({ target: 'brainstorm', id, error: String(err) }, '*');
+  }
+});
 
 // 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
 function syncViewButtons(): void {
