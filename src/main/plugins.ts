@@ -12,7 +12,7 @@ import { getSettings, saveSettings } from './settings';
 
 // ── v2 类型 ──────────────────────────────────────────────
 
-export type PluginCategory = 'office' | 'dev' | 'media' | 'data' | 'system' | 'creative' | 'misc';
+export type PluginCategory = 'office' | 'dev' | 'media' | 'data' | 'system' | 'creative' | 'education' | 'misc';
 
 export interface PluginManifest {
   // v1 必填
@@ -342,6 +342,7 @@ const CATEGORY_COLORS: Record<PluginCategory, string> = {
   data: '#5a4a2d',
   system: '#444444',
   creative: '#6b3d9e',
+  education: '#b8860b',
   misc: '#666666',
 };
 

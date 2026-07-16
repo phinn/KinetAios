@@ -1284,7 +1284,7 @@ async function showSettings() {
     else showMemMsg(r.error ?? 'error', false);
   };
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
-  const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'misc'] as const;
+  const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'] as const;
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
   let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string }> = [];
 
