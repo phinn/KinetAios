@@ -192,6 +192,24 @@ export function loadPlugins(): LoadedPlugin[] {
     } catch {
       /* 源码 plugins/ 目录不存在, 跳过 */
     }
+  } else {
+    // 打包模式: 扫描 extraResources 复制的内置插件 — Packaged: scan bundled plugins.
+    // electron-builder 把 plugins/ 复制到 resources/plugins/, process.resourcesPath 指向 resources/.
+    const bundledRoot = path.join(process.resourcesPath, 'plugins');
+    try {
+      const bundledDirs = fs
+        .readdirSync(bundledRoot, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => path.join(bundledRoot, d.name));
+      // 用户安装的优先(去重) — User-installed take precedence (dedupe by basename).
+      const existing = new Set(dirs.map((d) => path.basename(d)));
+      for (const bd of bundledDirs) {
+        const base = path.basename(bd);
+        if (!existing.has(base)) dirs.push(bd);
+      }
+    } catch {
+      /* resources/plugins/ 不存在, 跳过 */
+    }
   }
   if (!dirs.length) {
     cache = [];

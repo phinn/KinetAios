@@ -31,6 +31,13 @@
       "**/better-sqlite3/**",
       "**/*.node"
     ],
+    "extraResources": [
+      {
+        "from": "plugins/",
+        "to": "plugins/",
+        "filter": ["**/*", "!**/examples/**"]
+      }
+    ],
     "mac": {
       "target": ["dmg"],
       "icon": "build/icon.png"
