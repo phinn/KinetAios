@@ -2552,7 +2552,7 @@ function rebuildPluginPanelMenu(): void {
 async function loadPluginPanels(): Promise<void> {
   try {
     const res = await api.pluginPanels();
-    if (!res.ok || !res.items || res.items.length === 0) return;
+    if (!res.ok || !res.items) return;
     pluginPanelRegistry = res.items;
 
     // 注入 DOM: 每个面板创建一个空容器, iframe 延迟到首次打开时才注入
