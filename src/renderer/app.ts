@@ -2524,13 +2524,25 @@ async function showTown() {
 // Rebuild plugin panel entries in the ⋯ more menu (called after toggle to refresh).
 function rebuildPluginPanelMenu(): void {
   const menu = document.getElementById('sb-more-menu')!;
-  // 移除旧的插件入口(保留非插件项) — Remove old plugin entries (keep non-plugin items).
-  menu.querySelectorAll('.sb-more-item[data-plugin-panel]').forEach((el) => el.remove());
+  // 移除旧的插件入口和分隔/标题 — Remove old plugin entries + divider/header.
+  menu.querySelectorAll('[data-plugin-section]').forEach((el) => el.remove());
+  if (pluginPanelRegistry.length === 0) return;
+  // 分隔线 + 小标题 — Divider + section label.
+  const sep = document.createElement('div');
+  sep.className = 'sb-more-sep';
+  sep.dataset.pluginSection = '';
+  menu.appendChild(sep);
+  const header = document.createElement('div');
+  header.className = 'sb-more-section-label';
+  header.dataset.pluginSection = '';
+  header.textContent = '🔌 插件';
+  menu.appendChild(header);
   // 重新添加 — Re-add.
   for (const panel of pluginPanelRegistry) {
     const btn = document.createElement('button');
     btn.className = 'sb-more-item';
     btn.dataset.pluginPanel = panel.name;
+    btn.dataset.pluginSection = '';
     btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
     btn.onclick = () => { document.getElementById('sb-more-menu')?.classList.remove('open'); showPluginPanel(panel.name); };
     menu.appendChild(btn);
