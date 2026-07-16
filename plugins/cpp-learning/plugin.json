@@ -1,0 +1,14 @@
+{
+  "name": "cpp-learning",
+  "version": "1.0.0",
+  "description": "小学生 C++ 启蒙学习面板 —— 知识卡闯关、代码阅读理解、趣味填空、AI 辅导老师。面向零基础初学者。",
+  "author": "KinetAios",
+  "category": "education",
+  "icon": "icon.svg",
+  "permissions": [],
+  "engines": ["direct", "claudeCode", "codex"],
+  "systemPrompt": "system-prompt.md",
+  "panel": "panel.html",
+  "panelTitle": "C++ 启蒙",
+  "panelIcon": "icon.svg"
+}

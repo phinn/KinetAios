@@ -1,0 +1,1122 @@
+<!-- C++ 启蒙学习面板 — C++ Learning Panel (v2.1 plugin) -->
+<!-- 面向零基础初学者: 知识卡闯关 / 代码阅读 / 趣味填空 / AI 辅导 -->
+<!-- Runs inside an iframe (srcdoc). Communicates with host via postMessage. -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  /* ── CSS 变量回退值 (iframe 内无法继承宿主 :root) ── */
+  :root {
+    --bg-side: #161619;
+    --bg-elev: #242429;
+    --bg-input: #2a2a31;
+    --bg-code: #1a1a1f;
+    --border: #34343c;
+    --text: #e7e7ec;
+    --text-dim: #9a9aa4;
+    --text-faint: #6c6c76;
+    --accent: #b8860b;
+    --accent-dim: #9a7209;
+    --success: #22c55e;
+    --success-dim: #16a34a;
+    --danger: #e05050;
+    --warning: #f59e0b;
+    --cpp-blue: #659ad2;
+    --cpp-code: #99c0ef;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    height: 100vh; overflow: hidden;
+    background: var(--bg-side);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ── 布局骨架 ── */
+  #cl-root {
+    display: flex; flex-direction: column; height: 100vh; width: 100%;
+  }
+
+  /* ── 顶部工具栏 ── */
+  #cl-toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    z-index: 20;
+  }
+  .cl-title {
+    font-size: 13px; font-weight: 600;
+    color: var(--text); margin-right: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .cl-title svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+
+  /* ── 按钮 ── */
+  .cl-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    cursor: pointer; transition: background .15s, border-color .15s, opacity .15s;
+  }
+  .cl-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .cl-btn:active { transform: scale(.97); }
+  .cl-btn:disabled { opacity: .35; cursor: default; transform: none; }
+  .cl-btn.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+  }
+  .cl-btn.primary:hover { background: var(--accent-dim); }
+
+  /* ── 滚动区 ── */
+  #cl-scroll {
+    flex: 1; overflow-y: auto; padding: 20px 24px;
+    scroll-behavior: smooth;
+  }
+  #cl-scroll::-webkit-scrollbar { width: 6px; }
+  #cl-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  #cl-scroll::-webkit-scrollbar-track { background: transparent; }
+
+  /* ── 欢迎页 ── */
+  .cl-welcome {
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center; height: 100%; gap: 24px; text-align: center;
+  }
+  .cl-welcome h1 { font-size: 26px; color: var(--accent); }
+  .cl-welcome p { color: var(--text-dim); font-size: 14px; max-width: 380px; line-height: 1.7; }
+  .cl-welcome .big-icon {
+    width: 64px; height: 64px; border-radius: 16px;
+    background: linear-gradient(135deg, var(--accent), #d4a017);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 28px; font-weight: bold; color: #fff;
+  }
+  .cl-welcome-stats {
+    display: flex; gap: 16px; margin-top: 8px;
+  }
+  .cl-welcome-stat {
+    display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .cl-welcome-stat .num { font-size: 22px; font-weight: bold; color: var(--accent); }
+  .cl-welcome-stat .lbl { font-size: 11px; color: var(--text-faint); }
+
+  /* ── 统计栏 ── */
+  #cl-stats {
+    display: flex; gap: 20px; padding: 8px 24px; flex-shrink: 0;
+    background: var(--bg-elev); border-bottom: 1px solid var(--border);
+    font-size: 11px; color: var(--text-dim);
+  }
+  #cl-stats .stat-item { display: flex; align-items: center; gap: 4px; }
+  #cl-stats .stat-item b { color: var(--text); font-size: 13px; }
+  #cl-stats .stat-item.rate b { color: var(--accent); }
+
+  /* ── 进度条 ── */
+  .cl-progress-bar {
+    height: 3px; background: var(--bg-input); flex-shrink: 0;
+    position: relative; overflow: hidden;
+  }
+  .cl-progress-bar .fill {
+    height: 100%; background: var(--accent); border-radius: 0 2px 2px 0;
+    transition: width .4s ease;
+  }
+
+  /* ── 知识卡 ── */
+  .cl-card {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    animation: slideIn .3s ease;
+  }
+  @keyframes slideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .cl-card-tag {
+    display: inline-block; padding: 2px 10px; border-radius: 10px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    background: var(--accent-dim); color: #fff; margin-bottom: 12px;
+  }
+  .cl-card-tag.practice { background: var(--cpp-blue); }
+
+  .cl-card h2 {
+    font-size: 17px; margin-bottom: 8px; color: var(--text);
+  }
+  .cl-card .desc {
+    font-size: 13px; color: var(--text-dim); line-height: 1.7; margin-bottom: 12px;
+  }
+  .cl-card .desc b { color: var(--text); }
+  .cl-card .desc code {
+    background: var(--bg-code); padding: 1px 6px; border-radius: 4px;
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px; color: var(--cpp-code);
+  }
+
+  /* ── 代码块 ── */
+  .cl-code-block {
+    background: var(--bg-code);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 10px 0;
+    overflow-x: auto;
+  }
+  .cl-code-block pre {
+    font-family: 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    font-size: 13px; line-height: 1.6;
+    color: var(--cpp-code); white-space: pre;
+  }
+  .cl-code-block .kw { color: #c678dd; }
+  .cl-code-block .str { color: #98c379; }
+  .cl-code-block .num { color: #d19a66; }
+  .cl-code-block .cmt { color: #5c6370; font-style: italic; }
+  .cl-code-block .fn { color: #61afef; }
+  .cl-code-block .type { color: #e5c07b; }
+  .cl-code-block .blank {
+    display: inline-block; min-width: 50px; padding: 0 6px;
+    border-bottom: 2px solid var(--accent); color: transparent;
+  }
+  .cl-code-block .blank.revealed { color: var(--accent); }
+
+  /* ── 生活化比喻 ── */
+  .cl-analogy {
+    background: rgba(101, 154, 210, 0.1);
+    border-left: 3px solid var(--cpp-blue);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px; margin: 10px 0;
+    font-size: 12px; color: var(--text-dim); line-height: 1.6;
+  }
+  .cl-analogy b { color: var(--cpp-blue); }
+
+  /* ── 提示 ── */
+  .cl-tip {
+    background: rgba(184, 134, 11, 0.1);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 8px 8px 0;
+    padding: 10px 14px; margin: 10px 0;
+    font-size: 12px; color: var(--text-dim); line-height: 1.6;
+  }
+  .cl-tip b { color: var(--accent); }
+
+  /* ── 题目区域 ── */
+  .cl-question {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 16px;
+    animation: slideIn .3s ease;
+  }
+  .cl-question .q-tag {
+    display: inline-block; padding: 2px 10px; border-radius: 10px;
+    font-size: 10px; font-weight: 600;
+    background: var(--cpp-blue); color: #fff; margin-bottom: 12px;
+  }
+  .cl-question .q-prompt {
+    font-size: 14px; color: var(--text); margin-bottom: 14px; line-height: 1.6;
+  }
+
+  /* ── 答题输入 ── */
+  .cl-input-row {
+    display: flex; gap: 8px; align-items: center; margin-top: 12px;
+  }
+  .cl-input {
+    flex: 1; padding: 10px 14px; border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 14px; font-family: 'Cascadia Code', 'Consolas', monospace;
+    outline: none; transition: border-color .15s;
+  }
+  .cl-input:focus { border-color: var(--accent); }
+  .cl-input::placeholder { color: var(--text-faint); }
+
+  /* ── 选项按钮组 ── */
+  .cl-options {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 12px;
+  }
+  .cl-option {
+    padding: 10px 14px; border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 13px; font-family: 'Cascadia Code', 'Consolas', monospace;
+    cursor: pointer; transition: all .15s;
+    text-align: left;
+  }
+  .cl-option:hover { border-color: var(--accent); background: var(--accent-dim); }
+  .cl-option.correct { border-color: var(--success); background: rgba(34,197,94,.15); }
+  .cl-option.wrong { border-color: var(--danger); background: rgba(224,80,80,.15); }
+  .cl-option.disabled { pointer-events: none; opacity: .6; }
+
+  /* ── 反馈 ── */
+  .cl-feedback {
+    padding: 12px 16px; border-radius: 8px; margin-top: 12px;
+    font-size: 13px; line-height: 1.6; animation: slideIn .2s ease;
+  }
+  .cl-feedback.ok { background: rgba(34,197,94,.1); border: 1px solid var(--success-dim); color: var(--success); }
+  .cl-feedback.no { background: rgba(224,80,80,.1); border: 1px solid var(--danger); color: var(--danger); }
+  .cl-feedback.info { background: rgba(101,154,210,.1); border: 1px solid var(--cpp-blue); color: var(--text-dim); }
+
+  /* ── 关卡地图 ── */
+  .cl-map {
+    display: flex; flex-wrap: wrap; gap: 10px; padding: 8px 0;
+  }
+  .cl-map-node {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    cursor: pointer; transition: transform .15s;
+  }
+  .cl-map-node:hover { transform: scale(1.08); }
+  .cl-map-circle {
+    width: 38px; height: 38px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: bold; border: 2px solid var(--border);
+    background: var(--bg-input); color: var(--text-faint);
+  }
+  .cl-map-node.completed .cl-map-circle {
+    background: var(--success-dim); border-color: var(--success); color: #fff;
+  }
+  .cl-map-node.current .cl-map-circle {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+    box-shadow: 0 0 0 4px rgba(184,134,11,.2);
+  }
+  .cl-map-node.locked { cursor: default; opacity: .4; }
+  .cl-map-label {
+    font-size: 10px; color: var(--text-faint); text-align: center;
+    max-width: 70px; line-height: 1.3;
+  }
+  .cl-map-node.completed .cl-map-label { color: var(--success); }
+  .cl-map-node.current .cl-map-label { color: var(--accent); font-weight: 600; }
+
+  /* ── Toast ── */
+  #cl-toast {
+    position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%) translateY(10px);
+    background: var(--bg-elev); border: 1px solid var(--border);
+    padding: 8px 18px; border-radius: 20px;
+    font-size: 12px; color: var(--text); z-index: 100;
+    opacity: 0; pointer-events: none; transition: opacity .2s, transform .2s;
+  }
+  #cl-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── AI 面板 ── */
+  #cl-ai-panel {
+    position: fixed; right: 0; bottom: 0;
+    width: 360px; max-height: 55%;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 12px 0 0 0;
+    transform: translateX(105%); transition: transform .3s ease;
+    z-index: 50; display: flex; flex-direction: column;
+  }
+  #cl-ai-panel.show { transform: translateX(0); }
+  .cl-ai-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim);
+  }
+  .cl-ai-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--accent); flex-shrink: 0;
+  }
+  .cl-ai-dot.thinking {
+    animation: pulse 1s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: .4; transform: scale(.8); }
+  }
+  .cl-ai-close {
+    margin-left: auto; cursor: pointer; color: var(--text-faint);
+    font-size: 16px; padding: 2px 6px; border-radius: 4px;
+  }
+  .cl-ai-close:hover { color: var(--text); background: var(--bg-input); }
+  .cl-ai-body {
+    padding: 12px 16px; overflow-y: auto; flex: 1;
+    font-size: 13px; line-height: 1.7; color: var(--text);
+  }
+  .cl-ai-body code {
+    background: var(--bg-code); padding: 1px 5px; border-radius: 3px;
+    font-family: 'Cascadia Code', 'Consolas', monospace; font-size: 12px;
+    color: var(--cpp-code);
+  }
+  .cl-ai-body .thinking { color: var(--text-faint); font-style: italic; }
+
+  /* ── 底部操作栏 ── */
+  #cl-bottom {
+    display: flex; gap: 8px; padding: 10px 24px; flex-shrink: 0;
+    background: var(--bg-elev); border-top: 1px solid var(--border);
+    z-index: 20;
+  }
+
+  /* ── 关卡完成 ── */
+  .cl-complete {
+    text-align: center; padding: 40px 20px;
+  }
+  .cl-complete .emoji { font-size: 48px; margin-bottom: 12px; }
+  .cl-complete h2 { font-size: 20px; color: var(--accent); margin-bottom: 8px; }
+  .cl-complete p { color: var(--text-dim); font-size: 13px; }
+</style>
+</head>
+<body>
+<div id="cl-root">
+
+  <!-- ══ 工具栏 ══ -->
+  <div id="cl-toolbar">
+    <span class="cl-title">
+      <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 1l2 2-2 2-2-2 2-2zM3 6h2v8H3V6zm4 0h2v8H7V6zm4 0h2v8h-2V6z"/></svg>
+      C++ 启蒙
+    </span>
+    <button class="cl-btn" id="cl-btn-map" title="关卡地图">🗺️ 关卡</button>
+    <button class="cl-btn" id="cl-btn-reset" title="重新开始">🔄 重置</button>
+  </div>
+
+  <!-- ══ 统计栏 ══ -->
+  <div id="cl-stats">
+    <div class="stat-item">📝 已答 <b id="cl-answered">0</b></div>
+    <div class="stat-item">✅ 正确 <b id="cl-correct">0</b></div>
+    <div class="stat-item">❌ 错误 <b id="cl-wrong">0</b></div>
+    <div class="stat-item">🔥 连续 <b id="cl-streak">0</b></div>
+    <div class="stat-item rate">📊 正确率 <b id="cl-rate">—</b></div>
+    <div class="stat-item" style="margin-left:auto">⏱ <span id="cl-timer">0:00</span></div>
+  </div>
+
+  <!-- ══ 进度条 ══ -->
+  <div class="cl-progress-bar"><div class="fill" id="cl-progress" style="width:0%"></div></div>
+
+  <!-- ══ 滚动内容区 ══ -->
+  <div id="cl-scroll">
+    <!-- 欢迎页 / 关卡地图 / 知识卡+练习 动态渲染 -->
+  </div>
+
+  <!-- ══ 底部操作 ══ -->
+  <div id="cl-bottom">
+    <button class="cl-btn primary" id="cl-btn-start">🚀 开始学习</button>
+    <button class="cl-btn" id="cl-btn-ai" style="display:none">🤖 问 AI 老师</button>
+    <button class="cl-btn" id="cl-btn-next" style="display:none">下一关 →</button>
+  </div>
+
+  <!-- ══ AI 面板 ══ -->
+  <div id="cl-ai-panel">
+    <div class="cl-ai-header">
+      <span class="cl-ai-dot" id="cl-ai-dot"></span>
+      AI 编程小老师
+      <span class="cl-ai-close" id="cl-ai-close">✕</span>
+    </div>
+    <div class="cl-ai-body" id="cl-ai-body">
+      <div class="thinking">等待提问...</div>
+    </div>
+  </div>
+
+  <!-- ══ Toast ══ -->
+  <div id="cl-toast"></div>
+</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════════════════════════════
+//  宿主通信层 — postMessage bridge
+// ═══════════════════════════════════════════════════════════════
+
+var reqId = 0;
+var pending = {};
+
+function hostCall(method, args) {
+  var id = ++reqId;
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      if (pending[id]) { delete pending[id]; reject('timeout: ' + method); }
+    }, 30000);
+    pending[id] = {
+      resolve: function(v) { clearTimeout(timer); resolve(v); },
+      reject: function(e) { clearTimeout(timer); reject(e); }
+    };
+    window.parent.postMessage({
+      source: 'cpp-learning', id: id, method: method, args: args || []
+    }, '*');
+  });
+}
+
+window.addEventListener('message', function(ev) {
+  var data = ev.data;
+  if (!data || data.target !== 'cpp-learning') return;
+  if (data.id && pending[data.id]) {
+    if (data.error) pending[data.id].reject(data.error);
+    else pending[data.id].resolve(data.result);
+    delete pending[data.id];
+    return;
+  }
+  if (data.type === 'theme') applyTheme(data.cssVars || {});
+  if (data.type === 'conversationUpdate' && data.conv) handleConvUpdate(data.conv);
+});
+
+function applyTheme(vars) {
+  for (var key in vars) document.documentElement.style.setProperty(key, vars[key]);
+}
+hostCall('getTheme', []).then(function(v) { if (v) applyTheme(v); }).catch(function() {});
+
+// ═══════════════════════════════════════════════════════════════
+//  关卡内容数据 — C++ 启蒙课程
+// ═══════════════════════════════════════════════════════════════
+
+var LESSONS = [
+  // ── 第 1 关: 认识 C++ ──
+  {
+    id: 1, title: 'C++ 是什么？', icon: '👋',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<b>C++</b> 是一种编程语言，就像我们用中文跟人说话一样，我们用 C++ 跟电脑说话！' },
+        { type: 'para', text: '电脑本身听不懂人话，但学会了 C++ 你就能让电脑帮你做事——比如算数、画图、做游戏 🎮' },
+        { type: 'code', code: '#include <iostream>\nusing namespace std;\n\nint main() {\n    cout << "Hello!";\n    return 0;\n}' },
+        { type: 'analogy', text: '想象 C++ 就是你和电脑之间的<b>"翻译官"</b>。你说"打印 Hello"，翻译官帮你翻译成电脑能懂的信号。' },
+        { type: 'tip', text: '<code>#include</code> 是"带上工具箱"的意思。<code>cout</code>（读作 C-out）就是把文字"送出去"显示在屏幕上。' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '下面哪行代码可以让电脑显示文字？',
+      options: ['cin >> x;', 'cout << "Hello!";', 'int x = 5;', 'return 0;'],
+      answer: 1,
+      hint: '想想哪个像"输出"——把东西送出去'
+    }
+  },
+
+  // ── 第 2 关: 变量 ──
+  {
+    id: 2, title: '变量 — 魔法盒子', icon: '📦',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<b>变量</b> 就像一个有名字的<b>"魔法盒子"</b>，你可以在里面存东西。' },
+        { type: 'para', text: '不同的盒子装不同的东西：<code>int</code> 盒子装整数，<code>string</code> 盒子装文字，<code>double</code> 盒子装小数。' },
+        { type: 'code', code: 'int age = 10;        // 整数: 年龄\nstring name = "小明";  // 文字: 名字\ndouble height = 1.4;  // 小数: 身高' },
+        { type: 'analogy', text: '变量就像你书桌上贴了标签的<b>抽屉</b>——一个写"年龄"、一个写"名字"。往里面放东西后，看一眼标签就能找到。' },
+        { type: 'tip', text: '记住：<code>int</code> = 整数(integer)、<code>string</code> = 文字串、<code>double</code> = 小数。<b>等号 = 是"放进盒子"的意思</b>，不是数学的"等于"。' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '要存一个人的名字"小红"，应该用哪种"盒子"（变量类型）？',
+      options: ['int', 'string', 'double', 'cout'],
+      answer: 1,
+      hint: '名字是文字，哪种类型像"文字"？'
+    }
+  },
+
+  // ── 第 3 关: 输出 cout ──
+  {
+    id: 3, title: 'cout — 让电脑说话', icon: '📤',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<code>cout</code> 是"字符输出"的缩写，读作 <b>C-out</b>。它能把文字、数字显示在屏幕上。' },
+        { type: 'para', text: '<code>&lt;&lt;</code> 像一个<b>箭头</b>，把右边的东西"推"到屏幕上。' },
+        { type: 'code', code: 'cout << "你好";     // 显示: 你好\ncout << 3 + 4;      // 显示: 7\ncout << "我" << "是" << "小明";  // 显示: 我是小明' },
+        { type: 'analogy', text: '把 <code>cout</code> 想象成一台<b>打印机</b>，<code>&lt;&lt;</code> 就是你把纸"塞进去"的动作。' },
+        { type: 'tip', text: '文字要用<b>双引号</b> <code>" "</code> 包起来：<code>cout &lt;&lt; "hi"</code>。数字不用：<code>cout &lt;&lt; 42</code>。' }
+      ]
+    },
+    question: {
+      type: 'fill',
+      prompt: '请补全代码，让电脑显示 "Hello World"：',
+      codeBefore: 'cout',
+      codeAfter: ';  // 显示 Hello World',
+      placeholder: '在这里填...',
+      answer: '<< "Hello World"',
+      hint: '需要一个箭头符号 + 双引号包起来的文字'
+    }
+  },
+
+  // ── 第 4 关: 输入 cin ──
+  {
+    id: 4, title: 'cin — 听你说', icon: '👂',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<code>cin</code> 读作 <b>C-in</b>，和 <code>cout</code> 相反——它负责<b>听</b>，把用户键盘输入的内容存到变量里。' },
+        { type: 'para', text: '<code>&gt;&gt;</code> 像一个<b>反方向箭头</b>，把输入"接住"放进变量。' },
+        { type: 'code', code: 'int age;\ncout << "你几岁？";\ncin >> age;          // 把输入的数字存进 age\ncout << "你" << age << "岁了！";' },
+        { type: 'analogy', text: '如果 <code>cout &lt;&lt;</code> 是你向别人<b>递东西</b>，那 <code>cin &gt;&gt;</code> 就是<b>接东西</b>。箭头方向刚好相反！' },
+        { type: 'tip', text: '记忆口诀：<b>cout 出去用 &lt;&lt;，cin 进来用 &gt;&gt;</b>。箭头指向数据的流向。' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '哪个符号配合 cin 使用，把输入存到变量？',
+      options: ['<<', '>>', '==', '&&'],
+      answer: 1,
+      hint: 'cin 是"进来"，箭头方向和 cout 相反'
+    }
+  },
+
+  // ── 第 5 关: 条件判断 if-else ──
+  {
+    id: 5, title: 'if-else — 选路口', icon: '🔀',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<code>if</code> 是"如果"，<code>else</code> 是"否则"。电脑会根据<b>条件</b>选择走哪条路。' },
+        { type: 'code', code: 'int score;\ncin >> score;\nif (score >= 60) {\n    cout << "及格了！🎉";\n} else {\n    cout << "再加油~";\n}' },
+        { type: 'analogy', text: '走到十字路口——<b>if 左边有学校就走左边，else 就走右边</b>。电脑也一样：条件成立走 if，不成立走 else。' },
+        { type: 'tip', text: '比较符号：<code>&gt;=</code> 大于等于、<code>&lt;=</code> 小于等于、<code>==</code> 等于（注意是<b>两个</b>等号！）、<code>!=</code> 不等于。' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '判断两个数是否相等，应该用哪个符号？',
+      options: ['=', '==', '!=', '>='],
+      answer: 1,
+      hint: '一个 = 是赋值（放东西进盒子），判断相等要用两个'
+    }
+  },
+
+  // ── 第 6 关: 循环 for ──
+  {
+    id: 6, title: 'for 循环 — 重复魔法', icon: '🔁',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<code>for</code> 循环让电脑<b>重复做同一件事</b>，不用你自己写很多遍。' },
+        { type: 'code', code: 'for (int i = 1; i <= 5; i++) {\n    cout << "第" << i << "次\\n";\n}\n// 显示 5 行: 第1次 ~ 第5次' },
+        { type: 'analogy', text: '就像体育课跑圈——老师说"跑 5 圈"，你就绕跑道重复 5 次。<code>i</code> 就是你的<b>计数器</b>，帮你记住跑了几圈。' },
+        { type: 'tip', text: '<code>i++</code> 是 <code>i = i + 1</code> 的缩写，意思是"加 1"。三要素：<b>起点</b>(i=1)、<b>终点</b>(i&lt;=5)、<b>步子</b>(i++)。' }
+      ]
+    },
+    question: {
+      type: 'fill',
+      prompt: '补全代码：让循环从 1 跑到 3：',
+      codeBefore: 'for (int i = 1; i ',
+      codeAfter: '; i++) {',
+      placeholder: '条件...',
+      answer: '<= 3',
+      hint: '要跑到 3（含3），用什么比较符号？'
+    }
+  },
+
+  // ── 第 7 关: 函数 ──
+  {
+    id: 7, title: '函数 — 魔法食谱', icon: '📋',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<b>函数</b>就像一份<b>食谱</b>——你定义好步骤，以后每次叫它的名字就能用。' },
+        { type: 'code', code: '// 定义一个"打招呼"函数\nvoid sayHello(string name) {\n    cout << "你好, " << name;\n}\n\n// 使用它\nsayHello("小明");  // 显示: 你好, 小明' },
+        { type: 'analogy', text: '函数 = <b>食谱</b>。<b>参数</b>（name）= 你给的食材。<b>调用</b>函数 = 按食谱做菜。<code>void</code> = 这道菜不需要"端出来"（不返回值）。' },
+        { type: 'tip', text: '<code>void</code> 表示"什么都不返回"。<code>int</code> 开头的函数会返回一个整数——就像食谱最终产出一道菜。' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '函数前面的 void 是什么意思？',
+      options: ['函数没有名字', '函数不返回任何东西', '函数是私密的', '函数速度很快'],
+      answer: 1,
+      hint: '想想食谱——有些食谱做出一道菜，有些只是"做动作"'
+    }
+  },
+
+  // ── 第 8 关: 数组 ──
+  {
+    id: 8, title: '数组 — 编号抽屉', icon: '🗄️',
+    card: {
+      tag: '知识卡',
+      content: [
+        { type: 'para', text: '<b>数组</b> 是一排<b>编了号的抽屉</b>，可以一次性存很多个同类的东西。' },
+        { type: 'code', code: 'int scores[5] = {90, 85, 78, 92, 88};\n\n// 注意: 编号从 0 开始！\ncout << scores[0];  // 第1个: 90\ncout << scores[2];  // 第3个: 78' },
+        { type: 'analogy', text: '想象鞋柜里一排抽屉，从<b>0 号</b>开始编号。第一个抽屉是 0 号（不是 1 号！）——这是编程的特别之处。' },
+        { type: 'tip', text: '⚠️ 编号从 <b>0</b> 开始！5 个抽屉的编号是 0,1,2,3,4（不是 1~5）。这是初学者最容易搞错的！' }
+      ]
+    },
+    question: {
+      type: 'choice',
+      prompt: '数组 int arr[5] 有 5 个元素，最后一个元素的编号是？',
+      options: ['5', '4', '1', '0'],
+      answer: 1,
+      hint: '编号从 0 开始，5 个就是 0,1,2,3,4'
+    }
+  }
+];
+
+// ═══════════════════════════════════════════════════════════════
+//  状态 / State
+// ═══════════════════════════════════════════════════════════════
+
+var state = {
+  currentLesson: 0,   // 当前关卡索引 (0-based)
+  unlocked: 1,         // 已解锁到第几关
+  answered: false,     // 当前题是否已答
+  answeredCount: 0,
+  correctCount: 0,
+  wrongCount: 0,
+  streak: 0,
+  startTime: 0,
+  completed: [],       // 已完成关卡 ID 列表
+  waitingAI: false,
+  waitingConvId: null,
+};
+
+var elScroll    = document.getElementById('cl-scroll');
+var elStart     = document.getElementById('cl-btn-start');
+var elNext      = document.getElementById('cl-btn-next');
+var elAI        = document.getElementById('cl-btn-ai');
+var elMap       = document.getElementById('cl-btn-map');
+var elReset     = document.getElementById('cl-btn-reset');
+var elAnswered  = document.getElementById('cl-answered');
+var elCorrect   = document.getElementById('cl-correct');
+var elWrong     = document.getElementById('cl-wrong');
+var elStreak    = document.getElementById('cl-streak');
+var elRate      = document.getElementById('cl-rate');
+var elTimer     = document.getElementById('cl-timer');
+var elProgress  = document.getElementById('cl-progress');
+var elToast     = document.getElementById('cl-toast');
+var elAIPanel   = document.getElementById('cl-ai-panel');
+var elAIBody    = document.getElementById('cl-ai-body');
+var elAIDot     = document.getElementById('cl-ai-dot');
+var elAIClose   = document.getElementById('cl-ai-close');
+
+// ═══════════════════════════════════════════════════════════════
+//  工具函数 / Utilities
+// ═══════════════════════════════════════════════════════════════
+
+function escapeHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function toast(msg) {
+  elToast.textContent = msg;
+  elToast.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(function() { elToast.classList.remove('show'); }, 2000);
+}
+
+// 简易 C++ 代码高亮 / Simple C++ syntax highlight
+function highlightCode(code) {
+  var html = escapeHtml(code);
+  // 注释
+  html = html.replace(/(\/\/.*)/g, '<span class="cmt">$1</span>');
+  // 字符串
+  html = html.replace(/(&quot;.*?&quot;)/g, '<span class="str">$1</span>');
+  // 关键字
+  var kws = ['int', 'string', 'double', 'void', 'for', 'if', 'else', 'return', 'using', 'namespace', 'include'];
+  kws.forEach(function(kw) {
+    var re = new RegExp('\\b' + kw + '\\b', 'g');
+    html = html.replace(re, '<span class="kw">' + kw + '</span>');
+  });
+  // 数字
+  html = html.replace(/\b(\d+(\.\d+)?)\b/g, '<span class="num">$1</span>');
+  // cout / cin
+  html = html.replace(/\b(cout|cin|main)\b/g, '<span class="fn">$1</span>');
+  return html;
+}
+
+// 简易 Markdown 格式化 / Simple markdown for AI responses
+function formatMarkdown(text) {
+  var html = escapeHtml(text);
+  html = html.replace(/```(\w*)\n([\s\S]*?)```/g, function(m, lang, code) {
+    return '<div class="cl-code-block"><pre>' + highlightCode(code.trim()) + '</pre></div>';
+  });
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  html = html.replace(/\n/g, '<br>');
+  return html;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  渲染 / Rendering
+// ═══════════════════════════════════════════════════════════════
+
+function renderWelcome() {
+  elScroll.innerHTML =
+    '<div class="cl-welcome">' +
+      '<div class="big-icon">C++</div>' +
+      '<h1>C++ 启蒙之旅</h1>' +
+      '<p>欢迎来到 C++ 编程世界！8 个趣味关卡，从零开始认识编程。<br>每关一张知识卡 + 一道挑战题，闯关学编程！</p>' +
+      '<div class="cl-welcome-stats">' +
+        '<div class="cl-welcome-stat"><span class="num">8</span><span class="lbl">关卡</span></div>' +
+        '<div class="cl-welcome-stat"><span class="num">8</span><span class="lbl">知识卡</span></div>' +
+        '<div class="cl-welcome-stat"><span class="num">8</span><span class="lbl">挑战题</span></div>' +
+      '</div>' +
+    '</div>';
+  elStart.style.display = '';
+  elNext.style.display = 'none';
+  elAI.style.display = 'none';
+  elProgress.style.width = '0%';
+}
+
+function renderMap() {
+  var html = '<div style="padding:8px 0"><h2 style="font-size:16px;margin-bottom:16px">🗺️ 关卡地图</h2><div class="cl-map">';
+
+  LESSONS.forEach(function(lesson, i) {
+    var cls = 'cl-map-node ';
+    var isCompleted = state.completed.indexOf(lesson.id) >= 0;
+    var isLocked = (i + 1) > state.unlocked;
+    var isCurrent = i === state.currentLesson;
+
+    if (isCompleted) cls += 'completed';
+    else if (isCurrent && !isLocked) cls += 'current';
+    else cls += 'locked';
+
+    var icon = isCompleted ? '✓' : isLocked ? '🔒' : lesson.icon;
+
+    html += '<div class="' + cls + '" data-idx="' + i + '">' +
+      '<div class="cl-map-circle">' + icon + '</div>' +
+      '<div class="cl-map-label">' + (i + 1) + '. ' + lesson.title + '</div>' +
+    '</div>';
+  });
+
+  html += '</div></div>';
+  elScroll.innerHTML = html;
+
+  // 点击关卡
+  document.querySelectorAll('.cl-map-node').forEach(function(node) {
+    if (node.classList.contains('locked')) return;
+    node.addEventListener('click', function() {
+      var idx = parseInt(this.getAttribute('data-idx'));
+      state.currentLesson = idx;
+      renderLesson();
+    });
+  });
+
+  elStart.style.display = 'none';
+  elNext.style.display = 'none';
+  elAI.style.display = 'none';
+}
+
+function renderLesson() {
+  var lesson = LESSONS[state.currentLesson];
+  state.answered = false;
+
+  // 知识卡
+  var html = '<div class="cl-card" id="cl-card-' + lesson.id + '">';
+  html += '<span class="cl-card-tag">' + lesson.card.tag + '</span>';
+  html += '<h2>' + lesson.icon + ' 第 ' + lesson.id + ' 关: ' + lesson.title + '</h2>';
+
+  lesson.card.content.forEach(function(block) {
+    if (block.type === 'para') {
+      html += '<p class="desc">' + block.text + '</p>';
+    } else if (block.type === 'code') {
+      html += '<div class="cl-code-block"><pre>' + highlightCode(block.code) + '</pre></div>';
+    } else if (block.type === 'analogy') {
+      html += '<div class="cl-analogy">💡 <b>比喻:</b> ' + block.text + '</div>';
+    } else if (block.type === 'tip') {
+      html += '<div class="cl-tip">⭐ <b>小贴士:</b> ' + block.text + '</div>';
+    }
+  });
+  html += '</div>';
+
+  // 练习题
+  var q = lesson.question;
+  html += '<div class="cl-question" id="cl-question">';
+  html += '<span class="q-tag">挑战题</span>';
+  html += '<div class="q-prompt">' + q.prompt + '</div>';
+
+  if (q.type === 'choice') {
+    html += '<div class="cl-options" id="cl-options">';
+    q.options.forEach(function(opt, i) {
+      html += '<button class="cl-option" data-idx="' + i + '">' + escapeHtml(opt) + '</button>';
+    });
+    html += '</div>';
+  } else if (q.type === 'fill') {
+    // 代码填空
+    html += '<div class="cl-code-block"><pre>' +
+      highlightCode(q.codeBefore) +
+      '<span style="display:inline-block;min-width:60px"></span>' +
+      highlightCode(q.codeAfter) +
+      '</pre></div>';
+    html += '<div class="cl-input-row">';
+    html += '<input type="text" class="cl-input" id="cl-fill-input" placeholder="' + (q.placeholder || '输入答案...') + '" autocomplete="off">';
+    html += '<button class="cl-btn primary" id="cl-fill-submit">提交</button>';
+    html += '</div>';
+  }
+
+  // 反馈区域
+  html += '<div id="cl-feedback-area"></div>';
+  html += '</div>';
+
+  elScroll.innerHTML = html;
+  elScroll.scrollTop = 0;
+
+  // 绑定答题事件
+  if (q.type === 'choice') {
+    document.querySelectorAll('#cl-options .cl-option').forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        handleChoice(parseInt(this.getAttribute('data-idx')), this);
+      });
+    });
+  } else if (q.type === 'fill') {
+    var input = document.getElementById('cl-fill-input');
+    var submit = document.getElementById('cl-fill-submit');
+    input.addEventListener('keydown', function(e) { if (e.key === 'Enter') submit.click(); });
+    submit.addEventListener('click', function() {
+      var val = input.value.trim();
+      handleFill(val);
+    });
+    input.focus();
+  }
+
+  // 底部按钮
+  elStart.style.display = 'none';
+  elAI.style.display = 'none';
+  elNext.style.display = 'none';
+
+  // 更新进度条
+  var progress = (state.currentLesson / LESSONS.length) * 100;
+  elProgress.style.width = progress + '%';
+}
+
+function handleChoice(selectedIdx, btn) {
+  if (state.answered) return;
+  state.answered = true;
+
+  var lesson = LESSONS[state.currentLesson];
+  var q = lesson.question;
+  var isCorrect = selectedIdx === q.answer;
+
+  // 标记选项
+  document.querySelectorAll('#cl-options .cl-option').forEach(function(b) {
+    b.classList.add('disabled');
+    var idx = parseInt(b.getAttribute('data-idx'));
+    if (idx === q.answer) b.classList.add('correct');
+    else if (idx === selectedIdx) b.classList.add('wrong');
+  });
+
+  showFeedback(isCorrect, lesson, q, q.options[selectedIdx]);
+}
+
+function handleFill(val) {
+  if (state.answered) return;
+  if (!val) { toast('请先输入答案~'); return; }
+  state.answered = true;
+
+  var lesson = LESSONS[state.currentLesson];
+  var q = lesson.question;
+
+  // 容错比较: 去空格，统一比较
+  var normalize = function(s) { return s.replace(/\s+/g, ' ').trim().toLowerCase(); };
+  var isCorrect = normalize(val) === normalize(q.answer);
+
+  showFeedback(isCorrect, lesson, q, val);
+}
+
+function showFeedback(isCorrect, lesson, q, userAnswer) {
+  state.answeredCount++;
+  var fa = document.getElementById('cl-feedback-area');
+
+  if (isCorrect) {
+    state.correctCount++;
+    state.streak++;
+    state.completed.push(lesson.id);
+    if (state.currentLesson + 1 < LESSONS.length) {
+      state.unlocked = Math.max(state.unlocked, state.currentLesson + 2);
+    }
+
+    var praises = ['🎉 太棒了！', '⭐ 完全正确！', '👏 代码小达人！', '🔥 厉害呀！'];
+    var msg = state.streak >= 3
+      ? '🔥 连续 ' + state.streak + ' 题正确！'
+      : praises[Math.floor(Math.random() * praises.length)];
+    fa.innerHTML = '<div class="cl-feedback ok">' + msg + '</div>';
+  } else {
+    state.wrongCount++;
+    state.streak = 0;
+    var correctDisp = q.type === 'choice' ? q.options[q.answer] : q.answer;
+    fa.innerHTML =
+      '<div class="cl-feedback no">😊 没关系！正确答案是 <code>' + escapeHtml(correctDisp) + '</code></div>' +
+      '<div style="margin-top:8px"><button class="cl-btn" id="cl-btn-ask-ai">🤖 请 AI 老师讲解</button></div>';
+    // 绑定 AI 讲解
+    var askBtn = document.getElementById('cl-btn-ask-ai');
+    if (askBtn) {
+      askBtn.addEventListener('click', function() {
+        requestAIGuidance(lesson, q, userAnswer);
+      });
+    }
+  }
+
+  // 更新统计
+  updateStats();
+
+  // 显示底部按钮
+  elAI.style.display = '';
+
+  // 检查是否全部完成
+  var allDone = state.completed.length >= LESSONS.length;
+  if (allDone) {
+    setTimeout(renderComplete, 1200);
+  } else {
+    elNext.style.display = '';
+    elNext.textContent = state.currentLesson + 1 < LESSONS.length ? '下一关 →' : '完成 🏁';
+  }
+
+  // 滚动到反馈
+  fa.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function renderComplete() {
+  var rate = state.answeredCount > 0 ? Math.round(state.correctCount / state.answeredCount * 100) : 0;
+  var emoji = rate >= 80 ? '🏆' : rate >= 60 ? '🎉' : '💪';
+  elScroll.innerHTML =
+    '<div class="cl-card cl-complete">' +
+      '<div class="emoji">' + emoji + '</div>' +
+      '<h2>恭喜通关！</h2>' +
+      '<p>你完成了全部 ' + LESSONS.length + ' 个关卡！</p>' +
+      '<div class="cl-welcome-stats" style="margin-top:20px">' +
+        '<div class="cl-welcome-stat"><span class="num">' + state.correctCount + '</span><span class="lbl">答对</span></div>' +
+        '<div class="cl-welcome-stat"><span class="num">' + state.wrongCount + '</span><span class="lbl">答错</span></div>' +
+        '<div class="cl-welcome-stat"><span class="num">' + rate + '%</span><span class="lbl">正确率</span></div>' +
+      '</div>' +
+      '<p style="margin-top:16px;font-size:12px">点击「关卡」可以重温任意一关哦~</p>' +
+    '</div>';
+  elStart.style.display = '';
+  elStart.textContent = '🔄 再来一次';
+  elNext.style.display = 'none';
+  elAI.style.display = 'none';
+  elProgress.style.width = '100%';
+}
+
+function updateStats() {
+  elAnswered.textContent = state.answeredCount;
+  elCorrect.textContent = state.correctCount;
+  elWrong.textContent = state.wrongCount;
+  elStreak.textContent = state.streak;
+  var rate = state.answeredCount > 0 ? Math.round(state.correctCount / state.answeredCount * 100) : 0;
+  elRate.textContent = state.answeredCount > 0 ? rate + '%' : '—';
+}
+
+function updateTimer() {
+  if (!state.startTime) return;
+  var elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+  var m = Math.floor(elapsed / 60);
+  var s = elapsed % 60;
+  elTimer.textContent = m + ':' + (s < 10 ? '0' + s : s);
+}
+
+setInterval(updateTimer, 1000);
+
+// ═══════════════════════════════════════════════════════════════
+//  AI 引导 / AI guidance (via host Agent)
+// ═══════════════════════════════════════════════════════════════
+
+function requestAIGuidance(lesson, q, userAnswer) {
+  hostCall('getActiveConvId', []).then(function(convId) {
+    if (!convId) { toast('AI 不可用，请先选择对话'); return; }
+
+    var qType = q.type === 'choice' ? '选择题' : '填空题';
+    var qDesc = q.prompt;
+    var correctAns = q.type === 'choice' ? q.options[q.answer] : q.answer;
+
+    var prompt = '## 学习信息\n' +
+      '- 关卡: 第 ' + lesson.id + ' 关 — ' + lesson.title + '\n' +
+      '- 题型: ' + qType + '\n' +
+      '- 题目: ' + qDesc + '\n' +
+      '- 学生答案: ' + userAnswer + '\n' +
+      '- 正确答案: ' + correctAns + '\n' +
+      '- 是否正确: ❌错误\n\n' +
+      '## 请求\n请对这个回答给出反馈和引导。';
+
+    elAIPanel.classList.add('show');
+    elAIBody.innerHTML = '<div class="thinking">AI 小老师正在思考...</div>';
+    elAIDot.classList.add('thinking');
+    state.waitingAI = true;
+    state.waitingConvId = convId;
+
+    hostCall('send', [convId, prompt]).then(function() {
+      // 等待 conversationUpdate
+    }).catch(function(err) {
+      elAIBody.innerHTML = '<span style="color:var(--danger)">AI 连接失败: ' + escapeHtml(String(err)) + '</span>';
+      elAIDot.classList.remove('thinking');
+      state.waitingAI = false;
+    });
+  }).catch(function() { toast('无法连接宿主'); });
+}
+
+function handleConvUpdate(conv) {
+  if (!state.waitingAI || !state.waitingConvId || conv.id !== state.waitingConvId) return;
+  var turns = conv.turns || [];
+  if (turns.length === 0) return;
+  var latest = turns[turns.length - 1];
+  if (latest.done) {
+    state.waitingAI = false;
+    state.waitingConvId = null;
+    elAIDot.classList.remove('thinking');
+    elAIBody.innerHTML = formatMarkdown(latest.answer || '(无回复)');
+  } else if (latest.answer) {
+    elAIBody.innerHTML = '<div style="opacity:.7">' + formatMarkdown(latest.answer) + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  按钮绑定 / Button bindings
+// ═══════════════════════════════════════════════════════════════
+
+elStart.addEventListener('click', function() {
+  // 从第一关开始（或恢复到上次位置）
+  if (state.completed.length >= LESSONS.length) {
+    // 重置
+    state.completed = [];
+    state.unlocked = 1;
+    state.currentLesson = 0;
+    state.answeredCount = 0;
+    state.correctCount = 0;
+    state.wrongCount = 0;
+    state.streak = 0;
+    updateStats();
+  }
+  state.startTime = Date.now();
+  renderLesson();
+});
+
+elNext.addEventListener('click', function() {
+  // 找下一个未完成的关卡
+  var next = state.currentLesson + 1;
+  if (next >= LESSONS.length) { renderComplete(); return; }
+  state.currentLesson = next;
+  renderLesson();
+});
+
+elAI.addEventListener('click', function() {
+  if (elAIPanel.classList.contains('show')) {
+    elAIPanel.classList.remove('show');
+  } else {
+    // 通用提问
+    elAIPanel.classList.add('show');
+    if (!state.waitingAI) {
+      elAIBody.innerHTML = '<div class="thinking">💡 点击错题旁的「请 AI 老师讲解」可以获取详细引导</div>';
+    }
+  }
+});
+
+elAIClose.addEventListener('click', function() {
+  elAIPanel.classList.remove('show');
+});
+
+elMap.addEventListener('click', function() {
+  renderMap();
+});
+
+elReset.addEventListener('click', function() {
+  state.completed = [];
+  state.unlocked = 1;
+  state.currentLesson = 0;
+  state.answeredCount = 0;
+  state.correctCount = 0;
+  state.wrongCount = 0;
+  state.streak = 0;
+  state.startTime = 0;
+  updateStats();
+  elTimer.textContent = '0:00';
+  renderWelcome();
+  toast('已重置进度');
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  初始化 / Init
+// ═══════════════════════════════════════════════════════════════
+
+renderWelcome();
+</script>
+</body>
+</html>
