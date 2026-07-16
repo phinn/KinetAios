@@ -713,7 +713,7 @@ a { color: var(--accent); }
 .s-plugin-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
 .s-plugin-row-err { border-color: var(--danger); }
 .s-plugin-icon { flex-shrink: 0; width: 40px; height: 40px; }
-.s-plugin-icon svg { display: block; }
+.s-plugin-icon svg { display: block; width: 100%; height: 100%; }
 .s-plugin-info { flex: 1; min-width: 0; }
 .s-plugin-name { font-size: 13px; font-weight: 600; }
 .s-plugin-ver { font-size: 11px; color: var(--muted, var(--text-dim)); font-weight: 400; margin-left: 6px; }
