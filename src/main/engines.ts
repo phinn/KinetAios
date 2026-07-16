@@ -18,6 +18,7 @@ import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
 import { getBrand } from './brand';
+import { pluginSystemPrompts } from './plugins';
 
 export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、抓网页、搜索历史记忆来帮用户完成任务。
 该用工具就果断用,不要只给步骤。需要回忆过去做过/聊过的事,用 recall_memory 搜历史。
@@ -150,7 +151,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? ''),
+      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct'),
       memoryBlock,
       snapshot: snap,
       userInput,

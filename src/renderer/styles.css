@@ -696,13 +696,25 @@ a { color: var(--accent); }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track .thumb { transform: translateX(16px); }
 .switch-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 13px; }
-/* plugin list in settings */
-.s-plugin-list { width: 100%; display: flex; flex-direction: column; gap: 6px; }
-.s-plugin-row { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
+/* plugin list in settings — v2 分类卡片 */
+.s-plugin-dropzone { width: 100%; min-height: 56px; border: 2px dashed var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: copy; transition: border-color .15s, background .15s; }
+.s-plugin-dropzone.drag-over { border-color: var(--accent); background: rgba(232,179,57,.06); }
+.s-plugin-list { width: 100%; display: flex; flex-direction: column; gap: 12px; }
+.s-plugin-cat-group { display: flex; flex-direction: column; gap: 6px; }
+.s-plugin-cat-header { font-size: 12px; font-weight: 600; color: var(--muted, var(--text-dim)); text-transform: uppercase; letter-spacing: .04em; padding: 2px 0; }
+.s-plugin-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
+.s-plugin-row-err { border-color: var(--danger); }
+.s-plugin-icon { flex-shrink: 0; width: 40px; height: 40px; }
+.s-plugin-icon svg { display: block; }
+.s-plugin-info { flex: 1; min-width: 0; }
 .s-plugin-name { font-size: 13px; font-weight: 600; }
 .s-plugin-ver { font-size: 11px; color: var(--muted, var(--text-dim)); font-weight: 400; margin-left: 6px; }
 .s-plugin-meta { font-size: 11px; color: var(--muted, var(--text-dim)); margin-top: 2px; }
-.s-plugin-err { display: inline-block; margin-top: 4px; font-size: 11px; color: var(--err, var(--danger)); }
+.s-plugin-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center; }
+.s-plugin-perm { font-size: 10px; padding: 1px 6px; border-radius: 3px; background: rgba(255,255,255,.06); color: var(--muted, var(--text-dim)); border: 1px solid var(--border); }
+.s-plugin-err { display: inline-block; font-size: 11px; color: var(--err, var(--danger)); }
+.s-plugin-uninstall { flex-shrink: 0; background: none; border: none; color: var(--muted, var(--text-dim)); cursor: pointer; padding: 4px; border-radius: 4px; transition: color .15s, background .15s; }
+.s-plugin-uninstall:hover { color: var(--danger); background: rgba(239,68,68,.08); }
 .s-plugin-empty { font-size: 12px; color: var(--muted, var(--text-dim)); padding: 8px 0; font-style: italic; }
 
 /* cron 面板 */

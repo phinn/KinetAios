@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { SkillInfo, SkillType } from '../shared/types';
+import { pluginSlashCommands, loadPluginCommandBody } from './plugins';
 
 type Skill = SkillInfo & { body: string; dir: string };
 
@@ -108,9 +109,21 @@ function ensure(): Map<string, Skill> {
 }
 
 export function listSkills(): SkillInfo[] {
-  return [...ensure().values()]
-    .map(({ body: _body, ...info }) => info)
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // v2: 合并插件贡献的 slash 命令(pluginSlashCommands 每次调 loadPlugins, 有缓存)。
+  const pluginCmds = safePluginSlashCommands();
+  const builtin: SkillInfo[] = [...ensure().values()].map(
+    ({ body: _body, dir: _dir, ...info }) => info,
+  );
+  return [...builtin, ...pluginCmds].sort((a, b) => a.name.localeCompare(b.name));
+}
+
+// 安全包装: 插件加载失败不应影响 skills 列表。
+function safePluginSlashCommands(): SkillInfo[] {
+  try {
+    return pluginSlashCommands();
+  } catch {
+    return [];
+  }
 }
 
 // 返回 body 用于注入;没有该 name 则 null(→ 不是 skill/command/agent 调用)。
@@ -118,6 +131,22 @@ export function listSkills(): SkillInfo[] {
 // (glob/where 递归)会找不到甚至超时。
 export function loadSkillBody(name: string): string | null {
   const s = ensure().get(name.toLowerCase());
-  if (!s) return null;
-  return `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用,例如执行其下的 scripts/xxx):\n${s.dir}\n\n${s.body}`;
+  if (s) {
+    return `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用, 例如执行其下的 scripts/xxx):\n${s.dir}\n\n${s.body}`;
+  }
+  // v2: 再查插件贡献的 slash 命令。
+  const pluginCmd = safeLoadPluginCommandBody(name);
+  if (pluginCmd) {
+    return `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用):\n${pluginCmd.dir}\n\n${pluginCmd.body}`;
+  }
+  return null;
+}
+
+// 安全包装: 插件加载失败不应影响 skill body 查找。
+function safeLoadPluginCommandBody(name: string): { body: string; dir: string } | null {
+  try {
+    return loadPluginCommandBody(name);
+  } catch {
+    return null;
+  }
 }

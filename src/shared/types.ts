@@ -71,7 +71,7 @@ export type SkillType = 'skill' | 'command' | 'agent';
 export type SkillInfo = {
   name: string;
   description: string;
-  source: 'claude' | 'codex';
+  source: 'claude' | 'codex' | 'plugin';
   type: SkillType;
 };
 
@@ -332,9 +332,11 @@ export interface KinetAPI {
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
-  // Plugin SDK:<userData>/plugins/* 下的扩展,贡献 Tool[]。列出 + 强制重载。
-  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; toolCount: number; error?: string; dir: string }>; error?: string }>;
+  // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt。列出 + 重载 + 安装 + 卸载。
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; error?: string; dir: string }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
+  pluginInstall(sourcePath: string): Promise<{ ok: boolean; name?: string; error?: string }>;
+  pluginUninstall(name: string): Promise<{ ok: boolean; error?: string }>;
   // Cron 定时任务:每分钟 tick,匹配的自动起会话发 prompt。
   cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
   cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;

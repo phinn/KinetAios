@@ -1041,7 +1041,11 @@ async function showSettings() {
       <div class="s-section">
         <h3>${tr('settings.sec.plugins')}</h3>
         <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
-          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.plugins.desc')}</span>
+          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.plugins.dragDrop')}</span>
+          <div id="s-plugin-dropzone" class="s-plugin-dropzone">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <span style="font-size:12px;color:var(--muted)">${tr('settings.plugins.install')}</span>
+          </div>
           <div id="s-plugins" class="s-plugin-list"></div>
           <div style="display:flex;gap:8px;align-items:center">
             <button id="s-plugins-reload">${tr('settings.plugins.reload')}</button>
@@ -1219,7 +1223,8 @@ async function showSettings() {
     else if (r.error === 'canceled') showMemMsg(tr('settings.mem.canceled'), false);
     else showMemMsg(r.error ?? 'error', false);
   };
-  // Plugin SDK:列出已加载插件 + 重载按钮。点重载 → invalidate cache → 再拉一遍。
+  // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
+  const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'misc'] as const;
   const renderPlugins = async (): Promise<void> => {
     const el = document.getElementById('s-plugins')!;
     const msg = document.getElementById('s-plugins-msg')!;
@@ -1232,17 +1237,60 @@ async function showSettings() {
       el.innerHTML = `<div class="s-plugin-empty">${tr('settings.plugins.empty')}</div>`;
       return;
     }
-    el.innerHTML = r.items
-      .map((p) => {
-        const errBadge = p.error ? `<span class="s-plugin-err" title="${esc(p.error)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>` : '';
-        return `<div class="s-plugin-row">
-          <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
-          <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${p.author ? ' · ' + esc(p.author) : ''}</div>
-          ${errBadge}
+    // 按分类分组
+    const grouped: Record<string, typeof r.items> = {};
+    for (const p of r.items) {
+      const cat = p.category || 'misc';
+      (grouped[cat] ??= []).push(p);
+    }
+    el.innerHTML = PLUGIN_CATS.filter((c) => grouped[c]?.length)
+      .map((cat) => {
+        const items = grouped[cat]!;
+        const catLabel = tr(`settings.plugins.cat.${cat}` as 'settings.plugins.cat.office');
+        return `<div class="s-plugin-cat-group">
+          <div class="s-plugin-cat-header">${esc(catLabel)} (${items.length})</div>
+          ${items
+            .map((p) => {
+              const errBadge = p.error
+                ? `<span class="s-plugin-err" title="${esc(p.error)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>`
+                : '';
+              const permTags = (p.permissions ?? [])
+                .map((perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`)
+                .join('');
+              const slashInfo = p.slashCommandCount
+                ? ` · ${p.slashCommandCount} ${esc(tr('settings.plugins.slashCommands', { count: p.slashCommandCount }))}`
+                : '';
+              const iconHtml = p.icon ? `<span class="s-plugin-icon">${p.icon}</span>` : '';
+              const hasError = !!p.error;
+              return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}" data-plugin-name="${esc(p.name)}">
+                ${iconHtml}
+                <div class="s-plugin-info">
+                  <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
+                  <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
+                  <div class="s-plugin-tags">${permTags}${errBadge}</div>
+                </div>
+                ${!hasError ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
+              </div>`;
+            })
+            .join('')}
         </div>`;
       })
       .join('');
     msg.textContent = '';
+    // 绑定卸载按钮
+    el.querySelectorAll<HTMLButtonElement>('.s-plugin-uninstall').forEach((btn) => {
+      btn.onclick = async () => {
+        const name = btn.dataset.uninstall!;
+        if (!confirm(tr('settings.plugins.uninstallConfirm', { name }))) return;
+        const r = await api.pluginUninstall(name);
+        if (r.ok) renderPlugins();
+        else {
+          const msgEl = document.getElementById('s-plugins-msg')!;
+          msgEl.style.color = 'var(--danger)';
+          msgEl.textContent = r.error ?? 'error';
+        }
+      };
+    });
   };
   document.getElementById('s-plugins-reload')!.onclick = async () => {
     const msg = document.getElementById('s-plugins-msg')!;
@@ -1252,6 +1300,35 @@ async function showSettings() {
     msg.textContent = r.ok ? tr('settings.plugins.reloaded', { count: r.count ?? 0 }) : (r.error ?? 'error');
     renderPlugins();
   };
+  // 拖放安装
+  const dropzone = document.getElementById('s-plugin-dropzone')!;
+  dropzone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropzone.classList.add('drag-over');
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.classList.remove('drag-over');
+  });
+  dropzone.addEventListener('drop', async (e) => {
+    e.preventDefault();
+    dropzone.classList.remove('drag-over');
+    const files = Array.from(e.dataTransfer?.files ?? []);
+    const msg = document.getElementById('s-plugins-msg')!;
+    // Electron: file.path 有完整路径
+    for (const f of files) {
+      const fp = (f as unknown as { path?: string }).path;
+      if (!fp) continue;
+      const r = await api.pluginInstall(fp);
+      if (r.ok) {
+        msg.style.color = 'var(--ok)';
+        msg.textContent = tr('settings.plugins.installSuccess', { name: r.name ?? '' });
+      } else {
+        msg.style.color = 'var(--danger)';
+        msg.textContent = tr('settings.plugins.installFailed', { error: r.error ?? '' });
+      }
+    }
+    renderPlugins();
+  });
   renderPlugins();
 }
 

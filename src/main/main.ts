@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
-import { pluginListSnap, invalidatePluginCache } from './plugins';
+import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
@@ -887,6 +887,21 @@ function registerIpc(): void {
       invalidatePluginCache();
       const items = pluginListSnap();
       return { ok: true, count: items.length };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // v2: 安装(复制目录) + 卸载(删除目录)。
+  ipcMain.handle('plugin-install', (_e, sourcePath: string) => {
+    try {
+      return installPlugin(sourcePath);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('plugin-uninstall', (_e, name: string) => {
+    try {
+      return uninstallPlugin(name);
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

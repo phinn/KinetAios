@@ -1,0 +1,13 @@
+{
+  "name": "office-suite",
+  "version": "1.0.0",
+  "description": "办公工具套件:文档创建、格式转换、表格提取",
+  "author": "Kinet",
+  "category": "office",
+  "icon": "icon.svg",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands/",
+  "systemPrompt": "prompts/office.md"
+}
