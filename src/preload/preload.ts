@@ -57,6 +57,7 @@ const api: KinetAPI = {
   pluginInstall: (sourcePath: string) => ipcRenderer.invoke('plugin-install', sourcePath),
   pluginUninstall: (name: string) => ipcRenderer.invoke('plugin-uninstall', name),
   pluginToggle: (name: string, enabled: boolean) => ipcRenderer.invoke('plugin-toggle', name, enabled),
+  pluginPanels: () => ipcRenderer.invoke('plugin-panels'),
   cronList: () => ipcRenderer.invoke('cron-list'),
   cronAdd: (t) => ipcRenderer.invoke('cron-add', t),
   cronUpdate: (id, patch) => ipcRenderer.invoke('cron-update', id, patch),

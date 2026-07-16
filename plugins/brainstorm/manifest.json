@@ -1,0 +1,14 @@
+{
+  "name": "brainstorm",
+  "version": "1.0.0",
+  "description": "AI-powered whiteboard panel (Excalidraw + Agent). Draw ideas → ask AI to expand, organize, or challenge them.",
+  "author": "KinetAios",
+  "category": "creative",
+  "icon": "icon.svg",
+  "permissions": [],
+  "engines": ["direct", "claudeCode", "codex"],
+  "systemPrompt": "system-prompt.md",
+  "panel": "panel.html",
+  "panelTitle": "Brainstorm Board",
+  "panelIcon": "icon.svg"
+}

@@ -345,13 +345,16 @@ export interface KinetAPI {
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
-  // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt。列出 + 重载 + 安装 + 卸载。
-  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string }>; error?: string }>;
+  // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt / panel。列出 + 重载 + 安装 + 卸载。
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
   pluginInstall(sourcePath: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   pluginUninstall(name: string): Promise<{ ok: boolean; error?: string }>;
   // 启用/禁用插件(不删除,只是从工具/prompt/命令注入中排除)。
   pluginToggle(name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
+  // Plugin SDK v2.1: 渲染层扩展 —— 插件声明 panel.html, 返回 HTML 内容供 renderer 注入。
+  // Panel 插件获得一个独立的全屏视图 (像 workbench / town 一样), 由插件自己管理 UI。
+  pluginPanels(): Promise<{ ok: boolean; items?: Array<{ name: string; title: string; icon?: string; html: string }>; error?: string }>;
   // Cron 定时任务:每分钟 tick,匹配的自动起会话发 prompt。
   cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
   cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;

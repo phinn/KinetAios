@@ -34,6 +34,11 @@ export interface PluginManifest {
   slashCommands?: string; // 目录路径(相对插件目录), 其下 *.md 成为 slash 命令
   systemPrompt?: string; // 文件路径(相对插件目录), 内容追加到 system prompt
   hooks?: string; // entryPath#exportName, v2 仅支持 onActivate
+  // v2.1 新增: 渲染层扩展 —— 声明一个 panel.html, renderer 注入为独立全屏视图。
+  // panel.html 内可用 <script> 操作 DOM, 通过 window.kinet (preload) 与 main 进程通信。
+  panel?: string; // HTML 文件路径(相对插件目录)
+  panelTitle?: string; // panel 在侧栏菜单中显示的标题
+  panelIcon?: string; // panel 在侧栏菜单中的 SVG 图标文件路径
 }
 
 export interface LoadedPlugin {
@@ -42,6 +47,7 @@ export interface LoadedPlugin {
   tools: Tool[];
   slashCommands: SkillInfo[]; // v2 新增
   systemPromptText?: string; // v2 新增: 已读入的 prompt 文本
+  panelHtml?: string; // v2.1 新增: 已读入的 panel HTML
   error?: string;
 }
 
@@ -240,6 +246,16 @@ export function loadPlugins(): LoadedPlugin[] {
         }
       }
 
+      // 3.5 Panel HTML(v2.1 新增 — 渲染层扩展)
+      let panelHtml: string | undefined;
+      if (manifest.panel) {
+        try {
+          panelHtml = fs.readFileSync(path.join(dir, manifest.panel), 'utf8');
+        } catch {
+          /* 读不了 → 跳过 */
+        }
+      }
+
       // 4. Hooks(v2 新增 — 仅 onActivate)
       if (manifest.hooks) {
         try {
@@ -262,7 +278,7 @@ export function loadPlugins(): LoadedPlugin[] {
         }
       }
 
-      out.push({ manifest, dir, tools, slashCommands, systemPromptText });
+      out.push({ manifest, dir, tools, slashCommands, systemPromptText, panelHtml });
     } catch (e) {
       out.push({
         manifest: { name: path.basename(dir), version: '0' },
@@ -380,6 +396,9 @@ export function pluginListSnap(): Array<{
       tools: p.tools.map((t) => ({ name: t.name, description: t.description })),
       slashCommands: p.slashCommands.map((s) => ({ name: s.name, description: s.description ?? '' })),
       systemPrompt: p.systemPromptText,
+      hasPanel: !!p.panelHtml,
+      panelTitle: p.manifest.panelTitle ?? p.manifest.name,
+      panelIcon: p.manifest.panelIcon ? (() => { try { return fs.readFileSync(path.join(p.dir, p.manifest.panelIcon!), 'utf8'); } catch { return undefined; } })() : undefined,
       enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,
@@ -456,6 +475,20 @@ export function togglePlugin(name: string, enabled: boolean): { ok: boolean; err
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
   }
+}
+
+// ── 导出: Panel 数据(v2.1 新增 — 渲染层扩展) ────────────────
+
+// 返回所有已启用且有 panel 的插件, 含 HTML 内容供 renderer 注入。
+export function pluginPanelsSnap(): Array<{ name: string; title: string; icon?: string; html: string }> {
+  return loadPlugins()
+    .filter((p) => p.panelHtml && isPluginEnabled(p.manifest.name))
+    .map((p) => ({
+      name: p.manifest.name,
+      title: p.manifest.panelTitle ?? p.manifest.name,
+      icon: p.manifest.panelIcon ? (() => { try { return fs.readFileSync(path.join(p.dir, p.manifest.panelIcon!), 'utf8'); } catch { return undefined; } })() : undefined,
+      html: p.panelHtml!,
+    }));
 }
 
 // 强制重载(开发回路 / 设置页刷新按钮)。下次 loadPlugins() 会重新扫。

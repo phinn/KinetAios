@@ -19,7 +19,10 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
-let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' = 'chat';
+let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' | string = 'chat';
+// 插件 panel 注册表: name → { title, icon, html }。init 时从 main 加载。
+// Plugin panel registry: name → { title, icon, html }. Loaded from main on init.
+let pluginPanelRegistry: Array<{ name: string; title: string; icon?: string; html: string }> = [];
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
@@ -1758,6 +1761,19 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('m-timeline')!.onclick = () => { closeMoreMenu(); showTimeline(); };
   document.getElementById('m-mgraph')!.onclick = () => { closeMoreMenu(); void api.openMemoryGraph(); };
 
+  // 插件 Panel 入口(v2.1): 动态添加到 ⋯ 更多菜单底部
+  // Plugin Panel entries (v2.1): dynamically appended to the ⋯ more menu
+  void loadPluginPanels().then(() => {
+    const menu = document.getElementById('sb-more-menu')!;
+    for (const panel of pluginPanelRegistry) {
+      const btn = document.createElement('button');
+      btn.className = 'sb-more-item';
+      btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
+      btn.onclick = () => { closeMoreMenu(); showPluginPanel(panel.name); };
+      menu.appendChild(btn);
+    }
+  });
+
   // ⋯ 更多菜单:点击切换 open,点外部收起
   const moreMenu = document.getElementById('sb-more-menu')!;
   const moreBtn = document.getElementById('btn-more')!;
@@ -2467,6 +2483,8 @@ function hideAllViews(): void {
     // 切走时重置滚动位置,避免回来时停在底部 / 布局错乱
     el.scrollTop = 0;
   }
+  // 隐藏所有插件 panel 视图 / Hide all plugin panel views
+  document.querySelectorAll('.plugin-panel-view').forEach((el) => el.classList.remove('active'));
 }
 
 function showWorkbench() {
@@ -2499,6 +2517,44 @@ async function showTown() {
   } catch { /* ignore — main may not be ready yet */ }
   renderTown();
 }
+
+// ── 插件 Panel 视图(v2.1: 渲染层扩展)──
+// 从 main 加载已启用插件的 panel HTML, 注入 DOM 容器, 并在"更多"菜单中添加入口。
+async function loadPluginPanels(): Promise<void> {
+  try {
+    const res = await api.pluginPanels();
+    if (!res.ok || !res.items || res.items.length === 0) return;
+    pluginPanelRegistry = res.items;
+
+    // 注入 DOM: 每个面板一个 <div class="view plugin-panel-view" id="plugin-panel-<name>">
+    const container = document.getElementById('plugin-panels-container')!;
+    for (const panel of res.items) {
+      const viewId = `plugin-panel-${panel.name}`;
+      let viewEl = document.getElementById(viewId);
+      if (!viewEl) {
+        viewEl = document.createElement('div');
+        viewEl.id = viewId;
+        viewEl.className = 'view plugin-panel-view';
+        container.appendChild(viewEl);
+      }
+      viewEl.innerHTML = panel.html;
+    }
+  } catch { /* main 尚未就绪 / main not ready yet */ }
+}
+
+// 显示某个插件的面板 / Show a specific plugin's panel view
+function showPluginPanel(name: string): void {
+  currentView = `plugin:${name}`;
+  hideAllViews();
+  document.getElementById(`plugin-panel-${name}`)?.classList.add('active');
+  syncViewButtons();
+}
+
+// 插件 panel 可读取当前活动会话 ID (供 panel 内的 AI 操作使用)
+// Plugin panels can read the current active conversation ID via this global.
+function getActiveConvId(): string | null { return selectedId; }
+// 暴露到 window, panel HTML 中的 <script> 可通过 window.__kinet.getActiveConvId() 获取
+;(window as unknown as { __kinet: unknown }).__kinet = { getActiveConvId };
 
 // 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
 function syncViewButtons(): void {
