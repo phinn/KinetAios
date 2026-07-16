@@ -1436,6 +1436,8 @@ async function showSettings() {
           row.classList.toggle('s-plugin-row-disabled', !enabled);
           const icon = row.querySelector('.s-plugin-icon');
           if (icon) icon.classList.toggle('s-plugin-icon-off', !enabled);
+          // 刷新侧栏面板菜单(toggle 后 panel 列表可能变化) — Refresh sidebar panel menu.
+          void loadPluginPanels().then(() => { rebuildPluginPanelMenu(); });
         } else {
           cb.checked = !enabled; // 回滚 — Revert.
           const msg = document.getElementById('s-plugins-msg')!;
@@ -1769,16 +1771,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
 
   // 插件 Panel 入口(v2.1): 动态添加到 ⋯ 更多菜单底部
   // Plugin Panel entries (v2.1): dynamically appended to the ⋯ more menu
-  void loadPluginPanels().then(() => {
-    const menu = document.getElementById('sb-more-menu')!;
-    for (const panel of pluginPanelRegistry) {
-      const btn = document.createElement('button');
-      btn.className = 'sb-more-item';
-      btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
-      btn.onclick = () => { closeMoreMenu(); showPluginPanel(panel.name); };
-      menu.appendChild(btn);
-    }
-  });
+  void loadPluginPanels().then(() => { rebuildPluginPanelMenu(); });
 
   // ⋯ 更多菜单:点击切换 open,点外部收起
   const moreMenu = document.getElementById('sb-more-menu')!;
@@ -2527,6 +2520,23 @@ async function showTown() {
 
 // ── 插件 Panel 视图(v2.1: 渲染层扩展)──
 // 从 main 加载已启用插件的 panel HTML, 注入 DOM 容器, 并在"更多"菜单中添加入口。
+// 重建侧栏 ⋯ 更多菜单中的插件 Panel 按钮(toggle 后调用以刷新菜单)。
+// Rebuild plugin panel entries in the ⋯ more menu (called after toggle to refresh).
+function rebuildPluginPanelMenu(): void {
+  const menu = document.getElementById('sb-more-menu')!;
+  // 移除旧的插件入口(保留非插件项) — Remove old plugin entries (keep non-plugin items).
+  menu.querySelectorAll('.sb-more-item[data-plugin-panel]').forEach((el) => el.remove());
+  // 重新添加 — Re-add.
+  for (const panel of pluginPanelRegistry) {
+    const btn = document.createElement('button');
+    btn.className = 'sb-more-item';
+    btn.dataset.pluginPanel = panel.name;
+    btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
+    btn.onclick = () => { document.getElementById('sb-more-menu')?.classList.remove('open'); showPluginPanel(panel.name); };
+    menu.appendChild(btn);
+  }
+}
+
 async function loadPluginPanels(): Promise<void> {
   try {
     const res = await api.pluginPanels();
