@@ -771,11 +771,24 @@
     if (excaliReady) {
       var api = excaliAPI;
       if (!api) { toast('Canvas API not ready'); return; }
-      var existing = api.getSceneElements();
+
+      // 生成唯一 ID — crypto.randomUUID 在 sandbox 里可能不可用 / UUID fallback for sandbox
+      function genId() {
+        try { return crypto.randomUUID(); }
+        catch (e) { return 'el-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10); }
+      }
+
+      // 安全获取已有元素 / Safely get existing elements
+      var existing = [];
+      try { existing = api.getSceneElements() || []; } catch (e) { existing = cachedEls || []; }
+
+      console.log('[brainstorm] addToCanvas: existing=' + existing.length + ' new=' + newEls.length);
 
       var nextEls = newEls.map(function(e) {
-        return {
-          id: crypto.randomUUID(),
+        var isText = (e.type || 'text') === 'text';
+        var isArrow = e.type === 'arrow';
+        var el = {
+          id: genId(),
           type: e.type || 'text',
           x: e.x || 100,
           y: e.y || 400,
@@ -783,7 +796,7 @@
           height: e.height || 60,
           angle: 0,
           strokeColor: '#8b5cf6',
-          backgroundColor: e.type === 'rectangle' ? 'transparent' : 'transparent',
+          backgroundColor: 'transparent',
           fillStyle: 'solid',
           strokeWidth: 1,
           strokeStyle: 'solid',
@@ -791,27 +804,40 @@
           opacity: 100,
           groupIds: [],
           frameId: null,
-          roundness: null,
-          seed: Math.floor(Math.random() * 1000000),
+          roundness: isArrow ? { type: 2 } : null,
+          seed: Math.floor(Math.random() * 1000000) + 1,
           version: 1,
-          versionNonce: Math.floor(Math.random() * 1000000),
+          versionNonce: Math.floor(Math.random() * 1000000) + 1,
           isDeleted: false,
           boundElements: [],
           updated: Date.now(),
           link: null,
-          locked: false,
-          text: e.text || '',
-          fontSize: 16,
-          fontFamily: 1,
-          textAlign: 'center',
-          verticalAlign: 'middle',
-          containerId: null,
-          originalText: e.text || '',
-          lineHeight: 1.25,
-          baseline: 18
+          locked: false
         };
+        if (isText) {
+          el.text = e.text || '';
+          el.fontSize = 16;
+          el.fontFamily = 1;
+          el.textAlign = 'center';
+          el.verticalAlign = 'middle';
+          el.containerId = null;
+          el.originalText = e.text || '';
+          el.lineHeight = 1.25;
+          el.baseline = 18;
+        }
+        // 箭头需要起止点 / Arrow needs points
+        if (isArrow) {
+          el.points = [[0, 0], [e.width || 100, e.height || 40]];
+          el.lastCommittedPoint = null;
+          el.startBinding = null;
+          el.endBinding = null;
+          el.startArrowhead = null;
+          el.endArrowhead = 'arrow';
+        }
+        return el;
       });
 
+      console.log('[brainstorm] addToCanvas: total elements after=' + (existing.length + nextEls.length));
       api.updateScene({ elements: existing.concat(nextEls) });
       toast('Added ' + newEls.length + ' elements');
     } else {
