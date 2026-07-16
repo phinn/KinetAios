@@ -2566,8 +2566,21 @@ function msgPreview(m: ChatMsg): string {
     const text = m.content.map((p) => p.type === 'text' ? p.text : '[image]').join(' ').trim();
     if (text) return text.slice(0, 120);
   }
-  // content 为空/null 但有 tool_calls
-  if (m.tool_calls?.length) return `🔧 ${m.tool_calls.map((tc) => tc.function.name).join(', ')}`;
+  // content 为空/null 但有 tool_calls — 显示工具名 + 参数摘要
+  if (m.tool_calls?.length) {
+    const calls = m.tool_calls.map((tc) => {
+      let args = '';
+      try { args = JSON.parse(tc.function.arguments); } catch { args = tc.function.arguments; }
+      // 只取第一层 key:value 做预览
+      const argStr = typeof args === 'object' && args
+        ? Object.entries(args).slice(0, 2).map(([k, v]) => `${k}: ${String(v).slice(0, 40)}`).join(', ')
+        : String(args).slice(0, 60);
+      return `${tc.function.name}(${argStr})`;
+    }).join(', ');
+    return `🔧 ${calls}`;
+  }
+  // tool 角色回复:显示结果摘要
+  if (m.role === 'tool' && typeof m.content === 'string') return m.content.slice(0, 120);
   // content 为 null/空且无 tool_calls
   if (m.content === null) return '(无文本内容)';
   if (m.content === '') return '(空)';
@@ -2612,6 +2625,7 @@ function renderCtxList(): void {
     const m = ctxInspHistory[i];
     const card = document.createElement('div');
     card.className = 'ctx-insp-msg';
+    card.dataset.role = m.role;
 
     // 头部:role 标签 + 预览 + token + 操作按钮
     const head = document.createElement('div');
@@ -2628,6 +2642,10 @@ function renderCtxList(): void {
 
     const prev = document.createElement('span');
     prev.className = 'ctx-insp-msg-preview';
+    // tool_call 消息(content=null + 有 tool_calls)用等宽字体高亮
+    if (m.role === 'assistant' && m.content == null && m.tool_calls?.length) {
+      prev.classList.add('tool-call');
+    }
     prev.textContent = msgPreview(m);
 
     const tok = document.createElement('span');

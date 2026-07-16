@@ -751,8 +751,12 @@ a { color: var(--accent); }
 .ctx-insp-list { flex: 1; overflow-y: auto; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 .ctx-insp-empty { text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px; }
 .ctx-insp-warn { text-align: center; padding: 40px 20px; color: var(--text-dim); font-size: 13px; line-height: 1.6; }
-.ctx-insp-msg { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); overflow: hidden; margin-bottom: 2px; }
-.ctx-insp-msg.editing { border-color: var(--accent); }
+.ctx-insp-msg { border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); overflow: hidden; margin-bottom: 2px; border-left: 3px solid var(--border); }
+.ctx-insp-msg[data-role="user"] { border-left-color: #6ba6ff; }
+.ctx-insp-msg[data-role="assistant"] { border-left-color: #8ccc6a; }
+.ctx-insp-msg[data-role="tool"] { border-left-color: #d4a83c; margin-left: 20px; }
+.ctx-insp-msg[data-role="system"] { border-left-color: var(--accent); }
+.ctx-insp-msg.editing { border-color: var(--accent); border-left-color: var(--accent); }
 .ctx-insp-msg-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; cursor: pointer; user-select: none; min-height: 36px; }
 .ctx-insp-msg-head:hover { background: rgba(128,128,128,.06); }
 .ctx-insp-msg-idx { font-size: 10px; color: var(--text-faint, var(--text-dim)); font-family: ui-monospace, SFMono-Regular, monospace; width: 20px; text-align: right; flex-shrink: 0; }
@@ -760,7 +764,9 @@ a { color: var(--accent); }
 .ctx-insp-msg-role[data-role="user"] { background: rgba(100,160,255,.15); color: #6ba6ff; }
 .ctx-insp-msg-role[data-role="assistant"] { background: rgba(140,200,100,.15); color: #8ccc6a; }
 .ctx-insp-msg-role[data-role="tool"] { background: rgba(200,160,60,.15); color: #d4a83c; }
+.ctx-insp-msg-role[data-role="system"] { background: rgba(232,179,57,.15); color: var(--accent); }
 .ctx-insp-msg-preview { flex: 1; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; padding: 0 4px; }
+.ctx-insp-msg-preview.tool-call { color: var(--accent); font-family: ui-monospace, SFMono-Regular, monospace; font-size: 11px; }
 .ctx-insp-msg-tok { font-size: 10px; color: var(--text-faint, var(--text-dim)); font-family: ui-monospace, SFMono-Regular, monospace; flex-shrink: 0; }
 .ctx-insp-msg-actions { display: flex; gap: 2px; flex-shrink: 0; }
 .ctx-insp-msg-btn { padding: 2px 6px; font-size: 11px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; border-radius: 3px; }
