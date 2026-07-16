@@ -293,8 +293,17 @@ export interface KinetAPI {
   getSettings(): Promise<AppSettings>;
   saveSettings(s: AppSettings): Promise<boolean>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
-  /** 查询智谱 API 账户状态:余额 + Coding Plan 用量(如果订阅了) */
-  getBalance(): Promise<{ ok: boolean; balance?: string; left?: string; gift?: string; tiers?: Array<{ window: string; used: number; remain: number; reset?: string }>; message?: string }>;
+  /** 查询智谱 API 账户状态: Coding Plan 用量或钱包余额 */
+  getBalance(): Promise<{
+    ok: boolean;
+    codingPlan?: boolean;
+    level?: string;                        // 套餐等级 Lite/Pro/Max
+    tiers?: Array<{ window: string; pct: number; reset?: string }>;
+    balance?: string;
+    left?: string;
+    gift?: string;
+    message?: string;
+  }>;
   listSkills(): Promise<SkillInfo[]>;
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──

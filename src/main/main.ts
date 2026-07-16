@@ -660,26 +660,72 @@ function registerIpc(): void {
     }
   });
 
-  // 查询智谱 API 账户状态 — 余额 + Coding Plan 用量
-  // 统一用 GET {baseURL}/balance 查询。智谱返回 data 包含:
-  //   - 钱包余额: totalBalance / balance / giftBalance
-  //   - Coding Plan 用量(如果有订阅): data.limits[] 数组
-  //     · unit=3 → 5 小时滚动窗口(used/remain/nextResetTime)
-  //     · unit=6 → 每周窗口(used/remain/nextResetTime)
-  // Coding Plan 端点(/api/coding/paas/v4)本身可能不响应 /balance,
-  // 改用标准端点 /api/paas/v4/balance 查询(同一个 key 同一个账户)。
-  // 参考: CC Switch (github.com/farion1231/cc-switch) coding_plan.rs 实现。
+  // 查询智谱 API 账户状态 — Coding Plan 用量 + 钱包余额
+  // 参考 CC Switch (github.com/farion1231/cc-switch) coding_plan.rs:
+  //   1. Coding Plan 用量: GET {host}/api/monitor/usage/quota/limit
+  //      - Auth 头直接放 key,不加 Bearer 前缀
+  //      - 返回 data.limits[],每个条目含 type=TOKENS_LIMIT, unit(3=5h,6=weekly), percentage, nextResetTime
+  //   2. 钱包余额: GET {baseURL}/balance (标准 OpenAI 兼容端点)
+  //      - Auth 头加 Bearer 前缀
+  //      - 返回 data.totalBalance / balance / giftBalance
+  // Coding Plan 用户(baseURL 含 /coding 或 /anthropic)走 1;普通 API 用户走 2。
   ipcMain.handle('get-balance', async () => {
     const s = getSettings();
     if (!s.apiKey) return { ok: false, message: '未设置 API Key' };
-    // 不管用户配的是 coding 端点还是标准端点,统一查标准端点 /api/paas/v4/balance。
-    // coding/paas/v4/balance 和 anthropic/balance 不存在;只有 paas/v4 有 balance。
-    let baseURL = s.baseURL.replace(/\/+$/, '');
-    if (baseURL.includes('/coding/paas/')) {
-      baseURL = baseURL.replace('/coding/paas/', '/paas/');
-    } else if (baseURL.includes('/api/anthropic')) {
-      baseURL = baseURL.replace('/api/anthropic', '/api/paas/v4');
+    const baseURL = s.baseURL.replace(/\/+$/, '');
+    const isCodingPlan = baseURL.includes('/coding') || baseURL.includes('/anthropic');
+
+    // ── Coding Plan:查用量 ──
+    if (isCodingPlan) {
+      // quota 端点固定在 open.bigmodel.cn 或 api.z.ai,不走 /coding 或 /anthropic 路径
+      const host = baseURL.toLowerCase().includes('bigmodel.cn') ? 'https://open.bigmodel.cn'
+        : baseURL.toLowerCase().includes('z.ai') ? 'https://api.z.ai'
+        : `https://${new URL(baseURL).host}`;
+      const url = `${host}/api/monitor/usage/quota/limit`;
+      try {
+        const resp = await fetch(url, {
+          method: 'GET',
+          // 智谱 quota API 的 Auth 头不加 Bearer 前缀(CC Switch 实测)
+          headers: { Authorization: s.apiKey, 'Content-Type': 'application/json', 'Accept-Language': 'en-US,en' },
+          signal: AbortSignal.timeout(15_000),
+        });
+        if (resp.status === 401 || resp.status === 403) {
+          return { ok: false, message: 'API Key 无效或已过期' };
+        }
+        if (!resp.ok) {
+          const detail = await resp.text().catch(() => '');
+          return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
+        }
+        const j = await resp.json() as Record<string, any>;
+        // 业务级错误:{ success: false, msg: "..." }
+        if (j?.success === false) {
+          return { ok: false, message: j?.msg || 'API 返回错误' };
+        }
+        const data = j?.data ?? {};
+        const level = data?.level ? String(data.level) : undefined; // 套餐等级 Lite/Pro/Max
+        // 解析 limits[] → tiers
+        const tiers: Array<{ window: string; pct: number; reset?: string }> = [];
+        const limits = data?.limits;
+        if (Array.isArray(limits)) {
+          for (const item of limits) {
+            if (!String(item?.type || '').toUpperCase().includes('TOKENS_LIMIT')) continue;
+            const unit = item?.unit;
+            const pct = Number(item?.percentage ?? 0);
+            const resetMs = item?.nextResetTime; // 毫秒时间戳
+            let window = '';
+            if (unit === 3) window = '5h';
+            else if (unit === 6) window = 'weekly';
+            else continue; // 只认 unit 3/6(CC Switch 同策略)
+            tiers.push({ window, pct, reset: resetMs ? String(resetMs) : undefined });
+          }
+        }
+        return { ok: true, codingPlan: true, level, tiers };
+      } catch (e) {
+        return { ok: false, message: (e as Error)?.message ?? String(e) };
+      }
     }
+
+    // ── 普通智谱 API:查余额 ──
     const url = baseURL + '/balance';
     try {
       const resp = await fetch(url, {
@@ -694,30 +740,13 @@ function registerIpc(): void {
       }
       const j = await resp.json() as Record<string, any>;
       const data = j?.data ?? j;
-      // ── 解析钱包余额 ──
-      const balance = String(data?.totalBalance ?? data?.total ?? '?');
-      const left = String(data?.balance ?? data?.left ?? '?');
-      const gift = String(data?.giftBalance ?? data?.gift ?? '0');
-      // ── 解析 Coding Plan 用量(如果返回中有 limits[]) ──
-      // CC Switch 的 unit 分类: 3 = 5h 窗口, 6 = 每周窗口
-      const tiers: Array<{ window: string; used: number; remain: number; reset?: string }> = [];
-      const limits = data?.limits;
-      if (Array.isArray(limits)) {
-        for (const item of limits) {
-          // CC Switch 解析: limit item 含 type(TOKENS_LIMIT)、unit、number、tokens(总量)、used、remain、nextResetTime
-          const unit = item?.unit;
-          const tokens = Number(item?.tokens ?? item?.limit ?? 0);
-          const used = Number(item?.used ?? 0);
-          const remain = Number(item?.remain ?? item?.remaining ?? (tokens - used));
-          const reset = item?.nextResetTime || item?.resetTime;
-          let window = '';
-          if (unit === 3) window = '5h';
-          else if (unit === 6) window = 'weekly';
-          else if (reset) window = 'limit';
-          if (window) tiers.push({ window, used, remain, reset: reset ? String(reset) : undefined });
-        }
-      }
-      return { ok: true, balance, left, gift, tiers };
+      return {
+        ok: true,
+        codingPlan: false,
+        balance: String(data?.totalBalance ?? data?.total ?? '?'),
+        left: String(data?.balance ?? data?.left ?? '?'),
+        gift: String(data?.giftBalance ?? data?.gift ?? '0'),
+      };
     } catch (e) {
       return { ok: false, message: (e as Error)?.message ?? String(e) };
     }

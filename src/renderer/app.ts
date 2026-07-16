@@ -1206,7 +1206,7 @@ async function showSettings() {
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
   };
-  // 查询智谱余额 + Coding Plan 用量
+  // 查询智谱 Coding Plan 用量 / 余额
   document.getElementById('s-balance')!.onclick = async () => {
     const btn = document.getElementById('s-balance') as HTMLButtonElement;
     btn.disabled = true;
@@ -1214,18 +1214,24 @@ async function showSettings() {
     try {
       const r = await api.getBalance();
       if (r.ok) {
-        const parts: string[] = [`💰 余额 ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`];
-        // Coding Plan 用量(如果有)
-        if (r.tiers && r.tiers.length > 0) {
-          for (const t of r.tiers) {
-            const total = t.used + t.remain;
-            const pct = total > 0 ? Math.round((t.used / total) * 100) : 0;
-            const label = t.window === '5h' ? '5h窗口' : t.window === 'weekly' ? '本周' : '限额';
-            const resetStr = t.reset ? ` 重置${formatResetTime(t.reset)}` : '';
-            parts.push(`📦 ${label}: ${pct}%${resetStr}`);
+        if (r.codingPlan) {
+          // Coding Plan — 显示套餐用量
+          const parts: string[] = [];
+          if (r.level) parts.push(`📦 ${r.level}`);
+          if (r.tiers && r.tiers.length > 0) {
+            for (const t of r.tiers) {
+              const label = t.window === '5h' ? '5h窗口' : '本周';
+              const resetStr = t.reset ? ` ${formatResetTime(t.reset)}` : '';
+              parts.push(`${label}: ${t.pct.toFixed(1)}%${resetStr}`);
+            }
+          } else {
+            parts.push('暂无用量数据');
           }
+          showMsg(parts.join(' | '), true);
+        } else {
+          // 普通按量计费 — 显示余额
+          showMsg(`💰 余额 ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
         }
-        showMsg(parts.join(' | '), true);
       } else {
         showMsg(r.message || tr('balance.fail'), false);
       }
