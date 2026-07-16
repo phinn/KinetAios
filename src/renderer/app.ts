@@ -153,6 +153,15 @@ function applyI18nDOM(): void {
     if (conv.id === selectedId) renderMain();
     if (currentView === 'workbench') renderWorkbench();
     if (currentView === 'town') townOnConversationChanged();
+    // 转发 conversation 更新给插件 iframe (替代轮询)
+    // Forward conversation updates to plugin iframe (replaces polling)
+    const iframe = pluginIframe();
+    if (iframe?.contentWindow) {
+      iframe.contentWindow.postMessage(
+        { target: 'brainstorm', type: 'conversationUpdate', conv },
+        '*'
+      );
+    }
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
@@ -2592,7 +2601,6 @@ window.addEventListener('message', async (ev: MessageEvent) => {
 
   const { id, method, args } = data;
   const source = ev.source as (Window | null);
-  console.log('[plugin-bridge] recv', method, 'id=', id, 'source=', source ? 'ok' : 'NULL');
   try {
     let result: unknown;
     switch (method) {
@@ -2603,25 +2611,30 @@ window.addEventListener('message', async (ev: MessageEvent) => {
         result = getThemeCssVars();
         break;
       case 'send':
-        console.log('[plugin-bridge] send args:', args[0], (args[1] as string)?.slice(0, 80));
         result = await api.send(args[0], args[1]);
-        console.log('[plugin-bridge] send result:', result);
         break;
       case 'getConversations':
         result = await api.getConversations();
         break;
       default:
-        console.warn('[plugin-bridge] unknown method:', method);
         source?.postMessage({ target: 'brainstorm', id, error: `Unknown method: ${method}` }, '*');
         return;
     }
-    console.log('[plugin-bridge] reply', method, 'id=', id, 'to source=', source ? 'ok' : 'NULL');
     source?.postMessage({ target: 'brainstorm', id, result }, '*');
   } catch (err) {
-    console.error('[plugin-bridge] error', method, err);
     source?.postMessage({ target: 'brainstorm', id, error: String(err) }, '*');
   }
 });
+
+// 转发 conversation 更新事件给 iframe (替代轮询)
+// Forward conversation update events to iframe (replaces polling)
+// 当对话有 turn 完成时，iframe 能立即收到通知
+let bridgeConvListener: ((conv: import('../shared/types').Conversation) => void) | null = null;
+const pluginIframe = (): HTMLIFrameElement | null => {
+  const container = document.getElementById('plugin-panels-container');
+  if (!container) return null;
+  return container.querySelector('iframe');
+};
 
 // 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
 function syncViewButtons(): void {

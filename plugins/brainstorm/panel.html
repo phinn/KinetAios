@@ -392,6 +392,11 @@
     if (data.type === 'theme') {
       applyTheme(data.cssVars || {});
     }
+
+    // 宿主推送: conversation 更新 (替代轮询) / Host push: conversation update (replaces polling)
+    if (data.type === 'conversationUpdate' && data.conv) {
+      handleConversationUpdate(data.conv);
+    }
   });
 
   // 应用宿主主题变量 / Apply host theme CSS variables
@@ -664,49 +669,58 @@
     });
   }
 
-  // ── 轮询 AI 响应 / Poll conversation for AI reply ──
+  // ── 轮询 AI 响应 (已改用事件推送, 保留兜底轮询) ──
+  // Poll conversation for AI reply (now uses event push, polling as fallback)
+  var waitingConvId = null;
+  var waitAttempts = 0;
+
+  function handleConversationUpdate(conv) {
+    if (!waitingConvId || conv.id !== waitingConvId) return;
+    var turns = conv.turns || [];
+    if (turns.length === 0) return;
+    var latest = turns[turns.length - 1];
+    console.log('[brainstorm] convUpdate:', conv.id, 'turns=' + turns.length, 'done=' + !!latest.done, 'answerLen=' + (latest.answer || '').length);
+    if (latest.done) {
+      waitingConvId = null;
+      finishLoading();
+      displayAIResult(latest);
+    } else if (latest.answer) {
+      // 流式中显示部分文本 / Show streaming text
+      elResultBody.innerHTML = '<div style="opacity:.6">' + formatMarkdown(latest.answer) + '</div>';
+    }
+  }
+
   function waitForResponse(convId) {
-    var attempts = 0;
-    var maxAttempts = 120; // 2 分钟超时 / 2 min timeout
-    var initialTurnCount = 0;
-
-    hostCall('getConversations', []).then(function(convs) {
-      var conv = findConv(convs, convId);
-      initialTurnCount = conv ? turnCount(conv) : 0;
-      poll();
-    }).catch(function() { poll(); });
-
-    function poll() {
-      attempts++;
-      if (attempts > maxAttempts) {
+    waitingConvId = convId;
+    waitAttempts = 0;
+    // 兜底轮询: 每 3s 检查一次 (防事件丢失) / Fallback poll (in case events are missed)
+    function fallbackPoll() {
+      if (!waitingConvId) return; // 已通过事件完成 / Already finished via event
+      waitAttempts++;
+      if (waitAttempts > 40) { // 2 分钟超时 / 2 min timeout
+        waitingConvId = null;
         finishLoading();
         elResultBody.innerHTML = '<span style="color:var(--text-faint)">Response timed out. Check the conversation for results.</span>';
         return;
       }
-
       hostCall('getConversations', []).then(function(convs) {
-        var conv = findConv(convs, convId);
-        if (!conv) { setTimeout(poll, 1500); return; }
-
+        if (!waitingConvId) return; // 已完成
+        var conv = findConv(convs, waitingConvId);
+        if (!conv) { setTimeout(fallbackPoll, 3000); return; }
         var turns = conv.turns || [];
-        if (turns.length > initialTurnCount) {
+        if (turns.length > 0) {
           var latest = turns[turns.length - 1];
-          // Turn.done = true 表示完成 / Turn.done === true means finished
-          if (latest && latest.done) {
+          if (latest.done) {
+            waitingConvId = null;
             finishLoading();
             displayAIResult(latest);
             return;
           }
-          // 流式中显示部分文本 / Show streaming text (Turn.answer, not .text)
-          if (latest && latest.answer) {
-            elResultBody.innerHTML = '<div style="opacity:.6">' + formatMarkdown(latest.answer) + '</div>';
-          }
-          setTimeout(poll, 1500);
-        } else {
-          setTimeout(poll, 1500);
         }
-      }).catch(function() { setTimeout(poll, 1500); });
+        setTimeout(fallbackPoll, 3000);
+      }).catch(function() { setTimeout(fallbackPoll, 3000); });
     }
+    setTimeout(fallbackPoll, 3000);
   }
 
   function findConv(convs, id) {
