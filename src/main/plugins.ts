@@ -346,6 +346,9 @@ export function pluginListSnap(): Array<{
   engines: EngineKind[];
   toolCount: number;
   slashCommandCount: number;
+  tools: { name: string; description: string }[];
+  slashCommands: { name: string; description: string }[];
+  systemPrompt?: string;
   enabled: boolean;
   error?: string;
   dir: string;
@@ -374,6 +377,9 @@ export function pluginListSnap(): Array<{
       engines: p.manifest.engines ?? ['direct'],
       toolCount: p.tools.length,
       slashCommandCount: p.slashCommands.length,
+      tools: p.tools.map((t) => ({ name: t.name, description: t.description })),
+      slashCommands: p.slashCommands.map((s) => ({ name: s.name, description: s.description ?? '' })),
+      systemPrompt: p.systemPromptText,
       enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,

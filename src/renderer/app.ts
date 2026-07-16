@@ -1277,7 +1277,7 @@ async function showSettings() {
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'misc'] as const;
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
-  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; enabled: boolean; error?: string; dir: string }> = [];
+  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string }> = [];
 
   const renderPluginStats = (): void => {
     const el = document.getElementById('s-plugin-stats')!;
@@ -1355,7 +1355,7 @@ async function showSettings() {
 
     return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}${p.enabled ? '' : ' s-plugin-row-disabled'}" data-plugin-name="${esc(p.name)}">
       ${iconHtml}
-      <div class="s-plugin-info">
+      <div class="s-plugin-info" data-plugin-detail="${esc(p.name)}">
         <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
         <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
         <div class="s-plugin-tags">${engineTags}${permTags}${errBadge}</div>
@@ -1367,12 +1367,49 @@ async function showSettings() {
         </label>
         ${!hasError ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
       </div>
+      ${renderPluginDetail(p)}
     </div>`;
   };
 
-  // 绑定卡片交互事件 — Bind card event handlers.
+  // 渲染插件详情面板(初始隐藏,点击卡片信息区展开) — Render plugin detail panel.
+  const renderPluginDetail = (p: typeof pluginCache[number]): string => {
+    const tools = (p.tools ?? []).map(
+      (t) => `<div class="s-plugin-detail-tool"><span class="s-plugin-detail-tool-name">🔧 ${esc(t.name)}</span><span class="s-plugin-detail-tool-desc">${esc(t.description)}</span></div>`,
+    ).join('');
+    const cmds = (p.slashCommands ?? []).map(
+      (c) => `<div class="s-plugin-detail-cmd"><span class="s-plugin-detail-cmd-name">/${esc(c.name)}</span><span class="s-plugin-detail-cmd-desc">${esc(c.description)}</span></div>`,
+    ).join('');
+    const perms = (p.permissions ?? []).map(
+      (perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`,
+    ).join('');
+    const promptPreview = p.systemPrompt
+      ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">系统提示词</div><pre class="s-plugin-detail-prompt">${esc(p.systemPrompt.slice(0, 500))}${p.systemPrompt.length > 500 ? '…' : ''}</pre></div>`
+      : '';
+
+    return `<div class="s-plugin-detail" data-detail-for="${esc(p.name)}" style="display:none">
+      ${tools ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">工具 (${p.tools!.length})</div><div class="s-plugin-detail-list">${tools}</div></div>` : ''}
+      ${cmds ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">Slash 命令 (${p.slashCommands!.length})</div><div class="s-plugin-detail-list">${cmds}</div></div>` : ''}
+      ${perms ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">权限声明</div><div class="s-plugin-detail-perms">${perms}</div></div>` : ''}
+      ${promptPreview}
+      <div class="s-plugin-detail-section"><div class="s-plugin-detail-label">路径</div><code class="s-plugin-detail-path">${esc(p.dir)}</code></div>
+      ${p.error ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label" style="color:var(--danger)">错误详情</div><pre class="s-plugin-detail-error">${esc(p.error)}</pre></div>` : ''}
+    </div>`;
+  };
   const bindPluginCardEvents = (): void => {
     const el = document.getElementById('s-plugins')!;
+
+    // 点击插件信息区展开/收起详情 — Click to expand/collapse detail.
+    el.querySelectorAll<HTMLElement>('[data-plugin-detail]').forEach((info) => {
+      info.onclick = () => {
+        const name = info.dataset.pluginDetail!;
+        const detail = el.querySelector<HTMLElement>(`[data-detail-for="${CSS.escape(name)}"]`);
+        if (!detail) return;
+        const isShown = detail.style.display !== 'none';
+        detail.style.display = isShown ? 'none' : 'block';
+        info.classList.toggle('s-plugin-info-expanded', !isShown);
+      };
+      info.style.cursor = 'pointer';
+    });
 
     // 启用/禁用开关 — Enable/disable toggle.
     el.querySelectorAll<HTMLInputElement>('.s-plugin-toggle').forEach((cb) => {

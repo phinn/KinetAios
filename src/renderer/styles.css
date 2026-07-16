@@ -703,7 +703,7 @@ a { color: var(--accent); }
 .s-plugin-list { width: 100%; display: flex; flex-direction: column; gap: 12px; }
 .s-plugin-cat-group { display: flex; flex-direction: column; gap: 6px; }
 .s-plugin-cat-header { font-size: 12px; font-weight: 600; color: var(--muted, var(--text-dim)); text-transform: uppercase; letter-spacing: .04em; padding: 2px 0; }
-.s-plugin-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
+.s-plugin-row { display: flex; flex-wrap: wrap; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
 .s-plugin-row-err { border-color: var(--danger); }
 .s-plugin-icon { flex-shrink: 0; width: 40px; height: 40px; }
 .s-plugin-icon svg { display: block; }
@@ -739,6 +739,25 @@ a { color: var(--accent); }
 .s-plugin-row-disabled { opacity: .5; }
 .s-plugin-row-disabled:hover { opacity: .85; }
 .s-plugin-icon-off { filter: grayscale(1); opacity: .6; }
+.s-plugin-info { cursor: pointer; transition: background .15s; border-radius: 6px; padding: 2px 4px; margin: -2px -4px; }
+.s-plugin-info:hover { background: rgba(255,255,255,.03); }
+.s-plugin-info-expanded { background: rgba(255,255,255,.04); }
+
+/* 插件详情面板 */
+.s-plugin-detail { flex-basis: 100%; margin-top: 8px; padding: 10px 12px; background: rgba(0,0,0,.18); border-radius: 6px; border: 1px solid var(--border); font-size: 12px; }
+.s-plugin-detail-section { margin-bottom: 10px; }
+.s-plugin-detail-section:last-child { margin-bottom: 0; }
+.s-plugin-detail-label { font-size: 11px; color: var(--muted); margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em; }
+.s-plugin-detail-list { display: flex; flex-direction: column; gap: 4px; }
+.s-plugin-detail-tool, .s-plugin-detail-cmd { display: flex; gap: 8px; align-items: baseline; line-height: 1.4; }
+.s-plugin-detail-tool-name { color: var(--accent); font-weight: 500; white-space: nowrap; min-width: 130px; }
+.s-plugin-detail-tool-desc { color: var(--muted); font-size: 11px; }
+.s-plugin-detail-cmd-name { color: #4fc3f7; font-weight: 500; white-space: nowrap; min-width: 130px; }
+.s-plugin-detail-cmd-desc { color: var(--muted); font-size: 11px; }
+.s-plugin-detail-perms { display: flex; flex-wrap: wrap; gap: 4px; }
+.s-plugin-detail-prompt { background: rgba(0,0,0,.2); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--muted); max-height: 200px; overflow-y: auto; border: 1px solid var(--border); }
+.s-plugin-detail-path { font-size: 10px; color: var(--muted); word-break: break-all; }
+.s-plugin-detail-error { background: rgba(255,0,0,.05); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font-size: 11px; color: var(--danger); border: 1px solid rgba(255,0,0,.15); }
 
 /* 引擎标签 */
 .s-plugin-engine { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(232,179,57,.1); color: var(--accent); border: 1px solid rgba(232,179,57,.2); text-transform: uppercase; letter-spacing: .03em; }
