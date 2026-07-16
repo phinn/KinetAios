@@ -480,6 +480,10 @@ const ZH_CN: Dict = {
   'tray.quit': '退出',
   'readfile.outOfPath': '路径必须在工作目录内',
   'testConn.ok': '连接成功',
+  'balance.query': '查余额',
+  'balance.loading': '查询中…',
+  'balance.unsupported': '当前端点不支持余额查询(仅智谱开放平台)',
+  'balance.fail': '查询失败',
 
   'tmgr.cancelled': '已取消',
   'tmgr.stopped': '已停止',
@@ -1039,6 +1043,10 @@ const EN: Dict = {
   'tray.quit': 'Quit',
   'readfile.outOfPath': 'Path must be inside the working directory',
   'testConn.ok': 'Connection OK',
+  'balance.query': 'Balance',
+  'balance.loading': 'Loading…',
+  'balance.unsupported': 'This endpoint does not support balance query (Zhipu only)',
+  'balance.fail': 'Query failed',
 
   'tmgr.cancelled': 'Cancelled',
   'tmgr.stopped': 'Stopped',
@@ -1600,6 +1608,10 @@ const ZH_TW: Dict = {
   'tray.quit': '結束',
   'readfile.outOfPath': '路徑必須在工作目錄內',
   'testConn.ok': '連線成功',
+  'balance.query': '查餘額',
+  'balance.loading': '查詢中…',
+  'balance.unsupported': '目前端點不支援餘額查詢(僅智譜開放平台)',
+  'balance.fail': '查詢失敗',
 
   'tmgr.cancelled': '已取消',
   'tmgr.stopped': '已停止',
@@ -2161,6 +2173,10 @@ const JA: Dict = {
   'tray.quit': '終了',
   'readfile.outOfPath': 'パスは作業ディレクトリ内である必要があります',
   'testConn.ok': '接続成功',
+  'balance.query': '残高確認',
+  'balance.loading': '確認中…',
+  'balance.unsupported': 'このエンドポイントは残高照会に対応していません(Zhipuのみ)',
+  'balance.fail': '確認失敗',
 
   'tmgr.cancelled': 'キャンセルしました',
   'tmgr.stopped': '停止しました',

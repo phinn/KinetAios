@@ -954,7 +954,7 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
           ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
         </select></div>
-        <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /></div>
+        <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /> <button id="s-balance" style="margin-left:6px;padding:2px 10px;font-size:11px">${tr('balance.query')}</button></div>
         <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
         <div class="field"><label>${tr('settings.modelId')}</label><input id="s-model" value="${esc(s.model)}" /></div>
         <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
@@ -1205,6 +1205,26 @@ async function showSettings() {
     // Test the in-form values, not the last-saved ones (kills the "edit key, test, still old key" trap).
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
+  };
+  // 查询智谱余额
+  document.getElementById('s-balance')!.onclick = async () => {
+    const btn = document.getElementById('s-balance') as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = tr('balance.loading');
+    try {
+      const r = await api.getBalance();
+      if (r.ok) {
+        // 智谱返回: totalBalance(总额)、balance(剩余)、giftBalance(赠送额)
+        showMsg(`💰 余额: ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
+      } else {
+        showMsg(r.message || tr('balance.fail'), false);
+      }
+    } catch (e) {
+      showMsg(tr('balance.fail') + ': ' + (e as Error).message, false);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = tr('balance.query');
+    }
   };
   // 长期记忆导出/导入。结果写入 s-mem-msg(用与 showMsg 同款样式,但不抢 s-msg 通道)。
   const showMemMsg = (text: string, ok: boolean): void => {

@@ -660,6 +660,40 @@ function registerIpc(): void {
     }
   });
 
+  // 查询智谱 API 账户余额 — GET {baseURL}/balance
+  // 仅 open.bigmodel.cn 端点支持此接口;其他 OpenAI 兼容端点(DeepSeek/Qwen/Ollama)返回非 200 → 提示不支持。
+  ipcMain.handle('get-balance', async () => {
+    const s = getSettings();
+    if (!s.apiKey) return { ok: false, message: '未设置 API Key' };
+    // 智谱 balance API 在 v4 根下,不在 /api/paas/v4 下;从 baseURL 推导平台根。
+    // open.bigmodel.cn/api/paas/v4 → https://open.bigmodel.cn/api/paas/v4/balance
+    const url = s.baseURL.replace(/\/+$/, '') + '/balance';
+    try {
+      const resp = await fetch(url, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${s.apiKey}` },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => '');
+        // 404 = 非智谱端点;401 = key 无效
+        if (resp.status === 404) return { ok: false, message: '当前 API 端点不支持余额查询(仅智谱开放平台支持)' };
+        return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
+      }
+      const j = await resp.json() as Record<string, any>;
+      // 智谱返回格式: { success: true, data: { totalBalance, balance, giftBalance } }
+      const data = j?.data ?? j;
+      return {
+        ok: true,
+        balance: String(data?.totalBalance ?? data?.total ?? '?'),
+        left: String(data?.balance ?? data?.left ?? '?'),
+        gift: String(data?.giftBalance ?? data?.gift ?? '0'),
+      };
+    } catch (e) {
+      return { ok: false, message: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   ipcMain.on('confirm-response', (_e, { id, approved }: { id: string; approved: boolean }) => {
     const resolve = pendingConfirms.get(id);
     if (resolve) {

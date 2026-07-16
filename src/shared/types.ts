@@ -293,6 +293,8 @@ export interface KinetAPI {
   getSettings(): Promise<AppSettings>;
   saveSettings(s: AppSettings): Promise<boolean>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
+  /** 查询智谱 API 账户余额(Balance API — 仅 bigmodel.cn 端点支持) */
+  getBalance(): Promise<{ ok: boolean; balance?: string; left?: string; gift?: string; message?: string }>;
   listSkills(): Promise<SkillInfo[]>;
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──
