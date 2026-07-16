@@ -144,6 +144,7 @@ export function loadPlugins(): LoadedPlugin[] {
   const root = path.join(app.getPath('userData'), 'plugins');
   const out: LoadedPlugin[] = [];
   let dirs: string[] = [];
+  // 用户安装的插件 — User-installed plugins.
   try {
     dirs = fs
       .readdirSync(root, { withFileTypes: true })
@@ -151,6 +152,42 @@ export function loadPlugins(): LoadedPlugin[] {
       .map((d) => path.join(root, d.name));
   } catch {
     /* 目录不存在 = 没装插件, 正常路径 */
+  }
+  // 开发模式: 同时扫描项目源码目录的 plugins/ — Dev mode: also scan source-tree plugins/.
+  // 通过 app.isPackaged 判断: 打包后不扫源码目录。
+  if (!app.isPackaged) {
+    // __dirname 在 dist/main/ 下, 往上两级到项目根。
+    const devRoot = path.resolve(__dirname, '..', '..', 'plugins');
+    try {
+      const devDirs = fs
+        .readdirSync(devRoot, { withFileTypes: true })
+        .filter((d) => d.isDirectory())
+        .map((d) => path.join(devRoot, d.name));
+      // 排除 examples/ 子目录本身(只取直接子目录), 并去重(用户安装的优先)
+      const existing = new Set(dirs.map((d) => path.basename(d)));
+      for (const dd of devDirs) {
+        const base = path.basename(dd);
+        if (base === 'examples') {
+          // 扫描 examples/ 下的子目录 — scan subdirs of examples/.
+          try {
+            const exDirs = fs
+              .readdirSync(dd, { withFileTypes: true })
+              .filter((d) => d.isDirectory())
+              .map((d) => path.join(dd, d.name));
+            for (const ed of exDirs) {
+              const eb = path.basename(ed);
+              if (!existing.has(eb)) dirs.push(ed);
+            }
+          } catch { /* examples/ 不存在 */ }
+          continue;
+        }
+        if (!existing.has(base)) dirs.push(dd);
+      }
+    } catch {
+      /* 源码 plugins/ 目录不存在, 跳过 */
+    }
+  }
+  if (!dirs.length) {
     cache = [];
     return cache;
   }
