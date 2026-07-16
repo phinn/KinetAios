@@ -1208,6 +1208,7 @@ async function showSettings() {
   };
   // 查询智谱 Coding Plan 用量 / 余额
   document.getElementById('s-balance')!.onclick = async () => {
+    console.log('[s-balance] button clicked');
     const btn = document.getElementById('s-balance') as HTMLButtonElement;
     btn.disabled = true;
     btn.textContent = tr('balance.loading');

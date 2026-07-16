@@ -75,8 +75,12 @@ function drainConfirms(): void {
 // Send to a window that may be mid-destroy: ?. only guards a null win, not a destroyed webContents.
 function safeSend(win: BrowserWindow | null, channel: string, data: unknown): void {
   if (!win || win.isDestroyed()) return;
+  // webContents 可能先于 BrowserWindow 销毁(窗口正在卸载/刷新中)，
+  // 此时 webContents.send 会抛 "Render frame was disposed"
+  const wc = win.webContents;
+  if (wc.isDestroyed()) return;
   try {
-    win.webContents.send(channel, data);
+    wc.send(channel, data);
   } catch {
     /* webContents torn down between the two checks */
   }
@@ -671,9 +675,11 @@ function registerIpc(): void {
   // Coding Plan 用户(baseURL 含 /coding 或 /anthropic)走 1;普通 API 用户走 2。
   ipcMain.handle('get-balance', async () => {
     const s = getSettings();
+    console.log('[get-balance] apiKey set:', !!s.apiKey, 'baseURL:', s.baseURL);
     if (!s.apiKey) return { ok: false, message: '未设置 API Key' };
     const baseURL = s.baseURL.replace(/\/+$/, '');
     const isCodingPlan = baseURL.includes('/coding') || baseURL.includes('/anthropic');
+    console.log('[get-balance] isCodingPlan:', isCodingPlan, 'baseURL:', baseURL);
 
     // ── Coding Plan:查用量 ──
     if (isCodingPlan) {
