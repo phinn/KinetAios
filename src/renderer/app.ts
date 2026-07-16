@@ -2558,11 +2558,19 @@ function estMsgTokens(content: string | unknown): number {
   return Math.ceil(text.length / 4);
 }
 
-// 提取消息预览文本(截断 100 字)
+// 提取消息预览文本(截断 120 字)
 function msgPreview(m: ChatMsg): string {
-  if (typeof m.content === 'string') return m.content.slice(0, 100);
-  if (Array.isArray(m.content)) return m.content.map((p) => p.type === 'text' ? p.text : '[image]').join(' ').slice(0, 100);
-  if (m.tool_calls?.length) return `[tool_call: ${m.tool_calls.map((tc) => tc.function.name).join(', ')}]`;
+  // 先检查 content
+  if (typeof m.content === 'string' && m.content.trim()) return m.content.slice(0, 120);
+  if (Array.isArray(m.content) && m.content.length) {
+    const text = m.content.map((p) => p.type === 'text' ? p.text : '[image]').join(' ').trim();
+    if (text) return text.slice(0, 120);
+  }
+  // content 为空/null 但有 tool_calls
+  if (m.tool_calls?.length) return `🔧 ${m.tool_calls.map((tc) => tc.function.name).join(', ')}`;
+  // content 为 null/空且无 tool_calls
+  if (m.content === null) return '(无文本内容)';
+  if (m.content === '') return '(空)';
   return '(空)';
 }
 
@@ -2608,6 +2616,10 @@ function renderCtxList(): void {
     // 头部:role 标签 + 预览 + token + 操作按钮
     const head = document.createElement('div');
     head.className = 'ctx-insp-msg-head';
+
+    const idxEl = document.createElement('span');
+    idxEl.className = 'ctx-insp-msg-idx';
+    idxEl.textContent = String(i + 1);
 
     const roleEl = document.createElement('span');
     roleEl.className = 'ctx-insp-msg-role';
@@ -2656,7 +2668,7 @@ function renderCtxList(): void {
     delBtn.onclick = (e) => { e.stopPropagation(); ctxInspHistory.splice(i, 1); renderCtxList(); };
 
     actions.append(upBtn, dnBtn, editBtn, delBtn);
-    head.append(roleEl, prev, tok, actions);
+    head.append(idxEl, roleEl, prev, tok, actions);
     card.appendChild(head);
 
     // 点击头部折叠/展开(已有 body 时移除)
