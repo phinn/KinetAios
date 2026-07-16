@@ -1,0 +1,884 @@
+<!-- 数学练习面板 — Math Practice Panel (v2.1 plugin) -->
+<!-- 面向小学 1-6 年级: 口算挑战 / 分级练习 / 错题本 / AI 引导讲解 -->
+<!-- Runs inside an iframe (srcdoc). Communicates with host via postMessage. -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  /* ── CSS 变量回退值 (iframe 内无法继承宿主 :root) ── */
+  :root {
+    --bg-side: #161619;
+    --bg-elev: #242429;
+    --bg-input: #2a2a31;
+    --border: #34343c;
+    --text: #e7e7ec;
+    --text-dim: #9a9aa4;
+    --text-faint: #6c6c76;
+    --accent: #8b5cf6;
+    --accent-dim: #6d28d9;
+    --success: #22c55e;
+    --success-dim: #16a34a;
+    --danger: #e05050;
+    --warning: #f59e0b;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    height: 100vh; overflow: hidden;
+    background: var(--bg-side);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text);
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  /* ── 布局骨架 ── */
+  #mp-root {
+    display: flex; flex-direction: column; height: 100vh; width: 100%;
+  }
+
+  /* ── 顶部工具栏 ── */
+  #mp-toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    z-index: 20;
+  }
+  .mp-title {
+    font-size: 13px; font-weight: 600;
+    color: var(--text); margin-right: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .mp-title svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+
+  /* ── 按钮 ── */
+  .mp-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    cursor: pointer; transition: background .15s, border-color .15s, opacity .15s;
+  }
+  .mp-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .mp-btn:active { transform: scale(.97); }
+  .mp-btn:disabled { opacity: .35; cursor: default; transform: none; }
+  .mp-btn.primary {
+    background: var(--accent); border-color: var(--accent); color: #fff;
+  }
+  .mp-btn.primary:hover { background: var(--accent-dim); }
+
+  /* ── 选择器 ── */
+  .mp-select {
+    padding: 5px 10px; border-radius: 7px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 12px; cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg width='10' height='6' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239a9aa4' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 10px center;
+    padding-right: 26px;
+  }
+  .mp-select:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  /* ── 统计栏 ── */
+  #mp-stats {
+    display: flex; align-items: center; gap: 16px;
+    padding: 6px 14px; flex-shrink: 0;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim);
+  }
+  .mp-stat { display: flex; align-items: center; gap: 4px; }
+  .mp-stat-val { font-weight: 700; color: var(--text); }
+  .mp-stat-val.correct { color: var(--success); }
+  .mp-stat-val.wrong { color: var(--danger); }
+  .mp-stat-val.streak { color: var(--warning); }
+  #mp-timer { margin-left: auto; font-variant-numeric: tabular-nums; }
+  #mp-timer.running { color: var(--accent); font-weight: 700; }
+
+  /* ── 主体区域 ── */
+  #mp-body {
+    flex: 1; min-height: 0; display: flex;
+    overflow: hidden;
+  }
+
+  /* ── 练习区 ── */
+  #mp-practice {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 20px; gap: 24px; min-width: 0;
+    overflow-y: auto;
+  }
+
+  /* 欢迎界面 */
+  #mp-welcome { text-align: center; color: var(--text-dim); }
+  #mp-welcome .emoji { font-size: 56px; margin-bottom: 16px; }
+  #mp-welcome h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+  #mp-welcome p { font-size: 13px; line-height: 1.6; max-width: 360px; margin: 0 auto; }
+  #mp-welcome .start-btn { margin-top: 20px; }
+
+  /* 题目卡片 */
+  .mp-question-card {
+    width: 100%; max-width: 420px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 32px 28px;
+    text-align: center;
+    transition: border-color .3s, box-shadow .3s;
+    position: relative;
+  }
+  .mp-question-card.correct {
+    border-color: var(--success);
+    box-shadow: 0 0 20px rgba(34, 197, 94, .15);
+  }
+  .mp-question-card.wrong {
+    border-color: var(--danger);
+    box-shadow: 0 0 20px rgba(224, 80, 80, .15);
+    animation: shake .4s ease;
+  }
+  @keyframes shake {
+    0%, 100% { transform: translateX(0); }
+    25% { transform: translateX(-6px); }
+    75% { transform: translateX(6px); }
+  }
+
+  .mp-q-index {
+    font-size: 11px; color: var(--text-faint);
+    margin-bottom: 16px; letter-spacing: .05em;
+  }
+  .mp-q-text {
+    font-size: 40px; font-weight: 800;
+    color: var(--text);
+    letter-spacing: .02em;
+    margin-bottom: 24px;
+    font-variant-numeric: tabular-nums;
+  }
+  .mp-q-equal { color: var(--text-faint); margin: 0 8px; }
+  .mp-q-blank {
+    display: inline-block;
+    min-width: 80px;
+    border-bottom: 3px solid var(--accent);
+    text-align: center;
+    color: var(--accent);
+  }
+  .mp-q-blank.answered { color: var(--text); }
+
+  /* 答案输入 */
+  .mp-answer-row {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+  }
+  .mp-answer-input {
+    width: 140px; height: 52px;
+    text-align: center;
+    font-size: 28px; font-weight: 700;
+    color: var(--text);
+    background: var(--bg-input);
+    border: 2px solid var(--border);
+    border-radius: 12px;
+    outline: none;
+    transition: border-color .2s;
+    font-variant-numeric: tabular-nums;
+    user-select: text; -webkit-user-select: text;
+  }
+  .mp-answer-input:focus { border-color: var(--accent); }
+  .mp-answer-input::placeholder { color: var(--text-faint); font-weight: 400; }
+
+  /* 反馈区 */
+  .mp-feedback {
+    width: 100%; max-width: 420px;
+    padding: 14px 18px;
+    border-radius: 12px;
+    font-size: 13px; line-height: 1.6;
+    animation: fadeIn .3s ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  .mp-feedback.ok {
+    background: rgba(34, 197, 94, .1);
+    border: 1px solid rgba(34, 197, 94, .3);
+    color: var(--success);
+  }
+  .mp-feedback.no {
+    background: rgba(224, 80, 80, .1);
+    border: 1px solid rgba(224, 80, 80, .3);
+    color: var(--text-dim);
+  }
+
+  /* ── AI 引导面板 ── */
+  #mp-ai-panel {
+    width: 340px; flex-shrink: 0;
+    border-left: 1px solid var(--border);
+    background: var(--bg-elev);
+    display: none; flex-direction: column;
+  }
+  #mp-ai-panel.show { display: flex; }
+  .mp-ai-header {
+    padding: 10px 14px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: var(--text);
+  }
+  .mp-ai-header .dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--accent);
+  }
+  .mp-ai-header .dot.thinking { animation: pulse 1s ease infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .3; } }
+  .mp-ai-close {
+    margin-left: auto; cursor: pointer; color: var(--text-faint);
+    font-size: 18px; line-height: 1; padding: 2px 6px; border-radius: 5px;
+    transition: color .15s, background .15s;
+  }
+  .mp-ai-close:hover { color: var(--text); background: var(--bg-input); }
+  #mp-ai-body {
+    flex: 1; overflow-y: auto; padding: 14px;
+    font-size: 13px; line-height: 1.7;
+    color: var(--text-dim);
+  }
+  #mp-ai-body .thinking {
+    display: flex; align-items: center; gap: 8px;
+    color: var(--text-faint); font-style: italic;
+  }
+  #mp-ai-body .thinking::after {
+    content: '...';
+    animation: dots 1.5s steps(4) infinite;
+  }
+  @keyframes dots {
+    0% { content: '   '; } 25% { content: '.  '; }
+    50% { content: '.. '; } 75% { content: '...'; }
+  }
+
+  /* ── 错题本面板 ── */
+  #mp-wrong-panel {
+    position: absolute; inset: 0;
+    background: var(--bg-side);
+    display: none; flex-direction: column;
+    z-index: 30;
+  }
+  #mp-wrong-panel.show { display: flex; }
+  .mp-wrong-header {
+    padding: 10px 14px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-elev);
+    font-size: 13px; font-weight: 600;
+  }
+  .mp-wrong-close {
+    margin-left: auto; cursor: pointer; color: var(--text-faint);
+    font-size: 18px; line-height: 1; padding: 2px 8px; border-radius: 5px;
+  }
+  .mp-wrong-close:hover { color: var(--text); }
+  #mp-wrong-list {
+    flex: 1; overflow-y: auto; padding: 12px;
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .mp-wrong-item {
+    display: flex; align-items: center; gap: 12px;
+    padding: 10px 14px;
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    font-size: 13px;
+  }
+  .mp-wrong-item .expr { font-weight: 700; font-size: 16px; font-variant-numeric: tabular-nums; }
+  .mp-wrong-item .your { color: var(--danger); }
+  .mp-wrong-item .right { color: var(--success); }
+  .mp-wrong-item .ts { margin-left: auto; font-size: 11px; color: var(--text-faint); }
+  .mp-wrong-empty {
+    text-align: center; color: var(--text-faint);
+    padding: 40px 20px; font-size: 13px;
+  }
+  .mp-wrong-clear {
+    padding: 4px 10px; border-radius: 6px;
+    border: 1px solid var(--border); background: transparent;
+    color: var(--text-dim); font-size: 11px; cursor: pointer;
+    margin-left: 8px;
+  }
+  .mp-wrong-clear:hover { color: var(--danger); border-color: var(--danger); }
+
+  /* ── Toast ── */
+  #mp-toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px);
+    padding: 8px 18px; border-radius: 10px;
+    background: var(--bg-elev); border: 1px solid var(--border);
+    color: var(--text); font-size: 12px;
+    opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 100;
+    box-shadow: 0 4px 12px rgba(0,0,0,.3);
+  }
+  #mp-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* 滚动条 */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+</style>
+</head>
+<body>
+
+<div id="mp-root">
+  <!-- ── 顶部工具栏 ── -->
+  <div id="mp-toolbar">
+    <span class="mp-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="3" width="18" height="18" rx="3"/>
+        <path d="M8 9h8M8 15h8"/><path d="M10 7v4M14 13v4"/>
+      </svg>
+      数学练习
+    </span>
+
+    <select class="mp-select" id="mp-grade" title="选择年级">
+      <option value="1">一年级</option>
+      <option value="2">二年级</option>
+      <option value="3" selected>三年级</option>
+      <option value="4">四年级</option>
+      <option value="5">五年级</option>
+      <option value="6">六年级</option>
+    </select>
+
+    <select class="mp-select" id="mp-mode" title="练习模式">
+      <option value="add">加法</option>
+      <option value="sub">减法</option>
+      <option value="mul" selected>乘法</option>
+      <option value="div">除法</option>
+      <option value="mixed">混合运算</option>
+    </select>
+
+    <button class="mp-btn primary" id="mp-btn-start">开始练习</button>
+    <button class="mp-btn" id="mp-btn-wrong" title="错题本">📝 错题本 <span id="mp-wrong-count" style="color:var(--danger)"></span></button>
+  </div>
+
+  <!-- ── 统计栏 ── -->
+  <div id="mp-stats">
+    <div class="mp-stat">已答 <span class="mp-stat-val" id="mp-answered">0</span></div>
+    <div class="mp-stat">✅ <span class="mp-stat-val correct" id="mp-correct">0</span></div>
+    <div class="mp-stat">❌ <span class="mp-stat-val wrong" id="mp-wrong">0</span></div>
+    <div class="mp-stat">🔥 <span class="mp-stat-val streak" id="mp-streak">0</span></div>
+    <div class="mp-stat">正确率 <span class="mp-stat-val" id="mp-rate">—</span></div>
+    <div id="mp-timer">⏱ 0:00</div>
+  </div>
+
+  <!-- ── 主体 ── -->
+  <div id="mp-body">
+    <!-- 练习区 -->
+    <div id="mp-practice">
+      <!-- 欢迎界面 (练习未开始时显示) -->
+      <div id="mp-welcome">
+        <div class="emoji">🔢</div>
+        <h2>欢迎来到数学练习!</h2>
+        <p>选择年级和题型,点击「开始练习」<br>看看你能连对多少题! 🎉</p>
+        <button class="mp-btn primary start-btn" id="mp-welcome-start" style="padding:10px 28px;font-size:14px">🚀 开始练习</button>
+      </div>
+
+      <!-- 题目卡片 (动态插入) -->
+    </div>
+
+    <!-- AI 引导侧栏 -->
+    <div id="mp-ai-panel">
+      <div class="mp-ai-header">
+        <span class="dot" id="mp-ai-dot"></span>
+        AI 小老师
+        <span class="mp-ai-close" id="mp-ai-close">×</span>
+      </div>
+      <div id="mp-ai-body"></div>
+    </div>
+  </div>
+
+  <!-- 错题本覆盖层 -->
+  <div id="mp-wrong-panel">
+    <div class="mp-wrong-header">
+      📝 错题本
+      <span id="mp-wrong-title-count" style="color:var(--text-faint);font-weight:400"></span>
+      <button class="mp-wrong-clear" id="mp-wrong-clear-btn">清空</button>
+      <span class="mp-wrong-close" id="mp-wrong-close">×</span>
+    </div>
+    <div id="mp-wrong-list"></div>
+  </div>
+
+  <!-- Toast -->
+  <div id="mp-toast"></div>
+</div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ═══════════════════════════════════════════════════════════════
+  //  宿主通信层 — postMessage bridge
+  // ═══════════════════════════════════════════════════════════════
+
+  var reqId = 0;
+  var pending = {};
+
+  function hostCall(method, args) {
+    var id = ++reqId;
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        if (pending[id]) {
+          delete pending[id];
+          reject('hostCall timeout: ' + method);
+        }
+      }, 30000);
+      pending[id] = {
+        resolve: function(v) { clearTimeout(timer); resolve(v); },
+        reject: function(e) { clearTimeout(timer); reject(e); }
+      };
+      window.parent.postMessage({
+        source: 'math-practice',
+        id: id, method: method, args: args || []
+      }, '*');
+    });
+  }
+
+  // 监听宿主响应
+  window.addEventListener('message', function(ev) {
+    var data = ev.data;
+    if (!data || data.target !== 'math-practice') return;
+
+    if (data.id && pending[data.id]) {
+      if (data.error) { pending[data.id].reject(data.error); }
+      else { pending[data.id].resolve(data.result); }
+      delete pending[data.id];
+      return;
+    }
+
+    if (data.type === 'theme') { applyTheme(data.cssVars || {}); }
+    if (data.type === 'conversationUpdate' && data.conv) { handleConvUpdate(data.conv); }
+  });
+
+  function applyTheme(vars) {
+    var root = document.documentElement;
+    for (var key in vars) { root.style.setProperty(key, vars[key]); }
+  }
+
+  hostCall('getTheme', []).then(function(v) { if (v) applyTheme(v); }).catch(function() {});
+
+  // ═══════════════════════════════════════════════════════════════
+  //  状态 / State
+  // ═══════════════════════════════════════════════════════════════
+
+  var state = {
+    grade: 3,         // 年级 1-6
+    mode: 'mul',      // 当前题型
+    active: false,    // 是否正在练习
+    current: null,    // 当前题目 {a, b, op, answer}
+    index: 0,         // 当前第几题
+    answered: 0,
+    correct: 0,
+    wrong: 0,
+    streak: 0,
+    maxStreak: 0,
+    startTime: 0,
+    timerInterval: null,
+    wrongList: [],    // 错题本 [{a,b,op,yourAnswer,correctAnswer,ts}]
+    waitingAI: false, // AI 是否正在回复
+    waitingConvId: null,
+  };
+
+  // DOM refs
+  var elRoot       = document.getElementById('mp-root');
+  var elPractice   = document.getElementById('mp-practice');
+  var elWelcome    = document.getElementById('mp-welcome');
+  var elGrade      = document.getElementById('mp-grade');
+  var elMode       = document.getElementById('mp-mode');
+  var elStart      = document.getElementById('mp-btn-start');
+  var elWelcomeStart = document.getElementById('mp-welcome-start');
+  var elWrongBtn   = document.getElementById('mp-btn-wrong');
+  var elWrongCount = document.getElementById('mp-wrong-count');
+  var elAnswered   = document.getElementById('mp-answered');
+  var elCorrect    = document.getElementById('mp-correct');
+  var elWrong      = document.getElementById('mp-wrong');
+  var elStreak     = document.getElementById('mp-streak');
+  var elRate       = document.getElementById('mp-rate');
+  var elTimer      = document.getElementById('mp-timer');
+  var elAIPanel    = document.getElementById('mp-ai-panel');
+  var elAIBody     = document.getElementById('mp-ai-body');
+  var elAIDot      = document.getElementById('mp-ai-dot');
+  var elAIClose    = document.getElementById('mp-ai-close');
+  var elWrongPanel = document.getElementById('mp-wrong-panel');
+  var elWrongList  = document.getElementById('mp-wrong-list');
+  var elWrongClose = document.getElementById('mp-wrong-close');
+  var elWrongTitleCount = document.getElementById('mp-wrong-title-count');
+  var elWrongClearBtn = document.getElementById('mp-wrong-clear-btn');
+  var elToast      = document.getElementById('mp-toast');
+
+  // ═══════════════════════════════════════════════════════════════
+  //  题目生成 — 按年级分级 / Question generation by grade
+  // ═══════════════════════════════════════════════════════════════
+
+  function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
+
+  // 根据年级和题型生成一道题 / Generate one question
+  function genQuestion(grade, mode) {
+    // 实际题型 (mixed 时随机选一种)
+    var ops = mode === 'mixed' ? ['add', 'sub', 'mul', 'div'] : [mode];
+    var op = ops[randInt(0, ops.length - 1)];
+
+    // 难度配置: 数字范围按年级递增
+    // Difficulty: number ranges scale with grade level
+    var config = {
+      1: { add: [1, 20],  sub: [1, 20],  mul: [1, 9],   div: [1, 9]   },
+      2: { add: [1, 50],  sub: [1, 50],  mul: [2, 9],   div: [2, 9]   },
+      3: { add: [10, 200],sub: [10, 200],mul: [2, 12],  div: [2, 12]  },
+      4: { add: [50, 500],sub: [50, 500],mul: [3, 25],  div: [3, 25]  },
+      5: { add: [100,1000],sub:[100,1000],mul:[6,50],   div: [6, 50]  },
+      6: { add: [200,2000],sub:[200,2000],mul:[11,99],  div: [11, 99] },
+    };
+
+    var cfg = config[grade] || config[3];
+    var range = cfg[op] || cfg.mul;
+    var a, b, answer;
+
+    switch (op) {
+      case 'add':
+        a = randInt(range[0], range[1]);
+        b = randInt(range[0], range[1]);
+        answer = a + b;
+        break;
+      case 'sub':
+        // 确保结果不为负 / Ensure non-negative result
+        a = randInt(range[0], range[1]);
+        b = randInt(range[0], a); // b <= a
+        answer = a - b;
+        break;
+      case 'mul':
+        a = randInt(range[0], Math.min(range[1], 12));
+        b = randInt(range[0], Math.min(range[1], 12));
+        answer = a * b;
+        break;
+      case 'div':
+        // 先生成答案和除数, 再算被除数 → 保证整除
+        // Generate divisor and quotient first → ensure clean division
+        b = randInt(Math.max(2, range[0]), Math.min(range[1], 12));
+        answer = randInt(Math.max(2, range[0]), Math.min(range[1], 12));
+        a = b * answer; // 被除数 = 除数 × 商
+        break;
+    }
+
+    return { a: a, b: b, op: op, answer: answer };
+  }
+
+  // 运算符显示 / Operator display
+  var OP_SYMBOLS = { add: '+', sub: '−', mul: '×', div: '÷' };
+  var OP_NAMES = { add: '加法', sub: '减法', mul: '乘法', div: '除法' };
+
+  // ═══════════════════════════════════════════════════════════════
+  //  练习流程 / Practice flow
+  // ═══════════════════════════════════════════════════════════════
+
+  function startPractice() {
+    state.grade = parseInt(elGrade.value);
+    state.mode = elMode.value;
+    state.active = true;
+    state.index = 0;
+    state.answered = 0;
+    state.correct = 0;
+    state.wrong = 0;
+    state.streak = 0;
+    state.maxStreak = 0;
+    state.startTime = Date.now();
+    state.wrongList = [];
+
+    elWelcome.style.display = 'none';
+    elStart.textContent = '重新开始';
+    elTimer.classList.add('running');
+
+    // 启动计时器
+    if (state.timerInterval) clearInterval(state.timerInterval);
+    state.timerInterval = setInterval(updateTimer, 1000);
+    updateTimer();
+
+    nextQuestion();
+    updateStats();
+    renderWrongBadge();
+  }
+
+  function nextQuestion() {
+    state.current = genQuestion(state.grade, state.mode);
+    state.index++;
+
+    var q = state.current;
+    var html = '' +
+      '<div class="mp-question-card" id="mp-card">' +
+        '<div class="mp-q-index">第 ' + state.index + ' 题</div>' +
+        '<div class="mp-q-text">' +
+          q.a + ' <span class="mp-q-equal">' + OP_SYMBOLS[q.op] + '</span> ' + q.b +
+          ' <span class="mp-q-equal">=</span> ' +
+        '</div>' +
+        '<div class="mp-answer-row">' +
+          '<input type="text" class="mp-answer-input" id="mp-input" ' +
+            'placeholder="?" autocomplete="off" inputmode="numeric" />' +
+          '<button class="mp-btn primary" id="mp-submit">提交</button>' +
+        '</div>' +
+      '</div>';
+
+    // 清除旧的题目和反馈,插入新题目
+    var oldCard = document.getElementById('mp-card');
+    var oldFeedback = document.querySelector('.mp-feedback');
+    if (oldCard) oldCard.remove();
+    if (oldFeedback) oldFeedback.remove();
+
+    elPractice.insertAdjacentHTML('afterbegin', html);
+
+    // 聚焦输入框
+    var input = document.getElementById('mp-input');
+    input.focus();
+
+    // 回车提交
+    input.addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') { e.preventDefault(); submitAnswer(); }
+    });
+    document.getElementById('mp-submit').addEventListener('click', submitAnswer);
+  }
+
+  function submitAnswer() {
+    var input = document.getElementById('mp-input');
+    var raw = (input.value || '').trim();
+    if (raw === '') { toast('请输入答案~'); return; }
+
+    var userAnswer = parseInt(raw, 10);
+    if (isNaN(userAnswer)) { toast('请输入数字~'); return; }
+
+    var q = state.current;
+    var isCorrect = userAnswer === q.answer;
+
+    // 更新统计
+    state.answered++;
+    if (isCorrect) {
+      state.correct++;
+      state.streak++;
+      if (state.streak > state.maxStreak) state.maxStreak = state.streak;
+    } else {
+      state.wrong++;
+      state.streak = 0;
+      // 加入错题本
+      state.wrongList.push({
+        a: q.a, b: q.b, op: q.op,
+        yourAnswer: userAnswer,
+        correctAnswer: q.answer,
+        ts: Date.now()
+      });
+      renderWrongBadge();
+    }
+
+    // 显示反馈
+    showFeedback(isCorrect, q, userAnswer);
+
+    // 更新题目卡片样式
+    var card = document.getElementById('mp-card');
+    if (card) card.classList.add(isCorrect ? 'correct' : 'wrong');
+
+    // 禁用输入
+    input.disabled = true;
+    document.getElementById('mp-submit').disabled = true;
+
+    updateStats();
+
+    // 答错 → 请求 AI 引导
+    if (!isCorrect) {
+      requestAIGuidance(q, userAnswer);
+    }
+
+    // 延迟出下一题
+    var delay = isCorrect ? 800 : 2500;
+    setTimeout(function() {
+      if (state.active) nextQuestion();
+    }, delay);
+  }
+
+  function showFeedback(isCorrect, q, userAnswer) {
+    var msg;
+    if (isCorrect) {
+      var praises = ['🎉 答对了!', '⭐ 太棒了!', '👍 完美!', '🔥 厉害!'];
+      if (state.streak >= 5) {
+        msg = '🔥 连续 ' + state.streak + ' 题正确! 火力全开!';
+      } else {
+        msg = praises[Math.floor(Math.random() * praises.length)];
+      }
+    } else {
+      msg = '😊 没关系,正确答案是 ' + q.answer + '~ 再试试下一题!';
+    }
+
+    var html = '<div class="mp-feedback ' + (isCorrect ? 'ok' : 'no') + '">' + msg + '</div>';
+    elPractice.insertAdjacentHTML('beforeend', html);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  AI 引导 / AI guidance (via host Agent)
+  // ═══════════════════════════════════════════════════════════════
+
+  function requestAIGuidance(q, userAnswer) {
+    hostCall('getActiveConvId', []).then(function(convId) {
+      if (!convId) { toast('AI 不可用,请先选择对话'); return; }
+
+      var prompt = '## 练习信息\n' +
+        '- 年级: ' + state.grade + '年级\n' +
+        '- 题型: ' + OP_NAMES[q.op] + '\n' +
+        '- 题目: ' + q.a + ' ' + OP_SYMBOLS[q.op] + ' ' + q.b + ' = ?\n' +
+        '- 学生答案: ' + userAnswer + '\n' +
+        '- 正确答案: ' + q.answer + '\n' +
+        '- 是否正确: ❌错误\n\n' +
+        '## 请求\n请对这个回答给出反馈和引导。';
+
+      // 打开 AI 面板
+      elAIPanel.classList.add('show');
+      elAIBody.innerHTML = '<div class="thinking">AI 小老师正在思考</div>';
+      elAIDot.classList.add('thinking');
+      state.waitingAI = true;
+      state.waitingConvId = convId;
+
+      hostCall('send', [convId, prompt]).then(function() {
+        // 等待 conversationUpdate 事件
+      }).catch(function(err) {
+        elAIBody.innerHTML = '<span style="color:var(--danger)">AI 连接失败: ' + escapeHtml(String(err)) + '</span>';
+        elAIDot.classList.remove('thinking');
+        state.waitingAI = false;
+      });
+    }).catch(function() {
+      toast('无法连接宿主');
+    });
+  }
+
+  function handleConvUpdate(conv) {
+    if (!state.waitingAI || !state.waitingConvId || conv.id !== state.waitingConvId) return;
+    var turns = conv.turns || [];
+    if (turns.length === 0) return;
+    var latest = turns[turns.length - 1];
+
+    if (latest.done) {
+      state.waitingAI = false;
+      state.waitingConvId = null;
+      elAIDot.classList.remove('thinking');
+      elAIBody.innerHTML = formatMarkdown(latest.answer || '(无回复)');
+    } else if (latest.answer) {
+      // 流式显示
+      elAIBody.innerHTML = '<div style="opacity:.7">' + formatMarkdown(latest.answer) + '</div>';
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  统计 / Stats display
+  // ═══════════════════════════════════════════════════════════════
+
+  function updateStats() {
+    elAnswered.textContent = state.answered;
+    elCorrect.textContent = state.correct;
+    elWrong.textContent = state.wrong;
+    elStreak.textContent = state.streak;
+    var rate = state.answered > 0 ? Math.round(state.correct / state.answered * 100) : 0;
+    elRate.textContent = state.answered > 0 ? rate + '%' : '—';
+  }
+
+  function updateTimer() {
+    if (!state.active || !state.startTime) return;
+    var elapsed = Math.floor((Date.now() - state.startTime) / 1000);
+    var m = Math.floor(elapsed / 60);
+    var s = elapsed % 60;
+    elTimer.textContent = '⏱ ' + m + ':' + (s < 10 ? '0' + s : s);
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  错题本 / Wrong answer book
+  // ═══════════════════════════════════════════════════════════════
+
+  function renderWrongBadge() {
+    var n = state.wrongList.length;
+    elWrongCount.textContent = n > 0 ? '(' + n + ')' : '';
+  }
+
+  function showWrongPanel() {
+    renderWrongList();
+    elWrongPanel.classList.add('show');
+  }
+
+  function renderWrongList() {
+    elWrongTitleCount.textContent = state.wrongList.length > 0
+      ? '（共 ' + state.wrongList.length + ' 题）' : '';
+
+    if (state.wrongList.length === 0) {
+      elWrongList.innerHTML = '<div class="mp-wrong-empty">🎉 还没有错题,继续加油!</div>';
+      return;
+    }
+
+    var html = state.wrongList.slice().reverse().map(function(item) {
+      var expr = item.a + ' ' + OP_SYMBOLS[item.op] + ' ' + item.b + ' = ?';
+      var time = new Date(item.ts).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+      return '<div class="mp-wrong-item">' +
+        '<span class="expr">' + expr + '</span>' +
+        '<span class="your">你: ' + item.yourAnswer + '</span>' +
+        '<span class="right">正确: ' + item.correctAnswer + '</span>' +
+        '<span class="ts">' + time + '</span>' +
+      '</div>';
+    }).join('');
+
+    elWrongList.innerHTML = html;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  Toast / Markdown / Utilities
+  // ═══════════════════════════════════════════════════════════════
+
+  var toastTimer = null;
+  function toast(msg) {
+    elToast.textContent = msg;
+    elToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { elToast.classList.remove('show'); }, 2200);
+  }
+
+  function formatMarkdown(text) {
+    var html = escapeHtml(text);
+    html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, function(_, lang, code) {
+      return '<pre><code>' + code.trim() + '</code></pre>';
+    });
+    html = html.replace(/`([^`]+)`/g, '<code>$1</code>');
+    html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    html = html.replace(/^### (.+)$/gm, '<h3>$1</h3>');
+    html = html.replace(/^## (.+)$/gm, '<h2>$1</h2>');
+    html = html.replace(/^# (.+)$/gm, '<h1>$1</h1>');
+    html = html.replace(/\n/g, '<br>');
+    return html;
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // ═══════════════════════════════════════════════════════════════
+  //  事件绑定 / Bind events
+  // ═══════════════════════════════════════════════════════════════
+
+  elStart.addEventListener('click', startPractice);
+  elWelcomeStart.addEventListener('click', startPractice);
+  elWrongBtn.addEventListener('click', showWrongPanel);
+  elWrongClose.addEventListener('click', function() { elWrongPanel.classList.remove('show'); });
+  elAIClose.addEventListener('click', function() { elAIPanel.classList.remove('show'); });
+
+  elWrongClearBtn.addEventListener('click', function() {
+    if (state.wrongList.length === 0) { toast('错题本已经是空的'); return; }
+    state.wrongList = [];
+    renderWrongBadge();
+    renderWrongList();
+    toast('错题本已清空');
+  });
+
+  // 年级/题型变化时如果正在练习, 自动重新开始
+  elGrade.addEventListener('change', function() {
+    if (state.active) startPractice();
+  });
+  elMode.addEventListener('change', function() {
+    if (state.active) startPractice();
+  });
+
+})();
+</script>
+</body>
+</html>

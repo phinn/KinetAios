@@ -155,7 +155,10 @@ function applyI18nDOM(): void {
     if (currentView === 'town') townOnConversationChanged();
     // 转发 conversation 更新给所有插件 iframe (替代轮询)
     // Forward conversation updates to all plugin iframes (replaces polling)
-    broadcastToPlugins({ target: 'brainstorm', type: 'conversationUpdate', conv });
+    // 每个插件收到的 target 必须匹配自己的 source 名
+    for (const panel of pluginPanelRegistry) {
+      broadcastToPlugins({ target: panel.name, type: 'conversationUpdate', conv });
+    }
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
@@ -2602,7 +2605,7 @@ window.addEventListener('message', async (ev: MessageEvent) => {
   if (!data || typeof data !== 'object') return;
   // 只处理 plugin bridge 消息 (source 以 'plugin:' 前缀或已知插件名标识)
   // Only handle plugin bridge messages — accept any source that looks like a plugin
-  const knownSources = ['brainstorm', 'low-altitude', 'office-suite', 'echo'];
+  const knownSources = ['brainstorm', 'math-practice', 'low-altitude', 'office-suite', 'echo'];
   if (!knownSources.includes(data.source) && !data.source?.startsWith('plugin:')) return;
 
   const { id, method, args } = data;
