@@ -2539,14 +2539,18 @@ async function loadPluginPanels(): Promise<void> {
         viewEl.className = 'view plugin-panel-view';
         container.appendChild(viewEl);
       }
-      // iframe 方案: panel.html 作为一个完整文档注入 / iframe: panel.html as a full document
+      // iframe 方案: 用 blob URL 而非 srcdoc, 避免 srcdoc 继承父页面 CSP
+      // blob: URL gives iframe a unique origin → independent CSP context
+      // 需要的通信全部通过 postMessage
       viewEl.innerHTML = '';
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
-      iframe.srcdoc = panel.html;
+      // blob URL — iframe 有独立 browsing context, 不继承宿主 CSP
+      const blob = new Blob([panel.html], { type: 'text/html' });
+      iframe.src = URL.createObjectURL(blob);
       viewEl.appendChild(iframe);
     }
   } catch { /* main 尚未就绪 / main not ready yet */ }

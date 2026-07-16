@@ -409,6 +409,12 @@ a { color: var(--accent); }
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .view { flex: 1; display: none; flex-direction: column; min-height: 0; }
 .view.active { display: flex; }
+
+/* 插件面板容器 — 必须撑满父级高度 / Plugin panels container — fill parent height */
+#plugin-panels-container { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+#plugin-panels-container .plugin-panel-view { display: none; }
+#plugin-panels-container .plugin-panel-view.active { display: flex; flex: 1; min-height: 0; }
+#plugin-panels-container .plugin-panel-view iframe { flex: 1; width: 100%; height: 100%; border: none; min-height: 0; }
 /* 需要自身滚动的视图(无内层滚动容器的) */
 #timeline-view, #ctools-view, #cost-view, #pipeline-view, #templates-view, #settings-view, #workbench-view { overflow-y: auto; }
 /* chat-view 不滚动 — 内部 #turns 自己滚 */

@@ -448,31 +448,46 @@
     elEmpty.classList.add('hidden');
 
     // React 18 → ReactDOM → Excalidraw (CDN) / Chain load scripts
+    // 注意: 不设 crossOrigin 避免某些环境下 CORS 预检失败
     var reactScript = document.createElement('script');
-    reactScript.crossOrigin = 'anonymous';
     reactScript.src = 'https://unpkg.com/react@18.3.1/umd/react.production.min.js';
     reactScript.onload = function() {
       var reactDomScript = document.createElement('script');
-      reactDomScript.crossOrigin = 'anonymous';
       reactDomScript.src = 'https://unpkg.com/react-dom@18.3.1/umd/react-dom.production.min.js';
       reactDomScript.onload = function() {
         var excaliScript = document.createElement('script');
-        excaliScript.crossOrigin = 'anonymous';
         excaliScript.src = 'https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.production.min.js';
-        excaliScript.onload = mountExcalidraw;
-        excaliScript.onerror = activateFallback;
+        excaliScript.onload = function() {
+          // 给 UMD bundle 一点时间初始化全局变量 / Let UMD init globals
+          setTimeout(mountExcalidraw, 50);
+        };
+        excaliScript.onerror = function() {
+          console.error('[brainstorm] Excalidraw script failed to load');
+          activateFallback();
+        };
         document.head.appendChild(excaliScript);
       };
-      reactDomScript.onerror = activateFallback;
+      reactDomScript.onerror = function() {
+        console.error('[brainstorm] ReactDOM script failed to load');
+        activateFallback();
+      };
       document.head.appendChild(reactDomScript);
     };
-    reactScript.onerror = activateFallback;
+    reactScript.onerror = function() {
+      console.error('[brainstorm] React script failed to load');
+      activateFallback();
+    };
     document.head.appendChild(reactScript);
   }
 
   function mountExcalidraw() {
     try {
       var ExcalidrawLib = window.ExcalidrawLib;
+      if (!ExcalidrawLib || !ExcalidrawLib.Excalidraw) {
+        console.error('[brainstorm] ExcalidrawLib not found on window');
+        activateFallback();
+        return;
+      }
       var excaliRoot = document.getElementById('bs-excalidraw');
 
       // React 18 createRoot — 挂载 Excalidraw 组件 / Mount Excalidraw
