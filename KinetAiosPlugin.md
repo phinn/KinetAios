@@ -1,83 +1,10 @@
-# CLAUDE.md
+# KinetAiosPlugin.md — 插件开发标准流程
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+> **每次开发插件（新增 / 修改 / 调试）时严格按照本文件执行。** 这不是建议，是 checklist。
+>
+> 本文件由 `KinetAios.md` 关联引用。项目核心规范见 [`KinetAios.md`](./KinetAios.md)。
 
-## What this is
-
-KinetAios — Windows 11 port of a local AI-agent dashboard (the macOS original is the native-SwiftUI app in `../KinetAios`). **Behavior-aligned TypeScript rewrite, not shared code with the original** — the Swift sources were ported line-by-line into Electron + TypeScript. Run multiple sessions concurrently, stream answers, three switchable agent engines, shell/file/web/memory tools, SQLite history, global hotkey.
-
-Stack: **Electron + TypeScript**, **better-sqlite3** (with FTS5), **no frontend framework** (vanilla TS + HTML/CSS, bundled with esbuild).
-
-## Commands
-
-```bash
-npm install          # installs + builds better-sqlite3 native module (needs Node 18+ and a compiler toolchain)
-npm run build        # tsc (main/preload/shared) + esbuild (renderer bundles) + copy renderer assets
-npm run typecheck    # typecheck both halves without emitting — the primary verification step
-npm start            # electron .  (requires a prior build)
-npm run dev          # build + start
-npm run pack         # build + electron-builder --win --dir  → release/win-unpacked/KinetAios.exe
-npm run dist         # build + electron-builder --win        → release/KinetAios Setup <ver>.exe (NSIS)
-```
-
-**There is no test framework in this repo.** Verification = `npm run typecheck` plus launching the app (`npm start`) and driving the affected flow. Don't invent a test script.
-
-### Platform caveat (important)
-
-The real build target is **Windows 11** (cmd.exe shell, `.cmd` shims, Windows paths). On this mac you can `npm install`, `npm run typecheck`, and `npm start` (Electron is cross-platform; core logic smokes fine), but you **cannot build/verify a Windows binary or NSIS installer from macOS** — electron-builder + the native module rebuild need a Windows toolchain. Windows-only behavior (shell, PATH, hotkey) must be verified on Windows.
-
-## Architecture
-
-### Two processes, one narrow bridge
-
-- **Main process** (`dist/main/main.js`, source `src/main/*`): app lifecycle, windows, global hotkey, IPC handlers, the agent runtime, SQLite, settings, CLI spawning. Has full Node access.
-- **Renderer** (`src/renderer/*`): vanilla-TS dashboard + quick panel. **No Node access** — `contextIsolation: true`, `nodeIntegration: false`. It can only call what the preload exposes.
-
-The **preload** (`src/preload/preload.ts`) is the entire surface between them: it binds a typed `KinetAPI` (`src/shared/types.ts`) onto `window.kinet` via `contextBridge`. Adding a new main↔renderer capability = add a method to `KinetAPI`, a `ipcRenderer.invoke`/`on` line in preload, and the matching `ipcMain.handle`/`on` in `main.ts`. All three must stay in sync; the `KinetAPI` interface is the contract.
-
-### `shared/types.ts` is the single source of truth
-
-This file is imported by **both** halves (main as CJS, renderer bundled) and is deliberately pure — no Node- or DOM-only APIs. It holds all shared types **and** `applyEvent(conv, ev)`, the pure function that folds one streaming event into a conversation's current turn.
-
-The key pattern: every engine emits the same unified `AgentEvent` union (`token | tool | cost | status | sessionStarted | done | error`). **Main calls `applyEvent` then persists; the renderer calls the same `applyEvent` to update the view.** When you change how an event updates state, you change it in exactly one place. (This mirrors the Swift original's `apply()`.)
-
-### Three engines, one `Engine` interface
-
-`src/main/engines.ts` defines `Engine { name; run(opts) }` and three implementations, switchable per-conversation (switching clears cross-engine context):
-
-- **Direct ("Kaios")** — the built-in ReAct loop (`AgentLoop.ts`) calling the provider in `glm.ts`. Only Direct uses the in-app tools (`tools.ts`: `shell`, `read_file`, `write_file`, `web_fetch`, `recall_memory`).
-- **Claude Code** — spawns `claude -p --output-format stream-json`, parses NDJSON, resumes via `--resume` + persisted session id, injects memory via `--append-system-prompt`.
-- **Codex** — spawns `codex exec --json`, parses JSONL, resumes, prepends memory into the prompt.
-
-`TaskManager.ts` owns conversations, dispatches to the right engine, and runs background memory extraction (pulls durable "facts about the user" from each turn, injected into the next).
-
-### Cross-platform CLI spawn — read this before touching spawn logic
-
-npm-global CLIs ship as **`.cmd` shims on Windows**. Node refuses to spawn `.cmd`/`.bat` directly (CVE-2024-27980), so `engines.ts` routes `.cmd`/`.bat` through `shell: true` and spawns real `.exe`/unix bins directly (clean argv, smaller prompt-injection surface). There is also a `binEnv()` that **augments `PATH`** with common install dirs, because a GUI-launched Electron app inherits a sparse PATH and would otherwise not find `claude`/`codex`.
-
-### SQLite schema (`src/main/store.ts`)
-
-FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (turn bodies stored as JSON in `data`) hold session state; `memories` holds extracted long-term facts. Schema is migrated idempotently on init (FTS via `db.exec` because `.prepare` runs only the first statement).
-
-### Shell-confirm bridge
-
-`shell` (Direct) and the sandboxed CLIs may need pre-approval. Main can't show UI, so `main.ts`'s `confirm()` sends a `confirm-request` to the dashboard window and parks a resolver in a `pendingConfirms` map; the renderer's modal replies via `confirm-response`. `approval: 'never'` short-circuits this.
-
-## Conventions
-
-- Comments are **bilingual (Chinese + English)** throughout, matching the Swift original and the README. Match the surrounding style.
-- Deliberate MVP simplifications are marked `// ponytail:` with the ceiling named and the upgrade path noted. Respect these — don't silently "complete" them unless the task asks.
-- UI strings and the Direct system prompt are **Chinese**; engine error messages guide users in Chinese.
-- `dist/`, `release/`, `node_modules/` are gitignored. `main` entry points at `dist/main/main.js` (set in `package.json`), so **`npm start` won't work without a build**.
-- API key is stored **plaintext** in `userData/settings.json` (known MVP constraint — swap for Windows Credential Manager before real distribution).
-
----
-
-## Plugin Development SOP — 插件开发标准流程
-
-> **每次开发新插件时严格按照本节步骤执行。** 这不是建议，是 checklist。
-
-### 0. 先理解架构
+## 0. 先理解架构
 
 插件是运行在 **main 进程**的 Node 模块，由 `src/main/plugins.ts` 同步加载、进程级缓存。一个插件可以贡献 **5 种东西**，任选组合：
 
@@ -89,7 +16,7 @@ FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (
 | **Panel（面板）** | `panel` | .html 文件 | v2.1: 注入为 iframe srcdoc 的全屏交互视图 |
 | **Hooks** | `hooks` | JS (entry#exportName) | v2: 仅 `onActivate(ctx)` 生命周期回调 |
 
-### 1. 创建目录
+## 1. 创建目录
 
 ```
 plugins/<plugin-name>/
@@ -100,7 +27,7 @@ plugins/<plugin-name>/
 - 开发模式扫描项目根 `plugins/`（非 packaged）；用户安装的扫描 `<userData>/plugins/`
 - **改完插件必须重启 app**（进程级缓存，无热重载）
 
-### 2. 编写 plugin.json（manifest）
+## 2. 编写 plugin.json（manifest）
 
 **必填字段**：`name`、`version`
 
@@ -137,7 +64,7 @@ plugins/<plugin-name>/
 }
 ```
 
-### 3. ⚠️ 分类注册（最容易遗漏的步骤）
+## 3. ⚠️ 分类注册（最容易遗漏的步骤）
 
 **category 必须是已注册的分类**。如果用了新分类，必须同时在以下 4 处注册（漏一处 → 插件在设置页不显示）：
 
@@ -163,9 +90,9 @@ plugins/<plugin-name>/
 
 > 复用已有分类不需要改任何文件。**只有新增分类才需要动上面 4 处。**
 
-### 4. 编写贡献点（按需）
+## 4. 编写贡献点（按需）
 
-#### 4a. Tools（自定义工具）
+### 4a. Tools（自定义工具）
 
 文件：`index.js`（或 manifest `tools` 字段指定的 JS 文件）
 
@@ -203,7 +130,7 @@ module.exports = {
 - 工具只在 **Direct 引擎**生效（Claude Code / Codex 用各自内置工具）
 - 可以 `require('child_process')`、`require('https')` 等 Node 内置模块
 
-#### 4b. Slash 命令
+### 4b. Slash 命令
 
 目录：manifest `slashCommands` 指定的目录（如 `commands/`），每个 `.md` 文件 = 一个命令
 
@@ -219,7 +146,7 @@ description: 命令的一句话说明（用户输入 / 时看到）
 
 **frontmatter 格式**：`name` + `description`（与 `src/main/skills.ts` 的 skill 格式一致）。
 
-#### 4c. System Prompt
+### 4c. System Prompt
 
 文件：manifest `systemPrompt` 指定的 .md 文件（如 `system-prompt.md`）
 
@@ -228,7 +155,7 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - 适合注入：领域知识、角色设定、工具使用指南、输出格式约束
 - **只在 manifest.engines 包含当前引擎时注入**
 
-#### 4d. Panel（v2.1 面板）
+### 4d. Panel（v2.1 面板）
 
 文件：manifest `panel` 指定的 HTML 文件（如 `panel.html`）
 
@@ -238,7 +165,7 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - `panelTitle` + `panelIcon` 控制侧栏菜单显示
 - **修改 panel.html 需要重启 app**（srcdoc 不热更新）
 
-### 5. 图标（可选但建议）
+## 5. 图标（可选但建议）
 
 文件：`icon.svg`（相对插件目录），在 `plugin.json` 的 `icon` 字段引用
 
@@ -246,7 +173,7 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - SVG 内容会被内联嵌入（`readFileSync` → 传到 renderer）
 - 建议尺寸 40×40，`viewBox="0 0 40 40"`
 
-### 6. 验证 Checklist
+## 6. 验证 Checklist
 
 开发完成后，逐项检查：
 
@@ -260,14 +187,14 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - [ ] 每个贡献点功能正常（工具能调用 / slash 命令能触发 / system prompt 生效 / panel 能打开）
 - [ ] 插件加载失败时不影响其它插件（loader 有 try-catch 兜底，但 manifest 语法错误要提前排查）
 
-### 7. Git 提交
+## 7. Git 提交
 
 ```bash
 git add -A
 git commit -m "feat(plugin): 新增 <name> 插件 — <一句话描述>"
 ```
 
-### 参考插件
+## 参考插件
 
 | 插件 | 目录 | 贡献点组合 | 适合参照场景 |
 |------|------|-----------|-------------|
