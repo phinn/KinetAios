@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
-import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin } from './plugins';
+import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
@@ -1000,6 +1000,14 @@ function registerIpc(): void {
   ipcMain.handle('plugin-uninstall', (_e, name: string) => {
     try {
       return uninstallPlugin(name);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // v2: 启用/禁用插件(不删除,只是从工具/prompt/命令注入中排除)。
+  ipcMain.handle('plugin-toggle', (_e, name: string, enabled: boolean) => {
+    try {
+      return togglePlugin(name, enabled);
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

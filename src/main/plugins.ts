@@ -8,6 +8,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { Tool } from './tools';
 import type { SkillInfo, EngineKind } from '../shared/types';
+import { getSettings, saveSettings } from './settings';
 
 // ── v2 类型 ──────────────────────────────────────────────
 
@@ -241,17 +242,28 @@ export function loadPlugins(): LoadedPlugin[] {
 
 // ── 导出: 工具 ──────────────────────────────────────────────
 
-// 给 allTools() 用: 把所有插件的工具摊平返回。无插件 = 空数组。
+// 辅助: 判断插件是否被禁用(读 settings.disabledPlugins)。 — Helper: is plugin disabled?
+function isPluginEnabled(name: string): boolean {
+  try {
+    const disabled = getSettings().disabledPlugins ?? [];
+    return !disabled.includes(name);
+  } catch {
+    return true; // settings 读不了 → 默认启用(不阻断插件)
+  }
+}
+
+// 给 allTools() 用: 把所有【已启用】插件的工具摊平返回。无插件 = 空数组。
 export function pluginTools(): Tool[] {
-  return loadPlugins().flatMap((p) => p.tools);
+  return loadPlugins().filter((p) => isPluginEnabled(p.manifest.name)).flatMap((p) => p.tools);
 }
 
 // ── 导出: System Prompt(v2 新增) ──────────────────────────────
 
 // 给 engines.ts 用: 当前引擎的插件 system prompt 拼接。
-// 遍历 engines 包含当前引擎的插件, 读取 systemPromptText, 用标题分隔拼接。
+// 遍历 engines 包含当前引擎且【已启用】的插件, 读取 systemPromptText, 用标题分隔拼接。
 export function pluginSystemPrompts(engine: EngineKind): string {
   return loadPlugins()
+    .filter((p) => isPluginEnabled(p.manifest.name))
     .filter((p) => !p.manifest.engines || p.manifest.engines.includes(engine))
     .filter((p) => p.systemPromptText?.trim())
     .map((p) => `\n\n# 插件扩展: ${p.manifest.name}\n${p.systemPromptText}`)
@@ -260,11 +272,11 @@ export function pluginSystemPrompts(engine: EngineKind): string {
 
 // ── 导出: Slash 命令(v2 新增) ──────────────────────────────
 
-// 给 skills.ts 的 listSkills() 用: 插件贡献的 slash 命令列表。
+// 给 skills.ts 的 listSkills() 用: 【已启用】插件贡献的 slash 命令列表。
 export function pluginSlashCommands(): SkillInfo[] {
-  return loadPlugins().flatMap((p) =>
-    p.slashCommands.map((s) => ({ ...s, source: 'plugin' as const })),
-  );
+  return loadPlugins()
+    .filter((p) => isPluginEnabled(p.manifest.name))
+    .flatMap((p) => p.slashCommands.map((s) => ({ ...s, source: 'plugin' as const })));
 }
 
 // ── 导出: IPC snap(v2 扩展) ──────────────────────────────
@@ -297,6 +309,7 @@ export function pluginListSnap(): Array<{
   engines: EngineKind[];
   toolCount: number;
   slashCommandCount: number;
+  enabled: boolean;
   error?: string;
   dir: string;
 }> {
@@ -324,6 +337,7 @@ export function pluginListSnap(): Array<{
       engines: p.manifest.engines ?? ['direct'],
       toolCount: p.tools.length,
       slashCommandCount: p.slashCommands.length,
+      enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,
     };
@@ -375,6 +389,25 @@ export function uninstallPlugin(name: string): { ok: boolean; error?: string } {
     const dest = path.join(app.getPath('userData'), 'plugins', name);
     fs.rmSync(dest, { recursive: true, force: true });
     hooksMap.delete(name);
+    invalidatePluginCache();
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
+
+// 启用/禁用插件: 修改 settings.disabledPlugins, 然后 invalidate cache。
+// Enable/disable plugin: modify settings.disabledPlugins, then invalidate cache.
+export function togglePlugin(name: string, enabled: boolean): { ok: boolean; error?: string } {
+  try {
+    const s = getSettings();
+    let disabled = s.disabledPlugins ?? [];
+    if (enabled) {
+      disabled = disabled.filter((n) => n !== name);
+    } else {
+      if (!disabled.includes(name)) disabled = [...disabled, name];
+    }
+    saveSettings({ ...s, disabledPlugins: disabled });
     invalidatePluginCache();
     return { ok: true };
   } catch (e) {

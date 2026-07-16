@@ -718,6 +718,44 @@ a { color: var(--accent); }
 .s-plugin-uninstall:hover { color: var(--danger); background: rgba(239,68,68,.08); }
 .s-plugin-empty { font-size: 12px; color: var(--muted, var(--text-dim)); padding: 8px 0; font-style: italic; }
 
+/* ── 插件管理面板 v2 ── */
+/* Plugin management panel v2 — toolbar, stats, toggle switch, search. */
+.s-plugin-toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.s-plugin-search { flex: 1; min-width: 160px; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); color: inherit; font-size: 13px; outline: none; transition: border-color .15s; }
+.s-plugin-search:focus { border-color: var(--accent); }
+.s-plugin-search::placeholder { color: var(--muted, var(--text-dim)); }
+.s-plugin-toolbar .s-plugin-dropzone { min-height: 34px; padding: 0 12px; border-width: 1.5px; flex-shrink: 0; }
+.s-plugin-reload-btn { padding: 6px 14px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev, rgba(255,255,255,0.02)); color: inherit; cursor: pointer; font-size: 12px; white-space: nowrap; transition: border-color .15s, background .15s; }
+.s-plugin-reload-btn:hover { border-color: var(--accent); background: rgba(232,179,57,.06); }
+
+/* 统计概览条 */
+.s-plugin-stats { display: flex; gap: 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
+.s-plugin-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.s-plugin-stat-num { font-size: 18px; font-weight: 700; color: var(--text); }
+.s-plugin-stat-label { font-size: 10px; color: var(--muted, var(--text-dim)); text-transform: uppercase; letter-spacing: .04em; }
+.s-plugin-stat-warn .s-plugin-stat-num { color: var(--danger); }
+
+/* 禁用状态行 */
+.s-plugin-row-disabled { opacity: .5; }
+.s-plugin-row-disabled:hover { opacity: .85; }
+.s-plugin-icon-off { filter: grayscale(1); opacity: .6; }
+
+/* 引擎标签 */
+.s-plugin-engine { font-size: 9px; padding: 1px 5px; border-radius: 3px; background: rgba(232,179,57,.1); color: var(--accent); border: 1px solid rgba(232,179,57,.2); text-transform: uppercase; letter-spacing: .03em; }
+
+/* 操作区 */
+.s-plugin-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
+
+/* iOS 风格开关 */
+.s-plugin-switch { position: relative; display: inline-block; cursor: pointer; }
+.s-plugin-switch input { opacity: 0; width: 0; height: 0; position: absolute; }
+.s-plugin-switch-track { display: block; width: 36px; height: 20px; border-radius: 10px; background: var(--border); transition: background .2s; position: relative; }
+.s-plugin-switch-thumb { position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: white; transition: transform .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+.s-plugin-switch input:checked ~ .s-plugin-switch-track { background: var(--accent); }
+.s-plugin-switch input:checked ~ .s-plugin-switch-track .s-plugin-switch-thumb { transform: translateX(16px); }
+.s-plugin-switch input:disabled ~ .s-plugin-switch-track { opacity: .4; cursor: not-allowed; }
+.s-plugin-switch input:disabled ~ .s-plugin-track { cursor: not-allowed; }
+
 /* cron 面板 */
 #cron-modal { position: fixed; inset: 0; background: rgba(0,0,0,.5); display: none; align-items: center; justify-content: center; z-index: 60; }
 #cron-modal.show { display: flex; }

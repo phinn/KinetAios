@@ -63,6 +63,8 @@ export type AppSettings = {
   localMcpServer: { enabled: boolean; port: number; token: string };
   // ── 多机协作:远程 MCP Server 列表(把别的 KinetAios 节点当工具用)──
   remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
+  // ── 插件管理:被禁用的插件 name 列表(空 = 全部启用) ──
+  disabledPlugins: string[];
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
@@ -344,10 +346,12 @@ export interface KinetAPI {
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
   // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt。列出 + 重载 + 安装 + 卸载。
-  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; error?: string; dir: string }>; error?: string }>;
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; enabled: boolean; error?: string; dir: string }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
   pluginInstall(sourcePath: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   pluginUninstall(name: string): Promise<{ ok: boolean; error?: string }>;
+  // 启用/禁用插件(不删除,只是从工具/prompt/命令注入中排除)。
+  pluginToggle(name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
   // Cron 定时任务:每分钟 tick,匹配的自动起会话发 prompt。
   cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
   cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;

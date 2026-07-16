@@ -31,6 +31,7 @@ const DEFAULTS: AppSettings = {
   localMcpServer: { enabled: false, port: 18109, token: '' },
   // 远程 MCP server 列表默认为空(用户在设置里添加其它机器)。
   remoteMcpServers: [],
+  disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
 };
 
 let cache: AppSettings | null = null;

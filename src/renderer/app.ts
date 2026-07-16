@@ -37,6 +37,8 @@ let budgetCache: AppSettings['budget'] = { enabled: false, perSessionLimit: 0, d
 // 多机协作:MCP Server + 远程节点配置缓存(同 budget 模式)
 let localMcpServerCache: AppSettings['localMcpServer'] = { enabled: false, port: 18109, token: '' };
 let remoteMcpServersCache: AppSettings['remoteMcpServers'] = [];
+// 插件禁用列表缓存(由插件面板通过 pluginToggle IPC 直接修改,save settings 时原样回写)。
+let disabledPluginsCache: string[] = [];
 // 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
@@ -934,6 +936,7 @@ async function showSettings() {
   budgetCache = s.budget ?? { enabled: false, perSessionLimit: 0, dailyLimit: 0 };
   localMcpServerCache = s.localMcpServer ?? { enabled: false, port: 18109, token: '' };
   remoteMcpServersCache = s.remoteMcpServers ?? [];
+  disabledPluginsCache = s.disabledPlugins ?? [];
   const root = document.getElementById('settings')!;
   root.innerHTML = `
     <div class="card">
@@ -945,6 +948,7 @@ async function showSettings() {
         <button class="s-tab active" data-stab="model">模型</button>
         <button class="s-tab" data-stab="behavior">行为</button>
         <button class="s-tab" data-stab="advanced">高级</button>
+        <button class="s-tab" data-stab="plugins">插件</button>
         <button class="s-tab" data-stab="mesh">多机协作</button>
       </div>
 
@@ -1039,22 +1043,31 @@ async function showSettings() {
         </div>
       </div>
 
-      <div class="s-section">
-        <h3>${tr('settings.sec.plugins')}</h3>
-        <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
-          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.plugins.dragDrop')}</span>
-          <div id="s-plugin-dropzone" class="s-plugin-dropzone">
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.4"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            <span style="font-size:12px;color:var(--muted)">${tr('settings.plugins.install')}</span>
-          </div>
-          <div id="s-plugins" class="s-plugin-list"></div>
-          <div style="display:flex;gap:8px;align-items:center">
-            <button id="s-plugins-reload">${tr('settings.plugins.reload')}</button>
+      </div>
+
+      </div><!-- /advanced panel -->
+
+      <div class="s-tab-panel" data-panel="plugins" style="display:none">
+        <div class="s-section">
+          <h3>插件管理</h3>
+          <div class="field" style="flex-direction:column;align-items:stretch;gap:10px">
+            <!-- 工具栏:搜索 + 安装 + 重载 -->
+            <div class="s-plugin-toolbar">
+              <input type="text" id="s-plugin-search" class="s-plugin-search" placeholder="搜索插件名称、描述、作者…" />
+              <div id="s-plugin-dropzone" class="s-plugin-dropzone">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                <span style="font-size:11px;color:var(--muted)">拖放插件目录安装</span>
+              </div>
+              <button id="s-plugins-reload" class="s-plugin-reload-btn" title="重新扫描插件目录">↻ 重载</button>
+            </div>
             <span class="test-msg" id="s-plugins-msg"></span>
+            <!-- 概览统计 -->
+            <div class="s-plugin-stats" id="s-plugin-stats"></div>
+            <!-- 插件卡片列表 -->
+            <div id="s-plugins" class="s-plugin-list"></div>
           </div>
         </div>
-      </div>
-      </div><!-- /advanced panel -->
+      </div><!-- /plugins panel -->
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
@@ -1263,73 +1276,169 @@ async function showSettings() {
   };
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'misc'] as const;
-  const renderPlugins = async (): Promise<void> => {
+  // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
+  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; enabled: boolean; error?: string; dir: string }> = [];
+
+  const renderPluginStats = (): void => {
+    const el = document.getElementById('s-plugin-stats')!;
+    const total = pluginCache.length;
+    const enabled = pluginCache.filter((p) => p.enabled).length;
+    const errored = pluginCache.filter((p) => p.error).length;
+    const tools = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.toolCount, 0);
+    const cmds = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.slashCommandCount, 0);
+    el.innerHTML = `
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${enabled}/${total}</span><span class="s-plugin-stat-label">已启用</span></div>
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${tools}</span><span class="s-plugin-stat-label">工具</span></div>
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${cmds}</span><span class="s-plugin-stat-label">命令</span></div>
+      ${errored ? `<div class="s-plugin-stat s-plugin-stat-warn"><span class="s-plugin-stat-num">${errored}</span><span class="s-plugin-stat-label">加载失败</span></div>` : ''}
+    `;
+  };
+
+  const renderPluginList = (filter = ''): void => {
     const el = document.getElementById('s-plugins')!;
-    const msg = document.getElementById('s-plugins-msg')!;
-    const r = await api.pluginList();
-    if (!r.ok || !r.items) {
-      el.innerHTML = `<div class="s-plugin-empty">${esc(r.error ?? 'error')}</div>`;
+    const q = filter.trim().toLowerCase();
+    const filtered = q
+      ? pluginCache.filter((p) =>
+          p.name.toLowerCase().includes(q) ||
+          (p.description ?? '').toLowerCase().includes(q) ||
+          (p.author ?? '').toLowerCase().includes(q),
+        )
+      : pluginCache;
+
+    if (!filtered.length) {
+      el.innerHTML = q
+        ? `<div class="s-plugin-empty">没有匹配 "${esc(filter)}" 的插件</div>`
+        : `<div class="s-plugin-empty">${tr('settings.plugins.empty')}</div>`;
       return;
     }
-    if (!r.items.length) {
-      el.innerHTML = `<div class="s-plugin-empty">${tr('settings.plugins.empty')}</div>`;
-      return;
-    }
-    // 按分类分组
-    const grouped: Record<string, typeof r.items> = {};
-    for (const p of r.items) {
+
+    // 按分类分组 — Group by category.
+    const grouped: Record<string, typeof filtered> = {};
+    for (const p of filtered) {
       const cat = p.category || 'misc';
       (grouped[cat] ??= []).push(p);
     }
+
     el.innerHTML = PLUGIN_CATS.filter((c) => grouped[c]?.length)
       .map((cat) => {
         const items = grouped[cat]!;
         const catLabel = tr(`settings.plugins.cat.${cat}` as 'settings.plugins.cat.office');
         return `<div class="s-plugin-cat-group">
           <div class="s-plugin-cat-header">${esc(catLabel)} (${items.length})</div>
-          ${items
-            .map((p) => {
-              const errBadge = p.error
-                ? `<span class="s-plugin-err" title="${esc(p.error)}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>`
-                : '';
-              const permTags = (p.permissions ?? [])
-                .map((perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`)
-                .join('');
-              const slashInfo = p.slashCommandCount
-                ? ` · ${p.slashCommandCount} ${esc(tr('settings.plugins.slashCommands', { count: p.slashCommandCount }))}`
-                : '';
-              const iconHtml = p.icon ? `<span class="s-plugin-icon">${p.icon}</span>` : '';
-              const hasError = !!p.error;
-              return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}" data-plugin-name="${esc(p.name)}">
-                ${iconHtml}
-                <div class="s-plugin-info">
-                  <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
-                  <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
-                  <div class="s-plugin-tags">${permTags}${errBadge}</div>
-                </div>
-                ${!hasError ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
-              </div>`;
-            })
-            .join('')}
+          ${items.map((p) => renderPluginCard(p)).join('')}
         </div>`;
       })
       .join('');
-    msg.textContent = '';
-    // 绑定卸载按钮
+
+    // 绑定交互 — Bind interactions.
+    bindPluginCardEvents();
+  };
+
+  // 渲染单个插件卡片 — Render a single plugin card.
+  const renderPluginCard = (p: typeof pluginCache[number]): string => {
+    const hasError = !!p.error;
+    const errBadge = hasError
+      ? `<span class="s-plugin-err" title="${esc(p.error ?? '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>`
+      : '';
+    const permTags = (p.permissions ?? [])
+      .map((perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`)
+      .join('');
+    const slashInfo = p.slashCommandCount
+      ? ` · ${p.slashCommandCount} ${esc(tr('settings.plugins.slashCommands', { count: p.slashCommandCount }))}`
+      : '';
+    const iconHtml = p.icon ? `<span class="s-plugin-icon${p.enabled ? '' : ' s-plugin-icon-off'}">${p.icon}</span>` : '';
+    const engineTags = (p.engines ?? ['direct'])
+      .map((eng) => `<span class="s-plugin-engine">${esc(eng)}</span>`)
+      .join('');
+    const toggleChecked = p.enabled && !hasError ? 'checked' : '';
+    const toggleDisabled = hasError ? 'disabled' : '';
+
+    return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}${p.enabled ? '' : ' s-plugin-row-disabled'}" data-plugin-name="${esc(p.name)}">
+      ${iconHtml}
+      <div class="s-plugin-info">
+        <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
+        <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
+        <div class="s-plugin-tags">${engineTags}${permTags}${errBadge}</div>
+      </div>
+      <div class="s-plugin-actions">
+        <label class="s-plugin-switch" title="${hasError ? '加载失败,无法启用' : (p.enabled ? '点击禁用' : '点击启用')}">
+          <input type="checkbox" class="s-plugin-toggle" data-toggle="${esc(p.name)}" ${toggleChecked} ${toggleDisabled} />
+          <span class="s-plugin-switch-track"><span class="s-plugin-switch-thumb"></span></span>
+        </label>
+        ${!hasError ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
+      </div>
+    </div>`;
+  };
+
+  // 绑定卡片交互事件 — Bind card event handlers.
+  const bindPluginCardEvents = (): void => {
+    const el = document.getElementById('s-plugins')!;
+
+    // 启用/禁用开关 — Enable/disable toggle.
+    el.querySelectorAll<HTMLInputElement>('.s-plugin-toggle').forEach((cb) => {
+      cb.onchange = async () => {
+        const name = cb.dataset.toggle!;
+        const enabled = cb.checked;
+        const r = await api.pluginToggle(name, enabled);
+        if (r.ok) {
+          // 更新缓存中对应插件的 enabled 状态 — Update cache.
+          const p = pluginCache.find((x) => x.name === name);
+          if (p) p.enabled = enabled;
+          renderPluginStats();
+          // 局部更新卡片样式(不重渲染整个列表,避免输入框焦点丢失)
+          const row = cb.closest('.s-plugin-row')!;
+          row.classList.toggle('s-plugin-row-disabled', !enabled);
+          const icon = row.querySelector('.s-plugin-icon');
+          if (icon) icon.classList.toggle('s-plugin-icon-off', !enabled);
+        } else {
+          cb.checked = !enabled; // 回滚 — Revert.
+          const msg = document.getElementById('s-plugins-msg')!;
+          msg.style.color = 'var(--danger)';
+          msg.textContent = r.error ?? 'error';
+        }
+      };
+    });
+
+    // 卸载 — Uninstall.
     el.querySelectorAll<HTMLButtonElement>('.s-plugin-uninstall').forEach((btn) => {
       btn.onclick = async () => {
         const name = btn.dataset.uninstall!;
         if (!confirm(tr('settings.plugins.uninstallConfirm', { name }))) return;
         const r = await api.pluginUninstall(name);
-        if (r.ok) renderPlugins();
-        else {
-          const msgEl = document.getElementById('s-plugins-msg')!;
-          msgEl.style.color = 'var(--danger)';
-          msgEl.textContent = r.error ?? 'error';
+        if (r.ok) {
+          pluginCache = pluginCache.filter((x) => x.name !== name);
+          renderPluginStats();
+          renderPluginList((document.getElementById('s-plugin-search') as HTMLInputElement)?.value ?? '');
+        } else {
+          const msg = document.getElementById('s-plugins-msg')!;
+          msg.style.color = 'var(--danger)';
+          msg.textContent = r.error ?? 'error';
         }
       };
     });
   };
+
+  // 拉取最新插件列表并渲染 — Fetch latest and render.
+  const renderPlugins = async (): Promise<void> => {
+    const msg = document.getElementById('s-plugins-msg')!;
+    const r = await api.pluginList();
+    if (!r.ok || !r.items) {
+      pluginCache = [];
+      document.getElementById('s-plugins')!.innerHTML = `<div class="s-plugin-empty">${esc(r.error ?? 'error')}</div>`;
+      return;
+    }
+    pluginCache = r.items;
+    renderPluginStats();
+    renderPluginList((document.getElementById('s-plugin-search') as HTMLInputElement)?.value ?? '');
+    msg.textContent = '';
+  };
+
+  // 搜索框 — Search input.
+  document.getElementById('s-plugin-search')!.oninput = (e) => {
+    renderPluginList((e.target as HTMLInputElement).value);
+  };
+
+  // 重载按钮 — Reload button.
   document.getElementById('s-plugins-reload')!.onclick = async () => {
     const msg = document.getElementById('s-plugins-msg')!;
     const r = await api.pluginReload();
@@ -1338,7 +1447,8 @@ async function showSettings() {
     msg.textContent = r.ok ? tr('settings.plugins.reloaded', { count: r.count ?? 0 }) : (r.error ?? 'error');
     renderPlugins();
   };
-  // 拖放安装
+
+  // 拖放安装 — Drag & drop install.
   const dropzone = document.getElementById('s-plugin-dropzone')!;
   dropzone.addEventListener('dragover', (e) => {
     e.preventDefault();
@@ -1352,7 +1462,6 @@ async function showSettings() {
     dropzone.classList.remove('drag-over');
     const files = Array.from(e.dataTransfer?.files ?? []);
     const msg = document.getElementById('s-plugins-msg')!;
-    // Electron: file.path 有完整路径
     for (const f of files) {
       const fp = (f as unknown as { path?: string }).path;
       if (!fp) continue;
@@ -1400,6 +1509,7 @@ function readSettingsForm(): AppSettings {
       token: (document.getElementById('s-mcp-token') as HTMLInputElement).value,
     },
     remoteMcpServers: remoteMcpServersCache,
+    disabledPlugins: disabledPluginsCache,
   };
 }
 
