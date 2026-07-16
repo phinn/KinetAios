@@ -893,6 +893,7 @@
         }
         return el;
       });
+      } // 关闭 else 分支 / Close else branch
 
       console.log('[brainstorm] addToCanvas: total elements after=' + (existing.length + nextEls.length));
       api.updateScene({ elements: existing.concat(nextEls) });

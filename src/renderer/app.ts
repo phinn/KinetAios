@@ -2533,23 +2533,38 @@ async function loadPluginPanels(): Promise<void> {
     if (!res.ok || !res.items || res.items.length === 0) return;
     pluginPanelRegistry = res.items;
 
-    // 注入 DOM: 每个面板用 iframe (srcdoc) 隔离, 绕过主页面 CSP 限制
-    // Inject via iframe srcdoc: iframe has its own browsing context,
-    // inline <script> executes normally, external CDN scripts also work.
+    // 注入 DOM: 每个面板创建一个空容器, iframe 延迟到首次打开时才注入
+    // Create empty containers — defer iframe injection until first show.
+    // 原因: Excalidraw 在 display:none 的 0×0 容器里初始化会永远卡在 loading。
+    // Reason: Excalidraw gets stuck loading inside a 0×0 display:none container.
     const container = document.getElementById('plugin-panels-container')!;
     for (const panel of res.items) {
       const viewId = `plugin-panel-${panel.name}`;
-      let viewEl = document.getElementById(viewId);
-      if (!viewEl) {
-        viewEl = document.createElement('div');
+      if (!document.getElementById(viewId)) {
+        const viewEl = document.createElement('div');
         viewEl.id = viewId;
         viewEl.className = 'view plugin-panel-view';
         container.appendChild(viewEl);
       }
-      // iframe 方案: srcdoc + 放宽后的 CSP (script-src 'unsafe-inline' https://unpkg.com)
-      // iframe: srcdoc — CSP already allows inline + unpkg scripts.
-      // srcdoc keeps same-origin with parent → postMessage works reliably.
-      viewEl.innerHTML = '';
+    }
+  } catch { /* main 尚未就绪 / main not ready yet */ }
+}
+
+// 显示某个插件的面板 — 首次打开时延迟注入 iframe
+// Show a plugin panel — lazy-inject iframe on first open
+// 原因: Excalidraw 在 display:none 容器里无法正确测量尺寸, 会永远卡 loading
+function showPluginPanel(name: string): void {
+  currentView = `plugin:${name}`;
+  hideAllViews();
+  // 显示容器 + 指定面板 / Show container + specific panel
+  document.getElementById('plugin-panels-container')?.classList.add('active');
+  const viewEl = document.getElementById(`plugin-panel-${name}`);
+  viewEl?.classList.add('active');
+
+  // 延迟注入: 首次打开时才创建 iframe / Lazy inject: create iframe on first open
+  if (viewEl && !viewEl.querySelector('iframe')) {
+    const panel = pluginPanelRegistry.find((p) => p.name === name);
+    if (panel) {
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
@@ -2558,16 +2573,8 @@ async function loadPluginPanels(): Promise<void> {
       iframe.srcdoc = panel.html;
       viewEl.appendChild(iframe);
     }
-  } catch { /* main 尚未就绪 / main not ready yet */ }
-}
+  }
 
-// 显示某个插件的面板 / Show a specific plugin's panel view
-function showPluginPanel(name: string): void {
-  currentView = `plugin:${name}`;
-  hideAllViews();
-  // 显示容器 + 指定面板 / Show container + specific panel
-  document.getElementById('plugin-panels-container')?.classList.add('active');
-  document.getElementById(`plugin-panel-${name}`)?.classList.add('active');
   syncViewButtons();
 }
 
