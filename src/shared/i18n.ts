@@ -66,6 +66,8 @@ const ZH_CN: Dict = {
   'head.cwdPh': '工作目录',
   'head.pickDir': '选择目录',
   'head.newConv': '新会话',
+  'head.ctxInspectorTitle': '上下文检查器(查看/编辑发送给模型的消息列表)',
+  'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '对话',
   'tabs.files': '文件',
@@ -624,6 +626,8 @@ const EN: Dict = {
   'head.cwdPh': 'Working directory',
   'head.pickDir': 'Pick directory',
   'head.newConv': 'New session',
+  'head.ctxInspectorTitle': 'Context Inspector (view/edit messages sent to the model)',
+  'head.ctxInspectorBtn': 'Context',
 
   'tabs.chat': 'Chat',
   'tabs.files': 'Files',
@@ -1183,6 +1187,8 @@ const ZH_TW: Dict = {
   'head.cwdPh': '工作目錄',
   'head.pickDir': '選擇目錄',
   'head.newConv': '新工作階段',
+  'head.ctxInspectorTitle': '上下文檢查器(檢視/編輯發送給模型的訊息列表)',
+  'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '對話',
   'tabs.files': '檔案',
@@ -1742,6 +1748,8 @@ const JA: Dict = {
   'head.cwdPh': '作業ディレクトリ',
   'head.pickDir': 'ディレクトリを選択',
   'head.newConv': '新規セッション',
+  'head.ctxInspectorTitle': 'コンテキストインスペクター(モデルに送信するメッセージリストを表示/編集)',
+  'head.ctxInspectorBtn': 'コンテキスト',
 
   'tabs.chat': 'チャット',
   'tabs.files': 'ファイル',
