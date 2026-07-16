@@ -638,19 +638,35 @@
       elStatus.textContent = 'AI thinking…';
       aiButtons.forEach(function(btn) { btn.disabled = true; });
 
+      // 计算现有元素的边界范围 / Compute bounding box of existing elements
+      var bounds = { minX: Infinity, maxX: -Infinity, maxY: -Infinity };
+      data.forEach(function(el) {
+        bounds.minX = Math.min(bounds.minX, el.x);
+        bounds.maxX = Math.max(bounds.maxX, el.x + (el.width || 0));
+        bounds.maxY = Math.max(bounds.maxY, el.y + (el.height || 0));
+      });
+
       var prompts = {
-        expand: 'Expand on these ideas. Generate 4-6 new related ideas that build upon what is on the canvas. Consider adjacent topics, creative extensions, and unexpected connections.',
-        organize: 'Analyze the elements on this canvas and organize them into logical categories or clusters. Identify the natural groupings and suggest a clearer structure.',
-        challenge: 'Play devil\'s advocate. Identify gaps, contradictions, assumptions, and blind spots in the ideas on this canvas. Be constructive but thorough.',
-        synthesize: 'Synthesize the key themes from this canvas. What patterns emerge? What is the core narrative? Suggest a unified framework that connects everything.'
+        expand: 'Expand on these ideas. Generate 3-5 new related ideas that build upon what is on the canvas.',
+        organize: 'Analyze the elements on this canvas and organize them into logical categories or clusters.',
+        challenge: 'Play devil\'s advocate. Identify 3-4 key gaps, contradictions, or blind spots in the ideas on this canvas.',
+        synthesize: 'Synthesize the key themes from this canvas. Suggest a unified framework that connects everything.'
       };
 
       var prompt = '## Canvas Elements\n\n```json\n' + JSON.stringify(data, null, 2) + '\n```\n\n## Task\n\n' + prompts[mode] + '\n\n' +
         '## Output Format\n\n' +
         '1. Write 2-3 sentences of analysis.\n' +
         '2. Then provide your suggestions as a JSON code block (for "Add to Canvas"):\n' +
-        '```json\n[{"type": "text", "text": "Suggestion text", "x": 100, "y": 200, "width": 200, "height": 60}]\n```\n' +
-        'Position new elements away from existing ones (offset y by +400 or more).';
+        '```json\n[{"type": "text", "text": "Suggestion text", "x": 100, "y": 200, "width": 200, "height": 60}]\n```\n\n' +
+        '## IMPORTANT Layout Rules\n\n' +
+        '- Generate at most 4-6 new elements. Fewer is better.\n' +
+        '- Each text element must be concise: 1 short sentence or a short phrase (under 15 Chinese characters).\n' +
+        '- Do NOT put long multi-line text in a single element. Break long content into separate elements.\n' +
+        '- Place all new elements in a tidy grid BELOW existing content (y starts at ' + (bounds.maxY + 80) + ').\n' +
+        '- Use consistent grid spacing: 220px horizontal, 80px vertical.\n' +
+        '- All elements should have width=200, height=50 (uniform size).\n' +
+        '- Do NOT use arrows. Only use text elements.\n' +
+        '- Existing elements occupy x=' + bounds.minX + '–' + bounds.maxX + ', y≤' + bounds.maxY + '. Do not overlap.';
 
       elResultMode.textContent = MODE_LABELS[mode] || 'AI Insight';
       elResultBody.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-faint)"><div class="bs-spinner" style="width:20px;height:20px;border-width:2px"></div> Waiting for AI response…</div>';
