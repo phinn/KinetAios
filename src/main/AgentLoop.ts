@@ -116,14 +116,160 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   return dropTransient(messages);
 }
 
+// 尝试修复被 max_tokens 截断的 tool_call arguments JSON。
+// 场景:模型生成长 write_file content 时,输出被 max_tokens 切断,
+// arguments JSON 字符串不完整(引号/括号未闭合)→ JSON.parse 失败。
+// 策略:逐字符追踪字符串/对象/数组层级,在安全位置截断并补全闭合符号。
+function repairTruncatedJSON(raw: string): Record<string, unknown> | null {
+  if (!raw) return null;
+  let s = raw.trim();
+  if (!s.startsWith('{')) return null; // 不是对象开头,放弃
+
+  // 逐字符扫描,追踪状态
+  let inStr = false;       // 是否在字符串内
+  let escape = false;      // 上一个字符是否为反斜杠
+  let depth = 0;           // 对象/数组嵌套深度
+  let lastValidEnd = -1;   // 最后一个完整 key-value 后的位置(逗号或开括号后)
+  let lastKeyEnd = -1;     // 最后一个完整 key 的冒号位置
+  let bracketStack: string[] = []; // 栈:追踪 { 和 [
+
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (escape) { escape = false; continue; }
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') { inStr = false; continue; }
+      continue;
+    }
+    // 不在字符串内
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') { depth++; bracketStack.push(ch); continue; }
+    if (ch === '}' || ch === ']') {
+      depth--;
+      bracketStack.pop();
+      if (depth > 0) lastValidEnd = i; // 记录顶层 value 结束位置
+      continue;
+    }
+    if (ch === ',' && depth === 1) { lastValidEnd = i; } // 顶层逗号
+    if (ch === ':' && depth === 1) { lastKeyEnd = i; }
+  }
+
+  // 情况 1:JSON 意外结束,字符串仍在 open 状态 → content value 被截断
+  if (inStr) {
+    // 找到最后一个顶层 key 的冒号位置,确定是哪个 value 被截断
+    // 截断到冒号后开始一个空字符串 value,关闭所有打开的括号
+    // 策略:在最后一个完整 key-value 后截断(如果有逗号,在逗号后截;否则去掉这个不完整的 key-value)
+    if (lastValidEnd >= 0) {
+      // 在最后一个完整逗号位置后截断
+      s = raw.slice(0, lastValidEnd + 1);
+    } else {
+      // 没有完整的 key-value,整个对象可能只有一个不完整的 key
+      // 尝试:保留最后一个完整 key,给空值
+      if (lastKeyEnd >= 0) {
+        // 找到 key 名
+        const keyRegion = raw.slice(0, lastKeyEnd);
+        const keyMatch = keyRegion.match(/"([^"]*)"\s*:$/);
+        if (keyMatch) {
+          // 保留这个 key,给空字符串值
+          s = raw.slice(0, lastKeyEnd + 1) + ' ""';
+        } else {
+          s = '{}';
+        }
+      } else {
+        s = '{}';
+      }
+    }
+    // 如果仍在字符串内,闭合引号
+    // (此时 s 可能已经不需要,但保险起见再检查)
+  } else if (depth > 0) {
+    // 情况 2:不在字符串内,但括号没闭合 → 补全
+    if (lastValidEnd >= 0) {
+      s = raw.slice(0, lastValidEnd + 1);
+    }
+    // 移除末尾可能残留的逗号
+    s = s.replace(/,\s*$/, '');
+  }
+
+  // 如果仍在字符串内,先闭合字符串
+  // 重新扫描确认
+  inStr = false; escape = false;
+  for (let i = 0; i < s.length; i++) {
+    if (escape) { escape = false; continue; }
+    if (s[i] === '"') {
+      if (!inStr) inStr = true;
+      else { inStr = false; }
+      continue;
+    }
+    if (inStr && s[i] === '\\') { escape = true; continue; }
+  }
+  if (inStr) {
+    // 字符串未闭合 → 补引号
+    s += '"';
+  }
+
+  // 重新计算需要关闭的括号
+  bracketStack = [];
+  inStr = false; escape = false;
+  for (let i = 0; i < s.length; i++) {
+    if (escape) { escape = false; continue; }
+    const ch = s[i];
+    if (inStr) {
+      if (ch === '\\') { escape = true; continue; }
+      if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') { inStr = true; continue; }
+    if (ch === '{' || ch === '[') bracketStack.push(ch);
+    if (ch === '}') bracketStack.pop();
+    if (ch === ']') bracketStack.pop();
+  }
+
+  // 从栈顶向下补全闭合括号
+  const closing = bracketStack.reverse().map((b) => b === '{' ? '}' : ']').join('');
+  s += closing;
+
+  // 移除末尾多余的逗号(JSON 不允许尾逗号)
+  s = s.replace(/,\s*([}\]])/g, '$1');
+
+  try {
+    return JSON.parse(s);
+  } catch {
+    return null;
+  }
+}
+
 async function execute(tc: { name: string; arguments: string }, tools: Tool[], ctx: ToolCtx): Promise<string> {
   const tool = tools.find((t) => t.name === tc.name);
   if (!tool) return `未知工具: ${tc.name}`;
   let args: Record<string, unknown> = {};
+  let parsedOk = true;
   try {
     args = JSON.parse(tc.arguments || '{}');
   } catch {
-    console.error(`[AgentLoop] ${tc.name} args 不是合法 JSON: ${tc.arguments.slice(0, 400)}`);
+    // JSON 解析失败 —— 很可能是模型输出被 max_tokens 截断。
+    // 尝试容错修复截断的 JSON,提取已完整的字段。
+    const repaired = repairTruncatedJSON(tc.arguments);
+    if (repaired) {
+      args = repaired;
+      // 如果 write_file 的 content 被截断(修复后值为空或异常短,但原 arguments 很长),
+      // 说明内容不完整,不应写入半截文件。
+      if (tc.name === 'write_file' || tc.name === 'edit_file') {
+        const contentLen = typeof args.content === 'string' ? args.content.length : 0;
+        const originalLen = tc.arguments.length;
+        // 原始 arguments 有数 KB 但提取出的 content 为空或极短 → content 被截断
+        if (originalLen > 500 && contentLen < 50) {
+          return `⚠️ 参数 JSON 被 max_tokens 截断(原始长度 ${originalLen} 字符),content 字符串不完整。` +
+            `请缩短单次写入内容,或改用 edit_file 分段写入。如果是新文件,可以先写一个骨架框架,再用 edit_file 逐步补充内容。`;
+        }
+      }
+      console.warn(`[AgentLoop] ${tc.name} JSON 被截断,已容错修复提取部分字段。原始长度: ${tc.arguments.length}`);
+    } else {
+      parsedOk = false;
+      console.error(`[AgentLoop] ${tc.name} args 不是合法 JSON: ${tc.arguments.slice(0, 400)}`);
+    }
+  }
+  if (!parsedOk && Object.keys(args).length === 0) {
+    return `⚠️ 参数解析失败:模型输出的 JSON 不完整(可能被 max_tokens 截断)。请重试,缩短参数内容。`;
   }
   try {
     return await tool.run(args, ctx);
