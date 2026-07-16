@@ -1206,7 +1206,7 @@ async function showSettings() {
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
   };
-  // 查询智谱余额
+  // 查询智谱余额 / Coding Plan 状态
   document.getElementById('s-balance')!.onclick = async () => {
     const btn = document.getElementById('s-balance') as HTMLButtonElement;
     btn.disabled = true;
@@ -1214,8 +1214,13 @@ async function showSettings() {
     try {
       const r = await api.getBalance();
       if (r.ok) {
-        // 智谱返回: totalBalance(总额)、balance(剩余)、giftBalance(赠送额)
-        showMsg(`💰 余额: ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
+        if (r.plan === 'coding') {
+          // Coding Plan 订阅用户 — 额度按窗口刷新,不走余额
+          showMsg('📦 GLM Coding Plan 订阅(额度按 5h/周窗口刷新,不消耗余额)', true);
+        } else {
+          // 普通按量计费 — 显示余额
+          showMsg(`💰 余额: ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
+        }
       } else {
         showMsg(r.message || tr('balance.fail'), false);
       }
