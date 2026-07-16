@@ -171,7 +171,10 @@ description: 命令的一句话说明（用户输入 / 时看到）
 
 - 没有图标 → 按分类色自动生成（首字母方块）
 - SVG 内容会被内联嵌入（`readFileSync` → 传到 renderer）
-- 建议尺寸 40×40，`viewBox="0 0 40 40"`
+- 设置页容器固定 `40×40px`，CSS 用 `width:100%; height:100%` 强制 SVG 填满容器
+- **SVG 的 `width`/`height` 属性不影响最终渲染尺寸**（被 CSS 覆盖），但 `viewBox` 决定坐标系
+- 建议 `viewBox="0 0 40 40"`，所有图形画在这个坐标系内
+- ⚠️ 不要在 SVG 标签上写固定 `width="N" height="N"` 期望控制大小 —— 统一由 CSS 容器决定
 
 ## 6. 验证 Checklist
 
@@ -183,7 +186,8 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - [ ] `npm run typecheck` 通过（如果新增了 TS 类型）
 - [ ] `npm run build` 通过
 - [ ] 启动 app → 设置页 → 插件列表 → 能看到新插件
-- [ ] 启用/禁用开关正常工作
+- [ ] 启用/禁用开关正常工作（开关后侧栏 panel 菜单同步刷新）
+- [ ] 图标尺寸与其他插件一致（40×40，不应偏大或偏小）
 - [ ] 每个贡献点功能正常（工具能调用 / slash 命令能触发 / system prompt 生效 / panel 能打开）
 - [ ] 插件加载失败时不影响其它插件（loader 有 try-catch 兜底，但 manifest 语法错误要提前排查）
 
