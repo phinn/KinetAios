@@ -373,6 +373,7 @@
   }
 
   // 监听宿主响应 / Listen for host responses
+  // 宿主回复的 target === 我们的 source ('brainstorm')
   window.addEventListener('message', function(ev) {
     var data = ev.data;
     if (!data || data.target !== 'brainstorm') return;

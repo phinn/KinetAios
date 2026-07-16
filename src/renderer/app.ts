@@ -153,15 +153,9 @@ function applyI18nDOM(): void {
     if (conv.id === selectedId) renderMain();
     if (currentView === 'workbench') renderWorkbench();
     if (currentView === 'town') townOnConversationChanged();
-    // 转发 conversation 更新给插件 iframe (替代轮询)
-    // Forward conversation updates to plugin iframe (replaces polling)
-    const iframe = pluginIframe();
-    if (iframe?.contentWindow) {
-      iframe.contentWindow.postMessage(
-        { target: 'brainstorm', type: 'conversationUpdate', conv },
-        '*'
-      );
-    }
+    // 转发 conversation 更新给所有插件 iframe (替代轮询)
+    // Forward conversation updates to all plugin iframes (replaces polling)
+    broadcastToPlugins({ target: 'brainstorm', type: 'conversationUpdate', conv });
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
@@ -2576,7 +2570,17 @@ function showPluginPanel(name: string): void {
 
 // 插件面板通过 iframe srcdoc 运行, 需通过 postMessage 桥接 IPC
 // Plugin panels run in iframe (srcdoc) — bridge IPC via postMessage
-function getActiveConvId(): string | null { return selectedId; }
+// 获取当前活动会话 ID — 如果没有选中, 自动选最近的会话
+// Get active conv ID — auto-select most recent if none selected
+function getActiveConvId(): string | null {
+  if (selectedId && convs.has(selectedId)) return selectedId;
+  // selectedId 无效或为 null, 尝试回退到最近的会话
+  if (order.length > 0) {
+    selectedId = order[0];
+    return selectedId;
+  }
+  return null;
+}
 
 // 宿主主题 CSS 变量提取 — 传给 iframe 让面板跟主题 / Extract theme CSS vars for iframe
 function getThemeCssVars(): Record<string, string> {
@@ -2596,11 +2600,14 @@ function getThemeCssVars(): Record<string, string> {
 window.addEventListener('message', async (ev: MessageEvent) => {
   const data = ev.data;
   if (!data || typeof data !== 'object') return;
-  // 只处理 plugin bridge 消息 / Only handle plugin bridge messages
-  if (data.source !== 'brainstorm') return;
+  // 只处理 plugin bridge 消息 (source 以 'plugin:' 前缀或已知插件名标识)
+  // Only handle plugin bridge messages — accept any source that looks like a plugin
+  const knownSources = ['brainstorm', 'low-altitude', 'office-suite', 'echo'];
+  if (!knownSources.includes(data.source) && !data.source?.startsWith('plugin:')) return;
 
   const { id, method, args } = data;
   const source = ev.source as (Window | null);
+  const replyOrigin = ev.origin; // 锁定来源 origin, 避免 '*' / Lock origin for security
   try {
     let result: unknown;
     switch (method) {
@@ -2617,24 +2624,34 @@ window.addEventListener('message', async (ev: MessageEvent) => {
         result = await api.getConversations();
         break;
       default:
-        source?.postMessage({ target: 'brainstorm', id, error: `Unknown method: ${method}` }, '*');
+        source?.postMessage({ target: data.source, id, error: `Unknown method: ${method}` }, replyOrigin);
         return;
     }
-    source?.postMessage({ target: 'brainstorm', id, result }, '*');
+    source?.postMessage({ target: data.source, id, result }, replyOrigin);
   } catch (err) {
-    source?.postMessage({ target: 'brainstorm', id, error: String(err) }, '*');
+    source?.postMessage({ target: data.source, id, error: String(err) }, replyOrigin);
   }
 });
 
-// 转发 conversation 更新事件给 iframe (替代轮询)
-// Forward conversation update events to iframe (replaces polling)
+// 转发 conversation 更新事件给所有插件 iframe (替代轮询)
+// Forward conversation update events to all plugin iframes (replaces polling)
 // 当对话有 turn 完成时，iframe 能立即收到通知
-let bridgeConvListener: ((conv: import('../shared/types').Conversation) => void) | null = null;
 const pluginIframe = (): HTMLIFrameElement | null => {
   const container = document.getElementById('plugin-panels-container');
   if (!container) return null;
-  return container.querySelector('iframe');
+  // 优先返回当前可见的 iframe; 没有则返回第一个 / Prefer visible iframe; fallback first
+  const visible = container.querySelector('.plugin-panel-view.active iframe');
+  return (visible as HTMLIFrameElement) || container.querySelector('iframe');
 };
+
+// 向所有插件 iframe 广播事件 (多插件场景) / Broadcast to all plugin iframes
+function broadcastToPlugins(msg: Record<string, unknown>): void {
+  const container = document.getElementById('plugin-panels-container');
+  if (!container) return;
+  container.querySelectorAll('iframe').forEach((iframe) => {
+    iframe.contentWindow?.postMessage(msg, '*');
+  });
+}
 
 // 顶栏按钮的 active 态(📂 / ⚙):高亮当前所在视图,让用户知道点回去会切走。
 function syncViewButtons(): void {
