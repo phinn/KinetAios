@@ -1206,7 +1206,7 @@ async function showSettings() {
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
   };
-  // 查询智谱余额 / Coding Plan 状态
+  // 查询智谱余额 + Coding Plan 用量
   document.getElementById('s-balance')!.onclick = async () => {
     const btn = document.getElementById('s-balance') as HTMLButtonElement;
     btn.disabled = true;
@@ -1214,13 +1214,18 @@ async function showSettings() {
     try {
       const r = await api.getBalance();
       if (r.ok) {
-        if (r.plan === 'coding') {
-          // Coding Plan 订阅用户 — 额度按窗口刷新,不走余额
-          showMsg('📦 GLM Coding Plan 订阅(额度按 5h/周窗口刷新,不消耗余额)', true);
-        } else {
-          // 普通按量计费 — 显示余额
-          showMsg(`💰 余额: ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
+        const parts: string[] = [`💰 余额 ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`];
+        // Coding Plan 用量(如果有)
+        if (r.tiers && r.tiers.length > 0) {
+          for (const t of r.tiers) {
+            const total = t.used + t.remain;
+            const pct = total > 0 ? Math.round((t.used / total) * 100) : 0;
+            const label = t.window === '5h' ? '5h窗口' : t.window === 'weekly' ? '本周' : '限额';
+            const resetStr = t.reset ? ` 重置${formatResetTime(t.reset)}` : '';
+            parts.push(`📦 ${label}: ${pct}%${resetStr}`);
+          }
         }
+        showMsg(parts.join(' | '), true);
       } else {
         showMsg(r.message || tr('balance.fail'), false);
       }
@@ -1389,6 +1394,21 @@ function readSettingsForm(): AppSettings {
     },
     remoteMcpServers: remoteMcpServersCache,
   };
+}
+
+// 把 ISO 时间或毫秒时间戳转成"3.2h后"/"2d后"格式 / Format reset time to human-readable.
+function formatResetTime(reset: string): string {
+  let ms: number;
+  const n = Number(reset);
+  if (!isNaN(n) && n > 1e12) ms = n;       // 毫秒时间戳
+  else if (!isNaN(n) && n > 1e9) ms = n * 1000; // 秒时间戳
+  else { ms = new Date(reset).getTime(); }    // ISO 8601 字符串
+  const diff = ms - Date.now();
+  if (diff <= 0) return '(已过期)';
+  const h = diff / 3_600_000;
+  if (h < 1) return `(${Math.round(h * 60)}m后)`;
+  if (h < 24) return `(${h.toFixed(1)}h后)`;
+  return `(${Math.round(h / 24)}d后)`;
 }
 
 function showMsg(text: string, ok: boolean) {

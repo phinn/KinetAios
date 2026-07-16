@@ -661,28 +661,25 @@ function registerIpc(): void {
   });
 
   // 查询智谱 API 账户状态 — 余额 + Coding Plan 用量
-  // 智谱有两种计费模式:
-  //   1. 按量计费(普通 API): baseURL 含 /api/paas/v4,查 GET /balance → { totalBalance, balance, giftBalance }
-  //   2. Coding Plan(订阅套餐): baseURL 含 /api/coding/paas/v4 或 /api/anthropic,额度按 5h/周窗口刷新,不走余额
-  // Coding Plan 的用量数据在 Web 控制台 (bigmodel.cn/coding-plan/personal/usage),没有公开 API;
-  // 我们通过 baseURL 判断类型,对 Coding Plan 提示用户去控制台查看,对普通 API 查余额。
-  // 其他 OpenAI 兼容端点(DeepSeek/Qwen/Ollama)不支持 → 提示。
+  // 统一用 GET {baseURL}/balance 查询。智谱返回 data 包含:
+  //   - 钱包余额: totalBalance / balance / giftBalance
+  //   - Coding Plan 用量(如果有订阅): data.limits[] 数组
+  //     · unit=3 → 5 小时滚动窗口(used/remain/nextResetTime)
+  //     · unit=6 → 每周窗口(used/remain/nextResetTime)
+  // Coding Plan 端点(/api/coding/paas/v4)本身可能不响应 /balance,
+  // 改用标准端点 /api/paas/v4/balance 查询(同一个 key 同一个账户)。
+  // 参考: CC Switch (github.com/farion1231/cc-switch) coding_plan.rs 实现。
   ipcMain.handle('get-balance', async () => {
     const s = getSettings();
     if (!s.apiKey) return { ok: false, message: '未设置 API Key' };
-    const baseURL = s.baseURL.replace(/\/+$/, '');
-    // ── 判断是否 Coding Plan ──
-    const isCodingPlan = baseURL.includes('/coding/paas/') || baseURL.includes('/api/anthropic');
-    if (isCodingPlan) {
-      // Coding Plan 套餐类型推断(从 URL 看不出 Lite/Pro/Max,需要用户自己去控制台查)
-      return {
-        ok: true,
-        plan: 'coding' as const,
-        message: 'GLM Coding Plan 订阅用户\n额度按 5 小时 / 每周窗口刷新,不消耗账户余额\n请前往 bigmodel.cn/coding-plan/personal/usage 查看详细用量',
-      };
+    // 不管用户配的是 coding 端点还是标准端点,统一查标准端点 /api/paas/v4/balance。
+    // coding/paas/v4/balance 和 anthropic/balance 不存在;只有 paas/v4 有 balance。
+    let baseURL = s.baseURL.replace(/\/+$/, '');
+    if (baseURL.includes('/coding/paas/')) {
+      baseURL = baseURL.replace('/coding/paas/', '/paas/');
+    } else if (baseURL.includes('/api/anthropic')) {
+      baseURL = baseURL.replace('/api/anthropic', '/api/paas/v4');
     }
-    // ── 普通智谱 API:查余额 ──
-    // 仅 open.bigmodel.cn 端点支持;非智谱端点返回 404
     const url = baseURL + '/balance';
     try {
       const resp = await fetch(url, {
@@ -696,15 +693,31 @@ function registerIpc(): void {
         return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
       }
       const j = await resp.json() as Record<string, any>;
-      // 智谱返回格式: { success: true, data: { totalBalance, balance, giftBalance } }
       const data = j?.data ?? j;
-      return {
-        ok: true,
-        plan: 'standard' as const,
-        balance: String(data?.totalBalance ?? data?.total ?? '?'),
-        left: String(data?.balance ?? data?.left ?? '?'),
-        gift: String(data?.giftBalance ?? data?.gift ?? '0'),
-      };
+      // ── 解析钱包余额 ──
+      const balance = String(data?.totalBalance ?? data?.total ?? '?');
+      const left = String(data?.balance ?? data?.left ?? '?');
+      const gift = String(data?.giftBalance ?? data?.gift ?? '0');
+      // ── 解析 Coding Plan 用量(如果返回中有 limits[]) ──
+      // CC Switch 的 unit 分类: 3 = 5h 窗口, 6 = 每周窗口
+      const tiers: Array<{ window: string; used: number; remain: number; reset?: string }> = [];
+      const limits = data?.limits;
+      if (Array.isArray(limits)) {
+        for (const item of limits) {
+          // CC Switch 解析: limit item 含 type(TOKENS_LIMIT)、unit、number、tokens(总量)、used、remain、nextResetTime
+          const unit = item?.unit;
+          const tokens = Number(item?.tokens ?? item?.limit ?? 0);
+          const used = Number(item?.used ?? 0);
+          const remain = Number(item?.remain ?? item?.remaining ?? (tokens - used));
+          const reset = item?.nextResetTime || item?.resetTime;
+          let window = '';
+          if (unit === 3) window = '5h';
+          else if (unit === 6) window = 'weekly';
+          else if (reset) window = 'limit';
+          if (window) tiers.push({ window, used, remain, reset: reset ? String(reset) : undefined });
+        }
+      }
+      return { ok: true, balance, left, gift, tiers };
     } catch (e) {
       return { ok: false, message: (e as Error)?.message ?? String(e) };
     }
