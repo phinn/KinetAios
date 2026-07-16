@@ -2592,6 +2592,7 @@ window.addEventListener('message', async (ev: MessageEvent) => {
 
   const { id, method, args } = data;
   const source = ev.source as (Window | null);
+  console.log('[plugin-bridge] recv', method, 'id=', id, 'source=', source ? 'ok' : 'NULL');
   try {
     let result: unknown;
     switch (method) {
@@ -2602,17 +2603,22 @@ window.addEventListener('message', async (ev: MessageEvent) => {
         result = getThemeCssVars();
         break;
       case 'send':
+        console.log('[plugin-bridge] send args:', args[0], (args[1] as string)?.slice(0, 80));
         result = await api.send(args[0], args[1]);
+        console.log('[plugin-bridge] send result:', result);
         break;
       case 'getConversations':
         result = await api.getConversations();
         break;
       default:
+        console.warn('[plugin-bridge] unknown method:', method);
         source?.postMessage({ target: 'brainstorm', id, error: `Unknown method: ${method}` }, '*');
         return;
     }
+    console.log('[plugin-bridge] reply', method, 'id=', id, 'to source=', source ? 'ok' : 'NULL');
     source?.postMessage({ target: 'brainstorm', id, result }, '*');
   } catch (err) {
+    console.error('[plugin-bridge] error', method, err);
     source?.postMessage({ target: 'brainstorm', id, error: String(err) }, '*');
   }
 });

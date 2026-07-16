@@ -349,17 +349,19 @@
   // 发送请求到宿主, 返回 Promise / Send request to host, returns Promise
   function hostCall(method, args) {
     var id = ++reqId;
+    console.log('[brainstorm] hostCall', method, 'id=', id);
     return new Promise(function(resolve, reject) {
       // 30 秒超时, 防止永久 pending / 30s timeout to avoid hanging
       var timer = setTimeout(function() {
         if (pending[id]) {
           delete pending[id];
+          console.error('[brainstorm] TIMEOUT', method, 'id=', id);
           reject('hostCall timeout: ' + method);
         }
       }, 30000);
       pending[id] = {
-        resolve: function(v) { clearTimeout(timer); resolve(v); },
-        reject: function(e) { clearTimeout(timer); reject(e); }
+        resolve: function(v) { clearTimeout(timer); console.log('[brainstorm] resolved', method, 'id=', id); resolve(v); },
+        reject: function(e) { clearTimeout(timer); console.error('[brainstorm] rejected', method, e); reject(e); }
       };
       window.parent.postMessage({
         source: 'brainstorm',
@@ -689,13 +691,15 @@
         var turns = conv.turns || [];
         if (turns.length > initialTurnCount) {
           var latest = turns[turns.length - 1];
-          if (latest && latest.status === 'done') {
+          // Turn.done = true 表示完成 / Turn.done === true means finished
+          if (latest && latest.done) {
             finishLoading();
             displayAIResult(latest);
             return;
           }
-          if (latest && latest.text) {
-            elResultBody.innerHTML = '<div style="opacity:.6">' + formatMarkdown(latest.text) + '</div>';
+          // 流式中显示部分文本 / Show streaming text (Turn.answer, not .text)
+          if (latest && latest.answer) {
+            elResultBody.innerHTML = '<div style="opacity:.6">' + formatMarkdown(latest.answer) + '</div>';
           }
           setTimeout(poll, 1500);
         } else {
@@ -720,7 +724,7 @@
   }
 
   function displayAIResult(turn) {
-    lastAIResponse = turn.text || '';
+    lastAIResponse = turn.answer || '';
     elResultBody.innerHTML = formatMarkdown(lastAIResponse);
     // 检测是否有 JSON code block (可添加到画布) / Check for JSON code block
     var jsonMatch = lastAIResponse.match(/```json\s*([\s\S]*?)```/);
