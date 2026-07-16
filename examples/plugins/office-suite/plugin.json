@@ -1,12 +1,12 @@
 {
   "name": "office-suite",
-  "version": "1.0.0",
-  "description": "办公工具套件:文档创建、格式转换、表格提取",
+  "version": "2.0.0",
+  "description": "办公工具套件:CSV分析/文档转换/Excel读写/PDF/OCR/Outlook邮件/Office COM自动化(共15个工具)",
   "author": "Kinet",
   "category": "office",
   "icon": "icon.svg",
   "engines": ["direct"],
-  "permissions": ["shell", "fs"],
+  "permissions": ["shell", "fs", "powershell", "com-automation"],
   "tools": "index.js#tools",
   "slashCommands": "commands/",
   "systemPrompt": "prompts/office.md"
