@@ -1139,6 +1139,14 @@ function registerIpc(): void {
     return { ok: taskManager.pinTurn(convId, turnId, pinned) };
   });
 
+  // ── 上下文检查器:查看 / 编辑 Direct 引擎的 directHistory ──
+  ipcMain.handle('get-direct-history', (_e, convId: string) => {
+    return taskManager.getDirectHistory(convId);
+  });
+  ipcMain.handle('save-direct-history', (_e, convId: string, history: ChatMsg[]) => {
+    return taskManager.saveDirectHistory(convId, history);
+  });
+
   // ── 跨会话引用 + Agent 任务图 ──
   ipcMain.handle('task-graph', () => {
     return loadTaskGraph();

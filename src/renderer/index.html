@@ -56,6 +56,7 @@
             <span class="stat" id="head-stat"></span>
             <span class="status" id="head-status"></span>
             <button class="ghost" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话" data-i18n="head.clearBtn">清空</button>
+            <button class="ghost" id="btn-ctx-inspector" title="上下文检查器(查看/编辑发送给模型的消息列表)" data-i18n-title="head.ctxInspector" data-i18n="head.ctxInspectorBtn">上下文</button>
             <button class="ghost" id="btn-del" data-i18n-title="head.delete" title="删除会话" data-i18n="head.deleteBtn">删除</button>
             <span class="ch-tabs">
               <button class="cht active" id="tab-chat" data-i18n="tabs.chat">对话</button>
@@ -254,6 +255,29 @@
         <button class="ghost" id="cron-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="mm-list" id="cron-list"></div>
+    </div>
+  </div>
+
+  <!-- 上下文检查器:查看/编辑 Direct 引擎的 directHistory(实际发给 LLM 的消息列表)-->
+  <div id="ctx-inspector-modal">
+    <div class="modal-card ctx-insp-card">
+      <div class="ctx-insp-head">
+        <h3>上下文检查器</h3>
+        <span class="ctx-insp-tokens" id="ctx-insp-tokens"></span>
+        <span class="ctx-insp-engine" id="ctx-insp-engine"></span>
+        <button class="ghost ctx-insp-add" id="ctx-insp-add" title="添加一条消息"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="ghost" id="ctx-insp-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="ctx-insp-bar" id="ctx-insp-bar">
+        <div class="ctx-insp-bar-fill" id="ctx-insp-bar-fill"></div>
+      </div>
+      <div class="ctx-insp-list" id="ctx-insp-list"></div>
+      <div class="ctx-insp-actions">
+        <span class="ctx-insp-status" id="ctx-insp-status"></span>
+        <span class="ctx-insp-spacer"></span>
+        <button id="ctx-insp-cancel">取消</button>
+        <button class="primary" id="ctx-insp-save">保存</button>
+      </div>
     </div>
   </div>
 

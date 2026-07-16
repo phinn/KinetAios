@@ -380,6 +380,11 @@ export interface KinetAPI {
   estContextTokens(convId: string): Promise<{ tokens: number; modelMax: number; pct: number }>;
   // 锁定/解锁一个 turn → pinned turn 在 compact 时永远保留(不被摘要压缩)。
   pinTurn(convId: string, turnId: string, pinned: boolean): Promise<{ ok: boolean; error?: string }>;
+  // ── 上下文检查器:查看 / 编辑 Direct 引擎的 directHistory(实际发给 LLM 的消息列表)──
+  // 获取指定会话的 directHistory(OpenAI ChatMsg[] 格式,含 role/content/tool_calls)。
+  getDirectHistory(convId: string): Promise<{ ok: boolean; history?: ChatMsg[]; engine?: EngineKind; tokens?: number; modelMax?: number; error?: string }>;
+  // 保存编辑后的 directHistory 回会话(持久化到 DB,下一轮 send 用新的上下文)。
+  saveDirectHistory(convId: string, history: ChatMsg[]): Promise<{ ok: boolean; error?: string }>;
   // ── 跨会话引用 + Agent 任务图 ──
   // 任务图:返回所有会话间的 DAG 关系(分支/引用/pipeline)。
   taskGraph(): Promise<{ nodes: Array<{ id: string; engine: string; cwd: string; createdAt: number; customTitle: string | null; turns: number; cost: number }>; edges: Array<{ from: string; to: string; type: string; meta?: Record<string, unknown> }> }>;

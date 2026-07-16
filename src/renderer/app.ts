@@ -2,7 +2,7 @@
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS } from '../shared/types';
 import { t, LANGS, type Lang } from '../shared/i18n';
-import type { AppSettings, Conversation, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
@@ -1582,6 +1582,11 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('btn-rules-gen')!.onclick = () => openRuleGenerator();
   document.getElementById('btn-clear')!.onclick = () => selectedId && api.clearConversation(selectedId);
   document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);
+  document.getElementById('btn-ctx-inspector')!.onclick = () => selectedId && void openCtxInspector(selectedId);
+  document.getElementById('ctx-insp-close')!.onclick = closeCtxInspector;
+  document.getElementById('ctx-insp-cancel')!.onclick = closeCtxInspector;
+  document.getElementById('ctx-insp-save')!.onclick = () => void saveCtxInspector();
+  document.getElementById('ctx-insp-add')!.onclick = () => addCtxMsg();
   document.getElementById('btn-send')!.onclick = send;
   document.getElementById('modal-ok')!.onclick = () => closeConfirm(true);
   document.getElementById('modal-cancel')!.onclick = () => closeConfirm(false);
@@ -1632,13 +1637,15 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     if (document.getElementById('modal')!.classList.contains('show')) closeConfirm(false);
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
     else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
+    else if (document.getElementById('ctx-inspector-modal')!.classList.contains('show')) closeCtxInspector();
   });
-  for (const id of ['modal', 'prompt-modal', 'context-modal']) {
+  for (const id of ['modal', 'prompt-modal', 'context-modal', 'ctx-inspector-modal']) {
     document.getElementById(id)!.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) {
         if (id === 'modal') closeConfirm(false);
         else if (id === 'prompt-modal') dismissPrompt();
-        else closeContextModal();
+        else if (id === 'context-modal') closeContextModal();
+        else if (id === 'ctx-inspector-modal') closeCtxInspector();
       }
     });
   }
@@ -2499,6 +2506,243 @@ async function saveContext(): Promise<void> {
 function closeContextModal(): void {
   contextCwd = '';
   document.getElementById('context-modal')!.classList.remove('show');
+}
+
+// ---------- 上下文检查器 (Context Inspector) ----------
+// 查看 / 编辑 Direct 引擎的 directHistory —— 实际发给 LLM 的消息列表。
+// 支持展开折叠每条消息、编辑 content、删除、上下移动、新增。
+
+let ctxInspConvId = '';
+let ctxInspHistory: ChatMsg[] = [];
+let ctxInspEngine: EngineKind = 'direct';
+
+async function openCtxInspector(convId: string): Promise<void> {
+  ctxInspConvId = convId;
+  const modal = document.getElementById('ctx-inspector-modal')!;
+  const status = document.getElementById('ctx-insp-status')!;
+  status.textContent = '加载中…';
+  modal.classList.add('show');
+  const r = await api.getDirectHistory(convId);
+  if (!r.ok) {
+    status.textContent = r.error ?? '加载失败';
+    ctxInspHistory = [];
+    renderCtxList();
+    return;
+  }
+  ctxInspHistory = r.history ?? [];
+  ctxInspEngine = r.engine ?? 'direct';
+  // token 进度条
+  const tokEl = document.getElementById('ctx-insp-tokens')!;
+  const barFill = document.getElementById('ctx-insp-bar-fill')!;
+  const pct = r.modelMax ? Math.min(100, Math.round(((r.tokens ?? 0) / r.modelMax) * 100)) : 0;
+  tokEl.textContent = `${((r.tokens ?? 0) / 1000).toFixed(1)}k / ${((r.modelMax ?? 128000) / 1000).toFixed(0)}k (${pct}%)`;
+  barFill.style.width = pct + '%';
+  barFill.className = 'ctx-insp-bar-fill' + (pct > 80 ? ' danger' : pct > 60 ? ' warn' : '');
+  // 引擎标签
+  const engEl = document.getElementById('ctx-insp-engine')!;
+  engEl.textContent = ENGINE_LABELS[ctxInspEngine] ?? ctxInspEngine;
+  status.textContent = '';
+  renderCtxList();
+}
+
+function closeCtxInspector(): void {
+  ctxInspConvId = '';
+  ctxInspHistory = [];
+  document.getElementById('ctx-inspector-modal')!.classList.remove('show');
+}
+
+// 估算单条消息的 token 数(粗略:1 token ≈ 4 chars)
+function estMsgTokens(content: string | unknown): number {
+  const text = typeof content === 'string' ? content : JSON.stringify(content ?? '');
+  return Math.ceil(text.length / 4);
+}
+
+// 提取消息预览文本(截断 100 字)
+function msgPreview(m: ChatMsg): string {
+  if (typeof m.content === 'string') return m.content.slice(0, 100);
+  if (Array.isArray(m.content)) return m.content.map((p) => p.type === 'text' ? p.text : '[image]').join(' ').slice(0, 100);
+  if (m.tool_calls?.length) return `[tool_call: ${m.tool_calls.map((tc) => tc.function.name).join(', ')}]`;
+  return '(空)';
+}
+
+// 提取消息完整文本(给编辑 textarea 用)
+function msgFullText(m: ChatMsg): string {
+  if (typeof m.content === 'string') return m.content;
+  if (Array.isArray(m.content)) return m.content.map((p) => p.type === 'text' ? p.text : '[image]').join('');
+  return '';
+}
+
+// role 显示名
+const ROLE_LABELS: Record<string, string> = {
+  user: 'User', assistant: 'AI', tool: 'Tool', system: 'Sys',
+};
+
+function renderCtxList(): void {
+  const list = document.getElementById('ctx-insp-list')!;
+  list.innerHTML = '';
+
+  // 非 Direct 引擎:显示提示
+  if (ctxInspEngine !== 'direct') {
+    list.innerHTML = `<div class="ctx-insp-warn">
+      <p>🔍 <strong>${esc(ENGINE_LABELS[ctxInspEngine] ?? ctxInspEngine)}</strong> 引擎的上下文由各自 CLI 管理,无法在应用内查看/编辑。</p>
+      <p>仅 <strong>Kaios (Direct)</strong> 引擎支持上下文检查器。</p>
+      <p style="margin-top:16px;font-size:11px;color:var(--text-faint)">CLI 引擎的会话历史存储在 ~/.claude 或 ~/.codex 中。</p>
+    </div>`;
+    // 隐藏 add 按钮
+    (document.getElementById('ctx-insp-add') as HTMLButtonElement).style.display = 'none';
+    return;
+  }
+  (document.getElementById('ctx-insp-add') as HTMLButtonElement).style.display = '';
+
+  if (!ctxInspHistory.length) {
+    list.innerHTML = '<div class="ctx-insp-empty">📭 上下文为空 —— 还没有对话历史。<br>发送一条消息后,这里会显示实际发给模型的消息列表。</div>';
+    return;
+  }
+
+  for (let i = 0; i < ctxInspHistory.length; i++) {
+    const m = ctxInspHistory[i];
+    const card = document.createElement('div');
+    card.className = 'ctx-insp-msg';
+
+    // 头部:role 标签 + 预览 + token + 操作按钮
+    const head = document.createElement('div');
+    head.className = 'ctx-insp-msg-head';
+
+    const roleEl = document.createElement('span');
+    roleEl.className = 'ctx-insp-msg-role';
+    roleEl.dataset.role = m.role;
+    roleEl.textContent = ROLE_LABELS[m.role] ?? m.role;
+
+    const prev = document.createElement('span');
+    prev.className = 'ctx-insp-msg-preview';
+    prev.textContent = msgPreview(m);
+
+    const tok = document.createElement('span');
+    tok.className = 'ctx-insp-msg-tok';
+    tok.textContent = `~${estMsgTokens(m.content)} tok`;
+
+    const actions = document.createElement('div');
+    actions.className = 'ctx-insp-msg-actions';
+
+    // 上移
+    const upBtn = document.createElement('button');
+    upBtn.className = 'ctx-insp-msg-btn';
+    upBtn.innerHTML = '▲';
+    upBtn.title = '上移';
+    upBtn.disabled = i === 0;
+    upBtn.onclick = (e) => { e.stopPropagation(); if (i > 0) { [ctxInspHistory[i - 1], ctxInspHistory[i]] = [ctxInspHistory[i], ctxInspHistory[i - 1]]; renderCtxList(); } };
+
+    // 下移
+    const dnBtn = document.createElement('button');
+    dnBtn.className = 'ctx-insp-msg-btn';
+    dnBtn.innerHTML = '▼';
+    dnBtn.title = '下移';
+    dnBtn.disabled = i === ctxInspHistory.length - 1;
+    dnBtn.onclick = (e) => { e.stopPropagation(); if (i < ctxInspHistory.length - 1) { [ctxInspHistory[i + 1], ctxInspHistory[i]] = [ctxInspHistory[i], ctxInspHistory[i + 1]]; renderCtxList(); } };
+
+    // 编辑(展开)
+    const editBtn = document.createElement('button');
+    editBtn.className = 'ctx-insp-msg-btn';
+    editBtn.textContent = '编辑';
+    editBtn.title = '编辑内容';
+    editBtn.onclick = (e) => { e.stopPropagation(); card.classList.add('editing'); renderCtxBody(card, m, i); };
+
+    // 删除
+    const delBtn = document.createElement('button');
+    delBtn.className = 'ctx-insp-msg-btn del';
+    delBtn.textContent = '✕';
+    delBtn.title = '删除此消息';
+    delBtn.onclick = (e) => { e.stopPropagation(); ctxInspHistory.splice(i, 1); renderCtxList(); };
+
+    actions.append(upBtn, dnBtn, editBtn, delBtn);
+    head.append(roleEl, prev, tok, actions);
+    card.appendChild(head);
+
+    // 点击头部折叠/展开(已有 body 时移除)
+    head.onclick = () => {
+      const existing = card.querySelector('.ctx-insp-msg-body');
+      if (existing) { existing.remove(); card.classList.remove('editing'); }
+      else renderCtxBody(card, m, i);
+    };
+
+    list.appendChild(card);
+  }
+}
+
+// 展开消息体:显示完整文本 + tool_calls 信息(只读)
+function renderCtxBody(card: HTMLElement, m: ChatMsg, _idx: number): void {
+  const body = document.createElement('div');
+  body.className = 'ctx-insp-msg-body';
+
+  const ta = document.createElement('textarea');
+  ta.value = msgFullText(m);
+  ta.placeholder = '(空内容)';
+  ta.rows = Math.min(15, Math.max(3, Math.ceil(ta.value.length / 80)));
+  ta.oninput = () => { m.content = ta.value; };
+  body.appendChild(ta);
+
+  // 如果有 tool_calls,显示只读信息
+  if (m.tool_calls?.length) {
+    const tcDiv = document.createElement('div');
+    tcDiv.className = 'ctx-insp-msg-tools';
+    for (const tc of m.tool_calls) {
+      const line = document.createElement('div');
+      line.textContent = `🔧 ${tc.function.name}(${tc.function.arguments})`;
+      tcDiv.appendChild(line);
+    }
+    body.appendChild(tcDiv);
+  }
+
+  // 如果有 tool_call_id(这是 tool 角色的回复)
+  if (m.tool_call_id) {
+    const idDiv = document.createElement('div');
+    idDiv.className = 'ctx-insp-msg-tools';
+    idDiv.textContent = `↩ tool_call_id: ${m.tool_call_id}`;
+    body.appendChild(idDiv);
+  }
+
+  card.appendChild(body);
+}
+
+// 添加一条新消息(默认 role=user)
+function addCtxMsg(): void {
+  ctxInspHistory.push({ role: 'user', content: '' });
+  renderCtxList();
+  // 滚到底部 + 自动展开编辑
+  const list = document.getElementById('ctx-insp-list')!;
+  list.scrollTop = list.scrollHeight;
+  const cards = list.querySelectorAll('.ctx-insp-msg');
+  const last = cards[cards.length - 1] as HTMLElement | undefined;
+  if (last) {
+    last.classList.add('editing');
+    const idx = ctxInspHistory.length - 1;
+    renderCtxBody(last, ctxInspHistory[idx], idx);
+    const ta = last.querySelector('textarea');
+    if (ta) ta.focus();
+  }
+}
+
+async function saveCtxInspector(): Promise<void> {
+  const status = document.getElementById('ctx-insp-status')!;
+  if (!ctxInspConvId) return;
+  status.textContent = '保存中…';
+  const r = await api.saveDirectHistory(ctxInspConvId, ctxInspHistory);
+  if (r.ok) {
+    status.textContent = '✓ 已保存';
+    // 刷新 token 统计
+    const tr = await api.getDirectHistory(ctxInspConvId);
+    if (tr.ok) {
+      const tokEl = document.getElementById('ctx-insp-tokens')!;
+      const barFill = document.getElementById('ctx-insp-bar-fill')!;
+      const pct = tr.modelMax ? Math.min(100, Math.round(((tr.tokens ?? 0) / tr.modelMax) * 100)) : 0;
+      tokEl.textContent = `${((tr.tokens ?? 0) / 1000).toFixed(1)}k / ${((tr.modelMax ?? 128000) / 1000).toFixed(0)}k (${pct}%)`;
+      barFill.style.width = pct + '%';
+      barFill.className = 'ctx-insp-bar-fill' + (pct > 80 ? ' danger' : pct > 60 ? ' warn' : '');
+    }
+    setTimeout(() => { status.textContent = ''; }, 2000);
+  } else {
+    status.textContent = '✕ ' + (r.error ?? '保存失败');
+  }
 }
 
 function autosize(el: HTMLTextAreaElement) {

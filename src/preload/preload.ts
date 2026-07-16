@@ -2,7 +2,7 @@
 // Renderer has no Node access — it can only call these and listen to these events.
 // 每个 on* 方法先 removeAllListeners 再注册,防止多次调用导致回调叠加(hot-reload / 窗口重建场景)。
 import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron';
-import type { KinetAPI } from '../shared/types';
+import type { KinetAPI, ChatMsg } from '../shared/types';
 
 const api: KinetAPI = {
   getConversations: () => ipcRenderer.invoke('get-conversations'),
@@ -94,6 +94,9 @@ const api: KinetAPI = {
   // 上下文压缩可视化
   estContextTokens: (convId) => ipcRenderer.invoke('est-context-tokens', convId),
   pinTurn: (convId, turnId, pinned) => ipcRenderer.invoke('pin-turn', convId, turnId, pinned),
+  // 上下文检查器
+  getDirectHistory: (convId: string) => ipcRenderer.invoke('get-direct-history', convId),
+  saveDirectHistory: (convId: string, history: ChatMsg[]) => ipcRenderer.invoke('save-direct-history', convId, history),
   // 跨会话引用 + Agent 任务图
   taskGraph: () => ipcRenderer.invoke('task-graph'),
   searchConversations: (query) => ipcRenderer.invoke('search-conversations', query),

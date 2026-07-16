@@ -1,7 +1,7 @@
 // Conversation manager. Port of Swift TaskManager (engine dispatch + persistence + memory).
 // Three engines now (Direct / Claude Code / Codex); each implements the Engine interface.
 import fs from 'node:fs';
-import type { AgentEvent, Conversation, EngineKind } from '../shared/types';
+import type { AgentEvent, ChatMsg, Conversation, EngineKind } from '../shared/types';
 import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
@@ -495,6 +495,32 @@ export class TaskManager {
     store.saveTurn(convId, turn);
     this.emit.emitConversation(conv);
     return true;
+  }
+
+  // ── 上下文检查器:获取 Direct 引擎的 directHistory ──
+  // 返回完整消息列表 + token 估算(给 UI 显示进度条)。
+  // 非 Direct 引擎返回 engine 字段让 UI 提示「仅 Direct 引擎支持」。
+  getDirectHistory(convId: string): { ok: boolean; history?: ChatMsg[]; engine?: EngineKind; tokens?: number; modelMax?: number; error?: string } {
+    const conv = this.convs.get(convId);
+    if (!conv) return { ok: false, error: '会话不存在' };
+    // 深拷贝(避免 renderer 直接修改内存对象)
+    const history = JSON.parse(JSON.stringify(conv.directHistory ?? [])) as ChatMsg[];
+    const { estTokenCount } = require('./AgentLoop') as typeof import('./AgentLoop');
+    const tokens = estTokenCount(history);
+    return { ok: true, history, engine: conv.engine, tokens, modelMax: 128_000 };
+  }
+
+  // ── 上下文检查器:保存编辑后的 directHistory ──
+  // 会话正在运行时拒绝修改(防数据竞争);非 Direct 引擎也拒绝。
+  saveDirectHistory(convId: string, history: ChatMsg[]): { ok: boolean; error?: string } {
+    const conv = this.convs.get(convId);
+    if (!conv) return { ok: false, error: '会话不存在' };
+    if (conv.status === 'running') return { ok: false, error: '会话运行中,无法修改上下文' };
+    // 替换 directHistory + 持久化
+    conv.directHistory = history;
+    store.saveDirectHistory(conv);
+    this.emit.emitConversation(conv);
+    return { ok: true };
   }
 
   // ── 会话分支 ──
