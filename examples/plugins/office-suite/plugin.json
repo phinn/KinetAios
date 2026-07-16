@@ -1,7 +1,7 @@
 {
   "name": "office-suite",
   "version": "2.0.0",
-  "description": "办公工具套件:CSV分析/文档转换/Excel读写/PDF/OCR/Outlook邮件/Office COM自动化(共15个工具)",
+  "description": "办公工具套件:CSV分析/文档转换/Excel读写/PDF/OCR/Outlook邮件/Office COM自动化(共18个工具)",
   "author": "Kinet",
   "category": "office",
   "icon": "icon.svg",
