@@ -789,18 +789,58 @@
       if (!api) { toast('Canvas API not ready'); return; }
 
       // 生成唯一 ID — crypto.randomUUID 在 sandbox 里可能不可用 / UUID fallback for sandbox
-      function genId() {
-        try { return crypto.randomUUID(); }
-        catch (e) { return 'el-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10); }
-      }
-
       // 安全获取已有元素 / Safely get existing elements
       var existing = [];
       try { existing = api.getSceneElements() || []; } catch (e) { existing = cachedEls || []; }
 
       console.log('[brainstorm] addToCanvas: existing=' + existing.length + ' new=' + newEls.length);
 
-      var nextEls = newEls.map(function(e) {
+      // 用 Excalidraw 官方 API 转换简化元素 → 完整合法元素
+      // Use Excalidraw's convertToExcalidrawElements to produce valid elements
+      var convertFn = window.ExcalidrawLib && window.ExcalidrawLib.convertToExcalidrawElements;
+      var validEls;
+      if (convertFn) {
+        try {
+          validEls = convertFn(newEls.map(function(e) {
+            var out = {
+              type: e.type || 'text',
+              x: e.x || 100,
+              y: e.y || 400,
+              width: e.width || 200,
+              height: e.height || 50
+            };
+            if (e.text) out.text = e.text;
+            if (e.type === 'arrow' || e.type === 'line') {
+              out.points = [[0, 0], [e.width || 100, e.height || 40]];
+            }
+            return out;
+          }));
+          console.log('[brainstorm] convertToExcalidrawElements ok:', validEls.length, validEls.map(function(e){return e.type;}));
+        } catch (convErr) {
+          console.warn('[brainstorm] convertToExcalidrawElements failed, using manual:', convErr);
+          validEls = null;
+        }
+      }
+
+      var nextEls;
+      if (validEls && validEls.length > 0) {
+        // 官方转换成功 — 直接使用 / Official conversion succeeded
+        nextEls = validEls.map(function(el) {
+          // 染色 + 确保 id / Apply color and ensure id
+          el.strokeColor = '#8b5cf6';
+          if (!el.id) {
+            try { el.id = crypto.randomUUID(); }
+            catch (e) { el.id = 'el-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10); }
+          }
+          return el;
+        });
+      } else {
+        // Fallback: 手动构建 (兼容旧版本) / Manual build (compat fallback)
+        function genId() {
+          try { return crypto.randomUUID(); }
+          catch (e) { return 'el-' + Date.now() + '-' + Math.random().toString(36).slice(2, 10); }
+        }
+        nextEls = newEls.map(function(e) {
         var isText = (e.type || 'text') === 'text';
         var isArrow = e.type === 'arrow';
         var el = {
@@ -855,6 +895,13 @@
 
       console.log('[brainstorm] addToCanvas: total elements after=' + (existing.length + nextEls.length));
       api.updateScene({ elements: existing.concat(nextEls) });
+
+      // 滚动到新元素位置，确保用户能看见 / Scroll viewport to new elements
+      try {
+        var firstNew = nextEls[0];
+        if (firstNew) api.scrollToContent(nextEls, { fitToContent: true, animate: true });
+      } catch (e) { /* noop */ }
+
       toast('Added ' + newEls.length + ' elements');
     } else {
       // Fallback: 追加到文本框 / Append to textarea
