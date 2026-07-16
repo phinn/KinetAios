@@ -350,7 +350,17 @@
   function hostCall(method, args) {
     var id = ++reqId;
     return new Promise(function(resolve, reject) {
-      pending[id] = { resolve: resolve, reject: reject };
+      // 30 秒超时, 防止永久 pending / 30s timeout to avoid hanging
+      var timer = setTimeout(function() {
+        if (pending[id]) {
+          delete pending[id];
+          reject('hostCall timeout: ' + method);
+        }
+      }, 30000);
+      pending[id] = {
+        resolve: function(v) { clearTimeout(timer); resolve(v); },
+        reject: function(e) { clearTimeout(timer); reject(e); }
+      };
       window.parent.postMessage({
         source: 'brainstorm',
         id: id,

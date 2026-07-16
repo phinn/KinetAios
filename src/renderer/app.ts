@@ -2483,8 +2483,9 @@ function hideAllViews(): void {
     // 切走时重置滚动位置,避免回来时停在底部 / 布局错乱
     el.scrollTop = 0;
   }
-  // 隐藏所有插件 panel 视图 / Hide all plugin panel views
+  // 隐藏所有插件 panel 视图 + 容器 / Hide all plugin panel views + container
   document.querySelectorAll('.plugin-panel-view').forEach((el) => el.classList.remove('active'));
+  document.getElementById('plugin-panels-container')?.classList.remove('active');
 }
 
 function showWorkbench() {
@@ -2539,18 +2540,16 @@ async function loadPluginPanels(): Promise<void> {
         viewEl.className = 'view plugin-panel-view';
         container.appendChild(viewEl);
       }
-      // iframe 方案: 用 blob URL 而非 srcdoc, 避免 srcdoc 继承父页面 CSP
-      // blob: URL gives iframe a unique origin → independent CSP context
-      // 需要的通信全部通过 postMessage
+      // iframe 方案: srcdoc + 放宽后的 CSP (script-src 'unsafe-inline' https://unpkg.com)
+      // iframe: srcdoc — CSP already allows inline + unpkg scripts.
+      // srcdoc keeps same-origin with parent → postMessage works reliably.
       viewEl.innerHTML = '';
       const iframe = document.createElement('iframe');
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
-      // blob URL — iframe 有独立 browsing context, 不继承宿主 CSP
-      const blob = new Blob([panel.html], { type: 'text/html' });
-      iframe.src = URL.createObjectURL(blob);
+      iframe.srcdoc = panel.html;
       viewEl.appendChild(iframe);
     }
   } catch { /* main 尚未就绪 / main not ready yet */ }
@@ -2560,6 +2559,8 @@ async function loadPluginPanels(): Promise<void> {
 function showPluginPanel(name: string): void {
   currentView = `plugin:${name}`;
   hideAllViews();
+  // 显示容器 + 指定面板 / Show container + specific panel
+  document.getElementById('plugin-panels-container')?.classList.add('active');
   document.getElementById(`plugin-panel-${name}`)?.classList.add('active');
   syncViewButtons();
 }
