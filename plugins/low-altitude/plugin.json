@@ -1,0 +1,15 @@
+{
+  "name": "low-altitude",
+  "version": "0.1.0",
+  "description": "低空经济行业插件 —— 飞行任务规划、空域查询、气象简报、巡检报告生成。提供行业工具集 + 工作流命令 + 领域知识提示词。",
+  "author": "KinetAios",
+  "category": "data",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/low-altitude",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "web_fetch", "network"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}
