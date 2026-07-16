@@ -1,288 +1,770 @@
 <!-- Brainstorm Board — Excalidraw + AI whiteboard panel (v2.1 plugin) -->
-<!-- Requires internet access for Excalidraw CDN. Falls back to textarea if blocked. -->
+<!-- Requires internet for Excalidraw CDN. Falls back to textarea if blocked. -->
 <style>
-  #bs-root { display: flex; flex-direction: column; height: 100%; width: 100%; position: relative; }
+  /* ── 布局骨架 / Layout skeleton ── */
+  #bs-root {
+    display: flex; flex-direction: column; height: 100%; width: 100%;
+    position: relative; overflow: hidden;
+    background: var(--bg-side, #161619);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text, #e7e7ec);
+  }
+
+  /* ── 顶部工具栏 / Top toolbar ── */
   #bs-toolbar {
-    display: flex; align-items: center; gap: 8px; padding: 8px 12px;
-    background: var(--bg-sidebar, #1a1a2e); border-bottom: 1px solid var(--border, #333);
-    z-index: 10; flex-shrink: 0;
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev, #242429);
+    border-bottom: 1px solid var(--border, #34343c);
+    z-index: 20;
   }
-  #bs-toolbar .bs-title { font-weight: 600; font-size: 14px; margin-right: auto; color: var(--text, #eee); }
+  #bs-toolbar .bs-title {
+    font-size: 13px; font-weight: 600; letter-spacing: .02em;
+    color: var(--text, #e7e7ec); margin-right: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  #bs-toolbar .bs-title svg {
+    width: 16px; height: 16px;
+    color: var(--accent, #e8b339); flex-shrink: 0;
+  }
+
+  /* ── 按钮 / Buttons ── */
   .bs-btn {
-    padding: 6px 14px; border-radius: 8px; border: 1px solid var(--border, #444);
-    background: var(--bg-input, #2a2a4a); color: var(--text, #eee);
-    font-size: 13px; cursor: pointer; transition: all .15s; white-space: nowrap;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 7px;
+    border: 1px solid var(--border, #34343c);
+    background: var(--bg-input, #2a2a31);
+    color: var(--text, #e7e7ec);
+    font-size: 12px; font-weight: 500; white-space: nowrap;
+    cursor: pointer; transition: background .15s, border-color .15s, opacity .15s;
+    -webkit-app-region: no-drag;
   }
-  .bs-btn:hover { background: var(--accent-dim, #3a3a6a); border-color: var(--accent, #6c6cff); }
-  .bs-btn:disabled { opacity: .4; cursor: default; }
-  .bs-btn.primary { background: var(--accent, #6c6cff); color: #fff; border-color: transparent; }
-  .bs-btn.primary:hover { filter: brightness(1.15); }
+  .bs-btn:hover {
+    background: var(--accent-dim, #6b5320);
+    border-color: var(--accent, #e8b339);
+  }
+  .bs-btn:active { transform: scale(.97); }
+  .bs-btn:disabled { opacity: .35; cursor: default; transform: none; }
+  .bs-btn:focus-visible { outline: 2px solid var(--accent, #e8b339); outline-offset: 2px; }
+  .bs-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  /* ── 画布区 / Canvas area ── */
   #bs-canvas-wrap { flex: 1; min-height: 0; position: relative; }
   #bs-excalidraw { width: 100%; height: 100%; }
+
+  /* ── 空状态 / Empty state ── */
+  #bs-empty {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 12px;
+    pointer-events: none; z-index: 5;
+    color: var(--text-faint, #6c6c76); font-size: 13px;
+    transition: opacity .3s;
+  }
+  #bs-empty.hidden { opacity: 0; }
+  #bs-empty svg {
+    width: 48px; height: 48px; opacity: .3;
+    color: var(--accent, #e8b339);
+  }
+
+  /* ── 加载指示 / Loading indicator ── */
+  #bs-loading {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    display: flex; flex-direction: column; align-items: center; gap: 14px;
+    z-index: 15; color: var(--text-dim, #9a9aa4); font-size: 13px;
+  }
+  #bs-loading.hidden { display: none; }
+  .bs-spinner {
+    width: 32px; height: 32px;
+    border: 3px solid var(--border, #34343c);
+    border-top-color: var(--accent, #e8b339);
+    border-radius: 50%;
+    animation: bs-spin .8s linear infinite;
+  }
+  @keyframes bs-spin { to { transform: rotate(360deg); } }
+
+  /* ── 底部 AI 操作栏 / Bottom AI bar ── */
   #bs-ai-bar {
-    display: flex; gap: 6px; padding: 8px 12px;
-    background: var(--bg-sidebar, #1a1a2e); border-top: 1px solid var(--border, #333);
+    display: flex; gap: 6px; padding: 8px 14px;
     flex-shrink: 0; flex-wrap: wrap; align-items: center;
+    background: var(--bg-elev, #242429);
+    border-top: 1px solid var(--border, #34343c);
+    z-index: 20;
   }
-  #bs-ai-bar .bs-label { font-size: 12px; color: var(--text-dim, #888); margin-right: 4px; }
+  #bs-ai-bar .bs-ai-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase;
+    color: var(--text-faint, #6c6c76); margin-right: 6px;
+  }
   .bs-ai-btn {
-    padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer;
-    border: 1px solid var(--border, #444); background: var(--bg-input, #2a2a4a); color: var(--text, #eee);
-    transition: all .15s;
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 11px; border-radius: 6px;
+    font-size: 12px; font-weight: 500;
+    border: 1px solid var(--border, #34343c);
+    background: transparent;
+    color: var(--text-dim, #9a9aa4);
+    cursor: pointer; transition: all .15s;
+    -webkit-app-region: no-drag;
   }
-  .bs-ai-btn:hover { background: var(--accent-dim, #3a3a6a); }
-  .bs-ai-btn.active { background: var(--accent, #6c6cff); color: #fff; border-color: transparent; }
+  .bs-ai-btn:hover {
+    color: var(--text, #e7e7ec);
+    background: var(--bg-input, #2a2a31);
+    border-color: var(--accent-dim, #6b5320);
+  }
+  .bs-ai-btn:disabled { opacity: .3; cursor: default; }
+  .bs-ai-btn:focus-visible { outline: 2px solid var(--accent, #e8b339); outline-offset: 1px; }
+  .bs-ai-btn svg { width: 13px; height: 13px; flex-shrink: 0; }
+  #bs-status {
+    font-size: 11px; color: var(--text-faint, #6c6c76);
+    margin-left: auto; white-space: nowrap;
+  }
+
+  /* ── AI 结果面板 / AI result panel ── */
   #bs-result {
-    position: absolute; bottom: 60px; right: 12px; width: 380px; max-height: 50%;
-    background: var(--bg-panel, #1e1e38); border: 1px solid var(--border, #444);
-    border-radius: 12px; padding: 16px; overflow-y: auto; z-index: 100;
-    box-shadow: 0 8px 32px rgba(0,0,0,.4); display: none;
-    font-size: 13px; line-height: 1.6; color: var(--text, #eee);
+    position: absolute; top: 52px; right: 14px; bottom: 56px;
+    width: 400px; max-width: calc(100vw - 28px);
+    display: flex; flex-direction: column;
+    background: var(--bg-elev, #242429);
+    border: 1px solid var(--border, #34343c);
+    border-radius: 12px; overflow: hidden;
+    box-shadow: 0 12px 40px rgba(0,0,0,.35);
+    z-index: 50;
+    transform: translateX(20px); opacity: 0;
+    transition: transform .25s ease-out, opacity .25s ease-out;
+    pointer-events: none;
   }
-  #bs-result.show { display: block; }
-  #bs-result .bs-result-close { float: right; cursor: pointer; opacity: .5; font-size: 18px; }
-  #bs-result .bs-result-close:hover { opacity: 1; }
-  #bs-result .bs-add-btn {
-    margin-top: 8px; padding: 6px 16px; border-radius: 6px; border: none;
-    background: var(--accent, #6c6cff); color: #fff; font-size: 12px; cursor: pointer;
+  #bs-result.show { transform: translateX(0); opacity: 1; pointer-events: auto; }
+  #bs-result-header {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 14px; flex-shrink: 0;
+    border-bottom: 1px solid var(--border, #34343c);
+    background: var(--bg-side, #161619);
   }
-  #bs-status { font-size: 11px; color: var(--text-dim, #666); margin-left: auto; }
+  #bs-result-header .bs-result-title {
+    font-size: 12px; font-weight: 600; color: var(--text, #e7e7ec);
+    display: flex; align-items: center; gap: 6px; flex: 1;
+  }
+  #bs-result-header .bs-result-title svg {
+    width: 14px; height: 14px; color: var(--accent, #e8b339);
+  }
+  #bs-result-close {
+    width: 24px; height: 24px; display: flex; align-items: center; justify-content: center;
+    border-radius: 6px; border: none; background: transparent;
+    color: var(--text-faint, #6c6c76); cursor: pointer;
+    transition: background .15s, color .15s;
+  }
+  #bs-result-close:hover { background: var(--bg-input, #2a2a31); color: var(--text, #e7e7ec); }
+  #bs-result-close:focus-visible { outline: 2px solid var(--accent, #e8b339); outline-offset: 1px; }
+  #bs-result-close svg { width: 14px; height: 14px; }
+  #bs-result-body {
+    flex: 1; overflow-y: auto; padding: 14px;
+    font-size: 13px; line-height: 1.65; color: var(--text-dim, #9a9aa4);
+  }
+  #bs-result-body .bs-analysis { margin-bottom: 10px; color: var(--text, #e7e7ec); }
+  #bs-result-body strong { color: var(--text, #e7e7ec); font-weight: 600; }
+  #bs-result-body pre {
+    background: var(--bg-side, #161619); border: 1px solid var(--border, #34343c);
+    border-radius: 6px; padding: 10px; font-size: 11px; overflow-x: auto;
+    margin: 8px 0; color: var(--accent, #e8b339);
+  }
+  #bs-result-actions {
+    flex-shrink: 0; padding: 10px 14px;
+    border-top: 1px solid var(--border, #34343c);
+    display: none; gap: 8px;
+  }
+  #bs-result-actions.show { display: flex; }
+  #bs-add-btn {
+    flex: 1; display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+    padding: 7px 14px; border-radius: 7px; border: none;
+    background: var(--accent, #e8b339); color: var(--accent-fg, #1b1b1f);
+    font-size: 12px; font-weight: 600; cursor: pointer;
+    transition: filter .15s;
+  }
+  #bs-add-btn:hover { filter: brightness(1.12); }
+  #bs-add-btn:focus-visible { outline: 2px solid var(--accent, #e8b339); outline-offset: 2px; }
+  #bs-add-btn svg { width: 13px; height: 13px; }
+
+  /* ── Fallback 文本模式 / Fallback text mode ── */
   #bs-fallback {
     flex: 1; display: none; flex-direction: column; padding: 16px; gap: 8px;
-    color: var(--text-dim, #888); font-size: 13px; align-items: center; justify-content: center;
+    color: var(--text-dim, #9a9aa4); font-size: 13px;
   }
-  #bs-fallback textarea { width: 100%; max-width: 500px; height: 200px; border-radius: 8px; padding: 12px; font-size: 14px; }
+  #bs-fallback.show { display: flex; }
+  #bs-fallback textarea {
+    flex: 1; border: 1px solid var(--border, #34343c); border-radius: 8px;
+    padding: 12px; font-family: inherit; font-size: 13px; line-height: 1.6;
+    background: var(--bg-input, #2a2a31); color: var(--text, #e7e7ec);
+    resize: none; outline: none;
+  }
+  #bs-fallback textarea:focus { border-color: var(--accent, #e8b339); }
+
+  /* ── Toast / Toast notification ── */
+  #bs-toast {
+    position: absolute; bottom: 60px; left: 50%; transform: translateX(-50%) translateY(10px);
+    padding: 8px 20px; border-radius: 8px;
+    background: var(--accent, #e8b339); color: var(--accent-fg, #1b1b1f);
+    font-size: 12px; font-weight: 500;
+    opacity: 0; pointer-events: none; z-index: 100;
+    transition: opacity .25s, transform .25s ease-out;
+  }
+  #bs-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  /* ── Reduced motion / 降低动态偏好 ── */
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration: .01ms !important;
+      transition-duration: .01ms !important;
+    }
+  }
 </style>
 
 <div id="bs-root">
+  <!-- 顶部工具栏 / Toolbar -->
   <div id="bs-toolbar">
-    <span class="bs-title">🧠 Brainstorm Board</span>
-    <button class="bs-btn" onclick="bsClear()">Clear</button>
-    <button class="bs-btn" onclick="bsExport()">Export PNG</button>
+    <span class="bs-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>
+      Brainstorm Board
+    </span>
+    <button class="bs-btn" id="bs-btn-clear" title="Clear canvas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
+      Clear
+    </button>
+    <button class="bs-btn" id="bs-btn-export" title="Export as PNG">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4M17 8l-5-5-5 5M12 3v12"/></svg>
+      Export
+    </button>
   </div>
+
+  <!-- 加载状态 / Loading state -->
+  <div id="bs-loading" class="hidden">
+    <div class="bs-spinner"></div>
+    <span>Loading canvas…</span>
+  </div>
+
+  <!-- 空状态 / Empty state -->
+  <div id="bs-empty">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18h6M10 22h4"/><path d="M12 2a7 7 0 0 0-4 12.7c.6.5 1 1.3 1 2.1V18h6v-1.2c0-.8.4-1.6 1-2.1A7 7 0 0 0 12 2z"/></svg>
+    <span>Start drawing, then let AI expand your ideas</span>
+  </div>
+
+  <!-- Excalidraw 容器 / Excalidraw container -->
   <div id="bs-canvas-wrap">
     <div id="bs-excalidraw"></div>
-    <div id="bs-fallback">
-      <p>⚠️ Excalidraw CDN unreachable (offline mode).<br>Use the text area below to brainstorm — AI actions still work.</p>
-      <textarea id="bs-fallback-text" placeholder="Type your ideas here, one per line..."></textarea>
+  </div>
+
+  <!-- Fallback 文本模式 / Fallback text mode -->
+  <div id="bs-fallback">
+    <div>Excalidraw unavailable — text mode active. Type your ideas below.</div>
+    <textarea id="bs-fallback-text" placeholder="Write your ideas here, one per line…"></textarea>
+  </div>
+
+  <!-- AI 结果面板 / AI result panel -->
+  <div id="bs-result">
+    <div id="bs-result-header">
+      <span class="bs-result-title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/></svg>
+        <span id="bs-result-mode">AI Insight</span>
+      </span>
+      <button id="bs-result-close" title="Close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+      </button>
+    </div>
+    <div id="bs-result-body"></div>
+    <div id="bs-result-actions">
+      <button id="bs-add-btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+        Add to Canvas
+      </button>
     </div>
   </div>
+
+  <!-- 底部 AI 操作栏 / Bottom AI action bar -->
   <div id="bs-ai-bar">
-    <span class="bs-label">AI:</span>
-    <button class="bs-ai-btn" data-mode="expand" onclick="bsAIAction('expand')">💡 Expand</button>
-    <button class="bs-ai-btn" data-mode="organize" onclick="bsAIAction('organize')">🗂️ Organize</button>
-    <button class="bs-ai-btn" data-mode="challenge" onclick="bsAIAction('challenge')">⚡ Challenge</button>
-    <button class="bs-ai-btn" data-mode="synthesize" onclick="bsAIAction('synthesize')">✨ Synthesize</button>
-    <span id="bs-status"></span>
+    <span class="bs-ai-label">AI</span>
+    <button class="bs-ai-btn" data-mode="expand" disabled title="Generate new related ideas">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>
+      Expand
+    </button>
+    <button class="bs-ai-btn" data-mode="organize" disabled title="Structure into categories">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      Organize
+    </button>
+    <button class="bs-ai-btn" data-mode="challenge" disabled title="Find gaps and blind spots">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+      Challenge
+    </button>
+    <button class="bs-ai-btn" data-mode="synthesize" disabled title="Find themes and synthesize">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-6.5 6M12 11l6.5 6"/></svg>
+      Synthesize
+    </button>
+    <span id="bs-status">Ready</span>
   </div>
-  <div id="bs-result">
-    <span class="bs-result-close" onclick="document.getElementById('bs-result').classList.remove('show')">×</span>
-    <div id="bs-result-content"></div>
-  </div>
+
+  <!-- Toast / Toast notification -->
+  <div id="bs-toast"></div>
 </div>
 
 <script>
 (function() {
   'use strict';
-  var excaliApp = null;
+
+  // ── 状态 / State ──
   var excaliReady = false;
+  var excaliAPI = null;
+  var cachedEls = [];  // onChange 缓存, 供 getCanvasData fallback / Cached from onChange
   var lastAIResponse = '';
+  var lastAIMode = '';
+  var isLoading = false;
 
-  // ── Load Excalidraw from CDN ──
-  function loadScript(src) {
-    return new Promise(function(resolve, reject) {
-      var s = document.createElement('script');
-      s.src = src; s.type = 'module'; s.crossOrigin = 'anonymous';
-      s.onload = resolve; s.onerror = reject;
-      document.head.appendChild(s);
-    });
-  }
+  // ── DOM 引用 / DOM refs ──
+  var elRoot       = document.getElementById('bs-root');
+  var elLoading    = document.getElementById('bs-loading');
+  var elEmpty      = document.getElementById('bs-empty');
+  var elFallback   = document.getElementById('bs-fallback');
+  var elResult     = document.getElementById('bs-result');
+  var elResultBody = document.getElementById('bs-result-body');
+  var elResultMode = document.getElementById('bs-result-mode');
+  var elResultAct  = document.getElementById('bs-result-actions');
+  var elStatus     = document.getElementById('bs-status');
+  var elToast      = document.getElementById('bs-toast');
+  var aiButtons    = document.querySelectorAll('.bs-ai-btn');
 
-  function initExcalidraw() {
-    // Excalidraw React component loaded via ESM CDN
-    import('https://esm.sh/excalidraw@0.17.6').then(function(mod) {
-      var React = mod.React || window.React;
-      var ExcalidrawLib = mod;
-      var excalidraw = ExcalidrawLib.Excalidraw || ExcalidrawLib.default;
-
-      // Use the imperative API
-      var apiRef = {};
-      var hostEl = document.getElementById('bs-excalidraw');
-
-      // Create a container and use renderToString + innerHTML as fallback
-      // Actually, Excalidraw provides a non-React exportFn — use the DOM API
-      if (ExcalidrawLib.Excalidraw) {
-        // React-based: mount via createRoot
-        import('https://esm.sh/react-dom@18/client').then(function(DOM) {
-          import('https://esm.sh/react@18').then(function(React) {
-            var root = ReactDOM.createRoot(hostEl);
-            root.render(React.createElement(ExcalidrawLib.Excalidraw, {
-              initialData: { elements: [], appState: { viewBackgroundColor: '#1e1e2e' } },
-              excalidrawAPI: function(api) { apiRef.api = api; excaliReady = true; },
-              UIOptions: { canvasActions: { loadScene: true, saveToActiveFile: true } }
-            }));
-            excaliApp = apiRef;
-          });
-        }).catch(function() { showFallback(); });
-      } else {
-        showFallback();
-      }
-    }).catch(function(e) {
-      console.warn('[brainstorm] Excalidraw CDN failed, using fallback', e);
-      showFallback();
-    });
-  }
-
-  function showFallback() {
-    document.getElementById('bs-excalidraw').style.display = 'none';
-    document.getElementById('bs-fallback').style.display = 'flex';
-  }
-
-  // ── Serialize canvas elements to JSON ──
-  function getCanvasElements() {
-    if (excaliReady && excaliApp && excaliApp.api) {
-      try {
-        var els = excaliApp.api.getSceneElements();
-        return els.filter(function(e) { return !e.isDeleted; }).map(function(e) {
-          return { type: e.type, x: Math.round(e.x), y: Math.round(e.y), width: Math.round(e.width), height: Math.round(e.height), text: e.text || e.label || '', angle: e.angle || 0 };
-        });
-      } catch(e) { /* API not ready */ }
-    }
-    // Fallback: parse textarea lines as virtual sticky notes
-    var text = (document.getElementById('bs-fallback-text') || {}).value || '';
-    return text.split('\n').filter(function(l) { return l.trim(); }).map(function(l, i) {
-      return { type: 'text', text: l.trim(), x: 50, y: 50 + i * 60, width: 300, height: 40 };
-    });
-  }
-
-  // ── AI actions ──
-  window.bsAIAction = function(mode) {
-    var els = getCanvasElements();
-    if (!els.length) {
-      document.getElementById('bs-status').textContent = '⚠️ Canvas is empty — draw something first';
-      setTimeout(function() { document.getElementById('bs-status').textContent = ''; }, 3000);
-      return;
-    }
-    // Highlight active button
-    document.querySelectorAll('.bs-ai-btn').forEach(function(b) { b.classList.remove('active'); });
-    document.querySelector('[data-mode="' + mode + '"]').classList.add('active');
-
-    var prompts = {
-      expand: 'Expand on these ideas. For each concept on the board, suggest 1-2 related sub-ideas or extensions. Output suggested additions as JSON.',
-      organize: 'Analyze the spatial layout and relationships. Suggest a better grouping or structure. Output reorganized labels as JSON.',
-      challenge: 'Play devil\'s advocate. Find blind spots, contradictions, or missing considerations in these ideas. Output suggested "missing piece" elements as JSON.',
-      synthesize: 'Synthesize all elements into a coherent narrative or framework. Identify the central theme and suggest connecting elements as JSON.'
-    };
-
-    var prompt = prompts[mode] + '\n\n--- Canvas Elements (JSON) ---\n' + JSON.stringify(els, null, 2);
-    document.getElementById('bs-status').textContent = '🤔 Thinking...';
-
-    // Use the kinet API to send to the active conversation
-    var convId = (window.__kinet && window.__kinet.getActiveConvId) ? window.__kinet.getActiveConvId() : null;
-    if (convId && window.kinet && window.kinet.send) {
-      window.kinet.send(convId, prompt).then(function(ok) {
-        document.getElementById('bs-status').textContent = '';
-        document.querySelectorAll('.bs-ai-btn').forEach(function(b) { b.classList.remove('active'); });
-        if (ok) {
-          showResult(mode, '✅ Prompt sent to active conversation! Check the chat for AI response. You can switch back and forth between the board and chat.');
-        } else {
-          showResult(mode, '⚠️ Send failed. The conversation may still be processing.');
-        }
-      }).catch(function(e) {
-        document.getElementById('bs-status').textContent = '';
-        showResult(mode, '⚠️ Error: ' + (e.message || e));
-      });
-    } else {
-      // Fallback: no active conversation, copy prompt to clipboard
-      if (navigator.clipboard) {
-        navigator.clipboard.writeText(prompt).then(function() {
-          showResult(mode, '📋 No active conversation found. Prompt copied to clipboard — paste it into a chat to get AI feedback.');
-        });
-      } else {
-        showResult(mode, '⚠️ No active conversation and no clipboard access. Create a conversation first.');
-      }
-    }
+  // ── SVG 图标 / SVG icons (for reuse in dynamic HTML) ──
+  var ICON = {
+    expand:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 6-6"/></svg>',
+    organize:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>',
+    challenge: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>',
+    synthesize:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;flex-shrink:0"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11l-6.5 6M12 11l6.5 6"/></svg>'
   };
 
-  function showResult(mode, text) {
-    lastAIResponse = text;
-    var labels = { expand: '💡 Expanded Ideas', organize: '🗂️ Organized Structure', challenge: '⚡ Challenges & Blind Spots', synthesize: '✨ Synthesis' };
-    var html = '<h4 style="margin:0 0 8px;font-size:14px">' + (labels[mode] || 'AI Result') + '</h4>';
-    // Render text, converting markdown-ish ** ** and code blocks
-    html += '<div>' + text
-      .replace(/```json([\s\S]*?)```/g, function(m, code) {
-        return '<pre style="background:#111;padding:8px;border-radius:6px;overflow-x:auto;font-size:11px">' + escapeHtml(code.trim()) + '</pre>';
-      })
-      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-      .replace(/\n/g, '<br>') + '</div>';
-    // Try to extract JSON suggestions for "Add to canvas" button
-    var jsonMatch = text.match(/```json\s*\n([\s\S]*?)\n```/);
-    if (jsonMatch) {
-      try {
-        JSON.parse(jsonMatch[1]); // validate
-        html += '<button class="bs-add-btn" onclick="bsAddToCanvas()">➕ Add to Canvas</button>';
-      } catch(e) { /* not valid JSON, skip */ }
+  var MODE_LABELS = {
+    expand:     'Expand Ideas',
+    organize:   'Organize & Structure',
+    challenge:  'Challenge & Gaps',
+    synthesize: 'Synthesize Themes'
+  };
+
+  // ── Toast / Toast notification ──
+  var toastTimer = null;
+  function toast(msg) {
+    elToast.textContent = msg;
+    elToast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function() { elToast.classList.remove('show'); }, 2200);
+  }
+
+  // ── 加载 Excalidraw / Initialize Excalidraw ──
+  function initExcalidraw() {
+    elLoading.classList.remove('hidden');
+    elEmpty.classList.add('hidden');
+
+    // 动态注入 React + Excalidraw — Inject React + Excalidraw scripts
+    var reactScript = document.createElement('script');
+    reactScript.crossOrigin = 'anonymous';
+    reactScript.src = 'https://unpkg.com/react@18.3.1/umd/react.development.js';
+    reactScript.onload = function() {
+      var reactDomScript = document.createElement('script');
+      reactDomScript.crossOrigin = 'anonymous';
+      reactDomScript.src = 'https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js';
+      reactDomScript.onload = function() {
+        var excaliScript = document.createElement('script');
+        excaliScript.crossOrigin = 'anonymous';
+        excaliScript.src = 'https://unpkg.com/@excalidraw/excalidraw@0.17.6/dist/excalidraw.development.js';
+        excaliScript.onload = mountExcalidraw;
+        excaliScript.onerror = activateFallback;
+        document.head.appendChild(excaliScript);
+      };
+      reactDomScript.onerror = activateFallback;
+      document.head.appendChild(reactDomScript);
+    };
+    reactScript.onerror = activateFallback;
+    document.head.appendChild(reactScript);
+  }
+
+  function mountExcalidraw() {
+    try {
+      var ExcalidrawLib = window.ExcalidrawLib;
+      var excaliRoot = document.getElementById('bs-excalidraw');
+
+      // React 18 createRoot — 挂载 Excalidraw 组件 / Mount Excalidraw component
+      // ref API: getSceneElements, updateScene, exportToBlob 等 / ref API methods
+      var apiRef = { current: null };
+      var excaliApp = ReactDOM.createRoot(excaliRoot);
+      excaliApp.render(
+        React.createElement(ExcalidrawLib.Excalidraw, {
+          excalidrawAPI: function(api) { apiRef.current = api; },
+          onChange: function(els) {
+            cachedEls = els || [];
+            updateEmptyState(els && els.length ? els : []);
+            updateAIButtons(els && els.length ? els.length > 0 : false);
+          }
+        })
+      );
+
+      // excaliAPI 指向 ref API / Point to ref API
+      // 由于 React 异步渲染, 需短暂等待 ref 就绪 / Wait briefly for ref to populate
+      var apiCheckCount = 0;
+      var apiCheckTimer = setInterval(function() {
+        apiCheckCount++;
+        if (apiRef.current) {
+          clearInterval(apiCheckTimer);
+          excaliAPI = apiRef.current;
+          onReady();
+        } else if (apiCheckCount > 30) {
+          // 3 秒超时: 可能 React 版本差异, 直接标记 ready(getSceneElements 可能在 onChange 中获取)
+          // 3s timeout: mark ready anyway, getSceneElements may be available from onChange
+          clearInterval(apiCheckTimer);
+          onReady();
+        }
+      }, 100);
+
+      function onReady() {
+        excaliReady = true;
+        elLoading.classList.add('hidden');
+        elEmpty.classList.remove('hidden');
+        elStatus.textContent = 'Canvas ready';
+        syncExcalidrawTheme();
+        toast('Canvas ready');
+      }
+    } catch (e) {
+      console.error('[brainstorm] mount failed:', e);
+      activateFallback();
     }
-    document.getElementById('bs-result-content').innerHTML = html;
-    document.getElementById('bs-result').classList.add('show');
+  }
+
+  function syncExcalidrawTheme() {
+    if (!excaliAPI) return;
+    // 检测宿主暗色主题 / Detect host dark theme
+    var isDark = true;
+    var bg = getComputedStyle(elRoot).getPropertyValue('--bg-side').trim();
+    if (bg) {
+      var hex = bg.replace('#', '');
+      if (hex.length === 6) {
+        var r = parseInt(hex.substr(0, 2), 16);
+        var g = parseInt(hex.substr(2, 2), 16);
+        var b = parseInt(hex.substr(4, 2), 16);
+        isDark = (r + g + b) / 3 < 128;
+      }
+    }
+    try {
+      excaliAPI.updateScene({ appState: { theme: isDark ? 'dark' : 'light' } });
+    } catch (e) { /* 主题同步失败不影响核心功能 / Theme sync failure is non-fatal */ }
+  }
+
+  function activateFallback() {
+    elLoading.classList.add('hidden');
+    elEmpty.classList.add('hidden');
+    elFallback.classList.add('show');
+    elStatus.textContent = 'Text mode (offline)';
+    // 在文本模式下也启用 AI 按钮
+    aiButtons.forEach(function(btn) { btn.disabled = false; });
+  }
+
+  function updateEmptyState(els) {
+    var hasReal = els.some(function(e) { return !e.isDeleted; });
+    elEmpty.classList.toggle('hidden', hasReal);
+  }
+
+  function updateAIButtons(hasContent) {
+    if (isLoading) return; // loading 时保持 disabled
+    aiButtons.forEach(function(btn) { btn.disabled = !hasContent; });
+  }
+
+  // ── 获取画布数据 / Get canvas data ──
+  function getCanvasData() {
+    var els = [];
+    if (excaliReady) {
+      if (excaliAPI) {
+        try { els = excaliAPI.getSceneElements(); } catch(e) { els = cachedEls; }
+      } else {
+        els = cachedEls; // ref API 超时 fallback / ref API timeout fallback
+      }
+      return els.filter(function(e) { return !e.isDeleted; }).map(function(e) {
+        var item = { type: e.type, x: Math.round(e.x), y: Math.round(e.y), width: Math.round(e.width), height: Math.round(e.height) };
+        if (e.text) item.text = e.text;
+        return item;
+      });
+    } else {
+      // Fallback: 解析文本 / Parse textarea
+      var text = (document.getElementById('bs-fallback-text') || {}).value || '';
+      return text.split('\n').filter(function(l) { return l.trim(); }).map(function(l, i) {
+        return { type: 'text', text: l.trim(), x: 100, y: 80 + i * 60, width: 200, height: 40 };
+      });
+    }
+  }
+
+  // ── AI 操作 / AI action ──
+  function runAI(mode) {
+    if (isLoading) return;
+
+    var convId = (window.__kinet && window.__kinet.getActiveConvId && window.__kinet.getActiveConvId()) || null;
+    if (!convId) {
+      toast('Select a conversation first');
+      return;
+    }
+
+    var data = getCanvasData();
+    if (!data.length) {
+      toast('Draw something first');
+      return;
+    }
+
+    isLoading = true;
+    lastAIMode = mode;
+    elStatus.textContent = 'AI thinking…';
+    aiButtons.forEach(function(btn) { btn.disabled = true; });
+
+    var prompts = {
+      expand: 'Expand on these ideas. Generate 4-6 new related ideas that build upon what is on the canvas. Consider adjacent topics, creative extensions, and unexpected connections.',
+      organize: 'Analyze the elements on this canvas and organize them into logical categories or clusters. Identify the natural groupings and suggest a clearer structure.',
+      challenge: 'Play devil\'s advocate. Identify gaps, contradictions, assumptions, and blind spots in the ideas on this canvas. Be constructive but thorough.',
+      synthesize: 'Synthesize the key themes from this canvas. What patterns emerge? What is the core narrative? Suggest a unified framework that connects everything.'
+    };
+
+    var prompt = '## Canvas Elements\n\n```json\n' + JSON.stringify(data, null, 2) + '\n```\n\n## Task\n\n' + prompts[mode] + '\n\n' +
+      '## Output Format\n\n' +
+      '1. Write 2-3 sentences of analysis.\n' +
+      '2. Then provide your suggestions as a JSON code block (for "Add to Canvas"):\n' +
+      '```json\n[{"type": "text", "text": "Suggestion text", "x": 100, "y": 200, "width": 200, "height": 60}]\n```\n' +
+      'Position new elements away from existing ones (offset y by +400 or more).';
+
+    elResultMode.textContent = MODE_LABELS[mode] || 'AI Insight';
+    elResultBody.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-faint,#6c6c76)"><div class="bs-spinner" style="width:20px;height:20px;border-width:2px"></div> Waiting for AI response…</div>';
+    elResultAct.classList.remove('show');
+    elResult.classList.add('show');
+
+    // 调用对话 / Send to conversation
+    var kinet = window.kinet;
+    if (!kinet || !kinet.send) {
+      finishLoading();
+      elResultBody.innerHTML = '<span style="color:var(--danger,#e05050)">Error: KinetAios API not available</span>';
+      return;
+    }
+
+    kinet.send(convId, prompt).then(function() {
+      // 等待对话流式响应完成 — Poll conversation for AI response
+      waitForResponse(convId);
+    }).catch(function(err) {
+      finishLoading();
+      elResultBody.innerHTML = '<span style="color:var(--danger,#e05050)">Failed to send: ' + escapeHtml(String(err)) + '</span>';
+    });
+  }
+
+  // ── 轮询 AI 响应 / Poll conversation for AI reply ──
+  function waitForResponse(convId) {
+    var kinet = window.kinet;
+    var attempts = 0;
+    var maxAttempts = 120; // 2 分钟超时 / 2 min timeout
+    var initialTurnCount = 0;
+
+    // 先获取初始轮次 — Get initial turn count
+    kinet.getConversations().then(function(convs) {
+      var conv = convs.find(function(c) { return c.id === convId; });
+      initialTurnCount = conv ? (conv.turns ? conv.turns.length : (conv.turnCount || 0)) : 0;
+      poll();
+    }).catch(function() { poll(); });
+
+    function poll() {
+      attempts++;
+      if (attempts > maxAttempts) {
+        finishLoading();
+        elResultBody.innerHTML = '<span style="color:var(--text-faint,#6c6c76)">Response timed out. Check the conversation for results.</span>';
+        return;
+      }
+
+      kinet.getConversations().then(function(convs) {
+        var conv = convs.find(function(c) { return c.id === convId; });
+        if (!conv) { setTimeout(poll, 1500); return; }
+
+        var turns = conv.turns || [];
+        if (turns.length > initialTurnCount) {
+          // 新轮次出现 — 检查是否完成 / New turn appeared — check if done
+          var latest = turns[turns.length - 1];
+          if (latest && latest.status === 'done') {
+            finishLoading();
+            displayAIResult(latest);
+            return;
+          }
+          // 正在流式输出 — update with partial
+          if (latest && latest.text) {
+            elResultBody.innerHTML = '<div style="opacity:.6">' + formatMarkdown(latest.text) + '</div>';
+          }
+        }
+        setTimeout(poll, 1000);
+      }).catch(function() {
+        setTimeout(poll, 1500);
+      });
+    }
+  }
+
+  function finishLoading() {
+    isLoading = false;
+    elStatus.textContent = 'Ready';
+    var hasContent = getCanvasData().length > 0;
+    aiButtons.forEach(function(btn) { btn.disabled = !hasContent; });
+  }
+
+  // ── 显示 AI 结果 / Display AI result ──
+  function displayAIResult(turn) {
+    lastAIResponse = turn.text || '';
+
+    // 提取 JSON 建议 / Extract JSON suggestions
+    var jsonMatch = lastAIResponse.match(/```json\s*\n([\s\S]*?)\n```/);
+    var hasValidJson = false;
+    if (jsonMatch) {
+      try { JSON.parse(jsonMatch[1]); hasValidJson = true; } catch(e) { /* invalid */ }
+    }
+
+    // 渲染结果文本(隐藏 JSON 代码块, 保留其余) / Render result text (hide JSON block)
+    var displayText = lastAIResponse.replace(/```json\s*\n[\s\S]*?\n```/g, '').trim();
+    elResultBody.innerHTML = formatMarkdown(displayText) || '<em style="color:var(--text-faint)">No additional text</em>';
+
+    if (hasValidJson) {
+      elResultAct.classList.add('show');
+    } else {
+      elResultAct.classList.remove('show');
+    }
+  }
+
+  // ── Markdown 渲染(轻量) / Lightweight Markdown renderer ──
+  function formatMarkdown(text) {
+    if (!text) return '';
+    return escapeHtml(text)
+      .replace(/```[\w]*\s*\n([\s\S]*?)\n```/g, function(_, code) {
+        return '<pre>' + escapeHtml(code.trim()) + '</pre>';
+      })
+      .replace(/`([^`]+)`/g, '<code style="background:var(--bg-side);padding:2px 6px;border-radius:4px;font-size:12px">$1</code>')
+      .replace(/^### (.+)$/gm, '<div style="font-weight:600;color:var(--text);margin:10px 0 4px;font-size:13px">$1</div>')
+      .replace(/^## (.+)$/gm, '<div style="font-weight:600;color:var(--text);margin:12px 0 4px;font-size:14px">$1</div>')
+      .replace(/^\d+\.\s(.+)$/gm, '<div style="margin:4px 0 4px 18px;text-indent:-18px">• $1</div>')
+      .replace(/^- (.+)$/gm, '<div style="margin:4px 0 4px 16px;text-indent:-16px">• $1</div>')
+      .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+      .replace(/\n\n/g, '</div><div style="margin:8px 0">')
+      .replace(/\n/g, '<br>');
   }
 
   function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   }
 
-  window.bsAddToCanvas = function() {
+  // ── 添加建议到画布 / Add suggestions to canvas ──
+  function addToCanvas() {
     var match = lastAIResponse.match(/```json\s*\n([\s\S]*?)\n```/);
     if (!match) return;
     var newEls;
-    try { newEls = JSON.parse(match[1]); } catch(e) { return; }
+    try { newEls = JSON.parse(match[1]); } catch(e) { toast('Invalid JSON data'); return; }
 
-    if (excaliReady && excaliApp && excaliApp.api) {
-      var existing = excaliApp.api.getSceneElements();
+    if (excaliReady) {
+      var api = excaliAPI;
+      if (!api) { toast('Canvas API not ready'); return; }
+      var existing = api.getSceneElements();
+      // 计算放置位置: 找画布底部 + 偏移 / Position below existing content
+      var maxY = 0;
+      existing.forEach(function(e) { if (!e.isDeleted && e.y + e.height > maxY) maxY = e.y + e.height; });
+      var yOffset = maxY > 0 ? maxY + 80 : 200;
+
       var nextEls = newEls.map(function(e, i) {
+        var elY = (e.y || 0) + yOffset - 200;
         return {
           id: 'ai-' + Date.now() + '-' + i,
           type: e.type || 'rectangle',
-          x: (e.x || 100) , y: (e.y || 100),
-          width: e.width || 160, height: e.height || 60,
-          angle: 0, strokeColor: '#e03131', backgroundColor: '#fff5f5',
-          fillStyle: 'solid', strokeWidth: 2, strokeStyle: 'solid', roughness: 1,
-          opacity: 100, groupIds: [], frameId: null, roundness: null,
-          seed: Math.floor(Math.random() * 1000000), version: 1, versionNonce: Math.floor(Math.random() * 1000000),
-          isDeleted: false, boundElements: [], updated: Date.now(),
-          link: null, locked: false,
-          text: e.text || '', fontSize: 16, fontFamily: 1, textAlign: 'center', verticalAlign: 'middle',
-          containerId: null, originalText: e.text || '', lineHeight: 1.25, baseline: 18
+          x: e.x || 100,
+          y: elY + (i * 70),
+          width: e.width || 200,
+          height: e.height || 60,
+          angle: 0,
+          strokeColor: '#e03131',
+          backgroundColor: '#fff5f5',
+          fillStyle: 'solid',
+          strokeWidth: 2,
+          strokeStyle: 'solid',
+          roughness: 1,
+          opacity: 100,
+          groupIds: ['ai-suggestions'],
+          frameId: null,
+          roundness: { type: 3 },
+          seed: Math.floor(Math.random() * 1000000),
+          version: 1,
+          versionNonce: Math.floor(Math.random() * 1000000),
+          isDeleted: false,
+          boundElements: [],
+          updated: Date.now(),
+          link: null,
+          locked: false,
+          text: e.text || '',
+          fontSize: 16,
+          fontFamily: 1,
+          textAlign: 'center',
+          verticalAlign: 'middle',
+          containerId: null,
+          originalText: e.text || '',
+          lineHeight: 1.25,
+          baseline: 18
         };
       });
-      excaliApp.api.updateScene({ elements: existing.concat(nextEls) });
+
+      api.updateScene({ elements: existing.concat(nextEls) });
+      toast('Added ' + newEls.length + ' elements');
     } else {
-      // Fallback: append to textarea
+      // Fallback: 追加到文本框 / Append to textarea
       var ta = document.getElementById('bs-fallback-text');
-      newEls.forEach(function(e) { ta.value += '\n' + (e.text || JSON.stringify(e)); });
+      newEls.forEach(function(e) {
+        ta.value += '\n' + (e.text || JSON.stringify(e));
+      });
+      toast('Added to text');
     }
-    document.getElementById('bs-result').classList.remove('show');
-  };
 
-  window.bsClear = function() {
-    if (excaliReady && excaliApp && excaliApp.api) {
-      excaliApp.api.updateScene({ elements: [] });
+    elResult.classList.remove('show');
+  }
+
+  // ── 清空画布 / Clear canvas ──
+  function clearCanvas() {
+    if (excaliReady && excaliAPI) {
+      try { excaliAPI.updateScene({ elements: [] }); } catch(e) { /* noop */ }
+      elEmpty.classList.remove('hidden');
     } else {
-      document.getElementById('bs-fallback-text').value = '';
+      var ta = document.getElementById('bs-fallback-text');
+      if (ta) ta.value = '';
     }
-  };
+    elResult.classList.remove('show');
+    toast('Canvas cleared');
+  }
 
-  window.bsExport = function() {
-    if (excaliReady && excaliApp && excaliApp.api) {
-      excaliApp.api.exportToBlob({ type: 'image/png' }).then(function(blob) {
+  // ── 导出 PNG / Export PNG ──
+  function exportPNG() {
+    if (excaliReady && excaliAPI) {
+      excaliAPI.exportToBlob({ type: 'image/png', quality: 0.92 }).then(function(blob) {
         var url = URL.createObjectURL(blob);
         var a = document.createElement('a');
-        a.href = url; a.download = 'brainstorm-' + Date.now() + '.png'; a.click();
+        a.href = url;
+        a.download = 'brainstorm-' + Date.now() + '.png';
+        a.click();
         URL.revokeObjectURL(url);
+        toast('Exported');
+      }).catch(function() {
+        toast('Export failed');
       });
+    } else {
+      toast('Canvas not available');
     }
-  };
+  }
 
-  // ── Init ──
+  // ── 绑定事件 / Bind events ──
+  aiButtons.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var mode = btn.getAttribute('data-mode');
+      runAI(mode);
+    });
+  });
+
+  document.getElementById('bs-btn-clear').addEventListener('click', clearCanvas);
+  document.getElementById('bs-btn-export').addEventListener('click', exportPNG);
+  document.getElementById('bs-add-btn').addEventListener('click', addToCanvas);
+  document.getElementById('bs-result-close').addEventListener('click', function() {
+    elResult.classList.remove('show');
+  });
+
+  // ── 初始化 / Initialize ──
   initExcalidraw();
 })();
+</script>
