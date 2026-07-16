@@ -261,7 +261,7 @@ function taskLi(id: string): HTMLElement {
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
   const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" title="上下文检查器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     selectedId = id;
     showChat();
@@ -270,7 +270,8 @@ function taskLi(id: string): HTMLElement {
   li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
     btn.onclick = (e) => {
       e.stopPropagation();
-      if (btn.dataset.act === 'rename') void renameConv(id);
+      if (btn.dataset.act === 'ctx') void openCtxInspector(id);
+      else if (btn.dataset.act === 'rename') void renameConv(id);
       else if (btn.dataset.act === 'delete') void deleteConv(id);
     };
   });

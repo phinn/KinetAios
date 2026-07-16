@@ -369,6 +369,7 @@ a { color: var(--accent); }
 #conv-list > li:hover .conv-actions { display: inline-flex; }
 .ca-btn { background: transparent; border: none; color: var(--text-dim); padding: 2px 5px; font-size: 12px; line-height: 1; cursor: pointer; }
 .ca-btn:hover { color: var(--text); }
+.ca-btn[data-act="ctx"]:hover { color: var(--accent); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
 #conv-list .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
