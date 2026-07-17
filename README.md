@@ -5,6 +5,8 @@
 [![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-Windows%20%7C%20macOS-lightgrey)](#install)
 
+> 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
+
 > 🚀 **We're live on Product Hunt today** — [upvote & say hi](https://www.producthunt.com/products/kinet-aios)
 
 <!-- TODO: drop a 1440×900 screenshot or 30s GIF at docs/hero.png, then remove this note -->
