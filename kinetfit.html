@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KinetFit — 智能健康管理 | KinetAios</title>
+<style>
+:root{
+  --bg:#0B0F14; --surface:#141B22; --surface2:#1E2731; --line:#2A3540;
+  --text:#E8EEF2; --muted:#8B97A3; --dim:#5A6571;
+  --mint:#00E5B5; --cyan:#00B5E5;
+  --grad:linear-gradient(135deg,#00E5B5 0%,#00B5E5 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Hiragino Sans",Inter,system-ui,sans-serif;line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:1140px;margin:0 auto;padding:0 24px}
+section{padding:72px 0;border-bottom:1px solid var(--line)}
+
+/* NAV */
+nav{position:sticky;top:0;z-index:50;background:rgba(11,15,20,.82);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.brand .mark{width:28px;height:28px;border-radius:8px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#0B0F14;font-weight:800;font-size:15px}
+.back-link{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-size:13px;transition:color .15s}
+.back-link:hover{color:var(--mint)}
+
+/* HERO */
+.hero{padding:80px 0 64px;text-align:center;position:relative;overflow:hidden}
+.hero::before{content:"";position:absolute;inset:-40px -200px 0;background:radial-gradient(ellipse at center top,rgba(0,229,181,.14),transparent 60%),radial-gradient(ellipse at 25% 0,rgba(0,181,229,.12),transparent 50%);pointer-events:none;z-index:-1}
+.hero .pbadge{display:inline-flex;align-items:center;gap:8px;background:var(--surface);border:1px solid var(--line);padding:6px 14px;border-radius:999px;font-size:12px;color:var(--muted);margin-bottom:24px}
+.hero .pbadge .dot{width:6px;height:6px;border-radius:50%;background:var(--mint);box-shadow:0 0 8px var(--mint)}
+.hero h1{font-size:clamp(36px,5.6vw,64px);line-height:1.1;font-weight:700;letter-spacing:-.02em;margin-bottom:20px}
+.hero h1 .grad{background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent}
+.hero p.sub{font-size:18px;color:var(--muted);max-width:620px;margin:0 auto 36px}
+.hero .picon{font-size:72px;margin-bottom:20px;line-height:1}
+
+/* FEATURES */
+.h-eyebrow{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--mint);letter-spacing:.12em;text-transform:uppercase;margin-bottom:12px}
+.h-title{font-size:clamp(26px,3.4vw,40px);font-weight:700;letter-spacing:-.015em;margin-bottom:14px}
+.h-sub{font-size:16px;color:var(--muted);max-width:640px;margin-bottom:44px}
+.feats{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.feat{border:1px solid var(--line);border-radius:12px;padding:24px;background:var(--surface);transition:border-color .15s}
+.feat:hover{border-color:var(--mint)}
+.feat .num{font-family:ui-monospace,SFMono-Regular,monospace;font-size:12px;color:var(--mint);margin-bottom:8px}
+.feat h4{font-size:17px;font-weight:700;margin-bottom:8px}
+.feat p{font-size:14px;color:var(--muted)}
+
+/* STATS */
+.stats{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--line);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+.stat{background:var(--surface);padding:28px 20px;text-align:center}
+.stat .val{font-size:32px;font-weight:700;background:var(--grad);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:4px}
+.stat .label{font-size:12px;color:var(--muted)}
+
+/* CTA */
+.final{text-align:center;position:relative;overflow:hidden;border-bottom:0}
+.final .glow{position:absolute;left:50%;top:30%;width:400px;height:400px;transform:translate(-50%,-50%);background:radial-gradient(circle,rgba(0,229,181,.08),transparent 60%);pointer-events:none}
+.final h2{font-size:clamp(28px,3.6vw,44px);font-weight:700;margin-bottom:14px;position:relative}
+.final p{color:var(--muted);font-size:17px;margin-bottom:32px;position:relative}
+.btn-primary{background:var(--grad);color:#0B0F14;font-weight:600;font-size:15px;padding:12px 28px;border-radius:10px;border:0;cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;transition:transform .15s,box-shadow .15s;position:relative}
+.btn-primary:hover{transform:translateY(-2px);box-shadow:0 8px 28px rgba(0,229,181,.3)}
+.btn-ghost{background:transparent;color:var(--text);font-weight:500;font-size:15px;padding:12px 28px;border-radius:10px;border:1px solid var(--line);cursor:pointer;font-family:inherit;display:inline-flex;align-items:center;gap:8px;transition:.15s;position:relative;margin-left:12px}
+.btn-ghost:hover{border-color:var(--mint);color:var(--mint)}
+
+footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(--dim);text-align:center}
+
+@media(max-width:880px){
+  .feats{grid-template-columns:1fr}
+  .stats{grid-template-columns:1fr 1fr}
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="wrap nav">
+    <a href="index.html" class="brand"><div class="mark">K</div><span>KinetAios</span></a>
+    <a href="index.html" class="back-link">← 返回首页</a>
+  </div>
+</nav>
+
+<!-- HERO -->
+<header class="hero">
+  <div class="wrap">
+    <div class="pbadge"><span class="dot"></span> KinetAios 产品系列</div>
+    <div class="picon">💪</div>
+    <h1>Kinet<span class="grad">Fit</span></h1>
+    <p class="sub">智能健康管理中心。追踪你的每一次训练,量化每一分进步,让 AI 成为你的私人教练。</p>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap">
+      <a class="btn-primary" href="index.html">开始使用 →</a>
+      <a class="btn-ghost" href="#features">了解更多</a>
+    </div>
+  </div>
+</header>
+
+<!-- STATS -->
+<section style="padding:0">
+  <div class="wrap">
+    <div class="stats">
+      <div class="stat"><div class="val">24/7</div><div class="label">全天候追踪</div></div>
+      <div class="stat"><div class="val">AI</div><div class="label">智能训练计划</div></div>
+      <div class="stat"><div class="val">∞</div><div class="label">数据维度</div></div>
+      <div class="stat"><div class="val">100%</div><div class="label">本地隐私</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- FEATURES -->
+<section id="features">
+  <div class="wrap">
+    <div class="h-eyebrow">features</div>
+    <h2 class="h-title">你的 AI 私人教练</h2>
+    <p class="h-sub">从训练计划到数据分析,从进度追踪到健康建议,KinetFit 让健康管理变得简单而智能。</p>
+    <div class="feats">
+      <div class="feat">
+        <div class="num">01</div>
+        <h4>智能训练计划</h4>
+        <p>AI 根据你的体能数据、目标和时间安排,自动生成个性化训练计划。每天该练什么、练多少,一目了然。</p>
+      </div>
+      <div class="feat">
+        <div class="num">02</div>
+        <h4>全面数据追踪</h4>
+        <p>记录心率、卡路里、运动时长、次数组数等关键指标。支持手动录入和设备同步,数据完整不遗漏。</p>
+      </div>
+      <div class="feat">
+        <div class="num">03</div>
+        <h4>进度可视化</h4>
+        <p>趋势图、热力图、对比报告,用直观的图表展示你的进步曲线。看到变化,才有持续的动力。</p>
+      </div>
+      <div class="feat">
+        <div class="num">04</div>
+        <h4>AI 健康建议</h4>
+        <p>根据训练数据和身体反馈,AI 实时调整建议。何时加量、何时休息、如何避免受伤,都有据可循。</p>
+      </div>
+      <div class="feat">
+        <div class="num">05</div>
+        <h4>营养管理</h4>
+        <p>配合训练计划自动计算每日营养需求,记录饮食摄入,确保吃和练的科学平衡。</p>
+      </div>
+      <div class="feat">
+        <div class="num">06</div>
+        <h4>隐私优先</h4>
+        <p>所有健康数据存储在本地,不上传任何后台。你的身体数据,只有你自己能看到。</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- CTA -->
+<section class="final">
+  <div class="glow"></div>
+  <div class="wrap">
+    <h2>开始你的智能健身之旅</h2>
+    <p>下载 KinetAios,立即体验 KinetFit。</p>
+    <a class="btn-primary" href="index.html">返回 KinetAios 首页 →</a>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">© 2026 KinetAios · KinetFit · 智能健康管理</div>
+</footer>
+
+</body>
+</html>

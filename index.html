@@ -183,11 +183,27 @@ h1 .grad{background:var(--grad);-webkit-background-clip:text;background-clip:tex
 
 footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(--dim)}
 
+/* ===== PRODUCT SUITE ===== */
+.products{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:8px}
+.pcard{position:relative;border:1px solid var(--line);border-radius:14px;padding:28px 24px;background:var(--surface);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s;text-decoration:none;display:flex;flex-direction:column}
+.pcard:hover{transform:translateY(-3px);border-color:transparent;box-shadow:0 12px 40px rgba(0,0,0,.4)}
+.pcard::before{content:"";position:absolute;inset:0;padding:1px;border-radius:14px;background:var(--cardGrad);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .2s}
+.pcard:hover::before{opacity:1}
+.pcard .glow{position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;opacity:.08;filter:blur(40px);transition:opacity .2s}
+.pcard:hover .glow{opacity:.18}
+.pcard .pico{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px;position:relative;z-index:1}
+.pcard h4{font-size:18px;font-weight:700;margin-bottom:4px;position:relative;z-index:1}
+.pcard .tag{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:12px;position:relative;z-index:1}
+.pcard p{font-size:14px;color:var(--muted);margin-bottom:16px;flex:1;position:relative;z-index:1}
+.pcard .plink{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;position:relative;z-index:1;transition:gap .15s}
+.pcard:hover .plink{gap:10px}
+
 /* ===== RESPONSIVE ===== */
 @media(max-width:880px){
   .mock-body{grid-template-columns:1fr}
   .mock-side,.mock-right{display:none}
   .engines,.scenes{grid-template-columns:1fr 1fr}
+  .products{grid-template-columns:1fr}
   .priv,.dag-wrap{grid-template-columns:1fr}
   .feats{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr 1fr}
@@ -304,6 +320,41 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <div class="stat"><div class="val">10+</div><div class="label" data-i18n="st_tools">内置工具</div></div>
       <div class="stat"><div class="val">4</div><div class="label" data-i18n="st_lang">UI 语言</div></div>
       <div class="stat"><div class="val">0</div><div class="label" data-i18n="st_upload">后端上传</div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== PRODUCT SUITE ===== -->
+<section>
+  <div class="wrap">
+    <div class="h-eyebrow">00 / product suite</div>
+    <h2 class="h-title" data-i18n="ps_title"></h2>
+    <p class="h-sub" data-i18n="ps_sub"></p>
+    <div class="products">
+      <a class="pcard" href="kinetfit.html" style="--cardGrad:linear-gradient(135deg,#00E5B5,#00B5E5)">
+        <div class="glow" style="background:var(--mint)"></div>
+        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)">💪</div>
+        <h4>KinetFit</h4>
+        <div class="tag" data-i18n="ps_fit_tag"></div>
+        <p data-i18n="ps_fit_desc"></p>
+        <span class="plink" style="color:var(--mint)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
+      <a class="pcard" href="kinetagent.html" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#00B5E5)">
+        <div class="glow" style="background:var(--purple)"></div>
+        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)">✦</div>
+        <h4>KinetAgent</h4>
+        <div class="tag" data-i18n="ps_agt_tag"></div>
+        <p data-i18n="ps_agt_desc"></p>
+        <span class="plink" style="color:var(--purple)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
+      <a class="pcard" href="kinetbrief.html" style="--cardGrad:linear-gradient(135deg,#FF9A5C,#FFD75F)">
+        <div class="glow" style="background:var(--orange)"></div>
+        <div class="pico" style="background:rgba(255,154,92,.12);color:var(--orange)">📋</div>
+        <h4>KinetBrief</h4>
+        <div class="tag" data-i18n="ps_brf_tag"></div>
+        <p data-i18n="ps_brf_desc"></p>
+        <span class="plink" style="color:var(--orange)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
     </div>
   </div>
 </section>
@@ -546,6 +597,15 @@ const I18N = {
     m_reply:'已经按"客户视角 + 利益点优先"重写,开头一句钩子 + 三个支撑卖点 + CTA。',
     m_tool:"用户偏好:深色商务风、四语言",
     st_eng:"AI 引擎", st_tools:"内置工具", st_lang:"UI 语言", st_upload:"后端上传",
+    ps_title:"KinetAios 产品系列",
+    ps_sub:"三款产品,覆盖健康管理、AI 自动化和信息简报,各有专长。",
+    ps_fit_tag:"健康 · 健身 · 运动追踪",
+    ps_fit_desc:"智能健康管理中心。追踪健身数据、制定训练计划、记录运动进度,帮你保持最佳状态。",
+    ps_agt_tag:"AI · 自动化 · 多引擎",
+    ps_agt_desc:"多 AI 引擎并发的自动化助手。Claude Code、Codex、Kaios 同时干活,任务自动调度。",
+    ps_brf_tag:"简报 · 摘要 · 信息聚合",
+    ps_brf_desc:"智能信息简报工具。自动聚合新闻、生成摘要、推送关键资讯,让你不漏重要信息。",
+    ps_learn:"了解产品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每个引擎一个独立 agent,各自循环、各自状态、各自产出。互不阻塞,你只管下达任务。",
     eng_c:"长代码任务主力。会调工具、改文件、跑命令,从重构到 debug 一条龙。",
@@ -594,6 +654,15 @@ const I18N = {
     m_reply:'已經按「客戶視角 + 利益點優先」重寫,開頭一句鉤子 + 三個支撐賣點 + CTA。',
     m_tool:"使用者偏好:深色商務風、四語言",
     st_eng:"AI 引擎", st_tools:"內建工具", st_lang:"UI 語言", st_upload:"後端上傳",
+    ps_title:"KinetAios 產品系列",
+    ps_sub:"三款產品,覆蓋健康管理、AI 自動化和資訊簡報,各有專長。",
+    ps_fit_tag:"健康 · 健身 · 運動追蹤",
+    ps_fit_desc:"智能健康管理中心。追蹤健身數據、制定訓練計畫、記錄運動進度,幫你保持最佳狀態。",
+    ps_agt_tag:"AI · 自動化 · 多引擎",
+    ps_agt_desc:"多 AI 引擎併發的自動化助手。Claude Code、Codex、Kaios 同時幹活,任務自動調度。",
+    ps_brf_tag:"簡報 · 摘要 · 資訊聚合",
+    ps_brf_desc:"智能資訊簡報工具。自動聚合新聞、生成摘要、推送關鍵資訊,讓你不漏重要消息。",
+    ps_learn:"了解產品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每個引擎一個獨立 agent,各自循環、各自狀態、各自產出。互不阻塞,你只管下達任務。",
     eng_c:"長程式碼任務主力。會調工具、改檔案、跑命令,從重構到 debug 一條龍。",
@@ -642,6 +711,15 @@ const I18N = {
     m_reply:'Rewritten with "customer angle + benefit-first" approach. Lead hook + 3 supporting points + CTA.',
     m_tool:"User preferences: dark business style, 4 languages",
     st_eng:"AI Engines", st_tools:"Built-in Tools", st_lang:"UI Languages", st_upload:"Backend Upload",
+    ps_title:"KinetAios Product Suite",
+    ps_sub:"Three products covering health management, AI automation, and information briefings.",
+    ps_fit_tag:"Health · Fitness · Activity Tracking",
+    ps_fit_desc:"Smart health management hub. Track fitness data, build training plans, and log workout progress to stay at your peak.",
+    ps_agt_tag:"AI · Automation · Multi-Engine",
+    ps_agt_desc:"Multi-AI automation assistant. Claude Code, Codex, and Kaios work simultaneously with automatic task scheduling.",
+    ps_brf_tag:"Briefing · Summary · News Aggregation",
+    ps_brf_desc:"Intelligent information briefing tool. Auto-aggregates news, generates summaries, and surfaces what matters most.",
+    ps_learn:"Learn more",
     eng_title:"Multiple AI engines, each on its own",
     eng_sub:"Each engine runs as an independent agent — own loop, own status, own output. No blocking. You just hand out tasks.",
     eng_c:"Heavy-lift code tasks. Calls tools, edits files, runs commands — refactor to debug in one flow.",
@@ -690,6 +768,15 @@ const I18N = {
     m_reply:'「顧客視点 + ベネフィット優先」でリライト。リード文の鉤 + 3つの支え + CTA。',
     m_tool:"ユーザー設定:ダークビジネス風、4言語",
     st_eng:"AI エンジン", st_tools:"内蔵ツール", st_lang:"UI 言語", st_upload:"バックエンド送信",
+    ps_title:"KinetAios 製品ラインナップ",
+    ps_sub:"3つの製品、健康管理、AI自動化、情報ブリーフィングをカバー。",
+    ps_fit_tag:"健康 · フィットネス · 活動追跡",
+    ps_fit_desc:"スマート健康管理ハブ。フィットネスデータの追跡、トレーニング計画の作成、運動進度の記録でベストコンディションを維持。",
+    ps_agt_tag:"AI · 自動化 · マルチエンジン",
+    ps_agt_desc:"マルチ AI 自動化アシスタント。Claude Code、Codex、Kaios が同時に作業、タスクを自動スケジュール。",
+    ps_brf_tag:"ブリーフィング · 要約 · 情報集約",
+    ps_brf_desc:"インテリジェント情報ブリーフィングツール。ニュース自動集約、要約生成、重要情報の通知。",
+    ps_learn:"製品詳細",
     eng_title:"マルチ AI エンジン、それぞれ独立",
     eng_sub:"各エンジンが独立 agent として稼動。独自ループ、独自ステータス、独自アウトプット。互いにブロックしない。タスクを渡すだけ。",
     eng_c:"長期コードタスクの主力。ツール呼び、ファイル編集、コマンド実行。リファクタから debug まで一気通貫。",
