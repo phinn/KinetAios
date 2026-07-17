@@ -363,8 +363,8 @@ const writeFile: Tool = {
 };
 
 // ── 网页工具:web_fetch + web_search ──────────────────────────
-// B+C 方案:web_search 走 DuckDuckGo HTML 解析(零 key),web_fetch 优先走
-// Jina Reader(r.jina.ai → 干净 Markdown),失败回退原生 fetch + 正则去噪。
+// B+C 方案适配大陆网络:Jina Reader 和 Google/DDG 在大陆被墙,
+// 回退链路改为:Bing 中国版(搜索) + 原生 fetch + 正则去噪(抓取)。
 
 // 通用浏览器 headers — 很多站点拒绝默认 Node fetch UA。
 const BROWSER_HEADERS: Record<string, string> = {
@@ -396,6 +396,27 @@ function extractTextFromHTML(html: string): string {
   return s;
 }
 
+// 尝试 Jina Reader(大陆可能被墙,15s 超时后静默回退)。
+// 成功返回正文文本,失败返回 null。
+async function tryJinaReader(targetUrl: string): Promise<string | null> {
+  try {
+    const jinaUrl = `https://r.jina.ai/${targetUrl}`;
+    const jinaResp = await fetch(jinaUrl, {
+      headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text' },
+      signal: AbortSignal.timeout(12_000),
+    });
+    if (jinaResp.ok) {
+      const text = await jinaResp.text();
+      if (text.length > 200) {
+        return text.length > 16_000 ? text.slice(0, 16_000) + '\n…[截断]' : text;
+      }
+    }
+  } catch {
+    // 超时/连接失败 → 静默
+  }
+  return null;
+}
+
 const webFetch: Tool = {
   name: 'web_fetch',
   readOnly: true,
@@ -423,29 +444,13 @@ const webFetch: Tool = {
 
     const timeout = ctx?.signal ?? AbortSignal.timeout(25_000);
 
-    // ── 路径 1: Jina Reader(r.jina.ai)——把任意 URL 转成干净 Markdown 正文 ──
-    // 免费额度,无需 key。对 JS 渲染页面也有效(服务端渲染)。
-    try {
-      const jinaUrl = `https://r.jina.ai/${s}`;
-      const jinaResp = await fetch(jinaUrl, {
-        headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text' },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (jinaResp.ok) {
-        const jinaText = await jinaResp.text();
-        // Jina 成功时返回 Markdown 正文(通常 500+ 字符)
-        if (jinaText.length > 200) {
-          const trimmed = jinaText.length > 16_000 ? jinaText.slice(0, 16_000) + '\n…[截断]' : jinaText;
-          return trimmed;
-        }
-      }
-    } catch {
-      // Jina 超时/失败 → 静默回退到原生 fetch
-    }
+    // ── 路径 1: Jina Reader(如果可达,返回干净 Markdown)──
+    const jinaResult = await tryJinaReader(s);
+    if (jinaResult) return jinaResult;
 
     // ── 路径 2: 原生 fetch + 正则去噪 ──
     try {
-      const resp = await fetch(s, { headers: BROWSER_HEADERS, signal: timeout });
+      const resp = await fetch(s, { headers: BROWSER_HEADERS, signal: timeout, redirect: 'follow' });
       const raw = await resp.text();
       const ct = resp.headers.get('content-type') ?? '';
 
@@ -466,7 +471,9 @@ const webFetch: Tool = {
   },
 };
 
-// web_search: 通过 DuckDuckGo HTML 接口搜索,返回标题+摘要+URL 列表。无需 API key。
+// web_search: 多搜索引擎回退,适配大陆网络。
+// 回退顺序:Bing 中国版(大陆直连) → DuckDuckGo(需翻墙)。
+// 模型不需要关心用了哪个引擎,只看结果。
 const webSearch: Tool = {
   name: 'web_search',
   readOnly: true,
@@ -483,85 +490,109 @@ const webSearch: Tool = {
     const q = String(args.query ?? '').trim();
     if (!q) return '请提供搜索关键词。';
     const maxResults = Math.min(Number(args.max_results ?? 8), 15);
-    const timeout = ctx?.signal ?? AbortSignal.timeout(20_000);
+    const signal = ctx?.signal ?? AbortSignal.timeout(20_000);
 
-    // ── 路径 1: Jina Reader 搜索(r.jina.ai + Google) ──
-    // r.jina.ai/https://www.google.com/search?q=... → 返回搜索结果的 Markdown
+    // ── 搜索引擎 1: Bing 中国版(大陆直连,最可靠) ──
     try {
-      const jinaSearchUrl = `https://r.jina.ai/https://www.google.com/search?q=${encodeURIComponent(q)}`;
-      const jinaResp = await fetch(jinaSearchUrl, {
-        headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text' },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (jinaResp.ok) {
-        const jinaText = await jinaResp.text();
-        // Jina 搜索结果通常包含多个 URL 和摘要
-        if (jinaText.length > 300) {
-          const trimmed = jinaText.length > 12_000 ? jinaText.slice(0, 12_000) + '\n…[截断]' : jinaText;
-          return trimmed;
-        }
+      const results = await bingSearch(q, maxResults, signal);
+      if (results.length > 0) {
+        const body = results
+          .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
+          .join('\n\n');
+        return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
       }
     } catch {
-      // 静默回退到 DuckDuckGo
+      // Bing 失败 → 尝试下一个引擎
     }
 
-    // ── 路径 2: DuckDuckGo HTML 接口 ──
+    // ── 搜索引擎 2: DuckDuckGo HTML(大陆需翻墙,作为备用) ──
     try {
-      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
-      const resp = await fetch(ddgUrl, {
-        headers: {
-          ...BROWSER_HEADERS,
-          'Referer': 'https://duckduckgo.com/',
-        },
-        signal: timeout,
-      });
-      if (!resp.ok) return `搜索失败: HTTP ${resp.status}`;
-      const html = await resp.text();
-
-      // 解析 DuckDuckGo HTML 结果
-      const results: Array<{ title: string; snippet: string; url: string }> = [];
-      // 结果块: <div class="result ...">...<a class="result__a" href="...">title</a>...<a class="result__snippet" href="...">snippet</a>...</div>
-      const resultBlocks = html.split(/class="result\s/);
-      for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
-        const block = resultBlocks[i];
-        // 提取标题 + URL
-        const titleMatch = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
-        if (!titleMatch) continue;
-        // DuckDuckGo 的 URL 是跳转链接,需要提取实际 URL
-        let link = titleMatch[1];
-        // ddg 链接格式: //duckduckgo.com/l/?uddg=<encoded_url>&...
-        const uddgMatch = link.match(/uddg=([^&]+)/);
-        if (uddgMatch) {
-          link = decodeURIComponent(uddgMatch[1]);
-        } else if (link.startsWith('//')) {
-          link = 'https:' + link;
-        }
-        // 标题去标签
-        const title = titleMatch[2].replace(/<[^>]+>/g, '').trim();
-        if (!title || !link) continue;
-
-        // 提取摘要
-        const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
-        const snippet = snippetMatch
-          ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim()
-          : '';
-
-        results.push({ title, snippet, url: link });
+      const results = await ddgSearch(q, maxResults, signal);
+      if (results.length > 0) {
+        const body = results
+          .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
+          .join('\n\n');
+        return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
       }
-
-      if (results.length === 0) {
-        return `没有找到「${q}」的相关结果。尝试换一个关键词?`;
-      }
-
-      const body = results
-        .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
-        .join('\n\n');
-      return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
-    } catch (e) {
-      return `搜索失败: ${sanitizeError(e)}`;
+    } catch {
+      // DDG 也失败
     }
+
+    return `搜索「${q}」失败:所有搜索引擎均不可用。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
   },
 };
+
+// Bing 中国版搜索解析 —— 解析 cn.bing.com/search?q=... 的 HTML 结果页。
+// b_algo 块含 <h2><a href> 标题</a></h2> 和 <p class="b_lineclamp*"> 摘要。
+async function bingSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
+  const bingUrl = `https://cn.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(maxResults + 5, 20)}&setlang=zh-CN`;
+  const resp = await fetch(bingUrl, {
+    headers: { ...BROWSER_HEADERS, 'Referer': 'https://cn.bing.com/' },
+    signal,
+    redirect: 'follow',
+  });
+  if (!resp.ok) throw new Error(`Bing HTTP ${resp.status}`);
+  const html = await resp.text();
+
+  const results: Array<{ title: string; snippet: string; url: string }> = [];
+  // 按 b_algo 分割结果块
+  const blocks = html.split('class="b_algo"');
+  for (let i = 1; i < blocks.length && results.length < maxResults; i++) {
+    const block = blocks[i];
+    // 提取 <h2 ...><a ... href="URL">标题</a></h2>
+    const titleMatch = block.match(/<h2[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+    const url = titleMatch[1];
+    const title = titleMatch[2].replace(/<[^>]+>/g, '').trim();
+    if (!title || !url || url.startsWith('javascript:')) continue;
+
+    // 提取摘要:<p class="b_lineclamp*"> 或 <div class="b_caption">
+    const snippetMatch = block.match(/<p[^>]*class="b_lineclamp[^"]*"[^>]*>([\s\S]*?)<\/p>/i)
+      || block.match(/class="b_caption"[^>]*>[\s\S]*?<p[^>]*>([\s\S]*?)<\/p>/i);
+    const snippet = snippetMatch
+      ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&#\d+;/g, ' ').trim()
+      : '';
+
+    results.push({ title, snippet, url });
+  }
+  return results;
+}
+
+// DuckDuckGo HTML 搜索解析 —— 解析 html.duckduckgo.com/html/?q=... 的结果页。
+async function ddgSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
+  const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+  const resp = await fetch(ddgUrl, {
+    headers: { ...BROWSER_HEADERS, 'Referer': 'https://duckduckgo.com/' },
+    signal,
+  });
+  if (!resp.ok) throw new Error(`DDG HTTP ${resp.status}`);
+  const html = await resp.text();
+
+  const results: Array<{ title: string; snippet: string; url: string }> = [];
+  const blocks = html.split(/class="result\s/);
+  for (let i = 1; i < blocks.length && results.length < maxResults; i++) {
+    const block = blocks[i];
+    const titleMatch = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+    if (!titleMatch) continue;
+    let link = titleMatch[1];
+    const uddgMatch = link.match(/uddg=([^&]+)/);
+    if (uddgMatch) {
+      link = decodeURIComponent(uddgMatch[1]);
+    } else if (link.startsWith('//')) {
+      link = 'https:' + link;
+    }
+    const title = titleMatch[2].replace(/<[^>]+>/g, '').trim();
+    if (!title || !link) continue;
+
+    const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+    const snippet = snippetMatch
+      ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim()
+      : '';
+
+    results.push({ title, snippet, url: link });
+  }
+  return results;
+}
 
 const recallMemory: Tool = {
   name: 'recall_memory',
