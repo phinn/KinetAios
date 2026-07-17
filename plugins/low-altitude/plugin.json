@@ -9,6 +9,7 @@
   "license": "MIT",
   "engines": ["direct"],
   "permissions": ["shell", "web_fetch", "network"],
+  "keywords": ["无人机", "飞行", "空域", "航拍", "低空", "uav", "drone", "evtol", "巡检", "气象", "风速能见度", "禁飞", "起飞", "降落", "航线", "flight", "airspace", "空管"],
   "tools": "index.js#tools",
   "slashCommands": "commands",
   "systemPrompt": "prompt.md"

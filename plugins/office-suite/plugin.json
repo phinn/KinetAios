@@ -7,6 +7,7 @@
   "icon": "icon.svg",
   "engines": ["direct"],
   "permissions": ["shell", "fs", "powershell", "com-automation"],
+  "keywords": ["excel", "word", "csv", "pdf", "ocr", "邮件", "outlook", "docx", "xlsx", "表格", "文档转换", "文字识别", "发邮件", "收件箱", "工作表", "ppt", "powerpoint", "epub", "markdown转"],
   "tools": "index.js#tools",
   "slashCommands": "commands/",
   "systemPrompt": "prompts/office.md"

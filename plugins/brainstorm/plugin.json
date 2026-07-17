@@ -6,6 +6,7 @@
   "category": "creative",
   "icon": "icon.svg",
   "permissions": [],
+  "keywords": ["白板", "头脑风暴", "思维导图", "brainstorm", "whiteboard", "canvas", "画板"],
   "engines": ["direct", "claudeCode", "codex"],
   "systemPrompt": "system-prompt.md",
   "panel": "panel.html",

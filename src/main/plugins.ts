@@ -29,6 +29,9 @@ export interface PluginManifest {
   engines?: EngineKind[];
   // v2 新增: 权限声明(告知性质, 不做运行时拦截)
   permissions?: string[];
+  // v2.2 新增: 按需注入关键词 —— 有此字段时, 仅当用户输入命中任一关键词才注入 systemPrompt。
+  // 无此字段 = 始终注入(向后兼容)。省 token: 编程任务不白送 C++ 启蒙 / 数学练习等无关 prompt。
+  keywords?: string[];
   // v2 新增: 贡献点
   tools?: string; // entryPath#exportName, 默认 "index.js#tools"
   slashCommands?: string; // 目录路径(相对插件目录), 其下 *.md 成为 slash 命令
@@ -332,11 +335,23 @@ export function pluginTools(): Tool[] {
 
 // 给 engines.ts 用: 当前引擎的插件 system prompt 拼接。
 // 遍历 engines 包含当前引擎且【已启用】的插件, 读取 systemPromptText, 用标题分隔拼接。
-export function pluginSystemPrompts(engine: EngineKind): string {
+// v2.2: 支持按需注入 —— 传 userInput 时, 只注入 keywords 命中的插件(无 keywords 的始终注入)。
+// 不传 userInput = 全量注入(向后兼容, 但失去 token 优化)。
+export function pluginSystemPrompts(engine: EngineKind, userInput?: string): string {
+  const input = userInput?.toLowerCase() ?? '';
   return loadPlugins()
     .filter((p) => isPluginEnabled(p.manifest.name))
     .filter((p) => !p.manifest.engines || p.manifest.engines.includes(engine))
     .filter((p) => p.systemPromptText?.trim())
+    .filter((p) => {
+      // 无关键词 → 始终注入(向后兼容)
+      const kws = p.manifest.keywords;
+      if (!kws || kws.length === 0) return true;
+      // 无用户输入 → 安全兜底全量注入(避免遗漏关键指令)
+      if (!input) return true;
+      // 有关键词 + 有输入 → 关键词匹配
+      return kws.some((kw) => input.includes(kw.toLowerCase()));
+    })
     .map((p) => `\n\n# 插件扩展: ${p.manifest.name}\n${p.systemPromptText}`)
     .join('');
 }

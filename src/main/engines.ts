@@ -152,7 +152,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct'),
+      systemPrompt: baseSystemPrompt + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

@@ -6,6 +6,7 @@
   "category": "education",
   "icon": "icon.svg",
   "permissions": [],
+  "keywords": ["数学", "口算", "算术", "加减乘除", "竖式", "应用题", "乘法", "除法", "分数", "math", "练习题", "运算"],
   "engines": ["direct", "claudeCode", "codex"],
   "systemPrompt": "system-prompt.md",
   "panel": "panel.html",

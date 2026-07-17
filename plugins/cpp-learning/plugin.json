@@ -6,6 +6,7 @@
   "category": "education",
   "icon": "icon.svg",
   "permissions": [],
+  "keywords": ["c++", "cpp", "启蒙", "编程题", "代码题", "变量", "循环", "函数", "数组", "iostream", "cout", "cin", "int main", "知识点", "闯关", "代码阅读"],
   "engines": ["direct", "claudeCode", "codex"],
   "systemPrompt": "system-prompt.md",
   "panel": "panel.html",
