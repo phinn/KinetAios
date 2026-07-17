@@ -362,10 +362,44 @@ const writeFile: Tool = {
   },
 };
 
+// ── 网页工具:web_fetch + web_search ──────────────────────────
+// B+C 方案:web_search 走 DuckDuckGo HTML 解析(零 key),web_fetch 优先走
+// Jina Reader(r.jina.ai → 干净 Markdown),失败回退原生 fetch + 正则去噪。
+
+// 通用浏览器 headers — 很多站点拒绝默认 Node fetch UA。
+const BROWSER_HEADERS: Record<string, string> = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
+  'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+  'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+};
+
+// 从 HTML 中提取正文:去掉 script/style/nav/footer 等噪声,保留文字。
+// Simple Readability — 不引外部依赖,用正则做基础去噪 + 文本提取。
+function extractTextFromHTML(html: string): string {
+  let s = html;
+  // 移除噪声标签及其内容
+  s = s.replace(/<script[\s\S]*?<\/script>/gi, '');
+  s = s.replace(/<style[\s\S]*?<\/style>/gi, '');
+  s = s.replace(/<nav[\s\S]*?<\/nav>/gi, '');
+  s = s.replace(/<footer[\s\S]*?<\/footer>/gi, '');
+  s = s.replace(/<header[\s\S]*?<\/header>/gi, '');
+  s = s.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
+  s = s.replace(/<!--[\s\S]*?-->/g, '');
+  // 块级标签 → 换行
+  s = s.replace(/<(?:p|div|br|h[1-6]|li|tr|blockquote|pre)[^>]*>/gi, '\n');
+  // 去所有剩余标签
+  s = s.replace(/<[^>]+>/g, '');
+  // HTML entities
+  s = s.replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)));
+  // 压缩空白
+  s = s.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+  return s;
+}
+
 const webFetch: Tool = {
   name: 'web_fetch',
   readOnly: true,
-  description: '抓取一个 http(s) URL 的文本内容(GET)。',
+  description: '抓取一个 http(s) URL 的正文内容(GET)。优先返回干净的 Markdown/纯文本(去广告/导航/脚本噪声)。',
   parameters: {
     type: 'object',
     properties: { url: { type: 'string', description: '要抓取的 http(s) URL' } },
@@ -380,22 +414,151 @@ const webFetch: Tool = {
       return `非法 URL: ${s}`;
     }
     if (url.protocol !== 'http:' && url.protocol !== 'https:') return `非法 URL: ${s}`;
-    // SSRF 防护:阻止访问内网/本地地址(LLM 被诱导时不会探测内部服务)
-    // 两层检查:① hostname 字符串 ② DNS 解析后验证实际 IP(防 DNS rebinding)
+    // SSRF 防护:阻止访问内网/本地地址
     const host = url.hostname.toLowerCase();
     const safe = await assertSafeHost(host);
     if (!safe.ok) {
       return safe.reason ?? `安全限制:不允许访问内网地址(${host})`;
     }
+
+    const timeout = ctx?.signal ?? AbortSignal.timeout(25_000);
+
+    // ── 路径 1: Jina Reader(r.jina.ai)——把任意 URL 转成干净 Markdown 正文 ──
+    // 免费额度,无需 key。对 JS 渲染页面也有效(服务端渲染)。
     try {
-      const resp = await fetch(s, { headers: { 'User-Agent': 'KinetAios/0.2' }, signal: ctx?.signal ?? AbortSignal.timeout(20_000) });
-      // body 上限:避免 OOM(截断到 500KB 后 toString)
-      const text = await resp.text();
-      const body = text.length > 500_000 ? text.slice(0, 500_000) + '\n…[截断]' : text;
-      const trimmed = body.length > 8000 ? body.slice(0, 8000) + '\n…[截断]' : body;
+      const jinaUrl = `https://r.jina.ai/${s}`;
+      const jinaResp = await fetch(jinaUrl, {
+        headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (jinaResp.ok) {
+        const jinaText = await jinaResp.text();
+        // Jina 成功时返回 Markdown 正文(通常 500+ 字符)
+        if (jinaText.length > 200) {
+          const trimmed = jinaText.length > 16_000 ? jinaText.slice(0, 16_000) + '\n…[截断]' : jinaText;
+          return trimmed;
+        }
+      }
+    } catch {
+      // Jina 超时/失败 → 静默回退到原生 fetch
+    }
+
+    // ── 路径 2: 原生 fetch + 正则去噪 ──
+    try {
+      const resp = await fetch(s, { headers: BROWSER_HEADERS, signal: timeout });
+      const raw = await resp.text();
+      const ct = resp.headers.get('content-type') ?? '';
+
+      // JSON / 纯文本 → 直接用
+      if (ct.includes('application/json') || ct.includes('text/plain')) {
+        const body = raw.length > 500_000 ? raw.slice(0, 500_000) + '\n…[截断]' : raw;
+        const trimmed = body.length > 12_000 ? body.slice(0, 12_000) + '\n…[截断]' : body;
+        return `[HTTP ${resp.status}]\n${trimmed}`;
+      }
+
+      // HTML → 提取正文
+      const extracted = extractTextFromHTML(raw);
+      const trimmed = extracted.length > 12_000 ? extracted.slice(0, 12_000) + '\n…[截断]' : extracted;
       return `[HTTP ${resp.status}]\n${trimmed}`;
     } catch (e) {
       return `抓取失败: ${sanitizeError(e)}`;
+    }
+  },
+};
+
+// web_search: 通过 DuckDuckGo HTML 接口搜索,返回标题+摘要+URL 列表。无需 API key。
+const webSearch: Tool = {
+  name: 'web_search',
+  readOnly: true,
+  description: '用搜索引擎搜索关键词,返回相关结果的标题、摘要和链接(通常 8-10 条)。先用此工具找到有用链接,再用 web_fetch 抓取详情。适合查询最新信息、技术文档、新闻等。',
+  parameters: {
+    type: 'object',
+    properties: {
+      query: { type: 'string', description: '搜索关键词' },
+      max_results: { type: 'number', description: '最大返回条数(默认 8,最大 15)' },
+    },
+    required: ['query'],
+  },
+  async run(args, ctx) {
+    const q = String(args.query ?? '').trim();
+    if (!q) return '请提供搜索关键词。';
+    const maxResults = Math.min(Number(args.max_results ?? 8), 15);
+    const timeout = ctx?.signal ?? AbortSignal.timeout(20_000);
+
+    // ── 路径 1: Jina Reader 搜索(r.jina.ai + Google) ──
+    // r.jina.ai/https://www.google.com/search?q=... → 返回搜索结果的 Markdown
+    try {
+      const jinaSearchUrl = `https://r.jina.ai/https://www.google.com/search?q=${encodeURIComponent(q)}`;
+      const jinaResp = await fetch(jinaSearchUrl, {
+        headers: { 'Accept': 'text/plain', 'X-Return-Format': 'text' },
+        signal: AbortSignal.timeout(15_000),
+      });
+      if (jinaResp.ok) {
+        const jinaText = await jinaResp.text();
+        // Jina 搜索结果通常包含多个 URL 和摘要
+        if (jinaText.length > 300) {
+          const trimmed = jinaText.length > 12_000 ? jinaText.slice(0, 12_000) + '\n…[截断]' : jinaText;
+          return trimmed;
+        }
+      }
+    } catch {
+      // 静默回退到 DuckDuckGo
+    }
+
+    // ── 路径 2: DuckDuckGo HTML 接口 ──
+    try {
+      const ddgUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(q)}`;
+      const resp = await fetch(ddgUrl, {
+        headers: {
+          ...BROWSER_HEADERS,
+          'Referer': 'https://duckduckgo.com/',
+        },
+        signal: timeout,
+      });
+      if (!resp.ok) return `搜索失败: HTTP ${resp.status}`;
+      const html = await resp.text();
+
+      // 解析 DuckDuckGo HTML 结果
+      const results: Array<{ title: string; snippet: string; url: string }> = [];
+      // 结果块: <div class="result ...">...<a class="result__a" href="...">title</a>...<a class="result__snippet" href="...">snippet</a>...</div>
+      const resultBlocks = html.split(/class="result\s/);
+      for (let i = 1; i < resultBlocks.length && results.length < maxResults; i++) {
+        const block = resultBlocks[i];
+        // 提取标题 + URL
+        const titleMatch = block.match(/class="result__a"[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/i);
+        if (!titleMatch) continue;
+        // DuckDuckGo 的 URL 是跳转链接,需要提取实际 URL
+        let link = titleMatch[1];
+        // ddg 链接格式: //duckduckgo.com/l/?uddg=<encoded_url>&...
+        const uddgMatch = link.match(/uddg=([^&]+)/);
+        if (uddgMatch) {
+          link = decodeURIComponent(uddgMatch[1]);
+        } else if (link.startsWith('//')) {
+          link = 'https:' + link;
+        }
+        // 标题去标签
+        const title = titleMatch[2].replace(/<[^>]+>/g, '').trim();
+        if (!title || !link) continue;
+
+        // 提取摘要
+        const snippetMatch = block.match(/class="result__snippet"[^>]*>([\s\S]*?)<\/a>/i);
+        const snippet = snippetMatch
+          ? snippetMatch[1].replace(/<[^>]+>/g, '').replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').trim()
+          : '';
+
+        results.push({ title, snippet, url: link });
+      }
+
+      if (results.length === 0) {
+        return `没有找到「${q}」的相关结果。尝试换一个关键词?`;
+      }
+
+      const body = results
+        .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
+        .join('\n\n');
+      return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
+    } catch (e) {
+      return `搜索失败: ${sanitizeError(e)}`;
     }
   },
 };
@@ -705,7 +868,7 @@ const dispatchAgent: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, recallMemory, gitDiff, dispatchAgent];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, dispatchAgent];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -720,7 +883,7 @@ export function allTools(): Tool[] {
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
 export function readOnlyTools(): Tool[] {
-  return [readFile, grep, glob, webFetch, recallMemory, gitDiff];
+  return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff];
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。
