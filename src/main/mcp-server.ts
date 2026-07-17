@@ -114,11 +114,12 @@ const PROTOCOL_VERSION = '2024-11-05';
 
 // 恒定时间字符串比较 —— 防止时序攻击逐字节爆破 token。
 // Constant-time string comparison to prevent timing attacks on token verification.
+// 先用 HMAC-SHA256 把两个串归一化为固定 32 字节再比较,消除长度差异导致的时序泄漏。
 function timingSafeStr(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  if (ab.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ab, bb);
+  const key = crypto.randomBytes(32); // 随机 key,仅本次比较用
+  const ah = crypto.createHmac('sha256', key).update(a).digest();
+  const bh = crypto.createHmac('sha256', key).update(b).digest();
+  return crypto.timingSafeEqual(ah, bh);
 }
 
 export class LocalMcpServer {
@@ -278,9 +279,26 @@ export class LocalMcpServer {
       // 注册到活跃 SSE 连接列表 → emitRemoteEvent 会推送新事件
       const buf = { res, lastIdx: this.liveEvents.length };
       this.liveBuffers.push(buf);
-      // 保活 ping
+      // 保活 ping + 僵尸连接检测:write 失败时清理,防止半开连接泄漏。
+      let failCount = 0;
       const timer = setInterval(() => {
-        try { res.write(': ping\n\n'); } catch { clearInterval(timer); }
+        if (res.destroyed || res.writableEnded) {
+          clearInterval(timer);
+          this.liveBuffers = this.liveBuffers.filter((b) => b !== buf);
+          return;
+        }
+        const ok = res.write(': ping\n\n');
+        if (!ok) {
+          // write 返回 false → backpressure 或底层 socket 已关闭
+          failCount++;
+          if (failCount >= 3) {
+            clearInterval(timer);
+            this.liveBuffers = this.liveBuffers.filter((b) => b !== buf);
+            try { res.destroy(); } catch { /* already closed */ }
+          }
+        } else {
+          failCount = 0;
+        }
       }, 30_000);
       req.on('close', () => {
         clearInterval(timer);
@@ -296,12 +314,16 @@ export class LocalMcpServer {
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
       });
-      // 每 30s 发一个 ping comment 保活
+      // 每 30s 发一个 ping comment 保活 + 僵尸连接检测。
+      let failCount = 0;
       const timer = setInterval(() => {
-        try {
-          res.write(': ping\n\n');
-        } catch {
-          clearInterval(timer);
+        if (res.destroyed || res.writableEnded) { clearInterval(timer); return; }
+        const ok = res.write(': ping\n\n');
+        if (!ok) {
+          failCount++;
+          if (failCount >= 3) { clearInterval(timer); try { res.destroy(); } catch { /* closed */ } }
+        } else {
+          failCount = 0;
         }
       }, 30_000);
       req.on('close', () => clearInterval(timer));
@@ -542,12 +564,21 @@ export class LocalMcpServer {
   // ── 导出会话状态(任务交接)──
   // 把指定会话(默认最近活跃的)序列化成 JSON 串,包含 turns + directHistory + engine + cwd + model。
   // 远程机器收到后 import_session 创建对应会话,接续上下文继续执行。
+  // 安全:对 directHistory 做脱敏(屏蔽疑似 API key / 密码 / token 的文本),防止敏感信息泄露到远程节点。
   private exportSession(args: Record<string, unknown>): string {
     const convId = String(args.convId ?? '');
     // 需要访问 TaskManager —— 通过 dynamic import 避免循环依赖。
     const { taskManager } = require('./main-instance') as { taskManager: import('./TaskManager').TaskManager };
     const conv = convId ? taskManager.get(convId) : taskManager.list()[0];
     if (!conv) throw new Error(convId ? `会话 ${convId} 不存在` : '无可用会话');
+    // 脱敏正则:匹配常见的 API key / secret / token 格式。
+    const SENSITIVE_RE = /(?:sk-[a-zA-Z0-9]{20,}|(?:api[_-]?key|secret|token|password|passwd)\s*[:=]\s*["']?[a-zA-Z0-9+/=_-]{8,}["']?)/gi;
+    const redact = (s: string): string => s.replace(SENSITIVE_RE, '[REDACTED]');
+    const sanitizeMsgs = (msgs: import('../shared/types').ChatMsg[]): import('../shared/types').ChatMsg[] =>
+      msgs.map((m) => {
+        if (typeof m.content === 'string') return { ...m, content: redact(m.content) };
+        return m;
+      });
     const state = {
       version: 1,
       conv: {
@@ -556,7 +587,7 @@ export class LocalMcpServer {
         cwd: conv.cwd,
         customTitle: conv.customTitle,
         turns: conv.turns,
-        directHistory: conv.directHistory,
+        directHistory: sanitizeMsgs(conv.directHistory),
         engineSessionId: conv.engineSessionId,
         cost: conv.cost,
         tokens: conv.tokens,
@@ -572,17 +603,75 @@ export class LocalMcpServer {
   private importSession(args: Record<string, unknown>): string {
     const json = String(args.sessionJson ?? '');
     if (!json) throw new Error('缺少 sessionJson 参数');
-    const state = JSON.parse(json) as { version: number; conv: { engine: import('../shared/types').EngineKind; model: string; cwd: string; customTitle: string | null; turns: import('../shared/types').Turn[]; directHistory: import('../shared/types').ChatMsg[]; engineSessionId: string | null; cost: number; tokens: number } };
-    if (!state.conv) throw new Error('无效的会话 JSON');
-    const { taskManager } = require('./main-instance') as { taskManager: import('./TaskManager').TaskManager };
+    let state: { version: number; conv: { engine: import('../shared/types').EngineKind; model: string; cwd: string; customTitle: string | null; turns: import('../shared/types').Turn[]; directHistory: import('../shared/types').ChatMsg[]; engineSessionId: string | null; cost: number; tokens: number } };
+    try {
+      state = JSON.parse(json);
+    } catch {
+      throw new Error('sessionJson 不是有效的 JSON');
+    }
+    if (!state || !state.conv) throw new Error('无效的会话 JSON:缺少 conv 字段');
+
+    // ── 安全:验证反序列化数据,防止远程注入恶意消息 ──
+    // Security: validate deserialized data to prevent malicious message injection.
+    const VALID_ROLES = new Set(['system', 'user', 'assistant', 'tool']);
+    const MAX_MSGS = 500;     // 消息条数上限
+    const MAX_MSG_LEN = 50_000; // 单条消息最大字符数
+
+    const sanitizeMsgs = (msgs: unknown[]): import('../shared/types').ChatMsg[] => {
+      const out: import('../shared/types').ChatMsg[] = [];
+      for (const m of msgs) {
+        if (!m || typeof m !== 'object') continue;
+        const msg = m as Record<string, unknown>;
+        const role = String(msg.role ?? '');
+        if (!VALID_ROLES.has(role)) continue;
+        const content = typeof msg.content === 'string'
+          ? msg.content.slice(0, MAX_MSG_LEN)
+          : (Array.isArray(msg.content) ? msg.content : '');
+        out.push({
+          role: role as import('../shared/types').ChatMsg['role'],
+          content,
+          ...(msg.tool_call_id ? { tool_call_id: String(msg.tool_call_id) } : {}),
+          ...(msg.tool_calls ? { tool_calls: msg.tool_calls } : {}),
+          ...(msg.name ? { name: String(msg.name) } : {}),
+        } as import('../shared/types').ChatMsg);
+      }
+      return out;
+    };
+
+    const sanitizeTurns = (turns: unknown[]): import('../shared/types').Turn[] => {
+      return turns.filter((t): t is import('../shared/types').Turn => {
+        if (!t || typeof t !== 'object') return false;
+        const turn = t as Record<string, unknown>;
+        return typeof turn.prompt === 'string' && turn.prompt.length <= MAX_MSG_LEN;
+      }).map((t) => {
+        const turn = t as import('../shared/types').Turn;
+        return {
+          ...turn,
+          prompt: turn.prompt.slice(0, MAX_MSG_LEN),
+          answer: typeof turn.answer === 'string' ? turn.answer.slice(0, MAX_MSG_LEN) : turn.answer,
+        };
+      });
+    };
+
     const c = state.conv;
-    const conv = taskManager.newConversation(c.cwd || process.cwd(), c.engine || 'direct');
-    conv.customTitle = `[交接] ${c.customTitle || c.turns[0]?.prompt.slice(0, 20) || 'Session'}`;
-    conv.turns = c.turns ?? [];
-    conv.directHistory = c.directHistory ?? [];
-    conv.engineSessionId = c.engineSessionId ?? null;
-    conv.cost = c.cost ?? 0;
-    conv.tokens = c.tokens ?? 0;
+    const rawTurns = Array.isArray(c.turns) ? c.turns.slice(0, MAX_MSGS) : [];
+    const rawHistory = Array.isArray(c.directHistory) ? c.directHistory.slice(0, MAX_MSGS) : [];
+    const turns = sanitizeTurns(rawTurns);
+    const directHistory = sanitizeMsgs(rawHistory);
+
+    const { taskManager } = require('./main-instance') as { taskManager: import('./TaskManager').TaskManager };
+    const VALID_ENGINES = new Set(['direct', 'claudeCode', 'codex']);
+    const engine = VALID_ENGINES.has(c.engine as string) ? c.engine : 'direct';
+    const conv = taskManager.newConversation(
+      typeof c.cwd === 'string' && c.cwd.length < 1024 ? c.cwd : process.cwd(),
+      engine as import('../shared/types').EngineKind,
+    );
+    conv.customTitle = `[交接] ${(typeof c.customTitle === 'string' ? c.customTitle : c.turns[0]?.prompt?.slice(0, 20) || 'Session')}`;
+    conv.turns = turns;
+    conv.directHistory = directHistory;
+    conv.engineSessionId = typeof c.engineSessionId === 'string' ? c.engineSessionId : null;
+    conv.cost = typeof c.cost === 'number' && isFinite(c.cost) ? c.cost : 0;
+    conv.tokens = typeof c.tokens === 'number' && isFinite(c.tokens) ? c.tokens : 0;
     // 持久化导入的 turns
     const { saveConversation, saveTurn } = require('./store') as typeof import('./store');
     saveConversation(conv);

@@ -42,6 +42,21 @@ function logFatal(kind: string, e: unknown): void {
 process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
+// ── 系统路径安全检查:阻止渲染器读写敏感系统路径 ──
+// System path guard: prevent renderer from reading/writing sensitive system paths.
+// 虽然渲染器 contextIsolation,但万一被 XSS/prompt injection 攻破,这里是一道防线。
+const BLOCKED_PATH_PREFIXES = process.platform === 'win32'
+  ? ['c:\\windows\\system32', 'c:\\windows\\system', 'c:\\program files', 'c:\\program files (x86)']
+  : ['/etc', '/usr', '/bin', '/sbin', '/boot', '/sys', '/proc', '/dev'];
+
+function isBlockedSystemPath(absPath: string): boolean {
+  const norm = path.resolve(absPath).toLowerCase();
+  return BLOCKED_PATH_PREFIXES.some((p) => {
+    const prefix = p.toLowerCase();
+    return norm === prefix || norm.startsWith(prefix + path.sep);
+  });
+}
+
 let dashboardWin: BrowserWindow | null = null;
 let quickWin: BrowserWindow | null = null;
 let metricsWin: BrowserWindow | null = null;
@@ -611,6 +626,8 @@ function registerIpc(): void {
   // Files 窗口编辑器:绝对路径读全文(无 20KB 截断、无 cwd 越界检查 —— 用户主动挑的文件)。
   ipcMain.handle('file-read', (_e, abs: string) => {
     try {
+      // 安全:阻止读取系统敏感目录。
+      if (isBlockedSystemPath(abs)) return { ok: false, error: '安全限制:不允许读取系统目录' };
       // 先读 Buffer 检测二进制:前 8KB 内有 null byte → 二进制文件,拒绝打开。
       // 否则 toString('utf8') 返回文本(避免直接 utf8 读二进制导致乱码/崩溃)。
       const buf = fs.readFileSync(abs);
@@ -630,6 +647,8 @@ function registerIpc(): void {
   // Files 窗口编辑器:绝对路径写全文。
   ipcMain.handle('file-write', (_e, abs: string, content: string) => {
     try {
+      // 安全:阻止写入系统敏感目录。
+      if (isBlockedSystemPath(abs)) return { ok: false, error: '安全限制:不允许写入系统目录' };
       fs.writeFileSync(abs, content, 'utf8');
       return { ok: true };
     } catch (e) {

@@ -73,7 +73,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       if (!retriedAfterShrink && isContextTooLong(e)) {
         retriedAfterShrink = true;
         const beforeMsgs = messages;
-        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), 15_000)];
+        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), 15_000, snapshot.apiProtocol)];
         // 发压缩事件:让用户知道上下文超长被自动裁剪了
         const beforeTokens = estTokenCount(beforeMsgs);
         const afterTokens = estTokenCount(messages);
@@ -98,7 +98,8 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       });
     }
     // 用这轮真实 prompt_tokens 校准 token 估算系数(给 trimHistoryToTokenBudget / compactHistory 用)。
-    calibrateTokens(completion.tokensIn, messages);
+    // 按协议分别校准:GLM(OpenAI 协议)与 Claude 的 token/char 比差异大,混用一个系数会导致并发会话互相干扰。
+    calibrateTokens(completion.tokensIn, messages, snapshot.apiProtocol);
 
     messages.push(completion.rawAssistant);
     if (completion.toolCalls.length === 0) {
@@ -146,7 +147,17 @@ function repairTruncatedJSON(raw: string): Record<string, unknown> | null {
     if (ch === '{' || ch === '[') { depth++; bracketStack.push(ch); continue; }
     if (ch === '}' || ch === ']') {
       depth--;
-      bracketStack.pop();
+      // 安全:只弹出匹配的括号类型,防止 {] 或 [} 交叉畸形导致栈状态错误。
+      // Security: only pop matching bracket type, preventing mismatched {] or [} from corrupting stack.
+      if (bracketStack.length > 0) {
+        const top = bracketStack[bracketStack.length - 1];
+        if ((ch === '}' && top === '{') || (ch === ']' && top === '[')) {
+          bracketStack.pop();
+        } else {
+          // 不匹配 → 跳过这个畸形的闭括号(不弹栈)
+          depth++; // 撤销 depth-- 因为这个闭括号是畸形的
+        }
+      }
       if (depth > 0) lastValidEnd = i; // 记录顶层 value 结束位置
       continue;
     }
@@ -220,8 +231,15 @@ function repairTruncatedJSON(raw: string): Record<string, unknown> | null {
     }
     if (ch === '"') { inStr = true; continue; }
     if (ch === '{' || ch === '[') bracketStack.push(ch);
-    if (ch === '}') bracketStack.pop();
-    if (ch === ']') bracketStack.pop();
+    if (ch === '}' || ch === ']') {
+      // 安全:匹配检查,与第一段扫描一致
+      if (bracketStack.length > 0) {
+        const top = bracketStack[bracketStack.length - 1];
+        if ((ch === '}' && top === '{') || (ch === ']' && top === '[')) {
+          bracketStack.pop();
+        }
+      }
+    }
   }
 
   // 从栈顶向下补全闭合括号
@@ -335,7 +353,13 @@ function errMsg(e: unknown): string {
 // Token estimation, calibrated from real API usage.
 // ponytail: GLM/Claude/OpenAI 的 tokenizer 各不同且不公开 → 不上 tiktoken(加 ~1MB 依赖、打包变大)。
 // 改用「字符数 × 校准系数」:每轮拿 API 真实 prompt_tokens 反推 token/char 比,滑动平均,自动贴合实际模型。
-let tokenCoef = 0.6; // 初始 0.6(中英混合经验值),每轮按真实 usage 校准
+// 按协议(openai/anthropic)分别保存系数,避免并发会话互相干扰(GLM 中英文比 ≠ Claude)。
+const tokenCoefByProto: Record<string, number> = {};
+function coefFor(proto?: string): number {
+  const k = proto ?? 'default';
+  if (tokenCoefByProto[k] === undefined) tokenCoefByProto[k] = 0.6;
+  return tokenCoefByProto[k];
+}
 // 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
 function estMsgChars(m: ChatMsg): number {
   let content = '';
@@ -347,20 +371,22 @@ function estMsgChars(m: ChatMsg): number {
 
 // 导出给 renderer / UI 用:估算一批消息的 token 总量(用当前校准系数)。
 // 用于上下文进度条 —— 用户实时看到当前对话大约用了多少 token。
-export function estTokenCount(msgs: ChatMsg[]): number {
+export function estTokenCount(msgs: ChatMsg[], proto?: string): number {
   if (!msgs.length) return 0;
-  return msgs.reduce((s, m) => s + Math.floor(estMsgChars(m) * tokenCoef) + 20, 0);
+  const c = coefFor(proto);
+  return msgs.reduce((s, m) => s + Math.floor(estMsgChars(m) * c) + 20, 0);
 }
 
 // 导出当前系数(UI 可选显示"估算精度")。
-export function getTokenCoef(): number {
-  return tokenCoef;
+export function getTokenCoef(proto?: string): number {
+  return coefFor(proto);
 }
 // 用这批 messages 的真实 prompt_tokens 校准 tokenCoef(滑动平均 0.5/0.5,抗单轮抖动)。
-function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
+function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[], proto?: string): void {
   const chars = msgs.reduce((s, m) => s + estMsgChars(m), 0);
+  const k = proto ?? 'default';
   if (realPromptTokens > 0 && chars > 0) {
-    tokenCoef = tokenCoef * 0.5 + (realPromptTokens / chars) * 0.5;
+    tokenCoefByProto[k] = coefFor(k) * 0.5 + (realPromptTokens / chars) * 0.5;
   }
 }
 
@@ -369,8 +395,9 @@ function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[]): void {
 // an "orphan" tool message whose assistant was dropped — both OpenAI and Anthropic reject that.
 // 标了 _memory 的消息(长期记忆块)永远保留:它是参考材料,不是对话历史,不该被裁掉。
 // 标了 _pinned 的消息(用户锁定的关键 turn)同样永远保留。
-export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatMsg[] {
+export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?: string): ChatMsg[] {
   if (!msgs.length) return [];
+  const c = coefFor(proto);
   const memoryMsgs = msgs.filter((m) => m._memory);
   const pinnedMsgs = msgs.filter((m) => m._pinned);
   const rest = msgs.filter((m) => !m._memory && !m._pinned);
@@ -378,7 +405,7 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number): ChatM
   let total = 0;
   const kept: ChatMsg[] = [];
   for (const m of [...rest].reverse()) {
-    const tokens = Math.floor(estMsgChars(m) * tokenCoef) + 20; // +20 per-message overhead
+    const tokens = Math.floor(estMsgChars(m) * c) + 20; // +20 per-message overhead
     if (total + tokens > budget && kept.length) break;
     total += tokens;
     kept.push(m);
@@ -428,7 +455,7 @@ export async function compactHistory(
   const memoryMsgs = msgs.filter((m) => m._memory);
   const pinnedMsgs = msgs.filter((m) => m._pinned);
   const rest = msgs.filter((m) => !m._memory && !m._pinned);
-  const tail = trimHistoryToTokenBudget(rest, budget);
+  const tail = trimHistoryToTokenBudget(rest, budget, snap.apiProtocol);
   if (tail.length === rest.length) return [...memoryMsgs, ...pinnedMsgs, ...tail]; // 没超预算,无需摘要
   const head = rest.slice(0, rest.length - tail.length);
   if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...tail];
@@ -465,8 +492,8 @@ export async function compactHistory(
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...tail];
     // 发压缩事件 → renderer 高亮提示「已自动压缩 headTokens → summaryTokens」。
     if (onEvent) {
-      const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * tokenCoef) + 20, 0);
-      const summaryTokens = Math.floor(summary.length * tokenCoef) + 20;
+      const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * coefFor(snap.apiProtocol)) + 20, 0);
+      const summaryTokens = Math.floor(summary.length * coefFor(snap.apiProtocol)) + 20;
       onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话摘要)` });
       // 用 cost 事件的 tokensIn/Out 上报压缩 LLM 调用成本(已有,上面 onEvent 里)
       // 再用一个新的 context 事件报告压缩详情(不影响现有 status 显示)

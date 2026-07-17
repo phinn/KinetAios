@@ -208,7 +208,14 @@ const execFileAsync = promisify(execFile);
 async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd: string, signal: AbortSignal): Promise<string> {
   const bin = resolveBin(engine === 'claudeCode' ? 'claude' : 'codex');
   if (!bin.found) return `(${engine} CLI 不在 PATH,跳过子任务)`;
-  const args = engine === 'claudeCode' ? ['-p', prompt] : ['exec', prompt];
+  // 安全:Windows 上 .cmd 走 shell:true,prompt 如果含 &|> 等 cmd 元字符会导致命令注入。
+  // 改为通过 stdin 传入 prompt,argv 只传 flag(不带用户/LLM 内容)。
+  // Security: on Windows .cmd shims go through shell:true, so prompt content in argv risks
+  // command injection (&|> etc). Pipe prompt via stdin instead, argv has only flags.
+  const useStdin = bin.shell;
+  const args = useStdin
+    ? (engine === 'claudeCode' ? ['-p'] : ['exec'])
+    : (engine === 'claudeCode' ? ['-p', prompt] : ['exec', prompt]);
   try {
     const { stdout } = await execFileAsync(bin.cmd, args, {
       cwd,
@@ -216,6 +223,7 @@ async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd
       signal,
       maxBuffer: 10 * 1024 * 1024,
       ...(bin.shell ? { shell: true } : {}),
+      ...(useStdin ? { input: prompt } : {}),
     });
     const text = stdout.trim();
     return text || '(子任务无文本输出)';

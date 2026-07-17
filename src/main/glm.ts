@@ -60,18 +60,20 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 }
 
 // 建连 + 拿到 200:可重试状态码/网络错退避重试;不可重试(400/401/404 等)或耗尽则抛 GLMError。
-async function fetchUntil200(url: string, init: RequestInit, signal: AbortSignal): Promise<Response> {
+async function fetchUntil200(url: string, init: RequestInit): Promise<Response> {
+  // signal 从 init.signal 提取,用于重试逻辑判断(不重复传参)。
+  const signal = init.signal as AbortSignal | undefined;
   for (let attempt = 0; ; attempt++) {
     let resp: Response;
     try {
       resp = await fetch(url, init);
     } catch (e) {
-      if (attempt < MAX_RETRY && !signal.aborted) { await sleep(backoffMs(attempt), signal); continue; }
+      if (attempt < MAX_RETRY && !signal?.aborted) { await sleep(backoffMs(attempt), signal); continue; }
       throw e;
     }
     if (resp.status === 200) return resp;
     const detail = await readErr(resp);
-    if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal.aborted) {
+    if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
       await sleep(backoffMs(attempt), signal);
       continue;
     }
@@ -158,9 +160,11 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
     }
     if (buf.trim()) yield buf;
   } finally {
-    // 确保释放 reader(abort/异常/break 时也清理,避免 TCP 连接泄漏)
+    // 确保释放 reader(abort/异常/break 时也清理,避免 TCP 连接泄漏)。
+    // 先 releaseLock(让 body 可被再次获取或 GC),cancel 的 Promise fire-and-forget。
+    // Node 16+ 的 releaseLock 在 cancel 未完成时调用是安全的(generator 即将终结)。
+    try { reader.releaseLock(); } catch { /* already released */ }
     reader.cancel().catch(() => {});
-    reader.releaseLock();
   }
 }
 
@@ -221,7 +225,6 @@ class OpenAICompatibleProvider implements Provider {
       body: JSON.stringify(body),
       signal,
     },
-      signal,
     );
 
     let content = '';
@@ -310,12 +313,21 @@ class AnthropicProvider implements Provider {
           anthContent = [{ type: 'text', text: content }];
         }
         // Anthropic 要求 user/assistant 严格交替。memoryBlock 头部消息(_memory)紧跟 history[0]
-        // 的首个用户输入会构成连续 user —— 合并进上一条 user(纯文本直接拼,tool_result 数组追加 text block)。
+        // 的首个用户输入会构成连续 user —— 合并进上一条 user。
+        // 安全:合并时保留 last 已有的 content blocks(含图片),只追加新 blocks。
+        // Security: preserve existing content blocks (including images) when merging.
         const last = anth[anth.length - 1];
         if (last && last.role === 'user') {
-          if (Array.isArray(last.content)) last.content.push(...anthContent);
-          else if (typeof last.content === 'string') last.content = last.content + '\n\n' + anthContent.map((b: any) => b.text ?? '').join('');
-          else anth.push({ role: 'user', content: anthContent });
+          if (Array.isArray(last.content)) {
+            // 已是数组(可能含图片)→ 直接追加新 blocks
+            last.content.push(...anthContent);
+          } else if (typeof last.content === 'string' && last.content) {
+            // 字符串 content → 转为数组保留原文,再追加新 blocks(图片不丢失)
+            last.content = [{ type: 'text', text: last.content }, ...anthContent];
+          } else {
+            // content 为空/null → 直接用新 blocks
+            last.content = anthContent;
+          }
         } else {
           anth.push({ role: 'user', content: anthContent });
         }
@@ -372,7 +384,6 @@ class AnthropicProvider implements Provider {
       body: JSON.stringify(body),
       signal,
     },
-      signal,
     );
 
     // 2) parse Anthropic SSE: text_delta → onToken; input_json_delta → stitch tool args

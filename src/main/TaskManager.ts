@@ -378,21 +378,24 @@ export class TaskManager {
         }
       }
       // 给新插入的 fact 算 embedding。失败不阻塞主流程,recall_memory 会回退 FTS5。
-      // ponytail: addMemory 不返回 id,靠内容反查最新行;新 fact 量小,逐条 embed 够用。
+      // 批量 embedding:一次 API 调用处理所有新 fact,避免 N+1 性能问题。
       if (added.length) {
         try {
           const { embedSnapshot } = await import('./settings');
           const esnap = embedSnapshot();
           const recent = store.loadMemories(undefined);
           const byContent = new Map(recent.map((r) => [r.content, r.id]));
+          // 收集需要 embed 的 (id, content) 对
+          const toEmbed: Array<{ id: string; text: string }> = [];
           for (const f of added) {
             const id = byContent.get(f);
-            if (!id) continue;
-            try {
-              const vecs = await embed([f], snap, ac.signal);
-              if (vecs[0]?.length) store.setMemoryEmbedding(id, vecs[0], esnap.model);
-            } catch (embErr) {
-              console.warn('[memory] embed failed (non-blocking):', (embErr as Error)?.message);
+            if (id) toEmbed.push({ id, text: f });
+          }
+          if (toEmbed.length) {
+            // 一次性批量 embed 所有 fact
+            const vecs = await embed(toEmbed.map((e) => e.text), snap, ac.signal);
+            for (let i = 0; i < toEmbed.length && i < vecs.length; i++) {
+              if (vecs[i]?.length) store.setMemoryEmbedding(toEmbed[i].id, vecs[i], esnap.model);
             }
           }
         } catch {
