@@ -927,15 +927,22 @@ function registerIpc(): void {
     return true;
   });
   ipcMain.handle('list-dir', (_e, absPath: string) => listDirAbs(absPath));
-  // 在用户默认浏览器里打开 URL(file:// / https:// 都行)。文件树右键「在浏览器中打开」用。
-  // 只允许 http(s) 协议打开外部浏览器,防止 file:///、smb://、恶意协议打开本地程序。
+  // 在用户默认程序里打开 URL(file:// → 系统默认程序 / http(s) → 默认浏览器)。
+  // 文件树右键「在浏览器中打开」用 file:// 协议;浏览器/外链用 http(s)。
+  // 只允许 file/http/https,防止 smb://、恶意协议打开本地程序。
   ipcMain.handle('shell-open', (_e, url: string) => {
     try {
       const u = new URL(url);
-      if (u.protocol !== 'http:' && u.protocol !== 'https:') {
-        return { ok: false, error: `不允许的协议: ${u.protocol}` };
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        return shell.openExternal(u.href);
       }
-      return shell.openExternal(u.href);
+      if (u.protocol === 'file:') {
+        // file:/// → 本地路径,用 openPath 走系统默认程序(浏览器/图片查看器等)
+        // openPath 期望普通路径(URL decode + 去掉 file:// 前缀)
+        const fp = decodeURIComponent(u.pathname).replace(/^\/([A-Za-z]:)/, '$1');
+        return shell.openPath(fp);
+      }
+      return { ok: false, error: `不允许的协议: ${u.protocol}` };
     } catch {
       return { ok: false, error: '非法 URL' };
     }
