@@ -66,7 +66,7 @@ function strToHex(str) {
 // ── 构造 PowerShell 串口脚本 ───────────────────────────────
 // Build PowerShell script for serial port send + read.
 function buildPwshScript(port, baud, data, readMs, lineEnding) {
-  // lineEnding: \r\n for default, \r for AT mode, \n for raw
+  // lineEnding: crlf(默认) / cr(AT模式) / lf(raw)
   const ending = lineEnding === 'cr' ? '`r' : lineEnding === 'lf' ? '`n' : '`r`n';
   // 转义 PowerShell 字符串中的特殊字符
   const escapedData = data.replace(/'/g, "''").replace(/\r/g, '').replace(/\n/g, '');
@@ -379,44 +379,55 @@ const serialSession = {
     const endingStr = lineEnding === 'crlf' ? '\r\n' : lineEnding === 'cr' ? '\r' : lineEnding === 'lf' ? '\n' : '';
 
     if (isWin) {
-      // PowerShell: 打开串口 → 每秒发一条命令 → 持续读 → 关闭
-      const writes = commands.map((c, i) => {
-        const delay = (i + 1) * 1000;
-        const escaped = c.replace(/'/g, "''").replace(/"/g, '');
-        const le = lineEnding === 'cr' ? '`r' : lineEnding === 'lf' ? '`n' : '`r`n';
-        return `Start-Sleep -Milliseconds ${delay}; $port.Write('${escaped}' + '${le}');`;
-      }).join(' ');
-
+      // PowerShell: 打开串口 → 顺序发命令(每秒一条) → 持续读 → 关闭
+      // 不用 Start-Job: Job 在独立 runspace 中 $port 变量不存在。
+      // 用主线程顺序 Write + Sleep, 每条命令后读一下输出。
       const pwshLines = [
         `try {`,
         `  $port = New-Object System.IO.Ports.SerialPort '${port}',${baud},None,8,one`,
         `  $port.Open()`,
         `  $output = ""`,
-        `  $jobs = @( ${writes || 'Start-Sleep -Milliseconds 0'} )`,
       ];
 
-      // 简化方案: 用后台 Job 发命令,主线程持续读
       if (commands.length > 0) {
-        const sendScript = commands.map((c, i) => {
+        // 先在 duration 的前 N 秒每秒发一条命令, 每次发完读一波响应
+        commands.forEach((c, i) => {
           const escaped = c.replace(/'/g, "''").replace(/"/g, '');
           const le = lineEnding === 'cr' ? '`r' : lineEnding === 'lf' ? '`n' : '`r`n';
-          return `Start-Sleep -Milliseconds ${(i + 1) * 1000}; $port.Write('${escaped}${le}')`;
-        }).join('; ');
-        pwshLines.push(`Start-Job -ScriptBlock { ${sendScript} } | Out-Null`);
+          pwshLines.push(
+            `  Start-Sleep -Milliseconds 500`,
+            `  $port.Write('${escaped}' + '${le}')`,
+            `  Start-Sleep -Milliseconds 800`,
+            `  if ($port.BytesToRead -gt 0) { $output += $port.ReadExisting() }`,
+          );
+        });
+        // 剩余时间持续读
+        const remainingMs = Math.max(duration * 1000 - commands.length * 1300, 0);
+        pwshLines.push(
+          `  $endTime = (Get-Date).AddMilliseconds(${remainingMs})`,
+          `  while ((Get-Date) -lt $endTime) {`,
+          `    if ($port.BytesToRead -gt 0) { $output += $port.ReadExisting() }`,
+          `    Start-Sleep -Milliseconds 100`,
+          `  }`,
+        );
+      } else {
+        // 只读模式: 持续读 duration 秒
+        pwshLines.push(
+          `  $endTime = (Get-Date).AddSeconds(${duration})`,
+          `  while ((Get-Date) -lt $endTime) {`,
+          `    if ($port.BytesToRead -gt 0) { $output += $port.ReadExisting() }`,
+          `    Start-Sleep -Milliseconds 100`,
+          `  }`,
+        );
       }
 
       pwshLines.push(
-        `  $endTime = (Get-Date).AddSeconds(${duration})`,
-        `  while ((Get-Date) -lt $endTime) {`,
-        `    if ($port.BytesToRead -gt 0) { $output += $port.ReadExisting() }`,
-        `    Start-Sleep -Milliseconds 100`,
-        `  }`,
         `  $port.Close()`,
         `  Write-Output $output`,
         `} catch { Write-Output "ERROR: " + $_.Exception.Message }`,
       );
       const pwsh = pwshLines.join('\n');
-      cmd = `powershell -NoProfile -Command "${pwsh.replace(/"/g, '\\"')}"`;
+      cmd = `powershell -NoProfile -Command "${pwsh.replace(/"/g, '\\"').replace(/\$/g, '\\$')}"`;
     } else {
       // macOS/Linux: 后台发命令 + 前台 cat 持续读
       const sendBg = commands.length > 0

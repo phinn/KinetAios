@@ -375,14 +375,11 @@ const pioMonitor = {
 
     await ctx.confirm(`串口监控:\n  时长: ${duration}s\n  端口: ${args.port || '自动'}\n  波特率: ${args.baudrate || '自动'}`);
 
-    // pio device monitor 是持续运行的,用 timeout 杀掉
-    const timeoutCmd = process.platform === 'win32'
-      ? `powershell -Command "Start-Process -NoNewWindow -Wait -FilePath pio -ArgumentList 'device','monitor','${portFlag}','${baudFlag}','-d','${projDir.replace(/\\/g, '/')}' ; Start-Sleep -Seconds ${duration} ; Stop-Process -Name pio -Force -ErrorAction SilentlyContinue"`
-      : `timeout ${duration} pio device monitor ${portFlag} ${baudFlag} -d "${projDir}" 2>&1 || true`;
-
-    // 简化方案: 直接用系统 timeout + pio device monitor
+    // pio device monitor 是持续运行的, 必须 timeout 杀掉。
+    // Windows 没有 `timeout` 命令的管道模式, 用 PowerShell 控制生命周期。
+    // macOS/Linux: timeout + cat 管道。
     const cmd = process.platform === 'win32'
-      ? `pio device monitor ${portFlag} ${baudFlag} -d "${projDir}"`
+      ? `powershell -NoProfile -Command "$p = Start-Process -NoNewWindow -PassThru -FilePath pio -ArgumentList 'device','monitor','${portFlag}','${baudFlag}','-d','${projDir.replace(/\\/g, '/')}'; Start-Sleep -Seconds ${duration}; Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue"`
       : `timeout ${duration} pio device monitor ${portFlag} ${baudFlag} -d "${projDir}" 2>&1 || true`;
 
     const r = await shellExec(cmd, ctx.cwd, (duration + 5) * 1000);
