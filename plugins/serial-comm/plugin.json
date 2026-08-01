@@ -12,5 +12,8 @@
   "keywords": ["串口", "serial", "UART", "AT指令", "AT", "USB", "设备", "调试", "hex", "十六进制", "GPIO", "发送", "接收", "serialport", "ttyUSB", "COM", "波特率", "baudrate", "modbus", "传感器"],
   "tools": "index.js#tools",
   "slashCommands": "commands",
-  "systemPrompt": "prompt.md"
+  "systemPrompt": "prompt.md",
+  "panel": "panel.html",
+  "panelTitle": "串口调试终端",
+  "panelIcon": "icon.svg"
 }

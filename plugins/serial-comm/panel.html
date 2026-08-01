@@ -1,0 +1,496 @@
+<!-- 串口调试终端 — Serial Debug Terminal (serial-comm plugin panel) -->
+<!-- 运行在 iframe srcdoc 中,通过 postMessage 与宿主通信。 -->
+<!-- 通信模型: panel → hostCall('send', [convId, 指令]) → AI 调用 serial_send/serial_query → 结果推回 -->
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>串口调试终端</title>
+<style>
+  :root {
+    --bg-side: #161619; --bg-elev: #242429; --bg-input: #2a2a31;
+    --border: #34343c; --text: #e7e7ec; --text-dim: #9a9aa4;
+    --text-faint: #6c6c76; --accent: #1A73E8; --accent-dim: #1557B0;
+    --danger: #e05050; --success: #22c55e; --warn: #f59e0b;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    height: 100vh; overflow: hidden;
+    background: var(--bg-side);
+    font-family: 'Cascadia Code', 'SF Mono', 'Fira Code', Consolas, monospace;
+    font-size: 13px; color: var(--text);
+  }
+
+  /* ── 布局 ── */
+  #sc-root { display: flex; flex-direction: column; height: 100vh; }
+
+  /* ── 顶部工具栏 ── */
+  #sc-toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+  }
+  .sc-title {
+    font-weight: 600; font-size: 13px; margin-right: auto;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .sc-title svg { width: 16px; height: 16px; color: var(--accent); }
+
+  .sc-select, .sc-input {
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 5px 10px;
+    font-family: inherit; font-size: 12px; outline: none;
+    transition: border-color .15s;
+  }
+  .sc-select:focus, .sc-input:focus { border-color: var(--accent); }
+  .sc-select { cursor: pointer; }
+  .sc-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 5px 12px; border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    font-family: inherit; white-space: nowrap;
+    transition: background .15s, border-color .15s;
+  }
+  .sc-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .sc-btn:active { transform: scale(.97); }
+  .sc-btn.primary { background: var(--accent); border-color: var(--accent); }
+  .sc-btn.primary:hover { background: var(--accent-dim); }
+  .sc-btn.danger { color: var(--danger); }
+  .sc-btn:disabled { opacity: .35; cursor: default; }
+
+  /* ── 端口配置行 ── */
+  #sc-config {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev);
+    border-bottom: 1px solid var(--border);
+    font-size: 12px; color: var(--text-dim);
+  }
+  #sc-config label { display: flex; align-items: center; gap: 4px; }
+  #sc-config .sc-input { width: 80px; }
+
+  /* ── 终端输出区 ── */
+  #sc-terminal {
+    flex: 1; min-height: 0; overflow-y: auto;
+    padding: 12px 14px;
+    background: var(--bg-side);
+    font-family: inherit; font-size: 13px; line-height: 1.6;
+  }
+  .sc-log-entry { margin-bottom: 4px; word-break: break-all; white-space: pre-wrap; }
+  .sc-log-entry .ts { color: var(--text-faint); font-size: 11px; margin-right: 6px; }
+  .sc-log-entry.sent { color: var(--accent); }
+  .sc-log-entry.recv { color: var(--text); }
+  .sc-log-entry.info { color: var(--text-dim); font-style: italic; }
+  .sc-log-entry.error { color: var(--danger); }
+  .sc-log-entry.success { color: var(--success); }
+  .sc-log-entry.warn { color: var(--warn); }
+  .sc-log-entry .arrow { margin: 0 4px; opacity: .5; }
+
+  /* ── 输入区 ── */
+  #sc-input-row {
+    display: flex; gap: 8px; padding: 8px 14px;
+    flex-shrink: 0; background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+  }
+  #sc-input {
+    flex: 1; font-family: inherit; font-size: 13px;
+    background: var(--bg-input); border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 8px 12px;
+    outline: none; transition: border-color .15s;
+  }
+  #sc-input:focus { border-color: var(--accent); }
+  #sc-input::placeholder { color: var(--text-faint); }
+
+  /* hex 切换 */
+  .sc-toggle {
+    display: flex; align-items: center; gap: 4px;
+    font-size: 11px; color: var(--text-dim); cursor: pointer;
+  }
+  .sc-toggle input { accent-color: var(--accent); }
+
+  /* 状态指示器 */
+  .sc-status-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-faint); flex-shrink: 0;
+  }
+  .sc-status-dot.active { background: var(--success); }
+  .sc-status-dot.busy { background: var(--warn); animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { opacity: .4; } }
+
+  /* 快捷按钮区 */
+  #sc-quick {
+    display: flex; gap: 6px; padding: 6px 14px;
+    flex-shrink: 0; background: var(--bg-elev);
+    border-top: 1px solid var(--border);
+    flex-wrap: wrap;
+  }
+  .sc-quick-btn {
+    padding: 3px 10px; border-radius: 4px;
+    border: 1px solid var(--border);
+    background: transparent; color: var(--text-dim);
+    font-size: 11px; cursor: pointer; font-family: inherit;
+    transition: all .15s;
+  }
+  .sc-quick-btn:hover { color: var(--accent); border-color: var(--accent); }
+</style>
+</head>
+<body>
+<div id="sc-root">
+
+  <!-- 顶部工具栏 -->
+  <div id="sc-toolbar">
+    <span class="sc-title">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/></svg>
+      串口调试终端
+    </span>
+    <span class="sc-status-dot" id="sc-status"></span>
+    <button class="sc-btn" id="btn-scan" title="扫描设备">📡 扫描</button>
+    <button class="sc-btn primary" id="btn-connect" title="连接设备">🔗 连接</button>
+    <button class="sc-btn danger" id="btn-clear" title="清屏">🗑 清屏</button>
+  </div>
+
+  <!-- 端口配置行 -->
+  <div id="sc-config">
+    <label>端口 <select class="sc-select" id="sel-port" style="width: 160px;">
+      <option value="">— 选择端口 —</option>
+    </select></label>
+    <label>波特率 <select class="sc-select" id="sel-baud">
+      <option value="9600">9600</option>
+      <option value="19200">19200</option>
+      <option value="38400">38400</option>
+      <option value="57600">57600</option>
+      <option value="115200" selected>115200</option>
+      <option value="230400">230400</option>
+      <option value="460800">460800</option>
+      <option value="921600">921600</option>
+    </select></label>
+    <label>行尾
+      <select class="sc-select" id="sel-ending">
+        <option value="crlf" selected>CRLF (\r\n)</option>
+        <option value="cr">CR (\r)</option>
+        <option value="lf">LF (\n)</option>
+        <option value="none">None</option>
+      </select>
+    </label>
+    <label class="sc-toggle">
+      <input type="checkbox" id="chk-hex"> HEX 模式
+    </label>
+    <span style="margin-left: auto; color: var(--text-faint); font-size: 11px;" id="sc-conn-info">未连接</span>
+  </div>
+
+  <!-- 快捷指令 -->
+  <div id="sc-quick">
+    <button class="sc-quick-btn" data-cmd="AT">AT</button>
+    <button class="sc-quick-btn" data-cmd="AT+GMR">AT+GMR</button>
+    <button class="sc-quick-btn" data-cmd="AT+RST">AT+RST</button>
+    <button class="sc-quick-btn" data-cmd="AT+CWLAP">AT+CWLAP</button>
+    <button class="sc-quick-btn" data-cmd="AT+CIFSR">AT+CIFSR</button>
+    <button class="sc-quick-btn" data-cmd="\r\n" style="color: var(--text-faint);">↵</button>
+  </div>
+
+  <!-- 终端输出区 -->
+  <div id="sc-terminal"></div>
+
+  <!-- 输入区 -->
+  <div id="sc-input-row">
+    <input type="text" id="sc-input" placeholder="输入命令或数据,回车发送..." autocomplete="off" spellcheck="false">
+    <button class="sc-btn primary" id="btn-send">发送</button>
+    <button class="sc-btn" id="btn-monitor" title="持续采样 10 秒">📡 采样</button>
+  </div>
+
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+// 宿主通信层 — postMessage bridge to parent window (iframe context)
+// 宿主 (app.ts) 监听这些消息并调用真实 KinetAPI
+// ═══════════════════════════════════════════════════════════════
+var SOURCE = 'serial-comm';
+var reqId = 0;
+var pending = {};
+
+function hostCall(method, args) {
+  var id = ++reqId;
+  return new Promise(function(resolve, reject) {
+    var timer = setTimeout(function() {
+      if (pending[id]) { delete pending[id]; reject('hostCall timeout: ' + method); }
+    }, 60000); // 串口操作可能需要较长时间
+    pending[id] = {
+      resolve: function(v) { clearTimeout(timer); resolve(v); },
+      reject: function(e) { clearTimeout(timer); reject(e); }
+    };
+    window.parent.postMessage({ source: SOURCE, id: id, method: method, args: args || [] }, '*');
+  });
+}
+
+window.addEventListener('message', function(ev) {
+  var data = ev.data;
+  if (!data || data.target !== SOURCE) return;
+  if (data.id && pending[data.id]) {
+    if (data.error) pending[data.id].reject(data.error);
+    else pending[data.id].resolve(data.result);
+    delete pending[data.id];
+    return;
+  }
+  // 宿主推送
+  if (data.type === 'theme') applyTheme(data.cssVars || {});
+  if (data.type === 'conversationUpdate' && data.conv) handleConvUpdate(data.conv);
+});
+
+function applyTheme(vars) {
+  var root = document.documentElement;
+  for (var key in vars) root.style.setProperty(key, vars[key]);
+}
+
+hostCall('getTheme', []).then(function(v) { if (v) applyTheme(v); }).catch(function() {});
+
+// ═══════════════════════════════════════════════════════════════
+// 状态 / State
+// ═══════════════════════════════════════════════════════════════
+var convId = null;
+var connected = false;
+var busy = false;
+var lastResponse = '';
+
+// ═══════════════════════════════════════════════════════════════
+// 终端日志 / Terminal logging
+// ═══════════════════════════════════════════════════════════════
+var terminal = document.getElementById('sc-terminal');
+
+function log(type, text) {
+  var entry = document.createElement('div');
+  entry.className = 'sc-log-entry ' + type;
+  var ts = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  var prefix = '';
+  if (type === 'sent') prefix = '📤 ';
+  else if (type === 'recv') prefix = '📥 ';
+  else if (type === 'info') prefix = 'ℹ️ ';
+  else if (type === 'error') prefix = '❌ ';
+  else if (type === 'success') prefix = '✅ ';
+  else if (type === 'warn') prefix = '⚠️ ';
+  entry.innerHTML = '<span class="ts">' + ts + '</span>' + prefix + escHtml(text);
+  terminal.appendChild(entry);
+  terminal.scrollTop = terminal.scrollHeight;
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function setStatus(state) {
+  var dot = document.getElementById('sc-status');
+  dot.className = 'sc-status-dot' + (state === 'active' ? ' active' : state === 'busy' ? ' busy' : '');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// AI 指令构造 — 通过 AI 对话间接调用 serial-comm 工具
+// Instruction construction — use AI conversation to invoke serial-comm tools
+// ═══════════════════════════════════════════════════════════════
+
+// 发送指令到 AI 会话(AI 会调用 serial_send/serial_query 等工具执行)
+function sendToAI(instruction) {
+  if (!convId) {
+    log('error', '未连接到会话,请先在侧栏选择或创建一个对话');
+    return Promise.reject('no conv');
+  }
+  return hostCall('send', [convId, instruction]);
+}
+
+// 处理 AI 响应(从 conversationUpdate 推送)
+function handleConvUpdate(conv) {
+  if (busy) {
+    var lastTurn = conv.turns[conv.turns.length - 1];
+    if (lastTurn && lastTurn.status === 'done') {
+      busy = false;
+      setStatus(connected ? 'active' : '');
+      // 提取 AI 回复中的串口输出
+      var answer = lastTurn.answer || '';
+      if (answer) {
+        // 尝试提取代码块中的串口输出
+        var output = extractSerialOutput(answer);
+        if (output) {
+          lastResponse = output;
+          log('recv', output);
+        }
+      }
+    }
+  }
+}
+
+function extractSerialOutput(answer) {
+  // 提取 📥 响应部分或代码块
+  var match = answer.match(/📥[\s\S]*?(?:\n\n|$)/);
+  if (match) return match[0].trim();
+  // 尝试提取代码块
+  var codeMatch = answer.match(/```[\s\S]*?```/);
+  if (codeMatch) return codeMatch[0].replace(/```\w*\n?/g, '').replace(/```/g, '').trim();
+  // 返回最后几行
+  var lines = answer.split('\n').filter(function(l) { return l.trim(); });
+  return lines.slice(-5).join('\n');
+}
+
+// ═══════════════════════════════════════════════════════════════
+// 操作 / Actions
+// ═══════════════════════════════════════════════════════════════
+
+// 扫描设备
+document.getElementById('btn-scan').onclick = function() {
+  log('info', '正在扫描串口设备...');
+  busy = true; setStatus('busy');
+  sendToAI('请使用 serial_scan 工具扫描当前可用的串口设备,列出所有端口和 USB 设备信息。').catch(function(e) {
+    log('error', '扫描失败: ' + e);
+    busy = false; setStatus('');
+  });
+};
+
+// 连接设备
+document.getElementById('btn-connect').onclick = function() {
+  var port = document.getElementById('sel-port').value;
+  var baud = document.getElementById('sel-baud').value;
+  if (!port) {
+    // 自动扫描 + 连接
+    log('info', '请先选择端口,或点击「扫描」获取可用端口');
+    return;
+  }
+  connected = !connected;
+  if (connected) {
+    document.getElementById('sc-conn-info').textContent = port + ' @ ' + baud + ' baud';
+    setStatus('active');
+    log('success', '已连接 ' + port + ' @ ' + baud + ' baud');
+  } else {
+    document.getElementById('sc-conn-info').textContent = '未连接';
+    setStatus('');
+    log('info', '已断开连接');
+  }
+};
+
+// 发送数据
+function doSend() {
+  var input = document.getElementById('sc-input');
+  var data = input.value.trim();
+  if (!data) return;
+
+  var port = document.getElementById('sel-port').value || '当前会话工作目录的设备';
+  var baud = document.getElementById('sel-baud').value;
+  var hexMode = document.getElementById('chk-hex').checked;
+  var ending = document.getElementById('sel-ending').value;
+
+  log('sent', data);
+
+  // 构造 AI 指令
+  var inst;
+  if (hexMode) {
+    inst = '请使用 serial_send 工具向 ' + port + ' (波特率 ' + baud + ') 发送十六进制数据: ' + data + '。hex_mode 设为 true,wait_response 设为 true。';
+  } else if (data.toUpperCase().startsWith('AT')) {
+    inst = '请使用 serial_query 工具向 ' + port + ' (波特率 ' + baud + ') 发送 AT 指令: ' + data;
+  } else {
+    inst = '请使用 serial_send 工具向 ' + port + ' (波特率 ' + baud + ') 发送数据: ' + JSON.stringify(data) + '。行尾用 ' + ending + ',wait_response 设为 true。';
+  }
+
+  input.value = '';
+  busy = true; setStatus('busy');
+
+  sendToAI(inst).catch(function(e) {
+    log('error', '发送失败: ' + e);
+    busy = false; setStatus(connected ? 'active' : '');
+  });
+}
+
+document.getElementById('btn-send').onclick = doSend;
+document.getElementById('sc-input').addEventListener('keydown', function(e) {
+  if (e.key === 'Enter') doSend();
+});
+
+// 采样监控
+document.getElementById('btn-monitor').onclick = function() {
+  var port = document.getElementById('sel-port').value;
+  if (!port) { log('warn', '请先选择端口'); return; }
+  var baud = document.getElementById('sel-baud').value;
+  log('info', '开始采样 ' + port + ' (10秒)...');
+  busy = true; setStatus('busy');
+  sendToAI('请使用 serial_session 工具打开 ' + port + ' (波特率 ' + baud + '),持续采样 10 秒,只读不写。返回采样到的所有串口输出。').catch(function(e) {
+    log('error', '采样失败: ' + e);
+    busy = false; setStatus(connected ? 'active' : '');
+  });
+};
+
+// 清屏
+document.getElementById('btn-clear').onclick = function() {
+  terminal.innerHTML = '';
+  log('info', '终端已清屏');
+};
+
+// 快捷按钮
+document.querySelectorAll('.sc-quick-btn').forEach(function(btn) {
+  btn.onclick = function() {
+    var cmd = btn.dataset.cmd;
+    if (cmd === '\\r\\n') {
+      document.getElementById('sc-input').value = '';
+      doSend();
+    } else {
+      document.getElementById('sc-input').value = cmd;
+      document.getElementById('sc-input').focus();
+    }
+  };
+});
+
+// ═══════════════════════════════════════════════════════════════
+// 初始化 / Init
+// ═══════════════════════════════════════════════════════════════
+
+// 获取当前会话 ID
+hostCall('getActiveConvId', []).then(function(id) {
+  convId = id;
+  if (convId) {
+    log('info', '已绑定会话: ' + convId.slice(0, 8) + '...');
+  } else {
+    log('warn', '未找到活动会话,请在侧栏选择或创建对话后再使用');
+  }
+}).catch(function() {
+  log('warn', '无法获取会话 ID');
+});
+
+log('info', '🔌 串口调试终端已就绪');
+log('info', '选择端口 → 点击「连接」→ 输入命令回车发送');
+log('info', 'AT 指令自动走 serial_query,普通数据走 serial_send,HEX 模式切换十六进制发送');
+
+// 端口下拉框: 允许手动输入
+var portSelect = document.getElementById('sel-port');
+portSelect.addEventListener('click', function() {
+  // 如果已经有选项就不重复扫描
+  if (portSelect.options.length > 1) return;
+});
+
+// 允许手动输入端口名
+var portWrapper = document.createElement('input');
+portWrapper.type = 'text';
+portWrapper.className = 'sc-input';
+portWrapper.style.width = '160px';
+portWrapper.placeholder = 'COM3 / /dev/ttyUSB0';
+portWrapper.style.display = 'none';
+portSelect.parentNode.appendChild(portWrapper);
+
+// 双击端口 select 切换为手动输入
+portSelect.addEventListener('dblclick', function() {
+  portSelect.style.display = 'none';
+  portWrapper.style.display = '';
+  portWrapper.focus();
+});
+portWrapper.addEventListener('blur', function() {
+  if (portWrapper.value.trim()) {
+    var opt = document.createElement('option');
+    opt.value = portWrapper.value.trim();
+    opt.textContent = portWrapper.value.trim() + ' (手动)';
+    portSelect.appendChild(opt);
+    portSelect.value = portWrapper.value.trim();
+  }
+  portWrapper.style.display = 'none';
+  portSelect.style.display = '';
+});
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "platformio-dev",
+  "version": "1.0.0",
+  "description": "PlatformIO 集成开发插件 —— 项目初始化、编译、烧录、串口监控、库管理。针对 ESP 系列(ESP32-S3/C3)、STM32、nRF52 等 ARM/RISC-V 芯片体验更佳,与 arduino-dev(arduino-cli)互补。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/platformio-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["platformio", "pio", "ESP32", "ESP32-S3", "ESP32-C3", "STM32", "nRF52", "嵌入式", "固件", "编译", "烧录", "upload", "monitor", "platformio.ini", "lib_deps", "框架", "framework", "arduino", "espidf"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

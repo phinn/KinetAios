@@ -1,0 +1,16 @@
+{
+  "name": "nestjs-dev",
+  "version": "1.0.0",
+  "description": "NestJS 后端脚手架插件 —— 生成 module/controller/service/dto 骨架,自动加 Swagger 装饰器,支持 TypeORM entity 生成,RBAC/JWT 多租户代码模板。直接服务于企业级 ERP 项目。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/nestjs-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["NestJS", "controller", "service", "module", "dto", "entity", "TypeORM", "Swagger", "API", "后端", "backend", "脚手架", "scaffold", "CRUD", "REST", "Guard", "JWT", "RBAC", "多租户", "tenant", "Interceptor", "Pipe", "Decorator"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}
