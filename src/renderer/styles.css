@@ -935,13 +935,15 @@ a { color: var(--accent); }
 
 /* git 操作按钮工具栏 / git action button toolbar */
 .git-actions { display: flex; align-items: center; gap: 2px; }
-.gh-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; transition: all 0.15s; text-decoration: none; }
+.gh-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; transition: background .15s, color .15s, transform .1s; text-decoration: none; }
 .gh-btn:hover { background: var(--bg-elev); color: var(--accent); }
 .gh-btn:active { transform: scale(0.92); }
-.gh-btn.gh-danger:hover { color: #dc5050; }
+.gh-btn.gh-danger:hover { color: #dc5050; background: rgba(220,80,80,.10); }
+.gh-btn.gh-accent:hover { color: #50c878; background: rgba(80,200,120,.12); }
 .gh-btn[disabled] { opacity: 0.35; cursor: not-allowed; }
 .gh-btn[disabled]:hover { background: transparent; color: var(--text-dim); }
-.gh-icon { font-size: 15px; font-weight: 600; line-height: 1; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; }
+/* inline SVG 图标:强制 display:block + 固定尺寸,防止全局规则把 svg 缩成点 */
+.gh-icon { display: block; width: 15px; height: 15px; flex-shrink: 0; }
 .gh-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
 
 /* git commit 对话框 / git commit dialog */
