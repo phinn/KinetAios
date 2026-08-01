@@ -592,7 +592,7 @@ function renderGit(): void {
       });
     }
   } else {
-    sideTitleEl.innerHTML = `<button class="ghost git-back" id="git-back"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px"><path d="M15 18l-6-6 6-6"/></svg> ${esc(tr('git.history'))}</button><span class="git-diff-title">${esc(gitState.view.title)}</span>`;
+    sideTitleEl.innerHTML = `<button class="ghost git-back" id="git-back">← ${esc(tr('git.history'))}</button><span class="git-diff-title">${esc(gitState.view.title)}</span>`;
     sideListEl.innerHTML = gitState.view.contentHTML;
     document.getElementById('git-back')!.onclick = () => {
       gitState.view = { kind: 'history' };
@@ -721,9 +721,30 @@ function colorGitDiff(s: string): string {
   const diffStart = lines.findIndex((l) => l.startsWith('diff --git'));
   const meta = diffStart >= 0 ? lines.slice(0, diffStart) : [];
   const body = diffStart >= 0 ? lines.slice(diffStart) : lines;
-  const metaHtml = meta.length
-    ? `<div class="d-commit-meta">${meta.map((l) => `<span>${esc(l) || '&nbsp;'}</span>`).join('')}</div>`
-    : '';
+  // 把 commit 元数据拆成「hash 行(高亮 monospace)」「key/value 行(subject 加粗)」
+  // 例:git show 输出是 "commit abc123\\nAuthor: ...\\nDate: ...\\n\\n    subject\\n\\n    body"
+  let metaHtml = '';
+  if (meta.length) {
+    const hashLine = meta[0]; // "commit abc123" 或 "commit abc123 (HEAD -> main)"
+    const restLines = meta.slice(1);
+    // 第一个空行前的 key:value 行 + 空行 + subject + body
+    const subjectStart = restLines.findIndex((l) => l.trim() !== '');
+    // 找空行作为 subject 的边界
+    const blankIdx = restLines.findIndex((l) => l === '');
+    const kvLines = blankIdx >= 0 ? restLines.slice(0, blankIdx) : restLines;
+    const afterBlank = blankIdx >= 0 ? restLines.slice(blankIdx + 1) : [];
+    const subjectLine = afterBlank[0]?.trim() ?? '';
+    const bodyLines = afterBlank.slice(1);
+    const hashHtml = `<div class="d-commit-hash">${esc(hashLine)}</div>`;
+    const kvHtml = kvLines.map((l) => `<div class="d-commit-kv">${esc(l) || '&nbsp;'}</div>`).join('');
+    const subjectHtml = subjectLine
+      ? `<div class="d-commit-subject">${esc(subjectLine)}</div>`
+      : '';
+    const bodyHtml = bodyLines.length
+      ? `<div class="d-commit-body">${bodyLines.map((l) => `<div>${esc(l) || '&nbsp;'}</div>`).join('')}</div>`
+      : '';
+    metaHtml = `<div class="d-commit-meta">${hashHtml}${kvHtml}${subjectHtml}${bodyHtml}</div>`;
+  }
   // 按文件分段
   const segments: { header: string; stat: string; lines: string[] }[] = [];
   let cur: { header: string; stat: string; lines: string[] } | null = null;
@@ -770,7 +791,13 @@ function colorGitDiff(s: string): string {
       .join('\n');
     const addN = seg.stat.match(/\+(\d+)/)?.[1] ?? '0';
     const delN = seg.stat.match(/-(\d+)/)?.[1] ?? '0';
-    return `<div class="d-file-header"><span class="d-file-name">${esc(seg.header)}</span><span class="d-file-stat"><span class="d-add-count">+${addN}</span> <span class="d-del-count">-${delN}</span></span></div><pre class="git-diff">${bodyHtml}</pre>`;
+    const fpath = esc(seg.header);
+    // 文件名 + 目录名分离着色,例 src/main/foo.ts → 目录淡、文件名浓
+    const sepIdx = fpath.lastIndexOf('/');
+    const nameHtml = sepIdx >= 0
+      ? `<span class="d-file-dir">${fpath.slice(0, sepIdx + 1)}</span>${fpath.slice(sepIdx + 1)}`
+      : fpath;
+    return `<div class="d-file-header"><span class="d-file-icon"></span><span class="d-file-name">${nameHtml}</span><span class="d-file-stat"><span class="d-add-count">+${addN}</span> <span class="d-del-count">-${delN}</span></span></div><pre class="git-diff">${bodyHtml}</pre>`;
   }).join('');
   return `${metaHtml}${segHtml}`;
 }

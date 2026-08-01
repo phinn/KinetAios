@@ -971,7 +971,7 @@ a { color: var(--accent); }
 .git-col:last-child { border-right: none; }
 .gb-title { font-size: 11px; color: var(--text-dim); padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-side); display: flex; align-items: center; gap: 8px; }
 .gb-list { flex: 1; overflow: auto; padding: 4px 0; }
-.git-empty { color: var(--text-faint); font-size: 12px; padding: 14px 12px; }
+.git-empty { color: var(--text-faint); font-size: 12px; padding: 22px 14px; text-align: center; font-style: italic; }
 
 .gc-row { display: grid; grid-template-columns: 28px 60px 1fr; gap: 6px; padding: 4px 12px; cursor: pointer; font-size: 12.5px; align-items: center; }
 .gc-row:hover { background: var(--bg-elev); }
@@ -999,21 +999,119 @@ a { color: var(--accent); }
 
 .git-back { font: inherit; font-size: 11.5px; padding: 2px 8px; }
 .git-diff-title { color: var(--text-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.git-diff { margin: 0; padding: 10px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; line-height: 1.55; color: var(--text); white-space: pre-wrap; word-break: break-word; user-select: text; }
+
+/* ── 统一格式 diff(unified,全量 diff / commit show)── */
+.git-diff-wrap { padding: 8px 12px 14px; }
+.git-diff {
+  margin: 0;
+  padding: 12px 14px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--text);
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre;
+  overflow-x: auto;
+  user-select: text;
+}
 /* ponytail: diff 高亮只到 +/-/@@ 行级(行首字符匹配),不到 token 粒度;够清楚就行。 */
-.git-diff .d-add { color: #50c878; }
-.git-diff .d-del { color: #dc5050; }
-.git-diff .d-hunk { color: var(--text-faint); }
-.git-diff .d-meta { color: var(--text-dim); display: block; }
+.git-diff .d-add,
+.git-diff .d-del {
+  display: inline-block;
+  padding: 1px 8px 1px 10px;
+  margin: 0 -14px;       /* 抵消 wrap 内边距,让色块贴合 wrap 边缘 */
+  width: calc(100% + 28px);
+  border-radius: 2px;
+}
+.git-diff .d-add { color: #50c878; background: rgba(80,200,120,.14); }
+.git-diff .d-add::before { content: '+'; opacity: .6; margin-right: 4px; }
+.git-diff .d-del { color: #dc5050; background: rgba(220,80,80,.14); }
+.git-diff .d-del::before { content: '−'; opacity: .6; margin-right: 4px; }
+.git-diff .d-hunk {
+  display: block;
+  margin: 8px -14px 4px;
+  padding: 4px 14px;
+  color: var(--accent);
+  background: rgba(127,127,255,.08);
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  font-weight: 500;
+}
+.git-diff .d-hunk:not(:first-child) { margin-top: 12px; }
+.git-diff .d-meta { color: var(--text-dim); display: block; padding: 2px 0; }
 
 /* commit show 的 metadata 区(commit message 等,非 diff body) */
-.d-commit-meta { padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--bg-side); }
-.d-commit-meta span { display: block; color: var(--text-dim); font-size: 12px; line-height: 1.5; }
-.d-commit-meta span:first-child { color: var(--text); font-weight: 600; }
+.d-commit-meta {
+  padding: 14px 16px;
+  margin: 8px 12px 4px;
+  background: linear-gradient(135deg, var(--bg-elev), var(--bg-side));
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.d-commit-hash {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--accent);
+  letter-spacing: .02em;
+  margin-bottom: 6px;
+  font-weight: 600;
+}
+.d-commit-kv {
+  color: var(--text-dim);
+  font-size: 11.5px;
+  line-height: 1.55;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.d-commit-kv span:first-child { color: var(--text-faint); }
+.d-commit-subject {
+  color: var(--text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.45;
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.d-commit-body { color: var(--text-dim); font-size: 12.5px; line-height: 1.6; margin-top: 6px; white-space: pre-wrap; }
+.d-commit-body div { padding: 1px 0; }
 
 /* 文件段标题栏:文件名 + +/- stat */
-.d-file-header { display: flex; align-items: center; gap: 10px; padding: 6px 12px; background: var(--bg-elev); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; }
-.d-file-name { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; color: var(--text); font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.d-file-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  margin-top: 14px;
+  background: linear-gradient(to right, var(--bg-elev), transparent);
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 1;
+}
+.d-file-header:first-child { margin-top: 0; border-top: none; }
+.d-file-icon {
+  width: 16px; height: 16px;
+  border-radius: 3px;
+  background: var(--accent);
+  opacity: .25;
+  flex-shrink: 0;
+}
+.d-file-name {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  color: var(--text);
+  font-weight: 600;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.d-file-name .d-file-dir { color: var(--text-faint); font-weight: 400; }
 .d-file-stat { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: nowrap; }
 .d-add-count { color: #50c878; font-weight: 600; }
 .d-del-count { color: #dc5050; font-weight: 600; }
@@ -1025,20 +1123,72 @@ a { color: var(--accent); }
 .gc-all-diff:hover { background: var(--bg-side); border-color: var(--accent); }
 
 /* 文件 diff 左右对比表(修改前 / 修改后)。表行同高天然对齐,无需 JS 同步滚动。 */
-.git-ss-wrap { overflow-x: auto; }
-.git-ss { width: 100%; border-collapse: collapse; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11.5px; }
-.git-ss th { font-size: 10.5px; color: var(--text-dim); text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--border); background: var(--bg-side); font-weight: 500; }
-.git-ss th.ss-num { width: 42px; }
-.git-ss td { padding: 0 8px; vertical-align: top; line-height: 1.55; }
-.git-ss td.ss-num { width: 42px; color: var(--text-faint); text-align: right; user-select: none; white-space: nowrap; }
-.git-ss td.ss-txt { white-space: pre-wrap; word-break: break-all; }
-.git-ss tr.ss-hunk td { color: var(--text-faint); padding: 6px 8px; }
-.git-ss tr.ss-del td:nth-child(2) { background: rgba(220,80,80,.14); }
-.git-ss tr.ss-add td:nth-child(4) { background: rgba(80,200,120,.14); }
-.git-ss tr.ss-mod td:nth-child(2) { background: rgba(220,80,80,.10); }
-.git-ss tr.ss-mod td:nth-child(4) { background: rgba(80,200,120,.10); }
+.git-ss-wrap {
+  margin: 8px 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-elev);
+  overflow: hidden;
+  box-shadow: 0 1px 2px rgba(0,0,0,.04);
+}
+.git-ss {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+}
+.git-ss thead th {
+  font-size: 11px;
+  color: var(--text-dim);
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--border);
+  background: linear-gradient(to bottom, var(--bg-side), var(--bg-elev));
+  font-weight: 500;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+}
+.git-ss thead th:first-child { border-right: 1px solid var(--border); }
+.git-ss thead th:last-child  { border-left:  1px solid var(--border); }
+.git-ss tbody td { padding: 3px 8px; vertical-align: top; line-height: 1.6; }
+.git-ss tbody tr { transition: background .12s; }
+.git-ss tbody tr:hover td { filter: brightness(1.05); }
+.git-ss tbody tr:not(:last-child) td { border-bottom: 1px solid rgba(127,127,127,.06); }
+.git-ss td.ss-num {
+  width: 44px;
+  color: var(--text-faint);
+  text-align: right;
+  user-select: none;
+  white-space: nowrap;
+  font-size: 11px;
+  background: rgba(127,127,127,.04);
+  border-right: 1px solid rgba(127,127,127,.08);
+}
+.git-ss td.ss-txt { white-space: pre; word-break: normal; }
+.git-ss tr.ss-hunk td {
+  color: var(--accent);
+  padding: 6px 12px;
+  background: rgba(127,127,255,.07);
+  border-top: 1px dashed rgba(127,127,127,.18);
+  border-bottom: 1px dashed rgba(127,127,127,.18);
+  font-weight: 500;
+  font-size: 11.5px;
+}
+/* 行级背景色:左侧(旧)红、右侧(新)绿,带左侧色条 */
+.git-ss tr.ss-del td:nth-child(2) { background: rgba(220,80,80,.14); border-left: 3px solid rgba(220,80,80,.55); }
+.git-ss tr.ss-add td:nth-child(4) { background: rgba(80,200,120,.14); border-left: 3px solid rgba(80,200,120,.55); }
+.git-ss tr.ss-mod td:nth-child(2) { background: rgba(220,80,80,.10); border-left: 3px solid rgba(220,80,80,.45); }
+.git-ss tr.ss-mod td:nth-child(4) { background: rgba(80,200,120,.10); border-left: 3px solid rgba(80,200,120,.45); }
+.git-ss tr.ss-mod td:nth-child(2) + td,
+.git-ss tr.ss-mod td:nth-child(4) { box-shadow: inset 1px 0 0 var(--border); }
 /* word-level diff 高亮:修改行中变化的字符 */
-.git-ss mark { background: rgba(232,179,57,.30); color: inherit; border-radius: 1px; padding: 0 1px; }
+.git-ss mark {
+  background: rgba(232,179,57,.45);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 2px;
+  font-weight: 600;
+}
 .ch-title .t { font-weight: 600; flex: 1; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ch-title .stat,
 .ch-title .status { font-size: 11px; color: var(--text-dim); white-space: nowrap; }
