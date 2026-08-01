@@ -1,0 +1,16 @@
+{
+  "name": "arduino-dev",
+  "version": "1.0.0",
+  "description": "Arduino / ESP32 / STM32duino 硬件开发插件 —— 编译、烧录、串口监控、库管理。包装 arduino-cli 为 AI 工具，支持编译验证闭环。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/arduino-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["arduino", "esp32", "esp8266", "stm32", "嵌入式", "固件", "硬件开发", "单片机", "mcu", "iot", "compile", "flash", "serial", "platformio"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}
