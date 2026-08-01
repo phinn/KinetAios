@@ -1,0 +1,16 @@
+{
+  "name": "mqtt-dev",
+  "version": "1.0.0",
+  "description": "MQTT 通信调试插件 —— 连接 broker、订阅/发布消息、QoS 设置、 retained 消息、遗嘱消息。支持 Mosquitto/EMQX 等标准 broker,覆盖 IoT 通信全场景。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/mqtt-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell"],
+  "keywords": ["MQTT", "broker", "订阅", "发布", "subscribe", "publish", "QoS", "retained", "遗嘱", "will", "mosquitto", "EMQX", "topic", "IoT", "消息队列", "telemetry", "ESP32", "物联网"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

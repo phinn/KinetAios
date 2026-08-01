@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景圆 -->
+  <circle cx="32" cy="32" r="30" fill="#1565C0"/>
+  <!-- 向下箭头(更新) -->
+  <path d="M32 14 L32 38" stroke="#BBDEFB" stroke-width="3" stroke-linecap="round"/>
+  <path d="M24 30 L32 40 L40 30" stroke="#BBDEFB" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 设备 -->
+  <rect x="18" y="42" width="28" height="14" rx="2" fill="#90CAF9"/>
+  <circle cx="25" cy="49" r="2" fill="#1565C0"/>
+  <rect x="32" y="47" width="10" height="3" rx="1" fill="#1565C0"/>
+  <!-- WiFi 弧线 -->
+  <path d="M42 18 Q48 22 48 28" stroke="#64B5F6" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M44 15 Q52 20 52 28" stroke="#64B5F6" stroke-width="1" fill="none" stroke-linecap="round" opacity="0.6"/>
+</svg>

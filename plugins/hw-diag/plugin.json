@@ -1,0 +1,16 @@
+{
+  "name": "hw-diag",
+  "version": "1.0.0",
+  "description": "硬件诊断插件 —— GPIO 状态读取、I²C 设备扫描、SPI 检测、供电/信号质量检查。覆盖嵌入式开发中'为什么不工作'的排查场景。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/hw-diag",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["硬件", "诊断", "GPIO", "I2C", "i2c", "SPI", "spi", "扫描", "电源", "供电", "电压", "排错", "debug", "示波器", "上拉", "下拉", "电阻", "万用表", "i2cdetect", "gpio"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

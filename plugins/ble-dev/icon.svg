@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景圆 -->
+  <circle cx="32" cy="32" r="30" fill="#1B5E20"/>
+  <!-- 蓝牙符号 -->
+  <path d="M28 18 L36 26 L28 34 L28 46 L38 38 L28 30" stroke="#A5D6A7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- 广播波纹 -->
+  <circle cx="42" cy="32" r="6" fill="none" stroke="#81C784" stroke-width="1.5" opacity="0.5"/>
+  <circle cx="42" cy="32" r="10" fill="none" stroke="#81C784" stroke-width="1" opacity="0.3"/>
+</svg>

@@ -1,0 +1,16 @@
+{
+  "name": "sensor-lookup",
+  "version": "1.0.0",
+  "description": "传感器速查插件 —— 输入传感器型号(BME280/DHT22/MPU6050/SSD1306…),一键获取接线表、驱动库推荐、关键寄存器、示例代码。零外部依赖,纯内置知识库。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/sensor-lookup",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["fs"],
+  "keywords": ["传感器", "sensor", "BME280", "DHT22", "DHT11", "MPU6050", "SSD1306", "OLED", "温度", "湿度", "气压", "加速度", "陀螺仪", "引脚", "接线", "寄存器", "datasheet", "驱动", "library", "ADC", "DS18B20", "HC-SR04", "超声波", "红外", "PIR"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

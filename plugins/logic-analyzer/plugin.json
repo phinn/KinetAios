@@ -1,0 +1,16 @@
+{
+  "name": "logic-analyzer",
+  "version": "1.0.0",
+  "description": "逻辑分析仪插件 —— 对接 sigrok-cli 进行协议捕获与解码(UART/I²C/SPI/1-Wire/WS2812 等),支持采样配置、协议解析、信号导出。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/logic-analyzer",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell"],
+  "keywords": ["逻辑分析仪", "sigrok", "pulseview", "协议解码", "捕获", "waveform", "波形", "UART解码", "I2C解码", "SPI解码", "采样率", "触发", "trigger", "saleae", "logic", "analyzer", "protocol", "decode"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

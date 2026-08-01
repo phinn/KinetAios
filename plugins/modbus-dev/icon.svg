@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景圆 -->
+  <circle cx="32" cy="32" r="30" fill="#37474F"/>
+  <!-- 工业总线节点 -->
+  <circle cx="16" cy="32" r="5" fill="#FF7043"/>
+  <circle cx="32" cy="32" r="5" fill="#FFCA28"/>
+  <circle cx="48" cy="32" r="5" fill="#66BB6A"/>
+  <!-- 连接线 -->
+  <line x1="21" y1="32" x2="27" y2="32" stroke="#B0BEC5" stroke-width="2"/>
+  <line x1="37" y1="32" x2="43" y2="32" stroke="#B0BEC5" stroke-width="2"/>
+  <!-- 数据包 -->
+  <text x="14" y="18" fill="#90A4AE" font-size="8" font-family="monospace">0x03</text>
+  <text x="44" y="18" fill="#90A4AE" font-size="8" font-family="monospace">CRC</text>
+</svg>

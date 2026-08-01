@@ -3547,7 +3547,7 @@ window.addEventListener('message', async (ev: MessageEvent) => {
   if (!data || typeof data !== 'object') return;
   // 只处理 plugin bridge 消息 (source 以 'plugin:' 前缀或已知插件名标识)
   // Only handle plugin bridge messages — accept any source that looks like a plugin
-  const knownSources = ['brainstorm', 'math-practice', 'low-altitude', 'office-suite', 'echo', 'serial-comm', 'arduino-dev', 'platformio-dev', 'nestjs-dev'];
+  const knownSources = ['brainstorm', 'math-practice', 'low-altitude', 'office-suite', 'echo', 'serial-comm', 'arduino-dev', 'platformio-dev', 'nestjs-dev', 'hw-diag', 'logic-analyzer', 'sensor-lookup', 'modbus-dev', 'ota-dev', 'ble-dev', 'mqtt-dev'];
   if (!knownSources.includes(data.source) && !data.source?.startsWith('plugin:')) return;
 
   const { id, method, args } = data;

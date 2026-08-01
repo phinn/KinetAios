@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景圆 -->
+  <circle cx="32" cy="32" r="30" fill="#4527A0"/>
+  <!-- 波形通道 0 -->
+  <polyline points="8,20 16,20 20,14 24,26 28,20 36,20 40,14 44,26 48,20 56,20" stroke="#CE93D8" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- 波形通道 1 -->
+  <polyline points="8,34 14,34 18,28 26,40 30,34 38,34 42,28 48,40 52,34 56,34" stroke="#64B5F6" stroke-width="1.5" stroke-linecap="round"/>
+  <!-- 波形通道 2 -->
+  <polyline points="8,48 20,48 24,42 28,54 32,48 44,48 48,42 52,54 56,48" stroke="#81C784" stroke-width="1.5" stroke-linecap="round"/>
+</svg>

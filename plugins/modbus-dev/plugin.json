@@ -1,0 +1,16 @@
+{
+  "name": "modbus-dev",
+  "version": "1.0.0",
+  "description": "Modbus 通信调试插件 —— Modbus RTU/TCP 从站扫描、读保持寄存器/线圈/输入寄存器、写寄存器、CRC 校验。覆盖工业设备通信场景。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/modbus-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell"],
+  "keywords": ["modbus", "RTU", "TCP", "工业", "PLC", "变频器", "寄存器", "线圈", "CRC", "从站", "主站", "slave", "master", "holding", "coil", "function", "0x01", "0x03", "0x06", "0x10", "485", "RS485"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

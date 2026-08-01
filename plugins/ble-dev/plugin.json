@@ -1,0 +1,16 @@
+{
+  "name": "ble-dev",
+  "version": "1.0.0",
+  "description": "蓝牙 BLE 调试插件 —— BLE 设备扫描、GATT 服务/特征读写、通知监听。基于 Python bleak 库,覆盖 ESP32/STM32/nRF52 BLE 开发调试。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/ble-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell"],
+  "keywords": ["蓝牙", "BLE", "bluetooth", "GATT", "服务", "特征", "characteristic", "notify", "indicate", "UUID", "广播", "adv", "扫描", "bleak", "ESP32", "nRF52", "低功耗", "蓝牙调试"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

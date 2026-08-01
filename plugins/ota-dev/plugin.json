@@ -1,0 +1,16 @@
+{
+  "name": "ota-dev",
+  "version": "1.0.0",
+  "description": "OTA 固件更新插件 —— 生成 ESP32/ESP8266 OTA 代码(HTTP/HTTPS OTA、分区表配置、回滚逻辑),验证 OTA 架构方案。覆盖远程升级全流程。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/ota-dev",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["fs"],
+  "keywords": ["OTA", "固件升级", "远程更新", "ESP32", "ESP8266", "fota", "分区表", "partitions", "回滚", "rollback", "HTTP", "HTTPS", "Update", "Arduino", "espidf", "双区", "OTA_DEDICATED"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}
