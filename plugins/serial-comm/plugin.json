@@ -1,0 +1,16 @@
+{
+  "name": "serial-comm",
+  "version": "1.0.0",
+  "description": "串口/设备通信调试插件 —— 串口收发、AT 指令交互、十六进制通信、USB 设备扫描。覆盖嵌入式调试中“和设备对话”的场景,与 arduino-dev 的编译烧录互补。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/serial-comm",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["串口", "serial", "UART", "AT指令", "AT", "USB", "设备", "调试", "hex", "十六进制", "GPIO", "发送", "接收", "serialport", "ttyUSB", "COM", "波特率", "baudrate", "modbus", "传感器"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

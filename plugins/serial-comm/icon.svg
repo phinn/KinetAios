@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- 背景圆 -->
+  <circle cx="32" cy="32" r="30" fill="#1A73E8"/>
+  <!-- USB 接口符号 -->
+  <!-- USB 三叉戟主干 -->
+  <line x1="32" y1="12" x2="32" y2="44" stroke="white" stroke-width="3.5" stroke-linecap="round"/>
+  <!-- 左分支 -->
+  <path d="M 32 26 L 24 26 L 24 20" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 右分支 -->
+  <path d="M 32 26 L 40 26 L 40 20" stroke="white" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- 顶部箭头 -->
+  <path d="M 32 12 L 28 18 L 36 18 Z" fill="white"/>
+  <!-- 左端点圆 -->
+  <circle cx="24" cy="20" r="3" fill="white"/>
+  <!-- 右端点方 -->
+  <rect x="37" y="17" width="6" height="6" rx="1" fill="white"/>
+  <!-- 底部串口齿(DB9 风格) -->
+  <rect x="24" y="44" width="16" height="10" rx="2" fill="none" stroke="white" stroke-width="3"/>
+  <circle cx="28" cy="49" r="1.5" fill="white"/>
+  <circle cx="32" cy="49" r="1.5" fill="white"/>
+  <circle cx="36" cy="49" r="1.5" fill="white"/>
+</svg>
