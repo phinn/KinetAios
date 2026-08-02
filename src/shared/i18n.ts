@@ -324,6 +324,7 @@ const ZH_CN: Dict = {
   'voice.chatHintMute': '点击麦克风可静音',
   'voice.chatHintWait': '请稍候',
   'voice.chatEnd': '结束',
+  'voice.chatNeedConfig': '请在设置 → 高级中配置语音对话的 App ID 和 Access Token',
 
   'snap.open': '快照与回滚',
   'snap.title': '快照与回滚',
@@ -960,6 +961,7 @@ const EN: Dict = {
   'voice.chatHintMute': 'Click mic to mute',
   'voice.chatHintWait': 'Please wait',
   'voice.chatEnd': 'End',
+  'voice.chatNeedConfig': 'Please configure Voice Chat App ID and Access Token in Settings → Advanced',
 
   'snap.open': 'Snapshots & Rollback',
   'snap.title': 'Snapshots & Rollback',
@@ -1597,6 +1599,7 @@ const ZH_TW: Dict = {
   'voice.chatHintMute': '點擊麥克風可靜音',
   'voice.chatHintWait': '請稍候',
   'voice.chatEnd': '結束',
+  'voice.chatNeedConfig': '請在設定 → 進階中設定語音對話的 App ID 和 Access Token',
 
   'snap.open': '快照與回滾',
   'snap.title': '快照與回滾',
@@ -2234,6 +2237,7 @@ const JA: Dict = {
   'voice.chatHintMute': 'マイクをクリックでミュート',
   'voice.chatHintWait': 'お待ちください',
   'voice.chatEnd': '終了',
+  'voice.chatNeedConfig': '設定 → 詳細で音声対話の App ID と Access Token を設定してください',
 
   'snap.open': 'スナップショット & ロールバック',
   'snap.title': 'スナップショット & ロールバック',

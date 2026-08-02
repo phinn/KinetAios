@@ -3380,10 +3380,20 @@ function wireVoiceChat(): void {
 
   btnChat.onclick = async () => {
     const settings = await api.getSettings();
-    if (!settings.voiceChat?.enable) {
-      // 没启用 → 弹提示去设置
+    const vc = settings.voiceChat;
+    // 未配置或未启用 → 提示用户去设置
+    // Not configured or disabled → prompt user to configure in settings
+    if (!vc?.enable || !vc?.appId || !vc?.accessToken) {
       btnChat.classList.add('pulse');
       setTimeout(() => btnChat.classList.remove('pulse'), 600);
+      // 在状态栏区域显示提示 / show hint in status area
+      const hint = document.getElementById('vc-hint');
+      if (hint) {
+        hint.textContent = tr('voice.chatNeedConfig');
+        hint.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(40,40,50,0.95);color:#e8c07d;padding:8px 16px;border-radius:8px;font-size:13px;z-index:10000;pointer-events:none';
+        hint.style.display = 'block';
+        setTimeout(() => { hint.style.display = ''; hint.style.cssText = ''; }, 3000);
+      }
       return;
     }
     if (vcActive) {
