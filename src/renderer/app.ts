@@ -3417,7 +3417,7 @@ function wireVoiceChat(): void {
         break;
       case 'ready':
         updateVcState('connected');
-        document.getElementById('vc-hint')!.textContent = '开始说话,AI 会自动回复';
+        document.getElementById('vc-hint')!.textContent = tr('voice.chatHintSpeak');
         break;
       case 'userText':
         // 增量追加用户文本
@@ -3460,13 +3460,13 @@ async function startVoiceChat(): Promise<void> {
   overlay.hidden = false;
   document.getElementById('vc-user-text')!.textContent = '';
   document.getElementById('vc-ai-text')!.textContent = '';
-  document.getElementById('vc-status')!.textContent = '正在连接…';
+  document.getElementById('vc-status')!.textContent = tr('voice.chatConnecting');
   document.getElementById('vc-orb')!.className = 'vc-orb connecting';
 
   // 连接 WebSocket(在 main 进程)
   const result = await api.voiceChatStart();
   if (!result.ok) {
-    document.getElementById('vc-status')!.textContent = '❌ ' + (result.error || '连接失败');
+    document.getElementById('vc-status')!.textContent = '❌ ' + (result.error || tr('voice.chatConnFail'));
     document.getElementById('vc-orb')!.className = 'vc-orb error';
     return;
   }
@@ -3510,7 +3510,7 @@ async function startVoiceChat(): Promise<void> {
       wireScriptProcessor();
     }
   } catch (e) {
-    document.getElementById('vc-status')!.textContent = '❌ 麦克风不可用';
+    document.getElementById('vc-status')!.textContent = '❌ ' + tr('voice.chatMicDenied');
     document.getElementById('vc-orb')!.className = 'vc-orb error';
   }
 }
@@ -3561,29 +3561,29 @@ function updateVcState(state: string): void {
   switch (state) {
     case 'connecting':
       orb.classList.add('connecting');
-      status.textContent = '正在连接…';
-      hint.textContent = '请稍候';
+      status.textContent = tr('voice.chatConnecting');
+      hint.textContent = tr('voice.chatHintWait');
       break;
     case 'connected':
-      status.textContent = '已连接';
-      hint.textContent = '开始说话,AI 会自动回复';
+      status.textContent = tr('voice.chatConnected');
+      hint.textContent = tr('voice.chatHintSpeak');
       break;
     case 'listening':
       orb.classList.add('listening');
-      status.textContent = '正在聆听…';
-      hint.textContent = '请说话';
+      status.textContent = tr('voice.chatListening');
+      hint.textContent = tr('voice.chatHintSpeak');
       break;
     case 'speaking':
       orb.classList.add('speaking');
-      status.textContent = 'AI 正在回复…';
-      hint.textContent = '点击麦克风可静音';
+      status.textContent = tr('voice.chatSpeaking');
+      hint.textContent = tr('voice.chatHintMute');
       break;
     case 'error':
       orb.classList.add('error');
-      status.textContent = '连接错误';
+      status.textContent = tr('voice.chatError');
       break;
     case 'idle':
-      status.textContent = '已断开';
+      status.textContent = tr('voice.chatDisconnected');
       break;
   }
 }
