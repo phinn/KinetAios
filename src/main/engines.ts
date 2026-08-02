@@ -148,7 +148,8 @@ class DirectEngine implements Engine {
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
     // 会话目标(通过 /goal 设置):注入 systemPrompt 顶部,跨轮持续生效,引导整个会话方向。
-    const goalSection = conv.goal ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。如果用户的新请求偏离目标,可以提醒并征求确认。` : '';
+    // goal 模式:agent 自动循环执行直到完成 goal。模型判断完成后在回答末尾输出 [GOAL_COMPLETE]。
+    const goalSection = conv.goal ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。如果用户的新请求偏离目标,可以提醒并征求确认。\n**当你确认目标已经完成时,在回答的最末尾输出 \`[GOAL_COMPLETE]\` 标记。**` : '';
     const refSection = refBlock ?? '';
     const rulesSection = loadProjectRules(conv.cwd);
     // KINET.md(app UI 维护的项目规则)紧跟 loadProjectRules 之后,与 AGENTS.md/CLAUDE.md 并列。

@@ -21,6 +21,8 @@ export class TaskManager {
   private convs = new Map<string, Conversation>();
   private order: string[] = []; // newest first
   private aborts = new Map<string, AbortController>();
+  // Goal loop 取消标志:cancel() 设置后,runGoalLoop 的下一轮检查时退出。
+  private goalLoopStopped = new Set<string>();
   private engines: Map<EngineKind, Engine>;
 
   constructor(private emit: TaskManagerEmitter) {
@@ -155,6 +157,7 @@ export class TaskManager {
       ac.abort();
       this.aborts.delete(id);
     }
+    this.goalLoopStopped.add(id); // 通知 goal loop 停止
     const conv = this.convs.get(id);
     if (conv && conv.status === 'running') {
       const turn = conv.turns[conv.turns.length - 1];
@@ -300,6 +303,81 @@ export class TaskManager {
       store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0));
     }
     this.emit.emitConversation(conv); // final flush
+
+    // ── Goal Auto-Loop:有 goal 且本轮未出错且未标记完成 → 自动发下一轮 ──
+    if (conv.goal && conv.engine === 'direct' && lastTurn && !lastTurn.error && lastTurn.answer) {
+      // 立即恢复 running 状态(applyEvent 的 done 会把它设成 ready,这里夺回)
+      conv.status = 'running';
+      this.emit.emitConversation(conv);
+      await this.runGoalLoop(conv, id, ac);
+    }
+  }
+
+  // Goal 自动循环:每轮结束后检查是否完成,未完成则自动 dispatch 下一轮。
+  // 取消机制:用户点 Stop → cancel() → ac.abort() + conv.status='ready' → 循环检测到后退出。
+  private async runGoalLoop(conv: Conversation, id: string, initialAc: AbortController): Promise<void> {
+    const GOAL_MAX_ITERATIONS = 20; // 防止无限循环
+    this.goalLoopStopped.delete(id); // 清除上次的取消标记
+    // 用户取消会 abort 当前 ac,循环检测到后退出
+    let currentAc = initialAc;
+    for (let iter = 0; iter < GOAL_MAX_ITERATIONS; iter++) {
+      // 检查上一轮的结果
+      const lastTurn = conv.turns[conv.turns.length - 1];
+      if (!lastTurn?.answer) break;
+      // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环
+      if (lastTurn.answer.includes('[GOAL_COMPLETE]')) {
+        // 去掉标记文本,给用户一个干净的结尾
+        lastTurn.answer = lastTurn.answer.replace(/\s*\[GOAL_COMPLETE\]\s*/g, '').trim();
+        store.saveTurn(conv.id, lastTurn);
+        conv.statusNote = '✅ 目标已完成';
+        this.emit.emitConversation(conv);
+        break;
+      }
+      // 用户取消(cancel 会 abort + 设 goalLoopStopped)或会话被删除 → 停止
+      if (currentAc.signal.aborted || this.goalLoopStopped.has(id) || !this.convs.has(id)) break;
+
+      // 准备下一轮:发一个简短的 continue prompt(goal 已在 systemPrompt 里,这里只需推动)
+      const continuePrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
+      store.appendMessage('user', continuePrompt);
+      conv.turns.push(newTurn(continuePrompt));
+      conv.status = 'running';
+      this.emit.emitConversation(conv);
+
+      const ac = new AbortController();
+      this.aborts.set(id, ac);
+      currentAc = ac;
+      const engine = this.engines.get(conv.engine);
+      if (!engine) break;
+
+      await engine.run({
+        conv,
+        memoryBlock: this.memoryBlock(conv),
+        rulesBlock: loadRulesBlock(conv.cwd),
+        contextBlock: loadContextBlock(conv.cwd),
+        signal: ac.signal,
+        onEvent: (ev) => this.applyAndPersist(conv, id, ev, continuePrompt, ac.signal),
+      }).catch((e) => {
+        const msg = e instanceof Error ? e.message : String(e);
+        this.applyAndPersist(conv, id, { type: 'error', message: msg }, continuePrompt, ac.signal);
+      }).finally(() => {
+        this.aborts.delete(id);
+      });
+
+      if (!this.convs.has(id)) break;
+      store.saveDirectHistory(conv);
+      // 记本轮 cost → 成本看板
+      const goalTurn = conv.turns[conv.turns.length - 1];
+      if (goalTurn && goalTurn.costUSD > 0) {
+        store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0));
+      }
+      if (goalTurn?.error) break; // 出错 → 停止循环
+    }
+    // 循环结束 → 确保状态恢复 + 清理标记
+    this.goalLoopStopped.delete(id);
+    if (this.convs.has(id) && conv.status === 'running') {
+      conv.status = 'ready';
+      this.emit.emitConversation(conv);
+    }
   }
 
   // Push a turn that immediately ends in an error (used when we bail before running an engine).

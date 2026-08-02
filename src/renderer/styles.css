@@ -1203,6 +1203,10 @@ a { color: var(--accent); }
 .ch-goal .goal-text { flex: 1; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ch-goal #btn-goal-clear { flex: 0 0 auto; padding: 0 4px; font-size: 11px; color: var(--text-dim); border: none; background: none; cursor: pointer; }
 .ch-goal #btn-goal-clear:hover { color: var(--danger); }
+/* Goal Auto-Loop 运行中:pulse 动画提示 agent 正在自主推进目标 */
+.ch-goal.goal-active { border-color: var(--accent); animation: goal-pulse 2s ease-in-out infinite; }
+.ch-goal.goal-active .goal-icon { animation: goal-pulse 2s ease-in-out infinite; }
+@keyframes goal-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .stat { font-size: 11px; color: var(--text-dim); }
 
 /* turns */

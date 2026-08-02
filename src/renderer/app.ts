@@ -950,15 +950,17 @@ function renderHead(conv: Conversation | undefined) {
   status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
   sendBtn.textContent = conv.status === 'running' ? tr('common.stop') : tr('common.send');
   sendBtn.classList.toggle('stop', conv.status === 'running');
-  // 会话目标条:有 goal 时显示
+  // 会话目标条:有 goal 时显示;goal loop 运行中加 pulse 动画
   const goalBar = document.getElementById('goal-bar');
   const goalText = document.getElementById('goal-text');
   if (goalBar && goalText) {
     if (conv.goal) {
       goalText.textContent = conv.goal;
       goalBar.style.display = '';
+      goalBar.classList.toggle('goal-active', conv.status === 'running');
     } else {
       goalBar.style.display = 'none';
+      goalBar.classList.remove('goal-active');
     }
   }
   // 上下文模式选择器:同步当前值 + hifi 高亮 + 仅 Direct 引擎显示。
