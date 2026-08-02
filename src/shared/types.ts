@@ -113,6 +113,7 @@ export type VoiceChatConfig = {
   wsUrl: string;        // WebSocket 连接地址(含 region 路由),默认走火山引擎官方地址
   voiceType: string;    // 音色 ID(Voice Type),如 'zh_female_wanwanxiaohe_moon_bigtts'
   enable: boolean;      // 是否在聊天界面启用语音入口(关闭 = 只用文字)
+  contextHint?: string; // 上下文提示(当前项目名/最近对话摘要),注入 system_role
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash

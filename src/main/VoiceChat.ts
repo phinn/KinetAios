@@ -171,7 +171,13 @@ export class VoiceChat {
     this.sessionId = crypto.randomUUID();
     const cfg = this.cfg!;
 
-    const systemRole = '你是一个友好的AI助手,请用简洁易懂的中文回答。';
+    // 基础人设 + 当前项目上下文(如果有)
+    // Base persona + current project context (if any)
+    let systemRole = '你是一个友好的AI助手,请用简洁易懂的中文回答。';
+    if (cfg.contextHint) {
+      systemRole = cfg.contextHint;
+    }
+
     const payload = {
       asr: {
         audio_info: {

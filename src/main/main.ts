@@ -1796,7 +1796,29 @@ function registerIpc(): void {
       return { ok: false, error: '缺少 App ID 或 Access Token,请在设置中配置' };
     }
     try {
-      await voiceChat.start(s.voiceChat);
+      // 从当前活跃会话提取项目上下文,注入语音对话的 system_role
+      // Extract project context from active conversation to inject into voice dialog system_role
+      const convs = taskManager.list();
+      const activeConv = convs.length > 0 ? convs[0] : null;
+      let contextHint: string | undefined;
+      if (activeConv?.cwd) {
+        const projName = activeConv.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || activeConv.cwd;
+        // 取最近 3 轮对话摘要作为上下文(避免太长)
+        const recentTurns = activeConv.turns.slice(-3);
+        const recentText = recentTurns
+          .filter(t => t.prompt || t.answer)
+          .map(t => {
+            const u = (t.prompt || '').slice(0, 100);
+            const a = (t.answer || '').slice(0, 200);
+            return u ? `用户:${u} → 回答:${a}` : '';
+          })
+          .filter(Boolean)
+          .join('\n');
+        contextHint = `你是一个友好的AI助手。用户当前正在「${projName}」项目中工作(路径:${activeConv.cwd})。${
+          recentText ? `以下是最近的对话记录,供你参考:\n${recentText}\n` : ''
+        }请用简洁易懂的中文回答。如果用户问到当前项目相关信息,基于以上上下文回答。`;
+      }
+      await voiceChat.start({ ...s.voiceChat, contextHint });
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
