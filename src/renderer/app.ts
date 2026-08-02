@@ -1468,9 +1468,10 @@ async function showSettings() {
             从你的历史对话(${(await api.getConversations()).length} 个会话)和记忆中提取做事风格,生成结构化画像。
             画像将作为 AI 替身的「人格设定」—— 让 AI 以你的方式自主使用 KinetAios 完成任务。
           </div>
-          <div style="display:flex;gap:8px;margin-bottom:14px">
+          <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
             <button id="s-persona-gen" style="padding:6px 16px">生成画像</button>
             <button id="s-persona-save" style="padding:6px 16px;display:none">保存修改</button>
+            <button id="s-persona-clear" style="padding:6px 16px;display:none">清空(关闭替身)</button>
             <span class="test-msg" id="s-persona-msg"></span>
           </div>
           <div id="s-persona-stats" style="color:var(--muted);font-size:11px;margin-bottom:10px"></div>
@@ -2215,16 +2216,20 @@ async function initPersonaTab(existing: string): Promise<void> {
   const editor = document.getElementById('s-persona-editor') as HTMLTextAreaElement | null;
   const empty = document.getElementById('s-persona-empty')!;
   const saveBtn = document.getElementById('s-persona-save')!;
+  const clearBtn = document.getElementById('s-persona-clear')!;
   const genBtn = document.getElementById('s-persona-gen')!;
   const msgEl = document.getElementById('s-persona-msg')!;
   const statsEl = document.getElementById('s-persona-stats')!;
 
-  // 如果已有画像,显示编辑器
+  // 如果已有画像,显示编辑器 + 清空按钮
   if (existing && existing.trim()) {
     editor!.value = existing;
     editor!.style.display = '';
     empty.style.display = 'none';
     saveBtn.style.display = '';
+    clearBtn.style.display = '';
+    statsEl.textContent = '✅ 替身模式已激活 — 新对话将注入此画像';
+    statsEl.style.color = 'var(--ok)';
   }
 
   genBtn.onclick = async () => {
@@ -2239,10 +2244,12 @@ async function initPersonaTab(existing: string): Promise<void> {
         editor!.style.display = '';
         empty.style.display = 'none';
         saveBtn.style.display = '';
-        msgEl.textContent = '画像已生成';
+        clearBtn.style.display = '';
+        msgEl.textContent = '画像已生成并自动保存';
         msgEl.className = 'test-msg ok';
         if (res.stats) {
-          statsEl.textContent = `基于 ${res.stats.conversations} 个会话、${res.stats.turns} 轮对话、${res.stats.memories} 条记忆生成`;
+          statsEl.textContent = `✅ 替身模式已激活 — 基于 ${res.stats.conversations} 个会话、${res.stats.turns} 轮对话、${res.stats.memories} 条记忆生成`;
+          statsEl.style.color = 'var(--ok)';
         }
         // 自动保存
         await api.savePersona(res.persona);
@@ -2265,10 +2272,24 @@ async function initPersonaTab(existing: string): Promise<void> {
     if (res.ok) {
       msgEl.textContent = '已保存';
       msgEl.className = 'test-msg ok';
+      statsEl.textContent = persona ? '✅ 替身模式已激活 — 新对话将注入此画像' : '⚪ 替身已关闭';
+      statsEl.style.color = persona ? 'var(--ok)' : 'var(--muted)';
     } else {
       msgEl.textContent = res.error || '保存失败';
       msgEl.className = 'test-msg bad';
     }
+  };
+
+  clearBtn.onclick = async () => {
+    editor!.value = '';
+    editor!.style.display = 'none';
+    empty.style.display = '';
+    saveBtn.style.display = 'none';
+    clearBtn.style.display = 'none';
+    statsEl.textContent = '⚪ 替身已关闭 — 清空画像后新对话不再注入';
+    statsEl.style.color = 'var(--muted)';
+    msgEl.textContent = '';
+    await api.savePersona('');
   };
 }
 
