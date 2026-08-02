@@ -25,7 +25,8 @@ import { allTools } from './tools';
 import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
-import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, ContextMode, CustomTool, EngineKind, GitActionKind, GitActionResult, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg } from '../shared/types';
+import { VoiceChat } from './VoiceChat';
+import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, ContextMode, CustomTool, EngineKind, GitActionKind, GitActionResult, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg, VoiceChatEventPayload } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
 
@@ -1743,6 +1744,47 @@ function registerIpc(): void {
       console.error('[webview-inspect] ERROR:', (e as Error)?.message ?? e);
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
+  });
+
+  // ── 实时语音助手(豆包实时语音大模型)──
+  // VoiceChat 管理器:WebSocket 双向音频流, renderer 通过 IPC 发送麦克风音频、接收 AI 音频。
+  const voiceChat = new VoiceChat();
+  // VoiceChat 事件 → 转发到 renderer
+  voiceChat.onEvent((ev) => {
+    // Buffer → base64(IPC 不能直接传 Buffer)
+    const payload: VoiceChatEventPayload = ev.type === 'aiAudio'
+      ? { type: 'aiAudio', data: (ev as any).data.toString('base64') }
+      : ev as any;
+    dashboardWin?.webContents.send('voice-chat-event', payload);
+  });
+
+  ipcMain.handle('voice-chat-start', async () => {
+    const s = getSettings();
+    if (!s.voiceChat?.appId || !s.voiceChat?.accessToken) {
+      return { ok: false, error: '缺少 App ID 或 Access Token,请在设置中配置' };
+    }
+    try {
+      await voiceChat.start(s.voiceChat);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('voice-chat-stop', async () => {
+    voiceChat.close();
+    return { ok: true };
+  });
+  ipcMain.handle('voice-chat-send-audio', async (_e, pcmBase64: string) => {
+    try {
+      const buf = Buffer.from(pcmBase64, 'base64');
+      voiceChat.sendAudio(buf);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false };
+    }
+  });
+  ipcMain.handle('voice-chat-state', async () => {
+    return { state: voiceChat.getState() };
   });
 }
 

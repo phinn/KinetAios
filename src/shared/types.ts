@@ -163,6 +163,17 @@ export type RemoteAgentEvent =
   | { type: 'done'; summary: string }
   | { type: 'error'; message: string };
 
+// 实时语音事件(IPC 传输用,音频以 base64 编码)
+// Voice chat event for IPC transport (audio as base64 since IPC can't transfer Buffer directly)
+export type VoiceChatEventPayload =
+  | { type: 'state'; state: 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error' }
+  | { type: 'userText'; text: string }
+  | { type: 'aiText'; text: string }
+  | { type: 'aiAudio'; data: string }  // base64 PCM 16kHz 16-bit mono
+  | { type: 'aiAudioEnd' }
+  | { type: 'error'; message: string }
+  | { type: 'ready' };
+
 export type TaskStep = {
   id: string;
   name: string;
@@ -526,6 +537,18 @@ export interface KinetAPI {
   onConfirmRequest(cb: (req: { id: string; cmd: string }) => void): void;
   onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;
   confirmResponse(id: string, approved: boolean): void;
+
+  // ── 实时语音助手(豆包实时语音大模型)──
+  /** 启动语音会话(连接 WebSocket) */
+  voiceChatStart(): Promise<{ ok: boolean; error?: string }>;
+  /** 停止语音会话(断开 WebSocket) */
+  voiceChatStop(): Promise<{ ok: boolean }>;
+  /** 发送麦克风音频(PCM 16kHz 16-bit mono Buffer) */
+  voiceChatSendAudio(pcm: ArrayBuffer): Promise<{ ok: boolean }>;
+  /** 当前语音状态 */
+  voiceChatState(): Promise<{ state: string }>;
+  /** 语音事件回调(状态变化/ASR文本/AI文本/AI音频/错误) */
+  onVoiceChatEvent(cb: (ev: VoiceChatEventPayload) => void): void;
 }
 
 export function newTurn(prompt: string): Turn {

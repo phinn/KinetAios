@@ -94,6 +94,7 @@
               <button class="tool" id="btn-mcp" data-i18n-title="mcp.title" title="MCP 服务与工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg><span class="lbl" data-i18n="mcp.lbl">MCP</span></button>
               <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg><span class="lbl" data-i18n="vision.capture">截图</span></button>
               <button class="tool" id="btn-voice" data-i18n-title="voice.mic" title="语音输入(说,自动转文字)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg><span class="lbl" data-i18n="voice.lbl">语音</span></button>
+              <button class="tool" id="btn-voice-chat" data-i18n-title="voice.chatTitle" title="实时语音对话(双向音频流)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-6 4 12 3-9 2 3h5"/></svg><span class="lbl" data-i18n="voice.chatLbl">对话</span></button>
               <span class="bar-spacer"></span>
               <button class="primary send" id="btn-send">发送</button>
             </div>
@@ -337,6 +338,29 @@
       <button class="ghost" id="live-close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="live-panel-body" id="live-body"></div>
+  </div>
+
+  <!-- 实时语音对话浮层:全屏覆盖,显示状态/转写/AI回复 -->
+  <div id="voice-chat-overlay" class="voice-chat-overlay" hidden>
+    <div class="vc-panel">
+      <div class="vc-header">
+        <span id="vc-title">🎙️ 实时语音对话</span>
+        <button class="ghost" id="vc-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="vc-status" id="vc-status">正在连接…</div>
+      <div class="vc-wave" id="vc-wave">
+        <div class="vc-orb" id="vc-orb"></div>
+      </div>
+      <div class="vc-transcript" id="vc-transcript">
+        <div class="vc-line vc-user" id="vc-user-text"></div>
+        <div class="vc-line vc-ai" id="vc-ai-text"></div>
+      </div>
+      <div class="vc-controls">
+        <button class="vc-btn vc-mic-btn" id="vc-mute"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
+        <button class="vc-btn vc-end" id="vc-end">结束</button>
+      </div>
+      <div class="vc-hint" id="vc-hint">开始说话,AI 会自动回复</div>
+    </div>
   </div>
 
   <script src="app.js"></script>

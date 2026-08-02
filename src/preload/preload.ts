@@ -138,6 +138,12 @@ const api: KinetAPI = {
   getPersona: () => ipcRenderer.invoke('get-persona'),
   savePersona: (persona: string) => ipcRenderer.invoke('save-persona', persona),
 
+  // ── 实时语音助手(豆包实时语音大模型)──
+  voiceChatStart: () => ipcRenderer.invoke('voice-chat-start'),
+  voiceChatStop: () => ipcRenderer.invoke('voice-chat-stop'),
+  voiceChatSendAudio: (pcm: ArrayBuffer) => ipcRenderer.invoke('voice-chat-send-audio', arrayBufferToBase64(pcm)),
+  voiceChatState: () => ipcRenderer.invoke('voice-chat-state'),
+
   onAgentEvent: (cb) => {
     ipcRenderer.removeAllListeners('agent-event');
     ipcRenderer.on('agent-event', (_e: IpcRendererEvent, { convId, ev }) => cb(convId, ev));
@@ -166,7 +172,19 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('remote-agent-event');
     ipcRenderer.on('remote-agent-event', (_e: IpcRendererEvent, ev) => cb(ev));
   },
+  onVoiceChatEvent: (cb) => {
+    ipcRenderer.removeAllListeners('voice-chat-event');
+    ipcRenderer.on('voice-chat-event', (_e: IpcRendererEvent, ev) => cb(ev));
+  },
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),
 };
+
+// ArrayBuffer → base64(语音音频传输用)
+function arrayBufferToBase64(buf: ArrayBuffer): string {
+  const bytes = new Uint8Array(buf);
+  let binary = '';
+  for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+  return btoa(binary);
+}
 
 contextBridge.exposeInMainWorld('kinet', api);

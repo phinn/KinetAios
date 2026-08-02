@@ -3061,6 +3061,7 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   // TTS 走 speechSynthesis(系统级,零依赖),每条 AI 回复自带 🔊 按钮(见 renderTurn)。
   // ponytail: STT 需要联网调 API,后续可换 whisper.cpp 离线。
   wireVoice();
+  wireVoiceChat();
 }
 
 // 录音状态:MediaRecorder → chunks → base64 → main 转写
@@ -3352,6 +3353,313 @@ function stopVAD(): void {
 
 // TTS:speechSynthesis 系统级,零依赖。再次点同一个正在读的消息 → 取消。
 let lastUtterance: SpeechSynthesisUtterance | null = null;
+
+// ── 实时语音对话(豆包实时语音大模型)──
+// Realtime voice chat: WebSocket 双向音频流, 通过 IPC 桥接 main 进程 VoiceChat 管理器。
+// 用户说话 → main → 火山引擎 → AI 音频回复 → renderer 播放。
+// 同时:ASR 文本和 AI 文本实时显示在浮层中。
+//
+// 音频链路: getUserMedia(16kHz) → AudioWorklet → PCM Int16 → base64 → IPC → main → WebSocket
+// 播放链路: WebSocket → main → base64 PCM → IPC → renderer → AudioWorklet/ScriptProcessor → 扬声器
+
+let vcActive = false;             // 语音对话是否活跃
+let vcMicStream: MediaStream | null = null;
+let vcAudioCtx: AudioContext | null = null;
+let vcWorkletNode: AudioWorkletNode | null = null;
+let vcSourceNode: MediaStreamAudioSourceNode | null = null;
+let vcMuted = false;
+let vcPlayCtx: AudioContext | null = null;  // AI 音频播放 context
+let vcPlayQueue: Float32Array[] = [];        // 待播放的 PCM chunks
+let vcPlaying = false;
+let vcUserText = '';               // 累积用户文本
+let vcAiText = '';                 // 累积 AI 文本
+
+function wireVoiceChat(): void {
+  const btnChat = document.getElementById('btn-voice-chat');
+  if (!btnChat) return;
+
+  btnChat.onclick = async () => {
+    const settings = await api.getSettings();
+    if (!settings.voiceChat?.enable) {
+      // 没启用 → 弹提示去设置
+      btnChat.classList.add('pulse');
+      setTimeout(() => btnChat.classList.remove('pulse'), 600);
+      return;
+    }
+    if (vcActive) {
+      endVoiceChat();
+    } else {
+      await startVoiceChat();
+    }
+  };
+
+  // 浮层控制按钮
+  document.getElementById('vc-close')!.onclick = () => endVoiceChat();
+  document.getElementById('vc-end')!.onclick = () => endVoiceChat();
+  document.getElementById('vc-mute')!.onclick = () => {
+    vcMuted = !vcMuted;
+    const muteBtn = document.getElementById('vc-mute')!;
+    if (vcMuted) {
+      muteBtn.classList.add('muted');
+      if (vcSourceNode) vcSourceNode.disconnect();
+    } else {
+      muteBtn.classList.remove('muted');
+      if (vcSourceNode && vcWorkletNode) vcSourceNode.connect(vcWorkletNode);
+    }
+  };
+
+  // 监听 main 进程发来的语音事件
+  api.onVoiceChatEvent((ev) => {
+    if (!vcActive) return;
+    switch (ev.type) {
+      case 'state':
+        updateVcState(ev.state);
+        break;
+      case 'ready':
+        updateVcState('connected');
+        document.getElementById('vc-hint')!.textContent = '开始说话,AI 会自动回复';
+        break;
+      case 'userText':
+        // 增量追加用户文本
+        vcUserText = ev.text;
+        document.getElementById('vc-user-text')!.textContent = vcUserText;
+        break;
+      case 'aiText':
+        // AI 文本(增量)
+        if (!vcAiText) {
+          vcAiText = ev.text;
+        } else {
+          // 接收增量块
+          vcAiText += ev.text;
+        }
+        document.getElementById('vc-ai-text')!.textContent = vcAiText;
+        break;
+      case 'aiAudio':
+        playAiAudio(ev.data);
+        break;
+      case 'aiAudioEnd':
+        vcPlaying = false;
+        break;
+      case 'error':
+        document.getElementById('vc-status')!.textContent = '❌ ' + ev.message;
+        document.getElementById('vc-hint')!.textContent = ev.message;
+        document.getElementById('vc-orb')!.className = 'vc-orb error';
+        break;
+    }
+  });
+}
+
+async function startVoiceChat(): Promise<void> {
+  vcActive = true;
+  vcUserText = '';
+  vcAiText = '';
+  vcMuted = false;
+
+  // 显示浮层
+  const overlay = document.getElementById('voice-chat-overlay')!;
+  overlay.hidden = false;
+  document.getElementById('vc-user-text')!.textContent = '';
+  document.getElementById('vc-ai-text')!.textContent = '';
+  document.getElementById('vc-status')!.textContent = '正在连接…';
+  document.getElementById('vc-orb')!.className = 'vc-orb connecting';
+
+  // 连接 WebSocket(在 main 进程)
+  const result = await api.voiceChatStart();
+  if (!result.ok) {
+    document.getElementById('vc-status')!.textContent = '❌ ' + (result.error || '连接失败');
+    document.getElementById('vc-orb')!.className = 'vc-orb error';
+    return;
+  }
+
+  // 请求麦克风 + 采集 PCM
+  try {
+    vcMicStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        sampleRate: 16000,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+    vcAudioCtx = new AudioContext({ sampleRate: 16000 });
+    vcSourceNode = vcAudioCtx.createMediaStreamSource(vcMicStream);
+
+    // 用 AudioWorklet 采集 PCM(比 ScriptProcessor 更低延迟)
+    // 兼容性兜底:如果 AudioWorklet 不可用,回退 ScriptProcessor
+    if (vcAudioCtx.audioWorklet) {
+      try {
+        await vcAudioCtx.audioWorklet.addModule(createPcmWorkletUrl());
+        vcWorkletNode = new AudioWorkletNode(vcAudioCtx, 'pcm-capture', {
+          numberOfInputs: 1,
+          numberOfOutputs: 0,
+          channelCount: 1,
+        });
+        vcWorkletNode.port.onmessage = (e: MessageEvent) => {
+          if (vcActive && !vcMuted && e.data?.pcm) {
+            // Float32Array → Int16Array PCM → ArrayBuffer → IPC
+            const pcm = float32ToInt16(e.data.pcm as Float32Array);
+            api.voiceChatSendAudio(pcm.buffer.slice(0) as ArrayBuffer);
+          }        };
+        vcSourceNode.connect(vcWorkletNode);
+      } catch {
+        // 回退 ScriptProcessor
+        wireScriptProcessor();
+      }
+    } else {
+      wireScriptProcessor();
+    }
+  } catch (e) {
+    document.getElementById('vc-status')!.textContent = '❌ 麦克风不可用';
+    document.getElementById('vc-orb')!.className = 'vc-orb error';
+  }
+}
+
+function wireScriptProcessor(): void {
+  if (!vcAudioCtx || !vcSourceNode) return;
+  const bufSize = 4096;
+  const proc = vcAudioCtx.createScriptProcessor(bufSize, 1, 1);
+  proc.onaudioprocess = (e: AudioProcessingEvent) => {
+    if (!vcActive || vcMuted) return;
+    const input = e.inputBuffer.getChannelData(0);
+    const pcm = float32ToInt16(input);
+    api.voiceChatSendAudio(pcm.buffer.slice(0) as ArrayBuffer);
+  };
+  vcSourceNode.connect(proc);
+  // ScriptProcessor 需要连接 destination 才会处理音频(即使不输出)
+  proc.connect(vcAudioCtx.destination);
+}
+
+function endVoiceChat(): void {
+  vcActive = false;
+
+  // 停止麦克风采集
+  if (vcWorkletNode) { try { vcWorkletNode.disconnect(); } catch {} vcWorkletNode = null; }
+  if (vcSourceNode) { try { vcSourceNode.disconnect(); } catch {} vcSourceNode = null; }
+  if (vcMicStream) { vcMicStream.getTracks().forEach(t => t.stop()); vcMicStream = null; }
+  if (vcAudioCtx) { try { vcAudioCtx.close(); } catch {} vcAudioCtx = null; }
+
+  // 停止播放
+  vcPlayQueue = [];
+  vcPlaying = false;
+  if (vcPlayCtx) { try { vcPlayCtx.close(); } catch {} vcPlayCtx = null; }
+
+  // 断开 WebSocket
+  api.voiceChatStop();
+
+  // 隐藏浮层
+  document.getElementById('voice-chat-overlay')!.hidden = true;
+  document.getElementById('vc-orb')!.className = 'vc-orb';
+}
+
+function updateVcState(state: string): void {
+  const orb = document.getElementById('vc-orb')!;
+  const status = document.getElementById('vc-status')!;
+  const hint = document.getElementById('vc-hint')!;
+
+  orb.className = 'vc-orb';
+  switch (state) {
+    case 'connecting':
+      orb.classList.add('connecting');
+      status.textContent = '正在连接…';
+      hint.textContent = '请稍候';
+      break;
+    case 'connected':
+      status.textContent = '已连接';
+      hint.textContent = '开始说话,AI 会自动回复';
+      break;
+    case 'listening':
+      orb.classList.add('listening');
+      status.textContent = '正在聆听…';
+      hint.textContent = '请说话';
+      break;
+    case 'speaking':
+      orb.classList.add('speaking');
+      status.textContent = 'AI 正在回复…';
+      hint.textContent = '点击麦克风可静音';
+      break;
+    case 'error':
+      orb.classList.add('error');
+      status.textContent = '连接错误';
+      break;
+    case 'idle':
+      status.textContent = '已断开';
+      break;
+  }
+}
+
+/** 播放 AI 回复音频(base64 PCM 16kHz 16-bit mono → AudioBuffer → 扬声器) */
+function playAiAudio(base64Pcm: string): void {
+  try {
+    // base64 → Int16Array → Float32Array
+    const bytes = atob(base64Pcm);
+    const buf = new ArrayBuffer(bytes.length);
+    const view = new Uint8Array(buf);
+    for (let i = 0; i < bytes.length; i++) view[i] = bytes.charCodeAt(i);
+    const int16 = new Int16Array(buf);
+    const float32 = new Float32Array(int16.length);
+    for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+
+    vcPlayQueue.push(float32);
+    drainPlayQueue();
+  } catch (e) {
+    console.error('[voice-chat] playAiAudio error:', e);
+  }
+}
+
+async function drainPlayQueue(): Promise<void> {
+  if (vcPlaying || vcPlayQueue.length === 0) return;
+  vcPlaying = true;
+
+  if (!vcPlayCtx) {
+    vcPlayCtx = new AudioContext({ sampleRate: 16000 });
+  }
+  // 确保 context 是 running 状态
+  if (vcPlayCtx.state === 'suspended') await vcPlayCtx.resume();
+
+  while (vcPlayQueue.length > 0 && vcActive) {
+    const chunk = vcPlayQueue.shift()!;
+    const audioBuf = vcPlayCtx.createBuffer(1, chunk.length, 16000);
+    audioBuf.copyToChannel(chunk as any, 0);
+    const srcNode = vcPlayCtx.createBufferSource();
+    srcNode.buffer = audioBuf;
+    srcNode.connect(vcPlayCtx.destination);
+    srcNode.start();
+    // 等待这一段播完
+    await new Promise(r => setTimeout(r, (chunk.length / 16000) * 1000));
+  }
+  vcPlaying = false;
+}
+
+/** Float32Array (-1.0 ~ 1.0) → Int16Array (PCM 16-bit) */
+function float32ToInt16(float32: Float32Array | ArrayLike<number>): Int16Array {
+  const len = float32.length;
+  const int16 = new Int16Array(len);
+  for (let i = 0; i < len; i++) {
+    const s = Math.max(-1, Math.min(1, float32[i]));
+    int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+  }
+  return int16;
+}
+
+/** 创建 PCM capture AudioWorklet 的 Blob URL(内联代码) */
+function createPcmWorkletUrl(): string {
+  const code = `
+    class PcmCaptureProcessor extends AudioWorkletProcessor {
+      process(inputs) {
+        const input = inputs[0];
+        if (input && input[0]) {
+          this.port.postMessage({ pcm: input[0] }, []);
+        }
+        return true;
+      }
+    }
+    registerProcessor('pcm-capture', PcmCaptureProcessor);
+  `;
+  const blob = new Blob([code], { type: 'application/javascript' });
+  return URL.createObjectURL(blob);
+}
+
 // 复制文本到剪贴板,带短暂"已复制"反馈
 // Electron contextIsolation 下 navigator.clipboard 经常静默失效 → 走 IPC 主进程 clipboard 模块
 async function copyText(text: string, btn?: HTMLElement): Promise<void> {

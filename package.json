@@ -35,15 +35,22 @@
       {
         "from": "plugins/",
         "to": "plugins/",
-        "filter": ["**/*", "!**/examples/**"]
+        "filter": [
+          "**/*",
+          "!**/examples/**"
+        ]
       }
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.png"
     },
     "win": {
-      "target": ["nsis"],
+      "target": [
+        "nsis"
+      ],
       "icon": "build/icon.ico"
     },
     "nsis": {
@@ -57,12 +64,14 @@
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^20.14.0",
+    "@types/ws": "^8.18.1",
     "electron": "^31.0.0",
     "electron-builder": "^25.0.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
   },
   "dependencies": {
-    "better-sqlite3": "^11.1.0"
+    "better-sqlite3": "^11.1.0",
+    "ws": "^8.21.1"
   }
 }

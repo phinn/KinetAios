@@ -3518,3 +3518,124 @@ button.sm { padding: 3px 8px; font-size: 11px; }
     scroll-behavior: auto !important;
   }
 }
+
+/* ── 实时语音对话浮层 / Voice chat overlay ── */
+.voice-chat-overlay {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 9999;
+  display: flex; align-items: center; justify-content: center;
+}
+.voice-chat-overlay[hidden] { display: none; }
+
+.vc-panel {
+  width: 480px; max-width: 90vw;
+  background: var(--bg-card, rgba(30,30,40,0.95));
+  border-radius: 24px;
+  padding: 32px;
+  display: flex; flex-direction: column; align-items: center; gap: 16px;
+  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
+  border: 1px solid var(--border, rgba(255,255,255,0.08));
+}
+
+.vc-header {
+  width: 100%;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.vc-header #vc-title {
+  font-size: 16px; font-weight: 600; color: var(--text, #e0e0e0);
+}
+
+.vc-status {
+  font-size: 13px; color: var(--muted, #888);
+  padding: 4px 12px; border-radius: 12px;
+  background: var(--bg-hover, rgba(255,255,255,0.05));
+}
+
+.vc-wave {
+  width: 120px; height: 120px;
+  display: flex; align-items: center; justify-content: center;
+  margin: 8px 0;
+}
+
+/* 动态球体:根据状态变化大小和颜色 */
+.vc-orb {
+  width: 80px; height: 80px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, rgba(100,180,255,0.8), rgba(50,120,220,0.3));
+  transition: all 0.3s ease;
+  animation: vc-pulse 2s ease-in-out infinite;
+}
+.vc-orb.speaking {
+  background: radial-gradient(circle at 30% 30%, rgba(120,220,140,0.8), rgba(50,180,80,0.3));
+  transform: scale(1.15);
+}
+.vc-orb.listening {
+  background: radial-gradient(circle at 30% 30%, rgba(255,200,80,0.8), rgba(220,150,40,0.3));
+}
+.vc-orb.connecting {
+  background: radial-gradient(circle at 30% 30%, rgba(150,150,160,0.6), rgba(80,80,90,0.3));
+  animation: vc-pulse 0.8s ease-in-out infinite;
+}
+.vc-orb.error {
+  background: radial-gradient(circle at 30% 30%, rgba(255,100,100,0.8), rgba(200,40,40,0.3));
+}
+
+@keyframes vc-pulse {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+
+.vc-transcript {
+  width: 100%; min-height: 80px; max-height: 160px;
+  overflow-y: auto;
+  display: flex; flex-direction: column; gap: 8px;
+  padding: 8px;
+}
+.vc-line { font-size: 14px; line-height: 1.5; }
+.vc-line:empty { display: none; }
+.vc-user {
+  color: var(--muted, #aaa);
+  align-self: flex-start;
+  max-width: 85%;
+}
+.vc-user::before { content: '🗣️ '; }
+.vc-ai {
+  color: var(--text, #e0e0e0);
+  align-self: flex-end;
+  text-align: right;
+  max-width: 85%;
+}
+.vc-ai::before { content: '🤖 '; }
+
+.vc-controls {
+  display: flex; align-items: center; gap: 16px;
+  margin-top: 4px;
+}
+
+.vc-btn {
+  border: none; cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.2s;
+}
+.vc-mic-btn {
+  width: 56px; height: 56px; border-radius: 50%;
+  background: var(--accent, #4a9eff); color: white;
+  box-shadow: 0 4px 12px rgba(74,158,255,0.4);
+}
+.vc-mic-btn:hover { transform: scale(1.05); }
+.vc-mic-btn:active { transform: scale(0.95); }
+.vc-mic-btn.muted { background: var(--danger, #e74c3c); }
+
+.vc-end {
+  padding: 12px 28px; border-radius: 28px;
+  font-size: 14px; font-weight: 500;
+  background: var(--danger, #e74c3c); color: white;
+}
+.vc-end:hover { opacity: 0.9; }
+
+.vc-hint {
+  font-size: 12px; color: var(--muted, #666);
+}
