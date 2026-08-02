@@ -1818,6 +1818,7 @@ function registerIpc(): void {
           recentText ? `以下是最近的对话记录,供你参考:\n${recentText}\n` : ''
         }请用简洁易懂的中文回答。如果用户问到当前项目相关信息,基于以上上下文回答。`;
       }
+      console.log('[VoiceChat] 📎 项目上下文注入:', activeConv?.cwd ? `项目=${activeConv.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop()}, 轮次=${activeConv.turns.length}` : '无活跃会话或无 cwd');
       await voiceChat.start({ ...s.voiceChat, contextHint });
       return { ok: true };
     } catch (e) {

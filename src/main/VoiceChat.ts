@@ -206,6 +206,7 @@ export class VoiceChat {
     };
 
     console.log('[VoiceChat] 📤 发送 StartSession (event=100), sessionId:', this.sessionId);
+    console.log('[VoiceChat] 📝 system_role:', systemRole.slice(0, 200));
     this.sendSessionEvent(100, JSON.stringify(payload));
   }
 
