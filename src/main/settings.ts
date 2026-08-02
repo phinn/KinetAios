@@ -39,6 +39,14 @@ const DEFAULTS: AppSettings = {
   voiceAutoSend: false, // 语音实时输入默认关闭(开启后 Web Speech API 实时转写 + VAD 自动发送)
   hifiContextBudget: 200000, // 高保真模式上下文预算(默认 200K token,适配 GLM-5.2 的 1M 窗口)
   persona: '', // 替身画像:分析历史对话生成的用户风格描述(空 = 未生成)
+  // 实时语音助手配置:默认关闭,AppID/Token 留空(wsUrl 预填火山引擎官方地址)。
+  voiceChat: {
+    appId: '',
+    accessToken: '',
+    wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+    voiceType: 'zh_female_wanwanxiaohe_moon_bigtts',
+    enable: false,
+  },
 };
 
 let cache: AppSettings | null = null;
@@ -60,6 +68,10 @@ export function getSettings(): AppSettings {
     };
     s.apiKey = decryptIfEnc(s.apiKey);
     s.embedApiKey = decryptIfEnc(s.embedApiKey);
+    // voiceChat.accessToken 也加密存储 / also encrypted at rest
+    if (s.voiceChat) {
+      s.voiceChat.accessToken = decryptIfEnc(s.voiceChat.accessToken);
+    }
     cache = s;
   } catch {
     cache = { ...DEFAULTS };
@@ -77,6 +89,13 @@ export function saveSettings(s: AppSettings): void {
   }
   if (s.embedApiKey && safeStorage.isEncryptionAvailable()) {
     toWrite.embedApiKey = '@enc:' + safeStorage.encryptString(s.embedApiKey).toString('base64');
+  }
+  // voiceChat.accessToken 加密 / encrypt voiceChat access token
+  if (s.voiceChat?.accessToken && safeStorage.isEncryptionAvailable()) {
+    toWrite.voiceChat = {
+      ...s.voiceChat,
+      accessToken: '@enc:' + safeStorage.encryptString(s.voiceChat.accessToken).toString('base64'),
+    };
   }
   fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2));
 }

@@ -1437,6 +1437,18 @@ async function showSettings() {
 
       </div>
 
+      <div class="s-section">
+        <h3>🎙️ 实时语音助手</h3>
+        <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">
+          配置豆包(火山引擎)实时语音大模型 API。填写后可在聊天界面开启语音对话模式 —— 实时说话,实时回复,支持中途发指令给 Agent 执行。
+        </div>
+        <div class="field"><label><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} style="width:auto;margin-right:6px" />启用语音入口(聊天界面显示语音按钮)</label></div>
+        <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="火山引擎控制台 → 语音技术 → 应用管理" /></div>
+        <div class="field"><label>Access Token</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎 Access Token" /></div>
+        <div class="field"><label>WebSocket 地址</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
+        <div class="field"><label>音色 ID</label><input id="s-vc-voicetype" value="${esc(s.voiceChat?.voiceType ?? 'zh_female_wanwanxiaohe_moon_bigtts')}" placeholder="如 zh_female_wanwanxiaohe_moon_bigtts" style="font-family:var(--mono);font-size:12px" /></div>
+      </div>
+
       </div><!-- /advanced panel -->
 
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
@@ -2192,6 +2204,15 @@ function readSettingsForm(): AppSettings {
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
     persona: (document.getElementById('s-persona-editor') as HTMLTextAreaElement)?.value ?? '', // 替身画像(从编辑器读)
+    voiceChat: {
+      appId: (document.getElementById('s-vc-appid') as HTMLInputElement).value.trim(),
+      accessToken: (document.getElementById('s-vc-token') as HTMLInputElement).value.trim(),
+      wsUrl: (document.getElementById('s-vc-wsurl') as HTMLInputElement).value.trim() ||
+        'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
+      voiceType: (document.getElementById('s-vc-voicetype') as HTMLInputElement).value.trim() ||
+        'zh_female_wanwanxiaohe_moon_bigtts',
+      enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
+    },
   };
 }
 

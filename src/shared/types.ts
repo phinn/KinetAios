@@ -101,6 +101,18 @@ export type AppSettings = {
   // 替身模式开启后注入 Direct 引擎 systemPrompt,让 AI 模仿用户风格自主执行任务。
   // 空字符串 = 未生成,替身功能不可用。
   persona: string;
+  // ── 实时语音助手(豆包实时语音大模型)── WebSocket 双向音频流,实时说话→实时回复。
+  // 配置火山引擎实时语音 API 凭据和音色。
+  voiceChat: VoiceChatConfig;
+};
+
+// 实时语音配置 / Realtime voice chat config (Volcengine / Doubao realtime voice API)
+export type VoiceChatConfig = {
+  appId: string;        // 火山引擎 AppID
+  accessToken: string;  // 火山引擎 Access Token
+  wsUrl: string;        // WebSocket 连接地址(含 region 路由),默认走火山引擎官方地址
+  voiceType: string;    // 音色 ID(Voice Type),如 'zh_female_wanwanxiaohe_moon_bigtts'
+  enable: boolean;      // 是否在聊天界面启用语音入口(关闭 = 只用文字)
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
