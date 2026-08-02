@@ -69,17 +69,27 @@ export class VoiceChat {
     this.setState('connecting');
 
     if (!cfg.appId || !cfg.accessToken) {
-      this.emit({ type: 'error', message: '缺少 App ID 或 Access Token,请在设置 → 高级中配置' });
+      this.emit({ type: 'error', message: '缺少 App ID 或 Access Key,请在设置 → 高级中配置' });
       this.setState('error');
       return;
     }
 
     const url = cfg.wsUrl || WS_URL;
+    this.connectId = crypto.randomUUID();
+
+    // 调试: 打印实际使用的认证参数(脱敏)
+    // Debug: print actual auth params (masked)
+    console.log('[VoiceChat] 正在连接火山引擎实时语音...');
+    console.log('[VoiceChat]   URL:', url);
+    console.log('[VoiceChat]   appId:', cfg.appId);
+    console.log('[VoiceChat]   accessKey:', cfg.accessToken.slice(0, 6) + '...' + cfg.accessToken.slice(-4));
+    console.log('[VoiceChat]   resourceID:', RESOURCE_ID);
+    console.log('[VoiceChat]   appKey:', APP_KEY);
+    console.log('[VoiceChat]   connectId:', this.connectId);
 
     try {
-      // 5 个认证 headers — 与 studyapp 已验证的实现完全一致
-      // 5 auth headers — matching studyapp's verified implementation
-      this.connectId = crypto.randomUUID();
+      // 5 个认证 headers — 与 studyapp (Swift) 已验证的实现完全一致
+      // 5 auth headers — matching studyapp's verified Swift implementation
       this.ws = new WebSocket(url, {
         headers: {
           'X-Api-App-ID': cfg.appId,
@@ -138,6 +148,7 @@ export class VoiceChat {
 
   /** WebSocket 连接成功 → 发送 StartConnection (event=1) */
   private onOpen(): void {
+    console.log('[VoiceChat] ✅ WebSocket 握手成功! 发送 StartConnection (event=1)');
     // StartConnection: event=1, payload="{}" (connect_id 已通过 HTTP header 传递)
     this.sendConnectEvent(1, '{}');
   }
@@ -147,6 +158,7 @@ export class VoiceChat {
     this.sessionId = crypto.randomUUID();
     const cfg = this.cfg!;
 
+    const systemRole = '你是一个友好的AI助手,请用简洁易懂的中文回答。';
     const payload = {
       asr: {
         audio_info: {
@@ -157,7 +169,8 @@ export class VoiceChat {
       },
       dialog: {
         bot_name: 'AI助手',
-        system_role: '你是一个友好的AI助手,请用简洁易懂的中文回答。',
+        system_role: systemRole,
+        bot_personality: systemRole,  // 与 studyapp 一致,部分版本用此字段
         extra: {
           input_mod: 'keep_alive',
           model: '1.2.1.1',    // 豆包实时语音大模型版本
@@ -173,6 +186,7 @@ export class VoiceChat {
       },
     };
 
+    console.log('[VoiceChat] 📤 发送 StartSession (event=100), sessionId:', this.sessionId);
     this.sendSessionEvent(100, JSON.stringify(payload));
   }
 
@@ -231,6 +245,14 @@ export class VoiceChat {
   /** 处理服务端消息 */
   private onMessage(data: Buffer, _isBinary: boolean): void {
     if (data.length < 4) return;
+
+    // 调试: 打印前几个字节,便于排查协议问题
+    if (data.length <= 512) {
+      const preview = data.toString('utf-8').slice(0, 200);
+      console.log(`[VoiceChat] 📥 收到消息 ${data.length}B: ${preview}`);
+    } else {
+      console.log(`[VoiceChat] 📥 收到消息 ${data.length}B (audio/binary)`);
+    }
 
     // 解析 header
     const byte1 = data[1];
@@ -356,13 +378,39 @@ export class VoiceChat {
         break;
       }
 
-      case 453: { // AI 回复文本
+      case 453: { // AI 回复文本(旧事件号,兼容)
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
             const text = json.text || json.content || '';
             if (text) this.emit({ type: 'aiText', text: String(text) });
           }
+        }
+        break;
+      }
+
+      case 550: { // ChatResponse — 模型回复文本(流式增量,与 studyapp 一致)
+        if (payload) {
+          const json = this.safeJson(payload);
+          if (json) {
+            const content = json.content || '';
+            if (content) this.emit({ type: 'aiText', text: String(content) });
+          }
+        }
+        break;
+      }
+
+      case 559:  // ChatEnded — 模型回复结束
+        break;
+
+      case 459:  // ASREnded — 用户说话结束
+        break;
+
+      case 599: { // DialogCommonError
+        if (payload) {
+          const json = this.safeJson(payload);
+          const msg = json?.message || json?.error || '对话错误';
+          this.emit({ type: 'error', message: `对话错误: ${msg}` });
         }
         break;
       }
@@ -390,11 +438,14 @@ export class VoiceChat {
   }
 
   private onError(err: Error): void {
+    console.error('[VoiceChat] ❌ WebSocket error:', err.message);
     this.emit({ type: 'error', message: `WebSocket 错误: ${err.message}` });
     this.setState('error');
   }
 
-  private onClose(code: number, _reason: Buffer): void {
+  private onClose(code: number, reason: Buffer): void {
+    const reasonStr = reason.toString('utf-8');
+    console.log(`[VoiceChat] 🔌 WebSocket 关闭: code=${code}, reason=${reasonStr}`);
     if (this.state !== 'error') {
       this.setState('idle');
     }
