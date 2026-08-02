@@ -3530,8 +3530,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 .voice-chat-pane {
   width: 360px; flex-shrink: 0;
-  background: var(--bg-card, rgba(30,30,40,0.95));
-  border-left: 1px solid var(--border, rgba(255,255,255,0.08));
+  background: var(--bg-elev);
+  border-left: 1px solid var(--border);
   display: flex; flex-direction: column; align-items: center; gap: 16px;
   padding: 24px 20px;
   overflow-y: auto;
@@ -3543,13 +3543,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   display: flex; align-items: center; justify-content: space-between;
 }
 .vc-header #vc-title {
-  font-size: 16px; font-weight: 600; color: var(--text, #e0e0e0);
+  font-size: 16px; font-weight: 600; color: var(--text);
 }
 
 .vc-status {
-  font-size: 13px; color: var(--muted, #888);
+  font-size: 13px; color: var(--text-dim);
   padding: 4px 12px; border-radius: 12px;
-  background: var(--bg-hover, rgba(255,255,255,0.05));
+  background: var(--bg-elev-2);
 }
 
 .vc-wave {
@@ -3595,13 +3595,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .vc-line { font-size: 14px; line-height: 1.5; }
 .vc-line:empty { display: none; }
 .vc-user {
-  color: var(--muted, #aaa);
+  color: var(--text-dim);
   align-self: flex-start;
   max-width: 85%;
 }
 .vc-user::before { content: '🗣️ '; }
 .vc-ai {
-  color: var(--text, #e0e0e0);
+  color: var(--text);
   align-self: flex-end;
   text-align: right;
   max-width: 85%;
@@ -3620,20 +3620,20 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 .vc-mic-btn {
   width: 56px; height: 56px; border-radius: 50%;
-  background: var(--accent, #4a9eff); color: white;
-  box-shadow: 0 4px 12px rgba(74,158,255,0.4);
+  background: var(--accent); color: var(--accent-fg);
+  box-shadow: 0 4px 12px var(--accent-glow);
 }
 .vc-mic-btn:hover { transform: scale(1.05); }
 .vc-mic-btn:active { transform: scale(0.95); }
-.vc-mic-btn.muted { background: var(--danger, #e74c3c); }
+.vc-mic-btn.muted { background: var(--danger); color: #fff; }
 
 .vc-end {
   padding: 12px 28px; border-radius: 28px;
   font-size: 14px; font-weight: 500;
-  background: var(--danger, #e74c3c); color: white;
+  background: var(--danger); color: #fff;
 }
 .vc-end:hover { opacity: 0.9; }
 
 .vc-hint {
-  font-size: 12px; color: var(--muted, #666);
+  font-size: 12px; color: var(--text-faint);
 }
