@@ -44,7 +44,7 @@ const DEFAULTS: AppSettings = {
     appId: '',
     accessToken: '',
     wsUrl: 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
-    voiceType: 'zh_female_wanwanxiaohe_moon_bigtts',
+    voiceType: 'zh_female_vv_jupiter_bigtts',
     enable: false,
   },
 };

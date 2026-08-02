@@ -1444,9 +1444,9 @@ async function showSettings() {
         </div>
         <div class="field"><label><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} style="width:auto;margin-right:6px" />启用语音入口(聊天界面显示语音按钮)</label></div>
         <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="火山引擎控制台 → 语音技术 → 应用管理" /></div>
-        <div class="field"><label>Access Token</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎 Access Token" /></div>
+        <div class="field"><label>Access Key</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎控制台 → 实时语音 → Access Key" /></div>
         <div class="field"><label>WebSocket 地址</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
-        <div class="field"><label>音色 ID</label><input id="s-vc-voicetype" value="${esc(s.voiceChat?.voiceType ?? 'zh_female_wanwanxiaohe_moon_bigtts')}" placeholder="如 zh_female_wanwanxiaohe_moon_bigtts" style="font-family:var(--mono);font-size:12px" /></div>
+        <div class="field"><label>音色 ID</label><input id="s-vc-voicetype" value="${esc(s.voiceChat?.voiceType ?? 'zh_female_vv_jupiter_bigtts')}" placeholder="如 zh_female_vv_jupiter_bigtts" style="font-family:var(--mono);font-size:12px" /></div>
       </div>
 
       </div><!-- /advanced panel -->
@@ -3596,7 +3596,7 @@ function updateVcState(state: string): void {
   }
 }
 
-/** 播放 AI 回复音频(base64 PCM 16kHz 16-bit mono → AudioBuffer → 扬声器) */
+/** 播放 AI 回复音频(base64 PCM 24kHz 16-bit mono → AudioBuffer → 扬声器) */
 function playAiAudio(base64Pcm: string): void {
   try {
     // base64 → Int16Array → Float32Array
@@ -3619,22 +3619,23 @@ async function drainPlayQueue(): Promise<void> {
   if (vcPlaying || vcPlayQueue.length === 0) return;
   vcPlaying = true;
 
+  // 服务端 TTS 返回 24kHz PCM s16le
   if (!vcPlayCtx) {
-    vcPlayCtx = new AudioContext({ sampleRate: 16000 });
+    vcPlayCtx = new AudioContext({ sampleRate: 24000 });
   }
   // 确保 context 是 running 状态
   if (vcPlayCtx.state === 'suspended') await vcPlayCtx.resume();
 
   while (vcPlayQueue.length > 0 && vcActive) {
     const chunk = vcPlayQueue.shift()!;
-    const audioBuf = vcPlayCtx.createBuffer(1, chunk.length, 16000);
+    const audioBuf = vcPlayCtx.createBuffer(1, chunk.length, 24000);
     audioBuf.copyToChannel(chunk as any, 0);
     const srcNode = vcPlayCtx.createBufferSource();
     srcNode.buffer = audioBuf;
     srcNode.connect(vcPlayCtx.destination);
     srcNode.start();
     // 等待这一段播完
-    await new Promise(r => setTimeout(r, (chunk.length / 16000) * 1000));
+    await new Promise(r => setTimeout(r, (chunk.length / 24000) * 1000));
   }
   vcPlaying = false;
 }

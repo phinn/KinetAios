@@ -2,16 +2,18 @@
 // Realtime voice chat manager: connects to Volcengine (Doubao) realtime voice API via WebSocket,
 // manages bidirectional audio streaming, sends user mic audio → receives AI audio response.
 //
-// 协议概述 / Protocol overview:
-// 1. Renderer 采集麦克风 PCM (16kHz, 16-bit, mono) → IPC 传给 main → main 通过 WebSocket 发给服务端
-// 2. 服务端返回 AI 语音音频 + 转写文本 → main 通过 IPC 推给 renderer
-// 3. 用户可随时打断(说话时 AI 停止播放)
-// 4. 支持"指令模式":用户语音 → ASR 转文字 → 填入 composer 或直接发给 Agent → 结果 TTS 回播
+// 协议概述 / Protocol overview (参照 studyapp 已验证实现):
+// 1. WebSocket 握手需 5 个认证 headers: X-Api-App-ID / X-Api-Access-Key / X-Api-Resource-Id / X-Api-App-Key / X-Api-Connect-Id
+// 2. 握手成功后发送 StartConnection (event=1, 二进制帧)
+// 3. 收到 ConnectionStarted (event=50) → 发送 StartSession (event=100, 含 ASR/Dialog/TTS 配置)
+// 4. 收到 SessionStarted (event=150) → 开始发送音频 (event=200, 二进制帧)
+// 5. 服务端返回: ASR 文本 (event=451) / AI 文本 (event=453) / TTS 音频 (event=352) / TTS 结束 (event=359)
 //
-// 使用 ws 模块(Node WebSocket,支持自定义 headers)。
-// ponytail: 当前实现走火山引擎实时语音对话 API (v3)。
-// 二进制协议: 4-byte header + payload. 文档: https://www.volcengine.com/docs/6561
-// 后续可扩展为 OpenAI Realtime API 或本地 whisper.cpp + TTS pipeline.
+// 二进制帧格式:
+//   Header (4 bytes): 0x11 0x14 0x10 0x00 (protocol=1, header_size=1, msg_type=full_client, flags=has_event, serial=JSON)
+//   Event ID (4 bytes big-endian)
+//   Session/Connect ID size (4 bytes) + ID bytes (仅 session/connect 类事件)
+//   Payload size (4 bytes) + payload bytes
 
 import WebSocket from 'ws';
 import type { VoiceChatConfig } from '../shared/types.js';
@@ -21,25 +23,17 @@ export type VoiceChatEvent =
   | { type: 'state'; state: VoiceChatState }
   | { type: 'userText'; text: string }          // ASR 转写的用户语音文本(增量)
   | { type: 'aiText'; text: string }            // AI 回复文本(增量)
-  | { type: 'aiAudio'; data: Buffer }           // AI 回复音频(PCM 16kHz 16-bit mono)
+  | { type: 'aiAudio'; data: Buffer }           // AI 回复音频(PCM s16le 24kHz mono)
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
   | { type: 'error'; message: string }
-  | { type: 'ready' };                          // WebSocket 连接成功,可以开始说话
+  | { type: 'ready' };                          // 会话已建立,可以开始说话
 
 export type VoiceChatState = 'idle' | 'connecting' | 'connected' | 'speaking' | 'listening' | 'error';
 
-// ── 火山引擎实时语音 v3 协议常量 ──
-// Binary framing: https://www.volcengine.com/docs/6561/1354557
-const MSG_FULL_CLIENT = 0x01;       // 客户端→服务端:完整音频
-const MSG_AUDIO_ONLY_CLIENT = 0x02;  // 客户端→服务端:仅音频(无 control)
-const MSG_FULL_SERVER = 0x09;        // 服务端→客户端:完整响应
-const MSG_AUDIO_SERVER = 0x0B;       // 服务端→客户端:仅音频
-const MSG_ERROR = 0x0F;             // 服务端→客户端:错误
-
-// 序列化 JSON header (0x10 = JSON header serialization)
-const SERIAL_JSON = 0x10;
-// GZIP compression (0x00 = no compression for simplicity, audio is raw PCM)
-const COMPRESSION_NONE = 0x00;
+// ── 火山引擎常量 ──
+const WS_URL = 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
+const RESOURCE_ID = 'volc.speech.dialog';
+const APP_KEY = 'PlgvMymc7f3tQnJ6';   // 应用标识,与 studyapp 一致
 
 type EventCb = (ev: VoiceChatEvent) => void;
 
@@ -48,8 +42,8 @@ export class VoiceChat {
   private cfg: VoiceChatConfig | null = null;
   private state: VoiceChatState = 'idle';
   private cb: EventCb | null = null;
+  private connectId = '';
   private sessionId = '';
-  private sequenceNumber = 0;
 
   /** 设置事件回调 / Set event callback */
   onEvent(cb: EventCb): void {
@@ -73,19 +67,27 @@ export class VoiceChat {
     }
     this.cfg = cfg;
     this.setState('connecting');
-    this.sequenceNumber = 0;
 
     if (!cfg.appId || !cfg.accessToken) {
-      this.emit({ type: 'error', message: '缺少 App ID 或 Access Token,请在设置 → 实时语音助手中填写' });
+      this.emit({ type: 'error', message: '缺少 App ID 或 Access Token,请在设置 → 高级中配置' });
       this.setState('error');
       return;
     }
 
-    const url = cfg.wsUrl || 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue';
+    const url = cfg.wsUrl || WS_URL;
 
     try {
+      // 5 个认证 headers — 与 studyapp 已验证的实现完全一致
+      // 5 auth headers — matching studyapp's verified implementation
+      this.connectId = crypto.randomUUID();
       this.ws = new WebSocket(url, {
-        headers: this.buildHeaders(cfg),
+        headers: {
+          'X-Api-App-ID': cfg.appId,
+          'X-Api-Access-Key': cfg.accessToken,
+          'X-Api-Resource-Id': RESOURCE_ID,
+          'X-Api-App-Key': APP_KEY,
+          'X-Api-Connect-Id': this.connectId,
+        },
       });
       this.ws.binaryType = 'arraybuffer';
       this.ws.on('open', () => this.onOpen());
@@ -103,8 +105,10 @@ export class VoiceChat {
     if (this.ws) {
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
-          // 发送 finish session 消息
-          this.sendFinish();
+          // 发送 FinishSession (event=102)
+          this.sendSessionEvent(102, '{}');
+          // 发送 FinishConnection (event=2)
+          this.sendConnectEvent(2, '{}');
         }
         this.ws.close();
       } catch { /* ignore */ }
@@ -113,226 +117,276 @@ export class VoiceChat {
     this.setState('idle');
   }
 
-  /**
-   * 发送麦克风音频(PCM 16kHz 16-bit mono)
-   * Send microphone audio chunk (PCM 16kHz 16-bit mono)
-   */
+  /** 发送音频数据(由 renderer IPC 调用) / Send audio chunk (called from renderer via IPC) */
   sendAudio(pcm: Buffer): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    this.sequenceNumber++;
-    const frame = this.buildAudioFrame(pcm, this.sequenceNumber, false);
-    this.ws.send(frame);
-  }
-
-  /**
-   * 通知服务端用户开始说话(用于打断检测)
-   * Notify server that user started speaking (for interruption detection)
-   */
-  sendUserStartTalking(): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
-    // 火山引擎协议中:客户端可发送 start-talking 信号
-    // 这里用 control message 通知
+    if (this.state === 'idle' || this.state === 'error') return;
+    // event=200 TaskRequest, message_type=0b0010 (audio-only)
+    this.sendAudioFrame(pcm);
   }
 
   // ── 内部方法 / Internal methods ──
+
+  private emit(ev: VoiceChatEvent): void {
+    this.cb?.(ev);
+  }
 
   private setState(s: VoiceChatState): void {
     this.state = s;
     this.emit({ type: 'state', state: s });
   }
 
-  private emit(ev: VoiceChatEvent): void {
-    this.cb?.(ev);
-  }
-
-  /** 构建 WebSocket 握手 headers */
-  private buildHeaders(cfg: VoiceChatConfig): Record<string, string> {
-    return {
-      'X-Api-App-Key': cfg.appId,
-      'X-Api-Access-Key': cfg.accessToken,
-      'X-Api-Resource-Id': 'volc.bigasr.sauc.duration',
-      'X-Api-Connect-Id': this.genConnectId(),
-    };
-  }
-
-  private genConnectId(): string {
-    return Date.now().toString(36) + Math.random().toString(36).slice(2, 10);
-  }
-
-  /** WebSocket 连接成功 → 发送 StartSession */
+  /** WebSocket 连接成功 → 发送 StartConnection (event=1) */
   private onOpen(): void {
-    this.sessionId = this.genConnectId();
-    const startPayload = this.buildStartSession(this.cfg!);
-    this.ws!.send(JSON.stringify(startPayload));
-    this.setState('connected');
+    // StartConnection: event=1, payload="{}" (connect_id 已通过 HTTP header 传递)
+    this.sendConnectEvent(1, '{}');
   }
 
-  /** 构建 StartSession payload */
-  private buildStartSession(cfg: VoiceChatConfig): object {
-    return {
-      event: 'StartSession',
-      session_id: this.sessionId,
-      // 音频配置:16kHz 16-bit mono PCM
-      audio_format: 'pcm_s16le',
-      sample_rate: 16000,
-      channels: 1,
-      // AI 音色
-      voice_type: cfg.voiceType || 'zh_female_wanwanxiaohe_moon_bigtts',
-      // 热词、场景等可选参数
-      enable_punc: true,
-      // 实时交互模式
-      mode: 'dialogue',
-    };
-  }
+  /** 构建并发送 StartSession (event=100) */
+  private startSession(): void {
+    this.sessionId = crypto.randomUUID();
+    const cfg = this.cfg!;
 
-  /** 发送 FinishSession */
-  private sendFinish(): void {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
     const payload = {
-      event: 'FinishSession',
-      session_id: this.sessionId,
+      asr: {
+        audio_info: {
+          format: 'pcm',
+          sample_rate: 16000,
+          channel: 1,
+        },
+      },
+      dialog: {
+        bot_name: 'AI助手',
+        system_role: '你是一个友好的AI助手,请用简洁易懂的中文回答。',
+        extra: {
+          input_mod: 'keep_alive',
+          model: '1.2.1.1',    // 豆包实时语音大模型版本
+        },
+      },
+      tts: {
+        speaker: cfg.voiceType || 'zh_female_vv_jupiter_bigtts',
+        audio_config: {
+          format: 'pcm_s16le',
+          sample_rate: 24000,
+          channel: 1,
+        },
+      },
     };
-    try {
-      this.ws.send(JSON.stringify(payload));
-    } catch { /* ignore */ }
+
+    this.sendSessionEvent(100, JSON.stringify(payload));
   }
+
+  // ── 二进制帧编码 ──
+
+  /** 发送 Connect 类事件(不含 connect_id 字段,已在 HTTP header 中传递) */
+  private sendConnectEvent(eventId: number, payload: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const header = Buffer.from([0x11, 0x14, 0x10, 0x00]);  // protocol=1, header_size=1, msg_type=full_client, flags=has_event, serial=JSON
+    const eventBuf = Buffer.alloc(4);
+    eventBuf.writeUInt32BE(eventId, 0);
+    const payloadBytes = Buffer.from(payload, 'utf-8');
+    const sizeBuf = Buffer.alloc(4);
+    sizeBuf.writeUInt32BE(payloadBytes.length, 0);
+
+    this.ws.send(Buffer.concat([header, eventBuf, sizeBuf, payloadBytes]));
+  }
+
+  /** 发送 Session 类事件(含 session_id 字段) */
+  private sendSessionEvent(eventId: number, payload: string): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    const header = Buffer.from([0x11, 0x14, 0x10, 0x00]);
+    const eventBuf = Buffer.alloc(4);
+    eventBuf.writeUInt32BE(eventId, 0);
+    const sidBytes = Buffer.from(this.sessionId, 'utf-8');
+    const sidLenBuf = Buffer.alloc(4);
+    sidLenBuf.writeUInt32BE(sidBytes.length, 0);
+    const payloadBytes = Buffer.from(payload, 'utf-8');
+    const payloadSizeBuf = Buffer.alloc(4);
+    payloadSizeBuf.writeUInt32BE(payloadBytes.length, 0);
+
+    this.ws.send(Buffer.concat([header, eventBuf, sidLenBuf, sidBytes, payloadSizeBuf, payloadBytes]));
+  }
+
+  /** 发送音频帧(event=200, message_type=audio-only) */
+  private sendAudioFrame(pcm: Buffer): void {
+    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) return;
+
+    // message_type=0b0010 (audio-only), flags=0b0100 (has_event)
+    const header = Buffer.from([0x11, 0x24, 0x00, 0x00]);  // serial=raw, compression=none
+    const eventBuf = Buffer.alloc(4);
+    eventBuf.writeUInt32BE(200, 0);   // event=200 TaskRequest
+    const sidBytes = Buffer.from(this.sessionId, 'utf-8');
+    const sidLenBuf = Buffer.alloc(4);
+    sidLenBuf.writeUInt32BE(sidBytes.length, 0);
+    const payloadSizeBuf = Buffer.alloc(4);
+    payloadSizeBuf.writeUInt32BE(pcm.length, 0);
+
+    this.ws.send(Buffer.concat([header, eventBuf, sidLenBuf, sidBytes, payloadSizeBuf, pcm]));
+  }
+
+  // ── 二进制帧解析 ──
 
   /** 处理服务端消息 */
   private onMessage(data: Buffer, _isBinary: boolean): void {
-    if (!data || data.length < 4) return;
+    if (data.length < 4) return;
 
-    // 尝试解析二进制帧
-    const msgType = data[0];
-    const msgSpec = data[1];
-    // const reserved = data.readUInt16BE(2);
-    const payload = data.subarray(4);
+    // 解析 header
+    const byte1 = data[1];
+    const messageType = (byte1 >> 4) & 0x0F;
+    const messageFlags = byte1 & 0x0F;
 
-    switch (msgType) {
-      case MSG_FULL_SERVER:
-      case MSG_AUDIO_SERVER:
-        this.handleServerMessage(msgType, msgSpec, payload);
-        break;
-      case MSG_ERROR:
-        this.handleServerError(payload);
-        break;
-      default:
-        // 尝试 JSON 解析(有些版本用纯 JSON 协议)
-        this.tryJsonMessage(data);
-        break;
+    let offset = 4;  // 跳过 4-byte header
+
+    // 1) code (flags bit3, 仅 error 包)
+    let errorCode = 0;
+    if (messageFlags & 0b1000) {
+      if (offset + 4 <= data.length) {
+        errorCode = data.readUInt32BE(offset);
+        offset += 4;
+      }
     }
-  }
 
-  /** 处理服务端音频/文本消息 */
-  private handleServerMessage(msgType: number, msgSpec: number, payload: Buffer): void {
-    // 检查是否包含 JSON header
-    if (msgSpec & SERIAL_JSON || payload.length === 0) {
-      // 尝试解析 JSON 部分(控制信息)和二进制部分(音频)
-      const jsonEnd = payload.indexOf(0x7d); // '}' 的位置 — 粗略定位
-      if (jsonEnd > 0) {
-        const jsonStr = payload.subarray(0, jsonEnd + 1).toString('utf-8');
-        const audioData = payload.subarray(jsonEnd + 1);
-        try {
-          const info = JSON.parse(jsonStr);
-          this.processServerInfo(info, audioData);
-        } catch {
-          // JSON 解析失败,尝试当作纯音频
-          if (audioData.length > 0) {
-            this.emit({ type: 'aiAudio', data: audioData });
+    // 2) event (flags bit2)
+    let eventId = 0;
+    if (messageFlags & 0b0100) {
+      if (offset + 4 <= data.length) {
+        eventId = data.readUInt32BE(offset);
+        offset += 4;
+      }
+    }
+
+    // 3) sequence (flags bit1)
+    if (messageFlags & 0b0010) {
+      if (offset + 4 <= data.length) {
+        offset += 4;  // 跳过 sequence
+      }
+    }
+
+    // 4) connect_id 或 session_id (根据事件类型)
+    //    Connect 类事件 (eventId <= 99) → connect_id
+    //    Session 类事件 (eventId >= 100) → session_id
+    if (eventId > 0) {
+      const isConnectEvent = eventId <= 99;
+      if (offset + 4 <= data.length) {
+        const idLen = data.readUInt32BE(offset);
+        offset += 4;
+        if (idLen > 0 && offset + idLen <= data.length) {
+          offset += idLen;  // 跳过 ID 字段
+        }
+      }
+    }
+
+    // 5) payload
+    let payload: Buffer | null = null;
+    if (offset + 4 <= data.length) {
+      const payloadSize = data.readUInt32BE(offset);
+      offset += 4;
+      if (payloadSize > 0 && offset + payloadSize <= data.length) {
+        payload = data.subarray(offset, offset + payloadSize);
+      }
+    }
+
+    // 处理 error 包
+    if (messageType === 0x0F || errorCode > 0) {
+      const errMsg = payload ? this.extractErrorMessage(payload) : `错误码: ${errorCode}`;
+      this.emit({ type: 'error', message: `服务端错误: ${errMsg}` });
+      this.setState('error');
+      return;
+    }
+
+    // 按 eventId 处理
+    switch (eventId) {
+      case 50:  // ConnectionStarted → 发送 StartSession
+        this.startSession();
+        break;
+
+      case 51:  // ConnectionFailed
+        this.emit({ type: 'error', message: `连接被拒绝: ${payload ? payload.toString('utf-8') : '未知原因'}` });
+        this.setState('error');
+        break;
+
+      case 52:  // ConnectionFinished
+        break;
+
+      case 150:  // SessionStarted → 可以开始说话
+        this.setState('listening');
+        this.emit({ type: 'ready' });
+        break;
+
+      case 152:  // SessionFinished
+        break;
+
+      case 153:  // SessionFailed
+        this.emit({ type: 'error', message: `会话失败: ${payload ? payload.toString('utf-8') : '未知'}` });
+        this.setState('error');
+        break;
+
+      case 350:  // TTSSentenceStart → AI 开始说话
+        this.setState('speaking');
+        break;
+
+      case 352:  // TTSResponse — 音频数据(message_type=0b1011 audio-only server)
+        if (payload && payload.length > 0) {
+          this.emit({ type: 'aiAudio', data: payload });
+        }
+        break;
+
+      case 359:  // TTSEnded → AI 说完
+        this.emit({ type: 'aiAudioEnd' });
+        this.setState('listening');
+        break;
+
+      case 450:  // ASRInfo — 用户开始说话
+        this.setState('listening');
+        break;
+
+      case 451: { // ASRResponse — 识别结果
+        if (payload) {
+          const json = this.safeJson(payload);
+          if (json) {
+            const results = json.results as Array<{ text?: string }> | undefined;
+            if (results && results.length > 0) {
+              const text = results.map((r) => r.text || '').join('');
+              if (text) this.emit({ type: 'userText', text });
+            }
           }
         }
-      } else if (payload.length > 0) {
-        // 纯音频帧
-        this.setState('speaking');
-        this.emit({ type: 'aiAudio', data: payload });
+        break;
       }
-    } else {
-      // 纯音频帧
-      if (payload.length > 0) {
-        this.setState('speaking');
-        this.emit({ type: 'aiAudio', data: payload });
-      }
-    }
-  }
 
-  /** 处理服务端 JSON 信息 */
-  private processServerInfo(info: any, audioData: Buffer): void {
-    // ASR 转写结果(用户说的)
-    if (info.result?.text || info.text) {
-      const text = info.result?.text || info.text;
-      const isFinal = info.is_final || info.isFull || false;
-      if (info.from === 'user' || info.role === 'user' || !info.from) {
-        // 默认当作用户输入文本(除非标记为 AI)
-        if (info.from !== 'ai' && info.role !== 'assistant') {
-          this.emit({ type: 'userText', text });
-          this.setState('listening');
-          return;
+      case 453: { // AI 回复文本
+        if (payload) {
+          const json = this.safeJson(payload);
+          if (json) {
+            const text = json.text || json.content || '';
+            if (text) this.emit({ type: 'aiText', text: String(text) });
+          }
         }
+        break;
       }
-    }
-    // AI 回复文本
-    if (info.result?.text || info.text) {
-      const text = info.result?.text || info.text;
-      if (info.from === 'ai' || info.role === 'assistant') {
-        this.emit({ type: 'aiText', text });
-      }
-    }
-    // AI 音频
-    if (audioData.length > 0) {
-      this.setState('speaking');
-      this.emit({ type: 'aiAudio', data: audioData });
-    }
-    // 音频结束标记
-    if (info.is_last || info.end || info.event === 'AudioEnd') {
-      this.emit({ type: 'aiAudioEnd' });
-      this.setState('connected');
+
+      default:
+        // 未知事件号,忽略
+        break;
     }
   }
 
-  /** 尝试纯 JSON 解析(兼容 JSON 协议版本) */
-  private tryJsonMessage(data: Buffer): void {
+  /** 从 payload 提取错误消息 */
+  private extractErrorMessage(payload: Buffer): string {
+    const json = this.safeJson(payload);
+    if (json) return json.error || json.message || payload.toString('utf-8');
+    return payload.toString('utf-8').slice(0, 200);
+  }
+
+  /** 安全 JSON 解析 */
+  private safeJson(buf: Buffer): Record<string, any> | null {
     try {
-      const text = data.toString('utf-8');
-      const msg = JSON.parse(text);
-      // 统一处理
-      if (msg.event === 'Ready' || msg.event === 'SessionStarted') {
-        this.setState('connected');
-        this.emit({ type: 'ready' });
-      } else if (msg.event === 'Error' || msg.error) {
-        this.emit({ type: 'error', message: msg.error?.message || msg.message || '服务端错误' });
-        this.setState('error');
-      } else if (msg.event === 'ASRResult' || msg.event === 'Transcription') {
-        const asrText = msg.result?.text || msg.text || '';
-        if (asrText) this.emit({ type: 'userText', text: asrText });
-        this.setState('listening');
-      } else if (msg.event === 'LLMResult' || msg.event === 'Response') {
-        const aiText = msg.result?.text || msg.text || '';
-        if (aiText) this.emit({ type: 'aiText', text: aiText });
-      } else if (msg.event === 'TTSResult' || msg.event === 'Audio') {
-        const audioB64 = msg.data || msg.audio || '';
-        if (audioB64) {
-          const audioBuf = Buffer.from(audioB64, 'base64');
-          this.setState('speaking');
-          this.emit({ type: 'aiAudio', data: audioBuf });
-        }
-      } else if (msg.event === 'TTSEnd' || msg.event === 'AudioEnd') {
-        this.emit({ type: 'aiAudioEnd' });
-        this.setState('connected');
-      }
+      return JSON.parse(buf.toString('utf-8'));
     } catch {
-      // 不是 JSON 也不是已知二进制帧,忽略
+      return null;
     }
-  }
-
-  /** 处理服务端错误帧 */
-  private handleServerError(payload: Buffer): void {
-    const msg = payload.toString('utf-8');
-    let errMsg = msg;
-    try {
-      const j = JSON.parse(msg);
-      errMsg = j.error?.message || j.message || msg;
-    } catch { /* use raw */ }
-    this.emit({ type: 'error', message: `服务端错误: ${errMsg}` });
-    this.setState('error');
   }
 
   private onError(err: Error): void {
@@ -344,20 +398,13 @@ export class VoiceChat {
     if (this.state !== 'error') {
       this.setState('idle');
     }
-    // 非正常关闭 → 提示
+    // 1006 = 异常关闭(通常是认证失败或 TLS 问题)
     if (code !== 1000 && code !== 1005) {
-      this.emit({ type: 'error', message: `连接已断开 (code: ${code})` });
+      let hint = '';
+      if (code === 1006) {
+        hint = '(可能是 App ID / Access Key 不正确,或未开通实时语音服务)';
+      }
+      this.emit({ type: 'error', message: `连接已断开 (code: ${code}) ${hint}` });
     }
-  }
-
-  /** 构建客户端音频帧(火山引擎二进制协议) */
-  private buildAudioFrame(pcm: Buffer, sequence: number, isLast: boolean): Buffer {
-    // Header: 1 byte msg_type | 1 byte msg_spec | 2 byte sequence_high | payload
-    // 简化版:4-byte header + raw PCM
-    const header = Buffer.alloc(4);
-    header[0] = MSG_AUDIO_ONLY_CLIENT;
-    header[1] = isLast ? 0x02 : 0x00;  // negative_sequence = is_last marker
-    header.writeUInt16BE(Math.min(sequence, 0xFFFF), 2);
-    return Buffer.concat([header, pcm]);
   }
 }
