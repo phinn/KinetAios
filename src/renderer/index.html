@@ -203,6 +203,27 @@
       </div>
       <!-- plugin panels(v2.1: 插件贡献的渲染层视图, 运行时动态注入)-->
       <div id="plugin-panels-container"></div>
+
+      <!-- 实时语音对话分栏:点语音按钮后在 main 右侧展开 -->
+      <aside id="voice-chat-pane" class="voice-chat-pane" hidden>
+        <div class="vc-header">
+          <span id="vc-title" data-i18n="voice.chatOverlayTitle">🎙️ 实时语音对话</span>
+          <button class="ghost" id="vc-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+        </div>
+        <div class="vc-status" id="vc-status" data-i18n="voice.chatConnecting">正在连接…</div>
+        <div class="vc-wave" id="vc-wave">
+          <div class="vc-orb" id="vc-orb"></div>
+        </div>
+        <div class="vc-transcript" id="vc-transcript">
+          <div class="vc-line vc-user" id="vc-user-text"></div>
+          <div class="vc-line vc-ai" id="vc-ai-text"></div>
+        </div>
+        <div class="vc-controls">
+          <button class="vc-btn vc-mic-btn" id="vc-mute"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
+          <button class="vc-btn vc-end" id="vc-end" data-i18n="voice.chatEnd">结束</button>
+        </div>
+        <div class="vc-hint" id="vc-hint" data-i18n="voice.chatHintSpeak">开始说话,AI 会自动回复</div>
+      </aside>
     </main>
     <!-- town panel(居中弹出,放在 #app 下避免被 main flex 布局干扰)-->
     <div id="town-backdrop"></div>
@@ -340,28 +361,7 @@
     <div class="live-panel-body" id="live-body"></div>
   </div>
 
-  <!-- 实时语音对话浮层:全屏覆盖,显示状态/转写/AI回复 -->
-  <div id="voice-chat-overlay" class="voice-chat-overlay" hidden>
-    <div class="vc-panel">
-      <div class="vc-header">
-        <span id="vc-title" data-i18n="voice.chatOverlayTitle">🎙️ 实时语音对话</span>
-        <button class="ghost" id="vc-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
-      </div>
-      <div class="vc-status" id="vc-status" data-i18n="voice.chatConnecting">正在连接…</div>
-      <div class="vc-wave" id="vc-wave">
-        <div class="vc-orb" id="vc-orb"></div>
-      </div>
-      <div class="vc-transcript" id="vc-transcript">
-        <div class="vc-line vc-user" id="vc-user-text"></div>
-        <div class="vc-line vc-ai" id="vc-ai-text"></div>
-      </div>
-      <div class="vc-controls">
-        <button class="vc-btn vc-mic-btn" id="vc-mute"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
-        <button class="vc-btn vc-end" id="vc-end" data-i18n="voice.chatEnd">结束</button>
-      </div>
-      <div class="vc-hint" id="vc-hint" data-i18n="voice.chatHintSpeak">开始说话,AI 会自动回复</div>
     </div>
-  </div>
 
   <script src="app.js"></script>
 </body>

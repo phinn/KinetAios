@@ -3386,14 +3386,12 @@ function wireVoiceChat(): void {
     if (!vc?.enable || !vc?.appId || !vc?.accessToken) {
       btnChat.classList.add('pulse');
       setTimeout(() => btnChat.classList.remove('pulse'), 600);
-      // 在状态栏区域显示提示 / show hint in status area
-      const hint = document.getElementById('vc-hint');
-      if (hint) {
-        hint.textContent = tr('voice.chatNeedConfig');
-        hint.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(40,40,50,0.95);color:#e8c07d;padding:8px 16px;border-radius:8px;font-size:13px;z-index:10000;pointer-events:none';
-        hint.style.display = 'block';
-        setTimeout(() => { hint.style.display = ''; hint.style.cssText = ''; }, 3000);
-      }
+      // 临时在 composer-bar 上方提示 / show toast above composer
+      const toast = document.createElement('div');
+      toast.textContent = tr('voice.chatNeedConfig');
+      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(40,40,50,0.95);color:#e8c07d;padding:8px 16px;border-radius:8px;font-size:13px;z-index:10000;pointer-events:none;white-space:nowrap';
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 3000);
       return;
     }
     if (vcActive) {
@@ -3466,7 +3464,7 @@ async function startVoiceChat(): Promise<void> {
   vcMuted = false;
 
   // 显示浮层
-  const overlay = document.getElementById('voice-chat-overlay')!;
+  const overlay = document.getElementById('voice-chat-pane')!;
   overlay.hidden = false;
   document.getElementById('vc-user-text')!.textContent = '';
   document.getElementById('vc-ai-text')!.textContent = '';
@@ -3558,7 +3556,7 @@ function endVoiceChat(): void {
   api.voiceChatStop();
 
   // 隐藏浮层
-  document.getElementById('voice-chat-overlay')!.hidden = true;
+  document.getElementById('voice-chat-pane')!.hidden = true;
   document.getElementById('vc-orb')!.className = 'vc-orb';
 }
 

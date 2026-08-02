@@ -3520,25 +3520,23 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 /* ── 实时语音对话浮层 / Voice chat overlay ── */
-.voice-chat-overlay {
-  position: fixed; inset: 0;
-  background: rgba(0,0,0,0.7);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  z-index: 9999;
-  display: flex; align-items: center; justify-content: center;
+/* 实时语音对话分栏面板 — 嵌入 #main 右侧,与聊天并排 */
+/* Voice chat side panel — sits inside #main as right column */
+#main:has(#voice-chat-pane:not([hidden])) {
+  flex-direction: row;
 }
-.voice-chat-overlay[hidden] { display: none; }
-
-.vc-panel {
-  width: 480px; max-width: 90vw;
+#main:has(#voice-chat-pane:not([hidden])) > .view {
+  min-width: 0;
+}
+.voice-chat-pane {
+  width: 360px; flex-shrink: 0;
   background: var(--bg-card, rgba(30,30,40,0.95));
-  border-radius: 24px;
-  padding: 32px;
+  border-left: 1px solid var(--border, rgba(255,255,255,0.08));
   display: flex; flex-direction: column; align-items: center; gap: 16px;
-  box-shadow: 0 24px 60px rgba(0,0,0,0.5);
-  border: 1px solid var(--border, rgba(255,255,255,0.08));
+  padding: 24px 20px;
+  overflow-y: auto;
 }
+.voice-chat-pane[hidden] { display: none; }
 
 .vc-header {
   width: 100%;
