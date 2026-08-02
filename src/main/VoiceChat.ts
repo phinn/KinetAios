@@ -99,9 +99,9 @@ export class VoiceChat {
           'X-Api-Connect-Id': this.connectId,
         },
       });
-      this.ws.binaryType = 'arraybuffer';
+      // 不设 binaryType — ws 模块在 Node.js 默认传 Buffer,适合我们的 readUInt32BE 操作
       this.ws.on('open', () => this.onOpen());
-      this.ws.on('message', (data: Buffer, isBinary: boolean) => this.onMessage(data, isBinary));
+      this.ws.on('message', (data: WebSocket.RawData, isBinary: boolean) => this.onMessage(data, isBinary));
       this.ws.on('error', (err: Error) => this.onError(err));
       this.ws.on('close', (code: number, reason: Buffer) => this.onClose(code, reason));
     } catch (e) {
@@ -243,8 +243,13 @@ export class VoiceChat {
   // ── 二进制帧解析 ──
 
   /** 处理服务端消息 */
-  private onMessage(data: Buffer, _isBinary: boolean): void {
-    if (data.length < 4) return;
+  private onMessage(raw: WebSocket.RawData, isBinary: boolean): void {
+    // ws 模块可能传 ArrayBuffer / ArrayBuffer[] / Buffer，统一转 Buffer
+    const data: Buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
+    if (data.length < 4) {
+      console.log(`[VoiceChat] ⚠️ 消息过短: ${data.length}B`);
+      return;
+    }
 
     // 调试: 打印前几个字节,便于排查协议问题
     if (data.length <= 512) {
