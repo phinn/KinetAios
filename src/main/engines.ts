@@ -37,6 +37,14 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 【输出路径】生成的文件(HTML / CSV / 报告等)默认写到当前工作目录(cwd)或其子目录。
 执行 shell 前会请求用户确认。Windows 上 shell 走 cmd.exe。回复用中文,简洁。`;
 
+// 替身画像注入:从 settings 读 persona,返回带标题前缀的 section(空则空字符串)。
+// 三引擎共用:Direct 拼到 systemPrompt,Claude Code 进 --append-system-prompt,Codex 前置拼到 prompt。
+function personaSection(): string {
+  const persona = getSettings().persona?.trim();
+  if (!persona) return '';
+  return `\n\n# 🧬 替身画像(用户做事风格)\n以下是用户本人的做事风格画像。请在回答风格、方案选择、代码风格上尽量贴合画像描述,就像用户本人在操作一样:\n\n${persona}`;
+}
+
 // 子 agent 系统提示(Direct 的 dispatch_agent 用)。只读工具,完成后文本汇报。
 const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
 你只有只读工具(read_file / grep / glob / web_search / web_fetch / recall_memory)—— 不能写文件、不能起 shell、不能再派发子任务。
@@ -162,7 +170,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + personaSection() + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,
@@ -358,7 +366,7 @@ class ClaudeCodeEngine implements Engine {
     if (conv.engineSessionId) args.push('--resume', conv.engineSessionId);
     // KINET.md 规则 + KINET-CONTEXT.md 背景 + memory —— 同一个 flag 只能传一次,顺序拼接。
     // goal 不注入 CLI 引擎:Claude Code / Codex 自带 CLAUDE.md / AGENTS.md 等机制管理目标。
-    const append = (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock;
+    const append = personaSection() + (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock;
     if (append.trim()) args.push('--append-system-prompt', append);
 
     let sawResult = false;
@@ -436,7 +444,7 @@ class CodexEngine implements Engine {
     }
     // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
     // goal 不注入 CLI 引擎:Claude Code / Codex 自带目标管理机制。
-    const head = [(rulesBlock ?? '').trim(), (contextBlock ?? '').trim(), (memoryBlock ?? '').trim()].filter(Boolean).join('\n\n---\n\n');
+    const head = [personaSection().trim(), (rulesBlock ?? '').trim(), (contextBlock ?? '').trim(), (memoryBlock ?? '').trim()].filter(Boolean).join('\n\n---\n\n');
     const fullPrompt = head ? `${head}\n\n---\n\n${prompt}` : prompt;
     // exec-level flags (--json/-C/--add-dir/-s/--skip-git-repo-check) MUST precede the resume subcommand,
     // else clap parses them as resume args and exits status=2.
