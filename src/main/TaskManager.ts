@@ -735,6 +735,106 @@ export class TaskManager {
     this.emit.emitConversation(conv);
     return conv;
   }
+
+  // ── 替身画像生成 ──
+  // 分析历史对话 + 记忆,调 LLM 总结出用户的做事风格 Markdown。
+  // Analyze history + memories, ask LLM to produce a structured persona profile.
+  async generatePersona(): Promise<{ ok: boolean; persona?: string; stats?: { conversations: number; turns: number; memories: number }; error?: string }> {
+    try {
+      const snap = snapshot();
+      const recentTurns = store.loadRecentTurns(200);
+      const memories = store.loadMemories();
+      const conversations = store.loadConversations();
+
+      if (recentTurns.length === 0 && memories.length === 0) {
+        return { ok: false, error: '历史数据不足,无法生成画像(需要至少一轮对话或一条记忆)' };
+      }
+
+      // 拼接对话样本(最多 100 轮,每轮 prompt + answer 前 500 字)
+      // Assemble conversation samples (max 100 turns, truncate each to 500 chars)
+      const turnSamples = recentTurns.slice(0, 100).map((t, i) =>
+        `[对话${i + 1} | ${t.engine} | ${t.cwd}]\n用户: ${t.prompt.slice(0, 300)}\n助手: ${t.answer.slice(0, 500)}`,
+      ).join('\n\n---\n\n');
+
+      // 记忆样本(最多 200 条)
+      const memorySamples = memories.slice(0, 200).map((m) => `- ${m.content}`).join('\n');
+
+      const sys = `你是用户行为分析师。根据用户的历史对话和长期记忆,生成一份结构化的「用户做事风格画像」。
+这份画像将用于构建 AI 替身 —— 让 AI 能以用户本人的风格自主使用工具完成任务。
+
+输出 Markdown 格式,包含以下部分(某部分信息不足可跳过,不要编造):
+
+## 沟通风格
+- 语言习惯、句式特征、详细度偏好
+- 提问方式(直接给指令 / 描述问题等)
+
+## 技术画像
+- 主力技术栈、编程语言、框架
+- 常用工具链和开发环境
+- 熟悉的领域和技术
+
+## 工作偏好
+- 偏好的方案风格(最小改动 / 彻底重构 / 快速落地等)
+- 对代码质量的要求(验收标准)
+- commit / 文档习惯
+
+## 项目背景
+- 正在进行的主要项目
+- 产品领域和目标用户
+
+## 决策模式
+- 遇到选择题时倾向于怎么选
+- 什么时候会打断 / 纠正 AI
+- 对自主执行的容忍度
+
+## 替身指令
+(给 AI 替身的直接指令,以 "你扮演上述用户,使用 KinetAios 完成任务时:" 开头,列出 3-5 条核心行为准则)
+
+只输出 Markdown,不要加额外解释。基于实际数据,不要编造。`;
+
+      const user = `## 用户历史对话样本(最近 ${recentTurns.length} 轮,共 ${conversations.length} 个会话)
+
+${turnSamples || '(无对话样本)'}
+
+## 用户长期记忆(${memories.length} 条)
+
+${memorySamples || '(无记忆)'}`;
+
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 60_000);
+      try {
+        const comp = await currentProvider(snap).streamComplete(
+          [
+            { role: 'system', content: sys },
+            { role: 'user', content: user },
+          ],
+          [],
+          snap,
+          ac.signal,
+          () => {},
+        );
+        clearTimeout(timer);
+
+        if (!comp.content || comp.content.trim().length < 50) {
+          return { ok: false, error: '生成结果过短,可能模型未正确响应' };
+        }
+
+        return {
+          ok: true,
+          persona: comp.content.trim(),
+          stats: {
+            conversations: conversations.length,
+            turns: recentTurns.length,
+            memories: memories.length,
+          },
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  }
 }
 
 function isCliEngine(e: EngineKind): boolean {

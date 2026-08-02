@@ -1431,6 +1431,24 @@ function registerIpc(): void {
     return taskManager.saveDirectHistory(convId, history);
   });
 
+  // ── 替身画像(Persona)──
+  ipcMain.handle('generate-persona', async () => {
+    return taskManager.generatePersona();
+  });
+  ipcMain.handle('get-persona', () => {
+    return { ok: true, persona: getSettings().persona ?? '' };
+  });
+  ipcMain.handle('save-persona', (_e, persona: string) => {
+    try {
+      const s = getSettings();
+      s.persona = persona;
+      saveSettings(s);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   // ── 跨会话引用 + Agent 任务图 ──
   ipcMain.handle('task-graph', () => {
     return loadTaskGraph();

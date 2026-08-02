@@ -1393,6 +1393,10 @@ a { color: var(--accent); }
 .s-plugin-stats { display: flex; gap: 16px; padding: 10px 14px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elev, rgba(255,255,255,0.02)); }
 .s-plugin-stat { display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .s-plugin-stat-num { font-size: 18px; font-weight: 700; color: var(--text); }
+
+/* 替身画像编辑器 / Persona editor */
+.s-persona-editor { line-height: 1.6; }
+.s-persona-editor:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(232,179,57,.1); }
 .s-plugin-stat-label { font-size: 10px; color: var(--muted, var(--text-dim)); text-transform: uppercase; letter-spacing: .04em; }
 .s-plugin-stat-warn .s-plugin-stat-num { color: var(--danger); }
 

@@ -38,6 +38,7 @@ const DEFAULTS: AppSettings = {
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
   voiceAutoSend: false, // 语音实时输入默认关闭(开启后 Web Speech API 实时转写 + VAD 自动发送)
   hifiContextBudget: 200000, // 高保真模式上下文预算(默认 200K token,适配 GLM-5.2 的 1M 窗口)
+  persona: '', // 替身画像:分析历史对话生成的用户风格描述(空 = 未生成)
 };
 
 let cache: AppSettings | null = null;

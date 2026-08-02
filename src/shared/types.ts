@@ -97,6 +97,10 @@ export type AppSettings = {
   // ── 高保真模式上下文预算(token)── 控制高保真模式的 reactive trim / compactHistory 预算上限。
   // 默认 200000(GLM-5.2 有 1M 窗口,留余量给 system prompt + 多轮对话)。
   hifiContextBudget: number;
+  // ── 替身画像(Persona)── 从历史对话中提取的用户做事风格 Markdown 文本。
+  // 替身模式开启后注入 Direct 引擎 systemPrompt,让 AI 模仿用户风格自主执行任务。
+  // 空字符串 = 未生成,替身功能不可用。
+  persona: string;
 };
 
 // A discoverable skill from ~/.claude/skills or ~/.codex/skills (SKILL.md frontmatter). The slash
@@ -495,6 +499,13 @@ export interface KinetAPI {
   // ── Visual Inspector:获取 webview 的 guestInstanceId ──
   // webview 嵌在 renderer,但 guestInstanceId 只有通过 Electron webview API 才能拿到。
   // preload 直接暴露无返回值的桥即可,renderer 自己 webview.getGuestInstanceId()。
+  // ── 替身画像(Persona)── 分析历史对话生成风格画像 / 读取 / 保存 ──
+  /** 分析历史对话 + 记忆,生成用户做事风格画像(markdown) */
+  generatePersona(): Promise<{ ok: boolean; persona?: string; stats?: { conversations: number; turns: number; memories: number }; error?: string }>;
+  /** 读取已保存的画像(settings.persona 的便捷接口) */
+  getPersona(): Promise<{ ok: boolean; persona?: string; error?: string }>;
+  /** 保存画像(用户编辑后回写) */
+  savePersona(persona: string): Promise<{ ok: boolean; error?: string }>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

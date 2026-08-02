@@ -251,6 +251,26 @@ export function loadConversations(): Conversation[] {
   });
 }
 
+// 批量读取最近的 turns(prompt + answer),供替身画像分析用。
+// Load recent turns (prompt + answer) for persona generation.
+export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: string; engine: string; cwd: string }> {
+  const rows = db.prepare(
+    `SELECT t.data, c.engine, c.cwd FROM turns t
+     JOIN conversations c ON t.conv_id = c.id
+     ORDER BY t.created_at DESC LIMIT ?;`,
+  ).all(limit) as Array<{ data: string; engine: string; cwd: string }>;
+  const results: Array<{ prompt: string; answer: string; engine: string; cwd: string }> = [];
+  for (const r of rows) {
+    try {
+      const t = JSON.parse(r.data) as { prompt?: string; answer?: string };
+      if (t.prompt && t.answer && t.answer.length > 20) {
+        results.push({ prompt: t.prompt, answer: t.answer, engine: r.engine, cwd: r.cwd });
+      }
+    } catch { /* skip malformed */ }
+  }
+  return results;
+}
+
 // MARK: long-term memory (injected into the system prompt)
 // convId 过滤:有值只返回该频道产生的;undefined 返回全部。
 export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null }> {

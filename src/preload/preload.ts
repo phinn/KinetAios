@@ -133,6 +133,10 @@ const api: KinetAPI = {
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
   // Visual Inspector:向 webview guest 注入脚本执行,返回结果
   webviewInspect: (guestInstanceId: number, script: string) => ipcRenderer.invoke('webview-inspect', guestInstanceId, script),
+  // ── 替身画像(Persona)──
+  generatePersona: () => ipcRenderer.invoke('generate-persona'),
+  getPersona: () => ipcRenderer.invoke('get-persona'),
+  savePersona: (persona: string) => ipcRenderer.invoke('save-persona', persona),
 
   onAgentEvent: (cb) => {
     ipcRenderer.removeAllListeners('agent-event');

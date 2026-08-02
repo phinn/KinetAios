@@ -1316,6 +1316,7 @@ async function showSettings() {
         <button class="s-tab" data-stab="behavior">行为</button>
         <button class="s-tab" data-stab="advanced">高级</button>
         <button class="s-tab" data-stab="plugins">插件</button>
+        <button class="s-tab" data-stab="persona">替身</button>
         <button class="s-tab" data-stab="mesh">多机协作</button>
       </div>
 
@@ -1460,6 +1461,28 @@ async function showSettings() {
         </div>
       </div><!-- /plugins panel -->
 
+      <div class="s-tab-panel" data-panel="persona" style="display:none">
+        <div class="s-section">
+          <h3>🧬 替身画像</h3>
+          <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:14px">
+            从你的历史对话(${(await api.getConversations()).length} 个会话)和记忆中提取做事风格,生成结构化画像。
+            画像将作为 AI 替身的「人格设定」—— 让 AI 以你的方式自主使用 KinetAios 完成任务。
+          </div>
+          <div style="display:flex;gap:8px;margin-bottom:14px">
+            <button id="s-persona-gen" style="padding:6px 16px">生成画像</button>
+            <button id="s-persona-save" style="padding:6px 16px;display:none">保存修改</button>
+            <span class="test-msg" id="s-persona-msg"></span>
+          </div>
+          <div id="s-persona-stats" style="color:var(--muted);font-size:11px;margin-bottom:10px"></div>
+          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="点击「生成画像」按钮,或在此手动编写你的替身画像…" style="width:100%;min-height:400px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px;display:none"></textarea>
+          <div id="s-persona-empty" style="padding:40px;text-align:center;color:var(--muted)">
+            <div style="font-size:36px;margin-bottom:12px;opacity:.4">🧬</div>
+            <div>尚未生成替身画像</div>
+            <div style="font-size:11px;margin-top:4px">点击「生成画像」开始</div>
+          </div>
+        </div>
+      </div><!-- /persona panel -->
+
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
         <h3>${ICON.link} 多机协作 (MCP Bridge)</h3>
@@ -1544,6 +1567,9 @@ async function showSettings() {
     const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
     (document.getElementById('s-mcp-token') as HTMLInputElement).value = token;
   };
+
+  // ── 替身画像(Persona)──
+  await initPersonaTab(s.persona ?? '');
 
   document.getElementById('s-back')!.onclick = () => showChat();
   document.getElementById('s-preset')!.onchange = apply;
@@ -2164,6 +2190,7 @@ function readSettingsForm(): AppSettings {
     disabledPlugins: disabledPluginsCache,
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
+    persona: (document.getElementById('s-persona-editor') as HTMLTextAreaElement)?.value ?? '', // 替身画像(从编辑器读)
   };
 }
 
@@ -2180,6 +2207,69 @@ function formatResetTime(reset: string): string {
   if (h < 1) return `(${Math.round(h * 60)}m后)`;
   if (h < 24) return `(${h.toFixed(1)}h后)`;
   return `(${Math.round(h / 24)}d后)`;
+}
+
+// ── 替身画像(Persona)tab 初始化 ──
+// Initialize persona tab: load existing persona or show empty state, wire buttons.
+async function initPersonaTab(existing: string): Promise<void> {
+  const editor = document.getElementById('s-persona-editor') as HTMLTextAreaElement | null;
+  const empty = document.getElementById('s-persona-empty')!;
+  const saveBtn = document.getElementById('s-persona-save')!;
+  const genBtn = document.getElementById('s-persona-gen')!;
+  const msgEl = document.getElementById('s-persona-msg')!;
+  const statsEl = document.getElementById('s-persona-stats')!;
+
+  // 如果已有画像,显示编辑器
+  if (existing && existing.trim()) {
+    editor!.value = existing;
+    editor!.style.display = '';
+    empty.style.display = 'none';
+    saveBtn.style.display = '';
+  }
+
+  genBtn.onclick = async () => {
+    genBtn.textContent = '生成中…';
+    genBtn.setAttribute('disabled', 'true');
+    msgEl.textContent = '正在分析历史对话和记忆,可能需要 30-60 秒…';
+    msgEl.className = 'test-msg';
+    try {
+      const res = await api.generatePersona();
+      if (res.ok && res.persona) {
+        editor!.value = res.persona;
+        editor!.style.display = '';
+        empty.style.display = 'none';
+        saveBtn.style.display = '';
+        msgEl.textContent = '画像已生成';
+        msgEl.className = 'test-msg ok';
+        if (res.stats) {
+          statsEl.textContent = `基于 ${res.stats.conversations} 个会话、${res.stats.turns} 轮对话、${res.stats.memories} 条记忆生成`;
+        }
+        // 自动保存
+        await api.savePersona(res.persona);
+      } else {
+        msgEl.textContent = res.error || '生成失败';
+        msgEl.className = 'test-msg bad';
+      }
+    } catch (e) {
+      msgEl.textContent = (e as Error)?.message ?? String(e);
+      msgEl.className = 'test-msg bad';
+    } finally {
+      genBtn.textContent = '生成画像';
+      genBtn.removeAttribute('disabled');
+    }
+  };
+
+  saveBtn.onclick = async () => {
+    const persona = editor!.value.trim();
+    const res = await api.savePersona(persona);
+    if (res.ok) {
+      msgEl.textContent = '已保存';
+      msgEl.className = 'test-msg ok';
+    } else {
+      msgEl.textContent = res.error || '保存失败';
+      msgEl.className = 'test-msg bad';
+    }
+  };
 }
 
 function showMsg(text: string, ok: boolean) {
