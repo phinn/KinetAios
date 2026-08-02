@@ -1758,6 +1758,38 @@ function registerIpc(): void {
     dashboardWin?.webContents.send('voice-chat-event', payload);
   });
 
+  // 用户语音 → 转发给当前活跃频道的 Agent 执行
+  voiceChat.onUserMessage(async (text: string) => {
+    // 找到最近活跃的频道(最后一个非 running 的,或列表第一个)
+    const convs = taskManager.list();
+    if (convs.length === 0) {
+      voiceChat.agentResult('当前没有活跃的聊天频道。');
+      return;
+    }
+    // 取第一个频道作为活跃频道(与 dashboard 列表顺序一致)
+    const conv = convs[0];
+    if (conv.status === 'running') {
+      voiceChat.agentResult('频道正在执行任务中,请稍候。');
+      return;
+    }
+    // 监听 Agent 完成 — 通过 emitter 的 emitConversation 检测 turn.done
+    const checkInterval = setInterval(() => {
+      const updated = taskManager.list().find((c) => c.id === conv.id);
+      if (!updated) return;
+      const lastTurn = updated.turns[updated.turns.length - 1];
+      if (lastTurn && lastTurn.done) {
+        clearInterval(checkInterval);
+        const answer = lastTurn.answer || lastTurn.error || '(无回复)';
+        // 截取前 2000 字(太长语音播不完)
+        voiceChat.agentResult(answer.slice(0, 2000));
+      }
+    }, 500);
+    // 超时清理(60s)
+    setTimeout(() => clearInterval(checkInterval), 60_000);
+    // 发给 Agent
+    taskManager.send(conv.id, text);
+  });
+
   ipcMain.handle('voice-chat-start', async () => {
     const s = getSettings();
     if (!s.voiceChat?.appId || !s.voiceChat?.accessToken) {

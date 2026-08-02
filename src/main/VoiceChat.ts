@@ -25,6 +25,7 @@ export type VoiceChatEvent =
   | { type: 'aiText'; text: string }            // AI 回复文本(增量)
   | { type: 'aiAudio'; data: Buffer }           // AI 回复音频(PCM s16le 24kHz mono)
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
+  | { type: 'agentReply'; text: string }        // Agent 执行结果(来自当前频道)
   | { type: 'error'; message: string }
   | { type: 'ready' };                          // 会话已建立,可以开始说话
 
@@ -44,15 +45,27 @@ export class VoiceChat {
   private cb: EventCb | null = null;
   private connectId = '';
   private sessionId = '';
+  private lastUserText = '';                    // 最近一句 ASR 识别文本(增量累积)
+  private userMsgCb: ((text: string) => void) | null = null;
 
   /** 设置事件回调 / Set event callback */
   onEvent(cb: EventCb): void {
     this.cb = cb;
   }
 
+  /** 设置"用户完整发言"回调 — ASR 判定一句话结束时触发,main 可据此调用 Agent */
+  onUserMessage(cb: (text: string) => void): void {
+    this.userMsgCb = cb;
+  }
+
   /** 当前状态 / Current state */
   getState(): VoiceChatState {
     return this.state;
+  }
+
+  /** Agent 执行完毕,把结果文本推给 renderer 显示 + 朗读 */
+  agentResult(text: string): void {
+    if (text) this.emit({ type: 'agentReply', text });
   }
 
   /** 是否活跃 / Is active */
@@ -369,14 +382,17 @@ export class VoiceChat {
         this.setState('listening');
         break;
 
-      case 451: { // ASRResponse — 识别结果
+      case 451: { // ASRResponse — 识别结果(增量)
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
             const results = json.results as Array<{ text?: string }> | undefined;
             if (results && results.length > 0) {
               const text = results.map((r) => r.text || '').join('');
-              if (text) this.emit({ type: 'userText', text });
+              if (text) {
+                this.lastUserText = text;  // 累积最新文本
+                this.emit({ type: 'userText', text });
+              }
             }
           }
         }
@@ -408,7 +424,13 @@ export class VoiceChat {
       case 559:  // ChatEnded — 模型回复结束
         break;
 
-      case 459:  // ASREnded — 用户说话结束
+      case 459: // ASREnded — 用户说话结束,触发 Agent 查询
+        if (this.lastUserText && this.userMsgCb) {
+          const msg = this.lastUserText;
+          this.lastUserText = '';
+          console.log('[VoiceChat] 📋 用户完整发言,转发给 Agent:', msg);
+          this.userMsgCb(msg);
+        }
         break;
 
       case 599: { // DialogCommonError

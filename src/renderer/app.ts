@@ -3449,6 +3449,24 @@ function wireVoiceChat(): void {
         }
         document.getElementById('vc-ai-text')!.textContent = vcAiText;
         break;
+      case 'agentReply': {
+        // Agent 执行结果(来自当前频道的 AgentLoop)
+        // 在 AI 文本区显示(覆盖豆包的通用回复,因为 Agent 结果更准确)
+        vcAiText = ev.text;
+        document.getElementById('vc-ai-text')!.textContent = vcAiText;
+        // 用浏览器内置语音合成朗读结果
+        try {
+          const utter = new SpeechSynthesisUtterance(ev.text.slice(0, 500));
+          utter.lang = 'zh-CN';
+          utter.rate = 1.0;
+          // 尝试选中文女声
+          const voices = window.speechSynthesis.getVoices();
+          const zhVoice = voices.find((v) => v.lang.startsWith('zh') && /female|女|wan/i.test(v.name));
+          if (zhVoice) utter.voice = zhVoice;
+          window.speechSynthesis.speak(utter);
+        } catch { /* 浏览器不支持语音合成则静默 */ }
+        break;
+      }
       case 'aiAudio':
         playAiAudio(ev.data);
         break;
