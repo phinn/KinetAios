@@ -1446,7 +1446,14 @@ async function showSettings() {
         <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="火山引擎控制台 → 语音技术 → 应用管理" /></div>
         <div class="field"><label>Access Key</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎控制台 → 实时语音 → Access Key" /></div>
         <div class="field"><label>WebSocket 地址</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
-        <div class="field"><label>音色 ID</label><input id="s-vc-voicetype" value="${esc(s.voiceChat?.voiceType ?? 'zh_female_vv_jupiter_bigtts')}" placeholder="如 zh_female_vv_jupiter_bigtts" style="font-family:var(--mono);font-size:12px" /></div>
+        <div class="field"><label>音色</label><select id="s-vc-voicetype" style="font-family:var(--mono);font-size:12px">
+          ${[
+            ['zh_female_vv_jupiter_bigtts', 'vv（活泼女声）'],
+            ['zh_female_xiaohe_jupiter_bigtts', '小何（甜美女声）'],
+            ['zh_male_yunzhou_jupiter_bigtts', '云舟（沉稳男声）'],
+            ['zh_male_xiaotian_jupiter_bigtts', '小天（磁性男声）'],
+          ].map(([v, label]) => `<option value="${v}" ${(s.voiceChat?.voiceType ?? 'zh_female_vv_jupiter_bigtts') === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select></div>
       </div>
 
       </div><!-- /advanced panel -->
@@ -2209,8 +2216,8 @@ function readSettingsForm(): AppSettings {
       accessToken: (document.getElementById('s-vc-token') as HTMLInputElement).value.trim(),
       wsUrl: (document.getElementById('s-vc-wsurl') as HTMLInputElement).value.trim() ||
         'wss://openspeech.bytedance.com/api/v3/realtime/dialogue',
-      voiceType: (document.getElementById('s-vc-voicetype') as HTMLInputElement).value.trim() ||
-        'zh_female_wanwanxiaohe_moon_bigtts',
+      voiceType: (document.getElementById('s-vc-voicetype') as HTMLSelectElement).value ||
+        'zh_female_vv_jupiter_bigtts',
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
   };
