@@ -932,15 +932,16 @@ function renderHead(conv: Conversation | undefined) {
   dot.className = `dot ${cls}`;
   title.textContent = conv.customTitle || conv.turns[0]?.prompt.slice(0, 60) || tr('head.newConv');
   if (document.activeElement !== cwd) cwd.value = conv.cwd;
-  // 配置档下拉:只在 Direct 引擎 + 有配置档时显示;有配置档时隐藏 model-input
+  // 配置档下拉:Direct 家族引擎(direct + directV2)+ 有配置档时显示
   const profileSel = document.getElementById('profile-select') as HTMLSelectElement | null;
   const hasProfiles = !!(profileSel && profileSel.options.length > 1);
+  const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2';
   if (profileSel) {
     profileSel.value = conv.profileId || '';
-    profileSel.style.display = (conv.engine === 'direct' && hasProfiles) ? '' : 'none';
+    profileSel.style.display = (isDirectFam && hasProfiles) ? '' : 'none';
   }
-  // Model picker only matters for Direct (claudeCode/codex use their own CLI models) → hide otherwise.
-  model.style.display = (conv.engine === 'direct' && !hasProfiles) ? '' : 'none';
+  // Model picker only matters for Direct family (CLI engines use their own models)
+  model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
   syncEngineSelect(conv);
   const parts: string[] = [];
@@ -968,7 +969,7 @@ function renderHead(conv: Conversation | undefined) {
   if (ctxSel) {
     ctxSel.value = conv.contextMode || 'standard';
     ctxSel.classList.toggle('hifi', ctxSel.value === 'hifi');
-    ctxSel.style.display = conv.engine === 'direct' ? '' : 'none';
+    ctxSel.style.display = isDirectFam ? '' : 'none';
   }
 }
 
@@ -978,7 +979,8 @@ function renderHead(conv: Conversation | undefined) {
 function syncEngineSelect(conv: Conversation | undefined) {
   const sel = document.getElementById('engine-select') as HTMLSelectElement;
   const current = conv?.engine ?? 'direct';
-  const want: EngineKind[] = cliEnabled ? ['direct', 'claudeCode', 'codex'] : ['direct'];
+  // Direct 家族永远可用;CLI 引擎需要 enableCliEngines。
+  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'claudeCode', 'codex'] : ['direct', 'directV2'];
   if (!want.includes(current)) want.push(current);
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
@@ -1351,6 +1353,11 @@ async function showSettings() {
         </select></div>
         <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.plan')}</label></div>
         <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.cli')}</label></div>
+        <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
+          <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
+          <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>Kaios v2 (Plan·Verify)</option>
+          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>Claude Code</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
+        </select></div>
         <div class="field"><label><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.voiceAutoSend')}</label></div>
       </div>
 
@@ -2188,6 +2195,7 @@ function readSettingsForm(): AppSettings {
     sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
     enableCliEngines: (document.getElementById('s-cli') as HTMLInputElement).checked,
+    defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
@@ -4380,8 +4388,8 @@ async function ensureSkills(): Promise<SkillInfo[]> {
 function handleSlash(composer: HTMLTextAreaElement): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   const v = composer.value;
-  // Only while the user is still typing the name token (no space yet) and only for Direct.
-  if (conv?.engine !== 'direct' || !v.startsWith('/') || /\s/.test(v.slice(1))) {
+  // Only while the user is still typing the name token (no space yet) and only for Direct family.
+  if (!conv || (conv.engine !== 'direct' && conv.engine !== 'directV2') || !v.startsWith('/') || /\s/.test(v.slice(1))) {
     closeSlash();
     return;
   }
@@ -5388,6 +5396,7 @@ function renderPipelineStages(): void {
         <input class="pl-stage-label" value="${esc(s.label || '')}" placeholder="Step ${i + 1}" />
         <select class="pl-stage-engine">
           <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
+          <option value="directV2" ${s.engine === 'directV2' ? 'selected' : ''}>Kaios v2</option>
           ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>Claude Code</option>` : ''}
           ${cliEnabled ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
         </select>

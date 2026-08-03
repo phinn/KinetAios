@@ -222,7 +222,7 @@ export function loadConversations(): Conversation[] {
       /* leave empty */
     }
     const turns = loadTurns(r.id);
-    const engine: EngineKind = (['direct', 'claudeCode', 'codex'] as const).includes(r.engine as EngineKind)
+    const engine: EngineKind = (['direct', 'directV2', 'claudeCode', 'codex'] as const).includes(r.engine as EngineKind)
       ? (r.engine as EngineKind)
       : 'direct';
     const conv: Conversation = {

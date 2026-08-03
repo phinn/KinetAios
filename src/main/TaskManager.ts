@@ -23,6 +23,8 @@ export class TaskManager {
   private aborts = new Map<string, AbortController>();
   // Goal loop 取消标志:cancel() 设置后,runGoalLoop 的下一轮检查时退出。
   private goalLoopStopped = new Set<string>();
+  // 追踪每个会话切换前的引擎(用于判断同族切换是否需要清空上下文)。
+  private lastEngine: Record<string, EngineKind> = {};
   private engines: Map<EngineKind, Engine>;
 
   constructor(private emit: TaskManagerEmitter) {
@@ -44,10 +46,11 @@ export class TaskManager {
     return this.convs.get(id);
   }
 
-  newConversation(cwd: string, engine: EngineKind = 'direct'): Conversation {
+  newConversation(cwd: string, engine?: EngineKind): Conversation {
+    const eng = engine ?? getSettings().defaultEngine ?? 'direct';
     const conv: Conversation = {
       id: rid(),
-      engine,
+      engine: eng,
       model: getSettings().model,
       cwd,
       createdAt: Date.now(),
@@ -69,13 +72,18 @@ export class TaskManager {
 
   // Switch engine mid-conversation. Clears cross-protocol context (directHistory + CLI session),
   // same as Swift AgentTask.setEngine — a Claude session id is meaningless to Codex, etc.
+  // Direct 家族(direct ↔ directV2)共享 directHistory,切换不清空。
   setEngine(id: string, engine: EngineKind): void {
     const conv = this.convs.get(id);
     if (!conv || conv.engine === engine) return;
     if (isCliEngine(engine) && !getSettings().enableCliEngines) return; // toggle off → refuse
     conv.engine = engine;
-    conv.directHistory = [];
-    conv.engineSessionId = null;
+    // 跨族切换才清空上下文(同族 direct ↔ directV2 保留)
+    if (!isDirectFamily(engine) || !isDirectFamily(this.lastEngine[id] ?? engine)) {
+      conv.directHistory = [];
+      conv.engineSessionId = null;
+    }
+    this.lastEngine[id] = engine;
     store.saveConversation(conv);
     this.emit.emitConversation(conv);
   }
@@ -234,7 +242,7 @@ export class TaskManager {
     // their own CLI skill systems). The /name token stays in the prompt (harmless context); the
     // real instruction is the injected body. Unknown names resolve to null → no injection.
     let skillBlock: string | undefined;
-    if (conv.engine === 'direct') {
+    if (isDirectFamily(conv.engine)) {
       const m = prompt.match(/^\/([\w-]+)/);
       if (m) {
         const body = loadSkillBody(m[1]);
@@ -295,7 +303,7 @@ export class TaskManager {
     if (!this.convs.has(id)) return;
 
     // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
-    if (conv.engine === 'direct') store.saveDirectHistory(conv);
+    if (isDirectFamily(conv.engine)) store.saveDirectHistory(conv);
     // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
     // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
     const lastTurn = conv.turns[conv.turns.length - 1];
@@ -305,7 +313,7 @@ export class TaskManager {
     this.emit.emitConversation(conv); // final flush
 
     // ── Goal Auto-Loop:有 goal 且本轮未出错且未标记完成 → 自动发下一轮 ──
-    if (conv.goal && conv.engine === 'direct' && lastTurn && !lastTurn.error && lastTurn.answer) {
+    if (conv.goal && isDirectFamily(conv.engine) && lastTurn && !lastTurn.error && lastTurn.answer) {
       // 立即恢复 running 状态(applyEvent 的 done 会把它设成 ready,这里夺回)
       conv.status = 'running';
       this.emit.emitConversation(conv);
@@ -839,6 +847,12 @@ ${memorySamples || '(无记忆)'}`;
 
 function isCliEngine(e: EngineKind): boolean {
   return e === 'claudeCode' || e === 'codex';
+}
+
+// Direct 家族引擎(direct + directV2)共享 directHistory 上下文。
+// 切换引擎时,同族之间保留上下文,跨族(→ CLI)清空。
+function isDirectFamily(e: EngineKind): boolean {
+  return e === 'direct' || e === 'directV2';
 }
 
 // cwd must exist and be a directory; otherwise CLIs ENOENT with an opaque message.

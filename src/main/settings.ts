@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, safeStorage } from 'electron';
-import type { AppSettings, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
+import type { AppSettings, ConfigSnapshot, EmbedSnapshot, EngineKind } from '../shared/types';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
 const DEFAULTS: AppSettings = {
@@ -15,6 +15,7 @@ const DEFAULTS: AppSettings = {
   sandbox: 'workspaceWrite',
   planMode: false,
   enableCliEngines: false,
+  defaultEngine: 'direct' as EngineKind,
   priceInPerMTok: 0.07, // GLM ¥0.5/1M in ≈ $0.07
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',

@@ -39,7 +39,7 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 
 // 替身画像注入:从 settings 读 persona,返回带标题前缀的 section(空则空字符串)。
 // 三引擎共用:Direct 拼到 systemPrompt,Claude Code 进 --append-system-prompt,Codex 前置拼到 prompt。
-function personaSection(): string {
+export function personaSection(): string {
   const persona = getSettings().persona?.trim();
   if (!persona) return '';
   return `\n\n# 🧬 替身画像(用户做事风格)\n以下是用户本人的做事风格画像。请在回答风格、方案选择、代码风格上尽量贴合画像描述,就像用户本人在操作一样:\n\n${persona}`;
@@ -68,7 +68,7 @@ export interface Engine {
 
 // 项目规则文件注入 system prompt —— 约定大于配置。
 // 优先级: KinetAios.md > AGENTS.md > CLAUDE.md（第一个找到的即用，不合并）
-function loadProjectRules(cwd: string): string {
+export function loadProjectRules(cwd: string): string {
   for (const name of ['KinetAios.md', 'AGENTS.md', 'CLAUDE.md']) {
     try {
       const body = fs.readFileSync(path.join(cwd, name), 'utf8');
@@ -221,7 +221,7 @@ const execFileAsync = promisify(execFile);
 // 跨引擎子任务(dispatch_agent engine=claudeCode/codex)的 one-shot CLI 调用:
 // 不走 stream-json 解析,直接 execFile + 全量 stdout。CLI 失败/超时返回错误文本而非抛错(子任务不应阻塞主流程)。
 // ponytail: maxBuffer 10MB;再大就走流式(目前没遇到)。codex exec 默认输出 JSON,模型自己解析。
-async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd: string, signal: AbortSignal): Promise<string> {
+export async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd: string, signal: AbortSignal): Promise<string> {
   const bin = resolveBin(engine === 'claudeCode' ? 'claude' : 'codex');
   if (!bin.found) return `(${engine} CLI 不在 PATH,跳过子任务)`;
   // 安全:Windows 上 .cmd 走 shell:true,prompt 如果含 &|> 等 cmd 元字符会导致命令注入。
@@ -550,9 +550,12 @@ class CodexEngine implements Engine {
   }
 }
 
+import { DirectV2Engine } from './DirectV2Engine';
+
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   return new Map<EngineKind, Engine>([
     ['direct', new DirectEngine(confirm)],
+    ['directV2', new DirectV2Engine(confirm)],
     ['claudeCode', new ClaudeCodeEngine()],
     ['codex', new CodexEngine()],
   ]);

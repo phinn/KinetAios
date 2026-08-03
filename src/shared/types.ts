@@ -23,7 +23,7 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 // (never/onFailure/onRequest/untrusted) — none of those need the multi-agent machinery, add when needed.
 export type ApprovalPolicy = 'always' | 'never';
 
-export type EngineKind = 'direct' | 'claudeCode' | 'codex';
+export type EngineKind = 'direct' | 'directV2' | 'claudeCode' | 'codex';
 
 // 上下文模式 —— 控制工具结果截断策略与上下文预算。以后可扩展更多模式(如 deep-research)。
 // Context mode — controls tool result truncation + context budget. Extensible for future modes.
@@ -31,6 +31,7 @@ export type ContextMode = 'standard' | 'hifi';
 export const CONTEXT_MODES: ContextMode[] = ['standard', 'hifi'];
 export const ENGINE_LABELS: Record<EngineKind, string> = {
   direct: 'Kaios (Direct)',
+  directV2: 'Kaios v2 (Plan·Verify)',
   claudeCode: 'Claude Code',
   codex: 'Codex',
 };
@@ -64,6 +65,7 @@ export type AppSettings = {
   // Claude Code + Codex shell out to locally-installed CLIs. Off by default — turn on only after
   // installing the CLI, else the engine just errors "找不到 CLI". Direct never needs this.
   enableCliEngines: boolean;
+  defaultEngine: EngineKind; // 新会话默认引擎(direct / directV2 / claudeCode / codex)
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default
   priceOutPerMTok: number;
   presetId: string;
