@@ -1,0 +1,847 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios 四引擎架构分析报告</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --card: #161b22;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --direct: #58a6ff;
+    --v2: #bc8cff;
+    --claude: #d2691e;
+    --codex: #39d353;
+    --red: #f85149;
+    --yellow: #d29922;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans SC", sans-serif;
+    line-height: 1.7;
+    padding: 40px 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.8em;
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, var(--direct), var(--v2));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+  h2 {
+    font-size: 1.3em;
+    margin: 40px 0 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  h3 {
+    font-size: 1.05em;
+    margin: 20px 0 8px;
+    color: var(--muted);
+  }
+  .subtitle { color: var(--muted); margin-bottom: 32px; font-size: 0.9em; }
+
+  /* 引擎卡片 */
+  .engine-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .engine-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+    position: relative;
+    overflow: hidden;
+  }
+  .engine-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+  }
+  .engine-card.direct::before { background: var(--direct); }
+  .engine-card.v2::before { background: var(--v2); }
+  .engine-card.claude::before { background: var(--claude); }
+  .engine-card.codex::before { background: var(--codex); }
+  .engine-card h3 {
+    font-size: 1.1em;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+  .engine-card .tag {
+    display: inline-block;
+    font-size: 0.7em;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .tag-direct { background: rgba(88,166,255,.15); color: var(--direct); }
+  .tag-v2 { background: rgba(188,140,255,.15); color: var(--v2); }
+  .tag-claude { background: rgba(210,105,30,.15); color: var(--claude); }
+  .tag-codex { background: rgba(57,211,83,.15); color: var(--codex); }
+  .engine-card ul { list-style: none; font-size: 0.85em; }
+  .engine-card li { padding: 3px 0; color: var(--muted); }
+  .engine-card li strong { color: var(--text); }
+
+  /* 表格 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 16px 0;
+    font-size: 0.85em;
+  }
+  th, td {
+    border: 1px solid var(--border);
+    padding: 10px 14px;
+    text-align: left;
+  }
+  th {
+    background: #21262d;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+  }
+  td { color: var(--muted); }
+  td strong { color: var(--text); }
+  tr:hover td { background: rgba(88,166,255,.05); }
+
+  /* 架构图 */
+  .arch-diagram {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 24px;
+    margin: 16px 0;
+    overflow-x: auto;
+  }
+  .arch-diagram pre {
+    font-family: "Cascadia Code", "Fira Code", "Consolas", monospace;
+    font-size: 0.78em;
+    line-height: 1.5;
+    color: var(--text);
+    white-space: pre;
+  }
+  .arch-diagram .comment { color: var(--muted); }
+  .arch-diagram .highlight { color: var(--v2); }
+
+  /* 问题列表 */
+  .issue {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px 20px;
+    margin: 10px 0;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .issue .badge {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8em;
+    font-weight: 700;
+  }
+  .badge-red { background: rgba(248,81,73,.15); color: var(--red); }
+  .badge-yellow { background: rgba(210,153,34,.15); color: var(--yellow); }
+  .badge-green { background: rgba(57,211,83,.15); color: var(--codex); }
+  .issue .body { flex: 1; }
+  .issue .body strong { color: var(--text); }
+  .issue .body p { color: var(--muted); font-size: 0.85em; margin-top: 4px; }
+  .issue .body code {
+    background: #21262d;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.85em;
+    color: var(--direct);
+  }
+
+  /* 对比卡片 */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 16px;
+    margin: 16px 0;
+  }
+  .compare-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .compare-card h4 {
+    font-size: 0.95em;
+    margin-bottom: 10px;
+  }
+  .compare-card .pros li { color: var(--codex); }
+  .compare-card .cons li { color: var(--red); }
+  .compare-card ul { list-style: disc; padding-left: 20px; font-size: 0.82em; }
+  .compare-card li { margin: 4px 0; }
+
+  .note {
+    background: rgba(188,140,255,.08);
+    border-left: 3px solid var(--v2);
+    padding: 12px 16px;
+    margin: 16px 0;
+    border-radius: 0 8px 8px 0;
+    font-size: 0.85em;
+    color: var(--text);
+  }
+  .footer {
+    margin-top: 48px;
+    padding-top: 20px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+    color: var(--muted);
+    font-size: 0.8em;
+  }
+</style>
+</head>
+<body>
+
+<h1>⚙️ KinetAios 四引擎架构分析</h1>
+<p class="subtitle">DirectEngine (v1) · DirectV2Engine (v2) · ClaudeCodeEngine · CodexEngine — 源码级深度对比</p>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>一、引擎总览</h2>
+
+<div class="engine-grid">
+  <div class="engine-card direct">
+    <h3>DirectEngine</h3>
+    <span class="tag tag-direct">Kaios (Direct)</span>
+    <ul>
+      <li><strong>文件:</strong> <code>engines.ts</code></li>
+      <li><strong>架构:</strong> 单轮 ReAct loop</li>
+      <li><strong>模型:</strong> 用户配置的 LLM provider</li>
+      <li><strong>工具:</strong> 全部内置工具 (10+)</li>
+      <li><strong>上下文:</strong> directHistory 跨轮持久化</li>
+      <li><strong>压缩:</strong> compactHistory 摘要压缩</li>
+    </ul>
+  </div>
+
+  <div class="engine-card v2">
+    <h3>DirectV2Engine</h3>
+    <span class="tag tag-v2">Kaios v2 (Plan·Verify)</span>
+    <ul>
+      <li><strong>文件:</strong> <code>DirectV2Engine.ts</code></li>
+      <li><strong>架构:</strong> Plan → Execute → Verify → Judge</li>
+      <li><strong>模型:</strong> 复用 v1 的 provider</li>
+      <li><strong>工具:</strong> 复用 v1，Planner 阶段只读</li>
+      <li><strong>重试:</strong> 每步 MAX_RETRIES=3</li>
+      <li><strong>重规划:</strong> Judge 判定未完成 → Replan (≤2 次)</li>
+    </ul>
+  </div>
+
+  <div class="engine-card claude">
+    <h3>ClaudeCodeEngine</h3>
+    <span class="tag tag-claude">Claude Code</span>
+    <ul>
+      <li><strong>文件:</strong> <code>engines.ts</code></li>
+      <li><strong>架构:</strong> 外部 CLI <code>claude -p</code></li>
+      <li><strong>模型:</strong> Claude (Anthropic 自有模型)</li>
+      <li><strong>协议:</strong> NDJSON stream-json</li>
+      <li><strong>Session:</strong> <code>--resume &lt;session_id&gt;</code></li>
+      <li><strong>注入:</strong> <code>--append-system-prompt</code></li>
+    </ul>
+  </div>
+
+  <div class="engine-card codex">
+    <h3>CodexEngine</h3>
+    <span class="tag tag-codex">Codex</span>
+    <ul>
+      <li><strong>文件:</strong> <code>engines.ts</code></li>
+      <li><strong>架构:</strong> 外部 CLI <code>codex exec</code></li>
+      <li><strong>模型:</strong> OpenAI Codex (GPT 系列)</li>
+      <li><strong>协议:</strong> JSONL 事件流</li>
+      <li><strong>Session:</strong> <code>resume &lt;session_id&gt;</code> 子命令</li>
+      <li><strong>注入:</strong> 前置拼到 prompt</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>二、架构流程对比</h2>
+
+<h3>DirectEngine (v1) — 单轮 ReAct</h3>
+<div class="arch-diagram">
+<pre>
+<span class="comment">┌─────────────────────────────────────────────────────┐
+│                    DirectEngine v1                    │
+│                                                       │
+│  systemPrompt ──► runAgentLoop ──► 事件流 (token/tool)│
+│       │              ↑    ↓                           │
+│  memoryBlock         │    └── 工具调用 (shell/write…) │
+│  rulesBlock     ┌────┘                                │
+│  contextBlock   │ LLM ← (tool_results 循环直到无调用) │
+│  skillBlock     └──────────────────────────────────── │
+│                                                       │
+│  结束 → compactHistory → directHistory (持久化)       │
+└─────────────────────────────────────────────────────┘</span>
+</pre>
+</div>
+
+<h3>DirectV2Engine (v2) — 四层架构</h3>
+<div class="arch-diagram">
+<pre>
+<span class="comment">┌──────────────────────────────────────────────────────────────┐
+│                    DirectV2Engine v2                          │
+│                                                                │
+│  <span class="highlight">Phase 1: Planner</span>  (只读工具 + PLANNER_PROMPT)              │
+│    │  runAgentLoop → 探查项目 → 输出 &lt;plan&gt; JSON               │
+│    │  parsePlan() 解析 → Plan{goal, steps[]}                    │
+│    │                                                           │
+│    ├─ 无 plan? → <span class="comment">退化 v1 模式</span> (autoVerify + finalize) → done │
+│    │                                                           │
+│  <span class="highlight">Phase 2: Executor</span>  (全工具 + STEP_EXECUTOR_PROMPT)       │
+│    │  for each step:                                            │
+│    │    runAgentLoop(systemPrompt, history=execHistory)         │
+│    │    step.verifyCommand? → runVerify (走 confirm)            │
+│    │    验证失败? → 重试 (≤3 次, 注入上次失败结果)              │
+│    │                                                           │
+│  <span class="highlight">Phase 3: Verifier</span>  (全局 autoVerify)                    │
+│    │  detectVerifyCommand: tsc / npm test                      │
+│    │                                                           │
+│  <span class="highlight">Phase 4: Judge</span>    (独立 LLM 调用, 不信模型自述)       │
+│    │  JUDGE_PROMPT → {completed: bool, reason: string}          │
+│    │                                                           │
+│    ├─ 未完成 & replanCount &lt; 2? → <span class="highlight">Replan</span> (回到 Phase 1)    │
+│    └─ 完成 / 达上限 → finalizeContext → done                   │
+│                                                                │
+│  事件转发: forwardEvent() 拦截子 loop 的 done/error            │
+│  上下文: finalizeContext → compactHistory → directHistory      │
+└──────────────────────────────────────────────────────────────┘</span>
+</pre>
+</div>
+
+<h3>ClaudeCodeEngine — CLI 进程流</h3>
+<div class="arch-diagram">
+<pre>
+<span class="comment">┌──────────────────────────────────────────────────────────────┐
+│                   ClaudeCodeEngine                             │
+│                                                                │
+│  spawn: claude -p --output-format stream-json --verbose        │
+│         --include-partial-messages                             │
+│         --permission-mode plan|acceptEdits|bypassPermissions   │
+│         [--resume &lt;session_id&gt;]                                │
+│         [--append-system-prompt &lt;persona+rules+context+mem&gt;]   │
+│                                                                │
+│  stdout → 逐行解析 NDJSON:                                      │
+│    init       → sessionStarted(session_id)                     │
+│    stream     → onToken(text)                                  │
+│    tool_use   → pending map (id→name+args)                     │
+│    tool_result→ onEvent(tool, name, result)                    │
+│    result     → cost(total_cost_usd) + done/error              │
+│                                                                │
+│  无 directHistory — 上下文完全由 CLI --resume 管理              │
+└──────────────────────────────────────────────────────────────┘</span>
+</pre>
+</div>
+
+<h3>CodexEngine — CLI 进程流</h3>
+<div class="arch-diagram">
+<pre>
+<span class="comment">┌──────────────────────────────────────────────────────────────┐
+│                     CodexEngine                                │
+│                                                                │
+│  spawn: codex exec --json --skip-git-repo-check                │
+│         -C &lt;cwd&gt; --add-dir &lt;cwd&gt;                               │
+│         -s read-only|workspace-write|danger-full-access        │
+│         [resume &lt;session_id&gt;]   ← 注意: 子命令, 非 flag       │
+│                                                                │
+│  prompt 构造: persona+rules+context+memory 前置拼到 prompt      │
+│  (codex 无 --append-system-prompt → 只能拼 prompt)              │
+│                                                                │
+│  stdout → 逐行解析 JSONL:                                       │
+│    item.completed / agent_message → onToken(text)              │
+│    item.completed / command_exec  → onEvent(tool, shell)       │
+│    item.completed / patch_applied → onEvent(tool, patch)       │
+│    turn.completed → cost + done                                │
+│                                                                │
+│  无 directHistory — 上下文完全由 CLI resume 管理                │
+└──────────────────────────────────────────────────────────────┘</span>
+</pre>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>三、核心维度对比矩阵</h2>
+
+<table>
+  <tr>
+    <th>维度</th>
+    <th>Direct (v1)</th>
+    <th>DirectV2 (v2)</th>
+    <th>Claude Code</th>
+    <th>Codex</th>
+  </tr>
+  <tr>
+    <td><strong>实现方式</strong></td>
+    <td>内置 ReAct loop</td>
+    <td>内置多阶段编排</td>
+    <td>spawn <code>claude</code> CLI</td>
+    <td>spawn <code>codex</code> CLI</td>
+  </tr>
+  <tr>
+    <td><strong>LLM Provider</strong></td>
+    <td>用户配置 (GLM/DeepSeek…)</td>
+    <td>同 v1 (复用 provider)</td>
+    <td>Anthropic Claude</td>
+    <td>OpenAI GPT</td>
+  </tr>
+  <tr>
+    <td><strong>工具集</strong></td>
+    <td>allTools (10 内置 + 插件 + 自定义)</td>
+    <td>同 v1 (Planner 阶段降为 readOnlyTools)</td>
+    <td>CLI 自带 (Bash/Read/Write…)</td>
+    <td>CLI 自带 (Shell/ApplyPatch…)</td>
+  </tr>
+  <tr>
+    <td><strong>工具调用方式</strong></td>
+    <td>OpenAI function calling</td>
+    <td>同 v1 (runAgentLoop)</td>
+    <td>CLI 内部工具 → NDJSON 映射</td>
+    <td>CLI 内部工具 → JSONL 映射</td>
+  </tr>
+  <tr>
+    <td><strong>dispatch_agent</strong></td>
+    <td>✅ 支持 (内置子 agent)</td>
+    <td>✅ 支持 (复用 v1 逻辑)</td>
+    <td>❌ 无 (CLI 自有机制)</td>
+    <td>❌ 无 (CLI 自有机制)</td>
+  </tr>
+  <tr>
+    <td><strong>跨轮上下文</strong></td>
+    <td>directHistory + compactHistory</td>
+    <td>同 v1 (finalizeContext)</td>
+    <td>CLI <code>--resume</code></td>
+    <td>CLI <code>resume</code></td>
+  </tr>
+  <tr>
+    <td><strong>记忆注入</strong></td>
+    <td>history[0] _memory 消息 (不进 systemPrompt → 稳定缓存)</td>
+    <td>同 v1</td>
+    <td><code>--append-system-prompt</code> 拼尾部</td>
+    <td>前置拼到 prompt</td>
+  </tr>
+  <tr>
+    <td><strong>规则/上下文注入</strong></td>
+    <td>拼入 systemPrompt</td>
+    <td>同 v1</td>
+    <td><code>--append-system-prompt</code></td>
+    <td>前置拼到 prompt</td>
+  </tr>
+  <tr>
+    <td><strong>替身画像</strong></td>
+    <td>systemPrompt 末尾</td>
+    <td>同 v1</td>
+    <td>append-system-prompt</td>
+    <td>prompt 头部</td>
+  </tr>
+  <tr>
+    <td><strong>Skill (/ 命令)</strong></td>
+    <td>✅ skillBlock → systemPrompt</td>
+    <td>⚠️ 未处理 skillBlock</td>
+    <td>❌ 不支持</td>
+    <td>❌ 不支持</td>
+  </tr>
+  <tr>
+    <td><strong>沙箱: readOnly</strong></td>
+    <td>拦截 write_file/edit_file/shell 写操作</td>
+    <td>同 v1 (Planner 强制 readOnly)</td>
+    <td><code>--permission-mode plan</code></td>
+    <td><code>-s read-only</code></td>
+  </tr>
+  <tr>
+    <td><strong>沙箱: workspaceWrite</strong></td>
+    <td>限制 cwd 内写</td>
+    <td>同 v1</td>
+    <td><code>acceptEdits</code></td>
+    <td><code>workspace-write</code></td>
+  </tr>
+  <tr>
+    <td><strong>沙箱: fullAccess</strong></td>
+    <td>不限</td>
+    <td>同 v1</td>
+    <td><code>bypassPermissions</code></td>
+    <td><code>danger-full-access</code></td>
+  </tr>
+  <tr>
+    <td><strong>Plan Mode</strong></td>
+    <td>全局强制 readOnly sandbox</td>
+    <td>同 v1 (Planner 阶段)</td>
+    <td>覆盖为 <code>plan</code></td>
+    <td>覆盖为 <code>read-only</code></td>
+  </tr>
+  <tr>
+    <td><strong>Shell 确认</strong></td>
+    <td>ctx.confirm → IPC → 用户点确认</td>
+    <td>同 v1 + 验证命令也走 confirm</td>
+    <td>CLI 自管 (permission-mode)</td>
+    <td>CLI 自管 (-s flag)</td>
+  </tr>
+  <tr>
+    <td><strong>自动验证</strong></td>
+    <td>❌ 无</td>
+    <td>✅ detectVerifyCommand + runVerify</td>
+    <td>❌ 无 (CLI 自验证)</td>
+    <td>❌ 无 (CLI 自验证)</td>
+  </tr>
+  <tr>
+    <td><strong>失败重试</strong></td>
+    <td>❌ 无</td>
+    <td>✅ 每步 MAX_RETRIES=3</td>
+    <td>❌ 无 (CLI 自管)</td>
+    <td>❌ 无 (CLI 自管)</td>
+  </tr>
+  <tr>
+    <td><strong>Judge 裁决</strong></td>
+    <td>❌ 无</td>
+    <td>✅ 独立 LLM 调用</td>
+    <td>❌ 无</td>
+    <td>❌ 无</td>
+  </tr>
+  <tr>
+    <td><strong>Replan 循环</strong></td>
+    <td>❌ 无</td>
+    <td>✅ Judge 判定未完成 → 重新规划 (≤2 次)</td>
+    <td>❌ 无</td>
+    <td>❌ 无</td>
+  </tr>
+  <tr>
+    <td><strong>cost 上报</strong></td>
+    <td>provider 返回 tokensIn/Out → priceUSD</td>
+    <td>同 v1 + Judge 的 cost 也上报</td>
+    <td><code>total_cost_usd</code> (无 token 明细)</td>
+    <td><code>total_cost_usd</code></td>
+  </tr>
+  <tr>
+    <td><strong>多模态 (图片)</strong></td>
+    <td>✅ \x00IMAGES 标记 → ContentPart[]</td>
+    <td>⚠️ Planners 轮支持, 步骤轮透传</td>
+    <td>❌ 不传图片</td>
+    <td>❌ 不传图片</td>
+  </tr>
+  <tr>
+    <td><strong>事件 done/error</strong></td>
+    <td>runAgentLoop 直接发</td>
+    <td>forwardEvent 拦截子 loop 的 done/error, 仅最终发一次</td>
+    <td>result 事件发</td>
+    <td>turn.completed 发</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>四、事件流 (AgentEvent) 对比</h2>
+
+<table>
+  <tr>
+    <th>事件类型</th>
+    <th>Direct v1</th>
+    <th>DirectV2</th>
+    <th>Claude Code</th>
+    <th>Codex</th>
+  </tr>
+  <tr>
+    <td><code>token</code></td>
+    <td>✅ 流式</td>
+    <td>✅ 流式 (forwardEvent)</td>
+    <td>✅ stream.text_delta</td>
+    <td>✅ agent_message</td>
+  </tr>
+  <tr>
+    <td><code>tool</code></td>
+    <td>✅ name/args/result</td>
+    <td>✅ 同 v1 + verify 工具</td>
+    <td>✅ tool_use → tool_result</td>
+    <td>✅ command_exec / patch_applied</td>
+  </tr>
+  <tr>
+    <td><code>cost</code></td>
+    <td>✅ tokensIn + tokensOut → priceUSD</td>
+    <td>✅ 同 v1 + Judge cost</td>
+    <td>✅ total_cost_usd (tokens=0)</td>
+    <td>✅ total_cost_usd</td>
+  </tr>
+  <tr>
+    <td><code>status</code></td>
+    <td>✅ 间歇状态</td>
+    <td>✅ 带前缀 "v2:" (防双重嵌套)</td>
+    <td>✅ 间歇状态</td>
+    <td>✅ 间歇状态</td>
+  </tr>
+  <tr>
+    <td><code>sessionStarted</code></td>
+    <td>❌ 无</td>
+    <td>❌ 无</td>
+    <td>✅ init.session_id</td>
+    <td>✅ session.id</td>
+  </tr>
+  <tr>
+    <td><code>done</code></td>
+    <td>✅ 模型停止调用工具</td>
+    <td>✅ 仅最终发一次 (子 loop 拦截)</td>
+    <td>✅ result 事件</td>
+    <td>✅ turn.completed</td>
+  </tr>
+  <tr>
+    <td><code>error</code></td>
+    <td>✅ 异常 / abort</td>
+    <td>✅ 仅最终发一次</td>
+    <td>✅ is_error / 无 result</td>
+    <td>✅ exit code ≠ 0</td>
+  </tr>
+</table>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>五、优缺点对比</h2>
+
+<div class="compare-grid">
+  <div class="compare-card">
+    <h4 style="color: var(--direct);">🔵 DirectEngine (v1)</h4>
+    <h3>优点</h3>
+    <ul class="pros">
+      <li>轻量，单次 ReAct loop 响应快</li>
+      <li>全功能工具链 (10+ 内置工具)</li>
+      <li>dispatch_agent 子 agent 派发</li>
+      <li>compactHistory 长对话摘要压缩</li>
+      <li>支持任意 OpenAI 兼容 provider</li>
+      <li>多模态图片输入</li>
+      <li>Anthropic prompt cache 优化</li>
+    </ul>
+    <h3>缺点</h3>
+    <ul class="cons">
+      <li>无规划阶段，复杂任务容易"边想边改"</li>
+      <li>无自动验证，依赖模型自觉跑 tsc/test</li>
+      <li>无 Judge 裁决，模型说"完成"就完成</li>
+      <li>失败不自动重试</li>
+    </ul>
+  </div>
+
+  <div class="compare-card">
+    <h4 style="color: var(--v2);">🟣 DirectV2Engine (v2)</h4>
+    <h3>优点</h3>
+    <ul class="pros">
+      <li>Plan-first 架构，先探查再动手</li>
+      <li>按步骤串行执行，每步有独立上下文</li>
+      <li>自动验证 (detectVerifyCommand)</li>
+      <li>失败重试 (MAX_RETRIES=3)</li>
+      <li>Judge 独立裁决 (不信模型自述)</li>
+      <li>Replan 循环 (Judge 判定未完成 → 重新规划)</li>
+      <li>简单任务自动退化为 v1 模式</li>
+    </ul>
+    <h3>缺点</h3>
+    <ul class="cons">
+      <li>多轮 LLM 调用 (Planner + 每步 + Judge)，token 消耗显著增加</li>
+      <li>步骤串行执行，无法并行</li>
+      <li>简单任务退化路径不如 v1 直接（多了一次 plan 检测开销）</li>
+      <li>Judge 用同一 provider，非真正的"独立第三方"</li>
+    </ul>
+  </div>
+
+  <div class="compare-card">
+    <h4 style="color: var(--claude);">🟠 ClaudeCodeEngine</h4>
+    <h3>优点</h3>
+    <ul class="pros">
+      <li>Claude 原生工具调用能力（Anthropic 优化）</li>
+      <li>--resume 跨轮上下文由 CLI 管理，app 无需维护 history</li>
+      <li>--append-system-prompt 注入规则</li>
+      <li>stream-json 支持 partial messages（更细粒度的流式）</li>
+      <li>permission-mode 沙箱精确控制</li>
+    </ul>
+    <h3>缺点</h3>
+    <ul class="cons">
+      <li>依赖外部 CLI 安装 (enableCliEngines)</li>
+      <li>无 dispatch_agent 子 agent</li>
+      <li>无多模态支持</li>
+      <li>cost 只有 $ 总额，无 token 明细</li>
+      <li>.cmd shim 通过 shell:true 存在命令注入风险 (已知 MVP 限制)</li>
+      <li>不支持 Skill (/ 命令)</li>
+    </ul>
+  </div>
+
+  <div class="compare-card">
+    <h4 style="color: var(--codex);">🟢 CodexEngine</h4>
+    <h3>优点</h3>
+    <ul class="pros">
+      <li>OpenAI Codex/GPT 原生能力</li>
+      <li>resume 子命令跨轮上下文</li>
+      <li>JSONL 事件流结构清晰 (item.completed / turn.completed)</li>
+      <li>沙箱三档: read-only / workspace-write / danger-full-access</li>
+      <li>patch_applied 事件可追踪文件修改</li>
+    </ul>
+    <h3>缺点</h3>
+    <ul class="cons">
+      <li>依赖外部 CLI 安装</li>
+      <li>无 --append-system-prompt → 规则/记忆只能拼 prompt (打乱缓存)</li>
+      <li>无 dispatch_agent</li>
+      <li>无多模态支持</li>
+      <li>exec 级 flag 必须在 resume 之前 (clap 解析顺序限制)</li>
+      <li>不支持 Skill</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>六、代码层面的问题与发现</h2>
+
+<h3>🔴 严重 (影响功能正确性)</h3>
+
+<div class="issue">
+  <div class="badge badge-red">1</div>
+  <div class="body">
+    <strong>V2 步骤执行缺少上下文隔离</strong>
+    <p><code>execHistory</code> 在步骤间是累加的 (<code>execHistory = stepMessages</code>)，但 <code>runAgentLoop</code> 的 <code>history</code> 参数会被 <code>trimHistoryToTokenBudget</code> 裁剪。多步任务中早期步骤的工具结果会被裁掉，后续步骤看不到前步的完整上下文 —— 可能导致重复操作或遗漏依赖。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-red">2</div>
+  <div class="body">
+    <strong>V2 未处理 skillBlock</strong>
+    <p><code>EngineRunOpts</code> 有 <code>skillBlock</code> 字段，DirectEngine (v1) 将其拼入 systemPrompt，但 <code>DirectV2Engine.run()</code> 的解构里完全没有 <code>skillBlock</code> —— 用户在 v2 引擎中使用 <code>/skill</code> 命令时，skill 指令会被静默丢弃。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-red">3</div>
+  <div class="body">
+    <strong>V2 Replan 时 Planner 使用全工具集而非 readOnlyTools</strong>
+    <p>Phase 1 的 Planner 正确使用了 <code>readOnlyTools()</code>，但 <code>replan()</code> 方法中重新规划的 <code>runAgentLoop</code> 调用使用了从外层传入的 <code>tools</code> 参数（即 <code>allTools()</code>），这意味着 Replan 阶段模型可以使用写工具 —— 违背了"规划阶段禁止写操作"的设计原则。</p>
+  </div>
+</div>
+
+<h3>🟡 设计问题 (可改进)</h3>
+
+<div class="issue">
+  <div class="badge badge-yellow">4</div>
+  <div class="body">
+    <strong>V2 Judge 使用同一 provider，非真正独立</strong>
+    <p>Judge 的设计意图是"不信模型自己说搞定了"，但 <code>judge()</code> 用的是同一个 <code>provider</code>（即同一个 LLM）。如果模型在执行阶段自我欺骗，Judge 也可能得出相同结论。真正的独立裁决需要用不同模型或至少不同 systemPrompt。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-yellow">5</div>
+  <div class="body">
+    <strong>四引擎对多模态支持不一致</strong>
+    <p>只有 Direct v1 在 <code>runAgentLoop</code> 内完整实现了 <code>\x00IMAGES[...]\x00</code> 标记 → <code>ContentPart[]</code> 的转换。V2 依赖 <code>runAgentLoop</code> 所以间接支持，但 CLI 引擎 (Claude/Codex) 完全丢弃图片输入。用户在 Claude/Codex 引擎拖入图片后无任何提示。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-yellow">6</div>
+  <div class="body">
+    <strong>V2 parsePlan 容错不足</strong>
+    <p><code>parsePlan()</code> 依赖正则匹配 <code>&lt;plan&gt;...&lt;/plan&gt;</code> 标签。如果模型输出了裸 JSON 或格式略有偏差（如 <code>&lt;plan json&gt;</code>），虽然有 fallback，但 fallback 逻辑尝试匹配 <code>{</code> 开头 —— 如果模型在 plan 前面有寒暄文字，fallback 也会失败，最终退化为 v1 模式（无警告）。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-yellow">7</div>
+  <div class="body">
+    <strong>V2 验证步骤跳过逻辑可能掩盖问题</strong>
+    <p>步骤验证失败 <code>MAX_RETRIES</code> 次后，代码发一条 status 事件 "步骤最终失败,继续下一步" 就跳过了 —— 后续步骤可能依赖前步的产出，静默继续可能导致连锁失败。更好的做法是：步骤失败 → 立即触发 Judge 或 Replan。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-yellow">8</div>
+  <div class="body">
+    <strong>CLI 引擎的 .cmd shim 安全风险</strong>
+    <p><code>resolveBin()</code> 在 Windows 上检测到 <code>.cmd/.bat</code> 后缀时启用 <code>shell: true</code>。prompt 内容通过命令行参数传递，如果包含 <code>&amp;|&gt;&lt;</code> 等 cmd 元字符，理论上存在命令注入风险。代码注释标记为 "acceptable for MVP"。</p>
+  </div>
+</div>
+
+<h3>🟢 小问题 / 细节</h3>
+
+<div class="issue">
+  <div class="badge badge-green">9</div>
+  <div class="body">
+    <strong>V2 forwardEvent 拦截逻辑</strong>
+    <p>子 <code>runAgentLoop</code> 每次结束都会发 <code>done</code>/<code>error</code>，v2 通过 <code>forwardEvent</code> 拦截这些事件（转为 status），仅在最终发一次 <code>done</code>。设计正确，但如果子 loop 真的出错（如 LLM 400），error 被吞为 status，用户只看到一条状态消息而不清楚是严重错误。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-green">10</div>
+  <div class="body">
+    <strong>Codex flag 顺序陷阱</strong>
+    <p><code>codex exec</code> 的 exec 级 flag (<code>--json -C --add-dir -s</code>) 必须在 <code>resume</code> 子命令之前，否则 clap 解析器将它们视为 resume 的参数并退出 status=2。代码已处理但无注释解释原因（原文注释在源码中有）。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-green">11</div>
+  <div class="body">
+    <strong>V2 退化模式的 done 事件</strong>
+    <p>当 <code>parsePlan()</code> 返回 null（无 plan），v2 走退化路径后直接 <code>onEvent({ type: 'done' })</code>，但此时 <code>plannerMessages</code> 已经包含了一轮完整的 ReAct 交互。退化模式实际上跑了两轮（planner 的 runAgentLoop 内部），而 v1 只跑一轮 —— 性能不对等。</p>
+  </div>
+</div>
+
+<div class="issue">
+  <div class="badge badge-green">12</div>
+  <div class="body">
+    <strong>autoVerifyFromSteps 参数不一致</strong>
+    <p>定义签名为 <code>(conv, ctx, signal, onEvent, messages)</code>（5 参数），但之前的代码中曾出现 6 参数调用 <code>(conv, snap, ctx, signal, onEvent, ...)</code>。当前代码看起来已修复，但 <code>conv</code> 参数在内层只用于 <code>conv.cwd</code>，可以直接传 cwd 减少耦合。</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>七、选型建议</h2>
+
+<div class="note">
+  <strong>📌 日常快速任务 →</strong> 用 <strong>DirectEngine (v1)</strong>。单轮 ReAct 够用，工具齐全，响应快。
+</div>
+<div class="note">
+  <strong>📌 复杂多文件任务 →</strong> 用 <strong>DirectV2Engine (v2)</strong>。Plan-first 先规划再执行，自动验证 + Judge 裁决 + Replan 循环，更像人类工程师。但注意 token 消耗约为 v1 的 2-3 倍。
+</div>
+<div class="note">
+  <strong>📌 需要 Claude 原生能力 →</strong> 用 <strong>ClaudeCodeEngine</strong>。适合 Claude 擅长的代码推理 / 大规模重构。前提是已安装 <code>claude</code> CLI。
+</div>
+<div class="note">
+  <strong>📌 需要 OpenAI 生态 →</strong> 用 <strong>CodexEngine</strong>。适合 GPT 系列模型 / OpenAI 工具链。前提是已安装 <code>codex</code> CLI。
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════ -->
+
+<h2>八、关键文件索引</h2>
+
+<table>
+  <tr><th>文件</th><th>角色</th><th>关键导出</th></tr>
+  <tr><td><code>engines.ts</code></td><td>引擎接口 + v1/Claude/Codex 实现</td><td><code>Engine</code>, <code>DirectEngine</code>, <code>ClaudeCodeEngine</code>, <code>CodexEngine</code>, <code>buildEngines()</code>, <code>baseSystemPrompt</code>, <code>SUBAGENT_PROMPT</code></td></tr>
+  <tr><td><code>DirectV2Engine.ts</code></td><td>V2 四层架构引擎</td><td><code>DirectV2Engine</code>, <code>PlanStep</code>, <code>Plan</code>, <code>parsePlan()</code>, <code>judge()</code>, <code>replan()</code></td></tr>
+  <tr><td><code>AgentLoop.ts</code></td><td>ReAct 循环核心</td><td><code>runAgentLoop()</code>, <code>compactHistory()</code>, <code>RunOpts</code></td></tr>
+  <tr><td><code>glm.ts</code></td><td>LLM Provider 层</td><td><code>Provider</code>, <code>Completion</code>, <code>GLMProvider</code>, <code>AnthropicProvider</code>, <code>priceUSD()</code></td></tr>
+  <tr><td><code>tools.ts</code></td><td>工具系统</td><td><code>Tool</code>, <code>ToolCtx</code>, <code>allTools()</code>, <code>readOnlyTools()</code>, <code>shellExec()</code>, <code>sandboxCheck()</code></td></tr>
+  <tr><td><code>shared/types.ts</code></td><td>共享类型</td><td><code>EngineKind</code>, <code>AgentEvent</code>, <code>Conversation</code>, <code>Turn</code>, <code>SandboxMode</code>, <code>applyEvent()</code></td></tr>
+  <tr><td><code>TaskManager.ts</code></td><td>会话调度</td><td>调用 <code>engine.run()</code>, 传入 memoryBlock/rulesBlock/contextBlock/skillBlock/refBlock</td></tr>
+</table>
+
+<div class="footer">
+  <p>KinetAios Engine Analysis Report · Generated from source code review</p>
+  <p>Source: <code>engines.ts</code> · <code>DirectV2Engine.ts</code> · <code>AgentLoop.ts</code> · <code>glm.ts</code> · <code>tools.ts</code> · <code>shared/types.ts</code></p>
+</div>
+
+</body>
+</html>
