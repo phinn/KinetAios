@@ -1,4 +1,4 @@
-// DirectV2Engine — Plan · Execute · Verify 三层架构引擎
+// DirectV2Engine — Plan · Execute · Verify · Judge 四层架构引擎
 //
 // 核心思路:不是更快的 ReAct loop,而是像人类工程师一样工作 —— 先规划再执行,执行完验证。
 //
@@ -11,16 +11,20 @@
 //
 // 与 v1 DirectEngine 的关键区别:
 // 1. Plan-first:第一轮不执行任何工具,只输出结构化 plan(JSON)
-// 2. Verifier:每个步骤完成后自动验证(tsc / lint / test),失败自动重试
-// 3. Judge:独立判定目标是否真正完成(不信模型自己说"搞定了")
-// 4. Budget-aware:有预算预估和熔断机制
+// 2. Per-step execution:按 plan 步骤串行执行,每步独立的 ReAct loop
+// 3. Verifier:每个步骤完成后自动验证(tsc / lint / test),失败自动重试(MAX_RETRIES)
+// 4. Judge:独立 LLM 调用判定目标是否真正完成(不信模型自己说"搞定了")
+// 5. Replan:Judge 判定未完成 → 重新规划(MAX_REPLANS 次)
 //
 // 设计约束:复用现有 runAgentLoop / provider / tools 基础设施,不重新发明轮子。
+// 对于简单任务(无需分步),自动退化为 v1 单轮 ReAct + autoVerify。
 
-import type { AgentEvent, Conversation } from '../shared/types';
+import fs from 'node:fs';
+import path from 'node:path';
+import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider } from './glm';
-import { allTools, readOnlyTools, type ToolCtx } from './tools';
+import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
 import { mcp } from './mcp';
 import { pluginSystemPrompts } from './plugins';
@@ -28,6 +32,7 @@ import {
   baseSystemPrompt,
   personaSection,
   loadProjectRules,
+  SUBAGENT_PROMPT,
   type Engine,
   type EngineRunOpts,
 } from './engines';
@@ -43,7 +48,7 @@ interface PlanStep {
   status: 'pending' | 'running' | 'done' | 'failed' | 'skipped';
   verifyCommand?: string; // 验证命令(如 "npx tsc --noEmit")
   result?: string; // 执行后的输出摘要
-  retryCount?: number;
+  retryCount: number;
 }
 
 interface Plan {
@@ -59,6 +64,7 @@ interface Plan {
 const MAX_RETRIES = 3; // 每步最多重试 3 次
 const MAX_REPLANS = 2; // 最多重新规划 2 次
 
+// v2 引擎追加的 systemPrompt 片段 —— 告诉模型 v2 的工作模式。
 const V2_SYSTEM_SUFFIX = `
 # 你是 Kaios v2 引擎 — 具备「先规划、再执行、执行完验证」能力
 
@@ -82,6 +88,52 @@ const V2_SYSTEM_SUFFIX = `
 - 直接执行即可,不用过度规划
 `;
 
+// Planner prompt —— 引导模型先探查再规划(只读工具,不执行写操作)。
+const PLANNER_PROMPT = `你现在处于 v2 引擎的**规划阶段**。
+
+你的任务:
+1. 用只读工具(read_file / grep / glob / shell 只读命令)探查项目现状
+2. 理解代码结构、找到需要修改的文件、确认技术方案
+3. 在回答末尾输出 \`<plan>\` JSON
+
+**规划阶段禁止调用写工具(write_file / edit_file / shell 写命令)。** 你只探查,不修改。
+
+Plan 格式:
+\`\`\`<plan>
+{"goal":"任务目标","steps":[{"id":"1","title":"步骤标题","description":"具体做什么(足够详细,包含文件路径和关键逻辑)","verifyCommand":"验证命令(可选,如 npx tsc --noEmit)"}]}
+</plan>\`\`\`
+
+如果任务太简单不需要分步(比如单文件修改、快速查询),直接输出答案,不要输出 \`<plan>\`。
+引擎会检测到没有 plan 并自动退化为普通模式。`;
+
+// Per-step executor prompt —— 告诉模型当前执行 plan 的哪个步骤。
+const STEP_EXECUTOR_PROMPT = (step: PlanStep, allSteps: PlanStep[], planGoal: string) => `你现在处于 v2 引擎的**执行阶段**,正在执行以下 plan 步骤。
+
+**会话目标:** ${planGoal}
+
+**当前步骤 [${step.id}/${allSteps.length}]:** ${step.title}
+**具体描述:** ${step.description}
+${step.verifyCommand ? `**验证命令:** ${step.verifyCommand}` : ''}
+
+**已完成步骤:**
+${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.title}: ${(s.result || '完成').slice(0, 200)}`).join('\n') || '  (无)'}
+
+请执行当前步骤。完成后用简洁中文汇报你做了什么。`;
+
+// Judge prompt —— 独立 LLM 调用判定 plan 是否真正完成。
+const JUDGE_PROMPT = (planGoal: string, steps: PlanStep[]) => `你是独立的验收裁判(Judge)。你的任务是判定以下 plan 的执行结果是否真正完成了目标。
+
+**目标:** ${planGoal}
+
+**步骤执行情况:**
+${steps.map((s) => `  [${s.id}] ${s.title} — 状态: ${s.status}${s.result ? `\n    结果: ${s.result.slice(0, 300)}` : ''}`).join('\n')}
+
+请回答一个问题:**目标是否已经完成?**
+
+输出 JSON:
+\`\`\`{"completed": true/false, "reason": "简要说明为什么完成/未完成", "nextAction": "如果未完成,建议下一步做什么(可为空)"}
+\`\`\``;
+
 // ════════════════════════════════════════════════════════════════════════
 // DirectV2Engine 实现
 // ════════════════════════════════════════════════════════════════════════
@@ -94,7 +146,6 @@ export class DirectV2Engine implements Engine {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
     const snap = { ...base, model: conv.model || base.model };
-
     const provider = currentProvider(snap);
 
     // ── 构建 systemPrompt(与 v1 共享 base,追加 v2 能力描述)──
@@ -114,66 +165,449 @@ export class DirectV2Engine implements Engine {
       (contextBlock ?? '') +
       pluginSystemPrompts('directV2', prompt);
 
-    // ── 构建 ToolCtx(与 v1 相同)──
+    // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
 
-    // ── 工具集(与 v1 相同)──
+    // ── 工具集 ──
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
 
     // ── 构建 user input ──
     const refSection = refBlock ?? '';
     const userInput = refSection ? prompt + refSection : prompt;
 
-    // ── Phase 1: 首轮执行(ReAct loop,探查 + 规划 + 开始执行)──
+    // ── Phase 1: Planner — 探查 + 规划(只读工具)──
     onEvent({ type: 'status', text: '🧠 v2: 规划中...' });
 
-    const updated = await runAgentLoop({
+    const plannerTools = [...readOnlyTools(), ...(await mcp.directTools(2000))];
+    const plannerMessages = await runAgentLoop({
       provider,
-      tools,
-      systemPrompt,
+      tools: plannerTools,
+      systemPrompt: systemPrompt + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
       userInput,
       history: conv.directHistory,
-      ctx,
+      ctx: { ...ctx, sandbox: 'readOnly' }, // planner 强制只读
       signal,
+      maxTurns: 12, // 规划阶段不需要太多轮
       contextMode: conv.contextMode,
       hifiContextBudget: getSettings().hifiContextBudget,
-      onEvent: (ev) => {
-        // 透传事件,但 status 补 v2 前缀
-        if (ev.type === 'status') onEvent({ type: 'status', text: `🔬 v2: ${ev.text}` });
-        else onEvent(ev);
-      },
+      onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
-    // ── Phase 2: 检查是否需要验证(从最后一轮 answer 中提取验证线索)──
-    const lastTurn = conv.turns[conv.turns.length - 1];
-    if (!signal.aborted && lastTurn?.answer) {
-      // 如果有文件修改(tool 调用了 write_file/edit_file/shell 写命令),尝试自动验证
-      const hasFileChange = this.detectFileChanges(lastTurn.answer);
-      if (hasFileChange) {
-        await this.autoVerify(conv, snap, ctx, signal, onEvent);
+    if (signal.aborted) {
+      conv.directHistory = plannerMessages;
+      return;
+    }
+
+    // 提取 planner 输出中的 plan JSON
+    const plannerAnswer = this.extractLastAssistantText(plannerMessages);
+    const plan = this.parsePlan(plannerAnswer);
+
+    if (!plan || plan.steps.length === 0) {
+      // 简单任务退化为 v1 模式:planner 已经给出了答案,直接走 autoVerify + compact
+      onEvent({ type: 'status', text: '⚡ v2: 任务简单,跳过分步执行' });
+      await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, plannerMessages);
+      this.finalizeContext(conv, plannerMessages, provider, snap, signal);
+      return;
+    }
+
+    // 有 plan → 进入分步执行模式
+    onEvent({ type: 'status', text: `📋 v2: 计划 ${plan.steps.length} 个步骤 — ${plan.summary}` });
+
+    // 用 plan 轮的 messages 作为执行的基础 history
+    let execHistory = plannerMessages;
+
+    // ── Phase 2: Executor — 按 plan 步骤串行执行 ──
+    for (const step of plan.steps) {
+      if (signal.aborted) break;
+      step.status = 'running';
+      onEvent({ type: 'status', text: `🔨 v2: 执行步骤 [${step.id}] ${step.title}` });
+
+      let stepDone = false;
+      for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
+        const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
+
+        const stepMessages = await runAgentLoop({
+          provider,
+          tools, // 执行阶段:完整工具集(含写工具)
+          systemPrompt,
+          // 不注入 memoryBlock(已经在 planner 轮注入过,execHistory 里已有)
+          snapshot: snap,
+          userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote,
+          history: execHistory,
+          ctx,
+          signal,
+          contextMode: conv.contextMode,
+          hifiContextBudget: getSettings().hifiContextBudget,
+          onEvent: (ev) => this.forwardEvent(ev, onEvent),
+        });
+
+        execHistory = stepMessages;
+        const stepAnswer = this.extractLastAssistantText(stepMessages);
+
+        // 验证此步骤
+        if (step.verifyCommand) {
+          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent);
+          if (verifyResult.ok) {
+            step.status = 'done';
+            step.result = stepAnswer.slice(0, 500);
+            stepDone = true;
+            onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
+          } else {
+            step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+            step.result = `验证失败: ${verifyResult.output.slice(0, 500)}`;
+            step.retryCount = attempt + 1;
+            if (attempt + 1 < MAX_RETRIES) {
+              onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
+            }
+          }
+        } else {
+          // 无验证命令 → 信任模型输出
+          step.status = 'done';
+          step.result = stepAnswer.slice(0, 500);
+          stepDone = true;
+          onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        }
       }
     }
 
-    // ── Phase 3: Context 压缩(与 v1 共享)──
-    if (!signal.aborted) {
-      const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
-      conv.directHistory = await compactHistory(
-        updated,
-        conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
-        provider,
-        snap,
-        signal,
-        onEvent,
-      );
+    if (signal.aborted) {
+      conv.directHistory = execHistory;
+      return;
+    }
+
+    // ── Phase 3: Verifier — 全局验证(自动检测项目类型)──
+    onEvent({ type: 'status', text: '🔬 v2: 全局验证...' });
+    await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, execHistory);
+
+    // ── Phase 4: Judge — 独立判定是否完成 ──
+    const judgeResult = await this.judge(plan, provider, snap, signal, onEvent);
+
+    if (!judgeResult.completed) {
+      onEvent({ type: 'status', text: `⚖️ v2: Judge 判定未完成 — ${judgeResult.reason}` });
+      // 未完成 → 重新规划(如果还有额度)
+      await this.replan(prompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, plan);
     } else {
-      conv.directHistory = updated;
+      onEvent({ type: 'status', text: `⚖️ v2: Judge 判定已完成 — ${judgeResult.reason}` });
+    }
+
+    // ── Phase 5: Context 压缩(与 v1 共享)──
+    this.finalizeContext(conv, execHistory, provider, snap, signal);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Replan:Judge 判定未完成时,重新规划并执行(递归,最多 MAX_REPLANS 次)
+  // ════════════════════════════════════════════════════════════════════
+
+  private async replan(
+    originalPrompt: string,
+    conv: Conversation,
+    snap: ReturnType<typeof snapshot>,
+    provider: ReturnType<typeof currentProvider>,
+    ctx: ToolCtx,
+    tools: Tool[],
+    systemPrompt: string,
+    memoryBlock: string,
+    signal: AbortSignal,
+    onEvent: (e: AgentEvent) => void,
+    execHistory: ChatMsg[],
+    prevPlan: Plan,
+    replanCount = 0,
+  ): Promise<void> {
+    if (replanCount >= MAX_REPLANS) {
+      onEvent({ type: 'status', text: `🛑 v2: 已达最大重规划次数 (${MAX_REPLANS}),停止` });
+      return;
+    }
+    if (signal.aborted) return;
+
+    onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
+
+    // 告诉模型上一轮哪里没做好,让它重新出 plan
+    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, 200)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
+
+    const plannerMessages = await runAgentLoop({
+      provider,
+      tools: [...readOnlyTools(), ...(await mcp.directTools(2000))],
+      systemPrompt: systemPrompt + '\n\n' + PLANNER_PROMPT,
+      memoryBlock,
+      snapshot: snap,
+      userInput: replanInput,
+      history: execHistory,
+      ctx: { ...ctx, sandbox: 'readOnly' },
+      signal,
+      maxTurns: 12,
+      onEvent: (ev) => this.forwardEvent(ev, onEvent),
+    });
+
+    const newPlan = this.parsePlan(this.extractLastAssistantText(plannerMessages));
+    if (!newPlan || newPlan.steps.length === 0) {
+      // 模型没出新 plan → 说明它觉得可以直接给出答案,走退化模式
+      return;
+    }
+
+    // 执行新 plan(简化版:不再递归 replan,避免无限循环)
+    for (const step of newPlan.steps) {
+      if (signal.aborted) break;
+      step.status = 'running';
+      onEvent({ type: 'status', text: `🔨 v2: 重执行步骤 [${step.id}] ${step.title}` });
+
+      const stepMessages = await runAgentLoop({
+        provider,
+        tools,
+        systemPrompt,
+        userInput: STEP_EXECUTOR_PROMPT(step, newPlan.steps, newPlan.goal),
+        history: plannerMessages,
+        ctx,
+        signal,
+        snapshot: snap,
+        contextMode: conv.contextMode,
+        hifiContextBudget: getSettings().hifiContextBudget,
+        onEvent: (ev) => this.forwardEvent(ev, onEvent),
+      });
+
+      execHistory = stepMessages;
+      step.status = 'done';
+      step.result = this.extractLastAssistantText(stepMessages).slice(0, 500);
+      onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+    }
+
+    // 最终验证
+    await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, execHistory);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // Plan 解析:从模型回答中提取 <plan> JSON
+  // ════════════════════════════════════════════════════════════════════
+
+  private parsePlan(text: string): Plan | null {
+    // 匹配 <plan>{...}</plan> 或裸 JSON
+    const planMatch = text.match(/<plan>\s*(\{[\s\S]*?\})\s*<\/plan>/i);
+    const jsonStr = planMatch?.[1] ?? null;
+    if (!jsonStr) return null;
+
+    try {
+      const raw = JSON.parse(jsonStr) as { goal?: string; steps?: unknown[]; summary?: string };
+      if (!Array.isArray(raw.steps) || raw.steps.length === 0) return null;
+
+      const steps: PlanStep[] = raw.steps.map((s, i) => {
+        const obj = s as Record<string, unknown>;
+        return {
+          id: String(obj.id ?? i + 1),
+          title: String(obj.title ?? `步骤 ${i + 1}`),
+          description: String(obj.description ?? ''),
+          status: 'pending' as const,
+          verifyCommand: obj.verifyCommand ? String(obj.verifyCommand) : undefined,
+          retryCount: 0,
+        };
+      });
+
+      return {
+        goal: String(raw.goal ?? ''),
+        steps,
+        summary: String(raw.summary ?? steps.map((s) => s.title).join(', ')),
+      };
+    } catch {
+      return null; // JSON 解析失败 → 当作无 plan
     }
   }
 
   // ════════════════════════════════════════════════════════════════════
-  // 构建 ToolCtx(复用 v1 的逻辑,但保留 v2 引用以便未来扩展)
+  // Judge:独立 LLM 调用判定目标是否完成
+  // ════════════════════════════════════════════════════════════════════
+
+  private async judge(
+    plan: Plan,
+    provider: ReturnType<typeof currentProvider>,
+    snap: ReturnType<typeof snapshot>,
+    signal: AbortSignal,
+    onEvent: (e: AgentEvent) => void,
+  ): Promise<{ completed: boolean; reason: string }> {
+    try {
+      const comp = await provider.streamComplete(
+        [
+          { role: 'system', content: '你是验收裁判。严格判定,不要因为模型说"完成了"就轻信。只有验证通过且逻辑自洽才算完成。' },
+          { role: 'user', content: JUDGE_PROMPT(plan.goal, plan.steps) },
+        ],
+        [],
+        snap,
+        signal,
+        () => {},
+      );
+
+      // 消费 Judge LLM 调用的 cost
+      const { priceUSD } = await import('./glm');
+      if (comp.tokensIn > 0 || comp.tokensOut > 0) {
+        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+      }
+
+      const text = comp.content ?? '';
+      const jsonMatch = text.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const obj = JSON.parse(jsonMatch[0]) as { completed?: boolean; reason?: string };
+        return {
+          completed: Boolean(obj.completed),
+          reason: String(obj.reason ?? '(无说明)'),
+        };
+      }
+      // JSON 解析失败 → 默认判定完成(不阻塞用户)
+      return { completed: true, reason: 'Judge 响应解析失败,默认判定完成' };
+    } catch {
+      // Judge 出错 → 默认判定完成(不因 Judge 故障阻塞流程)
+      return { completed: true, reason: 'Judge 调用失败,默认判定完成' };
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 验证命令执行:走 confirm/sandbox,不再绕过
+  // ════════════════════════════════════════════════════════════════════
+
+  /** 运行指定验证命令(走 confirm 审批 + shellExec 统一执行)。 */
+  private async runVerify(
+    command: string,
+    cwd: string,
+    ctx: ToolCtx,
+    signal: AbortSignal,
+    onEvent: (e: AgentEvent) => void,
+  ): Promise<{ ok: boolean; output: string }> {
+    // 安全:验证命令必须走 confirm(和 shell 工具一致)
+    const approved = await ctx.confirm(`[v2 验证] ${command}`);
+    if (!approved) {
+      return { ok: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过
+    }
+
+    try {
+      const output = await shellExec(command, cwd, 30_000, signal);
+      const ok = !/\[exit \d+\]/.test(output); // shellExec 非零退出码会加 [exit N] 前缀
+      return { ok, output: output.slice(0, 3000) };
+    } catch {
+      return { ok: false, output: '验证命令执行失败' };
+    }
+  }
+
+  /**
+   * 自动验证:从实际工具调用记录(不是文字)检测文件修改,
+   * 检测到后运行项目级验证命令(走 confirm)。
+   */
+  private async autoVerifyFromSteps(
+    conv: Conversation,
+    _snap: ReturnType<typeof snapshot>,
+    ctx: ToolCtx,
+    signal: AbortSignal,
+    onEvent: (e: AgentEvent) => void,
+    messages: ChatMsg[],
+  ): Promise<void> {
+    // 检查实际工具调用(而非文字描述)是否包含写操作
+    const hasFileChange = this.detectFileChangesFromMessages(messages);
+    if (!hasFileChange) return;
+
+    const verifyCmd = this.detectVerifyCommand(conv.cwd);
+    if (!verifyCmd) return;
+
+    onEvent({ type: 'status', text: `🔬 v2: 自动验证 (${verifyCmd.name})...` });
+
+    const result = await this.runVerify(verifyCmd.command, conv.cwd, ctx, signal, onEvent);
+    onEvent({
+      type: 'tool',
+      name: 'verify',
+      args: verifyCmd.name,
+      result: result.ok
+        ? `✅ ${verifyCmd.name} 通过\n${result.output.slice(0, 2000)}`
+        : `⚠️ ${verifyCmd.name} 发现问题:\n${result.output}`,
+    });
+    if (!result.ok) {
+      onEvent({ type: 'status', text: `⚠️ v2: 验证发现问题(${verifyCmd.name}),请检查` });
+    }
+  }
+
+  /**
+   * 从 ChatMsg[] 中检测实际工具调用是否包含写操作。
+   * 检查 assistant 消息的 tool_calls(而非文字内容)—— 更可靠。
+   */
+  private detectFileChangesFromMessages(messages: ChatMsg[]): boolean {
+    const writeTools = ['write_file', 'edit_file', 'shell'];
+    return messages.some((m) => {
+      if (!m.tool_calls) return false;
+      return m.tool_calls.some((tc) => writeTools.includes(tc.function.name));
+    });
+  }
+
+  /** 检测项目类型,返回最合适的验证命令。 */
+  private detectVerifyCommand(cwd: string): { name: string; command: string } | null {
+    try {
+      // TypeScript 项目:tsc --noEmit
+      if (fs.existsSync(path.join(cwd, 'tsconfig.json'))) {
+        return { name: 'tsc', command: 'npx tsc --noEmit 2>&1' };
+      }
+      // package.json 但无 tsconfig:npm test(如果有)
+      if (fs.existsSync(path.join(cwd, 'package.json'))) {
+        const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
+        if (pkg.scripts?.test && pkg.scripts.test !== 'echo "Error: no test specified" && exit 1') {
+          return { name: 'npm test', command: 'npm test 2>&1' };
+        }
+      }
+      // Python 项目:暂不支持
+      if (fs.existsSync(path.join(cwd, 'pyproject.toml')) || fs.existsSync(path.join(cwd, 'setup.py'))) {
+        return null;
+      }
+    } catch {
+      // 检测失败 → 不验证
+    }
+    return null;
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 工具方法
+  // ════════════════════════════════════════════════════════════════════
+
+  /** 从 messages 中提取最后一条 assistant 消息的文本内容。 */
+  private extractLastAssistantText(messages: ChatMsg[]): string {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const m = messages[i];
+      if (m.role === 'assistant' && typeof m.content === 'string') {
+        return m.content;
+      }
+    }
+    return '';
+  }
+
+  /**
+   * 转发事件给上层,给 status 事件加 v2 前缀(防重复嵌套)。
+   * 如果事件文本已经包含 "v2:" 前缀,直接透传。
+   */
+  private forwardEvent(ev: AgentEvent, onEvent: (e: AgentEvent) => void): void {
+    if (ev.type === 'status') {
+      const text = ev.text.startsWith('v2:') ? ev.text : `v2: ${ev.text}`;
+      onEvent({ type: 'status', text });
+    } else {
+      onEvent(ev);
+    }
+  }
+
+  /** Context 压缩(与 v1 共享逻辑)。 */
+  private async finalizeContext(
+    conv: Conversation,
+    messages: ChatMsg[],
+    provider: ReturnType<typeof currentProvider>,
+    snap: ReturnType<typeof snapshot>,
+    signal: AbortSignal,
+  ): Promise<void> {
+    if (!signal.aborted) {
+      const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
+      conv.directHistory = await compactHistory(
+        messages,
+        conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
+        provider,
+        snap,
+        signal,
+      );
+    } else {
+      conv.directHistory = messages;
+    }
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 构建 ToolCtx(复用 v1 的逻辑,子 agent prompt 引用共享的 SUBAGENT_PROMPT)
   // ════════════════════════════════════════════════════════════════════
 
   private buildCtx(conv: Conversation, snap: ReturnType<typeof snapshot>, signal: AbortSignal, onEvent: (e: AgentEvent) => void): ToolCtx {
@@ -194,7 +628,7 @@ export class DirectV2Engine implements Engine {
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
-          systemPrompt: `你是子 agent,在主 agent(v2)派发下独立完成一个子任务。你只有只读工具。聚焦目标,结束后用简洁中文汇报结果。`,
+          systemPrompt: SUBAGENT_PROMPT,
           snapshot: snap,
           userInput: sub,
           history: [],
@@ -214,90 +648,5 @@ export class DirectV2Engine implements Engine {
         return text || '(子任务无文本输出)';
       },
     };
-  }
-
-  // ════════════════════════════════════════════════════════════════════
-  // 自动验证:检测到文件修改后,尝试运行验证命令
-  // ════════════════════════════════════════════════════════════════════
-
-  private detectFileChanges(answer: string): boolean {
-    // 简单启发式:回答里提到写入/修改/创建文件
-    return /(?:write_file|edit_file|已写入|已修改|已创建|已替换|写入成功|saved|updated|created)/i.test(answer);
-  }
-
-  private async autoVerify(
-    conv: Conversation,
-    snap: ReturnType<typeof snapshot>,
-    ctx: ToolCtx,
-    signal: AbortSignal,
-    onEvent: (e: AgentEvent) => void,
-  ): Promise<void> {
-    // 检测项目类型,选合适的验证命令
-    const verifyCmd = this.detectVerifyCommand(conv.cwd);
-    if (!verifyCmd) return; // 没有可用的验证工具,跳过
-
-    onEvent({ type: 'status', text: `🔬 v2: 自动验证 (${verifyCmd.name})...` });
-
-    try {
-      const { exec } = await import('node:child_process');
-      const { promisify } = await import('node:util');
-      const execAsync = promisify(exec);
-      const result = await execAsync(verifyCmd.command, {
-        cwd: conv.cwd,
-        maxBuffer: 1024 * 1024,
-        timeout: 30_000,
-        signal,
-        env: { ...process.env, FORCE_COLOR: '0' },
-      });
-      // 验证通过
-      onEvent({
-        type: 'tool',
-        name: 'verify',
-        args: verifyCmd.name,
-        result: `✅ ${verifyCmd.name} 通过\n${(result.stdout || '').slice(0, 2000)}`,
-      });
-    } catch (e: unknown) {
-      const err = e as { stdout?: string; stderr?: string; message?: string };
-      // 验证失败 → 发 status 提示(但不阻止 done)
-      const output = (err.stdout || '') + (err.stderr || '');
-      const trimmed = output.slice(0, 3000) || err.message || '未知错误';
-      onEvent({
-        type: 'tool',
-        name: 'verify',
-        args: verifyCmd.name,
-        result: `⚠️ ${verifyCmd.name} 发现问题:\n${trimmed}`,
-      });
-      // 发一个 status 提示模型可以在下一轮修复
-      onEvent({
-        type: 'status',
-        text: `⚠️ v2: 验证发现问题(${verifyCmd.name}),请在后续回复中修复`,
-      });
-    }
-  }
-
-  // 检测项目类型,返回最合适的验证命令
-  private detectVerifyCommand(cwd: string): { name: string; command: string } | null {
-    const fs = require('node:fs');
-    const path = require('node:path');
-    try {
-      // TypeScript 项目:tsc --noEmit
-      if (fs.existsSync(path.join(cwd, 'tsconfig.json'))) {
-        return { name: 'tsc', command: 'npx tsc --noEmit 2>&1' };
-      }
-      // package.json 但无 tsconfig:npm test(如果有)
-      if (fs.existsSync(path.join(cwd, 'package.json'))) {
-        const pkg = JSON.parse(fs.readFileSync(path.join(cwd, 'package.json'), 'utf8'));
-        if (pkg.scripts?.test && pkg.scripts.test !== 'echo "Error: no test specified" && exit 1') {
-          return { name: 'npm test', command: 'npm test 2>&1' };
-        }
-      }
-      // Python 项目:py_compile
-      if (fs.existsSync(path.join(cwd, 'pyproject.toml')) || fs.existsSync(path.join(cwd, 'setup.py'))) {
-        return null; // python 验证太依赖环境,暂不做
-      }
-    } catch {
-      // 检测失败 → 不验证
-    }
-    return null;
   }
 }

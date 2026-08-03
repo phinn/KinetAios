@@ -46,7 +46,7 @@ export function personaSection(): string {
 }
 
 // 子 agent 系统提示(Direct 的 dispatch_agent 用)。只读工具,完成后文本汇报。
-const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
+export const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
 你只有只读工具(read_file / grep / glob / web_search / web_fetch / recall_memory)—— 不能写文件、不能起 shell、不能再派发子任务。
 聚焦完成给定目标,结束后用简洁中文文本汇报结果(结论 / 找到的东西 / 关键路径),不要寒暄。`;
 
