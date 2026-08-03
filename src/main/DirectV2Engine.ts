@@ -189,7 +189,7 @@ export class DirectV2Engine implements Engine {
       history: conv.directHistory,
       ctx: { ...ctx, sandbox: 'readOnly' }, // planner 强制只读
       signal,
-      maxTurns: 12, // 规划阶段不需要太多轮
+      // maxTurns 不设限 — Planner 需要充分探查复杂项目,使用全局设置值
       contextMode: conv.contextMode,
       hifiContextBudget: getSettings().hifiContextBudget,
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
@@ -336,7 +336,7 @@ export class DirectV2Engine implements Engine {
       history: execHistory,
       ctx: { ...ctx, sandbox: 'readOnly' },
       signal,
-      maxTurns: 12,
+      // maxTurns 不设限 — Replan 同样需要充分探查
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
