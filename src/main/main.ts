@@ -1819,6 +1819,45 @@ function registerIpc(): void {
         }请用简洁易懂的中文回答。如果用户问到当前项目相关信息,基于以上上下文回答。`;
       }
       console.log('[VoiceChat] 📎 项目上下文注入:', activeConv?.cwd ? `项目=${activeConv.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop()}, 轮次=${activeConv.turns.length}` : '无活跃会话或无 cwd');
+
+      // 设置 Agent 桥接:用户说完话 → ASR 文本转给 Agent → Agent 结果回传语音
+      // Agent bridge: user speech → ASR text to Agent → Agent result spoken back
+      voiceChat.onUserMessage(async (text: string) => {
+        const convs = taskManager.list();
+        if (convs.length === 0) {
+          voiceChat.agentResult('当前没有活跃的对话频道,请先创建一个。');
+          return;
+        }
+        const conv = convs[0];
+        if (conv.status === 'running') {
+          voiceChat.agentResult('上一个任务还在执行中,请稍等。');
+          return;
+        }
+        console.log('[VoiceChat] 🔄 转发给 Agent:', text, 'convId:', conv.id);
+        try {
+          await taskManager.send(conv.id, text);
+          // 轮询检测 turn 完成,最多等 60s
+          // Poll for turn completion, max 60s
+          const start = Date.now();
+          const poll = setInterval(() => {
+            const c = taskManager.get(conv.id);
+            if (!c) { clearInterval(poll); return; }
+            const lastTurn = c.turns[c.turns.length - 1];
+            if (lastTurn?.done) {
+              clearInterval(poll);
+              const result = (lastTurn.answer || '').slice(0, 2000);
+              console.log('[VoiceChat] ✅ Agent 完成,回传:', result.slice(0, 100));
+              voiceChat.agentResult(result || '执行完成,但没有返回文本。');
+            } else if (Date.now() - start > 60000) {
+              clearInterval(poll);
+              voiceChat.agentResult('Agent 执行超时,请稍后重试。');
+            }
+          }, 500);
+        } catch (e) {
+          voiceChat.agentResult(`Agent 执行失败: ${(e as Error)?.message ?? String(e)}`);
+        }
+      });
+
       await voiceChat.start({ ...s.voiceChat, contextHint });
       return { ok: true };
     } catch (e) {

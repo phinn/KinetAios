@@ -3462,7 +3462,8 @@ function wireVoiceChat(): void {
         // 在 AI 文本区显示(覆盖豆包的通用回复,因为 Agent 结果更准确)
         vcAiText = ev.text;
         document.getElementById('vc-ai-text')!.textContent = vcAiText;
-        // 不自动朗读 — 用户可自行决定是否播放
+        // 自动朗读 Agent 结果(系统级 TTS,零依赖)
+        speakText(ev.text);
         break;
       }
       case 'aiAudio':
