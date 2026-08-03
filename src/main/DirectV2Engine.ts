@@ -183,6 +183,7 @@ export class DirectV2Engine implements Engine {
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
+    this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
     const snap = { ...base, model: conv.model || base.model };
@@ -245,9 +246,13 @@ export class DirectV2Engine implements Engine {
     const plannerAnswer = this.extractLastAssistantText(plannerMessages);
     const plan = this.parsePlan(plannerAnswer);
 
-    // Planner 失败检测:API 报错被 forwardEvent 吞掉后,plannerAnswer 可能为空(无新助手消息)。
-    // 此时退化为 v1 模式只会展示空/错误内容,不如明确告知用户。
-    if (!plannerAnswer.trim() && !signal.aborted) {
+    // Planner 失败检测:API 报错时 runAgentLoop 返回 [...history, user_input]——
+    // extractLastAssistantText 会命中 history 里的旧 assistant 消息(上一轮的过期回答)。
+    // 正确检测:如果 messages 尾部不是 assistant 消息(或新 assistant 前面没有新的 user input),
+    // 说明本轮没有产生新的 assistant 回复 → API 报错。
+    const lastMsg = plannerMessages[plannerMessages.length - 1];
+    const hasNewAssistant = lastMsg?.role === 'assistant';
+    if (!hasNewAssistant && !signal.aborted) {
       onEvent({ type: 'status', text: '⚠️ v2: 规划阶段未产生有效输出(可能是 API 错误),请重试' });
       onEvent({ type: 'error', message: 'v2 规划阶段失败:模型未返回有效内容。请检查 API 连接后重试。' });
       conv.directHistory = plannerMessages;
@@ -277,6 +282,7 @@ export class DirectV2Engine implements Engine {
 
       let stepDone = false;
       let verifyApproved = false; // 同一步骤首次 confirm 后记住,重试不再弹窗
+      let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
 
@@ -298,6 +304,9 @@ export class DirectV2Engine implements Engine {
 
         execHistory = stepMessages;
         const stepAnswer = this.extractLastAssistantText(stepMessages);
+        // 在截断前检测 [GOAL_COMPLETE]:prompt 要求模型放在回答最末尾,
+        // step.result 被 slice(0,2000) 截断后会漏掉(长回答场景)
+        goalComplete = stepAnswer.includes('[GOAL_COMPLETE]');
 
         // 验证此步骤
         if (step.verifyCommand) {
@@ -331,7 +340,7 @@ export class DirectV2Engine implements Engine {
       }
 
       // 检测模型是否声明目标已完成(goal 模式)→ 跳过剩余步骤,直接进 Judge
-      if (stepDone && step.result?.includes('[GOAL_COMPLETE]')) {
+      if (stepDone && goalComplete) {
         // 标记后续步骤为 skipped
         for (const s of plan.steps) {
           if (s.status === 'pending') s.status = 'skipped';
@@ -421,13 +430,21 @@ export class DirectV2Engine implements Engine {
       ctx: { ...ctx, sandbox: 'readOnly' },
       signal,
       // maxTurns 不设限 — Replan 同样需要充分探查
+      contextMode: conv.contextMode, // 与 run() 的 planner 保持一致
+      hifiContextBudget: getSettings().hifiContextBudget,
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
     execHistory = plannerMessages;
 
+    // Planner 失败检测:同 run()——检查尾部是否有新 assistant 消息
+    const replanLastMsg = plannerMessages[plannerMessages.length - 1];
+    if (replanLastMsg?.role !== 'assistant' && !signal.aborted) {
+      onEvent({ type: 'status', text: '⚠️ v2: 重新规划阶段未产生有效输出(可能是 API 错误)' });
+      return execHistory;
+    }
+
     const replanAnswer = this.extractLastAssistantText(plannerMessages);
-    // Planner 失败检测:API 报错被 forwardEvent 吞掉,可能无新助手消息。
     if (!replanAnswer.trim() && !signal.aborted) {
       onEvent({ type: 'status', text: '⚠️ v2: 重新规划阶段未产生有效输出(可能是 API 错误)' });
       return execHistory;
@@ -448,9 +465,9 @@ export class DirectV2Engine implements Engine {
 
       let stepDone = false;
       let verifyApproved = false;
+      let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
-
         const stepMessages = await runAgentLoop({
           provider,
           tools,
@@ -469,6 +486,7 @@ export class DirectV2Engine implements Engine {
 
         execHistory = stepMessages;
         const stepAnswer = this.extractLastAssistantText(stepMessages);
+        goalComplete = stepAnswer.includes('[GOAL_COMPLETE]'); // 截断前检测
 
         if (step.verifyCommand) {
           const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
@@ -500,7 +518,7 @@ export class DirectV2Engine implements Engine {
       }
 
       // 检测模型是否声明目标已完成 → 跳过剩余步骤
-      if (stepDone && step.result?.includes('[GOAL_COMPLETE]')) {
+      if (stepDone && goalComplete) {
         for (const s of newPlan.steps) {
           if (s.status === 'pending') s.status = 'skipped';
         }
