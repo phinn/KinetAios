@@ -260,10 +260,27 @@ export class DirectV2Engine implements Engine {
     }
 
     if (!plan || plan.steps.length === 0) {
-      // 简单任务退化为 v1 模式:planner 已经给出了答案,直接走 autoVerify + compact
-      onEvent({ type: 'status', text: '⚡ v2: 任务简单,跳过分步执行' });
-      await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, plannerMessages);
-      this.finalizeContext(conv, plannerMessages, provider, snap, signal);
+      // 简单任务退化为 v1 模式:planner 用只读工具探查后直接给了答案。
+      // 但如果任务需要写操作(创建文件/修改代码),planner 没有写工具 → 模型会说"我无法创建文件"。
+      // 修复:退化时用完整工具集(含 write_file/shell)再跑一轮,让模型真正执行任务。
+      onEvent({ type: 'status', text: '⚡ v2: 任务简单,直接执行(完整工具集)' });
+      const execMessages = await runAgentLoop({
+        provider,
+        tools, // 完整工具集(含写工具)
+        systemPrompt,
+        memoryBlock,
+        snapshot: snap,
+        userInput: prompt, // 原始用户请求(不含 PLANNER_PROMPT 的规划指令)
+        history: plannerMessages, // 继承 planner 的探查上下文
+        ctx,
+        signal,
+        maxTurns: 30,
+        contextMode: conv.contextMode,
+        hifiContextBudget: getSettings().hifiContextBudget,
+        onEvent: (ev) => this.forwardEvent(ev, onEvent),
+      });
+      await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execMessages);
+      this.finalizeContext(conv, execMessages, provider, snap, signal);
       onEvent({ type: 'done' });
       return;
     }
