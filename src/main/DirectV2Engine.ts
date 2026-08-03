@@ -303,13 +303,23 @@ export class DirectV2Engine implements Engine {
         });
 
         execHistory = stepMessages;
-        const stepAnswer = this.extractLastAssistantText(stepMessages);
+        // 检测 maxTurns 截断:runAgentLoop 到达上限时 forwardEvent 吞了 error 事件,
+        // 返回值尾部是 tool 消息(非正常完成)。此时模型可能没做完 → 标记失败让重试。
+        const truncated = this.wasTruncatedByMaxTurns(stepMessages);
+        const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
         // 在截断前检测 [GOAL_COMPLETE]:prompt 要求模型放在回答最末尾,
         // step.result 被 slice(0,2000) 截断后会漏掉(长回答场景)
-        goalComplete = stepAnswer.includes('[GOAL_COMPLETE]');
+        goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
 
-        // 验证此步骤
-        if (step.verifyCommand) {
+        if (truncated) {
+          // maxTurns 截断 → 视为失败,让重试逻辑接管
+          step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+          step.result = `步骤执行达到轮次上限(30 轮),可能未完成`;
+          step.retryCount = attempt + 1;
+          if (attempt + 1 < MAX_RETRIES) {
+            onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 达到轮次上限,重试 ${attempt + 1}/${MAX_RETRIES}` });
+          }
+        } else if (step.verifyCommand) {
           const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
@@ -485,10 +495,18 @@ export class DirectV2Engine implements Engine {
         });
 
         execHistory = stepMessages;
-        const stepAnswer = this.extractLastAssistantText(stepMessages);
-        goalComplete = stepAnswer.includes('[GOAL_COMPLETE]'); // 截断前检测
+        const truncated = this.wasTruncatedByMaxTurns(stepMessages);
+        const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
+        goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
 
-        if (step.verifyCommand) {
+        if (truncated) {
+          step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+          step.result = `步骤执行达到轮次上限(30 轮),可能未完成`;
+          step.retryCount = attempt + 1;
+          if (attempt + 1 < MAX_RETRIES) {
+            onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 达到轮次上限,重试 ${attempt + 1}/${MAX_RETRIES}` });
+          }
+        } else if (step.verifyCommand) {
           const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
@@ -785,6 +803,19 @@ export class DirectV2Engine implements Engine {
   // ════════════════════════════════════════════════════════════════════
   // 工具方法
   // ════════════════════════════════════════════════════════════════════
+
+  /** 检测 runAgentLoop 返回值是否因 maxTurns 被截断。
+   *  runAgentLoop 到达 maxTurns 时发 error 事件(被 forwardEvent 吞掉),然后返回 messages。
+   *  此时 messages 尾部是 tool 消息(模型在调工具时被截断)或带 tool_calls 的 assistant(还没执行工具)。
+   *  正常完成时尾部是无 tool_calls 的 assistant 消息(模型给了最终文字回答)。 */
+  private wasTruncatedByMaxTurns(messages: ChatMsg[]): boolean {
+    if (!messages.length) return false;
+    const last = messages[messages.length - 1];
+    // 正常完成:最后一条是无 tool_calls 的 assistant
+    if (last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0)) return false;
+    // 被截断:最后一条是 tool 消息,或带 tool_calls 的 assistant(缺 tool result)
+    return true;
+  }
 
   /** 从 messages 中提取最后一条有实际文本内容的 assistant 消息。
    *  跳过 content="" 的纯 tool_call assistant 消息 —
