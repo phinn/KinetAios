@@ -935,7 +935,14 @@ export class DirectV2Engine implements Engine {
           const { runCliOneShot } = await import('./engines');
           return await runCliOneShot(engine, sub, conv.cwd, childSignal);
         }
-        // Direct 子任务:只读工具、独立上下文
+        // Direct 子任务:只读工具、独立上下文。
+        // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        // AbortSignal.any 在 Node 20+ 可用;旧版 fallback 到手动 AbortController。
+        const subAc = new AbortController();
+        const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
+        // 主 signal abort 时也 abort 子任务
+        if (childSignal.aborted) subAc.abort();
+        else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
@@ -944,13 +951,14 @@ export class DirectV2Engine implements Engine {
           userInput: sub,
           history: [],
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
-          signal: childSignal,
+          signal: subAc.signal,
           maxTurns: 8,
           onEvent: (e) => {
             if (e.type === 'cost') onEvent(e);
             else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
           },
         });
+        clearTimeout(subTimer);
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)

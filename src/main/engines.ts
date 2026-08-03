@@ -130,6 +130,11 @@ class DirectEngine implements Engine {
         if (engine === 'claudeCode' || engine === 'codex') {
           return await runCliOneShot(engine, sub, conv.cwd, childSignal);
         }
+        // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        const subAc = new AbortController();
+        const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
+        if (childSignal.aborted) subAc.abort();
+        else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
@@ -138,13 +143,14 @@ class DirectEngine implements Engine {
           userInput: sub,
           history: [],
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
-          signal: childSignal,
+          signal: subAc.signal,
           maxTurns: 8,
           onEvent: (e) => {
             if (e.type === 'cost') onEvent(e);
             else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
           },
         });
+        clearTimeout(subTimer);
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)
@@ -233,10 +239,13 @@ export async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: stri
     ? (engine === 'claudeCode' ? ['-p'] : ['exec'])
     : (engine === 'claudeCode' ? ['-p', prompt] : ['exec', prompt]);
   try {
+    // timeout 5 分钟:CLI 子任务可能跑很久(大代码库分析),但不能无限等。
+    // execFile 的 timeout 到期后会杀进程,防止 dispatch_agent engine=claudeCode/codex 永久 hang。
     const { stdout } = await execFileAsync(bin.cmd, args, {
       cwd,
       env: binEnv(),
       signal,
+      timeout: 5 * 60 * 1000,
       maxBuffer: 10 * 1024 * 1024,
       ...(bin.shell ? { shell: true } : {}),
       ...(useStdin ? { input: prompt } : {}),
