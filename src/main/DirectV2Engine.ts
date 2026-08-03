@@ -418,6 +418,7 @@ export class DirectV2Engine implements Engine {
     const newPlan = this.parsePlan(this.extractLastAssistantText(plannerMessages));
     if (!newPlan || newPlan.steps.length === 0) {
       // 模型没出新 plan → 说明它觉得可以直接给出答案,走退化模式
+      onEvent({ type: 'status', text: '⚠️ v2: 重新规划未产出新 plan — 任务可能未真正完成,请检查输出' });
       return execHistory;
     }
 
@@ -636,8 +637,9 @@ export class DirectV2Engine implements Engine {
     }
 
     try {
-      const output = await shellExec(command, cwd, 30_000, signal);
-      const ok = !/\[exit \d+\]/.test(output); // shellExec 非零退出码会加 [exit N] 前缀
+      const output = await shellExec(command, cwd, 120_000, signal); // 与 shell 工具一致 120s;30s 会误杀 npx tsc 冷启动/大项目
+      // shellExec 非零退出码加 [exit N] 前缀;超时返回 [超时(Ns),已终止。] —— 两种都必须判为失败,否则超时会被静默当作验证通过
+      const ok = !/\[exit \d+\]/.test(output) && !output.startsWith('[超时');
       return { ok, output: output.slice(0, 3000) };
     } catch {
       return { ok: false, output: '验证命令执行失败' };
@@ -720,7 +722,8 @@ export class DirectV2Engine implements Engine {
       if (hasData || hasOutput || hasPy) {
         return {
           name: 'data-check',
-          command: `python -c "import os; files=[f for f in os.listdir('.') if f.endswith(('.html','.csv','.xlsx','.xls','.json'))]; print(f'产出文件 ({len(files)}): ' + ', '.join(sorted(files)[:20]) if files else '⚠️ 未发现产出文件'"`,
+          // 纯 ASCII 输出:emoji/中文在 Windows cmd 默认 GBK 代码页下 print 会 UnicodeEncodeError → 误报失败
+          command: `python -c "import os; files=[f for f in os.listdir('.') if f.lower().endswith(('.html','.csv','.xlsx','.xls','.json'))]; print('output files ('+str(len(files))+'): ' + ', '.join(sorted(files)[:20]) if files else '(no output files found)')"`,
         };
       }
     } catch {
