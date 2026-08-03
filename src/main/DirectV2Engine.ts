@@ -244,6 +244,15 @@ export class DirectV2Engine implements Engine {
     const plannerAnswer = this.extractLastAssistantText(plannerMessages);
     const plan = this.parsePlan(plannerAnswer);
 
+    // Planner 失败检测:API 报错被 forwardEvent 吞掉后,plannerAnswer 可能为空(无新助手消息)。
+    // 此时退化为 v1 模式只会展示空/错误内容,不如明确告知用户。
+    if (!plannerAnswer.trim() && !signal.aborted) {
+      onEvent({ type: 'status', text: '⚠️ v2: 规划阶段未产生有效输出(可能是 API 错误),请重试' });
+      onEvent({ type: 'error', message: 'v2 规划阶段失败:模型未返回有效内容。请检查 API 连接后重试。' });
+      conv.directHistory = plannerMessages;
+      return;
+    }
+
     if (!plan || plan.steps.length === 0) {
       // 简单任务退化为 v1 模式:planner 已经给出了答案,直接走 autoVerify + compact
       onEvent({ type: 'status', text: '⚡ v2: 任务简单,跳过分步执行' });
@@ -274,7 +283,7 @@ export class DirectV2Engine implements Engine {
           provider,
           tools, // 执行阶段:完整工具集(含写工具)
           systemPrompt,
-          // 不注入 memoryBlock(已经在 planner 轮注入过,execHistory 里已有)
+          memoryBlock, // 每步都注入长期记忆:dropTransient 会从返回值里剔除,模型必须在调用时看到
           snapshot: snap,
           userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote,
           history: execHistory,
@@ -415,7 +424,14 @@ export class DirectV2Engine implements Engine {
 
     execHistory = plannerMessages;
 
-    const newPlan = this.parsePlan(this.extractLastAssistantText(plannerMessages));
+    const replanAnswer = this.extractLastAssistantText(plannerMessages);
+    // Planner 失败检测:API 报错被 forwardEvent 吞掉,可能无新助手消息。
+    if (!replanAnswer.trim() && !signal.aborted) {
+      onEvent({ type: 'status', text: '⚠️ v2: 重新规划阶段未产生有效输出(可能是 API 错误)' });
+      return execHistory;
+    }
+
+    const newPlan = this.parsePlan(replanAnswer);
     if (!newPlan || newPlan.steps.length === 0) {
       // 模型没出新 plan → 说明它觉得可以直接给出答案,走退化模式
       onEvent({ type: 'status', text: '⚠️ v2: 重新规划未产出新 plan — 任务可能未真正完成,请检查输出' });
@@ -437,6 +453,7 @@ export class DirectV2Engine implements Engine {
           provider,
           tools,
           systemPrompt,
+          memoryBlock, // 每步注入长期记忆(dropTransient 会从返回值剔除,不持久化)
           userInput: STEP_EXECUTOR_PROMPT(step, newPlan.steps, newPlan.goal) + retryNote,
           history: execHistory,
           ctx,
