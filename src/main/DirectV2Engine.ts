@@ -179,6 +179,7 @@ function extractBalancedJson(text: string): string | null {
 
 export class DirectV2Engine implements Engine {
   readonly name = 'directV2' as const;
+  private autoVerifyApproved = false; // 一次 run 中 autoVerify 首次 confirm 后记住,避免 replan 反复弹窗
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
@@ -289,6 +290,7 @@ export class DirectV2Engine implements Engine {
           history: execHistory,
           ctx,
           signal,
+          maxTurns: 30, // 单步上限 30 轮:防止模型陷入循环反复 read_file 同一文件烧 token
           contextMode: conv.contextMode,
           hifiContextBudget: getSettings().hifiContextBudget,
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
@@ -459,6 +461,7 @@ export class DirectV2Engine implements Engine {
           ctx,
           signal,
           snapshot: snap,
+          maxTurns: 30, // 单步上限 30 轮(与主流程一致)
           contextMode: conv.contextMode,
           hifiContextBudget: getSettings().hifiContextBudget,
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
@@ -614,13 +617,18 @@ export class DirectV2Engine implements Engine {
       }
 
       const text = comp.content ?? '';
-      const jsonMatch = text.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        const obj = JSON.parse(jsonMatch[0]) as { completed?: boolean; reason?: string };
-        return {
-          completed: Boolean(obj.completed),
-          reason: String(obj.reason ?? '(无说明)'),
-        };
+      // 用 brace-counting 提取 JSON(而非贪婪 \{[\s\S]*\}——会在多段 JSON 时取到最后一个 })
+      const jsonStr = extractBalancedJson(text);
+      if (jsonStr) {
+        try {
+          const obj = JSON.parse(jsonStr) as { completed?: boolean; reason?: string };
+          return {
+            completed: Boolean(obj.completed),
+            reason: String(obj.reason ?? '(无说明)'),
+          };
+        } catch {
+          // JSON.parse 失败 → 走默认
+        }
       }
       // JSON 解析失败 → 默认判定完成(不阻塞用户)
       return { completed: true, reason: 'Judge 响应解析失败,默认判定完成' };
@@ -683,7 +691,14 @@ export class DirectV2Engine implements Engine {
 
     onEvent({ type: 'status', text: `🔬 v2: 自动验证 (${verifyCmd.name})...` });
 
-    const result = await this.runVerify(verifyCmd.command, conv.cwd, ctx, signal, onEvent);
+    // autoVerify 在一次 run 中可能被调用多次(主流程 + replan),记住首次 confirm 即可
+    if (!this.autoVerifyApproved) {
+      const approved = await ctx.confirm(`[v2 验证] ${verifyCmd.command}`);
+      this.autoVerifyApproved = true;
+      if (!approved) return; // 用户拒绝 → 跳过全局验证
+    }
+
+    const result = await this.runVerify(verifyCmd.command, conv.cwd, ctx, signal, onEvent, true);
     onEvent({
       type: 'tool',
       name: 'verify',
@@ -753,11 +768,13 @@ export class DirectV2Engine implements Engine {
   // 工具方法
   // ════════════════════════════════════════════════════════════════════
 
-  /** 从 messages 中提取最后一条 assistant 消息的文本内容。 */
+  /** 从 messages 中提取最后一条有实际文本内容的 assistant 消息。
+   *  跳过 content="" 的纯 tool_call assistant 消息 —
+   *  模型在最后一步可能只调工具不写文字,用空字符串会导致 Planner 失败误报。 */
   private extractLastAssistantText(messages: ChatMsg[]): string {
     for (let i = messages.length - 1; i >= 0; i--) {
       const m = messages[i];
-      if (m.role === 'assistant' && typeof m.content === 'string') {
+      if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) {
         return m.content;
       }
     }
