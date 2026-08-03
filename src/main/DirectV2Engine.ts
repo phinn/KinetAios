@@ -86,6 +86,12 @@ const V2_SYSTEM_SUFFIX = `
 ## 何时不需要 plan:
 - 简单问答、单文件修改、快速查询
 - 直接执行即可,不用过度规划
+
+## 中间结果落地(重要):
+当任务涉及多文件数据处理时(如 CSV/Excel 分析、跨文件统计):
+- **将每步的关键产出写入临时文件**(如 \`_step1_summary.json\`、\`_step2_result.csv\`)
+- 后续步骤通过 \`read_file\` 读取这些文件,而非依赖对话上下文中可能被裁剪的文本
+- 这样即使上下文压缩(trim/compact),关键数据也能持久保留在磁盘上
 `;
 
 // Planner prompt —— 引导模型先探查再规划(只读工具,不执行写操作)。
@@ -116,7 +122,9 @@ const STEP_EXECUTOR_PROMPT = (step: PlanStep, allSteps: PlanStep[], planGoal: st
 ${step.verifyCommand ? `**验证命令:** ${step.verifyCommand}` : ''}
 
 **已完成步骤:**
-${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.title}: ${(s.result || '完成').slice(0, 200)}`).join('\n') || '  (无)'}
+${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.title}: ${(s.result || '完成').slice(0, 1000)}`).join('\n') || '  (无)'}
+
+> 💡 如果前步有数据需要引用,请用 read_file 读取前步产出的临时文件(如 _step*_summary.json),不要仅依赖上面的摘要文本。
 
 请执行当前步骤。完成后用简洁中文汇报你做了什么。`;
 
@@ -134,6 +142,36 @@ ${execEvidence ? `**实际执行输出(尾部摘要):**\n${execEvidence}\n` : ''
 输出 JSON:
 \`\`\`{"completed": true/false, "reason": "简要说明为什么完成/未完成", "nextAction": "如果未完成,建议下一步做什么(可为空)"}
 \`\`\``;
+
+// extractBalancedJson — 从文本中提取第一个完整的 `{...}` JSON 对象(brace-counting)。
+// 解决非贪婪正则 `\{[\s\S]*?\}` 在嵌套对象中被第一个 `}` 截断的问题。
+// 标记: 只在字符串字面量外计数 `{`/`}`，避免 JSON 值中的花括号干扰。
+function extractBalancedJson(text: string): string | null {
+  const start = text.indexOf('{');
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = start; i < text.length; i++) {
+    const ch = text[i];
+
+    if (escape) { escape = false; continue; }
+    if (ch === '\\') { escape = true; continue; }
+
+    if (ch === '"') { inString = !inString; continue; }
+    if (inString) continue;
+
+    if (ch === '{') depth++;
+    else if (ch === '}') {
+      depth--;
+      if (depth === 0) return text.slice(start, i + 1);
+    }
+  }
+
+  return null; // 括号不平衡 → 返回 null
+}
 
 // ════════════════════════════════════════════════════════════════════════
 // DirectV2Engine 实现
@@ -256,12 +294,12 @@ export class DirectV2Engine implements Engine {
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
-            step.result = stepAnswer.slice(0, 500);
+            step.result = stepAnswer.slice(0, 2000);
             stepDone = true;
             onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
           } else {
             step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, 500)}`;
+            step.result = `验证失败: ${verifyResult.output.slice(0, 2000)}`;
             step.retryCount = attempt + 1;
             if (attempt + 1 < MAX_RETRIES) {
               onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
@@ -270,7 +308,7 @@ export class DirectV2Engine implements Engine {
         } else {
           // 无验证命令 → 信任模型输出
           step.status = 'done';
-          step.result = stepAnswer.slice(0, 500);
+          step.result = stepAnswer.slice(0, 2000);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
@@ -292,16 +330,14 @@ export class DirectV2Engine implements Engine {
       }
 
       // 步骤间上下文压缩:防止多步 plan 的 history 累积爆炸。
-      // budget 同 finalizeContext(普通 30K / hifi 40% of hifiBudget)。
+      // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
-        const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
-        execHistory = await compactHistory(
-          execHistory,
-          conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
-          provider,
-          snap,
-          signal,
-        );
+        execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
+        // 追加结构化摘要消息,确保下一步 ReAct loop 在 prompt 尾部能看到前步结论。
+        execHistory.push({
+          role: 'user',
+          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${step.result ?? '(无)'}\n---\n`,
+        });
       }
     }
 
@@ -361,7 +397,7 @@ export class DirectV2Engine implements Engine {
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
     // 告诉模型上一轮哪里没做好,让它重新出 plan
-    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, 200)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
+    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, 1000)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
 
     const plannerMessages = await runAgentLoop({
       provider,
@@ -418,12 +454,12 @@ export class DirectV2Engine implements Engine {
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
-            step.result = stepAnswer.slice(0, 500);
+            step.result = stepAnswer.slice(0, 2000);
             stepDone = true;
             onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
           } else {
             step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, 500)}`;
+            step.result = `验证失败: ${verifyResult.output.slice(0, 2000)}`;
             step.retryCount = attempt + 1;
             if (attempt + 1 < MAX_RETRIES) {
               onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
@@ -431,7 +467,7 @@ export class DirectV2Engine implements Engine {
           }
         } else {
           step.status = 'done';
-          step.result = stepAnswer.slice(0, 500);
+          step.result = stepAnswer.slice(0, 2000);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
@@ -451,16 +487,14 @@ export class DirectV2Engine implements Engine {
         break;
       }
 
-      // 步骤间上下文压缩(同 Phase 2)
+      // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
-        const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
-        execHistory = await compactHistory(
-          execHistory,
-          conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
-          provider,
-          snap,
-          signal,
-        );
+        execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
+        // 追加结构化摘要消息,确保下一步 ReAct loop 在 prompt 尾部能看到前步结论。
+        execHistory.push({
+          role: 'user',
+          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${step.result ?? '(无)'}\n---\n`,
+        });
       }
     }
 
@@ -488,9 +522,20 @@ export class DirectV2Engine implements Engine {
   // ════════════════════════════════════════════════════════════════════
 
   private parsePlan(text: string): Plan | null {
-    // 匹配 <plan>{...}</plan> 或裸 JSON
-    const planMatch = text.match(/<plan>\s*(\{[\s\S]*?\})\s*<\/plan>/i);
-    const jsonStr = planMatch?.[1] ?? null;
+    // 策略 1:提取 <plan>...</plan> 标签内容,然后用 brace-counting 找到完整 JSON 对象。
+    // 不再用 \{[\s\S]*?\} 非贪婪匹配 —— 那会在嵌套对象的第一个 `}` 处截断。
+    const planTagMatch = text.match(/<plan>\s*([\s\S]*?)<\/plan>/i);
+    let jsonStr: string | null = null;
+
+    if (planTagMatch) {
+      jsonStr = extractBalancedJson(planTagMatch[1]);
+    }
+
+    // 策略 2:fallback —— 无标签时,在全文中搜索裸 JSON（以 {"goal" 开头）。
+    if (!jsonStr) {
+      jsonStr = extractBalancedJson(text);
+    }
+
     if (!jsonStr) return null;
 
     try {
@@ -663,6 +708,21 @@ export class DirectV2Engine implements Engine {
       if (fs.existsSync(path.join(cwd, 'pyproject.toml')) || fs.existsSync(path.join(cwd, 'setup.py'))) {
         return null;
       }
+
+      // 数据分析场景:检查目录下是否有数据文件或产出文件
+      const dataExts = ['.csv', '.xlsx', '.xls', '.json'];
+      const outputExts = ['.html', '.xlsx'];
+      const pyPattern = /\.(py|ipynb)$/;
+      const entries = fs.readdirSync(cwd);
+      const hasData = entries.some((f) => dataExts.some((ext) => f.toLowerCase().endsWith(ext)));
+      const hasOutput = entries.some((f) => outputExts.some((ext) => f.toLowerCase().endsWith(ext)));
+      const hasPy = entries.some((f) => pyPattern.test(f));
+      if (hasData || hasOutput || hasPy) {
+        return {
+          name: 'data-check',
+          command: `python -c "import os; files=[f for f in os.listdir('.') if f.endswith(('.html','.csv','.xlsx','.xls','.json'))]; print(f'产出文件 ({len(files)}): ' + ', '.join(sorted(files)[:20]) if files else '⚠️ 未发现产出文件'"`,
+        };
+      }
     } catch {
       // 检测失败 → 不验证
     }
@@ -686,10 +746,10 @@ export class DirectV2Engine implements Engine {
 
   /**
    * 从 execHistory 尾部提取最近的 assistant 文本 + tool 结果,截断为 Judge 可读的证据摘要。
-   * 只取尾部 ~20 条消息,每条截断到 300 字符,总上限 ~4000 字符。
+   * 只取尾部 ~30 条消息,tool result 截断到 1000 字符,assistant 截断到 800 字符,总上限 ~8000 字符。
    */
   private extractExecEvidence(messages: ChatMsg[]): string {
-    const tail = messages.slice(-20);
+    const tail = messages.slice(-30);
     const parts: string[] = [];
     let totalLen = 0;
     for (const m of tail) {
@@ -697,17 +757,17 @@ export class DirectV2Engine implements Engine {
       if (m.role === 'assistant') {
         const text = typeof m.content === 'string' ? m.content : '';
         const tools = (m.tool_calls ?? []).map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 80)})`).join(', ');
-        line = `[助手] ${text.slice(0, 300)}${tools ? `  🔧 ${tools}` : ''}`;
+        line = `[助手] ${text.slice(0, 800)}${tools ? `  🔧 ${tools}` : ''}`;
       } else if (m.role === 'tool') {
         const text = typeof m.content === 'string' ? m.content : '';
-        line = `[工具结果] ${text.slice(0, 300)}`;
+        line = `[工具结果] ${text.slice(0, 1000)}`;
       } else if (m.role === 'user' && !m._memory) {
         const text = typeof m.content === 'string' ? m.content : '';
         line = `[用户] ${text.slice(0, 150)}`;
       }
       if (line) {
         totalLen += line.length;
-        if (totalLen > 4000) break;
+        if (totalLen > 8000) break;
         parts.push(line);
       }
     }
@@ -734,6 +794,22 @@ export class DirectV2Engine implements Engine {
   }
 
   /** Context 压缩(与 v1 共享逻辑)。 */
+  // interStepCompact:步骤间压缩 execHistory,防止多步累积导致上下文膨胀。
+  // budget 同 finalizeContext(普通 30K / hifi 40% of hifiBudget)。
+  // 同时在每个步骤完成后追加一条步骤摘要消息,确保后续步骤即使被 trim 也能看到前步结论。
+  private async interStepCompact(
+    messages: ChatMsg[],
+    conv: Conversation,
+    provider: ReturnType<typeof currentProvider>,
+    snap: ReturnType<typeof snapshot>,
+    signal: AbortSignal,
+    onEvent: (e: AgentEvent) => void,
+  ): Promise<ChatMsg[]> {
+    const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
+    const budget = conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000;
+    return compactHistory(messages, budget, provider, snap, signal, onEvent);
+  }
+
   private async finalizeContext(
     conv: Conversation,
     messages: ChatMsg[],
