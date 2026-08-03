@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
-import { currentProvider } from './glm';
+import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
 import { mcp } from './mcp';
@@ -228,6 +228,7 @@ export class DirectV2Engine implements Engine {
       onEvent({ type: 'status', text: `🔨 v2: 执行步骤 [${step.id}] ${step.title}` });
 
       let stepDone = false;
+      let verifyApproved = false; // 同一步骤首次 confirm 后记住,重试不再弹窗
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
 
@@ -251,7 +252,8 @@ export class DirectV2Engine implements Engine {
 
         // 验证此步骤
         if (step.verifyCommand) {
-          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent);
+          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
+          verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
             step.result = stepAnswer.slice(0, 500);
@@ -272,6 +274,11 @@ export class DirectV2Engine implements Engine {
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
+      }
+
+      // 步骤最终失败(MAX_RETRIES 耗尽)→ 告知用户,继续下一步
+      if (!stepDone && step.status === 'failed') {
+        onEvent({ type: 'status', text: `❌ v2: 步骤 [${step.id}] ${step.title} 最终失败,继续下一步` });
       }
 
       // 检测模型是否声明目标已完成(goal 模式)→ 跳过剩余步骤,直接进 Judge
@@ -385,6 +392,7 @@ export class DirectV2Engine implements Engine {
       onEvent({ type: 'status', text: `🔨 v2: 重执行步骤 [${step.id}] ${step.title}` });
 
       let stepDone = false;
+      let verifyApproved = false;
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
 
@@ -406,7 +414,8 @@ export class DirectV2Engine implements Engine {
         const stepAnswer = this.extractLastAssistantText(stepMessages);
 
         if (step.verifyCommand) {
-          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent);
+          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
+          verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
             step.result = stepAnswer.slice(0, 500);
@@ -426,6 +435,11 @@ export class DirectV2Engine implements Engine {
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
+      }
+
+      // 步骤最终失败(MAX_RETRIES 耗尽)→ 告知用户,继续下一步
+      if (!stepDone && step.status === 'failed') {
+        onEvent({ type: 'status', text: `❌ v2: 步骤 [${step.id}] ${step.title} 最终失败,继续下一步` });
       }
 
       // 检测模型是否声明目标已完成 → 跳过剩余步骤
@@ -532,7 +546,6 @@ export class DirectV2Engine implements Engine {
       );
 
       // 消费 Judge LLM 调用的 cost
-      const { priceUSD } = await import('./glm');
       if (comp.tokensIn > 0 || comp.tokensOut > 0) {
         onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
       }
@@ -558,18 +571,23 @@ export class DirectV2Engine implements Engine {
   // 验证命令执行:走 confirm/sandbox,不再绕过
   // ════════════════════════════════════════════════════════════════════
 
-  /** 运行指定验证命令(走 confirm 审批 + shellExec 统一执行)。 */
+  /** 运行指定验证命令(走 confirm 审批 + shellExec 统一执行)。
+   *  skipConfirm: 同一步骤的重试不再重复弹窗(首次 confirm 过即可)。
+   */
   private async runVerify(
     command: string,
     cwd: string,
     ctx: ToolCtx,
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
+    skipConfirm = false,
   ): Promise<{ ok: boolean; output: string }> {
-    // 安全:验证命令必须走 confirm(和 shell 工具一致)
-    const approved = await ctx.confirm(`[v2 验证] ${command}`);
-    if (!approved) {
-      return { ok: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过
+    // 安全:验证命令必须走 confirm(和 shell 工具一致);同一步骤重试时跳过
+    if (!skipConfirm) {
+      const approved = await ctx.confirm(`[v2 验证] ${command}`);
+      if (!approved) {
+        return { ok: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过
+      }
     }
 
     try {
