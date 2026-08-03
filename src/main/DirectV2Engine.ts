@@ -121,13 +121,14 @@ ${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.ti
 请执行当前步骤。完成后用简洁中文汇报你做了什么。`;
 
 // Judge prompt —— 独立 LLM 调用判定 plan 是否真正完成。
-const JUDGE_PROMPT = (planGoal: string, steps: PlanStep[]) => `你是独立的验收裁判(Judge)。你的任务是判定以下 plan 的执行结果是否真正完成了目标。
+const JUDGE_PROMPT = (planGoal: string, steps: PlanStep[], execEvidence?: string) => `你是独立的验收裁判(Judge)。你的任务是判定以下 plan 的执行结果是否真正完成了目标。
 
 **目标:** ${planGoal}
 
 **步骤执行情况:**
 ${steps.map((s) => `  [${s.id}] ${s.title} — 状态: ${s.status}${s.result ? `\n    结果: ${s.result.slice(0, 300)}` : ''}`).join('\n')}
 
+${execEvidence ? `**实际执行输出(尾部摘要):**\n${execEvidence}\n` : ''}
 请回答一个问题:**目标是否已经完成?**
 
 输出 JSON:
@@ -197,6 +198,7 @@ export class DirectV2Engine implements Engine {
 
     if (signal.aborted) {
       conv.directHistory = plannerMessages;
+      onEvent({ type: 'done' });
       return;
     }
 
@@ -207,8 +209,9 @@ export class DirectV2Engine implements Engine {
     if (!plan || plan.steps.length === 0) {
       // 简单任务退化为 v1 模式:planner 已经给出了答案,直接走 autoVerify + compact
       onEvent({ type: 'status', text: '⚡ v2: 任务简单,跳过分步执行' });
-      await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, plannerMessages);
+      await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, plannerMessages);
       this.finalizeContext(conv, plannerMessages, provider, snap, signal);
+      onEvent({ type: 'done' });
       return;
     }
 
@@ -270,36 +273,63 @@ export class DirectV2Engine implements Engine {
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
       }
+
+      // 检测模型是否声明目标已完成(goal 模式)→ 跳过剩余步骤,直接进 Judge
+      if (stepDone && step.result?.includes('[GOAL_COMPLETE]')) {
+        // 标记后续步骤为 skipped
+        for (const s of plan.steps) {
+          if (s.status === 'pending') s.status = 'skipped';
+        }
+        onEvent({ type: 'status', text: '🎯 v2: 模型声明目标已完成 [GOAL_COMPLETE],跳过剩余步骤' });
+        break;
+      }
+
+      // 步骤间上下文压缩:防止多步 plan 的 history 累积爆炸。
+      // budget 同 finalizeContext(普通 30K / hifi 40% of hifiBudget)。
+      if (!signal.aborted) {
+        const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
+        execHistory = await compactHistory(
+          execHistory,
+          conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
+          provider,
+          snap,
+          signal,
+        );
+      }
     }
 
     if (signal.aborted) {
       conv.directHistory = execHistory;
+      onEvent({ type: 'done' });
       return;
     }
 
     // ── Phase 3: Verifier — 全局验证(自动检测项目类型)──
     onEvent({ type: 'status', text: '🔬 v2: 全局验证...' });
-    await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, execHistory);
+    await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execHistory);
 
     // ── Phase 4: Judge — 独立判定是否完成 ──
-    const judgeResult = await this.judge(plan, provider, snap, signal, onEvent);
+    const judgeResult = await this.judge(plan, provider, snap, signal, onEvent, execHistory);
 
     if (!judgeResult.completed) {
       onEvent({ type: 'status', text: `⚖️ v2: Judge 判定未完成 — ${judgeResult.reason}` });
-      // 未完成 → 重新规划(如果还有额度)
-      await this.replan(prompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, plan);
+      // 未完成 → 重新规划(如果还有额度);replan 内部会递归 + judge,返回最终 execHistory
+      execHistory = await this.replan(prompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, plan);
     } else {
       onEvent({ type: 'status', text: `⚖️ v2: Judge 判定已完成 — ${judgeResult.reason}` });
     }
 
     // ── Phase 5: Context 压缩(与 v1 共享)──
     this.finalizeContext(conv, execHistory, provider, snap, signal);
+    onEvent({ type: 'done' });
   }
 
   // ════════════════════════════════════════════════════════════════════
   // Replan:Judge 判定未完成时,重新规划并执行(递归,最多 MAX_REPLANS 次)
   // ════════════════════════════════════════════════════════════════════
 
+  // Replan:Judge 判定未完成时,重新规划并执行(递归,最多 MAX_REPLANS 次)。
+  // 返回最终的 execHistory(可能被 replan 步骤更新过),供 run() 写入 directHistory。
   private async replan(
     originalPrompt: string,
     conv: Conversation,
@@ -314,12 +344,12 @@ export class DirectV2Engine implements Engine {
     execHistory: ChatMsg[],
     prevPlan: Plan,
     replanCount = 0,
-  ): Promise<void> {
+  ): Promise<ChatMsg[]> {
     if (replanCount >= MAX_REPLANS) {
       onEvent({ type: 'status', text: `🛑 v2: 已达最大重规划次数 (${MAX_REPLANS}),停止` });
-      return;
+      return execHistory;
     }
-    if (signal.aborted) return;
+    if (signal.aborted) return execHistory;
 
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
@@ -340,40 +370,103 @@ export class DirectV2Engine implements Engine {
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
+    execHistory = plannerMessages;
+
     const newPlan = this.parsePlan(this.extractLastAssistantText(plannerMessages));
     if (!newPlan || newPlan.steps.length === 0) {
       // 模型没出新 plan → 说明它觉得可以直接给出答案,走退化模式
-      return;
+      return execHistory;
     }
 
-    // 执行新 plan(简化版:不再递归 replan,避免无限循环)
+    // ── 执行新 plan 的步骤(与 Phase 2 一致:重试 + 验证)──
     for (const step of newPlan.steps) {
       if (signal.aborted) break;
       step.status = 'running';
       onEvent({ type: 'status', text: `🔨 v2: 重执行步骤 [${step.id}] ${step.title}` });
 
-      const stepMessages = await runAgentLoop({
-        provider,
-        tools,
-        systemPrompt,
-        userInput: STEP_EXECUTOR_PROMPT(step, newPlan.steps, newPlan.goal),
-        history: plannerMessages,
-        ctx,
-        signal,
-        snapshot: snap,
-        contextMode: conv.contextMode,
-        hifiContextBudget: getSettings().hifiContextBudget,
-        onEvent: (ev) => this.forwardEvent(ev, onEvent),
-      });
+      let stepDone = false;
+      for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
+        const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
 
-      execHistory = stepMessages;
-      step.status = 'done';
-      step.result = this.extractLastAssistantText(stepMessages).slice(0, 500);
-      onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        const stepMessages = await runAgentLoop({
+          provider,
+          tools,
+          systemPrompt,
+          userInput: STEP_EXECUTOR_PROMPT(step, newPlan.steps, newPlan.goal) + retryNote,
+          history: execHistory,
+          ctx,
+          signal,
+          snapshot: snap,
+          contextMode: conv.contextMode,
+          hifiContextBudget: getSettings().hifiContextBudget,
+          onEvent: (ev) => this.forwardEvent(ev, onEvent),
+        });
+
+        execHistory = stepMessages;
+        const stepAnswer = this.extractLastAssistantText(stepMessages);
+
+        if (step.verifyCommand) {
+          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent);
+          if (verifyResult.ok) {
+            step.status = 'done';
+            step.result = stepAnswer.slice(0, 500);
+            stepDone = true;
+            onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
+          } else {
+            step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+            step.result = `验证失败: ${verifyResult.output.slice(0, 500)}`;
+            step.retryCount = attempt + 1;
+            if (attempt + 1 < MAX_RETRIES) {
+              onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
+            }
+          }
+        } else {
+          step.status = 'done';
+          step.result = stepAnswer.slice(0, 500);
+          stepDone = true;
+          onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        }
+      }
+
+      // 检测模型是否声明目标已完成 → 跳过剩余步骤
+      if (stepDone && step.result?.includes('[GOAL_COMPLETE]')) {
+        for (const s of newPlan.steps) {
+          if (s.status === 'pending') s.status = 'skipped';
+        }
+        onEvent({ type: 'status', text: '🎯 v2: 模型声明目标已完成 [GOAL_COMPLETE],跳过剩余步骤' });
+        break;
+      }
+
+      // 步骤间上下文压缩(同 Phase 2)
+      if (!signal.aborted) {
+        const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
+        execHistory = await compactHistory(
+          execHistory,
+          conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
+          provider,
+          snap,
+          signal,
+        );
+      }
     }
 
+    if (signal.aborted) return execHistory;
+
     // 最终验证
-    await this.autoVerifyFromSteps(conv, snap, ctx, signal, onEvent, execHistory);
+    await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execHistory);
+
+    // ── Judge 再次判定 ──
+    const judgeResult = await this.judge(newPlan, provider, snap, signal, onEvent, execHistory);
+    if (!judgeResult.completed && replanCount + 1 < MAX_REPLANS) {
+      // 仍未完成 → 递归 replan,传入更新后的 execHistory 和 newPlan
+      return this.replan(originalPrompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, newPlan, replanCount + 1);
+    } else if (!judgeResult.completed) {
+      onEvent({ type: 'status', text: `🛑 v2: Judge 仍未判定完成,已达最大重规划次数 (${MAX_REPLANS})` });
+    } else {
+      onEvent({ type: 'status', text: `⚖️ v2: Replan 后 Judge 判定已完成 — ${judgeResult.reason}` });
+    }
+
+    return execHistory;
   }
 
   // ════════════════════════════════════════════════════════════════════
@@ -422,12 +515,15 @@ export class DirectV2Engine implements Engine {
     snap: ReturnType<typeof snapshot>,
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
+    execHistory?: ChatMsg[],
   ): Promise<{ completed: boolean; reason: string }> {
+    // 从 execHistory 尾部提取最近的 assistant 文本 + tool 结果,作为执行证据传给 Judge
+    const execEvidence = execHistory ? this.extractExecEvidence(execHistory) : undefined;
     try {
       const comp = await provider.streamComplete(
         [
           { role: 'system', content: '你是验收裁判。严格判定,不要因为模型说"完成了"就轻信。只有验证通过且逻辑自洽才算完成。' },
-          { role: 'user', content: JUDGE_PROMPT(plan.goal, plan.steps) },
+          { role: 'user', content: JUDGE_PROMPT(plan.goal, plan.steps, execEvidence) },
         ],
         [],
         snap,
@@ -491,7 +587,6 @@ export class DirectV2Engine implements Engine {
    */
   private async autoVerifyFromSteps(
     conv: Conversation,
-    _snap: ReturnType<typeof snapshot>,
     ctx: ToolCtx,
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
@@ -572,10 +667,46 @@ export class DirectV2Engine implements Engine {
   }
 
   /**
+   * 从 execHistory 尾部提取最近的 assistant 文本 + tool 结果,截断为 Judge 可读的证据摘要。
+   * 只取尾部 ~20 条消息,每条截断到 300 字符,总上限 ~4000 字符。
+   */
+  private extractExecEvidence(messages: ChatMsg[]): string {
+    const tail = messages.slice(-20);
+    const parts: string[] = [];
+    let totalLen = 0;
+    for (const m of tail) {
+      let line = '';
+      if (m.role === 'assistant') {
+        const text = typeof m.content === 'string' ? m.content : '';
+        const tools = (m.tool_calls ?? []).map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 80)})`).join(', ');
+        line = `[助手] ${text.slice(0, 300)}${tools ? `  🔧 ${tools}` : ''}`;
+      } else if (m.role === 'tool') {
+        const text = typeof m.content === 'string' ? m.content : '';
+        line = `[工具结果] ${text.slice(0, 300)}`;
+      } else if (m.role === 'user' && !m._memory) {
+        const text = typeof m.content === 'string' ? m.content : '';
+        line = `[用户] ${text.slice(0, 150)}`;
+      }
+      if (line) {
+        totalLen += line.length;
+        if (totalLen > 4000) break;
+        parts.push(line);
+      }
+    }
+    return parts.join('\n') || '(无执行记录)';
+  }
+
+  /**
    * 转发事件给上层,给 status 事件加 v2 前缀(防重复嵌套)。
    * 如果事件文本已经包含 "v2:" 前缀,直接透传。
    */
+  // forwardEvent: 转发中间事件给上层,但拦截 done/error。
+  // runAgentLoop 每次调用结束都会发 done/error,而 v2 会连续调多次(planner + 每步 + replan),
+  // 如果全部透传,applyEvent 会在每步之间把 conv.status 设成 ready + 触发 extractMemories。
+  // 解决:中间的 done/error 被吞掉,只在 run() 的最终退出点手动发一次 done。
   private forwardEvent(ev: AgentEvent, onEvent: (e: AgentEvent) => void): void {
+    // done/error 不转发 —— 由 run() 在最终退出时统一发
+    if (ev.type === 'done' || ev.type === 'error') return;
     if (ev.type === 'status') {
       const text = ev.text.startsWith('v2:') ? ev.text : `v2: ${ev.text}`;
       onEvent({ type: 'status', text });
