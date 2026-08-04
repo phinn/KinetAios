@@ -1930,14 +1930,14 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
-        <h3>💾 模型配置档 <span class="field-desc" style="display:inline;font-weight:400;text-transform:none;letter-spacing:0">保存多套配置,聊天界面可快速切换</span></h3>
+        <h3>${tr('settings.profile.title')} <span class="field-desc" style="display:inline;font-weight:400;text-transform:none;letter-spacing:0">${tr('settings.profile.hint')}</span></h3>
         <div id="s-profile-list" style="margin-top:8px"></div>
         <div class="field" style="align-items:flex-start;margin-top:8px">
-          <label>存为新配置</label>
+          <label>${tr('settings.profile.saveAs')}</label>
           <div style="display:flex;gap:6px;flex:1">
-            <input id="s-profile-name" placeholder="配置名(如 GLM-5.2 / DeepSeek)" style="flex:1" />
-            <button id="s-profile-cancel" class="btn-sm" style="white-space:nowrap;display:none">取消</button>
-            <button id="s-profile-save" class="btn-sm" style="white-space:nowrap">➕ 添加</button>
+            <input id="s-profile-name" placeholder="${tr('settings.profile.namePh')}" style="flex:1" />
+            <button id="s-profile-cancel" class="btn-sm" style="white-space:nowrap;display:none">${tr('settings.profile.cancel')}</button>
+            <button id="s-profile-save" class="btn-sm" style="white-space:nowrap">${tr('settings.profile.add')}</button>
           </div>
         </div>
       </div>
@@ -2000,46 +2000,46 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
-        <h3>🎙️ 实时语音助手</h3>
+        <h3>${tr('settings.voice.title')}</h3>
         <div class="field-desc">
-          配置豆包(火山引擎)实时语音大模型 API。填写后可在聊天界面开启语音对话模式 —— 实时说话,实时回复,支持中途发指令给 Agent 执行。
+          ${tr('settings.voice.desc')}
         </div>
-        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-vc-enable">启用语音入口(聊天界面显示语音按钮)</label></div>
-        <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="火山引擎控制台 → 语音技术 → 应用管理" /></div>
-        <div class="field"><label>Access Key</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎控制台 → 实时语音 → Access Key" /></div>
-        <div class="field"><label>WebSocket 地址</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
-        <div class="field"><label>音色</label><select id="s-vc-voicetype" style="font-family:var(--mono);font-size:12px">
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-vc-enable">${tr('settings.voice.enable')}</label></div>
+        <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="${tr('settings.voice.appIdPh')}" /></div>
+        <div class="field"><label>Access Key</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="${tr('settings.voice.accessKeyPh')}" /></div>
+        <div class="field"><label>${tr('settings.voice.wsUrl')}</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
+        <div class="field"><label>${tr('settings.voice.voiceType')}</label><select id="s-vc-voicetype" style="font-family:var(--mono);font-size:12px">
           ${[
-            ['zh_female_vv_jupiter_bigtts', 'vv（活泼女声）'],
-            ['zh_female_xiaohe_jupiter_bigtts', '小何（甜美女声）'],
-            ['zh_male_yunzhou_jupiter_bigtts', '云舟（沉稳男声）'],
-            ['zh_male_xiaotian_jupiter_bigtts', '小天（磁性男声）'],
+            ['zh_female_vv_jupiter_bigtts', tr('settings.voice.v1')],
+            ['zh_female_xiaohe_jupiter_bigtts', tr('settings.voice.v2')],
+            ['zh_male_yunzhou_jupiter_bigtts', tr('settings.voice.v3')],
+            ['zh_male_xiaotian_jupiter_bigtts', tr('settings.voice.v4')],
           ].map(([v, label]) => `<option value="${v}" ${(s.voiceChat?.voiceType ?? 'zh_female_vv_jupiter_bigtts') === v ? 'selected' : ''}>${label}</option>`).join('')}
         </select></div>
       </div>
 
       <div class="s-section">
-        <h3>MiniMax 文生视频</h3>
+        <h3>${tr('settings.minimax.title')}</h3>
         <div class="s-hint">
-          配置 <a href="https://platform.minimaxi.com" target="_blank">MiniMax 开放平台</a> API Key 后,Agent 可通过 <code>video_gen</code> 工具自主调用 H3 模型生成视频。密钥经系统级加密存储。
+          ${tr('settings.minimax.desc')}
         </div>
-        <div class="field"><label>MiniMax API Key</label><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="MiniMax → 账户管理 > 接口密钥" /></div>
+        <div class="field"><label>MiniMax API Key</label><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="${tr('settings.minimax.keyPh')}" /></div>
       </div>
 
       </div><!-- /advanced panel -->
 
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
         <div class="s-section">
-          <h3>插件管理</h3>
+          <h3>${tr('settings.plugin.title')}</h3>
           <div class="field" style="flex-direction:column;align-items:stretch;gap:10px">
             <!-- 工具栏:搜索 + 安装 + 重载 -->
             <div class="s-plugin-toolbar">
-              <input type="text" id="s-plugin-search" class="s-plugin-search" placeholder="搜索插件名称、描述、作者…" />
+              <input type="text" id="s-plugin-search" class="s-plugin-search" placeholder="${tr('settings.plugin.searchPh')}" />
               <div id="s-plugin-dropzone" class="s-plugin-dropzone">
                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity:.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-                <span style="font-size:11px;color:var(--muted)">拖放插件目录安装</span>
+                <span style="font-size:11px;color:var(--muted)">${tr('settings.plugin.dropHint')}</span>
               </div>
-              <button id="s-plugins-reload" class="s-plugin-reload-btn" title="重新扫描插件目录">↻ 重载</button>
+              <button id="s-plugins-reload" class="s-plugin-reload-btn" title="${tr('settings.plugin.reloadTitle')}">${tr('settings.plugin.reload')}</button>
             </div>
             <span class="test-msg" id="s-plugins-msg"></span>
             <!-- 概览统计 -->
@@ -2052,66 +2052,65 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="persona" style="display:none">
         <div class="s-section">
-          <h3>🧬 替身画像</h3>
+          <h3>${tr('settings.persona.title')}</h3>
           <div class="field-desc">
-            从你的历史对话(${(await api.getConversations()).length} 个会话)和记忆中提取做事风格,生成结构化画像。
-            画像将作为 AI 替身的「人格设定」—— 让 AI 以你的方式自主使用 KinetAios 完成任务。
+            ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
-            <button id="s-persona-gen" class="btn-sm">生成画像</button>
-            <button id="s-persona-save" class="btn-sm" style="display:none">保存修改</button>
-            <button id="s-persona-clear" class="btn-sm" style="display:none">清空(关闭替身)</button>
+            <button id="s-persona-gen" class="btn-sm">${tr('settings.persona.gen')}</button>
+            <button id="s-persona-save" class="btn-sm" style="display:none">${tr('settings.persona.save')}</button>
+            <button id="s-persona-clear" class="btn-sm" style="display:none">${tr('settings.persona.clear')}</button>
             <span class="test-msg" id="s-persona-msg"></span>
           </div>
           <div id="s-persona-stats" class="field-desc" style="margin-bottom:10px"></div>
-          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="点击「生成画像」按钮,或在此手动编写你的替身画像…" style="display:none"></textarea>
+          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="${tr('settings.persona.editorPh')}" style="display:none"></textarea>
           <div id="s-persona-empty" class="s-persona-empty">
             <div class="s-persona-empty-icon">🧬</div>
-            <div>尚未生成替身画像</div>
-            <div class="field-desc" style="margin-top:4px;text-align:center">点击「生成画像」开始</div>
+            <div>${tr('settings.persona.empty')}</div>
+            <div class="field-desc" style="margin-top:4px;text-align:center">${tr('settings.persona.emptyHint')}</div>
           </div>
         </div>
       </div><!-- /persona panel -->
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
-        <h3>${ICON.link} 多机协作 (MCP Bridge)</h3>
-        <div class="field-desc">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
+        <h3>${ICON.link} ${tr('settings.mesh.title')}</h3>
+        <div class="field-desc">${tr('settings.mesh.desc')}</div>
 
         <!-- 本机 MCP Server -->
         <div class="s-sub-panel">
           <label class="switch-label" style="margin-bottom:8px">
             <span class="switch"><input type="checkbox" id="s-mcp-enabled" ${s.localMcpServer?.enabled ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
-            <span class="s-sub-panel-title">本机 MCP Server</span>
+            <span class="s-sub-panel-title">${tr('settings.mesh.localTitle')}</span>
           </label>
-          <div class="s-sub-panel-desc-indent">开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)</div>
+          <div class="s-sub-panel-desc-indent">${tr('settings.mesh.localDesc')}</div>
 
           <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;margin-left:46px">
-            <label class="field-desc" style="margin:0">端口</label>
+            <label class="field-desc" style="margin:0">${tr('settings.mesh.port')}</label>
             <input id="s-mcp-port" type="number" value="${s.localMcpServer?.port ?? 18109}" style="width:100px" />
-            <button id="s-mcp-gentoken" class="btn-sm" title="生成随机 Token"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
+            <button id="s-mcp-gentoken" class="btn-sm" title="${tr('settings.mesh.genToken')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
 
             <label class="field-desc" style="margin:0">Token</label>
-            <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权" style="grid-column:2/4" />
+            <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="${tr('settings.mesh.tokenPh')}" style="grid-column:2/4" />
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;margin:10px 0 0 46px">
-            <button id="s-mcp-start" class="primary btn-sm">立即启动</button>
-            <button id="s-mcp-stop" class="btn-sm">停止</button>
+            <button id="s-mcp-start" class="primary btn-sm">${tr('settings.mesh.start')}</button>
+            <button id="s-mcp-stop" class="btn-sm">${tr('settings.mesh.stop')}</button>
             <span class="test-msg" id="s-mcp-msg"></span>
           </div>
         </div>
 
         <!-- 远程节点 -->
         <div class="s-sub-panel">
-          <div class="s-sub-panel-title">远程节点</div>
-          <div class="s-sub-panel-desc">把别的 KinetAios 当工具用</div>
+          <div class="s-sub-panel-title">${tr('settings.mesh.remoteTitle')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.mesh.remoteDesc')}</div>
           <div id="s-remote-list" style="width:100%;display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
           <div style="display:grid;grid-template-columns:130px 1fr 100px auto;gap:8px;align-items:center">
-            <input id="s-remote-name" placeholder="名称(如 macbook-pro)" />
+            <input id="s-remote-name" placeholder="${tr('settings.mesh.remoteNamePh')}" />
             <input id="s-remote-url" placeholder="http://192.168.1.100:18109/mcp" />
             <input id="s-remote-token" type="password" placeholder="token" />
-            <button id="s-remote-add" class="btn-sm">添加</button>
+            <button id="s-remote-add" class="btn-sm">${tr('settings.mesh.remoteAdd')}</button>
           </div>
         </div>
       </div>
@@ -2178,16 +2177,16 @@ async function showSettings() {
   // 读取本地 Ollama 模型列表 → 弹出选择菜单
   scanBtn.onclick = async () => {
     const base = (document.getElementById('s-base') as HTMLInputElement).value;
-    scanBtn.textContent = '⏳ 读取中…';
+    scanBtn.textContent = tr('settings.ollama.scanning');
     const r = await api.listLocalModels(base);
-    scanBtn.textContent = '🔄 读取本地模型';
+    scanBtn.textContent = tr('settings.ollama.scanBtn');
     if (!r.ok || r.models.length === 0) {
-      showMsg(r.message || '未找到模型,确认 Ollama 正在运行', false);
+      showMsg(r.message || tr('settings.ollama.notFound'), false);
       return;
     }
     if (r.models.length === 1) {
       modelInput.value = r.models[0];
-      showMsg(`已填入 ${r.models[0]}`, true);
+      showMsg(tr('settings.ollama.filled', { model: r.models[0] }), true);
       return;
     }
     // 构建 floating dropdown(比 datalist 在 Electron 下可靠)
@@ -2213,14 +2212,14 @@ async function showSettings() {
       item.onmouseleave = () => { item.style.background = ''; };
       item.onclick = () => {
         input.value = m;
-        showMsg(`已选择 ${m}`, true);
+        showMsg(tr('settings.ollama.selected', { model: m }), true);
         pop.remove();
       };
       pop.appendChild(item);
     });
     // 填充提示
     const hint = document.createElement('div');
-    hint.textContent = `找到 ${models.length} 个模型`;
+    hint.textContent = tr('settings.ollama.found', { n: models.length });
     hint.style.cssText = 'padding:4px 12px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);margin-bottom:4px';
     pop.insertBefore(hint, pop.firstChild);
     document.body.appendChild(pop);
@@ -2254,9 +2253,9 @@ async function showSettings() {
         <div style="display:flex;gap:8px;align-items:center;padding:4px 0">
           <span style="min-width:100px">${esc(r.name)}</span>
           <span style="flex:1;color:var(--muted);font-size:12px">${esc(r.url)}</span>
-          <button class="danger" data-remote-del="${i}" style="padding:2px 8px">删除</button>
+          <button class="danger" data-remote-del="${i}" style="padding:2px 8px">${tr('settings.mesh.delete')}</button>
         </div>`).join('')
-      : '<span style="color:var(--muted);font-size:12px">暂无远程节点</span>';
+      : `<span style="color:var(--muted);font-size:12px">${tr('settings.mesh.noRemote')}</span>`;
     list.querySelectorAll('[data-remote-del]').forEach((btn) => {
       (btn as HTMLElement).onclick = () => {
         const idx = Number((btn as HTMLElement).dataset.remoteDel);
@@ -2282,13 +2281,13 @@ async function showSettings() {
     const token = (document.getElementById('s-mcp-token') as HTMLInputElement).value;
     const r = await api.startMcpServer(port, token);
     const msg = document.getElementById('s-mcp-msg')!;
-    msg.textContent = r.ok ? `✓ 已启动 :${port}` : `✗ ${r.error}`;
+    msg.textContent = r.ok ? tr('settings.mesh.started', { port }) : `✗ ${r.error}`;
     msg.style.color = r.ok ? 'var(--ok)' : 'var(--danger)';
   };
   document.getElementById('s-mcp-stop')!.onclick = async () => {
     await api.stopMcpServer();
     const msg = document.getElementById('s-mcp-msg')!;
-    msg.textContent = '已停止';
+    msg.textContent = tr('settings.mesh.stopped');
     msg.style.color = 'var(--muted)';
   };
 
@@ -2315,7 +2314,7 @@ async function showSettings() {
   // ── 模型配置档:保存当前表单内容为新 profile 或覆盖编辑中的 profile ──
   document.getElementById('s-profile-save')!.onclick = async () => {
     const name = (document.getElementById('s-profile-name') as HTMLInputElement).value.trim();
-    if (!name) { showMsg('请输入配置名', false); return; }
+    if (!name) { showMsg(tr('settings.profile.nameRequired'), false); return; }
     const form = readSettingsForm();
     const cur = await api.getSettings();
     let profiles = cur.modelProfiles || [];
@@ -2332,7 +2331,7 @@ async function showSettings() {
         priceInPerMTok: form.priceInPerMTok,
         priceOutPerMTok: form.priceOutPerMTok,
       } : p);
-      showMsg(`✅ 已更新配置档「${name}」`, true);
+      showMsg(tr('settings.profile.updated', { name }), true);
     } else {
       // 新建模式
       const profile = {
@@ -2348,7 +2347,7 @@ async function showSettings() {
         createdAt: Date.now(),
       };
       profiles = [...profiles, profile];
-      showMsg(`✅ 已保存配置档「${name}」`, true);
+      showMsg(tr('settings.profile.saved', { name }), true);
     }
     await api.saveSettings({ ...cur, modelProfiles: profiles });
     profileCache = profiles; // 同步缓存
@@ -2357,7 +2356,7 @@ async function showSettings() {
     editingProfileId = null;
     (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
     const saveBtn = document.getElementById('s-profile-save')!;
-    saveBtn.textContent = '➕ 添加';
+    saveBtn.textContent = tr('settings.profile.add');
     (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
     renderProfileList(profiles);
   };
@@ -2377,7 +2376,7 @@ async function showSettings() {
   document.getElementById('s-profile-cancel')!.onclick = () => {
     editingProfileId = null;
     (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
-    document.getElementById('s-profile-save')!.textContent = '➕ 添加';
+    document.getElementById('s-profile-save')!.textContent = tr('settings.profile.add');
     (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
   };
 
@@ -2390,16 +2389,16 @@ async function showSettings() {
     const container = document.getElementById('s-profile-list');
     if (!container) return;
     if (profiles.length === 0) {
-      container.innerHTML = '<div style="color:var(--muted);font-size:12px;padding:8px 0">暂无配置档。填好上方 API 配置后,在底部输入名称点「添加」。</div>';
+      container.innerHTML = `<div style="color:var(--muted);font-size:12px;padding:8px 0">${tr('settings.profile.emptyHint2')}</div>`;
       return;
     }
     container.innerHTML = profiles.map((p: any) => `
       <div class="profile-item">
         <span class="pf-name">${esc(p.name)}</span>
         <span class="pf-info">${esc(p.model)} · ${esc(p.baseURL.slice(0, 40))}</span>
-        <button class="ghost btn-xs" data-pf-load="${p.id}">载入</button>
-        <button class="ghost btn-xs" data-pf-edit="${p.id}">✏️ 修改</button>
-        <button class="ghost btn-xs" data-pf-del="${p.id}" style="color:var(--danger)">删除</button>
+        <button class="ghost btn-xs" data-pf-load="${p.id}">${tr('settings.profile.load')}</button>
+        <button class="ghost btn-xs" data-pf-edit="${p.id}">${tr('settings.profile.editBtn')}</button>
+        <button class="ghost btn-xs" data-pf-del="${p.id}" style="color:var(--danger)">${tr('settings.profile.delBtn')}</button>
       </div>
     `).join('');
     container.querySelectorAll('[data-pf-load]').forEach((btn) => {
@@ -2408,7 +2407,7 @@ async function showSettings() {
         const pf = profiles.find((p: any) => p.id === pid);
         if (!pf) return;
         applyProfileToForm(pf);
-        showMsg(`已载入「${pf.name}」`, true);
+        showMsg(tr('settings.profile.loaded', { name: pf.name }), true);
       };
     });
     container.querySelectorAll('[data-pf-edit]').forEach((btn) => {
@@ -2421,10 +2420,10 @@ async function showSettings() {
         editingProfileId = pid;
         (document.getElementById('s-profile-name') as HTMLInputElement).value = pf.name;
         const saveBtn = document.getElementById('s-profile-save')!;
-        saveBtn.textContent = '💾 保存修改';
+        saveBtn.textContent = tr('settings.profile.saveBtn');
         const cancelBtn = document.getElementById('s-profile-cancel')!;
         cancelBtn.style.display = '';
-        showMsg(`正在编辑「${pf.name}」,修改上方配置后点「保存修改」`, true);
+        showMsg(tr('settings.profile.editing', { name: pf.name }), true);
       };
     });
     container.querySelectorAll('[data-pf-del]').forEach((btn) => {
@@ -2436,7 +2435,7 @@ async function showSettings() {
         profileCache = profiles2;
         void fillProfileSelect();
         renderProfileList(profiles2);
-        showMsg('已删除', true);
+        showMsg(tr('settings.profile.deleted'), true);
       };
     });
   }
@@ -2463,17 +2462,17 @@ async function showSettings() {
           if (r.level) parts.push(`📦 ${r.level}`);
           if (r.tiers && r.tiers.length > 0) {
             for (const t of r.tiers) {
-              const label = t.window === '5h' ? '5h窗口' : '本周';
+              const label = t.window === '5h' ? tr('settings.balance.window5h') : tr('settings.balance.week');
               const resetStr = t.reset ? ` ${formatResetTime(t.reset)}` : '';
               parts.push(`${label}: ${t.pct.toFixed(1)}%${resetStr}`);
             }
           } else {
-            parts.push('暂无用量数据');
+            parts.push(tr('settings.balance.noData'));
           }
           showMsg(parts.join(' | '), true);
         } else {
           // 普通按量计费 — 显示余额
-          showMsg(`💰 余额 ¥${r.balance} (剩余 ¥${r.left}, 赠送 ¥${r.gift})`, true);
+          showMsg(tr('settings.balance.result', { balance: r.balance ?? '-', left: r.left ?? '-', gift: r.gift ?? '-' }), true);
         }
       } else {
         showMsg(r.message || tr('balance.fail'), false);
@@ -2516,10 +2515,10 @@ async function showSettings() {
     const tools = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.toolCount, 0);
     const cmds = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.slashCommandCount, 0);
     el.innerHTML = `
-      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${enabled}/${total}</span><span class="s-plugin-stat-label">已启用</span></div>
-      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${tools}</span><span class="s-plugin-stat-label">工具</span></div>
-      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${cmds}</span><span class="s-plugin-stat-label">命令</span></div>
-      ${errored ? `<div class="s-plugin-stat s-plugin-stat-warn"><span class="s-plugin-stat-num">${errored}</span><span class="s-plugin-stat-label">加载失败</span></div>` : ''}
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${enabled}/${total}</span><span class="s-plugin-stat-label">${tr('settings.plugin.statEnabled')}</span></div>
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${tools}</span><span class="s-plugin-stat-label">${tr('settings.plugin.statTools')}</span></div>
+      <div class="s-plugin-stat"><span class="s-plugin-stat-num">${cmds}</span><span class="s-plugin-stat-label">${tr('settings.plugin.statCmds')}</span></div>
+      ${errored ? `<div class="s-plugin-stat s-plugin-stat-warn"><span class="s-plugin-stat-num">${errored}</span><span class="s-plugin-stat-label">${tr('settings.plugin.statError')}</span></div>` : ''}
     `;
   };
 
@@ -2536,7 +2535,7 @@ async function showSettings() {
 
     if (!filtered.length) {
       el.innerHTML = q
-        ? `<div class="s-plugin-empty">没有匹配 "${esc(filter)}" 的插件</div>`
+        ? `<div class="s-plugin-empty">${tr('settings.plugin.noMatch', { filter })}</div>`
         : `<div class="s-plugin-empty">${tr('settings.plugins.empty')}</div>`;
       return;
     }
@@ -2590,7 +2589,7 @@ async function showSettings() {
         <div class="s-plugin-tags">${engineTags}${permTags}${errBadge}</div>
       </div>
       <div class="s-plugin-actions">
-        <label class="s-plugin-switch" title="${hasError ? '加载失败,无法启用' : (p.enabled ? '点击禁用' : '点击启用')}">
+        <label class="s-plugin-switch" title="${hasError ? tr('settings.plugin.switchError') : (p.enabled ? tr('settings.plugin.switchDisable') : tr('settings.plugin.switchEnable'))}">
           <input type="checkbox" class="s-plugin-toggle" data-toggle="${esc(p.name)}" ${toggleChecked} ${toggleDisabled} />
           <span class="s-plugin-switch-track"><span class="s-plugin-switch-thumb"></span></span>
         </label>
@@ -2612,16 +2611,16 @@ async function showSettings() {
       (perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`,
     ).join('');
     const promptPreview = p.systemPrompt
-      ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">系统提示词</div><pre class="s-plugin-detail-prompt">${esc(p.systemPrompt.slice(0, 500))}${p.systemPrompt.length > 500 ? '…' : ''}</pre></div>`
+      ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailPrompt')}</div><pre class="s-plugin-detail-prompt">${esc(p.systemPrompt.slice(0, 500))}${p.systemPrompt.length > 500 ? '…' : ''}</pre></div>`
       : '';
 
     return `<div class="s-plugin-detail" data-detail-for="${esc(p.name)}" style="display:none">
-      ${tools ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">工具 (${p.tools!.length})</div><div class="s-plugin-detail-list">${tools}</div></div>` : ''}
-      ${cmds ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">Slash 命令 (${p.slashCommands!.length})</div><div class="s-plugin-detail-list">${cmds}</div></div>` : ''}
-      ${perms ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">权限声明</div><div class="s-plugin-detail-perms">${perms}</div></div>` : ''}
+      ${tools ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailTools', { n: p.tools!.length })}</div><div class="s-plugin-detail-list">${tools}</div></div>` : ''}
+      ${cmds ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailCmds', { n: p.slashCommands!.length })}</div><div class="s-plugin-detail-list">${cmds}</div></div>` : ''}
+      ${perms ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailPerms')}</div><div class="s-plugin-detail-perms">${perms}</div></div>` : ''}
       ${promptPreview}
-      <div class="s-plugin-detail-section"><div class="s-plugin-detail-label">路径</div><code class="s-plugin-detail-path">${esc(p.dir)}</code></div>
-      ${p.error ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label" style="color:var(--danger)">错误详情</div><pre class="s-plugin-detail-error">${esc(p.error)}</pre></div>` : ''}
+      <div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailPath')}</div><code class="s-plugin-detail-path">${esc(p.dir)}</code></div>
+      ${p.error ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label" style="color:var(--danger)">${tr('settings.plugin.detailError')}</div><pre class="s-plugin-detail-error">${esc(p.error)}</pre></div>` : ''}
     </div>`;
   };
   const bindPluginCardEvents = (): void => {
