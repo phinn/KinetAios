@@ -1746,19 +1746,6 @@ function registerIpc(): void {
     }
   });
 
-  // 剪贴板图片 — dataUrl → nativeImage → writeImage
-  // ponytail: 大图先 JPEG 压缩再传,目前直接透传(截图通常 < 几 MB,够用)。
-  ipcMain.handle('clipboard-write-image', (_e, dataUrl: string) => {
-    try {
-      const img = nativeImage.createFromDataURL(dataUrl);
-      if (img.isEmpty()) return { ok: false, error: 'empty image data' };
-      clipboard.writeImage(img);
-      return { ok: true };
-    } catch (e) {
-      return { ok: false, error: (e as Error)?.message ?? String(e) };
-    }
-  });
-
   // ── Visual Inspector:向 <webview> 的 guest contents 注入并执行 JS ──
   // webview 的 executeJavaScript 只能在主进程通过 guestInstanceId 拿到 webContents 后调用。
   // renderer 传 guestInstanceId(由 <webview>.getGuestInstanceId() 获得)+ 要执行的脚本。
