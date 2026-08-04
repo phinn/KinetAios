@@ -1,4 +1,6 @@
 每次修改完提交git并push
+打tag的时候package一起改
+新功能记得多国语言一起做
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 

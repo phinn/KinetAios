@@ -442,6 +442,26 @@ export type MemoryWithMeta = {
   weight: number;    // 衰减权重 0~1,新 fact = 1.0
   lastUsed: number;  // 最后一次被 recall 命中的时间戳
   useCount: number;  // 累计命中次数
+  importance: number; // P1: 重要性评分 1-10
+};
+
+// P0: Memory Block — 结构化核心记忆(借鉴 Letta Memory Blocks)
+export type MemoryBlockData = {
+  label: string;
+  value: string;
+  charLimit: number;
+  readOnly: boolean;
+  updatedAt: number;
+};
+
+// P2: Episodic Memory — 会话摘要
+export type EpisodicMemoryData = {
+  id: string;
+  convId: string | null;
+  summary: string;
+  importance: number;
+  tags: string | null;
+  createdAt: number;
 };
 
 // ── 会话导出 ──
@@ -636,6 +656,13 @@ export interface KinetAPI {
   memoryTimeline(): Promise<{ ok: boolean; items?: MemoryWithMeta[]; error?: string }>;
   memoryDecay(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
+  // ── P0: Memory Blocks(结构化核心记忆)──
+  memoryBlocksList(): Promise<{ ok: boolean; blocks?: MemoryBlockData[]; error?: string }>;
+  memoryBlockUpdate(label: string, value: string): Promise<{ ok: boolean; error?: string }>;
+  // ── P2: Episodic Memory(会话摘要)──
+  episodicMemories(limit?: number): Promise<{ ok: boolean; items?: EpisodicMemoryData[]; error?: string }>;
+  // ── P3: Idle Reflection(记忆 GC)──
+  memoryReflection(): Promise<{ ok: boolean; result?: { deduped: number; decayed: number; lowImportancePruned: number }; error?: string }>;
   // ── 会话导出 ──
   exportConversation(convId: string, format: ExportFormat): Promise<{ ok: boolean; path?: string; error?: string }>;
   // ── Arena Diff ──

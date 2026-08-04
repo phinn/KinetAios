@@ -1025,6 +1025,77 @@ const recallFact: Tool = {
   },
 };
 
+// P0: Memory Blocks 工具 — 让 agent 结构化编辑自己的长期记忆(借鉴 Letta core_memory_replace/append)。
+// 与 remember_fact 的区别:remember_fact 是会话级临时 KV,memory_replace/append 是全局持久的核心记忆块。
+// block label 含义:persona(系统人设,只读)/ user_profile(用户画像)/ project_context(项目上下文)/ active_goals(当前目标)。
+const memoryReplace: Tool = {
+  name: 'memory_replace',
+  description:
+    '更新你的核心记忆块(Memory Block)。这是结构化的长期记忆,持久跨会话,每轮注入到上下文中。\n' +
+    '可用 block: user_profile(用户画像) / project_context(项目上下文) / active_goals(当前目标)。\n' +
+    '用法:传入 block 名和完整新内容(会完全覆盖旧内容)。\n' +
+    '示例:发现用户切换了项目 → 更新 project_context;\n' +
+    '发现之前记的 user_profile 过时了 → 用最新信息替换。\n' +
+    '注意:persona block 是只读的(由系统管理),不可替换。',
+  parameters: {
+    type: 'object',
+    properties: {
+      block: {
+        type: 'string',
+        enum: ['user_profile', 'project_context', 'active_goals'],
+        description: '要更新的记忆块名称',
+      },
+      content: { type: 'string', description: '完整的新内容(覆盖旧内容)' },
+    },
+    required: ['block', 'content'],
+  },
+  async run(args) {
+    const block = String(args.block ?? '').trim();
+    const content = String(args.content ?? '');
+    if (!block || !content) return '缺少 block 或 content';
+    try {
+      const ok = store.updateMemoryBlock(block, content);
+      if (!ok) return `更新失败:block "${block}" 不存在或只读。`;
+      return `✅ 已更新 ${block}(${content.length} 字符)`;
+    } catch (e) {
+      return `memory_replace 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
+const memoryAppend: Tool = {
+  name: 'memory_append',
+  description:
+    '向你的核心记忆块(Memory Block)追加内容。不会覆盖已有内容,在末尾追加。\n' +
+    '可用 block: user_profile / project_context / active_goals。\n' +
+    '适用场景:逐步积累用户信息,不想覆盖已有内容。\n' +
+    '注意:追加后总长度超过 char_limit 会从头部截断。',
+  parameters: {
+    type: 'object',
+    properties: {
+      block: {
+        type: 'string',
+        enum: ['user_profile', 'project_context', 'active_goals'],
+        description: '要追加到的记忆块名称',
+      },
+      content: { type: 'string', description: '要追加的内容' },
+    },
+    required: ['block', 'content'],
+  },
+  async run(args) {
+    const block = String(args.block ?? '').trim();
+    const content = String(args.content ?? '');
+    if (!block || !content) return '缺少 block 或 content';
+    try {
+      const ok = store.appendMemoryBlock(block, content);
+      if (!ok) return `追加失败:block "${block}" 不存在或只读。`;
+      return `✅ 已追加到 ${block}(${content.length} 字符)`;
+    } catch (e) {
+      return `memory_append 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 // dispatch_agent:派发独立子任务给子 agent。Direct 默认走 runAgentLoop(只读工具集);
 // engine=claudeCode / codex 时跨引擎:走对应 CLI 的 one-shot 模式,只读、不递归。
 // 对应 CC 的 AgentTool 最小版 + 跨引擎扩展。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
@@ -1393,7 +1464,7 @@ const videoGen: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

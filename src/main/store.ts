@@ -77,6 +77,20 @@ export function initStore(): void {
       conv_id TEXT, step_id TEXT, row_type TEXT,
       plan_json TEXT, history_json TEXT, created_at REAL,
       PRIMARY KEY(conv_id, step_id));
+    -- P0: Memory Blocks — 结构化核心记忆(借鉴 Letta Memory Blocks)。
+    -- label 是 block 类型(persona/user_profile/project_context/active_goals),
+    -- value 是内容,char_limit 防膨胀,read_only 标记不可被 agent 编辑。
+    -- 与 memories 的区别:memories 是追加式事实流,memory_blocks 是结构化、可原地编辑的常驻块。
+    CREATE TABLE IF NOT EXISTS memory_blocks(
+      label TEXT PRIMARY KEY, value TEXT, char_limit INTEGER DEFAULT 2000,
+      read_only INTEGER DEFAULT 0, updated_at REAL);
+    -- P2: Episodic Memory — 会话摘要(每次 done 后自动提取)。
+    -- 与 memories(facts)的区别:episodic 是"这次会话做了什么"的叙事摘要,
+    -- memories 是"关于用户的持久事实"。episodic 用于跨会话回忆"上次那个 bug 怎么修的"。
+    CREATE TABLE IF NOT EXISTS episodic_memories(
+      id TEXT PRIMARY KEY, conv_id TEXT, summary TEXT,
+      importance INTEGER DEFAULT 5, tags TEXT,
+      created_at REAL);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -96,6 +110,12 @@ export function initStore(): void {
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
   if (!hasColumn('memories', 'conversation_id'))
     db.exec(`ALTER TABLE memories ADD COLUMN conversation_id TEXT;`);
+  // P1: memories 加 importance 列(1-10 分,LLM 提取时输出,默认 5)。
+  // 检索排序:importance * 0.5 + recency * 0.3 + relevance * 0.2。
+  if (!hasColumn('memories', 'importance'))
+    db.exec(`ALTER TABLE memories ADD COLUMN importance INTEGER DEFAULT 5;`);
+  // P0: 初始化 Memory Blocks 默认值
+  initMemoryBlocks();
 }
 
 // Prepared statement 缓存:热路径函数(appendMessage/saveTurn 等)每次调用都 prepare,
@@ -209,6 +229,8 @@ export function deleteConversation(id: string): void {
     if (hasTable('memory_embeddings')) stmt('DELETE FROM memory_embeddings WHERE memory_id IN (SELECT id FROM memories WHERE conversation_id=?);').run(id);
     if (hasTable('memory_meta')) stmt('DELETE FROM memory_meta WHERE memory_id IN (SELECT id FROM memories WHERE conversation_id=?);').run(id);
     stmt('DELETE FROM memories WHERE conversation_id=?;').run(id);
+    // P2: 级联清理 episodic memories
+    if (hasTable('episodic_memories')) stmt('DELETE FROM episodic_memories WHERE conv_id=?;').run(id);
     stmt('DELETE FROM conversations WHERE id=?;').run(id);
   })();
 }
@@ -302,18 +324,20 @@ export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: 
 
 // MARK: long-term memory (injected into the system prompt)
 // convId 过滤:有值只返回该频道产生的;undefined 返回全部。
-export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null }> {
+export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   if (convId === undefined) {
-    return db.prepare('SELECT id, content, conversation_id FROM memories ORDER BY created_at DESC;').all() as Array<{
+    return db.prepare('SELECT id, content, conversation_id, importance FROM memories ORDER BY created_at DESC;').all() as Array<{
       id: string;
       content: string;
       conversation_id: string | null;
+      importance: number;
     }>;
   }
-  return db.prepare('SELECT id, content, conversation_id FROM memories WHERE conversation_id=? ORDER BY created_at DESC;').all(convId) as Array<{
+  return db.prepare('SELECT id, content, conversation_id, importance FROM memories WHERE conversation_id=? ORDER BY created_at DESC;').all(convId) as Array<{
     id: string;
     content: string;
     conversation_id: string | null;
+    importance: number;
   }>;
 }
 
@@ -328,11 +352,11 @@ export function memoryCount(): number {
 
 // 关键词搜索 memories 表(LIKE 模糊匹配,不依赖 FTS5 也不依赖 embedding)。
 // 无 embedding 接口时 recall_memory 用此作为记忆搜索的 fallback。
-export function searchMemories(q: string, limit = 20): Array<{ id: string; content: string; conversation_id: string | null }> {
+export function searchMemories(q: string, limit = 20): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
   return db.prepare(
-    `SELECT id, content, conversation_id FROM memories WHERE content LIKE ? ESCAPE '\\' ORDER BY created_at DESC LIMIT ?;`,
-  ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null }>;
+    `SELECT id, content, conversation_id, importance FROM memories WHERE content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
+  ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
 }
 
 // 关键词搜索 memory_triples 表(subject / predicate / object 三列任意 LIKE 匹配)。
@@ -412,18 +436,112 @@ export function dedupMemories(threshold = 0.65): number {
   return pruned;
 }
 
-export function addMemory(content: string, convId?: string): string {
+export function addMemory(content: string, convId?: string, importance = 5): string {
   const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
-  db.prepare('INSERT INTO memories(id, content, created_at, conversation_id) VALUES(?,?,?,?);').run(
+  db.prepare('INSERT INTO memories(id, content, created_at, conversation_id, importance) VALUES(?,?,?,?,?);').run(
     id,
     content,
     Date.now() / 1000,
     convId ?? null,
+    Math.max(1, Math.min(10, importance)),
   );
   return id;
 }
 
-// MARK: 会话级 KV 锚点(remember_fact / recall_fact,P0-2)
+// MARK: P0 — Memory Blocks (结构化核心记忆,借鉴 Letta)
+// 与 memories 的区别:memories 是追加式事实流,memory_blocks 是结构化、可原地编辑的常驻块。
+// 注入格式:XML-like <memory_blocks><persona>...</persona><user_profile>...</user_profile></memory_blocks>
+
+export interface MemoryBlock {
+  label: string;
+  value: string;
+  charLimit: number;
+  readOnly: boolean;
+  updatedAt: number;
+}
+
+const DEFAULT_BLOCKS: Array<{ label: string; value: string; charLimit: number; readOnly: boolean }> = [
+  { label: 'persona', value: '', charLimit: 2000, readOnly: true },
+  { label: 'user_profile', value: '', charLimit: 3000, readOnly: false },
+  { label: 'project_context', value: '', charLimit: 3000, readOnly: false },
+  { label: 'active_goals', value: '', charLimit: 1500, readOnly: false },
+];
+
+/** 初始化默认 blocks(首次启动时调用,已有则跳过)。 */
+export function initMemoryBlocks(): void {
+  for (const b of DEFAULT_BLOCKS) {
+    db.prepare('INSERT OR IGNORE INTO memory_blocks(label, value, char_limit, read_only, updated_at) VALUES(?,?,?,?,?);')
+      .run(b.label, b.value, b.charLimit, b.readOnly ? 1 : 0, Date.now() / 1000);
+  }
+}
+
+export function loadMemoryBlocks(): MemoryBlock[] {
+  initMemoryBlocks(); // 确保默认 blocks 存在
+  return (db.prepare('SELECT label, value, char_limit AS charLimit, read_only AS readOnly, updated_at AS updatedAt FROM memory_blocks ORDER BY label;').all() as Array<{ label: string; value: string; charLimit: number; readOnly: number; updatedAt: number }>)
+    .map((r) => ({ ...r, readOnly: !!r.readOnly, updatedAt: r.updatedAt * 1000 }));
+}
+
+export function loadMemoryBlock(label: string): MemoryBlock | null {
+  const r = db.prepare('SELECT label, value, char_limit AS charLimit, read_only AS readOnly, updated_at AS updatedAt FROM memory_blocks WHERE label=?;').get(label) as { label: string; value: string; charLimit: number; readOnly: number; updatedAt: number } | undefined;
+  return r ? { ...r, readOnly: !!r.readOnly, updatedAt: r.updatedAt * 1000 } : null;
+}
+
+/** Agent 原地替换 block 内容(类似 Letta core_memory_replace)。 */
+export function updateMemoryBlock(label: string, value: string): boolean {
+  const block = loadMemoryBlock(label);
+  if (!block) return false;
+  if (block.readOnly) return false;
+  const truncated = value.slice(0, block.charLimit);
+  db.prepare('UPDATE memory_blocks SET value=?, updated_at=? WHERE label=?;')
+    .run(truncated, Date.now() / 1000, label);
+  return true;
+}
+
+/** Agent 追加内容到 block 末尾(类似 Letta core_memory_append)。 */
+export function appendMemoryBlock(label: string, content: string): boolean {
+  const block = loadMemoryBlock(label);
+  if (!block) return false;
+  if (block.readOnly) return false;
+  const newValue = (block.value + '\n' + content).slice(0, block.charLimit);
+  db.prepare('UPDATE memory_blocks SET value=?, updated_at=? WHERE label=?;')
+    .run(newValue, Date.now() / 1000, label);
+  return true;
+}
+
+// MARK: P2 — Episodic Memory (会话摘要,每次 done 后自动提取)
+// 与 memories(facts)的区别:episodic 记录"这次会话做了什么"(叙事摘要),
+// memories 记录"关于用户的持久事实"(原子命题)。episodic 用于跨会话回忆"上次那个 bug 怎么修的"。
+
+export interface EpisodicMemory {
+  id: string;
+  convId: string | null;
+  summary: string;
+  importance: number;
+  tags: string | null;
+  createdAt: number;
+}
+
+export function addEpisodicMemory(e: { convId: string; summary: string; importance: number; tags?: string }): string {
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare('INSERT INTO episodic_memories(id, conv_id, summary, importance, tags, created_at) VALUES(?,?,?,?,?,?);')
+    .run(id, e.convId, e.summary, Math.max(1, Math.min(10, e.importance)), e.tags ?? null, Date.now() / 1000);
+  return id;
+}
+
+export function loadEpisodicMemories(limit = 20): EpisodicMemory[] {
+  return (db.prepare('SELECT id, conv_id AS convId, summary, importance, tags, created_at AS createdAt FROM episodic_memories ORDER BY created_at DESC LIMIT ?;').all(limit) as Array<{ id: string; convId: string; summary: string; importance: number; tags: string | null; createdAt: number }>)
+    .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
+}
+
+export function searchEpisodicMemories(q: string, limit = 5): EpisodicMemory[] {
+  const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  return (db.prepare('SELECT id, conv_id AS convId, summary, importance, tags, created_at AS createdAt FROM episodic_memories WHERE summary LIKE ? ESCAPE \'\\\' OR tags LIKE ? ESCAPE \'\\\' ORDER BY importance DESC, created_at DESC LIMIT ?;').all(like, like, limit) as Array<{ id: string; convId: string; summary: string; importance: number; tags: string | null; createdAt: number }>)
+    .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
+}
+
+export function episodicMemoryCount(): number {
+  return (db.prepare('SELECT count(*) as n FROM episodic_memories;').get() as { n: number }).n;
+}
 // 设计目的:v2 多步任务的关键产出(文件路径列表、关键决策)存这里,不被 trim/compact 砍掉。
 // key 在 conv 内唯一;value 纯文本或 JSON 字符串。
 // 不参与跨会话同步(每个 conv 独立),后续可加 namespace 机制。
@@ -755,16 +873,15 @@ export function deleteCustomTool(id: string): void {
 }
 
 // MARK: memory_meta — 记忆权重/衰减/时间线
-export function loadMemoryTimeline(): Array<{ id: string; content: string; conversation_id: string | null; created_at: number; weight: number; lastUsed: number; useCount: number }> {
-  const mems = (db.prepare('SELECT id, content, conversation_id, created_at FROM memories ORDER BY created_at DESC LIMIT 500;').all()) as Array<{ id: string; content: string; conversation_id: string | null; created_at: number }>;
+export function loadMemoryTimeline(): Array<{ id: string; content: string; conversation_id: string | null; created_at: number; weight: number; lastUsed: number; useCount: number; importance: number }> {
+  const mems = (db.prepare('SELECT id, content, conversation_id, created_at, importance FROM memories ORDER BY created_at DESC LIMIT 500;').all()) as Array<{ id: string; content: string; conversation_id: string | null; created_at: number; importance: number }>;
   const metas = new Map<string, { weight: number; last_used: number; use_count: number }>();
   for (const m of (db.prepare('SELECT memory_id, weight, last_used, use_count FROM memory_meta;').all()) as Array<{ memory_id: string; weight: number; last_used: number; use_count: number }>) {
     metas.set(m.memory_id, { weight: m.weight, last_used: m.last_used, use_count: m.use_count });
   }
   return mems.map((m) => {
     const meta = metas.get(m.id) ?? { weight: 1.0, last_used: 0, use_count: 0 };
-    // created_at 存的是 Unix 秒,前端 new Date() 需要毫秒 → ×1000
-    return { ...m, created_at: m.created_at * 1000, weight: meta.weight, lastUsed: meta.last_used, useCount: meta.use_count };
+    return { ...m, created_at: m.created_at * 1000, weight: meta.weight, lastUsed: meta.last_used, useCount: meta.use_count, importance: m.importance ?? 5 };
   });
 }
 
@@ -777,11 +894,43 @@ export function touchMemoryUsed(id: string): void {
     .run(id, Date.now());
 }
 
+// P1: 加权排序检索 —— importance * 0.5 + recency * 0.3 + relevance * 0.2
+// relevance 来自调用方(embedding cosine 或 FTS5 BM25,归一化到 0-1)。
+// recency = exp(-Δt / half_life),half_life = 30天(ms)。
+// 返回按 final_score 降序排列的记忆列表。
+export function scoredMemories(
+  query: string,
+  limit: number,
+  relevanceFn?: (content: string) => number,
+): Array<{ id: string; content: string; conversation_id: string | null; importance: number; score: number }> {
+  const halfLife = 30 * 86400_000; // 30 天(ms)
+  const now = Date.now();
+  const mems = loadMemories();
+  const metas = new Map<string, { weight: number; last_used: number; use_count: number }>();
+  for (const m of (db.prepare('SELECT memory_id, weight, last_used, use_count FROM memory_meta;').all() as Array<{ memory_id: string; weight: number; last_used: number; use_count: number }>)) {
+    metas.set(m.memory_id, { weight: m.weight, last_used: m.last_used, use_count: m.use_count });
+  }
+  const scored = mems.map((m) => {
+    const meta = metas.get(m.id);
+    const importanceNorm = (m.importance ?? 5) / 10; // 0-1
+    // recency: 无 meta → 用 created_at;有 meta → 用 last_used
+    const refTs = meta?.last_used || (m as { created_at?: number }).created_at || now;
+    // created_at 存秒,last_used 存毫秒 → 统一到毫秒
+    const refMs = refTs < 1e12 ? refTs * 1000 : refTs;
+    const recency = Math.exp(-(now - refMs) / halfLife);
+    // relevance: 外部传入(embedding cosine)或简单 LIKE 匹配
+    const relevance = relevanceFn ? relevanceFn(m.content) : (m.content.includes(query) ? 0.5 : 0);
+    const score = importanceNorm * 0.5 + recency * 0.3 + relevance * 0.2;
+    return { ...m, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  return scored.slice(0, limit);
+}
+
 // 执行衰减:weight *= 0.95^(days_since_last_used),weight < 0.1 的连同 memory 一起删除。
 // 返回被清除的条数。
 // 未被 recall 命中过(无 memory_meta 行)的记忆按 weight=1.0 / last_used=created_at 参与。
-export function decayMemories(): number {
-  const now = Date.now();
+export function decayMemories(): number {  const now = Date.now();
   const dayMs = 86400_000;
   const hasEmbed = hasTable('memory_embeddings');
   const hasMeta = hasTable('memory_meta');
@@ -817,6 +966,34 @@ export function decayMemories(): number {
     }
   });
   tx();
+  return pruned;
+}
+
+// P1: 删除 importance ≤ threshold 且从未被 recall 命中(use_count = 0)的低价值记忆。
+// 防止大量噪声记忆(临时路径、一次性数据)堆积。
+export function pruneLowImportanceMemories(threshold = 2): number {
+  // 找到 importance 低 + 从未被 recall 的记忆
+  const candidates = db.prepare(`
+    SELECT m.id FROM memories m
+    LEFT JOIN memory_meta meta ON meta.memory_id = m.id
+    WHERE COALESCE(m.importance, 5) <= ? 
+      AND (meta.use_count IS NULL OR meta.use_count = 0)
+  `).all(threshold) as Array<{ id: string }>;
+  if (!candidates.length) return 0;
+  const hasEmbed = hasTable('memory_embeddings');
+  const hasMeta = hasTable('memory_meta');
+  const stmtDel = db.prepare('DELETE FROM memories WHERE id=?;');
+  const stmtDelEmbed = hasEmbed ? db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;') : null;
+  const stmtDelMeta = hasMeta ? db.prepare('DELETE FROM memory_meta WHERE memory_id=?;') : null;
+  let pruned = 0;
+  db.transaction(() => {
+    for (const c of candidates) {
+      stmtDel.run(c.id);
+      if (stmtDelEmbed) stmtDelEmbed.run(c.id);
+      if (stmtDelMeta) stmtDelMeta.run(c.id);
+      pruned++;
+    }
+  })();
   return pruned;
 }
 

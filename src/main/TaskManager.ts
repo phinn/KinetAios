@@ -25,6 +25,8 @@ export class TaskManager {
   private goalLoopStopped = new Set<string>();
   // 追踪每个会话切换前的引擎(用于判断同族切换是否需要清空上下文)。
   private lastEngine: Record<string, EngineKind> = {};
+  // P3: done 事件计数器,用于触发周期性 idle reflection(每 5 次 done 触发一次记忆 GC)
+  private doneCounter = 0;
   private engines: Map<EngineKind, Engine>;
 
   constructor(private emit: TaskManagerEmitter) {
@@ -409,7 +411,16 @@ export class TaskManager {
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);
     const t = conv.turns[conv.turns.length - 1];
-    if (ev.type === 'done' && t?.answer) this.extractMemories(t, prompt, conv.id, signal).catch(() => {});
+    if (ev.type === 'done' && t?.answer) {
+      this.extractMemories(t, prompt, conv.id, signal).catch(() => {});
+      // P2: 异步提取会话摘要(episodic memory),不阻塞主流程
+      this.extractEpisodicMemory(conv, signal).catch(() => {});
+      // P3: 异步执行记忆 GC(idle reflection),每 5 次 done 触发一次
+      this.doneCounter++;
+      if (this.doneCounter % 5 === 0) {
+        this.runIdleReflection().catch(() => {});
+      }
+    }
   }
 
   private persist(conv: Conversation, ev: AgentEvent): void {
@@ -440,15 +451,27 @@ export class TaskManager {
   }
 
   // Inject into the system prompt (Direct) / --append-system-prompt (Claude) / prompt prefix (Codex).
-  // 检索注入:根据当前对话内容做语义/全文检索,只注入相关的记忆子集。
-  // 三级回退:embedding cosine → FTS5 关键词 → recent-N(最终兜底)。
+  // P0: Memory Blocks(结构化常驻记忆,XML-like 格式注入)+ 检索式记忆(embedding/FTS5)+ episodic 摘要。
   private async memoryBlock(conv: Conversation): Promise<string> {
     let out = '';
 
-    // 构造检索 query:取最近 1-3 轮的用户消息拼接(提供足够语义信号又不至于太长)。
+    // ── P0: Memory Blocks(结构化核心记忆,每轮都注入,类似 Letta Memory Blocks)──
+    const blocks = store.loadMemoryBlocks();
+    const activeBlocks = blocks.filter((b) => b.value.trim());
+    if (activeBlocks.length) {
+      out += '\n\n<memory_blocks>';
+      for (const b of activeBlocks) {
+        out += `\n<${b.label}>\n${b.value}\n</${b.label}>`;
+      }
+      out += '\n</memory_blocks>';
+      out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。';
+    }
+
+    // 构造检索 query:取最近 1-3 轮的用户消息拼接。
     const recentUserMsgs = conv.turns.filter((t) => t.prompt).slice(-3).map((t) => t.prompt!);
     const query = recentUserMsgs.join(' ').slice(0, 500);
 
+    // ── P1: 加权检索式记忆(importance * 0.5 + recency * 0.3 + relevance * 0.2)──
     const recalled = await this.recallForInjection(query);
     const limited = recalled.map((m) => shellSafeMemory(m.content));
 
@@ -459,11 +482,23 @@ export class TaskManager {
         out += `\n…(共 ${allCount} 条记忆,根据当前对话检索注入 ${limited.length} 条)`;
       }
     }
-    // 知识图谱三元组注入:按 query 关键词匹配,补全 facts 之外的关系信息。
+    // 知识图谱三元组注入。
     if (query) {
       const triples = store.searchMemoryTriples(query, 5);
       if (triples.length) {
         out += '\n\n## 用户知识图谱(语义关系)\n' + triples.map((t) => `- ${t.subject} —${t.predicate}→ ${t.object}`).join('\n');
+      }
+    }
+    // ── P2: Episodic Memory(最近会话摘要,帮助回忆"上次做了什么")──
+    const episodes = store.loadEpisodicMemories(5);
+    if (episodes.length) {
+      out += '\n\n## 最近会话摘要\n' + episodes.map((e) => {
+        const date = new Date(e.createdAt).toISOString().slice(0, 10);
+        return `- [${date}] (⭐${e.importance}) ${e.summary}`;
+      }).join('\n');
+      const totalEp = store.episodicMemoryCount();
+      if (totalEp > episodes.length) {
+        out += `\n…(共 ${totalEp} 条会话摘要,显示最近 ${episodes.length} 条)`;
       }
     }
     if (conv.cwd) out += `\n\n## 当前工作目录\n${conv.cwd}`;
@@ -471,10 +506,11 @@ export class TaskManager {
   }
 
   // 三级回退检索:embedding cosine → FTS5 → recent-N 兜底。
+  // P1: 结果按 importance * 0.5 + recency * 0.3 + relevance * 0.2 加权排序。
   private async recallForInjection(query: string): Promise<Array<{ content: string }>> {
     const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
 
-    // 1. embedding cosine 检索(有 embedding 且 query 非空时)
+    // 1. embedding cosine 检索(有 embedding 且 query 非空时)→ P1 加权重排
     if (query) {
       try {
         const embedRows = store.listMemoryEmbeddings();
@@ -483,16 +519,28 @@ export class TaskManager {
           const qVecArr = await embed([query], snap);
           if (qVecArr[0]?.length) {
             const qVec = new Float32Array(qVecArr[0]);
-            const scored = embedRows
+            // 先用 embedding cosine 召回 top-30(宽召回)
+            const candidates = embedRows
               .map((r) => ({ memoryId: r.memoryId, content: r.content, score: store.cosine(qVec, r.vec) }))
-              .filter((r) => r.score > 0.25)
+              .filter((r) => r.score > 0.2)
               .sort((a, b) => b.score - a.score)
-              .slice(0, INJECT_LIMIT);
-            if (scored.length >= 3) { // 语义命中 ≥3 条才用,否则 fallback
-              for (const s of scored) {
+              .slice(0, 30);
+            if (candidates.length >= 3) {
+              // P1: 再用 scoredMemories 做重要性+时效性+相关性加权重排
+              const relevanceMap = new Map<string, number>();
+              for (const c of candidates) relevanceMap.set(c.content, c.score);
+              const scored = store.scoredMemories(query, INJECT_LIMIT, (content) => relevanceMap.get(content) ?? 0);
+              if (scored.length >= 3) {
+                for (const s of scored) {
+                  try { store.touchMemoryUsed(s.id); } catch { /* non-blocking */ }
+                }
+                return scored.map(({ content }) => ({ content }));
+              }
+              // scoredMemories 没有足够结果 → 用原始 embedding 排序
+              for (const s of candidates.slice(0, INJECT_LIMIT)) {
                 try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
               }
-              return scored.map(({ content }) => ({ content }));
+              return candidates.slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
             }
           }
         }
@@ -500,7 +548,7 @@ export class TaskManager {
         /* embedding 失败 → FTS5 兜底 */
       }
 
-      // 2. FTS5 全文检索(从 memories 表搜)
+      // 2. FTS5 全文检索(从 memories 表搜)→ 按 importance 排序
       try {
         const ftsHits = store.searchMemories(query, INJECT_LIMIT);
         if (ftsHits.length >= 2) {
@@ -530,8 +578,8 @@ export class TaskManager {
     const snap = snapshot(this.convs.get(convId)?.profileId);
     const sys = `你是记忆提取器。从下面这轮对话里提取【关于用户本人】的持久事实 —— 身份、职业、偏好、习惯、技术栈、家庭/宠物、所在城市、工具链、长期项目、价值观。
 哪怕只透出一点点信号也提取,宁可多提取不要漏。
-输出 JSON 对象,两个字段:
-- "facts": 字符串数组,每条 ≤ 18 字陈述句,主语「用户」(可省略)。
+输出 JSON 对象,三个字段:
+- "facts": [{ "text": "≤ 18字陈述句", "importance": 1-10 }] 数组,主语「用户」(可省略)。importance: 核心偏好/技术栈=8-10,一般习惯=5-7,边缘信号=2-4。
 - "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"用户","p":"在做","o":"Halo 项目"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节、纯时间敏感(今天/这次)。
 无持久事实就输出 {"facts":[],"triples":[]}。只输出 JSON,不要解释。`;
@@ -567,24 +615,24 @@ export class TaskManager {
         return false;
       };
 
-      // 先做精确 + 模糊过滤,拿到「文字层不重复」的候选
-      const candidates: string[] = [];
+      // 先做精确 + 模糊过滤,拿到「文字层不重复」的候选(P1: 带 importance)
+      const candidates: Array<{ text: string; importance: number }> = [];
       for (const f of facts) {
-        if (!f) continue;
-        if (existingFacts.includes(f)) continue; // 精确匹配
-        if (isDuplicateFuzzy(f)) continue; // 模糊匹配
+        if (!f.text) continue;
+        if (existingFacts.includes(f.text)) continue; // 精确匹配
+        if (isDuplicateFuzzy(f.text)) continue; // 模糊匹配
         candidates.push(f);
       }
 
       // 有 embedding 接口时再过一遍语义去重
-      let finalFacts: string[];
+      let finalFacts: Array<{ text: string; importance: number }>;
       if (candidates.length === 0) {
         finalFacts = [];
       } else {
         try {
           const { embed } = await import('./glm');
           // embed 候选 + 全部已有记忆,算 cosine
-          const candVecs = await embed(candidates, snap, ac.signal);
+          const candVecs = await embed(candidates.map((c) => c.text), snap, ac.signal);
           const embeddings = store.listMemoryEmbeddings();
           if (embeddings.length > 0) {
             // 有已有 embedding → 算 cosine
@@ -621,9 +669,10 @@ export class TaskManager {
       const added: Array<{ id: string; text: string }> = [];
       for (const f of finalFacts) {
         if (parentSignal.aborted) return;
-        const id = store.addMemory(f, convId);
-        existingFacts.push(f);
-        added.push({ id, text: f });
+        // P1: 传入 importance
+        const id = store.addMemory(f.text, convId, f.importance);
+        existingFacts.push(f.text);
+        added.push({ id, text: f.text });
       }
       // triples 去重按小写 s|p|o,跨频道也去重(全局知识图谱语义)。
       const existingTriples = store.allMemoryTripleKeys();
@@ -657,6 +706,81 @@ export class TaskManager {
       parentSignal.removeEventListener('abort', onParentAbort);
       release();
     }
+  }
+
+  // P2: Episodic Memory — 会话摘要提取。每次 done 后异步执行,生成"这次会话做了什么"的叙事摘要。
+  // 与 extractMemories 的区别:extractMemories 提取原子事实(facts),extractEpisodicMemory 提取叙事摘要(episodes)。
+  // 用于跨会话回忆:"上次那个 bug 怎么修的" → 搜 episodic_memories 表。
+  private async extractEpisodicMemory(conv: Conversation, parentSignal: AbortSignal): Promise<void> {
+    // 只在有实际内容的 turn 上提取
+    const meaningfulTurns = conv.turns.filter((t) => t.answer && t.answer.length > 50);
+    if (meaningfulTurns.length === 0) return;
+    // 太短的会话不值得提取
+    const totalChars = meaningfulTurns.reduce((s, t) => s + (t.answer?.length ?? 0), 0);
+    if (totalChars < 200) return;
+
+    const snap = snapshot(conv.profileId);
+    const sys = `你是会话摘要器。把下面的多轮对话压缩成 3-5 句话的叙事摘要。
+重点:
+1. 这次的任务目标是什么?
+2. 根因/解决方案是什么?
+3. 改了哪些文件/模块?
+4. 用户学到了什么 / 什么决策值得记住?
+输出 JSON 对象:
+- "summary": 3-5 句话摘要(≤ 200 字)
+- "importance": 1-10(日常问答=1-3,修 bug=5-7,架构改动=8-10)
+- "tags": 字符串数组(关键词标签,如 ["bug-fix", "concurrency", "AgentLoop"],最多 5 个)
+只输出 JSON,不要解释。`;
+
+    // 压缩对话内容:取最近 5 轮,每轮截取前 500 字
+    const recentTurns = meaningfulTurns.slice(-5);
+    const dialog = recentTurns.map((t, i) =>
+      `[Turn ${i + 1}] 用户: ${(t.prompt ?? '').slice(0, 300)}\n助手: ${(t.answer ?? '').slice(0, 500)}`
+    ).join('\n\n');
+
+    const ac = new AbortController();
+    const timer = setTimeout(() => ac.abort(), 20_000);
+    const onParentAbort = (): void => ac.abort();
+    if (parentSignal.aborted) { ac.abort(); return; }
+    parentSignal.addEventListener('abort', onParentAbort, { once: true });
+
+    try {
+      const comp = await currentProvider(snap).streamComplete(
+        [{ role: 'system', content: sys }, { role: 'user', content: dialog }],
+        [],
+        snap,
+        ac.signal,
+        () => {},
+      );
+      // 解析 JSON
+      const lo = comp.content.indexOf('{');
+      const hi = comp.content.lastIndexOf('}');
+      if (lo < 0 || hi <= lo) return;
+      const obj = JSON.parse(comp.content.slice(lo, hi + 1)) as { summary?: string; importance?: number; tags?: string[] };
+      if (!obj.summary || obj.summary.length < 10) return;
+      store.addEpisodicMemory({
+        convId: conv.id,
+        summary: obj.summary.slice(0, 500),
+        importance: obj.importance ?? 5,
+        tags: Array.isArray(obj.tags) ? obj.tags.slice(0, 5).join(', ') : undefined,
+      });
+    } catch {
+      /* best-effort,失败不影响主流程 */
+    } finally {
+      clearTimeout(timer);
+      parentSignal.removeEventListener('abort', onParentAbort);
+    }
+  }
+
+  // P3: Idle Reflection — 记忆 GC(合并重复 / 删除低价值 / 更新过时)。
+  // 在会话 done 事件后异步触发,也可以通过设置面板手动触发。
+  // 不用 LLM(成本高 + 慢),用规则:dedupMemories(已有) + decayMemories(已有) + 新增 importance-based prune。
+  async runIdleReflection(): Promise<{ deduped: number; decayed: number; lowImportancePruned: number }> {
+    const deduped = store.dedupMemories(0.65);
+    const decayed = store.decayMemories();
+    // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
+    const lowImportancePruned = store.pruneLowImportanceMemories(2);
+    return { deduped, decayed, lowImportancePruned };
   }
 
   // ── Pipeline 跨引擎编排 ──
@@ -935,16 +1059,28 @@ function shellSafeMemory(s: string): string {
 
 // Pull a JSON object {facts:string[], triples:[{s,p,o}]} out of an LLM response that may have surrounding prose.
 // 兼容老格式(纯 string[]):没匹配到 {} 时尝试匹配 []。
-function parseExtraction(s: string): { facts: string[]; triples: Array<{ s: string; p: string; o: string }> } {
-  const empty = { facts: [], triples: [] };
+// P1: 解析增强 — 支持 facts 为 [{text, importance}] 或纯 string[]（向后兼容）
+function parseExtraction(s: string): { facts: Array<{ text: string; importance: number }>; triples: Array<{ s: string; p: string; o: string }> } {
+  const empty = { facts: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
   const lo = s.indexOf('{');
   const hi = s.lastIndexOf('}');
   if (lo >= 0 && hi > lo) {
     try {
       const obj = JSON.parse(s.slice(lo, hi + 1)) as Record<string, unknown>;
-      const facts = Array.isArray(obj.facts)
-        ? obj.facts.filter((x): x is string => typeof x === 'string').map((x) => x.trim())
-        : [];
+      // 兼容两种格式：[{text, importance}] 或 string[]
+      const facts: Array<{ text: string; importance: number }> = [];
+      if (Array.isArray(obj.facts)) {
+        for (const x of obj.facts) {
+          if (typeof x === 'string') {
+            facts.push({ text: x.trim(), importance: 5 });
+          } else if (x && typeof x === 'object') {
+            const r = x as Record<string, unknown>;
+            const text = typeof r.text === 'string' ? r.text.trim() : '';
+            const importance = typeof r.importance === 'number' ? Math.max(1, Math.min(10, Math.round(r.importance))) : 5;
+            if (text) facts.push({ text, importance });
+          }
+        }
+      }
       const triples = Array.isArray(obj.triples)
         ? obj.triples
             .map((t) => {
@@ -963,7 +1099,7 @@ function parseExtraction(s: string): { facts: string[]; triples: Array<{ s: stri
     }
   }
   // 兼容老格式(纯 facts [])
-  return { facts: parseFactsLegacy(s), triples: [] };
+  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), triples: [] };
 }
 
 function parseFactsLegacy(s: string): string[] {

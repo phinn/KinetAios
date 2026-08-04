@@ -8,7 +8,7 @@ import os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
-import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories } from './store';
+import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
@@ -1387,6 +1387,44 @@ function registerIpc(): void {
     try {
       const pruned = dedupMemories(0.65);
       return { ok: true, pruned };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── P0: Memory Blocks ──
+  ipcMain.handle('memory-blocks-list', () => {
+    try {
+      const blocks = loadMemoryBlocks();
+      return { ok: true, blocks };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('memory-block-update', (_e, label: string, value: string) => {
+    try {
+      const ok = updateMemoryBlock(label, value);
+      return { ok };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── P2: Episodic Memories ──
+  ipcMain.handle('episodic-memories', (_e, limit?: number) => {
+    try {
+      const items = loadEpisodicMemories(limit ?? 20);
+      return { ok: true, items };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── P3: Idle Reflection(记忆 GC)──
+  ipcMain.handle('memory-reflection', async () => {
+    try {
+      const result = await taskManager.runIdleReflection();
+      return { ok: true, result };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

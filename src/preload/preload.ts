@@ -98,6 +98,13 @@ const api: KinetAPI = {
   memoryTimeline: () => ipcRenderer.invoke('memory-timeline'),
   memoryDecay: () => ipcRenderer.invoke('memory-decay'),
   memoryDedup: () => ipcRenderer.invoke('memory-dedup'),
+  // P0: Memory Blocks
+  memoryBlocksList: () => ipcRenderer.invoke('memory-blocks-list'),
+  memoryBlockUpdate: (label: string, value: string) => ipcRenderer.invoke('memory-block-update', label, value),
+  // P2: Episodic Memories
+  episodicMemories: (limit?: number) => ipcRenderer.invoke('episodic-memories', limit),
+  // P3: Idle Reflection
+  memoryReflection: () => ipcRenderer.invoke('memory-reflection'),
   // 会话导出
   exportConversation: (convId, format) => ipcRenderer.invoke('export-conversation', convId, format),
   // Arena Diff

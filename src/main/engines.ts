@@ -42,7 +42,12 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 一旦决定要写文件,直接 write_file 一次到位
 
 【输出路径】生成的文件(HTML / CSV / 报告等)默认写到当前工作目录(cwd)或其子目录。
-执行 shell 前会请求用户确认。Windows 上 shell 走 cmd.exe。回复用中文,简洁。`;
+执行 shell 前会请求用户确认。Windows 上 shell 走 cmd.exe。回复用中文,简洁。
+
+【记忆管理】你的记忆分三层:
+1. **Memory Blocks**(结构化常驻记忆):每轮注入到上下文,包含 user_profile / project_context / active_goals。你发现记忆过时或需要补充时,用 memory_replace 更新、memory_append 追加。
+2. **长期记忆**(自动提取):系统每轮自动从对话中提取关于用户的事实。需要回忆时用 recall_memory 搜历史。
+3. **会话摘要**(episodic):每次会话结束自动生成摘要,下次可看到"最近做了什么"。`;
 
 // 替身画像注入:从 settings 读 persona,返回带标题前缀的 section(空则空字符串)。
 // 三引擎共用:Direct 拼到 systemPrompt,Claude Code 进 --append-system-prompt,Codex 前置拼到 prompt。

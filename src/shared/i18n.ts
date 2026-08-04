@@ -775,6 +775,16 @@ const ZH_CN: Dict = {
   'mem.dedupDone': '已合并 {n} 条重复记忆',
   'mem.pruneThreshold': '权重低于 0.1 的将被清除',
 
+  // ── P0-P3: Memory Blocks / Episodic / Reflection ──
+  'mem.blocks': '核心记忆块',
+  'mem.blocksSub': '结构化常驻记忆(Agent 可自主编辑)。借鉴 MemGPT/Letta Memory Blocks。',
+  'mem.episodes': '会话摘要',
+  'mem.episodesSub': '每次会话结束自动生成叙事摘要,跨会话回忆"上次做了什么"。',
+  'mem.reflection': '🧹 记忆整理',
+  'mem.reflectionDone': '去重 {deduped} 条 / 衰减清理 {decayed} 条 / 低价值清理 {lowImportancePruned} 条',
+  'mem.importance': '重要性',
+  'mem.noEpisodes': '暂无会话摘要(完成一轮对话后自动生成)',
+
   // ── 会话导出 ──
   'export.title': '导出会话',
   'export.md': 'Markdown',
@@ -1565,6 +1575,16 @@ const EN: Dict = {
   'mem.dedup': '🔀 Deduplicate',
   'mem.dedupDone': 'Merged {n} duplicate memories',
   'mem.pruneThreshold': 'Memories with weight below 0.1 will be pruned',
+
+  // ── P0-P3: Memory Blocks / Episodic / Reflection ──
+  'mem.blocks': 'Core Memory Blocks',
+  'mem.blocksSub': 'Structured persistent memory (agent-editable). Inspired by MemGPT/Letta Memory Blocks.',
+  'mem.episodes': 'Session Summaries',
+  'mem.episodesSub': 'Auto-generated narrative summaries after each session. Recall "what we did last time".',
+  'mem.reflection': '🧹 Run Reflection',
+  'mem.reflectionDone': 'Deduped {deduped} / Decayed {decayed} / Low-importance pruned {lowImportancePruned}',
+  'mem.importance': 'Importance',
+  'mem.noEpisodes': 'No session summaries yet (auto-generated after a conversation)',
 
   // ── Export conversation ──
   'export.title': 'Export',
@@ -2359,6 +2379,16 @@ const ZH_TW: Dict = {
   'mem.dedupDone': '已合併 {n} 條重複記憶',
   'mem.pruneThreshold': '權重低於 0.1 的將被清除',
 
+  // ── P0-P3: Memory Blocks / Episodic / Reflection ──
+  'mem.blocks': '核心記憶塊',
+  'mem.blocksSub': '結構化常駐記憶(Agent 可自主編輯)。借鑑 MemGPT/Letta Memory Blocks。',
+  'mem.episodes': '工作階段摘要',
+  'mem.episodesSub': '每次工作階段結束自動生成敘事摘要,跨工作階段回憶「上次做了什麼」。',
+  'mem.reflection': '🧹 記憶整理',
+  'mem.reflectionDone': '去重 {deduped} 條 / 衰減清理 {decayed} 條 / 低價值清理 {lowImportancePruned} 條',
+  'mem.importance': '重要性',
+  'mem.noEpisodes': '暫無工作階段摘要(完成一輪對話後自動生成)',
+
   // ── 會話匯出 ──
   'export.title': '匯出會話',
   'export.md': 'Markdown',
@@ -3151,6 +3181,16 @@ const JA: Dict = {
   'mem.dedup': '🔀 重複排除',
   'mem.dedupDone': '重複メモリ {n} 件を統合',
   'mem.pruneThreshold': '重み 0.1 未満のメモリが削除されます',
+
+  // ── P0-P3: Memory Blocks / Episodic / Reflection ──
+  'mem.blocks': 'コアメモリブロック',
+  'mem.blocksSub': '構造化常駐メモリ(Agent が自律編集可能)。MemGPT/Letta Memory Blocks にインスパイア。',
+  'mem.episodes': 'セッション要約',
+  'mem.episodesSub': '各セッション終了時に自動生成されるナラティブ要約。「前回何をしたか」を回忆。',
+  'mem.reflection': '🧹 メモリ整理',
+  'mem.reflectionDone': '重複排除 {deduped} 件 / 減衰クリーンアップ {decayed} 件 / 低重要クリーンアップ {lowImportancePruned} 件',
+  'mem.importance': '重要度',
+  'mem.noEpisodes': 'セッション要約なし(対話完了後に自動生成)',
 
   // ── セッションエクスポート ──
   'export.title': 'エクスポート',
