@@ -960,7 +960,7 @@ export class DirectV2Engine implements Engine {
       signal,
       convId: conv.id,
       sandbox: getSettings().sandbox,
-      spawn: async ({ prompt: sub, signal: childSignal, engine }) => {
+      spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
         // 跨引擎子任务(v2 也支持调用 claude/codex 一次性任务)
         if (engine === 'claudeCode' || engine === 'codex') {
           const { runCliOneShot } = await import('./engines');
@@ -974,13 +974,27 @@ export class DirectV2Engine implements Engine {
         // 主 signal abort 时也 abort 子任务
         if (childSignal.aborted) subAc.abort();
         else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
+        // P1:复用 engines.resolveSpawnHistory 处理 scope(与 v1 一致)
+        const { resolveSpawnHistory } = await import('./engines');
+        const scopeResolved = scope ?? { mode: 'none' as const };
+        const { historyText } = await resolveSpawnHistory({
+          scope: scopeResolved,
+          parentHistory: conv.directHistory,
+          provider,
+          snap,
+          signal: subAc.signal,
+          onEvent,
+        });
+        const finalPrompt = historyText
+          ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
+          : sub;
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
           systemPrompt: SUBAGENT_PROMPT,
           snapshot: snap,
-          userInput: sub,
-          history: [],
+          userInput: finalPrompt,
+          history: [], // P1:scope 已合并到 userInput,保持空 history
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
           signal: subAc.signal,
           maxTurns: 8,

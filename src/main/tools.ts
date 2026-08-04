@@ -6,10 +6,11 @@ import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
 import crypto from 'node:crypto';
-import type { ToolDef } from './glm';
+import type { Provider, ToolDef } from './glm';
 import * as store from './store';
 import { takeSnapshot } from './snapshots';
-import type { SandboxMode } from '../shared/types';
+import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
+import { compactHistory } from './AgentLoop';
 
 // Sanitize error messages before returning to the LLM — strip absolute paths and stack traces
 // that could leak system info. The LLM only needs the gist (permission denied / not found / etc.).
@@ -116,10 +117,32 @@ async function assertSafeHost(hostname: string): Promise<{ ok: boolean; reason?:
 // spawn/signal only used by dispatch_agent (Direct injects them so it can start a sub-agent loop);
 // every other tool ignores them。convId 用作快照 scope(write_file/edit_file 改前存原文)。
 export type SubEngine = 'direct' | 'claudeCode' | 'codex';
+// sub-agent 的 history 注入策略(P1)。默认 'none' = 完全独立,最便宜。
+// last_n_turns(n) = 取 parent 最近 n 轮 user/assistant 注入子 agent 头部。
+// summary_only = 跑一次 LLM 摘要 parent history 注入子 agent(成本高,慎用)。
+// full_history = parent 全量 history 注入子 agent(可能很贵)。
+export type SpawnScope = 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
+export type SpawnScopeConfig =
+  | { mode: 'none' }
+  | { mode: 'last_n_turns'; n: number }
+  | { mode: 'summary_only' }
+  | { mode: 'full_history' };
+
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
-  spawn?: (a: { prompt: string; signal: AbortSignal; engine?: SubEngine }) => Promise<string>;
+  spawn?: (a: {
+    prompt: string;
+    signal: AbortSignal;
+    engine?: SubEngine;
+    // P1:子 agent 拿到多少 parent history。默认 'none'(完全独立)。
+    scope?: SpawnScopeConfig;
+    // parent history:spawn 实现方用来按 scope 切片,不传给子 agent 自身。
+    parentHistory?: ChatMsg[];
+    // parent provider/snap:仅 summary_only 需要(调 LLM 摘要时用)。
+    parentProvider?: Provider;
+    parentSnap?: ConfigSnapshot;
+  }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
   sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
@@ -968,10 +991,16 @@ const recallFact: Tool = {
 // dispatch_agent:派发独立子任务给子 agent。Direct 默认走 runAgentLoop(只读工具集);
 // engine=claudeCode / codex 时跨引擎:走对应 CLI 的 one-shot 模式,只读、不递归。
 // 对应 CC 的 AgentTool 最小版 + 跨引擎扩展。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
+// P1:新增 scope 参数,让 LLM 选择 sub-agent 拿到多少 parent history。参照 Codex SpawnAgentForkMode。
 const dispatchAgent: Tool = {
   name: 'dispatch_agent',
   description:
-    '派发一个独立子任务给子 agent(独立上下文)。默认走 Direct 引擎(只读工具集:read_file/grep/glob/web_fetch/recall_memory)。设 engine=claudeCode 或 codex 跨引擎:走对应 CLI 的 one-shot(同样只读)。用于并行探索或大任务分解,可以借力更强的模型完成子任务。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。',
+    '派发一个独立子任务给子 agent(独立上下文)。默认走 Direct 引擎(只读工具集:read_file/grep/glob/web_fetch/recall_memory/recall_fact)。设 engine=claudeCode 或 codex 跨引擎:走对应 CLI 的 one-shot(同样只读)。用于并行探索或大任务分解,可以借力更强的模型完成子任务。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。\n\n' +
+    '**scope 参数(关键)**:决定子 agent 拿到多少 parent conversation 历史。\n' +
+    '- "none"(默认):子 agent 完全独立,只看到 prompt。最便宜,适合"独立探索/查文档"任务。\n' +
+    '- "last_n_turns":注入 parent 最近 N 轮 user/assistant(默认 N=3)。子 agent 知道"在干嘛",适合"基于刚才对话的延伸任务"。\n' +
+    '- "summary_only":跑一次 LLM 摘要 parent history 注入子 agent。代价较高,慎用。\n' +
+    '- "full_history":parent 全量 history 注入。**最贵,通常不要用**。',
   parameters: {
     type: 'object',
     properties: {
@@ -981,6 +1010,21 @@ const dispatchAgent: Tool = {
         enum: ['direct', 'claudeCode', 'codex'],
         description: "子任务用的引擎。默认 'direct'(本地 ReAct + GLM)。'claudeCode' / 'codex' 走对应 CLI one-shot。",
       },
+      scope: {
+        type: 'object',
+        description: 'P1:子 agent 接收 parent history 的范围',
+        properties: {
+          mode: {
+            type: 'string',
+            enum: ['none', 'last_n_turns', 'summary_only', 'full_history'],
+            description: '默认 "none"。last_n_turns 推荐 3 轮(经验值,够上下文又不贵)。',
+          },
+          n: {
+            type: 'number',
+            description: '仅 last_n_turns 模式有效:取最近 N 个 user 消息 + 对应 assistant 回复。默认 3。',
+          },
+        },
+      },
     },
     required: ['prompt'],
   },
@@ -989,8 +1033,23 @@ const dispatchAgent: Tool = {
     const prompt = String(args.prompt ?? '').trim();
     if (!prompt) return '缺少 prompt';
     const engine = (args.engine as SubEngine) ?? 'direct';
+    // P1:解析 scope,默认 'none'。空对象也当 none 处理。
+    let scope: SpawnScopeConfig = { mode: 'none' };
+    const scopeArg = args.scope as { mode?: string; n?: number } | undefined;
+    if (scopeArg?.mode === 'last_n_turns') {
+      scope = { mode: 'last_n_turns', n: scopeArg.n && scopeArg.n > 0 ? Math.min(scopeArg.n, 10) : 3 };
+    } else if (scopeArg?.mode === 'summary_only') {
+      scope = { mode: 'summary_only' };
+    } else if (scopeArg?.mode === 'full_history') {
+      scope = { mode: 'full_history' };
+    }
     try {
-      return await ctx.spawn({ prompt, signal: ctx.signal ?? new AbortController().signal, engine });
+      return await ctx.spawn({
+        prompt,
+        signal: ctx.signal ?? new AbortController().signal,
+        engine,
+        scope,
+      });
     } catch (e) {
       return `子任务出错: ${(e as Error)?.message ?? e}`;
     }

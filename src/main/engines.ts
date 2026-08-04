@@ -10,11 +10,11 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { AgentEvent, Conversation, EngineKind, SandboxMode } from '../shared/types';
+import type { AgentEvent, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
-import { currentProvider, priceUSD } from './glm';
-import { allTools, readOnlyTools, type ToolCtx, type SubEngine } from './tools';
+import { currentProvider, priceUSD, type Provider } from './glm';
+import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
@@ -53,8 +53,106 @@ export function personaSection(): string {
 
 // 子 agent 系统提示(Direct 的 dispatch_agent 用)。只读工具,完成后文本汇报。
 export const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
-你只有只读工具(read_file / grep / glob / web_search / web_fetch / recall_memory)—— 不能写文件、不能起 shell、不能再派发子任务。
+你只有只读工具(read_file / grep / glob / web_search / web_fetch / recall_memory / recall_fact)—— 不能写文件、不能起 shell、不能再派发子任务。
 聚焦完成给定目标,结束后用简洁中文文本汇报结果(结论 / 找到的东西 / 关键路径),不要寒暄。`;
+
+/**
+ * P1:resolveSpawnHistory — 按 scope 策略把 parent history 转成一段文本。
+ * 返回 historyText:拼到子 agent userInput 末尾作为"父会话上下文"参考。
+ * 不传 ChatMsg[] 给 runAgentLoop(避免子 agent 看到父级 tool_calls/role 错位)。
+ *
+ * mode 语义:
+ * - 'none':空字符串(子 agent 完全独立)。
+ * - 'last_n_turns(n)':取 parent history 末尾最近 n 个 user 消息 + 它们对应的 assistant 回复。
+ *   简单按"role=user"的边界切,tool 消息作为该轮 assistant 的证据保留。
+ * - 'summary_only':跑一次 compactHistory(拿摘要能力)—— 失败回退 last_n_turns(3)。
+ * - 'full_history':全量 history,做长度检查(>8000 字符走 compactHistory)。
+ */
+export async function resolveSpawnHistory(opts: {
+  scope: SpawnScopeConfig;
+  parentHistory: ChatMsg[];
+  provider: Provider;
+  snap: import('../shared/types').ConfigSnapshot;
+  signal: AbortSignal;
+  onEvent: (e: AgentEvent) => void;
+}): Promise<{ historyText: string }> {
+  const { scope, parentHistory, provider, snap, signal, onEvent } = opts;
+  if (scope.mode === 'none') return { historyText: '' };
+  if (!parentHistory || parentHistory.length === 0) return { historyText: '' };
+
+  if (scope.mode === 'last_n_turns') {
+    const n = Math.max(1, Math.min(scope.n, 10));
+    // 从尾向头扫描,收集最近 n 个 user 消息 + 它们之间的所有消息(含 tool / assistant)。
+    const reversed = [...parentHistory].reverse();
+    const collected: ChatMsg[] = [];
+    let userCount = 0;
+    for (const m of reversed) {
+      collected.push(m);
+      if (m.role === 'user') {
+        userCount++;
+        if (userCount >= n) break;
+      }
+    }
+    collected.reverse();
+    return { historyText: chatHistoryToText(collected, n) };
+  }
+
+  if (scope.mode === 'summary_only') {
+    // 复用 compactHistory:传一个超大 budget 让它必须走"摘要"路径,然后拿摘要后的开头那段。
+    // ponytail: 这里实际上想要"全文摘要"而不是"摘要+尾部",但 compactHistory 接口设计是后者。
+    // 简化:用 budget=800 让它摘要足够长的头,尾部保留一两条。效果接近"全文摘要 + 最后 1 轮"。
+    try {
+      const summarized = await compactHistory(parentHistory, 800, provider, snap, signal, onEvent);
+      // 摘要结果里通常开头是 _memory(过滤掉)+ 摘要 user 消息 + 末尾真实对话。提取摘要 user 消息。
+      const summaryMsg = summarized.find((m) => m.role === 'user' && typeof m.content === 'string' && m.content.length > 100);
+      return { historyText: summaryMsg?.content ? `【父会话摘要】\n${summaryMsg.content}` : '' };
+    } catch {
+      // 摘要失败 → 回退 last_n_turns(3)
+      const fallback = [...parentHistory].slice(-6);
+      return { historyText: chatHistoryToText(fallback, 3) };
+    }
+  }
+
+  if (scope.mode === 'full_history') {
+    // 全量 history → 检查长度,太长就摘要
+    const totalChars = parentHistory.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0);
+    if (totalChars > 8000) {
+      try {
+        const summarized = await compactHistory(parentHistory, 8000, provider, snap, signal, onEvent);
+        return { historyText: chatHistoryToText(summarized, parentHistory.length) + '\n(已摘要)' };
+      } catch {
+        return { historyText: chatHistoryToText(parentHistory.slice(-10), 10) + '\n(摘要失败,只保留尾部)' };
+      }
+    }
+    return { historyText: chatHistoryToText(parentHistory, parentHistory.length) };
+  }
+
+  return { historyText: '' };
+}
+
+// ChatMsg[] → 简洁的纯文本(供 historyText 用)。
+// 跳过 _memory / _pinned 标的消息(它们是参考,不是子 agent 应该看到的"对话")。
+// tool 消息合并到对应 assistant 消息下,标 [工具: name]。
+function chatHistoryToText(msgs: ChatMsg[], n: number): string {
+  const lines: string[] = [`(父会话最近 ${n} 轮)`];
+  for (const m of msgs) {
+    if (m._memory || m._pinned) continue;
+    if (m.role === 'tool') {
+      const text = typeof m.content === 'string' ? m.content.slice(0, 300) : '[多模态]';
+      lines.push(`  [工具结果] ${text}${text.length >= 300 ? '…' : ''}`);
+    } else if (m.role === 'assistant') {
+      const text = typeof m.content === 'string' ? m.content : '[多模态]';
+      const tc = Array.isArray(m.tool_calls) ? m.tool_calls.map((c) => c.function.name).join(', ') : '';
+      lines.push(`[助手${tc ? ` 调用:${tc}` : ''}] ${text.slice(0, 600)}${text.length >= 600 ? '…' : ''}`);
+    } else if (m.role === 'user') {
+      const text = typeof m.content === 'string' ? m.content : '[多模态]';
+      lines.push(`[用户] ${text.slice(0, 400)}${text.length >= 400 ? '…' : ''}`);
+    } else if (m.role === 'system') {
+      continue; // 跳过 system
+    }
+  }
+  return lines.join('\n');
+}
 
 export interface EngineRunOpts {
   conv: Conversation;
@@ -124,13 +222,14 @@ class DirectEngine implements Engine {
     const provider = currentProvider(snap);
     // ctx.spawn:dispatch_agent 起子任务 —— 复用 runAgentLoop,独立 history、只读工具、maxTurns 限 8。
     // 子任务事件只转发 cost(也花钱)+ tool(带前缀供 UI 观感),吞掉 token 防刷屏。
+    // P1:支持 scope 参数,按需注入 parent history。scope 切片逻辑由 resolveSpawnHistory 集中处理。
     const ctx: ToolCtx = {
       cwd: conv.cwd,
       confirm: this.confirm,
       signal,
       convId: conv.id,
       sandbox: getSettings().sandbox,
-      spawn: async ({ prompt: sub, signal: childSignal, engine }) => {
+      spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
         // 跨引擎子任务:claudeCode / codex 走 CLI one-shot(只读,不递归)。
         // ponytail: 不复用 ClaudeCodeEngine/CodexEngine 的 stream-json 解析,直接 execFile + 取 stdout。
         if (engine === 'claudeCode' || engine === 'codex') {
@@ -141,13 +240,29 @@ class DirectEngine implements Engine {
         const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
         if (childSignal.aborted) subAc.abort();
         else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
+        // P1:解析 scope → 实际要注入的 history + 拼接后 prompt。
+        // 子任务的 SUBAGENT_PROMPT 末尾追加一段 history 摘要 + parent 上下文,作为事实锚点参考。
+        // 注意:不直接传 ChatMsg[] history 给 runAgentLoop(避免子 agent 的 response 模型看到父级 tool_calls),
+        // 而是把它转成一段文本注入 userInput(子 agent 当成 user 上下文读)。
+        const scopeResolved = scope ?? { mode: 'none' as const };
+        const resolved = await resolveSpawnHistory({
+          scope: scopeResolved,
+          parentHistory: conv.directHistory,
+          provider,
+          snap,
+          signal: subAc.signal,
+          onEvent,
+        });
+        const finalPrompt = resolved.historyText
+          ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${resolved.historyText}\n---`
+          : sub;
         const out = await runAgentLoop({
           provider,
           tools: readOnlyTools(),
           systemPrompt: SUBAGENT_PROMPT,
           snapshot: snap,
-          userInput: sub,
-          history: [],
+          userInput: finalPrompt,
+          history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
           signal: subAc.signal,
           maxTurns: 8,
