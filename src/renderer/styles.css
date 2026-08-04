@@ -267,6 +267,10 @@
 }
 [data-theme="aurora"] .sb-foot {
   border-top-color: rgba(37,40,57,.6);
+  --surface-pane-footer: transparent;
+}
+[data-theme="aurora"] .files-panel-bar {
+  --surface-pane-footer: transparent;
 }
 [data-theme="aurora"] input:hover,
 [data-theme="aurora"] textarea:hover,
@@ -431,6 +435,10 @@
 }
 [data-theme="serene"] .sb-foot {
   border-top-color: rgba(176,148,120,.30);
+  --surface-pane-footer: transparent;
+}
+[data-theme="serene"] .files-panel-bar {
+  --surface-pane-footer: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -779,6 +787,10 @@
 }
 [data-theme="tahoe"] .sb-foot {
   border-top-color: rgba(176,200,224,0.45);
+  --surface-pane-footer: transparent;
+}
+[data-theme="tahoe"] .files-panel-bar {
+  --surface-pane-footer: transparent;
 }
 
 #head-status { color: var(--text-dim); font-size: 12px; margin-left: 6px; }
@@ -2672,6 +2684,10 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 [data-theme="sierra"] .sb-foot {
   border-top-color: rgba(232,212,190,0.50);
+  --surface-pane-footer: transparent;
+}
+[data-theme="sierra"] .files-panel-bar {
+  --surface-pane-footer: transparent;
 }
 
 /* Sierra 代码高亮 — Xcode Light 暖色变体(关键词紫色→棕红色,统一暖调) */
