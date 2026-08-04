@@ -1598,6 +1598,7 @@ function updateStreamingStatus(conv: Conversation): void {
   const body = turnEl.querySelector('.ai-body');
   if (!body) return;
   const oldStatus = body.querySelector('.streaming-status');
+  let heightChanged = false;
   if (conv.statusNote) {
     if (oldStatus) {
       const txt = oldStatus.querySelector('.typing-text');
@@ -1611,9 +1612,17 @@ function updateStreamingStatus(conv: Conversation): void {
       ns.className = 'streaming-status';
       ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
       body.appendChild(ns);
+      heightChanged = true;
     }
   } else {
-    if (oldStatus) oldStatus.remove();
+    if (oldStatus) { oldStatus.remove(); heightChanged = true; }
+  }
+  // streaming-status 的创建/移除改变了内容高度,如果用户在底部需要重新贴底,否则抖动。
+  if (heightChanged) {
+    const turns = document.getElementById('turns');
+    if (turns && turns.scrollHeight - turns.scrollTop - turns.clientHeight < 60) {
+      turns.scrollTop = turns.scrollHeight;
+    }
   }
 }
 
@@ -1656,6 +1665,11 @@ function updateLastTurnIncremental(): void {
   } else if (wantStatus && oldStatus) {
     const txt = oldStatus.querySelector('.typing-text');
     if (txt) txt.textContent = conv.statusNote ?? '';
+  }
+  // DOM 结构改变(steps 重建 / streaming-status 增删)后,如果用户在底部,重新贴底。
+  const turnsEl = document.getElementById('turns');
+  if (turnsEl && turnsEl.scrollHeight - turnsEl.scrollTop - turnsEl.clientHeight < 60) {
+    turnsEl.scrollTop = turnsEl.scrollHeight;
   }
 }
 
