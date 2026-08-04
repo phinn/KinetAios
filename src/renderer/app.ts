@@ -1867,12 +1867,12 @@ async function showSettings() {
       <div class="sub">${tr('settings.sub')}</div>
 
       <div class="s-tabs">
-        <button class="s-tab active" data-stab="model" data-i18n="settings.tab.model">模型</button>
-        <button class="s-tab" data-stab="behavior" data-i18n="settings.tab.behavior">行为</button>
-        <button class="s-tab" data-stab="advanced" data-i18n="settings.tab.advanced">高级</button>
-        <button class="s-tab" data-stab="plugins" data-i18n="settings.tab.plugins">插件</button>
-        <button class="s-tab" data-stab="persona" data-i18n="settings.tab.persona">替身</button>
-        <button class="s-tab" data-stab="mesh" data-i18n="settings.tab.mesh">多机协作</button>
+        <button class="s-tab active" data-stab="model">${tr('settings.tab.model')}</button>
+        <button class="s-tab" data-stab="behavior">${tr('settings.tab.behavior')}</button>
+        <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
+        <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
+        <button class="s-tab" data-stab="persona">${tr('settings.tab.persona')}</button>
+        <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
       </div>
 
       <div class="s-tab-panel" data-panel="model">
