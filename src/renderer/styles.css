@@ -1393,25 +1393,34 @@ a { color: var(--accent); }
 #settings .card { width: 100%; max-width: 620px; box-sizing: border-box; overflow: hidden; }
 #settings h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 #settings .sub { color: var(--text-dim); margin-bottom: 20px; font-size: 13px; line-height: 1.6; }
-/* 设置页 tab 导航(模型/行为/高级/插件/多机协作) — 固定布局,不受 panel 内容影响 */
-.s-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; width: 100%; box-sizing: border-box; }
+
+/* sticky tab 导航:滚动时 tab 栏固定在顶部 / Sticky tab bar on scroll */
+.s-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 18px; width: 100%; box-sizing: border-box; position: sticky; top: -28px; z-index: 10; padding-top: 6px; margin-top: -6px; }
 .s-tab { padding: 8px 16px; font-size: 13px; border: none; background: none; color: var(--text-dim); cursor: pointer; border-bottom: 2px solid transparent; transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); flex-shrink: 0; white-space: nowrap; }
 .s-tab:hover { color: var(--text); }
 .s-tab:focus { outline: none; }
 .s-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
-/* 设置页 tab 面板:纯 display 切换,无动画(避免 Chromium display_lock 崩溃)。 */
+
 .s-tab-panel { }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 .field { margin-bottom: 14px; }
 .field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
 .field .row { display: flex; gap: 8px; }
 .field .row > * { flex: 1; }
-/* 设置页分组:每个 s-section 是一组同类字段(接口/行为/价格/界面),顶部 h3 标题。 */
+
+/* 设置页分组 */
 .s-section { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
 .s-section:first-of-type { border-top: none; margin-top: 14px; padding-top: 0; }
 .s-section h3 { margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
 .test-msg { font-size: 12px; margin-top: 6px; }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
+
+/* 字段描述文字 / Field description text */
+.field-desc { color: var(--text-dim); font-size: 12px; line-height: 1.6; margin-bottom: 10px; }
+/* 设置页 hint 提示框 / Settings hint box */
+.s-hint { color: var(--text-dim); font-size: 12px; line-height: 1.6; margin-bottom: 12px; padding: 10px 12px; background: var(--bg-elev, rgba(255,255,255,0.02)); border: 1px solid var(--border-soft); border-radius: 8px; }
+.s-hint code { font-family: var(--mono); font-size: 11px; background: var(--bg-2); padding: 1px 5px; border-radius: 3px; }
+
 /* iOS 风格开关(settings 页 toggle) */
 .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }
@@ -1420,6 +1429,36 @@ a { color: var(--accent); }
 .switch input:checked + .track { background: var(--accent); }
 .switch input:checked + .track .thumb { transform: translateX(16px); }
 .switch-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 13px; }
+
+/* checkbox field(用 switch 替代原生 checkbox) */
+.field-cb { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.field-cb label { font-size: 13px; color: var(--text); cursor: pointer; margin: 0; }
+
+/* 小按钮(设置页内嵌操作按钮) / Compact button */
+.btn-sm { padding: 4px 12px; font-size: 12px; border-radius: 6px; }
+.btn-xs { padding: 2px 10px; font-size: 11px; border-radius: 5px; }
+
+/* 设置页子容器(mesh panel 内的框) / Settings sub-panel */
+.s-sub-panel { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 14px; }
+.s-sub-panel-title { font-weight: 600; font-size: 13px; margin-bottom: 4px; }
+.s-sub-panel-desc { color: var(--text-dim); font-size: 11px; margin-bottom: 10px; line-height: 1.5; }
+.s-sub-panel-desc-indent { color: var(--text-dim); font-size: 11px; margin: -4px 0 10px 46px; line-height: 1.5; }
+
+/* 模型配置档卡片 / Model profile card */
+.profile-item { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bg-2); border: 1px solid var(--border-soft); border-radius: 8px; margin-bottom: 6px; transition: border-color var(--dur-fast) var(--ease-out); }
+.profile-item:hover { border-color: var(--accent-dim); }
+.profile-item .pf-name { font-weight: 600; min-width: 100px; font-size: 13px; }
+.profile-item .pf-info { color: var(--text-dim); font-size: 12px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 设置底部操作栏 / Settings footer */
+.s-footer { display: flex; gap: 8px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.s-version { margin-left: auto; color: var(--text-faint); font-size: 11px; user-select: text; cursor: default; }
+
+/* 替身画像编辑器 / Persona editor */
+.s-persona-editor { width: 100%; min-height: 400px; font-family: var(--mono); font-size: 12px; resize: vertical; background: var(--bg-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; line-height: 1.6; }
+.s-persona-empty { padding: 48px 20px; text-align: center; color: var(--text-dim); }
+.s-persona-empty-icon { font-size: 40px; margin-bottom: 14px; opacity: .35; }
+
 /* plugin list in settings — v2 分类卡片 */
 .s-plugin-dropzone { width: 100%; min-height: 56px; border: 2px dashed var(--border); border-radius: 8px; display: flex; align-items: center; justify-content: center; gap: 10px; cursor: copy; transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
 .s-plugin-dropzone.drag-over { border-color: var(--accent); background: rgba(232,179,57,.06); }

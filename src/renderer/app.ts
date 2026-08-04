@@ -1881,9 +1881,9 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
           ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
         </select></div>
-        <div class="field"><label>API Key</label><input id="s-key" type="password" value="${esc(s.apiKey)}" /> <button id="s-balance" style="margin-left:6px;padding:2px 10px;font-size:11px">${tr('balance.query')}</button></div>
+        <div class="field"><label>API Key</label><div class="row"><input id="s-key" type="password" value="${esc(s.apiKey)}" /><button id="s-balance" class="btn-xs">${tr('balance.query')}</button></div></div>
         <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
-        <div class="field"><label>${tr('settings.modelId')}</label><input id="s-model" value="${esc(s.model)}" /> <button id="s-scan-models" style="margin-left:6px;padding:2px 10px;font-size:11px;display:none">🔄 读取本地模型</button></div>
+        <div class="field"><label>${tr('settings.modelId')}</label><div class="row"><input id="s-model" value="${esc(s.model)}" /><button id="s-scan-models" class="btn-xs" style="display:none">🔄 读取本地模型</button></div></div>
         <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
           <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>${tr('settings.proto.openai')}</option>
           <option value="anthropic" ${s.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic</option>
@@ -1904,14 +1904,14 @@ async function showSettings() {
           <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
           <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
         </select></div>
-        <div class="field"><label><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.plan')}</label></div>
-        <div class="field"><label><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.cli')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
         <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
           <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
           <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>Kaios v2 (Plan·Verify)</option>
           ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>Claude Code</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
         </select></div>
-        <div class="field"><label><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} style="width:auto;margin-right:6px" />${tr('settings.voiceAutoSend')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
       </div>
 
       <div class="s-section">
@@ -1923,21 +1923,21 @@ async function showSettings() {
 
       <div class="s-section">
         <h3>${tr('settings.sec.embed')}</h3>
-        <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">${tr('settings.embed.desc')}</div>
+        <div class="field-desc">${tr('settings.embed.desc')}</div>
         <div class="field"><label>${tr('settings.embed.model')}</label><input id="s-embed-model" value="${esc(s.embedModel || 'embedding-3')}" /></div>
         <div class="field"><label>${tr('settings.embed.baseURL')}</label><input id="s-embed-base" value="${esc(s.embedBaseURL || '')}" placeholder="${esc(tr('settings.embed.baseURLPh'))}" /></div>
         <div class="field"><label>${tr('settings.embed.apiKey')}</label><input id="s-embed-key" type="password" value="${esc(s.embedApiKey || '')}" placeholder="${esc(tr('settings.embed.apiKeyPh'))}" /></div>
       </div>
 
       <div class="s-section">
-        <h3>💾 模型配置档 <span style="font-weight:400;font-size:12px;color:var(--muted)">保存多套配置,聊天界面可快速切换</span></h3>
+        <h3>💾 模型配置档 <span class="field-desc" style="display:inline;font-weight:400;text-transform:none;letter-spacing:0">保存多套配置,聊天界面可快速切换</span></h3>
         <div id="s-profile-list" style="margin-top:8px"></div>
         <div class="field" style="align-items:flex-start;margin-top:8px">
           <label>存为新配置</label>
           <div style="display:flex;gap:6px;flex:1">
             <input id="s-profile-name" placeholder="配置名(如 GLM-5.2 / DeepSeek)" style="flex:1" />
-            <button id="s-profile-cancel" style="padding:4px 14px;font-size:12px;white-space:nowrap;display:none">取消</button>
-            <button id="s-profile-save" style="padding:4px 14px;font-size:12px;white-space:nowrap">➕ 添加</button>
+            <button id="s-profile-cancel" class="btn-sm" style="white-space:nowrap;display:none">取消</button>
+            <button id="s-profile-save" class="btn-sm" style="white-space:nowrap">➕ 添加</button>
           </div>
         </div>
       </div>
@@ -1966,10 +1966,10 @@ async function showSettings() {
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.agent')}</h3>
-        <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="width:80px" /></div>
-        <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
-        <div class="field" style="margin-top:12px"><label>${tr('settings.hifiBudget')}</label><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="width:100px" /> <span style="color:var(--text-faint);font-size:11px">tokens</span></div>
-        <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.hifiBudget.desc')}</div>
+        <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
+        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
+        <div class="field"><label>${tr('settings.hifiBudget')}</label><div class="row"><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
+        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.hifiBudget.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
@@ -1978,7 +1978,7 @@ async function showSettings() {
           <option value="minimize" ${s.closeBehavior === 'minimize' ? 'selected' : ''}>${tr('settings.closeBehavior.minimize')}</option>
           <option value="tray" ${s.closeBehavior === 'tray' ? 'selected' : ''}>${tr('settings.closeBehavior.tray')}</option>
         </select></div>
-        <div class="field-desc" style="color:var(--muted);font-size:11px;margin:-4px 0 0 0">${tr('settings.closeBehavior.desc')}</div>
+        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.closeBehavior.desc')}</div>
       </div>
       </div><!-- /behavior panel -->
 
@@ -1986,7 +1986,7 @@ async function showSettings() {
       <div class="s-section">
         <h3>${tr('settings.sec.memory')}</h3>
         <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
-          <span class="field-desc" style="color:var(--muted);font-size:12px">${tr('settings.mem.desc')}</span>
+          <span class="field-desc">${tr('settings.mem.desc')}</span>
           <div style="display:flex;gap:8px">
             <button id="s-mem-exp">${tr('settings.mem.export')}</button>
             <button id="s-mem-imp">${tr('settings.mem.import')}</button>
@@ -1997,10 +1997,10 @@ async function showSettings() {
 
       <div class="s-section">
         <h3>🎙️ 实时语音助手</h3>
-        <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">
+        <div class="field-desc">
           配置豆包(火山引擎)实时语音大模型 API。填写后可在聊天界面开启语音对话模式 —— 实时说话,实时回复,支持中途发指令给 Agent 执行。
         </div>
-        <div class="field"><label><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} style="width:auto;margin-right:6px" />启用语音入口(聊天界面显示语音按钮)</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-vc-enable" ${s.voiceChat?.enable ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-vc-enable">启用语音入口(聊天界面显示语音按钮)</label></div>
         <div class="field"><label>App ID</label><input id="s-vc-appid" value="${esc(s.voiceChat?.appId ?? '')}" placeholder="火山引擎控制台 → 语音技术 → 应用管理" /></div>
         <div class="field"><label>Access Key</label><input id="s-vc-token" type="password" value="${esc(s.voiceChat?.accessToken ?? '')}" placeholder="火山引擎控制台 → 实时语音 → Access Key" /></div>
         <div class="field"><label>WebSocket 地址</label><input id="s-vc-wsurl" value="${esc(s.voiceChat?.wsUrl ?? 'wss://openspeech.bytedance.com/api/v3/realtime/dialogue')}" placeholder="wss://…" style="font-family:var(--mono);font-size:12px" /></div>
@@ -2016,7 +2016,7 @@ async function showSettings() {
 
       <div class="s-section">
         <h3>MiniMax 文生视频</h3>
-        <div class="s-hint" style="margin-bottom:12px">
+        <div class="s-hint">
           配置 <a href="https://platform.minimaxi.com" target="_blank">MiniMax 开放平台</a> API Key 后,Agent 可通过 <code>video_gen</code> 工具自主调用 H3 模型生成视频。密钥经系统级加密存储。
         </div>
         <div class="field"><label>MiniMax API Key</label><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="MiniMax → 账户管理 > 接口密钥" /></div>
@@ -2049,22 +2049,22 @@ async function showSettings() {
       <div class="s-tab-panel" data-panel="persona" style="display:none">
         <div class="s-section">
           <h3>🧬 替身画像</h3>
-          <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:14px">
+          <div class="field-desc">
             从你的历史对话(${(await api.getConversations()).length} 个会话)和记忆中提取做事风格,生成结构化画像。
             画像将作为 AI 替身的「人格设定」—— 让 AI 以你的方式自主使用 KinetAios 完成任务。
           </div>
           <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
-            <button id="s-persona-gen" style="padding:6px 16px">生成画像</button>
-            <button id="s-persona-save" style="padding:6px 16px;display:none">保存修改</button>
-            <button id="s-persona-clear" style="padding:6px 16px;display:none">清空(关闭替身)</button>
+            <button id="s-persona-gen" class="btn-sm">生成画像</button>
+            <button id="s-persona-save" class="btn-sm" style="display:none">保存修改</button>
+            <button id="s-persona-clear" class="btn-sm" style="display:none">清空(关闭替身)</button>
             <span class="test-msg" id="s-persona-msg"></span>
           </div>
-          <div id="s-persona-stats" style="color:var(--muted);font-size:11px;margin-bottom:10px"></div>
-          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="点击「生成画像」按钮,或在此手动编写你的替身画像…" style="width:100%;min-height:400px;font-family:var(--mono);font-size:12px;resize:vertical;background:var(--bg-2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:10px;display:none"></textarea>
-          <div id="s-persona-empty" style="padding:40px;text-align:center;color:var(--muted)">
-            <div style="font-size:36px;margin-bottom:12px;opacity:.4">🧬</div>
+          <div id="s-persona-stats" class="field-desc" style="margin-bottom:10px"></div>
+          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="点击「生成画像」按钮,或在此手动编写你的替身画像…" style="display:none"></textarea>
+          <div id="s-persona-empty" class="s-persona-empty">
+            <div class="s-persona-empty-icon">🧬</div>
             <div>尚未生成替身画像</div>
-            <div style="font-size:11px;margin-top:4px">点击「生成画像」开始</div>
+            <div class="field-desc" style="margin-top:4px;text-align:center">点击「生成画像」开始</div>
           </div>
         </div>
       </div><!-- /persona panel -->
@@ -2072,52 +2072,52 @@ async function showSettings() {
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
         <h3>${ICON.link} 多机协作 (MCP Bridge)</h3>
-        <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:12px">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
+        <div class="field-desc">把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。</div>
 
         <!-- 本机 MCP Server -->
-        <div style="border:1px solid var(--border);border-radius:8px;padding:12px;margin-bottom:12px">
+        <div class="s-sub-panel">
           <label class="switch-label" style="margin-bottom:8px">
             <span class="switch"><input type="checkbox" id="s-mcp-enabled" ${s.localMcpServer?.enabled ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
-            <span style="font-weight:600">本机 MCP Server</span>
+            <span class="s-sub-panel-title">本机 MCP Server</span>
           </label>
-          <div style="color:var(--muted);font-size:11px;margin:-4px 0 10px 46px">开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)</div>
+          <div class="s-sub-panel-desc-indent">开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)</div>
 
           <div style="display:grid;grid-template-columns:auto 1fr auto;gap:8px 10px;align-items:center;margin-left:46px">
-            <label style="font-size:12px;color:var(--muted)">端口</label>
+            <label class="field-desc" style="margin:0">端口</label>
             <input id="s-mcp-port" type="number" value="${s.localMcpServer?.port ?? 18109}" style="width:100px" />
-            <button id="s-mcp-gentoken" title="生成随机 Token" style="padding:4px 10px;font-size:12px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
+            <button id="s-mcp-gentoken" class="btn-sm" title="生成随机 Token"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
 
-            <label style="font-size:12px;color:var(--muted)">Token</label>
+            <label class="field-desc" style="margin:0">Token</label>
             <input id="s-mcp-token" type="password" value="${esc(s.localMcpServer?.token ?? '')}" placeholder="留空=不鉴权" style="grid-column:2/4" />
           </div>
 
           <div style="display:flex;gap:8px;align-items:center;margin:10px 0 0 46px">
-            <button id="s-mcp-start" class="primary" style="padding:4px 14px;font-size:12px">立即启动</button>
-            <button id="s-mcp-stop" style="padding:4px 14px;font-size:12px">停止</button>
+            <button id="s-mcp-start" class="primary btn-sm">立即启动</button>
+            <button id="s-mcp-stop" class="btn-sm">停止</button>
             <span class="test-msg" id="s-mcp-msg"></span>
           </div>
         </div>
 
         <!-- 远程节点 -->
-        <div style="border:1px solid var(--border);border-radius:8px;padding:12px">
-          <div style="font-weight:600;font-size:13px;margin-bottom:4px">远程节点</div>
-          <div style="color:var(--muted);font-size:11px;margin-bottom:8px">把别的 KinetAios 当工具用</div>
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">远程节点</div>
+          <div class="s-sub-panel-desc">把别的 KinetAios 当工具用</div>
           <div id="s-remote-list" style="width:100%;display:flex;flex-direction:column;gap:4px;margin-bottom:8px"></div>
           <div style="display:grid;grid-template-columns:130px 1fr 100px auto;gap:8px;align-items:center">
             <input id="s-remote-name" placeholder="名称(如 macbook-pro)" />
             <input id="s-remote-url" placeholder="http://192.168.1.100:18109/mcp" />
             <input id="s-remote-token" type="password" placeholder="token" />
-            <button id="s-remote-add" style="padding:4px 12px;font-size:12px">添加</button>
+            <button id="s-remote-add" class="btn-sm">添加</button>
           </div>
         </div>
       </div>
       </div><!-- /mesh panel -->
 
-      <div style="display:flex;gap:8px;align-items:center;margin-top:8px">
+      <div class="s-footer">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
         <button id="s-test">${tr('settings.test')}</button>
         <span class="test-msg" id="s-msg"></span>
-        <span id="s-version" style="margin-left:auto;color:var(--muted);font-size:11px;user-select:text;cursor:default"></span>
+        <span id="s-version" class="s-version"></span>
       </div>
     </div>`;
   // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
@@ -2387,12 +2387,12 @@ async function showSettings() {
       return;
     }
     container.innerHTML = profiles.map((p: any) => `
-      <div class="profile-item" style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-2);border:1px solid var(--border);border-radius:6px;margin-bottom:6px">
-        <span style="font-weight:600;min-width:100px">${esc(p.name)}</span>
-        <span style="color:var(--muted);font-size:12px;flex:1">${esc(p.model)} · ${esc(p.baseURL.slice(0, 40))}</span>
-        <button class="ghost" data-pf-load="${p.id}" style="padding:2px 10px;font-size:11px">载入</button>
-        <button class="ghost" data-pf-edit="${p.id}" style="padding:2px 10px;font-size:11px">✏️ 修改</button>
-        <button class="ghost" data-pf-del="${p.id}" style="padding:2px 10px;font-size:11px;color:var(--danger)">删除</button>
+      <div class="profile-item">
+        <span class="pf-name">${esc(p.name)}</span>
+        <span class="pf-info">${esc(p.model)} · ${esc(p.baseURL.slice(0, 40))}</span>
+        <button class="ghost btn-xs" data-pf-load="${p.id}">载入</button>
+        <button class="ghost btn-xs" data-pf-edit="${p.id}">✏️ 修改</button>
+        <button class="ghost btn-xs" data-pf-del="${p.id}" style="color:var(--danger)">删除</button>
       </div>
     `).join('');
     container.querySelectorAll('[data-pf-load]').forEach((btn) => {
