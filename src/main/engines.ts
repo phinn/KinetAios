@@ -66,7 +66,7 @@ export const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完�
  * - 'none':空字符串(子 agent 完全独立)。
  * - 'last_n_turns(n)':取 parent history 末尾最近 n 个 user 消息 + 它们对应的 assistant 回复。
  *   简单按"role=user"的边界切,tool 消息作为该轮 assistant 的证据保留。
- * - 'summary_only':跑一次 compactHistory(拿摘要能力)—— 失败回退 last_n_turns(3)。
+ * - 'summary_only':直接调 LLM 做全文摘要(不借 compactHistory),失败回退 last_n_turns(3)。
  * - 'full_history':全量 history,做长度检查(>8000 字符走 compactHistory)。
  */
 export async function resolveSpawnHistory(opts: {
@@ -99,14 +99,35 @@ export async function resolveSpawnHistory(opts: {
   }
 
   if (scope.mode === 'summary_only') {
-    // 复用 compactHistory:传一个超大 budget 让它必须走"摘要"路径,然后拿摘要后的开头那段。
-    // ponytail: 这里实际上想要"全文摘要"而不是"摘要+尾部",但 compactHistory 接口设计是后者。
-    // 简化:用 budget=800 让它摘要足够长的头,尾部保留一两条。效果接近"全文摘要 + 最后 1 轮"。
+    // 直接用 LLM 做全文摘要(而非借 compactHistory 间接模拟,后者保留尾部真实消息会混入)。
+    // 将 parentHistory 转文本 → 截断 → 一次 streamComplete 摘要。
     try {
-      const summarized = await compactHistory(parentHistory, 800, provider, snap, signal, onEvent);
-      // 摘要结果里通常开头是 _memory(过滤掉)+ 摘要 user 消息 + 末尾真实对话。提取摘要 user 消息。
-      const summaryMsg = summarized.find((m) => m.role === 'user' && typeof m.content === 'string' && m.content.length > 100);
-      return { historyText: summaryMsg?.content ? `【父会话摘要】\n${summaryMsg.content}` : '' };
+      const transcript = parentHistory
+        .filter((m) => !m._memory && !m._pinned && m.role !== 'system')
+        .map((m) => {
+          if (m.role === 'tool') return `[工具结果] ${typeof m.content === 'string' ? m.content.slice(0, 200) : ''}`;
+          if (m.role === 'assistant') {
+            const text = typeof m.content === 'string' ? m.content.slice(0, 400) : '';
+            const tc = Array.isArray(m.tool_calls) ? m.tool_calls.map((c) => c.function.name).join(', ') : '';
+            return `[助手${tc ? `:${tc}` : ''}] ${text}`;
+          }
+          return `[用户] ${typeof m.content === 'string' ? m.content.slice(0, 400) : ''}`;
+        })
+        .join('\n');
+      if (!transcript.trim()) return { historyText: '' };
+      // 截断到 10K(子 agent 只需摘要,不需要完整原文)
+      const trimmed = transcript.length > 10_000 ? transcript.slice(0, 10_000) + '\n…[截断]' : transcript;
+      const sys = '你是对话摘要器。把下面这段父会话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
+      const comp = await provider.streamComplete(
+        [{ role: 'system', content: sys }, { role: 'user', content: trimmed }],
+        [], snap, signal, () => {},
+      );
+      const summary = comp.content?.trim();
+      if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
+        const { priceUSD } = await import('./glm');
+        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+      }
+      return { historyText: summary ? `【父会话摘要】\n${summary}` : '' };
     } catch {
       // 摘要失败 → 回退 last_n_turns(3)
       const fallback = [...parentHistory].slice(-6);
