@@ -187,7 +187,9 @@ function applyI18nDOM(): void {
   // 非 token 事件(tool/cost/status/context)的 renderMain 做 debounce:
   // AgentLoop 一轮 ReAct 可能连发多个 tool+cost 事件,每次 renderMain 全量重建 DOM +
   // markdown 渲染所有 turn,导致 O(n²) CPU + 大量临时 DOM 节点(内存泄漏的主因)。
-  // done/error/sessionStarted 立即渲染;tool/cost/status/context 攒到下一帧合并一次。
+  // 流式期间:只更新 head 和当前 turn 的步骤(steps 容器 + streaming-status),其他 turn 不动。
+  // 这样 tool 来时只动小范围 DOM,不重建几百个节点。
+  // done/error/sessionStarted 才全量 renderMain。
   let renderMainPending = false;
   let pendingFullRender = false;
   function scheduleRenderMain(): void {
@@ -196,8 +198,8 @@ function applyI18nDOM(): void {
     pendingFullRender = false;
     requestAnimationFrame(() => {
       renderMainPending = false;
-      if (pendingFullRender) { pendingFullRender = false; scheduleRenderMain(); }
-      renderMain();
+      if (pendingFullRender) { pendingFullRender = false; scheduleRenderMain(); return; }
+      updateLastTurnIncremental();
     });
   }
 
@@ -918,20 +920,61 @@ function renderMain() {
   const turns = document.getElementById('turns')!;
   // 离屏构建再一次性挂载,避免 innerHTML='' 后到新 DOM 创建之间的空白帧(闪屏)。
   // Build off-screen then attach in one pass — avoids a blank frame between clearing and repopulating.
-  const frag = document.createDocumentFragment();
   if (!conv) {
-    frag.appendChild(empty(tr('empty.noConv')));
-    turns.replaceChildren(frag);
+    turns.replaceChildren(empty(tr('empty.noConv')));
     return;
   }
   if (!conv.turns.length) {
-    frag.appendChild(empty(tr('empty.noTurns')));
+    turns.replaceChildren(empty(tr('empty.noTurns')));
+    scrollDown();
+    return;
   }
-  for (let i = 0; i < conv.turns.length; i++) {
-    frag.appendChild(renderTurn(conv, i));
-  }
+  // 分批渲染:长对话一次全量渲染会卡死主线程(几百轮 Markdown + DOM 节点),
+  // 表现就是「切频道后空白几百 ms 到几秒」。先挂最近 30 个 turn 让用户看到内容,
+  // 剩余的用 idle 回调增量挂上去,边滚边补。
+  // Batch render: full re-render of 200+ turns blocks main thread for hundreds of ms.
+  // Mount the last 30 turns first (fast path), then fill earlier turns via idle callback.
+  const total = conv.turns.length;
+  const FIRST_BATCH = 30;
+  const startIdx = Math.max(0, total - FIRST_BATCH);
+  const frag = document.createDocumentFragment();
+  for (let i = startIdx; i < total; i++) frag.appendChild(renderTurn(conv, i));
   turns.replaceChildren(frag);
   scrollDown();
+  // 剩余 turn 用 idle 回调增量补(头插)。补完后用户向上滚就能看到。
+  // Idle-fill earlier turns in the background (prepended to the top).
+  if (startIdx > 0) {
+    const remaining = startIdx;
+    let cursor = remaining;
+    const fillBatch = 20;
+    const fill = (deadline?: IdleDeadline) => {
+      // 优先在 idle 期间补,否则至少补一批避免永远挂着
+      const canContinue = !deadline || deadline.timeRemaining() > 5;
+      if (!canContinue) { scheduleFill(); return; }
+      const end = cursor;
+      const begin = Math.max(0, end - fillBatch);
+      const frag2 = document.createDocumentFragment();
+      // 记录挂载前的 scrollTop,头插 DOM 会把视口往下推,需要补偿
+      const beforeTop = turns.scrollTop;
+      const beforeHeight = turns.scrollHeight;
+      for (let i = begin; i < end; i++) frag2.appendChild(renderTurn(conv, i));
+      turns.prepend(frag2);
+      const afterHeight = turns.scrollHeight;
+      turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
+      cursor = begin;
+      if (cursor > 0) scheduleFill();
+    };
+    let scheduled = false;
+    const scheduleFill = () => {
+      if (scheduled) return;
+      scheduled = true;
+      (window.requestIdleCallback ?? ((cb: (d: IdleDeadline) => void) => setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 50 }), 0)))(() => {
+        scheduled = false;
+        fill({ didTimeout: false, timeRemaining: () => 50 });
+      });
+    };
+    scheduleFill();
+  }
   // 切会话后,文件 tab 若已挂,跟着换 cwd(切到当前会话的 cwd)。
   if (activeTab === 'files' && filesController) filesController.setCwd(conv.cwd);
   // git tab:cwd 变了就重抓 snapshot(切会话是最常见的触发)。
@@ -1172,6 +1215,47 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   pres[1].textContent = s.result.slice(0, 4000);
   el.appendChild(det);
   return el;
+}
+
+// 流式期间增量更新:只动 head + 当前 turn 的 steps 容器 + streaming-status。
+// 不重建其他 turn,避免几百轮的会话在 tool 来时全量重渲导致主线程卡死 / 空白闪屏。
+// Falls back to full renderMain if streaming turn element not found.
+function updateLastTurnIncremental(): void {
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  if (!conv || !conv.turns.length) { renderMain(); return; }
+  renderHead(conv);
+  const lastTurnIdx = conv.turns.length - 1;
+  // 找到当前 streaming-answer 所在 turn(最近的那个 .turn)
+  const ansEl = document.getElementById('streaming-answer');
+  if (!ansEl) { renderMain(); return; }
+  const turnEl = ansEl.closest('.turn') as HTMLElement | null;
+  if (!turnEl) { renderMain(); return; }
+  const t = conv.turns[lastTurnIdx];
+  // 重建 steps 子树(根据 t.steps 重新生成),其他 turn 不动。
+  const oldSteps = turnEl.querySelector('.steps');
+  if (t.steps.length) {
+    const fresh = document.createElement('div');
+    fresh.className = 'steps';
+    for (const s of t.steps) fresh.appendChild(renderStep(s));
+    if (oldSteps) oldSteps.replaceWith(fresh);
+    else turnEl.querySelector('.ai-body')?.prepend(fresh);
+  } else if (oldSteps) {
+    oldSteps.remove();
+  }
+  // 同步 streaming-status(toggle based on conv.statusNote)。
+  const oldStatus = turnEl.querySelector('.streaming-status');
+  const wantStatus = conv.statusNote;
+  if (wantStatus && !oldStatus) {
+    const ns = document.createElement('div');
+    ns.className = 'streaming-status';
+    ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote ?? '') + '</span>';
+    turnEl.querySelector('.ai-body')?.appendChild(ns);
+  } else if (!wantStatus && oldStatus) {
+    oldStatus.remove();
+  } else if (wantStatus && oldStatus) {
+    const txt = oldStatus.querySelector('.typing-text');
+    if (txt) txt.textContent = conv.statusNote ?? '';
+  }
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
