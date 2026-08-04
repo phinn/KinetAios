@@ -890,12 +890,43 @@ a { color: var(--accent); }
 /* ── 配置行 ── */
 .ch-config { padding-bottom: 0; }
 
-/* 环境胶囊:engine + cwd 视觉一体 */
-.ch-env { display: inline-flex; align-items: center; gap: 0; background: var(--bg-elev, rgba(255,255,255,.03)); border: 1px solid var(--border); border-radius: 8px; padding: 2px 4px 2px 8px; flex: 0 1 auto; min-width: 0; max-width: 60%; }
+/* 环境胶囊:engine + cwd 视觉一体。
+   cwd 默认收窄只露尾部路径;focus 时展开占满剩余空间,blur 回缩。*/
+.ch-env {
+  display: inline-flex; align-items: center; gap: 0;
+  background: var(--bg-elev, rgba(255,255,255,.03));
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 2px 4px 2px 8px;
+  flex: 0 1 auto; min-width: 0; max-width: 60%;
+  transition: max-width var(--dur, 0.3s) var(--ease-out),
+              border-color var(--dur-fast, 0.15s) var(--ease-out);
+}
+/* focus-within:整个胶囊放宽 + 边框微亮 */
+.ch-env:focus-within {
+  max-width: 80%;
+  border-color: var(--accent-dim, rgba(10,132,255,.3));
+}
 .ch-env select { all: unset; font-size: 11.5px; font-weight: 500; color: var(--text); cursor: pointer; padding: 3px 6px; border-radius: 5px; white-space: nowrap; flex-shrink: 0; }
 .ch-env select:hover { background: var(--bg-input); }
 .ch-env-sep { width: 1px; height: 14px; background: var(--border); flex-shrink: 0; margin: 0 4px; }
-.ch-env .cwd { all: unset; font-size: 11px; color: var(--text-dim); font-family: ui-monospace, "Cascadia Code", monospace; min-width: 60px; flex: 1; padding: 3px 4px; }
+/* cwd:默认窄(width 100px,文字 direction:rtl 保证露尾部路径);
+   focus 时 flex-grow 展开占满剩余空间 */
+.ch-env .cwd {
+  all: unset; font-size: 11px; color: var(--text-dim);
+  font-family: ui-monospace, "Cascadia Code", monospace;
+  width: 100px; flex: 0 1 100px;
+  padding: 3px 4px;
+  /* direction:rtl 让溢出时露尾部(路径关键信息在末尾) */
+  direction: rtl; text-align: left;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  transition: flex var(--dur, 0.3s) var(--ease-out),
+              width var(--dur, 0.3s) var(--ease-out);
+}
+.ch-env .cwd:focus {
+  flex: 1 1 auto; width: auto;
+  direction: ltr;            /* 编辑时恢复正常方向 */
+  color: var(--text);        /* 编辑态加深文字 */
+}
 .ch-env .cwd::placeholder { color: var(--text-faint); }
 .ch-env .cwd-pick { flex: 0 0 auto; padding: 3px; border-radius: 5px; color: var(--text-faint); display: inline-flex; }
 .ch-env .cwd-pick:hover { color: var(--text); background: var(--bg-input); }
