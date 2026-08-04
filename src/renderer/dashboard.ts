@@ -3,7 +3,7 @@
 // 雷达图 + 趋势线图 + 引擎对比表(SVG, 零依赖)。
 import { applyEvent, ENGINE_LABELS } from '../shared/types';
 import type { AgentEvent, Conversation, EngineKind, KinetAPI } from '../shared/types';
-import { t, type Lang } from '../shared/i18n';
+import { t, engineLabel, type Lang } from '../shared/i18n';
 
 declare global { interface Window { kinet: KinetAPI } }
 
@@ -133,7 +133,7 @@ function renderRadar(stats: ArenaStat[]): void {
   const legend = document.getElementById('dash-radar-legend')!;
   legend.innerHTML = stats.filter((s) => s.sessions > 0 || s.totalCost > 0).map((s) => {
     const color = ENGINE_COLORS[s.engine] ?? '#888';
-    const label = ENGINE_LABELS[s.engine as EngineKind] ?? s.engine;
+    const label = engineLabel(lang, s.engine as EngineKind);
     return `<div class="dash-legend-item"><span class="dash-legend-dot" style="background:${color}"></span>${esc(label)}</div>`;
   }).join('');
 }
@@ -244,7 +244,7 @@ function renderArenaTable(stats: ArenaStat[]): void {
     <th>${esc(tr('dash.col.avgDuration'))}</th>
   </tr></thead><tbody>` + active.map((s) => {
     return `<tr>
-      <td>${esc(ENGINE_LABELS[s.engine as EngineKind] ?? s.engine)}</td>
+      <td>${esc(engineLabel(lang, s.engine as EngineKind))}</td>
       <td>${s.sessions}</td>
       <td>${esc(fmtTok(s.totalTokens))}</td>
       <td>${s.totalTools}</td>
@@ -276,7 +276,7 @@ function renderDashboard(): void {
     const co = cs.reduce((s, c) => s + (c.cost ?? 0), 0);
     const pct = Math.round((co / maxCost) * 100);
     return `<div class="dash-eng">
-      <div class="de-name">${esc(ENGINE_LABELS[e])}<span class="de-count">${cs.length}</span></div>
+      <div class="de-name">${esc(engineLabel(lang, e))}<span class="de-count">${cs.length}</span></div>
       <div class="de-bar"><div class="de-fill" style="width:${pct}%"></div></div>
       <div class="de-stats"><span>${esc(fmtTok(tk))} · ${esc(tr('dash.tokens'))}</span><span>${esc(fmtCost(co))}</span></div>
     </div>`;
@@ -304,7 +304,7 @@ function renderDashboard(): void {
       const status = isRun ? (c.statusNote ? esc(c.statusNote) : esc(tr('dash.status.running'))) : esc(tr('dash.status.ready'));
       return `<tr class="${isRun ? 'run' : ''}">
         <td class="dt-name">${esc(name)}</td>
-        <td>${esc(ENGINE_LABELS[c.engine])}</td>
+        <td>${esc(engineLabel(lang, c.engine))}</td>
         <td class="mono">${esc(c.model || '—')}</td>
         <td class="dt-status">${isRun ? '<span class="dt-run"></span>' : ''}${status}</td>
         <td>${esc(fmtTok(c.tokens ?? 0))}</td>

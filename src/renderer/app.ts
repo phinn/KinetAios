@@ -1,7 +1,7 @@
 // Dashboard renderer. Vanilla TS — no framework. Holds a local copy of conversations,
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
-import { t, LANGS, type Lang } from '../shared/i18n';
+import { t, engineLabel, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
@@ -1447,7 +1447,7 @@ function syncEngineSelect(conv: Conversation | undefined) {
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
   if (!same) {
-    sel.innerHTML = want.map((e) => `<option value="${e}">${esc(ENGINE_LABELS[e])}</option>`).join('');
+    sel.innerHTML = want.map((e) => `<option value="${e}">${esc(engineLabel(lang, e))}</option>`).join('');
   }
   if (document.activeElement !== sel) sel.value = current;
 }
@@ -1867,12 +1867,12 @@ async function showSettings() {
       <div class="sub">${tr('settings.sub')}</div>
 
       <div class="s-tabs">
-        <button class="s-tab active" data-stab="model">模型</button>
-        <button class="s-tab" data-stab="behavior">行为</button>
-        <button class="s-tab" data-stab="advanced">高级</button>
-        <button class="s-tab" data-stab="plugins">插件</button>
-        <button class="s-tab" data-stab="persona">替身</button>
-        <button class="s-tab" data-stab="mesh">多机协作</button>
+        <button class="s-tab active" data-stab="model" data-i18n="settings.tab.model">模型</button>
+        <button class="s-tab" data-stab="behavior" data-i18n="settings.tab.behavior">行为</button>
+        <button class="s-tab" data-stab="advanced" data-i18n="settings.tab.advanced">高级</button>
+        <button class="s-tab" data-stab="plugins" data-i18n="settings.tab.plugins">插件</button>
+        <button class="s-tab" data-stab="persona" data-i18n="settings.tab.persona">替身</button>
+        <button class="s-tab" data-stab="mesh" data-i18n="settings.tab.mesh">多机协作</button>
       </div>
 
       <div class="s-tab-panel" data-panel="model">
@@ -1907,9 +1907,9 @@ async function showSettings() {
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
         <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
-          <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
-          <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>Kaios v2 (Plan·Verify)</option>
-          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>Claude Code</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
+          <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
+          <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
+          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
       </div>
@@ -2308,6 +2308,9 @@ async function showSettings() {
     showSettings(); // 重开设置面板,让所有 label/option 跟随新语言
     showMsg(tr('settings.saved'), true);
   };
+
+  // 新插入的 s-tab 节点带 data-i18n,刷一遍以即时翻译
+  applyI18nDOM();
 
   // ── 模型配置档:保存当前表单内容为新 profile 或覆盖编辑中的 profile ──
   document.getElementById('s-profile-save')!.onclick = async () => {
@@ -4897,7 +4900,7 @@ async function openCtxInspector(convId: string): Promise<void> {
   barFill.className = 'ctx-insp-bar-fill' + (pct > 80 ? ' danger' : pct > 60 ? ' warn' : '');
   // 引擎标签
   const engEl = document.getElementById('ctx-insp-engine')!;
-  engEl.textContent = ENGINE_LABELS[ctxInspEngine] ?? ctxInspEngine;
+  engEl.textContent = engineLabel(lang, ctxInspEngine);
   status.textContent = '';
   // 把 history 序列化到 textarea
   const editor = document.getElementById('ctx-insp-editor') as HTMLTextAreaElement;
@@ -5979,10 +5982,10 @@ function renderPipelineStages(): void {
       <div class="pl-stage-head">
         <input class="pl-stage-label" value="${esc(s.label || '')}" placeholder="Step ${i + 1}" />
         <select class="pl-stage-engine">
-          <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>Kaios (Direct)</option>
-          <option value="directV2" ${s.engine === 'directV2' ? 'selected' : ''}>Kaios v2</option>
-          ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>Claude Code</option>` : ''}
-          ${cliEnabled ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>Codex</option>` : ''}
+          <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
+          <option value="directV2" ${s.engine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
+          ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option>` : ''}
+          ${cliEnabled ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select>
         ${pipelineStages.length > 1 ? `<button class="ghost pl-stage-del" data-idx="${i}">✕</button>` : ''}
       </div>
@@ -6075,7 +6078,7 @@ function renderTemplates(): void {
                   <div class="tpl-card-icon">${esc(tpl.icon || '📋')}</div>
                   <div class="tpl-card-name">${esc(tpl.name)}</div>
                   <div class="tpl-card-desc">${esc(tpl.description)}</div>
-                  <div class="tpl-card-engine">${esc(ENGINE_LABELS[tpl.engine])}</div>
+                  <div class="tpl-card-engine">${esc(engineLabel(lang, tpl.engine))}</div>
                   <div class="tpl-card-actions">
                     <button class="primary tpl-use" data-id="${esc(tpl.id)}">${esc(tr('templates.use'))}</button>
                     ${tpl.builtin ? '' : `<button class="ghost tpl-del" data-id="${esc(tpl.id)}">✕</button>`}
@@ -6145,7 +6148,7 @@ function renderCost(): void {
             const maxC = Math.max(0.0001, ...Object.values(stats.byEngine));
             const pct = Math.round((cost / maxC) * 100);
             return `<div class="cost-eng">
-              <span class="ce-name">${esc(ENGINE_LABELS[eng as EngineKind] || eng)}</span>
+              <span class="ce-name">${esc(engineLabel(lang, eng as EngineKind))}</span>
               <div class="ce-bar"><div class="ce-fill" style="width:${pct}%"></div></div>
               <span class="ce-val">$${cost.toFixed(4)}</span>
             </div>`;

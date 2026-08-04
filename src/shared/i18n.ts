@@ -651,6 +651,21 @@ const ZH_CN: Dict = {
   'export.saved': '已导出到: {path}',
   'export.failed': '导出失败: {msg}',
 
+  // ── 引擎 / Engine 下拉 ──
+  'engine.direct': 'Kaios (Direct)',
+  'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.claudeCode': 'Claude Code',
+  'engine.codex': 'Codex',
+  'engine.team': 'Agent Team',
+
+  // ── 设置 tab 标签 ──
+  'settings.tab.model': '模型',
+  'settings.tab.behavior': '行为',
+  'settings.tab.advanced': '高级',
+  'settings.tab.plugins': '插件',
+  'settings.tab.persona': '替身',
+  'settings.tab.mesh': '多机协作',
+
   // ── Agent 行为回放 ──
   'replay.title': '回放',
   'replay.step': '第 {n} 步',
@@ -1294,6 +1309,21 @@ const EN: Dict = {
   'export.json': 'JSON',
   'export.saved': 'Exported to: {path}',
   'export.failed': 'Export failed: {msg}',
+
+  // ── Engine dropdown ──
+  'engine.direct': 'Kaios (Direct)',
+  'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.claudeCode': 'Claude Code',
+  'engine.codex': 'Codex',
+  'engine.team': 'Agent Team',
+
+  // ── Settings tabs ──
+  'settings.tab.model': 'Model',
+  'settings.tab.behavior': 'Behavior',
+  'settings.tab.advanced': 'Advanced',
+  'settings.tab.plugins': 'Plugins',
+  'settings.tab.persona': 'Persona',
+  'settings.tab.mesh': 'Mesh',
 
   // ── Agent replay ──
   'replay.title': 'Replay',
@@ -1941,6 +1971,21 @@ const ZH_TW: Dict = {
   'export.saved': '已匯出到: {path}',
   'export.failed': '匯出失敗: {msg}',
 
+  // ── 引擎下拉 ──
+  'engine.direct': 'Kaios (Direct)',
+  'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.claudeCode': 'Claude Code',
+  'engine.codex': 'Codex',
+  'engine.team': 'Agent Team',
+
+  // ── 設定 tab 標籤 ──
+  'settings.tab.model': '模型',
+  'settings.tab.behavior': '行為',
+  'settings.tab.advanced': '進階',
+  'settings.tab.plugins': '插件',
+  'settings.tab.persona': '替身',
+  'settings.tab.mesh': '多機協作',
+
   // ── Agent 行為回放 ──
   'replay.title': '回放',
   'replay.step': '第 {n} 步',
@@ -2587,6 +2632,21 @@ const JA: Dict = {
   'export.saved': 'エクスポート先: {path}',
   'export.failed': 'エクスポート失敗: {msg}',
 
+  // ── エンジン選択 ──
+  'engine.direct': 'Kaios (Direct)',
+  'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.claudeCode': 'Claude Code',
+  'engine.codex': 'Codex',
+  'engine.team': 'Agent Team',
+
+  // ── 設定タブ ──
+  'settings.tab.model': 'モデル',
+  'settings.tab.behavior': '動作',
+  'settings.tab.advanced': '詳細設定',
+  'settings.tab.plugins': 'プラグイン',
+  'settings.tab.persona': 'ペルソナ',
+  'settings.tab.mesh': 'メッシュ',
+
   // ── Agent 行動リプレイ ──
   'replay.title': 'リプレイ',
   'replay.step': 'ステップ {n}',
@@ -2618,4 +2678,11 @@ export function t(lang: Lang, key: string, params?: Record<string, string | numb
     }
   }
   return s;
+}
+
+// EngineKind 的本地化标签(UI 字符串,产品名 Kaios/Codex/Claude Code 保留英文)。
+// 取代 types.ts 的 ENGINE_LABELS 常量,供所有下拉/dashboard/模板等位置使用。
+import type { EngineKind } from './types';
+export function engineLabel(lang: Lang, kind: EngineKind): string {
+  return t(lang, 'engine.' + kind);
 }
