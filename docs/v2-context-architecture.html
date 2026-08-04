@@ -1,0 +1,1057 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>DirectV2 记忆与上下文管理架构</title>
+<style>
+:root {
+  --bg: #0d1117;
+  --bg-card: #161b22;
+  --bg-card-hover: #1c2333;
+  --border: #30363d;
+  --border-light: #444c56;
+  --text: #e6edf3;
+  --text-dim: #8b949e;
+  --text-mid: #b1bac4;
+  --accent: #58a6ff;
+  --accent-glow: rgba(88, 166, 255, 0.15);
+  --green: #3fb950;
+  --green-bg: rgba(63, 185, 80, 0.1);
+  --red: #f85149;
+  --red-bg: rgba(248, 81, 73, 0.1);
+  --yellow: #d29922;
+  --yellow-bg: rgba(210, 153, 34, 0.1);
+  --purple: #bc8cff;
+  --purple-bg: rgba(188, 140, 255, 0.1);
+  --orange: #db6d28;
+  --orange-bg: rgba(219, 109, 40, 0.1);
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  line-height: 1.7;
+  padding: 40px 20px;
+  max-width: 1280px;
+  margin: 0 auto;
+}
+h1 {
+  font-size: 2em;
+  font-weight: 700;
+  margin-bottom: 8px;
+  background: linear-gradient(135deg, var(--accent), var(--purple));
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+h2 {
+  font-size: 1.4em;
+  font-weight: 600;
+  margin: 48px 0 20px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+h3 {
+  font-size: 1.1em;
+  font-weight: 600;
+  margin: 28px 0 12px;
+  color: var(--accent);
+}
+.subtitle { color: var(--text-dim); font-size: 0.95em; margin-bottom: 32px; }
+.meta {
+  display: flex; gap: 16px; margin-bottom: 32px;
+  font-size: 0.85em; color: var(--text-dim);
+}
+.meta span { display: inline-flex; align-items: center; gap: 4px; }
+.meta span::before { content: ''; width: 8px; height: 8px; border-radius: 50%; }
+.meta .engine::before { background: var(--accent); }
+.meta .file::before { background: var(--green); }
+.meta .updated::before { background: var(--yellow); }
+
+/* ── Diagram Containers ── */
+.diagram {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 40px 24px;
+  margin: 24px 0;
+  overflow-x: auto;
+}
+.diagram svg { display: block; margin: 0 auto; }
+
+/* ── Architecture Flow Diagram ── */
+.flow-node { cursor: default; }
+.flow-node rect, .flow-node path { stroke-width: 2; transition: opacity 0.2s; }
+.flow-node:hover rect, .flow-node:hover path { opacity: 0.8; }
+
+/* ── Data Pipeline Boxes ── */
+.pipeline-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 16px;
+  margin: 24px 0;
+}
+.pipeline-box {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 20px;
+  position: relative;
+  overflow: hidden;
+}
+.pipeline-box::before {
+  content: '';
+  position: absolute; top: 0; left: 0;
+  width: 4px; height: 100%;
+}
+.pipeline-box.green::before { background: var(--green); }
+.pipeline-box.red::before { background: var(--red); }
+.pipeline-box.blue::before { background: var(--accent); }
+.pipeline-box.purple::before { background: var(--purple); }
+.pipeline-box.yellow::before { background: var(--yellow); }
+.pipeline-box.orange::before { background: var(--orange); }
+.pipeline-box h4 {
+  font-size: 0.9em;
+  font-weight: 600;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.pipeline-box.green h4 { color: var(--green); }
+.pipeline-box.red h4 { color: var(--red); }
+.pipeline-box.blue h4 { color: var(--accent); }
+.pipeline-box.purple h4 { color: var(--purple); }
+.pipeline-box.yellow h4 { color: var(--yellow); }
+.pipeline-box.orange h4 { color: var(--orange); }
+.pipeline-box p { color: var(--text-mid); font-size: 0.88em; }
+.pipeline-box code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.85em;
+  background: var(--bg);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: var(--text-dim);
+}
+
+/* ── Tables ── */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 20px 0;
+  font-size: 0.88em;
+}
+th, td {
+  padding: 10px 14px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+th {
+  font-weight: 600;
+  color: var(--text-dim);
+  font-size: 0.85em;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--bg-card);
+}
+td { color: var(--text-mid); }
+tr:hover td { background: var(--bg-card); }
+td code {
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 0.9em;
+  color: var(--accent);
+}
+
+/* ── Bug Cards ── */
+.bug-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+  margin: 24px 0;
+}
+.bug-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-left: 4px solid;
+  border-radius: 8px;
+  padding: 20px 24px;
+}
+.bug-card.p0 { border-left-color: var(--red); }
+.bug-card.p1 { border-left-color: var(--yellow); }
+.bug-card.p2 { border-left-color: var(--text-dim); }
+.bug-header {
+  display: flex; align-items: center; gap: 12px; margin-bottom: 10px;
+}
+.bug-badge {
+  font-size: 0.75em; font-weight: 700; padding: 3px 10px;
+  border-radius: 20px; text-transform: uppercase; letter-spacing: 0.5px;
+}
+.bug-badge.p0 { background: var(--red-bg); color: var(--red); }
+.bug-badge.p1 { background: var(--yellow-bg); color: var(--yellow); }
+.bug-badge.p2 { background: rgba(139,148,158,0.1); color: var(--text-dim); }
+.bug-title { font-weight: 600; font-size: 1em; color: var(--text); }
+.bug-desc { color: var(--text-mid); font-size: 0.9em; margin: 8px 0; }
+.bug-fix {
+  margin-top: 10px; padding: 10px 14px;
+  background: var(--green-bg);
+  border-radius: 6px;
+  font-size: 0.88em;
+  color: var(--text-mid);
+}
+.bug-fix::before { content: '🔧 修复 → '; color: var(--green); font-weight: 600; }
+
+/* ── Code Blocks ── */
+pre {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 16px 20px;
+  overflow-x: auto;
+  margin: 16px 0;
+  font-size: 0.85em;
+  line-height: 1.6;
+}
+code {
+  font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+pre code { color: var(--text-mid); }
+.code-comment { color: var(--text-dim); }
+.code-keyword { color: var(--purple); }
+.code-string { color: var(--green); }
+.code-number { color: var(--orange); }
+
+/* ── Callout ── */
+.callout {
+  background: var(--accent-glow);
+  border: 1px solid rgba(88, 166, 255, 0.3);
+  border-radius: 8px;
+  padding: 16px 20px;
+  margin: 20px 0;
+  font-size: 0.9em;
+  color: var(--text-mid);
+}
+.callout::before { content: '💡 '; }
+
+/* ── Legend ── */
+.legend {
+  display: flex; gap: 20px; flex-wrap: wrap;
+  margin: 16px 0; font-size: 0.82em; color: var(--text-dim);
+}
+.legend-item { display: inline-flex; align-items: center; gap: 6px; }
+.legend-swatch { width: 14px; height: 14px; border-radius: 3px; }
+
+/* ── Section Number ── */
+.section-num {
+  display: inline-block;
+  width: 32px; height: 32px;
+  line-height: 32px; text-align: center;
+  border-radius: 50%;
+  background: var(--accent-glow);
+  color: var(--accent);
+  font-size: 0.8em; font-weight: 700;
+  margin-right: 8px;
+}
+
+/* ── Token Budget Bar ── */
+.budget-bar {
+  height: 32px;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  margin: 16px 0;
+  border: 1px solid var(--border);
+}
+.budget-segment {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 0.78em; font-weight: 600;
+  transition: flex 0.3s;
+  white-space: nowrap; overflow: hidden;
+}
+.budget-label {
+  text-align: center; font-size: 0.8em; color: var(--text-dim); margin-top: 4px;
+}
+</style>
+</head>
+<body>
+
+<h1>DirectV2 记忆与上下文管理架构</h1>
+<p class="subtitle">Plan · Execute · Verify · Judge — 四层引擎的上下文生命周期</p>
+<div class="meta">
+  <span class="engine">Engine: DirectV2Engine.ts</span>
+  <span class="file">AgentLoop.ts · store.ts · types.ts</span>
+  <span class="updated">v1.9.0</span>
+</div>
+
+<!-- ════════ SECTION 1: 架构全景 ════════ -->
+<h2><span class="section-num">1</span>引擎全景数据流</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 1080 560" width="1080" height="560" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr1" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arr1r" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#f85149"/>
+    </marker>
+    <marker id="arr1g" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3fb950"/>
+    </marker>
+  </defs>
+
+  <!-- Title -->
+  <text x="540" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">DirectV2 引擎 — 记忆与上下文数据流</text>
+
+  <!-- ===== Row 0: Input ===== -->
+  <g class="flow-node">
+    <rect x="60" y="60" width="160" height="48" rx="8" fill="#161b22" stroke="#58a6ff" stroke-width="2"/>
+    <text x="140" y="82" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">User Input</text>
+    <text x="140" y="98" text-anchor="middle" fill="#8b949e" font-size="10">conv.turns last prompt</text>
+  </g>
+
+  <!-- ===== Phase 1: Planner ===== -->
+  <g class="flow-node">
+    <rect x="280" y="50" width="180" height="68" rx="10" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+    <text x="370" y="74" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">Phase 1: Planner</text>
+    <text x="370" y="92" text-anchor="middle" fill="#b1bac4" font-size="10">readOnly tools 探查</text>
+    <text x="370" y="106" text-anchor="middle" fill="#b1bac4" font-size="10">输出 &lt;plan&gt; JSON</text>
+  </g>
+
+  <!-- Arrow: Input → Planner -->
+  <line x1="220" y1="84" x2="278" y2="84" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+  <!-- History isolation box -->
+  <g class="flow-node">
+    <rect x="280" y="140" width="180" height="60" rx="8" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="370" y="162" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">P0-3: History 隔离</text>
+    <text x="370" y="178" text-anchor="middle" fill="#8b949e" font-size="10">丢探查中间过程</text>
+    <text x="370" y="192" text-anchor="middle" fill="#8b949e" font-size="10">只留 plan 结论</text>
+  </g>
+  <!-- Arrow: Planner → isolation -->
+  <line x1="370" y1="118" x2="370" y2="138" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr1r)"/>
+
+  <!-- ===== execHistory ===== -->
+  <g class="flow-node">
+    <rect x="530" y="105" width="170" height="70" rx="10" fill="rgba(188,140,255,0.1)" stroke="#bc8cff" stroke-width="2.5"/>
+    <text x="615" y="132" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="700">execHistory</text>
+    <text x="615" y="150" text-anchor="middle" fill="#8b949e" font-size="10">ChatMsg[] 核心载体</text>
+    <text x="615" y="164" text-anchor="middle" fill="#8b949e" font-size="10">[user, plan结论, ...]</text>
+  </g>
+  <!-- Arrow: isolation → execHistory -->
+  <line x1="460" y1="170" x2="528" y2="140" stroke="#bc8cff" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+  <!-- ===== Phase 2: Executor (center) ===== -->
+  <g class="flow-node">
+    <rect x="470" y="220" width="290" height="80" rx="10" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+    <text x="615" y="246" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">Phase 2: Executor (Per-Step ReAct)</text>
+    <text x="615" y="266" text-anchor="middle" fill="#b1bac4" font-size="11">for each step in plan:</text>
+    <text x="615" y="284" text-anchor="middle" fill="#b1bac4" font-size="10">runAgentLoop(history=execHistory) → verify → retry ×3</text>
+  </g>
+  <!-- Arrow: execHistory → Executor -->
+  <line x1="615" y1="175" x2="615" y2="218" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+  <!-- ===== L1 Trim (left of executor) ===== -->
+  <g class="flow-node">
+    <rect x="60" y="230" width="170" height="60" rx="8" fill="rgba(88,166,255,0.06)" stroke="#58a6ff" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="145" y="254" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">L1: Reactive Trim</text>
+    <text x="145" y="270" text-anchor="middle" fill="#8b949e" font-size="10">超长时砍半→1/4→激进</text>
+    <text x="145" y="282" text-anchor="middle" fill="#8b949e" font-size="10">trimBudget: 30K</text>
+  </g>
+  <!-- Arrow: L1 ↔ Executor -->
+  <line x1="230" y1="260" x2="468" y2="260" stroke="#58a6ff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
+
+  <!-- ===== L2 Compact (right of executor) ===== -->
+  <g class="flow-node">
+    <rect x="830" y="225" width="180" height="70" rx="8" fill="rgba(188,140,255,0.06)" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="920" y="250" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">L2: interStepCompact</text>
+    <text x="920" y="266" text-anchor="middle" fill="#8b949e" font-size="10">步骤间 LLM 摘要压缩</text>
+    <text x="920" y="278" text-anchor="middle" fill="#8b949e" font-size="10">fingerprint 去重</text>
+    <text x="920" y="290" text-anchor="middle" fill="#8b949e" font-size="10">budget: 20K</text>
+  </g>
+  <!-- Arrow: Executor → L2 -->
+  <line x1="760" y1="260" x2="828" y2="260" stroke="#bc8cff" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#arr1)"/>
+
+  <!-- ===== P0-B isolation (below executor) ===== -->
+  <g class="flow-node">
+    <rect x="470" y="320" width="290" height="54" rx="8" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="615" y="342" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">P0-B: 失败历史隔离</text>
+    <text x="615" y="360" text-anchor="middle" fill="#8b949e" font-size="10">只有 stepDone=true 才追加 slice(stepStartLen)</text>
+  </g>
+  <line x1="615" y1="300" x2="615" y2="318" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr1r)"/>
+
+  <!-- ===== Phase 3: Verify ===== -->
+  <g class="flow-node">
+    <rect x="470" y="400" width="130" height="50" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+    <text x="535" y="422" text-anchor="middle" fill="#d29922" font-size="12" font-weight="600">Phase 3: Verify</text>
+    <text x="535" y="438" text-anchor="middle" fill="#8b949e" font-size="10">autoVerify</text>
+  </g>
+  <!-- Arrow: P0-B → Verify -->
+  <line x1="535" y1="374" x2="535" y2="398" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+  <!-- ===== Phase 4: Judge ===== -->
+  <g class="flow-node">
+    <rect x="630" y="400" width="130" height="50" rx="8" fill="rgba(219,109,40,0.08)" stroke="#db6d28" stroke-width="2"/>
+    <text x="695" y="422" text-anchor="middle" fill="#db6d28" font-size="12" font-weight="600">Phase 4: Judge</text>
+    <text x="695" y="438" text-anchor="middle" fill="#8b949e" font-size="10">独立 LLM 判定</text>
+  </g>
+  <!-- Arrow: Verify → Judge -->
+  <line x1="600" y1="425" x2="628" y2="425" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr1)"/>
+
+  <!-- ===== Replan loop ===== -->
+  <g class="flow-node">
+    <rect x="830" y="400" width="180" height="50" rx="8" fill="rgba(248,81,73,0.08)" stroke="#f85149" stroke-width="2"/>
+    <text x="920" y="422" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">Replan (×2 max)</text>
+    <text x="920" y="438" text-anchor="middle" fill="#8b949e" font-size="10">重新规划+执行</text>
+  </g>
+  <!-- Arrow: Judge → Replan -->
+  <line x1="760" y1="425" x2="828" y2="425" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr1r)"/>
+  <!-- Arrow: Replan back up to execHistory -->
+  <path d="M1010 400 Q1010 140 870 140" fill="none" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr1r)"/>
+  <text x="1030" y="280" fill="#f85149" font-size="10" transform="rotate(-90 1030 280)">未完成 → 重规划</text>
+
+  <!-- ===== Output: conv.directHistory ===== -->
+  <g class="flow-node">
+    <rect x="470" y="488" width="290" height="54" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
+    <text x="615" y="510" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">L3: finalizeContext</text>
+    <text x="615" y="528" text-anchor="middle" fill="#8b949e" font-size="10">compactHistory(execHistory) → conv.directHistory</text>
+  </g>
+  <!-- Arrow: Judge → finalize -->
+  <line x1="695" y1="450" x2="615" y2="486" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr1g)"/>
+
+  <!-- ===== Checkpoint (sidebar) ===== -->
+  <g class="flow-node">
+    <rect x="60" y="400" width="170" height="60" rx="8" fill="rgba(139,148,158,0.06)" stroke="#8b949e" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="145" y="422" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">SQLite Checkpoint</text>
+    <text x="145" y="438" text-anchor="middle" fill="#8b949e" font-size="10">v2_state 表</text>
+    <text x="145" y="452" text-anchor="middle" fill="#8b949e" font-size="10">plan + execHistory</text>
+  </g>
+  <!-- Arrow: Executor area → checkpoint -->
+  <line x1="400" y1="350" x2="230" y2="410" stroke="#8b949e" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr1)"/>
+  <text x="280" y="392" fill="#8b949e" font-size="9">每步存</text>
+
+  <!-- ===== Memory (sidebar top) ===== -->
+  <g class="flow-node">
+    <rect x="60" y="130" width="170" height="54" rx="8" fill="rgba(188,140,255,0.06)" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="3,2"/>
+    <text x="145" y="152" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">长期记忆 (memory)</text>
+    <text x="145" y="168" text-anchor="middle" fill="#8b949e" font-size="10">_memory: true</text>
+    <text x="145" y="180" text-anchor="middle" fill="#8b949e" font-size="10">trim/compact 永保留</text>
+  </g>
+  <!-- Arrow: memory → Planner -->
+  <line x1="230" y1="157" x2="278" y2="100" stroke="#bc8cff" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr1)"/>
+
+  <!-- Legend -->
+  <g transform="translate(60, 524)">
+    <rect x="0" y="0" width="12" height="12" rx="2" fill="rgba(63,185,80,0.3)" stroke="#3fb950"/>
+    <text x="18" y="10" fill="#8b949e" font-size="10">执行流</text>
+    <rect x="70" y="0" width="12" height="12" rx="2" fill="rgba(248,81,73,0.3)" stroke="#f85149"/>
+    <text x="88" y="10" fill="#8b949e" font-size="10">Bug 隔离/修复</text>
+    <rect x="180" y="0" width="12" height="12" rx="2" fill="rgba(188,140,255,0.3)" stroke="#bc8cff"/>
+    <text x="198" y="10" fill="#8b949e" font-size="10">数据载体</text>
+    <rect x="270" y="0" width="12" height="12" rx="2" fill="rgba(88,166,255,0.3)" stroke="#58a6ff"/>
+    <text x="288" y="10" fill="#8b949e" font-size="10">压缩机制</text>
+  </g>
+</svg>
+</div>
+
+<!-- ════════ SECTION 2: execHistory 生命周期 ════════ -->
+<h2><span class="section-num">2</span>execHistory 生命周期</h2>
+<p style="color:var(--text-mid); margin:16px 0; font-size:0.92em;">
+<code style="background:var(--bg-card);padding:2px 8px;border-radius:4px;color:var(--accent);">execHistory</code> 是 V2 引擎的核心上下文载体 —— 它在 Planner → Executor → Replan 之间传递,承载着所有步骤的执行历史。理解它的流转就理解了整个 V2 引擎。
+</p>
+
+<div class="diagram">
+<svg viewBox="0 0 1080 680" width="1080" height="680" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arr2g" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3fb950"/>
+    </marker>
+    <marker id="arr2r" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#f85149"/>
+    </marker>
+  </defs>
+
+  <text x="540" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">execHistory 生命周期 — 从 Planner 到 finalizeContext</text>
+
+  <!-- ===== Step 1: Planner produces full history ===== -->
+  <g>
+    <text x="540" y="58" text-anchor="middle" fill="#58a6ff" font-size="13" font-weight="700">① Planner 阶段</text>
+    <!-- Input -->
+    <rect x="40" y="72" width="200" height="56" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+    <text x="140" y="94" text-anchor="middle" fill="#b1bac4" font-size="11">conv.directHistory</text>
+    <text x="140" y="110" text-anchor="middle" fill="#8b949e" font-size="10">上一轮的会话记忆</text>
+
+    <line x1="240" y1="100" x2="280" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- Planner box -->
+    <rect x="280" y="72" width="180" height="56" rx="6" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+    <text x="370" y="94" text-anchor="middle" fill="#58a6ff" font-size="11" font-weight="600">runAgentLoop</text>
+    <text x="370" y="110" text-anchor="middle" fill="#8b949e" font-size="10">readOnly tools 探查</text>
+
+    <line x1="460" y1="100" x2="500" y2="100" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- Full planner output -->
+    <rect x="500" y="68" width="240" height="64" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5" stroke-dasharray="4,3"/>
+    <text x="620" y="88" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">plannerMessages[]</text>
+    <text x="620" y="104" text-anchor="middle" fill="#8b949e" font-size="10">user + memory + system</text>
+    <text x="620" y="118" text-anchor="middle" fill="#8b949e" font-size="10">+ 大量探查工具结果 (grep/read...)</text>
+
+    <!-- scissors icon -->
+    <text x="770" y="100" fill="#f85149" font-size="20">✂️</text>
+    <text x="800" y="96" fill="#f85149" font-size="10">P0-3 隔离</text>
+  </g>
+
+  <!-- ===== Step 2: Extract plan conclusion ===== -->
+  <g>
+    <line x1="620" y1="132" x2="620" y2="158" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr2r)"/>
+
+    <rect x="500" y="158" width="240" height="50" rx="6" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+    <text x="620" y="180" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">execHistory (初始化)</text>
+    <text x="620" y="196" text-anchor="middle" fill="#8b949e" font-size="10">[userPrompt, plan结论] — 仅 2 条</text>
+
+    <text x="770" y="186" fill="#3fb950" font-size="10">✅ 精简</text>
+  </g>
+
+  <!-- ===== Step 3: Per-step execution loop ===== -->
+  <g>
+    <line x1="620" y1="208" x2="620" y2="234" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <text x="540" y="226" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">② 步骤执行循环 (for each step)</text>
+
+    <!-- Retry loop container -->
+    <rect x="160" y="244" width="760" height="210" rx="10" fill="rgba(63,185,80,0.04)" stroke="#3fb950" stroke-width="1.5" stroke-dasharray="6,3"/>
+    <text x="540" y="264" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">retry loop: attempt 0 → MAX_RETRIES(3)</text>
+
+    <!-- stepStartLen marker -->
+    <rect x="180" y="280" width="180" height="40" rx="6" fill="rgba(188,140,255,0.06)" stroke="#bc8cff" stroke-width="1.5"/>
+    <text x="270" y="298" text-anchor="middle" fill="#bc8cff" font-size="10" font-weight="600">stepStartLen = execHistory.length</text>
+    <text x="270" y="312" text-anchor="middle" fill="#8b949e" font-size="9">记录步骤开始位置</text>
+
+    <line x1="360" y1="300" x2="400" y2="300" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- runAgentLoop -->
+    <rect x="400" y="278" width="160" height="44" rx="6" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="480" y="298" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">runAgentLoop</text>
+    <text x="480" y="312" text-anchor="middle" fill="#8b949e" font-size="9">history = execHistory</text>
+
+    <line x1="560" y1="300" x2="600" y2="300" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- Verify -->
+    <rect x="600" y="278" width="120" height="44" rx="6" fill="rgba(210,153,34,0.06)" stroke="#d29922" stroke-width="1.5"/>
+    <text x="660" y="298" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">Verify</text>
+    <text x="660" y="312" text-anchor="middle" fill="#8b949e" font-size="9">tsc/test/lint</text>
+
+    <!-- Success path -->
+    <line x1="660" y1="322" x2="660" y2="350" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr2g)"/>
+    <text x="670" y="340" fill="#3fb950" font-size="10">✅ 成功</text>
+
+    <rect x="530" y="350" width="260" height="44" rx="6" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="1.5"/>
+    <text x="660" y="368" text-anchor="middle" fill="#3fb950" font-size="10" font-weight="600">execHistory += stepMessages.slice(stepStartLen)</text>
+    <text x="660" y="382" text-anchor="middle" fill="#3fb950" font-size="9">P0-B: 只追加增量,失败不追加</text>
+
+    <!-- Fail path -->
+    <line x1="720" y1="300" x2="780" y2="300" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr2r)"/>
+    <text x="745" y="292" fill="#f85149" font-size="10">❌ 失败</text>
+
+    <rect x="780" y="280" width="120" height="44" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5"/>
+    <text x="840" y="298" text-anchor="middle" fill="#f85149" font-size="10" font-weight="600">execHistory 不变</text>
+    <text x="840" y="312" text-anchor="middle" fill="#8b949e" font-size="9">retryNote 传入失败原因</text>
+
+    <!-- Retry arrow back -->
+    <path d="M840 324 Q840 340 540 340 Q480 340 480 322" fill="none" stroke="#f85149" stroke-width="1" stroke-dasharray="3,2" marker-end="url(#arr2r)"/>
+    <text x="850" y="352" fill="#f85149" font-size="9">retry &lt; 3</text>
+  </g>
+
+  <!-- ===== Step 4: Post-step processing ===== -->
+  <g>
+    <line x1="620" y1="454" x2="620" y2="472" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <text x="540" y="468" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="700">③ 步骤后处理</text>
+
+    <!-- interStepCompact -->
+    <rect x="200" y="482" width="220" height="56" rx="8" fill="rgba(188,140,255,0.08)" stroke="#bc8cff" stroke-width="2"/>
+    <text x="310" y="504" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">interStepCompact</text>
+    <text x="310" y="520" text-anchor="middle" fill="#8b949e" font-size="10">fingerprint 去重 → compactHistory</text>
+
+    <line x1="420" y1="510" x2="460" y2="510" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- Step summary -->
+    <rect x="460" y="482" width="260" height="56" rx="8" fill="rgba(63,185,80,0.06)" stroke="#3fb950" stroke-width="2"/>
+    <text x="590" y="502" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">push 步骤摘要消息</text>
+    <text x="590" y="518" text-anchor="middle" fill="#8b949e" font-size="10">📋 步骤[X] ✅完成/❌失败: title + result</text>
+    <text x="590" y="532" text-anchor="middle" fill="#8b949e" font-size="10">(stepSummaryMaxChars: 500)</text>
+
+    <line x1="720" y1="510" x2="760" y2="510" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <!-- Checkpoint -->
+    <rect x="760" y="482" width="180" height="56" rx="8" fill="rgba(139,148,158,0.06)" stroke="#8b949e" stroke-width="1.5"/>
+    <text x="850" y="504" text-anchor="middle" fill="#8b949e" font-size="11" font-weight="600">saveV2Checkpoint</text>
+    <text x="850" y="520" text-anchor="middle" fill="#8b949e" font-size="10">plan + execHistory → SQLite</text>
+  </g>
+
+  <!-- ===== Step 5: Final ===== -->
+  <g>
+    <line x1="620" y1="538" x2="620" y2="560" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr2)"/>
+
+    <text x="540" y="558" text-anchor="middle" fill="#3fb950" font-size="13" font-weight="700">④ 最终输出</text>
+
+    <rect x="400" y="568" width="200" height="52" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+    <text x="500" y="590" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">finalizeContext</text>
+    <text x="500" y="606" text-anchor="middle" fill="#8b949e" font-size="10">compactHistory(execHistory)</text>
+
+    <line x1="600" y1="594" x2="640" y2="594" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr2g)"/>
+
+    <rect x="640" y="568" width="240" height="52" rx="8" fill="rgba(188,140,255,0.08)" stroke="#bc8cff" stroke-width="2"/>
+    <text x="760" y="590" text-anchor="middle" fill="#bc8cff" font-size="11" font-weight="600">conv.directHistory</text>
+    <text x="760" y="606" text-anchor="middle" fill="#8b949e" font-size="10">压缩后写入 — 下一轮的记忆</text>
+
+    <!-- Final checkpoint -->
+    <rect x="900" y="568" width="140" height="52" rx="8" fill="rgba(139,148,158,0.06)" stroke="#8b949e" stroke-width="1.5"/>
+    <text x="970" y="590" text-anchor="middle" fill="#8b949e" font-size="10" font-weight="600">saveV2Checkpoint</text>
+    <text x="970" y="606" text-anchor="middle" fill="#8b949e" font-size="10">rowType = 'final'</text>
+  </g>
+
+  <!-- Legend -->
+  <g transform="translate(40, 648)">
+    <rect x="0" y="0" width="12" height="12" rx="2" fill="rgba(63,185,80,0.3)" stroke="#3fb950"/>
+    <text x="18" y="10" fill="#8b949e" font-size="10">数据流</text>
+    <rect x="80" y="0" width="12" height="12" rx="2" fill="rgba(248,81,73,0.3)" stroke="#f85149"/>
+    <text x="98" y="10" fill="#8b949e" font-size="10">丢弃/隔离</text>
+    <rect x="180" y="0" width="12" height="12" rx="2" fill="rgba(188,140,255,0.3)" stroke="#bc8cff"/>
+    <text x="198" y="10" fill="#8b949e" font-size="10">核心载体</text>
+    <rect x="280" y="0" width="12" height="12" rx="2" fill="rgba(139,148,158,0.3)" stroke="#8b949e"/>
+    <text x="298" y="10" fill="#8b949e" font-size="10">持久化</text>
+  </g>
+</svg>
+</div>
+
+<!-- ════════ SECTION 3: 三级压缩防线 ════════ -->
+<h2><span class="section-num">3</span>三级上下文压缩防线</h2>
+
+<div class="pipeline-grid">
+  <div class="pipeline-box blue">
+    <h4>L1: Reactive Trim</h4>
+    <p><strong>位置:</strong> <code>AgentLoop.ts:88</code></p>
+    <p>每轮 LLM 调用前检查。超长时砍半预算 → 1/4 预算 → 激进 trim。</p>
+    <p><strong>保留:</strong> 尾部消息 + _memory + _pinned</p>
+    <p><strong>预算:</strong> trimBudget 30K (hifi 60K)</p>
+  </div>
+  <div class="pipeline-box purple">
+    <h4>L2: interStepCompact</h4>
+    <p><strong>位置:</strong> <code>V2Engine:1063</code></p>
+    <p>每个步骤完成后,对 execHistory 调 LLM 做摘要压缩。</p>
+    <p><strong>fingerprint:</strong> <code>msgs.length + lastContent[:200]</code></p>
+    <p><strong>预算:</strong> interStepCompactBudget 20K (hifi 40K)</p>
+  </div>
+  <div class="pipeline-box orange">
+    <h4>L3: finalizeContext</h4>
+    <p><strong>位置:</strong> <code>V2Engine:1088</code></p>
+    <p>整个 run 结束时,把 execHistory 压缩后写入 <code>conv.directHistory</code>。</p>
+    <p><strong>用途:</strong> 跨 turn 的会话记忆(下一轮 user input 时注入)。</p>
+    <p><strong>预算:</strong> interStepCompactBudget 20K</p>
+  </div>
+</div>
+
+<div class="diagram">
+<svg viewBox="0 0 1080 420" width="1080" height="420" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr3" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
+    </marker>
+  </defs>
+
+  <text x="540" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">三级上下文压缩防线 — 数据流</text>
+
+  <!-- Input -->
+  <rect x="40" y="60" width="120" height="44" rx="6" fill="#161b22" stroke="#30363d" stroke-width="1.5"/>
+  <text x="100" y="80" text-anchor="middle" fill="#b1bac4" font-size="11">messages[]</text>
+  <text x="100" y="94" text-anchor="middle" fill="#8b949e" font-size="9">原始消息数组</text>
+
+  <line x1="160" y1="82" x2="200" y2="82" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <!-- ===== L1: Reactive Trim ===== -->
+  <rect x="200" y="56" width="200" height="56" rx="8" fill="rgba(88,166,255,0.08)" stroke="#58a6ff" stroke-width="2"/>
+  <text x="300" y="78" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="700">L1: Reactive Trim</text>
+  <text x="300" y="96" text-anchor="middle" fill="#8b949e" font-size="10">每轮 API 调用前触发</text>
+  <text x="300" y="108" text-anchor="middle" fill="#8b949e" font-size="10">trimBudget: 30K (hifi 60K)</text>
+
+  <line x1="400" y1="82" x2="440" y2="82" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <!-- L1 detail -->
+  <rect x="440" y="50" width="220" height="66" rx="6" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="550" y="70" text-anchor="middle" fill="#b1bac4" font-size="10" font-weight="600">触发条件</text>
+  <text x="550" y="86" text-anchor="middle" fill="#8b949e" font-size="9">API 报 context_too_long</text>
+  <text x="550" y="98" text-anchor="middle" fill="#8b949e" font-size="9">→ 砍半预算重试</text>
+  <text x="550" y="110" text-anchor="middle" fill="#8b949e" font-size="9">→ 1/4 预算再重试</text>
+
+  <!-- ===== L2: interStepCompact ===== -->
+  <rect x="200" y="150" width="200" height="56" rx="8" fill="rgba(188,140,255,0.08)" stroke="#bc8cff" stroke-width="2"/>
+  <text x="300" y="172" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="700">L2: interStepCompact</text>
+  <text x="300" y="190" text-anchor="middle" fill="#8b949e" font-size="10">每个步骤完成后触发</text>
+  <text x="300" y="202" text-anchor="middle" fill="#8b949e" font-size="10">budget: 20K (hifi 40K)</text>
+
+  <line x1="400" y1="176" x2="440" y2="176" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <!-- L2 detail -->
+  <rect x="440" y="144" width="220" height="66" rx="6" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="550" y="164" text-anchor="middle" fill="#b1bac4" font-size="10" font-weight="600">处理流程</text>
+  <text x="550" y="180" text-anchor="middle" fill="#8b949e" font-size="9">fingerprint 匹配? → 跳过</text>
+  <text x="550" y="192" text-anchor="middle" fill="#8b949e" font-size="9">否则 → compactHistory</text>
+  <text x="550" y="204" text-anchor="middle" fill="#8b949e" font-size="9">(LLM 摘要 head + 保留 tail)</text>
+
+  <!-- ===== L3: finalizeContext ===== -->
+  <rect x="200" y="244" width="200" height="56" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="300" y="266" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="700">L3: finalizeContext</text>
+  <text x="300" y="284" text-anchor="middle" fill="#8b949e" font-size="10">run() 结束时触发</text>
+  <text x="300" y="296" text-anchor="middle" fill="#8b949e" font-size="10">budget: 20K</text>
+
+  <line x1="400" y1="270" x2="440" y2="270" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <!-- L3 detail -->
+  <rect x="440" y="238" width="220" height="66" rx="6" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="550" y="258" text-anchor="middle" fill="#b1bac4" font-size="10" font-weight="600">输出</text>
+  <text x="550" y="274" text-anchor="middle" fill="#8b949e" font-size="9">compactHistory(execHistory)</text>
+  <text x="550" y="286" text-anchor="middle" fill="#8b949e" font-size="9">→ conv.directHistory</text>
+  <text x="550" y="298" text-anchor="middle" fill="#8b949e" font-size="9">(跨 turn 的持久记忆)</text>
+
+  <!-- ===== compactHistory internals (right side) ===== -->
+  <line x1="660" y1="178" x2="700" y2="178" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr3)"/>
+
+  <rect x="700" y="120" width="340" height="250" rx="10" fill="rgba(188,140,255,0.04)" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="6,3"/>
+  <text x="870" y="144" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="700">compactHistory 内部</text>
+
+  <!-- Step 1: Split -->
+  <rect x="720" y="160" width="300" height="36" rx="5" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="870" y="178" text-anchor="middle" fill="#b1bac4" font-size="10">① 分离 _memory / _pinned → 永保留</text>
+
+  <!-- Step 2: Trim tail -->
+  <rect x="720" y="206" width="300" height="36" rx="5" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="870" y="224" text-anchor="middle" fill="#b1bac4" font-size="10">② trimHistoryToTokenBudget(rest, budget)</text>
+
+  <!-- Step 3: LLM summarize head -->
+  <rect x="720" y="252" width="300" height="36" rx="5" fill="#161b22" stroke="#444c56" stroke-width="1"/>
+  <text x="870" y="270" text-anchor="middle" fill="#b1bac4" font-size="10">③ head (被丢弃的) → LLM 摘要</text>
+
+  <!-- Step 4: Assemble -->
+  <rect x="720" y="298" width="300" height="36" rx="5" fill="rgba(188,140,255,0.08)" stroke="#bc8cff" stroke-width="1.5"/>
+  <text x="870" y="316" text-anchor="middle" fill="#bc8cff" font-size="10" font-weight="600">④ [memory, pinned, 摘要, tail]</text>
+
+  <line x1="870" y1="196" x2="870" y2="204" stroke="#8b949e" stroke-width="1" marker-end="url(#arr3)"/>
+  <line x1="870" y1="242" x2="870" y2="250" stroke="#8b949e" stroke-width="1" marker-end="url(#arr3)"/>
+  <line x1="870" y1="288" x2="870" y2="296" stroke="#8b949e" stroke-width="1" marker-end="url(#arr3)"/>
+
+  <!-- sanitizeToolPairs annotation -->
+  <text x="870" y="352" text-anchor="middle" fill="#f85149" font-size="9">⚠ sanitizeToolPairs: 删除孤儿 tool 消息(配对的 assistant 被截断时)</text>
+
+  <!-- L2 → compactHistory link -->
+  <path d="M660 270 Q680 270 680 178 Q690 178 700 178" fill="none" stroke="#bc8cff" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arr3)"/>
+</svg>
+</div>
+
+<!-- ════════ SECTION 4: 消息层级 ════════ -->
+<h2><span class="section-num">4</span>消息层级与保留优先级</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 1080 300" width="1080" height="300" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="priGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#bc8cff" stop-opacity="0.3"/>
+      <stop offset="25%" stop-color="#58a6ff" stop-opacity="0.25"/>
+      <stop offset="50%" stop-color="#3fb950" stop-opacity="0.2"/>
+      <stop offset="75%" stop-color="#d29922" stop-opacity="0.2"/>
+      <stop offset="100%" stop-color="#f85149" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+
+  <text x="540" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">消息层级金字塔 — 保留优先级</text>
+
+  <!-- Pyramid layers (trapezoids) -->
+  <!-- L0: system (bottom, lowest) -->
+  <polygon points="120,260 960,260 880,220 200,220" fill="rgba(248,81,73,0.1)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="540" y="240" text-anchor="middle" fill="#f85149" font-size="12" font-weight="600">system prompt — dropTransient 过滤,每轮重建</text>
+  <text x="540" y="254" text-anchor="middle" fill="#8b949e" font-size="10">base + V2_SUFFIX + persona + goal + skill + rules + plugin</text>
+
+  <!-- L1: tool results -->
+  <polygon points="200,220 880,220 820,180 260,180" fill="rgba(210,153,34,0.1)" stroke="#d29922" stroke-width="1.5"/>
+  <text x="540" y="200" text-anchor="middle" fill="#d29922" font-size="12" font-weight="600">assistant + tool_calls / tool results — 标准 trim</text>
+  <text x="540" y="214" text-anchor="middle" fill="#8b949e" font-size="10">compactHistory: assistant 截 600 字符, tool 短结果截 300</text>
+
+  <!-- L2: step summary -->
+  <polygon points="260,180 820,180 770,140 310,140" fill="rgba(63,185,80,0.1)" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="540" y="160" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">📋 步骤摘要消息 — 标准 trim</text>
+  <text x="540" y="174" text-anchor="middle" fill="#8b949e" font-size="10">role=user, 内容含 "📋" → summarizeHistory 优先保留</text>
+
+  <!-- L3: pinned -->
+  <polygon points="310,140 770,140 710,100 370,100" fill="rgba(88,166,255,0.1)" stroke="#58a6ff" stroke-width="1.5"/>
+  <text x="540" y="120" text-anchor="middle" fill="#58a6ff" font-size="12" font-weight="600">_pinned: true — 永不裁剪</text>
+  <text x="540" y="134" text-anchor="middle" fill="#8b949e" font-size="10">用户锁定的关键 turn</text>
+
+  <!-- L4: memory (top, highest) -->
+  <polygon points="370,100 710,100 640,60 440,60" fill="rgba(188,140,255,0.12)" stroke="#bc8cff" stroke-width="2"/>
+  <text x="540" y="80" text-anchor="middle" fill="#bc8cff" font-size="12" font-weight="700">_memory: true — 永不裁剪</text>
+  <text x="540" y="94" text-anchor="middle" fill="#8b949e" font-size="10">长期记忆块 (TaskManager 提取)</text>
+
+  <!-- Right side annotations -->
+  <line x1="960" y1="260" x2="1000" y2="260" stroke="#f85149" stroke-width="1" stroke-dasharray="2,2"/>
+  <text x="1005" y="264" fill="#f85149" font-size="10">最低</text>
+  <line x1="640" y1="60" x2="1000" y2="60" stroke="#bc8cff" stroke-width="1" stroke-dasharray="2,2"/>
+  <text x="1005" y="64" fill="#bc8cff" font-size="10">最高</text>
+
+  <!-- Priority gradient bar -->
+  <rect x="120" y="270" width="840" height="6" rx="3" fill="url(#priGrad)"/>
+  <text x="120" y="288" fill="#f85149" font-size="9">最低优先</text>
+  <text x="960" y="288" text-anchor="end" fill="#bc8cff" font-size="9">最高优先</text>
+</svg>
+</div>
+
+<table>
+  <thead>
+    <tr><th>层级</th><th>消息类型</th><th>标记</th><th>Trim 行为</th><th>Compact 行为</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>🟣 最高</td><td>长期记忆块</td><td><code>_memory: true</code></td><td>永不裁剪</td><td>永不摘要(原样保留)</td></tr>
+    <tr><td>🔵 高</td><td>用户锁定 turn</td><td><code>_pinned: true</code></td><td>永不裁剪</td><td>永不摘要</td></tr>
+    <tr><td>🟢 中</td><td>步骤摘要消息</td><td>role=user + <code>📋</code></td><td>参与尾部 trim</td><td>参与摘要(但 summarizeHistory 优先保留)</td></tr>
+    <tr><td>🟡 标准</td><td>assistant 回复 + tool 调用/结果</td><td>—</td><td>参与尾部 trim</td><td>参与摘要(assistant 截 600 字符, tool 短结果截 300)</td></tr>
+    <tr><td>🔴 最低</td><td>system prompt</td><td>role=system</td><td>不进 history (dropTransient 过滤)</td><td>不参与(每轮重建)</td></tr>
+  </tbody>
+</table>
+
+<!-- ════════ SECTION 5: 策略包 ════════ -->
+<h2><span class="section-num">5</span>引擎上下文策略包 (EngineContextPolicy)</h2>
+
+<div class="callout">
+策略包是所有「上下文相关魔数」的统一收口。改一处,所有 engine 生效。<code>resolveEnginePolicy()</code> 在 hifi 模式下自动将 trimBudget / truncateThreshold / interStepCompactBudget 翻倍。
+</div>
+
+<table>
+  <thead>
+    <tr><th>字段</th><th>v1 Direct</th><th>v2 DirectV2</th><th>Claude / Codex</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>trimBudget</code></td><td>15,000</td><td style="color:var(--accent);font-weight:600;">30,000</td><td>15,000</td>
+      <td>Reactive trim 预算(tokens),超则砍旧消息。hifi ×2</td>
+    </tr>
+    <tr>
+      <td><code>interStepCompactBudget</code></td><td>0</td><td style="color:var(--accent);font-weight:600;">20,000</td><td>0</td>
+      <td>步骤间 compact 预算。v2 多步累积专用。hifi ×2</td>
+    </tr>
+    <tr>
+      <td><code>truncateThreshold</code></td><td>4,000</td><td style="color:var(--accent);font-weight:600;">6,000</td><td>4,000</td>
+      <td>单条 tool 输出截断阈值(chars)。hifi ×2</td>
+    </tr>
+    <tr>
+      <td><code>stepSummaryMaxChars</code></td><td>0</td><td style="color:var(--accent);font-weight:600;">500</td><td>0</td>
+      <td>摘要消息截断。逼模型用 <code>remember_fact</code> 存大数据</td>
+    </tr>
+    <tr>
+      <td><code>stepResultMaxChars</code></td><td>0</td><td style="color:var(--accent);font-weight:600;">4,000</td><td>0</td>
+      <td>PlanStep.result 完整版上限。Judge/replan 引用</td>
+    </tr>
+    <tr>
+      <td><code>subAgentScope</code></td><td>none</td><td style="color:var(--accent);font-weight:600;">last_n_turns</td><td>none</td>
+      <td>dispatch_agent 默认 scope</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ════════ SECTION 6: Crash Recovery ════════ -->
+<h2><span class="section-num">6</span>Crash Recovery 恢复流程</h2>
+
+<div class="diagram">
+<svg viewBox="0 0 1080 480" width="1080" height="480" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr5" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arr5g" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#3fb950"/>
+    </marker>
+    <marker id="arr5y" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#d29922"/>
+    </marker>
+  </defs>
+
+  <text x="540" y="28" text-anchor="middle" fill="#e6edf3" font-size="15" font-weight="600">Crash Recovery 恢复流程</text>
+
+  <!-- ===== Step 1: Check checkpoint ===== -->
+  <rect x="80" y="56" width="220" height="56" rx="8" fill="#161b22" stroke="#8b949e" stroke-width="2"/>
+  <text x="190" y="80" text-anchor="middle" fill="#8b949e" font-size="12" font-weight="600">run() 启动</text>
+  <text x="190" y="98" text-anchor="middle" fill="#8b949e" font-size="10">loadLatestV2Checkpoint()</text>
+
+  <line x1="300" y1="84" x2="340" y2="84" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr5)"/>
+
+  <!-- Decision diamond -->
+  <polygon points="460,50 580,84 460,118 340,84" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="460" y="80" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">checkpoint 存在</text>
+  <text x="460" y="94" text-anchor="middle" fill="#d29922" font-size="10">且有 pending 步骤?</text>
+
+  <!-- No path -->
+  <line x1="460" y1="118" x2="460" y2="148" stroke="#f85149" stroke-width="1.5" marker-end="url(#arr5)"/>
+  <text x="476" y="138" fill="#f85149" font-size="10">否</text>
+
+  <rect x="370" y="148" width="180" height="40" rx="6" fill="rgba(248,81,73,0.06)" stroke="#f85149" stroke-width="1.5"/>
+  <text x="460" y="172" text-anchor="middle" fill="#f85149" font-size="11" font-weight="600">clearV2State → 正常规划</text>
+
+  <!-- Yes path -->
+  <line x1="580" y1="84" x2="620" y2="84" stroke="#3fb950" stroke-width="1.5" marker-end="url(#arr5g)"/>
+  <text x="600" y="76" fill="#3fb950" font-size="10">是</text>
+
+  <!-- ===== Step 2: Parse checkpoint ===== -->
+  <rect x="620" y="56" width="220" height="56" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="730" y="78" text-anchor="middle" fill="#3fb950" font-size="11" font-weight="600">解析 checkpoint</text>
+  <text x="730" y="94" text-anchor="middle" fill="#8b949e" font-size="10">JSON.parse(plan_json)</text>
+  <text x="730" y="106" text-anchor="middle" fill="#8b949e" font-size="10">JSON.parse(history_json)</text>
+
+  <line x1="730" y1="112" x2="730" y2="138" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr5)"/>
+
+  <!-- ===== Step 3: Trim ===== -->
+  <rect x="590" y="138" width="280" height="56" rx="8" fill="rgba(210,153,34,0.08)" stroke="#d29922" stroke-width="2"/>
+  <text x="730" y="160" text-anchor="middle" fill="#d29922" font-size="11" font-weight="600">trimHistoryToTokenBudget</text>
+  <text x="730" y="176" text-anchor="middle" fill="#8b949e" font-size="10">budget: trimBudget (30K)</text>
+  <text x="730" y="188" text-anchor="middle" fill="#f85149" font-size="10">⚠ P1: 可能砍掉前步 📋 摘要</text>
+
+  <line x1="730" y1="194" x2="730" y2="220" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr5)"/>
+
+  <!-- ===== Step 4: Skip done, resume ===== -->
+  <rect x="520" y="220" width="420" height="60" rx="8" fill="rgba(63,185,80,0.08)" stroke="#3fb950" stroke-width="2"/>
+  <text x="730" y="244" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">跳过 done/skipped 步骤,从 running/pending/failed 恢复</text>
+  <text x="730" y="260" text-anchor="middle" fill="#8b949e" font-size="10">resumedPlan + trimmed execHistory → Phase 2 Executor</text>
+  <text x="730" y="272" text-anchor="middle" fill="#8b949e" font-size="10">status="running" 的步骤会重新执行(runAgentLoop 是幂等的:文件操作有结果)</text>
+
+  <!-- ===== Step 5: Normal execution ===== -->
+  <line x1="730" y1="280" x2="730" y2="308" stroke="#8b949e" stroke-width="1.5" marker-end="url(#arr5)"/>
+
+  <rect x="520" y="308" width="420" height="44" rx="8" fill="#161b22" stroke="#3fb950" stroke-width="1.5"/>
+  <text x="730" y="328" text-anchor="middle" fill="#3fb950" font-size="12" font-weight="600">→ 正常 Phase 2/3/4 流程</text>
+  <text x="730" y="344" text-anchor="middle" fill="#8b949e" font-size="10">(Executor → Verify → Judge → finalize)</text>
+
+  <!-- ===== Checkpoint storage timeline (bottom) ===== -->
+  <line x1="80" y1="400" x2="1000" y2="400" stroke="#8b949e" stroke-width="2" marker-end="url(#arr5)"/>
+  <text x="540" y="392" text-anchor="middle" fill="#8b949e" font-size="10">v2_state 表 — 时间线</text>
+
+  <!-- Checkpoint points -->
+  <circle cx="120" cy="400" r="6" fill="#3fb950"/>
+  <text x="120" y="424" text-anchor="middle" fill="#3fb950" font-size="10">step 1</text>
+
+  <circle cx="260" cy="400" r="6" fill="#3fb950"/>
+  <text x="260" y="424" text-anchor="middle" fill="#3fb950" font-size="10">step 2</text>
+
+  <circle cx="400" cy="400" r="6" fill="#d29922"/>
+  <text x="400" y="424" text-anchor="middle" fill="#d29922" font-size="10">step 3</text>
+  <text x="400" y="438" text-anchor="middle" fill="#f85149" font-size="9">← crash!</text>
+
+  <circle cx="540" cy="400" r="6" fill="#d29922"/>
+  <text x="540" y="424" text-anchor="middle" fill="#d29922" font-size="10">step 4</text>
+
+  <circle cx="680" cy="400" r="6" fill="#3fb950"/>
+  <text x="680" y="424" text-anchor="middle" fill="#3fb950" font-size="10">step 5</text>
+
+  <circle cx="820" cy="400" r="6" fill="#8b949e"/>
+  <text x="820" y="424" text-anchor="middle" fill="#8b949e" font-size="10">final</text>
+
+  <!-- Crash marker -->
+  <line x1="400" y1="378" x2="400" y2="396" stroke="#f85149" stroke-width="2" stroke-dasharray="2,2"/>
+  <text x="340" y="376" fill="#f85149" font-size="10">💥 crash</text>
+
+  <!-- Resume arrow -->
+  <path d="M400 440 Q400 458 540 458 Q540 458 540 440" fill="none" stroke="#d29922" stroke-width="1.5" stroke-dasharray="3,2" marker-end="url(#arr5y)"/>
+  <text x="470" y="458" text-anchor="middle" fill="#d29922" font-size="10">resume from step 3</text>
+
+  <text x="120" y="458" fill="#3fb950" font-size="10">✅ done</text>
+  <text x="820" y="458" fill="#8b949e" font-size="10">rowType=final</text>
+</svg>
+</div>
+
+<!-- ════════ SECTION 7: Bug 修复记录 ════════ -->
+<h2><span class="section-num">7</span>上下文管理 Bug 修复记录</h2>
+
+<div class="bug-grid">
+
+<div class="bug-card p0">
+  <div class="bug-header">
+    <span class="bug-badge p0">P0</span>
+    <span class="bug-title">重试失败历史污染 execHistory</span>
+  </div>
+  <div class="bug-desc">
+    步骤 3 次重试全失败时,失败的完整 ReAct 历史(大量 tool_calls + 错误结果)被永久追加进 <code>execHistory</code>。
+    后续重试和步骤面临巨大的失败上下文噪声(3 次重试 = 3 倍失败历史累积),且步骤间压缩无法完全消除。
+  </div>
+  <div class="bug-fix">
+    <code>stepStartLen</code> 记录步骤开始时的 execHistory 长度。只有 <code>stepDone=true</code> 时才用 <code>stepMessages.slice(stepStartLen)</code> 追加增量。失败时重试仍能看到 <code>step.result</code> 通过 <code>retryNote</code> 传入。
+  </div>
+</div>
+
+<div class="bug-card p0">
+  <div class="bug-header">
+    <span class="bug-badge p0">P0</span>
+    <span class="bug-title">interStepCompact fingerprint 碰撞</span>
+  </div>
+  <div class="bug-desc">
+    去重 fingerprint 仅使用 <code>messages.length</code> 和 <code>lastContent.length</code> 做 hash,碰撞率极高。
+    不同内容只要长度相同就误判「没变」,跳过必要的上下文压缩。
+  </div>
+  <div class="bug-fix">
+    直接用 content 前 200 字符的文本做 fingerprint:<code>${"${msgs.length}:${lastContent"}.slice(0, 200)}</code>。不用 hash 函数,省 CPU 且无碰撞。
+  </div>
+</div>
+
+<div class="bug-card p0">
+  <div class="bug-header">
+    <span class="bug-badge p0">P0</span>
+    <span class="bug-title">失败步骤摘要消息误导后续步骤</span>
+  </div>
+  <div class="bug-desc">
+    步骤失败时(3 次重试耗尽),摘要消息写死 <code>「📋 步骤[X] 完成」</code>。后续步骤看到「完成」会误以为前步成功,
+    依赖一个实际失败的步骤的产出。主流程和 replan 路径都有此问题。
+  </div>
+  <div class="bug-fix">
+    摘要消息区分成功/失败。成功 → <code>✅ 完成</code>,失败 → <code>❌ 失败</code> 并显示失败原因。
+  </div>
+</div>
+
+<div class="bug-card p1">
+  <div class="bug-header">
+    <span class="bug-badge p1">P1</span>
+    <span class="bug-title">crash recovery trim 可能丢弃步骤摘要</span>
+  </div>
+  <div class="bug-desc">
+    恢复路径执行 <code>trimHistoryToTokenBudget</code> 按尾部截断时,可能砍掉前置的步骤完成摘要消息(<code>📋</code>),
+    导致模型丢失前置进度记忆,可能重复执行已完成步骤。
+  </div>
+  <div class="bug-fix">
+    <strong>已知约束,暂不修复。</strong>STEP_EXECUTOR_PROMPT 已注入已完成步骤列表(status + result),影响可控。未来可给 <code>📋</code> 消息加 <code>_pinned</code> 标记。
+  </div>
+</div>
+
+</div>
+
+<!-- ════════ SECTION 8: 关键代码路径 ════════ -->
+<h2><span class="section-num">8</span>关键代码路径速查</h2>
+
+<table>
+  <thead>
+    <tr><th>功能</th><th>文件:行</th><th>函数</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Reactive trim (L1)</td><td><code>AgentLoop.ts:84-101</code></td><td>catch → trimHistoryToTokenBudget</td></tr>
+    <tr><td>步骤间压缩 (L2)</td><td><code>V2Engine:1063-1086</code></td><td>interStepCompact → compactHistory</td></tr>
+    <tr><td>会话结束压缩 (L3)</td><td><code>V2Engine:1088-1107</code></td><td>finalizeContext → compactHistory</td></tr>
+    <tr><td>LLM 摘要压缩</td><td><code>AgentLoop.ts:467-526</code></td><td>compactHistory</td></tr>
+    <tr><td>尾部截断保留</td><td><code>AgentLoop.ts:418-435</code></td><td>trimHistoryToTokenBudget</td></tr>
+    <tr><td>工具配对清理</td><td><code>AgentLoop.ts:438-461</code></td><td>sanitizeToolPairs</td></tr>
+    <tr><td>持久化前清理</td><td><code>AgentLoop.ts:321-335</code></td><td>dropTransient</td></tr>
+    <tr><td>Token 估算</td><td><code>AgentLoop.ts:384-411</code></td><td>estMsgChars / coefFor / calibrateTokens</td></tr>
+    <tr><td>策略解析</td><td><code>types.ts:103-117</code></td><td>resolveEnginePolicy</td></tr>
+    <tr><td>Checkpoint 存储</td><td><code>store.ts:516-538</code></td><td>saveV2Checkpoint / loadLatestV2Checkpoint</td></tr>
+    <tr><td>Planner→Executor 隔离</td><td><code>V2Engine:347-361</code></td><td>提取 plan 结论,丢探查中间过程</td></tr>
+    <tr><td>Replan history 隔离</td><td><code>V2Engine:590-597</code></td><td>只取 replan planner 最后一条 assistant</td></tr>
+  </tbody>
+</table>
+
+</body>
+</html>
