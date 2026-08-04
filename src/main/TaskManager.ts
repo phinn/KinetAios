@@ -459,6 +459,13 @@ export class TaskManager {
         out += `\n…(共 ${allCount} 条记忆,根据当前对话检索注入 ${limited.length} 条)`;
       }
     }
+    // 知识图谱三元组注入:按 query 关键词匹配,补全 facts 之外的关系信息。
+    if (query) {
+      const triples = store.searchMemoryTriples(query, 5);
+      if (triples.length) {
+        out += '\n\n## 用户知识图谱(语义关系)\n' + triples.map((t) => `- ${t.subject} —${t.predicate}→ ${t.object}`).join('\n');
+      }
+    }
     if (conv.cwd) out += `\n\n## 当前工作目录\n${conv.cwd}`;
     return out;
   }

@@ -663,12 +663,10 @@ const recallMemory: Tool = {
   },
   async run(args) {
     const q = (args.query as string) ?? '';
-    // 先试语义召回:embed query → cosine top-K over memory_embeddings(只覆盖 facts)。
-    // 失败 / 无 embedding → 回退 FTS5(覆盖 history 表,即对话历史)。
-    // ponytail ceiling:embedding 只覆盖 memories 表(facts),history 表(对话原文)仍走 FTS5;
-    // 后续要全量语义召回需把每轮对话也 embed,数量级会涨,先做 fact 这一档。
+    // 三级检索:embedding cosine(facts)→ FTS5 召回 + embedding 重排(history)→ 关键词兜底。
+    // ponytail ceiling:embedding 只覆盖 memories 表(facts);history 表用 FTS5 召回 + embedding 重排(无存储,实时算)。
     try {
-      // 先查表,空表直接跳过 embed(省 API 调用)
+      // Stage 1:语义召回 facts(embedding cosine top-K)
       const embedRows = store.listMemoryEmbeddings();
       if (embedRows.length) {
         const { embed } = await import('./glm');
@@ -682,7 +680,7 @@ const recallMemory: Tool = {
             .filter((r) => r.score > 0.2)
             .sort((a, b) => b.score - a.score)
             .slice(0, 20);
-          if (scored.length) {
+          if (scored.length >= 3) {
             // 命中的记忆 touch 一下(更新 lastUsed + useCount → 衰减权重 / 时间线统计才有数据)。
             for (const s of scored) {
               try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
@@ -693,30 +691,66 @@ const recallMemory: Tool = {
                 return `[${i + 1}] (score ${m.score.toFixed(2)}) ${cut}`;
               })
               .join('\n');
-            return `语义命中 ${scored.length} 条记忆:\n${body}`;
+            // 知识图谱三元组也参与检索
+            const tripleHits = store.searchMemoryTriples(q, 5);
+            const tripleBody = tripleHits.length
+              ? '\n\n## 知识图谱\n' + tripleHits.map((t, i) => `[${i + 1}] ${t.subject} → ${t.predicate} → ${t.object}`).join('\n')
+              : '';
+            return `语义命中 ${scored.length} 条记忆:\n${body}${tripleBody}`;
           }
         }
       }
     } catch (e) {
       console.warn('[recall] embed path failed, fallback to FTS5:', (e as Error)?.message);
     }
-    // 无 embedding 或语义命中 0 条 → 关键词搜 memories 表(LIKE 模糊匹配)。
+    // Stage 2:FTS5 召回(宽)+ embedding 重排(准)—— 对 history 表(对话原文)。
+    // 无 embedding 或 facts 语义命中 <3 条时走此路径。
     const memHits = store.searchMemories(q, 20);
+    // 知识图谱三元组也参与检索(之前只写不读)
+    const tripleHits = q ? store.searchMemoryTriples(q, 10) : [];
     // FTS5 fallback —— 覆盖对话历史(role/content 全文索引)。
     // FTS5 特殊字符(" * NEAR 等)可能导致语法错误 → try/catch
     let hits: Array<{ role: string; content: string }> = [];
     try {
-      hits = store.search(q, 20);
+      hits = store.search(q, 30); // 多取一些供重排
     } catch {
       // FTS5 语法错误 → 用转义后的查询重试
-      hits = store.search(q.replace(/["*]/g, ' '), 20);
+      hits = store.search(q.replace(/["*]/g, ' '), 30);
     }
-    // 合并结果:memories(长期记忆) + history(对话历史)
+    // 对 FTS5 结果做 embedding 重排(如果有 embedding 接口)——提升语义精确度。
+    if (hits.length > 3) {
+      try {
+        const { embed } = await import('./glm');
+        const { snapshot } = await import('./settings');
+        const snap = snapshot();
+        const hitTexts = hits.map((h) => h.content.slice(0, 500));
+        const hitVecs = await embed(hitTexts, snap);
+        const qVecArr = await embed([q], snap);
+        if (qVecArr[0]?.length) {
+          const qVec = new Float32Array(qVecArr[0]);
+          hits = hits
+            .map((h, i) => ({
+              h,
+              score: hitVecs[i]?.length ? store.cosine(qVec, new Float32Array(hitVecs[i])) : 0,
+            }))
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 20)
+            .map((x) => x.h);
+        }
+      } catch {
+        // embedding 重排失败 → 保持 FTS5 原始顺序
+      }
+    }
+    // 合并结果:memories(长期记忆) + triples(知识图谱) + history(对话历史)
     const allResults: Array<{ source: string; content: string }> = [
       ...memHits.map((m) => {
         const cut = m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content;
         return { source: '记忆', content: cut };
       }),
+      ...tripleHits.map((t) => ({
+        source: '图谱',
+        content: `${t.subject} → ${t.predicate} → ${t.object}`,
+      })),
       ...hits.map((m) => {
         const preview = m.content.replace(/\n/g, ' ');
         const cut = preview.length > 200 ? preview.slice(0, 200) + '…' : preview;

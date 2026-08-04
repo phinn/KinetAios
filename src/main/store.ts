@@ -335,6 +335,17 @@ export function searchMemories(q: string, limit = 20): Array<{ id: string; conte
   ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null }>;
 }
 
+// 关键词搜索 memory_triples 表(subject / predicate / object 三列任意 LIKE 匹配)。
+// recall_memory 和 memoryBlock 注入时调用,让知识图谱不再只写不读。
+export function searchMemoryTriples(q: string, limit = 10): Array<{ subject: string; predicate: string; object: string }> {
+  const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  return db.prepare(
+    `SELECT subject, predicate, object FROM memory_triples
+     WHERE subject LIKE ? ESCAPE '\\' OR predicate LIKE ? ESCAPE '\\' OR object LIKE ? ESCAPE '\\'
+     ORDER BY created_at DESC LIMIT ?;`,
+  ).all(like, like, like, limit) as Array<{ subject: string; predicate: string; object: string }>;
+}
+
 // ── 存量记忆去重清理:文本相似度(规范化+包含检测+bigram Jaccard)合并重复 ──
 // 返回被删除的条数。threshold 以下视为重复,保留最早创建的那条。
 // textSimilarity 取 max(包含比, bigram Jaccard),适配 5-30 字的短记忆。
