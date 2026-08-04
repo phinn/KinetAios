@@ -64,6 +64,12 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS conv_facts(
       conv_id TEXT, key TEXT, value TEXT, updated_at REAL,
       PRIMARY KEY(conv_id, key));
+    -- P2:AgentTeams — 团队成员 + 他们的历史。每个 team 挂在主 conv 下,多个 member 各自独立 history。
+    CREATE TABLE IF NOT EXISTS team_members(
+      team_id TEXT, member_id TEXT, name TEXT, role TEXT,
+      history TEXT, last_message TEXT, last_result TEXT,
+      status TEXT, created_at REAL, updated_at REAL,
+      PRIMARY KEY(team_id, member_id));
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -430,6 +436,54 @@ export function factsAsBlock(convId: string): string {
   const facts = listFacts(convId);
   if (facts.length === 0) return '';
   return facts.map((f) => `- ${f.key}: ${f.value}`).join('\n');
+}
+
+// MARK: AgentTeams 持久化(P2)
+// 设计:一个 team 是一组 named agent,member 各自独立 history,但都挂在主 conv 下。
+// 不复用 conversations 表 —— member 不是"独立会话",而是"team 的局部状态"。
+export interface TeamMember {
+  team_id: string;
+  member_id: string;
+  name: string;
+  role: string; // 'explorer' / 'reviewer' / 'integrator' 等,描述职责
+  history: string; // JSON: ChatMsg[] 序列化的成员本地 history
+  last_message: string | null; // 最近发给它的 message(用于 UI 显示"我在做什么")
+  last_result: string | null; // 最近一次回答(用于 UI 显示"我做了什么")
+  status: string; // 'idle' / 'running' / 'done' / 'failed'
+  created_at: number;
+  updated_at: number;
+}
+
+export function upsertTeamMember(m: TeamMember): void {
+  db.prepare(
+    `INSERT INTO team_members(team_id, member_id, name, role, history, last_message, last_result, status, created_at, updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(team_id, member_id) DO UPDATE SET
+       name=excluded.name, role=excluded.role, history=excluded.history,
+       last_message=excluded.last_message, last_result=excluded.last_result,
+       status=excluded.status, updated_at=excluded.updated_at;`
+  ).run(m.team_id, m.member_id, m.name, m.role, m.history, m.last_message, m.last_result, m.status, m.created_at, m.updated_at);
+}
+
+export function loadTeamMember(teamId: string, memberId: string): TeamMember | null {
+  const row = db.prepare('SELECT * FROM team_members WHERE team_id=? AND member_id=?;').get(teamId, memberId) as TeamMember | undefined;
+  return row ?? null;
+}
+
+export function listTeamMembers(teamId: string): TeamMember[] {
+  return db.prepare('SELECT * FROM team_members WHERE team_id=? ORDER BY created_at ASC;').all(teamId) as TeamMember[];
+}
+
+export function deleteTeam(teamId: string): number {
+  return db.prepare('DELETE FROM team_members WHERE team_id=?;').run(teamId).changes;
+}
+
+export function listTeamsForConv(convId: string): Array<{ team_id: string; member_count: number; updated_at: number }> {
+  // ponytail:team_id 与 convId 约定用 "conv:<convId>" 前缀,方便 JOIN 查询。
+  return db.prepare(
+    `SELECT team_id, COUNT(*) as member_count, MAX(updated_at) as updated_at
+     FROM team_members WHERE team_id LIKE ? GROUP BY team_id ORDER BY updated_at DESC;`
+  ).all(`conv:${convId}%`) as Array<{ team_id: string; member_count: number; updated_at: number }>;
 }
 
 export function updateMemory(id: string, content: string): void {

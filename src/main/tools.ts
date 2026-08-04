@@ -143,6 +143,9 @@ export interface ToolCtx {
     parentProvider?: Provider;
     parentSnap?: ConfigSnapshot;
   }) => Promise<string>;
+  // P2:AgentTeams 调度。给定 teamId + memberNames + message,实现方负责跑每个 member 并把结果串成文本。
+  // broadcast 时返回多成员拼接结果;send 单成员时返回该成员结果。
+  teamRun?: (a: { teamId: string; memberNames: string[]; message: string }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
   sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
@@ -1056,8 +1059,154 @@ const dispatchAgent: Tool = {
   },
 };
 
+// P2:AgentTeams 多 agent 协作工具。
+// 工作流:spawn_team 创建团队 → team_broadcast 派活 → team_send 单独追问 → team_close 收尾。
+// 每个 member 是独立只读 sub-agent(复用 SUBAGENT_PROMPT),有自己持久化的 history。
+// 成员间通过 recall_fact 共享数据(主会话的 remember_fact 也对 member 可见)。
+const spawnTeam: Tool = {
+  name: 'spawn_team',
+  description:
+    '创建一个 agent 团队(team)。每个 member 是独立只读 sub-agent,有各自持久化的 history。\n' +
+    '适合"并行调研 / 多视角评审 / 分模块探查"场景。**与 dispatch_agent 的区别**:dispatch_agent 起一次性 sub-agent,\n' +
+    'team 的 member 可以反复对话(每次看到自己 history 累积),且多个 member 可以同时持有"团队上下文"。\n\n' +
+    '使用流程:\n' +
+    '1. spawn_team({ members: [{name, role}, ...] }) → 返回 team_id 和 member 列表\n' +
+    '2. team_broadcast({ team_id, message }) → 给所有 member 发同一条指令,各自独立处理\n' +
+    '3. team_send({ team_id, member_name, message }) → 单独追问某个 member\n' +
+    '4. team_close({ team_id }) → 团队完成,可删除;不调用 close 也能继续用(members 持久化)',
+  parameters: {
+    type: 'object',
+    properties: {
+      members: {
+        type: 'array',
+        description: '成员列表。每个 member 必须有 name(短标识)和 role(职责描述,如 "explorer"/"reviewer")',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: '成员名(团队内唯一,用于 team_send)' },
+            role: { type: 'string', description: '角色描述,如 "前端模块探查"、"数据库架构评审"' },
+          },
+          required: ['name', 'role'],
+        },
+      },
+    },
+    required: ['members'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId) return '该上下文不支持 team(无 convId)';
+    const members = (args.members as Array<{ name?: string; role?: string }> | undefined) ?? [];
+    if (members.length === 0) return '缺少 members';
+    if (members.length > 8) return '成员过多(上限 8),请拆成多个 team 或缩减';
+    const teamId = `conv:${ctx.convId}:team:${Date.now().toString(36)}`;
+    const now = Date.now() / 1000;
+    const seen = new Set<string>();
+    for (const m of members) {
+      const name = String(m.name ?? '').trim();
+      const role = String(m.role ?? '').trim();
+      if (!name || !role) return '每个 member 必须有 name 和 role';
+      if (seen.has(name)) return `成员名重复: ${name}`;
+      seen.add(name);
+      store.upsertTeamMember({
+        team_id: teamId,
+        member_id: name,
+        name,
+        role,
+        history: '[]',
+        last_message: null,
+        last_result: null,
+        status: 'idle',
+        created_at: now,
+        updated_at: now,
+      });
+    }
+    return JSON.stringify({
+      team_id: teamId,
+      members: members.map((m) => ({ name: m.name, role: m.role })),
+    });
+  },
+};
+
+const teamBroadcast: Tool = {
+  name: 'team_broadcast',
+  description:
+    '给 team 的所有 member 发同一条指令。每个 member 独立处理,各自跑一次 LLM,各自更新自己的 history。\n' +
+    '返回每位 member 的回答(按成员顺序)。适合"统一问询所有模块的状态"。',
+  parameters: {
+    type: 'object',
+    properties: {
+      team_id: { type: 'string', description: 'spawn_team 返回的 team_id' },
+      message: { type: 'string', description: '广播给所有 member 的指令' },
+    },
+    required: ['team_id', 'message'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId || !ctx.teamRun) return '该上下文不支持 team run(无 convId 或 teamRun)';
+    const teamId = String(args.team_id ?? '').trim();
+    const message = String(args.message ?? '').trim();
+    if (!teamId || !message) return '缺少 team_id 或 message';
+    const members = store.listTeamMembers(teamId);
+    if (members.length === 0) return `team 不存在或已关闭: ${teamId}`;
+    try {
+      return await ctx.teamRun({ teamId, memberNames: members.map((m) => m.member_id), message });
+    } catch (e) {
+      return `team_broadcast 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
+const teamSend: Tool = {
+  name: 'team_send',
+  description:
+    '单独给 team 的某个 member 发指令。Member 看到自己 history + 这条消息,跑一次 LLM。\n' +
+    '返回该 member 的回答。适合"追问某个 member 上一轮没说完的" 或 "独立咨询某个专家"。',
+  parameters: {
+    type: 'object',
+    properties: {
+      team_id: { type: 'string' },
+      member_name: { type: 'string', description: 'spawn_team 时声明的 name' },
+      message: { type: 'string' },
+    },
+    required: ['team_id', 'member_name', 'message'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId || !ctx.teamRun) return '该上下文不支持 team run';
+    const teamId = String(args.team_id ?? '').trim();
+    const memberName = String(args.member_name ?? '').trim();
+    const message = String(args.message ?? '').trim();
+    if (!teamId || !memberName || !message) return '缺少必要参数';
+    const member = store.loadTeamMember(teamId, memberName);
+    if (!member) return `member 不存在: ${teamId}/${memberName}`;
+    try {
+      const out = await ctx.teamRun({ teamId, memberNames: [memberName], message });
+      return out; // 单 member,直接返回结果文本
+    } catch (e) {
+      return `team_send 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
+const teamClose: Tool = {
+  name: 'team_close',
+  description:
+    '删除 team 及其所有 member 的持久化数据。团队不再可用。\n' +
+    '通常在所有 member 都"汇报完毕"且主流程不再需要时调用。如果不调,members 也会一直保留(可继续对话)。',
+  parameters: {
+    type: 'object',
+    properties: {
+      team_id: { type: 'string' },
+    },
+    required: ['team_id'],
+  },
+  async run(args) {
+    const teamId = String(args.team_id ?? '').trim();
+    if (!teamId) return '缺少 team_id';
+    const n = store.deleteTeam(teamId);
+    return `已关闭 team ${teamId}(删除 ${n} 个 member)`;
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

@@ -29,6 +29,7 @@ import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './t
 import { getSettings, snapshot } from './settings';
 import { mcp } from './mcp';
 import { pluginSystemPrompts } from './plugins';
+import * as store from './store';
 import {
   baseSystemPrompt,
   personaSection,
@@ -960,6 +961,43 @@ export class DirectV2Engine implements Engine {
       signal,
       convId: conv.id,
       sandbox: getSettings().sandbox,
+      // P2:AgentTeams 调度(v2 也支持)。逻辑与 v1 相同 — 串行跑 member,持久化 history + last_result。
+      teamRun: async ({ teamId, memberNames, message }) => {
+        const { runMember, memberCostUSD } = await import('./teams');
+        const parts: string[] = [];
+        for (const name of memberNames) {
+          if (signal.aborted) break;
+          const m = store.loadTeamMember(teamId, name);
+          if (!m) { parts.push(`[${name}] (member 不存在)`); continue; }
+          try {
+            const r = await runMember({
+              member: m,
+              userMessage: message,
+              provider,
+              snap,
+              signal,
+              cwd: conv.cwd,
+              confirm: this.confirm,
+              convId: conv.id,
+            });
+            store.upsertTeamMember({
+              ...m,
+              history: JSON.stringify(r.newHistory),
+              last_message: message,
+              last_result: r.answer,
+              status: 'done',
+              updated_at: Date.now() / 1000,
+            });
+            const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
+            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
+            parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+          } catch (e) {
+            store.upsertTeamMember({ ...m, last_message: message, last_result: `错误: ${(e as Error)?.message}`, status: 'failed', updated_at: Date.now() / 1000 });
+            parts.push(`### ${m.name}\n错误: ${(e as Error)?.message}\n`);
+          }
+        }
+        return parts.join('\n');
+      },
       spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
         // 跨引擎子任务(v2 也支持调用 claude/codex 一次性任务)
         if (engine === 'claudeCode' || engine === 'codex') {

@@ -14,6 +14,7 @@ import type { AgentEvent, ChatMsg, Conversation, EngineKind, SandboxMode } from 
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider, priceUSD, type Provider } from './glm';
+import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -229,6 +230,44 @@ class DirectEngine implements Engine {
       signal,
       convId: conv.id,
       sandbox: getSettings().sandbox,
+      // P2:AgentTeams 调度。串行跑每个 member(broadcast 时多个),把结果拼成文本返回给主 LLM。
+      teamRun: async ({ teamId, memberNames, message }) => {
+        const { runMember, memberCostUSD } = await import('./teams');
+        const parts: string[] = [];
+        for (const name of memberNames) {
+          if (signal.aborted) break;
+          const m = store.loadTeamMember(teamId, name);
+          if (!m) { parts.push(`[${name}] (member 不存在)`); continue; }
+          try {
+            const r = await runMember({
+              member: m,
+              userMessage: message,
+              provider,
+              snap,
+              signal,
+              cwd: conv.cwd,
+              confirm: this.confirm,
+              convId: conv.id,
+            });
+            // 持久化:history + last_message + last_result + status
+            store.upsertTeamMember({
+              ...m,
+              history: JSON.stringify(r.newHistory),
+              last_message: message,
+              last_result: r.answer,
+              status: 'done',
+              updated_at: Date.now() / 1000,
+            });
+            const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
+            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
+            parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+          } catch (e) {
+            store.upsertTeamMember({ ...m, last_message: message, last_result: `错误: ${(e as Error)?.message}`, status: 'failed', updated_at: Date.now() / 1000 });
+            parts.push(`### ${m.name}\n错误: ${(e as Error)?.message}\n`);
+          }
+        }
+        return parts.join('\n');
+      },
       spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
         // 跨引擎子任务:claudeCode / codex 走 CLI one-shot(只读,不递归)。
         // ponytail: 不复用 ClaudeCodeEngine/CodexEngine 的 stream-json 解析,直接 execFile + 取 stdout。
