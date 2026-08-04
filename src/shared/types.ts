@@ -27,8 +27,88 @@ export type EngineKind = 'direct' | 'directV2' | 'claudeCode' | 'codex';
 
 // 上下文模式 —— 控制工具结果截断策略与上下文预算。以后可扩展更多模式(如 deep-research)。
 // Context mode — controls tool result truncation + context budget. Extensible for future modes.
+// 注意:ContextMode 是用户级覆盖开关,真正的默认策略来自 ENGINE_POLICIES (按 engine 独立配置)。
+// 关系:用户设置 contextMode='hifi' → 对应 engine 策略的 budget/threshold 翻倍;设置 'standard' → 严格按默认策略。
 export type ContextMode = 'standard' | 'hifi';
 export const CONTEXT_MODES: ContextMode[] = ['standard', 'hifi'];
+
+// 引擎上下文策略包 —— 不同 engine 对上下文的需求完全不同,统一用策略对象描述。
+// v1 Direct 是单 ReAct 短对话;v2 DirectV2 是多步累积,plan 上下文必须留住;
+// sub-agent 完全独立,只信 prompt 不信 history。
+// 一个策略里把所有"上下文相关魔数"集中,改一处生效全部 engine。
+export type EngineContextPolicy = {
+  /** reactive trim 预算(history 字符总和超过则砍旧消息)。hifi 模式翻倍。 */
+  trimBudget: number;
+  /** step 间 compact 预算(v2 才用:每步完成后,多步累积的 history 摘要后塞回的字符上限)。 */
+  interStepCompactBudget: number;
+  /** 工具结果截断阈值(单条 tool 输出的最大字符数)。hifi 模式翻倍。 */
+  truncateThreshold: number;
+  /** v2 步骤完成时是否往 history 追加"步骤摘要消息"(否则下一步靠 read_file 拿产物)。 */
+  appendStepSummary: boolean;
+  /** 摘要消息最大保留字数(超过则截短,逼模型用 remember_fact 存关键数据)。 */
+  stepSummaryMaxChars: number;
+  /** sub-agent 接收 history 的默认范围(给 dispatch_agent 的默认 scope.mode)。 */
+  subAgentScope: 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
+};
+
+export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
+  // v1 Direct:单 ReAct,短对话快响应,默认轻量。
+  direct: {
+    trimBudget: 15_000,
+    interStepCompactBudget: 0,
+    truncateThreshold: 4000,
+    appendStepSummary: false,
+    stepSummaryMaxChars: 0,
+    subAgentScope: 'none',
+  },
+  // v2 DirectV2:Plan-Verify 多步累积,plan 上下文必须留住,工具结果放更多。
+  directV2: {
+    trimBudget: 30_000,
+    interStepCompactBudget: 20_000,
+    truncateThreshold: 6000,
+    appendStepSummary: true,
+    stepSummaryMaxChars: 500,
+    subAgentScope: 'last_n_turns',
+  },
+  // Claude Code / Codex:外部 CLI 各自管自己的 context,这里只给个保底值(目前未触发)。
+  claudeCode: {
+    trimBudget: 15_000,
+    interStepCompactBudget: 0,
+    truncateThreshold: 4000,
+    appendStepSummary: false,
+    stepSummaryMaxChars: 0,
+    subAgentScope: 'none',
+  },
+  codex: {
+    trimBudget: 15_000,
+    interStepCompactBudget: 0,
+    truncateThreshold: 4000,
+    appendStepSummary: false,
+    stepSummaryMaxChars: 0,
+    subAgentScope: 'none',
+  },
+};
+
+/**
+ * 把 EngineContextPolicy + ContextMode 合成最终生效的策略。
+ * hifi 模式:trimBudget / truncateThreshold 翻倍;appendStepSummary / stepSummaryMaxChars / subAgentScope 不动。
+ * 让用户能"加预算"但不破坏 v2 的策略设计。
+ */
+export function resolveEnginePolicy(
+  engine: EngineKind,
+  mode: ContextMode | undefined,
+): EngineContextPolicy {
+  const base = ENGINE_POLICIES[engine] || ENGINE_POLICIES.direct;
+  if (mode === 'hifi') {
+    return {
+      ...base,
+      trimBudget: base.trimBudget * 2,
+      interStepCompactBudget: base.interStepCompactBudget * 2,
+      truncateThreshold: base.truncateThreshold * 2,
+    };
+  }
+  return base;
+}
 export const ENGINE_LABELS: Record<EngineKind, string> = {
   direct: 'Kaios (Direct)',
   directV2: 'Kaios v2 (Plan·Verify)',

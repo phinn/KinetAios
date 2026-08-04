@@ -1,6 +1,6 @@
 // ReAct loop: model ↔ tools until the model answers without a tool_call, or max turns hit.
 // Verbatim port of Swift AgentLoop.run. DirectEngine's trim-history logic lives here too.
-import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, ContextMode } from '../shared/types';
+import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy } from '../shared/types';
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
@@ -21,9 +21,13 @@ export interface RunOpts {
   signal: AbortSignal;
   maxTurns?: number;
   // 上下文模式:hifi 时不截断 tool result + 更大上下文预算(适合多数据源交叉分析,代价是更多 token)。
-  contextMode?: ContextMode;
+  // ponytail: 历史 ContextMode 字段保留以兼容 settings.json 旧数据,真正策略统一从 ENGINE_POLICIES 取。
+  contextMode?: 'standard' | 'hifi';
   // 高保真模式的上下文预算(token)——从设置页读取,控制 reactive trim 上限。
   hifiContextBudget?: number;
+  // 引擎上下文策略包:覆盖默认 ENGINE_POLICIES[engine]。调用方按 engine 传不同策略。
+  // 不传 → 用 resolveEnginePolicy(EngineKind, contextMode) 的解析结果。
+  policy?: EngineContextPolicy;
   onEvent: (e: AgentEvent) => void;
 }
 
@@ -31,6 +35,8 @@ export interface RunOpts {
 // memory message) for next-turn history.
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
+  // reactive trim 预算:从策略包取(覆盖硬编码 15K)。hifi 模式策略 trimBudget 已翻倍,不用再读 hifiContextBudget。
+  const trimBudget = opts.policy?.trimBudget ?? 15_000;
   // 从设置读 maxTurns(0 = 无限);子 agent 调用时可通过 opts.maxTurns 显式覆盖。
   const cfgMax = opts.maxTurns ?? getSettings().maxTurns ?? 50;
   const maxTurns = cfgMax > 0 ? cfgMax : Infinity;
@@ -77,7 +83,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       if (!retriedAfterShrink && isContextTooLong(e)) {
         retriedAfterShrink = true;
         const beforeMsgs = messages;
-        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), opts.contextMode === 'hifi' ? (opts.hifiContextBudget ?? 60_000) : 15_000, snapshot.apiProtocol)];
+        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
         // 发压缩事件:让用户知道上下文超长被自动裁剪了
         const beforeTokens = estTokenCount(beforeMsgs);
         const afterTokens = estTokenCount(messages);
@@ -112,7 +118,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
-    messages.push(...(await runToolBatch(completion.toolCalls, tools, ctx, signal, onEvent, opts.contextMode)));
+    messages.push(...(await runToolBatch(completion.toolCalls, tools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000)));
     // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);
@@ -517,7 +523,8 @@ async function runToolBatch(
   ctx: ToolCtx,
   signal: AbortSignal,
   onEvent: (e: AgentEvent) => void,
-  contextMode = 'standard' as ContextMode,
+  // 截断阈值:从策略包取(覆盖硬编码 8K)。hifi 模式 truncateThreshold 已翻倍到 12K。
+  truncateThreshold = 8000,
 ): Promise<ChatMsg[]> {
   const results: ChatMsg[] = [];
   // 执行前发个 status → 聊天框 streaming 区显示「执行 X, Y…」,让用户知道在跑工具(不只三点)。
@@ -547,7 +554,7 @@ async function runToolBatch(
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
           onEvent({ type: 'tool', name: c.name, args: c.arguments, result, durationMs: dur }); // UI 拿原文(可点开看全)
-          return { c, result: contextMode === 'hifi' ? result : truncateForModel(result), dur }; // 模型拿截断版(hifi 模式不截断)
+          return { c, result: truncateForModel(result, truncateThreshold), dur }; // 模型拿截断版
         }),
       );
       for (const { c, result } of outs) results.push({ role: 'tool', tool_call_id: c.id, content: result });
@@ -557,7 +564,7 @@ async function runToolBatch(
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
       onEvent({ type: 'tool', name: call.name, args: call.arguments, result, durationMs: dur });
-      results.push({ role: 'tool', tool_call_id: call.id, content: contextMode === 'hifi' ? result : truncateForModel(result) });
+      results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result, truncateThreshold) });
       i++;
     }
   }
@@ -566,13 +573,13 @@ async function runToolBatch(
 
 // 长 tool result 截断喂模型(不影响 UI 看完整原文)。read_file 一个 4MB 文件 / shell 几 MB 输出
 // / web_fetch 全页如果不截,下一轮全字面进 input → 爆 input token。模型基本只需头尾(路径/错误/概要)。
-// ponytail: 头尾各 3000、中间省略号,简单粗暴;真要全文可加 follow-up 让 read_file 偏移读。
-const MODEL_RESULT_MAX = 8192;
-const MODEL_RESULT_EDGE = 3000;
-function truncateForModel(s: string): string {
-  if (s.length <= MODEL_RESULT_MAX) return s;
-  const omitted = s.length - 2 * MODEL_RESULT_EDGE;
-  return `${s.slice(0, MODEL_RESULT_EDGE)}\n\n…[省略 ${omitted} 字符;UI 步骤详情可见完整结果]…\n\n${s.slice(-MODEL_RESULT_EDGE)}`;
+// ponytail: 头尾按比例,中间省略号,简单粗暴;真要全文可加 follow-up 让 read_file 偏移读。
+// 阈值由调用方传入(从 ENGINE_POLICIES 解析),默认 8K = direct 的策略。
+function truncateForModel(s: string, threshold = 8000): string {
+  if (s.length <= threshold) return s;
+  const edge = Math.floor(threshold * 0.375); // 头尾各 ~37.5%,剩余 25% 留给省略号注释
+  const omitted = s.length - 2 * edge;
+  return `${s.slice(0, edge)}\n\n…[省略 ${omitted} 字符;UI 步骤详情可见完整结果]…\n\n${s.slice(-edge)}`;
 }
 
 // Detect "context too long" from a provider error (GLMError or raw). ponytail: OpenAI-compatible

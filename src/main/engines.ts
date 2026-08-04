@@ -11,6 +11,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import type { AgentEvent, Conversation, EngineKind, SandboxMode } from '../shared/types';
+import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, type ToolCtx, type SubEngine } from './tools';
@@ -178,6 +179,9 @@ class DirectEngine implements Engine {
     // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿。
     // refBlock 拼到 userInput 后面(每轮动态,不进 systemPrompt → 不破坏缓存)。
     const userInput = refSection ? prompt + refSection : prompt;
+    // 从策略包取 trim/interStepCompact/truncate 阈值,统一收口到 ENGINE_POLICIES。
+    // v1 direct 默认轻量;hifi 模式 resolveEnginePolicy 已自动翻倍。
+    const policy = resolveEnginePolicy('direct', conv.contextMode);
     const updated = await runAgentLoop({
       provider,
       tools,
@@ -190,13 +194,16 @@ class DirectEngine implements Engine {
       signal,
       contextMode: conv.contextMode,
       hifiContextBudget: getSettings().hifiContextBudget,
+      policy, // P0-1:把策略传给 runAgentLoop,内部不再 if/else
       onEvent,
     });
     // abort 后 signal 已触发 → compactHistory 的摘要 LLM 调用也会被 abort(catch 后丢 head)。
     // 所以 abort 路径跳过 compactHistory,直接用 finalizeAbortedMessages 返回的完整 messages。
     if (!signal.aborted) {
-      const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
-      conv.directHistory = await compactHistory(updated, conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000, provider, snap, signal, onEvent);
+      // P0-1:interStepCompactBudget=0(v1 direct 不需要多步累积),仍走 30K 默认;兼容 v1 旧 30_000 字面。
+      // v1 直接拿 ENGINE_POLICIES.direct.interStepCompactBudget,语义上等于"不调 compact"。
+      // 这里 v1 仍走 compact(给用户体感上更连贯),但预算用 policy.interStepCompactBudget 或兜底 30_000。
+      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget || 30_000, provider, snap, signal, onEvent);
     } else {
       conv.directHistory = updated;
     }

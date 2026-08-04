@@ -22,6 +22,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
+import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
@@ -233,6 +234,7 @@ export class DirectV2Engine implements Engine {
       // maxTurns 不设限 — Planner 需要充分探查复杂项目,使用全局设置值
       contextMode: conv.contextMode,
       hifiContextBudget: getSettings().hifiContextBudget,
+      policy: resolveEnginePolicy('directV2', conv.contextMode),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -277,6 +279,7 @@ export class DirectV2Engine implements Engine {
         maxTurns: 30,
         contextMode: conv.contextMode,
         hifiContextBudget: getSettings().hifiContextBudget,
+      policy: resolveEnginePolicy('directV2', conv.contextMode),
         onEvent: (ev) => this.forwardEvent(ev, onEvent),
       });
       await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execMessages);
@@ -316,6 +319,7 @@ export class DirectV2Engine implements Engine {
           maxTurns: 30, // 单步上限 30 轮:防止模型陷入循环反复 read_file 同一文件烧 token
           contextMode: conv.contextMode,
           hifiContextBudget: getSettings().hifiContextBudget,
+      policy: resolveEnginePolicy('directV2', conv.contextMode),
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
@@ -459,6 +463,7 @@ export class DirectV2Engine implements Engine {
       // maxTurns 不设限 — Replan 同样需要充分探查
       contextMode: conv.contextMode, // 与 run() 的 planner 保持一致
       hifiContextBudget: getSettings().hifiContextBudget,
+      policy: resolveEnginePolicy('directV2', conv.contextMode),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -508,6 +513,7 @@ export class DirectV2Engine implements Engine {
           maxTurns: 30, // 单步上限 30 轮(与主流程一致)
           contextMode: conv.contextMode,
           hifiContextBudget: getSettings().hifiContextBudget,
+      policy: resolveEnginePolicy('directV2', conv.contextMode),
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
@@ -898,7 +904,7 @@ export class DirectV2Engine implements Engine {
 
   /** Context 压缩(与 v1 共享逻辑)。 */
   // interStepCompact:步骤间压缩 execHistory,防止多步累积导致上下文膨胀。
-  // budget 同 finalizeContext(普通 30K / hifi 40% of hifiBudget)。
+  // P0-1:预算从 ENGINE_POLICIES.directV2.interStepCompactBudget 取,统一收口。
   // 同时在每个步骤完成后追加一条步骤摘要消息,确保后续步骤即使被 trim 也能看到前步结论。
   private async interStepCompact(
     messages: ChatMsg[],
@@ -908,9 +914,9 @@ export class DirectV2Engine implements Engine {
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
-    const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
-    const budget = conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000;
-    return compactHistory(messages, budget, provider, snap, signal, onEvent);
+    const policy = resolveEnginePolicy('directV2', conv.contextMode);
+    // ponytail: 老版本会读 getSettings().hifiContextBudget * 0.4,这里用策略统一(已是 hifi 时翻倍)。
+    return compactHistory(messages, policy.interStepCompactBudget || 20_000, provider, snap, signal, onEvent);
   }
 
   private async finalizeContext(
@@ -921,10 +927,10 @@ export class DirectV2Engine implements Engine {
     signal: AbortSignal,
   ): Promise<void> {
     if (!signal.aborted) {
-      const hifiBudget = getSettings().hifiContextBudget ?? 80_000;
+      const policy = resolveEnginePolicy('directV2', conv.contextMode);
       conv.directHistory = await compactHistory(
         messages,
-        conv.contextMode === 'hifi' ? Math.round(hifiBudget * 0.4) : 30_000,
+        policy.interStepCompactBudget || 20_000,
         provider,
         snap,
         signal,
