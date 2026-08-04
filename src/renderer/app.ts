@@ -1491,8 +1491,6 @@ async function showSettings() {
         </div>
       </div>
 
-      </div>
-
       <div class="s-section">
         <h3>🎙️ 实时语音助手</h3>
         <div class="field-desc" style="color:var(--muted);font-size:12px;margin-bottom:8px">
