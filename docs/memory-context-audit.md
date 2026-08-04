@@ -286,3 +286,338 @@ resolveSpawnHistory(parentHistory, scope):
 10. **FTS5 特殊字符完整转义**：用 `q.replace(/[^a-zA-Z0-9\u4e00-\u9fff\s]/g, ' ')` 只保留字母数字中文空格
 11. **truncateForModel 策略化**：read_file → 头重(60/20)，shell → 尾重(20/60)，默认 → 均衡(37.5/37.5)
 12. **compactHistory 单条消息限长**：transcript 里每条消息截断到 2K，保证至少 5-6 条进入摘要
+
+---
+
+## 八、深度二次审计 — 逐行精读发现的额外问题
+
+> 以下是对全部核心文件逐行精读后新发现的问题，与第一轮审计互补。
+
+### A. V2 Executor 步骤间上下文断层（架构级）
+
+**位置**：`DirectV2Engine.ts:400` + `DirectV2Engine.ts:620`
+
+```ts
+// 主 run() Phase 2:
+execHistory = stepMessages;  // line 400 — 整个 stepMessages 覆盖 execHistory
+
+// replan Phase 2:
+execHistory = stepMessages;  // line 620 — 同样覆盖
+```
+
+**问题**：每个步骤的 `runAgentLoop` 返回的是该步**完整**的 messages（含 system + memory + execHistory + step input + step execution），而 `execHistory = stepMessages` **整体覆盖**。这意味着：
+
+- 步骤 2 的 `execHistory` 包含步骤 1 的全部执行过程（assistant + tool_calls + tool results）+ 步骤 2 的 input + 执行过程
+- 到步骤 5 时，`execHistory` 累积了 4 步完整历史（即使 interStepCompact 压缩了，也只是减缓）
+- **关键遗漏**：步骤 2 的 `execHistory` 里包含了步骤 1 的 `STEP_EXECUTOR_PROMPT`（user 消息），步骤 3 又包含步骤 2 的。模型看到的是一串不连续的"执行阶段"指令，每一个都说"当前步骤 X"，但实际在步骤 Y 的上下文里
+
+**Codex 对比**：Codex 的 StepContext 是每步独立的 — 只传 plan goal + 当前 step description + 前步 summary，不传前步的完整 ReAct 历史。KinetAios 的设计让模型在前步的探查噪声中找当前步的信号。
+
+**建议**：`execHistory = stepMessages` 改为 `execHistory = [...execHistory, ...stepNewMessages]`（只追加增量），或在步骤完成后只保留 summary + 关键 tool results（类似 extractExecEvidence 的思路，但在步骤间而非 Judge 前做）。
+
+### B. memoryBlock 每步重复注入但不累积（设计正确但有浪费）
+
+**位置**：`DirectV2Engine.ts:387`
+
+```ts
+memoryBlock, // 每步都注入长期记忆：dropTransient 会从返回值里剔除
+```
+
+每次 `runAgentLoop` 都注入完整的 memoryBlock（可能 15 条 × 200 字 = 3000 字符）。在 10 步 plan 中，memoryBlock 被 embed 进 10 次 LLM 调用的 prompt（每次 ~3000 tokens），但每次都是**同样的内容**。这对 Anthropic 的 cache_control 有效（cache 命中省钱），但对 GLM 等 OpenAI 协议的 provider 是纯浪费 — 每次 3000 tokens 的 input 多算。
+
+**建议**：V2 步骤间可以只注入"与本步相关的记忆子集"（用 step.description 做 query 检索），而非全量 memoryBlock。或设置一个 `memoryBlockPerStep` 标志，对 ≥5 步的 plan 只在前两步和最后一步注入全量。
+
+### C. V2 退化模式（无 plan）丢失 verifyCommand
+
+**位置**：`DirectV2Engine.ts:318-338`
+
+```ts
+if (!plan || plan.steps.length === 0) {
+  // 简单任务退化为 v1 模式
+  const execMessages = await runAgentLoop({...});
+  await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execMessages);
+  this.finalizeContext(conv, execMessages, provider, snap, signal);
+  onEvent({ type: 'done' });
+  return; // ← 直接 return，不进 Judge
+}
+```
+
+退化模式（无 plan）直接执行 + autoVerify + finalizeContext 后 return，**跳过了 Judge**。这意味着简单任务没有质量验收。虽然 autoVerify 做了 tsc/test 验证，但如果任务不是代码修改（如分析报告生成），autoVerify 不会触发（`hasFileChange` 为 false），任务就以 runAgentLoop 的原始输出为准，没有 Judge。
+
+**影响**：用户问"分析这个 CSV 并生成报告"，模型可能只读了一部分数据就给了答案（maxTurns 到了或模型自认为完成），退化模式不经过 Judge → 质量无保障。
+
+**建议**：退化模式也应该走 Judge（至少做一次轻量判定），或者 autoVerify 不触发时加一个 "answer quality check"。
+
+### D. wasTruncatedByMaxTurns 的假阳性
+
+**位置**：`DirectV2Engine.ts:937-944`
+
+```ts
+private wasTruncatedByMaxTurns(messages: ChatMsg[]): boolean {
+  const last = messages[messages.length - 1];
+  if (last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0)) return false;
+  return true; // tool 消息或带 tool_calls 的 assistant → 截断
+}
+```
+
+**问题**：如果用户 abort 了当前步骤（signal.aborted），`runAgentLoop` 返回 `finalizeAbortedMessages(messages)` — 最后一条是 `{ role: 'assistant', content: '[已中断]' }`。这条消息没有 tool_calls → `wasTruncatedByMaxTurns` 返回 false → 代码继续执行 `extractLastAssistantText` → 提取到 `'[已中断]'` → 步骤被标记 done，result 为 `'[已中断]'`。
+
+但 line 371/594 有 `if (signal.aborted) break` 保护 — 所以这个路径要触发需要 abort 发生在 `runAgentLoop` 返回后、`wasTruncatedByMaxTurns` 调用前的微任务窗口。概率极低但不是零。
+
+**实际更大问题**：`finalizeAbortedMessages` 在 `last.role === 'tool'` 时补了 `'[已中断]'` assistant。但 `wasTruncatedByMaxTurns` 看到的是补了之后的 — 如果补尾逻辑正确执行，最后一条就是 assistant 无 tool_calls → 返回 false → 步骤"完成"了。实际上用户 stop 了，步骤不应该标记 done。
+
+**建议**：在 `wasTruncatedByMaxTurns` 之前加 `if (signal.aborted)` 检查（虽然 for 循环顶部有 break，但在 `runAgentLoop` 返回值赋给 `stepMessages` 之后、break 检查之前的代码块仍然会执行）。
+
+### E. checkpoint 的 history_json 序列化膨胀
+
+**位置**：`DirectV2Engine.ts:468`
+
+```ts
+store.saveV2Checkpoint(conv.id, step.id, JSON.stringify(plan), JSON.stringify(execHistory));
+```
+
+每个步骤完成后将**整个 execHistory** 序列化为 JSON 存入 SQLite。步骤 5 的 checkpoint 包含步骤 1-4 的完整 messages（即使压缩过，可能仍有 20K+ 字符）。10 步 plan 有 10 个 checkpoint（主 run）+ 可能 2 × 10 个（replan），每个 20-50K JSON → **SQLite 单会话 V2 表膨胀到 500K-1MB**。
+
+`clearV2State` 在下次 run 开始时清理，但如果 crash 了就永远不清理（除非用户再次 send）。
+
+**建议**：
+1. checkpoint 只存 plan JSON（轻量），execHistory 不存 — crash recovery 时从 turns 表重建
+2. 或存 execHistory 的 hash + 最后 N 条消息（轻量 resume 所需的最小集）
+3. 加一个启动时清理 >24h 的 V2 checkpoint 的逻辑
+
+### F. Judge 的 default-to-complete 倾向
+
+**位置**：`DirectV2Engine.ts:795-800`
+
+```ts
+// JSON 解析失败 → 默认判定完成(不阻塞用户)
+return { completed: true, reason: 'Judge 响应解析失败,默认判定完成' };
+// ...
+// Judge 出错 → 默认判定完成(不因 Judge 故障阻塞流程)
+return { completed: true, reason: 'Judge 调用失败,默认判定完成' };
+```
+
+两次 fallback 都返回 `completed: true`。这意味着：
+- Judge LLM 返回非 JSON（如纯文本"是的完成了"）→ 判定完成
+- Judge API 调用失败（网络超时、限流）→ 判定完成
+- Judge 的 systemPrompt 里有"严格判定，不要因为模型说完成了就轻信" → 但如果 Judge 自己都调不通，就没有任何质量门禁了
+
+**对比 Codex**：Codex 没有独立 Judge（它的 verify 是命令式的 — 跑 test/build，非零退出码直接 fail）。KinetAios 的 Judge 是 LLM 判定，太容易形同虚设。
+
+**建议**：Judge 解析失败时改为 `completed: false` — 让 replan 接管（宁可多做一轮也不要假完成）。API 失败时可以保持 `completed: true`（不能因为基础设施问题阻塞用户）。或者加一个 `judgeStrictMode` 设置，让用户选择。
+
+### G. extractExecEvidence 的时间采样偏差
+
+**位置**：`DirectV2Engine.ts:965-1007`
+
+```ts
+for (const m of relevant) {
+  // ...
+  if (totalLen > BUDGET) break;  // line 1002 — 到 8000 字符就停
+  parts.push(line);
+}
+```
+
+**问题**：按时间顺序线性扫描，到 8000 字符预算就 break。这意味着：
+- 如果前 3 步的 assistant 回答都很长（每条 600 字符），8000 / 600 ≈ 13 条消息就停
+- 后面步骤（可能是最关键的最终步骤）的证据被完全丢弃
+- Judge 看到的是前步证据，对后步一无所知
+
+**建议**：改为**均匀采样** — 计算每步的 evidence，然后按步骤均分 8000 字符预算（如 10 步 × 800 字符/步）。或改为尾部优先（最后 N 步全保留，前面共享剩余预算）。
+
+### H. compactHistory 的摘要消息角色冲突
+
+**位置**：`AgentLoop.ts:514`
+
+```ts
+return [...memoryMsgs, ...pinnedMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
+```
+
+摘要作为 `role: 'user'` 插入。如果 tail 的第一条也是 `role: 'user'`（如步骤摘要消息），就会出现连续两条 user 消息 — OpenAI 协议虽然允许，但某些模型（尤其 Claude 协议）会报错或表现异常。
+
+V2 场景更容易触发：步骤间 interStepCompact 压缩后插入 `[早期对话摘要]` user 消息，然后 `appendStepSummary` 又插入 `📋 步骤[X] 完成` user 消息 → 两条连续 user。
+
+**建议**：摘要消息改用 `role: 'system'`（但 system 在 dropTransient 会被过滤），或加一个 `_summary: true` 标志，在 dropTransient 时保留但标记为非对话消息。或者直接合入 systemPrompt 的动态部分。
+
+### I. parsePlan 的 ID 冲突风险
+
+**位置**：`DirectV2Engine.ts:728-738`
+
+```ts
+const steps: PlanStep[] = raw.steps.map((s, i) => {
+  const obj = s as Record<string, unknown>;
+  return {
+    id: String(obj.id ?? i + 1),  // ← 如果模型给重复 ID 或不按序
+    // ...
+  };
+});
+```
+
+模型可能生成重复 ID（如两个步骤都叫 "1"），或者 ID 不连续（"1", "3", "5"）。checkpoint saveV2Checkpoint 用 `step.id` 做 `ON CONFLICT(conv_id, step_id)` 的唯一键 — 如果两个步骤 ID 相同，第二个会覆盖第一个的 checkpoint。
+
+**建议**：在 parsePlan 中强制 ID 去重（如 `id: String(obj.id ?? i + 1)` 后检查重复，有重复则追加序号）。
+
+### J. recent-N 兜底全量加载
+
+**位置**：`TaskManager.ts:515`
+
+```ts
+return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
+```
+
+`loadMemories()` 无参数时执行 `SELECT id, content, conversation_id FROM memories ORDER BY created_at DESC` — **全量加载所有记忆到内存**，然后 slice(15)。3172 条记忆 × 平均 50 字符 = ~160K 数据量全量读入再扔掉 99.5%。
+
+**建议**：加 LIMIT：`store.loadMemories(undefined, INJECT_LIMIT)`，或新建 `loadRecentMemories(limit)` 函数。
+
+### K. extractMemories 的 embedding 语义去重 O(N×M) 暴力扫描
+
+**位置**：`TaskManager.ts:591-599`
+
+```ts
+for (let i = 0; i < candidates.length; i++) {
+  const candVec = new Float32Array(candVecs[i]);
+  for (const ex of embeddings) {
+    if (store.cosine(candVec, ex.vec) > 0.85) { isDup = true; break; }
+  }
+}
+```
+
+候选 N 条 × 已有 M 条 embedding → O(N×M) 暴力 cosine。3172 条已有 × 5 条候选 = 15860 次 cosine（每次 1024 维 Float32Array 点积）。虽然单次 cosine 很快（~0.01ms），总计 ~160ms 可接受，但随着记忆增长到 5000+ 条，这个时间会线性增长。
+
+**建议**：优先用 FTS5/Jaccard 预筛（已有），只对预筛通过的候选做 embedding 精排。当前代码已经是这个流程（先 Jaccard > 0.65 过滤再 embedding），所以实际 N 很小。这个问题是"未来隐患"而非当前瓶颈，优先级低。
+
+### L. V2 超时风险：单步 maxTurns=30 + interStepCompact LLM 调用
+
+**位置**：`DirectV2Engine.ts:393` + `DirectV2Engine.ts:1054`
+
+每步 maxTurns=30，每轮一个 LLM 调用 + 可能多次工具执行。假设每轮 3 秒（含网络 + 工具），30 轮 = 90 秒/步。10 步 plan = 15 分钟。加上 interStepCompact 每步一次额外的 LLM 摘要调用（~5 秒/次）+ Judge（~5 秒）+ 可能的 2 次 replan（每次完整执行 + Judge）。
+
+**极端情况**：10 步 × 90 秒 + 10 × compact(5s) + 3 × Judge(5s) + 2 replan × (10步 × 90s + compact + Judge) ≈ 45 分钟。用户可能以为卡死了。
+
+**建议**：
+1. 加一个全局超时（如 10 分钟），到时间优雅终止 + 保存 checkpoint
+2. interStepCompact 的 LLM 调用加 15 秒超时（当前用 provider 的 signal，但没有独立 timeout）
+3. 步骤间发 status 事件报告进度（"步骤 3/10，已用 4 分钟"）
+
+### M. dispatch_agent 子 agent sandbox 绕过（安全漏洞）
+
+**位置**：`DirectV2Engine.ts:1178`
+
+```ts
+ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
+// ← 没有 sandbox 字段
+```
+
+`sandboxCheck` 逻辑：`if (!sandbox || sandbox === 'fullAccess') return null`。ctx.sandbox 为 undefined → `!sandbox` 为 true → **直接放行，不检查路径**。
+
+子 agent 拿到 `readOnlyTools()`（含 read_file），ctx 无 sandbox → 可读取 **cwd 外任意文件**（`~/.ssh/id_rsa`、`/etc/passwd`）。虽然子 agent 是 LLM 驱动，但 prompt injection（web_fetch/read_file 读到的恶意内容）可能诱导读取敏感文件。
+
+v1 DirectEngine 和 V2 主 ctx 都设了 `sandbox: getSettings().sandbox`，但 dispatch_agent 的 spawn 路径**漏了**。
+
+**建议**：`ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const }`。
+
+### N. V2 退化模式不传 policy
+
+**位置**：`DirectV2Engine.ts:319-334`
+
+退化模式（无 plan 直接执行）的 `runAgentLoop` 调用没有传 `policy` 字段。`runAgentLoop` 里 `trimBudget = opts.policy?.trimBudget ?? 15_000` → 退化模式用默认 15K（而非 V2 的 30K），truncateThreshold 也退化为 8K（而非 V2 的 6K）。
+
+退化模式的上下文管理比正常 V2 模式**更激进**，行为不一致。
+
+**建议**：加 `policy: resolveEnginePolicy('directV2', conv.contextMode)`。
+
+### O. compactHistory 摘要 + interStepCompact 摘要 + appendStepSummary 三重叠加
+
+V2 多步执行中 execHistory 可能同时存在三种压缩消息：
+
+1. `[早期对话摘要]...` — compactHistory/interStepCompact 产生
+2. `📋 步骤[X] 完成...` — appendStepSummary 产生  
+3. `[早期对话摘要]...` — 下一次 interStepCompact 又产生一条
+
+到步骤 8 时，execHistory 可能长这样：
+```
+[早期对话摘要] 步骤1-3 的摘要...
+📋 步骤[3] 完成: 结果摘要...
+[早期对话摘要] 步骤4-6 的摘要(包含上面的摘要)...
+📋 步骤[6] 完成: 结果摘要...
+📋 步骤[7] 完成: 结果摘要...
+```
+
+摘要的摘要 — 信息损失指数级增长。步骤 1 的关键产出经过两次摘要后可能只剩模糊关键词。
+
+**建议**：interStepCompact 改为**替换式** — 压缩后删掉旧的 `[早期对话摘要]` 消息，只保留最新的。
+
+### P. V2 多步 plan 的 cost 事件风暴
+
+每步 `runAgentLoop` 会发 `cost` 事件（每轮 LLM 调用一个）。10 步 plan × 平均 15 轮/步 = 150 个 cost 事件。加上 interStepCompact（10 个）、Judge（3 个）、Planner（1 个）、replan（可能 20+ 个）→ 总计 ~200 个 cost 事件。
+
+UI 如果对每个 cost 事件做重渲染（更新成本看板），会有性能问题。`forwardEvent` 只拦截 done/error，cost 全透传。
+
+**建议**：forwardEvent 对 cost 事件做节流（500ms 内只转发最后一个）。
+
+### Q. parsePlan ID 冲突导致 checkpoint 覆盖
+
+**位置**：`DirectV2Engine.ts:731` + `store.ts:521`
+
+模型可能生成重复 step ID（两个步骤都叫 "1"）。`saveV2Checkpoint` 用 `ON CONFLICT(conv_id, step_id) DO UPDATE` → 第二个同 ID 步骤的 checkpoint **覆盖**第一个。crash recovery 时只恢复到最后一个同 ID 步骤。
+
+**建议**：parsePlan 中强制 ID 去重。
+
+### R. Judge default-to-complete 倾向
+
+**位置**：`DirectV2Engine.ts:795-800`
+
+Judge 的两个 fallback 都返回 `completed: true`。LLM 返回非 JSON → 判定完成。API 调用失败 → 判定完成。Judge 形同虚设。
+
+**建议**：JSON 解析失败改为 `completed: false`（让 replan 接管，宁可多做一轮）。
+
+---
+
+## 九、全量问题汇总（按优先级排序）
+
+### P0 — 影响核心功能 / 安全
+
+| # | 问题 | 位置 | 影响 |
+|---|------|------|------|
+| 12 | reactive trim 只重试一次,第二次丢失 turn | AgentLoop.ts:86 | 用户对话丢失 |
+| 14 | crash recovery 恢复的 execHistory 不 trim | DirectV2Engine.ts:262 | 恢复后立即超长 |
+| 15 | replan 破坏 P0-3 隔离 | DirectV2Engine.ts:570 | Executor 上下文膨胀 |
+| A | V2 步骤间 execHistory 整体覆盖(非增量追加) | DirectV2Engine.ts:400/620 | 步骤间上下文累积爆炸 |
+| M | dispatch_agent 子 agent sandbox 绕过 | DirectV2Engine.ts:1178 | 安全漏洞:可读 cwd 外文件 |
+
+### P1 — 影响质量 / 一致性
+
+| # | 问题 | 位置 | 影响 |
+|---|------|------|------|
+| 13 | interStepCompact fingerprint 太粗(条数+长度) | DirectV2Engine.ts:1047 | 跳过该做的压缩 |
+| 6 | recall_memory 阈值 0.2 ≠ memoryBlock 阈值 0.25 | tools.ts:682 vs TaskManager.ts:488 | 召回不一致 |
+| 3 | memoryBlock query 不含 assistant 回答 | TaskManager.ts:449 | 短 prompt 检索失效 |
+| 17 | tokenCoef 全局共享 | AgentLoop.ts:369 | 并发会话互相干扰 |
+| 20 | last_n_turns 按条数非轮次切分 | engines.ts | 子 agent 上下文不完整 |
+| C | 退化模式(无 plan)跳过 Judge | DirectV2Engine.ts:337 | 简单任务无质量门禁 |
+| G | extractExecEvidence 时间采样偏差(前步占满预算) | DirectV2Engine.ts:1002 | Judge 看不到后步证据 |
+| N | 退化模式不传 policy(降级为 direct 策略) | DirectV2Engine.ts:332 | 行为不一致 |
+| O | 摘要三重叠加(摘要的摘要) | AgentLoop.ts:514 + DirectV2Engine.ts:463 | 信息损失指数增长 |
+| R | Judge default-to-complete | DirectV2Engine.ts:795 | Judge 形同虚设 |
+
+### P2 — 可优化 / 未来隐患
+
+| # | 问题 | 位置 | 影响 |
+|---|------|------|------|
+| 1 | extraction 只看 answer 前 2000 字符 | TaskManager.ts:538 | 长回答记忆丢失 |
+| 7 | recall_memory FTS5 重排每次实时 embed 30 条 | tools.ts:727 | 延迟开销 |
+| 8 | FTS5 特殊字符转义不完整 | tools.ts:718 | 复杂查询报错 |
+| 9 | FTS5/recent-N 路径不 touchMemoryUsed | tools.ts | 常用记忆被误衰减 |
+| 10 | decayMemories 无定时器 | store.ts | 记忆只增不减 |
+| 11 | truncateForModel 头尾比例硬编码 | AgentLoop.ts:582 | 截断策略单一 |
+| 18 | compactHistory transcript 单条可能占满 12K | AgentLoop.ts:485 | 摘要质量差 |
+| 19 | 多次 compact 累积重复摘要消息 | AgentLoop.ts:514 | 上下文浪费 |
+| B | V2 每步注入全量 memoryBlock(3000+ tokens × N步) | DirectV2Engine.ts:387 | GLM 协议下纯浪费 |
+| D | wasTruncatedByMaxTurns + abort 竞态(概率极低) | DirectV2Engine.ts:937 | 步骤误判 done |
+| E | checkpoint history_json 序列化膨胀 | DirectV2Engine.ts:468 | SQLite 膨胀 |
+| H | compactHistory 摘要消息 role:'user' 可能连续两条 user | AgentLoop.ts:514 | Claude 协议可能报错 |
+| J | recent-N 兜底全量加载 memories | TaskManager.ts:515 | 性能浪费 |
+| K | embedding 去重 O(N×M) 暴力扫描 | TaskManager.ts:591 | 未来隐患 |
+| L | V2 超时风险(10步plan最坏45分钟) | DirectV2Engine.ts | 用户以为卡死 |
+| P | cost 事件风暴(200+ 事件/plan) | DirectV2Engine.ts | UI 性能 |
+| Q | parsePlan ID 冲突导致 checkpoint 覆盖 | DirectV2Engine.ts:731 | crash recovery 丢步 |
