@@ -380,6 +380,10 @@ export class DirectV2Engine implements Engine {
       let stepDone = false;
       let verifyApproved = false; // 同一步骤首次 confirm 后记住,重试不再弹窗
       let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
+      // P0-B: 记录步骤开始时的 execHistory 长度,用于成功后精确截取增量。
+      // 重试失败的中间过程(大量工具调用+错误结果)不应永久追加到 execHistory ——
+      // 否则后续重试的上下文会被上一次失败的完整 ReAct 历史撑爆。
+      const stepStartLen = execHistory.length;
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
 
@@ -400,13 +404,6 @@ export class DirectV2Engine implements Engine {
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
-        // P0-A: 只追加本步的增量消息,而非整体覆盖 execHistory。
-        // runAgentLoop 返回 dropTransient([system, memMsg, ...history, userInput, ...reactTurns])
-        // = [...history, userInput, ...reactTurns]。history 前缀 == 传入的 execHistory,
-        // 所以增量 = stepMessages.slice(execHistory.length)。整体覆盖会导致步骤 5 的 execHistory
-        // 包含步骤 1-4 的完整 ReAct 历史(assistant + tool_calls + tool results),上下文累积爆炸。
-        const newMessages = stepMessages.slice(execHistory.length);
-        execHistory = [...execHistory, ...newMessages];
         // 检测 maxTurns 截断:runAgentLoop 到达上限时 forwardEvent 吞了 error 事件,
         // 返回值尾部是 tool 消息(非正常完成)。此时模型可能没做完 → 标记失败让重试。
         const truncated = this.wasTruncatedByMaxTurns(stepMessages);
@@ -446,6 +443,15 @@ export class DirectV2Engine implements Engine {
           step.result = stepAnswer.slice(0, stepFullChars);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        }
+
+        // P0-B: 只有步骤成功才把增量追加到 execHistory。
+        // 失败/截断的重试中间过程(大量工具调用 + 错误结果)不追加 —— 否则后续重试的上下文
+        // 会被上一次失败的完整 ReAct 历史撑爆(3 次重试 = 3 倍失败历史累积)。
+        // 失败时重试仍能看到 step.result(验证失败原因/截断说明)通过 retryNote 传入。
+        if (stepDone) {
+          const newMessages = stepMessages.slice(stepStartLen);
+          execHistory = [...execHistory, ...newMessages];
         }
       }
 
@@ -615,6 +621,8 @@ ${failedDetail || '  (无)'}
       let stepDone = false;
       let verifyApproved = false;
       let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
+      // P0-B: 同主流程,记录步骤开始时的 execHistory 长度,成功后才追加增量。
+      const stepStartLen = execHistory.length;
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
         const stepMessages = await runAgentLoop({
@@ -634,9 +642,6 @@ ${failedDetail || '  (无)'}
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
-        // P0-A: replan 路径同样只追加增量,而非整体覆盖。
-        const newMessagesReplan = stepMessages.slice(execHistory.length);
-        execHistory = [...execHistory, ...newMessagesReplan];
         const truncated = this.wasTruncatedByMaxTurns(stepMessages);
         const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
         goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
@@ -670,6 +675,12 @@ ${failedDetail || '  (无)'}
           step.result = stepAnswer.slice(0, stepFullChars);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        }
+
+        // P0-B: 只有步骤成功才把增量追加到 execHistory(同主流程)。
+        if (stepDone) {
+          const newMessagesReplan = stepMessages.slice(stepStartLen);
+          execHistory = [...execHistory, ...newMessagesReplan];
         }
       }
 
@@ -1058,12 +1069,13 @@ ${failedDetail || '  (无)'}
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
     const policy = resolveEnginePolicy('directV2', conv.contextMode);
-    // P0-2: fingerprint = 消息条数 + 最后一条消息 content 前 200 字符的简单 hash。
-    // 不用完整 hash(大消息算 hash 也费 CPU) — 只要能区分「变没变」就行。
+    // P0-2: fingerprint = 消息条数 + 最后一条消息 content 前 200 字符的实际内容。
+    // 旧版用 lastContent.length 做 hash → 碰撞率极高(不同内容长度相同就误判"没变",跳过压缩)。
+    // 修复:直接用 content 前 200 字符的文本做 fingerprint,不用 hash 函数(省 CPU 且无碰撞)。
     const lastContent = typeof messages.at(-1)?.content === 'string'
       ? (messages.at(-1)!.content as string).slice(0, 200)
       : '';
-    const fingerprint = `${messages.length}:${lastContent.length}`;
+    const fingerprint = `${messages.length}:${lastContent}`;
     if (fingerprint === this.lastCompactFingerprint) {
       // history 没变 → 跳过(上一步刚压缩过,这步没新消息)
       return messages;
