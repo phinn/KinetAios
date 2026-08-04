@@ -474,10 +474,15 @@ export class DirectV2Engine implements Engine {
       // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
         execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // P0-1: 追加结构化摘要消息(用 stepMaxChars 截短 → 给模型看精简版,完整版在 PlanStep.result)。
+        // P0-C: 摘要消息必须区分成功/失败 — 旧版无脑写"完成",
+        // 失败步骤也显示"📋 步骤[X] 完成"→ 后续步骤误以为前步成功,依赖失败的产出。
+        const summaryTag = stepDone ? '✅ 完成' : '❌ 失败';
+        const summaryResult = stepDone
+          ? (step.result ?? '(无)').slice(0, stepMaxChars)
+          : `失败: ${(step.result ?? '(无)').slice(0, stepMaxChars)}`;
         execHistory.push({
           role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${(step.result ?? '(无)').slice(0, stepMaxChars)}\n---\n`,
+          content: `\n---\n📋 步骤[${step.id}] ${summaryTag}: ${step.title}\n结果: ${summaryResult}\n---\n`,
         });
         // P2-1: 逐步持久化 checkpoint — crash 后可 resume。
         store.saveV2Checkpoint(conv.id, step.id, JSON.stringify(plan), JSON.stringify(execHistory));
@@ -701,10 +706,14 @@ ${failedDetail || '  (无)'}
       // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
         execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // P0-1: 追加摘要消息用 stepMaxChars 截短(完整版在 PlanStep.result)。
+        // P0-C: 同主流程,摘要区分成功/失败。
+        const summaryTag = stepDone ? '✅ 完成' : '❌ 失败';
+        const summaryResult = stepDone
+          ? (step.result ?? '(无)').slice(0, stepMaxChars)
+          : `失败: ${(step.result ?? '(无)').slice(0, stepMaxChars)}`;
         execHistory.push({
           role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${(step.result ?? '(无)').slice(0, stepMaxChars)}\n---\n`,
+          content: `\n---\n📋 步骤[${step.id}] ${summaryTag}: ${step.title}\n结果: ${summaryResult}\n---\n`,
         });
         // P2-1: 逐步持久化 checkpoint。
         store.saveV2Checkpoint(conv.id, `replan${replanCount}_${step.id}`, JSON.stringify(newPlan), JSON.stringify(execHistory));
