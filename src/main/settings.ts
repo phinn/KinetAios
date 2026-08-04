@@ -48,6 +48,7 @@ const DEFAULTS: AppSettings = {
     voiceType: 'zh_female_vv_jupiter_bigtts',
     enable: false,
   },
+  minimaxApiKey: '', // MiniMax 文生视频 API Key(留空 = 未配置)
 };
 
 let cache: AppSettings | null = null;
@@ -69,6 +70,7 @@ export function getSettings(): AppSettings {
     };
     s.apiKey = decryptIfEnc(s.apiKey);
     s.embedApiKey = decryptIfEnc(s.embedApiKey);
+    s.minimaxApiKey = decryptIfEnc(s.minimaxApiKey);
     // voiceChat.accessToken 也加密存储 / also encrypted at rest
     if (s.voiceChat) {
       s.voiceChat.accessToken = decryptIfEnc(s.voiceChat.accessToken);
@@ -90,6 +92,9 @@ export function saveSettings(s: AppSettings): void {
   }
   if (s.embedApiKey && safeStorage.isEncryptionAvailable()) {
     toWrite.embedApiKey = '@enc:' + safeStorage.encryptString(s.embedApiKey).toString('base64');
+  }
+  if (s.minimaxApiKey && safeStorage.isEncryptionAvailable()) {
+    toWrite.minimaxApiKey = '@enc:' + safeStorage.encryptString(s.minimaxApiKey).toString('base64');
   }
   // voiceChat.accessToken 加密 / encrypt voiceChat access token
   if (s.voiceChat?.accessToken && safeStorage.isEncryptionAvailable()) {

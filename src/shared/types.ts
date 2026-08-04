@@ -186,6 +186,8 @@ export type AppSettings = {
   // ── 实时语音助手(豆包实时语音大模型)── WebSocket 双向音频流,实时说话→实时回复。
   // 配置火山引擎实时语音 API 凭据和音色。
   voiceChat: VoiceChatConfig;
+  // ── MiniMax 文生视频 API Key ── 留空 = 工具调用时提示用户去设置。
+  minimaxApiKey: string;
 };
 
 // 实时语音配置 / Realtime voice chat config (Volcengine / Doubao realtime voice API)

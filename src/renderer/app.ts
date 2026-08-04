@@ -1948,6 +1948,14 @@ async function showSettings() {
         </select></div>
       </div>
 
+      <div class="s-section">
+        <h3>MiniMax 文生视频</h3>
+        <div class="s-hint" style="margin-bottom:12px">
+          配置 <a href="https://platform.minimaxi.com" target="_blank">MiniMax 开放平台</a> API Key 后,Agent 可通过 <code>video_gen</code> 工具自主调用 H3 模型生成视频。密钥经系统级加密存储。
+        </div>
+        <div class="field"><label>MiniMax API Key</label><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="MiniMax → 账户管理 > 接口密钥" /></div>
+      </div>
+
       </div><!-- /advanced panel -->
 
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
@@ -2713,6 +2721,7 @@ function readSettingsForm(): AppSettings {
         'zh_female_vv_jupiter_bigtts',
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
+    minimaxApiKey: (document.getElementById('s-minimax-key') as HTMLInputElement).value.trim(),
   };
 }
 

@@ -1205,8 +1205,161 @@ const teamClose: Tool = {
   },
 };
 
+// ── MiniMax 文生视频(H3 模型)──
+// 异步任务:创建 → 轮询 → 返回视频 URL。
+// API Key 从 settings.minimaxApiKey 获取。
+// MiniMax text-to-video (H3 model) — async task: create → poll → return video URL.
+const MINIMAX_API_BASE = 'https://api.minimaxi.com';
+const VIDEO_POLL_INTERVAL_MS = 5_000;  // 每 5 秒查询一次 / poll every 5s
+const VIDEO_MAX_POLL_MS = 180_000;     // 最长等 3 分钟 / max wait 3 min
+
+const videoGen: Tool = {
+  name: 'video_gen',
+  description: '使用 MiniMax H3 模型生成视频(文生视频)。输入文字描述,返回视频下载链接。需要先在设置中配置 MiniMax API Key。支持 2K/1080P 分辨率,5-15 秒时长,支持 16:9/9:16/1:1 等比例。',
+  parameters: {
+    type: 'object',
+    properties: {
+      prompt: {
+        type: 'string',
+        description: '视频内容描述(中文/英文均可,建议详细描述场景、人物、动作、镜头语言)',
+      },
+      resolution: {
+        type: 'string',
+        enum: ['2K', '1080P'],
+        description: '分辨率(默认 1080P)。2K 画质更好但更慢更贵。',
+      },
+      duration: {
+        type: 'number',
+        description: '视频时长秒数(可选值:4-15,默认 5)',
+      },
+      ratio: {
+        type: 'string',
+        enum: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+        description: '宽高比(默认 16:9)',
+      },
+    },
+    required: ['prompt'],
+  },
+  async run(args, ctx) {
+    const { getSettings } = await import('./settings');
+    const settings = getSettings();
+    const apiKey = settings.minimaxApiKey;
+
+    if (!apiKey) {
+      return '❌ MiniMax API Key 未配置。请在设置 → MiniMax API Key 中填入你的密钥(获取地址: https://platform.minimaxi.com → 账户管理 > 接口密钥)。';
+    }
+
+    const prompt = String(args.prompt ?? '').trim();
+    if (!prompt) return '请提供视频内容描述(prompt)。';
+
+    const resolution = String(args.resolution ?? '1080P');
+    const duration = Number(args.duration ?? 5);
+    const ratio = String(args.ratio ?? '16:9');
+    const signal = ctx?.signal ?? AbortSignal.timeout(VIDEO_MAX_POLL_MS);
+
+    // ── Step 1: 创建视频生成任务 / Create video generation task ──
+    let taskId: string;
+    try {
+      const resp = await fetch(`${MINIMAX_API_BASE}/v2/video_generation`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'MiniMax-H3',
+          content: [{ type: 'text', text: prompt }],
+          resolution,
+          duration,
+          ratio,
+        }),
+        signal,
+      });
+
+      if (!resp.ok) {
+        const errBody = await resp.text().catch(() => '');
+        let errMsg = errBody;
+        try { errMsg = JSON.parse(errBody)?.error?.message ?? errBody; } catch { /* keep raw */ }
+        return `❌ 创建视频任务失败 (HTTP ${resp.status}): ${errMsg.slice(0, 300)}`;
+      }
+
+      const data = await resp.json() as { task_id?: string };
+      taskId = data.task_id ?? '';
+      if (!taskId) {
+        return `❌ 创建视频任务成功但未返回 task_id。响应: ${JSON.stringify(data).slice(0, 300)}`;
+      }
+    } catch (e) {
+      return `❌ 创建视频任务网络错误: ${sanitizeError(e)}`;
+    }
+
+    // ── Step 2: 轮询任务状态 / Poll task status ──
+    const deadline = Date.now() + VIDEO_MAX_POLL_MS;
+    let lastStatus = '';
+
+    while (Date.now() < deadline) {
+      if (signal.aborted) return `⏹ 视频生成已取消(task_id: ${taskId})`;
+
+      await new Promise(r => setTimeout(r, VIDEO_POLL_INTERVAL_MS));
+      if (signal.aborted) return `⏹ 视频生成已取消(task_id: ${taskId})`;
+
+      try {
+        const resp = await fetch(`${MINIMAX_API_BASE}/v2/query/video_generation/${taskId}`, {
+          headers: { 'Authorization': `Bearer ${apiKey}` },
+          signal,
+        });
+
+        if (!resp.ok) {
+          // 临时错误,继续等
+          continue;
+        }
+
+        const data = await resp.json() as {
+          task?: {
+            status: string;
+            content?: { url?: string };
+            resolution?: string;
+            duration?: number;
+            ratio?: string;
+            usage?: { total_seconds?: number };
+          };
+        };
+
+        const task = data.task;
+        if (!task) continue;
+        const status = task.status;
+
+        if (status !== lastStatus) {
+          lastStatus = status;
+        }
+
+        if (status === 'succeeded') {
+          const url = task.content?.url ?? '';
+          if (!url) return `✅ 视频生成成功但未返回 URL(task_id: ${taskId})`;
+          const meta = [
+            task.resolution && `分辨率: ${task.resolution}`,
+            task.duration && `时长: ${task.duration}s`,
+            task.ratio && `比例: ${task.ratio}`,
+          ].filter(Boolean).join(' · ');
+          return `✅ 视频生成成功!\n📊 ${meta}\n🔗 视频链接(有效期有限,请及时下载):\n${url}\n\n📌 task_id: ${taskId}`;
+        }
+
+        if (status === 'failed') {
+          return `❌ 视频生成失败(task_id: ${taskId})。可能原因:内容审核未通过 / 服务内部错误。`;
+        }
+
+        // queued / running → 继续等待
+      } catch {
+        // 网络抖动,继续等
+      }
+    }
+
+    // 超时但任务可能仍在后台运行
+    return `⏳ 视频生成超时(已等 ${VIDEO_MAX_POLL_MS / 1000}s)。任务仍在后台运行,task_id: ${taskId}。\n稍后可用以下 curl 查询:\ncurl -H "Authorization: Bearer ${apiKey.slice(0, 6)}..." ${MINIMAX_API_BASE}/v2/query/video_generation/${taskId}`;
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
