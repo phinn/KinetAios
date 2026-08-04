@@ -643,7 +643,7 @@ function updateMemberCardPartial(liveKey: string, text: string): void {
 
 /** 手动给 member 发消息 */
 async function teamSendToMember(teamId: string, memberName: string): Promise<void> {
-  const message = prompt(`发给 ${memberName}:`);
+  const message = await showInputOverlay(`发给 ${memberName}`, '输入消息...');
   if (!message) return;
   // 清空 live status
   teamLiveStatus.set(`${teamId}/${memberName}`, { status: 'running', partial: '' });
@@ -659,7 +659,7 @@ async function teamSendToMember(teamId: string, memberName: string): Promise<voi
 
 /** 广播消息 */
 async function teamBroadcast(teamId: string): Promise<void> {
-  const message = prompt('广播消息:');
+  const message = await showInputOverlay('广播消息', '输入广播消息...');
   if (!message) return;
   // 清空所有 member 的 live status
   const members = teamMembers.get(teamId) ?? [];
@@ -678,29 +678,111 @@ async function teamBroadcast(teamId: string): Promise<void> {
 
 /** 删除 team */
 async function teamDelete(teamId: string): Promise<void> {
-  if (!confirm('确认删除这个 Team?所有 member 数据将被清除。')) return;
-  await api.deleteTeamById(teamId);
-  await refreshTeamPane();
+  // Electron confirm 也可能不工作,用自建 overlay
+  let overlay = document.querySelector<HTMLDivElement>('#team-confirm-overlay');
+  if (overlay) overlay.remove();
+  overlay = document.createElement('div');
+  overlay.id = 'team-confirm-overlay';
+  overlay.className = 'git-dialog-overlay';
+  overlay.innerHTML = `
+    <div class="git-dialog">
+      <div class="git-dialog-title">确认删除</div>
+      <div style="font-size:13px;color:var(--text-dim);padding:8px 0;">删除这个 Team?所有 member 数据将被清除。</div>
+      <div class="git-dialog-actions">
+        <button class="gd-cancel">取消</button>
+        <button class="gd-ok">删除</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const cancelBtn = overlay.querySelector<HTMLButtonElement>('.gd-cancel')!;
+  const okBtn = overlay.querySelector<HTMLButtonElement>('.gd-ok')!;
+  let done = false;
+  const finish = (val: boolean) => { if (done) return; done = true; overlay!.remove(); if (val) void doDelete(); };
+  cancelBtn.onclick = () => finish(false);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+  okBtn.onclick = () => finish(true);
+  requestAnimationFrame(() => overlay!.classList.add('show'));
+  async function doDelete() {
+    await api.deleteTeamById(teamId);
+    await refreshTeamPane();
+  }
 }
 
-/** 新建 team 弹窗 */
+/** 新建 team 弹窗(Electron 不支持原生 prompt,用自定义 modal)*/
 function showTeamCreateDialog(): void {
-  const input = prompt('输入成员(格式:name1:role1, name2:role2):\n例如:explorer:代码探查, reviewer:架构评审');
-  if (!input) return;
-  const members: Array<{ name: string; role: string }> = [];
-  for (const part of input.split(',')) {
-    const [name, role] = part.trim().split(':').map(s => s?.trim());
-    if (name && role) members.push({ name, role });
-  }
-  if (members.length === 0 || !selectedId) {
-    alert('格式错误或未选择会话');
-    return;
-  }
-  void (async () => {
+  let overlay = document.querySelector<HTMLDivElement>('#team-create-overlay');
+  if (overlay) { overlay.classList.add('show'); return; }
+  overlay = document.createElement('div');
+  overlay.id = 'team-create-overlay';
+  overlay.className = 'git-dialog-overlay';
+  overlay.innerHTML = `
+    <div class="git-dialog">
+      <div class="git-dialog-title">新建 Agent Team</div>
+      <textarea id="team-create-input" placeholder="输入成员(格式:name1:role1, name2:role2)&#10;例如:explorer:代码探查, reviewer:架构评审" rows="4" autofocus></textarea>
+      <div class="git-dialog-actions">
+        <button class="gd-cancel">取消</button>
+        <button class="gd-ok" disabled>创建</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const ta = overlay.querySelector<HTMLTextAreaElement>('#team-create-input')!;
+  const okBtn = overlay.querySelector<HTMLButtonElement>('.gd-ok')!;
+  const cancelBtn = overlay.querySelector<HTMLButtonElement>('.gd-cancel')!;
+  ta.addEventListener('input', () => { okBtn.disabled = !ta.value.trim(); });
+  const close = () => { overlay!.classList.remove('show'); ta.value = ''; okBtn.disabled = true; };
+  cancelBtn.onclick = close;
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  okBtn.onclick = async () => {
+    const input = ta.value.trim();
+    if (!input) return;
+    const members: Array<{ name: string; role: string }> = [];
+    for (const part of input.split(',')) {
+      const [name, role] = part.trim().split(':').map(s => s?.trim());
+      if (name && role) members.push({ name, role });
+    }
+    if (members.length === 0 || !selectedId) { alert('格式错误或未选择会话'); return; }
+    close();
     const r = await api.createTeam(selectedId, members);
     if (!r.ok || !r.team_id) { alert(r.error ?? '创建失败'); return; }
     await refreshTeamPane();
-  })();
+  };
+  requestAnimationFrame(() => { overlay!.classList.add('show'); ta.focus(); });
+}
+
+/** 通用输入弹窗(替代 Electron 不可用的 prompt)*/
+function showInputOverlay(title: string, placeholder: string): Promise<string | null> {
+  return new Promise(resolve => {
+    const overlay = document.createElement('div');
+    overlay.className = 'git-dialog-overlay';
+    overlay.innerHTML = `
+      <div class="git-dialog">
+        <div class="git-dialog-title">${escapeHtml(title)}</div>
+        <textarea id="team-input-field" placeholder="${escapeHtml(placeholder)}" rows="3" autofocus></textarea>
+        <div class="git-dialog-actions">
+          <button class="gd-cancel">取消</button>
+          <button class="gd-ok" disabled>发送</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const ta = overlay.querySelector<HTMLTextAreaElement>('#team-input-field')!;
+    const okBtn = overlay.querySelector<HTMLButtonElement>('.gd-ok')!;
+    const cancelBtn = overlay.querySelector<HTMLButtonElement>('.gd-cancel')!;
+    ta.addEventListener('input', () => { okBtn.disabled = !ta.value.trim(); });
+    let done = false;
+    const finish = (val: string | null) => {
+      if (done) return; done = true;
+      overlay.remove();
+      resolve(val);
+    };
+    cancelBtn.onclick = () => finish(null);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+    ta.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!okBtn.disabled) okBtn.click(); }
+      if (e.key === 'Escape') finish(null);
+    });
+    okBtn.onclick = () => finish(ta.value.trim() || null);
+    requestAnimationFrame(() => { overlay.classList.add('show'); ta.focus(); });
+  });
 }
 
 // 暴露到 window 供 inline onclick 调用
