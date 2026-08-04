@@ -64,16 +64,15 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     stepResultMaxChars: 0,
     subAgentScope: 'none',
   },
-  // v2 DirectV2:Plan-Verify 多步累积,plan 上下文必须留住,工具结果放更多。
-  // interStepCompactBudget=40000:GLM-4.6 支持 128K 窗口,40K 预算让 4-5 步完整保留不被压缩。
-  // 旧值 20K 太保守——跑到第 3-4 步就开始压缩,丢失中间步骤的完整推理链。
+  // v2 DirectV2:Plan-Verify 多步累积。这里的值仅作 fallback —— 实际预算由
+  // resolveEnginePolicy 根据 v2ModelWindow * v2BudgetRatio 动态计算(见下方)。
   directV2: {
-    trimBudget: 40_000,
-    interStepCompactBudget: 40_000,
-    truncateThreshold: 8000,
+    trimBudget: 80_000,
+    interStepCompactBudget: 80_000,
+    truncateThreshold: 12_000,
     appendStepSummary: true,
-    stepSummaryMaxChars: 500,
-    stepResultMaxChars: 4000,
+    stepSummaryMaxChars: 800,
+    stepResultMaxChars: 6000,
     subAgentScope: 'last_n_turns',
   },
   // Claude Code / Codex:外部 CLI 各自管自己的 context,这里只给个保底值(目前未触发)。
@@ -97,16 +96,51 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
   },
 };
 
+// v2 动态预算计算:根据用户配置的模型窗口大小和预算比例,算出 trim/compact/truncate 阈值。
+// 这样切换模型(GLM-4.6 128K → GLM-5.2 1M)只需改设置,不用改代码。
+// 默认:1M 窗口 * 8% = 80K trim/compact 预算,hifi 翻倍到 160K。
+export const V2_DEFAULT_MODEL_WINDOW = 1_000_000;
+export const V2_DEFAULT_BUDGET_RATIO = 0.08;
+
+export function v2BudgetFromWindow(modelWindow: number, ratio: number): { trim: number; compact: number; truncate: number } {
+  const trim = Math.floor(modelWindow * ratio);
+  return {
+    trim,
+    compact: trim,                         // trim 和 compact 保持一致(同一个预算池)
+    truncate: Math.floor(trim * 0.15),      // 单条工具结果 = 总预算的 15%
+  };
+}
+
 /**
  * 把 EngineContextPolicy + ContextMode 合成最终生效的策略。
  * hifi 模式:trimBudget / truncateThreshold 翻倍;appendStepSummary / stepSummaryMaxChars / subAgentScope 不动。
  * 让用户能"加预算"但不破坏 v2 的策略设计。
+ *
+ * directV2 特殊处理:trim/compact/truncate 由 v2ModelWindow * v2BudgetRatio 动态计算,
+ * 覆盖 ENGINE_POLICIES 里的 fallback 值。其他 engine 仍走静态策略。
  */
 export function resolveEnginePolicy(
   engine: EngineKind,
   mode: ContextMode | undefined,
+  v2ModelWindow?: number,
+  v2BudgetRatio?: number,
 ): EngineContextPolicy {
   const base = ENGINE_POLICIES[engine] || ENGINE_POLICIES.direct;
+
+  // directV2:动态预算
+  if (engine === 'directV2' && v2ModelWindow) {
+    const ratio = v2BudgetRatio ?? V2_DEFAULT_BUDGET_RATIO;
+    const { trim, compact, truncate } = v2BudgetFromWindow(v2ModelWindow, ratio);
+    const hifiMul = mode === 'hifi' ? 2 : 1;
+    return {
+      ...base,
+      trimBudget: trim * hifiMul,
+      interStepCompactBudget: compact * hifiMul,
+      truncateThreshold: truncate * hifiMul,
+    };
+  }
+
+  // 其他 engine:静态策略 + hifi 翻倍
   if (mode === 'hifi') {
     return {
       ...base,
@@ -187,6 +221,10 @@ export type AppSettings = {
   // ── 高保真模式上下文预算(token)── 控制高保真模式的 reactive trim / compactHistory 预算上限。
   // 默认 200000(GLM-5.2 有 1M 窗口,留余量给 system prompt + 多轮对话)。
   hifiContextBudget: number;
+  // ── V2 引擎上下文配置 ── 根据模型窗口大小动态计算 trim/compact 预算。
+  // 切换模型时只需改这里,不用改代码。默认适配 GLM-5.2 的 1M 窗口。
+  v2ModelWindow: number;     // 模型上下文窗口大小(token)。默认 1000000(GLM-5.2)。GLM-4.6 = 128000。
+  v2BudgetRatio: number;     // V2 预算比例(占窗口的百分比,0-1)。默认 0.08(8%)。trim/compact = window * ratio。
   // ── 替身画像(Persona)── 从历史对话中提取的用户做事风格 Markdown 文本。
   // 替身模式开启后注入 Direct 引擎 systemPrompt,让 AI 模仿用户风格自主执行任务。
   // 空字符串 = 未生成,替身功能不可用。

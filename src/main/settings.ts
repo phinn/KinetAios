@@ -39,6 +39,8 @@ const DEFAULTS: AppSettings = {
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
   voiceAutoSend: false, // 语音实时输入默认关闭(开启后 Web Speech API 实时转写 + VAD 自动发送)
   hifiContextBudget: 200000, // 高保真模式上下文预算(默认 200K token,适配 GLM-5.2 的 1M 窗口)
+  v2ModelWindow: 1_000_000,  // V2 引擎:模型上下文窗口大小(默认 1M = GLM-5.2;GLM-4.6 = 128000)
+  v2BudgetRatio: 0.08,       // V2 引擎:预算占窗口比例(8% → 1M 窗口 = 80K trim/compact 预算)
   persona: '', // 替身画像:分析历史对话生成的用户风格描述(空 = 未生成)
   // 实时语音助手配置:默认关闭,AppID/Token 留空(wsUrl 预填火山引擎官方地址)。
   voiceChat: {

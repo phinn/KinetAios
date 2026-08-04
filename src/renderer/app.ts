@@ -1970,6 +1970,10 @@ async function showSettings() {
         <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
         <div class="field"><label>${tr('settings.hifiBudget')}</label><div class="row"><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
         <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.hifiBudget.desc')}</div>
+        <div class="field"><label>${tr('settings.v2ModelWindow')}</label><div class="row"><input id="s-v2-window" type="number" min="32000" max="2000000" step="32000" value="${s.v2ModelWindow ?? 1000000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
+        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.v2ModelWindow.desc')}</div>
+        <div class="field"><label>${tr('settings.v2BudgetRatio')}</label><div class="row"><input id="s-v2-ratio" type="number" min="1" max="50" step="1" value="${Math.round((s.v2BudgetRatio ?? 0.08) * 100)}" style="max-width:80px" /><span style="color:var(--text-faint);font-size:11px;align-self:center">%</span></div></div>
+        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.v2BudgetRatio.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
@@ -2763,6 +2767,8 @@ function readSettingsForm(): AppSettings {
     townStyle: ((document.getElementById('s-town-style') as HTMLSelectElement)?.value as 'classic' | 'minecraft') || 'classic',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
+    v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,
+    v2BudgetRatio: (Number((document.getElementById('s-v2-ratio') as HTMLInputElement).value) || 8) / 100,
     closeBehavior: (document.getElementById('s-close-behavior') as HTMLSelectElement).value as AppSettings['closeBehavior'],
     embedBaseURL: (document.getElementById('s-embed-base') as HTMLInputElement).value.trim(),
     embedApiKey: (document.getElementById('s-embed-key') as HTMLInputElement).value.trim(),
@@ -2788,8 +2794,6 @@ function readSettingsForm(): AppSettings {
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
     minimaxApiKey: (document.getElementById('s-minimax-key') as HTMLInputElement).value.trim(),
-    v2ModelWindow: Number((document.getElementById('s-v2-model-window') as HTMLInputElement | null)?.value) || 1_000_000,
-    v2BudgetRatio: (Number((document.getElementById('s-v2-budget-ratio') as HTMLInputElement | null)?.value) || 8) / 100,
   };
 }
 
