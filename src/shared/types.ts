@@ -65,10 +65,12 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     subAgentScope: 'none',
   },
   // v2 DirectV2:Plan-Verify 多步累积,plan 上下文必须留住,工具结果放更多。
+  // interStepCompactBudget=40000:GLM-4.6 支持 128K 窗口,40K 预算让 4-5 步完整保留不被压缩。
+  // 旧值 20K 太保守——跑到第 3-4 步就开始压缩,丢失中间步骤的完整推理链。
   directV2: {
-    trimBudget: 30_000,
-    interStepCompactBudget: 20_000,
-    truncateThreshold: 6000,
+    trimBudget: 40_000,
+    interStepCompactBudget: 40_000,
+    truncateThreshold: 8000,
     appendStepSummary: true,
     stepSummaryMaxChars: 500,
     stepResultMaxChars: 4000,

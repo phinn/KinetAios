@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory, trimHistoryToTokenBudget } from './AgentLoop';
+import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estMsgChars } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
@@ -265,7 +265,7 @@ export class DirectV2Engine implements Engine {
       // P0-14: 恢复的 execHistory 可能很长(crash 发生在步骤 8 → 累积了 8 步完整历史)。
       // 直接传入 Executor 会导致第一轮 LLM 调用就超长。先 trim 到策略预算内。
       const recoveryPolicy = resolveEnginePolicy('directV2', conv.contextMode);
-      execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 30_000, snap.apiProtocol);
+      execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 40_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
       const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
       onEvent({ type: 'status', text: `📋 v2: 恢复计划(${plan.steps.length} 步,已完成 ${doneCount},剩余 ${remaining.length})— 跳过规划阶段` });
@@ -1091,8 +1091,24 @@ ${failedDetail || '  (无)'}
     }
     this.lastCompactFingerprint = fingerprint;
     // ponytail: 老版本会读 getSettings().hifiContextBudget * 0.4,这里用策略统一(已是 hifi 时翻倍)。
-    return compactHistory(messages, policy.interStepCompactBudget || 20_000, provider, snap, signal, onEvent);
+    return compactHistory(messages, policy.interStepCompactBudget || 40_000, provider, snap, signal, onEvent);
   }
+
+  /**
+   * 最终上下文持久化(hybrid resume 策略)。
+   *
+   * 短 session(<8K tokens)→ 全量续接,不压缩。对标 Claude Code --resume:
+   * 完整保留语义,下一 turn 的 LLM 能看到所有历史细节。
+   *
+   * 长 session(≥8K tokens)→ 走 compactHistory 结构化压缩。
+   * 预算用 interStepCompactBudget(standard 40K / hifi 80K)。
+   *
+   * 阈值 HYBRID_FULL_TOKENS=8000 的依据:
+   * - GLM-4.6 窗口 128K,8K 历史 + system prompt(~2K)+ 当前 turn(~4K)= ~14K,远未触顶
+   * - 8K 约等于 5-8 个正常 ReAct 轮次(每轮 ~1K tokens),覆盖大部分单步任务
+   * - 超过 8K 说明多步骤累积,此时 compact 的信息密度收益 > 全量保留的信息损失
+   */
+  private static readonly HYBRID_FULL_TOKENS = 8_000;
 
   private async finalizeContext(
     conv: Conversation,
@@ -1101,18 +1117,25 @@ ${failedDetail || '  (无)'}
     snap: ReturnType<typeof snapshot>,
     signal: AbortSignal,
   ): Promise<void> {
-    if (!signal.aborted) {
-      const policy = resolveEnginePolicy('directV2', conv.contextMode);
-      conv.directHistory = await compactHistory(
-        messages,
-        policy.interStepCompactBudget || 20_000,
-        provider,
-        snap,
-        signal,
-      );
-    } else {
+    if (signal.aborted) {
       conv.directHistory = messages;
+      return;
     }
+    // Hybrid resume:估算 messages 总 token 数,短 session 全量保留。
+    const estTokens = messages.reduce((s, m) => s + Math.floor(estMsgChars(m) * 0.6) + 20, 0);
+    if (estTokens <= DirectV2Engine.HYBRID_FULL_TOKENS) {
+      conv.directHistory = messages;
+      return;
+    }
+    // 长 session → compactHistory 结构化压缩。
+    const policy = resolveEnginePolicy('directV2', conv.contextMode);
+    conv.directHistory = await compactHistory(
+      messages,
+      policy.interStepCompactBudget || 40_000,
+      provider,
+      snap,
+      signal,
+    );
   }
 
   // ════════════════════════════════════════════════════════════════════

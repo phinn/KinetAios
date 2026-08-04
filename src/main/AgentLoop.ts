@@ -381,7 +381,7 @@ function coefFor(proto?: string): number {
   return tokenCoefByProto[k];
 }
 // 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
-function estMsgChars(m: ChatMsg): number {
+export function estMsgChars(m: ChatMsg): number {
   let content = '';
   if (typeof m.content === 'string') content = m.content;
   else if (Array.isArray(m.content)) content = m.content.map((p) => { const tp = p as { text?: string }; return tp.text ?? ''; }).join('');
@@ -464,6 +464,8 @@ function sanitizeToolPairs(msgs: ChatMsg[]): ChatMsg[] {
 // 长 conversation 不再丢早期上下文。失败 → 回退纯尾部 trim(不丢功能)。
 // _memory 消息不参与摘要(它是参考,不是对话),摘要后照旧 prepend 回头部。
 // ponytail: ① 每 turn 末尾按需摘一次,未做摘要缓存;② token 估算仍 length*0.6。
+// 优化:结构化摘要 prompt — 不再让 LLM 自由发挥,而是要求固定字段(目标/决策/文件/结论),
+// 这样摘要消息对后续步骤的信息密度远高于旧版的自由文本摘要。
 export async function compactHistory(
   msgs: ChatMsg[],
   budget: number,
@@ -480,8 +482,23 @@ export async function compactHistory(
   const head = rest.slice(0, rest.length - tail.length);
   if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...tail];
   try {
-    const sys =
-      '你是对话摘要器。把下面这段早期对话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
+    // 结构化摘要 prompt:固定字段 → 信息密度远高于自由文本摘要。
+    // 对标 Claude Code 的 compaction:保留"决策语义"而非原始文本片段。
+    const sys = `你是对话摘要器。把下面这段早期对话压成结构化中文摘要,严格按以下格式输出:
+
+【任务目标】一句话描述用户要完成什么
+【关键决策】列出已确定的技术方案/架构选择(每条一行,最多 5 条)
+【已改文件】列出被创建或修改的文件路径(每条一行)
+【执行命令】列出关键 shell 命令及其结果(成功/失败)
+【重要结论】已完成步骤的核心产出(每条一行,最多 5 条)
+【待办事项】尚未完成的遗留问题
+
+规则:
+- 丢掉寒暄、一次性细节、中间探查过程(如 ls/cat 输出)
+- 保留文件路径、命令、错误信息、技术栈名称的原文
+- 每个字段不超过 3 行;没有内容的字段写"无"
+- 不要输出任何标题/前言,直接从【任务目标】开始`;
+
     const transcript = head
       .map((m) => {
         const role = m.role === 'tool' ? '工具结果' : m.role;
@@ -489,8 +506,9 @@ export async function compactHistory(
         return `[${role}] ${text}`;
       })
       .join('\n');
-    // 截断到 12K 字符,但在行边界截(避免截在消息中间导致摘要 LLM 看到半截)
-    const MAX_TRANSCRIPT = 12_000;
+    // 截断到 16K 字符(旧版 12K),在行边界截(避免截在消息中间导致摘要 LLM 看到半截)。
+    // 提高到 16K 是因为结构化摘要需要更多原始材料才能准确提取文件路径和命令。
+    const MAX_TRANSCRIPT = 16_000;
     let trimmed = transcript;
     if (transcript.length > MAX_TRANSCRIPT) {
       const cut = transcript.slice(0, MAX_TRANSCRIPT);
@@ -514,9 +532,7 @@ export async function compactHistory(
     if (onEvent) {
       const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * coefFor(snap.apiProtocol)) + 20, 0);
       const summaryTokens = Math.floor(summary.length * coefFor(snap.apiProtocol)) + 20;
-      onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话摘要)` });
-      // 用 cost 事件的 tokensIn/Out 上报压缩 LLM 调用成本(已有,上面 onEvent 里)
-      // 再用一个新的 context 事件报告压缩详情(不影响现有 status 显示)
+      onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话结构化摘要)` });
       onEvent({ type: 'context', action: 'compacted', beforeTokens: headTokens, afterTokens: summaryTokens } as AgentEvent & { type: 'context' });
     }
     return [...memoryMsgs, ...pinnedMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
