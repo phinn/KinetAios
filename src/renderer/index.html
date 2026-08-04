@@ -66,6 +66,7 @@
               <button class="cht" id="tab-git" data-i18n="tabs.git">Git</button>
               <button class="cht" id="tab-rules" data-i18n="tabs.rules">规则</button>
               <button class="cht" id="tab-preview" data-i18n="tabs.preview" title="Artifact 预览">预览</button>
+              <button class="cht" id="tab-team" title="Agent Team">👥 Team</button>
             </span>
           </div>
           <div class="ch-row ch-config">
@@ -171,6 +172,17 @@
           </div>
           <div class="preview-body" id="preview-body">
             <iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>
+          </div>
+        </div>
+        <div id="chat-team-pane" class="chat-team-pane" hidden>
+          <div class="team-header">
+            <span class="team-title">👥 Agent Team</span>
+            <span class="team-spacer"></span>
+            <button class="ghost" id="btn-team-refresh" title="刷新 Team 状态"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
+            <button class="ghost" id="btn-team-new" title="新建 Team">+ 新建</button>
+          </div>
+          <div class="team-body" id="team-body">
+            <div class="team-empty">暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。</div>
           </div>
         </div>
       </div>

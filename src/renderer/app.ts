@@ -2,7 +2,7 @@
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import { t, LANGS, type Lang } from '../shared/i18n';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
@@ -54,7 +54,7 @@ let editingProfileId: string | null = null;
 // 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
-let activeTab: 'chat' | 'files' | 'git' | 'rules' | 'preview' = 'chat';
+let activeTab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
 // view.contentHTML 是已转义 + 按行包好 .d-add/.d-del/.d-hunk 的安全 HTML。
 let gitState: { snapshot?: GitSnapshot; view: { kind: 'history' } | { kind: 'diff'; title: string; contentHTML: string }; lastCwd: string; busy: boolean } = {
@@ -242,6 +242,11 @@ function applyI18nDOM(): void {
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
+
+  // Agent Team 实时事件:member 状态/token/工具/完成
+  api.onTeamEvent((teamId, ev) => {
+    handleTeamEvent(teamId, ev);
+  });
 
   // 远程 Agent 事件:别的机器正在调本机 Agent 干活 → 显示浮动状态条。
   api.onRemoteAgentEvent((ev) => {
@@ -449,7 +454,7 @@ async function deleteConv(id: string) {
 
 // ---------- main pane ----------
 // 聊天 tab 切换(对话 / 文件 / Git / 规则)。文件 tab 首次点才挂 mountFilesPane;切会话后切回任一 tab 都同步 cwd。
-function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview'): void {
+function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team'): void {
   if (activeTab === tab) return;
   activeTab = tab;
   document.getElementById('tab-chat')!.classList.toggle('active', tab === 'chat');
@@ -457,11 +462,13 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview'): void {
   document.getElementById('tab-git')!.classList.toggle('active', tab === 'git');
   document.getElementById('tab-rules')!.classList.toggle('active', tab === 'rules');
   document.getElementById('tab-preview')!.classList.toggle('active', tab === 'preview');
+  document.getElementById('tab-team')!.classList.toggle('active', tab === 'team');
   document.getElementById('chat-content')!.hidden = tab !== 'chat';
   document.getElementById('chat-files-pane')!.hidden = tab !== 'files';
   document.getElementById('chat-git-pane')!.hidden = tab !== 'git';
   document.getElementById('chat-rules-pane')!.hidden = tab !== 'rules';
   document.getElementById('chat-preview-pane')!.hidden = tab !== 'preview';
+  document.getElementById('chat-team-pane')!.hidden = tab !== 'team';
   if (tab === 'files') {
     if (!filesController) {
       const pane = document.getElementById('chat-files-pane')!;
@@ -490,6 +497,219 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview'): void {
     const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
     if (cwd && cwd !== rulesCwd) void loadRules(cwd);
   }
+  if (tab === 'team') {
+    void refreshTeamPane();
+  }
+}
+
+// ---------- Team 面板 ----------
+// Agent Team 可视化:列出当前会话的所有 team + member 卡片。
+// 实时事件(memberStatus/memberToken/memberTool/memberDone)驱动局部更新。
+// Team panel state
+let teamTeams: TeamInfo[] = [];
+let teamMembers: Map<string, TeamMemberInfo[]> = new Map(); // teamId → members
+let teamLiveStatus: Map<string, { status: MemberStatus; partial: string }> = new Map(); // `${teamId}/${memberName}` → live state
+
+/** 刷新整个 team 面板(从 IPC 拉最新数据) */
+async function refreshTeamPane(): Promise<void> {
+  if (!selectedId) {
+    renderTeamEmpty('请先选择一个会话');
+    return;
+  }
+  try {
+    teamTeams = await api.listTeams(selectedId);
+    teamMembers.clear();
+    for (const t of teamTeams) {
+      const members = await api.listTeamMembers(t.team_id);
+      teamMembers.set(t.team_id, members);
+    }
+    renderTeamPane();
+  } catch (e) {
+    renderTeamEmpty(`加载失败: ${(e as Error)?.message ?? e}`);
+  }
+}
+
+function renderTeamEmpty(msg: string): void {
+  const body = document.getElementById('team-body');
+  if (body) body.innerHTML = `<div class="team-empty">${msg}</div>`;
+}
+
+/** 渲染 team 面板:多个 team section,每个含 member 卡片 */
+function renderTeamPane(): void {
+  const body = document.getElementById('team-body');
+  if (!body) return;
+  if (teamTeams.length === 0) {
+    body.innerHTML = '<div class="team-empty">暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。</div>';
+    return;
+  }
+  const html = teamTeams.map(team => {
+    const members = teamMembers.get(team.team_id) ?? [];
+    const memberCards = members.map(m => renderMemberCard(team.team_id, m)).join('');
+    const timeStr = new Date(team.updated_at * 1000).toLocaleTimeString();
+    return `<div class="team-section" data-team-id="${team.team_id}">
+      <div class="team-section-head">
+        <span class="team-section-title">👥 ${members.length} members</span>
+        <span class="team-section-time">${timeStr}</span>
+        <button class="ghost sm" onclick="window.__teamBroadcast('${team.team_id}')">📢 广播</button>
+        <button class="ghost sm" onclick="window.__teamDelete('${team.team_id}')">🗑</button>
+      </div>
+      <div class="team-members">${memberCards}</div>
+    </div>`;
+  }).join('');
+  body.innerHTML = html;
+}
+
+/** 渲染单个 member 卡片 */
+function renderMemberCard(teamId: string, m: TeamMemberInfo): string {
+  const liveKey = `${teamId}/${m.name}`;
+  const live = teamLiveStatus.get(liveKey);
+  const status = live?.status ?? m.status;
+  const statusDot = status === 'running' ? '🔵' : status === 'done' ? '🟢' : status === 'failed' ? '🔴' : '⚪';
+  const partial = live?.partial ?? '';
+  const resultPreview = (partial || m.last_result || '').slice(0, 200);
+  const expanded = escapeHtml(resultPreview);
+  return `<div class="team-member-card" data-live-key="${liveKey}" data-status="${status}">
+    <div class="tmc-head">
+      <span class="tmc-status">${statusDot}</span>
+      <span class="tmc-name">${escapeHtml(m.name)}</span>
+      <span class="tmc-role">${escapeHtml(m.role)}</span>
+      <button class="ghost sm" onclick="window.__teamSend('${teamId}','${escapeHtml(m.name)}')">💬 发消息</button>
+    </div>
+    ${resultPreview ? `<div class="tmc-preview">${expanded}</div>` : ''}
+  </div>`;
+}
+
+/** Team 实时事件处理 */
+function handleTeamEvent(teamId: string, ev: TeamEvent): void {
+  const liveKey = `${teamId}/${ev.memberName}`;
+  switch (ev.type) {
+    case 'memberStatus': {
+      const prev = teamLiveStatus.get(liveKey) ?? { status: 'idle' as MemberStatus, partial: '' };
+      teamLiveStatus.set(liveKey, { ...prev, status: ev.status });
+      updateMemberCardStatus(liveKey, ev.status);
+      break;
+    }
+    case 'memberToken': {
+      const prev = teamLiveStatus.get(liveKey) ?? { status: 'running' as MemberStatus, partial: '' };
+      prev.partial += ev.text;
+      teamLiveStatus.set(liveKey, prev);
+      updateMemberCardPartial(liveKey, prev.partial);
+      break;
+    }
+    case 'memberDone': {
+      const prev = teamLiveStatus.get(liveKey) ?? { status: 'done' as MemberStatus, partial: '' };
+      teamLiveStatus.set(liveKey, { ...prev, status: 'done', partial: ev.answer });
+      updateMemberCardPartial(liveKey, ev.answer);
+      updateMemberCardStatus(liveKey, 'done');
+      break;
+    }
+    case 'memberTool': {
+      // 工具调用事件:在 preview 里追加提示
+      const prev = teamLiveStatus.get(liveKey) ?? { status: 'running' as MemberStatus, partial: '' };
+      prev.partial += `\n🔧 ${ev.toolName}\n`;
+      teamLiveStatus.set(liveKey, prev);
+      updateMemberCardPartial(liveKey, prev.partial);
+      break;
+    }
+    case 'memberCost': {
+      // 成本:暂存不显示(避免刷屏),刷新时从 DB 读
+      break;
+    }
+  }
+}
+
+function updateMemberCardStatus(liveKey: string, status: MemberStatus): void {
+  const card = document.querySelector(`.team-member-card[data-live-key="${CSS.escape(liveKey)}"]`);
+  if (!card) return;
+  const dot = card.querySelector('.tmc-status');
+  if (dot) {
+    const statusDot = status === 'running' ? '🔵' : status === 'done' ? '🟢' : status === 'failed' ? '🔴' : '⚪';
+    dot.textContent = statusDot;
+  }
+  card.setAttribute('data-status', status);
+}
+
+function updateMemberCardPartial(liveKey: string, text: string): void {
+  const card = document.querySelector(`.team-member-card[data-live-key="${CSS.escape(liveKey)}"]`);
+  if (!card) return;
+  let preview = card.querySelector('.tmc-preview') as HTMLElement | null;
+  if (!preview) {
+    preview = document.createElement('div');
+    preview.className = 'tmc-preview';
+    card.appendChild(preview);
+  }
+  preview.textContent = text.slice(-500); // 只显示最后 500 字,避免 DOM 爆炸
+}
+
+/** 手动给 member 发消息 */
+async function teamSendToMember(teamId: string, memberName: string): Promise<void> {
+  const message = prompt(`发给 ${memberName}:`);
+  if (!message) return;
+  // 清空 live status
+  teamLiveStatus.set(`${teamId}/${memberName}`, { status: 'running', partial: '' });
+  updateMemberCardStatus(`${teamId}/${memberName}`, 'running');
+  updateMemberCardPartial(`${teamId}/${memberName}`, '');
+  try {
+    const r = await api.sendToTeamMember(teamId, memberName, message);
+    if (!r.ok) alert(r.error ?? '发送失败');
+  } catch (e) {
+    alert(`发送失败: ${(e as Error)?.message ?? e}`);
+  }
+}
+
+/** 广播消息 */
+async function teamBroadcast(teamId: string): Promise<void> {
+  const message = prompt('广播消息:');
+  if (!message) return;
+  // 清空所有 member 的 live status
+  const members = teamMembers.get(teamId) ?? [];
+  for (const m of members) {
+    teamLiveStatus.set(`${teamId}/${m.name}`, { status: 'running', partial: '' });
+    updateMemberCardStatus(`${teamId}/${m.name}`, 'running');
+    updateMemberCardPartial(`${teamId}/${m.name}`, '');
+  }
+  try {
+    const r = await api.broadcastToTeam(teamId, message);
+    if (!r.ok) alert(r.error ?? '广播失败');
+  } catch (e) {
+    alert(`广播失败: ${(e as Error)?.message ?? e}`);
+  }
+}
+
+/** 删除 team */
+async function teamDelete(teamId: string): Promise<void> {
+  if (!confirm('确认删除这个 Team?所有 member 数据将被清除。')) return;
+  await api.deleteTeamById(teamId);
+  await refreshTeamPane();
+}
+
+/** 新建 team 弹窗 */
+function showTeamCreateDialog(): void {
+  const input = prompt('输入成员(格式:name1:role1, name2:role2):\n例如:explorer:代码探查, reviewer:架构评审');
+  if (!input) return;
+  const members: Array<{ name: string; role: string }> = [];
+  for (const part of input.split(',')) {
+    const [name, role] = part.trim().split(':').map(s => s?.trim());
+    if (name && role) members.push({ name, role });
+  }
+  if (members.length === 0 || !selectedId) {
+    alert('格式错误或未选择会话');
+    return;
+  }
+  void (async () => {
+    const r = await api.createTeam(selectedId, members);
+    if (!r.ok || !r.team_id) { alert(r.error ?? '创建失败'); return; }
+    await refreshTeamPane();
+  })();
+}
+
+// 暴露到 window 供 inline onclick 调用
+(window as unknown as Record<string, unknown>).__teamSend = teamSendToMember;
+(window as unknown as Record<string, unknown>).__teamBroadcast = teamBroadcast;
+(window as unknown as Record<string, unknown>).__teamDelete = teamDelete;
+
+function escapeHtml(s: string): string {
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 // 加载当前 cwd 的 KINET.md 到 CodeEditor。空文件 → 空白编辑器(保存就创建文件)。
@@ -986,6 +1206,8 @@ function renderMain() {
   if (activeTab === 'git' && conv.cwd !== gitState.lastCwd) void refreshGit(conv.cwd);
   // rules tab:cwd 变了就重载 KINET.md。
   if (activeTab === 'rules' && conv.cwd !== rulesCwd) void loadRules(conv.cwd);
+  // team tab:切会话时重新加载 team 列表。
+  if (activeTab === 'team') void refreshTeamPane();
   // 切会话时重新检测当前 turn 是否有 artifact,更新预览面板状态
   const lastTurn = conv.turns[conv.turns.length - 1];
   const artifactHtml = lastTurn ? detectArtifact(lastTurn.answer) : null;
@@ -2738,6 +2960,10 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   document.getElementById('gh-stash-pop')!.onclick = () => void doGitAction('stashPop');
   document.getElementById('gh-discard')!.onclick = () => void doGitAction('discard');
   document.getElementById('tab-rules')!.onclick = () => showTab('rules');
+  // ── Team tab ──
+  document.getElementById('tab-team')!.onclick = () => showTab('team');
+  document.getElementById('btn-team-refresh')!.onclick = () => void refreshTeamPane();
+  document.getElementById('btn-team-new')!.onclick = () => showTeamCreateDialog();
   // ── Artifact 预览 tab + 控制按钮 ──
   document.getElementById('tab-preview')!.onclick = () => openPreviewPane();
   document.getElementById('btn-preview-refresh')!.onclick = () => {
