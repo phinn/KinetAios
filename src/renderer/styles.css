@@ -37,6 +37,8 @@
      暗色默认:微透白;各主题覆盖,层次清晰。 */
   --surface-header: rgba(15,15,18,.72);
   --surface-input:  rgba(15,15,18,.72);
+  --surface-pane:   var(--bg-side);   /* 暗色默认:solid,不透明 */
+  --surface-pane-footer: var(--bg-side);
   --surface-chip:        rgba(255,255,255,.06);
   --surface-chip-focus:        rgba(255,255,255,.12);
   --surface-chip-soft:         rgba(255,255,255,.06);
@@ -90,6 +92,8 @@
   --surface-chip-focus:        rgba(0,0,0,.10);
   --surface-chip-soft:         rgba(0,0,0,.06);
   --surface-chip-soft-hover:   rgba(0,0,0,.10);
+  --surface-pane:   var(--bg-side);   /* 浅色:实色,保持清晰分层 */
+  --surface-pane-footer: transparent;
 }
 [data-theme="light"] .chat-head {
   border-bottom-color: rgba(0,0,0,.08);
@@ -255,6 +259,15 @@
   --surface-input: rgba(16,18,28,.72);
   border-top-color: rgba(37,40,57,.6);
 }
+[data-theme="aurora"] #sidebar {
+  --surface-pane: rgba(20,22,34,.68);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
+  border-right-color: rgba(37,40,57,.6);
+}
+[data-theme="aurora"] .sb-foot {
+  border-top-color: rgba(37,40,57,.6);
+}
 [data-theme="aurora"] input:hover,
 [data-theme="aurora"] textarea:hover,
 [data-theme="aurora"] select:hover {
@@ -408,6 +421,15 @@
 }
 [data-theme="serene"] #input {
   --surface-input: rgba(255,255,255,.55);
+  border-top-color: rgba(176,148,120,.30);
+}
+[data-theme="serene"] #sidebar {
+  --surface-pane: rgba(255,255,255,.50);
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
+  border-right-color: rgba(176,148,120,.30);
+}
+[data-theme="serene"] .sb-foot {
   border-top-color: rgba(176,148,120,.30);
 }
 
@@ -748,6 +770,16 @@
   --surface-input: rgba(245,250,255,0.55);
   border-top-color: rgba(176,200,224,0.45);
 }
+[data-theme="tahoe"] #sidebar {
+  --surface-pane: rgba(245,250,255,0.50);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
+  border-right-color: rgba(176,200,224,0.45);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.35);
+}
+[data-theme="tahoe"] .sb-foot {
+  border-top-color: rgba(176,200,224,0.45);
+}
 
 #head-status { color: var(--text-dim); font-size: 12px; margin-left: 6px; }
 .send.stop { background: #9c3a3a; border-color: #9c3a3a; }
@@ -800,9 +832,11 @@ a { color: var(--accent); }
 
 #app { display: flex; height: 100vh; }
 
-/* sidebar */
+/* sidebar — 侧栏容器,液态玻璃下面是半透明面板,实色主题保持分层 */
 #sidebar {
-  width: 256px; flex-shrink: 0; background: var(--bg-side); border-right: 1px solid var(--border);
+  width: 256px; flex-shrink: 0;
+  background: var(--surface-pane, var(--bg-side));
+  border-right: 1px solid var(--border);
   display: flex; flex-direction: column;
   position: relative;
 }
@@ -868,7 +902,14 @@ a { color: var(--accent); }
 .dot.running { background: var(--run); box-shadow: 0 0 6px var(--run); animation: pulse 1.1s infinite; }
 .dot.error { background: var(--err); }
 @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
-.sb-foot { padding: 8px 14px; border-top: 1px solid var(--border); font-size: 11px; color: var(--text-faint); display: flex; align-items: center; gap: 6px; background: var(--bg-side); }
+/* sb-foot — sidebar 底部分隔条,透明继承 sidebar,border-top 作为视觉分隔,
+   用 --surface-pane-footer 兼容希望加轻微层次的主题(默认透明以保持液态玻璃一致性) */
+.sb-foot {
+  padding: 8px 14px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--text-faint);
+  display: flex; align-items: center; gap: 6px;
+  background: var(--surface-pane-footer, transparent);
+}
 .sb-foot-info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-foot-spacer { flex: 1; }
 .sb-mode { padding: 2px 7px; font-size: 13px; line-height: 1; }
@@ -1037,8 +1078,16 @@ a { color: var(--accent); }
 .chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-files-pane[hidden] { display: none; }
 
-/* 多面板标签栏 / Multi-panel tab bar */
-.files-panel-bar { display: flex; align-items: center; gap: 0; padding: 0 6px; border-bottom: 1px solid var(--border); background: var(--bg-side); min-height: 32px; flex-shrink: 0; }
+/* 多面板标签栏 / Multi-panel tab bar — 液态玻璃,
+   跟 .chat-head / #input 同族表面,统一走 --surface-pane-foot */
+.files-panel-bar {
+  display: flex; align-items: center; gap: 0; padding: 0 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-pane-footer, var(--bg-side));
+  min-height: 32px; flex-shrink: 0;
+  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
+}
 .fp-tab { display: inline-flex; align-items: center; gap: 4px; padding: 5px 8px 5px 12px; cursor: pointer; font-size: 12px; color: var(--text-dim); border-right: 1px solid var(--border); border-radius: 0; transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); white-space: nowrap; }
 .fp-tab:hover { background: var(--bg-elev); color: var(--text); }
 .fp-tab.active { background: var(--bg); color: var(--accent); box-shadow: inset 0 2px 0 var(--accent); }
@@ -2614,6 +2663,16 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   --surface-input: rgba(255,250,242,0.55);
   border-top-color: rgba(232,212,190,0.50);
 }
+[data-theme="sierra"] #sidebar {
+  --surface-pane: rgba(255,250,242,0.50);
+  backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
+  border-right-color: rgba(232,212,190,0.50);
+  box-shadow: inset -1px 0 0 rgba(255,255,255,0.35);
+}
+[data-theme="sierra"] .sb-foot {
+  border-top-color: rgba(232,212,190,0.50);
+}
 
 /* Sierra 代码高亮 — Xcode Light 暖色变体(关键词紫色→棕红色,统一暖调) */
 [data-theme="sierra"] .tok-keyword   { color: #ad3da4; }
@@ -2960,6 +3019,18 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   border-bottom: 1px solid #1a1a1a;
   border-top: 1px solid #1a1a1a;
   box-shadow: inset 0 -1px 0 #555, inset 0 1px 0 #555;
+}
+/* Craft: sidebar — 不透明方块面板,不用玻璃 */
+[data-theme="craft"] #sidebar {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: var(--bg-side);
+  border-right: 1px solid #1a1a1a;
+  box-shadow: inset -1px 0 0 #555;
+}
+/* Craft: sb-foot — 3D 嵌条 */
+[data-theme="craft"] .sb-foot {
+  box-shadow: inset 0 1px 0 #555;
 }
 /* Craft: conv-list hover */
 [data-theme="craft"] #conv-list > li:hover {
@@ -3425,6 +3496,18 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 [data-theme="seed"] .chat-head {
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
+}
+/* SEED: sidebar — 金属面板,不用玻璃 */
+[data-theme="seed"] #sidebar {
+  background: var(--bg-side);
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border-right: 1px solid var(--seed-metal);
+}
+[data-theme="seed"] .sb-foot {
+  border-top-color: var(--seed-metal);
+  background: var(--bg-side);
+  box-shadow: 0 -1px 0 rgba(127,204,25,0.04);
 }
 
 /* SEED: 消息气泡 — 装甲板风 / Message bubbles = armor panels */
