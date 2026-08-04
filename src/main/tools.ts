@@ -291,10 +291,14 @@ function guessEncoding(buf: Buffer): string {
 const readFile: Tool = {
   name: 'read_file',
   readOnly: true,
-  description: '读取本地文件内容(UTF-8 文本)。',
+  description: '读取本地文件内容(UTF-8 文本)。可选 start_line/end_line 按行范围读取大文件。不传行范围则读全文(上限 50000 字符)。',
   parameters: {
     type: 'object',
-    properties: { path: { type: 'string', description: '文件绝对路径或相对路径' } },
+    properties: {
+      path: { type: 'string', description: '文件绝对路径或相对路径' },
+      start_line: { type: 'number', description: '起始行号(1-based,含)。不传则从头读。' },
+      end_line: { type: 'number', description: '结束行号(1-based,含)。不传则读到末尾。' },
+    },
     required: ['path'],
   },
   async run(args, ctx) {
@@ -305,10 +309,12 @@ const readFile: Tool = {
       const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, false);
       if (guard) return guard;
     }
+    const startLine = args.start_line ? Math.max(1, Math.floor(Number(args.start_line))) : 1;
+    const endLine = args.end_line ? Math.max(1, Math.floor(Number(args.end_line))) : undefined;
     try {
       const stat = fs.statSync(p);
       // 防止 read_file 大文件(PDF/图片等二进制)把主进程读 OOM —— 之前没限制是崩溃主因。
-      if (stat.size > 512 * 1024) return `文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB),read_file 上限 512KB。改用 shell 按需读(如 pdftotext/head/grep)。`;
+      if (stat.size > 2 * 1024 * 1024) return `文件过大(${(stat.size / 1024 / 1024).toFixed(1)}MB),read_file 上限 2MB。改用 shell 按需读(如 head/sed/grep)。`;
       // 二进制检测:先读 Buffer,前 8KB 有 null byte → 拒绝(避免 utf8 解码二进制产生乱码)。
       const buf = fs.readFileSync(p);
       const checkLen = Math.min(buf.length, 8192);
@@ -318,7 +324,33 @@ const readFile: Tool = {
       // 编码检测:BOM → ASCII → UTF-8 校验 → 启发式(GBK/Big5/Shift_JIS)。
       // Windows 上大量文件是 GBK 编码,直接 toString('utf8') 会产生乱码。
       const body = decodeBuffer(buf);
-      return body.length > 20000 ? body.slice(0, 20000) + '\n…[截断]' : body;
+
+      // 按行范围读取(如果指定了 start_line / end_line)。
+      const lines = body.split('\n');
+      const totalLines = lines.length;
+
+      // 有行范围 → 切片(1-based → 0-based)。
+      if (startLine > 1 || endLine !== undefined) {
+        const sIdx = startLine - 1;
+        const eIdx = endLine !== undefined ? Math.min(endLine, totalLines) : totalLines;
+        if (sIdx >= totalLines) return `起始行 ${startLine} 超出文件总行数 ${totalLines}。`;
+        const slice = lines.slice(sIdx, eIdx);
+        // 带行号前缀输出,方便模型引用具体行。
+        const numbered = slice.map((line, i) => `${sIdx + i + 1}: ${line}`).join('\n');
+        const rangeEnd = sIdx + slice.length;
+        const suffix = rangeEnd < totalLines
+          ? `\n\n[行 ${startLine}-${rangeEnd}/${totalLines},还有 ${totalLines - rangeEnd} 行未读。用 start_line=${rangeEnd + 1} 继续读]`
+          : `\n\n[行 ${startLine}-${rangeEnd}/${totalLines},文件读完]`;
+        return numbered + suffix;
+      }
+
+      // 无行范围 → 全文(上限 50000 字符,之前 20000 太小,常导致文件读不全)。
+      if (body.length <= 50000) return body;
+
+      // 超长文件:提示模型用行范围分页读。
+      const truncated = body.slice(0, 50000);
+      const linesInTruncated = truncated.split('\n').length;
+      return truncated + `\n\n…[文件共 ${totalLines} 行,已显示前 ${linesInTruncated} 行(50000 字符上限)。用 start_line=${linesInTruncated + 1} 继续读后续内容]`;
     } catch {
       return `读不到: ${p}`;
     }
