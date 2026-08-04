@@ -3387,90 +3387,155 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     }
   });
 
-  // 📷 区域截图:点按钮 → 全屏截图 → overlay 框选区域 → canvas 裁剪 → 附件。
+// 📷 区域截图:点按钮 → 全屏截图 → overlay 框选区域 → canvas 裁剪 → 附件。
   // 流程:先调 captureScreen 拿全屏,再让用户在 overlay 上拖拽选区,裁剪后得到区域截图。
+  // 拆出共享 grabFullScreen():右键菜单的"截全屏"和"复制到剪贴板"复用同一份拿图逻辑。
   const captureBtn = document.getElementById('btn-capture');
+
+  /** 拿一帧全屏截图 dataUrl。失败返回 null 并 alert。
+   *  路径 1:main 进程 desktopCapturer(权限一次性配齐后稳定,无浏览器选择条)
+   *  路径 2:renderer getDisplayMedia(回退,会触发屏幕选择条) */
+  async function grabFullScreen(): Promise<string | null> {
+    let fullDataUrl: string | null = null;
+
+    // 路径 1:desktopCapturer(main 进程)
+    try {
+      const r = await api.captureScreen();
+      console.log('[capture] desktopCapturer result:', r.ok, r.error ?? '', 'dataUrl len:', r.dataUrl?.length ?? 0);
+      if (r.ok && r.dataUrl && r.dataUrl.length > 1000) fullDataUrl = r.dataUrl;
+      else if (!r.ok) console.warn('[capture] desktopCapturer returned error:', r.error);
+    } catch (e) { console.warn('[capture] desktopCapturer exception:', e); /* 忽略,走回退 */ }
+
+    // 路径 2:getDisplayMedia(renderer 端)
+    if (!fullDataUrl) {
+      try {
+        const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
+        const track = stream.getVideoTracks()[0];
+        const video = document.createElement('video');
+        video.srcObject = stream;
+        await video.play();
+        await new Promise((r) => (video.onloadedmetadata = r));
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d')!;
+        ctx.drawImage(video, 0, 0);
+        track.stop(); // 释放屏幕占用
+        fullDataUrl = canvas.toDataURL('image/png');
+      } catch (e) {
+        console.warn('[capture] getDisplayMedia exception:', e);
+        // 用户取消或不支持
+      }
+    }
+
+    if (!fullDataUrl) {
+      console.warn('[capture] 全屏截图失败:desktopCapturer 和 getDisplayMedia 都没拿到画面');
+      alert(tr('vision.captureErr', { msg: 'No screen capture (permission denied?)' }));
+    }
+    return fullDataUrl;
+  }
+
+  /** 拿到 dataUrl 后塞进附件并刷附件栏 + focus composer */
+  function attachScreenshot(dataUrl: string, suffix = ''): void {
+    imageAttachments.push({ name: `screenshot-${Date.now()}${suffix}.png`, dataUrl });
+    renderAttach();
+    (document.getElementById('composer') as HTMLTextAreaElement).focus();
+  }
+
   if (captureBtn) {
+    // 左键 = 区域截图(原行为)
     captureBtn.onclick = async () => {
-      console.log('[capture] 按钮点击');
+      console.log('[capture] 左键点击 → 区域截图');
       captureBtn.classList.add('loading');
       try {
-        // 步骤 1:拿全屏截图(main 进程 desktopCapturer 优先,回退 getDisplayMedia)
-        let fullDataUrl: string | null = null;
-
-        // 路径 1:desktopCapturer(main 进程)
-        try {
-          const r = await api.captureScreen();
-          console.log('[capture] desktopCapturer result:', r.ok, r.error ?? '', 'dataUrl len:', r.dataUrl?.length ?? 0);
-          if (r.ok && r.dataUrl && r.dataUrl.length > 1000) fullDataUrl = r.dataUrl;
-          else if (!r.ok) console.warn('[capture] desktopCapturer returned error:', r.error);
-        } catch (e) { console.warn('[capture] desktopCapturer exception:', e); /* 忽略,走回退 */ }
-
-        // 路径 2:getDisplayMedia(renderer 端)
-        if (!fullDataUrl) {
-          try {
-            const stream = await navigator.mediaDevices.getDisplayMedia({ video: { frameRate: 1 } as MediaTrackConstraints, audio: false });
-            const track = stream.getVideoTracks()[0];
-            const video = document.createElement('video');
-            video.srcObject = stream;
-            video.muted = true;
-            const cleanupVideo = (): void => {
-              track.stop();
-              stream.getTracks().forEach((t) => t.stop());
-              video.srcObject = null;
-              video.remove();
-            };
-            try {
-              await new Promise<void>((resolve, reject) => {
-                video.onloadedmetadata = () => { video.play().then(() => resolve()).catch(reject); };
-                setTimeout(() => reject(new Error('video timeout')), 3000);
-              });
-              await new Promise((r) => requestAnimationFrame(r));
-              await new Promise((r) => setTimeout(r, 100));
-              const w = video.videoWidth;
-              const h = video.videoHeight;
-              if (w > 0 && h > 0) {
-                const canvas = document.createElement('canvas');
-                canvas.width = w;
-                canvas.height = h;
-                const ctx = canvas.getContext('2d')!;
-                ctx.drawImage(video, 0, 0);
-                const url = canvas.toDataURL('image/png');
-                if (url.length > 1000) fullDataUrl = url;
-              }
-            } finally {
-              cleanupVideo();
-            }
-          } catch (e) {
-            console.warn('[capture] getDisplayMedia exception:', e);
-            // 用户取消或不支持
-          }
-        }
-
-        captureBtn.classList.remove('loading');
-        if (!fullDataUrl) {
-          // 两条路径都失败 → 弹提示而非静默
-          console.warn('[capture] 全屏截图失败:desktopCapturer 和 getDisplayMedia 都没拿到画面');
-          alert(tr('vision.captureErr', { msg: 'No screen capture (permission denied?)' }));
-          return;
-        }
+        const fullDataUrl = await grabFullScreen();
+        if (!fullDataUrl) { captureBtn.classList.remove('loading'); return; }
         console.log('[capture] 全屏截图成功, dataUrl length =', fullDataUrl.length);
-
-        // 步骤 2:显示 overlay 让用户拖拽选区
         const croppedDataUrl = await pickRegionOverlay(fullDataUrl);
+        captureBtn.classList.remove('loading');
         if (!croppedDataUrl) return; // 用户取消或选区太小
-
-        imageAttachments.push({ name: `screenshot-${Date.now()}.png`, dataUrl: croppedDataUrl });
-        renderAttach();
-        (document.getElementById('composer') as HTMLTextAreaElement).focus();
+        attachScreenshot(croppedDataUrl);
       } catch (e) {
         captureBtn.classList.remove('loading');
         alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
       }
     };
+
+    // 右键 = 弹出模式菜单
+    captureBtn.oncontextmenu = (e) => {
+      e.preventDefault();
+      openCaptureMenu();
+    };
   }
 
-  // ── 区域截图 overlay:全屏显示截图 + 拖拽选区 → 裁剪返回 dataUrl ──
+  /** 弹出 / 关闭截图模式菜单 */
+  function openCaptureMenu(): void {
+    const menu = document.getElementById('capture-menu');
+    if (!menu) return;
+    if (!menu.hidden) { menu.hidden = true; return; } // 已开则关闭(toggle)
+    menu.innerHTML = `
+      <div class="capture-item" data-mode="region">
+        <span class="cap-name">${esc(tr('vision.captureRegion'))}<span class="cap-key">L-click</span></span>
+        <span class="cap-desc">${esc(tr('vision.captureRegionHint'))}</span>
+      </div>
+      <div class="capture-item" data-mode="full">
+        <span class="cap-name">${esc(tr('vision.captureFull'))}</span>
+        <span class="cap-desc">${esc(tr('vision.captureFullHint'))}</span>
+      </div>
+      <div class="capture-item" data-mode="clipboard">
+        <span class="cap-name">${esc(tr('vision.captureClipboard'))}</span>
+        <span class="cap-desc">${esc(tr('vision.captureClipboardHint'))}</span>
+      </div>
+    `;
+    menu.hidden = false;
+    menu.querySelectorAll('.capture-item').forEach((el) => {
+      el.addEventListener('click', () => {
+        const mode = (el as HTMLElement).dataset.mode;
+        menu.hidden = true;
+        if (mode) void runCaptureMode(mode as 'region' | 'full' | 'clipboard');
+      });
+    });
+  }
+
+  /** 执行某种截图模式: region / full / clipboard */
+  async function runCaptureMode(mode: 'region' | 'full' | 'clipboard'): Promise<void> {
+    const captureBtn = document.getElementById('btn-capture')!;
+    captureBtn.classList.add('loading');
+    try {
+      const fullDataUrl = await grabFullScreen();
+      if (!fullDataUrl) { captureBtn.classList.remove('loading'); return; }
+
+      if (mode === 'region') {
+        const cropped = await pickRegionOverlay(fullDataUrl);
+        captureBtn.classList.remove('loading');
+        if (!cropped) return;
+        attachScreenshot(cropped);
+      } else if (mode === 'full') {
+        captureBtn.classList.remove('loading');
+        attachScreenshot(fullDataUrl, '-full');
+      } else if (mode === 'clipboard') {
+        const r = await api.clipboardWriteImage(fullDataUrl);
+        captureBtn.classList.remove('loading');
+        if (r.ok) showMsg(tr('vision.captureSaved'), true);
+        else alert(tr('vision.captureErr', { msg: r.error ?? 'unknown' }));
+      }
+    } catch (e) {
+      captureBtn.classList.remove('loading');
+      alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
+    }
+  }
+
+  // 点空白处关闭 capture 菜单
+  document.addEventListener('click', (e) => {
+    const menu = document.getElementById('capture-menu');
+    if (menu && !menu.hidden && !(e.target as HTMLElement)?.closest('#capture-wrap'))
+      menu.hidden = true;
+  });
+  // ESC 关闭
+  document.addEventListener('keydown', (e) => {
+    const menu = document.getElementById('capture-menu');
+    if (e.key === 'Escape' && menu && !menu.hidden) { menu.hidden = true; e.preventDefault(); }
+  });  // ── 区域截图 overlay:全屏显示截图 + 拖拽选区 → 裁剪返回 dataUrl ──
   // 复用 inspect overlay 的模式:全屏遮罩 + crosshair + 选择框。
   function pickRegionOverlay(fullDataUrl: string): Promise<string | null> {
     return new Promise((resolve) => {

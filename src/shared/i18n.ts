@@ -600,6 +600,13 @@ const ZH_CN: Dict = {
   'vision.captureEmpty': '未捕获到屏幕内容',
   'vision.captureHint': '拖拽选择截图区域 · ESC 取消',
   'vision.captureSmall': '选区太小,已取消',
+  'vision.captureRegion': '✂️ 区域截图',
+  'vision.captureFull': '🖥️ 截全屏',
+  'vision.captureFullHint': '整屏截图,作为附件插入',
+  'vision.captureRegionHint': '框选屏幕区域,作为附件插入',
+  'vision.captureClipboard': '📋 复制到剪贴板',
+  'vision.captureClipboardHint': '截全屏,直接放进系统剪贴板',
+  'vision.captureSaved': '已保存到剪贴板',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 对比',
@@ -1259,6 +1266,13 @@ const EN: Dict = {
   'vision.captureEmpty': 'No screen content captured',
   'vision.captureHint': 'Drag to select area · ESC to cancel',
   'vision.captureSmall': 'Selection too small, cancelled',
+  'vision.captureRegion': '✂️ Capture region',
+  'vision.captureFull': '🖥️ Capture full screen',
+  'vision.captureFullHint': 'Capture entire screen as attachment',
+  'vision.captureRegionHint': 'Drag to select a screen region',
+  'vision.captureClipboard': '📋 Copy to clipboard',
+  'vision.captureClipboardHint': 'Capture full screen to clipboard',
+  'vision.captureSaved': 'Saved to clipboard',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff Compare',
@@ -1920,6 +1934,13 @@ const ZH_TW: Dict = {
   'vision.captureEmpty': '未擷取到螢幕內容',
   'vision.captureHint': '拖曳選擇截圖區域 · ESC 取消',
   'vision.captureSmall': '選區太小,已取消',
+  'vision.captureRegion': '✂️ 區域截圖',
+  'vision.captureFull': '🖥️ 截全螢幕',
+  'vision.captureFullHint': '整螢幕截圖,作為附件插入',
+  'vision.captureRegionHint': '框選螢幕區域,作為附件插入',
+  'vision.captureClipboard': '📋 複製到剪貼簿',
+  'vision.captureClipboardHint': '截全螢幕,直接放進系統剪貼簿',
+  'vision.captureSaved': '已儲存到剪貼簿',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 比對',
@@ -2581,6 +2602,13 @@ const JA: Dict = {
   'vision.captureEmpty': '画面内容が取得できませんでした',
   'vision.captureHint': 'ドラッグで範囲選択 · ESC でキャンセル',
   'vision.captureSmall': '選択範囲が小さすぎます',
+  'vision.captureRegion': '✂️ 範囲キャプチャ',
+  'vision.captureFull': '🖥️ 全画面キャプチャ',
+  'vision.captureFullHint': '画面全体を添付として挿入',
+  'vision.captureRegionHint': '画面の領域を選択',
+  'vision.captureClipboard': '📋 クリップボードへコピー',
+  'vision.captureClipboardHint': '画面全体をクリップボードへ',
+  'vision.captureSaved': 'クリップボードに保存しました',
 
   // ── Arena Diff ──
   'arena.diff': '📊 Diff 比較',

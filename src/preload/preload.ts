@@ -134,6 +134,8 @@ const api: KinetAPI = {
   transcribeAudio: (base64: string, mime: string) => ipcRenderer.invoke('transcribe-audio', base64, mime),
   // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
+  // 剪贴板图片(dataUrl → nativeImage → writeImage)
+  clipboardWriteImage: (dataUrl: string) => ipcRenderer.invoke('clipboard-write-image', dataUrl),
   // Visual Inspector:向 webview guest 注入脚本执行,返回结果
   webviewInspect: (guestInstanceId: number, script: string) => ipcRenderer.invoke('webview-inspect', guestInstanceId, script),
   // ── 替身画像(Persona)──
