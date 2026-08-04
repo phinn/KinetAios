@@ -6,3 +6,7 @@ release/
 .claude/
 .kinet-snapshots/
 competition/
+tmp_demo/
+*.mov
+tmp_ocr/
+tmp_*/

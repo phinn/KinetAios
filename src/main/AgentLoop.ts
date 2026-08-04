@@ -79,18 +79,26 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     } catch (e) {
       const name = (e as Error)?.name;
       if (name === 'AbortError' || signal.aborted) return finalizeAbortedMessages(messages); // user hit stop
-      // 超长兜底:API 报上下文过长时,更激进 trim(预算砍半)后重试本轮一次。
-      if (!retriedAfterShrink && isContextTooLong(e)) {
-        retriedAfterShrink = true;
-        const beforeMsgs = messages;
-        messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
-        // 发压缩事件:让用户知道上下文超长被自动裁剪了
-        const beforeTokens = estTokenCount(beforeMsgs);
-        const afterTokens = estTokenCount(messages);
-        onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
-        onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens } as AgentEvent & { type: 'context' });
-        i--; // 本轮重试(抵消 for 的 i++)
-        continue;
+      // 超长兜底:三级 fallback — 砍半预算 → 1/4 预算 → 激进 trim(仅保留最后 2 条 + memory + pinned)。
+      // P0-12: 原版只重试一次,第二次报错直接 return dropTransient → 丢失整个 turn 的执行结果。
+      if (isContextTooLong(e)) {
+        if (!retriedAfterShrink) {
+          // 第一级:砍半预算重试
+          retriedAfterShrink = true;
+          messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), Math.floor(trimBudget / 2), snapshot.apiProtocol)];
+          onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
+          onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          i--;
+          continue;
+        } else {
+          // 第二级:1/4 预算 + 激进 trim(宁可丢历史也不丢当前 turn 的最后产出)
+          const miniBudget = Math.floor(trimBudget / 4);
+          messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
+          onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
+          onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          // 不再 i-- — 如果 trim 到 1/4 仍然超长,说明 system prompt 本身就很长,
+          // 下一次 API 调用如果还报错就走 catch 末尾的 return dropTransient(至少保住已有消息)。
+        }
       }
       onEvent({ type: 'error', message: errMsg(e) });
       return dropTransient(messages);

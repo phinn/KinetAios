@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory } from './AgentLoop';
+import { runAgentLoop, compactHistory, trimHistoryToTokenBudget } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
@@ -262,7 +262,10 @@ export class DirectV2Engine implements Engine {
     if (resumedPlan && resumedHistory) {
       // Crash recovery 路径:跳过 Planner,直接用恢复的 plan + execHistory。
       plan = resumedPlan;
-      execHistory = resumedHistory;
+      // P0-14: 恢复的 execHistory 可能很长(crash 发生在步骤 8 → 累积了 8 步完整历史)。
+      // 直接传入 Executor 会导致第一轮 LLM 调用就超长。先 trim 到策略预算内。
+      const recoveryPolicy = resolveEnginePolicy('directV2', conv.contextMode);
+      execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 30_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
       const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
       onEvent({ type: 'status', text: `📋 v2: 恢复计划(${plan.steps.length} 步,已完成 ${doneCount},剩余 ${remaining.length})— 跳过规划阶段` });
@@ -397,7 +400,13 @@ export class DirectV2Engine implements Engine {
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
-        execHistory = stepMessages;
+        // P0-A: 只追加本步的增量消息,而非整体覆盖 execHistory。
+        // runAgentLoop 返回 dropTransient([system, memMsg, ...history, userInput, ...reactTurns])
+        // = [...history, userInput, ...reactTurns]。history 前缀 == 传入的 execHistory,
+        // 所以增量 = stepMessages.slice(execHistory.length)。整体覆盖会导致步骤 5 的 execHistory
+        // 包含步骤 1-4 的完整 ReAct 历史(assistant + tool_calls + tool results),上下文累积爆炸。
+        const newMessages = stepMessages.slice(execHistory.length);
+        execHistory = [...execHistory, ...newMessages];
         // 检测 maxTurns 截断:runAgentLoop 到达上限时 forwardEvent 吞了 error 事件,
         // 返回值尾部是 tool 消息(非正常完成)。此时模型可能没做完 → 标记失败让重试。
         const truncated = this.wasTruncatedByMaxTurns(stepMessages);
@@ -567,7 +576,15 @@ ${failedDetail || '  (无)'}
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
-    execHistory = plannerMessages;
+    // P0-15: replan 隔离 — 与 run() 的 P0-3 一致,只取 planner 最后一条 assistant(新 plan 结论),
+    // 丢掉探查中间过程。原版 `execHistory = plannerMessages` 把 Planner 的探查消息全部带入 Executor,
+    // 破坏了 P0-3 的隔离设计。
+    const replanPlanConclusion = plannerMessages.filter((m) => m.role === 'assistant').at(-1);
+    if (replanPlanConclusion) {
+      // 保留已有的 execHistory(前序步骤结果)+ replanInput(用户可看到)+ 新 plan 结论
+      execHistory = [...execHistory, { role: 'user' as const, content: replanInput }, replanPlanConclusion];
+    }
+    // 如果没找到 assistant(fallback):保持 execHistory 不变,不整体覆盖
 
     // Planner 失败检测:同 run()——检查尾部是否有新 assistant 消息
     const replanLastMsg = plannerMessages[plannerMessages.length - 1];
@@ -617,7 +634,9 @@ ${failedDetail || '  (无)'}
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
-        execHistory = stepMessages;
+        // P0-A: replan 路径同样只追加增量,而非整体覆盖。
+        const newMessagesReplan = stepMessages.slice(execHistory.length);
+        execHistory = [...execHistory, ...newMessagesReplan];
         const truncated = this.wasTruncatedByMaxTurns(stepMessages);
         const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
         goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
@@ -1175,7 +1194,7 @@ ${failedDetail || '  (无)'}
           snapshot: snap,
           userInput: finalPrompt,
           history: [], // P1:scope 已合并到 userInput,保持空 history
-          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
+          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
           signal: subAc.signal,
           maxTurns: 8,
           onEvent: (e) => {
