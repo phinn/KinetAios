@@ -40,9 +40,11 @@ There's no "project" entity persisted; everything derives from sessions. Startin
 | | Sidebar session list | Workbench |
 |---|---|---|
 | Unit | Single session | cwd (may contain multiple sessions) |
-| Default sort | Time descending | cwd alphabetical |
+| Default sort | Recent activity descending (`updatedAt`) | cwd alphabetical |
 | Actions | Switch / delete / rename session | Switch cwd + edit context |
 | View | Flat / grouped by project (`sb-mode-toggle`) | Always by cwd |
+
+The sidebar defaults to sorting by `updatedAt` (recent activity) descending, with a relative timestamp (e.g. "2m ago") shown on each channel. The **🕐** button at the sidebar footer toggles to creation order. See [[Session-Management]].
 
 The sidebar's "group by project" mode (`▤` button) is a lightweight Workbench — shows grouping inside the sidebar only.
 

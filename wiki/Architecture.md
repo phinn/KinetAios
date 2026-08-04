@@ -110,7 +110,7 @@ Engines only emit events; `TaskManager` receives → `applyEvent` updates `Conve
 
 See `src/main/store.ts`. Three main tables:
 
-- **`conversations`** + **`turns`** — sessions and turns (turn body stored as JSON)
+- **`conversations`** + **`turns`** — sessions and turns (turn body stored as JSON). The `conversations` table includes `created_at` and `updated_at` columns; the latter is refreshed on every user message and engine reply, driving the sidebar's "sort by recent activity".
 - **`history`** — FTS5 virtual table, powers `recall_memory` full-text search
 - **`memories`** — extracted long-term facts (cross-session, cross-engine)
 

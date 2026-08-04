@@ -68,9 +68,35 @@ Visualized as a DAG showing all sessions and their relationships:
 
 Accessed programmatically via `TaskManager.taskGraph()` → returns `{ nodes: TaskGraphNode[], edges: TaskGraphEdge[] }`.
 
+## Sidebar sorting & activity timestamps
+
+Each session has an `updatedAt` timestamp, automatically updated on:
+
+- **User sends a message**
+- **Engine events** arrive (token / tool / done / error)
+- **/goal command** execution
+
+The sidebar defaults to sorting by `updatedAt` descending (most recent first). The **🕐** button at the sidebar footer toggles back to creation order.
+
+Each channel shows a relative time on the right:
+
+| Elapsed | Display |
+|---|---|
+| < 1 min | `just now` |
+| < 1 hr | `Nm ago` |
+| < 1 day | `Nh ago` |
+| 1–2 days | `yesterday` |
+| 2–7 days | `Nd ago` |
+| 7 days–1 yr | `MM-DD` |
+| > 1 yr | `YYYY-MM-DD` |
+
+Hover shows the full date-time.
+
+Old sessions without `updatedAt` fall back to `createdAt`.
+
 ## Key source files
 
 - `src/main/TaskManager.ts` — `branchFrom`, `exportSession`, `importSession`, `taskGraph`
 - `src/main/mcp-server.ts` — remote `export_session` / `import_session` tools
 - `src/shared/types.ts` — `TaskGraphNode`, `TaskGraphEdge`
-- `src/main/store.ts` — `branch_info`, `pipeline_id` columns on `conversations`
+- `src/main/store.ts` — `branch_info`, `pipeline_id`, `updated_at` columns on `conversations`

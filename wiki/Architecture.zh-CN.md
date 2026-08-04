@@ -110,7 +110,7 @@ type AgentEvent =
 
 详见 `src/main/store.ts`。三张主要表:
 
-- **`conversations`** + **`turns`** —— 会话与轮次(turn body 存为 JSON)
+- **`conversations`** + **`turns`** —— 会话与轮次(turn body 存为 JSON)。`conversations` 表含 `created_at` 和 `updated_at` 列,后者在每次用户发消息或引擎回复时更新,驱动侧栏"按最近活动排序"。
 - **`history`** —— FTS5 虚表,供 `recall_memory` 全文搜
 - **`memories`** —— 抽取出的长期事实(跨会话、跨引擎)
 

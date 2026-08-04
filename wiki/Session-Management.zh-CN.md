@@ -68,9 +68,35 @@ branchFrom(convId: string, turnId: string): string  // 返回新 convId
 
 通过 `TaskManager.taskGraph()` 编程式访问 → 返回 `{ nodes: TaskGraphNode[], edges: TaskGraphEdge[] }`。
 
+## 侧栏排序与活动时间
+
+每个会话都有 `updatedAt` 时间戳,在以下时机自动更新:
+
+- **用户发消息** 时
+- **引擎事件** 流入时(token / tool / done / error)
+- **/goal 命令** 执行时
+
+侧栏默认按 `updatedAt` 倒序排列(最近活跃在最上面),无需手动操作。底部 **🕐** 按钮可切换回创建顺序。
+
+每条频道右侧显示相对时间:
+
+| 时间跨度 | 显示 |
+|---|---|
+| < 1 分钟 | `刚刚` |
+| < 1 小时 | `N分钟前` |
+| < 1 天 | `N小时前` |
+| 1–2 天 | `昨天` |
+| 2–7 天 | `N天前` |
+| 7 天–1 年 | `MM-DD` |
+| > 1 年 | `YYYY-MM-DD` |
+
+hover 显示完整日期时间。
+
+旧会话无 `updatedAt` 时 fallback 到 `createdAt`。
+
 ## 关键源文件
 
 - `src/main/TaskManager.ts` —— `branchFrom`、`exportSession`、`importSession`、`taskGraph`
 - `src/main/mcp-server.ts` —— 远程 `export_session` / `import_session` 工具
 - `src/shared/types.ts` —— `TaskGraphNode`、`TaskGraphEdge`
-- `src/main/store.ts` —— `conversations` 表的 `branch_info`、`pipeline_id` 列
+- `src/main/store.ts` —— `conversations` 表的 `branch_info`、`pipeline_id`、`updated_at` 列
