@@ -292,7 +292,7 @@ body {
   <div class="stats">
     <div class="stat"><div class="num">4</div><div class="label">Agent Engines</div></div>
     <div class="stat"><div class="num">20+</div><div class="label">Built-in Tools</div></div>
-    <div class="stat"><div class="num">12</div><div class="label">SQLite Tables</div></div>
+    <div class="stat"><div class="num">14</div><div class="label">SQLite Tables</div></div>
     <div class="stat"><div class="num">2</div><div class="label">IPC Layers</div></div>
     <div class="stat"><div class="num">8</div><div class="label">UI Themes</div></div>
   </div>
@@ -714,7 +714,7 @@ body {
 </div>
 
 <!-- ════════ 7. SQLite 持久化 ════════ -->
-<h2 class="section-title"><span class="num">07</span>SQLite 持久化 — 12 张表 + FTS5 全文搜索</h2>
+<h2 class="section-title"><span class="num">07</span>SQLite 持久化 — 14 张表 + FTS5 全文搜索</h2>
 <p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
   better-sqlite3 同步 API,WAL 模式。无应用层锁。FTS5 虚拟表驱动 recall_memory 语义搜索。
 </p>
@@ -772,6 +772,7 @@ body {
     <div class="schema-body">
       <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
       <div class="schema-row"><span class="col-name">content</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name" style="color:var(--accent3)">importance</span><span class="col-type">INT (1-10) NEW</span></div>
       <div class="schema-row"><span class="col-name">created_at</span><span class="col-type">REAL</span></div>
     </div>
   </div>
@@ -800,6 +801,36 @@ body {
       <div class="schema-row"><span class="col-name">subject</span><span class="col-type">TEXT</span></div>
       <div class="schema-row"><span class="col-name">predicate</span><span class="col-type">TEXT</span></div>
       <div class="schema-row"><span class="col-name">object</span><span class="col-type">TEXT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🧩</div>
+      <div class="table-name">memory_blocks</div>
+      <div class="table-type" style="background:rgba(246,173,85,.12);color:var(--accent3)">P0 NEW</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">label</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">value</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">char_limit</span><span class="col-type">INT</span></div>
+      <div class="schema-row"><span class="col-name">read_only</span><span class="col-type">INT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">📹</div>
+      <div class="table-name">episodic_memories</div>
+      <div class="table-type" style="background:rgba(246,173,85,.12);color:var(--accent3)">P2 NEW</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">conv_id</span><span class="col-type">TEXT FK</span></div>
+      <div class="schema-row"><span class="col-name">summary</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">importance</span><span class="col-type">INT</span></div>
+      <div class="schema-row"><span class="col-name">tags</span><span class="col-type">JSON []</span></div>
+      <div class="schema-row"><span class="col-name">created_at</span><span class="col-type">REAL</span></div>
     </div>
   </div>
 
@@ -1206,11 +1237,254 @@ body {
   </div>
 </div>
 
+<!-- ════════ 11. 记忆系统 ════════ -->
+<h2 class="section-title"><span class="num">11</span>三层记忆架构 — Memory Blocks · Importance · Episodic · Reflection</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  KinetAios 的记忆系统借鉴 MemGPT/Letta 的分层设计,将 Agent 记忆分为三层:核心记忆(常驻上下文)、长期记忆(向量检索)和情景记忆(会话摘要)。
+  每轮对话异步提取事实 → 加权打分 → 注入下一轮。后台自动执行 Reflection GC,防止噪声堆积。
+</p>
+
+<!-- 三层记忆架构图 -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>🧠 三层记忆模型 (Inspired by MemGPT / CoALA)</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:20px;margin-top:20px">
+    <!-- Layer 1: Core Memory -->
+    <div style="background:var(--bg);border:1px solid var(--accent3);border-radius:12px;padding:20px;position:relative">
+      <div style="position:absolute;top:-10px;left:16px;background:var(--accent3);color:var(--bg);font-size:11px;font-weight:700;padding:2px 10px;border-radius:6px">L1 · 每轮注入</div>
+      <div style="font-size:16px;font-weight:700;margin-top:8px;color:var(--accent3)">Core Memory Blocks</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">结构化常驻记忆,Agent 可通过 <code>memory_replace</code> / <code>memory_append</code> 自主编辑。</p>
+      <div style="font-family:var(--mono);font-size:11px;margin-top:12px;color:var(--text-faint);line-height:1.8">
+        <span style="color:var(--accent3)">●</span> persona <span style="color:var(--text-faint)">(read-only)</span><br>
+        <span style="color:var(--accent3)">●</span> user_profile<br>
+        <span style="color:var(--accent3)">●</span> project_context<br>
+        <span style="color:var(--accent3)">●</span> active_goals
+      </div>
+      <div style="margin-top:12px;padding:8px;background:rgba(246,173,85,.08);border-radius:6px;font-size:11px;color:var(--text-dim)">
+        💡 <code style="color:var(--accent3)">store.ts</code> → <code>loadMemoryBlocks()</code><br>
+        <code style="color:var(--accent3)">TaskManager</code> → <code>memoryBlock()</code> → XML 注入
+      </div>
+    </div>
+    <!-- Layer 2: Long-term Memory -->
+    <div style="background:var(--bg);border:1px solid var(--accent4);border-radius:12px;padding:20px;position:relative">
+      <div style="position:absolute;top:-10px;left:16px;background:var(--accent4);color:var(--bg);font-size:11px;font-weight:700;padding:2px 10px;border-radius:6px">L2 · 向量检索</div>
+      <div style="font-size:16px;font-weight:700;margin-top:8px;color:var(--accent4)">Long-term Memory</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">FTS5 全文 + Embedding 向量双路召回,<b>importance 加权重排</b>。</p>
+      <div style="font-family:var(--mono);font-size:11px;margin-top:12px;color:var(--text-faint);line-height:1.8">
+        <span style="color:var(--accent4)">●</span> recall_memory (embedding cosine)<br>
+        <span style="color:var(--accent4)">●</span> scoredMemories() 重排<br>
+        <span style="color:var(--accent4)">●</span> importance × 0.5 + recency × 0.3<br>
+        <span style="color:var(--accent4)">●</span> 每轮提取 → LLM 打分 1-10
+      </div>
+      <div style="margin-top:12px;padding:8px;background:rgba(104,211,145,.08);border-radius:6px;font-size:11px;color:var(--text-dim)">
+        💡 <code style="color:var(--accent4)">extractMemories()</code> → GLM 打分<br>
+        <code style="color:var(--accent4)">recallForInjection()</code> → top-15 注入
+      </div>
+    </div>
+    <!-- Layer 3: Episodic Memory -->
+    <div style="background:var(--bg);border:1px solid var(--accent6);border-radius:12px;padding:20px;position:relative">
+      <div style="position:absolute;top:-10px;left:16px;background:var(--accent6);color:var(--bg);font-size:11px;font-weight:700;padding:2px 10px;border-radius:6px">L3 · 会话级</div>
+      <div style="font-size:16px;font-weight:700;margin-top:8px;color:var(--accent6)">Episodic Memory</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">每次会话结束自动生成叙事摘要 + 标签,跨会话回忆"上次做了什么"。</p>
+      <div style="font-family:var(--mono);font-size:11px;margin-top:12px;color:var(--text-faint);line-height:1.8">
+        <span style="color:var(--accent6)">●</span> extractEpisodicMemory()<br>
+        <span style="color:var(--accent6)">●</span> 3-5 句叙事 + tags + importance<br>
+        <span style="color:var(--accent6)">●</span> 最近 5 条注入 memoryBlock()<br>
+        <span style="color:var(--accent6)">●</span> searchEpisodicMemories()
+      </div>
+      <div style="margin-top:12px;padding:8px;background:rgba(246,135,179,.08);border-radius:6px;font-size:11px;color:var(--text-dim)">
+        💡 <code style="color:var(--accent6)">done</code> 事件 → 异步生成摘要<br>
+        <code style="color:var(--accent6)">episodic_memories</code> 表持久化
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 记忆流转图 -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>🔄 记忆生命周期 — 从对话到注入</h3>
+  <div style="font-family:var(--mono);font-size:13px;line-height:2.2;color:var(--text-dim);margin-top:16px">
+    <span style="color:var(--accent)">① 用户输入</span>
+    → <span style="color:var(--accent4)">recallForInjection()</span> 宽召回 top-30 → scoredMemories 重排 top-15
+    <br>
+    → <span style="color:var(--accent3)">memoryBlock()</span> 拼接 Core Blocks + Episodic 摘要 → XML 注入 system prompt
+    <br>
+    → <span style="color:var(--accent)">Agent 执行 (ReAct Loop)</span>
+    <br>
+    → <span style="color:var(--accent)">② done 事件</span> → 异步触发:
+    <br>
+    &nbsp;&nbsp;&nbsp;├─ <span style="color:var(--accent4)">extractMemories()</span> LLM 提取事实 + importance 打分 → <code>memories</code> 表
+    <br>
+    &nbsp;&nbsp;&nbsp;├─ <span style="color:var(--accent6)">extractEpisodicMemory()</span> 生成叙事摘要 → <code>episodic_memories</code> 表
+    <br>
+    &nbsp;&nbsp;&nbsp;└─ <span style="color:var(--accent3)">doneCounter % 5 === 0</span> → <span style="color:var(--accent5)">runIdleReflection()</span> GC
+  </div>
+</div>
+
+<!-- P0: Memory Blocks 详解 -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>🧩 P0 · Core Memory Blocks — Agent 自主编辑的"笔记本"</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-top:8px">
+    借鉴 MemGPT/Letta 的 Memory Blocks 设计。每个 block 是一段结构化文本,每轮以 XML 标签注入 system prompt 顶部,Agent 始终可见。
+    Agent 通过 <code>memory_replace</code> 和 <code>memory_append</code> 两个工具自主维护这些 block,实现"自我认知"和跨会话记忆持久化。
+  </p>
+  <div style="display:grid;grid-template-columns:160px 1fr 80px 60px;gap:0;margin-top:16px;font-size:12px">
+    <div style="padding:8px 12px;font-weight:700;color:var(--accent3);border-bottom:1px solid var(--border)">label (PK)</div>
+    <div style="padding:8px 12px;font-weight:700;color:var(--accent3);border-bottom:1px solid var(--border)">用途</div>
+    <div style="padding:8px 12px;font-weight:700;color:var(--accent3);border-bottom:1px solid var(--border)">char_limit</div>
+    <div style="padding:8px 12px;font-weight:700;color:var(--accent3);border-bottom:1px solid var(--border)">read_only</div>
+
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text)">persona</div>
+    <div style="padding:8px 12px;color:var(--text-dim)">Agent 人格定义(行为准则、语气约束)— 系统管理</div>
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text-dim)">2000</div>
+    <div style="padding:8px 12px;color:var(--accent5)">✅</div>
+
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text)">user_profile</div>
+    <div style="padding:8px 12px;color:var(--text-dim)">用户画像(偏好、技术栈、工作习惯)</div>
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text-dim)">2000</div>
+    <div style="padding:8px 12px;color:var(--text-faint)">—</div>
+
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text)">project_context</div>
+    <div style="padding:8px 12px;color:var(--text-dim)">项目上下文(当前工作目录、技术选型、进度)</div>
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text-dim)">4000</div>
+    <div style="padding:8px 12px;color:var(--text-faint)">—</div>
+
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text)">active_goals</div>
+    <div style="padding:8px 12px;color:var(--text-dim)">当前目标/待办(短期记忆,Agent 主动维护)</div>
+    <div style="padding:8px 12px;font-family:var(--mono);color:var(--text-dim)">2000</div>
+    <div style="padding:8px 12px;color:var(--text-faint)">—</div>
+  </div>
+  <div style="margin-top:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">
+    <span style="color:var(--accent3)">// 注入格式 (system prompt 顶部)</span><br>
+    &lt;memory_blocks&gt;<br>
+    &nbsp;&nbsp;&lt;user_profile&gt;偏好 TypeScript,习惯用 ReAct 架构...&lt;/user_profile&gt;<br>
+    &nbsp;&nbsp;&lt;project_context&gt;KinetAios Win, Electron+TS, DirectV2 引擎开发中...&lt;/project_context&gt;<br>
+    &lt;/memory_blocks&gt;
+  </div>
+</div>
+
+<!-- P1: Importance Scoring -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>📊 P1 · Importance Scoring — 加权检索策略</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-top:8px">
+    传统 FTS5 只按相关性排序,无法区分"用户核心偏好"与"一次性细节"。KinetAios 在提取阶段让 LLM 对每条记忆打分(1-10),
+    检索阶段用三因子加权重排。
+  </p>
+  <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:20px;margin-top:16px">
+    <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent4)">scoredMemories() 公式</div>
+    <div style="font-family:var(--mono);font-size:16px;text-align:center;padding:16px;background:rgba(104,211,145,.06);border-radius:8px;color:var(--accent4)">
+      score = importance × 0.5 + recency × 0.3 + relevance × 0.2
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin-top:16px">
+      <div style="text-align:center;padding:12px;background:var(--bg-card2);border-radius:8px">
+        <div style="font-size:24px;font-weight:700;color:var(--accent4)">0.5</div>
+        <div style="font-size:12px;color:var(--text-dim)">importance</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">LLM 打分 (1-10)<br>归一化到 0-1</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:var(--bg-card2);border-radius:8px">
+        <div style="font-size:24px;font-weight:700;color:var(--accent)">0.3</div>
+        <div style="font-size:12px;color:var(--text-dim)">recency</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">指数衰减<br>half-life = 7 天</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:var(--bg-card2);border-radius:8px">
+        <div style="font-size:24px;font-weight:700;color:var(--accent2)">0.2</div>
+        <div style="font-size:12px;color:var(--text-dim)">relevance</div>
+        <div style="font-size:11px;color:var(--text-faint);margin-top:4px">cosine(emb_q, emb_m)<br>或 FTS5 rank</div>
+      </div>
+    </div>
+  </div>
+  <div style="margin-top:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">
+    <span style="color:var(--accent4)">// 提取 prompt 要求输出 JSON</span><br>
+    [{"text":"用户偏好 TypeScript", "importance": 8}, {"text":"刚才聊了天气", "importance": 2}]
+  </div>
+</div>
+
+<!-- P2: Episodic Memory -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>📹 P2 · Episodic Memory — 会话级叙事摘要</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-top:8px">
+    每次 <code>done</code> 事件异步触发 <code>extractEpisodicMemory()</code>,LLM 将整轮对话浓缩为 3-5 句叙事摘要 + 标签 + 重要性评分。
+    最近 5 条摘要注入到 <code>memoryBlock()</code> 顶部,让 Agent 在新会话中立即看到"最近做了什么"。
+  </p>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--accent6);margin-bottom:8px">📝 提取流程</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-dim);line-height:2">
+        done 事件<br>
+        → 收集本轮所有 turns<br>
+        → LLM 生成叙事摘要 (3-5 句)<br>
+        → 输出: { summary, tags[], importance }<br>
+        → INSERT INTO episodic_memories<br>
+        → 保留最近 20 条 (超限自动清理)
+      </div>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px">
+      <div style="font-size:13px;font-weight:600;color:var(--accent6);margin-bottom:8px">🔍 注入示例</div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text-faint);line-height:1.8">
+        <span style="color:var(--accent6)">## 最近会话摘要</span><br>
+        [2026-08-04] 排查 Agent Team 成员执行的 bug,<br>
+        发现 runMember 向 runAgentLoop 传参不匹配。<br>
+        将 EngineContextPolicy 补充到架构 HTML。<br>
+        <span style="color:var(--accent)">tags:</span> [agent-team, bug-fix, docs]
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- P3: Idle Reflection -->
+<div class="card" style="padding:28px;margin-bottom:20px">
+  <h3>🧹 P3 · Idle Reflection — 后台记忆 GC</h3>
+  <p style="font-size:13px;color:var(--text-dim);margin-top:8px">
+    记忆会随时间堆积噪声。<code>runIdleReflection()</code> 在每 5 次 <code>done</code> 事件后自动触发,执行三步 GC:
+  </p>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+      <div style="font-size:28px;margin-bottom:8px">🔀</div>
+      <div style="font-size:14px;font-weight:600;color:var(--accent)">① dedupMemories()</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">LLM 识别语义重复的记忆,合并为一条。保留最高 importance。</p>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+      <div style="font-size:28px;margin-bottom:8px">📉</div>
+      <div style="font-size:14px;font-weight:600;color:var(--accent)">② decayMemories()</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">长期未引用的记忆 weight ×0.7。低于 0.1 的直接清除。</p>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:16px;text-align:center">
+      <div style="font-size:28px;margin-bottom:8px">🗑️</div>
+      <div style="font-size:14px;font-weight:600;color:var(--accent5)">③ pruneLowImportance()</div>
+      <p style="font-size:12px;color:var(--text-dim);margin-top:8px">importance ≤2 且从未被 recall 命中的噪声记忆 → DELETE。</p>
+    </div>
+  </div>
+  <div style="margin-top:16px;padding:12px;background:var(--bg);border:1px solid var(--border);border-radius:8px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">
+    <span style="color:var(--accent3)">// 触发条件</span><br>
+    TaskManager.doneCounter % 5 === 0 → runIdleReflection() (异步,不阻塞用户输入)<br>
+    <span style="color:var(--accent3)">// 手动触发</span><br>
+    IPC: <code style="color:var(--accent)">memory-reflection</code> handler → 返回 { deduped, decayed, lowImportancePruned }
+  </div>
+</div>
+
+<!-- 记忆系统设计原则 -->
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px">
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🏗️</div>
+    <h3 style="font-size:14px">三层分离</h3>
+    <p style="font-size:12px">Core (常驻) / Long-term (检索) / Episodic (摘要) 各司其职。不混淆注入策略和衰减规则。</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">⚖️</div>
+    <h3 style="font-size:14px">异步提取</h3>
+    <p style="font-size:12px">extractMemories / extractEpisodicMemory 均为 fire-and-forget,不阻塞 done 事件返回。用户无感知。</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🔄</div>
+    <h3 style="font-size:14px">Agent 可自编辑</h3>
+    <p style="font-size:12px">memory_replace / memory_append 让 Agent 像编辑笔记一样更新自己的认知。非强制 read-only。</p>
+  </div>
+</div>
+
 <!-- ════════ Footer ════════ -->
 <div class="footer">
   <p>KinetAios Architecture · Electron + TypeScript · SQLite + FTS5</p>
-  <p style="margin-top:8px;font-size:12px">15,053 行 TypeScript · 4 引擎 · 20+ 工具 · 12 SQLite 表 · 4 语言 UI · Local-First</p>
-  <p style="margin-top:8px;font-size:12px">Generated 2025-07</p>
+  <p style="margin-top:8px;font-size:12px">15,500+ 行 TypeScript · 4 引擎 · 20+ 工具 · 14 SQLite 表 · 4 语言 UI · Local-First</p>
+  <p style="margin-top:8px;font-size:12px">Generated 2025-08</p>
 </div>
 
 </div>
