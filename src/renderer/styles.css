@@ -796,6 +796,11 @@ a { color: var(--accent); }
 .sb-foot-spacer { flex: 1; }
 .sb-mode { padding: 2px 7px; font-size: 13px; line-height: 1; }
 .sb-mode:hover { color: var(--text); }
+/* ⚡ 运行中筛选按钮:有 running 会话时才出现;激活态高亮(强调色) */
+.sb-running { position: relative; color: var(--run); }
+.sb-running.active { color: var(--accent); background: var(--bg-elev); }
+.sb-run-badge { font-size: 9px; font-weight: 700; background: var(--run); color: var(--bg-side); border-radius: 8px; padding: 0 4px; margin-left: 3px; line-height: 14px; min-width: 14px; text-align: center; }
+.sb-running.active .sb-run-badge { background: var(--accent); }
 
 /* 顶栏按钮 active 态:📂 / ⚙ 当前所在视图时高亮,让用户知道点回去会切走。 */
 #sidebar .sb-actions .ghost.active { color: var(--accent); background: var(--bg-elev); }

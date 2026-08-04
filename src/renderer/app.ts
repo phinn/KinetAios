@@ -25,6 +25,8 @@ let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 
 let pluginPanelRegistry: Array<{ name: string; title: string; icon?: string; html: string }> = [];
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
+// 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
+let runningOnly = false;
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
@@ -251,13 +253,27 @@ function applyI18nDOM(): void {
 function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
   ul.innerHTML = '';
-  if (!order.length) {
-    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(tr('sidebar.empty')) + '</li>';
+
+  // 同步运行中筛选按钮:有 running 会话才显示按钮,且显示数量。
+  // 如果筛选开着但已经没有 running 会话了,自动关闭筛选(避免空列表困惑)。
+  const runningCount = order.filter((id) => convs.get(id)?.status === 'running').length;
+  if (runningOnly && runningCount === 0) runningOnly = false;
+  const filterBtn = document.getElementById('sb-running-filter')!;
+  filterBtn.style.display = runningCount > 0 ? '' : 'none';
+  filterBtn.classList.toggle('active', runningOnly);
+  const badge = filterBtn.querySelector('.sb-run-badge') as HTMLElement | null;
+  if (badge) badge.textContent = String(runningCount);
+
+  // 运行中筛选:只保留 running 的会话。
+  const visibleOrder = runningOnly ? order.filter((id) => convs.get(id)?.status === 'running') : order;
+
+  if (!visibleOrder.length) {
+    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(runningOnly ? tr('sidebar.runningEmpty') : tr('sidebar.empty')) + '</li>';
     return;
   }
   // flat 模式 = 原始平铺;grouped = 按 cwd 分项目(默认)。
   if (sidebarMode === 'flat') {
-    for (const id of order) {
+    for (const id of visibleOrder) {
       const c = convs.get(id);
       if (!c) continue;
       ul.appendChild(taskLi(id));
@@ -266,7 +282,7 @@ function renderSidebar() {
   }
   // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
   const groups = new Map<string, string[]>();
-  for (const id of order) {
+  for (const id of visibleOrder) {
     const c = convs.get(id);
     if (!c) continue;
     const key = c.cwd || '';
@@ -2499,6 +2515,11 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     sidebarMode = sidebarMode === 'grouped' ? 'flat' : 'grouped';
     localStorage.setItem('sb-mode', sidebarMode);
     syncSidebarModeBtn();
+    renderSidebar();
+  };
+  // ⚡ 运行中筛选:点击切换 runningOnly,只显示 running 状态的会话。
+  document.getElementById('sb-running-filter')!.onclick = () => {
+    runningOnly = !runningOnly;
     renderSidebar();
   };
   // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)
