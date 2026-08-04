@@ -2788,6 +2788,8 @@ function readSettingsForm(): AppSettings {
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
     minimaxApiKey: (document.getElementById('s-minimax-key') as HTMLInputElement).value.trim(),
+    v2ModelWindow: Number((document.getElementById('s-v2-model-window') as HTMLInputElement | null)?.value) || 1_000_000,
+    v2BudgetRatio: (Number((document.getElementById('s-v2-budget-ratio') as HTMLInputElement | null)?.value) || 8) / 100,
   };
 }
 
