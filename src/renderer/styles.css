@@ -874,9 +874,10 @@ a { color: var(--accent); }
 .sb-proj-tasks li:hover .conv-actions { display: inline-flex; }
 
 /* chat header — 拆成标题行 + 配置行,避免一行塞太多控件互相遮挡 */
-.chat-head { padding: 9px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; background: var(--bg-side); }
+.chat-head { padding: 9px 16px; border-bottom: 1px solid var(--border); display: flex; flex-direction: column; gap: 7px; background: var(--bg-side); }
 .ch-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
-.ch-tabs { display: inline-flex; gap: 2px; margin-left: 8px; padding-left: 8px; border-left: 1px solid var(--border); }
+.ch-actions { display: inline-flex; gap: 4px; flex-shrink: 0; margin-left: auto; }
+.ch-tabs { display: inline-flex; gap: 2px; margin-left: auto; padding-left: 8px; }
 .cht { font: inherit; font-size: 12px; padding: 4px 10px; background: transparent; border: 1px solid transparent; border-radius: 6px; color: var(--text-dim); cursor: default; transition: color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
 .cht:active { transform: scale(0.96); }
 .cht:hover { color: var(--text); background: var(--bg-elev); }

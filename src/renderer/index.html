@@ -57,16 +57,10 @@
             <span class="t" id="head-title">KinetAios</span>
             <span class="stat" id="head-stat"></span>
             <span class="status" id="head-status"></span>
-            <button class="ghost" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话" data-i18n="head.clearBtn">清空</button>
-            <button class="ghost" id="btn-ctx-inspector" title="上下文检查器(查看/编辑发送给模型的消息列表)" data-i18n-title="head.ctxInspectorTitle" data-i18n="head.ctxInspectorBtn">上下文</button>
-            <button class="ghost" id="btn-del" data-i18n-title="head.delete" title="删除会话" data-i18n="head.deleteBtn">删除</button>
-            <span class="ch-tabs">
-              <button class="cht active" id="tab-chat" data-i18n="tabs.chat">对话</button>
-              <button class="cht" id="tab-files" data-i18n="tabs.files">文件</button>
-              <button class="cht" id="tab-git" data-i18n="tabs.git">Git</button>
-              <button class="cht" id="tab-rules" data-i18n="tabs.rules">规则</button>
-              <button class="cht" id="tab-preview" data-i18n="tabs.preview" title="Artifact 预览">预览</button>
-              <button class="cht" id="tab-team" title="Agent Team">👥 Team</button>
+            <span class="ch-actions">
+              <button class="ghost btn-xs" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话" data-i18n="head.clearBtn">清空</button>
+              <button class="ghost btn-xs" id="btn-ctx-inspector" title="上下文检查器(查看/编辑发送给模型的消息列表)" data-i18n-title="head.ctxInspectorTitle" data-i18n="head.ctxInspectorBtn">上下文</button>
+              <button class="ghost btn-xs" id="btn-del" data-i18n-title="head.delete" title="删除会话" data-i18n="head.deleteBtn">删除</button>
             </span>
           </div>
           <div class="ch-row ch-config">
@@ -76,6 +70,14 @@
             </select>
             <input class="cwd" id="cwd-input" data-i18n-title="head.cwdTitle" title="工作目录(回车应用或点按钮选)" data-i18n-placeholder="head.cwdPh" placeholder="工作目录" />
             <button class="ghost cwd-pick" id="btn-cwd" data-i18n-title="head.pickDir" title="选择目录"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+            <span class="ch-tabs">
+              <button class="cht active" id="tab-chat" data-i18n="tabs.chat">对话</button>
+              <button class="cht" id="tab-files" data-i18n="tabs.files">文件</button>
+              <button class="cht" id="tab-git" data-i18n="tabs.git">Git</button>
+              <button class="cht" id="tab-rules" data-i18n="tabs.rules">规则</button>
+              <button class="cht" id="tab-preview" data-i18n="tabs.preview" title="Artifact 预览">预览</button>
+              <button class="cht" id="tab-team" title="Agent Team">👥 Team</button>
+            </span>
           </div>
           <div id="goal-bar" class="ch-row ch-goal" style="display:none">
             <span class="goal-icon">🎯</span>
