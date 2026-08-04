@@ -15,7 +15,7 @@ inserts into the memories table (SQLite)
   ↓
 turn N+1 starts
   ↓
-memoryBlock() concatenates all memories into one block
+memoryBlock(): recall-based injection (embedding cosine → FTS5 → recent-N)
   ↓
 Direct: as the history[0] user message (_memory marker)
 Claude Code: --append-system-prompt
@@ -52,14 +52,21 @@ Each memory carries its source session (for "current channel" filtering).
 
 ## Injection (`memoryBlock`)
 
-`src/main/TaskManager.ts:267`:
+`src/main/TaskManager.ts:443`:
 
-```ts
-const mems = store.loadMemories().map(m => shellSafeMemory(m.content));
-return '\n\n## About the user (long-term memory, refer when answering)\n' + mems.map(m => `- ${m}`).join('\n');
+Since v1.9.0, memoryBlock uses **recall-based injection** instead of full-set injection:
+
+```
+memoryBlock(conv)
+  → build query from last 1-3 user messages (≤500 chars)
+  → recallForInjection(query):
+      1. embedding cosine (score > 0.25, top-15, ≥3 hits) → touchMemoryUsed
+      2. FTS5 LIKE over memories table (≥2 hits)
+      3. recent-N fallback (newest 15)
+  → shellSafeMemory filter → inject as "## About the user" block
 ```
 
-**All memories are injected every turn** (full set, no topic filtering). Reasoning: cross-topic user facts ("user is a Go backend dev", "user prefers concise replies") are useful for every task.
+**Why recall instead of full-set**: with hundreds/thousands of memories, injecting all of them wastes tokens and dilutes relevance. The recall pipeline selects the 15 most semantically relevant memories for the current conversation — ~500 tokens instead of ~2000.
 
 ## Direct engine special handling (v1.0 refactor)
 
@@ -101,8 +108,8 @@ Don't confuse them:
 
 | | `recall_memory` tool | Long-term memory |
 |---|---|---|
-| Source | `history` table (FTS5-indexed conversation text) | `memories` table (extracted facts) |
-| Trigger | Model invokes explicitly | Auto-injected every turn |
+| Source | `history` table (FTS5-indexed conversation text) + `memories` table (embedding cosine) | `memories` table (recall-based injection) |
+| Trigger | Model invokes explicitly | Auto-injected every turn (top-15 by relevance) |
 | Use case | "How did we solve X last time?" | "Who is this user, what do they like" |
 | Volume | Every conversation | Only durable facts |
 
@@ -112,7 +119,7 @@ Don't confuse them:
 
 - **Extracts every turn**: one extra LLM call per turn (doubles cost, though small)
 - **What gets extracted depends on the model**: occasionally captures one-off details ("user asked about X") → use the 🧠 panel to delete manually
-- **Full-set injection**: when memories reach hundreds, the prompt bloats (no auto-filtering/trimming yet)
+- **Embedding coverage**: embeddings only cover the `memories` table (facts); the `history` table (conversation text) still uses FTS5 keyword search for `recall_memory`. Full semantic recall over history is a roadmap item.
 - **No cross-language unification**: Chinese extracts Chinese, English extracts English, no translation
 
 Roadmap in `IMPROVEMENTS.md`.

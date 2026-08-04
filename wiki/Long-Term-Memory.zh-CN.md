@@ -15,7 +15,7 @@ extractMemories():调一次 LLM,从本轮对话抽「持久事实」
   ↓
 turn N+1 开始
   ↓
-memoryBlock() 把所有 memories 拼成一段
+memoryBlock():检索注入(embedding cosine → FTS5 → recent-N)
   ↓
 Direct:作为 history[0] 的 user 消息(_memory 标记)
 Claude Code:--append-system-prompt
@@ -52,14 +52,21 @@ CREATE TABLE memories (
 
 ## 注入(`memoryBlock`)
 
-`src/main/TaskManager.ts:267`:
+`src/main/TaskManager.ts:443`:
 
-```ts
-const mems = store.loadMemories().map(m => shellSafeMemory(m.content));
-return '\n\n## 关于用户(长期记忆,回答时参考)\n' + mems.map(m => `- ${m}`).join('\n');
+v1.9.0 起,memoryBlock 从**全量注入**改为**检索注入**:
+
+```
+memoryBlock(conv)
+  → 取最近 1-3 轮用户消息拼成 query(≤500 字)
+  → recallForInjection(query):
+      1. embedding cosine(score > 0.25, top-15, ≥3 条命中)→ touchMemoryUsed
+      2. FTS5 LIKE 从 memories 表搜(≥2 条命中)
+      3. recent-N 兜底(最新 15 条)
+  → shellSafeMemory 过滤 → 注入为「## 关于用户」块
 ```
 
-**所有记忆都注入**(每轮都全量,不分对话主题)。reasoning:跨主题的用户事实(「用户是 Go 后端」、「用户偏好简洁回复」)对每个任务都有用。
+**为什么改检索**:记忆多到几百上千条时,全量注入浪费 token 且稀释相关性。检索管线为当前对话选出最相关的 15 条 —— ~500 token 而非 ~2000。
 
 ## Direct 引擎的特殊处理(v1.0 重构)
 
@@ -101,8 +108,8 @@ trim / compact 时永远保留 `_memory` 消息;return 时 `dropTransient` 过�
 
 | | `recall_memory` 工具 | 长期记忆 |
 |---|---|---|
-| 来源 | `history` 表(FTS5 索引的对话原文) | `memories` 表(抽取出的 fact) |
-| 触发 | 模型主动调 | 每轮自动注入 |
+| 来源 | `history` 表(FTS5 对话原文)+ `memories` 表(embedding 语义) | `memories` 表(检索注入) |
+| 触发 | 模型主动调 | 每轮自动注入(top-15 按相关性) |
 | 用途 | 「我们之前怎么解决 X 的?」 | 「这个用户是谁、喜欢什么」 |
 | 数据量 | 所有对话 | 只挑持久事实 |
 
@@ -112,7 +119,7 @@ trim / compact 时永远保留 `_memory` 消息;return 时 `dropTransient` 过�
 
 - **每轮都抽**:每个 turn 多一次 LLM 调用(成本翻倍,虽然小)
 - **抽什么靠模型判断**:偶尔会抽出一次性细节(「用户问过 X」)→ 用 🧠 面板手动删
-- **全量注入**:记忆多到几百条时 prompt 会膨胀(目前没自动筛选/裁剪)
+- **embedding 覆盖不全**:embedding 只覆盖 `memories` 表(facts),`history` 表(对话原文)仍走 FTS5 关键词搜索。全量语义召回是 roadmap 项。
 - **跨语言不统一**:中文抽中文、英文抽英文,不翻译
 
 后续 roadmap 见 `IMPROVEMENTS.md`。
