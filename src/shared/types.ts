@@ -47,6 +47,8 @@ export type EngineContextPolicy = {
   appendStepSummary: boolean;
   /** 摘要消息最大保留字数(超过则截短,逼模型用 remember_fact 存关键数据)。 */
   stepSummaryMaxChars: number;
+  /** 步骤完整结果的最大保留字数(存 PlanStep.result,不进 prompt 但 Judge/replan 可引用)。0 = 不截断。 */
+  stepResultMaxChars: number;
   /** sub-agent 接收 history 的默认范围(给 dispatch_agent 的默认 scope.mode)。 */
   subAgentScope: 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
 };
@@ -59,6 +61,7 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     truncateThreshold: 4000,
     appendStepSummary: false,
     stepSummaryMaxChars: 0,
+    stepResultMaxChars: 0,
     subAgentScope: 'none',
   },
   // v2 DirectV2:Plan-Verify 多步累积,plan 上下文必须留住,工具结果放更多。
@@ -68,6 +71,7 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     truncateThreshold: 6000,
     appendStepSummary: true,
     stepSummaryMaxChars: 500,
+    stepResultMaxChars: 4000,
     subAgentScope: 'last_n_turns',
   },
   // Claude Code / Codex:外部 CLI 各自管自己的 context,这里只给个保底值(目前未触发)。
@@ -77,6 +81,7 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     truncateThreshold: 4000,
     appendStepSummary: false,
     stepSummaryMaxChars: 0,
+    stepResultMaxChars: 0,
     subAgentScope: 'none',
   },
   codex: {
@@ -85,6 +90,7 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     truncateThreshold: 4000,
     appendStepSummary: false,
     stepSummaryMaxChars: 0,
+    stepResultMaxChars: 0,
     subAgentScope: 'none',
   },
 };

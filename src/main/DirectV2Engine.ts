@@ -184,10 +184,15 @@ function extractBalancedJson(text: string): string | null {
 export class DirectV2Engine implements Engine {
   readonly name = 'directV2' as const;
   private autoVerifyApproved = false; // 一次 run 中 autoVerify 首次 confirm 后记住,避免 replan 反复弹窗
+  // P0-2: interStepCompact fingerprint 缓存 — history 没变就不重复调 LLM 摘要。
+  // fingerprint = `${msgs.length}:${最后一条消息 content 的简单 hash}`
+  private lastCompactFingerprint = '';
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
+    this.lastCompactFingerprint = ''; // P0-2: 重置 compact 缓存
+    store.clearV2State(conv.id); // P2-1: 清除上一轮的 checkpoint(新一轮开始)
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
     const snap = { ...base, model: conv.model || base.model };
@@ -213,9 +218,11 @@ export class DirectV2Engine implements Engine {
     // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
 
-    // P0-1:从策略包取 stepSummaryMaxChars(默认 500)。hifi 模式策略不动这字段。
+    // P0-1:从策略包取 stepSummaryMaxChars(给 execHistory 的精简版) + stepResultMaxChars(给 PlanStep.result 的完整版)。
+    // PlanStep.result 存完整版(最多 stepResultMaxChars),Judge/replan 引用;execHistory 追加的摘要用 stepSummaryMaxChars 截断。
     const policy = resolveEnginePolicy('directV2', conv.contextMode);
     const stepMaxChars = policy.stepSummaryMaxChars || 500;
+    const stepFullChars = policy.stepResultMaxChars || 4000;
 
     // ── 工具集 ──
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
@@ -298,8 +305,21 @@ export class DirectV2Engine implements Engine {
     // 有 plan → 进入分步执行模式
     onEvent({ type: 'status', text: `📋 v2: 计划 ${plan.steps.length} 个步骤 — ${plan.summary}` });
 
-    // 用 plan 轮的 messages 作为执行的基础 history
-    let execHistory = plannerMessages;
+    // P0-3: Planner → Executor history 隔离:只保留 planner 最后一条 assistant(plan 结论 + 探查总结),
+    // 丢掉探查中间过程(grep/read_file 结果等)。这些中间输出会迅速膨胀上下文,对后续步骤无价值。
+    // 用户原始 prompt 必须保留(否则后续步骤不知道任务是什么)。
+    const planConclusion = plannerMessages.filter((m) => m.role === 'assistant').at(-1);
+    let execHistory: ChatMsg[] = [];
+    if (planConclusion) {
+      // 保留 user input + plan 结论,跳过中间探查噪声
+      const userInputIdx = plannerMessages.findIndex((m, i) =>
+        i > 0 && m.role === 'user' && !m._memory && typeof m.content === 'string' && m.content.includes(prompt.slice(0, 50))
+      );
+      const userMsg = userInputIdx >= 0 ? plannerMessages[userInputIdx] : { role: 'user' as const, content: prompt };
+      execHistory = [userMsg, planConclusion];
+    } else {
+      execHistory = [...plannerMessages]; // fallback: 全量(理论上不会走到)
+    }
 
     // ── Phase 2: Executor — 按 plan 步骤串行执行 ──
     for (const step of plan.steps) {
@@ -352,13 +372,13 @@ export class DirectV2Engine implements Engine {
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
-            // P0-1:从策略包取 stepSummaryMaxChars(默认 500)。逼模型用 remember_fact 存关键数据。
-            step.result = stepAnswer.slice(0, stepMaxChars);
+            // P0-1: PlanStep.result 存完整版(最多 stepFullChars),Judge/replan 可引用完整产出。
+            step.result = stepAnswer.slice(0, stepFullChars);
             stepDone = true;
             onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
           } else {
             step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, stepMaxChars)}`;
+            step.result = `验证失败: ${verifyResult.output.slice(0, stepFullChars)}`;
             step.retryCount = attempt + 1;
             if (attempt + 1 < MAX_RETRIES) {
               onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
@@ -367,7 +387,7 @@ export class DirectV2Engine implements Engine {
         } else {
           // 无验证命令 → 信任模型输出
           step.status = 'done';
-          step.result = stepAnswer.slice(0, stepMaxChars);
+          step.result = stepAnswer.slice(0, stepFullChars);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
@@ -392,11 +412,13 @@ export class DirectV2Engine implements Engine {
       // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
         execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // 追加结构化摘要消息,确保下一步 ReAct loop 在 prompt 尾部能看到前步结论。
+        // P0-1: 追加结构化摘要消息(用 stepMaxChars 截短 → 给模型看精简版,完整版在 PlanStep.result)。
         execHistory.push({
           role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${step.result ?? '(无)'}\n---\n`,
+          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${(step.result ?? '(无)').slice(0, stepMaxChars)}\n---\n`,
         });
+        // P2-1: 逐步持久化 checkpoint — crash 后可 resume。
+        store.saveV2Checkpoint(conv.id, step.id, JSON.stringify(plan), JSON.stringify(execHistory));
       }
     }
 
@@ -423,6 +445,8 @@ export class DirectV2Engine implements Engine {
 
     // ── Phase 5: Context 压缩(与 v1 共享)──
     this.finalizeContext(conv, execHistory, provider, snap, signal);
+    // P2-1: 存最终 checkpoint(标记为 final,crash recovery 可区分)
+    store.saveV2Checkpoint(conv.id, 'final', JSON.stringify(plan), JSON.stringify(execHistory), 'final');
     onEvent({ type: 'done' });
   }
 
@@ -445,7 +469,7 @@ export class DirectV2Engine implements Engine {
     onEvent: (e: AgentEvent) => void,
     execHistory: ChatMsg[],
     prevPlan: Plan,
-    stepMaxChars: number,
+    stepMaxChars: number, // 给 execHistory 摘要用(精简版)
     replanCount = 0,
   ): Promise<ChatMsg[]> {
     if (replanCount >= MAX_REPLANS) {
@@ -456,8 +480,28 @@ export class DirectV2Engine implements Engine {
 
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
-    // 告诉模型上一轮哪里没做好,让它重新出 plan
-    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, stepMaxChars)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
+    // P0-1: replan 中也取完整版上限(与主 run 一致)
+    const replanPolicy = resolveEnginePolicy('directV2', conv.contextMode);
+    const stepFullChars = replanPolicy.stepResultMaxChars || 4000;
+
+    // P1-1: 只传失败/跳过的步骤 + Judge 的 reason,不传全部步骤(避免长 plan 撑爆 prompt)。
+    const failedSteps = prevPlan.steps.filter((s) => s.status === 'failed' || s.status === 'pending' || s.status === 'skipped');
+    const completedSummary = prevPlan.steps
+      .filter((s) => s.status === 'done')
+      .map((s) => `  ✅ [${s.id}] ${s.title}`)
+      .join('\n');
+    const failedDetail = failedSteps
+      .map((s) => `  ❌ [${s.id}] ${s.title} — ${s.status}: ${(s.result || '(无结果)').slice(0, stepMaxChars)}`)
+      .join('\n');
+    const replanInput = `原始任务: ${originalPrompt}
+
+已完成的步骤(不需重做):
+${completedSummary || '  (无)'}
+
+需要重新处理的步骤:
+${failedDetail || '  (无)'}
+
+请根据失败原因修正方案,重新输出 <plan>。只包含需要做的步骤,不要重复已完成的。`;
 
     const plannerMessages = await runAgentLoop({
       provider,
@@ -543,12 +587,13 @@ export class DirectV2Engine implements Engine {
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
-            step.result = stepAnswer.slice(0, 2000);
+            // P0-1: 存完整版(stepFullChars)
+            step.result = stepAnswer.slice(0, stepFullChars);
             stepDone = true;
             onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
           } else {
             step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, 2000)}`;
+            step.result = `验证失败: ${verifyResult.output.slice(0, stepFullChars)}`;
             step.retryCount = attempt + 1;
             if (attempt + 1 < MAX_RETRIES) {
               onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
@@ -556,7 +601,7 @@ export class DirectV2Engine implements Engine {
           }
         } else {
           step.status = 'done';
-          step.result = stepAnswer.slice(0, 2000);
+          step.result = stepAnswer.slice(0, stepFullChars);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
@@ -579,11 +624,13 @@ export class DirectV2Engine implements Engine {
       // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
       if (!signal.aborted) {
         execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // 追加结构化摘要消息,确保下一步 ReAct loop 在 prompt 尾部能看到前步结论。
+        // P0-1: 追加摘要消息用 stepMaxChars 截短(完整版在 PlanStep.result)。
         execHistory.push({
           role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${step.result ?? '(无)'}\n---\n`,
+          content: `\n---\n📋 步骤[${step.id}] 完成: ${step.title}\n结果摘要: ${(step.result ?? '(无)').slice(0, stepMaxChars)}\n---\n`,
         });
+        // P2-1: 逐步持久化 checkpoint。
+        store.saveV2Checkpoint(conv.id, `replan${replanCount}_${step.id}`, JSON.stringify(newPlan), JSON.stringify(execHistory));
       }
     }
 
@@ -863,29 +910,49 @@ export class DirectV2Engine implements Engine {
   }
 
   /**
-   * 从 execHistory 尾部提取最近的 assistant 文本 + tool 结果,截断为 Judge 可读的证据摘要。
-   * 只取尾部 ~30 条消息,tool result 截断到 1000 字符,assistant 截断到 800 字符,总上限 ~8000 字符。
+   * P1-2: 从 execHistory 按步骤提取证据,整体压缩到 budget 内。
+   * 旧方案只取尾部 30 条 → 多步任务前面的关键产出被丢弃。
+   * 新方案:跳过中间工具噪声(grep/read_file 的大段输出),只保留 assistant 的文本回答
+   * 和关键 tool result(短结果保留,长结果截断到 300 字符),按时间均匀采样。
    */
   private extractExecEvidence(messages: ChatMsg[]): string {
-    const tail = messages.slice(-30);
+    const BUDGET = 8000;
+    // 过滤掉 _memory 消息和纯系统消息
+    const relevant = messages.filter((m) => !m._memory && m.role !== 'system');
+    if (!relevant.length) return '(无执行记录)';
+
     const parts: string[] = [];
     let totalLen = 0;
-    for (const m of tail) {
+
+    for (const m of relevant) {
       let line = '';
       if (m.role === 'assistant') {
         const text = typeof m.content === 'string' ? m.content : '';
-        const tools = (m.tool_calls ?? []).map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 80)})`).join(', ');
-        line = `[助手] ${text.slice(0, 800)}${tools ? `  🔧 ${tools}` : ''}`;
+        // 有文本内容的 assistant 消息是关键决策点 → 保留 600 字符
+        if (text.trim()) {
+          line = `[助手] ${text.slice(0, 600)}`;
+        }
+        // tool_calls 只记工具名 + 参数摘要
+        const tools = (m.tool_calls ?? []).map((tc) => `${tc.function.name}(${tc.function.arguments.slice(0, 60)})`).join(', ');
+        if (tools && line) line += `  🔧 ${tools}`;
+        else if (tools && !line) line = `[助手🔧] ${tools}`;
       } else if (m.role === 'tool') {
         const text = typeof m.content === 'string' ? m.content : '';
-        line = `[工具结果] ${text.slice(0, 1000)}`;
+        // 工具结果:只保留短结果(≤500 字符)的头 300 字符,长结果跳过(中间探查噪声)
+        if (text.length <= 500) {
+          line = `[工具结果] ${text.slice(0, 300)}`;
+        }
+        // 长工具结果跳过(它是中间过程,不是决策证据)
       } else if (m.role === 'user' && !m._memory) {
         const text = typeof m.content === 'string' ? m.content : '';
-        line = `[用户] ${text.slice(0, 150)}`;
+        // 步骤摘要消息(📋 开头)是重要里程碑 → 保留
+        if (text.includes('📋') || text.includes('步骤[')) {
+          line = `[里程碑] ${text.slice(0, 200)}`;
+        }
       }
       if (line) {
         totalLen += line.length;
-        if (totalLen > 8000) break;
+        if (totalLen > BUDGET) break;
         parts.push(line);
       }
     }
@@ -914,6 +981,7 @@ export class DirectV2Engine implements Engine {
   /** Context 压缩(与 v1 共享逻辑)。 */
   // interStepCompact:步骤间压缩 execHistory,防止多步累积导致上下文膨胀。
   // P0-1:预算从 ENGINE_POLICIES.directV2.interStepCompactBudget 取,统一收口。
+  // P0-2: fingerprint 缓存 — 如果 history 自上次压缩后没变(消息条数 + 最后一条 hash 一致),跳过 LLM 调用。
   // 同时在每个步骤完成后追加一条步骤摘要消息,确保后续步骤即使被 trim 也能看到前步结论。
   private async interStepCompact(
     messages: ChatMsg[],
@@ -924,6 +992,17 @@ export class DirectV2Engine implements Engine {
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
     const policy = resolveEnginePolicy('directV2', conv.contextMode);
+    // P0-2: fingerprint = 消息条数 + 最后一条消息 content 前 200 字符的简单 hash。
+    // 不用完整 hash(大消息算 hash 也费 CPU) — 只要能区分「变没变」就行。
+    const lastContent = typeof messages.at(-1)?.content === 'string'
+      ? (messages.at(-1)!.content as string).slice(0, 200)
+      : '';
+    const fingerprint = `${messages.length}:${lastContent.length}`;
+    if (fingerprint === this.lastCompactFingerprint) {
+      // history 没变 → 跳过(上一步刚压缩过,这步没新消息)
+      return messages;
+    }
+    this.lastCompactFingerprint = fingerprint;
     // ponytail: 老版本会读 getSettings().hifiContextBudget * 0.4,这里用策略统一(已是 hifi 时翻倍)。
     return compactHistory(messages, policy.interStepCompactBudget || 20_000, provider, snap, signal, onEvent);
   }

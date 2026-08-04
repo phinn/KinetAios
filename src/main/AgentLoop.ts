@@ -364,10 +364,12 @@ function errMsg(e: unknown): string {
 // ponytail: GLM/Claude/OpenAI 的 tokenizer 各不同且不公开 → 不上 tiktoken(加 ~1MB 依赖、打包变大)。
 // 改用「字符数 × 校准系数」:每轮拿 API 真实 prompt_tokens 反推 token/char 比,滑动平均,自动贴合实际模型。
 // 按协议(openai/anthropic)分别保存系数,避免并发会话互相干扰(GLM 中英文比 ≠ Claude)。
+// 默认值 0.75:中文 1 字 ≈ 1-2 token(偏保守),英文 ~4 字符 ≈ 1 token → 混合场景 0.75 比旧 0.6 更安全。
+// 首轮 API 返回后 calibrateTokens 会立即校准到真实值,默认值只在首次调用时使用一次。
 const tokenCoefByProto: Record<string, number> = {};
 function coefFor(proto?: string): number {
   const k = proto ?? 'default';
-  if (tokenCoefByProto[k] === undefined) tokenCoefByProto[k] = 0.6;
+  if (tokenCoefByProto[k] === undefined) tokenCoefByProto[k] = 0.75;
   return tokenCoefByProto[k];
 }
 // 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。

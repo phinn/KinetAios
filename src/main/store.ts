@@ -70,6 +70,13 @@ export function initStore(): void {
       history TEXT, last_message TEXT, last_result TEXT,
       status TEXT, created_at REAL, updated_at REAL,
       PRIMARY KEY(team_id, member_id));
+    -- V2 逐步持久化:每步完成后存 plan JSON + execHistory JSON。
+    -- crash 后 resume 时读取最后一条 v2_state 恢复执行进度。
+    -- row_type = 'step_checkpoint':逐步 checkpoint; row_type = 'final':最终结果。
+    CREATE TABLE IF NOT EXISTS v2_state(
+      conv_id TEXT, step_id TEXT, row_type TEXT,
+      plan_json TEXT, history_json TEXT, created_at REAL,
+      PRIMARY KEY(conv_id, step_id));
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -490,6 +497,33 @@ export function listTeamsForConv(convId: string): Array<{ team_id: string; membe
 export function convIdFromTeamId(teamId: string): string | null {
   const m = teamId.match(/^conv:(.+):team:[^:]+$/);
   return m ? m[1] : null;
+}
+
+// MARK: V2 逐步持久化(P2-1)
+// 每次 step 完成后存 checkpoint(plan JSON + execHistory JSON)。
+// crash 后 resume 时读取最后一条 checkpoint 恢复执行进度。
+export function saveV2Checkpoint(convId: string, stepId: string, planJson: string, historyJson: string, rowType = 'step_checkpoint'): void {
+  db.prepare(
+    `INSERT INTO v2_state(conv_id, step_id, row_type, plan_json, history_json, created_at)
+     VALUES(?,?,?,?,?,?)
+     ON CONFLICT(conv_id, step_id) DO UPDATE SET
+       row_type=excluded.row_type, plan_json=excluded.plan_json,
+       history_json=excluded.history_json, created_at=excluded.created_at;`
+  ).run(convId, stepId, rowType, planJson, historyJson, Date.now() / 1000);
+}
+
+export function loadV2Checkpoint(convId: string, stepId: string): { plan_json: string; history_json: string; row_type: string; created_at: number } | null {
+  const row = db.prepare('SELECT plan_json, history_json, row_type, created_at FROM v2_state WHERE conv_id=? AND step_id=?;').get(convId, stepId) as { plan_json: string; history_json: string; row_type: string; created_at: number } | undefined;
+  return row ?? null;
+}
+
+export function loadLatestV2Checkpoint(convId: string): { step_id: string; plan_json: string; history_json: string; row_type: string; created_at: number } | null {
+  const row = db.prepare('SELECT step_id, plan_json, history_json, row_type, created_at FROM v2_state WHERE conv_id=? ORDER BY created_at DESC LIMIT 1;').get(convId) as { step_id: string; plan_json: string; history_json: string; row_type: string; created_at: number } | undefined;
+  return row ?? null;
+}
+
+export function clearV2State(convId: string): void {
+  db.prepare('DELETE FROM v2_state WHERE conv_id=?;').run(convId);
 }
 
 export function updateMemory(id: string, content: string): void {
