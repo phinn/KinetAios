@@ -1,0 +1,1218 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios 系统架构 | Architecture Deep Dive</title>
+<style>
+:root {
+  --bg: #0a0c10;
+  --bg-card: #131820;
+  --bg-card2: #1a2030;
+  --border: #252d3f;
+  --border-bright: #3a4a6b;
+  --accent: #00d9ff;
+  --accent-dim: rgba(0,217,255,.15);
+  --accent2: #b794f6;
+  --accent3: #f6ad55;
+  --accent4: #68d391;
+  --accent5: #fc8181;
+  --accent6: #f687b3;
+  --text: #e8ecf3;
+  --text-dim: #9aa5b8;
+  --text-faint: #5a6478;
+  --font: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.6;
+  padding: 40px 20px;
+  background-image:
+    radial-gradient(ellipse 1200px 600px at 50% -100px, rgba(0,217,255,.06), transparent),
+    radial-gradient(ellipse 800px 400px at 80% 50%, rgba(183,148,246,.04), transparent);
+}
+.container { max-width: 1200px; margin: 0 auto; }
+
+/* ── 顶部标题 ── */
+.hero { text-align: center; margin-bottom: 60px; }
+.hero h1 {
+  font-size: 48px; font-weight: 800; letter-spacing: -1px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 12px;
+}
+.hero .subtitle { font-size: 18px; color: var(--text-dim); }
+.hero .stats {
+  display: flex; justify-content: center; gap: 40px; margin-top: 30px; flex-wrap: wrap;
+}
+.hero .stat { text-align: center; }
+.hero .stat .num { font-size: 36px; font-weight: 700; color: var(--accent); font-family: var(--mono); }
+.hero .stat .label { font-size: 13px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px; }
+
+/* ── 章节标题 ── */
+.section-title {
+  font-size: 28px; font-weight: 700; margin: 60px 0 30px;
+  padding-left: 16px; border-left: 4px solid var(--accent);
+}
+.section-title .num { color: var(--accent); margin-right: 10px; font-family: var(--mono); }
+
+/* ── 进程架构图 ── */
+.process-diagram {
+  display: grid;
+  grid-template-columns: 1fr 60px 1fr 60px 1fr;
+  gap: 0; align-items: stretch;
+  margin: 30px 0;
+}
+.proc-box {
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 16px; padding: 28px 24px; position: relative;
+  transition: border-color .3s;
+}
+.proc-box:hover { border-color: var(--border-bright); }
+.proc-box .proc-header { margin-bottom: 16px; }
+.proc-box .proc-icon { font-size: 28px; margin-bottom: 8px; }
+.proc-box .proc-name { font-size: 18px; font-weight: 700; }
+.proc-box .proc-desc { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+.proc-box .proc-items { list-style: none; padding: 0; }
+.proc-box .proc-items li {
+  font-size: 13px; padding: 6px 0; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.proc-box .proc-items li:last-child { border-bottom: none; }
+.proc-box .proc-items code {
+  font-family: var(--mono); font-size: 12px; color: var(--accent);
+  background: var(--accent-dim); padding: 2px 8px; border-radius: 4px;
+}
+.proc-arrow {
+  display: flex; align-items: center; justify-content: center;
+  font-size: 24px; color: var(--accent);
+}
+.proc-arrow .arrow-label {
+  position: absolute; font-size: 11px; color: var(--text-faint);
+  white-space: nowrap; transform: translateY(-28px);
+}
+
+/* ── 引擎对比表 ── */
+.engine-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin: 30px 0;
+}
+.engine-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 24px 20px; transition: transform .2s, border-color .3s;
+}
+.engine-card:hover { transform: translateY(-4px); border-color: var(--border-bright); }
+.engine-card .eng-icon { font-size: 28px; margin-bottom: 12px; }
+.engine-card .eng-name { font-size: 16px; font-weight: 700; margin-bottom: 4px; }
+.engine-card .eng-code { font-family: var(--mono); font-size: 11px; color: var(--text-faint); margin-bottom: 12px; }
+.engine-card .eng-desc { font-size: 13px; color: var(--text-dim); margin-bottom: 12px; line-height: 1.5; }
+.engine-card .eng-feats { list-style: none; }
+.engine-card .eng-feats li { font-size: 12px; padding: 3px 0; color: var(--text-dim); }
+.engine-card .eng-feats li::before { content: '▸ '; color: var(--accent); }
+
+/* ── V2 流程图 ── */
+.v2-flow {
+  display: flex; align-items: stretch; gap: 0; margin: 30px 0; flex-wrap: wrap; justify-content: center;
+}
+.v2-phase {
+  flex: 1; min-width: 150px;
+  background: var(--bg-card); border: 1px solid var(--border);
+  border-radius: 14px; padding: 20px 16px; text-align: center; position: relative;
+}
+.v2-phase .phase-num {
+  position: absolute; top: -12px; left: 50%; transform: translateX(-50%);
+  background: var(--accent); color: var(--bg); font-weight: 700; font-size: 12px;
+  padding: 2px 12px; border-radius: 20px; font-family: var(--mono);
+}
+.v2-phase .phase-icon { font-size: 32px; margin: 12px 0 8px; }
+.v2-phase .phase-name { font-size: 15px; font-weight: 700; margin-bottom: 6px; }
+.v2-phase .phase-desc { font-size: 12px; color: var(--text-dim); }
+.v2-phase .phase-tools { font-size: 11px; color: var(--accent); margin-top: 8px; font-family: var(--mono); }
+.v2-arrow { display: flex; align-items: center; padding: 0 8px; font-size: 20px; color: var(--accent3); }
+.v2-loop {
+  text-align: center; margin-top: 16px; font-size: 13px; color: var(--accent3);
+  font-family: var(--mono);
+}
+
+/* ── ReAct 循环图 ── */
+.react-cycle {
+  display: flex; justify-content: center; align-items: center; gap: 40px; margin: 30px 0;
+}
+.react-circle {
+  width: 500px; height: 500px; position: relative;
+}
+.react-step {
+  position: absolute; width: 130px; text-align: center;
+  background: var(--bg-card); border: 2px solid var(--border-bright); border-radius: 50%;
+  padding: 20px 10px; transition: transform .2s; cursor: default;
+}
+.react-step:hover { transform: scale(1.08); }
+.react-step .step-icon { font-size: 24px; }
+.react-step .step-name { font-size: 13px; font-weight: 600; margin-top: 4px; }
+.react-step .step-num { font-size: 10px; color: var(--accent); font-family: var(--mono); }
+
+/* ── 数据流图 ── */
+.dataflow {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 30px; margin: 30px 0;
+}
+.dataflow-row {
+  display: flex; align-items: center; gap: 12px; padding: 10px 0;
+}
+.dataflow-node {
+  padding: 10px 20px; border-radius: 10px; font-size: 13px; font-weight: 600;
+  white-space: nowrap;
+}
+.dataflow-arrow { color: var(--accent); font-size: 20px; }
+.dataflow-label { font-size: 11px; color: var(--text-faint); }
+
+/* ── 工具列表 ── */
+.tool-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin: 20px 0; }
+.tool-item {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px;
+  padding: 14px 16px; display: flex; align-items: flex-start; gap: 12px; transition: border-color .3s;
+}
+.tool-item:hover { border-color: var(--border-bright); }
+.tool-item .tool-icon { font-size: 20px; flex-shrink: 0; }
+.tool-item .tool-info { flex: 1; }
+.tool-item .tool-name { font-family: var(--mono); font-size: 13px; font-weight: 600; color: var(--accent); }
+.tool-item .tool-desc { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.tool-badge {
+  font-size: 9px; padding: 2px 6px; border-radius: 4px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .5px;
+}
+.tool-badge.ro { background: rgba(104,211,145,.15); color: var(--accent4); }
+.tool-badge.rw { background: rgba(252,129,129,.15); color: var(--accent5); }
+.tool-badge.p2 { background: rgba(246,135,179,.15); color: var(--accent6); }
+
+/* ── 数据库 Schema ── */
+.schema-container { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 20px 0; }
+.schema-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden;
+}
+.schema-card .schema-header {
+  background: var(--bg-card2); padding: 12px 16px; border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; gap: 8px;
+}
+.schema-card .schema-header .table-icon { font-size: 16px; }
+.schema-card .schema-header .table-name { font-family: var(--mono); font-size: 14px; font-weight: 700; color: var(--accent); }
+.schema-card .schema-header .table-type { margin-left: auto; font-size: 10px; padding: 2px 8px; border-radius: 4px; }
+.schema-card .schema-body { padding: 8px 0; }
+.schema-card .schema-row {
+  display: flex; justify-content: space-between; padding: 6px 16px; font-size: 12px;
+  border-bottom: 1px solid rgba(37,45,63,.5);
+}
+.schema-card .schema-row:last-child { border: none; }
+.schema-card .schema-row .col-name { font-family: var(--mono); color: var(--text-dim); }
+.schema-card .schema-row .col-type { font-family: var(--mono); color: var(--text-faint); font-size: 11px; }
+.schema-card .schema-row .col-pk { color: var(--accent3); font-weight: 700; }
+
+/* ── 事件流 ── */
+.event-flow { display: flex; gap: 8px; flex-wrap: wrap; margin: 20px 0; }
+.event-item {
+  padding: 8px 16px; border-radius: 8px; font-family: var(--mono); font-size: 12px;
+  border: 1px solid var(--border);
+}
+.event-token { border-color: var(--accent); color: var(--accent); }
+.event-tool { border-color: var(--accent3); color: var(--accent3); }
+.event-cost { border-color: var(--accent4); color: var(--accent4); }
+.event-status { border-color: var(--text-dim); color: var(--text-dim); }
+.event-done { border-color: var(--accent4); color: var(--accent4); background: rgba(104,211,145,.1); }
+
+/* ── 目录结构 ── */
+.tree {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 24px; margin: 20px 0; font-family: var(--mono); font-size: 13px; line-height: 1.8;
+}
+.tree .dir { color: var(--accent2); }
+.tree .file { color: var(--text-dim); }
+.tree .comment { color: var(--text-faint); font-style: italic; }
+.tree .highlight { color: var(--accent3); }
+
+/* ── 卡片通用 ── */
+.card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 24px; margin: 16px 0;
+}
+.card h3 { font-size: 16px; margin-bottom: 12px; }
+.card p { font-size: 13px; color: var(--text-dim); }
+.card code { font-family: var(--mono); font-size: 12px; color: var(--accent); background: var(--accent-dim); padding: 1px 6px; border-radius: 3px; }
+
+/* ── 高亮标签 ── */
+.badge {
+  display: inline-block; font-size: 11px; padding: 2px 10px; border-radius: 12px;
+  font-weight: 600; margin-right: 6px;
+}
+.badge-core { background: rgba(0,217,255,.12); color: var(--accent); border: 1px solid rgba(0,217,255,.3); }
+.badge-new { background: rgba(246,135,179,.12); color: var(--accent6); border: 1px solid rgba(246,135,179,.3); }
+.badge-p2 { background: rgba(183,148,246,.12); color: var(--accent2); border: 1px solid rgba(183,148,246,.3); }
+
+/* ── 图例 ── */
+.legend { display: flex; gap: 20px; flex-wrap: wrap; margin: 20px 0; }
+.legend-item { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.legend-dot { width: 12px; height: 12px; border-radius: 50%; }
+
+/* ── 多机协作图 ── */
+.mesh-diagram {
+  display: flex; justify-content: center; align-items: center; gap: 40px; margin: 30px 0;
+}
+.mesh-node {
+  background: var(--bg-card); border: 2px solid var(--border-bright); border-radius: 16px;
+  padding: 20px 28px; text-align: center; min-width: 200px;
+}
+.mesh-node .node-icon { font-size: 32px; }
+.mesh-node .node-name { font-size: 14px; font-weight: 700; margin-top: 8px; }
+.mesh-node .node-role { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+.mesh-center {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+}
+.mesh-line {
+  width: 60px; height: 2px; background: var(--accent); position: relative;
+}
+.mesh-line::after {
+  content: 'MCP'; position: absolute; top: -18px; left: 50%; transform: translateX(-50%);
+  font-size: 10px; color: var(--text-faint); font-family: var(--mono);
+}
+
+/* footer */
+.footer { text-align: center; margin-top: 60px; padding: 40px 0; border-top: 1px solid var(--border); }
+.footer p { font-size: 13px; color: var(--text-faint); }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ════════ HERO ════════ -->
+<div class="hero">
+  <h1>⚡ KinetAios 架构深度解析</h1>
+  <p class="subtitle">Local-First AI Agent Dashboard · Electron + TypeScript · ~15,000 LoC</p>
+  <div class="stats">
+    <div class="stat"><div class="num">4</div><div class="label">Agent Engines</div></div>
+    <div class="stat"><div class="num">20+</div><div class="label">Built-in Tools</div></div>
+    <div class="stat"><div class="num">12</div><div class="label">SQLite Tables</div></div>
+    <div class="stat"><div class="num">2</div><div class="label">IPC Layers</div></div>
+    <div class="stat"><div class="num">8</div><div class="label">UI Themes</div></div>
+  </div>
+</div>
+
+<!-- ════════ 1. 进程架构 ════════ -->
+<h2 class="section-title"><span class="num">01</span>双进程架构 & IPC 桥梁</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  Electron 双进程模型。Main 有完整 Node.js 能力(SQLite / shell / child_process / network);Renderer 零 Node 访问,只能通过 Preload 暴露的 <code style="font-family:var(--mono);color:var(--accent)">window.kinet</code> API 调用。安全边界:<code style="font-family:var(--mono);color:var(--accent3)">contextIsolation: true</code> + <code style="font-family:var(--mono);color:var(--accent3)">nodeIntegration: false</code>。
+</p>
+
+<div class="process-diagram">
+  <!-- Renderer -->
+  <div class="proc-box" style="border-top: 3px solid var(--accent6);">
+    <div class="proc-header">
+      <div class="proc-icon">🖥️</div>
+      <div class="proc-name">Renderer Process</div>
+      <div class="proc-desc">vanilla TS · esbuild · 无框架</div>
+    </div>
+    <ul class="proc-items">
+      <li>📊 <code>dashboard.ts</code> 主仪表盘</li>
+      <li>⚡ <code>quick.ts</code> 全局快捷面板</li>
+      <li>📁 <code>files-pane.ts</code> 文件浏览器</li>
+      <li>🏟️ <code>arena.ts</code> 引擎竞技场</li>
+      <li>🏘️ <code>town.ts</code> 小镇可视化</li>
+      <li>🧠 <code>memory-graph.ts</code> 记忆图谱</li>
+      <li>📝 <code>code-editor.ts</code> 代码编辑</li>
+      <li>🎨 <code>markdown.ts</code> Markdown 渲染</li>
+    </ul>
+  </div>
+
+  <!-- Arrow 1 -->
+  <div class="proc-arrow">
+    ↔
+    <div class="arrow-label">contextBridge</div>
+  </div>
+
+  <!-- Preload -->
+  <div class="proc-box" style="border-top: 3px solid var(--accent3);">
+    <div class="proc-header">
+      <div class="proc-icon">🔌</div>
+      <div class="proc-name">Preload Bridge</div>
+      <div class="proc-desc">唯一安全通道 · 193 行</div>
+    </div>
+    <ul class="proc-items">
+      <li>🔗 <code>preload.ts</code> → <code>window.kinet</code></li>
+      <li>📡 <code>ipcRenderer.invoke()</code> 请求</li>
+      <li>📻 <code>ipcRenderer.on()</code> 事件订阅</li>
+      <li>✅ <code>confirm-response</code> 用户确认</li>
+      <li>🎤 voice / clipboard / webview 透传</li>
+    </ul>
+    <div style="margin-top:12px;padding:8px;background:var(--accent-dim);border-radius:8px;font-size:11px;color:var(--accent)">
+      KinetAPI 接口 = 契约<br>Main + Preload + Renderer 三处同步
+    </div>
+  </div>
+
+  <!-- Arrow 2 -->
+  <div class="proc-arrow">
+    ↔
+    <div class="arrow-label">ipcMain.handle</div>
+  </div>
+
+  <!-- Main -->
+  <div class="proc-box" style="border-top: 3px solid var(--accent);">
+    <div class="proc-header">
+      <div class="proc-icon">⚙️</div>
+      <div class="proc-name">Main Process</div>
+      <div class="proc-desc">Node.js 全能力 · 核心 12,000+ 行</div>
+    </div>
+    <ul class="proc-items">
+      <li>🧠 <code>TaskManager.ts</code> 会话管理</li>
+      <li>🔄 <code>engines.ts</code> 四引擎路由</li>
+      <li>🛠️ <code>tools.ts</code> 20+ 工具注册</li>
+      <li>📦 <code>store.ts</code> SQLite + FTS5</li>
+      <li>🌐 <code>mcp-server.ts</code> 远程暴露</li>
+      <li>🔌 <code>plugins.ts</code> 插件系统</li>
+      <li>⏰ <code>cron.ts</code> 定时任务</li>
+      <li>🎤 <code>VoiceChat.ts</code> 实时语音</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card" style="margin-top:20px">
+  <h3>🔐 安全隔离三原则</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px">
+    <div><span class="badge badge-core">1</span> Renderer 不能直接 <code>require()</code> 任何 Node 模块</div>
+    <div><span class="badge badge-core">2</span> 所有文件/shell/网络操作必须经 IPC → Main → 工具执行</div>
+    <div><span class="badge badge-core">3</span> Shell 命令需用户 <code>confirm-request → confirm-response</code> 弹窗确认(approval: always)</div>
+  </div>
+</div>
+
+<!-- ════════ 2. 四引擎架构 ════════ -->
+<h2 class="section-title"><span class="num">02</span>四引擎路由 · Engine Interface</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  每个会话独立选引擎,切换清空跨引擎上下文(Direct 家族 direct ↔ directV2 共享 history)。统一 <code style="font-family:var(--mono);color:var(--accent)">Engine { name; run(opts) }</code> 接口,输出统一 <code style="font-family:var(--mono);color:var(--accent)">AgentEvent</code> 联合类型。
+</p>
+
+<div class="engine-grid">
+  <div class="engine-card" style="border-top:3px solid var(--accent)">
+    <div class="eng-icon">🔄</div>
+    <div class="eng-name">Kaios (Direct)</div>
+    <div class="eng-code">direct · AgentLoop.ts</div>
+    <div class="eng-desc">经典 ReAct 循环。模型 ↔ 工具交替,直到模型不再调工具或达 maxTurns。单轮快响应。</div>
+    <ul class="eng-feats">
+      <li>SSE 流式 token</li>
+      <li>20+ 内置工具</li>
+      <li>reactive trim 防溢出</li>
+      <li>compactHistory 压缩</li>
+    </ul>
+  </div>
+
+  <div class="engine-card" style="border-top:3px solid var(--accent2)">
+    <div class="eng-icon">🧩</div>
+    <div class="eng-name">Kaios v2</div>
+    <div class="eng-code">directV2 · DirectV2Engine.ts</div>
+    <div class="eng-desc">Plan · Execute · Verify · Judge 四层。先规划再执行,执行完自动验证,Judge 裁决是否真正完成。</div>
+    <ul class="eng-feats">
+      <li>结构化 JSON plan</li>
+      <li>每步独立 ReAct loop</li>
+      <li>tsc / lint 自动验证</li>
+      <li>最多 2 次 replan</li>
+    </ul>
+  </div>
+
+  <div class="engine-card" style="border-top:3px solid var(--accent3)">
+    <div class="eng-icon">🤖</div>
+    <div class="eng-name">Claude Code</div>
+    <div class="eng-code">claudeCode · CLI spawn</div>
+    <div class="eng-desc">spawn <code>claude -p --output-format stream-json</code>,解析 NDJSON,通过 <code>--resume</code> + session id 续接。</div>
+    <ul class="eng-feats">
+      <li>NDJSON 流解析</li>
+      <li>--append-system-prompt 注入</li>
+      <li>记忆通过 prompt 前缀</li>
+      <li>.cmd 走 shell:true</li>
+    </ul>
+  </div>
+
+  <div class="engine-card" style="border-top:3px solid var(--accent4)">
+    <div class="eng-icon">📜</div>
+    <div class="eng-name">Codex</div>
+    <div class="eng-code">codex · CLI spawn</div>
+    <div class="eng-desc">spawn <code>codex exec --json</code>,解析 JSONL,resume + 记忆前置拼接到 prompt。</div>
+    <ul class="eng-feats">
+      <li>JSONL 事件解析</li>
+      <li>沙箱模式透传</li>
+      <li>独立 session 管理</li>
+      <li>PATH 增强 binEnv()</li>
+    </ul>
+  </div>
+</div>
+
+<div class="card">
+  <h3>⚡ 统一事件模型 <code style="font-family:var(--mono);font-size:13px">AgentEvent</code></h3>
+  <p style="margin-bottom:12px">所有引擎输出同一种事件联合类型。Main 调 <code>applyEvent()</code> 持久化;Renderer 调同一个 <code>applyEvent()</code> 更新视图 — 单一真相源。</p>
+  <div class="event-flow">
+    <div class="event-item event-token">{ type: 'token', text }</div>
+    <div class="event-item event-tool">{ type: 'tool', name, args, result }</div>
+    <div class="event-item event-cost">{ type: 'cost', usd, tokens }</div>
+    <div class="event-item event-status">{ type: 'status', text }</div>
+    <div class="event-item event-done">{ type: 'sessionStarted', id }</div>
+    <div class="event-item" style="border-color:var(--accent2);color:var(--accent2)">{ type: 'context', action: 'compacted'|'trimmed' }</div>
+    <div class="event-item event-done">{ type: 'done' }</div>
+    <div class="event-item" style="border-color:var(--accent5);color:var(--accent5)">{ type: 'error', message }</div>
+  </div>
+</div>
+
+<!-- ════════ 3. DirectV2 四层引擎 ════════ -->
+<h2 class="section-title"><span class="num">03</span>DirectV2 引擎 — Plan · Execute · Verify · Judge</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  不是更快的 ReAct loop,而是像人类工程师一样工作 — 先规划再执行,执行完验证,验证失败重新规划。对于简单任务自动退化为 v1 单轮 ReAct。
+</p>
+
+<div class="v2-flow">
+  <div class="v2-phase">
+    <div class="phase-num">1</div>
+    <div class="phase-icon">🗺️</div>
+    <div class="phase-name">Planner</div>
+    <div class="phase-desc">探查现状<br>输出 JSON plan</div>
+    <div class="phase-tools">readOnly tools</div>
+  </div>
+  <div class="v2-arrow">→</div>
+  <div class="v2-phase">
+    <div class="phase-num">2</div>
+    <div class="phase-icon">🔨</div>
+    <div class="phase-name">Executor</div>
+    <div class="phase-desc">按 plan 逐步<br>独立 ReAct loop</div>
+    <div class="phase-tools">allTools (含写)</div>
+  </div>
+  <div class="v2-arrow">→</div>
+  <div class="v2-phase">
+    <div class="phase-num">3</div>
+    <div class="phase-icon">✅</div>
+    <div class="phase-name">Verifier</div>
+    <div class="phase-desc">运行验证命令<br>tsc / lint / test</div>
+    <div class="phase-tools">step.verifyCommand</div>
+  </div>
+  <div class="v2-arrow">→</div>
+  <div class="v2-phase">
+    <div class="phase-num">4</div>
+    <div class="phase-icon">⚖️</div>
+    <div class="phase-name">Judge</div>
+    <div class="phase-desc">独立 LLM 调用<br>不信模型自述</div>
+    <div class="phase-tools">maxTurns=1</div>
+  </div>
+</div>
+<div class="v2-loop">
+  ↻ Judge 判定未完成 → 回到 Planner 重新规划（最多 MAX_REPLANS=2 次）
+</div>
+
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:24px">
+  <div class="card">
+    <h3>📦 步骤间数据传递</h3>
+    <p style="margin-bottom:8px"><b style="color:var(--accent)">remember_fact(key, value)</b> — 首选。持久化到 SQLite,抗 trim/compact</p>
+    <p style="margin-bottom:8px"><b style="color:var(--accent3)">临时文件</b> — 大数据写 <code>_step1.json</code>,后续 read_file</p>
+    <p><b style="color:var(--accent5)">绝不</b> — 只塞 step.result 摘要(会被截断到 500 字)</p>
+  </div>
+  <div class="card">
+    <h3>⚙️ 引擎上下文策略</h3>
+    <p style="margin-bottom:8px"><code>trimBudget: 30K</code> · <code>truncateThreshold: 6K</code></p>
+    <p style="margin-bottom:8px"><code>interStepCompactBudget: 20K</code> · <code>stepSummaryMaxChars: 500</code></p>
+    <p><code>subAgentScope: last_n_turns</code> · hifi 模式翻倍</p>
+  </div>
+</div>
+
+<!-- ════════ 4. ReAct 循环 ════════ -->
+<h2 class="section-title"><span class="num">04</span>ReAct 循环 — AgentLoop.ts 核心运行机制</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  v1 Direct 和 v2 DirectV2 的每步执行都复用同一个 <code style="font-family:var(--mono);color:var(--accent)">runAgentLoop()</code>。模型与工具交替调用,直到模型不再发起 tool_call 或到达 maxTurns 上限。
+</p>
+
+<div class="card" style="padding:40px">
+<div style="display:flex;justify-content:center">
+<table style="border-collapse:collapse;font-size:13px">
+<tr>
+  <td style="padding:20px 30px;text-align:center;border:2px solid var(--accent);border-radius:12px;background:var(--bg-card2)">
+    <div style="font-size:28px">💭</div>
+    <div style="font-weight:700;margin-top:4px">System Prompt</div>
+    <div style="font-size:11px;color:var(--text-dim)">base + persona + rules + context</div>
+  </td>
+  <td style="padding:0 10px;color:var(--accent);font-size:20px">→</td>
+  <td style="padding:20px 30px;text-align:center;border:2px solid var(--accent2);border-radius:12px;background:var(--bg-card2)">
+    <div style="font-size:28px">🧠</div>
+    <div style="font-weight:700;margin-top:4px">Memory Block</div>
+    <div style="font-size:11px;color:var(--text-dim)">_memory=true 消息</div>
+  </td>
+  <td style="padding:0 10px;color:var(--accent);font-size:20px">→</td>
+  <td style="padding:20px 30px;text-align:center;border:2px solid var(--accent3);border-radius:12px;background:var(--bg-card2)">
+    <div style="font-size:28px">📜</div>
+    <div style="font-weight:700;margin-top:4px">History</div>
+    <div style="font-size:11px;color:var(--text-dim)">prior turns (trimmed)</div>
+  </td>
+  <td style="padding:0 10px;color:var(--accent);font-size:20px">→</td>
+  <td style="padding:20px 30px;text-align:center;border:2px solid var(--accent4);border-radius:12px;background:var(--bg-card2)">
+    <div style="font-size:28px">👤</div>
+    <div style="font-weight:700;margin-top:4px">User Input</div>
+    <div style="font-size:11px;color:var(--text-dim)">text + images</div>
+  </td>
+</tr>
+</table>
+</div>
+
+<div style="text-align:center;margin:30px 0;font-size:20px;color:var(--accent)">↓ LLM streamComplete()</div>
+
+<div style="display:flex;justify-content:center;gap:20px;flex-wrap:wrap">
+  <div style="padding:16px 28px;border:2px solid var(--accent);border-radius:50%;text-align:center;background:var(--bg-card2)">
+    <div style="font-size:24px">🔤</div>
+    <div style="font-weight:600;font-size:13px;margin-top:4px">Token 流式输出</div>
+    <div style="font-size:11px;color:var(--accent)">→ onEvent({type:'token'})</div>
+  </div>
+  <div style="display:flex;align-items:center;font-size:20px;color:var(--text-dim)">+</div>
+  <div style="padding:16px 28px;border:2px solid var(--accent3);border-radius:50%;text-align:center;background:var(--bg-card2)">
+    <div style="font-size:24px">🔧</div>
+    <div style="font-weight:600;font-size:13px;margin-top:4px">Tool Call?</div>
+    <div style="font-size:11px;color:var(--accent3)">→ execute() → result</div>
+  </div>
+</div>
+
+<div style="text-align:center;margin:20px 0">
+  <div style="font-size:14px;color:var(--text-dim)">有 tool_call → 把 result 追加到 history → 重新喂给 LLM</div>
+  <div style="font-size:14px;color:var(--accent4);margin-top:8px">无 tool_call → 返回最终回答 → done</div>
+</div>
+
+<div style="background:var(--bg-card2);border-radius:12px;padding:16px;margin-top:16px">
+  <div style="font-size:13px;font-weight:600;margin-bottom:8px">🔄 Reactive Trim — 上下文溢出自动收缩</div>
+  <div style="font-size:12px;color:var(--text-dim)">
+    provider 报 context_length_exceeded → catch → trimBudget 砍半 → 砍旧消息(tool 结果优先删)→ 重试本轮<br>
+    再溢出 → <code style="color:var(--accent)">compactHistory()</code> 调 LLM 摘要早期对话 → 再试。最多重试一次。
+  </div>
+</div>
+</div>
+
+<!-- ════════ 5. 工具生态 ════════ -->
+<h2 class="section-title"><span class="num">05</span>工具生态 — 20+ 内置 + 插件 + MCP + 自定义</h2>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent4)"></div>只读工具 (ReadOnly)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent5)"></div>写入工具 (Write)</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--accent6)"></div>P2 新增 (AgentTeams)</div>
+</div>
+
+<div class="tool-grid">
+  <div class="tool-item"><div class="tool-icon">🖥️</div><div class="tool-info"><div class="tool-name">shell</div><div class="tool-desc">cmd.exe / /bin/sh 执行</div></div><span class="tool-badge rw">Write</span></div>
+  <div class="tool-item"><div class="tool-icon">📖</div><div class="tool-info"><div class="tool-name">read_file</div><div class="tool-desc">UTF-8 文件,支持行范围</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">✏️</div><div class="tool-info"><div class="tool-name">write_file</div><div class="tool-desc">整体写入,无长度限制</div></div><span class="tool-badge rw">Write</span></div>
+  <div class="tool-item"><div class="tool-icon">🔧</div><div class="tool-info"><div class="tool-name">edit_file</div><div class="tool-desc">精确字符串替换</div></div><span class="tool-badge rw">Write</span></div>
+  <div class="tool-item"><div class="tool-icon">🔍</div><div class="tool-info"><div class="tool-name">grep</div><div class="tool-desc">正则搜索文件内容</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">📂</div><div class="tool-info"><div class="tool-name">glob</div><div class="tool-desc">Glob 模式列文件</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">🌐</div><div class="tool-info"><div class="tool-name">web_search</div><div class="tool-desc">搜索引擎查询</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">📄</div><div class="tool-info"><div class="tool-name">web_fetch</div><div class="tool-desc">抓取网页正文(Jina)</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">🧠</div><div class="tool-info"><div class="tool-name">recall_memory</div><div class="tool-desc">FTS5 语义搜索历史</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">📌</div><div class="tool-info"><div class="tool-name">remember_fact</div><div class="tool-desc">会话级 KV 锚点</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">📎</div><div class="tool-info"><div class="tool-name">recall_fact</div><div class="tool-desc">读取会话锚点</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">📤</div><div class="tool-info"><div class="tool-name">dispatch_agent</div><div class="tool-desc">子 agent 派发(scope 4 档)</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">🔀</div><div class="tool-info"><div class="tool-name">git_diff</div><div class="tool-desc">Git diff(无注入风险)</div></div><span class="tool-badge ro">RO</span></div>
+  <div class="tool-item"><div class="tool-icon">👥</div><div class="tool-info"><div class="tool-name">spawn_team</div><div class="tool-desc">创建 Agent 团队</div></div><span class="tool-badge p2">P2</span></div>
+  <div class="tool-item"><div class="tool-icon">📡</div><div class="tool-info"><div class="tool-name">team_broadcast</div><div class="tool-desc">广播给全部 member</div></div><span class="tool-badge p2">P2</span></div>
+  <div class="tool-item"><div class="tool-icon">✉️</div><div class="tool-info"><div class="tool-name">team_send</div><div class="tool-desc">单独追问 member</div></div><span class="tool-badge p2">P2</span></div>
+  <div class="tool-item"><div class="tool-icon">🏁</div><div class="tool-info"><div class="tool-name">team_close</div><div class="tool-desc">关闭团队</div></div><span class="tool-badge p2">P2</span></div>
+</div>
+
+<div class="card">
+  <h3>🛡️ 沙箱三档 + 工具集隔离</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:12px">
+    <div style="padding:16px;border:1px solid var(--border);border-radius:10px">
+      <div style="font-weight:700;color:var(--accent4);margin-bottom:6px">🔒 readOnly</div>
+      <div style="font-size:12px;color:var(--text-dim)">只读 cwd 内文件。写操作全部禁止。Planner / Sub-agent / Team member 默认。</div>
+    </div>
+    <div style="padding:16px;border:1px solid var(--border);border-radius:10px">
+      <div style="font-weight:700;color:var(--accent3);margin-bottom:6px">📝 workspaceWrite</div>
+      <div style="font-size:12px;color:var(--text-dim)">只能写 cwd 内。读不限制。默认工作模式。</div>
+    </div>
+    <div style="padding:16px;border:1px solid var(--border);border-radius:10px">
+      <div style="font-weight:700;color:var(--accent5);margin-bottom:6px">🔓 fullAccess</div>
+      <div style="font-size:12px;color:var(--text-dim)">无限制。用户显式选择。</div>
+    </div>
+  </div>
+  <div style="margin-top:16px;font-size:13px;color:var(--text-dim)">
+    <code style="color:var(--accent)">allTools()</code> = builtin(16) + pluginTools + customTools(SQLite) + MCP tools<br>
+    <code style="color:var(--accent3)">readOnlyTools()</code> = read_file / grep / glob / web_fetch / recall_memory / recall_fact (显式排除 dispatch_agent 防递归)
+  </div>
+</div>
+
+
+<!-- ════════ 6. 子 Agent & Team 协作 ════════ -->
+<h2 class="section-title"><span class="num">06</span>多 Agent 协作 — dispatch_agent · AgentTeams · MCP Remote</h2>
+
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin:20px 0">
+
+  <div class="card" style="border-top:3px solid var(--accent)">
+    <h3>📤 dispatch_agent</h3>
+    <p style="margin-bottom:12px">一次性子任务派发。独立上下文,只读工具,文本汇报。</p>
+    <div style="font-size:12px;color:var(--text-dim);line-height:2">
+      <b style="color:var(--accent)">scope 四档:</b><br>
+      ▸ <code>none</code> — 完全独立(默认,最便宜)<br>
+      ▸ <code>last_n_turns(n)</code> — 注入父 N 轮对话<br>
+      ▸ <code>summary_only</code> — LLM 摘要注入<br>
+      ▸ <code>full_history</code> — 全量(最贵)<br>
+    </div>
+    <div style="margin-top:12px;font-size:11px;color:var(--text-faint)">
+      跨引擎:engine=claudeCode / codex → CLI one-shot
+    </div>
+  </div>
+
+  <div class="card" style="border-top:3px solid var(--accent6)">
+    <h3>👥 AgentTeams (P2)</h3>
+    <p style="margin-bottom:12px">持久化团队。每个 member 有独立 history,反复对话。</p>
+    <div style="font-size:12px;color:var(--text-dim);line-height:2">
+      <b style="color:var(--accent6)">生命周期:</b><br>
+      ▸ <code>spawn_team(members[])</code> → 创建<br>
+      ▸ <code>team_broadcast(msg)</code> → 全员指令<br>
+      ▸ <code>team_send(name, msg)</code> → 单独追问<br>
+      ▸ <code>team_close()</code> → 收尾<br>
+      <b style="color:var(--accent6)">存储:</b> team_members 表(SQLite)<br>
+      <b style="color:var(--accent6)">限制:</b> ≤8 成员 · 只读 · 3min 超时
+    </div>
+  </div>
+
+  <div class="card" style="border-top:3px solid var(--accent4)">
+    <h3>🌐 MCP Remote</h3>
+    <p style="margin-bottom:12px">多机协作。本机 MCP Server 暴露工具,远程节点可调用。</p>
+    <div style="font-size:12px;color:var(--text-dim);line-height:2">
+      <b style="color:var(--accent4)">协议:</b> JSON-RPC 2.0 over HTTP+SSE<br>
+      <b style="color:var(--accent4)">核心工具:</b> <code>run_agent</code><br>
+      ▸ 远程机器传 prompt<br>
+      ▸ 本机起完整 AgentLoop<br>
+      ▸ 返回最终文本结果<br>
+      <b style="color:var(--accent4)">安全:</b> Token 验证 · 禁递归
+    </div>
+  </div>
+</div>
+
+<!-- 多机拓扑 -->
+<div class="card" style="background:var(--bg-card2)">
+  <h3 style="text-align:center">🌍 多机协作拓扑</h3>
+  <div class="mesh-diagram" style="flex-direction:column;gap:20px">
+    <div style="display:flex;gap:40px;align-items:center">
+      <div class="mesh-node" style="border-color:var(--accent)">
+        <div class="node-icon">💻</div>
+        <div class="node-name">Machine A</div>
+        <div class="node-role">Controller + MCP Client</div>
+      </div>
+      <div class="mesh-line"></div>
+      <div class="mesh-node" style="border-color:var(--accent3)">
+        <div class="node-icon">🖥️</div>
+        <div class="node-name">Machine B</div>
+        <div class="node-role">MCP Server (run_agent)</div>
+      </div>
+      <div class="mesh-line"></div>
+      <div class="mesh-node" style="border-color:var(--accent4)">
+        <div class="node-icon">🖥️</div>
+        <div class="node-name">Machine C</div>
+        <div class="node-role">MCP Server (run_agent)</div>
+      </div>
+    </div>
+    <div style="font-size:12px;color:var(--text-dim);text-align:center">
+      Machine A 的 LLM 调 <code style="color:var(--accent)">dispatch_agent</code> → 路由到 B 或 C → B/C 各自起 AgentLoop → 结果回传 A
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 7. SQLite 持久化 ════════ -->
+<h2 class="section-title"><span class="num">07</span>SQLite 持久化 — 12 张表 + FTS5 全文搜索</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  better-sqlite3 同步 API,WAL 模式。无应用层锁。FTS5 虚拟表驱动 recall_memory 语义搜索。
+</p>
+
+<div class="schema-container">
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🔮</div>
+      <div class="table-name">history</div>
+      <div class="table-type" style="background:rgba(0,217,255,.12);color:var(--accent)">FTS5</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name">role</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">content</span><span class="col-type">TEXT (indexed)</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">💬</div>
+      <div class="table-name">conversations</div>
+      <div class="table-type" style="background:rgba(183,148,246,.12);color:var(--accent2)">PK: id</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">engine</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">cwd</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">model</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">direct_history</span><span class="col-type">JSON</span></div>
+      <div class="schema-row"><span class="col-name">engine_session_id</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">context_mode</span><span class="col-type">TEXT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🔄</div>
+      <div class="table-name">turns</div>
+      <div class="table-type" style="background:rgba(246,173,85,.12);color:var(--accent3)">INDEX: conv_id</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">conv_id</span><span class="col-type">TEXT FK</span></div>
+      <div class="schema-row"><span class="col-name">data</span><span class="col-type">JSON (Turn)</span></div>
+      <div class="schema-row"><span class="col-name">created_at</span><span class="col-type">REAL</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🧠</div>
+      <div class="table-name">memories</div>
+      <div class="table-type" style="background:rgba(104,211,145,.12);color:var(--accent4)">Long-term</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">content</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">created_at</span><span class="col-type">REAL</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🔢</div>
+      <div class="table-name">memory_embeddings</div>
+      <div class="table-type" style="background:rgba(104,211,145,.12);color:var(--accent4)">Vector</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">memory_id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">vec</span><span class="col-type">BLOB</span></div>
+      <div class="schema-row"><span class="col-name">model</span><span class="col-type">TEXT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🔗</div>
+      <div class="table-name">memory_triples</div>
+      <div class="table-type" style="background:rgba(104,211,145,.12);color:var(--accent4)">Graph</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">subject</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">predicate</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">object</span><span class="col-type">TEXT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">👥</div>
+      <div class="table-name">team_members</div>
+      <div class="table-type" style="background:rgba(246,135,179,.12);color:var(--accent6)">P2 NEW</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">team_id</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">member_id</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">name</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">role</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">history</span><span class="col-type">JSON ChatMsg[]</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">📌</div>
+      <div class="table-name">conversation_facts</div>
+      <div class="table-type" style="background:rgba(0,217,255,.12);color:var(--accent)">KV Store</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">conv_id</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name col-pk">key</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">value</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">updated_at</span><span class="col-type">REAL</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🛠️</div>
+      <div class="table-name">custom_tools</div>
+      <div class="table-type" style="background:rgba(246,173,85,.12);color:var(--accent3)">User-defined</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">name</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">command_tpl</span><span class="col-type">TEXT ($ARG_)</span></div>
+      <div class="schema-row"><span class="col-name">parameters</span><span class="col-type">JSON Schema</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">💰</div>
+      <div class="table-name">cost_log</div>
+      <div class="table-type" style="background:rgba(252,129,129,.12);color:var(--accent5)">Budget</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">conv_id</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">engine</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">amount</span><span class="col-type">REAL (USD)</span></div>
+      <div class="schema-row"><span class="col-name">tokens</span><span class="col-type">INTEGER</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">⏰</div>
+      <div class="table-name">cron_tasks</div>
+      <div class="table-type" style="background:rgba(183,148,246,.12);color:var(--accent2)">Scheduler</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">cron</span><span class="col-type">TEXT (expr)</span></div>
+      <div class="schema-row"><span class="col-name">prompt</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">enabled</span><span class="col-type">INT</span></div>
+    </div>
+  </div>
+
+  <div class="schema-card">
+    <div class="schema-header">
+      <div class="table-icon">🔗</div>
+      <div class="table-name">pipelines</div>
+      <div class="table-type" style="background:rgba(0,217,255,.12);color:var(--accent)">Multi-engine</div>
+    </div>
+    <div class="schema-body">
+      <div class="schema-row"><span class="col-name col-pk">id</span><span class="col-type">TEXT PK</span></div>
+      <div class="schema-row"><span class="col-name">name</span><span class="col-type">TEXT</span></div>
+      <div class="schema-row"><span class="col-name">data</span><span class="col-type">JSON PipelineStage[]</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════ 8. 源码目录 ════════ -->
+<h2 class="section-title"><span class="num">08</span>源码结构一览</h2>
+<div class="tree">
+<span class="dir">src/</span>
+├── <span class="dir">main/</span>                          <span class="comment"># Main process (Node.js 全能力)</span>
+│   ├── <span class="file">main.ts</span>                     <span class="highlight">2187</span>  <span class="comment"># IPC handlers + lifecycle + windows</span>
+│   ├── <span class="file">tools.ts</span>                    <span class="highlight">1295</span>  <span class="comment"># 20+ 工具定义 + sandboxCheck + customTools</span>
+│   ├── <span class="file">DirectV2Engine.ts</span>           <span class="highlight">1054</span>  <span class="comment"># Plan·Execute·Verify·Judge</span>
+│   ├── <span class="file">TaskManager.ts</span>              <span class="highlight">1008</span>  <span class="comment"># 会话管理 + 引擎路由 + 记忆提取</span>
+│   ├── <span class="file">store.ts</span>                    <span class="highlight"> 940</span>  <span class="comment"># SQLite + FTS5 12 表</span>
+│   ├── <span class="file">mcp-server.ts</span>               <span class="highlight"> 709</span>  <span class="comment"># MCP HTTP+SSE Server</span>
+│   ├── <span class="file">engines.ts</span>                  <span class="highlight"> 737</span>  <span class="comment"># Engine interface + 4 引擎 + spawn 逻辑</span>
+│   ├── <span class="file">glm.ts</span>                      <span class="highlight"> 556</span>  <span class="comment"># Provider (OpenAI / Anthropic) + SSE</span>
+│   ├── <span class="file">AgentLoop.ts</span>                <span class="highlight"> 592</span>  <span class="comment"># ReAct loop 核心</span>
+│   ├── <span class="file">mcp.ts</span>                      <span class="highlight"> 577</span>  <span class="comment"># MCP Client (连接远程节点)</span>
+│   ├── <span class="file">VoiceChat.ts</span>                <span class="highlight"> 504</span>  <span class="comment"># 豆包实时语音 WebSocket</span>
+│   ├── <span class="file">plugins.ts</span>                  <span class="highlight"> 532</span>  <span class="comment"># Plugin SDK v2</span>
+│   ├── <span class="file">teams.ts</span>                    <span class="highlight"> 108</span>  <span class="comment"># P2: AgentTeams runMember</span>
+│   ├── <span class="file">cron.ts</span>                     <span class="highlight"> 131</span>  <span class="comment"># 定时任务调度</span>
+│   ├── <span class="file">skills.ts</span>                   <span class="highlight"> 152</span>  <span class="comment"># Skill / Command 加载</span>
+│   ├── <span class="file">snapshots.ts</span>                <span class="highlight"> 101</span>  <span class="comment"># 写入前文件快照 + 还原</span>
+│   └── <span class="file">settings.ts</span>                 <span class="highlight"> 138</span>  <span class="comment"># AppSettings 读写</span>
+│
+├── <span class="dir">shared/</span>                        <span class="comment"># 两进程共享 (纯 TS,无 Node/DOM API)</span>
+│   ├── <span class="file">types.ts</span>                    <span class="highlight"> 718</span>  <span class="comment"># 类型真相源 + applyEvent() + ENGINE_POLICIES</span>
+│   ├── <span class="file">i18n.ts</span>                    <span class="highlight">2605</span>  <span class="comment"># 四语言 (en/zh-CN/zh-TW/ja)</span>
+│   └── <span class="file">glob.ts</span>                     <span class="highlight">  14</span>  <span class="comment"># glob → RegExp</span>
+│
+├── <span class="dir">preload/</span>                       <span class="comment"># 安全桥梁</span>
+│   └── <span class="file">preload.ts</span>                  <span class="highlight"> 193</span>  <span class="comment"># window.kinet (KinetAPI 接口)</span>
+│
+└── <span class="dir">renderer/</span>                      <span class="comment"># UI (vanilla TS, esbuild bundle)</span>
+    ├── <span class="file">app.ts</span>                      <span class="comment"># 主 App 入口</span>
+    ├── <span class="file">dashboard.ts</span>                <span class="comment"># 仪表盘</span>
+    ├── <span class="file">quick.ts</span>                    <span class="comment"># 快捷面板</span>
+    ├── <span class="file">arena.ts</span>                    <span class="comment"># 引擎竞技场</span>
+    ├── <span class="file">town.ts</span>                     <span class="comment"># 小镇可视化</span>
+    ├── <span class="file">files-pane.ts</span>               <span class="comment"># 文件浏览器</span>
+    ├── <span class="file">code-editor.ts</span>              <span class="comment"># Monaco 代码编辑</span>
+    ├── <span class="file">memory-graph.ts</span>             <span class="comment"># 记忆图谱可视化</span>
+    └── <span class="file">markdown.ts</span>                 <span class="comment"># Markdown 渲染</span>
+</div>
+
+<!-- ════════ 9. 完整请求生命周期 ════════ -->
+<h2 class="section-title"><span class="num">09</span>完整请求生命周期 — 从用户输入到回答渲染</h2>
+
+<div class="card" style="padding:32px">
+<div style="display:flex;flex-direction:column;gap:0">
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">1</div>
+    <div><b>用户在 Renderer 输入消息</b> → <code style="color:var(--accent)">window.kinet.send(convId, text)</code></div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent3);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">2</div>
+    <div><b>Preload</b> → <code style="color:var(--accent3)">ipcRenderer.invoke('send', id, text)</code></div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent4);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">3</div>
+    <div><b>Main: <code style="color:var(--accent4)">ipcMain.handle('send')</code></b> → TaskManager.send(convId, text)</div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent2);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">4</div>
+    <div><b>TaskManager</b> → 加载 Conversation + 创建新 Turn → <code style="color:var(--accent2)">engine.run(opts)</code></div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent6);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">5</div>
+    <div><b>Engine 选择</b>:
+      <div style="margin-left:20px;margin-top:6px;font-size:13px;color:var(--text-dim)">
+        <code style="color:var(--accent)">direct</code> → runAgentLoop() ReAct<br>
+        <code style="color:var(--accent2)">directV2</code> → Planner → Executor → Verifier → Judge<br>
+        <code style="color:var(--accent3)">claudeCode</code> → spawn CLI → NDJSON<br>
+        <code style="color:var(--accent4)">codex</code> → spawn CLI → JSONL
+      </div>
+    </div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent5);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">6</div>
+    <div><b>工具执行</b> → sandboxCheck → confirm(如需) → run() → 返回 result → 追加 history</div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">7</div>
+    <div><b>事件流</b>: 每个步骤 onEvent(AgentEvent) → emitEvent 到 Renderer</div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent3);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">8</div>
+    <div><b>Renderer</b> → <code style="color:var(--accent3)">onAgentEvent</code> → <code style="color:var(--accent3)">applyEvent()</code> 更新视图 → DOM 渲染</div>
+  </div>
+  <div style="margin-left:18px;border-left:2px solid var(--border);height:20px"></div>
+
+  <div style="display:flex;align-items:center;gap:16px;padding:12px 0">
+    <div style="width:36px;height:36px;border-radius:50%;background:var(--accent4);color:var(--bg);display:flex;align-items:center;justify-content:center;font-weight:700;flex-shrink:0">9</div>
+    <div><b>完成</b> → { type: 'done' } → persist(Conversation + Turn → SQLite) → 后台记忆提取</div>
+  </div>
+</div>
+</div>
+
+<!-- ════════ 10. EngineContextPolicy ════════ -->
+<h2 class="section-title"><span class="num">10</span>EngineContextPolicy — 引擎上下文策略体系</h2>
+<p style="color:var(--text-dim);font-size:14px;margin-bottom:20px">
+  一个引擎的"上下文能力"不只是模型窗口大小,而是一组精心调校的预算参数:
+  何时裁剪历史、截断工具结果、压缩步骤间累积、给子 agent 透传多少上下文。
+  <code style="font-family:var(--mono);color:var(--accent)">EngineContextPolicy</code> 把这些魔数集中到一个策略对象,改一处生效全部引擎。
+</p>
+
+<!-- 策略类型定义 -->
+<div class="card" style="padding:28px">
+  <h3>📋 EngineContextPolicy 类型 (<code style="color:var(--accent3)">shared/types.ts</code>)</h3>
+  <p style="margin-bottom:12px">6 个字段,每个对应上下文管理的一个维度。不同引擎传入不同策略对象,运行时按需读取。</p>
+  <pre style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:20px;overflow-x:auto;font-size:12px;line-height:1.7;font-family:var(--mono);color:var(--text-dim)">
+<span style="color:var(--accent2)">type</span> <span style="color:var(--accent)">EngineContextPolicy</span> = {
+  <span style="color:var(--accent3)">trimBudget</span>:           <span style="color:var(--accent4)">number</span>;  <span style="color:var(--text-faint)">// reactive trim 预算(history 字符总和超则砍旧消息)。hifi 翻倍</span>
+  <span style="color:var(--accent3)">interStepCompactBudget</span>: <span style="color:var(--accent4)">number</span>;  <span style="color:var(--text-faint)">// v2 步骤间 compact 预算(多步累积 history 摘要后塞回上限)</span>
+  <span style="color:var(--accent3)">truncateThreshold</span>:      <span style="color:var(--accent4)">number</span>;  <span style="color:var(--text-faint)">// 单条 tool 输出最大字符数(头尾保留,中间省略)。hifi 翻倍</span>
+  <span style="color:var(--accent3)">appendStepSummary</span>:      <span style="color:var(--accent4)">boolean</span>; <span style="color:var(--text-faint)">// v2 步骤完成时是否追加"步骤摘要消息"到 history</span>
+  <span style="color:var(--accent3)">stepSummaryMaxChars</span>:    <span style="color:var(--accent4)">number</span>;  <span style="color:var(--text-faint)">// 摘要消息最大保留字数(超则截短,逼模型用 remember_fact)</span>
+  <span style="color:var(--accent3)">subAgentScope</span>:          <span style="color:var(--accent4)">'none' | 'last_n_turns' | 'summary_only' | 'full_history'</span>;
+};</pre>
+</div>
+
+<!-- 四引擎策略对比表 -->
+<div class="card" style="padding:0;overflow:hidden;margin-top:20px">
+  <div style="padding:20px 24px 8px"><h3>⚙️ 四引擎策略对比 — ENGINE_POLICIES</h3>
+  <p style="margin-bottom:16px">每个引擎有独立的策略预设。核心差异:<code style="color:var(--accent)">direct</code> 轻量快响应、<code style="color:var(--accent2)">directV2</code> 大预算重累积、CLI 引擎只给保底值(各自管 context)。</p></div>
+  <table style="width:100%;border-collapse:collapse;font-size:13px">
+    <thead>
+      <tr style="background:var(--bg-card2);border-bottom:2px solid var(--border-bright)">
+        <th style="text-align:left;padding:12px 16px;color:var(--accent);font-family:var(--mono);font-size:12px">字段</th>
+        <th style="text-align:center;padding:12px 16px;color:var(--accent);font-family:var(--mono);font-size:12px">direct<br><span style="font-weight:400;font-size:10px;color:var(--text-faint)">Kaios v1</span></th>
+        <th style="text-align:center;padding:12px 16px;color:var(--accent2);font-family:var(--mono);font-size:12px">directV2<br><span style="font-weight:400;font-size:10px;color:var(--text-faint)">Plan·Verify</span></th>
+        <th style="text-align:center;padding:12px 16px;color:var(--accent3);font-family:var(--mono);font-size:12px">claudeCode<br><span style="font-weight:400;font-size:10px;color:var(--text-faint)">CLI</span></th>
+        <th style="text-align:center;padding:12px 16px;color:var(--accent4);font-family:var(--mono);font-size:12px">codex<br><span style="font-weight:400;font-size:10px;color:var(--text-faint)">CLI</span></th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">trimBudget</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono)">15,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--accent2);font-weight:600">30,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">15,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">15,000</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border);background:rgba(0,217,255,.02)">
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">interStepCompactBudget</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--accent2);font-weight:600">20,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">truncateThreshold</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono)">4,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--accent2);font-weight:600">6,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">4,000</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">4,000</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border);background:rgba(0,217,255,.02)">
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">appendStepSummary</td>
+        <td style="text-align:center;padding:10px 16px;color:var(--text-faint)">false</td>
+        <td style="text-align:center;padding:10px 16px;color:var(--accent2);font-weight:600">true</td>
+        <td style="text-align:center;padding:10px 16px;color:var(--text-faint)">false</td>
+        <td style="text-align:center;padding:10px 16px;color:var(--text-faint)">false</td>
+      </tr>
+      <tr style="border-bottom:1px solid var(--border)">
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">stepSummaryMaxChars</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--accent2);font-weight:600">500</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);color:var(--text-faint)">0</td>
+      </tr>
+      <tr>
+        <td style="padding:10px 16px;font-family:var(--mono);font-size:12px;color:var(--accent3)">subAgentScope</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">none</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);font-size:11px;color:var(--accent2);font-weight:600">last_n_turns</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">none</td>
+        <td style="text-align:center;padding:10px 16px;font-family:var(--mono);font-size:11px;color:var(--text-faint)">none</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- resolveEnginePolicy 流程 -->
+<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px">
+  <div class="card">
+    <h3>🔀 resolveEnginePolicy(engine, mode)</h3>
+    <p style="margin-bottom:10px">运行时合成函数:从 <code>ENGINE_POLICIES</code> 取引擎基础策略,再按 <code>ContextMode</code> 叠加调整。</p>
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:10px;padding:16px;font-family:var(--mono);font-size:12px;line-height:1.8">
+      <span style="color:var(--accent2)">standard</span> 模式 → <span style="color:var(--accent)">直接返回 base policy</span><br>
+      <span style="color:var(--accent3)">hifi</span> 模式 → <span style="color:var(--accent)">trimBudget ×2</span><br>
+      <span style="margin-left:72px"></span><span style="color:var(--accent)">interStepCompactBudget ×2</span><br>
+      <span style="margin-left:72px"></span><span style="color:var(--accent)">truncateThreshold ×2</span><br>
+      <span style="margin-left:72px;color:var(--text-faint)">// appendStepSummary 等不动</span>
+    </div>
+    <p style="margin-top:10px;font-size:12px">设计意图:hifi 让用户能"加预算"用于大文件分析 / 多数据源交叉,但<b style="color:var(--accent3)">不破坏 v2 的策略语义</b>(stepSummary/subAgent 不翻倍)。</p>
+  </div>
+  <div class="card">
+    <h3>💡 为什么 hifi 不全局翻倍?</h3>
+    <p style="margin-bottom:8px"><b style="color:var(--accent)">trimBudget ×2</b> — history 更长 → 保留更多上下文</p>
+    <p style="margin-bottom:8px"><b style="color:var(--accent)">truncateThreshold ×2</b> — 工具结果截断更宽松 → 不丢大文件内容</p>
+    <p style="margin-bottom:8px"><b style="color:var(--text-faint)">stepSummaryMaxChars 不变</b> — 摘要仍然精炼,逼模型用 <code>remember_fact</code> 存关键数据而非堆 history</p>
+    <p><b style="color:var(--text-faint)">subAgentScope 不变</b> — 子 agent 的上下文隔离策略不因主会话 hifi 而泄露</p>
+  </div>
+</div>
+
+<!-- 数据流：策略在 AgentLoop 中的应用点 -->
+<div class="card" style="padding:28px;margin-top:20px">
+  <h3>🔌 策略消费点 — 6 个字段在代码中如何生效</h3>
+  <div style="display:flex;flex-direction:column;gap:0;margin-top:16px">
+
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:12px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent);margin-top:6px;flex-shrink:0"></div>
+      <div>
+        <b style="color:var(--accent)">trimBudget</b> → <code style="color:var(--accent3)">AgentLoop.ts:39</code>
+        <p style="font-size:12px;margin-top:4px">ReAct 循环每轮检查 history 总字符数。超 <code>trimBudget</code> 时,<code>trimHistoryToTokenBudget()</code> 砍旧消息。API 报"上下文过长"时,<code>catch</code> 分支用 <code>trimBudget/2</code> 激进裁剪后重试本轮。</p>
+      </div>
+    </div>
+    <div style="margin-left:3px;border-left:2px solid var(--border);height:16px"></div>
+
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:12px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent2);margin-top:6px;flex-shrink:0"></div>
+      <div>
+        <b style="color:var(--accent2)">interStepCompactBudget</b> → <code style="color:var(--accent3)">DirectV2Engine.ts:928</code>
+        <p style="font-size:12px;margin-top:4px">v2 每步完成后,<code>interStepCompact()</code> 调 <code>compactHistory()</code> 把累积的 execHistory 摘要压缩到预算内,防止多步累积爆窗口。<code>finalizeContext()</code> 在整个任务完成时再做一次终态压缩。</p>
+      </div>
+    </div>
+    <div style="margin-left:3px;border-left:2px solid var(--border);height:16px"></div>
+
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:12px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent3);margin-top:6px;flex-shrink:0"></div>
+      <div>
+        <b style="color:var(--accent3)">truncateThreshold</b> → <code style="color:var(--accent3)">AgentLoop.ts:557,567</code>
+        <p style="font-size:12px;margin-top:4px">工具执行后,<code>truncateForModel(result, threshold)</code> 按 <code>37.5%头 + 37.5%尾 + 25%省略号</code> 比例截断。模型拿截断版(省 input token),UI 拿完整原文(可点击展开)。</p>
+      </div>
+    </div>
+    <div style="margin-left:3px;border-left:2px solid var(--border);height:16px"></div>
+
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:12px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent4);margin-top:6px;flex-shrink:0"></div>
+      <div>
+        <b style="color:var(--accent4)">appendStepSummary + stepSummaryMaxChars</b> → <code style="color:var(--accent3)">DirectV2Engine.ts:218,355</code>
+        <p style="font-size:12px;margin-top:4px">v2 每步完成,从 <code>step.result</code> 提取 <code>stepSummaryMaxChars</code> 字符的摘要,追加为 user 消息。后续步骤即使被 trim/compact,也能从摘要得知前步结论。超 500 字 → 截短 + 提示"用 remember_fact 存大数据"。</p>
+      </div>
+    </div>
+    <div style="margin-left:3px;border-left:2px solid var(--border);height:16px"></div>
+
+    <div style="display:flex;align-items:flex-start;gap:16px;padding:12px 0">
+      <div style="width:8px;height:8px;border-radius:50%;background:var(--accent6);margin-top:6px;flex-shrink:0"></div>
+      <div>
+        <b style="color:var(--accent6)">subAgentScope</b> → <code style="color:var(--accent3)">engines.ts:302-313</code>
+        <p style="font-size:12px;margin-top:4px"><code>dispatch_agent</code> 默认 scope。不走 ChatMsg[] 直接传(避免 tool_call role 错位),而是 <code>resolveSpawnHistory()</code> 把 parent history 转成文本拼到子 agent 的 userInput 末尾。模式:<code>none</code>=独立 / <code>last_n_turns</code>=最近3轮 / <code>summary_only</code>=摘要 / <code>full_history</code>=全量(>8000 字符 auto-compact)。</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- hifi 模式效果对比 -->
+<div class="card" style="padding:28px;margin-top:20px">
+  <h3>📈 standard vs hifi 模式实际效果 (以 DirectV2 为例)</h3>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-top:16px">
+    <div style="background:var(--bg);border:1px solid var(--border);border-radius:12px;padding:20px">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent3)">📦 standard 模式</div>
+      <div style="font-family:var(--mono);font-size:12px;line-height:2;color:var(--text-dim)">
+        trimBudget: <span style="color:var(--accent)">30,000</span><br>
+        interStepCompact: <span style="color:var(--accent)">20,000</span><br>
+        truncateThreshold: <span style="color:var(--accent)">6,000</span><br>
+        stepSummaryMax: <span style="color:var(--text-faint)">500 (不变)</span><br>
+        subAgentScope: <span style="color:var(--text-faint)">last_n_turns (不变)</span>
+      </div>
+      <p style="font-size:12px;margin-top:12px;color:var(--text-faint)">适合:日常编程、bug 修复、快速问答</p>
+    </div>
+    <div style="background:var(--bg);border:1px solid var(--border-bright);border-radius:12px;padding:20px;box-shadow:0 0 20px rgba(0,217,255,.08)">
+      <div style="font-size:14px;font-weight:600;margin-bottom:12px;color:var(--accent)">🔥 hifi 模式</div>
+      <div style="font-family:var(--mono);font-size:12px;line-height:2;color:var(--text-dim)">
+        trimBudget: <span style="color:var(--accent);font-weight:600">60,000</span> <span style="color:var(--accent4)">×2</span><br>
+        interStepCompact: <span style="color:var(--accent);font-weight:600">40,000</span> <span style="color:var(--accent4)">×2</span><br>
+        truncateThreshold: <span style="color:var(--accent);font-weight:600">12,000</span> <span style="color:var(--accent4)">×2</span><br>
+        stepSummaryMax: <span style="color:var(--text-faint)">500 (不变)</span><br>
+        subAgentScope: <span style="color:var(--text-faint)">last_n_turns (不变)</span>
+      </div>
+      <p style="font-size:12px;margin-top:12px;color:var(--text-faint)">适合:大文件分析、多数据源交叉、复杂架构审查</p>
+    </div>
+  </div>
+</div>
+
+<!-- 架构设计原则 -->
+<div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:20px">
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🎯</div>
+    <h3 style="font-size:14px">单一真相源</h3>
+    <p style="font-size:12px">所有"上下文魔数"集中在 <code>ENGINE_POLICIES</code> 一个 Record。加引擎 = 加一个 key,不改 AgentLoop 任何分支判断。</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">🔒</div>
+    <h3 style="font-size:14px">策略不可叠加</h3>
+    <p style="font-size:12px">hifi 只翻倍数值字段,不改 boolean/scope。防止"高保真"意外打开 appendStepSummary 或泄露子 agent 隔离边界。</p>
+  </div>
+  <div class="card" style="text-align:center">
+    <div style="font-size:28px;margin-bottom:8px">⚡</div>
+    <h3 style="font-size:14px">调用方透传</h3>
+    <p style="font-size:12px">RunOpts.policy 可选 — 不传则 <code>resolveEnginePolicy()</code> 自动解析。子 agent / team member 不传 policy,默认走 direct 标准策略。</p>
+  </div>
+</div>
+
+<!-- ════════ Footer ════════ -->
+<div class="footer">
+  <p>KinetAios Architecture · Electron + TypeScript · SQLite + FTS5</p>
+  <p style="margin-top:8px;font-size:12px">15,053 行 TypeScript · 4 引擎 · 20+ 工具 · 12 SQLite 表 · 4 语言 UI · Local-First</p>
+  <p style="margin-top:8px;font-size:12px">Generated 2025-07</p>
+</div>
+
+</div>
+</body>
+</html>
