@@ -539,7 +539,7 @@ function renderTeamPane(): void {
   const body = document.getElementById('team-body');
   if (!body) return;
   if (teamTeams.length === 0) {
-    body.innerHTML = '<div class="team-empty">暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。</div>';
+    body.innerHTML = `<div class="team-empty">${tr('team.empty')}</div>`;
     return;
   }
   const html = teamTeams.map(team => {
@@ -550,7 +550,7 @@ function renderTeamPane(): void {
       <div class="team-section-head">
         <span class="team-section-title">👥 ${members.length} members</span>
         <span class="team-section-time">${timeStr}</span>
-        <button class="ghost sm" onclick="window.__teamBroadcast('${team.team_id}')">📢 广播</button>
+        <button class="ghost sm" onclick="window.__teamBroadcast('${team.team_id}')">${tr('team.broadcast')}</button>
         <button class="ghost sm" onclick="window.__teamDelete('${team.team_id}')">🗑</button>
       </div>
       <div class="team-members">${memberCards}</div>
@@ -573,7 +573,7 @@ function renderMemberCard(teamId: string, m: TeamMemberInfo): string {
       <span class="tmc-status">${statusDot}</span>
       <span class="tmc-name">${escapeHtml(m.name)}</span>
       <span class="tmc-role">${escapeHtml(m.role)}</span>
-      <button class="ghost sm" onclick="window.__teamSend('${teamId}','${escapeHtml(m.name)}')">💬 发消息</button>
+      <button class="ghost sm" onclick="window.__teamSend('${teamId}','${escapeHtml(m.name)}')">${tr('team.send')}</button>
     </div>
     ${resultPreview ? `<div class="tmc-preview">${expanded}</div>` : ''}
   </div>`;
@@ -769,11 +769,11 @@ function showTeamCreateDialog(): void {
   overlay.className = 'git-dialog-overlay';
   overlay.innerHTML = `
     <div class="git-dialog">
-      <div class="git-dialog-title">新建 Agent Team</div>
-      <textarea id="team-create-input" placeholder="输入成员(格式:name1:role1, name2:role2)&#10;例如:explorer:代码探查, reviewer:架构评审" rows="4" autofocus></textarea>
+      <div class="git-dialog-title">${tr('team.dialog.title')}</div>
+      <textarea id="team-create-input" placeholder="${esc(tr('team.dialog.placeholder'))}" rows="4" autofocus></textarea>
       <div class="git-dialog-actions">
-        <button class="gd-cancel">取消</button>
-        <button class="gd-ok" disabled>创建</button>
+        <button class="gd-cancel">${tr('team.dialog.cancel')}</button>
+        <button class="gd-ok" disabled>${tr('team.dialog.create')}</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -792,10 +792,10 @@ function showTeamCreateDialog(): void {
       const [name, role] = part.trim().split(':').map(s => s?.trim());
       if (name && role) members.push({ name, role });
     }
-    if (members.length === 0 || !selectedId) { alert('格式错误或未选择会话'); return; }
+    if (members.length === 0 || !selectedId) { alert(tr('team.dialog.formatErr')); return; }
     close();
     const r = await api.createTeam(selectedId, members);
-    if (!r.ok || !r.team_id) { alert(r.error ?? '创建失败'); return; }
+    if (!r.ok || !r.team_id) { alert(r.error ?? tr('team.dialog.createFail')); return; }
     await refreshTeamPane();
   };
   requestAnimationFrame(() => { overlay!.classList.add('show'); ta.focus(); });

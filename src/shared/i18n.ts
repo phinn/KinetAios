@@ -628,6 +628,21 @@ const ZH_CN: Dict = {
   'settings.persona.saved': '已保存',
   'settings.persona.saveFail': '保存失败',
 
+  // ── Team 面板 ──
+  'team.title': '👥 Agent Team',
+  'team.new': '+ 新建',
+  'team.newTitle': '新建 Team',
+  'team.refreshTitle': '刷新 Team 状态',
+  'team.empty': '暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。',
+  'team.broadcast': '📢 广播',
+  'team.send': '💬 发消息',
+  'team.dialog.title': '新建 Agent Team',
+  'team.dialog.placeholder': '输入成员(格式:name1:role1, name2:role2)\n例如:explorer:代码探查, reviewer:架构评审',
+  'team.dialog.cancel': '取消',
+  'team.dialog.create': '创建',
+  'team.dialog.formatErr': '格式错误或未选择会话',
+  'team.dialog.createFail': '创建失败',
+
   // ── 多机协作 (Mesh) ──
   'settings.mesh.title': '多机协作 (MCP Bridge)',
   'settings.mesh.desc': '把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。',
@@ -1404,6 +1419,21 @@ const EN: Dict = {
   'settings.persona.genFail': 'Generation failed',
   'settings.persona.saved': 'Saved',
   'settings.persona.saveFail': 'Save failed',
+
+  // ── Team panel ──
+  'team.title': '👥 Agent Team',
+  'team.new': '+ New',
+  'team.newTitle': 'New Team',
+  'team.refreshTitle': 'Refresh team status',
+  'team.empty': 'No teams yet. The LLM can auto-create via spawn_team, or click "New" to add manually.',
+  'team.broadcast': '📢 Broadcast',
+  'team.send': '💬 Send',
+  'team.dialog.title': 'New Agent Team',
+  'team.dialog.placeholder': 'Enter members (format: name1:role1, name2:role2)\ne.g. explorer:code explorer, reviewer:architecture review',
+  'team.dialog.cancel': 'Cancel',
+  'team.dialog.create': 'Create',
+  'team.dialog.formatErr': 'Invalid format or no conversation selected',
+  'team.dialog.createFail': 'Creation failed',
 
   // ── Mesh ──
   'settings.mesh.title': 'Mesh (MCP Bridge)',
@@ -2183,6 +2213,21 @@ const ZH_TW: Dict = {
   'settings.persona.saved': '已儲存',
   'settings.persona.saveFail': '儲存失敗',
 
+  // ── Team 面板 ──
+  'team.title': '👥 Agent Team',
+  'team.new': '+ 新建',
+  'team.newTitle': '新建 Team',
+  'team.refreshTitle': '重新整理 Team 狀態',
+  'team.empty': '暫無 Team。LLM 可透過 spawn_team 工具自動建立,或點擊「新建」手動新增。',
+  'team.broadcast': '📢 廣播',
+  'team.send': '💬 發訊息',
+  'team.dialog.title': '新建 Agent Team',
+  'team.dialog.placeholder': '輸入成員(格式:name1:role1, name2:role2)\n例如:explorer:程式碼探查, reviewer:架構評審',
+  'team.dialog.cancel': '取消',
+  'team.dialog.create': '建立',
+  'team.dialog.formatErr': '格式錯誤或未選擇會話',
+  'team.dialog.createFail': '建立失敗',
+
   // ── 多機協作 (Mesh) ──
   'settings.mesh.title': '多機協作 (MCP Bridge)',
   'settings.mesh.desc': '把本機工具暴露給區域網路內其它 KinetAios 節點，或連接遠端節點作為工具使用。',
@@ -2960,6 +3005,21 @@ const JA: Dict = {
   'settings.persona.genFail': '生成に失敗しました',
   'settings.persona.saved': '保存しました',
   'settings.persona.saveFail': '保存に失敗しました',
+
+  // ── Team パネル ──
+  'team.title': '👥 Agent Team',
+  'team.new': '+ 新規',
+  'team.newTitle': '新規 Team',
+  'team.refreshTitle': 'Team ステータスを更新',
+  'team.empty': 'Team がありません。LLM が spawn_team で自動作成可能、または「新規」で手動追加。',
+  'team.broadcast': '📢 ブロードキャスト',
+  'team.send': '💬 送信',
+  'team.dialog.title': '新規 Agent Team',
+  'team.dialog.placeholder': 'メンバーを入力(形式: name1:role1, name2:role2)\n例: explorer:コード探索, reviewer:アーキテクチャレビュー',
+  'team.dialog.cancel': 'キャンセル',
+  'team.dialog.create': '作成',
+  'team.dialog.formatErr': '形式が不正、または会話が選択されていません',
+  'team.dialog.createFail': '作成に失敗しました',
 
   // ── メッシュ (MCP Bridge) ──
   'settings.mesh.title': 'メッシュ (MCP Bridge)',
