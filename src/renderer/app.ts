@@ -28,7 +28,8 @@ let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'group
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
-let sortByRecent = false;
+// 默认按最近活动排序(用户最关心最近活跃的频道)。
+let sortByRecent = true;
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
@@ -2554,10 +2555,12 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
     runningOnly = !runningOnly;
     renderSidebar();
   };
-  // 🕐 按最近活动排序:点击切换 sortByRecent,按 updatedAt 倒序排列。
-  document.getElementById('sb-sort-toggle')!.onclick = () => {
+  // 🕐 按最近活动排序:点击切换 sortByRecent,按 updatedAt 倒序排列。默认开启。
+  const sortBtn = document.getElementById('sb-sort-toggle')!;
+  sortBtn.classList.toggle('active', sortByRecent);
+  sortBtn.onclick = () => {
     sortByRecent = !sortByRecent;
-    document.getElementById('sb-sort-toggle')!.classList.toggle('active', sortByRecent);
+    sortBtn.classList.toggle('active', sortByRecent);
     renderSidebar();
   };
   // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)

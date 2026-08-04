@@ -219,6 +219,7 @@ export class TaskManager {
       t.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
       t.done = true;
       conv.turns.push(t);
+      conv.updatedAt = Date.now(); // /goal 也算活动。
       store.saveTurn(conv.id, t);
       this.emit.emitConversation(conv);
       return;
@@ -228,6 +229,7 @@ export class TaskManager {
     conv.turns.push(newTurn(prompt));
     conv.status = 'running';
     conv.statusNote = null;
+    conv.updatedAt = Date.now(); // 用户发消息也算活动,更新时间戳。
     this.emit.emitConversation(conv); // renderer sees the new (empty) turn + running state
 
     const ac = new AbortController();
