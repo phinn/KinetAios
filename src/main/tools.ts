@@ -908,6 +908,63 @@ const gitDiff: Tool = {
   },
 };
 
+// remember_fact / recall_fact:会话级 KV 锚点(P0-2)。
+// v2 多步任务关键产出(文件路径列表、关键决策、临时文件名)存这里,不被 trim/compact 砍掉。
+// key 在同一 conv 内唯一;value 纯文本或 JSON 字符串。sub-agent 也可调用 recall_fact 跨子任务共享。
+// 不参与跨会话同步,每个 conv 独立 —— 与 memories(跨轮长期记忆)互补。
+const rememberFact: Tool = {
+  name: 'remember_fact',
+  description:
+    '保存一个会话级锚点(键值对)到 SQLite。后续步骤可 recall_fact 读取。\n' +
+    '适用场景:v2 多步任务的关键产出(产出的文件路径列表、关键决策、临时文件名)、\n' +
+    'v1 长对话中需要跨轮持久化的数据(不能仅依赖对话 history,会被 trim/compact 砍掉)。\n' +
+    '注意:不要把寒暄 / 一次性细节 / 已能从文件读到的内容存这里 —— 锚点应当是"后续步骤会反复用到"的关键数据。',
+  parameters: {
+    type: 'object',
+    properties: {
+      key: { type: 'string', description: '锚点 key(同 conv 内唯一,建议短且语义清晰,如 "step1_files")' },
+      value: { type: 'string', description: '锚点 value(纯文本或 JSON 字符串)' },
+    },
+    required: ['key', 'value'],
+  },
+  async run(args, ctx) {
+    const key = String(args.key ?? '').trim();
+    const value = String(args.value ?? '');
+    if (!key) return '缺少 key';
+    if (!ctx.convId) return '该上下文不支持 fact(无 convId)';
+    try {
+      store.saveFact(ctx.convId, key, value);
+      // 状态事件方便 UI 显示(类型 'status',text 字段)
+      return `已记住: ${key} = ${value.length > 80 ? value.slice(0, 80) + '…' : value}`;
+    } catch (e) {
+      return `remember_fact 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
+const recallFact: Tool = {
+  name: 'recall_fact',
+  description:
+    '读取之前 remember_fact 保存的会话锚点。key 不存在时返回 "(无此 key)"。\n' +
+    '通常在多步任务的新步骤开始时调用一次,获取前步的关键产出。',
+  parameters: {
+    type: 'object',
+    properties: { key: { type: 'string', description: '要读取的锚点 key' } },
+    required: ['key'],
+  },
+  async run(args, ctx) {
+    const key = String(args.key ?? '').trim();
+    if (!key) return '缺少 key';
+    if (!ctx.convId) return '该上下文不支持 fact(无 convId)';
+    try {
+      const v = store.loadFact(ctx.convId, key);
+      return v ?? '(无此 key)';
+    } catch (e) {
+      return `recall_fact 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 // dispatch_agent:派发独立子任务给子 agent。Direct 默认走 runAgentLoop(只读工具集);
 // engine=claudeCode / codex 时跨引擎:走对应 CLI 的 one-shot 模式,只读、不递归。
 // 对应 CC 的 AgentTool 最小版 + 跨引擎扩展。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
@@ -941,7 +998,7 @@ const dispatchAgent: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, dispatchAgent];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, dispatchAgent];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -955,8 +1012,9 @@ export function allTools(): Tool[] {
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
+// recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(): Tool[] {
-  return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff];
+  return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, recallFact];
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。

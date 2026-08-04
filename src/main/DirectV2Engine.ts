@@ -88,11 +88,12 @@ const V2_SYSTEM_SUFFIX = `
 - 简单问答、单文件修改、快速查询
 - 直接执行即可,不用过度规划
 
-## 中间结果落地(重要):
-当任务涉及多文件数据处理时(如 CSV/Excel 分析、跨文件统计):
-- **将每步的关键产出写入临时文件**(如 \`_step1_summary.json\`、\`_step2_result.csv\`)
-- 后续步骤通过 \`read_file\` 读取这些文件,而非依赖对话上下文中可能被裁剪的文本
-- 这样即使上下文压缩(trim/compact),关键数据也能持久保留在磁盘上
+## 中间结果落地(P0-2 重要):
+当任务涉及多文件数据处理时(如 CSV/Excel 分析、跨文件统计),关键产出必须**显式持久化**:
+- **首选 \`remember_fact(key, value)\`**:把数据存到 SQLite,后续步骤 \`recall_fact(key)\` 读出。持久、抗 trim/compact。
+- **次选 临时文件**:把大数据写 \`_step1_summary.json\`、\`_step2_result.csv\`,后续步骤 \`read_file\` 读取。体积大但要全文搜时用。
+- **绝对不要**只把数据塞进 step.result 摘要(会被截断到 500 字,数据就丢了)
+- 跨步骤共享时,key 用语义化命名(\`step1_file_list\` / \`step2_decisions\` / \`target_csv_paths\`)
 `;
 
 // Planner prompt —— 引导模型先探查再规划(只读工具,不执行写操作)。
@@ -123,9 +124,10 @@ const STEP_EXECUTOR_PROMPT = (step: PlanStep, allSteps: PlanStep[], planGoal: st
 ${step.verifyCommand ? `**验证命令:** ${step.verifyCommand}` : ''}
 
 **已完成步骤:**
-${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.title}: ${(s.result || '完成').slice(0, 1000)}`).join('\n') || '  (无)'}
+${allSteps.filter((s) => s.status === 'done').map((s) => `  ✅ [${s.id}] ${s.title}: ${(s.result || '完成').slice(0, 500)}`).join('\n') || '  (无)'}
 
-> 💡 如果前步有数据需要引用,请用 read_file 读取前步产出的临时文件(如 _step*_summary.json),不要仅依赖上面的摘要文本。
+> 💡 前步关键数据:**优先用 \`recall_fact(key)\`** 读回(不被 trim 砍掉),其次 \`read_file\` 读临时文件。
+> 📤 当前步完成时:如果产生了**后续步骤会用到**的关键数据(文件路径列表、决策、临时文件名),**用 \`remember_fact\` 存好**,不要只塞 step.result。
 
 请执行当前步骤。完成后用简洁中文汇报你做了什么。`;
 
@@ -209,6 +211,10 @@ export class DirectV2Engine implements Engine {
 
     // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
+
+    // P0-1:从策略包取 stepSummaryMaxChars(默认 500)。hifi 模式策略不动这字段。
+    const policy = resolveEnginePolicy('directV2', conv.contextMode);
+    const stepMaxChars = policy.stepSummaryMaxChars || 500;
 
     // ── 工具集 ──
     const tools = [...allTools(), ...(await mcp.directTools(2000))];
@@ -345,12 +351,13 @@ export class DirectV2Engine implements Engine {
           verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
           if (verifyResult.ok) {
             step.status = 'done';
-            step.result = stepAnswer.slice(0, 2000);
+            // P0-1:从策略包取 stepSummaryMaxChars(默认 500)。逼模型用 remember_fact 存关键数据。
+            step.result = stepAnswer.slice(0, stepMaxChars);
             stepDone = true;
             onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
           } else {
             step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, 2000)}`;
+            step.result = `验证失败: ${verifyResult.output.slice(0, stepMaxChars)}`;
             step.retryCount = attempt + 1;
             if (attempt + 1 < MAX_RETRIES) {
               onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
@@ -359,7 +366,7 @@ export class DirectV2Engine implements Engine {
         } else {
           // 无验证命令 → 信任模型输出
           step.status = 'done';
-          step.result = stepAnswer.slice(0, 2000);
+          step.result = stepAnswer.slice(0, stepMaxChars);
           stepDone = true;
           onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
         }
@@ -408,7 +415,7 @@ export class DirectV2Engine implements Engine {
     if (!judgeResult.completed) {
       onEvent({ type: 'status', text: `⚖️ v2: Judge 判定未完成 — ${judgeResult.reason}` });
       // 未完成 → 重新规划(如果还有额度);replan 内部会递归 + judge,返回最终 execHistory
-      execHistory = await this.replan(prompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, plan);
+      execHistory = await this.replan(prompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, plan, stepMaxChars);
     } else {
       onEvent({ type: 'status', text: `⚖️ v2: Judge 判定已完成 — ${judgeResult.reason}` });
     }
@@ -437,6 +444,7 @@ export class DirectV2Engine implements Engine {
     onEvent: (e: AgentEvent) => void,
     execHistory: ChatMsg[],
     prevPlan: Plan,
+    stepMaxChars: number,
     replanCount = 0,
   ): Promise<ChatMsg[]> {
     if (replanCount >= MAX_REPLANS) {
@@ -448,7 +456,7 @@ export class DirectV2Engine implements Engine {
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
     // 告诉模型上一轮哪里没做好,让它重新出 plan
-    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, 1000)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
+    const replanInput = `原始任务: ${originalPrompt}\n\n上一轮 plan 的执行结果:\n${prevPlan.steps.map((s) => `  [${s.id}] ${s.title} — ${s.status}: ${(s.result || '').slice(0, stepMaxChars)}`).join('\n')}\n\n请根据上次结果修正方案,重新输出 <plan>。`;
 
     const plannerMessages = await runAgentLoop({
       provider,
@@ -587,7 +595,7 @@ export class DirectV2Engine implements Engine {
     const judgeResult = await this.judge(newPlan, provider, snap, signal, onEvent, execHistory);
     if (!judgeResult.completed && replanCount + 1 < MAX_REPLANS) {
       // 仍未完成 → 递归 replan,传入更新后的 execHistory 和 newPlan
-      return this.replan(originalPrompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, newPlan, replanCount + 1);
+      return this.replan(originalPrompt, conv, snap, provider, ctx, tools, systemPrompt, memoryBlock, signal, onEvent, execHistory, newPlan, stepMaxChars, replanCount + 1);
     } else if (!judgeResult.completed) {
       onEvent({ type: 'status', text: `🛑 v2: Judge 仍未判定完成,已达最大重规划次数 (${MAX_REPLANS})` });
     } else {

@@ -505,6 +505,9 @@ export interface KinetAPI {
   // Memory Graph(主谓宾三元组):列出 / 删除。convId 省略 = 全部。
   memoryTriples(convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; subject: string; predicate: string; object: string; conversation_id: string | null }>; error?: string }>;
   memoryTripleDelete(id: string): Promise<{ ok: boolean; error?: string }>;
+  // P0-2:会话级 KV 锚点(renderer debug 面板用)。工具本身直接调 store(),不走 IPC。
+  factList(convId: string): Promise<{ ok: boolean; items?: Array<{ key: string; value: string; updated_at: number }>; error?: string }>;
+  factDelete(convId: string, key: string): Promise<{ ok: boolean; error?: string }>;
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;

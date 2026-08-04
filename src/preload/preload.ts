@@ -54,6 +54,9 @@ const api: KinetAPI = {
   memoryDelete: (id) => ipcRenderer.invoke('memory-delete', id),
   memoryTriples: (convId) => ipcRenderer.invoke('memory-triples', convId),
   memoryTripleDelete: (id) => ipcRenderer.invoke('memory-triple-delete', id),
+  // P0-2:会话级 KV 锚点(renderer debug 面板用)
+  factList: (convId: string) => ipcRenderer.invoke('fact-list', convId),
+  factDelete: (convId: string, key: string) => ipcRenderer.invoke('fact-delete', convId, key),
   snapshotList: (cwd, convId) => ipcRenderer.invoke('snapshot-list', cwd, convId),
   snapshotRestore: (cwd, id) => ipcRenderer.invoke('snapshot-restore', cwd, id),
   pluginList: () => ipcRenderer.invoke('plugin-list'),

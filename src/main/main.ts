@@ -9,6 +9,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories } from './store';
+import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
@@ -1117,6 +1118,22 @@ function registerIpc(): void {
     try {
       deleteMemoryTriple(id);
       return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // P0-2:会话级 KV 锚点(remember_fact / recall_fact 走 IPC 暴露给 renderer debug 面板)。
+  // 工具自身通过 tools.ts 直接调 store(),不经 IPC(降低延迟)。
+  ipcMain.handle('fact-list', (_e, convId: string) => {
+    try {
+      return { ok: true, items: listFacts(convId) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('fact-delete', (_e, convId: string, key: string) => {
+    try {
+      return { ok: deleteFact(convId, key) };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

@@ -59,6 +59,11 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS conv_refs(
       id TEXT PRIMARY KEY, source_conv TEXT, ref_conv TEXT, ref_turn_idx INTEGER,
       created_at REAL);
+    -- 会话级 KV 锚点(P0-2):remember_fact / recall_fact 用。
+    -- key 在同一 conv 内唯一,value 是 JSON 或纯文本。sub-agent 也可以 recall_fact 跨子任务共享。
+    CREATE TABLE IF NOT EXISTS conv_facts(
+      conv_id TEXT, key TEXT, value TEXT, updated_at REAL,
+      PRIMARY KEY(conv_id, key));
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -392,6 +397,39 @@ export function addMemory(content: string, convId?: string): string {
     convId ?? null,
   );
   return id;
+}
+
+// MARK: 会话级 KV 锚点(remember_fact / recall_fact,P0-2)
+// 设计目的:v2 多步任务的关键产出(文件路径列表、关键决策)存这里,不被 trim/compact 砍掉。
+// key 在 conv 内唯一;value 纯文本或 JSON 字符串。
+// 不参与跨会话同步(每个 conv 独立),后续可加 namespace 机制。
+export function saveFact(convId: string, key: string, value: string): void {
+  // INSERT OR REPLACE 实现 upsert,同 conv 同 key 覆盖更新。
+  db.prepare(
+    'INSERT INTO conv_facts(conv_id, key, value, updated_at) VALUES(?,?,?,?) ON CONFLICT(conv_id, key) DO UPDATE SET value=excluded.value, updated_at=excluded.updated_at;'
+  ).run(convId, key, value, Date.now() / 1000);
+}
+
+export function loadFact(convId: string, key: string): string | null {
+  const row = db.prepare('SELECT value FROM conv_facts WHERE conv_id=? AND key=?;').get(convId, key) as { value: string } | undefined;
+  return row?.value ?? null;
+}
+
+export function listFacts(convId: string): Array<{ key: string; value: string; updated_at: number }> {
+  return db.prepare('SELECT key, value, updated_at FROM conv_facts WHERE conv_id=? ORDER BY updated_at DESC;').all(convId) as Array<{ key: string; value: string; updated_at: number }>;
+}
+
+export function deleteFact(convId: string, key: string): boolean {
+  const info = db.prepare('DELETE FROM conv_facts WHERE conv_id=? AND key=?;').run(convId, key);
+  return info.changes > 0;
+}
+
+// 加载会话所有 fact 拼成一段文本(给 systemPrompt 注入用,作为锚点参考)。
+// 与 recall_memory 的区别:facts 是结构化锚点(v2 步骤间共享),memories 是跨轮长期记忆。
+export function factsAsBlock(convId: string): string {
+  const facts = listFacts(convId);
+  if (facts.length === 0) return '';
+  return facts.map((f) => `- ${f.key}: ${f.value}`).join('\n');
 }
 
 export function updateMemory(id: string, content: string): void {
