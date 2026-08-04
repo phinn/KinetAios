@@ -1254,14 +1254,21 @@ function renderMain() {
     const remaining = startIdx;
     let cursor = remaining;
     const fillBatch = 20;
-    const fill = (deadline?: IdleDeadline) => {
-      // 优先在 idle 期间补,否则至少补一批避免永远挂着
-      const canContinue = !deadline || deadline.timeRemaining() > 5;
-      if (!canContinue) { scheduleFill(); return; }
+    // 只在用户停在底部(自动跟随)时做增量补全;
+    // 如果用户已经向上滚了,说明在看历史,不要 prepend 干扰视口。
+    // Only background-fill when the user is at the bottom (auto-scroll following).
+    // If they scrolled up to read history, don't prepend and shift the viewport.
+    const atBottom = turns.scrollHeight - turns.scrollTop - turns.clientHeight < 100;
+    if (!atBottom) return;
+    let fillScheduled = false;
+    const fillBatch_run = () => {
+      fillScheduled = false;
+      if (cursor <= 0) return;
       const end = cursor;
       const begin = Math.max(0, end - fillBatch);
       const frag2 = document.createDocumentFragment();
-      // 记录挂载前的 scrollTop,头插 DOM 会把视口往下推,需要补偿
+      // 记录挂载前的 scrollTop,头插 DOM 会把视口往下推,需要补偿。
+      // Record scrollTop before prepend; the inserted nodes push viewport down.
       const beforeTop = turns.scrollTop;
       const beforeHeight = turns.scrollHeight;
       for (let i = begin; i < end; i++) frag2.appendChild(renderTurn(conv, i));
@@ -1269,18 +1276,20 @@ function renderMain() {
       const afterHeight = turns.scrollHeight;
       turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
       cursor = begin;
-      if (cursor > 0) scheduleFill();
+      if (cursor > 0) {
+        fillScheduled = true;
+        // 用 double-rAF 分帧:确保浏览器渲染完当前帧再插下一批,
+        // 避免连续 prepend + scrollTop 修正导致的抖动。
+        // Use double-rAF to let the browser paint between batches.
+        requestAnimationFrame(() => requestAnimationFrame(fillBatch_run));
+      }
     };
-    let scheduled = false;
-    const scheduleFill = () => {
-      if (scheduled) return;
-      scheduled = true;
-      (window.requestIdleCallback ?? ((cb: (d: IdleDeadline) => void) => setTimeout(() => cb({ didTimeout: false, timeRemaining: () => 50 }), 0)))(() => {
-        scheduled = false;
-        fill({ didTimeout: false, timeRemaining: () => 50 });
-      });
-    };
-    scheduleFill();
+    fillScheduled = true;
+    // 首批延迟一帧,让首批 30 个 turn 先稳定渲染再补历史。
+    // Delay first fill by a frame so the initial 30 turns paint first.
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (fillScheduled) fillBatch_run();
+    }));
   }
   // 切会话后,文件 tab 若已挂,跟着换 cwd(切到当前会话的 cwd)。
   if (activeTab === 'files' && filesController) filesController.setCwd(conv.cwd);
