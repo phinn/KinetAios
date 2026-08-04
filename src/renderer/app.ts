@@ -2832,14 +2832,14 @@ async function initPersonaTab(existing: string): Promise<void> {
     empty.style.display = 'none';
     saveBtn.style.display = '';
     clearBtn.style.display = '';
-    statsEl.textContent = '✅ 替身模式已激活 — 新对话将注入此画像';
+    statsEl.textContent = tr('settings.persona.active');
     statsEl.style.color = 'var(--ok)';
   }
 
   genBtn.onclick = async () => {
-    genBtn.textContent = '生成中…';
+    genBtn.textContent = tr('settings.persona.generating');
     genBtn.setAttribute('disabled', 'true');
-    msgEl.textContent = '正在分析历史对话和记忆,可能需要 30-60 秒…';
+    msgEl.textContent = tr('settings.persona.analyzing');
     msgEl.className = 'test-msg';
     try {
       const res = await api.generatePersona();
@@ -2849,23 +2849,23 @@ async function initPersonaTab(existing: string): Promise<void> {
         empty.style.display = 'none';
         saveBtn.style.display = '';
         clearBtn.style.display = '';
-        msgEl.textContent = '画像已生成并自动保存';
+        msgEl.textContent = tr('settings.persona.generated');
         msgEl.className = 'test-msg ok';
         if (res.stats) {
-          statsEl.textContent = `✅ 替身模式已激活 — 基于 ${res.stats.conversations} 个会话、${res.stats.turns} 轮对话、${res.stats.memories} 条记忆生成`;
+          statsEl.textContent = tr('settings.persona.activeStats', { convs: res.stats.conversations, turns: res.stats.turns, mems: res.stats.memories });
           statsEl.style.color = 'var(--ok)';
         }
-        // 自动保存
+        // 自动保存 / Auto-save
         await api.savePersona(res.persona);
       } else {
-        msgEl.textContent = res.error || '生成失败';
+        msgEl.textContent = res.error || tr('settings.persona.genFail');
         msgEl.className = 'test-msg bad';
       }
     } catch (e) {
       msgEl.textContent = (e as Error)?.message ?? String(e);
       msgEl.className = 'test-msg bad';
     } finally {
-      genBtn.textContent = '生成画像';
+      genBtn.textContent = tr('settings.persona.gen');
       genBtn.removeAttribute('disabled');
     }
   };
@@ -2874,12 +2874,12 @@ async function initPersonaTab(existing: string): Promise<void> {
     const persona = editor!.value.trim();
     const res = await api.savePersona(persona);
     if (res.ok) {
-      msgEl.textContent = '已保存';
+      msgEl.textContent = tr('settings.persona.saved');
       msgEl.className = 'test-msg ok';
-      statsEl.textContent = persona ? '✅ 替身模式已激活 — 新对话将注入此画像' : '⚪ 替身已关闭';
+      statsEl.textContent = persona ? tr('settings.persona.active') : tr('settings.persona.disabled');
       statsEl.style.color = persona ? 'var(--ok)' : 'var(--muted)';
     } else {
-      msgEl.textContent = res.error || '保存失败';
+      msgEl.textContent = res.error || tr('settings.persona.saveFail');
       msgEl.className = 'test-msg bad';
     }
   };
@@ -2890,7 +2890,7 @@ async function initPersonaTab(existing: string): Promise<void> {
     empty.style.display = '';
     saveBtn.style.display = 'none';
     clearBtn.style.display = 'none';
-    statsEl.textContent = '⚪ 替身已关闭 — 清空画像后新对话不再注入';
+    statsEl.textContent = tr('settings.persona.disabledHint');
     statsEl.style.color = 'var(--muted)';
     msgEl.textContent = '';
     await api.savePersona('');
