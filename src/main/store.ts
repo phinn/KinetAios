@@ -303,6 +303,11 @@ export function allMemoryContents(): string[] {
   return (db.prepare('SELECT content FROM memories;').all() as Array<{ content: string }>).map((r) => r.content);
 }
 
+/** 快速返回记忆总数(不做全量 load,只 COUNT)。 */
+export function memoryCount(): number {
+  return (db.prepare('SELECT count(*) as n FROM memories;').get() as { n: number }).n;
+}
+
 // 关键词搜索 memories 表(LIKE 模糊匹配,不依赖 FTS5 也不依赖 embedding)。
 // 无 embedding 接口时 recall_memory 用此作为记忆搜索的 fallback。
 export function searchMemories(q: string, limit = 20): Array<{ id: string; content: string; conversation_id: string | null }> {

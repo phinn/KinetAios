@@ -288,7 +288,7 @@ export class TaskManager {
 
     await engine.run({
       conv,
-      memoryBlock: this.memoryBlock(conv),
+      memoryBlock: await this.memoryBlock(conv),
       rulesBlock: loadRulesBlock(conv.cwd),
       contextBlock: loadContextBlock(conv.cwd),
       skillBlock,
@@ -363,7 +363,7 @@ export class TaskManager {
 
       await engine.run({
         conv,
-        memoryBlock: this.memoryBlock(conv),
+        memoryBlock: await this.memoryBlock(conv),
         rulesBlock: loadRulesBlock(conv.cwd),
         contextBlock: loadContextBlock(conv.cwd),
         signal: ac.signal,
@@ -440,24 +440,72 @@ export class TaskManager {
   }
 
   // Inject into the system prompt (Direct) / --append-system-prompt (Claude) / prompt prefix (Codex).
-  private memoryBlock(conv: Conversation): string {
+  // 检索注入:根据当前对话内容做语义/全文检索,只注入相关的记忆子集。
+  // 三级回退:embedding cosine → FTS5 关键词 → recent-N(最终兜底)。
+  private async memoryBlock(conv: Conversation): Promise<string> {
     let out = '';
-    // Memories are model-extracted and flow into CLI prompts that pass through cmd.exe on Windows
-    // (shell:true). Strip shell/shell-expansion metacharacters so a planted memory can't inject a
-    // command. Short user facts don't legitimately need these chars.
-    const mems = store.loadMemories().map((m) => shellSafeMemory(m.content));
-    // 限制注入条数:长期使用后记忆可能几百条,全量注入会占大量 token。
-    // 按创建时间倒序取最近 50 条(最新的最相关)。
-    const MEM_LIMIT = 50;
-    const limited = mems.length > MEM_LIMIT ? mems.slice(0, MEM_LIMIT) : mems;
+
+    // 构造检索 query:取最近 1-3 轮的用户消息拼接(提供足够语义信号又不至于太长)。
+    const recentUserMsgs = conv.turns.filter((t) => t.prompt).slice(-3).map((t) => t.prompt!);
+    const query = recentUserMsgs.join(' ').slice(0, 500);
+
+    const recalled = await this.recallForInjection(query);
+    const limited = recalled.map((m) => shellSafeMemory(m.content));
+
     if (limited.length) {
       out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + limited.map((m) => `- ${m}`).join('\n');
-      if (mems.length > MEM_LIMIT) {
-        out += `\n…(共 ${mems.length} 条记忆,仅显示最近 ${MEM_LIMIT} 条)`;
+      const allCount = store.memoryCount();
+      if (allCount > limited.length) {
+        out += `\n…(共 ${allCount} 条记忆,根据当前对话检索注入 ${limited.length} 条)`;
       }
     }
     if (conv.cwd) out += `\n\n## 当前工作目录\n${conv.cwd}`;
     return out;
+  }
+
+  // 三级回退检索:embedding cosine → FTS5 → recent-N 兜底。
+  private async recallForInjection(query: string): Promise<Array<{ content: string }>> {
+    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
+
+    // 1. embedding cosine 检索(有 embedding 且 query 非空时)
+    if (query) {
+      try {
+        const embedRows = store.listMemoryEmbeddings();
+        if (embedRows.length) {
+          const snap = snapshot();
+          const qVecArr = await embed([query], snap);
+          if (qVecArr[0]?.length) {
+            const qVec = new Float32Array(qVecArr[0]);
+            const scored = embedRows
+              .map((r) => ({ memoryId: r.memoryId, content: r.content, score: store.cosine(qVec, r.vec) }))
+              .filter((r) => r.score > 0.25)
+              .sort((a, b) => b.score - a.score)
+              .slice(0, INJECT_LIMIT);
+            if (scored.length >= 3) { // 语义命中 ≥3 条才用,否则 fallback
+              for (const s of scored) {
+                try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
+              }
+              return scored.map(({ content }) => ({ content }));
+            }
+          }
+        }
+      } catch {
+        /* embedding 失败 → FTS5 兜底 */
+      }
+
+      // 2. FTS5 全文检索(从 memories 表搜)
+      try {
+        const ftsHits = store.searchMemories(query, INJECT_LIMIT);
+        if (ftsHits.length >= 2) {
+          return ftsHits.map(({ content }) => ({ content }));
+        }
+      } catch {
+        /* FTS5 失败 → recent-N 兜底 */
+      }
+    }
+
+    // 3. recent-N 兜底(无 query / 检索无结果时,取最新的 N 条)
+    return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
