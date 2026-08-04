@@ -1238,6 +1238,10 @@ function updateStreamingStatus(conv: Conversation): void {
       const txt = oldStatus.querySelector('.typing-text');
       if (txt) txt.textContent = conv.statusNote;
     } else {
+      // 创建 streaming-status 前,如果 #streaming-answer 里只有三点占位(无实际文本),
+      // 清掉它避免双重三点。
+      const ans = body.querySelector('#streaming-answer');
+      if (ans && !ans.textContent && ans.querySelector('.typing')) ans.innerHTML = '';
       const ns = document.createElement('div');
       ns.className = 'streaming-status';
       ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
@@ -1275,6 +1279,9 @@ function updateLastTurnIncremental(): void {
   const oldStatus = turnEl.querySelector('.streaming-status');
   const wantStatus = conv.statusNote;
   if (wantStatus && !oldStatus) {
+    // 创建 streaming-status 前,清掉 #streaming-answer 里的三点占位(避免双重三点)。
+    const ans = turnEl.querySelector('#streaming-answer');
+    if (ans && !ans.textContent && ans.querySelector('.typing')) ans.innerHTML = '';
     const ns = document.createElement('div');
     ns.className = 'streaming-status';
     ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote ?? '') + '</span>';
