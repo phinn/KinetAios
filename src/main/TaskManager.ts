@@ -230,6 +230,7 @@ export class TaskManager {
     conv.status = 'running';
     conv.statusNote = null;
     conv.updatedAt = Date.now(); // 用户发消息也算活动,更新时间戳。
+    store.touchConversation(conv.id); // 写库,侧栏排序/时间显示依赖 updated_at 列。
     this.emit.emitConversation(conv); // renderer sees the new (empty) turn + running state
 
     const ac = new AbortController();
@@ -415,6 +416,7 @@ export class TaskManager {
     const t = conv.turns[conv.turns.length - 1];
     if (!t) return;
     conv.updatedAt = Date.now(); // 更新最后活动时间,侧栏排序和时间显示用。
+    store.touchConversation(conv.id); // 同步写库,确保所有事件路径都持久化 updated_at。
     switch (ev.type) {
       case 'sessionStarted':
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume

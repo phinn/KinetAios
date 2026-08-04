@@ -167,13 +167,18 @@ export function saveDirectHistory(c: Conversation): void {
   );
 }
 
+/** 更新会话最后活动时间(侧栏"按最近活动排序"依赖此列)。轻量,只写一列。 */
+export function touchConversation(convId: string): void {
+  stmt('UPDATE conversations SET updated_at=? WHERE id=?;').run(Date.now(), convId);
+}
+
 export function saveTurn(convId: string, t: Turn): void {
   stmt(
     `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
   ).run(t.id, convId, JSON.stringify(t), t.ts);
-  // 同步更新会话最后活动时间 —— 侧栏"按最近活动排序"依赖此列。
-  stmt('UPDATE conversations SET updated_at=? WHERE id=?;').run(Date.now(), convId);
+  // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
+  touchConversation(convId);
 }
 
 export function deleteConversation(id: string): void {
