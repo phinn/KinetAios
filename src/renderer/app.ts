@@ -214,8 +214,13 @@ function applyI18nDOM(): void {
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
         if (renderMainPending) { renderMainPending = false; pendingFullRender = false; }
         renderMain();
+      } else if (ev.type === 'status') {
+        // status 事件(工具执行中 / 上下文压缩等)必须立即更新 DOM:
+        // 走 debounce 会在下一帧丢失(如果 token 先到并清了 statusNote)。
+        // 频率低(每次工具调用前一条),同步渲染无性能问题。
+        updateStreamingStatus(conv);
       } else {
-        // tool/cost/status/context — debounce 到下一帧
+        // tool/cost/context — debounce 到下一帧
         scheduleRenderMain();
       }
       // Artifact 检测:done 时最终检测一次(流式期间已有防抖检测)
@@ -1219,6 +1224,30 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
 
 // 流式期间增量更新:只动 head + 当前 turn 的 steps 容器 + streaming-status。
 // 不重建其他 turn,避免几百轮的会话在 tool 来时全量重渲导致主线程卡死 / 空白闪屏。
+// status 事件专用:同步更新 head-status 文字 + streaming-status DOM。
+// 不走 debounce,避免和 token 事件的 statusNote 清除竞态(下一帧丢显示)。
+function updateStreamingStatus(conv: Conversation): void {
+  renderHead(conv);
+  const turnEl = document.getElementById('streaming-answer')?.closest('.turn') ?? null;
+  if (!turnEl) return;
+  const body = turnEl.querySelector('.ai-body');
+  if (!body) return;
+  const oldStatus = body.querySelector('.streaming-status');
+  if (conv.statusNote) {
+    if (oldStatus) {
+      const txt = oldStatus.querySelector('.typing-text');
+      if (txt) txt.textContent = conv.statusNote;
+    } else {
+      const ns = document.createElement('div');
+      ns.className = 'streaming-status';
+      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
+      body.appendChild(ns);
+    }
+  } else {
+    if (oldStatus) oldStatus.remove();
+  }
+}
+
 // Falls back to full renderMain if streaming turn element not found.
 function updateLastTurnIncremental(): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
@@ -1268,6 +1297,11 @@ function streamAppend(text: string) {
   if (el) {
     if (el.querySelector('.typing')) el.textContent = ''; // 首个 token:清掉思考三点
     el.appendChild(document.createTextNode(text));
+    // token 到达 = 不再处于工具执行中。applyEvent 已清 statusNote,
+    // 同步移除 DOM 上残留的 streaming-status,避免它停在旧文本上不消失。
+    const turnEl = el.closest('.turn');
+    const ss = turnEl?.querySelector('.streaming-status');
+    if (ss) ss.remove();
     scrollDown();
     // 流式期间也检测 artifact(token 级增量检测,让用户边看边预览)
     scheduleArtifactCheck();
