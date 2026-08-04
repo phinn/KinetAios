@@ -54,6 +54,7 @@ export class TaskManager {
       model: getSettings().model,
       cwd,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       customTitle: null,
       directHistory: [],
       engineSessionId: null,
@@ -411,6 +412,7 @@ export class TaskManager {
   private persist(conv: Conversation, ev: AgentEvent): void {
     const t = conv.turns[conv.turns.length - 1];
     if (!t) return;
+    conv.updatedAt = Date.now(); // 更新最后活动时间,侧栏排序和时间显示用。
     switch (ev.type) {
       case 'sessionStarted':
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume
@@ -726,6 +728,7 @@ export class TaskManager {
       model: src.model,
       cwd: src.cwd,
       createdAt: Date.now(),
+      updatedAt: Date.now(),
       customTitle: `${src.customTitle || src.turns[0]?.prompt.slice(0, 20) || 'Session'} (分支)`,
       directHistory: [],
       engineSessionId: null,

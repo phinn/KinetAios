@@ -71,6 +71,7 @@ export function initStore(): void {
     ['profile_id', 'TEXT'],    // 绑定的模型配置档 ID,null = 用全局默认配置
     ['high_fidelity', 'INTEGER'], // deprecated: 旧列,保留做 migration 兼容(见 context_mode)
     ['context_mode', 'TEXT'],     // 上下文模式:standard(默认) / hifi(不截断+大预算) / 未来可扩展
+    ['updated_at', 'REAL'],       // 最后活动时间:每次 saveTurn / saveConversation 时更新。用于侧栏"按最近活动排序"
   ] as const) {
     if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
   }
@@ -126,23 +127,25 @@ type ConvRow = {
   profile_id: string | null;
   high_fidelity: number;
   context_mode: string | null;
+  updated_at: number | null;
 };
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, updated_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
-       high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode;`,
+       high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, updated_at=excluded.updated_at;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
     c.goal ?? null,
     c.profileId ?? null,
     c.contextMode === 'hifi' ? 1 : 0, // high_fidelity 列保留写,兼容旧版本读
-    c.contextMode ?? 'standard');
+    c.contextMode ?? 'standard',
+    c.updatedAt ?? Date.now());
 }
 
 export function updateConversationMeta(c: Conversation): void {
@@ -169,6 +172,8 @@ export function saveTurn(convId: string, t: Turn): void {
     `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
   ).run(t.id, convId, JSON.stringify(t), t.ts);
+  // 同步更新会话最后活动时间 —— 侧栏"按最近活动排序"依赖此列。
+  stmt('UPDATE conversations SET updated_at=? WHERE id=?;').run(Date.now(), convId);
 }
 
 export function deleteConversation(id: string): void {
@@ -210,7 +215,7 @@ function parseTurn(data: string): Turn {
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
-      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode FROM conversations ORDER BY created_at DESC;',
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, updated_at FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
   return rows.map((r) => {
@@ -231,6 +236,7 @@ export function loadConversations(): Conversation[] {
       model: r.model || '',
       cwd: r.cwd || '',
       createdAt: r.created_at ?? 0,
+      updatedAt: r.updated_at ?? r.created_at ?? 0, // 旧数据 fallback 到创建时间
       customTitle: r.custom_title || null,
       directHistory,
       engineSessionId: r.engine_session_id || null,

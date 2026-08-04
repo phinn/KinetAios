@@ -27,6 +27,8 @@ let pluginPanelRegistry: Array<{ name: string; title: string; icon?: string; htm
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
+// 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
+let sortByRecent = false;
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
@@ -265,7 +267,17 @@ function renderSidebar() {
   if (badge) badge.textContent = String(runningCount);
 
   // 运行中筛选:只保留 running 的会话。
-  const visibleOrder = runningOnly ? order.filter((id) => convs.get(id)?.status === 'running') : order;
+  let visibleOrder = runningOnly ? order.filter((id) => convs.get(id)?.status === 'running') : [...order];
+
+  // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。
+  if (sortByRecent) {
+    visibleOrder.sort((a, b) => {
+      const ca = convs.get(a);
+      const cb = convs.get(b);
+      if (!ca || !cb) return 0;
+      return (cb.updatedAt ?? cb.createdAt) - (ca.updatedAt ?? ca.createdAt);
+    });
+  }
 
   if (!visibleOrder.length) {
     ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(runningOnly ? tr('sidebar.runningEmpty') : tr('sidebar.empty')) + '</li>';
@@ -333,7 +345,9 @@ function taskLi(id: string): HTMLElement {
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
   const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-cwd">${esc(projName(c.cwd))}</span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" title="上下文检查器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  const ts = c.updatedAt ?? c.createdAt;
+  const timeStr = fmtRelative(ts);
+  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${timeStr}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" title="上下文检查器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     selectedId = id;
     showChat();
@@ -355,6 +369,24 @@ function projName(cwd: string): string {
   if (!cwd || cwd === HOME_DIR) return tr('wb.ungrouped');
   const base = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
   return base || cwd;
+}
+
+// 相对时间格式化:刚刚 / N分钟前 / N小时前 / 昨天 / MM-DD / YYYY-MM-DD。
+// Relative time formatter for sidebar list items.
+function fmtRelative(ts: number): string {
+  const now = Date.now();
+  const diff = now - ts;
+  const min = 60000, hour = 3600000, day = 86400000;
+  if (diff < min) return '刚刚';
+  if (diff < hour) return `${Math.floor(diff / min)}分钟前`;
+  if (diff < day) return `${Math.floor(diff / hour)}小时前`;
+  if (diff < 2 * day) return '昨天';
+  if (diff < 7 * day) return `${Math.floor(diff / day)}天前`;
+  const d = new Date(ts);
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  if (diff < 365 * day) return `${m}-${dd}`;
+  return `${d.getFullYear()}-${m}-${dd}`;
 }
 
 // Electron renderer 不支持 window.prompt(),用自定义输入 modal 替代。
@@ -2520,6 +2552,12 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   // ⚡ 运行中筛选:点击切换 runningOnly,只显示 running 状态的会话。
   document.getElementById('sb-running-filter')!.onclick = () => {
     runningOnly = !runningOnly;
+    renderSidebar();
+  };
+  // 🕐 按最近活动排序:点击切换 sortByRecent,按 updatedAt 倒序排列。
+  document.getElementById('sb-sort-toggle')!.onclick = () => {
+    sortByRecent = !sortByRecent;
+    document.getElementById('sb-sort-toggle')!.classList.toggle('active', sortByRecent);
     renderSidebar();
   };
   // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)

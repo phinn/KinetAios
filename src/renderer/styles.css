@@ -799,6 +799,8 @@ a { color: var(--accent); }
 /* ⚡ 运行中筛选按钮:有 running 会话时才出现;激活态高亮(强调色) */
 .sb-running { position: relative; color: var(--run); }
 .sb-running.active { color: var(--accent); background: var(--bg-elev); }
+/* 🕐 排序按钮:激活态用强调色 */
+#sb-sort-toggle.active { color: var(--accent); background: var(--bg-elev); }
 .sb-run-badge { font-size: 9px; font-weight: 700; background: var(--run); color: var(--bg-side); border-radius: 8px; padding: 0 4px; margin-left: 3px; line-height: 14px; min-width: 14px; text-align: center; }
 .sb-running.active .sb-run-badge { background: var(--accent); }
 
@@ -817,11 +819,15 @@ a { color: var(--accent); }
 #conv-list > li:not(.sb-proj) .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
 #conv-list > li:not(.sb-proj) .title { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 #conv-list > li:not(.sb-proj) .sb-task-cwd { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#conv-list > li:not(.sb-proj) .sb-task-meta { display: flex; gap: 6px; align-items: center; width: 100%; }
+#conv-list > li:not(.sb-proj) .sb-task-time { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; margin-left: auto; flex-shrink: 0; }
 #conv-list > li:not(.sb-proj) .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
 #conv-list > li:not(.sb-proj):hover .conv-actions { display: inline-flex; }
 /* grouped 模式:任务条目不显示 cwd(已有项目头),title 直接横排。 */
 .sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; justify-content: flex-start; }
 .sb-proj-tasks li .sb-task-cwd { display: none; }
+.sb-proj-tasks li .sb-task-meta { display: contents; }
+.sb-proj-tasks li .sb-task-time { font-size: 10px; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; margin-left: auto; }
 
 /* main */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }

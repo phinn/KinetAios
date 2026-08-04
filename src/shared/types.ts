@@ -306,6 +306,7 @@ export type Conversation = {
   contextMode?: ContextMode; // 上下文模式:standard(默认省 token) / hifi(不截断+大预算) / 未来可扩展
   cwd: string;
   createdAt: number;
+  updatedAt?: number; // 最后活动时间(saveTurn 时更新),用于侧栏排序和时间显示
   customTitle: string | null;
   directHistory: ChatMsg[]; // Direct-only OpenAI-format, persisted for cross-turn + restart context
   engineSessionId: string | null; // claude/codex session id → --resume next turn (persisted)
