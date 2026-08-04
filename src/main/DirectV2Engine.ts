@@ -192,7 +192,30 @@ export class DirectV2Engine implements Engine {
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
     this.lastCompactFingerprint = ''; // P0-2: 重置 compact 缓存
-    store.clearV2State(conv.id); // P2-1: 清除上一轮的 checkpoint(新一轮开始)
+
+    // P2-1: Crash recovery — 检查是否有未完成的 checkpoint(非 final)。
+    // 如果存在且 plan 有未完成步骤,从 checkpoint 恢复 plan + execHistory,跳过已完成步骤。
+    const ckpt = store.loadLatestV2Checkpoint(conv.id);
+    let resumedPlan: Plan | null = null;
+    let resumedHistory: ChatMsg[] | null = null;
+    if (ckpt && ckpt.row_type !== 'final' && ckpt.step_id !== 'final') {
+      try {
+        const parsedPlan = JSON.parse(ckpt.plan_json) as Plan;
+        const parsedHistory = JSON.parse(ckpt.history_json) as ChatMsg[];
+        // 只有 plan 里还有未完成步骤(pending/running/failed)才 resume;
+        // 全部 done/skipped 说明只是没存 final checkpoint,不需要 resume。
+        const hasPending = parsedPlan.steps.some((s) => s.status === 'pending' || s.status === 'running' || s.status === 'failed');
+        if (hasPending && Array.isArray(parsedHistory) && parsedHistory.length > 0) {
+          resumedPlan = parsedPlan;
+          resumedHistory = parsedHistory;
+          onEvent({ type: 'status', text: `🔄 v2: 检测到崩溃恢复点(步骤 ${ckpt.step_id}),从上次中断处继续` });
+        }
+      } catch { /* checkpoint 损坏 → 正常从头开始 */ }
+    }
+    if (!resumedPlan) {
+      store.clearV2State(conv.id); // 正常开始:清除上一轮的 checkpoint
+    }
+
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
     const snap = { ...base, model: conv.model || base.model };
@@ -232,6 +255,19 @@ export class DirectV2Engine implements Engine {
     const userInput = refSection ? prompt + refSection : prompt;
 
     // ── Phase 1: Planner — 探查 + 规划(只读工具)──
+    // Crash recovery: 如果有 resumedPlan,跳过 Planner,直接用恢复的 plan + history 进 Executor。
+    let plan: Plan | null;
+    let execHistory: ChatMsg[];
+
+    if (resumedPlan && resumedHistory) {
+      // Crash recovery 路径:跳过 Planner,直接用恢复的 plan + execHistory。
+      plan = resumedPlan;
+      execHistory = resumedHistory;
+      const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
+      const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
+      onEvent({ type: 'status', text: `📋 v2: 恢复计划(${plan.steps.length} 步,已完成 ${doneCount},剩余 ${remaining.length})— 跳过规划阶段` });
+    } else {
+    // ── 正常路径:Planner 探查 + 规划 ──
     onEvent({ type: 'status', text: '🧠 v2: 规划中...' });
 
     const plannerTools = [...readOnlyTools(), ...(await mcp.directTools(2000))];
@@ -260,7 +296,7 @@ export class DirectV2Engine implements Engine {
 
     // 提取 planner 输出中的 plan JSON
     const plannerAnswer = this.extractLastAssistantText(plannerMessages);
-    const plan = this.parsePlan(plannerAnswer);
+    plan = this.parsePlan(plannerAnswer);
 
     // Planner 失败检测:API 报错时 runAgentLoop 返回 [...history, user_input]——
     // extractLastAssistantText 会命中 history 里的旧 assistant 消息(上一轮的过期回答)。
@@ -309,7 +345,7 @@ export class DirectV2Engine implements Engine {
     // 丢掉探查中间过程(grep/read_file 结果等)。这些中间输出会迅速膨胀上下文,对后续步骤无价值。
     // 用户原始 prompt 必须保留(否则后续步骤不知道任务是什么)。
     const planConclusion = plannerMessages.filter((m) => m.role === 'assistant').at(-1);
-    let execHistory: ChatMsg[] = [];
+    execHistory = [];
     if (planConclusion) {
       // 保留 user input + plan 结论,跳过中间探查噪声
       const userInputIdx = plannerMessages.findIndex((m, i) =>
@@ -320,10 +356,21 @@ export class DirectV2Engine implements Engine {
     } else {
       execHistory = [...plannerMessages]; // fallback: 全量(理论上不会走到)
     }
+    } // end else (正常路径)
+
+    // 到这里 plan 和 execHistory 都已就绪(正常路径或 crash recovery)。
+    if (!plan) { // 理论上不会走到(正常路径的 plan===null 已在 else 内 return)
+      onEvent({ type: 'error', message: 'v2: 无法获取执行计划' });
+      onEvent({ type: 'done' });
+      return;
+    }
 
     // ── Phase 2: Executor — 按 plan 步骤串行执行 ──
+    // Crash recovery: 跳过已完成(done/skipped)的步骤,从第一个 pending/running/failed 开始。
     for (const step of plan.steps) {
       if (signal.aborted) break;
+      // Crash recovery: 已完成的步骤直接跳过(不重新执行)。
+      if (step.status === 'done' || step.status === 'skipped') continue;
       step.status = 'running';
       onEvent({ type: 'status', text: `🔨 v2: 执行步骤 [${step.id}] ${step.title}` });
 
