@@ -180,6 +180,21 @@ const api: KinetAPI = {
     ipcRenderer.on('voice-chat-event', (_e: IpcRendererEvent, ev) => cb(ev));
   },
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),
+
+  // ── AgentTeams ──
+  listTeams: (convId: string) => ipcRenderer.invoke('team-list', convId),
+  createTeam: (convId: string, members: Array<{ name: string; role: string }>) =>
+    ipcRenderer.invoke('team-create', convId, members),
+  deleteTeamById: (teamId: string) => ipcRenderer.invoke('team-delete', teamId),
+  listTeamMembers: (teamId: string) => ipcRenderer.invoke('team-list-members', teamId),
+  sendToTeamMember: (teamId: string, memberName: string, message: string) =>
+    ipcRenderer.invoke('team-send-member', teamId, memberName, message),
+  broadcastToTeam: (teamId: string, message: string) =>
+    ipcRenderer.invoke('team-broadcast', teamId, message),
+  onTeamEvent: (cb) => {
+    ipcRenderer.removeAllListeners('team-event');
+    ipcRenderer.on('team-event', (_e: IpcRendererEvent, payload: { teamId: string; ev: import('../shared/types').TeamEvent }) => cb(payload.teamId, payload.ev));
+  },
 };
 
 // ArrayBuffer → base64(语音音频传输用)

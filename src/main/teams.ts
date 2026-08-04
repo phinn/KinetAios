@@ -2,20 +2,19 @@
 // 设计目标:让 LLM 能在主流程中"派一个团队干活",团队由 N 个 named agent 组成,
 // 每个 member 有独立 history、独立的工具调用上下文。Member 之间通过 broadcast / send 通信。
 //
-// 简化的 MVP 设计:
+// 架构:
 // - 每个 team 挂在主 conv 下,team_id = "conv:<convId>:team:<ts>"
 // - 每个 member 是只读 sub-agent(复用 dispatch_agent 的 readOnlyTools + SUBAGENT_PROMPT)
 // - member history 持久化到 SQLite(team_members.history JSON 列),跨多轮团队对话保留
-// - 不再起多进程:team 调度的 LLM 调用在主 process 串行执行(避免 LLM 风暴)
-// - 主流程调度 team_send / team_broadcast:把消息发给指定 member,member 看到自己 history + 这条 user,
-//   跑一次 LLM,把回答写回 history,返回结果给主流程
+// - broadcast 时 member 并行执行(Promise.allSettled),team_send 时单 member 执行
+// - 实时事件通过 TeamEvent 发射到 renderer(独立 IPC 通道,不走 AgentEvent)
 //
 // 不做的:
 // - member 之间实时通信(不需要 — broadcast 已经够用,LLM 自己用 recall_fact 共享关键数据)
 // - member 写文件(全部只读,降低权限复杂度)
 // - 跨主会话共享 team(每个主 conv 独立)
 
-import type { ChatMsg } from '../shared/types';
+import type { ChatMsg, TeamEvent } from '../shared/types';
 import { priceUSD } from './glm';
 import type { Provider } from './glm';
 import { runAgentLoop } from './AgentLoop';
@@ -38,6 +37,18 @@ export function parseMemberHistory(raw: string | null): ChatMsg[] {
   }
 }
 
+/** Member 执行选项 — runMember / runMembersParallel 共用 */
+export interface MemberRunOpts {
+  provider: Provider;
+  snap: import('../shared/types').ConfigSnapshot;
+  signal: AbortSignal;
+  cwd: string;
+  confirm: (cmd: string) => Promise<boolean>;
+  convId: string;
+  /** Team 事件回调(发射到 renderer) */
+  onTeamEvent?: (memberName: string, ev: TeamEvent) => void;
+}
+
 /**
  * 跑一个 member 的回答:把它当前 history + 新 user message 喂给 LLM,返回新 history + 最终文本。
  * 复用 SUBAGENT_PROMPT(只读工具 + 文本汇报)。
@@ -46,15 +57,10 @@ export function parseMemberHistory(raw: string | null): ChatMsg[] {
 export async function runMember(opts: {
   member: store.TeamMember;
   userMessage: string;
-  provider: Provider;
-  snap: import('../shared/types').ConfigSnapshot;
-  signal: AbortSignal;
-  onEvent?: (e: { type: 'token' | 'tool' | 'cost'; text?: string; name?: string; usd?: number; tokens?: number }) => void;
-  cwd: string;
-  confirm: (cmd: string) => Promise<boolean>;
-  convId: string;
+  runOpts: MemberRunOpts;
 }): Promise<{ newHistory: ChatMsg[]; answer: string; tokensIn: number; tokensOut: number }> {
-  const { member, userMessage, provider, snap, signal, onEvent, cwd, confirm, convId } = opts;
+  const { member, userMessage, runOpts } = opts;
+  const { provider, snap, signal, cwd, confirm, convId, onTeamEvent } = runOpts;
   const history = parseMemberHistory(member.history);
 
   // 超时控制
@@ -78,10 +84,10 @@ export async function runMember(opts: {
     signal: ac.signal,
     maxTurns: 8,
     onEvent: (e) => {
-      if (!onEvent) return;
-      if (e.type === 'token') onEvent({ type: 'token', text: e.text });
-      else if (e.type === 'tool') onEvent({ type: 'tool', name: e.name });
-      else if (e.type === 'cost') onEvent({ type: 'cost', usd: e.usd, tokens: e.tokens });
+      if (!onTeamEvent) return;
+      if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });
+      else if (e.type === 'tool') onTeamEvent(member.name, { type: 'memberTool', memberName: member.name, toolName: e.name, toolResult: '' });
+      else if (e.type === 'cost') onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens });
     },
   });
 
@@ -98,6 +104,41 @@ export async function runMember(opts: {
   const tokensOut = answer.length;
 
   return { newHistory: out, answer, tokensIn, tokensOut };
+}
+
+/**
+ * 并行跑多个 member(broadcast 场景)。每个 member 独立 AbortController + 独立超时。
+ * 返回 memberName → answer 的 Map。失败的 member answer 为错误信息。
+ */
+export async function runMembersParallel(opts: {
+  members: store.TeamMember[];
+  message: string;
+  runOpts: MemberRunOpts;
+}): Promise<Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; error?: string }>> {
+  const { members, message, runOpts } = opts;
+  const results = await Promise.allSettled(
+    members.map(async (m) => {
+      runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'running' });
+      try {
+        const r = await runMember({ member: m, userMessage: message, runOpts });
+        runOpts.onTeamEvent?.(m.name, { type: 'memberDone', memberName: m.name, answer: r.answer });
+        runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'done' });
+        return { name: m.name, answer: r.answer, newHistory: r.newHistory, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+      } catch (e) {
+        const errMsg = (e as Error)?.message ?? String(e);
+        runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'failed' });
+        return { name: m.name, answer: `错误: ${errMsg}`, newHistory: [], tokensIn: 0, tokensOut: 0, error: errMsg };
+      }
+    }),
+  );
+  const map = new Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; error?: string }>();
+  for (const r of results) {
+    if (r.status === 'fulfilled') {
+      const v = r.value;
+      map.set(v.name, { answer: v.answer, newHistory: v.newHistory, tokensIn: v.tokensIn, tokensOut: v.tokensOut, error: v.error });
+    }
+  }
+  return map;
 }
 
 /**

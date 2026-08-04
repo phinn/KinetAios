@@ -283,6 +283,38 @@ export type Turn = {
 
 export type ConvStatus = 'ready' | 'running';
 
+// ── AgentTeams:多 agent 团队协作 ──
+// 一个 team 挂在主 conv 下,由 N 个 named member agent 组成。
+// Member 各自独立 history,串行/并行执行,通过 broadcast / send 通信。
+export type MemberStatus = 'idle' | 'running' | 'done' | 'failed';
+
+export type TeamMemberInfo = {
+  team_id: string;
+  member_id: string;
+  name: string;
+  role: string;
+  status: MemberStatus;
+  last_message: string | null;
+  last_result: string | null;
+  created_at: number;
+  updated_at: number;
+};
+
+export type TeamInfo = {
+  team_id: string;
+  conv_id: string;
+  member_count: number;
+  updated_at: number;
+};
+
+// Team 实时事件(独立 IPC 通道 onTeamEvent,不走 AgentEvent)
+export type TeamEvent =
+  | { type: 'memberStatus'; memberName: string; status: MemberStatus }
+  | { type: 'memberToken'; memberName: string; text: string }
+  | { type: 'memberTool'; memberName: string; toolName: string; toolResult: string }
+  | { type: 'memberCost'; memberName: string; usd: number; tokens: number }
+  | { type: 'memberDone'; memberName: string; answer: string };
+
 // ── Pipeline 跨引擎编排 ──
 // 一个 pipeline 由多个 stage 组成,每个 stage 指定引擎 + prompt。
 // 上一个 stage 的输出自动拼到下一个 stage 的 prompt 前面(链式传递)。
@@ -637,6 +669,22 @@ export interface KinetAPI {
   voiceChatState(): Promise<{ state: string }>;
   /** 语音事件回调(状态变化/ASR文本/AI文本/AI音频/错误) */
   onVoiceChatEvent(cb: (ev: VoiceChatEventPayload) => void): void;
+
+  // ── AgentTeams:多 agent 团队协作 ──
+  /** 列出当前会话下的所有 team */
+  listTeams(convId: string): Promise<TeamInfo[]>;
+  /** 创建 team(返回 team_id) */
+  createTeam(convId: string, members: Array<{ name: string; role: string }>): Promise<{ ok: boolean; team_id?: string; error?: string }>;
+  /** 删除 team(含所有 member) */
+  deleteTeamById(teamId: string): Promise<boolean>;
+  /** 列出 team 下所有 member */
+  listTeamMembers(teamId: string): Promise<TeamMemberInfo[]>;
+  /** 给单个 member 发消息(手动操控) */
+  sendToTeamMember(teamId: string, memberName: string, message: string): Promise<{ ok: boolean; answer?: string; error?: string }>;
+  /** 广播给所有 member */
+  broadcastToTeam(teamId: string, message: string): Promise<{ ok: boolean; results?: Record<string, string>; error?: string }>;
+  /** Team 实时事件流 */
+  onTeamEvent(cb: (teamId: string, ev: TeamEvent) => void): void;
 }
 
 export function newTurn(prompt: string): Turn {

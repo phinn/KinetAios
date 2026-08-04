@@ -10,6 +10,7 @@ import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
+import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
 import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
@@ -136,6 +137,11 @@ const emitter: TaskManagerEmitter = {
   },
   confirm,
 };
+
+// MARK: Team 事件广播(独立通道,不走 AgentEvent)
+export function emitTeamEvent(teamId: string, ev: import('../shared/types').TeamEvent): void {
+  safeSend(dashboardWin, 'team-event', { teamId, ev });
+}
 
 function createDashboard(): BrowserWindow {
   const win = new BrowserWindow({
@@ -1896,6 +1902,136 @@ function registerIpc(): void {
   });
   ipcMain.handle('voice-chat-state', async () => {
     return { state: voiceChat.getState() };
+  });
+
+  // ── AgentTeams IPC handlers ──
+  ipcMain.handle('team-list', (_e, convId: string) => {
+    const teams = listTeamsForConv(convId);
+    return teams.map(t => ({ team_id: t.team_id, conv_id: convId, member_count: t.member_count, updated_at: t.updated_at }));
+  });
+
+  ipcMain.handle('team-create', (_e, convId: string, members: Array<{ name: string; role: string }>) => {
+    if (!members || members.length === 0) return { ok: false, error: '缺少 members' };
+    if (members.length > 8) return { ok: false, error: '成员过多(上限 8)' };
+    const teamId = `conv:${convId}:team:${Date.now().toString(36)}`;
+    const now = Date.now() / 1000;
+    const seen = new Set<string>();
+    for (const m of members) {
+      const name = String(m.name ?? '').trim();
+      const role = String(m.role ?? '').trim();
+      if (!name || !role) return { ok: false, error: '每个 member 必须有 name 和 role' };
+      if (seen.has(name)) return { ok: false, error: `成员名重复: ${name}` };
+      seen.add(name);
+      upsertTeamMember({
+        team_id: teamId, member_id: name, name, role,
+        history: '[]', last_message: null, last_result: null,
+        status: 'idle', created_at: now, updated_at: now,
+      });
+    }
+    return { ok: true, team_id: teamId };
+  });
+
+  ipcMain.handle('team-delete', (_e, teamId: string) => {
+    deleteTeam(teamId);
+    return true;
+  });
+
+  ipcMain.handle('team-list-members', (_e, teamId: string) => {
+    return listTeamMembers(teamId).map(m => ({
+      team_id: m.team_id, member_id: m.member_id, name: m.name, role: m.role,
+      status: m.status, last_message: m.last_message, last_result: m.last_result,
+      created_at: m.created_at, updated_at: m.updated_at,
+    }));
+  });
+
+  ipcMain.handle('team-send-member', async (_e, teamId: string, memberName: string, message: string) => {
+    const convId = convIdFromTeamId(teamId);
+    if (!convId) return { ok: false, error: '无法解析 convId' };
+    const conv = taskManager.get(convId);
+    if (!conv) return { ok: false, error: '会话不存在' };
+    const member = loadTeamMember(teamId, memberName);
+    if (!member) return { ok: false, error: `member 不存在: ${memberName}` };
+
+    try {
+      const { runMember } = await import('./teams');
+      const { snapshot } = await import('./settings');
+      const { currentProvider } = await import('./glm');
+      const snap = snapshot(conv.profileId);
+      const provider = currentProvider(snap);
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 3 * 60 * 1000);
+      emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'running' });
+      const r = await runMember({
+        member,
+        userMessage: message,
+        runOpts: {
+          provider, snap, signal: ac.signal,
+          cwd: conv.cwd,
+          confirm,
+          convId: conv.id,
+          onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
+        },
+      });
+      clearTimeout(timer);
+      upsertTeamMember({
+        ...member,
+        history: JSON.stringify(r.newHistory),
+        last_message: message, last_result: r.answer,
+        status: 'done', updated_at: Date.now() / 1000,
+      });
+      emitTeamEvent(teamId, { type: 'memberDone', memberName, answer: r.answer });
+      emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'done' });
+      return { ok: true, answer: r.answer };
+    } catch (e) {
+      emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'failed' });
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  ipcMain.handle('team-broadcast', async (_e, teamId: string, message: string) => {
+    const convId = convIdFromTeamId(teamId);
+    if (!convId) return { ok: false, error: '无法解析 convId' };
+    const conv = taskManager.get(convId);
+    if (!conv) return { ok: false, error: '会话不存在' };
+    const members = listTeamMembers(teamId);
+    if (members.length === 0) return { ok: false, error: 'team 为空' };
+
+    try {
+      const { runMembersParallel } = await import('./teams');
+      const { snapshot } = await import('./settings');
+      const { currentProvider } = await import('./glm');
+      const snap = snapshot(conv.profileId);
+      const provider = currentProvider(snap);
+      const ac = new AbortController();
+      const timer = setTimeout(() => ac.abort(), 3 * 60 * 1000);
+      const results = await runMembersParallel({
+        members, message,
+        runOpts: {
+          provider, snap, signal: ac.signal,
+          cwd: conv.cwd,
+          confirm,
+          convId: conv.id,
+          onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
+        },
+      });
+      clearTimeout(timer);
+      // 持久化
+      const answers: Record<string, string> = {};
+      for (const m of members) {
+        const r = results.get(m.name);
+        if (!r) continue;
+        upsertTeamMember({
+          ...m,
+          history: JSON.stringify(r.newHistory),
+          last_message: message, last_result: r.answer,
+          status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000,
+        });
+        answers[m.name] = r.answer;
+      }
+      return { ok: true, results: answers };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
   });
 }
 

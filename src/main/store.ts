@@ -486,6 +486,12 @@ export function listTeamsForConv(convId: string): Array<{ team_id: string; membe
   ).all(`conv:${convId}%`) as Array<{ team_id: string; member_count: number; updated_at: number }>;
 }
 
+/** 从 team_id 解析出 conv_id("conv:<convId>:team:<ts>" → "<convId>") */
+export function convIdFromTeamId(teamId: string): string | null {
+  const m = teamId.match(/^conv:(.+):team:[^:]+$/);
+  return m ? m[1] : null;
+}
+
 export function updateMemory(id: string, content: string): void {
   db.prepare('UPDATE memories SET content=? WHERE id=?;').run(content, id);
   // content 变了 → 删旧 embedding;memory-update IPC handler 会同步重建新 embedding。

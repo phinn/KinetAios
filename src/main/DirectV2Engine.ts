@@ -961,41 +961,57 @@ export class DirectV2Engine implements Engine {
       signal,
       convId: conv.id,
       sandbox: getSettings().sandbox,
-      // P2:AgentTeams 调度(v2 也支持)。逻辑与 v1 相同 — 串行跑 member,持久化 history + last_result。
+      // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
       teamRun: async ({ teamId, memberNames, message }) => {
-        const { runMember, memberCostUSD } = await import('./teams');
-        const parts: string[] = [];
-        for (const name of memberNames) {
-          if (signal.aborted) break;
+        const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
+        const { emitTeamEvent } = await import('./main');
+
+        const runOpts = {
+          provider, snap, signal,
+          cwd: conv.cwd,
+          confirm: this.confirm,
+          convId: conv.id,
+          onTeamEvent: (memberName: string, ev: import('../shared/types').TeamEvent) => {
+            emitTeamEvent(teamId, ev);
+          },
+        };
+
+        if (memberNames.length <= 1) {
+          const name = memberNames[0];
+          if (!name) return '';
           const m = store.loadTeamMember(teamId, name);
-          if (!m) { parts.push(`[${name}] (member 不存在)`); continue; }
+          if (!m) return `[${name}] (member 不存在)`;
           try {
-            const r = await runMember({
-              member: m,
-              userMessage: message,
-              provider,
-              snap,
-              signal,
-              cwd: conv.cwd,
-              confirm: this.confirm,
-              convId: conv.id,
-            });
-            store.upsertTeamMember({
-              ...m,
-              history: JSON.stringify(r.newHistory),
-              last_message: message,
-              last_result: r.answer,
-              status: 'done',
-              updated_at: Date.now() / 1000,
-            });
+            emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
+            const r = await runMember({ member: m, userMessage: message, runOpts });
+            store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
             const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
-            parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+            emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
+            emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
+            return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
           } catch (e) {
             store.upsertTeamMember({ ...m, last_message: message, last_result: `错误: ${(e as Error)?.message}`, status: 'failed', updated_at: Date.now() / 1000 });
-            parts.push(`### ${m.name}\n错误: ${(e as Error)?.message}\n`);
+            emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'failed' });
+            return `### ${m.name}\n错误: ${(e as Error)?.message}\n`;
           }
         }
+
+        // 多 member(broadcast):并行
+        const members = memberNames.map(n => store.loadTeamMember(teamId, n)).filter((m): m is NonNullable<typeof m> => m !== null);
+        const results = await runMembersParallel({ members, message, runOpts });
+        const parts: string[] = [];
+        let totalUsd = 0;
+        let totalTokens = 0;
+        for (const m of members) {
+          const r = results.get(m.name);
+          if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
+          store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
+          totalUsd += memberCostUSD(snap, r.tokensIn, r.tokensOut);
+          totalTokens += r.tokensIn + r.tokensOut;
+          parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+        }
+        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens });
         return parts.join('\n');
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
