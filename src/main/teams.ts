@@ -127,7 +127,9 @@ export async function runMembersParallel(opts: {
       } catch (e) {
         const errMsg = (e as Error)?.message ?? String(e);
         runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'failed' });
-        return { name: m.name, answer: `错误: ${errMsg}`, newHistory: [], tokensIn: 0, tokensOut: 0, error: errMsg };
+        // 失败时保留原有 history(不清空),避免丢失 member 累积的对话上下文
+        const oldHistory = parseMemberHistory(m.history);
+        return { name: m.name, answer: `错误: ${errMsg}`, newHistory: oldHistory, tokensIn: 0, tokensOut: 0, error: errMsg };
       }
     }),
   );

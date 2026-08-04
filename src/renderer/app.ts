@@ -587,6 +587,16 @@ function handleTeamEvent(teamId: string, ev: TeamEvent): void {
       const prev = teamLiveStatus.get(liveKey) ?? { status: 'idle' as MemberStatus, partial: '' };
       teamLiveStatus.set(liveKey, { ...prev, status: ev.status });
       updateMemberCardStatus(liveKey, ev.status);
+      // 失败状态:延迟清除 live cache,让 DB 数据接管
+      if (ev.status === 'failed') {
+        setTimeout(() => {
+          const cur = teamLiveStatus.get(liveKey);
+          if (cur && cur.status === 'failed') {
+            teamLiveStatus.delete(liveKey);
+            if (activeTab === 'team') void refreshTeamPane();
+          }
+        }, 2000);
+      }
       break;
     }
     case 'memberToken': {
@@ -601,6 +611,17 @@ function handleTeamEvent(teamId: string, ev: TeamEvent): void {
       teamLiveStatus.set(liveKey, { ...prev, status: 'done', partial: ev.answer });
       updateMemberCardPartial(liveKey, ev.answer);
       updateMemberCardStatus(liveKey, 'done');
+      // memberDone 后清除 live cache:下次 refreshTeamPane / renderTeamPane 时从 DB 读真实数据
+      // 延迟 1s 清除,让用户看到结果渲染
+      setTimeout(() => {
+        // 只有没被新的 running 覆盖时才清
+        const cur = teamLiveStatus.get(liveKey);
+        if (cur && cur.status === 'done') {
+          teamLiveStatus.delete(liveKey);
+          // 从 DB 数据重新渲染该卡片(如果当前在 team tab)
+          if (activeTab === 'team') void refreshTeamPane();
+        }
+      }, 1500);
       break;
     }
     case 'memberTool': {
@@ -645,15 +666,34 @@ function updateMemberCardPartial(liveKey: string, text: string): void {
 async function teamSendToMember(teamId: string, memberName: string): Promise<void> {
   const message = await showInputOverlay(`发给 ${memberName}`, '输入消息...');
   if (!message) return;
-  // 清空 live status
-  teamLiveStatus.set(`${teamId}/${memberName}`, { status: 'running', partial: '' });
-  updateMemberCardStatus(`${teamId}/${memberName}`, 'running');
-  updateMemberCardPartial(`${teamId}/${memberName}`, '');
+  const liveKey = `${teamId}/${memberName}`;
+  // 清空 live status → 进入 running
+  teamLiveStatus.set(liveKey, { status: 'running', partial: '' });
+  updateMemberCardStatus(liveKey, 'running');
+  updateMemberCardPartial(liveKey, '');
   try {
     const r = await api.sendToTeamMember(teamId, memberName, message);
-    if (!r.ok) alert(r.error ?? '发送失败');
+    if (!r.ok) {
+      alert(r.error ?? '发送失败');
+      // 失败也清除 live status,从 DB 读真实状态
+      teamLiveStatus.delete(liveKey);
+      await refreshTeamPane();
+      return;
+    }
+    // 成功:用 IPC 返回的 answer 更新 partial,然后清除 live status 让 DB 数据接管
+    teamLiveStatus.set(liveKey, { status: 'done', partial: r.answer ?? '' });
+    updateMemberCardPartial(liveKey, r.answer ?? '');
+    updateMemberCardStatus(liveKey, 'done');
+    // 刷新 DB 数据覆盖 live cache
+    await refreshTeamPane();
+    // refreshTeamPane 会用 DB 数据渲染,但 liveStatus 仍在 → 清除让下次 render 从 DB 读
+    teamLiveStatus.delete(liveKey);
+    // 再渲染一次确保 UI 与 DB 一致
+    renderTeamPane();
   } catch (e) {
     alert(`发送失败: ${(e as Error)?.message ?? e}`);
+    teamLiveStatus.delete(liveKey);
+    await refreshTeamPane();
   }
 }
 
@@ -661,18 +701,30 @@ async function teamSendToMember(teamId: string, memberName: string): Promise<voi
 async function teamBroadcast(teamId: string): Promise<void> {
   const message = await showInputOverlay('广播消息', '输入广播消息...');
   if (!message) return;
-  // 清空所有 member 的 live status
+  // 清空所有 member 的 live status → running
   const members = teamMembers.get(teamId) ?? [];
   for (const m of members) {
-    teamLiveStatus.set(`${teamId}/${m.name}`, { status: 'running', partial: '' });
-    updateMemberCardStatus(`${teamId}/${m.name}`, 'running');
-    updateMemberCardPartial(`${teamId}/${m.name}`, '');
+    const lk = `${teamId}/${m.name}`;
+    teamLiveStatus.set(lk, { status: 'running', partial: '' });
+    updateMemberCardStatus(lk, 'running');
+    updateMemberCardPartial(lk, '');
   }
   try {
     const r = await api.broadcastToTeam(teamId, message);
-    if (!r.ok) alert(r.error ?? '广播失败');
+    if (!r.ok) {
+      alert(r.error ?? '广播失败');
+      // 清除 live status,从 DB 读真实状态
+      for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
+      await refreshTeamPane();
+      return;
+    }
+    // 成功:清除所有 live status,让 DB 数据接管
+    for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
+    await refreshTeamPane();
   } catch (e) {
     alert(`广播失败: ${(e as Error)?.message ?? e}`);
+    for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
+    await refreshTeamPane();
   }
 }
 
