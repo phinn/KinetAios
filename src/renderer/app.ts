@@ -4483,7 +4483,7 @@ async function send() {
       alert(tr('send.failed', { msg: (e as Error)?.message ?? String(e) }));
       return; // 不清空,用户可重试
     }
-    // 发送成功 → 清空 composer + 附件
+    // 发送成功 → 清空 composer + 附件 + 强制滚到最新消息
     if (files.length) {
       attachments = [];
     }
@@ -4494,6 +4494,9 @@ async function send() {
     composer.value = '';
     autosize(composer);
     document.getElementById('composer')!.focus();
+    // 发送后强制滚到底部;延迟两帧确保 onConversation → renderMain 已渲染新 turn DOM。
+    // Force scroll after send; delay 2 frames so the new turn DOM is present.
+    requestAnimationFrame(() => requestAnimationFrame(() => scrollDownForce()));
   } finally {
     sending = false;
   }
