@@ -1881,7 +1881,7 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.preset')}</label><select id="s-preset">
           ${PRESETS.map((p) => `<option value="${p.id}" ${p.id === s.presetId ? 'selected' : ''}>${tr(p.labelKey)}</option>`).join('')}
         </select></div>
-        <div class="field"><label>API Key</label><div class="row"><input id="s-key" type="password" value="${esc(s.apiKey)}" /><button id="s-balance" class="btn-xs">${tr('balance.query')}</button></div></div>
+        <div class="field"><label>API Key</label><div class="row"><div class="key-eye-wrap"><input id="s-key" type="password" value="${esc(s.apiKey)}" /><span class="key-eye" data-target="s-key">👁</span></div><button id="s-balance" class="btn-xs">${tr('balance.query')}</button></div></div>
         <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
         <div class="field"><label>${tr('settings.modelId')}</label><div class="row"><input id="s-model" value="${esc(s.model)}" /><button id="s-scan-models" class="btn-xs" style="display:none">🔄 读取本地模型</button></div></div>
         <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
@@ -1926,7 +1926,7 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.embed.desc')}</div>
         <div class="field"><label>${tr('settings.embed.model')}</label><input id="s-embed-model" value="${esc(s.embedModel || 'embedding-3')}" /></div>
         <div class="field"><label>${tr('settings.embed.baseURL')}</label><input id="s-embed-base" value="${esc(s.embedBaseURL || '')}" placeholder="${esc(tr('settings.embed.baseURLPh'))}" /></div>
-        <div class="field"><label>${tr('settings.embed.apiKey')}</label><input id="s-embed-key" type="password" value="${esc(s.embedApiKey || '')}" placeholder="${esc(tr('settings.embed.apiKeyPh'))}" /></div>
+        <div class="field"><label>${tr('settings.embed.apiKey')}</label><div class="key-eye-wrap"><input id="s-embed-key" type="password" value="${esc(s.embedApiKey || '')}" placeholder="${esc(tr('settings.embed.apiKeyPh'))}" /><span class="key-eye" data-target="s-embed-key">👁</span></div></div>
       </div>
 
       <div class="s-section">
@@ -2023,7 +2023,7 @@ async function showSettings() {
         <div class="s-hint">
           ${tr('settings.minimax.desc')}
         </div>
-        <div class="field"><label>MiniMax API Key</label><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="${tr('settings.minimax.keyPh')}" /></div>
+        <div class="field"><label>MiniMax API Key</label><div class="key-eye-wrap"><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="${tr('settings.minimax.keyPh')}" /><span class="key-eye" data-target="s-minimax-key">👁</span></div></div>
       </div>
 
       </div><!-- /advanced panel -->
@@ -2447,6 +2447,16 @@ async function showSettings() {
     const r = await api.testConnection(readSettingsForm());
     showMsg(r.message, r.ok);
   };
+  // API Key 眼睛切换:点击 👁 切换 password/text
+  document.querySelectorAll<HTMLSpanElement>('.key-eye').forEach((eye) => {
+    eye.onclick = () => {
+      const input = document.getElementById(eye.dataset.target!) as HTMLInputElement;
+      if (!input) return;
+      const isPw = input.type === 'password';
+      input.type = isPw ? 'text' : 'password';
+      eye.textContent = isPw ? '🙈' : '👁';
+    };
+  });
   // 查询智谱 Coding Plan 用量 / 余额
   document.getElementById('s-balance')!.onclick = async () => {
     console.log('[s-balance] button clicked');

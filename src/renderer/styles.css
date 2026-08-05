@@ -1645,6 +1645,13 @@ a { color: var(--accent); }
 .field .row { display: flex; gap: 8px; }
 .field .row > * { flex: 1; }
 
+/* API Key 眼睛切换 */
+.key-eye-wrap { position: relative; flex: 1; }
+.key-eye-wrap > input { width: 100%; padding-right: 32px; }
+.key-eye { position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  cursor: pointer; font-size: 14px; user-select: none; opacity: .5; transition: opacity .15s; }
+.key-eye:hover { opacity: 1; }
+
 /* 设置页分组 */
 .s-section { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
 .s-section:first-of-type { border-top: none; margin-top: 14px; padding-top: 0; }
