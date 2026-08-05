@@ -1533,7 +1533,7 @@ a { color: var(--accent); }
 /* 回到最新消息浮动按钮 / Floating "jump to bottom" button */
 .scroll-bottom-btn {
   position: absolute;
-  bottom: 72px;
+  bottom: 120px;
   right: 20px;
   z-index: 50;
   width: 34px;
