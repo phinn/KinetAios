@@ -5177,8 +5177,8 @@ function renderSlash(): void {
 /** 绑定分类标签栏的点击事件:点击后筛选该分类,但不改变输入框内容。 */
 function bindSlashCats(): void {
   slashMenu.querySelectorAll<HTMLElement>('.slash-cat').forEach((btn) => {
-    btn.onclick = (e) => {
-      e.stopPropagation();
+    btn.onmousedown = (e) => {
+      e.preventDefault();   // mousedown 阻止焦点转移 → composer 不 blur → 菜单不被 closeSlash 关掉
       const cat = btn.dataset.cat || '';
       slashCategory = cat || null;
       // 重新筛选当前 skills(不做文本搜索,纯分类过滤)。
