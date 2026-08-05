@@ -323,7 +323,7 @@ body {
         <tr>
           <td class="dim-cell">Skill 注入方式</td>
           <td><span class="tag-cell tag-good">skillBlock → systemPrompt 直接拼接</span></td>
-          <td><span class="tag-cell tag-bad">不支持 skillBlock（V2 不读 skill）</span></td>
+          <td><span class="tag-cell tag-good">同 V1（isDirectFamily 守卫，skillBlock 拼入 systemPrompt）</span></td>
           <td><span class="tag-cell tag-ok">--append-system-prompt 注入</span></td>
           <td><span class="tag-cell tag-ok">prompt 前置拼接</span></td>
         </tr>
@@ -448,7 +448,7 @@ body {
     <div class="flow-row">
       <div class="flow-engine-label" style="color:var(--accent2)">V2 Direct</div>
       <div class="flow-steps">
-        <div class="flow-step muted">/skill 跳过</div>
+        <div class="flow-step active-purple">/skill 注入</div>
         <span class="flow-arrow">→</span>
         <div class="flow-step active-purple big-consume">Plan JSON 🔥</div>
         <span class="flow-arrow">→</span>
@@ -538,7 +538,7 @@ body {
         <li>Plan JSON 本身消耗 2-5K token，数据还没读就已满</li>
         <li>每步 Verify 需要回顾数据 → 二次消耗</li>
         <li>Judge 再调一次 LLM → 三次消耗</li>
-        <li>不支持 skillBlock（EngineRunOpts 未传 skill 给 V2）</li>
+
         <li>interStepCompact 在大数据场景下频繁触发 → 数据丢失</li>
       </ul>
       <ul class="pros">
@@ -617,7 +617,7 @@ body {
     <div class="factor-card" style="border-top:3px solid var(--accent2)">
       <div class="f-icon">🧩</div>
       <div class="f-title">Skill 注入是一等公民</div>
-      <div class="f-desc">/<skill> 指令在 V1 中直接进入 systemPrompt。V2 不支持 skillBlock，Claude Code / Codex 只能降级为 prompt 文字</div>
+      <div class="f-desc">/<skill> 指令在 V1 和 V2 中均直接进入 systemPrompt（isDirectFamily 守卫）。Claude Code / Codex 不走 skill 解析，只能降级为 prompt 文字</div>
     </div>
     <div class="factor-card" style="border-top:3px solid var(--accent5)">
       <div class="f-icon">💾</div>
