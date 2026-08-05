@@ -1655,7 +1655,7 @@ function updateStreamingStatus(conv: Conversation): void {
   if (heightChanged) {
     const turns = document.getElementById('turns');
     if (turns && turns.scrollHeight - turns.scrollTop - turns.clientHeight < 60) {
-      turns.scrollTop = turns.scrollHeight;
+      scrollDown();
     }
   }
 }
@@ -1703,7 +1703,7 @@ function updateLastTurnIncremental(): void {
   // DOM 结构改变(steps 重建 / streaming-status 增删)后,如果用户在底部,重新贴底。
   const turnsEl = document.getElementById('turns');
   if (turnsEl && turnsEl.scrollHeight - turnsEl.scrollTop - turnsEl.clientHeight < 60) {
-    turnsEl.scrollTop = turnsEl.scrollHeight;
+    scrollDown();
   }
 }
 
@@ -1872,8 +1872,19 @@ function empty(text: string): HTMLElement {
 
 function scrollDown() {
   const turns = document.getElementById('turns');
-  if (turns) turns.scrollTop = turns.scrollHeight;
+  if (!turns) return;
+  // rAF 节流:同一帧内多个 token / status 事件只滚一次,避免高频 scrollTop 赋值
+  // 与异步 layout 计算打架导致上下抖动。
+  // Throttle via rAF: coalesce multiple scroll requests in the same frame.
+  if (scrollDownScheduled) return;
+  scrollDownScheduled = true;
+  requestAnimationFrame(() => {
+    scrollDownScheduled = false;
+    const el = document.getElementById('turns');
+    if (el) el.scrollTop = el.scrollHeight;
+  });
 }
+let scrollDownScheduled = false;
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
