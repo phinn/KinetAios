@@ -879,14 +879,14 @@ a { color: var(--accent); }
 /* 弹层面板 ⋯ — 点击展开浮层网格,点外部收起 (Launchpad 风格) */
 .sb-more-wrap { position: relative; }
 .sb-more-overlay {
-  display: none; position: fixed; inset: 0; z-index: 200;
+  display: none; position: fixed; inset: 0; z-index: 10000;
   background: transparent;
 }
 .sb-more-overlay.open { display: block; animation: overlay-fade var(--dur-fast) var(--ease-out); }
 @keyframes overlay-fade { from { opacity: 0; } to { opacity: 1; } }
 
 .sb-more-menu {
-  display: none; position: fixed; z-index: 201;
+  display: none; position: fixed; z-index: 10001;
   bottom: 56px; left: 56px;
   background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 16px;
   padding: 16px 18px; width: 420px; max-height: calc(100vh - 120px); overflow-y: auto;
