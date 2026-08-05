@@ -135,6 +135,8 @@ export interface ToolCtx {
     prompt: string;
     signal: AbortSignal;
     engine?: SubEngine;
+    // 子 agent 用的模型(仅 Direct 引擎生效)。不传 = 复用主 agent 的 model。
+    model?: string;
     // P1:子 agent 拿到多少 parent history。默认 'none'(完全独立)。
     scope?: SpawnScopeConfig;
     // parent history:spawn 实现方用来按 scope 切片,不传给子 agent 自身。
@@ -1104,6 +1106,7 @@ const dispatchAgent: Tool = {
   name: 'dispatch_agent',
   description:
     '派发一个独立子任务给子 agent(独立上下文)。默认走 Direct 引擎(只读工具集:read_file/grep/glob/web_fetch/recall_memory/recall_fact)。设 engine=claudeCode 或 codex 跨引擎:走对应 CLI 的 one-shot(同样只读)。用于并行探索或大任务分解,可以借力更强的模型完成子任务。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。\n\n' +
+    '**model 参数(Direct 引擎)**:可指定子 agent 用的大模型(如 "glm-4-flash" 做廉价探索,"glm-4-plus" 做深度分析)。不传 = 复用主 agent 的 model。\n\n' +
     '**scope 参数(关键)**:决定子 agent 拿到多少 parent conversation 历史。\n' +
     '- "none"(默认):子 agent 完全独立,只看到 prompt。最便宜,适合"独立探索/查文档"任务。\n' +
     '- "last_n_turns":注入 parent 最近 N 轮 user/assistant(默认 N=3)。子 agent 知道"在干嘛",适合"基于刚才对话的延伸任务"。\n' +
@@ -1117,6 +1120,10 @@ const dispatchAgent: Tool = {
         type: 'string',
         enum: ['direct', 'claudeCode', 'codex'],
         description: "子任务用的引擎。默认 'direct'(本地 ReAct + GLM)。'claudeCode' / 'codex' 走对应 CLI one-shot。",
+      },
+      model: {
+        type: 'string',
+        description: '子 agent 用的大模型(仅 Direct 引擎生效)。不传 = 复用主 agent 的 model。例:用便宜的 flash 做探索,用主力模型做分析。',
       },
       scope: {
         type: 'object',
@@ -1156,6 +1163,7 @@ const dispatchAgent: Tool = {
         prompt,
         signal: ctx.signal ?? new AbortController().signal,
         engine,
+        model: args.model ? String(args.model) : undefined,
         scope,
       });
     } catch (e) {
