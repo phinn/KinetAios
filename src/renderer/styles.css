@@ -1971,15 +1971,15 @@ body.dash { overflow-y: auto; user-select: none; }
 
 /* Files & Preview 窗口:左文件树 + 右 webview,上下分头/工具栏 */
 body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; user-select: none; }
-.files-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--border); background: var(--bg-side); }
+.files-head { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--bg-side); }
 .files-cwd { font-size: 12px; color: var(--text-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 380px; }
 .files-spacer { flex: 1; }
 .files-addr { flex: 0 1 360px; font: inherit; font-size: 12px; color: var(--text); background: var(--bg-input); border: 1px solid var(--border); border-radius: 6px; padding: 5px 9px; }
-.files-body { flex: 1; display: grid; grid-template-columns: 30% 70%; min-height: 0; }
-.files-tree { overflow: auto; border-right: 1px solid var(--border); background: var(--bg-side); padding: 4px 0; }
+.files-body { flex: 1; display: grid; grid-template-columns: 260px 1fr; min-height: 0; }
+.files-tree { overflow: auto; border-right: 1px solid var(--border); background: var(--bg-side); padding: 6px 4px; }
 .files-view { min-width: 0; background: #fff; position: relative; }
 .files-view webview { width: 100%; height: 100%; display: inline-flex; border: none; }
-.files-empty { color: var(--text-faint); font-size: 12px; padding: 14px 16px; }
+.files-empty { color: var(--text-faint); font-size: 12px; padding: 20px 16px; text-align: center; }
 
 /* 预览 / 编辑 分段控制器(segmented control)—— 克制内凹底 + 柔和高亮 */
 .seg { display: inline-flex; align-items: center; gap: 1px; background: var(--bg-input); border: 1px solid var(--border); border-radius: 7px; padding: 2px; }
@@ -1994,15 +1994,15 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 /* 编辑器铺满 .files-view,文本框 + 底部状态条 */
 .files-editor { position: absolute; inset: 0; display: flex; flex-direction: column; background: var(--bg); }
 .files-editor > div:first-child { flex: 1; overflow: hidden; min-height: 0; }
-.files-editor-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--bg-side); flex-shrink: 0; }
-.fe-status { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; }
+.files-editor-bar { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-top: 1px solid var(--border); background: var(--bg-side); flex-shrink: 0; }
+.fe-status { font-size: 11px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 60%; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 
-.fe-row { display: flex; align-items: center; gap: 6px; padding: 3px 10px; cursor: default; font-size: 12.5px; }
+.fe-row { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: default; font-size: 12.5px; border-radius: 6px; margin: 0 4px; transition: background var(--dur-fast) var(--ease-out); }
 .fe-row:hover { background: var(--bg-elev); }
 /* 选中态:左竖线 + accent 文字 + elev 底,跟系统文件管理器一致(单击选中、双击打开)。 */
-.fe-row.selected { background: var(--bg-elev); color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); }
+.fe-row.selected { background: var(--bg-elev); color: var(--accent); box-shadow: inset 2px 0 0 var(--accent); border-radius: 0 6px 6px 0; margin-left: 6px; padding-left: 8px; }
 .fe-row.selected .fe-name { color: var(--accent); }
-.fe-ico { width: 14px; text-align: center; flex-shrink: 0; }
+.fe-ico { width: 16px; text-align: center; flex-shrink: 0; opacity: .8; }
 .fe-name { color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .fe.file .fe-name { color: var(--text-dim); }
 .fe-children .fe-row { padding-left: 24px; }
@@ -2259,14 +2259,14 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   user-select: none;
   pointer-events: none;
   overflow: hidden;
-  background: rgba(0,0,0,.18);
-  border-right: 1px solid var(--border);
-  min-width: 40px;
+  background: rgba(0,0,0,.08);
+  border-right: 1px solid var(--border-soft);
+  min-width: 48px;
 }
 .ce-ln {
   font: 12px/1.65 "JetBrains Mono", "Cascadia Code", Consolas, monospace;
   color: var(--text-faint);
-  padding: 0 10px;
+  padding: 0 12px;
   height: calc(1.65 * 13px);
 }
 
