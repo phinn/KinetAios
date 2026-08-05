@@ -33,6 +33,7 @@ let sortByRecent = true;
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
+let slashHolding = false;  // mousedown 标签时临时抑制 blur 关闭
 let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
 let slashCategory: string | null = null; // 当前选中的分类筛选(null = 全部)
@@ -3217,10 +3218,15 @@ function closeMoreMenu() {
   void loadPluginPanels().then(() => { rebuildPluginPanelMenu(); });
 
   // ⋯ 更多菜单(Launchpad 风格浮层):点击切换 open,点遮罩收起
+  // 关键:菜单 DOM 必须迁移到 <body> 下,否则 #sidebar 的 backdrop-filter
+  // 会创建新的层叠上下文,导致 position:fixed 子元素被锁定在 sidebar 内部。
+  // Key: the panel DOM must be reparented to <body>, otherwise #sidebar's
+  // backdrop-filter creates a new stacking context that traps fixed children.
   const moreMenu = document.getElementById('sb-more-menu')!;
   const moreBtn = document.getElementById('btn-more')!;
-  // 创建遮罩层 — 创建一个全屏透明遮罩,点击时关闭菜单
-  // Create a full-screen transparent overlay; clicking it closes the panel
+  // 迁移到 body 顶层 — Reparent to body to escape sidebar stacking context
+  document.body.appendChild(moreMenu);
+  // 创建遮罩层 — Create a full-screen transparent overlay
   const moreOverlay = document.createElement('div');
   moreOverlay.className = 'sb-more-overlay';
   moreOverlay.id = 'sb-more-overlay';
@@ -3453,7 +3459,10 @@ function closeMoreMenu() {
     autosize(composer);
     handleSlash(composer);
   });
-  composer.addEventListener('blur', () => setTimeout(closeSlash, 150));
+  // 延迟关闭,给 mousedown 标签拦截留时间;用 slashHolding flag 可靠取消。
+  composer.addEventListener('blur', () => {
+    setTimeout(() => { if (!slashHolding) closeSlash(); }, 150);
+  });
 
   // 文件附件:📎 选 / 拖入多个
   const fileInput = document.getElementById('file-input') as HTMLInputElement;
@@ -5194,14 +5203,19 @@ function renderSlash(): void {
   bindSlashCats();
 }
 
-/** 绑定分类标签栏的点击事件:点击后筛选该分类,但不改变输入框内容。 */
+/** 绑定分类标签栏的点击事件:点击后筛选该分类,但不改变输入框内容。
+ *  关键:用 mousedown + slashHolding flag 阻止 blur 关闭菜单。
+ *  - onmousedown 设 flag → composer blur 定时器看到 flag=true 不执行 closeSlash
+ *  - mouseup/click 后恢复 flag
+ *  - preventDefault 阻止 button 抢焦点(双保险)
+ */
 function bindSlashCats(): void {
   slashMenu.querySelectorAll<HTMLElement>('.slash-cat').forEach((btn) => {
     btn.onmousedown = (e) => {
-      e.preventDefault();   // mousedown 阻止焦点转移 → composer 不 blur → 菜单不被 closeSlash 关掉
+      e.preventDefault();
+      slashHolding = true;     // 抑制 blur 的 closeSlash
       const cat = btn.dataset.cat || '';
       slashCategory = cat || null;
-      // 重新筛选当前 skills(不做文本搜索,纯分类过滤)。
       const all = [
         { name: 'goal', description: '设置会话目标', type: 'command' as const, source: 'builtin' as const },
         ...skills,
@@ -5215,6 +5229,8 @@ function bindSlashCats(): void {
       }
       slashIndex = 0;
       renderSlash();
+      // 恢复 flag,让后续正常 blur 能关菜单
+      setTimeout(() => { slashHolding = false; }, 20);
     };
   });
 }

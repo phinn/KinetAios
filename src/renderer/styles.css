@@ -1608,6 +1608,7 @@ a { color: var(--accent); }
   background: var(--surface-input, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
+  z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
 #input textarea { resize: none; width: 100%; min-height: 40px; max-height: 180px; }
 .composer-bar { display: flex; align-items: center; gap: 4px; }
@@ -1674,7 +1675,7 @@ a { color: var(--accent); }
   box-shadow: var(--shadow-lg);
   max-height: 280px;
   overflow-y: auto;
-  z-index: 40;
+  z-index: 100;
   padding: 4px;
 }
 .slash-item { padding: 7px 10px; border-radius: 7px; cursor: pointer; display: flex; flex-direction: column; gap: 1px; }
