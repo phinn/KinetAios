@@ -104,7 +104,9 @@ const ZH_CN: Dict = {
 
   'sidebar.moreViews': '视图',
   'sidebar.moreMemoryGroup': '记忆',
+  'sidebar.moreAutomation': '自动化',
   'sidebar.moreTools': '工具',
+  'sidebar.moreOthers': '其他',
   'sidebar.moreTown': '小镇',
   'town.title': '小镇',
   'town.sub': '每栋房子是一个项目,每个村民是一个 Agent。点击村民查看他的工作,或直接跟他说话。',
@@ -915,7 +917,9 @@ const EN: Dict = {
 
   'sidebar.moreViews': 'Views',
   'sidebar.moreMemoryGroup': 'Memory',
+  'sidebar.moreAutomation': 'Automation',
   'sidebar.moreTools': 'Tools',
+  'sidebar.moreOthers': 'Others',
   'sidebar.moreTown': 'Town',
   'town.title': 'Town',
   'town.sub': 'Each house is a project, each villager is an agent. Click a villager to see their work, or talk to them directly.',
@@ -1727,7 +1731,9 @@ const ZH_TW: Dict = {
 
   'sidebar.moreViews': '視圖',
   'sidebar.moreMemoryGroup': '記憶',
+  'sidebar.moreAutomation': '自動化',
   'sidebar.moreTools': '工具',
+  'sidebar.moreOthers': '其他',
   'sidebar.moreTown': '小鎮',
   'town.title': '小鎮',
   'town.sub': '每棟房子是一個專案,每個村民是一個 Agent。點擊村民查看他的工作,或直接跟他說話。',
@@ -2539,7 +2545,9 @@ const JA: Dict = {
 
   'sidebar.moreViews': 'ビュー',
   'sidebar.moreMemoryGroup': 'メモリ',
+  'sidebar.moreAutomation': 'オートメーション',
   'sidebar.moreTools': 'ツール',
+  'sidebar.moreOthers': 'その他',
   'sidebar.moreTown': 'タウン',
   'town.title': 'タウン',
   'town.sub': '各ハウスはプロジェクト、各住人はエージェントです。住人をクリックして作業を見るか、直接話しかけましょう。',
