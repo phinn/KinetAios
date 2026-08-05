@@ -1115,7 +1115,7 @@ a { color: var(--accent); }
 .cht.active { color: var(--text); border-bottom-color: var(--accent); font-weight: 500; }
 
 /* chat-content 包 #turns + #input;chat-files-pane 内联文件浏览器。两者互斥(由 tab 切换)。 */
-.chat-content { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.chat-content { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .chat-content[hidden] { display: none; }
 .chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-files-pane[hidden] { display: none; }
@@ -1533,7 +1533,7 @@ a { color: var(--accent); }
 /* 回到最新消息浮动按钮 / Floating "jump to bottom" button */
 .scroll-bottom-btn {
   position: absolute;
-  bottom: 16px;
+  bottom: 72px;
   right: 20px;
   z-index: 50;
   width: 34px;
