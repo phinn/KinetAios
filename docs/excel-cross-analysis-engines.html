@@ -325,7 +325,7 @@ body {
           <td><span class="tag-cell tag-good">skillBlock → systemPrompt 直接拼接</span></td>
           <td><span class="tag-cell tag-good">同 V1（isDirectFamily 守卫，skillBlock 拼入 systemPrompt）</span></td>
           <td><span class="tag-cell tag-ok">--append-system-prompt 注入</span></td>
-          <td><span class="tag-cell tag-ok">prompt 前置拼接</span></td>
+          <td><span class="tag-cell tag-good">$skill-name → SKILL.md → &lt;skill&gt; 标签注入（原生系统）</span></td>
         </tr>
         <!-- 2. 插件工具 -->
         <tr>
@@ -482,7 +482,7 @@ body {
     <div class="flow-row">
       <div class="flow-engine-label" style="color:var(--accent5)">Codex</div>
       <div class="flow-steps">
-        <div class="flow-step active-red">prompt 前置</div>
+        <div class="flow-step active-red">$skill → &lt;skill&gt;</div>
         <span class="flow-arrow">→</span>
         <div class="flow-step active-red">shell python</div>
         <span class="flow-arrow">→</span>
@@ -576,18 +576,18 @@ body {
         <span class="verdict-tag vt-bad">不推荐 · 5.5 分</span>
       </div>
       <ul class="cons">
-        <li>无 KinetAios 插件工具</li>
+        <li>无 KinetAios 插件工具（excel_read / csv_filter / excel_com 全部缺失）</li>
         <li>沙箱模式限制 shell 能力（read-only / workspace-write）</li>
-        <li>memory 前置拼到 prompt，最快照注入，无动态检索</li>
+        <li>memory 前置拼到 prompt，无动态检索</li>
         <li>JSONL 解析 + agent_message 去重逻辑开销</li>
-        <li>无 --append-system-prompt 等效 flag</li>
       </ul>
       <ul class="pros">
+        <li>原生 Skill 系统完善：$skill-name 语法、SKILL.md frontmatter、repo/user/system/admin 四级作用域、隐式调用检测、依赖声明（dependencies.tools）</li>
         <li>Codex 模型本身擅长代码 / 脚本</li>
         <li>resume thread 可恢复</li>
         <li>沙箱安全性最高（但数据分析不需要）</li>
       </ul>
-      <div class="summary">📌 沙箱 + 无插件 + 无 Skill 注入，三重劣势。不如直接用 V1。</div>
+      <div class="summary">📌 Skill 系统完善，但缺 KinetAios 插件工具 + 沙箱限制，数据分析效率远不如 V1。Skill 生态有潜力但当前插件不互通。</div>
     </div>
   </div>
 </div>
@@ -617,7 +617,7 @@ body {
     <div class="factor-card" style="border-top:3px solid var(--accent2)">
       <div class="f-icon">🧩</div>
       <div class="f-title">Skill 注入是一等公民</div>
-      <div class="f-desc">/<skill> 指令在 V1 和 V2 中均直接进入 systemPrompt（isDirectFamily 守卫）。Claude Code / Codex 不走 skill 解析，只能降级为 prompt 文字</div>
+      <div class="f-desc">/<skill> 指令在 V1 和 V2 中均直接进入 systemPrompt（isDirectFamily 守卫）。Codex 有原生 skill 系统：$skill-name → SKILL.md → &lt;skill&gt; 标签注入（支持 repo/user/system 四级作用域 + 隐式调用 + 依赖声明）。Claude Code 仅有 --append-system-prompt 降级注入</div>
     </div>
     <div class="factor-card" style="border-top:3px solid var(--accent5)">
       <div class="f-icon">💾</div>
