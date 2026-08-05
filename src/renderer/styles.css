@@ -876,27 +876,49 @@ a { color: var(--accent); }
    低频功能(仪表盘/文件/Arena/记忆/快照)收纳进 ⋯ 下拉,需要时点开。 */
 .sb-actions .ghost { padding: 5px 6px; font-size: 13px; }
 
-/* 下拉菜单 ⋯ — 点击展开,点外部收起 */
+/* 弹层面板 ⋯ — 点击展开浮层网格,点外部收起 (Launchpad 风格) */
 .sb-more-wrap { position: relative; }
+.sb-more-overlay {
+  display: none; position: fixed; inset: 0; z-index: 200;
+  background: transparent;
+}
+.sb-more-overlay.open { display: block; animation: overlay-fade var(--dur-fast) var(--ease-out); }
+@keyframes overlay-fade { from { opacity: 0; } to { opacity: 1; } }
+
 .sb-more-menu {
-  display: none; position: absolute; top: calc(100% + 4px); right: 0; z-index: 100;
-  background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 10px;
-  padding: 4px; min-width: 170px; box-shadow: var(--shadow-lg);
+  display: none; position: fixed; z-index: 201;
+  bottom: 56px; left: 56px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 16px;
+  padding: 16px 18px; width: 420px; max-height: calc(100vh - 120px); overflow-y: auto;
+  box-shadow: 0 20px 60px rgba(0,0,0,.5), 0 0 0 1px rgba(255,255,255,.03);
 }
-.sb-more-menu.open { display: block; animation: dropdown-in var(--dur-normal) var(--ease-out); transform-origin: top right; }
-@keyframes dropdown-in { from { opacity: 0; transform: scale(0.95) translateY(-4px); } to { opacity: 1; transform: none; } }
+.sb-more-menu.open { display: block; animation: panel-pop var(--dur-normal) var(--ease-out); transform-origin: bottom left; }
+@keyframes panel-pop { from { opacity: 0; transform: scale(0.92) translateY(12px); } to { opacity: 1; transform: none; } }
+
+/* 分区:每区一个 label + 网格行 */
+.sb-more-section-label { font-size: 10px; color: var(--text-dim); padding: 0 0 8px; text-transform: uppercase; letter-spacing: .8px; }
+.sb-more-sep { display: none; } /* 网格布局下不需要线分隔,用 label + spacing 代替 */
+
+/* 网格容器 */
+.sb-more-grid {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px;
+  margin-bottom: 14px;
+}
+.sb-more-grid:last-child { margin-bottom: 0; }
+
+/* 单个图标方块 */
 .sb-more-item {
-  display: flex; align-items: center; gap: 8px; width: 100%;
-  background: transparent; border: none; border-radius: 5px;
-  padding: 7px 10px; font: inherit; color: var(--text); cursor: pointer; text-align: left;
-  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  width: 100%; aspect-ratio: 1 / 1; min-height: 72px;
+  background: transparent; border: 1px solid transparent; border-radius: 12px;
+  padding: 8px 4px; font: inherit; color: var(--text); cursor: pointer; text-align: center;
+  transition: background var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
-.sb-more-item:hover { background: var(--bg-input); }
-.sb-more-item:active { transform: scale(0.97); }
-.sb-mi-ico { font-size: 13px; width: 18px; text-align: center; flex-shrink: 0; }
-.sb-mi-label { font-size: 12px; }
-.sb-more-sep { height: 1px; background: var(--border); margin: 4px 6px; }
-.sb-more-section-label { font-size: 10px; color: var(--text-dim); padding: 2px 10px 4px; text-transform: uppercase; letter-spacing: .5px; }
+.sb-more-item:hover { background: var(--bg-input); border-color: var(--border-soft); }
+.sb-more-item:active { transform: scale(0.92); }
+.sb-mi-ico { font-size: 13px; width: auto; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.sb-mi-ico svg { width: 22px; height: 22px; opacity: .85; }
+.sb-mi-label { font-size: 11px; line-height: 1.2; color: var(--text-dim); word-break: break-all; }
 #conv-list { list-style: none; margin: 0; padding: 4px 8px; overflow-y: auto; flex: 1; }
 /* ponytail: 用 > 限定直接子项,避免 .sb-proj-tasks 里的嵌套 li 继承 flex-direction:column。 */
 #conv-list > li {

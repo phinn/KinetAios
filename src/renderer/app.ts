@@ -3161,8 +3161,12 @@ function wireUi() {
     else showSettings();
   };
 
-// 收起 ⋯ 更多菜单
-function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.remove('open'); }
+// 收起 ⋯ 更多菜单 (Launchpad 风格浮层)
+// Close the ⋯ more panel (Launchpad-style overlay)
+function closeMoreMenu() {
+  document.getElementById('sb-more-menu')?.classList.remove('open');
+  document.getElementById('sb-more-overlay')?.classList.remove('open');
+}
   document.getElementById('btn-wb')!.onclick = () => {
     if (document.getElementById('workbench-view')!.classList.contains('active')) showChat();
     else showWorkbench();
@@ -3212,13 +3216,21 @@ function closeMoreMenu() { document.getElementById('sb-more-menu')?.classList.re
   // Plugin Panel entries (v2.1): dynamically appended to the ⋯ more menu
   void loadPluginPanels().then(() => { rebuildPluginPanelMenu(); });
 
-  // ⋯ 更多菜单:点击切换 open,点外部收起
+  // ⋯ 更多菜单(Launchpad 风格浮层):点击切换 open,点遮罩收起
   const moreMenu = document.getElementById('sb-more-menu')!;
   const moreBtn = document.getElementById('btn-more')!;
-  moreBtn.onclick = (e) => { e.stopPropagation(); moreMenu.classList.toggle('open'); };
-  document.addEventListener('click', (e) => {
-    if (!moreMenu.contains(e.target as Node) && e.target !== moreBtn) moreMenu.classList.remove('open');
-  });
+  // 创建遮罩层 — 创建一个全屏透明遮罩,点击时关闭菜单
+  // Create a full-screen transparent overlay; clicking it closes the panel
+  const moreOverlay = document.createElement('div');
+  moreOverlay.className = 'sb-more-overlay';
+  moreOverlay.id = 'sb-more-overlay';
+  document.body.appendChild(moreOverlay);
+  function openMoreMenu() { moreMenu.classList.add('open'); moreOverlay.classList.add('open'); }
+  function closeMoreMenuPanel() { moreMenu.classList.remove('open'); moreOverlay.classList.remove('open'); }
+  moreBtn.onclick = (e) => { e.stopPropagation(); if (moreMenu.classList.contains('open')) closeMoreMenuPanel(); else openMoreMenu(); };
+  moreOverlay.onclick = () => closeMoreMenuPanel();
+  // Esc 键关闭
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMoreMenuPanel(); });
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
@@ -4608,16 +4620,17 @@ function rebuildPluginPanelMenu(): void {
   // 移除旧的插件入口和分隔/标题 — Remove old plugin entries + divider/header.
   menu.querySelectorAll('[data-plugin-section]').forEach((el) => el.remove());
   if (pluginPanelRegistry.length === 0) return;
-  // 分隔线 + 小标题 — Divider + section label.
-  const sep = document.createElement('div');
-  sep.className = 'sb-more-sep';
-  sep.dataset.pluginSection = '';
-  menu.appendChild(sep);
+  // 分区标题 — Section label.
   const header = document.createElement('div');
   header.className = 'sb-more-section-label';
   header.dataset.pluginSection = '';
   header.textContent = '🔌 插件';
   menu.appendChild(header);
+  // 网格容器 — Grid container for plugin items.
+  const grid = document.createElement('div');
+  grid.className = 'sb-more-grid';
+  grid.dataset.pluginSection = '';
+  menu.appendChild(grid);
   // 重新添加 — Re-add.
   for (const panel of pluginPanelRegistry) {
     const btn = document.createElement('button');
@@ -4625,8 +4638,8 @@ function rebuildPluginPanelMenu(): void {
     btn.dataset.pluginPanel = panel.name;
     btn.dataset.pluginSection = '';
     btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
-    btn.onclick = () => { document.getElementById('sb-more-menu')?.classList.remove('open'); showPluginPanel(panel.name); };
-    menu.appendChild(btn);
+    btn.onclick = () => { document.getElementById('sb-more-menu')?.classList.remove('open'); document.getElementById('sb-more-overlay')?.classList.remove('open'); showPluginPanel(panel.name); };
+    grid.appendChild(btn);
   }
 }
 
