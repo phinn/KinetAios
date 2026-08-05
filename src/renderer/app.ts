@@ -1930,7 +1930,8 @@ function initScrollBottomBtn(): void {
   mo.observe(turns, { childList: true, subtree: true });
 
   btn.addEventListener('click', () => {
-    scrollDownForce();
+    const el = document.getElementById('turns');
+    if (el) el.scrollTop = el.scrollHeight;
     btn.classList.remove('visible');
   });
 }
