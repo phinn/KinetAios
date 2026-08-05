@@ -102,6 +102,9 @@ const ZH_CN: Dict = {
   'wb.saved': '已保存到 KINET-CONTEXT.md',
   'wb.saveErr': '保存失败: {msg}',
 
+  'sidebar.moreViews': '视图',
+  'sidebar.moreMemoryGroup': '记忆',
+  'sidebar.moreTools': '工具',
   'sidebar.moreTown': '小镇',
   'town.title': '小镇',
   'town.sub': '每栋房子是一个项目,每个村民是一个 Agent。点击村民查看他的工作,或直接跟他说话。',
@@ -909,6 +912,9 @@ const EN: Dict = {
   'wb.saved': 'Saved to KINET-CONTEXT.md',
   'wb.saveErr': 'Save failed: {msg}',
 
+  'sidebar.moreViews': 'Views',
+  'sidebar.moreMemoryGroup': 'Memory',
+  'sidebar.moreTools': 'Tools',
   'sidebar.moreTown': 'Town',
   'town.title': 'Town',
   'town.sub': 'Each house is a project, each villager is an agent. Click a villager to see their work, or talk to them directly.',
@@ -1717,6 +1723,9 @@ const ZH_TW: Dict = {
   'wb.saved': '已儲存到 KINET-CONTEXT.md',
   'wb.saveErr': '儲存失敗: {msg}',
 
+  'sidebar.moreViews': '視圖',
+  'sidebar.moreMemoryGroup': '記憶',
+  'sidebar.moreTools': '工具',
   'sidebar.moreTown': '小鎮',
   'town.title': '小鎮',
   'town.sub': '每棟房子是一個專案,每個村民是一個 Agent。點擊村民查看他的工作,或直接跟他說話。',
@@ -2525,6 +2534,9 @@ const JA: Dict = {
   'wb.saved': 'KINET-CONTEXT.md に保存しました',
   'wb.saveErr': '保存失敗: {msg}',
 
+  'sidebar.moreViews': 'ビュー',
+  'sidebar.moreMemoryGroup': 'メモリ',
+  'sidebar.moreTools': 'ツール',
   'sidebar.moreTown': 'タウン',
   'town.title': 'タウン',
   'town.sub': '各ハウスはプロジェクト、各住人はエージェントです。住人をクリックして作業を見るか、直接話しかけましょう。',
