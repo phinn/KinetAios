@@ -1504,8 +1504,9 @@ a { color: var(--accent); }
 @keyframes goal-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .stat { font-size: 11px; color: var(--text-dim); }
 
-/* turns */
-#turns { flex: 1; overflow-y: auto; padding: 18px 0; }
+/* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
+   scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
+#turns { flex: 1; overflow-y: scroll; padding: 18px 0; overflow-anchor: none; }
 .turn { padding: 4px 20px 16px; display: flex; flex-direction: column; gap: 12px; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.user { flex-direction: row-reverse; } /* 头像在右 */

@@ -1319,7 +1319,7 @@ function renderMain() {
   }
   if (!conv.turns.length) {
     turns.replaceChildren(empty(tr('empty.noTurns')));
-    scrollDown();
+    scrollDownForce();
     return;
   }
   // 分批渲染:长对话一次全量渲染会卡死主线程(几百轮 Markdown + DOM 节点),
@@ -1333,7 +1333,7 @@ function renderMain() {
   const frag = document.createDocumentFragment();
   for (let i = startIdx; i < total; i++) frag.appendChild(renderTurn(conv, i));
   turns.replaceChildren(frag);
-  scrollDown();
+  scrollDownForce();
   // 剩余 turn 用 idle 回调增量补(头插)。补完后用户向上滚就能看到。
   // Idle-fill earlier turns in the background (prepended to the top).
   if (startIdx > 0) {
@@ -1719,6 +1719,8 @@ function streamAppend(text: string) {
     el.appendChild(document.createTextNode(text));
     // token 到达 = 不再处于工具执行中。applyEvent 已清 statusNote,
     // 同步移除 DOM 上残留的 streaming-status,避免它停在旧文本上不消失。
+    // 只在首次(有 status 残留时)才查 DOM + remove,之后不再重复查询。
+    // Only query/remove on first token (when status element exists); skip after.
     const turnEl = el.closest('.turn');
     const ss = turnEl?.querySelector('.streaming-status');
     if (ss) ss.remove();
@@ -1871,20 +1873,37 @@ function empty(text: string): HTMLElement {
 }
 
 function scrollDown() {
+  scrollDownImpl(false);
+}
+/** 强制滚到底,即使用户正在向上翻看(用于切换会话 / 发送新消息等场景)。 */
+// Force scroll to bottom regardless of user's current scroll position.
+function scrollDownForce() {
+  scrollDownImpl(true);
+}
+function scrollDownImpl(force: boolean) {
   const turns = document.getElementById('turns');
   if (!turns) return;
-  // rAF 节流:同一帧内多个 token / status 事件只滚一次,避免高频 scrollTop 赋值
-  // 与异步 layout 计算打架导致上下抖动。
-  // Throttle via rAF: coalesce multiple scroll requests in the same frame.
-  if (scrollDownScheduled) return;
+  if (scrollDownScheduled) {
+    if (force) scrollDownForceFlag = true;
+    return;
+  }
   scrollDownScheduled = true;
-  requestAnimationFrame(() => {
-    scrollDownScheduled = false;
-    const el = document.getElementById('turns');
-    if (el) el.scrollTop = el.scrollHeight;
+  queueMicrotask(() => {
+    requestAnimationFrame(() => {
+      scrollDownScheduled = false;
+      const shouldForce = scrollDownForceFlag;
+      scrollDownForceFlag = false;
+      const el = document.getElementById('turns');
+      if (!el) return;
+      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+      if (shouldForce || distFromBottom < 120) {
+        el.scrollTop = el.scrollHeight;
+      }
+    });
   });
 }
 let scrollDownScheduled = false;
+let scrollDownForceFlag = false;
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
