@@ -1215,17 +1215,23 @@ a { color: var(--accent); }
 .git-branch strong { color: var(--accent); font-weight: 600; }
 
 /* 同步状态徽章 */
-.git-sync { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; line-height: 1; margin-left: 4px; }
-.git-sync svg { display: block; width: 13px; height: 13px; flex-shrink: 0; }
-.git-sync .git-ahead, .git-sync .git-behind { display: inline-flex; align-items: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-/* 已同步:淡绿 */
-.git-sync-ok { color: #50c878; background: rgba(80,200,120,.12); }
-/* 落后远程:淡橙红(需要 pull) */
-.git-sync-behind { color: #e8a838; background: rgba(232,168,56,.15); }
-/* 仅本地:灰色虚线感 */
-.git-sync-local { color: var(--text-faint); background: rgba(127,127,127,.08); }
-/* 有 remote 但无上游跟踪:淡蓝提示 */
-.git-sync-noup { color: var(--accent); background: rgba(100,149,237,.10); }
+.git-sync { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: 600; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; line-height: 1.4; margin-left: 6px; white-space: nowrap; }
+.git-sync-glyph { font-size: 12px; font-weight: 700; opacity: 0.9; }
+/* 大字号数字 ↑N ↓N */
+.git-sync .git-ahead, .git-sync .git-behind { display: inline-flex; align-items: center; gap: 1px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; font-weight: 700; }
+.git-sync .git-ahead b, .git-sync .git-behind b { font-size: 14px; line-height: 1; font-weight: 800; }
+/* 已同步:淡绿底 */
+.git-sync-ok { color: #2d8f57; background: rgba(80,200,120,.18); border: 1px solid rgba(80,200,120,.35); }
+/* 领先远程(accent) */
+.git-sync-ahead { color: #3b82f6; background: rgba(59,130,246,.12); border: 1px solid rgba(59,130,246,.30); }
+.git-sync-ahead .git-ahead { color: #3b82f6; }
+/* 落后远程(橙色警告 - 需要 pull) */
+.git-sync-behind { color: #c2410c; background: rgba(234,88,12,.12); border: 1px solid rgba(234,88,12,.32); }
+.git-sync-behind .git-behind { color: #c2410c; }
+/* 仅本地(灰色) */
+.git-sync-local { color: var(--text-faint); background: rgba(127,127,127,.08); border: 1px solid rgba(127,127,127,.20); }
+/* 有 remote 但无上游跟踪(蓝色提示) */
+.git-sync-noup { color: #2563eb; background: rgba(37,99,235,.10); border: 1px solid rgba(37,99,235,.28); }
 .git-spacer { flex: 1; }
 
 /* git 操作按钮工具栏 / git action button toolbar */

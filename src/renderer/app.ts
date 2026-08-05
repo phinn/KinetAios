@@ -93,11 +93,11 @@ const ICON = {
 // Git 同步状态徽章图标(local-first,inline SVG 防渲染问题)
 const SYNC_ICON = {
   // 已同步:上下双箭头(对齐)
-  ok: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10l5-5 5 5M7 14l5 5 5-5"/></svg>',
+  ok: '⇅',
   // 仅本地(无远程)
-  local: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 12h8"/></svg>',
+  local: '⊘',
   // 有 remote 但无上游跟踪
-  noup: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  noup: '+',
 } as const;
 // 刷 index.html 里的静态文本([data-i18n] 元素)+ <html lang>。init 和切语言后调。
 // 运行时注入的字符串(app.ts 各 render 函数)直接调 tr(),它们每次重建 innerHTML 自动跟随。
@@ -968,19 +968,22 @@ function renderGit(): void {
     const a = snap.ahead ?? 0;
     const b = snap.behind ?? 0;
     if (a === 0 && b === 0) {
-      syncBadge = `<span class="git-sync git-sync-ok" title="${esc(tr('git.synced'))}: ${esc(snap.upstream)}">${SYNC_ICON.ok}</span>`;
+      // 已同步:小图标 + "synced" 文字
+      syncBadge = `<span class="git-sync git-sync-ok" title="${esc(snap.upstream)} · ${esc(tr('git.synced'))}"><span class="git-sync-glyph">${SYNC_ICON.ok}</span> ${esc(tr('git.synced'))}</span>`;
     } else {
+      // 偏离:大字号数字 ↑N ↓N,落后优先警告色
       const parts: string[] = [];
-      if (a > 0) parts.push(`<span class="git-ahead">↑${a}</span>`);
-      if (b > 0) parts.push(`<span class="git-behind">↓${b}</span>`);
-      syncBadge = `<span class="git-sync ${b > 0 ? 'git-sync-behind' : ''}" title="${esc(snap.upstream)} · ↑${a} ↓${b}">${parts.join(' ')}</span>`;
+      if (a > 0) parts.push(`<span class="git-ahead"><b>↑</b>${a}</span>`);
+      if (b > 0) parts.push(`<span class="git-behind"><b>↓</b>${b}</span>`);
+      const cls = b > 0 ? 'git-sync-behind' : 'git-sync-ahead';
+      syncBadge = `<span class="git-sync ${cls}" title="${esc(snap.upstream)} · ↑${a} ↓${b}">${parts.join(' ')}</span>`;
     }
   } else if (snap.hasRemote === false) {
     // 有本地分支但无远程仓库
-    syncBadge = `<span class="git-sync git-sync-local" title="${esc(tr('git.noRemote'))}">${SYNC_ICON.local}</span>`;
+    syncBadge = `<span class="git-sync git-sync-local" title="${esc(tr('git.noRemote'))}"><span class="git-sync-glyph">${SYNC_ICON.local}</span> ${esc(tr('git.noRemote'))}</span>`;
   } else {
     // 有 remote 但当前分支没有上游
-    syncBadge = `<span class="git-sync git-sync-noup" title="${esc(tr('git.noUpstream'))}">${SYNC_ICON.noup}</span>`;
+    syncBadge = `<span class="git-sync git-sync-noup" title="${esc(tr('git.noUpstream'))}"><span class="git-sync-glyph">${SYNC_ICON.noup}</span> ${esc(tr('git.noUpstream'))}</span>`;
   }
   branchEl.innerHTML = `${ICON.branch2} <strong>${esc(snap.branch ?? '')}</strong> · ${snap.changes?.length ?? 0} ${tr('git.changes')} ${syncBadge}`;
   // changes — 分 staged / unstaged 两组
