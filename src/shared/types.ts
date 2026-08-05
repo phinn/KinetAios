@@ -500,6 +500,7 @@ export type Conversation = {
   tokens: number;
   branchInfo?: BranchInfo | null; // 分支来源(null/undefined = 原创会话)
   pipelineId?: string | null; // 如果由 pipeline 创建,记录 pipeline id
+  personaEnabled?: boolean; // 替身画像开关(默认 true;false = 本会话不注入 persona)
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
@@ -735,6 +736,8 @@ export interface KinetAPI {
   getPersona(): Promise<{ ok: boolean; persona?: string; error?: string }>;
   /** 保存画像(用户编辑后回写) */
   savePersona(persona: string): Promise<{ ok: boolean; error?: string }>;
+  /** 设置会话级替身画像开关 */
+  setPersonaEnabled(convId: string, enabled: boolean): Promise<boolean>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;

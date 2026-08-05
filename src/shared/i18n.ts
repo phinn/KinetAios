@@ -209,6 +209,7 @@ const ZH_CN: Dict = {
   'ctxMode.title': '上下文模式(每会话独立)',
   'ctxMode.standard': '标准',
   'ctxMode.hifi': '高保真',
+  'persona.toggle': '替身画像(开/关) — 开启后 AI 模仿你的做事风格',
 
   'skill.title': '选择 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -1022,6 +1023,7 @@ const EN: Dict = {
   'ctxMode.title': 'Context mode (per-session)',
   'ctxMode.standard': 'Standard',
   'ctxMode.hifi': 'Hi-Fi',
+  'persona.toggle': 'Persona (on/off) — AI mimics your working style when on',
 
   'skill.title': 'Pick a skill (Direct)',
   'skill.lbl': 'Skill',
@@ -1836,6 +1838,7 @@ const ZH_TW: Dict = {
   'ctxMode.title': '上下文模式(每工作階段獨立)',
   'ctxMode.standard': '標準',
   'ctxMode.hifi': '高保真',
+  'persona.toggle': '替身畫像(開/關) — 開啟後 AI 模仿你的做事風格',
 
   'skill.title': '選擇 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -2650,6 +2653,7 @@ const JA: Dict = {
   'ctxMode.title': 'コンテキストモード(セッションごと)',
   'ctxMode.standard': '標準',
   'ctxMode.hifi': 'Hi-Fi',
+  'persona.toggle': 'ペルソナ(オン/オフ) — オン時、AI があなたの作業スタイルを模倣',
 
   'skill.title': 'Skill を選択(Direct)',
   'skill.lbl': 'Skill',

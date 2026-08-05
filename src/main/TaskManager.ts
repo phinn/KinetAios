@@ -123,6 +123,15 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  // 会话级替身画像开关 —— false = 本会话不注入 persona。
+  setPersonaEnabled(id: string, enabled: boolean): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.personaEnabled = enabled;
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   deleteConversation(id: string): void {
     this.cancel(id);
     store.deleteConversation(id);

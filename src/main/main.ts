@@ -664,6 +664,11 @@ function registerIpc(): void {
     taskManager.setContextMode(id, mode as ContextMode);
     return true;
   });
+  // 会话级替身画像开关。
+  ipcMain.handle('set-persona-enabled', (_e, id: string, enabled: boolean) => {
+    taskManager.setPersonaEnabled(id, enabled);
+    return true;
+  });
 
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('save-settings', (_e, s: AppSettings) => {

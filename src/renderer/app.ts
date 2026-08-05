@@ -1419,6 +1419,8 @@ function renderHead(conv: Conversation | undefined) {
     model.style.display = 'none';
     const cs0 = document.getElementById('ctx-mode-select');
     if (cs0) cs0.style.display = 'none';
+    const pb0 = document.getElementById('btn-persona');
+    if (pb0) pb0.style.display = 'none';
     eng.value = 'direct';
     stat.textContent = '';
     status.textContent = '';
@@ -1469,6 +1471,14 @@ function renderHead(conv: Conversation | undefined) {
     ctxSel.value = conv.contextMode || 'standard';
     ctxSel.classList.toggle('hifi', ctxSel.value === 'hifi');
     ctxSel.style.display = isDirectFam ? '' : 'none';
+  }
+  // 替身画像 toggle:同步高亮状态。personaEnabled !== false = 开(默认)。
+  const personaBtn = document.getElementById('btn-persona');
+  if (personaBtn) {
+    const enabled = conv.personaEnabled !== false;
+    personaBtn.classList.toggle('active', enabled);
+    personaBtn.style.opacity = enabled ? '1' : '0.4';
+    personaBtn.style.display = '';
   }
 }
 
@@ -3303,6 +3313,18 @@ function closeMoreMenu() {
     void api.setContextMode(selectedId, ctxSel.value as ContextMode);
     ctxSel.classList.toggle('hifi', ctxSel.value === 'hifi');
   };
+  // 替身画像 toggle:点击切换会话级 persona 注入。
+  const personaBtn = document.getElementById('btn-persona');
+  if (personaBtn) {
+    personaBtn.onclick = () => {
+      if (!selectedId) return;
+      const conv = convs.get(selectedId);
+      const newEnabled = !(conv?.personaEnabled !== false);
+      void api.setPersonaEnabled(selectedId, newEnabled);
+      personaBtn.classList.toggle('active', newEnabled);
+      personaBtn.style.opacity = newEnabled ? '1' : '0.4';
+    };
+  }
   // 清除目标:发送 /goal(无参数)清除
   document.getElementById('btn-goal-clear')!.onclick = () => selectedId && void api.send(selectedId, '/goal');
   document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);

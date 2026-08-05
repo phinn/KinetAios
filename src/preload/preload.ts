@@ -17,6 +17,7 @@ const api: KinetAPI = {
   setModel: (id, model) => ipcRenderer.invoke('set-model', id, model),
   setConvProfile: (id, profileId) => ipcRenderer.invoke('set-conv-profile', id, profileId),
   setContextMode: (id, mode) => ipcRenderer.invoke('set-context-mode', id, mode),
+  setPersonaEnabled: (id, enabled) => ipcRenderer.invoke('set-persona-enabled', id, enabled),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   testConnection: (s?) => ipcRenderer.invoke('test-connection', s),
