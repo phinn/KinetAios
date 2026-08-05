@@ -79,27 +79,28 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     } catch (e) {
       const name = (e as Error)?.name;
       if (name === 'AbortError' || signal.aborted) return finalizeAbortedMessages(messages); // user hit stop
-      // 超长兜底:三级 fallback — 砍半预算 → 1/4 预算 → 激进 trim(仅保留最后 2 条 + memory + pinned)。
-      // P0-12: 原版只重试一次,第二次报错直接 return dropTransient → 丢失整个 turn 的执行结果。
+      // 超长兜底:三级 fallback — 全预算 → 砍半 → 1/4。
+      // P0-fix: 原版三级改动的第二级缺 continue,trim 后直接 return 退出而非重试。
+      // 且第一级从 trimBudget 降到 trimBudget/2 更激进,导致原来能跑的任务提前崩溃。
       if (isContextTooLong(e)) {
         if (!retriedAfterShrink) {
-          // 第一级:砍半预算重试
+          // 第一级:用 trimBudget 全预算重试(与 fa7740a 前的原版一致,不再过度激进)
           retriedAfterShrink = true;
-          messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), Math.floor(trimBudget / 2), snapshot.apiProtocol)];
+          messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
-          i--;
+          i--; // 抵消 for 的 i++,本轮重试
           continue;
         } else {
-          // 第二级:1/4 预算 + 激进 trim(宁可丢历史也不丢当前 turn 的最后产出)
+          // 第二级:1/4 预算激进 trim,然后重试(不再直接 return)
           const miniBudget = Math.floor(trimBudget / 4);
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
-          // 不再 i-- — 如果 trim 到 1/4 仍然超长,说明 system prompt 本身就很长,
-          // 下一次 API 调用如果还报错就走 catch 末尾的 return dropTransient(至少保住已有消息)。
+          continue; // ⚠️ 必须重试 — 不 continue 就会 fall-through 到 return,任务直接中断
         }
       }
+      // 非 context-too-long 的错误(网络/API 错误等)才走这里
       onEvent({ type: 'error', message: errMsg(e) });
       return dropTransient(messages);
     }
