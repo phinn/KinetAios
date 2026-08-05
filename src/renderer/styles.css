@@ -1535,17 +1535,18 @@ a { color: var(--accent); }
   pointer-events: auto;
 }
 .scroll-bottom-btn:hover {
-  background: var(--bg-3);
+  background: var(--bg-elev-2);
   color: var(--text);
 }
-.turn { padding: 2px 20px 12px; display: flex; flex-direction: column; gap: 10px; }
+.turn { padding: 2px 20px 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border-soft); }
+.turn:last-child { border-bottom: none; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.user { flex-direction: row-reverse; } /* 头像在右 */
 .avatar { width: 28px; height: 28px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; font-size: 14px; box-shadow: var(--shadow-xs); }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent-dim), var(--accent-dim)); }
 .msg.ai .avatar { background: var(--bg-elev); border: 1px solid var(--border); }
 .msg .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
-.msg.user .bubble { border-top-right-radius: 5px; background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); }
+.msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
 .msg .ai-body { min-width: 0; flex: 1; }
 .msg .ai-body .answer { margin-top: 0; }
 .msg .ai-body .steps { margin: 0 0 8px; }
@@ -1554,7 +1555,7 @@ a { color: var(--accent); }
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
 .answer.streaming { white-space: pre-wrap; }
-.answer.streaming::after { content: '▋'; color: var(--accent); animation: cursor-blink 1s step-end infinite; margin-left: 1px; }
+.answer.streaming::after { content: ''; display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; animation: cursor-blink 1s step-end infinite; }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: typing-blink 1.3s infinite ease-in-out; }
@@ -1570,7 +1571,7 @@ a { color: var(--accent); }
 .answer .ic { padding: 1px 6px; font-size: 12px; border: 1px solid var(--border-soft); }
 .answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; user-select: text; font-size: 12px; border: 1px solid var(--border-soft); }
 .steps { margin: 8px 0; }
-.step { border-left: 2px solid var(--accent-dim); padding: 7px 12px; margin-bottom: 6px; background: var(--bg-side); border-radius: 0 8px 8px 0; font-size: 12px; box-shadow: var(--shadow-xs); }
+.step { border-left: 2px solid var(--accent-dim); padding: 6px 12px; margin-bottom: 6px; background: var(--bg-side); border-radius: 0 8px 8px 0; font-size: 12px; }
 .step .name { color: var(--accent); font-weight: 600; }
 .step details summary { cursor: pointer; color: var(--text-dim); }
 .step pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
@@ -1610,6 +1611,8 @@ a { color: var(--accent); }
 .composer-bar #ctx-mode-select { min-width: 80px; max-width: 110px; }
 .composer-bar #ctx-mode-select.hifi { color: var(--accent); border-color: var(--accent-dim); }
 .composer-bar .bar-spacer { flex: 1 1 auto; }
+/* 工具按钮组与配置选择器之间的分隔线 / Divider between tools and config selectors */
+.composer-bar .bar-divider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
 /* 语音输入按钮:listening 状态红点闪烁 */
 .composer-bar .tool.listening { color: var(--danger); border-color: var(--danger); animation: mic-pulse 1.2s ease-in-out infinite; }
 .composer-bar .tool.disabled { opacity: 0.4; cursor: not-allowed; }
