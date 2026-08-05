@@ -396,10 +396,9 @@ class DirectEngine implements Engine {
     // abort 后 signal 已触发 → compactHistory 的摘要 LLM 调用也会被 abort(catch 后丢 head)。
     // 所以 abort 路径跳过 compactHistory,直接用 finalizeAbortedMessages 返回的完整 messages。
     if (!signal.aborted) {
-      // P0-1:interStepCompactBudget=0(v1 direct 不需要多步累积),仍走 30K 默认;兼容 v1 旧 30_000 字面。
-      // v1 直接拿 ENGINE_POLICIES.direct.interStepCompactBudget,语义上等于"不调 compact"。
-      // 这里 v1 仍走 compact(给用户体感上更连贯),但预算用 policy.interStepCompactBudget 或兜底 30_000。
-      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget || 30_000, provider, snap, signal, onEvent);
+      // P0-fix: interStepCompactBudget 现在有显式值(30K),不再需要 || fallback。
+      // v1 单轮 ReAct 结束后压缩:历史 <30K 保留尾部,超出才调 LLM 摘要。
+      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent);
     } else {
       conv.directHistory = updated;
     }

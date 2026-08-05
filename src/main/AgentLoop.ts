@@ -68,8 +68,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   }
   messages.push({ role: 'user', content: userContent });
 
-  // reactive trim 用:上下文超长报错时砍半预算重试本轮一次(见下方 catch)。ponytail:错误格式不统一,best-effort。
+  // reactive trim 用:上下文超长报错时三级 fallback — 全预算 → 1/4 → nuclear 退出。
+  // ponytail:错误格式不统一,best-effort。
   let retriedAfterShrink = false;
+  let retriedNuclear = false;
   for (let i = 0; i < maxTurns; i++) {
     let completion: Completion;
     try {
@@ -91,13 +93,19 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
           i--; // 抵消 for 的 i++,本轮重试
           continue;
-        } else {
+        } else if (!retriedNuclear) {
           // 第二级:1/4 预算激进 trim,然后重试(不再直接 return)
+          retriedNuclear = true;
           const miniBudget = Math.floor(trimBudget / 4);
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
           continue; // ⚠️ 必须重试 — 不 continue 就会 fall-through 到 return,任务直接中断
+        } else {
+          // 第三级(nuclear):1/4 trim 后仍超长 → systemPrompt + memory 本身就接近或超出窗口,
+          // 再重试只会反复空转烧 API 调用直到 maxTurns 耗尽。直接报错退出。
+          onEvent({ type: 'error', message: '上下文长度超出模型窗口:即使裁剪到最小集仍然超长。请减少记忆块大小或更换更大窗口的模型。' });
+          return dropTransient(messages);
         }
       }
       // 非 context-too-long 的错误(网络/API 错误等)才走这里
@@ -421,8 +429,13 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
   const c = coefFor(proto);
   const memoryMsgs = msgs.filter((m) => m._memory);
   const pinnedMsgs = msgs.filter((m) => m._pinned);
-  const rest = msgs.filter((m) => !m._memory && !m._pinned);
-  if (!rest.length) return [...memoryMsgs, ...pinnedMsgs];
+  // P1-fix: compactHistory 产出的摘要消息(content 以 [早期对话摘要] 开头)永远保留。
+  // 否则第一轮 compact 生成的摘要,第二轮 trim 时作为普通消息从头部被丢弃 → 信息完全丢失。
+  const summaryMsgs = msgs.filter((m) =>
+    typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+  const rest = msgs.filter((m) => !m._memory && !m._pinned &&
+    !(typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]')));
+  if (!rest.length) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs];
   let total = 0;
   const kept: ChatMsg[] = [];
   for (const m of [...rest].reverse()) {
@@ -431,8 +444,8 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
     total += tokens;
     kept.push(m);
   }
-  // 记忆消息本就处于头部,pinned 紧随其后,直接 prepend 还原位置。
-  return [...memoryMsgs, ...pinnedMsgs, ...sanitizeToolPairs(kept.reverse())];
+  // 记忆消息本就处于头部,pinned 紧随其后,摘要消息在 pinned 之后(它们都是"永不可丢"的头部上下文)。
+  return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...sanitizeToolPairs(kept.reverse())];
 }
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
@@ -464,7 +477,7 @@ function sanitizeToolPairs(msgs: ChatMsg[]): ChatMsg[] {
 // 摘要压缩:历史超 budget 时,把将被丢弃的头部调一次 LLM 压成一条摘要,保留尾部完整轮次。
 // 长 conversation 不再丢早期上下文。失败 → 回退纯尾部 trim(不丢功能)。
 // _memory 消息不参与摘要(它是参考,不是对话),摘要后照旧 prepend 回头部。
-// ponytail: ① 每 turn 末尾按需摘一次,未做摘要缓存;② token 估算仍 length*0.6。
+// ponytail: ① 每 turn 末尾按需摘一次,未做摘要缓存;② 摘要消息受 trimHistoryToTokenBudget 保护(不会被二次丢弃)。
 // 优化:结构化摘要 prompt — 不再让 LLM 自由发挥,而是要求固定字段(目标/决策/文件/结论),
 // 这样摘要消息对后续步骤的信息密度远高于旧版的自由文本摘要。
 export async function compactHistory(
@@ -477,11 +490,15 @@ export async function compactHistory(
 ): Promise<ChatMsg[]> {
   const memoryMsgs = msgs.filter((m) => m._memory);
   const pinnedMsgs = msgs.filter((m) => m._pinned);
-  const rest = msgs.filter((m) => !m._memory && !m._pinned);
+  // P1-fix: 已有的摘要消息也跟 memory/pinned 一样跳过 compact(不再被二次摘要)。
+  const summaryMsgs = msgs.filter((m) =>
+    typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+  const rest = msgs.filter((m) => !m._memory && !m._pinned &&
+    !(typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]')));
   const tail = trimHistoryToTokenBudget(rest, budget, snap.apiProtocol);
-  if (tail.length === rest.length) return [...memoryMsgs, ...pinnedMsgs, ...tail]; // 没超预算,无需摘要
+  if (tail.length === rest.length) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 没超预算,无需摘要
   const head = rest.slice(0, rest.length - tail.length);
-  if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...tail];
+  if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];
   try {
     // 结构化摘要 prompt:固定字段 → 信息密度远高于自由文本摘要。
     // 对标 Claude Code 的 compaction:保留"决策语义"而非原始文本片段。
@@ -528,7 +545,7 @@ export async function compactHistory(
       onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
     }
     const summary = comp.content.trim();
-    if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...tail];
+    if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];
     // 发压缩事件 → renderer 高亮提示「已自动压缩 headTokens → summaryTokens」。
     if (onEvent) {
       const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * coefFor(snap.apiProtocol)) + 20, 0);
@@ -536,9 +553,9 @@ export async function compactHistory(
       onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话结构化摘要)` });
       onEvent({ type: 'context', action: 'compacted', beforeTokens: headTokens, afterTokens: summaryTokens } as AgentEvent & { type: 'context' });
     }
-    return [...memoryMsgs, ...pinnedMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
+    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
   } catch {
-    return [...memoryMsgs, ...pinnedMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
+    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
   }
 }
 

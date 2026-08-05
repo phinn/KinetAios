@@ -55,9 +55,11 @@ export type EngineContextPolicy = {
 
 export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
   // v1 Direct:单 ReAct,短对话快响应,默认轻量。
+  // interStepCompactBudget: v1 单轮 ReAct 不需要多步累积压缩,但 compactHistory 需要一个显式预算。
+  // 设 30K(与旧版 fallback 一致):历史 <30K 直接保留尾部,超出才调 LLM 摘要。
   direct: {
     trimBudget: 15_000,
-    interStepCompactBudget: 0,
+    interStepCompactBudget: 30_000,
     truncateThreshold: 4000,
     appendStepSummary: false,
     stepSummaryMaxChars: 0,

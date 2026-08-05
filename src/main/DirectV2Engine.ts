@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estMsgChars } from './AgentLoop';
+import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
@@ -186,12 +186,13 @@ export class DirectV2Engine implements Engine {
   private autoVerifyApproved = false; // 一次 run 中 autoVerify 首次 confirm 后记住,避免 replan 反复弹窗
   // P0-2: interStepCompact fingerprint 缓存 — history 没变就不重复调 LLM 摘要。
   // fingerprint = `${msgs.length}:${最后一条消息 content 的简单 hash}`
-  private lastCompactFingerprint = '';
+  // P0-fix: 改为 Map<convId, fingerprint>,避免并发会话共享实例时 fingerprint 串扰。
+  private lastCompactFingerprints = new Map<string, string>();
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
-    this.lastCompactFingerprint = ''; // P0-2: 重置 compact 缓存
+    this.lastCompactFingerprints.delete(conv.id); // P0-2: 重置当前会话的 compact 缓存
 
     // P2-1: Crash recovery — 检查是否有未完成的 checkpoint(非 final)。
     // 如果存在且 plan 有未完成步骤,从 checkpoint 恢复 plan + execHistory,跳过已完成步骤。
@@ -1085,11 +1086,11 @@ ${failedDetail || '  (无)'}
       ? (messages.at(-1)!.content as string).slice(0, 200)
       : '';
     const fingerprint = `${messages.length}:${lastContent}`;
-    if (fingerprint === this.lastCompactFingerprint) {
+    if (fingerprint === this.lastCompactFingerprints.get(conv.id)) {
       // history 没变 → 跳过(上一步刚压缩过,这步没新消息)
       return messages;
     }
-    this.lastCompactFingerprint = fingerprint;
+    this.lastCompactFingerprints.set(conv.id, fingerprint);
     // ponytail: 老版本会读 getSettings().hifiContextBudget * 0.4,这里用策略统一(已是 hifi 时翻倍)。
     return compactHistory(messages, policy.interStepCompactBudget || 40_000, provider, snap, signal, onEvent);
   }
@@ -1122,7 +1123,8 @@ ${failedDetail || '  (无)'}
       return;
     }
     // Hybrid resume:估算 messages 总 token 数,短 session 全量保留。
-    const estTokens = messages.reduce((s, m) => s + Math.floor(estMsgChars(m) * 0.6) + 20, 0);
+    // P0-fix: 用 estTokenCount(走校准系数)替代硬编码 0.6,与 AgentLoop 的 token 估算一致。
+    const estTokens = estTokenCount(messages, snap.apiProtocol);
     if (estTokens <= DirectV2Engine.HYBRID_FULL_TOKENS) {
       conv.directHistory = messages;
       return;
