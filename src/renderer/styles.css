@@ -1211,7 +1211,21 @@ a { color: var(--accent); }
 
 /* Git tab:头 + 两栏(左 changes,右 history/diff) */
 .git-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-.git-branch { font-size: 12.5px; color: var(--text-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.git-branch { font-size: 12.5px; color: var(--text-dim); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; display: flex; align-items: center; gap: 4px; }
+.git-branch strong { color: var(--accent); font-weight: 600; }
+
+/* 同步状态徽章 */
+.git-sync { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border-radius: 5px; font-size: 11px; font-weight: 600; font-family: -apple-system, 'Segoe UI', system-ui, sans-serif; line-height: 1; margin-left: 4px; }
+.git-sync svg { display: block; width: 13px; height: 13px; flex-shrink: 0; }
+.git-sync .git-ahead, .git-sync .git-behind { display: inline-flex; align-items: center; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+/* 已同步:淡绿 */
+.git-sync-ok { color: #50c878; background: rgba(80,200,120,.12); }
+/* 落后远程:淡橙红(需要 pull) */
+.git-sync-behind { color: #e8a838; background: rgba(232,168,56,.15); }
+/* 仅本地:灰色虚线感 */
+.git-sync-local { color: var(--text-faint); background: rgba(127,127,127,.08); }
+/* 有 remote 但无上游跟踪:淡蓝提示 */
+.git-sync-noup { color: var(--accent); background: rgba(100,149,237,.10); }
 .git-spacer { flex: 1; }
 
 /* git 操作按钮工具栏 / git action button toolbar */

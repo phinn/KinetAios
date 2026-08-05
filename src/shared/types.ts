@@ -523,6 +523,14 @@ export type GitSnapshot = {
   branch?: string;
   changes?: GitChange[];
   log?: GitCommit[];
+  /** 本地领先远程的 commit 数 */
+  ahead?: number;
+  /** 本地落后远程的 commit 数 */
+  behind?: number;
+  /** 上游跟踪分支名 (如 origin/main) */
+  upstream?: string;
+  /** 远程仓库是否存在 */
+  hasRemote?: boolean;
   error?: string;
 };
 export type GitDiffResult = { ok: boolean; diff?: string; error?: string };

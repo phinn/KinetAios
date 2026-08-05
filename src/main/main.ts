@@ -378,7 +378,33 @@ async function gitSnapshotAsync(cwd: string): Promise<GitSnapshot> {
         const [hash, author, date, ...rest] = line.split('|');
         return { hash: hash ?? '', author: author ?? '', date: date ?? '', subject: rest.join('|') };
       });
-    return { ok: true, branch, changes, log };
+
+    // ── 本地 vs 远程比较:ahead/behind/upstream ──
+    // 从 status --porcelain 的 ## 行解析:`## main...origin/main [ahead 2, behind 1]`
+    let ahead: number | undefined;
+    let behind: number | undefined;
+    let upstream: string | undefined;
+    const headerLine = statusOut.split('\n')[0]; // ## branch...origin/branch [ahead N, behind M]
+    if (headerLine.startsWith('## ')) {
+      // 两种形态:有上游 `## main...origin/main [ahead 2]` / 无上游 `## main`
+      const parts = headerLine.slice(3).split(' ');
+      const dotsIdx = parts[0].indexOf('...');
+      if (dotsIdx >= 0) {
+        upstream = parts[0].slice(dotsIdx + 3);
+        const aheadMatch = headerLine.match(/\[ahead\s+(\d+)/);
+        const behindMatch = headerLine.match(/\[behind\s+(\d+)/);
+        ahead = aheadMatch ? parseInt(aheadMatch[1], 10) : 0;
+        behind = behindMatch ? parseInt(behindMatch[1], 10) : 0;
+      }
+    }
+    // 检查是否有远程仓库
+    let hasRemote = false;
+    try {
+      const remoteOut = await runGit(['remote'], cwd);
+      hasRemote = remoteOut.trim().length > 0;
+    } catch { /* 无 remote 不报错 */ }
+
+    return { ok: true, branch, changes, log, ahead, behind, upstream, hasRemote };
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     // 不是 git 仓库时 rev-parse 会非零退出。
