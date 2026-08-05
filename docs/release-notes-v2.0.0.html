@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios v2.0.0 Release Notes</title>
+<style>
+:root {
+  --bg: #0a0c10;
+  --bg-card: #131820;
+  --bg-card2: #1a2030;
+  --bg-glass: rgba(19,24,32,.72);
+  --border: #252d3f;
+  --border-bright: #3a4a6b;
+  --accent: #00d9ff;
+  --accent-dim: rgba(0,217,255,.12);
+  --accent2: #b794f6;
+  --accent2-dim: rgba(183,148,246,.12);
+  --accent3: #f6ad55;
+  --accent3-dim: rgba(246,173,85,.12);
+  --accent4: #68d391;
+  --accent4-dim: rgba(104,211,145,.12);
+  --accent5: #fc8181;
+  --accent5-dim: rgba(252,129,129,.12);
+  --accent6: #f687b3;
+  --accent6-dim: rgba(246,135,179,.12);
+  --text: #e8ecf3;
+  --text-dim: #9aa5b8;
+  --text-faint: #5a6478;
+  --font: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+}
+* { margin:0; padding:0; box-sizing:border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  line-height: 1.6;
+  padding: 40px 20px;
+  background-image:
+    radial-gradient(ellipse 1200px 600px at 50% -100px, rgba(0,217,255,.07), transparent),
+    radial-gradient(ellipse 800px 400px at 85% 30%, rgba(183,148,246,.05), transparent),
+    radial-gradient(ellipse 600px 400px at 15% 70%, rgba(246,173,85,.03), transparent);
+}
+.container { max-width: 1080px; margin: 0 auto; }
+
+/* ── Hero ── */
+.hero { text-align: center; margin-bottom: 50px; }
+.hero .ver-badge {
+  display: inline-block; font-family: var(--mono); font-size: 13px; font-weight: 700;
+  color: var(--accent); background: var(--accent-dim); padding: 4px 14px;
+  border-radius: 20px; border: 1px solid rgba(0,217,255,.25);
+  margin-bottom: 16px; letter-spacing: 1px;
+}
+.hero h1 {
+  font-size: 52px; font-weight: 800; letter-spacing: -1.5px;
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent2) 50%, var(--accent3) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  margin-bottom: 8px;
+}
+.hero .subtitle { font-size: 17px; color: var(--text-dim); margin-bottom: 8px; }
+.hero .daterange { font-size: 13px; color: var(--text-faint); font-family: var(--mono); }
+.hero .stats {
+  display: flex; justify-content: center; gap: 36px; margin-top: 36px; flex-wrap: wrap;
+}
+.hero .stat { text-align: center; }
+.hero .stat .num {
+  font-size: 40px; font-weight: 800; font-family: var(--mono);
+  background: linear-gradient(135deg, var(--accent), var(--accent2));
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.hero .stat .label { font-size: 11px; color: var(--text-faint); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 2px; }
+
+/* ── Section ── */
+.section { margin-bottom: 56px; }
+.section-title {
+  font-size: 26px; font-weight: 700; margin-bottom: 24px;
+  display: flex; align-items: center; gap: 12px;
+}
+.section-title .icon {
+  width: 36px; height: 36px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+  font-size: 18px; flex-shrink: 0;
+}
+.section-title .text { background: linear-gradient(135deg, var(--text) 0%, var(--text-dim) 100%); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+
+/* ── Feature Card ── */
+.feat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.feat-grid.full { grid-template-columns: 1fr; }
+.feat-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px;
+  padding: 24px; position: relative; overflow: hidden;
+  transition: transform .25s, border-color .3s, box-shadow .3s;
+}
+.feat-card:hover {
+  transform: translateY(-3px); border-color: var(--border-bright);
+  box-shadow: 0 8px 32px rgba(0,0,0,.3);
+}
+.feat-card::before {
+  content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+  border-radius: 16px 16px 0 0;
+}
+.feat-card.c-cyan::before { background: linear-gradient(90deg, var(--accent), transparent); }
+.feat-card.c-purple::before { background: linear-gradient(90deg, var(--accent2), transparent); }
+.feat-card.c-amber::before { background: linear-gradient(90deg, var(--accent3), transparent); }
+.feat-card.c-green::before { background: linear-gradient(90deg, var(--accent4), transparent); }
+.feat-card.c-red::before { background: linear-gradient(90deg, var(--accent5), transparent); }
+.feat-card.c-pink::before { background: linear-gradient(90deg, var(--accent6), transparent); }
+
+.feat-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.feat-head .emoji { font-size: 24px; }
+.feat-head .name { font-size: 16px; font-weight: 700; }
+.feat-card .desc { font-size: 13px; color: var(--text-dim); line-height: 1.7; }
+.feat-card ul { list-style: none; padding: 0; margin-top: 10px; }
+.feat-card ul li {
+  font-size: 12.5px; padding: 4px 0; color: var(--text-dim);
+  display: flex; align-items: flex-start; gap: 6px;
+}
+.feat-card ul li::before { content: '▸'; color: var(--accent); flex-shrink: 0; margin-top: 1px; }
+.feat-card ul li code {
+  font-family: var(--mono); font-size: 11px; color: var(--accent);
+  background: var(--accent-dim); padding: 1px 6px; border-radius: 4px;
+}
+
+/* ── Pipeline (V2 四层) ── */
+.pipeline {
+  display: flex; gap: 0; align-items: stretch; margin: 20px 0;
+  border-radius: 16px; overflow: hidden;
+}
+.pipeline-step {
+  flex: 1; background: var(--bg-card); border: 1px solid var(--border);
+  padding: 20px 16px; text-align: center; position: relative;
+}
+.pipeline-step:not(:last-child) { border-right: none; }
+.pipeline-step .step-emoji { font-size: 28px; margin-bottom: 6px; }
+.pipeline-step .step-name { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.pipeline-step .step-code { font-family: var(--mono); font-size: 11px; color: var(--text-faint); margin-bottom: 8px; }
+.pipeline-step .step-desc { font-size: 11.5px; color: var(--text-dim); }
+.pipeline-step + .pipeline-step::before {
+  content: '→'; position: absolute; left: -8px; top: 50%; transform: translateY(-50%);
+  font-size: 16px; color: var(--accent); z-index: 1;
+}
+
+/* ── Memory Layers ── */
+.mem-layers { display: flex; flex-direction: column; gap: 8px; margin: 20px 0; }
+.mem-layer {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px;
+  padding: 16px 20px; display: flex; align-items: center; gap: 16px;
+  transition: border-color .3s; position: relative; overflow: hidden;
+}
+.mem-layer:hover { border-color: var(--border-bright); }
+.mem-layer .ml-num {
+  font-family: var(--mono); font-size: 22px; font-weight: 800;
+  width: 40px; text-align: center; flex-shrink: 0;
+}
+.mem-layer .ml-body { flex: 1; }
+.mem-layer .ml-name { font-size: 15px; font-weight: 700; margin-bottom: 2px; }
+.mem-layer .ml-desc { font-size: 12px; color: var(--text-dim); }
+.mem-layer .ml-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.mem-layer .ml-tag {
+  font-family: var(--mono); font-size: 10px; padding: 2px 8px; border-radius: 4px;
+}
+.mem-layer.l1 .ml-num { color: var(--accent); }
+.mem-layer.l1 { border-left: 3px solid var(--accent); }
+.mem-layer.l2 .ml-num { color: var(--accent2); }
+.mem-layer.l2 { border-left: 3px solid var(--accent2); }
+.mem-layer.l3 .ml-num { color: var(--accent3); }
+.mem-layer.l3 { border-left: 3px solid var(--accent3); }
+
+/* ── Bugfix list ── */
+.fix-list {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+  overflow: hidden;
+}
+.fix-group { border-bottom: 1px solid var(--border); }
+.fix-group:last-child { border-bottom: none; }
+.fix-group-head {
+  background: var(--bg-card2); padding: 10px 18px; font-size: 13px; font-weight: 700;
+  display: flex; align-items: center; gap: 8px;
+}
+.fix-group-head .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.fix-group ul { list-style: none; padding: 8px 18px 12px; }
+.fix-group ul li {
+  font-size: 12.5px; padding: 5px 0; color: var(--text-dim);
+  display: flex; align-items: flex-start; gap: 8px;
+}
+.fix-group ul li .badge {
+  font-size: 9px; font-weight: 700; padding: 2px 6px; border-radius: 4px;
+  text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0; margin-top: 2px;
+}
+.badge.critical { background: rgba(252,129,129,.15); color: var(--accent5); }
+.badge.major { background: rgba(246,173,85,.15); color: var(--accent3); }
+.badge.minor { background: rgba(104,211,145,.15); color: var(--accent4); }
+
+/* ── Plugin grid ── */
+.plugin-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin: 20px 0; }
+.plugin-card {
+  background: var(--bg-card); border: 1px solid var(--border); border-radius: 14px;
+  padding: 20px 16px; text-align: center;
+  transition: transform .2s, border-color .3s;
+}
+.plugin-card:hover { transform: translateY(-3px); border-color: var(--border-bright); }
+.plugin-card .p-icon { font-size: 32px; margin-bottom: 8px; }
+.plugin-card .p-name { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.plugin-card .p-desc { font-size: 11px; color: var(--text-dim); }
+.plugin-card .p-tools { font-family: var(--mono); font-size: 10px; color: var(--accent); margin-top: 6px; }
+
+/* ── Data table ── */
+.data-table {
+  width: 100%; border-collapse: collapse; margin: 20px 0;
+  background: var(--bg-card); border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.data-table th {
+  background: var(--bg-card2); padding: 12px 20px; text-align: left;
+  font-size: 12px; text-transform: uppercase; letter-spacing: 1px;
+  color: var(--text-faint); border-bottom: 1px solid var(--border);
+}
+.data-table td {
+  padding: 14px 20px; font-size: 14px; border-bottom: 1px solid var(--border);
+}
+.data-table td .num { font-family: var(--mono); font-size: 22px; font-weight: 700; }
+.data-table td .dim { color: var(--text-dim); font-size: 12px; }
+.data-table tr:last-child td { border-bottom: none; }
+
+/* ── Footer ── */
+.footer {
+  text-align: center; margin-top: 60px; padding: 30px 0;
+  border-top: 1px solid var(--border);
+}
+.footer .upgrade {
+  display: inline-block; background: var(--accent-dim); border: 1px solid rgba(0,217,255,.2);
+  border-radius: 12px; padding: 12px 24px; font-size: 13px; color: var(--accent);
+}
+.footer .copyright { font-size: 12px; color: var(--text-faint); margin-top: 16px; }
+
+/* ── Visual decorations ── */
+.deco-line {
+  height: 1px; margin: 40px 0;
+  background: linear-gradient(90deg, transparent, var(--border), transparent);
+}
+
+@media (max-width: 768px) {
+  .feat-grid { grid-template-columns: 1fr; }
+  .plugin-grid { grid-template-columns: 1fr 1fr; }
+  .pipeline { flex-direction: column; }
+  .pipeline-step + .pipeline-step::before { content: '↓'; left: 50%; top: -8px; transform: translateX(-50%); }
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- ═══════════════ Hero ═══════════════ -->
+<div class="hero">
+  <div class="ver-badge">v2.0.0</div>
+  <h1>KinetAios</h1>
+  <div class="subtitle">Architecture-Grade Update — 四层引擎 · 三层记忆 · 多 Agent 团队</div>
+  <div class="daterange">133 commits from v1.6.0 → v2.0.0</div>
+  <div class="stats">
+    <div class="stat"><div class="num">133</div><div class="label">Commits</div></div>
+    <div class="stat"><div class="num">30+</div><div class="label">Features</div></div>
+    <div class="stat"><div class="num">40+</div><div class="label">Bug Fixes</div></div>
+    <div class="stat"><div class="num">4</div><div class="label">Engines</div></div>
+    <div class="stat"><div class="num">4</div><div class="label">Languages</div></div>
+  </div>
+</div>
+
+<!-- ═══════════════ 1. DirectV2 引擎 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent-dim)">🧠</div>
+    <span class="text">DirectV2 引擎 — Plan · Execute · Verify · Judge</span>
+  </div>
+
+  <!-- 四层流水线图 -->
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-emoji">📋</div>
+      <div class="step-name">Planner</div>
+      <div class="step-code">plan</div>
+      <div class="step-desc">结构化 JSON 计划生成</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-emoji">⚡</div>
+      <div class="step-name">Executor</div>
+      <div class="step-code">execute</div>
+      <div class="step-desc">逐步独立 ReAct loop</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-emoji">🔍</div>
+      <div class="step-name">Verifier</div>
+      <div class="step-code">verify</div>
+      <div class="step-desc">结果验证 · 防"假完成"</div>
+    </div>
+    <div class="pipeline-step">
+      <div class="step-emoji">⚖️</div>
+      <div class="step-name">Judge</div>
+      <div class="step-code">judge</div>
+      <div class="step-desc">通过 / 重试 / 重新规划</div>
+    </div>
+  </div>
+
+  <div class="feat-grid" style="margin-top:16px">
+    <div class="feat-card c-cyan">
+      <div class="feat-head"><span class="emoji">🔄</span><span class="name">Crash Recovery</span></div>
+      <div class="desc">每步完成后持久化 checkpoint。崩溃 / 重启后自动从断点续执行,不丢已完成步骤。</div>
+    </div>
+    <div class="feat-card c-cyan">
+      <div class="feat-head"><span class="emoji">📏</span><span class="name">上下文预算可配置</span></div>
+      <div class="desc"><code>modelWindow</code> + <code>budgetRatio</code> 让用户按模型调整上下文窗口。三级压缩 fallback:全预算 → 砍半 → 1/4,结构化摘要(任务目标 / 关键决策 / 已改文件 / 执行命令)。</div>
+    </div>
+    <div class="feat-card c-cyan">
+      <div class="feat-head"><span class="emoji">🔧</span><span class="name">Replan 动态重规划</span></div>
+      <div class="desc">执行中遇到预期外的问题时,Judge 可触发重新规划。新旧 plan 智能合并,已完成步骤不重复执行。</div>
+    </div>
+    <div class="feat-card c-cyan">
+      <div class="feat-head"><span class="emoji">🎯</span><span class="name">Auto-Verify 自动验证</span></div>
+      <div class="desc">每步执行后自动检查产出是否符合预期。验证失败自动重试,三次失败升级为 replan。</div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 2. Agent Teams ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent2-dim)">👥</div>
+    <span class="text">Agent Teams — 多 Agent 团队协作</span>
+  </div>
+  <div class="feat-grid">
+    <div class="feat-card c-purple">
+      <div class="feat-head"><span class="emoji">🚀</span><span class="name">spawn_team</span></div>
+      <div class="desc">创建多成员团队,每个 member 有独立 history + 持久化。适合并行调研、多视角评审、分模块探查。</div>
+    </div>
+    <div class="feat-card c-purple">
+      <div class="feat-head"><span class="emoji">📡</span><span class="name">team_broadcast</span></div>
+      <div class="desc">广播一条指令,所有 member 同时处理并各自汇报。统一问询所有模块状态的利器。</div>
+    </div>
+    <div class="feat-card c-purple">
+      <div class="feat-head"><span class="emoji">💬</span><span class="name">team_send</span></div>
+      <div class="desc">单独追问某个 member。Member 看到自己累积 history + 新消息,可深度追问。</div>
+    </div>
+    <div class="feat-card c-purple">
+      <div class="feat-head"><span class="emoji">🖥️</span><span class="name">实时可视化</span></div>
+      <div class="desc">Team 面板实时渲染 member 卡片状态(待命 / 执行中 / 完成)。完整 14 key × 4 语言 i18n。</div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 3. 三层记忆 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent3-dim)">🧬</div>
+    <span class="text">记忆系统 — 三层架构</span>
+  </div>
+
+  <div class="mem-layers">
+    <div class="mem-layer l1">
+      <div class="ml-num">01</div>
+      <div class="ml-body">
+        <div class="ml-name">Memory Blocks · 结构化常驻记忆</div>
+        <div class="ml-desc"><code>user_profile</code> / <code>project_context</code> / <code>active_goals</code> — 每轮注入上下文,<code>memory_replace</code> / <code>memory_append</code> API 管理</div>
+      </div>
+      <div class="ml-tags">
+        <span class="ml-tag" style="background:var(--accent-dim);color:var(--accent)">always-on</span>
+      </div>
+    </div>
+    <div class="mem-layer l2">
+      <div class="ml-num">02</div>
+      <div class="ml-body">
+        <div class="ml-name">长期记忆 · 自动提取 + 检索注入</div>
+        <div class="ml-desc">每轮自动提取事实 · Importance Scoring 重要性评分 · 三级去重(精确 + Jaccard + Embedding) · Embedding 语义检索 · 知识图谱三元组 · 时间衰减</div>
+      </div>
+      <div class="ml-tags">
+        <span class="ml-tag" style="background:var(--accent2-dim);color:var(--accent2)">retrieval</span>
+        <span class="ml-tag" style="background:var(--accent2-dim);color:var(--accent2)">scoring</span>
+        <span class="ml-tag" style="background:var(--accent2-dim);color:var(--accent2)">dedup</span>
+      </div>
+    </div>
+    <div class="mem-layer l3">
+      <div class="ml-num">03</div>
+      <div class="ml-body">
+        <div class="ml-name">Episodic Memory · 会话摘要</div>
+        <div class="ml-desc">每次会话结束自动生成摘要 · Idle Reflection 空闲反思 · 下次对话可见"最近做了什么"</div>
+      </div>
+      <div class="ml-tags">
+        <span class="ml-tag" style="background:var(--accent3-dim);color:var(--accent3)">summary</span>
+        <span class="ml-tag" style="background:var(--accent3-dim);color:var(--accent3)">reflection</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="feat-grid" style="margin-top:16px">
+    <div class="feat-card c-amber">
+      <div class="feat-head"><span class="emoji">🔗</span><span class="name">remember_fact / recall_fact</span></div>
+      <div class="desc">会话级 KV 锚点 — 多步任务的关键产出跨轮持久化(文件路径、关键决策、临时文件名)。不依赖对话 history,不会被 trim/compact 砍掉。</div>
+    </div>
+    <div class="feat-card c-amber">
+      <div class="feat-head"><span class="emoji">🕸️</span><span class="name">知识图谱三元组检索</span></div>
+      <div class="desc">记忆支持三元组提取 + 图谱检索重排。recall_memory 走 embedding cosine 相似度召回,无 embedding 时回退 FTS5 关键词。</div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 4. 替身画像 + 语音 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent6-dim)">🎭</div>
+    <span class="text">替身画像 & 实时语音对话</span>
+  </div>
+  <div class="feat-grid">
+    <div class="feat-card c-pink">
+      <div class="feat-head"><span class="emoji">🪞</span><span class="name">替身画像生成器 (Persona)</span></div>
+      <div class="desc">分析历史对话 + 长期记忆,自动生成用户做事风格画像。画像注入三引擎 <code>systemPrompt</code> — 让 AI 模仿用户风格操作。独立面板,支持手动清空 / 激活切换。</div>
+    </div>
+    <div class="feat-card c-pink">
+      <div class="feat-head"><span class="emoji">🎙️</span><span class="name">实时语音对话 (豆包大模型)</span></div>
+      <div class="desc">
+        <ul>
+          <li>WebSocket 全双工实时语音 — 说话即响应</li>
+          <li>ASR 文本 → Agent 执行 → 结果语音播报</li>
+          <li>语音对话注入当前项目上下文</li>
+          <li>分栏 UI — main 区域一分为二</li>
+          <li>四语言 i18n(zh / en / zh-TW / ja)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 5. UI/UX ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent4-dim)">🎨</div>
+    <span class="text">UI / UX 全面进化</span>
+  </div>
+  <div class="feat-grid">
+    <div class="feat-card c-green">
+      <div class="feat-head"><span class="emoji">💎</span><span class="name">液态玻璃主题深化</span></div>
+      <div class="desc">Sidebar / chat-head / input / composer 工具栏全面液态玻璃化。<code>.ch-env</code> 胶囊适配各主题材质,消除死灰背景。</div>
+    </div>
+    <div class="feat-card c-green">
+      <div class="feat-head"><span class="emoji">🔍</span><span class="name">Git 面板增强</span></div>
+      <div class="desc">分支旁显示<b>本地/远程同步状态徽章</b>(↑ahead / ↓behind / synced)。Git diff 精致化:行号 / 背景色 / hunk header / 圆角。图标统一 Lucide SVG 风格。</div>
+    </div>
+    <div class="feat-card c-green">
+      <div class="feat-head"><span class="emoji">👁️</span><span class="name">设置精致化</span></div>
+      <div class="desc">API Key 输入框加👁眼睛切换。消灭 inline style 毛胚感。设置面板 tab / engine 下拉全部 i18n 化。</div>
+    </div>
+    <div class="feat-card c-green">
+      <div class="feat-head"><span class="emoji">📅</span><span class="name">频道管理升级</span></div>
+      <div class="desc">侧栏频道按最近活动排序。「只看运行中」筛选按钮。长对话渲染分批 + 流式增量,消除切频道空白。</div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 6. 插件 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent5-dim)">🔌</div>
+    <span class="text">插件生态 — 7 个硬件插件 · 25 个工具</span>
+  </div>
+  <div class="plugin-grid">
+    <div class="plugin-card">
+      <div class="p-icon">🔌</div>
+      <div class="p-name">arduino-dev</div>
+      <div class="p-desc">Arduino / ESP32 编译烧录</div>
+      <div class="p-tools">compile · upload · monitor</div>
+    </div>
+    <div class="plugin-card">
+      <div class="p-icon">📡</div>
+      <div class="p-name">serial-comm</div>
+      <div class="p-desc">串口设备通信调试</div>
+      <div class="p-tools">scan · send · session</div>
+    </div>
+    <div class="plugin-card">
+      <div class="p-icon">⚙️</div>
+      <div class="p-name">platformio</div>
+      <div class="p-desc">PlatformIO 项目管理</div>
+      <div class="p-tools">init · build · upload</div>
+    </div>
+    <div class="plugin-card">
+      <div class="p-icon">🌡️</div>
+      <div class="p-name">sensor-hub</div>
+      <div class="p-desc">传感器查询与驱动骨架</div>
+      <div class="p-tools">info · list · driver</div>
+    </div>
+    <div class="plugin-card">
+      <div class="p-icon">📶</div>
+      <div class="p-name">ble-nfc</div>
+      <div class="p-desc">BLE / NFC 无线通信</div>
+      <div class="p-tools">scan · connect · gatt</div>
+    </div>
+    <div class="plugin-card">
+      <div class="p-icon">🎬</div>
+      <div class="p-name">video-gen</div>
+      <div class="p-desc">MiniMax H3 文生视频</div>
+      <div class="p-tools">text-to-video</div>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 7. Bug 修复 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent5-dim)">🐛</div>
+    <span class="text">重要 Bug 修复 — 40+ 项</span>
+  </div>
+
+  <div class="fix-list">
+    <div class="fix-group">
+      <div class="fix-group-head"><span class="dot" style="background:var(--accent5)"></span> 引擎核心</div>
+      <ul>
+        <li><span class="badge critical">P0</span> V1 AgentLoop reactive trim 第二级缺 <code>continue</code>,上下文超长时任务直接崩溃退出</li>
+        <li><span class="badge critical">P0</span> V1 第一级 trim 预算从 15K 降到 7.5K,比原版更激进,提前触发崩溃路径</li>
+        <li><span class="badge major">P1</span> DirectV2:Planner API 错误静默吞掉 / 长期记忆在步骤执行时丢失</li>
+        <li><span class="badge major">P1</span> DirectV2:Judge JSON 解析 / autoVerify 跨会话泄漏 / maxTurns 截断被当作步骤完成</li>
+        <li><span class="badge major">P1</span> DirectV2:replan 断裂 / 退化模式缺写工具 / 失败步骤摘要消息误导</li>
+        <li><span class="badge major">P1</span> dispatch_agent:子任务缺少独立超时,API/CLI hang 时永久卡住</li>
+        <li><span class="badge minor">P2</span> updatedAt 在所有事件路径都持久化到数据库</li>
+      </ul>
+    </div>
+    <div class="fix-group">
+      <div class="fix-group-head"><span class="dot" style="background:var(--accent3)"></span> 语音模块</div>
+      <ul>
+        <li><span class="badge major">P1</span> WebSocket <code>binaryType='arraybuffer'</code> 导致消息解析失败</li>
+        <li><span class="badge major">P1</span> InvalidSpeaker 错误 — 音色 ID 不存在</li>
+        <li><span class="badge major">P1</span> 1006 连接被拒 — 重写 VoiceChat 二进制协议</li>
+        <li><span class="badge minor">P2</span> Agent 回复不再自动语音朗读(仅显示文字)</li>
+      </ul>
+    </div>
+    <div class="fix-group">
+      <div class="fix-group-head"><span class="dot" style="background:var(--accent2)"></span> 记忆模块</div>
+      <ul>
+        <li><span class="badge major">P1</span> 去重算法从 Jaccard 换为 textSimilarity(规范化 + 包含检测 + Jaccard)</li>
+        <li><span class="badge minor">P2</span> 无 embedding 接口时也能正常工作(回退 FTS5)</li>
+        <li><span class="badge minor">P2</span> 旧 DB 表缺失崩溃修复</li>
+        <li><span class="badge minor">P2</span> 去重 / 衰减按钮反馈不可见修复</li>
+      </ul>
+    </div>
+    <div class="fix-group">
+      <div class="fix-group-head"><span class="dot" style="background:var(--accent4)"></span> UI / 渲染</div>
+      <ul>
+        <li><span class="badge major">P1</span> 聊天界面流式期间上下抖动</li>
+        <li><span class="badge major">P1</span> 切换频道时聊天 viewport 抖动 / 空白</li>
+        <li><span class="badge major">P1</span> Team member cards 执行后卡在 running 状态</li>
+        <li><span class="badge minor">P2</span> IME 确认 Enter 误吞导致需按两次发送</li>
+        <li><span class="badge minor">P2</span> 长期记忆面板未跟随特殊主题配色</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<div class="deco-line"></div>
+
+<!-- ═══════════════ 8. 数据 ═══════════════ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon" style="background:var(--accent-dim)">📊</div>
+    <span class="text">v2.0.0 数据总览</span>
+  </div>
+  <table class="data-table">
+    <tr><th>维度</th><th>数值</th><th>说明</th></tr>
+    <tr><td class="dim">Commits</td><td><span class="num" style="color:var(--accent)">133</span></td><td class="dim">v1.6.0 → v2.0.0</td></tr>
+    <tr><td class="dim">新特性</td><td><span class="num" style="color:var(--accent2)">30+</span></td><td class="dim">引擎 / 记忆 / 团队 / 语音 / 插件</td></tr>
+    <tr><td class="dim">Bug 修复</td><td><span class="num" style="color:var(--accent3)">40+</span></td><td class="dim">含 2 个 P0 致命修复</td></tr>
+    <tr><td class="dim">引擎</td><td><span class="num" style="color:var(--accent4)">4</span></td><td class="dim">Direct · DirectV2 · Claude Code · Codex</td></tr>
+    <tr><td class="dim">i18n 语言</td><td><span class="num" style="color:var(--accent6)">4</span></td><td class="dim">简中 · English · 繁中 · 日本語</td></tr>
+    <tr><td class="dim">硬件插件</td><td><span class="num" style="color:var(--accent)">7</span></td><td class="dim">25 个工具 · 11 个 slash 命令</td></tr>
+  </table>
+</div>
+
+<!-- ═══════════════ Footer ═══════════════ -->
+<div class="footer">
+  <div class="upgrade">⚡ 从 v1.6.0 直接覆盖安装 — SQLite schema 自动迁移,无需手动操作</div>
+  <div class="copyright">KinetAios v2.0.0 · Built with Electron + TypeScript · Local-First AI Agent</div>
+</div>
+
+</div>
+</body>
+</html>
