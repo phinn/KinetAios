@@ -41,7 +41,7 @@ body {
     radial-gradient(ellipse 800px 400px at 85% 30%, rgba(183,148,246,.05), transparent),
     radial-gradient(ellipse 600px 400px at 15% 70%, rgba(246,173,85,.03), transparent);
 }
-.container { max-width: 1100px; margin: 0 auto; }
+.container { max-width: 1400px; margin: 0 auto; }
 
 /* ── Hero ── */
 .hero { text-align: center; margin-bottom: 50px; }
@@ -91,30 +91,30 @@ body {
 
 /* ── 对比表 ── */
 .compare-table-wrap {
-  overflow-x: auto;
+  overflow: visible;
   border-radius: 16px;
   border: 1px solid var(--border);
 }
 .compare-table {
   width: 100%; border-collapse: collapse; background: var(--bg-card);
-  min-width: 1600px;
+  table-layout: fixed;
 }
 .compare-table th {
-  background: var(--bg-card2); padding: 16px 14px; text-align: center;
-  font-size: 14px; font-weight: 700; border-bottom: 1px solid var(--border);
+  background: var(--bg-card2); padding: 12px 8px; text-align: center;
+  font-size: 13px; font-weight: 700; border-bottom: 1px solid var(--border);
   position: sticky; top: 0;
 }
-.compare-table th .engine-emoji { font-size: 22px; display: block; margin-bottom: 4px; }
-.compare-table th .engine-name { font-size: 15px; }
-.compare-table th .engine-code { font-family: var(--mono); font-size: 10px; color: var(--text-faint); margin-top: 2px; }
+.compare-table th .engine-emoji { font-size: 20px; display: block; margin-bottom: 4px; }
+.compare-table th .engine-name { font-size: 14px; }
+.compare-table th .engine-code { font-family: var(--mono); font-size: 9px; color: var(--text-faint); margin-top: 2px; }
 .compare-table th.dim-col {
-  text-align: left; min-width: 180px; font-size: 12px;
+  text-align: left; font-size: 11px;
   color: var(--text-faint); text-transform: uppercase; letter-spacing: 1px;
+  width: 15%;
 }
 .compare-table td {
-  padding: 14px 14px; text-align: center; font-size: 13px;
+  padding: 12px 8px; text-align: center; font-size: 12px;
   border-bottom: 1px solid var(--border); color: var(--text-dim);
-  min-width: 240px;
 }
 .compare-table td.dim-cell {
   text-align: left; font-weight: 600; color: var(--text); font-size: 13px;
@@ -137,8 +137,9 @@ body {
 
 /* 标签 */
 .tag-cell {
-  display: inline-block; font-size: 11px; font-weight: 600;
-  padding: 3px 8px; border-radius: 6px; white-space: normal; word-break: break-word;
+  display: inline-block; font-size: 10px; font-weight: 600;
+  padding: 3px 6px; border-radius: 6px; white-space: normal; word-break: break-word;
+  line-height: 1.4;
 }
 .tag-good { background: var(--accent4-dim); color: var(--accent4); }
 .tag-ok { background: var(--accent3-dim); color: var(--accent3); }
