@@ -1659,8 +1659,8 @@ a { color: var(--accent); }
 
 .s-tab-panel { }
 @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-.field { margin-bottom: 14px; }
-.field label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 4px; }
+.field { margin-bottom: 10px; display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 8px; }
+.field label { font-size: 12px; color: var(--text-dim); }
 .field .row { display: flex; gap: 8px; }
 .field .row > * { flex: 1; }
 
@@ -1671,15 +1671,15 @@ a { color: var(--accent); }
   cursor: pointer; font-size: 14px; user-select: none; opacity: .5; transition: opacity .15s; }
 .key-eye:hover { opacity: 1; }
 
-/* 设置页分组 */
-.s-section { margin-top: 22px; padding-top: 14px; border-top: 1px solid var(--border); }
-.s-section:first-of-type { border-top: none; margin-top: 14px; padding-top: 0; }
-.s-section h3 { margin: 0 0 12px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
+/* 设置页分组 — 卡片化包裹,视觉层次清晰 / Settings section as card */
+.s-section { margin-top: 14px; padding: 14px 16px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-2); }
+.s-section:first-of-type { margin-top: 0; }
+.s-section h3 { margin: 0 0 10px 0; font-size: 12px; font-weight: 600; color: var(--accent); text-transform: uppercase; letter-spacing: 0.5px; }
 .test-msg { font-size: 12px; margin-top: 6px; }
 .test-msg.ok { color: var(--ok); } .test-msg.bad { color: var(--err); }
 
 /* 字段描述文字 / Field description text */
-.field-desc { color: var(--text-dim); font-size: 12px; line-height: 1.6; margin-bottom: 10px; }
+.field-desc { color: var(--text-dim); font-size: 11px; line-height: 1.5; margin: -4px 0 10px 138px; }
 /* 设置页 hint 提示框 / Settings hint box */
 .s-hint { color: var(--text-dim); font-size: 12px; line-height: 1.6; margin-bottom: 12px; padding: 10px 12px; background: var(--bg-elev, rgba(255,255,255,0.02)); border: 1px solid var(--border-soft); border-radius: 8px; }
 .s-hint code { font-family: var(--mono); font-size: 11px; background: var(--bg-2); padding: 1px 5px; border-radius: 3px; }
@@ -1694,7 +1694,7 @@ a { color: var(--accent); }
 .switch-label { display: inline-flex; align-items: center; gap: 8px; cursor: pointer; user-select: none; font-size: 13px; }
 
 /* checkbox field(用 switch 替代原生 checkbox) */
-.field-cb { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
+.field-cb { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .field-cb label { font-size: 13px; color: var(--text); cursor: pointer; margin: 0; }
 
 /* 小按钮(设置页内嵌操作按钮) / Compact button */

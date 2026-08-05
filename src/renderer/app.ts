@@ -1958,27 +1958,6 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
-        <h3>${tr('settings.sec.behavior')}</h3>
-        <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
-          <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
-          <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
-        </select></div>
-        <div class="field"><label>${tr('settings.sandbox')}</label><select id="s-sandbox">
-          <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>${tr('settings.sandbox.readOnly')}</option>
-          <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
-          <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
-        </select></div>
-        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
-        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
-        <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
-          <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
-          <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
-          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
-        </select></div>
-        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
-      </div>
-
-      <div class="s-section">
         <h3>${tr('settings.sec.price')}</h3>
         <div class="field"><label>${tr('settings.price')}</label>
           <div class="row"><input id="s-pin" type="number" step="0.01" value="${s.priceInPerMTok}" /><input id="s-pout" type="number" step="0.01" value="${s.priceOutPerMTok}" /></div>
@@ -1996,7 +1975,7 @@ async function showSettings() {
       <div class="s-section">
         <h3>${tr('settings.profile.title')} <span class="field-desc" style="display:inline;font-weight:400;text-transform:none;letter-spacing:0">${tr('settings.profile.hint')}</span></h3>
         <div id="s-profile-list" style="margin-top:8px"></div>
-        <div class="field" style="align-items:flex-start;margin-top:8px">
+        <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
           <label>${tr('settings.profile.saveAs')}</label>
           <div style="display:flex;gap:6px;flex:1">
             <input id="s-profile-name" placeholder="${tr('settings.profile.namePh')}" style="flex:1" />
@@ -2030,14 +2009,31 @@ async function showSettings() {
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.agent')}</h3>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
+        <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
+          <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
+          <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
+        </select></div>
+        <div class="field"><label>${tr('settings.sandbox')}</label><select id="s-sandbox">
+          <option value="readOnly" ${s.sandbox === 'readOnly' ? 'selected' : ''}>${tr('settings.sandbox.readOnly')}</option>
+          <option value="workspaceWrite" ${s.sandbox === 'workspaceWrite' ? 'selected' : ''}>${tr('settings.sandbox.workspaceWrite')}</option>
+          <option value="fullAccess" ${s.sandbox === 'fullAccess' ? 'selected' : ''}>${tr('settings.sandbox.fullAccess')}</option>
+        </select></div>
+        <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
+          <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
+          <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
+          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
+        </select></div>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
-        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.maxTurns.desc')}</div>
+        <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
         <div class="field"><label>${tr('settings.hifiBudget')}</label><div class="row"><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
-        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.hifiBudget.desc')}</div>
+        <div class="field-desc">${tr('settings.hifiBudget.desc')}</div>
         <div class="field"><label>${tr('settings.v2ModelWindow')}</label><div class="row"><input id="s-v2-window" type="number" min="32000" max="2000000" step="32000" value="${s.v2ModelWindow ?? 1000000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
-        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.v2ModelWindow.desc')}</div>
+        <div class="field-desc">${tr('settings.v2ModelWindow.desc')}</div>
         <div class="field"><label>${tr('settings.v2BudgetRatio')}</label><div class="row"><input id="s-v2-ratio" type="number" min="1" max="50" step="1" value="${Math.round((s.v2BudgetRatio ?? 0.08) * 100)}" style="max-width:80px" /><span style="color:var(--text-faint);font-size:11px;align-self:center">%</span></div></div>
-        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.v2BudgetRatio.desc')}</div>
+        <div class="field-desc">${tr('settings.v2BudgetRatio.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
@@ -2046,15 +2042,15 @@ async function showSettings() {
           <option value="minimize" ${s.closeBehavior === 'minimize' ? 'selected' : ''}>${tr('settings.closeBehavior.minimize')}</option>
           <option value="tray" ${s.closeBehavior === 'tray' ? 'selected' : ''}>${tr('settings.closeBehavior.tray')}</option>
         </select></div>
-        <div class="field-desc" style="margin:-4px 0 0 0">${tr('settings.closeBehavior.desc')}</div>
+        <div class="field-desc">${tr('settings.closeBehavior.desc')}</div>
       </div>
       </div><!-- /behavior panel -->
 
       <div class="s-tab-panel" data-panel="advanced" style="display:none">
       <div class="s-section">
         <h3>${tr('settings.sec.memory')}</h3>
-        <div class="field" style="flex-direction:column;align-items:flex-start;gap:8px">
-          <span class="field-desc">${tr('settings.mem.desc')}</span>
+        <div class="field" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px">
+          <span class="field-desc" style="margin:0">${tr('settings.mem.desc')}</span>
           <div style="display:flex;gap:8px">
             <button id="s-mem-exp">${tr('settings.mem.export')}</button>
             <button id="s-mem-imp">${tr('settings.mem.import')}</button>
@@ -2095,7 +2091,7 @@ async function showSettings() {
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
         <div class="s-section">
           <h3>${tr('settings.plugin.title')}</h3>
-          <div class="field" style="flex-direction:column;align-items:stretch;gap:10px">
+          <div class="field" style="display:flex;flex-direction:column;align-items:stretch;gap:10px">
             <!-- 工具栏:搜索 + 安装 + 重载 -->
             <div class="s-plugin-toolbar">
               <input type="text" id="s-plugin-search" class="s-plugin-search" placeholder="${tr('settings.plugin.searchPh')}" />
