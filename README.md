@@ -11,6 +11,10 @@
 
 ![KinetAios hero screenshot](docs/hero.png)
 
+![KinetAios v2.1.0](docs/kinetaios-v2.1.0.png)
+
+> 📊 **[查看完整四引擎对比报告 →](docs/excel-cross-analysis-engines.html)** — V1 Direct / V2 Direct / Claude Code / Codex 在真实数据分析场景下的全维度评估。
+
 **A local-first, multi-engine AI agent dashboard.** Run Claude Code, Codex, and a built-in ReAct loop side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
 
 English | [简体中文](README.zh-CN.md)
