@@ -35,6 +35,7 @@ const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashItems: SkillInfo[] = []; // current filtered view
 let slashIndex = 0;
+let slashCategory: string | null = null; // 当前选中的分类筛选(null = 全部)
 let attachments: { name: string; content: string }[] = []; // 📎 选 / 拖入的文件,发送时拼进 prompt
 let imageAttachments: { name: string; dataUrl: string }[] = []; // 🖼️ 图片附件(base64 data URL)
 let PRODUCT = 'KinetAios'; // 产品名(启动从 brand.json 读,所有显示处用这个)
@@ -5081,35 +5082,84 @@ function handleSlash(composer: HTMLTextAreaElement): void {
   void openSlash(v.slice(1).toLowerCase());
 }
 
+// slash skill 菜单的分类标签(中英双语 → category key)。
+// 用户输入 /营销 或 /marketing 都能匹配到分类。
+const SLASH_CATEGORY_MAP: { key: string; labels: string[] }[] = [
+  { key: 'marketing', labels: ['营销', 'marketing', '推广', '文案'] },
+  { key: 'design',    labels: ['设计', 'design', 'ui', 'ux'] },
+  { key: 'dev',       labels: ['开发', 'dev', 'code', '编程'] },
+  { key: 'review',    labels: ['审查', 'review', 'qa', '审计'] },
+  { key: 'docs',      labels: ['文档', 'docs', 'document', '报告'] },
+  { key: 'ops',       labels: ['运维', 'ops', 'deploy', '部署'] },
+  { key: 'media',     labels: ['媒体', 'media', '视频', 'video'] },
+];
+
+// 分类中文标签(渲染标签栏用)。
+const SLASH_CATEGORY_LABELS: Record<string, string> = {
+  marketing: '营销', design: '设计', dev: '开发', review: '审查',
+  docs: '文档', ops: '运维', media: '媒体', other: '其它',
+};
+
 async function openSlash(q: string): Promise<void> {
   // 内置斜杠命令(不是 skill 文件,而是 app 硬编码的快捷指令)。
   const builtin: SkillInfo[] = [
     { name: 'goal', description: '设置会话目标(持续注入 systemPrompt,引导整个会话方向)', type: 'command', source: 'builtin' },
   ];
   const all = [...builtin, ...(await ensureSkills())];
-  slashItems = all
-    .filter((s) => s.name.toLowerCase().includes(q))
-    .sort((a, b) => {
-      const ai = a.name.toLowerCase().startsWith(q) ? 0 : 1;
-      const bi = b.name.toLowerCase().startsWith(q) ? 0 : 1;
-      return ai - bi || a.name.localeCompare(b.name);
-    })
-    .slice(0, 50);
+
+  // 检查输入是否匹配某个分类标签(如 /营销 /marketing /dev)。
+  const qLower = q.toLowerCase();
+  const catMatch = SLASH_CATEGORY_MAP.find((c) => c.labels.some((l) => l.toLowerCase() === qLower));
+  if (catMatch) {
+    // 精确匹配分类 → 按分类筛选(不做 name 搜索)。
+    slashCategory = catMatch.key;
+    slashItems = all.filter((s) => s.category === catMatch.key)
+      .sort((a, b) => a.name.localeCompare(b.name))
+      .slice(0, 50);
+  } else {
+    // 模糊搜索:name + description + category 都参与匹配。
+    slashCategory = null;
+    slashItems = all
+      .filter((s) => {
+        const text = `${s.name} ${s.description} ${s.category ?? ''}`.toLowerCase();
+        return text.includes(qLower);
+      })
+      .sort((a, b) => {
+        const ai = a.name.toLowerCase().startsWith(qLower) ? 0 : 1;
+        const bi = b.name.toLowerCase().startsWith(qLower) ? 0 : 1;
+        return ai - bi || a.name.localeCompare(b.name);
+      })
+      .slice(0, 50);
+  }
   slashIndex = 0;
   renderSlash();
 }
 
 function renderSlash(): void {
+  // 分类标签栏:统计 all skills 里有哪些分类,渲染可点击标签。
+  const allCats = new Set<string>();
+  for (const s of skills) { if (s.category) allCats.add(s.category); }
+  const catBar = [...allCats].sort().map((cat) => {
+    const active = slashCategory === cat ? ' active' : '';
+    const label = SLASH_CATEGORY_LABELS[cat] ?? cat;
+    return `<button class="slash-cat${active}" data-cat="${esc(cat)}">${esc(label)}</button>`;
+  }).join('');
+  const catBarHtml = catBar
+    ? `<div class="slash-cats"><button class="slash-cat${slashCategory === null ? ' active' : ''}" data-cat="">${esc(tr('skill.allCats'))}</button>${catBar}</div>`
+    : '';
+
   if (!slashItems.length) {
-    slashMenu.innerHTML = '<div class="slash-empty">' + esc(tr('skill.noMatch')) + '</div>';
+    slashMenu.innerHTML = catBarHtml + '<div class="slash-empty">' + esc(tr('skill.noMatch')) + '</div>';
     slashMenu.hidden = false;
+    bindSlashCats();
     return;
   }
-  slashMenu.innerHTML = slashItems
+  slashMenu.innerHTML = catBarHtml + slashItems
     .map(
       (s, i) =>
         `<div class="slash-item${i === slashIndex ? ' active' : ''}" data-i="${i}">` +
-        `<span class="slash-name">${esc(s.name)}<span class="slash-tag">${s.source}·${s.type}</span></span>` +
+        `<span class="slash-name">${esc(s.name)}` +
+        `<span class="slash-tag">${s.source}·${s.type}${s.category ? '·' + (SLASH_CATEGORY_LABELS[s.category] ?? s.category) : ''}</span></span>` +
         `<span class="slash-desc">${esc(s.description)}</span></div>`,
     )
     .join('');
@@ -5118,6 +5168,32 @@ function renderSlash(): void {
     el.onclick = () => {
       const s = slashItems[Number(el.dataset.i)];
       if (s) pickSlash(s.name);
+    };
+  });
+  bindSlashCats();
+}
+
+/** 绑定分类标签栏的点击事件:点击后筛选该分类,但不改变输入框内容。 */
+function bindSlashCats(): void {
+  slashMenu.querySelectorAll<HTMLElement>('.slash-cat').forEach((btn) => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const cat = btn.dataset.cat || '';
+      slashCategory = cat || null;
+      // 重新筛选当前 skills(不做文本搜索,纯分类过滤)。
+      const all = [
+        { name: 'goal', description: '设置会话目标', type: 'command' as const, source: 'builtin' as const },
+        ...skills,
+      ];
+      if (slashCategory) {
+        slashItems = all.filter((s) => s.category === slashCategory)
+          .sort((a, b) => a.name.localeCompare(b.name))
+          .slice(0, 50);
+      } else {
+        slashItems = all.sort((a, b) => a.name.localeCompare(b.name)).slice(0, 50);
+      }
+      slashIndex = 0;
+      renderSlash();
     };
   });
 }

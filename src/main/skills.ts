@@ -9,6 +9,40 @@ import { pluginSlashCommands, loadPluginCommandBody } from './plugins';
 
 type Skill = SkillInfo & { body: string; dir: string };
 
+// ── Skill 分类推断 ──
+// 根据 name + description 关键词匹配,自动给 skill 打分类标签。
+// 分类用于 slash 菜单的标签栏筛选(输入 / 后显示分类标签)。
+const CATEGORY_RULES: { category: string; keywords: RegExp }[] = [
+  { category: 'marketing', keywords: /营销|推广|文案|广告|branding|marketing|copywriting|social|竞品|competitor|ASO|落地页|landing|promo/i },
+  { category: 'design',    keywords: /设计|ui|ux|visual|海报|poster|动画|animation|brandkit/i },
+  { category: 'dev',       keywords: /代码|开发|build|deploy|deploy|debug|fix|sync|clone|scaffold|boilerplate|html|css|swift|ios|android|frontend|backend/i },
+  { category: 'review',    keywords: /review|审查|code-review|qa|audit|审查|检查/i },
+  { category: 'docs',      keywords: /文档|document|report|report|pdf|ppt|md|markdown|notes/i },
+  { category: 'ops',       keywords: /部署|deploy|ci|cd|release|ship|publish|fastlane|test|benchmark/i },
+  { category: 'media',     keywords: /视频|video|audio|image|图片|录音|transcription|语音|voice|ocr|视频/i },
+];
+
+/** 推断 skill 分类。匹配 name + description;无匹配返回 'other'。 */
+function inferCategory(name: string, description: string): string {
+  const text = `${name} ${description}`;
+  for (const rule of CATEGORY_RULES) {
+    if (rule.keywords.test(text)) return rule.category;
+  }
+  return 'other';
+}
+
+/** 分类中文标签(slash 菜单标签栏显示)。 */
+export const CATEGORY_LABELS: Record<string, string> = {
+  marketing: '营销',
+  design: '设计',
+  dev: '开发',
+  review: '审查',
+  docs: '文档',
+  ops: '运维',
+  media: '媒体',
+  other: '其它',
+};
+
 type ScanRoot = {
   dir: string;
   source: 'claude' | 'codex';
@@ -68,7 +102,7 @@ function scan(): Map<string, Skill> {
   const add = (name: string, description: string, source: 'claude' | 'codex', type: SkillType, body: string, dir: string): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
-    map.set(key, { name, description, source, type, body, dir });
+    map.set(key, { name, description, source, type, body, dir, category: inferCategory(name, description) });
   };
   for (const { dir, source, type, mode } of [...roots(), ...pluginRoots()]) {
     let ents: fs.Dirent[];
@@ -110,7 +144,10 @@ function ensure(): Map<string, Skill> {
 
 export function listSkills(): SkillInfo[] {
   // v2: 合并插件贡献的 slash 命令(pluginSlashCommands 每次调 loadPlugins, 有缓存)。
-  const pluginCmds = safePluginSlashCommands();
+  const pluginCmds = safePluginSlashCommands().map((s) => ({
+    ...s,
+    category: s.category ?? inferCategory(s.name, s.description),
+  }));
   const builtin: SkillInfo[] = [...ensure().values()].map(
     ({ body: _body, dir: _dir, ...info }) => info,
   );

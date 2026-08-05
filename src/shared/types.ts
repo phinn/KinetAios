@@ -256,6 +256,7 @@ export type SkillInfo = {
   description: string;
   source: 'claude' | 'codex' | 'plugin' | 'builtin';
   type: SkillType;
+  category?: string; // 自动推断的分类(marketing/dev/design/review/ops/docs/media/other)
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).
