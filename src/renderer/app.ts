@@ -267,6 +267,7 @@ function applyI18nDOM(): void {
   api.getSettings().then((s) => { profileCache = s.modelProfiles || []; });
   fillModelHints();
   wireUi();
+  initScrollBottomBtn();
   syncSidebarModeBtn();
   syncViewButtons();
   renderSidebar();
@@ -1904,6 +1905,34 @@ function scrollDownImpl(force: boolean) {
 }
 let scrollDownScheduled = false;
 let scrollDownForceFlag = false;
+
+// ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
+/** 用户滚离底部时显示浮动箭头,点击回到底部。 */
+// Show floating arrow when user scrolls up; click to jump to bottom.
+function initScrollBottomBtn(): void {
+  const turns = document.getElementById('turns');
+  const btn = document.getElementById('scroll-bottom-btn');
+  if (!turns || !btn) return;
+
+  const update = () => {
+    const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
+    if (dist > 200) {
+      btn.classList.add('visible');
+    } else {
+      btn.classList.remove('visible');
+    }
+  };
+
+  turns.addEventListener('scroll', update, { passive: true });
+  // 内容变化时也检查(新消息可能增加 scrollHeight) / Check on content changes
+  const mo = new MutationObserver(() => update());
+  mo.observe(turns, { childList: true, subtree: true });
+
+  btn.addEventListener('click', () => {
+    scrollDownForce();
+    btn.classList.remove('visible');
+  });
+}
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。

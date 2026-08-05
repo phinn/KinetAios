@@ -1091,8 +1091,9 @@ ${failedDetail || '  (无)'}
       return messages;
     }
     this.lastCompactFingerprints.set(conv.id, fingerprint);
-    // ponytail: 老版本会读 getSettings().hifiContextBudget * 0.4,这里用策略统一(已是 hifi 时翻倍)。
-    return compactHistory(messages, policy.interStepCompactBudget || 40_000, provider, snap, signal, onEvent);
+    // P0-fix: 去掉 || fallback,directV2 的 interStepCompactBudget 由 v2BudgetFromWindow 动态计算,永远 > 0。
+    // 如果用户故意设 ratio=0,trim 会算出 0 → compactHistory 会保留 0 条尾部 → 空历史,这是用户的选择。
+    return compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent);
   }
 
   /**
@@ -1133,10 +1134,11 @@ ${failedDetail || '  (无)'}
     const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
     conv.directHistory = await compactHistory(
       messages,
-      policy.interStepCompactBudget || 40_000,
+      policy.interStepCompactBudget,
       provider,
       snap,
       signal,
+      onEvent, // P0-5: 传 onEvent → 摘要 LLM 的 cost/status 事件不再被吞
     );
   }
 

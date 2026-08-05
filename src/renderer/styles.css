@@ -1506,7 +1506,38 @@ a { color: var(--accent); }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
-#turns { flex: 1; overflow-y: scroll; padding: 10px 0 18px; overflow-anchor: none; }
+#turns { flex: 1; overflow-y: scroll; padding: 10px 0 18px; overflow-anchor: none; position: relative; }
+
+/* 回到最新消息浮动按钮 / Floating "jump to bottom" button */
+.scroll-bottom-btn {
+  position: absolute;
+  bottom: 12px;
+  right: 20px;
+  z-index: 50;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+  background: var(--bg-2);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateY(8px) scale(0.8);
+  pointer-events: none;
+  transition: opacity 0.2s, transform 0.2s, background 0.15s, color 0.15s;
+}
+.scroll-bottom-btn.visible {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+.scroll-bottom-btn:hover {
+  background: var(--bg-3);
+  color: var(--text);
+}
 .turn { padding: 2px 20px 12px; display: flex; flex-direction: column; gap: 10px; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.user { flex-direction: row-reverse; } /* 头像在右 */

@@ -190,6 +190,7 @@ const ZH_CN: Dict = {
   'git.actConfirmStashPop': '确定弹出最近的贮藏?',
 
   'composer.placeholder': '给 {product} 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)',
+  'scrollBottom.title': '回到最新消息',
   'send.failed': '发送失败:{msg}',
 
   'attach.title': '添加文件(可多选 / 可拖入)',
@@ -995,6 +996,7 @@ const EN: Dict = {
   'git.actConfirmStashPop': 'Pop the latest stash?',
 
   'composer.placeholder': 'Give {product} a task…  (Enter to send, Shift+Enter for newline; files can be dropped)',
+  'scrollBottom.title': 'Jump to latest',
   'send.failed': 'Send failed: {msg}',
 
   'attach.title': 'Add files (multi-select / drop)',
@@ -1801,6 +1803,7 @@ const ZH_TW: Dict = {
   'git.actConfirmStashPop': '確定彈出最近的貯藏?',
 
   'composer.placeholder': '給 {product} 下達任務…  (Enter 傳送,Shift+Enter 換行;可拖入檔案)',
+  'scrollBottom.title': '回到最新訊息',
   'send.failed': '傳送失敗:{msg}',
 
   'attach.title': '新增檔案(可多選 / 可拖入)',
@@ -2607,6 +2610,7 @@ const JA: Dict = {
   'git.actConfirmStashPop': '最新のスタッシュをポップしますか?',
 
   'composer.placeholder': '{product} にタスクを…  (Enter で送信、Shift+Enter で改行、ファイルもドロップ可)',
+  'scrollBottom.title': '最新メッセージへ',
   'send.failed': '送信失敗:{msg}',
 
   'attach.title': 'ファイルを追加(複数可 / ドロップ可)',
