@@ -320,6 +320,10 @@ export class DirectV2Engine implements Engine {
       // 但如果任务需要写操作(创建文件/修改代码),planner 没有写工具 → 模型会说"我无法创建文件"。
       // 修复:退化时用完整工具集(含 write_file/shell)再跑一轮,让模型真正执行任务。
       onEvent({ type: 'status', text: '⚡ v2: 任务简单,直接执行(完整工具集)' });
+      // P2-1-fix: 退化路径也要 trim plannerMessages,防止探查阶段的大段工具输出撑爆 executor。
+      // 不像正常路径那样只取 planConclusion —— 退化场景没有 plan,executor 需要探查发现的文件路径。
+      const fallbackPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+      const trimmedPlannerMsgs = trimHistoryToTokenBudget(plannerMessages, fallbackPolicy.trimBudget, snap.apiProtocol);
       const execMessages = await runAgentLoop({
         provider,
         tools, // 完整工具集(含写工具)
@@ -327,17 +331,17 @@ export class DirectV2Engine implements Engine {
         memoryBlock,
         snapshot: snap,
         userInput: prompt, // 原始用户请求(不含 PLANNER_PROMPT 的规划指令)
-        history: plannerMessages, // 继承 planner 的探查上下文
+        history: trimmedPlannerMsgs, // P2-1: trim 后的探查上下文(不再全量灌入)
         ctx,
         signal,
         maxTurns: 30,
         contextMode: conv.contextMode,
         hifiContextBudget: getSettings().hifiContextBudget,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio),
+        policy: fallbackPolicy,
         onEvent: (ev) => this.forwardEvent(ev, onEvent),
       });
       await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execMessages);
-      this.finalizeContext(conv, execMessages, provider, snap, signal);
+      this.finalizeContext(conv, execMessages, provider, snap, signal, onEvent);
       onEvent({ type: 'done' });
       return;
     }
@@ -512,7 +516,7 @@ export class DirectV2Engine implements Engine {
     }
 
     // ── Phase 5: Context 压缩(与 v1 共享)──
-    this.finalizeContext(conv, execHistory, provider, snap, signal);
+    this.finalizeContext(conv, execHistory, provider, snap, signal, onEvent);
     // P2-1: 存最终 checkpoint(标记为 final,crash recovery 可区分)
     store.saveV2Checkpoint(conv.id, 'final', JSON.stringify(plan), JSON.stringify(execHistory), 'final');
     onEvent({ type: 'done' });
@@ -1079,13 +1083,16 @@ ${failedDetail || '  (无)'}
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
     const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
-    // P0-2: fingerprint = 消息条数 + 最后一条消息 content 前 200 字符的实际内容。
-    // 旧版用 lastContent.length 做 hash → 碰撞率极高(不同内容长度相同就误判"没变",跳过压缩)。
-    // 修复:直接用 content 前 200 字符的文本做 fingerprint,不用 hash 函数(省 CPU 且无碰撞)。
-    const lastContent = typeof messages.at(-1)?.content === 'string'
-      ? (messages.at(-1)!.content as string).slice(0, 200)
+    // P0-2: fingerprint = 消息条数 + 首尾消息 content 前 100 字符。
+    // P1-fix: 旧版只看最后一条 → 步骤摘要都以 "📋 步骤[X]" 开头,前 200 字符可能碰撞 → 跳过压缩。
+    // 改为首条 + 末条 content 各取前 100 字符:两个不同步骤几乎不可能首尾都一样。
+    const firstContent = typeof messages[0]?.content === 'string'
+      ? (messages[0]!.content as string).slice(0, 100)
       : '';
-    const fingerprint = `${messages.length}:${lastContent}`;
+    const lastContent = typeof messages.at(-1)?.content === 'string'
+      ? (messages.at(-1)!.content as string).slice(0, 100)
+      : '';
+    const fingerprint = `${messages.length}:${firstContent}ↇ${lastContent}`;
     if (fingerprint === this.lastCompactFingerprints.get(conv.id)) {
       // history 没变 → 跳过(上一步刚压缩过,这步没新消息)
       return messages;
@@ -1118,6 +1125,8 @@ ${failedDetail || '  (无)'}
     provider: ReturnType<typeof currentProvider>,
     snap: ReturnType<typeof snapshot>,
     signal: AbortSignal,
+    // P0-5: 传 onEvent → compactHistory 摘要 LLM 的 cost/status 事件不再被吞。
+    onEvent?: (e: AgentEvent) => void,
   ): Promise<void> {
     if (signal.aborted) {
       conv.directHistory = messages;
