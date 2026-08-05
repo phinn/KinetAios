@@ -457,6 +457,7 @@ const ZH_CN: Dict = {
   'settings.embed.apiKey': 'API Key',
   'settings.embed.apiKeyPh': '留空 = 跟随主接口',
   'settings.sec.ui': '界面',
+  'settings.sec.v2engine': 'V2 引擎参数',
   'settings.sec.agent': 'Agent',
   'settings.maxTurns': '最大循环轮数',
   'settings.maxTurns.desc': 'Direct 引擎单次对话的最大 ReAct 循环数(防死循环烧 token)。设为 0 = 无限。',
@@ -810,10 +811,10 @@ const ZH_CN: Dict = {
 
   // ── 设置 tab 标签 ──
   'settings.tab.model': '模型',
-  'settings.tab.behavior': '行为',
+  'settings.tab.appearance': '外观',
+  'settings.tab.engine': '引擎',
   'settings.tab.advanced': '高级',
   'settings.tab.plugins': '插件',
-  'settings.tab.persona': '替身',
   'settings.tab.mesh': '多机协作',
 
   // ── Agent 行为回放 ──
@@ -1267,6 +1268,7 @@ const EN: Dict = {
   'settings.embed.apiKey': 'API Key',
   'settings.embed.apiKeyPh': 'Blank = follow main endpoint',
   'settings.sec.ui': 'Interface',
+  'settings.sec.v2engine': 'V2 Engine Parameters',
   'settings.sec.agent': 'Agent',
   'settings.maxTurns': 'Max loop turns',
   'settings.maxTurns.desc': 'Maximum ReAct iterations per turn in the Direct engine (prevents runaway token usage). Set to 0 = unlimited.',
@@ -1619,10 +1621,10 @@ const EN: Dict = {
 
   // ── Settings tabs ──
   'settings.tab.model': 'Model',
-  'settings.tab.behavior': 'Behavior',
+  'settings.tab.appearance': 'Appearance',
+  'settings.tab.engine': 'Engine',
   'settings.tab.advanced': 'Advanced',
   'settings.tab.plugins': 'Plugins',
-  'settings.tab.persona': 'Persona',
   'settings.tab.mesh': 'Mesh',
 
   // ── Agent replay ──
@@ -2078,6 +2080,7 @@ const ZH_TW: Dict = {
   'settings.embed.apiKey': 'API Key',
   'settings.embed.apiKeyPh': '留空 = 跟隨主介面',
   'settings.sec.ui': '介面',
+  'settings.sec.v2engine': 'V2 引擎參數',
   'settings.sec.agent': 'Agent',
   'settings.maxTurns': '最大循環輪數',
   'settings.maxTurns.desc': 'Direct 引擎單次對話的最大 ReAct 循環數(防死循環燒 token)。設為 0 = 無限。',
@@ -2430,10 +2433,10 @@ const ZH_TW: Dict = {
 
   // ── 設定 tab 標籤 ──
   'settings.tab.model': '模型',
-  'settings.tab.behavior': '行為',
+  'settings.tab.appearance': '外觀',
+  'settings.tab.engine': '引擎',
   'settings.tab.advanced': '進階',
   'settings.tab.plugins': '插件',
-  'settings.tab.persona': '替身',
   'settings.tab.mesh': '多機協作',
 
   // ── Agent 行為回放 ──
@@ -2889,6 +2892,7 @@ const JA: Dict = {
   'settings.embed.apiKey': 'API Key',
   'settings.embed.apiKeyPh': '空欄 = メインに従う',
   'settings.sec.ui': 'インターフェース',
+  'settings.sec.v2engine': 'V2 エンジンパラメータ',
   'settings.sec.agent': 'Agent',
   'settings.maxTurns': '最大ループ数',
   'settings.maxTurns.desc': 'Direct エンジンの 1 回の会話あたり最大 ReAct ループ数(トークン浪費防止)。0 = 無制限。',
@@ -3241,10 +3245,10 @@ const JA: Dict = {
 
   // ── 設定タブ ──
   'settings.tab.model': 'モデル',
-  'settings.tab.behavior': '動作',
+  'settings.tab.appearance': '外観',
+  'settings.tab.engine': 'エンジン',
   'settings.tab.advanced': '詳細設定',
   'settings.tab.plugins': 'プラグイン',
-  'settings.tab.persona': 'ペルソナ',
   'settings.tab.mesh': 'メッシュ',
 
   // ── Agent 行動リプレイ ──

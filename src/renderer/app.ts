@@ -1963,10 +1963,10 @@ async function showSettings() {
 
       <div class="s-tabs">
         <button class="s-tab active" data-stab="model">${tr('settings.tab.model')}</button>
-        <button class="s-tab" data-stab="behavior">${tr('settings.tab.behavior')}</button>
+        <button class="s-tab" data-stab="appearance">${tr('settings.tab.appearance')}</button>
+        <button class="s-tab" data-stab="engine">${tr('settings.tab.engine')}</button>
         <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
         <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
-        <button class="s-tab" data-stab="persona">${tr('settings.tab.persona')}</button>
         <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
       </div>
 
@@ -2017,7 +2017,7 @@ async function showSettings() {
       </div>
       </div><!-- /model panel -->
 
-      <div class="s-tab-panel" data-panel="behavior" style="display:none">
+      <div class="s-tab-panel" data-panel="appearance" style="display:none">
       <div class="s-section">
         <h3>${tr('settings.sec.ui')}</h3>
         <div class="field"><label>${tr('settings.lang')}</label><select id="s-lang">
@@ -2039,6 +2039,18 @@ async function showSettings() {
         </select></div>
       </div>
       <div class="s-section">
+        <h3>${tr('settings.sec.window')}</h3>
+        <div class="field"><label>${tr('settings.closeBehavior')}</label><select id="s-close-behavior">
+          <option value="quit" ${s.closeBehavior === 'quit' ? 'selected' : ''}>${tr('settings.closeBehavior.quit')}</option>
+          <option value="minimize" ${s.closeBehavior === 'minimize' ? 'selected' : ''}>${tr('settings.closeBehavior.minimize')}</option>
+          <option value="tray" ${s.closeBehavior === 'tray' ? 'selected' : ''}>${tr('settings.closeBehavior.tray')}</option>
+        </select></div>
+        <div class="field-desc">${tr('settings.closeBehavior.desc')}</div>
+      </div>
+      </div><!-- /appearance panel -->
+
+      <div class="s-tab-panel" data-panel="engine" style="display:none">
+      <div class="s-section">
         <h3>${tr('settings.sec.agent')}</h3>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
@@ -2059,6 +2071,9 @@ async function showSettings() {
         </select></div>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
+      </div>
+      <div class="s-section">
+        <h3>${tr('settings.sec.v2engine')}</h3>
         <div class="field"><label>${tr('settings.hifiBudget')}</label><div class="row"><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
         <div class="field-desc">${tr('settings.hifiBudget.desc')}</div>
         <div class="field"><label>${tr('settings.v2ModelWindow')}</label><div class="row"><input id="s-v2-window" type="number" min="32000" max="2000000" step="32000" value="${s.v2ModelWindow ?? 1000000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
@@ -2066,16 +2081,7 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.v2BudgetRatio')}</label><div class="row"><input id="s-v2-ratio" type="number" min="1" max="50" step="1" value="${Math.round((s.v2BudgetRatio ?? 0.08) * 100)}" style="max-width:80px" /><span style="color:var(--text-faint);font-size:11px;align-self:center">%</span></div></div>
         <div class="field-desc">${tr('settings.v2BudgetRatio.desc')}</div>
       </div>
-      <div class="s-section">
-        <h3>${tr('settings.sec.window')}</h3>
-        <div class="field"><label>${tr('settings.closeBehavior')}</label><select id="s-close-behavior">
-          <option value="quit" ${s.closeBehavior === 'quit' ? 'selected' : ''}>${tr('settings.closeBehavior.quit')}</option>
-          <option value="minimize" ${s.closeBehavior === 'minimize' ? 'selected' : ''}>${tr('settings.closeBehavior.minimize')}</option>
-          <option value="tray" ${s.closeBehavior === 'tray' ? 'selected' : ''}>${tr('settings.closeBehavior.tray')}</option>
-        </select></div>
-        <div class="field-desc">${tr('settings.closeBehavior.desc')}</div>
-      </div>
-      </div><!-- /behavior panel -->
+      </div><!-- /engine panel -->
 
       <div class="s-tab-panel" data-panel="advanced" style="display:none">
       <div class="s-section">
@@ -2117,6 +2123,26 @@ async function showSettings() {
         <div class="field"><label>MiniMax API Key</label><div class="key-eye-wrap"><input id="s-minimax-key" type="password" value="${esc(s.minimaxApiKey ?? '')}" placeholder="${tr('settings.minimax.keyPh')}" /><span class="key-eye" data-target="s-minimax-key">👁</span></div></div>
       </div>
 
+      <div class="s-section">
+        <h3>${tr('settings.persona.title')}</h3>
+        <div class="field-desc">
+          ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
+        </div>
+        <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
+          <button id="s-persona-gen" class="btn-sm">${tr('settings.persona.gen')}</button>
+          <button id="s-persona-save" class="btn-sm" style="display:none">${tr('settings.persona.save')}</button>
+          <button id="s-persona-clear" class="btn-sm" style="display:none">${tr('settings.persona.clear')}</button>
+          <span class="test-msg" id="s-persona-msg"></span>
+        </div>
+        <div id="s-persona-stats" class="field-desc" style="margin-bottom:10px"></div>
+        <textarea id="s-persona-editor" class="s-persona-editor" placeholder="${tr('settings.persona.editorPh')}" style="display:none"></textarea>
+        <div id="s-persona-empty" class="s-persona-empty">
+          <div class="s-persona-empty-icon">🧬</div>
+          <div>${tr('settings.persona.empty')}</div>
+          <div class="field-desc" style="margin-top:4px;text-align:center">${tr('settings.persona.emptyHint')}</div>
+        </div>
+      </div>
+
       </div><!-- /advanced panel -->
 
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
@@ -2140,28 +2166,6 @@ async function showSettings() {
           </div>
         </div>
       </div><!-- /plugins panel -->
-
-      <div class="s-tab-panel" data-panel="persona" style="display:none">
-        <div class="s-section">
-          <h3>${tr('settings.persona.title')}</h3>
-          <div class="field-desc">
-            ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
-          </div>
-          <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
-            <button id="s-persona-gen" class="btn-sm">${tr('settings.persona.gen')}</button>
-            <button id="s-persona-save" class="btn-sm" style="display:none">${tr('settings.persona.save')}</button>
-            <button id="s-persona-clear" class="btn-sm" style="display:none">${tr('settings.persona.clear')}</button>
-            <span class="test-msg" id="s-persona-msg"></span>
-          </div>
-          <div id="s-persona-stats" class="field-desc" style="margin-bottom:10px"></div>
-          <textarea id="s-persona-editor" class="s-persona-editor" placeholder="${tr('settings.persona.editorPh')}" style="display:none"></textarea>
-          <div id="s-persona-empty" class="s-persona-empty">
-            <div class="s-persona-empty-icon">🧬</div>
-            <div>${tr('settings.persona.empty')}</div>
-            <div class="field-desc" style="margin-top:4px;text-align:center">${tr('settings.persona.emptyHint')}</div>
-          </div>
-        </div>
-      </div><!-- /persona panel -->
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
