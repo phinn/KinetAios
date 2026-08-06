@@ -344,7 +344,14 @@ export class DirectV2Engine implements Engine {
         onEvent: (ev) => this.forwardEvent(ev, onEvent),
       });
       await this.autoVerifyFromSteps(conv, ctx, signal, onEvent, execMessages);
-      this.finalizeContext(conv, execMessages, provider, snap, signal, onEvent);
+      try {
+        await this.finalizeContext(conv, execMessages, provider, snap, signal, onEvent);
+      } catch (e) {
+        console.error('[DirectV2] fallback finalizeContext failed:', (e as Error)?.message);
+        conv.directHistory = execMessages;
+      }
+      // 退化路径也存 final checkpoint,防止下次 send 误触发 crash recovery。
+      store.saveV2Checkpoint(conv.id, 'final', JSON.stringify({ steps: [], summary: 'fallback' }), JSON.stringify(execMessages), 'final');
       onEvent({ type: 'done' });
       return;
     }
@@ -519,8 +526,16 @@ export class DirectV2Engine implements Engine {
     }
 
     // ── Phase 5: Context 压缩(与 v1 共享)──
-    this.finalizeContext(conv, execHistory, provider, snap, signal, onEvent);
-    // P2-1: 存最终 checkpoint(标记为 final,crash recovery 可区分)
+    try {
+      await this.finalizeContext(conv, execHistory, provider, snap, signal, onEvent);
+    } catch (e) {
+      // compactHistory 可能因 API 失败抛异常 → 不能阻断 done 事件和 final checkpoint。
+      // 降级:直接用原始 execHistory 作为 directHistory。
+      console.error('[DirectV2] finalizeContext failed, fallback to raw history:', (e as Error)?.message);
+      conv.directHistory = execHistory;
+    }
+    // P2-1: 存最终 checkpoint(标记为 final,crash recovery 可区分)。
+    // 必须在 done 之前执行,否则下次 send 会误触发 crash recovery(resume 旧 plan)。
     store.saveV2Checkpoint(conv.id, 'final', JSON.stringify(plan), JSON.stringify(execHistory), 'final');
     onEvent({ type: 'done' });
   }

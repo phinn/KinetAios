@@ -317,6 +317,9 @@ export class TaskManager {
       // 引擎抛错 → 确保不会永久卡在 running 状态
       const msg = e instanceof Error ? e.message : String(e);
       this.applyAndPersist(conv, id, { type: 'error', message: msg }, prompt, ac.signal);
+      // P0-fix: 引擎异常退出 → 清除 V2 crash recovery checkpoint,防止下次 send 误 resume 旧 plan。
+      // crash recovery 只为进程崩溃设计(重启后恢复),同进程内异常不应触发。
+      if (conv.engine === 'directV2') store.clearV2State(conv.id);
     }).finally(() => {
       this.aborts.delete(id);
     });
@@ -389,6 +392,8 @@ export class TaskManager {
       }).catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
         this.applyAndPersist(conv, id, { type: 'error', message: msg }, continuePrompt, ac.signal);
+        // P0-fix: 同上,清除 V2 checkpoint 防误 resume。
+        if (conv.engine === 'directV2') store.clearV2State(conv.id);
       }).finally(() => {
         this.aborts.delete(id);
       });
