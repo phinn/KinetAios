@@ -1,0 +1,946 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios · 记忆系统架构全景</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --bg-card: #12121a;
+    --bg-card-hover: #16162a;
+    --border: #1e1e2e;
+    --border-bright: #2a2a3e;
+    --text: #c8c8d4;
+    --text-dim: #6b6b80;
+    --text-bright: #e8e8f0;
+    --accent: #7c5cff;
+    --accent-2: #00d9a3;
+    --accent-3: #ff6b9d;
+    --accent-4: #ffa657;
+    --accent-5: #58a6ff;
+    --radius: 12px;
+    --mono: 'SF Mono', 'Cascadia Code', 'Fira Code', 'Consolas', monospace;
+    --sans: -apple-system, 'Segoe UI', system-ui, sans-serif;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+  /* 背景网格 */
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      radial-gradient(ellipse 800px 600px at 15% -5%, rgba(124,92,255,.08), transparent),
+      radial-gradient(ellipse 600px 400px at 85% 5%, rgba(0,217,163,.05), transparent),
+      radial-gradient(ellipse 500px 300px at 50% 100%, rgba(255,107,157,.04), transparent);
+    pointer-events: none; z-index: 0;
+  }
+  body::after {
+    content: '';
+    position: fixed; inset: 0;
+    background-image:
+      linear-gradient(rgba(124,92,255,.025) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(124,92,255,.025) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none; z-index: 0;
+  }
+  .wrap { position: relative; z-index: 1; max-width: 1280px; margin: 0 auto; padding: 48px 32px 120px; }
+
+  /* Hero */
+  .hero { text-align: center; margin-bottom: 64px; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: rgba(124,92,255,.1); border: 1px solid rgba(124,92,255,.25);
+    padding: 6px 16px; border-radius: 100px; font-size: 13px; color: var(--accent);
+    margin-bottom: 24px;
+  }
+  .hero-badge .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-2); box-shadow: 0 0 8px var(--accent-2); animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+  .hero h1 { font-size: 52px; font-weight: 800; color: var(--text-bright); letter-spacing: -1.5px; margin-bottom: 16px; }
+  .hero h1 .grad { background: linear-gradient(135deg, var(--accent), var(--accent-3) 50%, var(--accent-4)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+  .hero p { font-size: 18px; color: var(--text-dim); max-width: 720px; margin: 0 auto; }
+
+  /* Stats Bar */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 64px; }
+  .stat {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 24px; transition: border-color .2s;
+  }
+  .stat:hover { border-color: var(--border-bright); }
+  .stat .num { font-size: 28px; font-weight: 700; font-family: var(--mono); }
+  .stat .label { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .stat:nth-child(1) .num { color: var(--accent); }
+  .stat:nth-child(2) .num { color: var(--accent-2); }
+  .stat:nth-child(3) .num { color: var(--accent-3); }
+  .stat:nth-child(4) .num { color: var(--accent-4); }
+  .stat:nth-child(5) .num { color: var(--accent-5); }
+
+  /* Section */
+  .section { margin-bottom: 64px; }
+  .section-title {
+    display: flex; align-items: center; gap: 12px;
+    font-size: 24px; font-weight: 700; color: var(--text-bright); margin-bottom: 24px;
+  }
+  .section-title .icon { width: 32px; height: 32px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+  .section-title .bar { flex: 1; height: 1px; background: linear-gradient(90deg, var(--border-bright), transparent); }
+
+  /* Layers diagram */
+  .layers { display: flex; flex-direction: column; gap: 2px; }
+  .layer {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px 32px; position: relative; overflow: hidden;
+    transition: all .25s;
+  }
+  .layer:hover { background: var(--bg-card-hover); border-color: var(--border-bright); transform: translateX(4px); }
+  .layer-header { display: flex; align-items: center; gap: 16px; margin-bottom: 16px; }
+  .layer-badge {
+    font-family: var(--mono); font-size: 11px; font-weight: 700;
+    padding: 3px 10px; border-radius: 6px; text-transform: uppercase; letter-spacing: 1px;
+  }
+  .layer-title { font-size: 18px; font-weight: 600; color: var(--text-bright); }
+  .layer-desc { color: var(--text-dim); font-size: 14px; margin-bottom: 16px; max-width: 800px; }
+  .layer-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 12px; }
+  .layer-item {
+    background: rgba(255,255,255,.02); border: 1px solid var(--border); border-radius: 8px;
+    padding: 14px 16px; transition: all .2s;
+  }
+  .layer-item:hover { background: rgba(255,255,255,.04); border-color: var(--border-bright); }
+  .layer-item h4 { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+  .layer-item p { font-size: 13px; color: var(--text-dim); line-height: 1.5; }
+  .layer-item code { font-family: var(--mono); font-size: 12px; color: var(--accent-2); background: rgba(0,217,163,.08); padding: 1px 5px; border-radius: 3px; }
+
+  /* Flow diagram */
+  .flow { display: flex; flex-direction: column; gap: 0; }
+  .flow-step {
+    display: flex; align-items: flex-start; gap: 20px; position: relative;
+    padding-bottom: 32px;
+  }
+  .flow-step:not(:last-child)::before {
+    content: ''; position: absolute; left: 19px; top: 44px; bottom: 0;
+    width: 2px; background: linear-gradient(to bottom, var(--border-bright), var(--border));
+  }
+  .flow-num {
+    width: 40px; height: 40px; border-radius: 10px; display: flex; align-items: center; justify-content: center;
+    font-family: var(--mono); font-weight: 700; font-size: 16px; flex-shrink: 0; z-index: 1;
+  }
+  .flow-content {
+    flex: 1; background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 20px 24px; transition: all .2s;
+  }
+  .flow-content:hover { border-color: var(--border-bright); }
+  .flow-content h4 { font-size: 15px; font-weight: 600; color: var(--text-bright); margin-bottom: 6px; }
+  .flow-content p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+  .flow-content .tag { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; margin-right: 6px; }
+
+  /* Tables */
+  .table-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  table { width: 100%; border-collapse: collapse; }
+  th { text-align: left; padding: 12px 20px; font-size: 12px; font-weight: 600; color: var(--text-dim); text-transform: uppercase; letter-spacing: 1px; border-bottom: 1px solid var(--border); background: rgba(124,92,255,.03); }
+  td { padding: 12px 20px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(255,255,255,.015); }
+  td code { font-family: var(--mono); font-size: 12px; }
+  .type { font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 4px; }
+
+  /* Color helpers */
+  .c-purple { color: var(--accent); } .c-green { color: var(--accent-2); } .c-pink { color: var(--accent-3); }
+  .c-orange { color: var(--accent-4); } .c-blue { color: var(--accent-5); }
+  .bg-purple { background: rgba(124,92,255,.12); color: var(--accent); border: 1px solid rgba(124,92,255,.2); }
+  .bg-green { background: rgba(0,217,163,.12); color: var(--accent-2); border: 1px solid rgba(0,217,163,.2); }
+  .bg-pink { background: rgba(255,107,157,.12); color: var(--accent-3); border: 1px solid rgba(255,107,157,.2); }
+  .bg-orange { background: rgba(255,166,87,.12); color: var(--accent-4); border: 1px solid rgba(255,166,87,.2); }
+  .bg-blue { background: rgba(88,166,255,.12); color: var(--accent-5); border: 1px solid rgba(88,166,255,.2); }
+
+  /* Code blocks */
+  .code-block {
+    background: #06060a; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px 28px; overflow-x: auto; font-family: var(--mono); font-size: 13px; line-height: 1.7;
+  }
+  .code-block .kw { color: var(--accent-3); }
+  .code-block .str { color: var(--accent-2); }
+  .code-block .num { color: var(--accent-4); }
+  .code-block .cmt { color: var(--text-dim); font-style: italic; }
+  .code-block .fn { color: var(--accent-5); }
+
+  /* Feature cards */
+  .feature-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+  .feature-card {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 24px; transition: all .25s; position: relative; overflow: hidden;
+  }
+  .feature-card::after {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px;
+    opacity: 0; transition: opacity .25s;
+  }
+  .feature-card:hover { border-color: var(--border-bright); transform: translateY(-2px); }
+  .feature-card:hover::after { opacity: 1; }
+  .feature-card:nth-child(4n+1)::after { background: var(--accent); }
+  .feature-card:nth-child(4n+2)::after { background: var(--accent-2); }
+  .feature-card:nth-child(4n+3)::after { background: var(--accent-3); }
+  .feature-card:nth-child(4n)::after { background: var(--accent-4); }
+  .feature-card .emoji { font-size: 28px; margin-bottom: 12px; }
+  .feature-card h4 { font-size: 15px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; }
+  .feature-card p { font-size: 13px; color: var(--text-dim); line-height: 1.6; }
+  .feature-card ul { font-size: 13px; color: var(--text-dim); line-height: 1.8; padding-left: 16px; margin-top: 8px; }
+
+  /* Two column */
+  .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  @media (max-width: 800px) { .two-col { grid-template-columns: 1fr; } }
+
+  /* Scoring formula */
+  .formula {
+    background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 32px; text-align: center;
+  }
+  .formula .eq {
+    font-family: var(--mono); font-size: 22px; color: var(--text-bright);
+    padding: 20px; background: rgba(124,92,255,.05); border: 1px solid rgba(124,92,255,.1);
+    border-radius: 8px; margin-bottom: 20px;
+  }
+  .formula .eq .w { font-weight: 700; }
+  .formula-weights { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+  .formula-weight { text-align: center; }
+  .formula-weight .pct { font-size: 32px; font-weight: 800; font-family: var(--mono); }
+  .formula-weight .name { font-size: 13px; color: var(--text-dim); margin-top: 4px; }
+  .formula-weight .desc { font-size: 12px; color: var(--text-dim); margin-top: 8px; line-height: 1.5; }
+
+  /* Retrieval pipeline */
+  .pipeline { display: flex; align-items: stretch; gap: 0; margin: 24px 0; flex-wrap: wrap; }
+  .pipeline-step {
+    flex: 1; min-width: 180px; background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius) 0 0 var(--radius); padding: 20px; position: relative;
+  }
+  .pipeline-step:not(:first-child) { border-left: none; }
+  .pipeline-step:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+  .pipeline-step.fallback { opacity: .65; }
+  .pipeline-step .step-num { font-family: var(--mono); font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+  .pipeline-step h5 { font-size: 14px; font-weight: 600; color: var(--text-bright); margin-bottom: 6px; }
+  .pipeline-step p { font-size: 12px; color: var(--text-dim); line-height: 1.5; }
+  .pipeline-arrow { display: flex; align-items: center; padding: 0 4px; color: var(--text-dim); font-size: 20px; }
+
+  /* Footer */
+  .footer { text-align: center; padding-top: 48px; border-top: 1px solid var(--border); }
+  .footer p { font-size: 13px; color: var(--text-dim); }
+  .footer .logo { font-size: 20px; font-weight: 700; color: var(--text-bright); margin-bottom: 8px; }
+  .footer .logo .grad { background: linear-gradient(135deg, var(--accent), var(--accent-3)); -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; }
+
+  /* Tag list */
+  .tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+  .tag-chip { font-size: 12px; font-family: var(--mono); padding: 3px 10px; border-radius: 6px; background: rgba(255,255,255,.04); border: 1px solid var(--border); color: var(--text-dim); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══ Hero ═══ -->
+<div class="hero">
+  <div class="hero-badge">
+    <span class="dot"></span>
+    KinetAios · Memory Engine
+  </div>
+  <h1>记忆系统<span class="grad"> 架构全景</span></h1>
+  <p>从结构化常驻记忆到语义向量检索，从原子事实提取到会话叙事摘要 —— 五层记忆架构，让 AI Agent 拥有真正的长期记忆。</p>
+</div>
+
+<!-- ═══ Stats ═══ -->
+<div class="stats">
+  <div class="stat"><div class="num">5</div><div class="label">记忆层级</div></div>
+  <div class="stat"><div class="num">10</div><div class="label">SQLite 数据表</div></div>
+  <div class="stat"><div class="num">3</div><div class="label">检索策略</div></div>
+  <div class="stat"><div class="num">4</div><div class="label">核心工具</div></div>
+  <div class="stat"><div class="num">2×</div><div class="label">异步提取器</div></div>
+</div>
+
+<!-- ═══ 1. Architecture Overview ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-purple">🧩</div>
+    <span>五层记忆架构</span>
+    <div class="bar"></div>
+  </div>
+  <p style="color:var(--text-dim);font-size:14px;margin-bottom:24px;max-width:900px;">
+    KinetAios 的记忆系统不是单一的"对话历史"，而是五层独立但协同的记忆子系统。每层有不同的生命周期、存储格式和注入策略，共同构成一个完整的认知记忆栈。
+  </p>
+
+  <div class="layers">
+    <!-- Layer 0 -->
+    <div class="layer">
+      <div class="layer-header">
+        <span class="layer-badge bg-purple">L0</span>
+        <span class="layer-title">Memory Blocks · 结构化核心记忆</span>
+      </div>
+      <p class="layer-desc">借鉴 Letta Memory Blocks 设计。每轮对话始终注入，是 AI 的"常驻意识"。Agent 可通过 <code style="font-family:var(--mono);color:var(--accent-2);">memory_replace</code> / <code style="font-family:var(--mono);color:var(--accent-2);">memory_append</code> 工具主动编辑。</p>
+      <div class="layer-grid">
+        <div class="layer-item">
+          <h4>🧬 persona <span class="tag-chip">read-only</span></h4>
+          <p>替身画像（用户做事风格）。由 <code>generatePersona()</code> 从历史对话+记忆 LLM 生成，2000 字符上限。</p>
+        </div>
+        <div class="layer-item">
+          <h4>👤 user_profile</h4>
+          <p>用户画像：身份、偏好、习惯、技术栈。3000 字符上限，Agent 可原地编辑。</p>
+        </div>
+        <div class="layer-item">
+          <h4>📁 project_context</h4>
+          <p>项目上下文：当前项目的技术栈、目录结构、命名规范。3000 字符上限。</p>
+        </div>
+        <div class="layer-item">
+          <h4>🎯 active_goals</h4>
+          <p>当前目标：正在进行的任务、待办事项。1500 字符上限，随任务进展更新。</p>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <span class="tag-chip">表: memory_blocks</span>
+        <span class="tag-chip">注入: system → user msg (_memory: true)</span>
+        <span class="tag-chip">XML 格式: &lt;memory_blocks&gt;...</memory_blocks&gt;</span>
+      </div>
+    </div>
+
+    <!-- Layer 1 -->
+    <div class="layer">
+      <div class="layer-header">
+        <span class="layer-badge bg-green">L1</span>
+        <span class="layer-title">Semantic Facts · 语义记忆库</span>
+      </div>
+      <p class="layer-desc">原子级事实陈述（"用户偏好 Tailwind"），由 <code style="font-family:var(--mono);color:var(--accent-2);">extractMemories()</code> 在每轮 done 后异步提取。支持 embedding 向量索引 + FTS5 全文检索双重召回，带重要性评分和时间衰减。</p>
+      <div class="layer-grid">
+        <div class="layer-item">
+          <h4>📝 facts (memories 表)</h4>
+          <p><code>id</code> · <code>content</code> ≤18字 · <code>importance</code> 1-10 · <code>conversation_id</code> · <code>created_at</code></p>
+        </div>
+        <div class="layer-item">
+          <h4>🔢 embeddings</h4>
+          <p>Float32Array 向量。GLM embedding-3 模型，768 维。存储为 BLOB，cosine 相似度暴力 O(n) 计算。</p>
+        </div>
+        <div class="layer-item">
+          <h4>📊 memory_meta</h4>
+          <p><code>weight</code> 衰减权重 · <code>last_used</code> 最后命中时间 · <code>use_count</code> 命中次数</p>
+        </div>
+        <div class="layer-item">
+          <h4>🔗 memory_triples</h4>
+          <p>知识图谱三元组 (S→P→O)。如 <code>用户 → 偏好 → TypeScript</code>。每次提取同步生成。</p>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <span class="tag-chip">表: memories, memory_embeddings, memory_meta, memory_triples</span>
+        <span class="tag-chip">注入: 按需检索 top-N 注入 systemPrompt</span>
+        <span class="tag-chip">触发: done 事件后异步提取</span>
+      </div>
+    </div>
+
+    <!-- Layer 2 -->
+    <div class="layer">
+      <div class="layer-header">
+        <span class="layer-badge bg-pink">L2</span>
+        <span class="layer-title">Episodic Memory · 会话叙事摘要</span>
+      </div>
+      <p class="layer-desc">每次会话 done 后自动提取的叙事摘要（"这次会话做了什么"），与 L1 的原子事实互补。用于跨会话回忆"上次那个 bug 怎么修的"。</p>
+      <div class="layer-grid">
+        <div class="layer-item">
+          <h4>📋 episodic_memories</h4>
+          <p><code>summary</code> 3-5 句话 ≤200字 · <code>importance</code> 1-10 · <code>tags</code> 关键词标签 · <code>conv_id</code></p>
+        </div>
+        <div class="layer-item">
+          <h4>🔑 摘要重点</h4>
+          <ul style="font-size:12px;color:var(--text-dim);line-height:1.8;padding-left:16px;margin-top:4px;">
+            <li>任务目标 + 根因/解决方案</li>
+            <li>改了哪些文件/模块</li>
+            <li>关键决策 + 用户学到什么</li>
+          </ul>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <span class="tag-chip">表: episodic_memories</span>
+        <span class="tag-chip">注入: 最近 5 条注入 systemPrompt 尾部</span>
+      </div>
+    </div>
+
+    <!-- Layer 3 -->
+    <div class="layer">
+      <div class="layer-header">
+        <span class="layer-badge bg-orange">L3</span>
+        <span class="layer-title">Conversation History · 对话全文索引</span>
+      </div>
+      <p class="layer-desc">所有历史对话的 role + content 被写入 FTS5 虚拟表。<code style="font-family:var(--mono);color:var(--accent-2);">recall_memory</code> 工具在此做全文检索，让 Agent 能回忆起任何历史对话片段。</p>
+      <div class="layer-grid">
+        <div class="layer-item">
+          <h4>🔍 history (FTS5)</h4>
+          <p><code>role</code> (user/assistant/shell) · <code>content</code> 全文。MATCH 查询，rowid DESC 排序。</p>
+        </div>
+        <div class="layer-item">
+          <h4>💬 turns + conversations</h4>
+          <p>完整会话结构：<code>turns.data</code> 存 JSON (prompt/answer/steps/cost)。<code>conversations</code> 存引擎/模型/cwd/分支/目标等元数据。</p>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <span class="tag-chip">表: history (FTS5 virtual), conversations, turns</span>
+        <span class="tag-chip">检索: recall_memory 工具 FTS5 MATCH</span>
+      </div>
+    </div>
+
+    <!-- Layer 4 -->
+    <div class="layer">
+      <div class="layer-header">
+        <span class="layer-badge bg-blue">L4</span>
+        <span class="layer-title">Session Anchors · 会话级临时记忆</span>
+      </div>
+      <p class="layer-desc">V2 多步任务的关键产出锚点（文件路径、关键决策、临时文件名），通过 <code style="font-family:var(--mono);color:var(--accent-2);">remember_fact</code> / <code style="font-family:var(--mono);color:var(--accent-2);">recall_fact</code> 工具操作。会话内有效，不参与跨会话同步，防止被 trim/compact 砍掉。</p>
+      <div class="layer-grid">
+        <div class="layer-item">
+          <h4>📌 conv_facts</h4>
+          <p><code>conv_id + key</code> 联合主键 · <code>value</code> 纯文本或 JSON · <code>updated_at</code></p>
+        </div>
+        <div class="layer-item">
+          <h4>🤝 sub-agent 共享</h4>
+          <p>子 agent 也可 <code>recall_fact</code> 跨子任务读取锚点，实现步骤间数据传递。</p>
+        </div>
+      </div>
+      <div style="margin-top:16px;">
+        <span class="tag-chip">表: conv_facts</span>
+        <span class="tag-chip">生命周期: 会话级(随会话消亡)</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 2. Lifecycle Flow ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-green">⚙️</div>
+    <span>记忆生命周期</span>
+    <div class="bar"></div>
+  </div>
+  <p style="color:var(--text-dim);font-size:14px;margin-bottom:24px;max-width:900px;">
+    从用户发送消息到记忆沉淀，完整的写入→检索→注入→维护流水线。
+  </p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-num bg-purple c-purple">1</div>
+      <div class="flow-content">
+        <h4>用户发送消息 → <code style="font-family:var(--mono);font-size:13px;color:var(--accent);">memoryBlock()</code> 构建</h4>
+        <p>
+          <span class="tag bg-purple">L0</span>
+          <span class="tag bg-green">L1</span>
+          <span class="tag bg-pink">L2</span>
+          发送消息时，<code>TaskManager.send()</code> 调用 <code>memoryBlock(conv)</code> 异步构建记忆注入块：
+          ① 加载 Memory Blocks（L0，XML 格式）；
+          ② 取最近 3 轮用户消息拼接为 query，走 <code>recallForInjection()</code> 三级检索（L1）；
+          ③ 查询知识图谱三元组（L1）；
+          ④ 加载最近 5 条 Episodic Memory（L2）。
+          拼成一个 <code>_memory: true</code> 的 user 消息，插入 history 头部（不进 systemPrompt，保持 KV 缓存稳定）。
+        </p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num bg-green c-green">2</div>
+      <div class="flow-content">
+        <h4>Agent 执行 → <code style="font-family:var(--mono);font-size:13px;color:var(--accent-2);">recall_memory</code> 主动检索</h4>
+        <p>
+          <span class="tag bg-orange">L3</span>
+          <span class="tag bg-green">L1</span>
+          Agent 在执行过程中可随时调用 <code>recall_memory</code> 工具，三级检索：
+          <strong class="c-green">Stage 1</strong> — embedding cosine 语义召回 facts（top 20, score > 0.2）；
+          <strong class="c-orange">Stage 2</strong> — FTS5 MATCH 全文检索 history 表 + embedding 重排；
+          <strong class="c-blue">Stage 3</strong> — LIKE 关键词兜底。同时查知识图谱三元组。
+        </p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num bg-pink c-pink">3</div>
+      <div class="flow-content">
+        <h4>回合结束 <code style="font-family:var(--mono);font-size:13px;color:var(--accent-3);">done</code> → 双轨异步提取</h4>
+        <p>
+          <span class="tag bg-green">L1</span>
+          <span class="tag bg-pink">L2</span>
+          <code>applyAndPersist()</code> 在 done 事件后并行触发两个异步提取器（不阻塞主流程）：<br>
+          <strong class="c-green">① extractMemories()</strong> — 发 LLM 提取原子事实 (facts ≤18字 + importance 1-10) 和知识图谱三元组 (S→P→O)。30s 超时，同会话串行化。<br>
+          <strong class="c-pink">② extractEpisodicMemory()</strong> — 发 LLM 生成 3-5 句叙事摘要 + tags + importance。20s 超时。总对话 ≥200 字才触发。
+        </p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num bg-orange c-orange">4</div>
+      <div class="flow-content">
+        <h4>去重 + 存储 → 三级去重策略</h4>
+        <p>
+          <span class="tag bg-green">L1</span>
+          提取的 facts 经三级去重后写入：
+          <strong>① 精确匹配</strong>（快，过滤完全相同的）；
+          <strong>② Jaccard 模糊</strong>（bigram token 相似度 ≥ 0.65 视为重复）；
+          <strong>③ Embedding 语义</strong>（cosine ≥ 0.85，最准但需异步）。
+          通过的写入 <code>memories</code> 表 + 异步生成 embedding 向量存入 <code>memory_embeddings</code>。
+        </p>
+      </div>
+    </div>
+
+    <div class="flow-step">
+      <div class="flow-num bg-blue c-blue">5</div>
+      <div class="flow-content">
+        <h4>记忆 GC → <code style="font-family:var(--mono);font-size:13px;color:var(--accent-5);">runIdleReflection()</code></h4>
+        <p>
+          每 5 次 done 事件触发一次 idle reflection（纯规则，不调 LLM）：
+          ① <code>dedupMemories(0.65)</code> — 全量扫描，Jaccard ≥ 0.65 的删除后来者；
+          ② <code>decayMemories()</code> — weight ×= 0.95<sup>days</sup>，weight &lt; 0.1 的连同 embedding + meta 一起删除；
+          ③ <code>pruneLowImportanceMemories(2)</code> — importance ≤ 2 且从未被 recall 命中 (use_count=0) 的直接删除。
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 3. Retrieval Scoring ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-pink">📐</div>
+    <span>记忆检索评分公式</span>
+    <div class="bar"></div>
+  </div>
+  <p style="color:var(--text-dim);font-size:14px;margin-bottom:24px;">
+    L1 语义记忆库注入时的排序策略：<code style="font-family:var(--mono);color:var(--accent-2);">scoredMemories()</code> 对每条记忆计算加权得分。
+  </p>
+
+  <div class="formula">
+    <div class="eq">
+      score = <span class="w c-purple">importance</span> × 0.5 + <span class="w c-green">recency</span> × 0.3 + <span class="w c-pink">relevance</span> × 0.2
+    </div>
+    <div class="formula-weights">
+      <div class="formula-weight">
+        <div class="pct c-purple">50%</div>
+        <div class="name">Importance</div>
+        <div class="desc">LLM 提取时打分 1-10，归一化到 0-1。核心偏好/技术栈 = 8-10，一般习惯 = 5-7，边缘信号 = 2-4。</div>
+      </div>
+      <div class="formula-weight">
+        <div class="pct c-green">30%</div>
+        <div class="name">Recency</div>
+        <div class="desc">指数衰减：e<sup>-(now - lastUsed) / 30天</sup>。30 天半衰期，被 recall 命中会刷新 lastUsed。</div>
+      </div>
+      <div class="formula-weight">
+        <div class="pct c-pink">20%</div>
+        <div class="name">Relevance</div>
+        <div class="desc">Embedding cosine 相似度（0-1）。无 embedding 接口时回退 LIKE 匹配（命中=0.5，不命中=0）。</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 4. Recall Pipeline ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-orange">🔍</div>
+    <span>recall_memory 三级检索管线</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="pipeline">
+    <div class="pipeline-step">
+      <div class="step-num c-green">STAGE 1</div>
+      <h5 class="c-green">Embedding Cosine</h5>
+      <p>对 memories 表的所有存储向量做 cosine top-K。score > 0.2，取 top 20。命中 ≥ 3 条则返回。同时 touch 权重。</p>
+    </div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step">
+      <div class="step-num c-orange">STAGE 2</div>
+      <h5 class="c-orange">FTS5 + Embedding Rerank</h5>
+      <p>Stage 1 不足 3 条时，对 history 表 FTS5 MATCH 召回 30 条，实时算 embedding 重排。+ LIKE 搜 memories 表。</p>
+    </div>
+    <div class="pipeline-arrow">→</div>
+    <div class="pipeline-step fallback">
+      <div class="step-num c-blue">FALLBACK</div>
+      <h5 class="c-blue">Recent-N</h5>
+      <p>无 query 或检索全空时，直接取最新 N 条 memories（按 created_at DESC）。保证总有内容注入。</p>
+    </div>
+  </div>
+
+  <div class="table-card" style="margin-top:24px;">
+    <table>
+      <thead><tr><th>策略</th><th>目标表</th><th>机制</th><th>触发条件</th><th>延迟</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong class="c-green">Embedding Cosine</strong></td>
+          <td><code>memories</code> + <code>memory_embeddings</code></td>
+          <td>768 维 Float32Array，暴力 O(n) cosine</td>
+          <td>有 query + 有 embedding 数据</td>
+          <td>~50ms (3607 条)</td>
+        </tr>
+        <tr>
+          <td><strong class="c-orange">FTS5 MATCH</strong></td>
+          <td><code>history</code></td>
+          <td>SQLite FTS5 全文索引，rowid DESC</td>
+          <td>Stage 1 不足 或 recall_memory 兜底</td>
+          <td>~5ms</td>
+        </tr>
+        <tr>
+          <td><strong class="c-purple">LIKE 模糊</strong></td>
+          <td><code>memories</code></td>
+          <td>content LIKE %q%，importance DESC 排序</td>
+          <td>无 embedding 接口时</td>
+          <td>~10ms</td>
+        </tr>
+        <tr>
+          <td><strong class="c-blue">Recent-N</strong></td>
+          <td><code>memories</code></td>
+          <td>created_at DESC LIMIT N</td>
+          <td>无 query / 全空</td>
+          <td>~2ms</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ 5. Extraction Prompts ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-blue">🧠</div>
+    <span>记忆提取 Prompt 架构</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="two-col">
+    <div>
+      <h4 style="color:var(--accent-2);font-size:15px;margin-bottom:12px;">① extractMemories · 原子事实提取</h4>
+      <div class="code-block">
+<span class="cmt">// 触发: done 事件后, answer.length > 15</span>
+<span class="cmt">// 超时: 30s, 同会话串行化</span>
+
+<span class="kw">System</span>:
+你是记忆提取器。从这轮对话里提取
+【关于用户本人】的持久事实 ——
+身份、职业、偏好、习惯、技术栈、
+家庭/宠物、城市、工具链、长期项目。
+
+<span class="kw">输出 JSON</span>:
+{
+  <span class="str">"facts"</span>: [{
+    <span class="str">"text"</span>: <span class="str">"≤18字陈述句"</span>,
+    <span class="str">"importance"</span>: <span class="num">1-10</span>
+  }],
+  <span class="str">"triples"</span>: [{
+    <span class="str">"s"</span>: 主语,
+    <span class="str">"p"</span>: 谓语,
+    <span class="str">"o"</span>: 宾语
+  }]
+}
+
+<span class="cmt">// 不提取: 一次性细节、时间敏感信息</span>
+<span class="cmt">// importance: 核心偏好=8-10, 习惯=5-7, 边缘=2-4</span>
+
+<span class="kw">User</span>:
+用户: <span class="str">${prompt}</span>
+助手: <span class="str">${answer.slice(0, 2000)}</span>
+      </div>
+    </div>
+
+    <div>
+      <h4 style="color:var(--accent-3);font-size:15px;margin-bottom:12px;">② extractEpisodicMemory · 会话叙事摘要</h4>
+      <div class="code-block">
+<span class="cmt">// 触发: done 后, meaningful turns ≥ 1, total ≥ 200字</span>
+<span class="cmt">// 超时: 20s</span>
+
+<span class="kw">System</span>:
+你是会话摘要器。把多轮对话压缩成
+3-5 句话的叙事摘要。
+
+<span class="kw">重点</span>:
+1. 任务目标是什么?
+2. 根因/解决方案是什么?
+3. 改了哪些文件/模块?
+4. 用户学到了什么 / 什么决策值得记住?
+
+<span class="kw">输出 JSON</span>:
+{
+  <span class="str">"summary"</span>: <span class="str">"3-5句话 ≤200字"</span>,
+  <span class="str">"importance"</span>: <span class="num">1-10</span>,
+  <span class="str">"tags"</span>: [<span class="str">"bug-fix"</span>, <span class="str">"concurrency"</span>]
+}
+
+<span class="cmt">// 日常问答=1-3, 修bug=5-7, 架构改动=8-10</span>
+
+<span class="kw">User</span>:
+<span class="str">${最近5轮对话, 每轮截取prompt 300字 + answer 500字}</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 6. Database Schema ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-purple">🗄️</div>
+    <span>数据库表结构</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="table-card">
+    <table>
+      <thead><tr><th>表名</th><th>层级</th><th>用途</th><th>关键字段</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><code class="c-purple">memory_blocks</code></td>
+          <td><span class="type bg-purple">L0</span></td>
+          <td>结构化核心记忆（XML 注入）</td>
+          <td><code>label</code>(PK) · <code>value</code> · <code>char_limit</code> · <code>read_only</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-green">memories</code></td>
+          <td><span class="type bg-green">L1</span></td>
+          <td>原子事实流（追加式）</td>
+          <td><code>id</code>(PK) · <code>content</code> · <code>importance</code> · <code>conversation_id</code> · <code>created_at</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-green">memory_embeddings</code></td>
+          <td><span class="type bg-green">L1</span></td>
+          <td>语义向量索引</td>
+          <td><code>memory_id</code>(PK) · <code>vec</code>(BLOB Float32) · <code>model</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-green">memory_meta</code></td>
+          <td><span class="type bg-green">L1</span></td>
+          <td>衰减权重 / 使用统计</td>
+          <td><code>memory_id</code>(PK) · <code>weight</code> · <code>last_used</code> · <code>use_count</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-green">memory_triples</code></td>
+          <td><span class="type bg-green">L1</span></td>
+          <td>知识图谱三元组</td>
+          <td><code>id</code>(PK) · <code>subject</code> · <code>predicate</code> · <code>object</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-pink">episodic_memories</code></td>
+          <td><span class="type bg-pink">L2</span></td>
+          <td>会话叙事摘要</td>
+          <td><code>id</code>(PK) · <code>conv_id</code> · <code>summary</code> · <code>importance</code> · <code>tags</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-orange">history</code></td>
+          <td><span class="type bg-orange">L3</span></td>
+          <td>FTS5 全文索引（对话原文）</td>
+          <td><code>role</code> · <code>content</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-orange">conversations</code></td>
+          <td><span class="type bg-orange">L3</span></td>
+          <td>会话元数据</td>
+          <td><code>id</code>(PK) · <code>engine</code> · <code>cwd</code> · <code>model</code> · <code>branch_info</code> · <code>goal</code> · <code>context_mode</code> · <code>persona_enabled</code></td>
+        </tr>
+        <tr>
+          <td><code class="c-orange">turns</code></td>
+          <td><span class="type bg-orange">L3</span></td>
+          <td>单轮对话数据（JSON）</td>
+          <td><code>id</code>(PK) · <code>conv_id</code> · <code>data</code>(JSON: prompt/answer/steps/cost)</td>
+        </tr>
+        <tr>
+          <td><code class="c-blue">conv_facts</code></td>
+          <td><span class="type bg-blue">L4</span></td>
+          <td>会话级 KV 锚点</td>
+          <td><code>conv_id</code> + <code>key</code>(PK) · <code>value</code> · <code>updated_at</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ 7. Injection Topology ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-green">💉</div>
+    <span>注入拓扑 — 记忆如何进入上下文</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="code-block">
+<span class="cmt">// AgentLoop.ts — 记忆注入的核心逻辑</span>
+
+<span class="cmt">// 记忆块作为 history 头部 user 消息(不进 systemPrompt,保持 KV cache 稳定)</span>
+<span class="kw">const</span> memMsg: ChatMsg[] = memoryBlock?.trim()
+  ? [{ <span class="str">role</span>: <span class="str">"user"</span>, <span class="str">content</span>: memoryBlock, <span class="str">_memory</span>: <span class="kw">true</span> }]
+  : [];
+
+<span class="kw">let</span> messages: ChatMsg[] = [
+  { <span class="str">role</span>: <span class="str">"system"</span>, <span class="str">content</span>: systemPrompt },  <span class="cmt">// Direct 系统提示</span>
+  ...memMsg,                                              <span class="cmt">// ← 记忆注入位置</span>
+  ...history,                                             <span class="cmt">// directHistory 对话</span>
+];
+
+<span class="cmt">// memoryBlock 内容结构 (memoryBlock() 函数生成):</span>
+<span class="cmt">// ┌──────────────────────────────────────────────┐</span>
+<span class="cmt">// │ <memory_blocks>                              │ ← L0: 每轮固定注入</span>
+<span class="cmt">// │   <persona>用户做事风格...</persona>           │</span>
+<span class="cmt">// │   <user_profile>偏好/习惯...</user_profile>    │</span>
+<span class="cmt">// │   <project_context>项目信息...</project_context>│</span>
+<span class="cmt">// │   <active_goals>当前目标...</active_goals>     │</span>
+<span class="cmt">// │ </memory_blocks>                             │</span>
+<span class="cmt">// │                                              │</span>
+<span class="cmt">// │ ## 关于用户(长期记忆,回答时参考)              │ ← L1: 检索 top-N</span>
+<span class="cmt">// │ - 用户偏好 TypeScript                        │</span>
+<span class="cmt">// │ - 用户在做 KinetAios 项目                    │</span>
+<span class="cmt">// │ ...(共 3607 条,注入 15 条)                   │</span>
+<span class="cmt">// │                                              │</span>
+<span class="cmt">// │ ## 用户知识图谱(语义关系)                    │ ← L1: 三元组</span>
+<span class="cmt">// │ - 用户 —偏好→ Tailwind                       │</span>
+<span class="cmt">// │                                              │</span>
+<span class="cmt">// │ ## 最近会话摘要                              │ ← L2: 最近 5 条</span>
+<span class="cmt">// │ - [2026-08-06] (⭐6) 修复聊天界面抖动...      │</span>
+<span class="cmt">// │                                              │</span>
+<span class="cmt">// │ ## 当前工作目录                              │</span>
+<span class="cmt">// │ /Users/phinn/Documents/kinet/KinetAiosWin    │</span>
+<span class="cmt">// └──────────────────────────────────────────────┘</span>
+  </div>
+</div>
+
+<!-- ═══ 8. Agent Tools ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-pink">🛠️</div>
+    <span>Agent 记忆工具链</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="feature-grid">
+    <div class="feature-card">
+      <div class="emoji">🔍</div>
+      <h4>recall_memory</h4>
+      <p>语义搜索历史记忆。三级检索管线：embedding cosine → FTS5 + rerank → 关键词兜底。同时查知识图谱三元组。</p>
+      <div class="tags">
+        <span class="tag-chip">readOnly</span>
+        <span class="tag-chip">L1 + L3</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">🔄</div>
+      <h4>memory_replace</h4>
+      <p>覆盖更新核心记忆块（L0）。指定 block 名（user_profile / project_context / active_goals），完整替换内容。persona 块只读。</p>
+      <div class="tags">
+        <span class="tag-chip">write</span>
+        <span class="tag-chip">L0</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">➕</div>
+      <h4>memory_append</h4>
+      <p>向核心记忆块末尾追加内容（不覆盖）。超 char_limit 时从头部截断。</p>
+      <div class="tags">
+        <span class="tag-chip">write</span>
+        <span class="tag-chip">L0</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">📌</div>
+      <h4>remember_fact</h4>
+      <p>保存会话级 KV 锚点（L4）。key 在 conv 内唯一，value 纯文本或 JSON。防止被 trim/compact 砍掉。</p>
+      <div class="tags">
+        <span class="tag-chip">write</span>
+        <span class="tag-chip">L4</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">📖</div>
+      <h4>recall_fact</h4>
+      <p>读取会话级锚点。key 不存在返回 "(无此 key)"。子 agent 也可调用，跨子任务共享。</p>
+      <div class="tags">
+        <span class="tag-chip">readOnly</span>
+        <span class="tag-chip">L4</span>
+      </div>
+    </div>
+    <div class="feature-card">
+      <div class="emoji">🧬</div>
+      <h4>generatePersona</h4>
+      <p>分析 200 轮历史 + 200 条记忆，LLM 生成用户做事风格画像（沟通风格/技术栈/工作偏好/决策模式/替身指令），写入 persona block。</p>
+      <div class="tags">
+        <span class="tag-chip">LLM 调用</span>
+        <span class="tag-chip">60s 超时</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 9. Cross-Engine Injection ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-orange">🔀</div>
+    <span>跨引擎记忆注入</span>
+    <div class="bar"></div>
+  </div>
+  <p style="color:var(--text-dim);font-size:14px;margin-bottom:24px;max-width:900px;">
+    记忆系统的输出 <code style="font-family:var(--mono);color:var(--accent-2);">memoryBlock</code> 会被注入到三种引擎的不同位置：
+  </p>
+
+  <div class="table-card">
+    <table>
+      <thead><tr><th>引擎</th><th>注入位置</th><th>机制</th><th>记忆生效范围</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong class="c-purple">Direct (Kaios)</strong></td>
+          <td>history 头部 user msg</td>
+          <td><code>_memory: true</code> 标记，不进 systemPrompt</td>
+          <td>当前轮 + reactive trim 管理</td>
+        </tr>
+        <tr>
+          <td><strong class="c-green">Claude Code</strong></td>
+          <td><code>--append-system-prompt</code></td>
+          <td>记忆块拼到 CLI flag 尾部</td>
+          <td>整个 CLI session</td>
+        </tr>
+        <tr>
+          <td><strong class="c-pink">Codex</strong></td>
+          <td>prompt 前缀</td>
+          <td>记忆块 prepend 到用户输入前面</td>
+          <td>单次 <code>codex exec</code> 调用</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<!-- ═══ 10. Dedup + Decay ═══ -->
+<div class="section">
+  <div class="section-title">
+    <div class="icon bg-blue">♻️</div>
+    <span>去重与衰减策略</span>
+    <div class="bar"></div>
+  </div>
+
+  <div class="two-col">
+    <div class="feature-card" style="margin:0;">
+      <div class="emoji">🔀</div>
+      <h4>三级去重 (extractMemories 写入时)</h4>
+      <ul>
+        <li><strong class="c-purple">精确匹配</strong> — 完全相同直接跳过</li>
+        <li><strong class="c-green">Jaccard 模糊</strong> — bigram token 相似度 ≥ 0.65。先 norm（去前缀/括号/空格），再取 max(包含比, bigram Jaccard)</li>
+        <li><strong class="c-pink">Embedding 语义</strong> — cosine ≥ 0.85。异步执行，全失败也回退文字去重</li>
+      </ul>
+      <p style="margin-top:12px;font-size:12px;">dedupMemories(0.65) 在 idle reflection 时再次全局扫描。</p>
+    </div>
+    <div class="feature-card" style="margin:0;">
+      <div class="emoji">📉</div>
+      <h4>指数衰减 (decayMemories)</h4>
+      <ul>
+        <li><strong>公式</strong>：<code>weight ×= 0.95^days</code></li>
+        <li><strong>删除阈值</strong>：weight &lt; 0.1 → 连同 memory + embedding + meta 一起删</li>
+        <li><strong>刷新机制</strong>：recall_memory 命中时 <code>touchMemoryUsed()</code> 更新 last_used + use_count</li>
+        <li><strong>低价值清理</strong>：importance ≤ 2 且 use_count = 0 → 直接删</li>
+      </ul>
+      <p style="margin-top:12px;font-size:12px;">每 5 次 done 事件触发一次 idle reflection。</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Footer ═══ -->
+<div class="footer">
+  <div class="logo"><span class="grad">KinetAios</span> Memory Engine</div>
+  <p>SQLite + FTS5 + Embedding Vector · 10 Tables · 5 Layers · 3 Retrieval Strategies</p>
+  <p style="margin-top:8px;font-size:12px;">Source: store.ts · TaskManager.ts · AgentLoop.ts · tools.ts</p>
+</div>
+
+</div>
+</body>
+</html>
