@@ -1942,36 +1942,8 @@ function registerIpc(): void {
   });
 
   // 用户语音 → 转发给当前活跃频道的 Agent 执行
-  voiceChat.onUserMessage(async (text: string) => {
-    // 找到最近活跃的频道(最后一个非 running 的,或列表第一个)
-    const convs = taskManager.list();
-    if (convs.length === 0) {
-      voiceChat.agentResult('当前没有活跃的聊天频道。');
-      return;
-    }
-    // 取第一个频道作为活跃频道(与 dashboard 列表顺序一致)
-    const conv = convs[0];
-    if (conv.status === 'running') {
-      voiceChat.agentResult('频道正在执行任务中,请稍候。');
-      return;
-    }
-    // 监听 Agent 完成 — 通过 emitter 的 emitConversation 检测 turn.done
-    const checkInterval = setInterval(() => {
-      const updated = taskManager.list().find((c) => c.id === conv.id);
-      if (!updated) return;
-      const lastTurn = updated.turns[updated.turns.length - 1];
-      if (lastTurn && lastTurn.done) {
-        clearInterval(checkInterval);
-        const answer = lastTurn.answer || lastTurn.error || '(无回复)';
-        // 截取前 2000 字(太长语音播不完)
-        voiceChat.agentResult(answer.slice(0, 2000));
-      }
-    }, 500);
-    // 超时清理(60s)
-    setTimeout(() => clearInterval(checkInterval), 60_000);
-    // 发给 Agent
-    taskManager.send(conv.id, text);
-  });
+  // 注意:实际的 onUserMessage 注册在 voice-chat-start handler 中,因为需要注入项目上下文。
+  // 此处不再重复注册(旧版本会被 handler 内的新版本覆盖,但留着是 dead code + 混淆)。
 
   ipcMain.handle('voice-chat-start', async () => {
     const s = getSettings();
@@ -2016,9 +1988,18 @@ function registerIpc(): void {
           voiceChat.agentResult('上一个任务还在执行中,请稍等。');
           return;
         }
+        // 记录当前 turn 数,send 之后新增的 turn 才是本次语音触发的。
+        const turnCountBefore = conv.turns.length;
         console.log('[VoiceChat] 🔄 转发给 Agent:', text, 'convId:', conv.id);
         try {
           await taskManager.send(conv.id, text);
+          // send 在 status=running 时静默返回(turn 不会新增)→ 不要启动 poll
+          const convAfter = taskManager.get(conv.id);
+          if (!convAfter || convAfter.turns.length === turnCountBefore) {
+            console.log('[VoiceChat] ⚠️ send 未创建新 turn(status 可能已变),取消 poll');
+            voiceChat.agentResult('发送失败,频道可能正忙,请稍后重试。');
+            return;
+          }
           // 轮询检测 turn 完成,最多等 60s
           // Poll for turn completion, max 60s
           const start = Date.now();
