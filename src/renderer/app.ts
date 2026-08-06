@@ -1477,7 +1477,6 @@ function renderHead(conv: Conversation | undefined) {
   if (personaBtn) {
     const enabled = conv.personaEnabled !== false;
     personaBtn.classList.toggle('active', enabled);
-    personaBtn.style.opacity = enabled ? '1' : '0.4';
     personaBtn.style.display = '';
   }
 }
@@ -3322,7 +3321,6 @@ function closeMoreMenu() {
       const newEnabled = !(conv?.personaEnabled !== false);
       void api.setPersonaEnabled(selectedId, newEnabled);
       personaBtn.classList.toggle('active', newEnabled);
-      personaBtn.style.opacity = newEnabled ? '1' : '0.4';
     };
   }
   // 清除目标:发送 /goal(无参数)清除
