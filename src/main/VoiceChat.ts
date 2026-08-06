@@ -396,9 +396,11 @@ export class VoiceChat {
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
-            const results = json.results as Array<{ text?: string }> | undefined;
+            const results = json.results as Array<{ text?: string; is_interim?: boolean }> | undefined;
             if (results && results.length > 0) {
               const text = results.map((r) => r.text || '').join('');
+              const isInterim = results[0]?.is_interim;  // 诊断:读取是否中间结果
+              console.log('[VoiceChat] 📝 ASR 451:', JSON.stringify(text).slice(0, 80), 'is_interim=', isInterim);
               if (text) {
                 this.lastUserText = text;  // 累积最新文本
                 this.emit({ type: 'userText', text });
@@ -441,6 +443,7 @@ export class VoiceChat {
         break;
 
       case 459: // ASREnded — 用户说话结束,触发 Agent 查询
+        console.log('[VoiceChat] 🔔 ASREnded 到达, lastUserText:', JSON.stringify(this.lastUserText), 'hasCb:', !!this.userMsgCb);
         if (this.lastUserText && this.userMsgCb) {
           const msg = this.lastUserText;
           this.lastUserText = '';
@@ -459,7 +462,12 @@ export class VoiceChat {
       }
 
       default:
-        // 未知事件号,忽略
+        // 未知事件号 — 打印诊断(仅 ≤512B 的消息,避免音频刷屏)
+        if (payload && payload.length <= 512) {
+          console.log(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload.toString('utf-8').slice(0, 150)}`);
+        } else {
+          console.log(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload?.length || 0}B`);
+        }
         break;
     }
   }
