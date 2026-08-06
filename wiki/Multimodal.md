@@ -24,7 +24,7 @@ Provider receives: [{type:"text", text:"What's wrong with this UI?"},
                     {type:"image_url", image_url:{url:"data:image/png;base64,..."}}]
 ```
 
-## Voice input
+## Voice input (Whisper transcription)
 
 🎤 button in the composer:
 
@@ -33,6 +33,8 @@ Provider receives: [{type:"text", text:"What's wrong with this UI?"},
 3. Sent to **OpenAI Whisper API** (`whisper-1` model) for transcription.
 4. Transcribed text fills the composer input.
 5. Requires an OpenAI-compatible endpoint (Whisper is OpenAI-only).
+
+> **For realtime voice conversation** (bidirectional, natural TTS, Agent tool execution), see [[Voice-Chat]].
 
 **TTS (Text-to-Speech)**:
 

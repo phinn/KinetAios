@@ -45,6 +45,7 @@ See [[Getting-Started]] for details.
 | Workbench (project card overview) | 📂 button | [[Workbench]] |
 | Dashboard (cost/token analytics) | 📊 button | [[Dashboard]] |
 | Town view (remote node visualization) | 🏘️ button | [[Town]] |
+| Realtime voice chat (Doubao WS) | 🎤 in chat | [[Voice-Chat]] |
 | Multimodal (image + voice + screenshot) | 📎 / 🎤 / 📸 in chat | [[Multimodal]] |
 | Global search (all conversations) | `Ctrl/Cmd+K` | [[Global-Search]] |
 | Settings (API / Behavior / Pricing / Interface / Memory) | ⚙ button | [[Settings]] |

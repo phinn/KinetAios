@@ -24,7 +24,7 @@ Provider 收到:[{type:"text", text:"这个 UI 有什么问题?"},
                {type:"image_url", image_url:{url:"data:image/png;base64,..."}}]
 ```
 
-## 语音输入
+## 语音输入(Whisper 转写)
 
 输入框 🎤 按钮:
 
@@ -33,6 +33,8 @@ Provider 收到:[{type:"text", text:"这个 UI 有什么问题?"},
 3. 发送到 **OpenAI Whisper API**(`whisper-1` 模型)转写。
 4. 转写文本填入输入框。
 5. 需要 OpenAI 兼容端点(Whisper 是 OpenAI 专有)。
+
+> **实时语音对话**(双向、自然 TTS、Agent 工具执行)请看 [[Voice-Chat]]。
 
 **TTS(文本转语音)**:
 

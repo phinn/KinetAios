@@ -45,6 +45,7 @@ npm start
 | 工作台(项目卡片概览) | 📂 按钮 | [[Workbench]] |
 | 仪表盘(成本/token 分析) | 📊 按钮 | [[Dashboard]] |
 | Town 视图(远程节点可视化) | 🏘️ 按钮 | [[Town]] |
+| 实时语音对话(豆包 WS) | 聊天区 🎤 | [[Voice-Chat]] |
 | 多模态(图片 + 语音 + 截图) | 聊天区 📎 / 🎤 / 📸 | [[Multimodal]] |
 | 全局搜索(所有会话) | `Ctrl/Cmd+K` | [[Global-Search]] |
 | 设置(API / 行为 / 价格 / 界面 / 记忆) | ⚙ 按钮 | [[Settings]] |

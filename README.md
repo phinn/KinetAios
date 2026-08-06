@@ -128,7 +128,8 @@ Chain multiple stages, each specifying an engine + prompt. Previous stage's outp
 
 ### Multimodal (Direct engine)
 - **Image input**: 📎 select/paste images → vision content parts → OpenAI `image_url` or Anthropic base64 format.
-- **Voice**: 🎤 record → Whisper transcription → fills composer. TTS via `speechSynthesis` (auto language detection, 2000-char limit).
+- **Voice transcription**: 🎤 record → Whisper transcription → fills composer.
+- **Realtime voice chat**: 🎤 → bidirectional WS conversation with Volcengine Doubao — natural TTS, live transcription, parallel Agent tool execution. See [Voice Chat wiki](https://github.com/phinn/KinetAios/wiki/Voice-Chat).
 - **Screenshot**: 📸 overlay → drag-select region → cropped image injected into prompt.
 
 ### Global search

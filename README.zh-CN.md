@@ -122,7 +122,8 @@ npm start
 
 ### 多模态(Direct 引擎)
 - **图片输入**:📎 选/粘贴图片 → vision content parts → OpenAI `image_url` 或 Anthropic base64 格式。
-- **语音**:🎤 录音 → Whisper 转写 → 填入输入框。TTS 走 `speechSynthesis`(自动语言检测,2000 字截断)。
+- **语音转写**:🎤 录音 → Whisper 转写 → 填入输入框。
+- **实时语音对话**:🎤 → 火山引擎豆包 WS 双向语音——自然 TTS、实时转写、并行 Agent 工具执行。详见 [语音对话 wiki](https://github.com/phinn/KinetAios/wiki/Voice-Chat)。
 - **截图**:📸 overlay → 拖拽选区 → 裁剪图片注入 prompt。
 
 ### 全局搜索

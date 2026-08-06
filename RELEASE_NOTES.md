@@ -1,5 +1,58 @@
 # Release Notes
 
+## v2.4.0 — 实时语音对话 & 安全加固
+
+**发布日期：** 2026-08-06
+
+语音链路从零到可用，加上安全加固。
+
+---
+
+### 🎙️ 实时语音对话（新）
+
+火山引擎豆包实时语音大模型 WebSocket 集成：
+
+- **全链路语音** — 说话→ASR 转写→豆包 LLM→自然 TTS，端到端低延迟
+- **并行 Agent 执行** — ASR 文本同时转发给本地 Agent 引擎执行工具（shell/文件等），结果通过 WS 注入豆包 TTS 朗读
+- **项目上下文注入** — 自动读取当前 cwd + 最近 3 轮对话作为 system_role
+- **频道绑定** — 语音会话绑定到发起时的活跃频道，Agent 结果进主聊天窗口
+- **并发保护** — `agentBusy` 锁 + 双重检查，防 ASR 交错触发
+- **音频串行播放** — drainPlayQueue 队列，Agent TTS 等豆包 TTS 播完再注入
+
+### 🔒 安全加固
+
+- **webview-inspect 白名单化** — 从接受任意 JS 脚本改为 action 白名单，采集逻辑迁移到主进程
+- **MCP CORS 收紧** — 从 `*` 改为白名单
+
+### 🐛 重要修复
+
+- **GLM API 500** — 孤儿 surrogate 字符导致 Python 服务端编码失败，请求前清洗
+- **DirectV2 crash recovery 误触发** — `finalizeContext` 异常导致 final checkpoint 未存，下次 send 恢复旧 plan 忽略新指令
+- **agentBusy 死锁** — ASR 回调 async fire-and-forget 异常导致锁永不释放
+- **语音消息发到错误频道** — `onUserMessage` 硬编码 `convs[0]` 改为传入 convId
+
+---
+
+## v2.0.0 — 架构级升级
+
+**发布日期：** 2026-07-28
+
+**从 v1.6.0 到 v2.0.0 — 133 commits。**
+
+> 📄 详细发版说明见 [release-notes-v2.0.0.md](documents/release-notes-v2.0.0.md)
+
+---
+
+### 🔥 核心新特性
+
+- **DirectV2 引擎** — Plan · Execute · Verify · Judge 四层架构，Crash Recovery，三级压缩 fallback
+- **Agent Teams** — 多 Agent 团队协作（`spawn_team` / `team_broadcast` / `team_send`）
+- **记忆系统升级** — 三层架构（FTS5 + embedding + LLM 提取），去重链路（精确→Jaccard→cosine 0.85）
+- **会话级替身画像（Persona）** — 🧬 toggle，每会话独立持久化
+- **跨引擎上下文摘要** — 切换引擎时自动注入历史摘要
+
+---
+
 ## v1.4.0 — 协作增强 & 可视化全面升级
 
 **发布日期：** 2026-07-16
