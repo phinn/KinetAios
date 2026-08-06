@@ -766,7 +766,7 @@ export interface KinetAPI {
 
   // ── 实时语音助手(豆包实时语音大模型)──
   /** 启动语音会话(连接 WebSocket) */
-  voiceChatStart(): Promise<{ ok: boolean; error?: string }>;
+  voiceChatStart(convId: string): Promise<{ ok: boolean; error?: string }>;
   /** 停止语音会话(断开 WebSocket) */
   voiceChatStop(): Promise<{ ok: boolean }>;
   /** 发送麦克风音频(PCM 16kHz 16-bit mono Buffer) */

@@ -4242,8 +4242,14 @@ async function startVoiceChat(): Promise<void> {
   document.getElementById('vc-status')!.textContent = tr('voice.chatConnecting');
   document.getElementById('vc-orb')!.className = 'vc-orb connecting';
 
-  // 连接 WebSocket(在 main 进程)
-  const result = await api.voiceChatStart();
+  // 连接 WebSocket(在 main 进程),传入当前活跃频道 ID
+  const activeId = getActiveConvId();
+  if (!activeId) {
+    document.getElementById('vc-status')!.textContent = '❌ 没有活跃频道';
+    document.getElementById('vc-orb')!.className = 'vc-orb error';
+    return;
+  }
+  const result = await api.voiceChatStart(activeId);
   if (!result.ok) {
     document.getElementById('vc-status')!.textContent = '❌ ' + (result.error || tr('voice.chatConnFail'));
     document.getElementById('vc-orb')!.className = 'vc-orb error';

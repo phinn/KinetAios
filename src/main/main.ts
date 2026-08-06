@@ -1945,16 +1945,15 @@ function registerIpc(): void {
   // 注意:实际的 onUserMessage 注册在 voice-chat-start handler 中,因为需要注入项目上下文。
   // 此处不再重复注册(旧版本会被 handler 内的新版本覆盖,但留着是 dead code + 混淆)。
 
-  ipcMain.handle('voice-chat-start', async () => {
+  ipcMain.handle('voice-chat-start', async (_e, convId: string) => {
     const s = getSettings();
     if (!s.voiceChat?.appId || !s.voiceChat?.accessToken) {
       return { ok: false, error: '缺少 App ID 或 Access Token,请在设置中配置' };
     }
     try {
-      // 从当前活跃会话提取项目上下文,注入语音对话的 system_role
-      // Extract project context from active conversation to inject into voice dialog system_role
-      const convs = taskManager.list();
-      const activeConv = convs.length > 0 ? convs[0] : null;
+      // 从语音发起的频道提取项目上下文,注入语音对话的 system_role
+      // Extract project context from the conversation where voice was triggered
+      const activeConv = taskManager.get(convId) || null;
       let contextHint: string | undefined;
       if (activeConv?.cwd) {
         const projName = activeConv.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || activeConv.cwd;
@@ -1978,12 +1977,13 @@ function registerIpc(): void {
       // 设置 Agent 桥接:用户说完话 → ASR 文本转给 Agent → Agent 结果回传语音
       // Agent bridge: user speech → ASR text to Agent → Agent result spoken back
       voiceChat.onUserMessage(async (text: string) => {
-        const convs = taskManager.list();
-        if (convs.length === 0) {
-          voiceChat.agentResult('当前没有活跃的对话频道,请先创建一个。');
+        // 使用语音发起时的频道,而非列表第一个
+        // Use the conversation that was active when voice chat was started
+        const conv = taskManager.get(convId);
+        if (!conv) {
+          voiceChat.agentResult('频道不存在,请重新打开语音对话。');
           return;
         }
-        const conv = convs[0];
         // P0: double-check conv.status — agentBusy 在 VoiceChat case 459 中已设,
         // 但两个 ASR 事件可能近乎同时到达,这里做第二道防线
         if (conv.status === 'running') {

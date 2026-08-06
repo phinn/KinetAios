@@ -150,7 +150,7 @@ const api: KinetAPI = {
   savePersona: (persona: string) => ipcRenderer.invoke('save-persona', persona),
 
   // ── 实时语音助手(豆包实时语音大模型)──
-  voiceChatStart: () => ipcRenderer.invoke('voice-chat-start'),
+  voiceChatStart: (convId: string) => ipcRenderer.invoke('voice-chat-start', convId),
   voiceChatStop: () => ipcRenderer.invoke('voice-chat-stop'),
   voiceChatSendAudio: (pcm: ArrayBuffer) => ipcRenderer.invoke('voice-chat-send-audio', arrayBufferToBase64(pcm)),
   voiceChatState: () => ipcRenderer.invoke('voice-chat-state'),
