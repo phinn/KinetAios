@@ -4213,11 +4213,10 @@ function wireVoiceChat(): void {
         break;
       case 'agentReply': {
         // Agent 执行结果(来自当前频道的 AgentLoop)
-        // 在 AI 文本区显示(覆盖豆包的通用回复,因为 Agent 结果更准确)
-        vcAiText = ev.text;
+        // 旁路模式:不覆盖豆包回复文本,不朗读(用户已听到豆包 TTS)
+        // 在 AI 文本区追加 Agent 结果,用分隔线区分
+        vcAiText = vcAiText ? vcAiText + '\n─── Agent ───\n' + ev.text : ev.text;
         document.getElementById('vc-ai-text')!.textContent = vcAiText;
-        // 自动朗读 Agent 结果(系统级 TTS,零依赖)
-        speakText(ev.text);
         break;
       }
       case 'aiAudio':

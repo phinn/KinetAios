@@ -371,19 +371,16 @@ export class VoiceChat {
         break;
 
       case 350:  // TTSSentenceStart → AI 开始说话
-        if (this.userMsgCb) break;  // 桥接模式:忽略豆包 TTS
         this.setState('speaking');
         break;
 
       case 352:  // TTSResponse — 音频数据(message_type=0b1011 audio-only server)
-        if (this.userMsgCb) break;  // 桥接模式:忽略豆包 TTS 音频
         if (payload && payload.length > 0) {
           this.emit({ type: 'aiAudio', data: payload });
         }
         break;
 
       case 359:  // TTSEnded → AI 说完
-        if (this.userMsgCb) break;  // 桥接模式:忽略
         this.emit({ type: 'aiAudioEnd' });
         this.setState('listening');
         break;
@@ -411,10 +408,8 @@ export class VoiceChat {
         break;
       }
 
-      case 453: { // AI 回复文本(旧事件号,兼容) — 桥接模式下忽略豆包自答
-        if (this.userMsgCb && payload) {
-          break;  // Agent 桥接模式:豆包自己回复的内容不显示
-        }
+      case 453: { // AI 回复文本(旧事件号,兼容)
+        // 旁路模式:豆包回复正常显示,Agent 结果通过 agentReply 追加
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
@@ -425,10 +420,7 @@ export class VoiceChat {
         break;
       }
 
-      case 550: { // ChatResponse — 模型回复文本(流式增量) — 桥接模式下忽略豆包自答
-        if (this.userMsgCb) {
-          break;  // Agent 桥接模式:由 Agent 结果代替豆包回复
-        }
+      case 550: { // ChatResponse — 模型回复文本(流式增量)
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
