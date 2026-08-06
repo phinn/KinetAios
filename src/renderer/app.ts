@@ -1884,38 +1884,29 @@ function empty(text: string): HTMLElement {
   return d;
 }
 
+// 流式期间频繁调用 scrollDown 会和 DOM 增长竞态导致抖动。
+// scrollDown(非强制)走 rAF 防抖合并;scrollDownForce(发送/切会话)同步执行确保即时到位。
+let scrollDownScheduled = false;
 function scrollDown() {
-  scrollDownImpl(false);
-}
-/** 强制滚到底,即使用户正在向上翻看(用于切换会话 / 发送新消息等场景)。 */
-// Force scroll to bottom regardless of user's current scroll position.
-function scrollDownForce() {
-  scrollDownImpl(true);
-}
-function scrollDownImpl(force: boolean) {
-  const turns = document.getElementById('turns');
-  if (!turns) return;
-  if (scrollDownScheduled) {
-    if (force) scrollDownForceFlag = true;
-    return;
-  }
+  if (scrollDownScheduled) return;
   scrollDownScheduled = true;
-  queueMicrotask(() => {
-    requestAnimationFrame(() => {
-      scrollDownScheduled = false;
-      const shouldForce = scrollDownForceFlag;
-      scrollDownForceFlag = false;
-      const el = document.getElementById('turns');
-      if (!el) return;
-      const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-      if (shouldForce || distFromBottom < 120) {
-        el.scrollTop = el.scrollHeight;
-      }
-    });
+  requestAnimationFrame(() => {
+    scrollDownScheduled = false;
+    const el = document.getElementById('turns');
+    if (!el) return;
+    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (distFromBottom < 120) {
+      el.scrollTop = el.scrollHeight;
+    }
   });
 }
-let scrollDownScheduled = false;
-let scrollDownForceFlag = false;
+/** 强制立即滚到底(同步),用于切换会话 / 发送新消息 / done 等场景。 */
+// Force immediate scroll — synchronous, no rAF delay.
+function scrollDownForce() {
+  scrollDownScheduled = false; // 取消待执行的防抖 scrollDown,防止竞态
+  const el = document.getElementById('turns');
+  if (el) el.scrollTop = el.scrollHeight;
+}
 
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
 /** 用户滚离底部时显示浮动箭头,点击回到底部。 */
@@ -4539,9 +4530,10 @@ async function send() {
     composer.value = '';
     autosize(composer);
     document.getElementById('composer')!.focus();
-    // 发送后强制滚到底部;延迟两帧确保 onConversation → renderMain 已渲染新 turn DOM。
-    // Force scroll after send; delay 2 frames so the new turn DOM is present.
-    requestAnimationFrame(() => requestAnimationFrame(() => scrollDownForce()));
+    // 发送后强制滚到底部;一层 rAF 确保 onConversation → renderMain 已渲染新 turn DOM。
+    // scrollDownForce 现在是同步的,所以延迟一帧即可。
+    // Force scroll after send; delay 1 frame so the new turn DOM is present.
+    requestAnimationFrame(() => scrollDownForce());
   } finally {
     sending = false;
   }
