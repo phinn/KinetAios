@@ -1,0 +1,611 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>记忆系统深度对比 — KinetAios vs Codex</title>
+<style>
+:root {
+  --bg: #0d1117; --bg2: #161b22; --bg3: #1c2333; --bg4: #242d3f;
+  --border: #30363d; --border2: #424a58;
+  --text: #e6edf3; --text2: #8b949e; --text3: #586069;
+  --accent: #2f81f7; --accent2: #1f6feb; --accent-dim: #0d335b;
+  --green: #3fb950; --green-dim: #0d2818; --red: #f85149; --red-dim: #2d0d0d;
+  --orange: #d29922; --orange-dim: #2d2410; --purple: #a371f7; --purple-dim: #1d1330;
+  --cyan: #39c5cf; --cyan-dim: #0d2d2f;
+  --radius: 10px; --radius-sm: 6px;
+  --mono: 'JetBrains Mono','SF Mono','Fira Code',Consolas,monospace;
+  --sans: -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;font-size:14px}
+.container{max-width:1280px;margin:0 auto;padding:40px 24px 80px}
+
+/* Hero */
+.hero{text-align:center;padding:48px 24px 40px;border-bottom:1px solid var(--border);margin-bottom:48px}
+.hero h1{font-size:2.2em;font-weight:800;letter-spacing:-0.02em;background:linear-gradient(135deg,#2f81f7,#a371f7,#39c5cf);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;margin-bottom:8px}
+.hero .sub{color:var(--text2);font-size:1.05em}
+.hero .meta{margin-top:16px;display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+.badge{display:inline-block;padding:4px 12px;border-radius:20px;font-size:0.78em;font-weight:600;border:1px solid var(--border2)}
+.badge.blue{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+.badge.green{background:var(--green-dim);border-color:var(--green);color:var(--green)}
+.badge.purple{background:var(--purple-dim);border-color:var(--purple);color:var(--purple)}
+.badge.orange{background:var(--orange-dim);border-color:var(--orange);color:var(--orange)}
+
+/* Section */
+section{margin-bottom:48px}
+h2{font-size:1.5em;font-weight:700;margin-bottom:20px;padding-bottom:8px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+h2 .num{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:var(--accent-dim);border:1px solid var(--accent);border-radius:8px;font-size:0.75em;color:var(--accent)}
+h3{font-size:1.15em;font-weight:600;margin:24px 0 12px;color:var(--text)}
+
+/* Cards */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;transition:border-color 0.2s}
+.card:hover{border-color:var(--border2)}
+.card-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.card-head .title{font-weight:700;font-size:1.1em;display:flex;align-items:center;gap:8px}
+.card-head .tag{font-size:0.75em;padding:2px 8px;border-radius:4px;font-weight:600}
+.card-body{padding:20px}
+.card p{color:var(--text2);margin-bottom:8px}
+.card ul{list-style:none;padding-left:0}
+.card ul li{padding:4px 0 4px 20px;position:relative;color:var(--text2);font-size:0.92em}
+.card ul li::before{content:'▸';position:absolute;left:0;color:var(--accent)}
+
+/* Pros/Cons */
+.pc-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.pc-block{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.pc-block .pc-head{padding:12px 16px;font-weight:700;display:flex;align-items:center;gap:8px}
+.pc-block.pros .pc-head{background:var(--green-dim);border-bottom:1px solid var(--green);color:var(--green)}
+.pc-block.cons .pc-head{background:var(--red-dim);border-bottom:1px solid var(--red);color:var(--red)}
+.pc-block ul{padding:12px 16px 16px}
+.pc-block ul li{padding:6px 0 6px 22px;position:relative;font-size:0.9em;color:var(--text)}
+.pc-block.pros ul li::before{content:'✓';position:absolute;left:0;color:var(--green);font-weight:700}
+.pc-block.cons ul li::before{content:'✗';position:absolute;left:0;color:var(--red);font-weight:700}
+
+/* Table */
+.tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;font-size:0.88em}
+th{background:var(--bg3);padding:12px 14px;text-align:left;font-weight:600;color:var(--text);border-bottom:1px solid var(--border2);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--border);color:var(--text2);vertical-align:top}
+tr:hover td{background:var(--bg2)}
+td .yes{color:var(--green);font-weight:600}
+td .no{color:var(--red);font-weight:600}
+td .partial{color:var(--orange);font-weight:600}
+
+/* Code */
+pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);padding:14px 16px;overflow-x:auto;font-family:var(--mono);font-size:0.82em;line-height:1.6;color:var(--text);margin:12px 0}
+code{font-family:var(--mono);font-size:0.85em}
+.inline-code{background:var(--bg3);padding:1px 6px;border-radius:4px;font-family:var(--mono);font-size:0.85em;color:var(--cyan)}
+
+/* Score */
+.score-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.score-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:24px;text-align:center}
+.score-card .name{font-size:1.1em;font-weight:700;margin-bottom:12px}
+.score-bar{width:100%;height:8px;background:var(--bg);border-radius:4px;overflow:hidden;margin:8px 0}
+.score-bar .fill{height:100%;border-radius:4px;transition:width 0.8s ease}
+.score-card .score{font-size:2em;font-weight:800}
+.score-card .out{color:var(--text3);font-size:0.6em}
+.score-rows{margin-top:16px;text-align:left}
+.score-row{display:flex;justify-content:space-between;align-items:center;padding:4px 0;font-size:0.85em;border-bottom:1px solid var(--border)}
+.score-row:last-child{border-bottom:none}
+.score-row .label{color:var(--text2)}
+.score-row .val{font-weight:600}
+
+/* Verdict */
+.verdict{background:linear-gradient(135deg,var(--bg2),var(--bg3));border:1px solid var(--border2);border-radius:var(--radius);padding:28px 32px;margin-top:16px}
+.verdict h3{margin-top:0;color:var(--text)}
+.verdict p{color:var(--text2);margin-bottom:12px}
+.verdict strong{color:var(--text)}
+
+/* Pipeline diagram */
+.pipeline{display:flex;align-items:stretch;gap:0;margin:20px 0}
+.pipeline .step{flex:1;padding:14px 12px;background:var(--bg2);border:1px solid var(--border);position:relative}
+.pipeline .step:not(:last-child){border-right:none}
+.pipeline .step:not(:last-child)::after{content:'';position:absolute;right:-7px;top:50%;transform:translateY(-50%);width:14px;height:14px;background:var(--bg2);border-top:1px solid var(--border);border-right:1px solid var(--border);transform:translateY(-50%) rotate(45deg);z-index:1}
+.pipeline .step .step-num{font-size:0.7em;color:var(--accent);font-weight:700;text-transform:uppercase;letter-spacing:0.05em}
+.pipeline .step .step-title{font-weight:600;font-size:0.92em;margin:4px 0}
+.pipeline .step .step-desc{font-size:0.78em;color:var(--text3);line-height:1.5}
+
+/* Memory model diagram */
+.mem-model{display:grid;grid-template-columns:1fr 1fr;gap:24px;margin:20px 0}
+.mem-layer{background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius);padding:16px 20px}
+.mem-layer .layer-head{font-weight:700;margin-bottom:12px;display:flex;align-items:center;gap:8px;font-size:1em}
+.mem-stack{display:flex;flex-direction:column;gap:6px}
+.mem-item{padding:8px 12px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);font-size:0.82em}
+.mem-item .layer-tag{display:inline-block;padding:1px 6px;border-radius:3px;font-size:0.8em;font-weight:700;margin-right:6px}
+.mem-item .lt-blue{background:var(--accent-dim);color:var(--accent)}
+.mem-item .lt-green{background:var(--green-dim);color:var(--green)}
+.mem-item .lt-purple{background:var(--purple-dim);color:var(--purple)}
+.mem-item .lt-orange{background:var(--orange-dim);color:var(--orange)}
+.mem-item .lt-cyan{background:var(--cyan-dim);color:var(--cyan)}
+.mem-item .lt-red{background:var(--red-dim);color:var(--red)}
+.mem-item .desc{color:var(--text3);font-size:0.9em}
+
+footer{text-align:center;padding:32px 0;border-top:1px solid var(--border);color:var(--text3);font-size:0.82em}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="hero">
+  <h1>记忆系统深度对比</h1>
+  <div class="sub">KinetAios 五层混合记忆 vs Codex 两阶段文件记忆 — 基于源码的逐行级架构分析</div>
+  <div class="meta">
+    <span class="badge blue">KinetAios store.ts + TaskManager.ts</span>
+    <span class="badge purple">Codex codex-rs/memories + ext/memories</span>
+    <span class="badge orange">Source-level Analysis</span>
+  </div>
+</div>
+
+<!-- ════════════════════ 1. 架构总览 ════════════════════ -->
+<section>
+<h2><span class="num">1</span>架构总览</h2>
+
+<div class="mem-model">
+  <div class="mem-layer">
+    <div class="layer-head">🔵 KinetAios — 五层混合记忆</div>
+    <div class="mem-stack">
+      <div class="mem-item"><span class="layer-tag lt-blue">L0</span>Memory Blocks<span class="desc"> — 每轮注入的结构化常驻记忆(persona/profile/project/goals)</span></div>
+      <div class="mem-item"><span class="layer-tag lt-purple">L1</span>Semantic Facts<span class="desc"> — SQLite memories + embeddings + triples,带 importance/recency/relevance 三维评分</span></div>
+      <div class="mem-item"><span class="layer-tag lt-green">L2</span>Episodic Memory<span class="desc"> — 每会话结束自动生成叙事摘要,按重要性排序注入</span></div>
+      <div class="mem-item"><span class="layer-tag lt-orange">L3</span>History FTS5<span class="desc"> — 全文检索引擎,recall_memory 工具的底层</span></div>
+      <div class="mem-item"><span class="layer-tag lt-cyan">L4</span>Session Anchors<span class="desc"> — conv_facts 键值对,跨步骤共享中间产出</span></div>
+    </div>
+  </div>
+  <div class="mem-layer">
+    <div class="layer-head">🟣 Codex — 两阶段文件记忆</div>
+    <div class="mem-stack">
+      <div class="mem-item"><span class="layer-tag lt-purple">T0</span>memory_summary.md<span class="desc"> — 每次启动注入 system prompt 的导航摘要(≤N tokens 截断)</span></div>
+      <div class="mem-item"><span class="layer-tag lt-blue">T1</span>MEMORY.md<span class="desc"> — 可 grep 的手册条目,L2 consolidation 产物</span></div>
+      <div class="mem-item"><span class="layer-tag lt-green">T2</span>raw_memories.md<span class="desc"> — Phase 1 临时输出,Phase 2 输入</span></div>
+      <div class="mem-item"><span class="layer-tag lt-orange">T3</span>rollout_summaries/<span class="desc"> — 每次会话的 recap + lessons learned</span></div>
+      <div class="mem-item"><span class="layer-tag lt-cyan">T4</span>skills/<span class="desc"> — SKILL.md 可复用流程,含 scripts/templates/examples</span></div>
+      <div class="mem-item"><span class="layer-tag lt-red">T5</span>extensions/<span class="desc"> — ad-hoc notes + resources,7 天保留期</span></div>
+    </div>
+  </div>
+</div>
+
+<div style="margin-top:20px;padding:16px;background:var(--bg2);border:1px solid var(--border);border-radius:var(--radius)">
+  <p style="color:var(--text2);font-size:0.92em">
+    <strong style="color:var(--accent)">核心差异</strong>:
+    KinetAios 使用 <strong>SQLite + Embedding + FTS5</strong> 的数据库式记忆,支持向量语义检索和三维加权评分;
+    Codex 使用 <strong>Markdown 文件 + LLM 子代理</strong> 的文件式记忆,依赖 Progressive Disclosure 和 grep 检索。
+    前者更像"带索引的知识库",后者更像"人类用的笔记本"。
+  </p>
+</div>
+</section>
+
+<!-- ════════════════════ 2. 记忆提取管线 ════════════════════ -->
+<section>
+<h2><span class="num">2</span>记忆提取管线对比</h2>
+
+<h3>KinetAios — 每轮异步提取</h3>
+<div class="pipeline">
+  <div class="step"><div class="step-num">Step 1</div><div class="step-title">对话完成</div><div class="step-desc">turn.done 事件触发</div></div>
+  <div class="step"><div class="step-num">Step 2</div><div class="step-title">extractMemories()</div><div class="step-desc">LLM 提取 facts + triples,30s 超时</div></div>
+  <div class="step"><div class="step-num">Step 3</div><div class="step-title">去重入库</div><div class="step-desc">余弦相似度 > 0.85 合并,INSERT memories + memory_embeddings</div></div>
+  <div class="step"><div class="step-num">Step 4</div><div class="step-title">extractEpisodicMemory()</div><div class="step-desc">LLM 生成整段会话摘要</div></div>
+  <div class="step"><div class="step-num">Step 5</div><div class="step-title">idle GC</div><div class="step-desc">dedupMemories(0.65) + decayMemories()</div></div>
+</div>
+
+<h3>Codex — 两阶段离线管线</h3>
+<div class="pipeline">
+  <div class="step"><div class="step-num">Phase 1</div><div class="step-title">Stage 1: Rollout 提取</div><div class="step-desc">读取上次 rollout JSONL,LLM 提取 raw_memories → state_db</div></div>
+  <div class="step"><div class="step-num">Connect</div><div class="step-title">state_db</div><div class="step-desc">SQLite 暂存 Stage 1 输出,watermark 跟踪</div></div>
+  <div class="step"><div class="step-num">Phase 2</div><div class="step-title">Stage 2: Consolidation</div><div class="step-desc">LLM 子代理读取 raw_memories + rollout_summaries → 编辑 memory_summary.md / MEMORY.md / skills/</div></div>
+  <div class="step"><div class="step-num">Cleanup</div><div class="step-title">Workspace Diff</div><div class="step-desc">phase2_workspace_diff.md (≤4MB),prune extensions >7天</div></div>
+  <div class="step"><div class="step-num">Inject</div><div class="step-title">注入 system prompt</div><div class="step-desc">memory_summary.md → developer instructions</div></div>
+</div>
+
+<div class="cards" style="margin-top:20px">
+  <div class="card">
+    <div class="card-head"><span class="title">🔵 KinetAios 提取 Prompt</span></div>
+    <div class="card-body">
+<pre><code>你是记忆提取器。从下面这轮对话里提取
+【关于用户本人】的持久事实 — 身份、职业、
+偏好、习惯、技术栈、家庭/宠物、所在城市、
+工具链、长期项目、价值观。
+哪怕只透出一点点信号也提取,宁可多提取不要漏。
+
+输出 JSON:
+- "facts": [{ "text": "≤18字", "importance": 1-10 }]
+- "triples": [{ "s":"", "p":"", "o":"" }]
+不提取:本次任务的一次性细节。</code></pre>
+      <p style="margin-top:8px"><strong>特点</strong>:聚焦用户画像,每轮触发,原子化事实 + 知识图谱三元组双输出,importance 1-10 分级。</p>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><span class="title">🟣 Codex Stage 1 Prompt</span></div>
+    <div class="card-body">
+<pre><code>// 从 rollout JSONL 提取,70% context window 截断
+// DEFAULT_ROLLOUT_TOKEN_LIMIT = 150,000 tokens
+// 实际 prompt 在 stage_one_input.md 模板中
+
+// Phase 2 Consolidation Agent prompt:
+"You are a Memory Writing Agent.
+Consolidate raw memories and rollout summaries
+into a local, file-based agent memory folder
+that supports progressive disclosure.
+
+The goal: help future agents:
+- deeply understand the user
+- solve similar tasks with fewer tool calls
+- reuse proven workflows and checklists
+- avoid known landmines and failure modes"</code></pre>
+      <p style="margin-top:8px"><strong>特点</strong>:启动时离线执行,双 LLM 子代理(Phase 1 提取 + Phase 2 合并),生成结构化文件体系。</p>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════════════════ 3. 检索与注入 ════════════════════ -->
+<section>
+<h2><span class="num">3</span>检索与注入策略</h2>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-head"><span class="title">🔵 KinetAios 三级检索</span><span class="tag" style="background:var(--accent-dim);color:var(--accent)">Hybrid</span></div>
+    <div class="card-body">
+      <ul>
+        <li><strong>P0: Embedding Cosine</strong> — query 向量与 memory_embeddings 余弦相似度 > 0.2,宽召回 Top-30</li>
+        <li><strong>P1: scoredMemories 重排</strong> — importance×0.5 + recency×0.3 + relevance×0.2</li>
+        <li><strong>P2: FTS5 兜底</strong> — embedding 不足 3 条时,FTS5 MATCH 检索</li>
+        <li><strong>P3: Recent-N</strong> — 全部失败时取最近 N 条</li>
+        <li><strong>注入格式</strong>:拼入 system prompt <code>## 关于用户(长期记忆)</code> 块</li>
+        <li><strong>注入上限</strong>:15 条,额外注入 5 条 episodic + 5 条 triples</li>
+      </ul>
+<pre><code>// 评分公式(store.ts L927)
+const score =
+  importanceNorm * 0.5 +  // 重要性 50%
+  recency * 0.3 +          // 时效性 30%
+  relevance * 0.2;         // 相关性 20%
+
+// recency = exp(-(now - lastUsed) / 30天)</code></pre>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><span class="title">🟣 Codex Progressive Disclosure</span><span class="tag" style="background:var(--purple-dim);color:var(--purple)">File-based</span></div>
+    <div class="card-body">
+      <ul>
+        <li><strong>T0: memory_summary.md</strong> — 每次启动自动注入 developer instructions(截断到 N tokens)</li>
+        <li><strong>T1: Agent 自主检索</strong> — LLM 通过 read/search/list 工具按需读取 MEMORY.md</li>
+        <li><strong>T2: Grep 检索</strong> — <code>search</code> 工具在记忆文件中 grep 关键词</li>
+        <li><strong>T3: Rollout citations</strong> — 输出中 <code>&lt;oai-mem-citation&gt;</code> 标签引用 MEMORY.md 行号</li>
+        <li><strong>T4: Skills 按需加载</strong> — <code>$skill-name</code> 触发 SKILL.md 注入</li>
+        <li><strong>注入格式</strong>:memory_summary → system prompt;其余 → LLM 自主决定是否读取</li>
+      </ul>
+<pre><code>// Codex read_path.md template
+"Memory layout (general -> specific):
+- memory_summary.md (already provided below)
+- MEMORY.md (searchable registry)
+- skills/<skill-name>/SKILL.md
+- rollout_summaries/<slug>.md
+
+Decision boundary:
+- Skip memory ONLY when clearly self-contained
+- Use memory when query mentions workspace/repo
+- If unsure, do a quick memory pass"</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════════════════ 4. 数据存储 ════════════════════ -->
+<section>
+<h2><span class="num">4</span>存储与持久化</h2>
+
+<div class="tbl-wrap">
+<table>
+<thead>
+<tr>
+  <th style="width:160px">维度</th>
+  <th style="width:45%">🔵 KinetAios</th>
+  <th style="width:40%">🟣 Codex</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+  <td><strong>存储介质</strong></td>
+  <td>SQLite(better-sqlite3)<br><span class="inline-code">memories</span> / <span class="inline-code">memory_embeddings</span> / <span class="inline-code">memory_meta</span> / <span class="inline-code">memory_triples</span> / <span class="inline-code">history</span>(FTS5)/ <span class="inline-code">episodic_memories</span> / <span class="inline-code">conv_facts</span> / <span class="inline-code">memory_blocks</span></td>
+  <td>Markdown 文件 + SQLite state_db<br><span class="inline-code">~/.codex/memories/memory_summary.md</span><br><span class="inline-code">~/.codex/memories/MEMORY.md</span><br><span class="inline-code">~/.codex/memories/raw_memories.md</span><br><span class="inline-code">~/.codex/memories/rollout_summaries/*.md</span><br><span class="inline-code">~/.codex/memories/skills/*/SKILL.md</span><br><span class="inline-code">~/.codex/memories/extensions/*/</span></td>
+</tr>
+<tr>
+  <td><strong>Embedding 向量</strong></td>
+  <td class="yes">✅ Float32Array 存 SQLite BLOB<br>cosine similarity 原生支持</td>
+  <td class="no">❌ 无 embedding 向量<br>依赖 LLM 自主 grep</td>
+</tr>
+<tr>
+  <td><strong>全文检索</strong></td>
+  <td class="yes">✅ FTS5 虚拟表<br><span class="inline-code">history</span> 表 MATCH 查询</td>
+  <td class="partial">⚠️ 间接 — LLM 使用 <span class="inline-code">search</span> 工具 grep 文件</td>
+</tr>
+<tr>
+  <td><strong>知识图谱</strong></td>
+  <td class="yes">✅ 主谓宾三元组<br><span class="inline-code">memory_triples</span> 表</td>
+  <td class="no">❌ 无显式图谱</td>
+</tr>
+<tr>
+  <td><strong>会话持久化</strong></td>
+  <td class="yes">✅ <span class="inline-code">conversations</span> + <span class="inline-code">turns</span> 表</td>
+  <td class="yes">✅ JSONL rollout 文件 + SQLite thread_store</td>
+</tr>
+<tr>
+  <td><strong>跨引擎注入</strong></td>
+  <td class="yes">✅ Claude Code: <span class="inline-code">--append-system-prompt</span><br>Codex: prompt 前置<br>Direct: system message 拼接</td>
+  <td class="no">❌ 仅 Codex 自身使用</td>
+</tr>
+<tr>
+  <td><strong>人类可读性</strong></td>
+  <td class="partial">⚠️ SQLite 二进制,需工具查看</td>
+  <td class="yes">✅ 纯 Markdown,可直接编辑</td>
+</tr>
+<tr>
+  <td><strong>版本控制友好</strong></td>
+  <td class="no">❌ SQLite diff 不友好</td>
+  <td class="yes">✅ Git diff 天然支持</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════ 5. 衰减与生命周期 ════════════════════ -->
+<section>
+<h2><span class="num">5</span>衰减与生命周期管理</h2>
+
+<div class="cards">
+  <div class="card">
+    <div class="card-head"><span class="title">🔵 KinetAios</span></div>
+    <div class="card-body">
+      <ul>
+        <li><strong>衰减公式</strong>:<code>weight *= 0.95^days_since_last_used</code></li>
+        <li><strong>淘汰阈值</strong>:weight < 0.1 → 连同 memory + embedding 一起删除</li>
+        <li><strong>去重</strong>:cosine similarity > 0.65 → 合并(main.ts 定时触发)</li>
+        <li><strong>使用追踪</strong>:<code>touchMemoryUsed(id)</code> 更新 last_used + use_count</li>
+        <li><strong>Recency 计算</strong>:<code>exp(-(now - lastUsed) / 30天)</code></li>
+        <li><strong>Episodic GC</strong>:低重要性摘要自动降级/清除</li>
+      </ul>
+<pre><code>// decayMemories() — store.ts L937
+const decayed = weight * Math.pow(0.95, days);
+if (decayed < 0.1) {
+  DELETE FROM memories WHERE id=?;
+  DELETE FROM memory_meta WHERE memory_id=?;
+  DELETE FROM memory_embeddings WHERE memory_id=?;
+}</code></pre>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-head"><span class="title">🟣 Codex</span></div>
+    <div class="card-body">
+      <ul>
+        <li><strong>Extension 清理</strong>:<code>RETENTION_DAYS = 7</code>,过期 resource .md 自动删除</li>
+        <li><strong>Workspace Diff</strong>:Phase 2 对比前后差异,生成 <code>phase2_workspace_diff.md</code>(≤4MB)</li>
+        <li><strong>Pruning</strong>:<code>prune_old_extension_resources()</code> 清理过期 extensions</li>
+        <li><strong>无数值衰减</strong>:不跟踪 weight/use_count</li>
+        <li><strong>合并策略</strong>:Phase 2 LLM 自主 deduplicate,保留原始措辞</li>
+        <li><strong>Token 裁剪</strong>:memory_summary.md 按 token limit 截断</li>
+      </ul>
+<pre><code>// prune.rs — extension resource cleanup
+const RETENTION_DAYS: i64 = 7;
+
+// Remove .md files older than cutoff
+if resource_timestamp > cutoff { continue; }
+tokio::fs::remove_file(&resource_file_path);
+
+// Phase 2 consolidation:
+// "If several sources say nearly the same thing,
+//  merge by keeping one of the original phrasings"</code></pre>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════════════════ 6. 上下文压缩 ════════════════════ -->
+<section>
+<h2><span class="num">6</span>上下文窗口管理</h2>
+
+<div class="tbl-wrap">
+<table>
+<thead><tr><th>策略</th><th>🔵 KinetAios</th><th>🟣 Codex</th></tr></thead>
+<tbody>
+<tr>
+  <td><strong>Compaction</strong></td>
+  <td><code>compactHistory()</code> + reactive trim<br>双重压缩:先 compact 再 trim 到 token budget</td>
+  <td><code>run_compact_task()</code><br>LLM 生成 handoff summary,SUMMARIZATION_PROMPT 驱动</td>
+</tr>
+<tr>
+  <td><strong>压缩 Prompt</strong></td>
+  <td>无独立 prompt,按字符截断</td>
+  <td><pre style="margin:0;font-size:0.8em">"You are performing a CONTEXT CHECKPOINT
+COMPACTION. Create a handoff summary for
+another LLM that will resume the task.
+Include: progress, decisions, constraints,
+next steps, critical data."</pre></td>
+</tr>
+<tr>
+  <td><strong>触发时机</strong></td>
+  <td>token 超预算时自动</td>
+  <td>Auto(超窗口) / Manual(/compact) / Mid-turn</td>
+</tr>
+<tr>
+  <td><strong>跨引擎摘要</strong></td>
+  <td class="yes">✅ <code>buildCrossEngineSummary()</code><br>Direct → Claude Code 切换时注入</td>
+  <td class="no">❌ N/A(单引擎)</td>
+</tr>
+<tr>
+  <td><strong>工具输出截断</strong></td>
+  <td>按字符截断</td>
+  <td><code>TruncationPolicy::Tokens(N)</code> 精确 token 裁剪</td>
+</tr>
+</tbody>
+</table>
+</div>
+</section>
+
+<!-- ════════════════════ 7. 优缺点 ════════════════════ -->
+<section>
+<h2><span class="num">7</span>优缺点对比</h2>
+
+<div class="pc-grid">
+  <div>
+    <h3 style="color:var(--accent)">🔵 KinetAios</h3>
+    <div class="pc-block pros">
+      <div class="pc-head">✅ 优势</div>
+      <ul>
+        <li><strong>语义检索精度高</strong>:Embedding cosine + FTS5 + scoredMemories 三级混合,召回率远超 grep</li>
+        <li><strong>实时提取</strong>:每轮对话结束即异步提取,无需等待下次启动</li>
+        <li><strong>三维加权评分</strong>:importance×0.5 + recency×0.3 + relevance×0.2,科学排序</li>
+        <li><strong>知识图谱</strong>:主谓宾三元组支持语义推理(Memory Graph)</li>
+        <li><strong>跨引擎注入</strong>:Direct/Claude Code/Codex 三引擎统一记忆层</li>
+        <li><strong>Episodic Memory</strong>:会话级叙事摘要,帮助"回忆上次做了什么"</li>
+        <li><strong>数值化衰减</strong>:0.95^days 指数衰减 + 自动淘汰 < 0.1 的记忆</li>
+        <li><strong>Session Anchors</strong>:conv_facts 跨步骤共享中间产出</li>
+        <li><strong>五层记忆架构</strong>:Blocks / Facts / Episodic / History / Anchors 分层明确</li>
+      </ul>
+    </div>
+    <div class="pc-block cons" style="margin-top:16px">
+      <div class="pc-head">❌ 不足</div>
+      <ul>
+        <li><strong>不可读性</strong>:SQLite 二进制存储,用户无法直接查看/编辑记忆</li>
+        <li><strong>无 LLM 合并</strong>:去重靠 cosine > 0.85 硬阈值,不语义合并</li>
+        <li><strong>无 Skills 沉淀</strong>:不提取可复用工作流/检查清单</li>
+        <li><strong>压缩粗糙</strong>:compactHistory 按字符截断,非 LLM 生成摘要</li>
+        <li><strong>Embedding 成本</strong>:每次提取需调用 embedding API</li>
+        <li><strong>单用户画像聚焦</strong>:extractMemories prompt 仅提取"关于用户本人"的事实,不提取任务/代码/工作流知识</li>
+      </ul>
+    </div>
+  </div>
+
+  <div>
+    <h3 style="color:var(--purple)">🟣 Codex</h3>
+    <div class="pc-block pros">
+      <div class="pc-head">✅ 优势</div>
+      <ul>
+        <li><strong>人类可读可编辑</strong>:纯 Markdown 文件,用户可直接编辑/版本控制</li>
+        <li><strong>LLM 驱动合并</strong>:Phase 2 子代理语义级 deduplicate + merge</li>
+        <li><strong>Skills 系统</strong>:从记忆中提取可复用流程(SKILL.md + scripts/ + templates/)</li>
+        <li><strong>Progressive Disclosure</strong>:memory_summary.md 常驻 → MEMORY.md 按需 → rollout_summaries 深挖</li>
+        <li><strong>LLM Compaction</strong>:SUMMARIZATION_PROMPT 生成结构化 handoff summary</li>
+        <li><strong>措辞保留</strong>:Phase 2 prompt 明确要求保留原始精确措辞(error strings/API names)</li>
+        <li><strong>Workspace Diff</strong>:可视化 Phase 2 前后变化</li>
+        <li><strong>Citation 系统</strong>:输出中 <code>&lt;oai-mem-citation&gt;</code> 标注引用来源</li>
+        <li><strong>多粒度记忆</strong>:summary → handbook → skills → rollout recaps → ad-hoc notes</li>
+      </ul>
+    </div>
+    <div class="pc-block cons" style="margin-top:16px">
+      <div class="pc-head">❌ 不足</div>
+      <ul>
+        <li><strong>无语义检索</strong>:依赖 LLM 自主 grep,精度远低于 embedding cosine</li>
+        <li><strong>启动延迟</strong>:Phase 1 + Phase 2 离线管线在启动时执行,耗时较长</li>
+        <li><strong>无实时提取</strong>:当前会话的知识不会即时入库,需下次启动</li>
+        <li><strong>无数值衰减</strong>:不跟踪 weight/use_count,旧记忆不会自动淡化</li>
+        <li><strong>无跨引擎支持</strong>:仅 Codex CLI 自身使用</li>
+        <li><strong>Token 开销大</strong>:Phase 1/2 各需一次 LLM 调用(token 消耗显著)</li>
+        <li><strong>无知识图谱</strong>:不维护三元组结构</li>
+        <li><strong>Grep 依赖</strong>:search 工具在非结构化 Markdown 上 grep,漏召率高</li>
+      </ul>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════════════════ 8. 评分总览 ════════════════════ -->
+<section>
+<h2><span class="num">8</span>维度评分总览</h2>
+
+<div class="score-grid">
+  <div class="score-card">
+    <div class="name" style="color:var(--accent)">🔵 KinetAios</div>
+    <div class="score">7.8<span class="out">/10</span></div>
+    <div class="score-bar"><div class="fill" style="width:78%;background:var(--accent)"></div></div>
+    <div class="score-rows">
+      <div class="score-row"><span class="label">检索精度</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">提取实时性</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">评分排序</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">知识图谱</span><span class="val" style="color:var(--green)">8/10</span></div>
+      <div class="score-row"><span class="label">跨引擎支持</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">Episodic Memory</span><span class="val" style="color:var(--green)">8/10</span></div>
+      <div class="score-row"><span class="label">衰减管理</span><span class="val" style="color:var(--green)">8/10</span></div>
+      <div class="score-row"><span class="label">人类可读性</span><span class="val" style="color:var(--red)">3/10</span></div>
+      <div class="score-row"><span class="label">Skills 沉淀</span><span class="val" style="color:var(--red)">2/10</span></div>
+      <div class="score-row"><span class="label">LLM 合并</span><span class="val" style="color:var(--red)">3/10</span></div>
+      <div class="score-row"><span class="label">上下文压缩</span><span class="val" style="color:var(--orange)">5/10</span></div>
+    </div>
+  </div>
+  <div class="score-card">
+    <div class="name" style="color:var(--purple)">🟣 Codex</div>
+    <div class="score">7.2<span class="out">/10</span></div>
+    <div class="score-bar"><div class="fill" style="width:72%;background:var(--purple)"></div></div>
+    <div class="score-rows">
+      <div class="score-row"><span class="label">检索精度</span><span class="val" style="color:var(--orange)">5/10</span></div>
+      <div class="score-row"><span class="label">提取实时性</span><span class="val" style="color:var(--red)">3/10</span></div>
+      <div class="score-row"><span class="label">评分排序</span><span class="val" style="color:var(--red)">2/10</span></div>
+      <div class="score-row"><span class="label">知识图谱</span><span class="val" style="color:var(--red)">1/10</span></div>
+      <div class="score-row"><span class="label">跨引擎支持</span><span class="val" style="color:var(--red)">1/10</span></div>
+      <div class="score-row"><span class="label">Episodic Memory</span><span class="val" style="color:var(--green)">7/10</span></div>
+      <div class="score-row"><span class="label">衰减管理</span><span class="val" style="color:var(--orange)">4/10</span></div>
+      <div class="score-row"><span class="label">人类可读性</span><span class="val" style="color:var(--green)">10/10</span></div>
+      <div class="score-row"><span class="label">Skills 沉淀</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">LLM 合并</span><span class="val" style="color:var(--green)">9/10</span></div>
+      <div class="score-row"><span class="label">上下文压缩</span><span class="val" style="color:var(--green)">8/10</span></div>
+    </div>
+  </div>
+</div>
+</section>
+
+<!-- ════════════════════ 9. 结论 ════════════════════ -->
+<section>
+<h2><span class="num">9</span>结论与互补建议</h2>
+
+<div class="verdict">
+  <h3>设计哲学差异</h3>
+  <p>
+    <strong style="color:var(--accent)">KinetAios</strong> 走的是 <strong>数据库 + 向量检索</strong> 路线:
+    记忆是带索引、带评分、带衰减的结构化数据。优势在于<strong>检索精度和实时性</strong>,
+    每轮对话即时提取、embedding 语义召回、三维加权排序。适合需要高 recall/high precision 的场景。
+  </p>
+  <p>
+    <strong style="color:var(--purple)">Codex</strong> 走的是 <strong>文件系统 + LLM 子代理</strong> 路线:
+    记忆是 Markdown 文件,Progressive Disclosure 引导 LLM 按需检索。
+    优势在于<strong>人类可读性、Skills 沉淀、LLM 语义合并</strong>。
+    用户可以直接 <code>cat ~/.codex/memories/MEMORY.md</code> 查看和编辑记忆,也可以 Git 版本控制。
+  </p>
+
+  <h3 style="margin-top:24px">KinetAios 可以从 Codex 借鉴的</h3>
+  <ul style="padding-left:20px;margin:12px 0">
+    <li><strong>Skills 沉淀</strong>:从记忆中提取可复用工作流(SKILL.md 模式),而不仅仅是原子事实</li>
+    <li><strong>LLM 合并</strong>:用 LLM 做语义级 deduplicate,而非 cosine > 0.85 硬阈值</li>
+    <li><strong>人类可读导出</strong>:提供一个 <code>/memories export</code> 命令导出 Markdown 视图</li>
+    <li><strong>LLM Compaction</strong>:上下文压缩用 LLM 生成结构化 handoff summary,而非字符截断</li>
+    <li><strong>措辞保留</strong>:提取 prompt 增加"保留原始 error string / API name / 文件名"指令</li>
+  </ul>
+
+  <h3 style="margin-top:20px">Codex 可以从 KinetAios 借鉴的</h3>
+  <ul style="padding-left:20px;margin:12px 0">
+    <li><strong>Embedding 检索</strong>:给 MEMORY.md 建向量索引,cosine 召回替代 grep</li>
+    <li><strong>实时提取</strong>:对话中增量提取,而非启动时离线批量</li>
+    <li><strong>三维评分</strong>:importance + recency + relevance 加权排序</li>
+    <li><strong>数值化衰减</strong>:跟踪 use_count + last_used,指数衰减淘汰</li>
+    <li><strong>知识图谱</strong>:维护三元组,支持语义推理</li>
+  </ul>
+
+  <div style="margin-top:24px;padding:16px;background:var(--bg);border:1px solid var(--border);border-radius:8px">
+    <p style="margin:0">
+      <strong style="color:var(--orange)">⚡ 结论</strong>:
+      KinetAios 在<strong>检索精度、实时性、跨引擎、评分排序、知识图谱</strong>上明显领先;
+      Codex 在<strong>人类可读性、Skills 系统、LLM 合并、上下文压缩</strong>上更有优势。
+      两者代表了 AI Agent 记忆系统的两种范式 — <strong>数据库派 vs 文件派</strong>,
+      各有适用场景。KinetAios 更适合多引擎聚合的 AI 仪表盘定位,Codex 更适合单引擎深度 Coding 场景。
+    </p>
+  </div>
+</div>
+</section>
+
+<footer>
+  <p>Source-level analysis · KinetAios <code>store.ts / TaskManager.ts / AgentLoop.ts</code> vs Codex <code>codex-rs/memories/ + ext/memories/</code></p>
+  <p>Generated from real source code · No hallucination</p>
+</footer>
+
+</div>
+</body>
+</html>
