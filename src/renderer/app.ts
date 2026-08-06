@@ -4211,21 +4211,6 @@ function wireVoiceChat(): void {
         }
         document.getElementById('vc-ai-text')!.textContent = vcAiText;
         break;
-      case 'agentReply': {
-        // Agent 执行结果(来自当前频道的 AgentLoop)
-        // 旁路模式:不覆盖豆包回复文本,在 AI 文本区追加 Agent 结果,用分隔线区分
-        // TTS 朗读由 VoiceChat.agentResult → synthesizeTTS → aiAudio 事件处理(豆包自然语音)
-        vcAiText = vcAiText ? vcAiText + '\n─── Agent ───\n' + ev.text : ev.text;
-        document.getElementById('vc-ai-text')!.textContent = vcAiText;
-        document.getElementById('vc-hint')!.textContent = tr('voice.chatHintSpeak');
-        break;
-      }
-      case 'agentStatus': {
-        // Agent 执行中间状态(工具调用/状态文本)— 实时显示在 hint 区
-        // Real-time agent execution feedback (tool calls, status) shown in hint area
-        document.getElementById('vc-hint')!.textContent = ev.text;
-        break;
-      }
       case 'aiAudio':
         playAiAudio(ev.data);
         break;

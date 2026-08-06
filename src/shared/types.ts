@@ -317,8 +317,6 @@ export type VoiceChatEventPayload =
   | { type: 'aiText'; text: string }
   | { type: 'aiAudio'; data: string }  // base64 PCM 16kHz 16-bit mono
   | { type: 'aiAudioEnd' }
-  | { type: 'agentReply'; text: string }  // Agent 执行结果(来自当前频道)
-  | { type: 'agentStatus'; text: string } // Agent 执行中间状态(工具调用等)
   | { type: 'error'; message: string }
   | { type: 'ready' };
 

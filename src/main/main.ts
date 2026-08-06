@@ -121,26 +121,11 @@ function safeSend(win: BrowserWindow | null, channel: string, data: unknown): vo
   }
 }
 
-// VoiceChat bridge — 提前声明(emitter 引用),在 voice-chat-start handler 中赋值。
-// Forward-declared so emitter.emitEvent can reference it; assigned when VoiceChat is constructed.
-let voiceChatBridge: { active: boolean; emitStatus: (text: string) => void } = {
-  active: false,
-  emitStatus: () => {},
-};
-
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
     safeSend(dashboardWin, 'agent-event', { convId, ev });
     safeSend(quickWin, 'agent-event', { convId, ev });
     safeSend(arenaWin, 'agent-event', { convId, ev });
-    // 联动语音面板:Agent 执行 tool/status 事件时,推一份精简状态到语音 UI
-    // Relay agent tool/status events to the voice panel for real-time feedback.
-    if (voiceChatBridge.active && (ev.type === 'tool' || ev.type === 'status')) {
-      const hint = ev.type === 'tool'
-        ? `🔧 ${ev.name}${ev.args ? ': ' + ev.args.slice(0, 80) : ''}`
-        : `⚙️ ${ev.text}`;
-      voiceChatBridge.emitStatus(hint);
-    }
   },
   emitConversation(conv: Conversation) {
     safeSend(dashboardWin, 'conversation', conv);
@@ -1947,12 +1932,6 @@ function registerIpc(): void {
   // ── 实时语音助手(豆包实时语音大模型)──
   // VoiceChat 管理器:WebSocket 双向音频流, renderer 通过 IPC 发送麦克风音频、接收 AI 音频。
   const voiceChat = new VoiceChat();
-  // Bridge object: emitter(定义在前面)通过此对象向语音面板推送 Agent 中间状态。
-  // Re-assign the forward-declared bridge now that voiceChat exists.
-  voiceChatBridge = {
-    active: false,
-    emitStatus: (text: string) => voiceChat.emitAgentStatus(text),
-  };
   // VoiceChat 事件 → 转发到 renderer
   voiceChat.onEvent((ev) => {
     // Buffer → base64(IPC 不能直接传 Buffer)
@@ -2036,7 +2015,6 @@ function registerIpc(): void {
         }
       });
 
-      voiceChatBridge.active = true;  // 启用 Agent 中间状态推送
       await voiceChat.start({ ...s.voiceChat, contextHint });
       return { ok: true };
     } catch (e) {
@@ -2044,7 +2022,6 @@ function registerIpc(): void {
     }
   });
   ipcMain.handle('voice-chat-stop', async () => {
-    voiceChatBridge.active = false;  // 停止 Agent 中间状态推送
     voiceChat.close();
     return { ok: true };
   });

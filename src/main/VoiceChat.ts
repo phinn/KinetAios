@@ -26,8 +26,6 @@ export type VoiceChatEvent =
   | { type: 'aiText'; text: string }            // AI 回复文本(增量)
   | { type: 'aiAudio'; data: Buffer }           // AI 回复音频(PCM s16le 24kHz mono)
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
-  | { type: 'agentReply'; text: string }        // Agent 执行结果(来自当前频道)
-  | { type: 'agentStatus'; text: string }      // Agent 执行中间状态(工具调用等)
   | { type: 'error'; message: string }
   | { type: 'ready' };                          // 会话已建立,可以开始说话
 
@@ -61,22 +59,15 @@ export class VoiceChat {
     this.userMsgCb = cb;
   }
 
-  /** 推送 Agent 执行中间状态(工具调用/状态文本),让语音面板实时显示执行进度 */
-  // Push agent intermediate status (tool calls / status text) to voice panel in real time.
-  emitAgentStatus(text: string): void {
-    this.emit({ type: 'agentStatus', text });
-  }
-
   /** 当前状态 / Current state */
   getState(): VoiceChatState {
     return this.state;
   }
 
-  /** Agent 执行完毕,把结果文本推给 renderer 显示 + 用豆包 TTS 朗读 */
-  // Agent result → display text + synthesize via Doubao TTS HTTP → emit aiAudio
+  /** Agent 执行完毕,把结果文本通过豆包 WS TTS 朗读。显示由主聊天窗口的 agent-event 自然处理。 */
+  // Agent result → speak via Doubao WS TTS. Display is handled by the main chat window's agent-event listener.
   async agentResult(text: string): Promise<void> {
     if (!text) return;
-    this.emit({ type: 'agentReply', text });
 
     // P1 #3: 等待豆包 WS TTS 播完再合成 Agent TTS,避免双路音频叠加
     // Wait for Doubao WS TTS to finish before synthesizing Agent TTS to prevent audio overlap
