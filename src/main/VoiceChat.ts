@@ -27,6 +27,7 @@ export type VoiceChatEvent =
   | { type: 'aiAudio'; data: Buffer }           // AI 回复音频(PCM s16le 24kHz mono)
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
   | { type: 'agentReply'; text: string }        // Agent 执行结果(来自当前频道)
+  | { type: 'agentStatus'; text: string }      // Agent 执行中间状态(工具调用等)
   | { type: 'error'; message: string }
   | { type: 'ready' };                          // 会话已建立,可以开始说话
 
@@ -57,6 +58,12 @@ export class VoiceChat {
   /** 设置"用户完整发言"回调 — ASR 判定一句话结束时触发,main 可据此调用 Agent */
   onUserMessage(cb: (text: string) => void): void {
     this.userMsgCb = cb;
+  }
+
+  /** 推送 Agent 执行中间状态(工具调用/状态文本),让语音面板实时显示执行进度 */
+  // Push agent intermediate status (tool calls / status text) to voice panel in real time.
+  emitAgentStatus(text: string): void {
+    this.emit({ type: 'agentStatus', text });
   }
 
   /** 当前状态 / Current state */
