@@ -1665,7 +1665,7 @@ function updateStreamingStatus(conv: Conversation): void {
   }
   // streaming-status 的创建/移除改变了内容高度,同步贴底避免抖动。
   if (heightChanged) {
-    scrollSyncIfNearBottom();
+    scrollDown();
   }
 }
 
@@ -1710,7 +1710,7 @@ function updateLastTurnIncremental(): void {
     if (txt) txt.textContent = conv.statusNote ?? '';
   }
   // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底(不走 rAF 防抖,避免抖动)。
-  scrollSyncIfNearBottom();
+  scrollDown();
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
@@ -1730,7 +1730,7 @@ function streamAppend(text: string) {
     const turnEl = el.closest('.turn');
     const ss = turnEl?.querySelector('.streaming-status');
     if (ss) ss.remove();
-    scrollSyncIfNearBottom();
+    scrollDown();
     // 流式期间也检测 artifact(token 级增量检测,让用户边看边预览)
     scheduleArtifactCheck();
   }
@@ -1878,42 +1878,39 @@ function empty(text: string): HTMLElement {
   return d;
 }
 
-// 流式期间频繁调用 scrollDown 会和 DOM 增长竞态导致抖动。
-// scrollDown(非强制)走 rAF 防抖合并;scrollDownForce(发送/切会话)同步执行确保即时到位。
+// ── 滚动控制 ──
+// 核心问题:每 token 同步读 scrollHeight + 设 scrollTop 会强制 reflow,
+// 高频 token (20-50/s) 下 reflow 堵塞主线程 → 帧丢失 → 视觉抖动(一跳一跳)。
+//
+// 方案:
+// - streamAppend 后走 rAF 防抖(scrollDown),一帧只滚一次,不强制 reflow。
+// - 用 flag(userAtBottom)在 scroll event 中被动维护,不在 rAF 里读 scrollHeight。
+// - scrollDownForce 用于发送/切会话/done 等低频同步场景。
+
 let scrollDownScheduled = false;
+// 用户是否在底部附近(passive scroll event 维护,避免主动读 layout)。
+let userAtBottom = true;
+
 function scrollDown() {
   if (scrollDownScheduled) return;
   scrollDownScheduled = true;
   requestAnimationFrame(() => {
     scrollDownScheduled = false;
+    if (!userAtBottom) return;
     const el = document.getElementById('turns');
     if (!el) return;
-    const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-    if (distFromBottom < 120) {
-      el.scrollTop = el.scrollHeight;
-    }
+    // scrollTop = 超大值 → 浏览器自动 clamp 到 scrollHeight - clientHeight。
+    // 不需要先读 scrollHeight,避免强制同步布局。
+    el.scrollTop = 999999;
   });
 }
+
 /** 强制立即滚到底(同步),用于切换会话 / 发送新消息 / done 等场景。 */
-// Force immediate scroll — synchronous, no rAF delay.
 function scrollDownForce() {
-  scrollDownScheduled = false; // 取消待执行的防抖 scrollDown,防止竞态
+  scrollDownScheduled = false;
+  userAtBottom = true;
   const el = document.getElementById('turns');
-  if (el) el.scrollTop = el.scrollHeight;
-}
-/**
- * 流式 token 追加后的同步贴底滚动。
- * 关键:必须在同一同步帧内追加文本 + 滚动,否则 rAF 异步滚动和文本追加交错导致抖动。
- * 只有用户已在底部附近时才跟随(用户主动上滚则不动)。
- */
-// Sync scroll after token append — must be in the same frame to avoid jitter.
-function scrollSyncIfNearBottom() {
-  const el = document.getElementById('turns');
-  if (!el) return;
-  const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
-  if (distFromBottom < 120) {
-    el.scrollTop = el.scrollHeight;
-  }
+  if (el) el.scrollTop = 999999;
 }
 
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
@@ -1926,6 +1923,8 @@ function initScrollBottomBtn(): void {
 
   const update = () => {
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
+    // 维护 userAtBottom flag(scrollDown 用,避免每帧读 scrollHeight)。
+    userAtBottom = dist < 120;
     if (dist > 200) {
       btn.classList.add('visible');
     } else {
@@ -1939,13 +1938,12 @@ function initScrollBottomBtn(): void {
   let moTimer: ReturnType<typeof setTimeout> | null = null;
   const mo = new MutationObserver(() => {
     if (moTimer) return;
-    moTimer = setTimeout(() => { moTimer = null; update(); }, 100);
+    moTimer = setTimeout(() => { moTimer = null; update(); }, 150);
   });
   mo.observe(turns, { childList: true, subtree: true });
 
   btn.addEventListener('click', () => {
-    const el = document.getElementById('turns');
-    if (el) el.scrollTop = el.scrollHeight;
+    scrollDownForce();
     btn.classList.remove('visible');
   });
 }
