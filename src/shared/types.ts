@@ -319,6 +319,7 @@ export type VoiceChatEventPayload =
   | { type: 'aiAudioEnd' }
   | { type: 'agentReply'; text: string }  // Agent 执行结果(来自当前频道)
   | { type: 'agentStatus'; text: string } // Agent 执行中间状态(工具调用等)
+  | { type: 'speakFallback'; text: string } // TTS 失败,renderer 用系统 speechSynthesis
   | { type: 'error'; message: string }
   | { type: 'ready' };
 

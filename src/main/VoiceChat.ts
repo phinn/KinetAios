@@ -28,6 +28,7 @@ export type VoiceChatEvent =
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
   | { type: 'agentReply'; text: string }        // Agent 执行结果(来自当前频道)
   | { type: 'agentStatus'; text: string }      // Agent 执行中间状态(工具调用等)
+  | { type: 'speakFallback'; text: string }    // TTS 失败,让 renderer 用系统 speechSynthesis 朗读
   | { type: 'error'; message: string }
   | { type: 'ready' };                          // 会话已建立,可以开始说话
 
@@ -49,6 +50,7 @@ export class VoiceChat {
   private sessionId = '';
   private lastUserText = '';                    // 最近一句 ASR 识别文本(增量累积)
   private userMsgCb: ((text: string) => void) | null = null;
+  private agentBusy = false;                    // P0: Agent 执行并发保护
 
   /** 设置事件回调 / Set event callback */
   onEvent(cb: EventCb): void {
@@ -77,6 +79,16 @@ export class VoiceChat {
     if (!text) return;
     this.emit({ type: 'agentReply', text });
 
+    // P1 #3: 等待豆包 WS TTS 播完再合成 Agent TTS,避免双路音频叠加
+    // Wait for Doubao WS TTS to finish before synthesizing Agent TTS to prevent audio overlap
+    if (this.state === 'speaking') {
+      console.log('[VoiceChat] ⏳ 豆包 TTS 正在播放,等待结束后再合成 Agent TTS');
+      const waitStart = Date.now();
+      while (this.state === 'speaking' && Date.now() - waitStart < 15000) {
+        await new Promise(r => setTimeout(r, 200));
+      }
+    }
+
     // 用豆包大模型 TTS HTTP API 合成音频,复用 renderer 的 playAiAudio 播放路径。
     // Synthesize via Doubao TTS HTTP API, reuse the same aiAudio playback path as the WS session.
     try {
@@ -84,10 +96,18 @@ export class VoiceChat {
       if (pcm && pcm.length > 0) {
         this.emit({ type: 'aiAudio', data: pcm });
         this.emit({ type: 'aiAudioEnd' });
+      } else {
+        // TTS HTTP 失败(权限不足/网络错误)→ fallback 到系统 speechSynthesis
+        // TTS HTTP failed (no permission / network) → fallback to system speechSynthesis
+        console.log('[VoiceChat] ⚠️ 豆包 TTS 不可用,fallback 到系统 TTS');
+        this.emit({ type: 'speakFallback', text });
       }
     } catch (e) {
       console.error('[VoiceChat] TTS 合成失败:', (e as Error)?.message);
-      // TTS 失败不阻塞 — 文字已显示,用户至少能看到结果
+      this.emit({ type: 'speakFallback', text });
+    } finally {
+      // P0: 无论成功失败,都释放并发锁
+      this.agentBusy = false;
     }
   }
 
@@ -217,6 +237,10 @@ export class VoiceChat {
 
   /** 停止并断开 / Stop & disconnect */
   close(): void {
+    // P0 #6: 清空回调,防止 close 后仍有在途的 async 回调将结果打到新 session
+    this.userMsgCb = null;
+    this.agentBusy = false;
+    this.lastUserText = '';
     if (this.ws) {
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
@@ -527,10 +551,17 @@ export class VoiceChat {
         break;
 
       case 459: // ASREnded — 用户说话结束,触发 Agent 查询
-        console.log('[VoiceChat] 🔔 ASREnded 到达, lastUserText:', JSON.stringify(this.lastUserText), 'hasCb:', !!this.userMsgCb);
+        console.log('[VoiceChat] 🔔 ASREnded 到达, lastUserText:', JSON.stringify(this.lastUserText), 'hasCb:', !!this.userMsgCb, 'agentBusy:', this.agentBusy);
         if (this.lastUserText && this.userMsgCb) {
+          if (this.agentBusy) {
+            // P0: 上一个 Agent 任务还在执行,丢弃本次 — 避免并发 send 导致消息乱序
+            console.log('[VoiceChat] ⚠️ Agent 正忙,丢弃本次 ASR:', this.lastUserText.slice(0, 60));
+            this.lastUserText = '';
+            break;
+          }
           const msg = this.lastUserText;
           this.lastUserText = '';
+          this.agentBusy = true;  // P0: 加锁,在 agentResult finally 中释放
           console.log('[VoiceChat] 📋 用户完整发言,转发给 Agent:', msg);
           this.userMsgCb(msg);
         }

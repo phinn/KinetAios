@@ -4138,7 +4138,7 @@ let vcWorkletNode: AudioWorkletNode | null = null;
 let vcSourceNode: MediaStreamAudioSourceNode | null = null;
 let vcMuted = false;
 let vcPlayCtx: AudioContext | null = null;  // AI 音频播放 context
-let vcPlayQueue: Float32Array[] = [];        // 待播放的 PCM chunks
+let vcPlayQueue: (Float32Array | null)[] = [];  // 待播放的 PCM chunks (null = sentinel, 一段播完)
 let vcPlaying = false;
 let vcUserText = '';               // 累积用户文本
 let vcAiText = '';                 // 累积 AI 文本
@@ -4226,11 +4226,23 @@ function wireVoiceChat(): void {
         document.getElementById('vc-hint')!.textContent = ev.text;
         break;
       }
+      case 'speakFallback': {
+        // 豆包 TTS HTTP 不可用 → 用系统 speechSynthesis 朗读 Agent 结果
+        // Doubao TTS HTTP unavailable → fallback to system speechSynthesis
+        const utter = new SpeechSynthesisUtterance(ev.text.slice(0, 500));
+        utter.lang = 'zh-CN';
+        utter.rate = 1.1;
+        speechSynthesis.cancel();
+        speechSynthesis.speak(utter);
+        break;
+      }
       case 'aiAudio':
         playAiAudio(ev.data);
         break;
       case 'aiAudioEnd':
-        vcPlaying = false;
+        // P1 #4: 不直接操作 vcPlaying(会和 drainPlayQueue 竞争),
+        // 改用 sentinel(null)让 drainPlayQueue 自然结束当前轮次
+        vcPlayQueue.push(null);
         break;
       case 'error':
         document.getElementById('vc-status')!.textContent = '❌ ' + ev.message;
@@ -4412,14 +4424,16 @@ async function drainPlayQueue(): Promise<void> {
 
   while (vcPlayQueue.length > 0 && vcActive) {
     const chunk = vcPlayQueue.shift()!;
+    // P1 #4: sentinel(null)表示一段音频播完,不播,继续 drain 剩余
+    if (chunk === null) continue;
     const audioBuf = vcPlayCtx.createBuffer(1, chunk.length, 24000);
     audioBuf.copyToChannel(chunk as any, 0);
     const srcNode = vcPlayCtx.createBufferSource();
     srcNode.buffer = audioBuf;
     srcNode.connect(vcPlayCtx.destination);
     srcNode.start();
-    // 等待这一段播完
-    await new Promise(r => setTimeout(r, (chunk.length / 24000) * 1000));
+    // P1 #7: 用 onended 替代 setTimeout,消除 timing drift
+    await new Promise<void>(resolve => { srcNode.onended = () => resolve(); });
   }
   vcPlaying = false;
 }

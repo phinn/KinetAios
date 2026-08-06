@@ -2005,6 +2005,8 @@ function registerIpc(): void {
           return;
         }
         const conv = convs[0];
+        // P0: double-check conv.status — agentBusy 在 VoiceChat case 459 中已设,
+        // 但两个 ASR 事件可能近乎同时到达,这里做第二道防线
         if (conv.status === 'running') {
           voiceChat.agentResult('上一个任务还在执行中,请稍等。');
           return;
