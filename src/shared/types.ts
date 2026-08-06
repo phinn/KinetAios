@@ -516,6 +516,9 @@ export type Conversation = {
   /** 跨引擎切换时自动生成的上下文摘要(让新引擎知道之前做了什么)。
    *  首次 run 后消费并清除。null = 无待注入摘要。 */
   crossEngineContext?: string | null;
+  /** 企信会话映射 key(格式: `wecom:${userid}`)。
+   *  非空 = 该会话由企信机器人创建,用于按用户复用会话避免每条消息新建频道。 */
+  wecomKey?: string | null;
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。

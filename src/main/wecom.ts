@@ -14,6 +14,8 @@ class WeComBridge {
   private ws: WSClient | null = null;
   private taskManager: TaskManager | null = null;
   private _connected = false;
+  /** userid → convId 映射,用于按用户复用会话(而非每条消息新建)。 */
+  private wecomSessions = new Map<string, string>();
 
   setTaskManager(tm: TaskManager): void {
     this.taskManager = tm;
@@ -138,10 +140,22 @@ class WeComBridge {
     const cfg = getSettings().wecomBot;
     const userid = body.from?.userid || 'unknown';
     const chatid = body.chatid || userid;
+    const wecomKey = `wecom:${userid}`;
 
-    // 新建 KinetAios 内部会话 / Create internal conversation
+    // 按用户复用会话:同一 userid 的后续消息进入同一会话,保持多轮上下文。
+    // / Reuse conversation per user: subsequent messages from the same userid go into the same conv.
     const cwd = cfg.defaultCwd || os.homedir();
-    const conv = this.taskManager.newConversation(cwd, cfg.engine);
+    let convId = this.wecomSessions.get(wecomKey);
+    let conv = convId ? this.taskManager.get(convId) : undefined;
+
+    // 会话不存在或已被删除 → 新建并登记
+    // / Conv not found or deleted → create and register
+    if (!conv) {
+      conv = this.taskManager.newConversation(cwd, cfg.engine);
+      conv.wecomKey = wecomKey;
+      this.wecomSessions.set(wecomKey, conv.id);
+    }
+    convId = conv.id;
     const streamId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const replyFrame: WsFrameHeaders = { headers: frame.headers };
 
@@ -149,6 +163,30 @@ class WeComBridge {
       type: 'message_received',
       data: { userid, chatid, text: text.slice(0, 100), chattype: body.chattype },
     });
+
+    // 上一轮还在处理 → 排队等待(轮询 conv.status 变为 ready)
+    // / Previous turn still running → wait in queue (poll until conv.status becomes ready)
+    if (conv.status === 'running') {
+      try {
+        await this.ws.reply(frame, {
+          msgtype: 'text',
+          text: { content: '⏳ 上一条消息还在处理中,请稍候…' },
+        });
+      } catch { /* ignore */ }
+      // 最多等待 120 秒
+      const deadline = Date.now() + 120_000;
+      while (Date.now() < deadline) {
+        await new Promise((r) => setTimeout(r, 2000));
+        const c = this.taskManager.get(convId);
+        if (c && c.status !== 'running') break;
+      }
+      // 超时仍 running → 放弃这条消息
+      const stillRunning = this.taskManager.get(convId);
+      if (stillRunning?.status === 'running') {
+        await this.replyFinal(replyFrame, streamId, '❌ 等待超时,上一条消息仍在处理。请稍后重试。');
+        return;
+      }
+    }
 
     // 流式模式:先发"思考中"首帧 / Stream mode: send "thinking" first frame
     if (cfg.streamReply && this.ws) {
@@ -162,14 +200,14 @@ class WeComBridge {
     // send() 内部 await engine.run(),返回时引擎处理完毕
     // / send() awaits engine.run(); when it resolves the answer is ready
     try {
-      await this.taskManager.send(conv.id, text);
+      await this.taskManager.send(convId, text);
     } catch (e: any) {
       console.error('[wecom] Agent error:', e);
       await this.replyFinal(replyFrame, streamId, `❌ 内部错误: ${e.message}`);
       return;
     }
 
-    const updated = this.taskManager.get(conv.id);
+    const updated = this.taskManager.get(convId);
     if (!updated) return;
     const lastTurn = updated.turns[updated.turns.length - 1];
     if (!lastTurn) return;
