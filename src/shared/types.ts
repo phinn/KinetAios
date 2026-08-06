@@ -741,9 +741,9 @@ export interface KinetAPI {
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
   clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
   // ── Visual Inspector:向 webview 注入 inspect 脚本,执行后返回元素信息 ──
-  // files-pane 拿不到 webview 的 webContents(只有 main 进程能),所以走 IPC。
-  // renderer 传 webview 的 guestInstanceId → main 通过 WebContents.fromId 拿到 guest contents → executeJavaScript。
-  webviewInspect(guestInstanceId: number, script: string): Promise<{ ok: boolean; result?: unknown; error?: string }>;
+  // 安全:白名单 action 模式,不接受任意脚本字符串 / Security: whitelist action, no arbitrary script string.
+  // renderer 传 webview 的 guestInstanceId + action 名 + 结构化参数 → main 组装脚本 → executeJavaScript。
+  webviewInspect(guestInstanceId: number, action: string, params?: Record<string, unknown>): Promise<{ ok: boolean; result?: unknown; error?: string }>;
   // ── Visual Inspector:获取 webview 的 guestInstanceId ──
   // webview 嵌在 renderer,但 guestInstanceId 只有通过 Electron webview API 才能拿到。
   // preload 直接暴露无返回值的桥即可,renderer 自己 webview.getGuestInstanceId()。

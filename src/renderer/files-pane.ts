@@ -26,7 +26,6 @@ interface WebviewLike {
   reload(): void;
   addEventListener(ev: string, cb: (e: { url: string }) => void): void;
   getGuestInstanceId(): number | undefined;
-  executeJavaScript(script: string, userGesture?: boolean): Promise<unknown>;  // 直接在 renderer 层调用
 }
 
 export interface FilesPaneController {
@@ -590,92 +589,22 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
         const inWvX1 = x1 - wvRect.left, inWvY1 = y1 - wvRect.top;
         const inWvX2 = x2 - wvRect.left, inWvY2 = y2 - wvRect.top;
 
-        // ★ 直接在 renderer 层调用 webview.executeJavaScript,不走主进程 IPC
-        // 避免 getGuestInstanceId + webContents.fromId 的 "guest view manager call error"
-        const collectScript = buildCollectScript(inWvX1, inWvY1, inWvX2, inWvY2);
+        // ★ 走 IPC 让主进程执行采集脚本(安全:不在 renderer 层直接 executeJavaScript)
+        // 主进程白名单 action,只接受 collectElements + 坐标参数。
         try {
-          const wv = webviewEl as unknown as WebviewLike;
-          const result = await wv.executeJavaScript(collectScript, false);
+          const guestInstanceId = (webviewEl as any).getGuestInstanceId?.() as number | undefined;
+          if (!guestInstanceId) { resolve(null); return; }
+          const result = await api.webviewInspect(guestInstanceId, 'collectElements', { x1: inWvX1, y1: inWvY1, x2: inWvX2, y2: inWvY2 });
           done = true;
-          if (!result || !Array.isArray(result)) { resolve(null); return; }
-          resolve(result as ElementInfo[]);
+          if (!result?.ok || !result.result || !Array.isArray(result.result)) { resolve(null); return; }
+          resolve(result.result as ElementInfo[]);
         } catch (err) {
-          console.error('[inspect] executeJavaScript failed:', err);
+          console.error('[inspect] webviewInspect IPC failed:', err);
           done = true;
           resolve(null);
         }
       });
     });
-  }
-
-  // buildCollectScript:生成一次性采集脚本,传入选择框坐标(webview 内部坐标)
-  function buildCollectScript(x1: number, y1: number, x2: number, y2: number): string {
-    return `(function() {
-      var x1 = ${x1}, y1 = ${y1}, x2 = ${x2}, y2 = ${y2};
-      var w = x2 - x1, h = y2 - y1;
-      if (w < 5 || h < 5) return null;
-      var collected = [];
-      var seen = new Set();
-      var step = Math.min(20, Math.min(w, h) / 3);
-      for (var px = x1 + step/2; px < x2; px += step) {
-        for (var py = y1 + step/2; py < y2; py += step) {
-          var els = document.elementsFromPoint(px, py);
-          for (var i = 0; i < els.length; i++) {
-            var el = els[i];
-            if (seen.has(el)) continue;
-            seen.add(el);
-            var r = el.getBoundingClientRect();
-            if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
-            if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
-            collected.push(extractInfo(el, r));
-          }
-        }
-      }
-      var deduped = {};
-      var result = [];
-      for (var j = 0; j < collected.length; j++) {
-        var c = collected[j];
-        var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
-        if (deduped[key]) {
-          if (c.outerHTML.length > deduped[key].outerHTML.length) {
-            var idx = result.indexOf(deduped[key]);
-            result[idx] = c; deduped[key] = c;
-          }
-        } else { deduped[key] = c; result.push(c); }
-      }
-      function extractInfo(el, r) {
-        var cs = window.getComputedStyle(el);
-        var styles = {};
-        var keys = ['color','background-color','font-size','font-weight','font-family','width','height','padding','margin','border','border-radius','display','position','text-align','line-height','letter-spacing','opacity','flex-direction','justify-content','align-items','gap'];
-        for (var k = 0; k < keys.length; k++) { styles[keys[k]] = cs.getPropertyValue(keys[k]); }
-        var path = [];
-        var cur = el;
-        while (cur && cur.nodeType === 1 && cur !== document.body) {
-          var sel = cur.tagName.toLowerCase();
-          if (cur.id) sel += '#' + cur.id;
-          else if (cur.className && typeof cur.className === 'string') {
-            var cls = cur.className.trim().split(/\\s+/).slice(0, 2).join('.');
-            if (cls) sel += '.' + cls;
-          }
-          var sib = cur, nth = 1;
-          while ((sib = sib.previousElementSibling)) nth++;
-          if (nth > 1) sel += ':nth-child(' + nth + ')';
-          path.unshift(sel);
-          cur = cur.parentElement;
-        }
-        return {
-          tag: el.tagName.toLowerCase(),
-          id: el.id || '',
-          className: (typeof el.className === 'string' ? el.className : ''),
-          textPreview: (el.textContent || '').trim().slice(0, 300),
-          outerHTML: el.outerHTML.slice(0, 2000),
-          computedStyle: styles,
-          domPath: path.join(' > '),
-          rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
-        };
-      }
-      return result.length ? result : null;
-    })();`;
   }
 
   addr.addEventListener('keydown', (ev) => {

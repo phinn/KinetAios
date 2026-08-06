@@ -624,6 +624,78 @@ function rebuildTrayMenu(): void {
   if (tray && !tray.isDestroyed()) tray.setContextMenu(buildTrayMenu(getSettings().lang));
 }
 
+// ── Visual Inspector 采集脚本生成器(安全:坐标为纯数字,无注入面)──
+// Collect script generator for Visual Inspector — numbers only, no injection surface.
+// 从 files-pane.ts 搬到主进程,避免 renderer 传任意 script 字符串。
+function buildCollectScript(x1: number, y1: number, x2: number, y2: number): string {
+  return `(function() {
+      var x1 = ${x1}, y1 = ${y1}, x2 = ${x2}, y2 = ${y2};
+      var w = x2 - x1, h = y2 - y1;
+      if (w < 5 || h < 5) return null;
+      var collected = [];
+      var seen = new Set();
+      var step = Math.min(20, Math.min(w, h) / 3);
+      for (var px = x1 + step/2; px < x2; px += step) {
+        for (var py = y1 + step/2; py < y2; py += step) {
+          var els = document.elementsFromPoint(px, py);
+          for (var i = 0; i < els.length; i++) {
+            var el = els[i];
+            if (seen.has(el)) continue;
+            seen.add(el);
+            var r = el.getBoundingClientRect();
+            if (r.left + r.width/2 < x1 || r.left + r.width/2 > x2) continue;
+            if (r.top + r.height/2 < y1 || r.top + r.height/2 > y2) continue;
+            collected.push(extractInfo(el, r));
+          }
+        }
+      }
+      var deduped = {};
+      var result = [];
+      for (var j = 0; j < collected.length; j++) {
+        var c = collected[j];
+        var key = c.tag + '|' + c.className + '|' + c.textPreview.slice(0, 50);
+        if (deduped[key]) {
+          if (c.outerHTML.length > deduped[key].outerHTML.length) {
+            var idx = result.indexOf(deduped[key]);
+            result[idx] = c; deduped[key] = c;
+          }
+        } else { deduped[key] = c; result.push(c); }
+      }
+      function extractInfo(el, r) {
+        var cs = window.getComputedStyle(el);
+        var styles = {};
+        var keys = ['color','background-color','font-size','font-weight','font-family','width','height','padding','margin','border','border-radius','display','position','text-align','line-height','letter-spacing','opacity','flex-direction','justify-content','align-items','gap'];
+        for (var k = 0; k < keys.length; k++) { styles[keys[k]] = cs.getPropertyValue(keys[k]); }
+        var path = [];
+        var cur = el;
+        while (cur && cur.nodeType === 1 && cur !== document.body) {
+          var sel = cur.tagName.toLowerCase();
+          if (cur.id) sel += '#' + cur.id;
+          else if (cur.className && typeof cur.className === 'string') {
+            var cls = cur.className.trim().split(/\\s+/).slice(0, 2).join('.');
+            if (cls) sel += '.' + cls;
+          }
+          var sib = cur, nth = 1;
+          while ((sib = sib.previousElementSibling)) nth++;
+          if (nth > 1) sel += ':nth-child(' + nth + ')';
+          path.unshift(sel);
+          cur = cur.parentElement;
+        }
+        return {
+          tag: el.tagName.toLowerCase(),
+          id: el.id || '',
+          className: (typeof el.className === 'string' ? el.className : ''),
+          textPreview: (el.textContent || '').trim().slice(0, 300),
+          outerHTML: el.outerHTML.slice(0, 2000),
+          computedStyle: styles,
+          domPath: path.join(' > '),
+          rect: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) }
+        };
+      }
+      return result.length ? result : null;
+    })();`;
+}
+
 function registerIpc(): void {
   ipcMain.handle('get-conversations', () => taskManager.list());
   ipcMain.handle('new-conversation', (_e, cwd?: string, engine?: EngineKind) => {
@@ -1826,22 +1898,30 @@ function registerIpc(): void {
     }
   });
 
-  // ── Visual Inspector:向 <webview> 的 guest contents 注入并执行 JS ──
-  // webview 的 executeJavaScript 只能在主进程通过 guestInstanceId 拿到 webContents 后调用。
-  // renderer 传 guestInstanceId(由 <webview>.getGuestInstanceId() 获得)+ 要执行的脚本。
-  // 返回 { ok, result?, error? }。脚本内的 Promise 会被自动 await。
-  ipcMain.handle('webview-inspect', async (_e, guestInstanceId: number, script: string) => {
+  // ── Visual Inspector:向 <webview> 的 guest contents 注入采集脚本 ──
+  // 安全:不再接受任意 script 字符串(防 XSS → IPC → 任意 JS 执行)。
+  // 改为白名单 action,主进程内部硬编码脚本,renderer 只传坐标参数。
+  // renderer 传 guestInstanceId(由 <webview>.getGuestInstanceId() 获得)+ action + params。
+  // 返回 { ok, result?, error? }。
+  ipcMain.handle('webview-inspect', async (_e, guestInstanceId: number, action: string, params?: Record<string, unknown>) => {
     try {
-      console.log('[webview-inspect] guestInstanceId =', guestInstanceId, 'script length =', script.length);
       const wc = webContents.fromId(guestInstanceId);
       if (!wc) {
-        const all = webContents.getAllWebContents().map(w => w.id);
-        console.log('[webview-inspect] NOT FOUND. all ids:', all);
         return { ok: false, error: 'webview not found (guestInstanceId=' + guestInstanceId + ')' };
       }
-      console.log('[webview-inspect] wc URL =', wc.getURL());
+      // 白名单 action:只允许 collectElements 这一种操作 / Whitelist: only collectElements allowed
+      if (action !== 'collectElements') {
+        return { ok: false, error: `Unknown action: ${action}` };
+      }
+      const x1 = Number(params?.x1 ?? 0), y1 = Number(params?.y1 ?? 0);
+      const x2 = Number(params?.x2 ?? 0), y2 = Number(params?.y2 ?? 0);
+      // 数值校验:防 NaN / 负数 / 超大值注入 / Validate numbers
+      if (!Number.isFinite(x1) || !Number.isFinite(y1) || !Number.isFinite(x2) || !Number.isFinite(y2)) {
+        return { ok: false, error: 'Invalid coordinates' };
+      }
+      // 硬编码采集脚本 —— 坐标为纯数字,不存在注入面 / Hardcoded script — numbers only, no injection surface
+      const script = buildCollectScript(x1, y1, x2, y2);
       const result = await wc.executeJavaScript(script);
-      console.log('[webview-inspect] result =', typeof result, JSON.stringify(result).slice(0, 200));
       return { ok: true, result };
     } catch (e) {
       console.error('[webview-inspect] ERROR:', (e as Error)?.message ?? e);

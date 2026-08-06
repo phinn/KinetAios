@@ -221,10 +221,17 @@ export class LocalMcpServer {
   }
 
   private handle(req: IncomingMessage, res: ServerResponse): void {
-    // CORS:允许任意来源(局域网内的 MCP 客户端)。
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
-    res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS');
+    // CORS:仅允许 localhost / file:// 协议(防止恶意网页跨域调用本机 MCP → RCE)。
+    // MCP 客户端(桌面应用、CLI)不走浏览器 CORS,不受此限制。
+    // / CORS: only allow localhost origins (prevents malicious web pages from calling local MCP → RCE).
+    const origin = req.headers.origin ?? '';
+    const allowedOrigins = ['http://localhost', 'http://127.0.0.1', 'http://localhost:3000', 'http://localhost:8080', 'null', 'file://'];
+    const corsOrigin = allowedOrigins.some(a => origin.startsWith(a)) ? origin : '';
+    if (corsOrigin) {
+      res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+      res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+      res.setHeader('Access-Control-Allow-Methods', 'POST, GET, DELETE, OPTIONS');
+    }
     if (req.method === 'OPTIONS') {
       res.writeHead(204);
       res.end();
@@ -265,12 +272,17 @@ export class LocalMcpServer {
         res.end(JSON.stringify({ error: '未授权:token 不匹配' }));
         return;
       }
-      res.writeHead(200, {
+      // CORS:同上,仅允许 localhost / CORS: same as above, localhost only
+      const liveOrigin = (req.headers.origin ?? '');
+      const liveAllowed = ['http://localhost', 'http://127.0.0.1', 'null', 'file://'];
+      const liveCors = liveAllowed.some(a => liveOrigin.startsWith(a)) ? liveOrigin : '';
+      const headers: Record<string, string> = {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache',
         Connection: 'keep-alive',
-        'Access-Control-Allow-Origin': '*',
-      });
+      };
+      if (liveCors) headers['Access-Control-Allow-Origin'] = liveCors;
+      res.writeHead(200, headers);
       // 先发缓存的事件
       const startIdx = Math.max(0, this.liveEvents.length - 100);
       for (let i = startIdx; i < this.liveEvents.length; i++) {
