@@ -28,7 +28,6 @@ export type VoiceChatEvent =
   | { type: 'aiAudioEnd' }                      // AI 一段音频播完
   | { type: 'agentReply'; text: string }        // Agent 执行结果(来自当前频道)
   | { type: 'agentStatus'; text: string }      // Agent 执行中间状态(工具调用等)
-  | { type: 'speakFallback'; text: string }    // TTS 失败,让 renderer 用系统 speechSynthesis 朗读
   | { type: 'error'; message: string }
   | { type: 'ready' };                          // 会话已建立,可以开始说话
 
@@ -89,95 +88,30 @@ export class VoiceChat {
       }
     }
 
-    // 用豆包大模型 TTS HTTP API 合成音频,复用 renderer 的 playAiAudio 播放路径。
-    // Synthesize via Doubao TTS HTTP API, reuse the same aiAudio playback path as the WS session.
+    // 用豆包实时语音 WS 管道直接注入文本,让豆包端到端 TTS 朗读 Agent 回复。
+    // Inject Agent reply text into the Doubao WS dialogue channel for TTS.
+    // 这复用已认证的 WS 连接,不需要额外的 TTS HTTP 权限。
+    // Reuses the authenticated WS connection — no separate TTS HTTP permission needed.
     try {
-      const pcm = await this.synthesizeTTS(text);
-      if (pcm && pcm.length > 0) {
-        this.emit({ type: 'aiAudio', data: pcm });
-        this.emit({ type: 'aiAudioEnd' });
-      } else {
-        // TTS HTTP 失败(权限不足/网络错误)→ fallback 到系统 speechSynthesis
-        // TTS HTTP failed (no permission / network) → fallback to system speechSynthesis
-        console.log('[VoiceChat] ⚠️ 豆包 TTS 不可用,fallback 到系统 TTS');
-        this.emit({ type: 'speakFallback', text });
+      const clean = text
+        .replace(/```[\s\S]*?```/g, '代码块')
+        .replace(/`([^`]+)`/g, '$1')
+        .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+        .replace(/[#*_>]/g, '')
+        .trim()
+        .slice(0, 500);
+      if (clean && this.ws && this.ws.readyState === WebSocket.OPEN) {
+        // event=502 ChatRequest: 让豆包 TTS 朗读指定文本
+        // 这会触发 event 352(TTSResponse)+ 359(TTSEnded),复用现有播放管道
+        console.log('[VoiceChat] 📤 通过 WS 注入 Agent 回复文本供豆包 TTS:', clean.slice(0, 80));
+        this.sendSessionEvent(502, JSON.stringify({ text: clean }));
       }
     } catch (e) {
-      console.error('[VoiceChat] TTS 合成失败:', (e as Error)?.message);
-      this.emit({ type: 'speakFallback', text });
+      console.error('[VoiceChat] WS 文本注入失败:', (e as Error)?.message);
     } finally {
       // P0: 无论成功失败,都释放并发锁
       this.agentBusy = false;
     }
-  }
-
-  /**
-   * 豆包大模型 TTS 同步 HTTP 合成
-   * Doubao large-model TTS synchronous HTTP synthesis.
-   *
-   * 端点: https://openspeech.bytedance.com/api/v1/tts
-   * 认证: Authorization: Bearer;${accessToken}
-   * 音频格式: pcm_s16le 24kHz mono(与 WS 实时语音一致, renderer playAiAudio 原生支持)
-   */
-  private async synthesizeTTS(text: string): Promise<Buffer | null> {
-    if (!this.cfg) return null;
-
-    // 清洗文本:去掉 markdown 噪声(代码块/链接/emoji),TTS 只朗读可读文本
-    const clean = text
-      .replace(/```[\s\S]*?```/g, '代码块')
-      .replace(/`([^`]+)`/g, '$1')
-      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-      .replace(/[#*_>]/g, '')
-      .replace(/[\u{D800}-\u{DFFF}]/gu, '\uFFFD')  // 清洗孤儿 surrogate
-      .trim()
-      .slice(0, 1024);  // TTS 单次请求文本上限
-
-    if (!clean) return null;
-
-    const reqId = crypto.randomUUID();
-    const body = {
-      app: {
-        appid: this.cfg.appId,
-        token: this.cfg.accessToken,     // 即 access token,与 WS 认证用同一个
-        cluster: 'volcano_tts',
-      },
-      user: { uid: 'kinetaios-agent' },
-      audio: {
-        voice_type: this.cfg.voiceType || 'zh_female_vv_jupiter_bigtts',
-        encoding: 'pcm',
-        rate: 24000,
-      },
-      request: {
-        reqid: reqId,
-        text: clean,
-        text_type: 'plain',
-        operation: 'query',
-      },
-    };
-
-    const resp = await fetch('https://openspeech.bytedance.com/api/v1/tts', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer;${this.cfg.accessToken}`,
-      },
-      body: JSON.stringify(body),
-    });
-
-    if (!resp.ok) {
-      const errText = await resp.text().catch(() => '');
-      console.error(`[VoiceChat] TTS HTTP ${resp.status}: ${errText.slice(0, 200)}`);
-      return null;
-    }
-
-    const json = await resp.json() as Record<string, any>;
-    // code=3000 表示成功,data 字段为 base64 编码的 PCM 音频
-    if (json.code !== 3000 || !json.data) {
-      console.error(`[VoiceChat] TTS 合成失败: code=${json.code}, message=${json.message || ''}`);
-      return null;
-    }
-
-    return Buffer.from(json.data as string, 'base64');
   }
 
   /** 是否活跃 / Is active */

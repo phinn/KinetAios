@@ -4226,16 +4226,6 @@ function wireVoiceChat(): void {
         document.getElementById('vc-hint')!.textContent = ev.text;
         break;
       }
-      case 'speakFallback': {
-        // 豆包 TTS HTTP 不可用 → 用系统 speechSynthesis 朗读 Agent 结果
-        // Doubao TTS HTTP unavailable → fallback to system speechSynthesis
-        const utter = new SpeechSynthesisUtterance(ev.text.slice(0, 500));
-        utter.lang = 'zh-CN';
-        utter.rate = 1.1;
-        speechSynthesis.cancel();
-        speechSynthesis.speak(utter);
-        break;
-      }
       case 'aiAudio':
         playAiAudio(ev.data);
         break;
