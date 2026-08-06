@@ -3,6 +3,25 @@
 import type { ChatMsg, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
 import { getSettings } from './settings';
 
+// Sanitize orphan surrogates from strings before JSON serialization.
+// Node JSON.stringify turns lone surrogates (e.g. \uD83D from a truncated emoji) into literal
+// "\ud83d" escapes — Python's json.loads faithfully restores them, then utf-8 encoding blows up
+// with "surrogates not allowed". Replace them with U+FFFD at the source.
+// 清洗孤儿 surrogate:截断的 emoji 半截字符(\uD83D 等)会导致 GLM 服务端 Python utf-8 编码崩溃。
+function sanitizeStr(s: string): string {
+  // TextEncoder.encode() replaces lone surrogates with U+FFFD, then decode back to string.
+  // Valid surrogate pairs (full emoji) are preserved. Zero allocations beyond the encode/decode.
+  return new TextDecoder().decode(new TextEncoder().encode(s));
+}
+
+function sanitizeMsgs(msgs: ChatMsg[]): ChatMsg[] {
+  return msgs.map(m => {
+    if (typeof m.content === 'string') return { ...m, content: sanitizeStr(m.content) };
+    if (Array.isArray(m.content)) return { ...m, content: m.content.map(p => p.type === 'text' ? { ...p, text: sanitizeStr(p.text ?? '') } : p) };
+    return m;
+  });
+}
+
 export type ToolDef = {
   type: 'function';
   function: { name: string; description: string; parameters: Record<string, unknown> };
@@ -203,7 +222,7 @@ class OpenAICompatibleProvider implements Provider {
     // OpenAI 兼容端点(GLM 智谱 / DeepSeek / Qwen / OpenAI)均为自动前缀缓存:messages 开头的
     // system + 早期 history 每轮不变 → 命中缓存、低价计费。无需额外参数(只有 Anthropic 要 cache_control)。
     // 剥掉内部用的 _memory 标记字段 —— 它是 AgentLoop 用来保护记忆消息不被 trim 的标记,不该发到 API。
-    const wireMsgs = messages.map(({ _memory, ...rest }) => rest);
+    const wireMsgs = sanitizeMsgs(messages.map(({ _memory, ...rest }) => rest));
     const body: Record<string, unknown> = { model: snap.model, messages: wireMsgs, stream: true };
     body.max_tokens = maxTokensFor(snap.model);
     // Streaming usually omits usage unless include_usage is set (final chunk then carries it).
@@ -393,9 +412,10 @@ class AnthropicProvider implements Provider {
     if (!snap.apiKey) throw new GLMError('noKey');
 
     // 1) OpenAI messages → Anthropic (system separate; consecutive tool msgs merge into one user tool_result block)
+    const cleanMessages = sanitizeMsgs(messages);
     const systemParts: string[] = [];
     const anth: any[] = [];
-    for (const m of messages) {
+    for (const m of cleanMessages) {
       const role = m.role;
       const content = (typeof m.content === 'string' ? m.content : '') ?? '';
       if (role === 'system') systemParts.push(content);
