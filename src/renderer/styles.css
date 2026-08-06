@@ -1593,6 +1593,15 @@ a { color: var(--accent); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: 6px; }
 .answer .ic { padding: 1px 6px; font-size: 12px; border: 1px solid var(--border-soft); }
 .answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; user-select: text; font-size: 12px; border: 1px solid var(--border-soft); }
+
+/* ── Markdown 表格 / GFM tables ── */
+.answer .md-table-wrap { overflow-x: auto; margin: 0 0 10px; }
+.answer .md-table { border-collapse: collapse; font-size: 12.5px; width: 100%; min-width: 0; }
+.answer .md-table thead th { background: var(--bg-elev); color: var(--text); font-weight: 600; text-align: left; padding: 7px 12px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+.answer .md-table tbody td { padding: 6px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); }
+.answer .md-table tbody tr:last-child td { border-bottom: none; }
+.answer .md-table tbody tr:hover td { background: var(--bg-elev); }
+
 .steps { margin: 8px 0; }
 .step { border-left: 2px solid var(--accent-dim); padding: 6px 12px; margin-bottom: 6px; background: var(--bg-side); border-radius: 0 8px 8px 0; font-size: 12px; }
 .step .name { color: var(--accent); font-weight: 600; }

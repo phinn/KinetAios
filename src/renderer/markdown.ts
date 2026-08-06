@@ -58,6 +58,37 @@ export function renderMarkdown(src: string): string {
       out.push(`<blockquote>${inline(quote.join('<br>'))}</blockquote>`);
       continue;
     }
+    // ── 表格 / Tables (GFM pipe-tables) ──
+    // | col1 | col2 |     ← header row
+    // |------|------|     ← separator
+    // | a    | b    |     ← data rows
+    if (/^\|.*\|\s*$/.test(line) && i + 1 < lines.length && /^\|[\s:|-]+\|\s*$/.test(lines[i + 1])) {
+      flushPara();
+      const parseRow = (raw: string): string[] =>
+        raw.trim().replace(/^\|/, '').replace(/\|\s*$/, '').split('|').map(c => c.trim());
+
+      const headerCells = parseRow(line);
+      i += 2; // skip header + separator
+      const bodyRows: string[][] = [];
+      while (i < lines.length && /^\|.*\|\s*$/.test(lines[i])) {
+        bodyRows.push(parseRow(lines[i]));
+        i++;
+      }
+
+      let tbl = '<div class="md-table-wrap"><table class="md-table"><thead><tr>';
+      for (const h of headerCells) tbl += `<th>${inline(h)}</th>`;
+      tbl += '</tr></thead><tbody>';
+      for (const row of bodyRows) {
+        tbl += '<tr>';
+        for (const c of row) tbl += `<td>${inline(c)}</td>`;
+        tbl += '</tr>';
+      }
+      tbl += '</tbody></table></div>';
+      out.push(tbl);
+      continue;
+    }
+
+    // ── 无序列表 / Unordered lists ──
     if (/^[-*+]\s+/.test(line)) {
       flushPara();
       const items: string[] = [];
