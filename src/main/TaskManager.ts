@@ -1,7 +1,7 @@
 // Conversation manager. Port of Swift TaskManager (engine dispatch + persistence + memory).
 // Three engines now (Direct / Claude Code / Codex); each implements the Engine interface.
 import fs from 'node:fs';
-import type { AgentEvent, ChatMsg, Conversation, ContextMode, EngineKind } from '../shared/types';
+import type { AgentEvent, ChatMsg, Conversation, ContextMode, EngineKind, Turn } from '../shared/types';
 import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
@@ -76,13 +76,20 @@ export class TaskManager {
   // Switch engine mid-conversation. Clears cross-protocol context (directHistory + CLI session),
   // same as Swift AgentTask.setEngine — a Claude session id is meaningless to Codex, etc.
   // Direct 家族(direct ↔ directV2)共享 directHistory,切换不清空。
+  // 跨族切换时:把已有 turns 摘要存入 crossEngineContext,让新引擎首次 run 时注入。
   setEngine(id: string, engine: EngineKind): void {
     const conv = this.convs.get(id);
     if (!conv || conv.engine === engine) return;
     if (isCliEngine(engine) && !getSettings().enableCliEngines) return; // toggle off → refuse
+    const oldEngine = conv.engine;
     conv.engine = engine;
     // 跨族切换才清空上下文(同族 direct ↔ directV2 保留)
     if (!isDirectFamily(engine) || !isDirectFamily(this.lastEngine[id] ?? engine)) {
+      // 生成上下文摘要,让新引擎知道之前做了什么(仅当有实质性对话时)
+      const validTurns = conv.turns.filter((t) => t.prompt || t.answer);
+      if (validTurns.length > 0) {
+        conv.crossEngineContext = buildCrossEngineSummary(validTurns, oldEngine);
+      }
       conv.directHistory = [];
       conv.engineSessionId = null;
     }
@@ -1157,4 +1164,31 @@ function textSimilarity(aRaw: string, bRaw: string): number {
   let inter = 0;
   for (const t of ta) if (tb.has(t)) inter++;
   return inter / (ta.size + tb.size - inter);
+}
+
+// ── 跨引擎切换上下文摘要 ──
+// 从已有 turns 生成一段紧凑的摘要,让新引擎理解"之前做了什么"。
+// 纯文本格式(Direct → CLI 或 CLI → Direct 都能用),不依赖 LLM 调用(避免切引擎时还要等 API)。
+// 最近 N 轮保留原文(prompt 截断 200 字 + answer 截断 500 字),更早的只留 prompt 第一句。
+function buildCrossEngineSummary(turns: Turn[], fromEngine: EngineKind): string {
+  const MAX_TURNS = 8;        // 最多取最近 8 轮
+  const PROMPT_TRUNC = 200;   // 每轮 prompt 截断
+  const ANSWER_TRUNC = 500;   // 每轮 answer 截断
+  const recent = turns.slice(-MAX_TURNS);
+  const lines: string[] = [
+    `# 跨引擎上下文(从 ${fromEngine} 切换而来)`,
+    `以下是之前会话的最近 ${recent.length} 轮摘要,请基于此继续。`,
+    '',
+  ];
+  for (let i = 0; i < recent.length; i++) {
+    const t = recent[i];
+    const p = (t.prompt || '').slice(0, PROMPT_TRUNC);
+    const a = (t.answer || '').slice(0, ANSWER_TRUNC);
+    if (!p && !a) continue;
+    lines.push(`## 第 ${i + 1} 轮`);
+    if (p) lines.push(`用户: ${p}${t.prompt.length > PROMPT_TRUNC ? '…' : ''}`);
+    if (a) lines.push(`助手: ${a}${t.answer.length > ANSWER_TRUNC ? '…' : ''}`);
+    lines.push('');
+  }
+  return lines.join('\n');
 }

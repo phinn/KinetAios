@@ -379,7 +379,12 @@ class DirectEngine implements Engine {
     // memoryBlock 走 history[0] 注入(见 runAgentLoop 的 memMsg),不拼进 systemPrompt ——
     // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿。
     // refBlock 拼到 userInput 后面(每轮动态,不进 systemPrompt → 不破坏缓存)。
-    const userInput = refSection ? prompt + refSection : prompt;
+    // 跨引擎上下文(切到 Direct 时自动注入,首次消费后清除)
+    const crossCtx = conv.crossEngineContext;
+    if (crossCtx) {
+      conv.crossEngineContext = null; // 消费一次即可
+    }
+    const userInput = [prompt, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
     // 从策略包取 trim/interStepCompact/truncate 阈值,统一收口到 ENGINE_POLICIES。
     // v1 direct 默认轻量;hifi 模式 resolveEnginePolicy 已自动翻倍。
     const policy = resolveEnginePolicy('direct', conv.contextMode);
@@ -568,7 +573,10 @@ class ClaudeCodeEngine implements Engine {
   readonly name = 'claudeCode' as const;
   async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
-    const prompt = refBlock ? basePrompt + refBlock : basePrompt;
+    // 跨引擎上下文:切到 Claude Code 时注入(首次消费后清除)
+    const crossCtx = conv.crossEngineContext;
+    if (crossCtx) conv.crossEngineContext = null;
+    const prompt = [basePrompt, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
     const cwd = conv.cwd;
     const s = getSettings();
     const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
@@ -654,7 +662,10 @@ class CodexEngine implements Engine {
   readonly name = 'codex' as const;
   async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
-    const prompt = refBlock ? basePrompt + refBlock : basePrompt;
+    // 跨引擎上下文:切到 Codex 时注入(首次消费后清除)
+    const crossCtx = conv.crossEngineContext;
+    if (crossCtx) conv.crossEngineContext = null;
+    const prompt = [basePrompt, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
     const cwd = conv.cwd;
     const s = getSettings();
     const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;

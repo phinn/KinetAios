@@ -231,7 +231,7 @@ export class DirectV2Engine implements Engine {
     const systemPrompt =
       baseSystemPrompt +
       V2_SYSTEM_SUFFIX +
-      personaSection() +
+      personaSection(conv) +
       goalSection +
       skillSection +
       rulesSection +
@@ -253,7 +253,10 @@ export class DirectV2Engine implements Engine {
 
     // ── 构建 user input ──
     const refSection = refBlock ?? '';
-    const userInput = refSection ? prompt + refSection : prompt;
+    // 跨引擎上下文:切到 DirectV2 时注入(首次消费后清除)
+    const crossCtx = conv.crossEngineContext;
+    if (crossCtx) conv.crossEngineContext = null;
+    const userInput = [prompt, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
 
     // ── Phase 1: Planner — 探查 + 规划(只读工具)──
     // Crash recovery: 如果有 resumedPlan,跳过 Planner,直接用恢复的 plan + history 进 Executor。

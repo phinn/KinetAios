@@ -501,6 +501,9 @@ export type Conversation = {
   branchInfo?: BranchInfo | null; // 分支来源(null/undefined = 原创会话)
   pipelineId?: string | null; // 如果由 pipeline 创建,记录 pipeline id
   personaEnabled?: boolean; // 替身画像开关(默认 true;false = 本会话不注入 persona)
+  /** 跨引擎切换时自动生成的上下文摘要(让新引擎知道之前做了什么)。
+   *  首次 run 后消费并清除。null = 无待注入摘要。 */
+  crossEngineContext?: string | null;
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
