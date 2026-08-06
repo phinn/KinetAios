@@ -4214,11 +4214,9 @@ function wireVoiceChat(): void {
       case 'agentReply': {
         // Agent 执行结果(来自当前频道的 AgentLoop)
         // 旁路模式:不覆盖豆包回复文本,在 AI 文本区追加 Agent 结果,用分隔线区分
-        // Agent 结果用系统 TTS 朗读(豆包 WS 不支持文本注入 TTS)
+        // TTS 朗读由 VoiceChat.agentResult → synthesizeTTS → aiAudio 事件处理(豆包自然语音)
         vcAiText = vcAiText ? vcAiText + '\n─── Agent ───\n' + ev.text : ev.text;
         document.getElementById('vc-ai-text')!.textContent = vcAiText;
-        // 朗读 Agent 结果(系统 TTS)
-        if (ev.text) speakText(ev.text);
         break;
       }
       case 'aiAudio':

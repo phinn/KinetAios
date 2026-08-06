@@ -16,6 +16,7 @@
 //   Payload size (4 bytes) + payload bytes
 
 import WebSocket from 'ws';
+import crypto from 'crypto';
 import type { VoiceChatConfig } from '../shared/types.js';
 
 // ── 事件类型(推给 renderer)──
@@ -63,9 +64,93 @@ export class VoiceChat {
     return this.state;
   }
 
-  /** Agent 执行完毕,把结果文本推给 renderer 显示 + 朗读 */
-  agentResult(text: string): void {
-    if (text) this.emit({ type: 'agentReply', text });
+  /** Agent 执行完毕,把结果文本推给 renderer 显示 + 用豆包 TTS 朗读 */
+  // Agent result → display text + synthesize via Doubao TTS HTTP → emit aiAudio
+  async agentResult(text: string): Promise<void> {
+    if (!text) return;
+    this.emit({ type: 'agentReply', text });
+
+    // 用豆包大模型 TTS HTTP API 合成音频,复用 renderer 的 playAiAudio 播放路径。
+    // Synthesize via Doubao TTS HTTP API, reuse the same aiAudio playback path as the WS session.
+    try {
+      const pcm = await this.synthesizeTTS(text);
+      if (pcm && pcm.length > 0) {
+        this.emit({ type: 'aiAudio', data: pcm });
+        this.emit({ type: 'aiAudioEnd' });
+      }
+    } catch (e) {
+      console.error('[VoiceChat] TTS 合成失败:', (e as Error)?.message);
+      // TTS 失败不阻塞 — 文字已显示,用户至少能看到结果
+    }
+  }
+
+  /**
+   * 豆包大模型 TTS 同步 HTTP 合成
+   * Doubao large-model TTS synchronous HTTP synthesis.
+   *
+   * 端点: https://openspeech.bytedance.com/api/v1/tts
+   * 认证: Authorization: Bearer;${accessToken}
+   * 音频格式: pcm_s16le 24kHz mono(与 WS 实时语音一致, renderer playAiAudio 原生支持)
+   */
+  private async synthesizeTTS(text: string): Promise<Buffer | null> {
+    if (!this.cfg) return null;
+
+    // 清洗文本:去掉 markdown 噪声(代码块/链接/emoji),TTS 只朗读可读文本
+    const clean = text
+      .replace(/```[\s\S]*?```/g, '代码块')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+      .replace(/[#*_>]/g, '')
+      .replace(/[\u{D800}-\u{DFFF}]/gu, '\uFFFD')  // 清洗孤儿 surrogate
+      .trim()
+      .slice(0, 1024);  // TTS 单次请求文本上限
+
+    if (!clean) return null;
+
+    const reqId = crypto.randomUUID();
+    const body = {
+      app: {
+        appid: this.cfg.appId,
+        token: this.cfg.accessToken,     // 即 access token,与 WS 认证用同一个
+        cluster: 'volcano_tts',
+      },
+      user: { uid: 'kinetaios-agent' },
+      audio: {
+        voice_type: this.cfg.voiceType || 'zh_female_vv_jupiter_bigtts',
+        encoding: 'pcm',
+        rate: 24000,
+      },
+      request: {
+        reqid: reqId,
+        text: clean,
+        text_type: 'plain',
+        operation: 'query',
+      },
+    };
+
+    const resp = await fetch('https://openspeech.bytedance.com/api/v1/tts', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer;${this.cfg.accessToken}`,
+      },
+      body: JSON.stringify(body),
+    });
+
+    if (!resp.ok) {
+      const errText = await resp.text().catch(() => '');
+      console.error(`[VoiceChat] TTS HTTP ${resp.status}: ${errText.slice(0, 200)}`);
+      return null;
+    }
+
+    const json = await resp.json() as Record<string, any>;
+    // code=3000 表示成功,data 字段为 base64 编码的 PCM 音频
+    if (json.code !== 3000 || !json.data) {
+      console.error(`[VoiceChat] TTS 合成失败: code=${json.code}, message=${json.message || ''}`);
+      return null;
+    }
+
+    return Buffer.from(json.data as string, 'base64');
   }
 
   /** 是否活跃 / Is active */
