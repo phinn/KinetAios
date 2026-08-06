@@ -46,6 +46,10 @@ function logFatal(kind: string, e: unknown): void {
 process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
+// macOS 12 + Intel 上 GPU 渲染可能黑屏/白屏(Electron 已知问题),禁用硬件加速兜底。
+// 对 CPU 渲染性能影响极小(本 app 以文本/列表为主,无 Canvas/WebGL 重负载)。
+app.disableHardwareAcceleration();
+
 // ── 系统路径安全检查:阻止渲染器读写敏感系统路径 ──
 // System path guard: prevent renderer from reading/writing sensitive system paths.
 // 虽然渲染器 contextIsolation,但万一被 XSS/prompt injection 攻破,这里是一道防线。
