@@ -17,7 +17,21 @@
 
 import WebSocket from 'ws';
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
+import { app } from 'electron';
 import type { VoiceChatConfig } from '../shared/types.js';
+
+// ── 日志:写到 userData/voice-debug.log(Windows 打包后 console 看不到)──
+function vlog(...args: unknown[]): void {
+  const msg = `[${new Date().toISOString()}] ${args.join(' ')}`;
+  // eslint-disable-next-line no-console
+  console.log(msg);
+  try {
+    const logPath = path.join(app.getPath('userData'), 'voice-debug.log');
+    fs.appendFileSync(logPath, msg + '\n', 'utf-8');
+  } catch { /* ignore */ }
+}
 
 // ── 事件类型(推给 renderer)──
 export type VoiceChatEvent =
@@ -72,7 +86,7 @@ export class VoiceChat {
     // P1 #3: 等待豆包 WS TTS 播完再合成 Agent TTS,避免双路音频叠加
     // Wait for Doubao WS TTS to finish before synthesizing Agent TTS to prevent audio overlap
     if (this.state === 'speaking') {
-      console.log('[VoiceChat] ⏳ 豆包 TTS 正在播放,等待结束后再合成 Agent TTS');
+      vlog('[VoiceChat] ⏳ 豆包 TTS 正在播放,等待结束后再合成 Agent TTS');
       const waitStart = Date.now();
       while (this.state === 'speaking' && Date.now() - waitStart < 15000) {
         await new Promise(r => setTimeout(r, 200));
@@ -94,11 +108,11 @@ export class VoiceChat {
       if (clean && this.ws && this.ws.readyState === WebSocket.OPEN) {
         // event=502 ChatRequest: 让豆包 TTS 朗读指定文本
         // 这会触发 event 352(TTSResponse)+ 359(TTSEnded),复用现有播放管道
-        console.log('[VoiceChat] 📤 通过 WS 注入 Agent 回复文本供豆包 TTS:', clean.slice(0, 80));
+        vlog('[VoiceChat] 📤 通过 WS 注入 Agent 回复文本供豆包 TTS:', clean.slice(0, 80));
         this.sendSessionEvent(502, JSON.stringify({ text: clean }));
       }
     } catch (e) {
-      console.error('[VoiceChat] WS 文本注入失败:', (e as Error)?.message);
+      vlog('[VoiceChat] WS 文本注入失败:', (e as Error)?.message);
     } finally {
       // P0: 无论成功失败,都释放并发锁
       this.agentBusy = false;
@@ -129,13 +143,13 @@ export class VoiceChat {
 
     // 调试: 打印实际使用的认证参数(脱敏)
     // Debug: print actual auth params (masked)
-    console.log('[VoiceChat] 正在连接火山引擎实时语音...');
-    console.log('[VoiceChat]   URL:', url);
-    console.log('[VoiceChat]   appId:', cfg.appId);
-    console.log('[VoiceChat]   accessKey:', cfg.accessToken.slice(0, 6) + '...' + cfg.accessToken.slice(-4));
-    console.log('[VoiceChat]   resourceID:', RESOURCE_ID);
-    console.log('[VoiceChat]   appKey:', APP_KEY);
-    console.log('[VoiceChat]   connectId:', this.connectId);
+    vlog('[VoiceChat] 正在连接火山引擎实时语音...');
+    vlog('[VoiceChat]   URL:', url);
+    vlog('[VoiceChat]   appId:', cfg.appId);
+    vlog('[VoiceChat]   accessKey:', cfg.accessToken.slice(0, 6) + '...' + cfg.accessToken.slice(-4));
+    vlog('[VoiceChat]   resourceID:', RESOURCE_ID);
+    vlog('[VoiceChat]   appKey:', APP_KEY);
+    vlog('[VoiceChat]   connectId:', this.connectId);
 
     try {
       // 5 个认证 headers — 与 studyapp (Swift) 已验证的实现完全一致
@@ -202,7 +216,7 @@ export class VoiceChat {
 
   /** WebSocket 连接成功 → 发送 StartConnection (event=1) */
   private onOpen(): void {
-    console.log('[VoiceChat] ✅ WebSocket 握手成功! 发送 StartConnection (event=1)');
+    vlog('[VoiceChat] ✅ WebSocket 握手成功! 发送 StartConnection (event=1)');
     // StartConnection: event=1, payload="{}" (connect_id 已通过 HTTP header 传递)
     this.sendConnectEvent(1, '{}');
   }
@@ -246,8 +260,8 @@ export class VoiceChat {
       },
     };
 
-    console.log('[VoiceChat] 📤 发送 StartSession (event=100), sessionId:', this.sessionId);
-    console.log('[VoiceChat] 📝 system_role:', systemRole.slice(0, 200));
+    vlog('[VoiceChat] 📤 发送 StartSession (event=100), sessionId:', this.sessionId);
+    vlog('[VoiceChat] 📝 system_role:', systemRole.slice(0, 200));
     this.sendSessionEvent(100, JSON.stringify(payload));
   }
 
@@ -308,16 +322,16 @@ export class VoiceChat {
     // ws 模块可能传 ArrayBuffer / ArrayBuffer[] / Buffer，统一转 Buffer
     const data: Buffer = Buffer.isBuffer(raw) ? raw : Buffer.from(raw as ArrayBuffer);
     if (data.length < 4) {
-      console.log(`[VoiceChat] ⚠️ 消息过短: ${data.length}B`);
+      vlog(`[VoiceChat] ⚠️ 消息过短: ${data.length}B`);
       return;
     }
 
     // 调试: 打印前几个字节,便于排查协议问题
     if (data.length <= 512) {
       const preview = data.toString('utf-8').slice(0, 200);
-      console.log(`[VoiceChat] 📥 收到消息 ${data.length}B: ${preview}`);
+      vlog(`[VoiceChat] 📥 收到消息 ${data.length}B: ${preview}`);
     } else {
-      console.log(`[VoiceChat] 📥 收到消息 ${data.length}B (audio/binary)`);
+      vlog(`[VoiceChat] 📥 收到消息 ${data.length}B (audio/binary)`);
     }
 
     // 解析 header
@@ -438,7 +452,7 @@ export class VoiceChat {
             if (results && results.length > 0) {
               const text = results.map((r) => r.text || '').join('');
               const isInterim = results[0]?.is_interim;  // 诊断:读取是否中间结果
-              console.log('[VoiceChat] 📝 ASR 451:', JSON.stringify(text).slice(0, 80), 'is_interim=', isInterim);
+              vlog('[VoiceChat] 📝 ASR 451:', JSON.stringify(text).slice(0, 80), 'is_interim=', isInterim);
               if (text) {
                 this.lastUserText = text;  // 累积最新文本
                 this.emit({ type: 'userText', text });
@@ -476,22 +490,22 @@ export class VoiceChat {
         break;
 
       case 459: // ASREnded — 用户说话结束,触发 Agent 查询
-        console.log('[VoiceChat] 🔔 ASREnded 到达, lastUserText:', JSON.stringify(this.lastUserText), 'hasCb:', !!this.userMsgCb, 'agentBusy:', this.agentBusy);
+        vlog('[VoiceChat] 🔔 ASREnded 到达, lastUserText:', JSON.stringify(this.lastUserText), 'hasCb:', !!this.userMsgCb, 'agentBusy:', this.agentBusy);
         if (this.lastUserText && this.userMsgCb) {
           if (this.agentBusy) {
             // P0: 上一个 Agent 任务还在执行,丢弃本次 — 避免并发 send 导致消息乱序
-            console.log('[VoiceChat] ⚠️ Agent 正忙,丢弃本次 ASR:', this.lastUserText.slice(0, 60));
+            vlog('[VoiceChat] ⚠️ Agent 正忙,丢弃本次 ASR:', this.lastUserText.slice(0, 60));
             this.lastUserText = '';
             break;
           }
           const msg = this.lastUserText;
           this.lastUserText = '';
           this.agentBusy = true;  // P0: 加锁,在 agentResult finally 中释放
-          console.log('[VoiceChat] 📋 用户完整发言,转发给 Agent:', msg);
+          vlog('[VoiceChat] 📋 用户完整发言,转发给 Agent:', msg);
           // 回调是 async, 但不 await — 不阻塞 WS 消息处理循环
           // 加 .catch() 防止 unhandled rejection (agentResult 内部异常等)
           Promise.resolve(this.userMsgCb(msg)).catch(e => {
-            console.error('[VoiceChat] ❌ onUserMessage 回调异常:', (e as Error)?.message);
+            vlog('[VoiceChat] ❌ onUserMessage 回调异常:', (e as Error)?.message);
             this.agentBusy = false;  // 确保异常时释放锁
           });
         }
@@ -509,9 +523,9 @@ export class VoiceChat {
       default:
         // 未知事件号 — 打印诊断(仅 ≤512B 的消息,避免音频刷屏)
         if (payload && payload.length <= 512) {
-          console.log(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload.toString('utf-8').slice(0, 150)}`);
+          vlog(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload.toString('utf-8').slice(0, 150)}`);
         } else {
-          console.log(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload?.length || 0}B`);
+          vlog(`[VoiceChat] ❓ 未知事件 eventId=${eventId}, payload=${payload?.length || 0}B`);
         }
         break;
     }
@@ -534,14 +548,14 @@ export class VoiceChat {
   }
 
   private onError(err: Error): void {
-    console.error('[VoiceChat] ❌ WebSocket error:', err.message);
+    vlog('[VoiceChat] ❌ WebSocket error:', err.message, err.stack || '');
     this.emit({ type: 'error', message: `WebSocket 错误: ${err.message}` });
     this.setState('error');
   }
 
   private onClose(code: number, reason: Buffer): void {
     const reasonStr = reason.toString('utf-8');
-    console.log(`[VoiceChat] 🔌 WebSocket 关闭: code=${code}, reason=${reasonStr}`);
+    vlog(`[VoiceChat] 🔌 WebSocket 关闭: code=${code}, reason=${reasonStr}`);
     if (this.state !== 'error') {
       this.setState('idle');
     }
