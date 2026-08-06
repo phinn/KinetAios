@@ -1663,12 +1663,9 @@ function updateStreamingStatus(conv: Conversation): void {
   } else {
     if (oldStatus) { oldStatus.remove(); heightChanged = true; }
   }
-  // streaming-status 的创建/移除改变了内容高度,如果用户在底部需要重新贴底,否则抖动。
+  // streaming-status 的创建/移除改变了内容高度,同步贴底避免抖动。
   if (heightChanged) {
-    const turns = document.getElementById('turns');
-    if (turns && turns.scrollHeight - turns.scrollTop - turns.clientHeight < 60) {
-      scrollDown();
-    }
+    scrollSyncIfNearBottom();
   }
 }
 
@@ -1712,11 +1709,8 @@ function updateLastTurnIncremental(): void {
     const txt = oldStatus.querySelector('.typing-text');
     if (txt) txt.textContent = conv.statusNote ?? '';
   }
-  // DOM 结构改变(steps 重建 / streaming-status 增删)后,如果用户在底部,重新贴底。
-  const turnsEl = document.getElementById('turns');
-  if (turnsEl && turnsEl.scrollHeight - turnsEl.scrollTop - turnsEl.clientHeight < 60) {
-    scrollDown();
-  }
+  // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底(不走 rAF 防抖,避免抖动)。
+  scrollSyncIfNearBottom();
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
@@ -1736,7 +1730,7 @@ function streamAppend(text: string) {
     const turnEl = el.closest('.turn');
     const ss = turnEl?.querySelector('.streaming-status');
     if (ss) ss.remove();
-    scrollDown();
+    scrollSyncIfNearBottom();
     // 流式期间也检测 artifact(token 级增量检测,让用户边看边预览)
     scheduleArtifactCheck();
   }
@@ -1907,6 +1901,20 @@ function scrollDownForce() {
   const el = document.getElementById('turns');
   if (el) el.scrollTop = el.scrollHeight;
 }
+/**
+ * 流式 token 追加后的同步贴底滚动。
+ * 关键:必须在同一同步帧内追加文本 + 滚动,否则 rAF 异步滚动和文本追加交错导致抖动。
+ * 只有用户已在底部附近时才跟随(用户主动上滚则不动)。
+ */
+// Sync scroll after token append — must be in the same frame to avoid jitter.
+function scrollSyncIfNearBottom() {
+  const el = document.getElementById('turns');
+  if (!el) return;
+  const distFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight;
+  if (distFromBottom < 120) {
+    el.scrollTop = el.scrollHeight;
+  }
+}
 
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
 /** 用户滚离底部时显示浮动箭头,点击回到底部。 */
@@ -1927,7 +1935,12 @@ function initScrollBottomBtn(): void {
 
   turns.addEventListener('scroll', update, { passive: true });
   // 内容变化时也检查(新消息可能增加 scrollHeight) / Check on content changes
-  const mo = new MutationObserver(() => update());
+  // 注意:流式 token 每次追加 textNode 都会触发 MutationObserver,用 debounce 避免频繁回调。
+  let moTimer: ReturnType<typeof setTimeout> | null = null;
+  const mo = new MutationObserver(() => {
+    if (moTimer) return;
+    moTimer = setTimeout(() => { moTimer = null; update(); }, 100);
+  });
   mo.observe(turns, { childList: true, subtree: true });
 
   btn.addEventListener('click', () => {
