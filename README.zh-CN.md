@@ -1,5 +1,12 @@
 # KinetAios
 
+<!-- SEO: GitHub 搜索关键词覆盖 -->
+<!--
+AI agent 仪表盘 | 本地优先 AI | 多引擎 Agent | Claude Code 界面 | Codex 界面 |
+ReAct 循环 | AI 编程助手 | MCP 客户端 | Electron AI | TypeScript Agent |
+Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作台
+-->
+
 [English](README.md) | 简体中文
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)

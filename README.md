@@ -1,5 +1,13 @@
 # KinetAios
 
+<!-- SEO: keywords for GitHub/NPM search discoverability -->
+<!--
+AI agent dashboard | local-first AI | multi-engine agent | Claude Code GUI | Codex GUI |
+ReAct agent | AI coding assistant | MCP client | Electron AI | TypeScript AI agent |
+Ollama desktop | AMD Radeon AI | offline AI agent | open source AI agent |
+AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
+-->
+
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
 [![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)

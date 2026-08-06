@@ -3,7 +3,71 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>KinetAios — Windows & macOS 的 AI 总机</title>
+
+<!-- ===== SEO META ===== -->
+<title>KinetAios — Local-First AI Agent Dashboard | Claude Code + Codex + ReAct</title>
+<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 DirectV2 / Claude Code / Codex 三个引擎，支持长期记忆、27 个插件、MCP 集成、AMD Radeon 本地推理。开源 GPL v3，Windows & macOS。">
+<meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, MCP, Electron, TypeScript, Ollama, AMD Radeon, 本地 AI, AI 工作台, 开源 AI Agent, KinetAios">
+<meta name="author" content="Kinet">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://phinn.github.io/KinetAios/">
+
+<!-- ===== hreflang 多语言 ===== -->
+<link rel="alternate" hreflang="en" href="https://phinn.github.io/KinetAios/?lang=en">
+<link rel="alternate" hreflang="zh-Hans" href="https://phinn.github.io/KinetAios/?lang=zh-Hans">
+<link rel="alternate" hreflang="zh-Hant" href="https://phinn.github.io/KinetAios/?lang=zh-Hant">
+<link rel="alternate" hreflang="ja" href="https://phinn.github.io/KinetAios/?lang=ja">
+<link rel="alternate" hreflang="x-default" href="https://phinn.github.io/KinetAios/">
+
+<!-- ===== Open Graph (Facebook / WeChat / Telegram / LinkedIn) ===== -->
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="KinetAios">
+<meta property="og:title" content="KinetAios — Local-First AI Agent Dashboard">
+<meta property="og:description" content="Run Claude Code, Codex, and a built-in ReAct engine side-by-side from one window. Long-term memory, 27 plugins, MCP integration, AMD Radeon local inference. Open source.">
+<meta property="og:url" content="https://phinn.github.io/KinetAios/">
+<meta property="og:image" content="https://phinn.github.io/KinetAios/og-image.png">
+<meta property="og:locale" content="zh_CN">
+<meta property="og:locale:alternate" content="en_US">
+<meta property="og:locale:alternate" content="zh_TW">
+<meta property="og:locale:alternate" content="ja_JP">
+
+<!-- ===== Twitter Card ===== -->
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="KinetAios — Local-First AI Agent Dashboard">
+<meta name="twitter:description" content="Three AI engines in one window. Claude Code + Codex + DirectV2 ReAct. Long-term memory, 27 plugins, AMD Radeon local inference. Open source.">
+<meta name="twitter:image" content="https://phinn.github.io/KinetAios/og-image.png">
+
+<!-- ===== JSON-LD 结构化数据 ===== -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "KinetAios",
+  "description": "Local-first multi-engine AI agent dashboard. Run Claude Code, Codex, and a built-in ReAct engine side-by-side with long-term memory, 27 plugins, and MCP integration.",
+  "applicationCategory": "DeveloperApplication",
+  "operatingSystem": "Windows 11, macOS",
+  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "programmingLanguage": "TypeScript",
+  "softwareVersion": "2.3.0",
+  "url": "https://phinn.github.io/KinetAios/",
+  "downloadUrl": "https://github.com/phinn/KinetAios/releases",
+  "featureList": [
+    "Multi-engine: DirectV2 / Claude Code / Codex",
+    "Plan-Execute-Verify-Judge 4-layer architecture",
+    "Cross-engine persistent long-term memory (SQLite + FTS5)",
+    "27 domain plugins (office, IoT, hardware, NestJS)",
+    "MCP client + server (bidirectional)",
+    "AMD Radeon local inference (Ollama + ROCm)",
+    "File snapshot auto-rollback",
+    "Three-tier sandbox with SSRF protection"
+  ]
+}
+</script>
 <style>
 :root{
   --bg:#0B0F14; --surface:#141B22; --surface2:#1E2731; --line:#2A3540;
