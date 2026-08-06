@@ -450,7 +450,7 @@ export class VoiceChat {
       }
 
       case 453: { // AI 回复文本(旧事件号,兼容)
-        // 旁路模式:豆包回复正常显示,Agent 结果通过 agentReply 追加
+        // 豆包全链路对话自回复,正常显示在语音面板
         if (payload) {
           const json = this.safeJson(payload);
           if (json) {
@@ -488,7 +488,12 @@ export class VoiceChat {
           this.lastUserText = '';
           this.agentBusy = true;  // P0: 加锁,在 agentResult finally 中释放
           console.log('[VoiceChat] 📋 用户完整发言,转发给 Agent:', msg);
-          this.userMsgCb(msg);
+          // 回调是 async, 但不 await — 不阻塞 WS 消息处理循环
+          // 加 .catch() 防止 unhandled rejection (agentResult 内部异常等)
+          Promise.resolve(this.userMsgCb(msg)).catch(e => {
+            console.error('[VoiceChat] ❌ onUserMessage 回调异常:', (e as Error)?.message);
+            this.agentBusy = false;  // 确保异常时释放锁
+          });
         }
         break;
 
