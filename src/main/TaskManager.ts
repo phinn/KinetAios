@@ -592,13 +592,14 @@ export class TaskManager {
     this.extractionLocks.set(convId, new Promise<void>((r) => { release = r; }));
     try { await prev.catch(() => {}); } finally { /* prev done, continue */ }
     const snap = snapshot(this.convs.get(convId)?.profileId);
-    const sys = `你是记忆提取器。从下面这轮对话里提取【关于用户本人】的持久事实 —— 身份、职业、偏好、习惯、技术栈、家庭/宠物、所在城市、工具链、长期项目、价值观。
+    const sys = `你是记忆提取器。从下面这轮对话里提取持久事实 —— 涵盖用户画像、项目知识、工作流三个维度。
 哪怕只透出一点点信号也提取,宁可多提取不要漏。
-输出 JSON 对象,三个字段:
+输出 JSON 对象,四个字段:
 - "facts": [{ "text": "≤ 18字陈述句", "importance": 1-10 }] 数组,主语「用户」(可省略)。importance: 核心偏好/技术栈=8-10,一般习惯=5-7,边缘信号=2-4。
-- "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"用户","p":"在做","o":"Halo 项目"}。每段 ≤ 14 字。
-不提取:本次任务的一次性细节、纯时间敏感(今天/这次)。
-无持久事实就输出 {"facts":[],"triples":[]}。只输出 JSON,不要解释。`;
+- "project_facts": [{ "text": "≤ 18字陈述句", "importance": 1-10 }] 数组,关于项目/代码/架构的持久知识。例:"KinetAios 用 better-sqlite3 + FTS5" / "打包命令是 npm run dist" / "的记忆系统用 cosine 评分"。importance: 核心架构/构建命令=8-10,一般约定=5-7,边缘细节=2-4。
+- "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"KinetAios","p":"用","o":"better-sqlite3"} / {"s":"项目","p":"构建","o":"npm run dist"}。每段 ≤ 14 字。
+不提取:本次任务的一次性细节(如临时变量名)、纯时间敏感(今天/这次)、单次 bug 的具体修复步骤(除非是通用 pattern)。
+无持久事实就输出 {"facts":[],"project_facts":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
@@ -616,7 +617,7 @@ export class TaskManager {
         ac.signal,
         () => {},
       );
-      const { facts, triples } = parseExtraction(comp.content);
+      const { facts, projectFacts, triples } = parseExtraction(comp.content);
       const existingFacts = store.allMemoryContents();
 
       // ── 去重策略:精确匹配 → 模糊去重(Jaccard) → 语义去重(embedding cosine)
@@ -632,8 +633,9 @@ export class TaskManager {
       };
 
       // 先做精确 + 模糊过滤,拿到「文字层不重复」的候选(P1: 带 importance)
+      // user facts + project facts 合入同一条去重管线
       const candidates: Array<{ text: string; importance: number }> = [];
-      for (const f of facts) {
+      for (const f of [...facts, ...projectFacts]) {
         if (!f.text) continue;
         if (existingFacts.includes(f.text)) continue; // 精确匹配
         if (isDuplicateFuzzy(f.text)) continue; // 模糊匹配
@@ -1076,27 +1078,32 @@ function shellSafeMemory(s: string): string {
 // Pull a JSON object {facts:string[], triples:[{s,p,o}]} out of an LLM response that may have surrounding prose.
 // 兼容老格式(纯 string[]):没匹配到 {} 时尝试匹配 []。
 // P1: 解析增强 — 支持 facts 为 [{text, importance}] 或纯 string[]（向后兼容）
-function parseExtraction(s: string): { facts: Array<{ text: string; importance: number }>; triples: Array<{ s: string; p: string; o: string }> } {
-  const empty = { facts: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
+function parseExtraction(s: string): { facts: Array<{ text: string; importance: number }>; projectFacts: Array<{ text: string; importance: number }>; triples: Array<{ s: string; p: string; o: string }> } {
+  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
   const lo = s.indexOf('{');
   const hi = s.lastIndexOf('}');
   if (lo >= 0 && hi > lo) {
     try {
       const obj = JSON.parse(s.slice(lo, hi + 1)) as Record<string, unknown>;
       // 兼容两种格式：[{text, importance}] 或 string[]
-      const facts: Array<{ text: string; importance: number }> = [];
-      if (Array.isArray(obj.facts)) {
-        for (const x of obj.facts) {
+      const parseFactArray = (arr: unknown): Array<{ text: string; importance: number }> => {
+        const out: Array<{ text: string; importance: number }> = [];
+        if (!Array.isArray(arr)) return out;
+        for (const x of arr) {
           if (typeof x === 'string') {
-            facts.push({ text: x.trim(), importance: 5 });
+            out.push({ text: x.trim(), importance: 5 });
           } else if (x && typeof x === 'object') {
             const r = x as Record<string, unknown>;
             const text = typeof r.text === 'string' ? r.text.trim() : '';
             const importance = typeof r.importance === 'number' ? Math.max(1, Math.min(10, Math.round(r.importance))) : 5;
-            if (text) facts.push({ text, importance });
+            if (text) out.push({ text, importance });
           }
         }
-      }
+        return out;
+      };
+      const facts = parseFactArray(obj.facts);
+      // project_facts 是新增字段,旧格式不会返回 → 空数组兜底
+      const projectFacts = parseFactArray(obj.project_facts);
       const triples = Array.isArray(obj.triples)
         ? obj.triples
             .map((t) => {
@@ -1109,13 +1116,13 @@ function parseExtraction(s: string): { facts: Array<{ text: string; importance: 
             })
             .filter((t): t is { s: string; p: string; o: string } => t !== null)
         : [];
-      return { facts, triples };
+      return { facts, projectFacts, triples };
     } catch {
       return empty;
     }
   }
   // 兼容老格式(纯 facts [])
-  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), triples: [] };
+  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], triples: [] };
 }
 
 function parseFactsLegacy(s: string): string[] {

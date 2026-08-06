@@ -415,7 +415,13 @@ tokio::fs::remove_file(&resource_file_path);
 </tr>
 <tr>
   <td><strong>压缩 Prompt</strong></td>
-  <td>无独立 prompt,按字符截断</td>
+  <td><pre style="margin:0;font-size:0.8em">"你是对话摘要器。把早期对话压成
+结构化摘要:
+【任务目标】【关键决策】【已改文件】
+【执行命令】【重要结论】【待办事项】
+丢掉寒暄/一次性细节,保留路径/命令/
+错误信息/技术栈原文"
+—— LLM 驱动,对标 Claude Code compaction</pre></td>
   <td><pre style="margin:0;font-size:0.8em">"You are performing a CONTEXT CHECKPOINT
 COMPACTION. Create a handoff summary for
 another LLM that will resume the task.
@@ -434,7 +440,7 @@ next steps, critical data."</pre></td>
 </tr>
 <tr>
   <td><strong>工具输出截断</strong></td>
-  <td>按字符截断</td>
+  <td>reactive trim 按字符估算截断(非压缩);compactHistory 走 LLM 结构化摘要</td>
   <td><code>TruncationPolicy::Tokens(N)</code> 精确 token 裁剪</td>
 </tr>
 </tbody>
@@ -469,7 +475,7 @@ next steps, critical data."</pre></td>
         <li><strong>不可读性</strong>:SQLite 二进制存储,用户无法直接查看/编辑记忆</li>
         <li><strong>无 LLM 合并</strong>:去重靠 cosine > 0.85 硬阈值,不语义合并</li>
         <li><strong>无 Skills 沉淀</strong>:不提取可复用工作流/检查清单</li>
-        <li><strong>压缩粗糙</strong>:compactHistory 按字符截断,非 LLM 生成摘要</li>
+        <li><strong>工具输出截断用字符估算</strong>:reactive trim 按字符数估算 token(非精确 tokenizer),大输出时可能偏差</li>
         <li><strong>Embedding 成本</strong>:每次提取需调用 embedding API</li>
         <li><strong>单用户画像聚焦</strong>:extractMemories prompt 仅提取"关于用户本人"的事实,不提取任务/代码/工作流知识</li>
       </ul>
