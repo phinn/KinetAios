@@ -1663,9 +1663,9 @@ function updateStreamingStatus(conv: Conversation): void {
   } else {
     if (oldStatus) { oldStatus.remove(); heightChanged = true; }
   }
-  // streaming-status 的创建/移除改变了内容高度,同步贴底避免抖动。
+  // streaming-status 的创建/移除改变了内容高度,同步贴底(低频操作,不防抖)。
   if (heightChanged) {
-    scrollDown();
+    scrollDownForce();
   }
 }
 
@@ -1709,8 +1709,9 @@ function updateLastTurnIncremental(): void {
     const txt = oldStatus.querySelector('.typing-text');
     if (txt) txt.textContent = conv.statusNote ?? '';
   }
-  // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底(不走 rAF 防抖,避免抖动)。
-  scrollDown();
+  // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底。
+  // 低频操作(tool/status event),直接 scrollDownForce 不走 rAF。
+  scrollDownForce();
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
@@ -1721,17 +1722,16 @@ function streamAppend(text: string) {
     el = document.getElementById('streaming-answer');
   }
   if (el) {
-    if (el.querySelector('.typing')) el.textContent = ''; // 首个 token:清掉思考三点
+    const hadTyping = el.querySelector('.typing');
+    if (hadTyping) el.textContent = ''; // 首个 token:清掉思考三点
     el.appendChild(document.createTextNode(text));
-    // token 到达 = 不再处于工具执行中。applyEvent 已清 statusNote,
-    // 同步移除 DOM 上残留的 streaming-status,避免它停在旧文本上不消失。
-    // 只在首次(有 status 残留时)才查 DOM + remove,之后不再重复查询。
-    // Only query/remove on first token (when status element exists); skip after.
     const turnEl = el.closest('.turn');
     const ss = turnEl?.querySelector('.streaming-status');
     if (ss) ss.remove();
-    scrollDown();
-    // 流式期间也检测 artifact(token 级增量检测,让用户边看边预览)
+    // 首个 token 有 DOM 结构变化(清 typing dots / 删 streaming-status),
+    // 同步滚到底;后续 token 走 rAF 防抖(高频,避免每 token 一次 reflow)。
+    if (hadTyping || ss) scrollDownForce();
+    else scrollDown();
     scheduleArtifactCheck();
   }
 }
