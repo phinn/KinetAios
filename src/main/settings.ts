@@ -51,6 +51,15 @@ const DEFAULTS: AppSettings = {
     enable: false,
   },
   minimaxApiKey: '', // MiniMax 文生视频 API Key(留空 = 未配置)
+  // 企业微信智能机器人:默认关闭,botId/secret 留空。
+  wecomBot: {
+    enabled: false,
+    botId: '',
+    secret: '',
+    defaultCwd: '',
+    engine: 'direct' as EngineKind,
+    streamReply: true,
+  },
 };
 
 let cache: AppSettings | null = null;

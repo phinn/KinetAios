@@ -28,6 +28,7 @@ import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import { VoiceChat } from './VoiceChat';
+import { getWeComBridge, setTaskManagerForWeCom } from './wecom';
 import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, ContextMode, CustomTool, EngineKind, GitActionKind, GitActionResult, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg, VoiceChatEventPayload } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
@@ -692,6 +693,16 @@ function registerIpc(): void {
       }
     } else if (!s.localMcpServer?.enabled && localMcpServer.isRunning()) {
       void localMcpServer.stop();
+    }
+    // 企信机器人:配置变化 → 重连/断开。
+    const oldWecom = old.wecomBot;
+    const newWecom = s.wecomBot;
+    if (newWecom?.enabled && (!oldWecom?.enabled
+        || oldWecom.botId !== newWecom.botId
+        || oldWecom.secret !== newWecom.secret)) {
+      getWeComBridge().start().catch((e) => console.warn('[wecom] 重连失败:', e.message));
+    } else if (!newWecom?.enabled && oldWecom?.enabled) {
+      getWeComBridge().stop();
     }
     return true;
   });
@@ -2102,6 +2113,18 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
+
+  // ── 企业微信机器人 IPC ──
+  ipcMain.handle('wecom-bot-status', () => {
+    const b = getWeComBridge();
+    return { connected: b.connected, pendingCount: b.pendingCount };
+  });
+  ipcMain.handle('wecom-bot-connect', async () => {
+    return getWeComBridge().start();
+  });
+  ipcMain.handle('wecom-bot-disconnect', () => {
+    return getWeComBridge().stop();
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -2163,6 +2186,14 @@ if (!gotLock) {
     setTaskManager(taskManager);
     // Watch 模式:把 taskManager 注入 watcher(触发时起会话)+ 给所有现存会话的 cwd 起 watcher(若 .kinet-watch.json 存在)。
     setTaskManagerForWatchers(taskManager);
+    // 企信机器人:注入 taskManager,settings 里 enabled 则自动连接。
+    setTaskManagerForWeCom(taskManager);
+    getWeComBridge().onEvent = (ev) => {
+      safeSend(dashboardWin, 'wecom-event', ev);
+    };
+    if (getSettings().wecomBot?.enabled) {
+      getWeComBridge().start().catch((e) => console.warn('[wecom] 自启动失败:', e.message));
+    }
     for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);
     // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。dispatcher 起新会话并发 prompt。
     setCronTasks(listCronTasks().map((r) => ({

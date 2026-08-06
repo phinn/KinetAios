@@ -597,6 +597,17 @@ const ZH_CN: Dict = {
   'settings.minimax.desc': '配置 MiniMax 开放平台 API Key 后,Agent 可通过 video_gen 工具自主调用 H3 模型生成视频。密钥经系统级加密存储。',
   'settings.minimax.keyPh': 'MiniMax → 账户管理 > 接口密钥',
 
+  // ── 企业微信智能机器人 ──
+  'settings.wecom.title': '企业微信机器人',
+  'settings.wecom.desc': '通过 WebSocket 长连接接入企业微信智能机器人,接收企信消息并路由到 Agent 引擎处理。在「企业微信管理后台 → 智能机器人」获取 Bot ID 和 Secret。',
+  'settings.wecom.enable': '启用',
+  'settings.wecom.botIdPh': '企业微信后台获取的 Bot ID',
+  'settings.wecom.secretPh': '企业微信后台获取的 Secret',
+  'settings.wecom.engine': '处理引擎',
+  'settings.wecom.streamReply': '流式回复',
+  'settings.wecom.cwd': '默认工作目录',
+  'settings.wecom.cwdPh': '空 = 用户主目录',
+
   // ── 插件管理(动态渲染部分)──
   'settings.plugin.title': '插件管理',
   'settings.plugin.searchPh': '搜索插件名称、描述、作者…',
@@ -1410,6 +1421,17 @@ const EN: Dict = {
   'settings.minimax.title': 'MiniMax Video Gen',
   'settings.minimax.desc': 'Configure MiniMax API Key. Agent can then call the video_gen tool to generate videos via the H3 model. Key is encrypted at rest.',
   'settings.minimax.keyPh': 'MiniMax → Account > API Keys',
+
+  // ── WeCom AI Bot ──
+  'settings.wecom.title': 'WeCom Bot',
+  'settings.wecom.desc': 'Connect to WeCom (Enterprise WeChat) AI Bot via WebSocket long-connection. Incoming messages are routed to the Agent engine for processing. Get Bot ID and Secret from WeCom Admin Console → AI Bot.',
+  'settings.wecom.enable': 'Enable',
+  'settings.wecom.botIdPh': 'Bot ID from WeCom console',
+  'settings.wecom.secretPh': 'Secret from WeCom console',
+  'settings.wecom.engine': 'Engine',
+  'settings.wecom.streamReply': 'Stream reply',
+  'settings.wecom.cwd': 'Default working directory',
+  'settings.wecom.cwdPh': 'Empty = user home',
 
   // ── Plugins (dynamic render) ──
   'settings.plugin.title': 'Plugins',
@@ -2226,6 +2248,17 @@ const ZH_TW: Dict = {
   'settings.minimax.desc': '設定 MiniMax 開放平台 API Key 後，Agent 可透過 video_gen 工具自主呼叫 H3 模型生成影片。金鑰經系統級加密儲存。',
   'settings.minimax.keyPh': 'MiniMax → 帳戶管理 > 介面金鑰',
 
+  // ── 企業微信智慧機器人 ──
+  'settings.wecom.title': '企業微信機器人',
+  'settings.wecom.desc': '透過 WebSocket 長連接接入企業微信智慧機器人，接收企信訊息並路由到 Agent 引擎處理。在「企業微信管理後台 → 智慧機器人」取得 Bot ID 和 Secret。',
+  'settings.wecom.enable': '啟用',
+  'settings.wecom.botIdPh': '企業微信後台取得的 Bot ID',
+  'settings.wecom.secretPh': '企業微信後台取得的 Secret',
+  'settings.wecom.engine': '處理引擎',
+  'settings.wecom.streamReply': '串流回覆',
+  'settings.wecom.cwd': '預設工作目錄',
+  'settings.wecom.cwdPh': '空 = 使用者主目錄',
+
   // ── 外掛管理（動態渲染）──
   'settings.plugin.title': '外掛管理',
   'settings.plugin.searchPh': '搜尋外掛名稱、描述、作者…',
@@ -3040,6 +3073,17 @@ const JA: Dict = {
   'settings.minimax.title': 'MiniMax 動画生成',
   'settings.minimax.desc': 'MiniMax API Key を設定すると、Agent が video_gen ツールで H3 モデルを使って動画を生成できます。キーはシステムレベルで暗号化保存されます。',
   'settings.minimax.keyPh': 'MiniMax → アカウント管理 > API キー',
+
+  // ── 企業微信（WeCom）スマートボット ──
+  'settings.wecom.title': 'WeCom ボット',
+  'settings.wecom.desc': 'WebSocket 長接続で企業微信スマートボットに接続します。受信メッセージは Agent エンジンにルーティングされます。「企業微信管理コンソール → スマートボット」で Bot ID と Secret を取得してください。',
+  'settings.wecom.enable': '有効化',
+  'settings.wecom.botIdPh': 'WeCom コンソールから取得した Bot ID',
+  'settings.wecom.secretPh': 'WeCom コンソールから取得した Secret',
+  'settings.wecom.engine': 'エンジン',
+  'settings.wecom.streamReply': 'ストリーミング返信',
+  'settings.wecom.cwd': 'デフォルト作業ディレクトリ',
+  'settings.wecom.cwdPh': '空 = ユーザーのホームディレクトリ',
 
   // ── プラグイン管理（動的レンダリング）──
   'settings.plugin.title': 'プラグイン管理',

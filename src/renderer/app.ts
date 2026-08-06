@@ -2136,6 +2136,19 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
+        <h3>${tr('settings.wecom.title')}</h3>
+        <div class="s-hint">${tr('settings.wecom.desc')}</div>
+        <div class="field"><label>${tr('settings.wecom.enable')}</label><input type="checkbox" id="s-wecom-enable" ${s.wecomBot?.enabled ? 'checked' : ''} /></div>
+        <div class="field"><label>Bot ID</label><input id="s-wecom-botid" type="text" value="${esc(s.wecomBot?.botId ?? '')}" placeholder="${tr('settings.wecom.botIdPh')}" /></div>
+        <div class="field"><label>Secret</label><div class="key-eye-wrap"><input id="s-wecom-secret" type="password" value="${esc(s.wecomBot?.secret ?? '')}" placeholder="${tr('settings.wecom.secretPh')}" /><span class="key-eye" data-target="s-wecom-secret">👁</span></div></div>
+        <div class="field"><label>${tr('settings.wecom.engine')}</label><select id="s-wecom-engine">
+          ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
+        </select></div>
+        <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
+        <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
+      </div>
+
+      <div class="s-section">
         <h3>${tr('settings.persona.title')}</h3>
         <div class="field-desc">
           ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
@@ -2913,6 +2926,14 @@ function readSettingsForm(): AppSettings {
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
     minimaxApiKey: (document.getElementById('s-minimax-key') as HTMLInputElement).value.trim(),
+    wecomBot: {
+      enabled: (document.getElementById('s-wecom-enable') as HTMLInputElement).checked,
+      botId: (document.getElementById('s-wecom-botid') as HTMLInputElement).value.trim(),
+      secret: (document.getElementById('s-wecom-secret') as HTMLInputElement).value.trim(),
+      defaultCwd: (document.getElementById('s-wecom-cwd') as HTMLInputElement).value.trim(),
+      engine: (document.getElementById('s-wecom-engine') as HTMLSelectElement).value as EngineKind,
+      streamReply: (document.getElementById('s-wecom-stream') as HTMLInputElement).checked,
+    },
   };
 }
 

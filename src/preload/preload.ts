@@ -203,6 +203,15 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('team-event');
     ipcRenderer.on('team-event', (_e: IpcRendererEvent, payload: { teamId: string; ev: import('../shared/types').TeamEvent }) => cb(payload.teamId, payload.ev));
   },
+
+  // ── 企业微信机器人 ──
+  wecomBotStatus: () => ipcRenderer.invoke('wecom-bot-status'),
+  wecomBotConnect: () => ipcRenderer.invoke('wecom-bot-connect'),
+  wecomBotDisconnect: () => ipcRenderer.invoke('wecom-bot-disconnect'),
+  onWeComBotEvent: (cb: (ev: { type: string; data?: unknown }) => void) => {
+    ipcRenderer.removeAllListeners('wecom-event');
+    ipcRenderer.on('wecom-event', (_e: IpcRendererEvent, ev: { type: string; data?: unknown }) => cb(ev));
+  },
 };
 
 // ArrayBuffer → base64(语音音频传输用)

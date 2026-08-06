@@ -236,6 +236,18 @@ export type AppSettings = {
   voiceChat: VoiceChatConfig;
   // ── MiniMax 文生视频 API Key ── 留空 = 工具调用时提示用户去设置。
   minimaxApiKey: string;
+  // ── 企业微信智能机器人 ── WebSocket 长连接模式,接收企信消息并路由到 Agent 引擎处理。
+  wecomBot: WeComBotConfig;
+};
+
+/** 企业微信智能机器人配置 / WeCom AI Bot config (WebSocket long-connection mode) */
+export type WeComBotConfig = {
+  enabled: boolean;       // 是否启用(默认 false)
+  botId: string;          // 机器人 ID(企业微信后台获取)
+  secret: string;         // 机器人 Secret(企业微信后台获取)
+  defaultCwd: string;     // 默认工作目录(空 = 用户主目录)
+  engine: EngineKind;     // 处理企信消息使用的引擎(默认 direct)
+  streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
 };
 
 // 实时语音配置 / Realtime voice chat config (Volcengine / Doubao realtime voice API)
@@ -777,6 +789,16 @@ export interface KinetAPI {
   broadcastToTeam(teamId: string, message: string): Promise<{ ok: boolean; results?: Record<string, string>; error?: string }>;
   /** Team 实时事件流 */
   onTeamEvent(cb: (teamId: string, ev: TeamEvent) => void): void;
+
+  // ── 企业微信智能机器人 ──
+  /** 获取企信机器人的运行状态(连接状态、活跃会话数等) */
+  wecomBotStatus(): Promise<{ connected: boolean; pendingCount: number }>;
+  /** 手动连接企信 WebSocket(settings 变更后调用) */
+  wecomBotConnect(): Promise<{ ok: boolean; error?: string }>;
+  /** 手动断开企信 WebSocket */
+  wecomBotDisconnect(): Promise<{ ok: boolean }>;
+  /** 企信事件回调(连接状态变化、消息收发日志) */
+  onWeComBotEvent(cb: (ev: { type: string; data?: unknown }) => void): void;
 }
 
 export function newTurn(prompt: string): Turn {
