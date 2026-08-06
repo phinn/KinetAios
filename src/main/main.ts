@@ -1988,35 +1988,26 @@ function registerIpc(): void {
           voiceChat.agentResult('上一个任务还在执行中,请稍等。');
           return;
         }
-        // 记录当前 turn 数,send 之后新增的 turn 才是本次语音触发的。
-        const turnCountBefore = conv.turns.length;
+        // send 是阻塞调用 — 返回时引擎已完成。直接读 turn 结果,无需 poll。
+        // send blocks until engine completes — read turn result directly, no polling.
         console.log('[VoiceChat] 🔄 转发给 Agent:', text, 'convId:', conv.id);
         try {
           await taskManager.send(conv.id, text);
-          // send 在 status=running 时静默返回(turn 不会新增)→ 不要启动 poll
-          const convAfter = taskManager.get(conv.id);
-          if (!convAfter || convAfter.turns.length === turnCountBefore) {
-            console.log('[VoiceChat] ⚠️ send 未创建新 turn(status 可能已变),取消 poll');
+          // send 是阻塞调用 — 返回时引擎已完成(或出错)。直接读最终 turn 状态。
+          // send blocks until engine completes — read final turn state directly, no polling needed.
+          const c = taskManager.get(conv.id);
+          const lastTurn = c?.turns[c.turns.length - 1];
+          if (!lastTurn?.done) {
+            // 理论上不会走到这里(send 一定 await 到 done),但防御性处理
             voiceChat.agentResult('发送失败,频道可能正忙,请稍后重试。');
-            return;
+          } else if (lastTurn.error) {
+            console.log('[VoiceChat] ❌ Agent 出错:', lastTurn.error.slice(0, 200));
+            voiceChat.agentResult(`执行失败: ${lastTurn.error}`);
+          } else {
+            const result = (lastTurn.answer || '').slice(0, 2000);
+            console.log('[VoiceChat] ✅ Agent 完成,回传:', result.slice(0, 100));
+            voiceChat.agentResult(result || '执行完成,但没有返回文本。');
           }
-          // 轮询检测 turn 完成,最多等 60s
-          // Poll for turn completion, max 60s
-          const start = Date.now();
-          const poll = setInterval(() => {
-            const c = taskManager.get(conv.id);
-            if (!c) { clearInterval(poll); return; }
-            const lastTurn = c.turns[c.turns.length - 1];
-            if (lastTurn?.done) {
-              clearInterval(poll);
-              const result = (lastTurn.answer || '').slice(0, 2000);
-              console.log('[VoiceChat] ✅ Agent 完成,回传:', result.slice(0, 100));
-              voiceChat.agentResult(result || '执行完成,但没有返回文本。');
-            } else if (Date.now() - start > 60000) {
-              clearInterval(poll);
-              voiceChat.agentResult('Agent 执行超时,请稍后重试。');
-            }
-          }, 500);
         } catch (e) {
           voiceChat.agentResult(`Agent 执行失败: ${(e as Error)?.message ?? String(e)}`);
         }
