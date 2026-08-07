@@ -562,10 +562,10 @@ function renderTeamPane(): void {
     const timeStr = new Date(team.updated_at * 1000).toLocaleTimeString();
     return `<div class="team-section" data-team-id="${team.team_id}">
       <div class="team-section-head">
-        <span class="team-section-title">👥 ${members.length} members</span>
+        <span class="team-section-title">${members.length} members</span>
         <span class="team-section-time">${timeStr}</span>
         <button class="ghost sm" onclick="window.__teamBroadcast('${team.team_id}')">${tr('team.broadcast')}</button>
-        <button class="ghost sm" onclick="window.__teamDelete('${team.team_id}')">🗑</button>
+        <button class="ghost sm team-del-btn" onclick="window.__teamDelete('${team.team_id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
       </div>
       <div class="team-members">${memberCards}</div>
     </div>`;
@@ -578,7 +578,7 @@ function renderMemberCard(teamId: string, m: TeamMemberInfo): string {
   const liveKey = `${teamId}/${m.name}`;
   const live = teamLiveStatus.get(liveKey);
   const status = live?.status ?? m.status;
-  const statusDot = status === 'running' ? '🔵' : status === 'done' ? '🟢' : status === 'failed' ? '🔴' : '⚪';
+  const statusDot = status === 'running' ? '<span class="tmc-dot running"></span>' : status === 'done' ? '<span class="tmc-dot done"></span>' : status === 'failed' ? '<span class="tmc-dot failed"></span>' : '<span class="tmc-dot idle"></span>';
   const partial = live?.partial ?? '';
   const resultPreview = (partial || m.last_result || '').slice(0, 200);
   const expanded = escapeHtml(resultPreview);
@@ -641,7 +641,7 @@ function handleTeamEvent(teamId: string, ev: TeamEvent): void {
     case 'memberTool': {
       // 工具调用事件:在 preview 里追加提示
       const prev = teamLiveStatus.get(liveKey) ?? { status: 'running' as MemberStatus, partial: '' };
-      prev.partial += `\n🔧 ${ev.toolName}\n`;
+      prev.partial += `\n— ${ev.toolName}\n`;
       teamLiveStatus.set(liveKey, prev);
       updateMemberCardPartial(liveKey, prev.partial);
       break;
@@ -658,8 +658,8 @@ function updateMemberCardStatus(liveKey: string, status: MemberStatus): void {
   if (!card) return;
   const dot = card.querySelector('.tmc-status');
   if (dot) {
-    const statusDot = status === 'running' ? '🔵' : status === 'done' ? '🟢' : status === 'failed' ? '🔴' : '⚪';
-    dot.textContent = statusDot;
+    const statusDot = status === 'running' ? '<span class="tmc-dot running"></span>' : status === 'done' ? '<span class="tmc-dot done"></span>' : status === 'failed' ? '<span class="tmc-dot failed"></span>' : '<span class="tmc-dot idle"></span>';
+    dot.innerHTML = statusDot;
   }
   card.setAttribute('data-status', status);
 }
@@ -2211,7 +2211,7 @@ async function showSettings() {
         <div id="s-persona-stats" class="field-desc" style="margin-bottom:10px"></div>
         <textarea id="s-persona-editor" class="s-persona-editor" placeholder="${tr('settings.persona.editorPh')}" style="display:none"></textarea>
         <div id="s-persona-empty" class="s-persona-empty">
-          <div class="s-persona-empty-icon">🧬</div>
+          <div class="s-persona-empty-icon"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a10 10 0 100 20 10 10 0 000-20z"/><path d="M12 7v5l3 2"/></svg></div>
           <div>${tr('settings.persona.empty')}</div>
           <div class="field-desc" style="margin-top:4px;text-align:center">${tr('settings.persona.emptyHint')}</div>
         </div>
