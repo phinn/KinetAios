@@ -50,6 +50,7 @@ See [[Getting-Started]] for details.
 | Global search (all conversations) | `Ctrl/Cmd+K` | [[Global-Search]] |
 | Settings (API / Behavior / Pricing / Interface / Memory) | ⚙ button | [[Settings]] |
 | Global hotkey quick panel | `Ctrl/Cmd+Alt+Space` | [[Global-Hotkey]] |
+| Feishu & WeCom bot integration | Settings → Messaging | [[Messaging-Bots]] |
 | Four-language switch | ⚙ → Interface → Language | [[i18n]] |
 | Architecture overview (main / preload / renderer) | — | [[Architecture]] |
 | Dev & packaging (typecheck / build / dist / CI) | — | [[Development]] |

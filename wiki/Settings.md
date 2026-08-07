@@ -52,6 +52,20 @@ i18n internals: [[i18n]].
 
 Good for machine migration, backup, sharing across providers. See [[Long-Term-Memory]].
 
+## Messaging
+
+Configure Feishu and WeCom bot integrations. See [[Messaging-Bots]] for full details.
+
+| Field | Description |
+|---|---|
+| Feishu — Enabled | Toggle Feishu bot connection |
+| Feishu — App ID / Secret | Credentials from Feishu Developer Console |
+| WeCom — Enabled | Toggle WeCom bot connection |
+| WeCom — Bot ID / Secret | Credentials from WeCom developer portal |
+| Engine | Which agent engine handles IM messages |
+| Stream reply | Send "thinking" placeholder first, then replace with answer |
+| Default cwd | Working directory for agent tools |
+
 ## Per-session vs global
 
 | Global (setting) | Per-session (conv) |

@@ -27,7 +27,8 @@ Both files carry a language switcher at the top. See [[Wiki-Sync]] for the ratio
 | `Git-Integration` | changes / history / per-file diff / commit show |
 | `Rules-and-Context` | AGENTS / CLAUDE / KINET / KINET-CONTEXT |
 | `Workbench` | Project card overview |
-| `Settings` | Five setting sections |
+| `Settings` | Six setting sections (API / Appearance / Engine / Messaging / Advanced / Plugins) |
+| `Messaging-Bots` | Feishu & WeCom bot integration (WS connection, slash commands, session reuse) |
 | `Global-Hotkey` | Global hotkey + quick panel + tray |
 | `i18n` | Four-language switching |
 | `Development` | typecheck / build / pack / dist / CI |

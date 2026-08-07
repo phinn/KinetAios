@@ -50,6 +50,7 @@ npm start
 | 全局搜索(所有会话) | `Ctrl/Cmd+K` | [[Global-Search]] |
 | 设置(API / 行为 / 价格 / 界面 / 记忆) | ⚙ 按钮 | [[Settings]] |
 | 全局热键快速面板 | `Ctrl/Cmd+Alt+Space` | [[Global-Hotkey]] |
+| 飞书 & 企微机器人集成 | 设置 → 消息 | [[Messaging-Bots]] |
 | 四语言切换 | ⚙ → 界面 → 语言 | [[i18n]] |
 | 架构概览(main / preload / renderer) | — | [[Architecture]] |
 | 开发与打包(typecheck / build / dist / CI) | — | [[Development]] |

@@ -94,6 +94,39 @@ hover 显示完整日期时间。
 
 旧会话无 `updatedAt` 时 fallback 到 `createdAt`。
 
+## 机器人会话管理(飞书 / 企微)
+
+来源是飞书或企微的会话带有 `feishuKey` / `wecomKey` 字段,将 IM 用户映射到会话。完整功能概览见 [[Messaging-Bots]]。
+
+### Key 格式
+
+| 来源 | 单聊 | 群聊 |
+|---|---|---|
+| 飞书 | `feishu:${open_id}` | `feishu:group:${chat_id}` |
+| 企微 | `wecom:${userid}` | `wecom:group:${chatid}` |
+
+### 持久化与恢复
+
+应用启动时,Bridge 扫描 SQLite 中所有带 `feishuKey` / `wecomKey` 的会话,重建内存 `Map<key, convId>`。Map 查找未命中时 fallback 到 SQLite 扫描 —— 确保会话跨重启不断裂。
+
+### IM 斜杠指令
+
+| 指令 | 动作 |
+|---|---|
+| `/new` | 开启新对话 |
+| `/reset` | 清空当前会话历史 |
+| `/list` | 显示历史会话 |
+| `/switch N` | 切换到第 N 个会话 |
+| `/context` | 显示会话信息 |
+
+### 淘汰机制
+
+每用户(或每群)上限 **5 个会话**。超出时自动删除最旧的。
+
+### 并发
+
+同一用户消息通过 per-user promise chain 串行处理。不同用户并行。
+
 ## 关键源文件
 
 - `src/main/TaskManager.ts` —— `branchFrom`、`exportSession`、`importSession`、`taskGraph`

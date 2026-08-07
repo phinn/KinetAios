@@ -94,6 +94,39 @@ Hover shows the full date-time.
 
 Old sessions without `updatedAt` fall back to `createdAt`.
 
+## Bot session management (Feishu / WeCom)
+
+Conversations originating from Feishu or WeCom have a `feishuKey` / `wecomKey` field that maps IM users to sessions. See [[Messaging-Bots]] for the full feature overview.
+
+### Key formats
+
+| Source | DM | Group |
+|---|---|---|
+| Feishu | `feishu:${open_id}` | `feishu:group:${chat_id}` |
+| WeCom | `wecom:${userid}` | `wecom:group:${chatid}` |
+
+### Persistence & recovery
+
+On app launch, the bridge scans SQLite for all conversations with a `feishuKey` / `wecomKey` and rebuilds the in-memory `Map<key, convId>`. If a Map lookup misses, it falls back to a SQLite scan — ensuring conversations survive restarts.
+
+### Slash commands in IM
+
+| Command | Action |
+|---|---|
+| `/new` | Start new conversation |
+| `/reset` | Clear current conversation turns |
+| `/list` | Show recent conversations |
+| `/switch N` | Switch to Nth conversation |
+| `/context` | Show session info |
+
+### Eviction
+
+Per-user (or per-group) limit of **5 conversations**. Oldest is auto-deleted when exceeded.
+
+### Concurrency
+
+Same-user messages processed via per-user promise chain (serial). Different users run in parallel.
+
 ## Key source files
 
 - `src/main/TaskManager.ts` — `branchFrom`, `exportSession`, `importSession`, `taskGraph`
