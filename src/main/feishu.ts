@@ -286,42 +286,43 @@ class FeishuBridge {
 
   // ── 从 Turn steps 提取 Agent 产出的文件路径 ──
   // / Extract file paths produced by the agent from tool-call steps.
+  // 只从 write_file/edit_file 的 args.path 提取(有明确产出意图),不从 shell result 猜路径。
+  // / Only extract from write_file/edit_file args (explicit output intent),
+  // never from shell results (which may list pre-existing files via ls/grep).
   private extractArtifacts(steps: TaskStep[]): string[] {
     const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
-    const FILE_EXTS = ['.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.zip', '.json', '.txt', '.md', '.html', '.mp4', '.mp3'];
+    const FILE_EXTS = ['.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.zip', '.mp4', '.mp3'];
     const ALL_EXTS = new Set([...IMAGE_EXTS, ...FILE_EXTS]);
+    // 排除代码/配置/日志类文件(不是交付物,只是中间产物)
+    // / Exclude code/config/log files (intermediate artifacts, not deliverables)
+    const EXCLUDE_EXTS = new Set(['.json', '.txt', '.md', '.html', '.js', '.ts', '.css', '.xml', '.log', '.yaml', '.yml']);
 
     const found = new Set<string>();
 
     for (const step of steps) {
-      // write_file / edit_file:从 args.path 提取
-      // / write_file / edit_file: extract from args.path
-      if (step.name === 'write_file' || step.name === 'edit_file') {
+      // 只从 write_file 提取(edit_file 改的是已有文件,不是产出物)
+      // / Only from write_file (edit_file modifies existing files, not new outputs)
+      if (step.name === 'write_file') {
         try {
           const args = JSON.parse(step.args);
           const p = args.path as string;
-          if (p && ALL_EXTS.has(path.extname(p).toLowerCase())) {
+          if (!p) continue;
+          const ext = path.extname(p).toLowerCase();
+          // 排除代码/配置/日志类,只保留图片和文档类交付物
+          // / Exclude code/config/log, only keep image and document deliverables
+          if (EXCLUDE_EXTS.has(ext)) continue;
+          if (ALL_EXTS.has(ext)) {
             found.add(path.resolve(p));
           }
         } catch { /* args 不是合法 JSON,跳过 */ }
       }
-
-      // shell:从 result 中正则提取文件路径(如"已写入 /path/to/file")
-      // / shell: extract file paths from result via regex
-      if (step.name === 'shell' || step.name === 'write_file') {
-        const pathRegex = /(?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|bmp|pdf|xlsx?|docx?|csv|zip|json|txt|md|html|mp[34])/gi;
-        const matches = step.result.match(pathRegex);
-        if (matches) {
-          for (const m of matches) found.add(path.resolve(m));
-        }
-      }
     }
 
-    // 只返回实际存在的文件
-    // / Only return files that actually exist on disk
+    // 只返回实际存在的文件,最多 5 个(防止刷屏)
+    // / Only return files that exist; cap at 5 to prevent flooding
     return [...found].filter(p => {
       try { return fs.existsSync(p) && fs.statSync(p).size > 0; } catch { return false; }
-    });
+    }).slice(0, 5);
   }
 
   // ── 上传图片/文件到飞书并发送回复 ──

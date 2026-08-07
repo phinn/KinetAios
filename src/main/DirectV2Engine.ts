@@ -33,6 +33,7 @@ import * as store from './store';
 import {
   baseSystemPrompt,
   personaSection,
+  sourceHintSection,
   loadProjectRules,
   SUBAGENT_PROMPT,
   type Engine,
@@ -232,6 +233,7 @@ export class DirectV2Engine implements Engine {
       baseSystemPrompt +
       V2_SYSTEM_SUFFIX +
       personaSection(conv) +
+      sourceHintSection(conv) +
       goalSection +
       skillSection +
       rulesSection +

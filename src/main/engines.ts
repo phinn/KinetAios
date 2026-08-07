@@ -49,6 +49,21 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 2. **长期记忆**(自动提取):系统每轮自动从对话中提取关于用户的事实。需要回忆时用 recall_memory 搜历史。
 3. **会话摘要**(episodic):每次会话结束自动生成摘要,下次可看到"最近做了什么"。`;
 
+// 来源渠道上下文:当会话由飞书/企信机器人创建时,注入来源提示,
+// 让 Agent 知道自己在聊天频道里运行,回复会自动发送到当前对话。
+// / Source channel hint: injected when the conversation was created by a bot bridge.
+// Tells the Agent it's inside a chat channel and replies are auto-delivered.
+export function sourceHintSection(conv?: Conversation): string {
+  if (!conv) return '';
+  if (conv.feishuKey) {
+    return '\n\n# 📱 运行环境:飞书频道\n你当前在飞书频道中运行。你的回复会自动发送到当前对话,无需任何 Webhook URL、App ID/Secret 或 chat_id。\n如果用户说"发到飞书""发给我",那意味着直接回复即可——你已经在飞书频道里了。\n你产出的图片和文件也会自动上传并发送到频道。';
+  }
+  if (conv.wecomKey) {
+    return '\n\n# 📱 运行环境:企业微信\n你当前在企业微信中运行。你的回复会自动发送到当前对话,无需任何额外配置。\n如果用户说"发到企微""发给我",那意味着直接回复即可——你已经在企业微信里了。';
+  }
+  return '';
+}
+
 // 替身画像注入:从 settings 读 persona,返回带标题前缀的 section(空则空字符串)。
 // 三引擎共用:Direct 拼到 systemPrompt,Claude Code 进 --append-system-prompt,Codex 前置拼到 prompt。
 // conv.personaEnabled === false 时跳过(会话级开关,默认开)。
@@ -391,7 +406,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + personaSection(conv) + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,
@@ -595,7 +610,7 @@ class ClaudeCodeEngine implements Engine {
     if (conv.engineSessionId) args.push('--resume', conv.engineSessionId);
     // KINET.md 规则 + KINET-CONTEXT.md 背景 + memory —— 同一个 flag 只能传一次,顺序拼接。
     // goal 不注入 CLI 引擎:Claude Code / Codex 自带 CLAUDE.md / AGENTS.md 等机制管理目标。
-    const append = personaSection(conv) + (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock;
+    const append = personaSection(conv) + sourceHintSection(conv) + (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock;
     if (append.trim()) args.push('--append-system-prompt', append);
 
     let sawResult = false;
@@ -676,7 +691,7 @@ class CodexEngine implements Engine {
     }
     // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
     // goal 不注入 CLI 引擎:Claude Code / Codex 自带目标管理机制。
-    const head = [personaSection(conv).trim(), (rulesBlock ?? '').trim(), (contextBlock ?? '').trim(), (memoryBlock ?? '').trim()].filter(Boolean).join('\n\n---\n\n');
+    const head = [personaSection(conv).trim(), sourceHintSection(conv).trim(), (rulesBlock ?? '').trim(), (contextBlock ?? '').trim(), (memoryBlock ?? '').trim()].filter(Boolean).join('\n\n---\n\n');
     const fullPrompt = head ? `${head}\n\n---\n\n${prompt}` : prompt;
     // exec-level flags (--json/-C/--add-dir/-s/--skip-git-repo-check) MUST precede the resume subcommand,
     // else clap parses them as resume args and exits status=2.
