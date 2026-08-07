@@ -839,6 +839,7 @@ const ZH_CN: Dict = {
   'settings.tab.appearance': '外观',
   'settings.tab.engine': '引擎',
   'settings.tab.advanced': '高级',
+  'settings.tab.messaging': '消息',
   'settings.tab.plugins': '插件',
   'settings.tab.mesh': '多机协作',
 
@@ -1674,6 +1675,7 @@ const EN: Dict = {
   'settings.tab.appearance': 'Appearance',
   'settings.tab.engine': 'Engine',
   'settings.tab.advanced': 'Advanced',
+  'settings.tab.messaging': 'Messaging',
   'settings.tab.plugins': 'Plugins',
   'settings.tab.mesh': 'Mesh',
 
@@ -2511,6 +2513,7 @@ const ZH_TW: Dict = {
   'settings.tab.appearance': '外觀',
   'settings.tab.engine': '引擎',
   'settings.tab.advanced': '進階',
+  'settings.tab.messaging': '訊息',
   'settings.tab.plugins': '插件',
   'settings.tab.mesh': '多機協作',
 
@@ -3348,6 +3351,7 @@ const JA: Dict = {
   'settings.tab.appearance': '外観',
   'settings.tab.engine': 'エンジン',
   'settings.tab.advanced': '詳細設定',
+  'settings.tab.messaging': 'メッセージ',
   'settings.tab.plugins': 'プラグイン',
   'settings.tab.mesh': 'メッシュ',
 

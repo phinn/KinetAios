@@ -1978,6 +1978,7 @@ async function showSettings() {
         <button class="s-tab" data-stab="appearance">${tr('settings.tab.appearance')}</button>
         <button class="s-tab" data-stab="engine">${tr('settings.tab.engine')}</button>
         <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
+        <button class="s-tab" data-stab="messaging">${tr('settings.tab.messaging')}</button>
         <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
         <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
       </div>
@@ -2136,32 +2137,6 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
-        <h3>${tr('settings.wecom.title')}</h3>
-        <div class="s-hint">${tr('settings.wecom.desc')}</div>
-        <div class="field"><label>${tr('settings.wecom.enable')}</label><input type="checkbox" id="s-wecom-enable" ${s.wecomBot?.enabled ? 'checked' : ''} /></div>
-        <div class="field"><label>Bot ID</label><input id="s-wecom-botid" type="text" value="${esc(s.wecomBot?.botId ?? '')}" placeholder="${tr('settings.wecom.botIdPh')}" /></div>
-        <div class="field"><label>Secret</label><div class="key-eye-wrap"><input id="s-wecom-secret" type="password" value="${esc(s.wecomBot?.secret ?? '')}" placeholder="${tr('settings.wecom.secretPh')}" /><span class="key-eye" data-target="s-wecom-secret">👁</span></div></div>
-        <div class="field"><label>${tr('settings.wecom.engine')}</label><select id="s-wecom-engine">
-          ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
-        </select></div>
-        <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
-        <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
-      </div>
-
-      <div class="s-section">
-        <h3>${tr('settings.feishu.title')}</h3>
-        <div class="s-hint">${tr('settings.feishu.desc')}</div>
-        <div class="field"><label>${tr('settings.feishu.enable')}</label><input type="checkbox" id="s-feishu-enable" ${s.feishuBot?.enabled ? 'checked' : ''} /></div>
-        <div class="field"><label>App ID</label><input id="s-feishu-appid" type="text" value="${esc(s.feishuBot?.appId ?? '')}" placeholder="${tr('settings.feishu.appIdPh')}" /></div>
-        <div class="field"><label>App Secret</label><div class="key-eye-wrap"><input id="s-feishu-secret" type="password" value="${esc(s.feishuBot?.appSecret ?? '')}" placeholder="${tr('settings.feishu.secretPh')}" /><span class="key-eye" data-target="s-feishu-secret">👁</span></div></div>
-        <div class="field"><label>${tr('settings.feishu.engine')}</label><select id="s-feishu-engine">
-          ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.feishuBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
-        </select></div>
-        <div class="field"><label>${tr('settings.feishu.streamReply')}</label><input type="checkbox" id="s-feishu-stream" ${s.feishuBot?.streamReply !== false ? 'checked' : ''} /></div>
-        <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.feishu.cwd')}</label><input id="s-feishu-cwd" type="text" value="${esc(s.feishuBot?.defaultCwd ?? '')}" placeholder="${tr('settings.feishu.cwdPh')}" style="width:100%" /></div>
-      </div>
-
-      <div class="s-section">
         <h3>${tr('settings.persona.title')}</h3>
         <div class="field-desc">
           ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
@@ -2182,6 +2157,34 @@ async function showSettings() {
       </div>
 
       </div><!-- /advanced panel -->
+
+      <div class="s-tab-panel" data-panel="messaging" style="display:none">
+        <div class="s-section">
+          <h3>${tr('settings.wecom.title')}</h3>
+          <div class="s-hint">${tr('settings.wecom.desc')}</div>
+          <div class="field"><label>${tr('settings.wecom.enable')}</label><input type="checkbox" id="s-wecom-enable" ${s.wecomBot?.enabled ? 'checked' : ''} /></div>
+          <div class="field"><label>Bot ID</label><input id="s-wecom-botid" type="text" value="${esc(s.wecomBot?.botId ?? '')}" placeholder="${tr('settings.wecom.botIdPh')}" /></div>
+          <div class="field"><label>Secret</label><div class="key-eye-wrap"><input id="s-wecom-secret" type="password" value="${esc(s.wecomBot?.secret ?? '')}" placeholder="${tr('settings.wecom.secretPh')}" /><span class="key-eye" data-target="s-wecom-secret">👁</span></div></div>
+          <div class="field"><label>${tr('settings.wecom.engine')}</label><select id="s-wecom-engine">
+            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
+          </select></div>
+          <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
+          <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
+        </div>
+
+        <div class="s-section">
+          <h3>${tr('settings.feishu.title')}</h3>
+          <div class="s-hint">${tr('settings.feishu.desc')}</div>
+          <div class="field"><label>${tr('settings.feishu.enable')}</label><input type="checkbox" id="s-feishu-enable" ${s.feishuBot?.enabled ? 'checked' : ''} /></div>
+          <div class="field"><label>App ID</label><input id="s-feishu-appid" type="text" value="${esc(s.feishuBot?.appId ?? '')}" placeholder="${tr('settings.feishu.appIdPh')}" /></div>
+          <div class="field"><label>App Secret</label><div class="key-eye-wrap"><input id="s-feishu-secret" type="password" value="${esc(s.feishuBot?.appSecret ?? '')}" placeholder="${tr('settings.feishu.secretPh')}" /><span class="key-eye" data-target="s-feishu-secret">👁</span></div></div>
+          <div class="field"><label>${tr('settings.feishu.engine')}</label><select id="s-feishu-engine">
+            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.feishuBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
+          </select></div>
+          <div class="field"><label>${tr('settings.feishu.streamReply')}</label><input type="checkbox" id="s-feishu-stream" ${s.feishuBot?.streamReply !== false ? 'checked' : ''} /></div>
+          <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.feishu.cwd')}</label><input id="s-feishu-cwd" type="text" value="${esc(s.feishuBot?.defaultCwd ?? '')}" placeholder="${tr('settings.feishu.cwdPh')}" style="width:100%" /></div>
+        </div>
+      </div><!-- /messaging panel -->
 
       <div class="s-tab-panel" data-panel="plugins" style="display:none">
         <div class="s-section">
