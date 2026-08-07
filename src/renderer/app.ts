@@ -1893,8 +1893,8 @@ function showPreviewEmpty(): void {
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>
     </svg>
-    <span class="pe-hint">等待 AI 生成 HTML/SVG 内容…</span>
-    <span class="pe-sub">让 AI「画一个网页 / 做 SVG 图表 / 写交互式组件」,结果会在这里实时预览</span>
+    <span class="pe-hint">${esc(tr('preview.emptyHint'))}</span>
+    <span class="pe-sub">${esc(tr('preview.emptySub'))}</span>
   </div>`;
   currentArtifactHtml = null;
 }
@@ -4345,7 +4345,7 @@ function wireVoiceChat(): void {
         vcPlayQueue.push(null);
         break;
       case 'error':
-        document.getElementById('vc-status')!.textContent = '❌ ' + ev.message;
+        document.getElementById('vc-status')!.textContent = tr('voice.chatStatusError', { msg: ev.message });
         document.getElementById('vc-hint')!.textContent = ev.message;
         document.getElementById('vc-orb')!.className = 'vc-orb error';
         break;
@@ -4370,7 +4370,7 @@ async function startVoiceChat(): Promise<void> {
   // 连接 WebSocket(在 main 进程),传入当前活跃频道 ID
   const activeId = getActiveConvId();
   if (!activeId) {
-    document.getElementById('vc-status')!.textContent = '❌ 没有活跃频道';
+    document.getElementById('vc-status')!.textContent = tr('voice.chatNoChannel');
     document.getElementById('vc-orb')!.className = 'vc-orb error';
     return;
   }
@@ -4803,7 +4803,7 @@ function rebuildPluginPanelMenu(): void {
   const header = document.createElement('div');
   header.className = 'sb-more-section-label';
   header.dataset.pluginSection = '';
-  header.textContent = '🔌 插件';
+  header.textContent = tr('sidebar.plugins');
   menu.appendChild(header);
   // 网格容器 — Grid container for plugin items.
   const grid = document.createElement('div');
@@ -4816,7 +4816,7 @@ function rebuildPluginPanelMenu(): void {
     btn.className = 'sb-more-item';
     btn.dataset.pluginPanel = panel.name;
     btn.dataset.pluginSection = '';
-    btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '🧩'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
+    btn.innerHTML = `<span class="sb-mi-ico">${panel.icon ?? '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19.439 7.85c-.049.322.059.648.289.878l1.568 1.568c.47.47.706 1.087.706 1.704s-.235 1.233-.706 1.704l-1.611 1.611a.98.98 0 01-.837.276c-.47-.07-.802-.48-.968-.925a2.501 2.501 0 10-3.214 3.214c.446.166.855.497.925.968a.979.979 0 01-.276.837l-1.61 1.61a2.404 2.404 0 01-1.705.707 2.402 2.402 0 01-1.704-.706l-1.568-1.568a1.026 1.026 0 00-.877-.29c-.493.074-.84.504-1.02.968a2.5 2.5 0 11-3.237-3.237c.464-.18.894-.527.967-1.02a1.026 1.026 0 00-.289-.877l-1.568-1.568A2.402 2.402 0 012 12c0-.617.236-1.234.706-1.704L4.317 8.685a.98.98 0 01.837-.276c.47.07.802.48.968.925a2.501 2.501 0 003.214-3.214c-.166-.446-.497-.855-.968-.925a.979.979 0 01-.276-.837l1.61-1.61a2.402 2.402 0 011.705-.707c.617 0 1.234.236 1.704.706l1.568 1.568c.23.23.556.338.877.29.493-.074.84-.504 1.02-.968a2.5 2.5 0 113.237 3.237c-.464.18-.894.527-.967 1.02z"/></svg>'}</span><span class="sb-mi-label">${esc(panel.title)}</span>`;
     btn.onclick = () => { document.getElementById('sb-more-menu')?.classList.remove('open'); document.getElementById('sb-more-overlay')?.classList.remove('open'); showPluginPanel(panel.name); };
     grid.appendChild(btn);
   }
@@ -5178,11 +5178,11 @@ async function openCtxInspector(convId: string): Promise<void> {
   ctxInspConvId = convId;
   const modal = document.getElementById('ctx-inspector-modal')!;
   const status = document.getElementById('ctx-insp-status')!;
-  status.textContent = '加载中…';
+  status.textContent = tr('ctxInsp.loading');
   modal.classList.add('show');
   const r = await api.getDirectHistory(convId);
   if (!r.ok) {
-    status.textContent = r.error ?? '加载失败';
+    status.textContent = r.error ?? tr('ctxInsp.loadFail');
     ctxInspHistory = [];
     const editor0 = document.getElementById('ctx-insp-editor') as HTMLTextAreaElement;
     editor0.value = '[]';
@@ -5234,26 +5234,26 @@ async function saveCtxInspector(): Promise<void> {
   try {
     ctxInspHistory = JSON.parse(editor.value || '[]');
   } catch (e) {
-    status.textContent = '✕ JSON 格式错误: ' + (e as Error).message;
+    status.textContent = tr('ctxInsp.jsonErr', { msg: (e as Error).message });
     return;
   }
-  status.textContent = '保存中…';
+  status.textContent = tr('ctxInsp.saving');
   const r = await api.saveDirectHistory(ctxInspConvId, ctxInspHistory);
   if (r.ok) {
-    status.textContent = '✓ 已保存';
+    status.textContent = tr('ctxInsp.saved');
     // 刷新 token 统计
-    const tr = await api.getDirectHistory(ctxInspConvId);
-    if (tr.ok) {
+    const hr = await api.getDirectHistory(ctxInspConvId);
+    if (hr.ok) {
       const tokEl = document.getElementById('ctx-insp-tokens')!;
       const barFill = document.getElementById('ctx-insp-bar-fill')!;
-      const pct = tr.modelMax ? Math.min(100, Math.round(((tr.tokens ?? 0) / tr.modelMax) * 100)) : 0;
-      tokEl.textContent = `${((tr.tokens ?? 0) / 1000).toFixed(1)}k / ${((tr.modelMax ?? 128000) / 1000).toFixed(0)}k (${pct}%)`;
+      const pct = hr.modelMax ? Math.min(100, Math.round(((hr.tokens ?? 0) / hr.modelMax) * 100)) : 0;
+      tokEl.textContent = `${((hr.tokens ?? 0) / 1000).toFixed(1)}k / ${((hr.modelMax ?? 128000) / 1000).toFixed(0)}k (${pct}%)`;
       barFill.style.transform = 'scaleX(' + (pct / 100) + ')';
       barFill.className = 'ctx-insp-bar-fill' + (pct > 80 ? ' danger' : pct > 60 ? ' warn' : '');
     }
     setTimeout(() => { status.textContent = ''; }, 2000);
   } else {
-    status.textContent = '✕ ' + (r.error ?? '保存失败');
+    status.textContent = tr('ctxInsp.saveFail', { msg: r.error ?? '' });
   }
 }
 
@@ -6063,9 +6063,9 @@ function memEdit(row: HTMLElement, id: string): void {
   };
   row.querySelector<HTMLElement>('.mm-save')!.onclick = async () => {
     const v = ta.value.trim();
-    if (!v) { msgEl.textContent = '内容不能为空'; return; }
+    if (!v) { msgEl.textContent = tr('memory.emptyContent'); return; }
     const r = await api.memoryUpdate(id, v);
-    if (!r.ok) { msgEl.textContent = r.error ?? '保存失败'; return; }
+    if (!r.ok) { msgEl.textContent = r.error ?? tr('memory.saveFail'); return; }
     await renderMemoryList();
   };
   row.querySelector<HTMLElement>('.mm-cancel')!.onclick = () => void renderMemoryList();
@@ -6807,7 +6807,7 @@ function setMemMsg(text: string, ok: boolean): void {
 async function renderTimeline(): Promise<void> {
   const root = document.getElementById('timeline-view')!;
   const r = await api.memoryTimeline();
-  if (!r.ok) { setMemMsg(r.error ?? '加载失败', false); return; }
+  if (!r.ok) { setMemMsg(r.error ?? tr('memory.loadFail'), false); return; }
   const items = r.items ?? [];
   const sorted = [...items].sort((a, b) => b.created_at - a.created_at);
   const totalPages = Math.max(1, Math.ceil(sorted.length / TL_PAGE_SIZE));
@@ -7069,9 +7069,9 @@ function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?:
     case 'start':
       liveTokenBuf = '';
       liveDot.classList.add('active');
-      liveTitle.textContent = '远程协作直播 · 运行中';
+      liveTitle.textContent = tr('live.title') + ' · ' + tr('live.running');
       liveBody.innerHTML = '';
-      liveBody.appendChild(liveEv(`🚀 任务启动:${escHtml(ev.prompt || '')}`, 'live-start'));
+      liveBody.appendChild(liveEv(tr('live.taskStart', { prompt: escHtml(ev.prompt || '') }), 'live-start'));
       break;
     case 'token':
       liveTokenBuf += ev.text ?? '';
@@ -7086,23 +7086,23 @@ function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?:
       break;
     case 'tool':
       liveTokenBuf = '';
-      liveBody.appendChild(liveEv(`🔧 调用工具:${escHtml(ev.name || '')}`));
+      liveBody.appendChild(liveEv(tr('live.toolCall', { name: escHtml(ev.name || '') })));
       break;
     case 'status':
-      liveBody.appendChild(liveEv(`⏳ ${escHtml(ev.text || '')}`));
+      liveBody.appendChild(liveEv(tr('live.status', { text: escHtml(ev.text || '') })));
       break;
     case 'cost':
-      liveBody.appendChild(liveEv(`💰 $${(ev.usd ?? 0).toFixed(4)} · ${(ev.tokens ?? 0).toLocaleString()} tokens`));
+      liveBody.appendChild(liveEv(tr('live.cost', { usd: (ev.usd ?? 0).toFixed(4), tokens: (ev.tokens ?? 0).toLocaleString() })));
       break;
     case 'done':
       liveDot.classList.remove('active');
-      liveTitle.textContent = '远程协作直播 · 已完成';
-      liveBody.appendChild(liveEv(`✅ 完成:${escHtml((ev.summary || '').slice(0, 300))}`, 'live-done'));
+      liveTitle.textContent = tr('live.title') + ' · ' + tr('live.done');
+      liveBody.appendChild(liveEv(tr('live.completed', { summary: escHtml((ev.summary || '').slice(0, 300)) }), 'live-done'));
       break;
     case 'error':
       liveDot.classList.remove('active');
-      liveTitle.textContent = '远程协作直播 · 出错';
-      liveBody.appendChild(liveEv(`❌ 错误:${escHtml(ev.message || '')}`, 'live-error'));
+      liveTitle.textContent = tr('live.title') + ' · ' + tr('live.error');
+      liveBody.appendChild(liveEv(tr('live.errorMsg', { msg: escHtml(ev.message || '') }), 'live-error'));
       break;
   }
   liveBody.scrollTop = liveBody.scrollHeight;

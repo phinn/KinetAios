@@ -4230,14 +4230,14 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   align-self: flex-start;
   max-width: 85%;
 }
-.vc-user::before { content: '🗣️ '; }
+.vc-user::before { content: ''; }
 .vc-ai {
   color: var(--text);
   align-self: flex-end;
   text-align: right;
   max-width: 85%;
 }
-.vc-ai::before { content: '🤖 '; }
+.vc-ai::before { content: ''; }
 
 .vc-controls {
   display: flex; align-items: center; gap: 16px;

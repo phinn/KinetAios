@@ -70,6 +70,7 @@ const ZH_CN: Dict = {
   'head.pickDir': '选择目录',
   'head.newConv': '新会话',
   'head.ctxInspectorTitle': '上下文检查器(查看/编辑发送给模型的消息列表)',
+  'head.clearGoal': '清除目标',
   'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '对话',
@@ -687,6 +688,57 @@ const ZH_CN: Dict = {
   'team.dialog.formatErr': '格式错误或未选择会话',
   'team.dialog.createFail': '创建失败',
 
+  // ── 上下文检查器 / Context Inspector ──
+  'ctxInsp.title': '上下文检查器',
+  'ctxInsp.add': '添加一条消息',
+  'ctxInsp.cancel': '取消',
+  'ctxInsp.save': '保存',
+
+  // ── 全局搜索 / Global Search ──
+  'search.placeholder': '搜索所有对话…',
+
+  // ── 远程直播 / Remote Live ──
+  'live.title': '远程协作直播',
+
+  // ── 语音通话角色标签 / Voice Chat Roles ──
+  'voice.userLabel': '用户',
+  'voice.aiLabel': 'AI',
+
+  // ── 上下文检查器状态 ──
+  'ctxInsp.loading': '加载中…',
+  'ctxInsp.loadFail': '加载失败',
+  'ctxInsp.jsonErr': 'JSON 格式错误: {msg}',
+  'ctxInsp.saving': '保存中…',
+  'ctxInsp.saved': '✓ 已保存',
+  'ctxInsp.saveFail': '保存失败: {msg}',
+
+  // ── 远程直播事件 ──
+  'live.running': '运行中',
+  'live.done': '已完成',
+  'live.error': '出错',
+  'live.taskStart': '任务启动: {prompt}',
+  'live.toolCall': '调用工具: {name}',
+  'live.status': '{text}',
+  'live.cost': '${usd} · {tokens} tokens',
+  'live.completed': '完成: {summary}',
+  'live.errorMsg': '错误: {msg}',
+
+  // ── 语音通话 ──
+  'voice.chatStatusError': '错误: {msg}',
+  'voice.chatNoChannel': '没有活跃频道',
+
+  // ── 记忆面板 ──
+  'memory.loadFail': '加载失败',
+  'memory.emptyContent': '内容不能为空',
+  'memory.saveFail': '保存失败',
+
+  // ── 侧边栏 ──
+  'sidebar.plugins': '插件',
+
+  // ── 预览面板 ──
+  'preview.emptyHint': '等待 AI 生成 HTML/SVG 内容…',
+  'preview.emptySub': '让 AI「画一个网页 / 做 SVG 图表 / 写交互式组件」,结果会在这里实时预览',
+
   // ── 多机协作 (Mesh) ──
   'settings.mesh.title': '多机协作 (MCP Bridge)',
   'settings.mesh.desc': '把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。',
@@ -917,6 +969,7 @@ const EN: Dict = {
   'head.pickDir': 'Pick directory',
   'head.newConv': 'New session',
   'head.ctxInspectorTitle': 'Context Inspector (view/edit messages sent to the model)',
+  'head.clearGoal': 'Clear goal',
   'head.ctxInspectorBtn': 'Context',
 
   'tabs.chat': 'Chat',
@@ -1534,6 +1587,57 @@ const EN: Dict = {
   'team.dialog.formatErr': 'Invalid format or no conversation selected',
   'team.dialog.createFail': 'Creation failed',
 
+  // ── Context Inspector ──
+  'ctxInsp.title': 'Context Inspector',
+  'ctxInsp.add': 'Add a message',
+  'ctxInsp.cancel': 'Cancel',
+  'ctxInsp.save': 'Save',
+
+  // ── Global Search ──
+  'search.placeholder': 'Search all conversations…',
+
+  // ── Remote Live ──
+  'live.title': 'Remote Live',
+
+  // ── Voice Chat Role Labels ──
+  'voice.userLabel': 'User',
+  'voice.aiLabel': 'AI',
+
+  // ── Context Inspector status ──
+  'ctxInsp.loading': 'Loading…',
+  'ctxInsp.loadFail': 'Load failed',
+  'ctxInsp.jsonErr': 'JSON format error: {msg}',
+  'ctxInsp.saving': 'Saving…',
+  'ctxInsp.saved': '✓ Saved',
+  'ctxInsp.saveFail': 'Save failed: {msg}',
+
+  // ── Remote Live events ──
+  'live.running': 'Running',
+  'live.done': 'Done',
+  'live.error': 'Error',
+  'live.taskStart': 'Task started: {prompt}',
+  'live.toolCall': 'Tool call: {name}',
+  'live.status': '{text}',
+  'live.cost': '${usd} · {tokens} tokens',
+  'live.completed': 'Done: {summary}',
+  'live.errorMsg': 'Error: {msg}',
+
+  // ── Voice chat ──
+  'voice.chatStatusError': 'Error: {msg}',
+  'voice.chatNoChannel': 'No active channel',
+
+  // ── Memory panel ──
+  'memory.loadFail': 'Load failed',
+  'memory.emptyContent': 'Content cannot be empty',
+  'memory.saveFail': 'Save failed',
+
+  // ── Sidebar ──
+  'sidebar.plugins': 'Plugins',
+
+  // ── Preview panel ──
+  'preview.emptyHint': 'Waiting for AI to generate HTML/SVG content…',
+  'preview.emptySub': 'Ask AI to "draw a webpage / make an SVG chart / build an interactive component" — results preview here live',
+
   // ── Mesh ──
   'settings.mesh.title': 'Mesh (MCP Bridge)',
   'settings.mesh.desc': 'Expose local tools to other KinetAios nodes on the LAN, or connect to remote nodes as tools.',
@@ -1765,6 +1869,7 @@ const ZH_TW: Dict = {
   'head.pickDir': '選擇目錄',
   'head.newConv': '新工作階段',
   'head.ctxInspectorTitle': '上下文檢查器(檢視/編輯發送給模型的訊息列表)',
+  'head.clearGoal': '清除目標',
   'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '對話',
@@ -2382,7 +2487,57 @@ const ZH_TW: Dict = {
   'team.dialog.formatErr': '格式錯誤或未選擇會話',
   'team.dialog.createFail': '建立失敗',
 
-  // ── 多機協作 (Mesh) ──
+  // ── 上下文檢查器 ──
+  'ctxInsp.title': '上下文檢查器',
+  'ctxInsp.add': '新增一則訊息',
+  'ctxInsp.cancel': '取消',
+  'ctxInsp.save': '儲存',
+
+  // ── 全域搜尋 ──
+  'search.placeholder': '搜尋所有對話…',
+
+  // ── 遠端直播 ──
+  'live.title': '遠端協作直播',
+
+  // ── 語音通話角色標籤 ──
+  'voice.userLabel': '使用者',
+  'voice.aiLabel': 'AI',
+
+  // ── 上下文檢查器狀態 ──
+  'ctxInsp.loading': '載入中…',
+  'ctxInsp.loadFail': '載入失敗',
+  'ctxInsp.jsonErr': 'JSON 格式錯誤: {msg}',
+  'ctxInsp.saving': '儲存中…',
+  'ctxInsp.saved': '✓ 已儲存',
+  'ctxInsp.saveFail': '儲存失敗: {msg}',
+
+  // ── 遠端直播事件 ──
+  'live.running': '執行中',
+  'live.done': '已完成',
+  'live.error': '錯誤',
+  'live.taskStart': '任務啟動: {prompt}',
+  'live.toolCall': '呼叫工具: {name}',
+  'live.status': '{text}',
+  'live.cost': '${usd} · {tokens} tokens',
+  'live.completed': '完成: {summary}',
+  'live.errorMsg': '錯誤: {msg}',
+
+  // ── 語音通話 ──
+  'voice.chatStatusError': '錯誤: {msg}',
+  'voice.chatNoChannel': '沒有活躍頻道',
+
+  // ── 記憶面板 ──
+  'memory.loadFail': '載入失敗',
+  'memory.emptyContent': '內容不能為空',
+  'memory.saveFail': '儲存失敗',
+
+  // ── 側邊欄 ──
+  'sidebar.plugins': '外掛',
+
+  // ── 預覽面板 ──
+  'preview.emptyHint': '等待 AI 生成 HTML/SVG 內容…',
+  'preview.emptySub': '讓 AI「畫一個網頁 / 做 SVG 圖表 / 寫互動式元件」，結果會在這裡即時預覽',
+
   'settings.mesh.title': '多機協作 (MCP Bridge)',
   'settings.mesh.desc': '把本機工具暴露給區域網路內其它 KinetAios 節點，或連接遠端節點作為工具使用。',
   'settings.mesh.localTitle': '本機 MCP Server',
@@ -2613,6 +2768,7 @@ const JA: Dict = {
   'head.pickDir': 'ディレクトリを選択',
   'head.newConv': '新規セッション',
   'head.ctxInspectorTitle': 'コンテキストインスペクター(モデルに送信するメッセージリストを表示/編集)',
+  'head.clearGoal': '目標をクリア',
   'head.ctxInspectorBtn': 'コンテキスト',
 
   'tabs.chat': 'チャット',
@@ -3229,6 +3385,57 @@ const JA: Dict = {
   'team.dialog.create': '作成',
   'team.dialog.formatErr': '形式が不正、または会話が選択されていません',
   'team.dialog.createFail': '作成に失敗しました',
+
+  // ── コンテキストインスペクター ──
+  'ctxInsp.title': 'コンテキストインスペクター',
+  'ctxInsp.add': 'メッセージを追加',
+  'ctxInsp.cancel': 'キャンセル',
+  'ctxInsp.save': '保存',
+
+  // ── 全体検索 ──
+  'search.placeholder': 'すべての会話を検索…',
+
+  // ── リモートライブ ──
+  'live.title': 'リモート協作ライブ',
+
+  // ── 音声通話ロールラベル ──
+  'voice.userLabel': 'ユーザー',
+  'voice.aiLabel': 'AI',
+
+  // ── コンテキストインスペクター状態 ──
+  'ctxInsp.loading': '読み込み中…',
+  'ctxInsp.loadFail': '読み込み失敗',
+  'ctxInsp.jsonErr': 'JSON フォーマットエラー: {msg}',
+  'ctxInsp.saving': '保存中…',
+  'ctxInsp.saved': '✓ 保存しました',
+  'ctxInsp.saveFail': '保存失敗: {msg}',
+
+  // ── リモートライブイベント ──
+  'live.running': '実行中',
+  'live.done': '完了',
+  'live.error': 'エラー',
+  'live.taskStart': 'タスク開始: {prompt}',
+  'live.toolCall': 'ツール呼び出し: {name}',
+  'live.status': '{text}',
+  'live.cost': '${usd} · {tokens} tokens',
+  'live.completed': '完了: {summary}',
+  'live.errorMsg': 'エラー: {msg}',
+
+  // ── 音声通話 ──
+  'voice.chatStatusError': 'エラー: {msg}',
+  'voice.chatNoChannel': 'アクティブなチャンネルがありません',
+
+  // ── メモリパネル ──
+  'memory.loadFail': '読み込み失敗',
+  'memory.emptyContent': '内容を空にすることはできません',
+  'memory.saveFail': '保存失敗',
+
+  // ── サイドバー ──
+  'sidebar.plugins': 'プラグイン',
+
+  // ── プレビューパネル ──
+  'preview.emptyHint': 'AI による HTML/SVG コンテンツの生成を待っています…',
+  'preview.emptySub': 'AI に「ウェブページを描く / SVG チャートを作る / インタラクティブコンポーネントを書く」ように指示すると、結果がここにリアルタイムプレビューされます',
 
   // ── メッシュ (MCP Bridge) ──
   'settings.mesh.title': 'メッシュ (MCP Bridge)',

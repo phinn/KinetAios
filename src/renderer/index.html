@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; frame-src blob: data: file: http: https: srcdoc:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://unpkg.com;" />
   <title>KinetAios</title>
-  <link rel="stylesheet" href="styles.css?v=20250809d" />
+  <link rel="stylesheet" href="styles.css?v=20250809e" />
  <link rel="stylesheet" href="town.css" />
 </head>
 <body>
@@ -97,7 +97,7 @@
           <div id="goal-bar" class="ch-row ch-goal" style="display:none">
             <span class="goal-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
             <span id="goal-text" class="goal-text"></span>
-            <button class="ghost" id="btn-goal-clear" title="清除目标">✕</button>
+            <button class="ghost" id="btn-goal-clear" title="清除目标" data-i18n-title="head.clearGoal">✕</button>
           </div>
         </div>
         <div id="chat-content" class="chat-content">
@@ -360,10 +360,10 @@
   <div id="ctx-inspector-modal">
     <div class="ctx-insp-card">
       <div class="ctx-insp-head">
-        <h3>上下文检查器</h3>
+        <h3 data-i18n="ctxInsp.title">上下文检查器</h3>
         <span class="ctx-insp-tokens" id="ctx-insp-tokens"></span>
         <span class="ctx-insp-engine" id="ctx-insp-engine"></span>
-        <button class="ghost ctx-insp-add" id="ctx-insp-add" title="添加一条消息"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+        <button class="ghost ctx-insp-add" id="ctx-insp-add" data-i18n-title="ctxInsp.add" title="添加一条消息"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
         <button class="ghost" id="ctx-insp-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="ctx-insp-bar" id="ctx-insp-bar">
@@ -373,8 +373,8 @@
       <div class="ctx-insp-actions">
         <span class="ctx-insp-status" id="ctx-insp-status"></span>
         <span class="ctx-insp-spacer"></span>
-        <button id="ctx-insp-cancel">取消</button>
-        <button class="primary" id="ctx-insp-save">保存</button>
+        <button id="ctx-insp-cancel" data-i18n="ctxInsp.cancel">取消</button>
+        <button class="primary" id="ctx-insp-save" data-i18n="ctxInsp.save">保存</button>
       </div>
     </div>
   </div>
@@ -383,7 +383,7 @@
   <div id="search-overlay" class="search-overlay" style="display:none;">
     <div class="search-overlay-card">
       <div class="search-overlay-head">
-        <input type="text" id="search-input" class="search-overlay-input" placeholder="搜索所有对话…" autocomplete="off" />
+        <input type="text" id="search-input" class="search-overlay-input" data-i18n-placeholder="search.placeholder" placeholder="搜索所有对话…" autocomplete="off" />
         <button class="ghost" id="search-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="search-overlay-results" id="search-results"></div>
@@ -394,7 +394,7 @@
   <div id="live-panel" class="live-panel" style="display:none;">
     <div class="live-panel-head">
       <span class="live-dot" id="live-dot"></span>
-      <span id="live-title">远程协作直播</span>
+      <span id="live-title" data-i18n="live.title">远程协作直播</span>
       <button class="ghost" id="live-close"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
     </div>
     <div class="live-panel-body" id="live-body"></div>
@@ -402,6 +402,6 @@
 
     </div>
 
-  <script src="app.js?v=20250809d"></script>
+  <script src="app.js?v=20250809e"></script>
 </body>
 </html>
