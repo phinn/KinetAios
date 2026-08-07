@@ -42,6 +42,9 @@ class FeishuBridge {
   private _connected = false;
   /** open_id → convId 映射,用于按用户复用会话(而非每条消息新建)。 */
   private feishuSessions = new Map<string, string>();
+  /** 当前活跃消息 ID(用于 feishu_send_file 工具回传文件) */
+  // / Active message ID (used by feishu_send_file tool to send files back)
+  private activeMessageId: string | null = null;
 
   setTaskManager(tm: TaskManager): void {
     this.taskManager = tm;
@@ -166,6 +169,7 @@ class FeishuBridge {
     const cfg = getSettings().feishuBot;
     const senderId = event.sender?.sender_id?.open_id || 'unknown';
     const messageId = msg.message_id;
+    this.activeMessageId = messageId;
     const chatId = msg.chat_id;
     const chatType = msg.chat_type;
     const feishuKey = `feishu:${senderId}`;
@@ -454,6 +458,20 @@ class FeishuBridge {
 
   /** 外部注册的事件回调(main.ts 设置以桥接到 renderer) */
   onEvent: ((ev: FeishuStatusEv) => void) | null = null;
+
+  // ── 供 feishu_send_file 工具调用的公开接口 ──
+  // / Public API for feishu_send_file tool to send files to the active chat.
+  async sendFileToActiveChat(filePath: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.apiClient) return { ok: false, error: '飞书未连接' };
+    if (!this.activeMessageId) return { ok: false, error: '没有活跃的飞书消息(非飞书频道会话)' };
+
+    try {
+      await this.uploadAndSendFiles(this.activeMessageId, [filePath]);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e.message };
+    }
+  }
 }
 
 // ── 单例 / Singleton ──

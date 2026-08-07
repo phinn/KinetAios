@@ -56,7 +56,7 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 export function sourceHintSection(conv?: Conversation): string {
   if (!conv) return '';
   if (conv.feishuKey) {
-    return '\n\n# 📱 运行环境:飞书频道\n你当前在飞书频道中运行。你的回复会自动发送到当前对话,无需任何 Webhook URL、App ID/Secret 或 chat_id。\n如果用户说"发到飞书""发给我",那意味着直接回复即可——你已经在飞书频道里了。\n你产出的图片和文件也会自动上传并发送到频道。';
+    return '\n\n# 📱 运行环境:飞书频道\n你当前在飞书频道中运行。你的回复会自动发送到当前对话,无需任何 Webhook URL、App ID/Secret 或 chat_id。\n如果用户说"发到飞书""发给我",那意味着直接回复即可——你已经在飞书频道里了。\n你产出的图片和文件也会自动上传并发送到频道。\n\n## 📎 发送已有文件\n如果用户要求你发送磁盘上已有的文件(如"把 xxx.png 发给我"),请使用 `feishu_send_file` 工具,传入文件路径即可。不要用 write_file 重新写入二进制文件(会破坏原数据)。';
   }
   if (conv.wecomKey) {
     return '\n\n# 📱 运行环境:企业微信\n你当前在企业微信中运行。你的回复会自动发送到当前对话,无需任何额外配置。\n如果用户说"发到企微""发给我",那意味着直接回复即可——你已经在企业微信里了。';

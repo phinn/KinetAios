@@ -1471,8 +1471,49 @@ const videoGen: Tool = {
   },
 };
 
+// ── feishu_send_file: 将磁盘文件发送到当前飞书频道 ──
+// / Send a file from disk to the active Feishu chat.
+// 仅在飞书频道会话中可用(Agent 通过 conv.feishuKey 判断)。
+// / Only available in Feishu chat sessions.
+const feishuSendFile: Tool = {
+  name: 'feishu_send_file',
+  description: '将磁盘上已有的文件发送到当前飞书频道。支持图片(png/jpg/gif/webp)、文档(pdf/xlsx/docx/csv)、音视频(mp4/mp3)等。仅在飞书频道会话中有效。如果用户要求发送已有文件/图片,请用此工具,不要用 write_file。',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '文件路径(绝对或相对路径)' },
+    },
+    required: ['path'],
+  },
+  async run(args, ctx) {
+    const p = expandPath((args.path as string) ?? '', ctx.cwd);
+    if (!p) return '缺少 path 参数';
+
+    if (!fs.existsSync(p)) return `文件不存在: ${p}`;
+    const stat = fs.statSync(p);
+    if (stat.size === 0) return `文件为空: ${p}`;
+
+    const ext = path.extname(p).toLowerCase();
+    const OK_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.zip', '.mp4', '.mp3'];
+    if (!OK_EXTS.includes(ext)) return `不支持的文件类型: ${ext}。支持: 图片(png/jpg/gif/webp)、文档(pdf/xlsx/docx/csv)、音视频(mp4/mp3)等。`;
+
+    try {
+      const { getFeishuBridge } = await import('./feishu');
+      const bridge = getFeishuBridge();
+      if (!bridge.connected) return '❌ 飞书未连接,无法发送文件。';
+      const res = await bridge.sendFileToActiveChat(p);
+      if (res.ok) {
+        return `✅ 已发送文件到飞书频道: ${path.basename(p)} (${(stat.size / 1024).toFixed(1)} KB)`;
+      }
+      return `❌ 发送失败: ${res.error}`;
+    } catch (e: any) {
+      return `❌ 发送失败: ${sanitizeError(e)}`;
+    }
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
