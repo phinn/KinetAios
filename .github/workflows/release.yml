@@ -15,18 +15,27 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false  # 一个 OS 失败不连累另一个
+      fail-fast: false  # 一个 OS/架构失败不连累另一个
       matrix:
         include:
           - os: windows-latest
+            mac_arch: ''
             run_dist: npm run dist
             artifact_glob: release/KinetAios*Setup*.exe
-          # macOS: 用 macos-latest(arm64)一个 runner 打双架构 DMG。
-          # pack.js 传 --x64 --arm64,electron-builder 内部会为每个 arch rebuild native module。
+          # macOS x64 + arm64 拆成两个 job —— electron-builder #10031 bug:
+          # 同一 job 顺序打双架构会打包错误架构的 native module。
+          # 各自只打一个架构,打包前手动 rebuild 对应架构的 better-sqlite3。
           - os: macos-latest
+            mac_arch: x64
             run_dist: npm run dist:mac
-            artifact_glob: release/KinetAios-*.dmg
+            artifact_glob: release/KinetAios-*-x64.dmg
+          - os: macos-latest
+            mac_arch: arm64
+            run_dist: npm run dist:mac
+            artifact_glob: release/KinetAios-*-arm64.dmg
     runs-on: ${{ matrix.os }}
+    env:
+      MAC_ARCH: ${{ matrix.mac_arch }}
     steps:
       - uses: actions/checkout@v4
 
@@ -36,17 +45,14 @@ jobs:
           cache: npm
 
       # .npmrc 强制走 npmmirror(国内拉 electron 用),GH Actions 机房连官方源更快 → 删之。
-      # 用 node 而非 rm,跨 Windows/macOS 通用。
       - run: node -e "require('fs').rmSync('.npmrc',{force:true})"
 
-      # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台跑。
-      # macos-latest(arm64)上 npm install 编出 arm64 native module(供 arm64 包)。
-      # 下面打包时 electron-builder --x64 会自动为 x64 重新 rebuild。
-      # --no-audit --no-fund 跳过 audit/fund 检查加速。
+      # postinstall 会跑 electron-rebuild 重编 better-sqlite3(编出 host=arm64 的)。
+      # macOS x64 job 会在下面 pack.js 里重新 rebuild 成 x64。
       - run: npm install --no-audit --no-fund
 
       # dist / dist:mac 内部已经先 build 再 electron-builder(pack.js)
-      # tee 到日志文件,失败时上传成 artifact 方便诊断(不必看 step 内层)
+      # tee 到日志文件,失败时上传成 artifact 方便诊断。
       - shell: bash
         run: |
           set -o pipefail
@@ -56,17 +62,17 @@ jobs:
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: dist-log-${{ matrix.os }}
+          name: dist-log-${{ matrix.os }}-${{ matrix.mac_arch }}
           path: dist.log
 
-      # 上传到 Actions 的 artifact(手动 dispatch 也能下)
+      # 上传到 Actions 的 artifact
       - uses: actions/upload-artifact@v4
         with:
-          name: KinetAios-${{ matrix.os }}-${{ github.ref_name }}
+          name: KinetAios-${{ matrix.os }}-${{ matrix.mac_arch || 'win' }}-${{ github.ref_name }}
           path: ${{ matrix.artifact_glob }}
           if-no-files-found: warn
 
-      # 打 tag 时:把构建产物贴到 GH Release(softprops/action-gh-release@v2 会自动建 Release)
+      # 打 tag 时:把构建产物贴到 GH Release
       - name: Attach to Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
