@@ -17,11 +17,11 @@ AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 
 > 🚀 **We're live on Product Hunt today** — [upvote & say hi](https://www.producthunt.com/products/kinet-aios)
 
-![KinetAios hero screenshot](docs/hero.png)
+![KinetAios hero screenshot](documents/hero.png)
 
-![KinetAios v2.1.0](docs/kinetaios-v2.1.0.png)
+![KinetAios v2.1.0](documents/kinetaios-v2.1.0.png)
 
-> 📊 **[查看完整四引擎对比报告 →](docs/excel-cross-analysis-engines.html)** — V1 Direct / V2 Direct / Claude Code / Codex 在真实数据分析场景下的全维度评估。
+> 📊 **[查看完整四引擎对比报告 →](documents/excel-cross-analysis-engines.html)** — V1 Direct / V2 Direct / Claude Code / Codex 在真实数据分析场景下的全维度评估。
 
 **A local-first, multi-engine AI agent dashboard.** Run Claude Code, Codex, and a built-in ReAct loop side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
 
@@ -35,7 +35,8 @@ Most AI clients lock you into one provider, lose context when you switch engines
 
 |  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
-| Three-engine switch (Direct / Claude Code / Codex) | ✅ | — | — | — | — |
+| Four-engine switch (Direct V1/V2 / Claude Code / Codex) | ✅ | — | — | — | — |
+| Messaging channels (Feishu + WeCom bot) | ✅ | — | — | — | — |
 | Local SQLite + automatic long-term memory | ✅ | — | — | — | — |
 | Cross-engine memory (one user profile, all engines) | ✅ | — | — | — | — |
 | Multiple parallel sessions | ✅ | — | ✅ | — | ✅ |
@@ -45,6 +46,7 @@ Most AI clients lock you into one provider, lose context when you switch engines
 | Built-in MCP Server (remote agent control) | ✅ | — | — | — | — |
 | Plugin system (tools / panels / slash commands) | ✅ | — | — | — | — |
 | Multimodal (image input + voice + screenshot) | ✅ | ✅ | — | — | — |
+| Text-to-video generation (MiniMax H3) | ✅ | — | — | — | — |
 | Session branching + cross-engine pipeline | ✅ | — | — | — | — |
 | Local-first, no account | ✅ | ✅ | ✅ | — | — |
 
@@ -76,13 +78,14 @@ npm start
 
 ## Features
 
-### Three engines (switchable per session; switching clears cross-engine context)
-- **Direct (Kaios)**: built-in ReAct loop + GLM/OpenAI-compatible & Anthropic **dual-protocol SSE streaming** provider, with tool-level concurrency, sub-agent dispatch, context compaction, and retry.
+### Four engines (switchable per session; switching clears cross-engine context)
+- **Direct V1 (Kaios)**: built-in ReAct loop + GLM/OpenAI-compatible & Anthropic **dual-protocol SSE streaming** provider, with tool-level concurrency, sub-agent dispatch, context compaction, and retry.
+- **Direct V2**: next-gen ReAct with Plan-Execute-Verify-Judge architecture, streaming tool calls, and enhanced reasoning. Shared tool set with V1.
 - **Claude Code**: spawns `claude -p --output-format stream-json`, parses NDJSON, resumes via `--resume`.
 - **Codex**: spawns `codex exec --json`, parses JSONL, `resume` continuation.
 
-### Direct tools (12)
-`shell` (confirm before exec), `read_file`, `write_file`, `edit_file` (precise replacement), `grep` (recursive content search), `glob` (list files), `web_fetch` (SSRF-protected, Jina Reader fallback), `web_search` (Bing → DuckDuckGo), `recall_memory`, `git_diff` (read-only), `dispatch_agent` (read-only sub-agent with independent context), `flight_plan` (plugin-injected tools may add more).
+### Direct tools (20+)
+`shell` (confirm before exec), `read_file`, `write_file`, `edit_file` (precise replacement), `grep` (recursive content search), `glob` (list files), `web_fetch` (SSRF-protected, Jina Reader fallback), `web_search` (Bing → DuckDuckGo), `recall_memory`, `git_diff` (read-only), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with independent context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `feishu_send_file` (send files to Feishu chat). Plugin-injected tools may add more.
 
 ### MCP integration (client + server)
 - **Client**: auto-discovers system-configured MCP services (`~/.claude.json`, `~/.codex/config.toml`, Claude Desktop config), stdio transport, auto-reconnect. 🔌 button shows connected services/tools.
