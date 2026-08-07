@@ -4,8 +4,11 @@
 // Uses @larksuiteoapi/node-sdk WSClient for the long-connection protocol.
 // KinetAios 主动连飞书服务器,不需要公网回调 URL。
 import * as lark from '@larksuiteoapi/node-sdk';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
 import os from 'node:os';
 import type { TaskManager } from './TaskManager';
+import type { TaskStep } from '../shared/types';
 import { getSettings } from './settings';
 
 type FeishuStatusEv = { type: string; data?: unknown };
@@ -235,6 +238,13 @@ class FeishuBridge {
       await this.replyFinal(messageId, lastTurn.answer);
     }
 
+    // 提取并发送 Agent 产出的文件/图片到飞书
+    // / Extract and send files/images produced by the agent to Feishu
+    const files = this.extractArtifacts(lastTurn.steps);
+    if (files.length > 0) {
+      await this.uploadAndSendFiles(messageId, files);
+    }
+
     this.broadcast({ type: 'message_replied', data: { senderId, chatId } });
   }
 
@@ -271,6 +281,133 @@ class FeishuBridge {
       });
     } catch (e: any) {
       console.error('[feishu] reply failed:', e.message);
+    }
+  }
+
+  // ── 从 Turn steps 提取 Agent 产出的文件路径 ──
+  // / Extract file paths produced by the agent from tool-call steps.
+  private extractArtifacts(steps: TaskStep[]): string[] {
+    const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+    const FILE_EXTS = ['.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.zip', '.json', '.txt', '.md', '.html', '.mp4', '.mp3'];
+    const ALL_EXTS = new Set([...IMAGE_EXTS, ...FILE_EXTS]);
+
+    const found = new Set<string>();
+
+    for (const step of steps) {
+      // write_file / edit_file:从 args.path 提取
+      // / write_file / edit_file: extract from args.path
+      if (step.name === 'write_file' || step.name === 'edit_file') {
+        try {
+          const args = JSON.parse(step.args);
+          const p = args.path as string;
+          if (p && ALL_EXTS.has(path.extname(p).toLowerCase())) {
+            found.add(path.resolve(p));
+          }
+        } catch { /* args 不是合法 JSON,跳过 */ }
+      }
+
+      // shell:从 result 中正则提取文件路径(如"已写入 /path/to/file")
+      // / shell: extract file paths from result via regex
+      if (step.name === 'shell' || step.name === 'write_file') {
+        const pathRegex = /(?:\/[\w.\-]+)+\.(?:png|jpe?g|gif|webp|bmp|pdf|xlsx?|docx?|csv|zip|json|txt|md|html|mp[34])/gi;
+        const matches = step.result.match(pathRegex);
+        if (matches) {
+          for (const m of matches) found.add(path.resolve(m));
+        }
+      }
+    }
+
+    // 只返回实际存在的文件
+    // / Only return files that actually exist on disk
+    return [...found].filter(p => {
+      try { return fs.existsSync(p) && fs.statSync(p).size > 0; } catch { return false; }
+    });
+  }
+
+  // ── 上传图片/文件到飞书并发送回复 ──
+  // / Upload images/files to Feishu and send as replies.
+  private async uploadAndSendFiles(messageId: string, files: string[]): Promise<void> {
+    if (!this.apiClient) return;
+
+    const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
+
+    for (const filePath of files) {
+      const ext = path.extname(filePath).toLowerCase();
+      const fileName = path.basename(filePath);
+      const isImage = IMAGE_EXTS.includes(ext);
+
+      try {
+        if (isImage) {
+          // 图片:im.image.create → reply msg_type='image'
+          // / Image: upload → get image_key → reply as image message
+          const uploadRes = await this.apiClient.im.image.create({
+            data: {
+              image_type: 'message',
+              image: fs.createReadStream(filePath),
+            },
+          });
+          const imageKey = uploadRes?.image_key;
+          if (!imageKey) {
+            console.error('[feishu] image upload returned no key:', filePath);
+            continue;
+          }
+          await this.apiClient.im.message.reply({
+            path: { message_id: messageId },
+            data: {
+              msg_type: 'image',
+              content: JSON.stringify({ image_key: imageKey }),
+            },
+          });
+          console.log('[feishu] 已发送图片:', fileName);
+        } else {
+          // 文件:im.file.create → reply msg_type='file'
+          // / File: upload → get file_key → reply as file message
+          const fileType = this.mapFileType(ext);
+          const uploadRes = await this.apiClient.im.file.create({
+            data: {
+              file_type: fileType,
+              file_name: fileName,
+              file: fs.createReadStream(filePath),
+            },
+          });
+          const fileKey = uploadRes?.file_key;
+          if (!fileKey) {
+            console.error('[feishu] file upload returned no key:', filePath);
+            continue;
+          }
+          await this.apiClient.im.message.reply({
+            path: { message_id: messageId },
+            data: {
+              msg_type: 'file',
+              content: JSON.stringify({ file_key: fileKey }),
+            },
+          });
+          console.log('[feishu] 已发送文件:', fileName);
+        }
+      } catch (e: any) {
+        console.error(`[feishu] 上传/发送失败 ${fileName}:`, e.message);
+        // 失败不中断,继续处理下一个文件
+        // / Don't abort on single file failure, continue with remaining
+      }
+    }
+  }
+
+  // 飞书文件 API 要求的 file_type 枚举映射
+  // / Map file extension to Feishu file_type enum.
+  private mapFileType(ext: string): 'opus' | 'mp4' | 'pdf' | 'doc' | 'xls' | 'ppt' | 'stream' {
+    switch (ext) {
+      case '.pdf': return 'pdf';
+      case '.doc':
+      case '.docx': return 'doc';
+      case '.xls':
+      case '.xlsx':
+      case '.csv': return 'xls';
+      case '.ppt':
+      case '.pptx': return 'ppt';
+      case '.mp4': return 'mp4';
+      case '.mp3':
+      case '.opus': return 'opus';
+      default: return 'stream';
     }
   }
 
