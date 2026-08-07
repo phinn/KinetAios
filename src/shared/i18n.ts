@@ -608,6 +608,17 @@ const ZH_CN: Dict = {
   'settings.wecom.cwd': '默认工作目录',
   'settings.wecom.cwdPh': '空 = 用户主目录',
 
+  // ── 飞书机器人 ──
+  'settings.feishu.title': '飞书机器人',
+  'settings.feishu.desc': '通过 WebSocket 长连接接入飞书自建应用机器人,接收飞书消息并路由到 Agent 引擎处理。在「飞书开发者后台 → 事件与回调 → 订阅方式」选择「使用长连接接收事件」。需订阅 im.message.receive_v1 事件。',
+  'settings.feishu.enable': '启用',
+  'settings.feishu.appIdPh': '飞书开发者后台获取的 App ID (cli_开头)',
+  'settings.feishu.secretPh': '飞书开发者后台获取的 App Secret',
+  'settings.feishu.engine': '处理引擎',
+  'settings.feishu.streamReply': '流式回复',
+  'settings.feishu.cwd': '默认工作目录',
+  'settings.feishu.cwdPh': '空 = 用户主目录',
+
   // ── 插件管理(动态渲染部分)──
   'settings.plugin.title': '插件管理',
   'settings.plugin.searchPh': '搜索插件名称、描述、作者…',
@@ -1432,6 +1443,17 @@ const EN: Dict = {
   'settings.wecom.streamReply': 'Stream reply',
   'settings.wecom.cwd': 'Default working directory',
   'settings.wecom.cwdPh': 'Empty = user home',
+
+  // ── Feishu Bot ──
+  'settings.feishu.title': 'Feishu Bot',
+  'settings.feishu.desc': 'Connect to Feishu (Lark) self-built app bot via WebSocket long-connection. Incoming messages are routed to the Agent engine. In Feishu Developer Console → Events & Callbacks → Subscription Mode, select "Receive events via persistent connection". Subscribe to the im.message.receive_v1 event.',
+  'settings.feishu.enable': 'Enable',
+  'settings.feishu.appIdPh': 'App ID from Feishu console (starts with cli_)',
+  'settings.feishu.secretPh': 'App Secret from Feishu console',
+  'settings.feishu.engine': 'Engine',
+  'settings.feishu.streamReply': 'Stream reply',
+  'settings.feishu.cwd': 'Default working directory',
+  'settings.feishu.cwdPh': 'Empty = user home',
 
   // ── Plugins (dynamic render) ──
   'settings.plugin.title': 'Plugins',
@@ -2259,6 +2281,17 @@ const ZH_TW: Dict = {
   'settings.wecom.cwd': '預設工作目錄',
   'settings.wecom.cwdPh': '空 = 使用者主目錄',
 
+  // ── 飛書機器人 ──
+  'settings.feishu.title': '飛書機器人',
+  'settings.feishu.desc': '透過 WebSocket 長連接接入飛書自建應用機器人，接收飛書訊息並路由到 Agent 引擎處理。在「飛書開發者後台 → 事件與回調 → 訂閱方式」選擇「使用長連接接收事件」。需訂閱 im.message.receive_v1 事件。',
+  'settings.feishu.enable': '啟用',
+  'settings.feishu.appIdPh': '飛書開發者後台取得的 App ID (cli_ 開頭)',
+  'settings.feishu.secretPh': '飛書開發者後台取得的 App Secret',
+  'settings.feishu.engine': '處理引擎',
+  'settings.feishu.streamReply': '串流回覆',
+  'settings.feishu.cwd': '預設工作目錄',
+  'settings.feishu.cwdPh': '空 = 使用者主目錄',
+
   // ── 外掛管理（動態渲染）──
   'settings.plugin.title': '外掛管理',
   'settings.plugin.searchPh': '搜尋外掛名稱、描述、作者…',
@@ -3084,6 +3117,17 @@ const JA: Dict = {
   'settings.wecom.streamReply': 'ストリーミング返信',
   'settings.wecom.cwd': 'デフォルト作業ディレクトリ',
   'settings.wecom.cwdPh': '空 = ユーザーのホームディレクトリ',
+
+  // ── 飛書ボット ──
+  'settings.feishu.title': '飛書ボット',
+  'settings.feishu.desc': 'WebSocket 長接続で飛書自社構築アプリボットに接続します。受信メッセージは Agent エンジンにルーティングされます。「飛書開発者コンソール → イベントとコールバック → サブスクリプション方式」で「長接続でイベントを受信」を選択してください。im.message.receive_v1 イベントのサブスクリプションが必要です。',
+  'settings.feishu.enable': '有効化',
+  'settings.feishu.appIdPh': '飛書コンソールから取得した App ID (cli_ で始まる)',
+  'settings.feishu.secretPh': '飛書コンソールから取得した App Secret',
+  'settings.feishu.engine': 'エンジン',
+  'settings.feishu.streamReply': 'ストリーミング返信',
+  'settings.feishu.cwd': 'デフォルト作業ディレクトリ',
+  'settings.feishu.cwdPh': '空 = ユーザーのホームディレクトリ',
 
   // ── プラグイン管理（動的レンダリング）──
   'settings.plugin.title': 'プラグイン管理',

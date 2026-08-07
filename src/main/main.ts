@@ -29,6 +29,7 @@ import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import { VoiceChat } from './VoiceChat';
 import { getWeComBridge, setTaskManagerForWeCom } from './wecom';
+import { getFeishuBridge, setTaskManagerForFeishu } from './feishu';
 import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, ContextMode, CustomTool, EngineKind, GitActionKind, GitActionResult, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg, VoiceChatEventPayload } from '../shared/types';
 
 const execFileAsync = promisify(execFile);
@@ -790,6 +791,16 @@ function registerIpc(): void {
       getWeComBridge().start().catch((e) => console.warn('[wecom] 重连失败:', e.message));
     } else if (!newWecom?.enabled && oldWecom?.enabled) {
       getWeComBridge().stop();
+    }
+    // 飞书机器人:配置变化 → 重连/断开。
+    const oldFeishu = old.feishuBot;
+    const newFeishu = s.feishuBot;
+    if (newFeishu?.enabled && (!oldFeishu?.enabled
+        || oldFeishu.appId !== newFeishu.appId
+        || oldFeishu.appSecret !== newFeishu.appSecret)) {
+      getFeishuBridge().start().catch((e) => console.warn('[feishu] 重连失败:', e.message));
+    } else if (!newFeishu?.enabled && oldFeishu?.enabled) {
+      getFeishuBridge().stop();
     }
     return true;
   });
@@ -2194,6 +2205,18 @@ function registerIpc(): void {
   ipcMain.handle('wecom-bot-disconnect', () => {
     return getWeComBridge().stop();
   });
+
+  // ── 飞书机器人 IPC ──
+  ipcMain.handle('feishu-bot-status', () => {
+    const b = getFeishuBridge();
+    return { connected: b.connected, pendingCount: b.pendingCount };
+  });
+  ipcMain.handle('feishu-bot-connect', async () => {
+    return getFeishuBridge().start();
+  });
+  ipcMain.handle('feishu-bot-disconnect', () => {
+    return getFeishuBridge().stop();
+  });
 }
 
 // single instance — second launch just focuses the existing window.
@@ -2262,6 +2285,14 @@ if (!gotLock) {
     };
     if (getSettings().wecomBot?.enabled) {
       getWeComBridge().start().catch((e) => console.warn('[wecom] 自启动失败:', e.message));
+    }
+    // 飞书机器人:注入 taskManager,settings 里 enabled 则自动连接。
+    setTaskManagerForFeishu(taskManager);
+    getFeishuBridge().onEvent = (ev) => {
+      safeSend(dashboardWin, 'feishu-event', ev);
+    };
+    if (getSettings().feishuBot?.enabled) {
+      getFeishuBridge().start().catch((e) => console.warn('[feishu] 自启动失败:', e.message));
     }
     for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);
     // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。dispatcher 起新会话并发 prompt。

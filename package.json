@@ -42,7 +42,9 @@
       }
     ],
     "mac": {
-      "target": ["dmg"],
+      "target": [
+        "dmg"
+      ],
       "icon": "build/icon.png",
       "minimumSystemVersion": "10.15.0"
     },
@@ -70,6 +72,7 @@
     "typescript": "^5.5.0"
   },
   "dependencies": {
+    "@larksuiteoapi/node-sdk": "^1.72.0",
     "@wecom/aibot-node-sdk": "^1.0.7",
     "better-sqlite3": "^11.1.0",
     "ws": "^8.21.1"

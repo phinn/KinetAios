@@ -238,6 +238,8 @@ export type AppSettings = {
   minimaxApiKey: string;
   // ── 企业微信智能机器人 ── WebSocket 长连接模式,接收企信消息并路由到 Agent 引擎处理。
   wecomBot: WeComBotConfig;
+  // ── 飞书机器人 ── WebSocket 长连接模式,接收飞书消息并路由到 Agent 引擎处理。
+  feishuBot: FeishuBotConfig;
 };
 
 /** 企业微信智能机器人配置 / WeCom AI Bot config (WebSocket long-connection mode) */
@@ -247,6 +249,16 @@ export type WeComBotConfig = {
   secret: string;         // 机器人 Secret(企业微信后台获取)
   defaultCwd: string;     // 默认工作目录(空 = 用户主目录)
   engine: EngineKind;     // 处理企信消息使用的引擎(默认 direct)
+  streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
+};
+
+/** 飞书机器人配置 / Feishu Bot config (WebSocket long-connection mode) */
+export type FeishuBotConfig = {
+  enabled: boolean;       // 是否启用(默认 false)
+  appId: string;          // 飞书应用 App ID(开发者后台获取)
+  appSecret: string;      // 飞书应用 App Secret(开发者后台获取)
+  defaultCwd: string;     // 默认工作目录(空 = 用户主目录)
+  engine: EngineKind;     // 处理飞书消息使用的引擎(默认 direct)
   streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
 };
 
@@ -518,6 +530,9 @@ export type Conversation = {
   /** 企信会话映射 key(格式: `wecom:${userid}`)。
    *  非空 = 该会话由企信机器人创建,用于按用户复用会话避免每条消息新建频道。 */
   wecomKey?: string | null;
+  /** 飞书会话映射 key(格式: `feishu:${open_id}`)。
+   *  非空 = 该会话由飞书机器人创建,用于按用户复用会话避免每条消息新建频道。 */
+  feishuKey?: string | null;
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。
@@ -801,6 +816,16 @@ export interface KinetAPI {
   wecomBotDisconnect(): Promise<{ ok: boolean }>;
   /** 企信事件回调(连接状态变化、消息收发日志) */
   onWeComBotEvent(cb: (ev: { type: string; data?: unknown }) => void): void;
+
+  // ── 飞书机器人 ──
+  /** 获取飞书机器人的运行状态 */
+  feishuBotStatus(): Promise<{ connected: boolean; pendingCount: number }>;
+  /** 手动连接飞书 WebSocket */
+  feishuBotConnect(): Promise<{ ok: boolean; error?: string }>;
+  /** 手动断开飞书 WebSocket */
+  feishuBotDisconnect(): Promise<{ ok: boolean }>;
+  /** 飞书事件回调 */
+  onFeishuBotEvent(cb: (ev: { type: string; data?: unknown }) => void): void;
 }
 
 export function newTurn(prompt: string): Turn {

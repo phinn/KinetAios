@@ -212,6 +212,15 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('wecom-event');
     ipcRenderer.on('wecom-event', (_e: IpcRendererEvent, ev: { type: string; data?: unknown }) => cb(ev));
   },
+
+  // ── 飞书机器人 ──
+  feishuBotStatus: () => ipcRenderer.invoke('feishu-bot-status'),
+  feishuBotConnect: () => ipcRenderer.invoke('feishu-bot-connect'),
+  feishuBotDisconnect: () => ipcRenderer.invoke('feishu-bot-disconnect'),
+  onFeishuBotEvent: (cb: (ev: { type: string; data?: unknown }) => void) => {
+    ipcRenderer.removeAllListeners('feishu-event');
+    ipcRenderer.on('feishu-event', (_e: IpcRendererEvent, ev: { type: string; data?: unknown }) => cb(ev));
+  },
 };
 
 // ArrayBuffer → base64(语音音频传输用)

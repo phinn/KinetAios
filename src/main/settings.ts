@@ -60,6 +60,15 @@ const DEFAULTS: AppSettings = {
     engine: 'direct' as EngineKind,
     streamReply: true,
   },
+  // 飞书机器人:默认关闭,appId/appSecret 留空。
+  feishuBot: {
+    enabled: false,
+    appId: '',
+    appSecret: '',
+    defaultCwd: '',
+    engine: 'direct' as EngineKind,
+    streamReply: true,
+  },
 };
 
 let cache: AppSettings | null = null;
