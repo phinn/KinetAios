@@ -48,8 +48,8 @@ process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
 // macOS 12 + Intel 上 GPU 渲染可能黑屏/白屏(Electron 已知问题),禁用硬件加速兜底。
 // 对 CPU 渲染性能影响极小(本 app 以文本/列表为主,无 Canvas/WebGL 重负载)。
-// 仅 Intel(x64)需要;Apple Silicon(arm64)GPU 驱动正常,保留硬件加速。
-if (process.arch === 'x64') app.disableHardwareAcceleration();
+// 仅 macOS Intel(x64)需要;Apple Silicon(arm64)GPU 驱动正常,保留硬件加速。
+if (process.platform === 'darwin' && process.arch === 'x64') app.disableHardwareAcceleration();
 
 // ── 系统路径安全检查:阻止渲染器读写敏感系统路径 ──
 // System path guard: prevent renderer from reading/writing sensitive system paths.
