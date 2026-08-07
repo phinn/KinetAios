@@ -240,7 +240,7 @@ class FeishuBridge {
 
     // 提取并发送 Agent 产出的文件/图片到飞书
     // / Extract and send files/images produced by the agent to Feishu
-    const files = this.extractArtifacts(lastTurn.steps);
+    const files = this.extractArtifacts(lastTurn.steps, cwd, text);
     if (files.length > 0) {
       await this.uploadAndSendFiles(messageId, files);
     }
@@ -284,12 +284,19 @@ class FeishuBridge {
     }
   }
 
-  // ── 从 Turn steps 提取 Agent 产出的文件路径 ──
-  // / Extract file paths produced by the agent from tool-call steps.
-  // 只从 write_file/edit_file 的 args.path 提取(有明确产出意图),不从 shell result 猜路径。
-  // / Only extract from write_file/edit_file args (explicit output intent),
-  // never from shell results (which may list pre-existing files via ls/grep).
-  private extractArtifacts(steps: TaskStep[]): string[] {
+  // ── 从 Turn 提取要发送的文件 ──
+  // / Extract files to send from the turn.
+  // 三条提取路径(按优先级):
+  // 1. write_file 的 args.path — Agent 本轮产出的新文件
+  // 2. read_file 的 args.path — Agent 读取过的文件(用户说"发图片"时 Agent 会先读取)
+  // 3. shell args 里的文件路径 — Agent 用 shell 操作过的文件
+  // 不从 shell result 正文提取(ls/grep 输出会污染)。
+  // / Three extraction paths by priority:
+  // 1. write_file args.path — newly produced files
+  // 2. read_file args.path — files the agent read (user says "send photo" → agent reads it)
+  // 3. shell args containing file paths — files operated on via shell
+  // Never extract from shell result body (ls/grep output would pollute).
+  private extractArtifacts(steps: TaskStep[], cwd: string, userPrompt?: string): string[] {
     const IMAGE_EXTS = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp'];
     const FILE_EXTS = ['.pdf', '.xlsx', '.xls', '.docx', '.doc', '.csv', '.zip', '.mp4', '.mp3'];
     const ALL_EXTS = new Set([...IMAGE_EXTS, ...FILE_EXTS]);
@@ -299,23 +306,51 @@ class FeishuBridge {
 
     const found = new Set<string>();
 
+    const tryAdd = (p: string) => {
+      const ext = path.extname(p).toLowerCase();
+      if (EXCLUDE_EXTS.has(ext)) return;
+      if (!ALL_EXTS.has(ext)) return;
+      found.add(path.resolve(cwd, p));
+    };
+
     for (const step of steps) {
-      // 只从 write_file 提取(edit_file 改的是已有文件,不是产出物)
-      // / Only from write_file (edit_file modifies existing files, not new outputs)
-      if (step.name === 'write_file') {
-        try {
-          const args = JSON.parse(step.args);
+      try {
+        const args = JSON.parse(step.args);
+
+        // write_file: Agent 本轮产出的新文件
+        if (step.name === 'write_file') {
           const p = args.path as string;
-          if (!p) continue;
-          const ext = path.extname(p).toLowerCase();
-          // 排除代码/配置/日志类,只保留图片和文档类交付物
-          // / Exclude code/config/log, only keep image and document deliverables
-          if (EXCLUDE_EXTS.has(ext)) continue;
-          if (ALL_EXTS.has(ext)) {
-            found.add(path.resolve(p));
+          if (p) tryAdd(p);
+        }
+
+        // read_file: Agent 读取过的文件(如用户说"发图片",Agent 可能先读取确认)
+        // / read_file: files the agent read (e.g. user says "send photo", agent reads first)
+        if (step.name === 'read_file') {
+          const p = args.path as string;
+          if (p) tryAdd(p);
+        }
+
+        // shell:从命令参数中提取文件路径(不从 result 正文提取,避免 ls 输出污染)
+        // / shell: extract file paths from command args only (not from result body)
+        if (step.name === 'shell') {
+          const cmd = args.command as string;
+          if (cmd) {
+            // 提取命令中出现的文件路径(带扩展名的)
+            // / Extract file paths (with extensions) from the command string
+            const filePathRegex = /[\w\/\\.\-]+\.(?:png|jpe?g|gif|webp|bmp|pdf|xlsx?|docx?|csv|zip|mp[34])/gi;
+            const matches = cmd.match(filePathRegex);
+            if (matches) for (const m of matches) tryAdd(m);
           }
-        } catch { /* args 不是合法 JSON,跳过 */ }
-      }
+        }
+      } catch { /* args 不是合法 JSON,跳过 */ }
+    }
+
+    // Fallback:如果 steps 没提取到任何文件,检查用户消息里是否提到了文件名
+    // / Fallback: if no files found from steps, check user prompt for filenames
+    if (found.size === 0 && userPrompt) {
+      const nameRegex = /[\w.\-]+\.(?:png|jpe?g|gif|webp|bmp|pdf|xlsx?|docx?|csv|zip|mp[34])/gi;
+      const matches = userPrompt.match(nameRegex);
+      if (matches) for (const m of matches) tryAdd(m);
     }
 
     // 只返回实际存在的文件,最多 5 个(防止刷屏)
