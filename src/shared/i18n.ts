@@ -203,6 +203,12 @@ const ZH_CN: Dict = {
   'attach.dirAlert': '暂不支持文件夹,请拖单个文件(可多选),或用 📎 选择。',
   'attach.missingAlert': '这些 @文件 没读到(不存在 / 非文本 / 不在工作目录内):\n{list}',
 
+  'composer.moreTools': '更多工具',
+  'composer.skill': 'Skill',
+  'composer.mcp': 'MCP',
+  'composer.voiceChat': '语音对话',
+  'composer.persona': '替身画像',
+
   'model.title': '模型(Direct 引擎,每会话独立;回车应用)',
   'model.ph': '模型',
   // 上下文模式 / Context mode selector (per-conversation, Direct engine only)
@@ -1039,6 +1045,12 @@ const EN: Dict = {
   'attach.lbl': 'Files',
   'attach.dirAlert': "Folders aren't supported — drop individual files (multi-ok), or use 📎.",
   'attach.missingAlert': "These @files couldn't be read (missing / non-text / outside cwd):\n{list}",
+
+  'composer.moreTools': 'More tools',
+  'composer.skill': 'Skill',
+  'composer.mcp': 'MCP',
+  'composer.voiceChat': 'Voice chat',
+  'composer.persona': 'Persona',
 
   'model.title': 'Model (Direct engine, per-session; Enter to apply)',
   'model.ph': 'Model',
@@ -1878,6 +1890,12 @@ const ZH_TW: Dict = {
   'attach.dirAlert': '暫不支援資料夾,請拖單個檔案(可多選),或用 📎 選擇。',
   'attach.missingAlert': '這些 @檔案 沒讀到(不存在 / 非文字 / 不在工作目錄內):\n{list}',
 
+  'composer.moreTools': '更多工具',
+  'composer.skill': 'Skill',
+  'composer.mcp': 'MCP',
+  'composer.voiceChat': '語音對話',
+  'composer.persona': '替身畫像',
+
   'model.title': '模型(Direct 引擎,每工作階段獨立;Enter 套用)',
   'model.ph': '模型',
   // 上下文模式 / Context mode selector
@@ -2715,6 +2733,12 @@ const JA: Dict = {
   'attach.lbl': '添付',
   'attach.dirAlert': 'フォルダは未対応です — 個別ファイルをドロップ(複数可)するか 📎 で選択してください。',
   'attach.missingAlert': '以下の @ファイル が読めませんでした(不在 / 非テキスト / 作業ディレクトリ外):\n{list}',
+
+  'composer.moreTools': 'その他ツール',
+  'composer.skill': 'Skill',
+  'composer.mcp': 'MCP',
+  'composer.voiceChat': '音声チャット',
+  'composer.persona': 'ペルソナ',
 
   'model.title': 'モデル(Direct エンジン、セッション単位、Enter で適用)',
   'model.ph': 'モデル',

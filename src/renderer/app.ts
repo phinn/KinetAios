@@ -371,9 +371,10 @@ function taskLi(id: string): HTMLElement {
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
   const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+  const engCls = c.engine ? ` eng-${c.engine}` : '';
   const ts = c.updatedAt ?? c.createdAt;
   const timeStr = fmtRelative(ts);
-  li.innerHTML = `<span class="dot ${cls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${timeStr}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" title="上下文检查器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${cls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${timeStr}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" title="上下文检查器"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     selectedId = id;
     showChat();
@@ -1473,11 +1474,14 @@ function renderHead(conv: Conversation | undefined) {
     ctxSel.style.display = isDirectFam ? '' : 'none';
   }
   // 替身画像 toggle:同步高亮状态。personaEnabled !== false = 开(默认)。
+  // btn-persona 已隐藏(proxy),同步 cm-persona(composer-more 菜单项)状态。
   const personaBtn = document.getElementById('btn-persona');
+  const cmPersona = document.getElementById('cm-persona');
   if (personaBtn) {
     const enabled = conv.personaEnabled !== false;
     personaBtn.classList.toggle('active', enabled);
-    personaBtn.style.display = '';
+    // 保持 proxy 按钮隐藏 — 不覆盖 inline display:none。
+    if (cmPersona) cmPersona.classList.toggle('active', enabled);
   }
 }
 
@@ -1540,8 +1544,9 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (streaming) {
       ans.id = 'streaming-answer';
       ans.classList.add('streaming');
-      // streaming 区只放 answer 文本(streamAppend 直接 appendChild text node,不能混入别的元素)。
-      if (t.answer) ans.textContent = t.answer;
+      // 同步 streamRawText buffer:renderMain 重建 DOM 时需重置 buffer 到当前 answer。
+      streamRawText = t.answer ?? '';
+      if (t.answer) ans.innerHTML = md(t.answer);
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       ans.innerHTML = md(t.answer);
@@ -1715,6 +1720,13 @@ function updateLastTurnIncremental(): void {
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
+// 流式 markdown 渲染:累积原始文本 + rAF 节流 innerHTML 重渲染。
+// 核心问题:每次 token 到来如果立即 innerHTML = md(text),高频(20-50/s)下会卡。
+// 方案:用 streamRawText 累积原始文本,streamAppend 只追加到 buffer,
+// rAF 每帧最多做一次 md(buffer) → innerHTML 替换。
+let streamRawText = '';
+let streamRenderScheduled = false;
+
 function streamAppend(text: string) {
   let el = document.getElementById('streaming-answer');
   if (!el) {
@@ -1723,8 +1735,24 @@ function streamAppend(text: string) {
   }
   if (el) {
     const hadTyping = el.querySelector('.typing');
-    if (hadTyping) el.textContent = ''; // 首个 token:清掉思考三点
-    el.appendChild(document.createTextNode(text));
+    if (hadTyping) {
+      streamRawText = ''; // 首个 token:清掉思考三点 + 重置 buffer
+      el.textContent = '';
+    }
+    // 累积原始文本到 buffer(不直接操作 DOM textNode)。
+    streamRawText += text;
+    // rAF 节流:每帧最多一次 md 渲染。
+    if (!streamRenderScheduled) {
+      streamRenderScheduled = true;
+      requestAnimationFrame(() => {
+        streamRenderScheduled = false;
+        const target = document.getElementById('streaming-answer');
+        if (target && streamRawText) {
+          target.innerHTML = md(streamRawText);
+          target.classList.add('streaming');
+        }
+      });
+    }
     const turnEl = el.closest('.turn');
     const ss = turnEl?.querySelector('.streaming-status');
     if (ss) ss.remove();
@@ -1919,7 +1947,23 @@ function scrollDownForce() {
 function initScrollBottomBtn(): void {
   const turns = document.getElementById('turns');
   const btn = document.getElementById('scroll-bottom-btn');
+  const input = document.getElementById('input');
   if (!turns || !btn) return;
+
+  // 动态测量 #input 高度(含 attach-row 展开),更新 CSS 变量 → scroll-bottom-btn 自动跟随。
+  // Measure #input height (including attach-row expansion), update CSS var for dynamic button position.
+  const measureInput = () => {
+    if (input) {
+      const h = input.offsetHeight;
+      document.documentElement.style.setProperty('--input-h', h + 'px');
+    }
+  };
+  measureInput();
+  // 监听 #input 子树变化(attach-row 展开/收起)和 textarea 尺寸变化。
+  if (input) {
+    new MutationObserver(() => measureInput()).observe(input, { childList: true, subtree: true, attributes: true });
+    new ResizeObserver(() => measureInput()).observe(input);
+  }
 
   const update = () => {
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
@@ -3368,6 +3412,8 @@ function closeMoreMenu() {
       const newEnabled = !(conv?.personaEnabled !== false);
       void api.setPersonaEnabled(selectedId, newEnabled);
       personaBtn.classList.toggle('active', newEnabled);
+      const cmp = document.getElementById('cm-persona');
+      if (cmp) cmp.classList.toggle('active', newEnabled);
     };
   }
   // 清除目标:发送 /goal(无参数)清除
@@ -3826,16 +3872,18 @@ function closeMoreMenu() {
     });
   }
 
-  // Skill 按钮:打开 skill 菜单(复用 / 的逻辑)。Direct 才有意义。
-  document.getElementById('btn-skill')!.onclick = () => {
+  // Skill 按钮(已移入 composer-more-menu):打开 skill 菜单(复用 / 的逻辑)。Direct 才有意义。
+  document.getElementById('cm-skill')!.onclick = () => {
+    closeComposerMore();
     if (selectedId && convs.get(selectedId)?.engine !== 'direct') return;
     (document.getElementById('composer') as HTMLTextAreaElement).focus();
     void openSlash('');
   };
 
-  // MCP 按钮:弹已连服务 + 工具列表(可见性)。点外面关闭。
-  document.getElementById('btn-mcp')!.onclick = async (e) => {
+  // MCP 按钮(已移入 composer-more-menu):弹已连服务 + 工具列表(可见性)。点外面关闭。
+  document.getElementById('cm-mcp')!.onclick = async (e) => {
     e.stopPropagation();
+    closeComposerMore();
     const menu = document.getElementById('mcp-menu')!;
     if (!menu.hidden) { menu.hidden = true; return; }
     const list = await api.listMcp();
@@ -3848,13 +3896,49 @@ function closeMoreMenu() {
   };
   document.addEventListener('click', (e) => {
     const menu = document.getElementById('mcp-menu')!;
-    if (!menu.hidden && !(e.target as HTMLElement)?.closest('#btn-mcp, #mcp-menu')) menu.hidden = true;
+    if (!menu.hidden && !(e.target as HTMLElement)?.closest('#cm-mcp, #mcp-menu')) menu.hidden = true;
   });
   // Voice in/out —— MediaRecorder 录音 → main 进程 /audio/transcriptions → 文字填入 composer。
   // TTS 走 speechSynthesis(系统级,零依赖),每条 AI 回复自带 🔊 按钮(见 renderTurn)。
   // ponytail: STT 需要联网调 API,后续可换 whisper.cpp 离线。
   wireVoice();
   wireVoiceChat();
+
+  // ── composer-more 菜单:低频工具弹出菜单(skill/mcp/voice-chat/persona) ──
+  const cMoreBtn = document.getElementById('btn-composer-more');
+  const cMoreMenu = document.getElementById('composer-more-menu');
+  if (cMoreBtn && cMoreMenu) {
+    cMoreBtn.onclick = (e) => {
+      e.stopPropagation();
+      cMoreMenu.hidden = !cMoreMenu.hidden;
+    };
+    // 点外部关闭菜单。
+    document.addEventListener('click', (e) => {
+      if (!cMoreMenu.hidden && !(e.target as HTMLElement)?.closest('#btn-composer-more, #composer-more-menu'))
+        cMoreMenu.hidden = true;
+    });
+  }
+  // persona 和 voice-chat 按钮转发原有逻辑。
+  const cmPersona = document.getElementById('cm-persona');
+  const cmVoiceChat = document.getElementById('cm-voice-chat');
+  if (cmPersona) {
+    cmPersona.onclick = () => {
+      closeComposerMore();
+      document.getElementById('btn-persona')?.click();
+    };
+  }
+  if (cmVoiceChat) {
+    cmVoiceChat.onclick = () => {
+      closeComposerMore();
+      document.getElementById('btn-voice-chat')?.click();
+    };
+  }
+}
+
+/** 关闭 composer-more 弹出菜单。*/
+function closeComposerMore(): void {
+  const m = document.getElementById('composer-more-menu');
+  if (m) m.hidden = true;
 }
 
 // 录音状态:MediaRecorder → chunks → base64 → main 转写

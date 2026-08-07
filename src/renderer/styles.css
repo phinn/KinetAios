@@ -1027,8 +1027,18 @@ a { color: var(--accent); }
   display: flex; align-items: center; gap: 7px; position: relative;
 }
 .sb-proj-tasks li:hover { background: var(--bg-elev); }
-.sb-proj-tasks li.active { background: var(--bg-elev); box-shadow: inset 2px 0 0 var(--accent); }
-.sb-proj-tasks li.active .title { color: var(--accent); }
+.sb-proj-tasks li.active { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
+.sb-proj-tasks li.active .title { color: var(--accent); font-weight: 500; }
+/* 引擎指示点 — 颜色区分会话使用的引擎 / Engine indicator dot */
+.sb-proj-tasks li .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.sb-proj-tasks li .dot.ready { background: var(--text-faint); }
+.sb-proj-tasks li .dot.running { background: var(--run); box-shadow: 0 0 6px var(--run); animation: dot-pulse 1.5s ease-in-out infinite; }
+.sb-proj-tasks li .dot.error { background: var(--err); }
+.sb-proj-tasks li .dot.eng-direct,
+.sb-proj-tasks li .dot.eng-directV2 { background: var(--accent); }
+.sb-proj-tasks li .dot.eng-claudeCode { background: #d97757; }
+.sb-proj-tasks li .dot.eng-codex { background: #4ec27a; }
+@keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
 .sb-proj-tasks li:hover .conv-actions { display: inline-flex; }
@@ -1091,7 +1101,7 @@ a { color: var(--accent); }
 .ch-env .cwd {
   all: unset; font-size: 11px; color: var(--text-dim);
   font-family: ui-monospace, "Cascadia Code", monospace;
-  width: 200px; flex: 0 1 200px;
+  width: 140px; flex: 0 1 140px;
   padding: 3px 4px;
   direction: rtl; text-align: left;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
@@ -1170,6 +1180,9 @@ a { color: var(--accent); }
 /* tab 按钮高亮(检测到 artifact 时闪烁) */
 .cht.has-artifact { color: var(--accent) !important; }
 .cht.has-artifact::after { content: ' ●'; }
+/* 无 artifact 时隐藏预览 tab,减少视觉噪声 / Hide preview tab when no artifact */
+.cht#tab-preview { display: none; }
+.cht#tab-preview.has-artifact { display: inline-block; }
 
 /* ── Team 面板 / Team panel ── */
 .chat-team-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
@@ -1530,10 +1543,11 @@ a { color: var(--accent); }
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
 #turns { flex: 1; overflow-y: scroll; padding: 10px 0 18px; overflow-anchor: none; position: relative; }
 
-/* 回到最新消息浮动按钮 / Floating "jump to bottom" button */
+/* 回到最新消息浮动按钮 / Floating "jump to bottom" button.
+   bottom 使用 CSS 变量,由 JS 根据 composer 高度动态设置(--input-height)。 */
 .scroll-bottom-btn {
   position: absolute;
-  bottom: 120px;
+  bottom: calc(var(--input-h, 120px) + 16px);
   right: 20px;
   z-index: 50;
   width: 34px;
@@ -1560,8 +1574,10 @@ a { color: var(--accent); }
   background: var(--bg-elev-2);
   color: var(--text);
 }
-.turn { padding: 2px 20px 14px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid var(--border-soft); }
-.turn:last-child { border-bottom: none; }
+.turn { padding: 2px 20px 10px; display: flex; flex-direction: column; gap: 8px; }
+.turn:last-child { padding-bottom: 6px; }
+/* 单消息 turn(只有用户消息或只有 AI 消息)减少 gap */
+.turn:has(.msg:only-child) { gap: 0; }
 .msg { display: flex; gap: 8px; align-items: flex-start; }
 .msg.user { flex-direction: row-reverse; } /* 头像在右 */
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
@@ -1577,7 +1593,7 @@ a { color: var(--accent); }
 .answer p, .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6,
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
-.answer.streaming { white-space: pre-wrap; }
+.answer.streaming { color: var(--text); }
 .answer.streaming::after { content: ''; display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; animation: cursor-blink 1s step-end infinite; }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
@@ -1621,7 +1637,7 @@ a { color: var(--accent); }
   z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
 #input textarea { resize: none; width: 100%; min-height: 40px; max-height: 180px; }
-.composer-bar { display: flex; align-items: center; gap: 4px; }
+.composer-bar { display: flex; align-items: center; gap: 6px; position: relative; }
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
   background: var(--surface-chip-soft, rgba(255,255,255,.06));
@@ -1668,6 +1684,50 @@ a { color: var(--accent); }
 .bubble:hover .bubble-copy { opacity: 0.6; }
 .bubble-copy:hover { opacity: 1 !important; }
 .composer-bar .send { flex-shrink: 0; }
+
+/* composer-more-menu — 低频工具(skill/mcp/voice-chat/persona)弹出菜单。
+   锚定 composer-bar,从右下角向上弹出,点外部收起。 */
+.composer-more-menu {
+  position: absolute;
+  bottom: 100%;
+  right: 0;
+  margin-bottom: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 60;
+  min-width: 140px;
+  animation: cm-pop var(--dur-fast, 0.15s) var(--ease-out, ease-out);
+}
+@keyframes cm-pop {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: none; }
+}
+.composer-more-menu .cm-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--dur-fast, 0.15s), color var(--dur-fast, 0.15s);
+}
+.composer-more-menu .cm-item:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}
+.composer-more-menu .cm-item.active {
+  color: var(--accent);
+}
 .attach-row { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 .attach-row:empty { display: none; }
 .chip { font-size: 11px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 3px 6px 3px 10px; display: inline-flex; align-items: center; gap: 6px; max-width: 240px; box-shadow: var(--shadow-xs); }
