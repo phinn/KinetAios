@@ -15,7 +15,7 @@ permissions:
 jobs:
   build:
     strategy:
-      fail-fast: false  # 一个 OS/架构失败不连累另一个
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -24,15 +24,14 @@ jobs:
             artifact_glob: release/KinetAios*Setup*.exe
           # macOS x64 + arm64 拆成两个 job —— electron-builder #10031 bug:
           # 同一 job 顺序打双架构会打包错误架构的 native module。
-          # 各自只打一个架构,打包前手动 rebuild 对应架构的 better-sqlite3。
           - os: macos-latest
             mac_arch: x64
             run_dist: npm run dist:mac
-            artifact_glob: release/KinetAios-*-x64.dmg
+            artifact_glob: release/KinetAios-*.dmg
           - os: macos-latest
             mac_arch: arm64
             run_dist: npm run dist:mac
-            artifact_glob: release/KinetAios-*-arm64.dmg
+            artifact_glob: release/KinetAios-*.dmg
     runs-on: ${{ matrix.os }}
     env:
       MAC_ARCH: ${{ matrix.mac_arch }}
@@ -47,16 +46,37 @@ jobs:
       # .npmrc 强制走 npmmirror(国内拉 electron 用),GH Actions 机房连官方源更快 → 删之。
       - run: node -e "require('fs').rmSync('.npmrc',{force:true})"
 
-      # postinstall 会跑 electron-rebuild 重编 better-sqlite3(编出 host=arm64 的)。
-      # macOS x64 job 会在下面 pack.js 里重新 rebuild 成 x64。
       - run: npm install --no-audit --no-fund
 
-      # dist / dist:mac 内部已经先 build 再 electron-builder(pack.js)
-      # tee 到日志文件,失败时上传成 artifact 方便诊断。
       - shell: bash
         run: |
           set -o pipefail
           ${{ matrix.run_dist }} 2>&1 | tee dist.log
+
+      # macOS: 打包后列出 DMG 文件名,便于诊断 electron-builder 输出
+      - name: List release dir (macOS)
+        if: matrix.mac_arch != ''
+        shell: bash
+        run: |
+          echo "=== release/ contents ==="
+          ls -la release/*.dmg 2>/dev/null || echo "(no dmg found)"
+          echo "=== renaming to ensure arch suffix ==="
+          # electron-builder 单架构打包时文件名可能不含 -x64/-arm64 后缀
+          # 重命名确保文件名带架构标识,避免两个 job 产物同名冲突
+          for f in release/*.dmg; do
+            base=$(basename "$f" .dmg)
+            # 已经有 -x64 或 -arm64 后缀 → 跳过
+            if [[ "$base" == *-x64 || "$base" == *-arm64 ]]; then
+              echo "  skip (already has arch suffix): $f"
+              continue
+            fi
+            # 去掉可能存在的 -arm64 后缀的旧文件
+            newname="release/${base}-${MAC_ARCH}.dmg"
+            echo "  rename: $f → $newname"
+            mv "$f" "$newname"
+          done
+          echo "=== final release/ ==="
+          ls -la release/*.dmg
 
       - name: Upload dist log on failure
         if: failure()
