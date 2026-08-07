@@ -77,6 +77,14 @@ jobs:
           done
           echo "=== final release/ ==="
           ls -la release/*.dmg
+          # 删掉重命名前的原始文件(无 arch 后缀),避免 glob 重复上传到 Release
+          for f in release/KinetAios-*.dmg; do
+            base=$(basename "$f" .dmg)
+            if [[ "$base" != *-x64 && "$base" != *-arm64 ]]; then
+              echo "  cleanup: rm $f"
+              rm -f "$f"
+            fi
+          done
 
       - name: Upload dist log on failure
         if: failure()
