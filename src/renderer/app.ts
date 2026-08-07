@@ -1425,8 +1425,8 @@ function renderHead(conv: Conversation | undefined) {
     eng.value = 'direct';
     stat.textContent = '';
     status.textContent = '';
-    sendBtn.textContent = tr('common.send');
-    sendBtn.classList.remove('stop');
+    sendBtn.classList.remove('stop', 'loading');
+    sendBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
     return;
   }
   const last = conv.turns[conv.turns.length - 1];
@@ -1451,8 +1451,13 @@ function renderHead(conv: Conversation | undefined) {
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
   stat.textContent = parts.join(' · ');
   status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
-  sendBtn.textContent = conv.status === 'running' ? tr('common.stop') : tr('common.send');
+  // 发送按钮:运行中显示停止图标,否则发送图标。
   sendBtn.classList.toggle('stop', conv.status === 'running');
+  if (conv.status === 'running') {
+    sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
+  } else {
+    sendBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  }
   // 会话目标条:有 goal 时显示;goal loop 运行中加 pulse 动画
   const goalBar = document.getElementById('goal-bar');
   const goalText = document.getElementById('goal-text');

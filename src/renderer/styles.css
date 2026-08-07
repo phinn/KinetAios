@@ -927,7 +927,7 @@ a { color: var(--accent); }
   transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 #conv-list > li:hover { background: var(--bg-elev); }
-#conv-list > li.active { background: var(--bg-elev); box-shadow: inset 2px 0 0 var(--accent); }
+#conv-list > li.active { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
 #conv-list > li.active .title { color: var(--accent); }
 #conv-list > li { position: relative; }
 #conv-list > li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
@@ -1046,8 +1046,8 @@ a { color: var(--accent); }
 /* chat header — 标题行 + 配置行,视觉分组清晰。
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/
 .chat-head {
-  padding: 8px 14px 6px; border-bottom: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 4px;
+  padding: 7px 14px 5px; border-bottom: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 3px;
   background: var(--surface-header, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
@@ -1574,6 +1574,9 @@ a { color: var(--accent); }
   background: var(--bg-elev-2);
   color: var(--text);
 }
+/* 空状态 — 无会话 / 无消息时的引导提示 */
+.empty { text-align: center; color: var(--text-faint); font-size: 13px; padding: 60px 20px; user-select: none; }
+
 .turn { padding: 2px 20px 10px; display: flex; flex-direction: column; gap: 8px; }
 .turn:last-child { padding-bottom: 6px; }
 /* 单消息 turn(只有用户消息或只有 AI 消息)减少 gap */
@@ -1587,14 +1590,17 @@ a { color: var(--accent); }
 .msg .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
 .msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
 .msg .ai-body { min-width: 0; flex: 1; }
+/* AI 消息容器:无气泡,但用 padding + 极淡底色做视觉分组 */
 .msg .ai-body .answer { margin-top: 0; }
 .msg .ai-body .steps { margin: 0 0 8px; }
+/* AI 步骤区:用轻底色卡片包裹,增加层次 */
+.msg.ai .ai-body .steps:empty { display: none; }
 .answer { margin-top: 0; user-select: text; }
 .answer p, .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6,
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
 .answer.streaming { color: var(--text); }
-.answer.streaming::after { content: ''; display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; animation: cursor-blink 1s step-end infinite; }
+.answer.streaming::after { content: ''; display: inline-block; width: 1.5px; height: 0.9em; background: var(--accent); margin-left: 1px; vertical-align: text-bottom; animation: cursor-blink 1s step-end infinite; }finite; }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: typing-blink 1.3s infinite ease-in-out; }
@@ -1619,7 +1625,7 @@ a { color: var(--accent); }
 .answer .md-table tbody tr:hover td { background: var(--bg-elev); }
 
 .steps { margin: 8px 0; }
-.step { border-left: 2px solid var(--accent-dim); padding: 6px 12px; margin-bottom: 6px; background: var(--bg-side); border-radius: 0 8px 8px 0; font-size: 12px; }
+.step { border-left: 2px solid var(--accent-dim); padding: 5px 12px; margin-bottom: 4px; background: var(--bg-elev); border-radius: 0 6px 6px 0; font-size: 12px; }
 .step .name { color: var(--accent); font-weight: 600; }
 .step details summary { cursor: pointer; color: var(--text-dim); }
 .step pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
@@ -1636,7 +1642,9 @@ a { color: var(--accent); }
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
-#input textarea { resize: none; width: 100%; min-height: 40px; max-height: 180px; }
+#input textarea { resize: none; width: 100%; min-height: 40px; max-height: 180px; border-color: transparent; background: transparent; }
+#input textarea:focus { border-color: transparent; box-shadow: none; }
+#input:focus-within { border-top-color: var(--accent-dim); }
 .composer-bar { display: flex; align-items: center; gap: 6px; position: relative; }
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
@@ -1683,7 +1691,14 @@ a { color: var(--accent); }
 }
 .bubble:hover .bubble-copy { opacity: 0.6; }
 .bubble-copy:hover { opacity: 1 !important; }
-.composer-bar .send { flex-shrink: 0; }
+.composer-bar .send { flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.composer-bar .send svg { transition: transform var(--dur-fast) var(--ease-out); }
+.composer-bar .send:hover svg { transform: translateX(1px) rotate(-5deg); }
+.composer-bar .send:disabled { opacity: 0.5; pointer-events: none; }
+.composer-bar .send.loading svg { animation: send-spin 0.8s linear infinite; }
+@keyframes send-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
+.composer-bar .send.stop { background: var(--bg-elev-2); color: var(--text-dim); border-color: var(--border); }
+.composer-bar .send.stop:hover { color: var(--err); border-color: var(--err); background: rgba(226,97,76,0.1); }
 
 /* composer-more-menu — 低频工具(skill/mcp/voice-chat/persona)弹出菜单。
    锚定 composer-bar,从左下角向上弹出,点外部收起。 */

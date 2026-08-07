@@ -77,6 +77,7 @@ const ZH_CN: Dict = {
   'tabs.git': 'Git',
   'tabs.rules': '规则',
   'tabs.preview': '预览',
+  'tabs.team': 'Team',
 
   'rules.title': '项目规则(KINET.md)',
   'rules.ph': '写在这里的规则会拼到每个会话的 system prompt / --append-system-prompt,所有引擎每次都会遵守。\n\n示例:\n- 所有代码注释用中英双语\n- 命名用 camelCase,不缩写\n- shell 命令默认不询问(已在设置里关)',
@@ -920,6 +921,7 @@ const EN: Dict = {
   'tabs.git': 'Git',
   'tabs.rules': 'Rules',
   'tabs.preview': 'Preview',
+  'tabs.team': 'Team',
 
   'rules.title': 'Project rules (KINET.md)',
   'rules.ph': 'Rules written here are appended to every session\'s system prompt / --append-system-prompt. All engines follow them on every request.\n\nExample:\n- Bilingual comments (Chinese + English)\n- camelCase names, no abbreviations\n- Don\'t ask for shell approval (already off in settings)',
@@ -1764,6 +1766,7 @@ const ZH_TW: Dict = {
   'tabs.git': 'Git',
   'tabs.rules': '規則',
   'tabs.preview': '預覽',
+  'tabs.team': 'Team',
 
   'rules.title': '專案規則(KINET.md)',
   'rules.ph': '寫在這裡的規則會拼到每個工作階段的 system prompt / --append-system-prompt,所有引擎每次都會遵守。\n\n範例:\n- 程式碼註解用中英雙語\n- 命名用 camelCase,不縮寫\n- shell 命令預設不詢問(已在設定裡關)',
@@ -2608,6 +2611,7 @@ const JA: Dict = {
   'tabs.git': 'Git',
   'tabs.rules': 'ルール',
   'tabs.preview': 'プレビュー',
+  'tabs.team': 'Team',
 
   'rules.title': 'プロジェクトルール (KINET.md)',
   'rules.ph': 'ここに書いたルールは毎回の system prompt / --append-system-prompt に付加され、全エンジンが毎回遵守します。\n\n例:\n- コメントは中日バイリンガル\n- camelCase、略語なし\n- shell コマンドは確認不要(設定でオフ)',
