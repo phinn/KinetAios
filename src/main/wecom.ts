@@ -6,6 +6,7 @@ import { WSClient, WSAuthFailureError, WSReconnectExhaustedError } from '@wecom/
 import type { WsFrame, TextMessage, VoiceMessage, WsFrameHeaders } from '@wecom/aibot-node-sdk';
 import os from 'node:os';
 import type { TaskManager } from './TaskManager';
+import type { Conversation } from '../shared/types';
 import { getSettings } from './settings';
 
 type WeComStatusEv = { type: string; data?: unknown };
@@ -14,11 +15,107 @@ class WeComBridge {
   private ws: WSClient | null = null;
   private taskManager: TaskManager | null = null;
   private _connected = false;
-  /** userid → convId 映射,用于按用户复用会话(而非每条消息新建)。 */
+  /** wecomKey → convId 映射(内存缓存,启动时从 SQLite 重建)。 */
+  // / wecomKey → convId mapping (in-memory cache, rebuilt from SQLite on start).
   private wecomSessions = new Map<string, string>();
+  /** per-userKey 串行队列,保证同一用户的消息按顺序处理。 */
+  // / Per-userKey serial queue: messages from the same user are processed in order.
+  private userQueues = new Map<string, Promise<void>>();
+  private static readonly MAX_SESSIONS_PER_USER = 5;
 
   setTaskManager(tm: TaskManager): void {
     this.taskManager = tm;
+    // 启动时从 SQLite 恢复 wecomSessions 映射 / Rebuild wecomSessions from SQLite.
+    this.rebuildSessionIndex();
+  }
+
+  /** 从 TaskManager 的所有会话中,重建 wecomKey → convId 映射。 */
+  // / Rebuild wecomKey → convId map from all conversations in TaskManager.
+  private rebuildSessionIndex(): void {
+    if (!this.taskManager) return;
+    const convs = this.taskManager.list();
+    for (let i = convs.length - 1; i >= 0; i--) {
+      const c = convs[i];
+      if (c.wecomKey && !this.wecomSessions.has(c.wecomKey)) {
+        this.wecomSessions.set(c.wecomKey, c.id);
+      }
+    }
+    console.log(`[wecom] 会话索引已恢复: ${this.wecomSessions.size} 条映射`);
+  }
+
+  /** 查找 wecomKey 对应的会话:先查内存 Map,miss 时查 SQLite fallback。 */
+  // / Find conv by wecomKey: memory Map first, SQLite fallback on miss.
+  private findConvByWecomKey(key: string): Conversation | undefined {
+    const cachedId = this.wecomSessions.get(key);
+    if (cachedId) {
+      const conv = this.taskManager?.get(cachedId);
+      if (conv) return conv;
+    }
+    if (!this.taskManager) return undefined;
+    const convs = this.taskManager.list();
+    for (let i = convs.length - 1; i >= 0; i--) {
+      if (convs[i].wecomKey === key) {
+        this.wecomSessions.set(key, convs[i].id);
+        return convs[i];
+      }
+    }
+    return undefined;
+  }
+
+  /** 列出指定 wecomKey 的所有历史会话(按最近活动排序)。 */
+  // / List all conversations for a wecomKey, sorted by recent activity.
+  private listUserConversations(key: string): Conversation[] {
+    if (!this.taskManager) return [];
+    return this.taskManager.list()
+      .filter(c => c.wecomKey === key)
+      .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  }
+
+  /** 获取或创建会话(含淘汰逻辑)。 */
+  // / Get-or-create conversation (with eviction).
+  private getOrCreateConv(key: string, cwd: string, engine?: string): Conversation {
+    let conv = this.findConvByWecomKey(key);
+    if (conv) return conv;
+
+    const userConvs = this.listUserConversations(key);
+    while (userConvs.length >= WeComBridge.MAX_SESSIONS_PER_USER) {
+      const oldest = userConvs.pop()!;
+      try {
+        this.taskManager?.deleteConversation(oldest.id);
+        console.log(`[wecom] 淘汰旧会话: ${oldest.id} (${key})`);
+      } catch { /* ignore */ }
+    }
+
+    conv = this.taskManager!.newConversation(cwd, engine as any);
+    conv.wecomKey = key;
+    this.wecomSessions.set(key, conv.id);
+    return conv;
+  }
+
+  /** per-userKey 串行队列:保证同一用户的消息按顺序处理。 */
+  // / Per-userKey serial queue: ensures ordered message processing.
+  private enqueue(userKey: string, task: () => Promise<void>): void {
+    const prev = this.userQueues.get(userKey) ?? Promise.resolve();
+    const next = prev.then(task, task);
+    this.userQueues.set(userKey, next);
+    next.finally(() => {
+      if (this.userQueues.get(userKey) === next) {
+        this.userQueues.delete(userKey);
+      }
+    });
+  }
+
+  /** 淘汰超额会话(仅保留最近 MAX_SESSIONS_PER_USER 条)。 */
+  // / Evict excess conversations.
+  private evictIfNeeded(wecomKey: string): void {
+    const convs = this.listUserConversations(wecomKey);
+    if (convs.length <= WeComBridge.MAX_SESSIONS_PER_USER) return;
+    for (let i = WeComBridge.MAX_SESSIONS_PER_USER; i < convs.length; i++) {
+      try {
+        this.taskManager?.deleteConversation(convs[i].id);
+        console.log(`[wecom] 淘汰旧会话: ${convs[i].id} (${wecomKey})`);
+      } catch { /* ignore */ }
+    }
   }
 
   get connected(): boolean { return this._connected; }
@@ -127,6 +224,93 @@ class WeComBridge {
     });
   }
 
+  // ── 斜杠指令处理 / Slash command handling ──
+  // / Users send /new, /reset, /list, /switch, /context in WeCom to manage sessions.
+  private async handleSlashCommand(
+    text: string, wecomKey: string, frame: WsFrameHeaders, streamId: string,
+  ): Promise<void> {
+    const parts = text.toLowerCase().trim().split(/\s+/);
+    const command = parts[0];
+
+    switch (command) {
+      case '/new': {
+        const cfg = getSettings().wecomBot;
+        const cwd = cfg.defaultCwd || os.homedir();
+        const conv = this.taskManager!.newConversation(cwd, cfg.engine);
+        conv.wecomKey = wecomKey;
+        this.wecomSessions.set(wecomKey, conv.id);
+        this.evictIfNeeded(wecomKey);
+        await this.replyFinal(frame, streamId, '✅ 已开启新对话');
+        return;
+      }
+      case '/reset': {
+        const conv = this.findConvByWecomKey(wecomKey);
+        if (conv) {
+          this.taskManager!.clearConversation(conv.id);
+          await this.replyFinal(frame, streamId, '✅ 已清空当前对话上下文');
+        } else {
+          await this.replyFinal(frame, streamId, '当前没有活跃会话');
+        }
+        return;
+      }
+      case '/list': {
+        const convs = this.listUserConversations(wecomKey).slice(0, 5);
+        if (convs.length === 0) {
+          await this.replyFinal(frame, streamId, '暂无历史会话');
+          return;
+        }
+        const lines = convs.map((c, i) => {
+          const time = new Date(c.updatedAt || c.createdAt).toLocaleString('zh-CN');
+          const title = c.customTitle || c.turns[0]?.prompt?.slice(0, 30) || '新对话';
+          const active = this.wecomSessions.get(wecomKey) === c.id ? ' ← 当前' : '';
+          return `${i + 1}. ${title}\n   ${time} · ${c.turns.length} 轮${active}`;
+        });
+        await this.replyFinal(frame, streamId, `📋 会话列表:\n\n${lines.join('\n\n')}\n\n输入 /switch <编号> 切换`);
+        return;
+      }
+      case '/switch': {
+        const idx = parseInt(parts[1], 10) - 1;
+        const convs = this.listUserConversations(wecomKey);
+        if (isNaN(idx) || idx < 0 || idx >= convs.length) {
+          await this.replyFinal(frame, streamId, '❌ 无效编号,输入 /list 查看可用会话');
+          return;
+        }
+        const target = convs[idx];
+        this.wecomSessions.set(wecomKey, target.id);
+        const title = target.customTitle || target.turns[0]?.prompt?.slice(0, 30) || '新对话';
+        await this.replyFinal(frame, streamId, `✅ 已切换到: ${title}`);
+        return;
+      }
+      case '/context': {
+        const conv = this.findConvByWecomKey(wecomKey);
+        if (!conv) {
+          await this.replyFinal(frame, streamId, '当前没有活跃会话');
+          return;
+        }
+        const time = new Date(conv.createdAt).toLocaleString('zh-CN');
+        await this.replyFinal(frame, streamId,
+          `📊 当前会话信息:\n\n` +
+          `创建时间: ${time}\n` +
+          `对话轮次: ${conv.turns.length}\n` +
+          `Token 用量: ${conv.tokens}\n` +
+          `累计费用: $${conv.cost.toFixed(4)}\n` +
+          `工作目录: ${conv.cwd}`
+        );
+        return;
+      }
+      default:
+        await this.replyFinal(frame, streamId,
+          '可用指令:\n' +
+          '/new — 开启新对话\n' +
+          '/reset — 清空当前对话上下文\n' +
+          '/list — 查看历史会话\n' +
+          '/switch <编号> — 切换到指定会话\n' +
+          '/context — 查看当前会话信息'
+        );
+        return;
+    }
+  }
+
   // ── 处理收到的企信消息 → 路由到 TaskManager ──
   private async handleIncoming(frame: WsFrame<TextMessage>): Promise<void> {
     if (!this.ws || !this.taskManager) return;
@@ -140,53 +324,52 @@ class WeComBridge {
     const cfg = getSettings().wecomBot;
     const userid = body.from?.userid || 'unknown';
     const chatid = body.chatid || userid;
-    const wecomKey = `wecom:${userid}`;
+    // 群聊按 chatid 共享会话,单聊按 userid 隔离。
+    // / Group chats share a conv per chatid; DMs per userid.
+    const isGroup = body.chattype === 'group';
+    const wecomKey = isGroup ? `wecom:group:${chatid}` : `wecom:${userid}`;
 
-    // 按用户复用会话:同一 userid 的后续消息进入同一会话,保持多轮上下文。
-    // / Reuse conversation per user: subsequent messages from the same userid go into the same conv.
-    const cwd = cfg.defaultCwd || os.homedir();
-    let convId = this.wecomSessions.get(wecomKey);
-    let conv = convId ? this.taskManager.get(convId) : undefined;
-
-    // 会话不存在或已被删除 → 新建并登记
-    // / Conv not found or deleted → create and register
-    if (!conv) {
-      conv = this.taskManager.newConversation(cwd, cfg.engine);
-      conv.wecomKey = wecomKey;
-      this.wecomSessions.set(wecomKey, conv.id);
-    }
-    convId = conv.id;
     const streamId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const replyFrame: WsFrameHeaders = { headers: frame.headers };
 
+    // ── 斜杠指令(同步快速回复,不走 Agent) ──
+    // / Slash commands (fast reply, no Agent).
+    if (text.startsWith('/')) {
+      await this.handleSlashCommand(text, wecomKey, replyFrame, streamId);
+      return;
+    }
+
+    // ── 入 per-user 串行队列:同一用户的消息按顺序处理 ──
+    // / Enqueue to per-user serial queue for ordered processing.
+    this.enqueue(wecomKey, () =>
+      this.processMessage(frame, text, wecomKey, userid, chatid, replyFrame, streamId)
+    );
+  }
+
+  // ── 后台处理:实际执行 Agent 调用和企信回复 ──
+  // / Background processing: actual agent invocation and WeCom reply.
+  private async processMessage(
+    frame: WsFrame<TextMessage>,
+    text: string,
+    wecomKey: string,
+    userid: string,
+    chatid: string,
+    replyFrame: WsFrameHeaders,
+    streamId: string,
+  ): Promise<void> {
+    if (!this.ws || !this.taskManager) return;
+    const cfg = getSettings().wecomBot;
+
+    // ── 获取或创建会话(含 fallback + 淘汰) ──
+    // / Get-or-create conversation.
+    const cwd = cfg.defaultCwd || os.homedir();
+    const conv = this.getOrCreateConv(wecomKey, cwd, cfg.engine);
+    const convId = conv.id;
+
     this.broadcast({
       type: 'message_received',
-      data: { userid, chatid, text: text.slice(0, 100), chattype: body.chattype },
+      data: { userid, chatid, text: text.slice(0, 100), chattype: frame.body?.chattype },
     });
-
-    // 上一轮还在处理 → 排队等待(轮询 conv.status 变为 ready)
-    // / Previous turn still running → wait in queue (poll until conv.status becomes ready)
-    if (conv.status === 'running') {
-      try {
-        await this.ws.reply(frame, {
-          msgtype: 'text',
-          text: { content: '⏳ 上一条消息还在处理中,请稍候…' },
-        });
-      } catch { /* ignore */ }
-      // 最多等待 120 秒
-      const deadline = Date.now() + 120_000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const c = this.taskManager.get(convId);
-        if (c && c.status !== 'running') break;
-      }
-      // 超时仍 running → 放弃这条消息
-      const stillRunning = this.taskManager.get(convId);
-      if (stillRunning?.status === 'running') {
-        await this.replyFinal(replyFrame, streamId, '❌ 等待超时,上一条消息仍在处理。请稍后重试。');
-        return;
-      }
-    }
 
     // 流式模式:先发"思考中"首帧 / Stream mode: send "thinking" first frame
     if (cfg.streamReply && this.ws) {

@@ -8,7 +8,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import os from 'node:os';
 import type { TaskManager } from './TaskManager';
-import type { TaskStep } from '../shared/types';
+import type { TaskStep, Conversation } from '../shared/types';
 import { getSettings } from './settings';
 
 type FeishuStatusEv = { type: string; data?: unknown };
@@ -40,8 +40,12 @@ class FeishuBridge {
   private apiClient: lark.Client | null = null;
   private taskManager: TaskManager | null = null;
   private _connected = false;
-  /** open_id → convId 映射,用于按用户复用会话(而非每条消息新建)。 */
+  /** feishuKey → convId 映射(内存缓存,启动时从 SQLite 重建)。 */
+  // / feishuKey → convId mapping (in-memory cache, rebuilt from SQLite on start).
   private feishuSessions = new Map<string, string>();
+  /** per-userKey 串行队列,保证同一用户的消息按顺序处理。 */
+  // / Per-userKey serial queue: messages from the same user are processed in order.
+  private userQueues = new Map<string, Promise<void>>();
   /** 当前活跃消息 ID(用于 feishu_send_file 工具回传文件) */
   // / Active message ID (used by feishu_send_file tool to send files back)
   private activeMessageId: string | null = null;
@@ -49,9 +53,93 @@ class FeishuBridge {
   // / Processed message_id set for idempotency (Feishu WS redelivers on timeout)
   private processedMsgIds = new Set<string>();
   private static readonly MAX_PROCESSED = 500;
+  /** 每个用户最多保留的会话数(超出时关闭最旧的)。 */
+  // / Max conversations per user key (oldest gets closed when exceeded).
+  private static readonly MAX_SESSIONS_PER_USER = 5;
 
   setTaskManager(tm: TaskManager): void {
     this.taskManager = tm;
+    // 启动时从 SQLite 恢复 feishuSessions 映射 / Rebuild feishuSessions from SQLite.
+    this.rebuildSessionIndex();
+  }
+
+  /** 从 TaskManager 的所有会话中,重建 feishuKey → convId 映射。 */
+  // / Rebuild feishuKey → convId map from all conversations in TaskManager.
+  private rebuildSessionIndex(): void {
+    if (!this.taskManager) return;
+    // 倒序遍历(最近创建的优先),每个 feishuKey 只保留最新的 convId。
+    const convs = this.taskManager.list();
+    for (let i = convs.length - 1; i >= 0; i--) {
+      const c = convs[i];
+      if (c.feishuKey && !this.feishuSessions.has(c.feishuKey)) {
+        this.feishuSessions.set(c.feishuKey, c.id);
+      }
+    }
+    console.log(`[feishu] 会话索引已恢复: ${this.feishuSessions.size} 条映射`);
+  }
+
+  /** 查找 feishuKey 对应的会话:先查内存 Map,miss 时查 SQLite fallback。 */
+  // / Find conv by feishuKey: memory Map first, SQLite fallback on miss.
+  private findConvByFeishuKey(key: string): Conversation | undefined {
+    const cachedId = this.feishuSessions.get(key);
+    if (cachedId) {
+      const conv = this.taskManager?.get(cachedId);
+      if (conv) return conv;
+    }
+    // Map miss → 查 SQLite (app 重启后 Map 可能不全) / Fallback: scan conversations.
+    if (!this.taskManager) return undefined;
+    const convs = this.taskManager.list();
+    for (let i = convs.length - 1; i >= 0; i--) {
+      if (convs[i].feishuKey === key) {
+        this.feishuSessions.set(key, convs[i].id);
+        return convs[i];
+      }
+    }
+    return undefined;
+  }
+
+  /** 列出指定 feishuKey 的所有历史会话(按最近活动排序)。 */
+  // / List all conversations for a feishuKey, sorted by recent activity.
+  private listUserConversations(key: string): Conversation[] {
+    if (!this.taskManager) return [];
+    return this.taskManager.list()
+      .filter(c => c.feishuKey === key)
+      .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt));
+  }
+
+  /** 获取或创建会话(含淘汰逻辑)。 */
+  // / Get-or-create conversation (with eviction).
+  private getOrCreateConv(key: string, cwd: string, engine?: string): Conversation {
+    let conv = this.findConvByFeishuKey(key);
+    if (conv) return conv;
+
+    // 新建前检查会话数上限 / Check session limit before creating.
+    const userConvs = this.listUserConversations(key);
+    while (userConvs.length >= FeishuBridge.MAX_SESSIONS_PER_USER) {
+      const oldest = userConvs.pop()!;
+      try {
+        this.taskManager?.deleteConversation(oldest.id);
+        console.log(`[feishu] 淘汰旧会话: ${oldest.id} (${key})`);
+      } catch { /* ignore */ }
+    }
+
+    conv = this.taskManager!.newConversation(cwd, engine as any);
+    conv.feishuKey = key;
+    this.feishuSessions.set(key, conv.id);
+    return conv;
+  }
+
+  /** per-userKey 串行队列:保证同一用户的消息按顺序处理。 */
+  // / Per-userKey serial queue: ensures ordered message processing.
+  private enqueue(userKey: string, task: () => Promise<void>): void {
+    const prev = this.userQueues.get(userKey) ?? Promise.resolve();
+    const next = prev.then(task, task); // 前一个失败不影响后一个 / prev failure doesn't block next
+    this.userQueues.set(userKey, next);
+    next.finally(() => {
+      if (this.userQueues.get(userKey) === next) {
+        this.userQueues.delete(userKey);
+      }
+    });
   }
 
   get connected(): boolean { return this._connected; }
@@ -189,11 +277,134 @@ class FeishuBridge {
       if (first) this.processedMsgIds.delete(first);
     }
 
+    // ── 计算 feishuKey:群聊按 chat_id 共享会话,单聊按用户隔离 ──
+    // / Compute feishuKey: group chats share a conv per chat_id, DMs per open_id.
+    const senderId = event.sender?.sender_id?.open_id || 'unknown';
+    const chatId = msg.chat_id;
+    const isGroup = msg.chat_type === 'group';
+    const feishuKey = isGroup ? `feishu:group:${chatId}` : `feishu:${senderId}`;
+
+    // ── 斜杠指令处理(同步快速回复,不走 Agent) ──
+    // / Slash command handling (sync fast reply, no Agent invocation).
+    if (text.startsWith('/')) {
+      this.handleSlashCommand(text, feishuKey, messageId).catch((e) => {
+        console.error('[feishu] slash command error:', e);
+      });
+      return;
+    }
+
     // ── fire-and-forget:Agent 处理放后台,函数立即返回让 SDK 发 ack ──
-    // / Fire-and-forget: run agent in background, return immediately for ack.
-    this.processMessage(event, text, messageId).catch((e) => {
-      console.error('[feishu] processMessage error:', e);
-    });
+    // 入 per-user 串行队列:同一用户的消息按顺序处理,不同用户并行。
+    // / Fire-and-forget: enqueue to per-user serial queue.
+    this.enqueue(feishuKey, () => this.processMessage(event, text, messageId, feishuKey));
+  }
+
+  // ── 斜杠指令处理 / Slash command handling ──
+  // 用户在飞书中发送 /new, /reset, /list, /context 来管理会话。
+  // / Users send /new, /reset, /list, /context in Feishu to manage sessions.
+  private async handleSlashCommand(text: string, feishuKey: string, messageId: string): Promise<void> {
+    const cmd = text.toLowerCase().trim();
+    const parts = cmd.split(/\s+/);
+    const command = parts[0];
+
+    switch (command) {
+      case '/new': {
+        // 新建会话,旧会话保留 / Create new conv, old one preserved.
+        const cfg = getSettings().feishuBot;
+        const cwd = cfg.defaultCwd || os.homedir();
+        const conv = this.taskManager!.newConversation(cwd, cfg.engine);
+        conv.feishuKey = feishuKey;
+        this.feishuSessions.set(feishuKey, conv.id);
+        // 淘汰超额会话 / Evict excess conversations.
+        this.evictIfNeeded(feishuKey);
+        await this.sendText(messageId, '✅ 已开启新对话');
+        return;
+      }
+      case '/reset': {
+        // 清空当前会话的上下文 / Clear current conv context.
+        const conv = this.findConvByFeishuKey(feishuKey);
+        if (conv) {
+          this.taskManager!.clearConversation(conv.id);
+          await this.sendText(messageId, '✅ 已清空当前对话上下文');
+        } else {
+          await this.sendText(messageId, '当前没有活跃会话');
+        }
+        return;
+      }
+      case '/list': {
+        // 列出该用户的最近会话 / List recent conversations.
+        const convs = this.listUserConversations(feishuKey).slice(0, 5);
+        if (convs.length === 0) {
+          await this.sendText(messageId, '暂无历史会话');
+          return;
+        }
+        const lines = convs.map((c, i) => {
+          const time = new Date(c.updatedAt || c.createdAt).toLocaleString('zh-CN');
+          const title = c.customTitle || c.turns[0]?.prompt?.slice(0, 30) || '新对话';
+          const active = this.feishuSessions.get(feishuKey) === c.id ? ' ← 当前' : '';
+          return `${i + 1}. ${title}\n   ${time} · ${c.turns.length} 轮${active}`;
+        });
+        await this.sendText(messageId, `📋 会话列表:\n\n${lines.join('\n\n')}\n\n输入 /switch <编号> 切换`);
+        return;
+      }
+      case '/switch': {
+        // 切换到历史会话 / Switch to a historical conversation.
+        const idx = parseInt(parts[1], 10) - 1;
+        const convs = this.listUserConversations(feishuKey);
+        if (isNaN(idx) || idx < 0 || idx >= convs.length) {
+          await this.sendText(messageId, '❌ 无效编号,输入 /list 查看可用会话');
+          return;
+        }
+        const target = convs[idx];
+        this.feishuSessions.set(feishuKey, target.id);
+        const title = target.customTitle || target.turns[0]?.prompt?.slice(0, 30) || '新对话';
+        await this.sendText(messageId, `✅ 已切换到: ${title}`);
+        return;
+      }
+      case '/context': {
+        // 显示当前会话信息 / Show current conv info.
+        const conv = this.findConvByFeishuKey(feishuKey);
+        if (!conv) {
+          await this.sendText(messageId, '当前没有活跃会话');
+          return;
+        }
+        const time = new Date(conv.createdAt).toLocaleString('zh-CN');
+        await this.sendText(messageId,
+          `📊 当前会话信息:\n\n` +
+          `创建时间: ${time}\n` +
+          `对话轮次: ${conv.turns.length}\n` +
+          `Token 用量: ${conv.tokens}\n` +
+          `累计费用: $${conv.cost.toFixed(4)}\n` +
+          `工作目录: ${conv.cwd}`
+        );
+        return;
+      }
+      default:
+        // 未知指令 → 提示 / Unknown command → help.
+        await this.sendText(messageId,
+          '可用指令:\n' +
+          '/new — 开启新对话\n' +
+          '/reset — 清空当前对话上下文\n' +
+          '/list — 查看历史会话\n' +
+          '/switch <编号> — 切换到指定会话\n' +
+          '/context — 查看当前会话信息'
+        );
+        return;
+    }
+  }
+
+  /** 淘汰超额会话(仅保留最近 MAX_SESSIONS_PER_USER 条)。 */
+  // / Evict excess conversations (keep only MAX_SESSIONS_PER_USER most recent).
+  private evictIfNeeded(feishuKey: string): void {
+    const convs = this.listUserConversations(feishuKey);
+    if (convs.length <= FeishuBridge.MAX_SESSIONS_PER_USER) return;
+    // 删除最旧的 / Remove oldest.
+    for (let i = FeishuBridge.MAX_SESSIONS_PER_USER; i < convs.length; i++) {
+      try {
+        this.taskManager?.deleteConversation(convs[i].id);
+        console.log(`[feishu] 淘汰旧会话: ${convs[i].id} (${feishuKey})`);
+      } catch { /* ignore */ }
+    }
   }
 
   // ── 后台处理:实际执行 Agent 调用和飞书回复 ──
@@ -202,6 +413,7 @@ class FeishuBridge {
     event: FeishuMessageEvent,
     text: string,
     messageId: string,
+    feishuKey: string,
   ): Promise<void> {
     if (!this.apiClient || !this.taskManager) return;
 
@@ -209,46 +421,19 @@ class FeishuBridge {
     const senderId = event.sender?.sender_id?.open_id || 'unknown';
     const chatId = event.message.chat_id;
     const chatType = event.message.chat_type;
-    const feishuKey = `feishu:${senderId}`;
 
     this.activeMessageId = messageId;
 
-    // 按用户复用会话:同一 open_id 的后续消息进入同一会话,保持多轮上下文。
-    // / Reuse conversation per user: same open_id → same conv for multi-turn context.
+    // 按用户/群聊复用会话(含 Map miss fallback + 淘汰)。
+    // / Reuse conversation per user/group (with Map miss fallback + eviction).
     const cwd = cfg.defaultCwd || os.homedir();
-    let convId = this.feishuSessions.get(feishuKey);
-    let conv = convId ? this.taskManager.get(convId) : undefined;
-
-    if (!conv) {
-      conv = this.taskManager.newConversation(cwd, cfg.engine);
-      conv.feishuKey = feishuKey;
-      this.feishuSessions.set(feishuKey, conv.id);
-    }
-    convId = conv.id;
+    const conv = this.getOrCreateConv(feishuKey, cwd, cfg.engine);
+    const convId = conv.id;
 
     this.broadcast({
       type: 'message_received',
       data: { senderId, chatId, text: text.slice(0, 100), chatType },
     });
-
-    // 上一轮还在处理 → 排队等待
-    // / Previous turn still running → wait in queue
-    if (conv.status === 'running') {
-      try {
-        await this.sendText(messageId, '⏳ 上一条消息还在处理中,请稍候…');
-      } catch { /* ignore */ }
-      const deadline = Date.now() + 120_000;
-      while (Date.now() < deadline) {
-        await new Promise((r) => setTimeout(r, 2000));
-        const c = this.taskManager.get(convId);
-        if (c && c.status !== 'running') break;
-      }
-      const stillRunning = this.taskManager.get(convId);
-      if (stillRunning?.status === 'running') {
-        await this.replyFinal(messageId, '❌ 等待超时,上一条消息仍在处理。请稍后重试。');
-        return;
-      }
-    }
 
     // 流式模式:先发"思考中"
     // / Stream mode: send "thinking" placeholder
