@@ -82,9 +82,9 @@ class FeishuBridge {
       const eventDispatcher = new lark.EventDispatcher({});
 
       eventDispatcher.register({
-        'im.message.receive_v1': async (raw: unknown) => {
+        'im.message.receive_v1': (raw: unknown) => {
           try {
-            await this.handleIncoming(raw as FeishuMessageEvent);
+            this.handleIncoming(raw as FeishuMessageEvent);
           } catch (e: any) {
             console.error('[feishu] handleIncoming:', e.message);
           }
@@ -145,13 +145,17 @@ class FeishuBridge {
   }
 
   // ── 处理收到的飞书消息 → 路由到 TaskManager ──
-  private async handleIncoming(event: FeishuMessageEvent): Promise<void> {
+  // ⚠️ 核心原则:此函数必须尽快返回(fire-and-forget)。
+  // 飞书 SDK 在 handleEventData 中 await invoke() 等此函数返回后才发 ack。
+  // 如果 await send() 阻塞几十秒,飞书服务器等不到 ack 会断连重连并重新推送事件。
+  // 因此:同步完成去重 + 解析 → 立即返回 → Agent 处理放到后台 Promise。
+  // / Must return ASAP — SDK awaits this to send ack. Agent runs in background.
+  private handleIncoming(event: FeishuMessageEvent): void {
     if (!this.apiClient || !this.taskManager) return;
 
     const msg = event.message;
     if (!msg) return;
 
-    // 只处理文本消息 / Only handle text messages
     if (msg.message_type !== 'text') return;
 
     // 解析消息内容(JSON: {"text":"实际内容"})
@@ -170,31 +174,47 @@ class FeishuBridge {
     text = text.replace(/@_user_\d+\s*/g, '').trim();
     if (!text) return;
 
-    const cfg = getSettings().feishuBot;
-    const senderId = event.sender?.sender_id?.open_id || 'unknown';
     const messageId = msg.message_id;
 
-    // ── 幂等去重:飞书 WS 长连接在消息处理超时后会重新投递同一条消息。
-    //  用 message_id 去重,确保每条消息只处理一次。
-    // / Idempotency: Feishu WS redelivers messages on timeout. Dedup by message_id.
+    // ── 幂等去重(同步,在任何 async 操作之前)
+    // 飞书 WS 长连接在 ack 超时后会重新投递同一条消息,用 message_id 去重。
+    // / Idempotency: dedup by message_id BEFORE any async work (sync check).
     if (this.processedMsgIds.has(messageId)) {
       console.log(`[feishu] 跳过重复消息: ${messageId}`);
       return;
     }
     this.processedMsgIds.add(messageId);
-    // 控制 Set 大小,避免无限增长
     if (this.processedMsgIds.size > FeishuBridge.MAX_PROCESSED) {
       const first = this.processedMsgIds.values().next().value;
       if (first) this.processedMsgIds.delete(first);
     }
 
-    this.activeMessageId = messageId;
-    const chatId = msg.chat_id;
-    const chatType = msg.chat_type;
+    // ── fire-and-forget:Agent 处理放后台,函数立即返回让 SDK 发 ack ──
+    // / Fire-and-forget: run agent in background, return immediately for ack.
+    this.processMessage(event, text, messageId).catch((e) => {
+      console.error('[feishu] processMessage error:', e);
+    });
+  }
+
+  // ── 后台处理:实际执行 Agent 调用和飞书回复 ──
+  // / Background processing: actual agent invocation and Feishu reply.
+  private async processMessage(
+    event: FeishuMessageEvent,
+    text: string,
+    messageId: string,
+  ): Promise<void> {
+    if (!this.apiClient || !this.taskManager) return;
+
+    const cfg = getSettings().feishuBot;
+    const senderId = event.sender?.sender_id?.open_id || 'unknown';
+    const chatId = event.message.chat_id;
+    const chatType = event.message.chat_type;
     const feishuKey = `feishu:${senderId}`;
 
+    this.activeMessageId = messageId;
+
     // 按用户复用会话:同一 open_id 的后续消息进入同一会话,保持多轮上下文。
-    // / Reuse conversation per user: subsequent messages from the same open_id go into the same conv.
+    // / Reuse conversation per user: same open_id → same conv for multi-turn context.
     const cwd = cfg.defaultCwd || os.homedir();
     let convId = this.feishuSessions.get(feishuKey);
     let conv = convId ? this.taskManager.get(convId) : undefined;

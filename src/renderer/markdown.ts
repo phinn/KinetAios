@@ -6,9 +6,10 @@ export function renderMarkdown(src: string): string {
 
   // 1) Pull fenced code blocks out so block/inline rules never touch their content.
   const blocks: string[] = [];
-  let text = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, _lang, code) => {
+  let text = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
     const i = blocks.length;
-    blocks.push(`<pre class="code"><code>${esc(code.replace(/\n$/, ''))}</code></pre>`);
+    const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
+    blocks.push(`<div class="code-block">${langLabel}<pre class="code"><code>${esc(code.replace(/\n$/, ''))}</code></pre></div>`);
     return `\x00${i}\x00`;
   });
 

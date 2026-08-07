@@ -1555,6 +1555,18 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       ans.innerHTML = md(t.answer);
+      // 非流式:给每个代码块挂复制按钮 / Non-streaming: attach copy button to each code block.
+      ans.querySelectorAll('.code-block').forEach(cb => {
+        const btn = document.createElement('button');
+        btn.className = 'code-copy ghost';
+        btn.title = tr('copy.text');
+        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+        btn.onclick = () => {
+          const codeEl = cb.querySelector('code');
+          copyText(codeEl?.textContent ?? '', btn);
+        };
+        cb.appendChild(btn);
+      });
     }
     body.appendChild(ans);
     // 工具执行中:在 answer 下面单独显示「●●● 执行 X…」(statusNote)。作为兄弟元素,

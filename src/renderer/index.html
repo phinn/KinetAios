@@ -95,7 +95,7 @@
             </span>
           </div>
           <div id="goal-bar" class="ch-row ch-goal" style="display:none">
-            <span class="goal-icon">🎯</span>
+            <span class="goal-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
             <span id="goal-text" class="goal-text"></span>
             <button class="ghost" id="btn-goal-clear" title="清除目标">✕</button>
           </div>
@@ -105,7 +105,7 @@
           <button id="scroll-bottom-btn" class="scroll-bottom-btn" data-i18n-title="scrollBottom.title" title="回到最新消息" aria-label="回到最新消息"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
           <div id="input">
             <div id="attach-row" class="attach-row"></div>
-            <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…""></textarea>
+            <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
               <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
@@ -117,13 +117,13 @@
               <datalist id="model-list"></datalist>
               <select id="profile-select" class="model-pill" style="max-width:140px;display:none" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
               <select id="ctx-mode-select" class="model-pill" style="max-width:100px" data-i18n-title="ctxMode.title" title="上下文模式"></select>
-              <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none;font-size:15px;line-height:1">🧬</button>
+              <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
               <button class="primary send" id="btn-send"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
               <div id="composer-more-menu" class="composer-more-menu" hidden>
                 <button class="cm-item" id="cm-skill" data-i18n-title="skill.title"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/></svg><span data-i18n="composer.skill">Skill</span></button>
                 <button class="cm-item" id="cm-mcp" data-i18n-title="mcp.title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg><span data-i18n="composer.mcp">MCP</span></button>
                 <button class="cm-item" id="cm-voice-chat" data-i18n-title="voice.chatTitle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h2l2-6 4 12 3-9 2 3h5"/></svg><span data-i18n="composer.voiceChat">语音对话</span></button>
-                <button class="cm-item" id="cm-persona" data-i18n-title="persona.toggle" style="font-size:14px">🧬<span data-i18n="composer.persona">替身画像</span></button>
+                <button class="cm-item" id="cm-persona" data-i18n-title="persona.toggle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg><span data-i18n="composer.persona">替身画像</span></button>
               </div>
             </div>
             <div id="slash-menu" class="slash-menu" hidden></div>
@@ -188,7 +188,7 @@
              – 流式更新:每次 token 事件触发重新检测 + 更新 -->
         <div id="chat-preview-pane" class="chat-preview-pane" hidden>
           <div class="preview-head">
-            <span class="preview-title">⚡ Artifact 预览</span>
+            <span class="preview-title">Artifact 预览</span>
             <span class="preview-spacer"></span>
             <button class="ghost" id="btn-preview-refresh" title="刷新预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
             <button class="ghost" id="btn-preview-open" title="在浏览器中打开"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></button>
@@ -200,13 +200,13 @@
         </div>
         <div id="chat-team-pane" class="chat-team-pane" hidden>
           <div class="team-header">
-            <span class="team-title" data-i18n="team.title">👥 Agent Team</span>
+            <span class="team-title" data-i18n="team.title">Agent Team</span>
             <span class="team-spacer"></span>
             <button class="ghost" id="btn-team-refresh" data-i18n-title="team.refreshTitle" title="刷新 Team 状态"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M20.5 9A9 9 0 005.6 5.6L1 10M3.5 15a9 9 0 0014.9 3.4L23 14"/></svg></button>
             <button class="ghost" id="btn-team-new" data-i18n="team.new" data-i18n-title="team.newTitle" title="新建 Team">+ 新建</button>
           </div>
           <div class="team-body" id="team-body">
-            <div class="team-empty">暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。</div>
+            <div class="team-empty" data-i18n="team.empty">暂无 Team。LLM 可通过 spawn_team 工具自动创建,或点击「新建」手动添加。</div>
           </div>
         </div>
       </div>
