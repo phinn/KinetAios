@@ -527,7 +527,7 @@ let teamLiveStatus: Map<string, { status: MemberStatus; partial: string }> = new
 /** 刷新整个 team 面板(从 IPC 拉最新数据) */
 async function refreshTeamPane(): Promise<void> {
   if (!selectedId) {
-    renderTeamEmpty('请先选择一个会话');
+    renderTeamEmpty(tr('team.selectConv'));
     return;
   }
   try {
@@ -539,7 +539,7 @@ async function refreshTeamPane(): Promise<void> {
     }
     renderTeamPane();
   } catch (e) {
-    renderTeamEmpty(`加载失败: ${(e as Error)?.message ?? e}`);
+    renderTeamEmpty(`${tr('team.loadFail')}: ${(e as Error)?.message ?? e}`);
   }
 }
 
@@ -562,7 +562,7 @@ function renderTeamPane(): void {
     const timeStr = new Date(team.updated_at * 1000).toLocaleTimeString();
     return `<div class="team-section" data-team-id="${team.team_id}">
       <div class="team-section-head">
-        <span class="team-section-title">${members.length} members</span>
+        <span class="team-section-title">${members.length} ${tr('team.members')}</span>
         <span class="team-section-time">${timeStr}</span>
         <button class="ghost sm" onclick="window.__teamBroadcast('${team.team_id}')">${tr('team.broadcast')}</button>
         <button class="ghost sm team-del-btn" onclick="window.__teamDelete('${team.team_id}')"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4a2 2 0 012-2h4a2 2 0 012 2v2M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/></svg></button>
@@ -825,8 +825,8 @@ function showInputOverlay(title: string, placeholder: string): Promise<string | 
         <div class="git-dialog-title">${escapeHtml(title)}</div>
         <textarea id="team-input-field" placeholder="${escapeHtml(placeholder)}" rows="3" autofocus></textarea>
         <div class="git-dialog-actions">
-          <button class="gd-cancel">取消</button>
-          <button class="gd-ok" disabled>发送</button>
+          <button class="gd-cancel">${tr('team.dialog.cancel')}</button>
+          <button class="gd-ok" disabled>${tr('team.send')}</button>
         </div>
       </div>`;
     document.body.appendChild(overlay);
