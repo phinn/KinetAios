@@ -45,6 +45,10 @@ class FeishuBridge {
   /** 当前活跃消息 ID(用于 feishu_send_file 工具回传文件) */
   // / Active message ID (used by feishu_send_file tool to send files back)
   private activeMessageId: string | null = null;
+  /** 已处理的 message_id 集合,用于幂等去重(飞书 WS 会在超时后重投递同一条消息) */
+  // / Processed message_id set for idempotency (Feishu WS redelivers on timeout)
+  private processedMsgIds = new Set<string>();
+  private static readonly MAX_PROCESSED = 500;
 
   setTaskManager(tm: TaskManager): void {
     this.taskManager = tm;
@@ -169,6 +173,21 @@ class FeishuBridge {
     const cfg = getSettings().feishuBot;
     const senderId = event.sender?.sender_id?.open_id || 'unknown';
     const messageId = msg.message_id;
+
+    // ── 幂等去重:飞书 WS 长连接在消息处理超时后会重新投递同一条消息。
+    //  用 message_id 去重,确保每条消息只处理一次。
+    // / Idempotency: Feishu WS redelivers messages on timeout. Dedup by message_id.
+    if (this.processedMsgIds.has(messageId)) {
+      console.log(`[feishu] 跳过重复消息: ${messageId}`);
+      return;
+    }
+    this.processedMsgIds.add(messageId);
+    // 控制 Set 大小,避免无限增长
+    if (this.processedMsgIds.size > FeishuBridge.MAX_PROCESSED) {
+      const first = this.processedMsgIds.values().next().value;
+      if (first) this.processedMsgIds.delete(first);
+    }
+
     this.activeMessageId = messageId;
     const chatId = msg.chat_id;
     const chatType = msg.chat_type;
