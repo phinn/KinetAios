@@ -56,6 +56,10 @@ if (process.platform === 'darwin' && process.arch === 'x64') {
   app.commandLine.appendSwitch('disable-software-rasterizer');
 }
 
+// ── V8 OOM 防护:老设备内存有限,渲染进程可能因大对话历史触发 Oilpan large allocation OOM ──
+// V8 OOM guard: low-RAM machines can crash on large GC allocations in the renderer.
+app.commandLine.appendSwitch('js-flags', '--max-old-space-size=2048 --max-semi-space-size=64');
+
 // ── 系统路径安全检查:阻止渲染器读写敏感系统路径 ──
 // System path guard: prevent renderer from reading/writing sensitive system paths.
 // 虽然渲染器 contextIsolation,但万一被 XSS/prompt injection 攻破,这里是一道防线。
