@@ -22,12 +22,11 @@ const env = useMirror
   : { ...process.env };
 // --publish never: electron-builder 检测到 CI=true 时会试图自动发 GH Release,
 // 没 GH_TOKEN 就会 fail。我们用 softprops/action-gh-release 单独贴 Release。
-// macOS: 显式 --arch x64 --arch arm64,确保 Intel + Apple Silicon 双架构都打出。
+// macOS: 不传 --arch,让 electron-builder 打当前 runner 的原生架构。
+// CI 拆了 macos-13(Intel) + macos-latest(arm64) 两个 job,各自编出正确架构的 native module。
 let ebArgs;
 if (arg === 'dir') {
   ebArgs = ['--win', '--dir'];
-} else if (arg === 'mac') {
-  ebArgs = ['--mac', '--x64', '--arm64', '--publish', 'never'];
 } else {
   ebArgs = [`--${arg}`, '--publish', 'never'];
 }

@@ -42,12 +42,7 @@
       }
     ],
     "mac": {
-      "target": [
-        {
-          "target": "dmg",
-          "arch": ["x64", "arm64"]
-        }
-      ],
+      "target": ["dmg"],
       "icon": "build/icon.png",
       "minimumSystemVersion": "10.15.0"
     },
