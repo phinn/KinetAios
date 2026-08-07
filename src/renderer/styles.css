@@ -1553,7 +1553,7 @@ a { color: var(--accent); }
   height: 34px;
   border-radius: 50%;
   border: 1px solid var(--border);
-  background: var(--bg-2);
+  background: var(--bg-elev);
   color: var(--text-dim);
   display: flex;
   align-items: center;
@@ -1562,7 +1562,8 @@ a { color: var(--accent); }
   opacity: 0;
   transform: translateY(8px) scale(0.8);
   pointer-events: none;
-  transition: opacity 0.2s, transform 0.2s, background 0.15s, color 0.15s;
+  box-shadow: var(--shadow-md);
+  transition: opacity 0.2s, transform 0.2s, background 0.15s, color 0.15s, box-shadow 0.15s;
 }
 .scroll-bottom-btn.visible {
   opacity: 1;
@@ -1618,6 +1619,10 @@ a { color: var(--accent); }
 .answer .code-block { position: relative; margin: 0 0 10px; }
 .answer .code-block .code-lang { position: absolute; top: 0; right: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 6px 0 6px; border-left: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; }
 .answer .code-block .code { border-radius: 6px; margin: 0; }
+/* 代码块复制按钮:默认隐藏,hover 代码块时显示 */
+.answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: 5px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
+.answer .code-block:hover .code-copy { opacity: 0.6; }
+.answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); }
 .answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre-wrap; word-break: break-word; user-select: text; font-size: 12px; border: 1px solid var(--border-soft); }
 
 /* ── Markdown 表格 / GFM tables ── */
