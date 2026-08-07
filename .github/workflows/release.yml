@@ -21,14 +21,11 @@ jobs:
           - os: windows-latest
             run_dist: npm run dist
             artifact_glob: release/KinetAios*Setup*.exe
-          # macOS Intel: macos-13 是 GH Actions 最后一个 Intel runner
-          - os: macos-13
-            run_dist: npm run dist:mac
-            artifact_glob: release/KinetAios-*-x64.dmg
-          # macOS Apple Silicon: macos-latest = arm64
+          # macOS: 用 macos-latest(arm64)一个 runner 打双架构 DMG。
+          # pack.js 传 --x64 --arm64,electron-builder 内部会为每个 arch rebuild native module。
           - os: macos-latest
             run_dist: npm run dist:mac
-            artifact_glob: release/KinetAios-*-arm64.dmg
+            artifact_glob: release/KinetAios-*.dmg
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -42,8 +39,9 @@ jobs:
       # 用 node 而非 rm,跨 Windows/macOS 通用。
       - run: node -e "require('fs').rmSync('.npmrc',{force:true})"
 
-      # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台+目标架构跑。
-      # 关键:macos-13(Intel)编出 x64 native module,macos-latest(arm64)编出 arm64 native module。
+      # postinstall 会跑 electron-rebuild 重编 better-sqlite3 —— 必须在目标平台跑。
+      # macos-latest(arm64)上 npm install 编出 arm64 native module(供 arm64 包)。
+      # 下面打包时 electron-builder --x64 会自动为 x64 重新 rebuild。
       # --no-audit --no-fund 跳过 audit/fund 检查加速。
       - run: npm install --no-audit --no-fund
 
