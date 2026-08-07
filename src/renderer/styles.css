@@ -1686,11 +1686,11 @@ a { color: var(--accent); }
 .composer-bar .send { flex-shrink: 0; }
 
 /* composer-more-menu — 低频工具(skill/mcp/voice-chat/persona)弹出菜单。
-   锚定 composer-bar,从右下角向上弹出,点外部收起。 */
+   锚定 composer-bar,从左下角向上弹出,点外部收起。 */
 .composer-more-menu {
   position: absolute;
   bottom: 100%;
-  right: 0;
+  left: 0;
   margin-bottom: 6px;
   background: var(--bg-elev);
   border: 1px solid var(--border);
@@ -1704,6 +1704,7 @@ a { color: var(--accent); }
   min-width: 140px;
   animation: cm-pop var(--dur-fast, 0.15s) var(--ease-out, ease-out);
 }
+.composer-more-menu[hidden] { display: none; }
 @keyframes cm-pop {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }

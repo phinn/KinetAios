@@ -107,6 +107,7 @@
             <div id="attach-row" class="attach-row"></div>
             <textarea id="composer" rows="1" placeholder="给 KinetAios 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)"></textarea>
             <div class="composer-bar">
+              <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
               <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
               <button class="tool" id="btn-voice" data-i18n-title="voice.mic" title="语音输入(说,自动转文字)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
@@ -116,7 +117,6 @@
               <datalist id="model-list"></datalist>
               <select id="profile-select" class="model-pill" style="max-width:140px;display:none" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
               <select id="ctx-mode-select" class="model-pill" style="max-width:100px" data-i18n-title="ctxMode.title" title="上下文模式"></select>
-              <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
               <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none;font-size:15px;line-height:1">🧬</button>
               <button class="primary send" id="btn-send">发送</button>
               <div id="composer-more-menu" class="composer-more-menu" hidden>
