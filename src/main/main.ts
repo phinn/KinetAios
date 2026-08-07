@@ -122,17 +122,23 @@ function drainConfirms(): void {
 }
 
 // Send to a window that may be mid-destroy: ?. only guards a null win, not a destroyed webContents.
+// renderer 可能已 crash/重载 — 标记哪些窗口的 render frame 已销毁,避免狂刷错误日志。
+// Track which windows have a dead render frame to stop spamming events into the void.
+const deadFrames = new WeakSet<BrowserWindow>();
+
 function safeSend(win: BrowserWindow | null, channel: string, data: unknown): void {
   if (!win || win.isDestroyed()) return;
-  // webContents 可能先于 BrowserWindow 销毁(窗口正在卸载/刷新中)，
-  // 此时 webContents.send 会抛 "Render frame was disposed"
+  if (deadFrames.has(win)) return; // render frame 已销毁,不再发送 / frame already gone
   const wc = win.webContents;
   if (wc.isDestroyed()) return;
   try {
     wc.send(channel, data);
   } catch {
-    /* webContents torn down between the two checks */
+    /* 同步异常:webContents torn down between the two checks / sync throw */
+    deadFrames.add(win);
   }
+  // wc.send 在某些 Electron 版本中异步 reject ("Render frame was disposed"),
+  // 无法 try/catch 捕获;用 wc.on('did-start-navigation') 在重载时清除 deadFrames 标记。
 }
 
 const emitter: TaskManagerEmitter = {
@@ -177,11 +183,35 @@ function createDashboard(): BrowserWindow {
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
 
-  // 渲染崩溃 / 无响应日志 — 排查 macOS 12 白屏问题。
+  // 渲染崩溃 / 无响应 — 停止所有运行中的 agent loop,避免向死掉的 renderer 狂发事件。
+  // Renderer crash: stop all running agent loops to avoid spamming events into the void.
   win.webContents.on('render-process-gone', (_e, details) => {
     logFatal('render-process-gone', `reason=${details.reason} exitCode=${details.exitCode}`);
+    deadFrames.add(win);
+    // 停止所有 running 会话的 agent loop / Abort all running conversations.
+    for (const conv of taskManager.list()) {
+      if (conv.status === 'running') {
+        try { taskManager.cancel(conv.id); } catch { /* already torn down */ }
+      }
+    }
+    // OOM crash 后自动重载页面(1 秒延迟让 GC 回收旧 frame)。
+    // Auto-reload after OOM (1s delay lets GC reclaim the dead frame).
+    if (details.reason === 'oom' || details.reason === 'crashed') {
+      setTimeout(() => {
+        deadFrames.delete(win);
+        if (!win.isDestroyed()) {
+          win.webContents.reload();
+        }
+      }, 1000);
+    }
   });
   win.webContents.on('unresponsive', () => logFatal('unresponsive', 'webContents unresponsive'));
+  // 页面重载时清除 deadFrames 标记,恢复事件推送。
+  // Clear dead-frame flag on manual reload (Ctrl+R / navigation).
+  win.webContents.on('did-start-navigation', (_e, _url, isInPlace) => {
+    if (isInPlace) deadFrames.delete(win);
+  });
+  win.webContents.on('did-finish-load', () => deadFrames.delete(win));
 
   // 窗口关闭行为:根据设置决定点 ✕ 时是退出、最小化到任务栏、还是隐藏到托盘。
   win.on('close', (e) => {
