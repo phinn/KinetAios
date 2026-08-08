@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NEXUS · 空间认知 Agent 界面设计方案</title>
+<style>
+/* ═══════════════════════════════════════════════════════════
+   NEXUS Design Proposal — 暗色主题 · 金色 Accent
+   ═══════════════════════════════════════════════════════════ */
+:root {
+  --bg: #18181c;
+  --bg-side: #131316;
+  --bg-elev: #212126;
+  --bg-elev-2: #27272d;
+  --bg-input: #2c2c34;
+  --border: #33333c;
+  --border-soft: #2a2a32;
+  --text: #ebebef;
+  --text-dim: #9696a0;
+  --text-faint: #65656f;
+  --accent: #e8b339;
+  --accent-light: #f4d06f;
+  --accent-dim: #6b5320;
+  --accent-glow: rgba(232,179,57,0.15);
+  --accent-fg: #18181c;
+  --ok: #4ec27a;
+  --err: #e2614c;
+  --info: #6b9fef;
+  --shadow-md: 0 4px 14px rgba(0,0,0,0.32), 0 2px 4px rgba(0,0,0,0.22);
+  --shadow-lg: 0 8px 28px rgba(0,0,0,0.38), 0 4px 10px rgba(0,0,0,0.26);
+  --shadow-accent: 0 4px 16px rgba(232,179,57,0.25);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --dur-normal: 200ms;
+  --dur-slow: 320ms;
+  --dur-slower: 420ms;
+  --max-w: 1200px;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'SF Pro Display', 'Segoe UI', system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.7;
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ═══ HERO ═══ */
+.hero {
+  position: relative;
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+.hero-bg {
+  position: absolute; inset: 0;
+  background:
+    radial-gradient(circle at 30% 40%, rgba(232,179,57,0.08) 0%, transparent 50%),
+    radial-gradient(circle at 70% 60%, rgba(107,159,239,0.04) 0%, transparent 50%);
+}
+.hero-grid {
+  position: absolute; inset: 0;
+  background-image:
+    linear-gradient(rgba(232,179,57,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,179,57,0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 0%, transparent 70%);
+}
+.hero-content {
+  position: relative; z-index: 2;
+  text-align: center;
+  max-width: 900px;
+  padding: 0 40px;
+}
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  border-radius: 100px;
+  background: rgba(232,179,57,0.08);
+  border: 1px solid rgba(232,179,57,0.2);
+  font-size: 12px;
+  letter-spacing: 2px;
+  color: var(--accent);
+  margin-bottom: 32px;
+  animation: fadeInUp 0.8s var(--ease-out) both;
+}
+.hero-tag::before {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px var(--accent);
+  animation: pulse 2s infinite;
+}
+.hero h1 {
+  font-size: clamp(48px, 8vw, 96px);
+  font-weight: 800;
+  letter-spacing: -2px;
+  line-height: 1.05;
+  margin-bottom: 24px;
+  background: linear-gradient(135deg, var(--text) 0%, var(--accent) 50%, var(--accent-light) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: fadeInUp 0.8s var(--ease-out) 0.1s both;
+}
+.hero-sub {
+  font-size: clamp(16px, 2vw, 22px);
+  color: var(--text-dim);
+  max-width: 640px;
+  margin: 0 auto 40px;
+  letter-spacing: 0.5px;
+  animation: fadeInUp 0.8s var(--ease-out) 0.2s both;
+}
+.hero-meta {
+  display: flex;
+  justify-content: center;
+  gap: 32px;
+  margin-top: 48px;
+  animation: fadeInUp 0.8s var(--ease-out) 0.3s both;
+}
+.hero-meta-item {
+  text-align: center;
+}
+.hero-meta-item .num {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+.hero-meta-item .label {
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+/* ═══ SECTIONS ═══ */
+.section {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 120px 40px;
+}
+.section-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  letter-spacing: 3px;
+  color: var(--accent);
+  text-transform: uppercase;
+  margin-bottom: 16px;
+}
+.section-label::before {
+  content: '';
+  width: 24px; height: 1px;
+  background: var(--accent);
+}
+.section-title {
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 700;
+  letter-spacing: -1px;
+  margin-bottom: 20px;
+  line-height: 1.15;
+}
+.section-desc {
+  font-size: 17px;
+  color: var(--text-dim);
+  max-width: 680px;
+  margin-bottom: 56px;
+}
+
+/* ═══ CONCEPT IMAGE ═══ */
+.concept-frame {
+  position: relative;
+  border-radius: 24px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 80px;
+}
+.concept-frame img,
+.concept-frame object {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+.concept-caption {
+  position: absolute;
+  bottom: 16px; left: 20px;
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 1px;
+  background: rgba(24,24,28,0.8);
+  padding: 4px 12px;
+  border-radius: 6px;
+  backdrop-filter: blur(10px);
+}
+
+/* ═══ COMPARISON GRID ═══ */
+.compare-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+  margin-bottom: 80px;
+}
+.compare-card {
+  padding: 32px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+  transition: border-color var(--dur-normal) var(--ease-out),
+              transform var(--dur-normal) var(--ease-out);
+}
+.compare-card:hover {
+  border-color: rgba(232,179,57,0.3);
+  transform: translateY(-2px);
+}
+.compare-card.now {
+  opacity: 0.7;
+}
+.compare-card.future {
+  border-color: rgba(232,179,57,0.2);
+  background: linear-gradient(135deg, var(--bg-elev) 0%, rgba(232,179,57,0.03) 100%);
+}
+.compare-card .badge {
+  display: inline-block;
+  font-size: 10px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: 4px;
+  margin-bottom: 16px;
+}
+.compare-card.now .badge {
+  background: var(--bg-elev-2);
+  color: var(--text-faint);
+}
+.compare-card.future .badge {
+  background: var(--accent-glow);
+  color: var(--accent);
+}
+.compare-card h3 {
+  font-size: 22px;
+  margin-bottom: 16px;
+  font-weight: 600;
+}
+.compare-card ul {
+  list-style: none;
+}
+.compare-card li {
+  padding: 6px 0;
+  color: var(--text-dim);
+  font-size: 14px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.compare-card li::before {
+  content: '';
+  width: 4px; height: 4px;
+  border-radius: 50%;
+  background: var(--text-faint);
+  margin-top: 9px;
+  flex-shrink: 0;
+}
+.compare-card.future li::before {
+  background: var(--accent);
+}
+
+/* ═══ PILLARS ═══ */
+.pillars {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 80px;
+}
+.pillar {
+  padding: 36px 28px;
+  border-radius: 16px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+  position: relative;
+  overflow: hidden;
+  transition: transform var(--dur-slow) var(--ease-out),
+              box-shadow var(--dur-slow) var(--ease-out);
+}
+.pillar::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  opacity: 0;
+  transition: opacity var(--dur-slow) var(--ease-out);
+}
+.pillar:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--shadow-md), 0 0 40px rgba(232,179,57,0.06);
+}
+.pillar:hover::before {
+  opacity: 1;
+}
+.pillar-num {
+  font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin-bottom: 20px;
+}
+.pillar-icon {
+  width: 48px; height: 48px;
+  margin-bottom: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
+  background: var(--accent-glow);
+  border: 1px solid rgba(232,179,57,0.2);
+}
+.pillar-icon svg {
+  width: 24px; height: 24px;
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 1.5;
+}
+.pillar h3 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 12px;
+}
+.pillar p {
+  font-size: 14px;
+  color: var(--text-dim);
+  line-height: 1.65;
+}
+
+/* ═══ ARCHITECTURE DIAGRAM ═══ */
+.arch-frame {
+  position: relative;
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 56px;
+  background: var(--bg-side);
+}
+.arch-frame object {
+  display: block;
+  width: 100%;
+}
+
+/* ═══ INTERACTION MODES ═══ */
+.modes-frame {
+  border-radius: 20px;
+  overflow: hidden;
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-lg);
+  margin-bottom: 56px;
+  background: var(--bg-side);
+}
+.modes-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+  margin-bottom: 80px;
+}
+.mode-card {
+  padding: 28px;
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  background: var(--bg-elev);
+  transition: border-color var(--dur-normal) var(--ease-out);
+}
+.mode-card:hover {
+  border-color: rgba(232,179,57,0.25);
+}
+.mode-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.mode-dot {
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.mode-card:nth-child(1) .mode-dot { background: var(--accent); box-shadow: 0 0 10px var(--accent); }
+.mode-card:nth-child(2) .mode-dot { background: var(--ok); box-shadow: 0 0 10px var(--ok); }
+.mode-card:nth-child(3) .mode-dot { background: var(--info); box-shadow: 0 0 10px var(--info); }
+.mode-card h4 {
+  font-size: 16px;
+  font-weight: 600;
+}
+.mode-card p {
+  font-size: 13px;
+  color: var(--text-dim);
+  line-height: 1.6;
+}
+
+/* ═══ TIMELINE ═══ */
+.timeline {
+  position: relative;
+  padding-left: 32px;
+  margin-bottom: 80px;
+}
+.timeline::before {
+  content: '';
+  position: absolute;
+  left: 8px; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--accent) 0%, rgba(232,179,57,0.1) 100%);
+}
+.tl-item {
+  position: relative;
+  padding-bottom: 48px;
+}
+.tl-item:last-child { padding-bottom: 0; }
+.tl-dot {
+  position: absolute;
+  left: -28px; top: 4px;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 2px solid var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.tl-dot::after {
+  content: '';
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.tl-year {
+  font-family: 'SF Mono', monospace;
+  font-size: 12px;
+  color: var(--accent);
+  letter-spacing: 2px;
+  margin-bottom: 8px;
+}
+.tl-title {
+  font-size: 18px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.tl-desc {
+  font-size: 14px;
+  color: var(--text-dim);
+  max-width: 560px;
+}
+
+/* ═══ SPEC TABLE ═══ */
+.spec-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 80px;
+  font-size: 14px;
+}
+.spec-table th {
+  text-align: left;
+  padding: 14px 20px;
+  font-size: 11px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+  color: var(--accent);
+  border-bottom: 2px solid rgba(232,179,57,0.2);
+}
+.spec-table td {
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border-soft);
+  color: var(--text-dim);
+}
+.spec-table td:first-child {
+  color: var(--text);
+  font-weight: 500;
+}
+.spec-table tr:hover td {
+  background: rgba(232,179,57,0.02);
+}
+
+/* ═══ CTA ═══ */
+.cta {
+  text-align: center;
+  padding: 120px 40px;
+  position: relative;
+  overflow: hidden;
+}
+.cta-bg {
+  position: absolute; inset: 0;
+  background: radial-gradient(circle at center, rgba(232,179,57,0.06) 0%, transparent 70%);
+}
+.cta h2 {
+  position: relative;
+  font-size: clamp(32px, 4vw, 48px);
+  font-weight: 700;
+  margin-bottom: 20px;
+  letter-spacing: -1px;
+}
+.cta p {
+  position: relative;
+  font-size: 17px;
+  color: var(--text-dim);
+  max-width: 520px;
+  margin: 0 auto 40px;
+}
+.cta-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 40px;
+  border-radius: 100px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  text-decoration: none;
+  box-shadow: var(--shadow-accent);
+  transition: transform var(--dur-normal) var(--ease-spring),
+              box-shadow var(--dur-normal) var(--ease-out);
+}
+.cta-btn:hover {
+  transform: scale(1.04);
+  box-shadow: 0 8px 32px rgba(232,179,57,0.35);
+}
+
+/* ═══ FOOTER ═══ */
+footer {
+  padding: 40px;
+  text-align: center;
+  border-top: 1px solid var(--border-soft);
+  font-size: 12px;
+  color: var(--text-faint);
+  letter-spacing: 1px;
+}
+footer span { color: var(--accent); }
+
+/* ═══ ANIMATIONS ═══ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(24px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%      { opacity: 0.5; transform: scale(1.3); }
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 900px) {
+  .compare-grid, .pillars, .modes-grid {
+    grid-template-columns: 1fr;
+  }
+  .section { padding: 80px 24px; }
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════ HERO ════════════════ -->
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-grid"></div>
+  <div class="hero-content">
+    <div class="hero-tag">NEXUS · DESIGN PROPOSAL · 2025</div>
+    <h1>空间认知界面</h1>
+    <p class="hero-sub">
+      不再是对话框，而是认知场。<br>
+      用户居于中心，Agent 围绕运转，意图在空间中流动、变形、涌现。
+    </p>
+    <div class="hero-meta">
+      <div class="hero-meta-item">
+        <div class="num">7</div>
+        <div class="label">Agent 节点</div>
+      </div>
+      <div class="hero-meta-item">
+        <div class="num">3</div>
+        <div class="label">交互范式</div>
+      </div>
+      <div class="hero-meta-item">
+        <div class="num">5</div>
+        <div class="label">认知层级</div>
+      </div>
+      <div class="hero-meta-item">
+        <div class="num">∞</div>
+        <div class="label">扩展维度</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ CONCEPT ════════════════ -->
+<section class="section" id="concept">
+  <div class="section-label">概念总览 / Concept Overview</div>
+  <h2 class="section-title">从「聊天窗口」到「认知星云」</h2>
+  <p class="section-desc">
+    过去十年的 AI 界面都是同一个范式：左边一列会话，右边一个聊天框。
+    这本质上是在模拟微信/iMessage——一个为「人与人即时通讯」设计的交互模式。
+    但 AI Agent 不是人，它是一个多线程、多模态、持续运作的认知系统。
+    NEXUS 彻底抛弃聊天窗口范式，用「空间认知场」替代——
+    用户的意图是引力中心，Agent 是围绕运转的行星，工具和数据流是星际尘埃。
+  </p>
+
+  <div class="concept-frame">
+    <object data="nexus-concept.svg" type="image/svg+xml" width="100%"></object>
+    <div class="concept-caption">FIG.01 · NEXUS 空间认知场全景概念图</div>
+  </div>
+
+  <div class="compare-grid">
+    <div class="compare-card now">
+      <div class="badge">2020-2025 · 当前范式</div>
+      <h3>💬 聊天窗口模式</h3>
+      <ul>
+        <li>左侧会话列表，右侧消息气泡流</li>
+        <li>线性对话：一问一答，严格排队</li>
+        <li>单线程：一次只能做一件事</li>
+        <li>上下文靠 scroll-back 翻历史</li>
+        <li>Agent 是「一个回答问题的盒子」</li>
+        <li>工具调用隐藏在文字背后，不可见</li>
+        <li>记忆是黑箱，用户无法感知和操控</li>
+        <li>多引擎切换 = 新开一个窗口</li>
+      </ul>
+    </div>
+    <div class="compare-card future">
+      <div class="badge">2025-2035 · NEXUS 范式</div>
+      <h3>🌌 空间认知场模式</h3>
+      <ul>
+        <li>无固定布局，意图驱动空间重组</li>
+        <li>并发认知：多 Agent 同时运转，用户随时介入</li>
+        <li>多线程：同时追踪多条任务线</li>
+        <li>上下文是可视化的知识星座</li>
+        <li>Agent 是「围绕用户运转的认知行星」</li>
+        <li>工具调用是可见的「数据流光线」</li>
+        <li>记忆是可导航的 3D 星图</li>
+        <li>多引擎 = 认知场中的不同轨道层</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ FIVE PILLARS ════════════════ -->
+<section class="section" id="pillars">
+  <div class="section-label">五大设计支柱 / Five Pillars</div>
+  <h2 class="section-title">重新定义 Agent 与人的关系</h2>
+  <p class="section-desc">
+    NEXUS 不是 UI 皮肤翻新，而是对「人机协作」底层范式的重新思考。
+    五个支柱从不同维度解构了未来 Agent 界面应有的样貌。
+  </p>
+
+  <div class="pillars">
+    <div class="pillar">
+      <div class="pillar-num">01 / SPATIAL</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8" stroke-dasharray="2 3"/><path d="M12 1v3M12 20v3M1 12h3M20 12h3"/></svg>
+      </div>
+      <h3>空间隐喻</h3>
+      <p>Agent 不再藏在文字后面，而是以「天体」的形态存在于用户周围。距离 = 关联度，大小 = 重要性，轨道 = 运行周期。空间即信息架构。</p>
+    </div>
+    <div class="pillar">
+      <div class="pillar-num">02 / CONCURRENT</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><circle cx="6" cy="6" r="3"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="18" r="3"/><path d="M9 6h6M9 18h6M6 9v6M18 9v6"/></svg>
+      </div>
+      <h3>并发认知</h3>
+      <p>打破「一问一答」的线性枷锁。多个 Agent 可同时处理不同子任务，用户随时拉取任意一条线的进度。像指挥一个团队，而非排队提问。</p>
+    </div>
+    <div class="pillar">
+      <div class="pillar-num">03 / OBSERVABLE</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+      </div>
+      <h3>全程可观测</h3>
+      <p>Plan、Execute、Verify 每一步都是可见的发光节点。数据流像河流一样在 Agent 间流动。用户看到的不是「等待中...」，而是一个活的认知生态。</p>
+    </div>
+    <div class="pillar">
+      <div class="pillar-num">04 / MEMORY</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2L2 7l10 5 10-5-10-5z"/><path d="M2 17l10 5 10-5"/><path d="M2 12l10 5 10-5"/></svg>
+      </div>
+      <h3>记忆即地形</h3>
+      <p>长期记忆不再是不可见的数据库，而是可导航的「星座图」。episodic / semantic / procedural 三类记忆以不同颜色的星团呈现，强度映射为亮度。</p>
+    </div>
+    <div class="pillar">
+      <div class="pillar-num">05 / AMBIENT</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2z"/><path d="M12 6v6l4 2"/></svg>
+      </div>
+      <h3>环境感知</h3>
+      <p>界面不是独立的「应用窗口」，而是叠加在操作系统上的环境层。Agent 感知当前上下文（当前文件、时间、应用状态），主动提供帮助，而非被动等待输入。</p>
+    </div>
+    <div class="pillar" style="background: linear-gradient(135deg, var(--bg-elev) 0%, rgba(232,179,57,0.04) 100%); border-color: rgba(232,179,57,0.15);">
+      <div class="pillar-num" style="color: var(--text-dim);">06 / ADAPTIVE</div>
+      <div class="pillar-icon">
+        <svg viewBox="0 0 24 24"><path d="M4 7h16M4 12h10M4 17h7"/><path d="M18 14l3 3-3 3"/></svg>
+      </div>
+      <h3>自适应重组</h3>
+      <p>没有固定布局。界面根据用户意图动态重组：写代码时变成 IDE 轨道，做分析时变成数据星图，闲聊时收缩成极简气泡。空间即界面，意图即布局引擎。</p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ ARCHITECTURE ════════════════ -->
+<section class="section" id="architecture">
+  <div class="section-label">五层认知架构 / Cognitive Architecture</div>
+  <h2 class="section-title">从核心到环境层的五重展开</h2>
+  <p class="section-desc">
+    NEXUS 的界面是一个五层嵌套的认知系统——从用户的核心意图球体，
+    到 Primary Agent 内环、Tool 中环、数据流外环，
+    最终消融在环境感知层中。
+  </p>
+
+  <div class="arch-frame">
+    <object data="nexus-architecture.svg" type="image/svg+xml" width="100%"></object>
+  </div>
+
+  <table class="spec-table">
+    <thead>
+      <tr>
+        <th>层级</th>
+        <th>名称</th>
+        <th>角色</th>
+        <th>交互方式</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>L1 · CORE</td>
+        <td>意图球体</td>
+        <td>用户当前核心意图的可视化锚点</td>
+        <td>拖拽改变焦点 / 语音输入 / 快捷键</td>
+      </tr>
+      <tr>
+        <td>L2 · INNER</td>
+        <td>Primary Agents</td>
+        <td>3 个主认知 Agent：感知 / 思考 / 执行</td>
+        <td>点击展开详情 / 拖拽重排优先级</td>
+      </tr>
+      <tr>
+        <td>L3 · MIDDLE</td>
+        <td>Tool Mesh</td>
+        <td>6 个工具节点：Shell / Web / Memory / File / Code / Cron</td>
+        <td>双击调用 / 拖拽连接到 Agent</td>
+      </tr>
+      <tr>
+        <td>L4 · OUTER</td>
+        <td>Data Stream</td>
+        <td>实时数据流动可视化，粒子轨迹 = 数据包</td>
+        <td>悬停查看 / 拖拽截取流片段</td>
+      </tr>
+      <tr>
+        <td>L5 · AMBIENT</td>
+        <td>环境层</td>
+        <td>系统状态栏 + 弧形输入区 + 全局上下文感知</td>
+        <td>自然语言 / 手势 / 眼动追踪 (未来)</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════ INTERACTION MODES ════════════════ -->
+<section class="section" id="modes">
+  <div class="section-label">三种交互范式 / Three Interaction Paradigms</div>
+  <h2 class="section-title">同一空间，三种视角</h2>
+  <p class="section-desc">
+    NEXUS 不是单一视图，而是三种可无缝切换的认知视角。
+    用户根据场景选择最自然的交互方式——
+    看全局用轨道模式，跟流程用流模式，查记忆用星座模式。
+  </p>
+
+  <div class="modes-frame">
+    <object data="nexus-interactions.svg" type="image/svg+xml" width="100%"></object>
+  </div>
+
+  <div class="modes-grid">
+    <div class="mode-card">
+      <div class="mode-header">
+        <div class="mode-dot"></div>
+        <h4>轨道模式 · Orbit</h4>
+      </div>
+      <p>
+        默认视图。用户意图居于中心，Agent 以不同轨道环绕运转。
+        每个节点的颜色代表状态（绿色=活跃，金色=扫描中，蓝色=回忆中，灰色=待命，红色=错误），
+        大小代表当前负载。拖拽节点可重新分配优先级。
+        <br><br>
+        <strong style="color:var(--accent)">适用场景：</strong>多任务并发、全局监控、团队指挥。
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-header">
+        <div class="mode-dot"></div>
+        <h4>流模式 · Flow</h4>
+      </div>
+      <p>
+        深度执行视图。从 Input → Parse → Plan → Execute → Verify → Output，
+        每个阶段是一个发光的管道节点，数据粒子在管道中流动。
+        用户可以随时「掐住」某个阶段，查看中间态，甚至手动注入修正。
+        <br><br>
+        <strong style="color:var(--ok)">适用场景：</strong>复杂任务跟踪、Debug、流程审计。
+      </p>
+    </div>
+    <div class="mode-card">
+      <div class="mode-header">
+        <div class="mode-dot"></div>
+        <h4>星座模式 · Constellation</h4>
+      </div>
+      <p>
+        记忆导航视图。所有长期记忆以星座图呈现——
+        金色 = episodic（事件记忆），蓝色 = semantic（知识记忆），绿色 = procedural（技能记忆）。
+        节点大小映射召回强度，星座连线映射记忆间的关联。
+        可缩放、搜索、手动连接/断开记忆节点。
+        <br><br>
+        <strong style="color:var(--info)">适用场景：</strong>记忆管理、知识图谱探索、上下文回顾。
+      </p>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ EVOLUTION TIMELINE ════════════════ -->
+<section class="section" id="timeline">
+  <div class="section-label">演进路线 / Evolution Roadmap</div>
+  <h2 class="section-title">从今天到 2035</h2>
+  <p class="section-desc">
+    NEXUS 不是一步到位的幻想，而是一条可落地的渐进路径。
+    每个阶段都在现有基础上叠加一层认知能力，最终收敛为完整的空间认知场。
+  </p>
+
+  <div class="timeline">
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-year">PHASE 01 · 2025 Q3-Q4</div>
+      <div class="tl-title">v1.0 · 轨道视图 Prototype</div>
+      <div class="tl-desc">
+        在现有 KinetAios 的 Electron 框架内，用 Canvas/SVG 实现轨道视图。
+        Agent 节点绑定现有引擎（Direct / Claude Code / Codex），
+        点击展开当前对话流。保留传统聊天气泡作为 fallback 模式。
+        布局从 sidebar+chat 切换为 radial+overlay。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-year">PHASE 02 · 2026</div>
+      <div class="tl-title">v2.0 · 并发认知 + 流模式</div>
+      <div class="tl-desc">
+        TaskManager 支持多线程并发任务，每个任务在轨道上独立运转。
+        引入 Flow 视图，Plan/Execute/Verify 全链路可视化。
+        数据流粒子用 Web Animation API 实现高性能流动效果。
+        弧形输入区替代底部文本框。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-year">PHASE 03 · 2027-2028</div>
+      <div class="tl-title">v3.0 · 记忆星座 + 3D 空间</div>
+      <div class="tl-desc">
+        长期记忆系统升级为可导航的 3D 星座图。
+        引入 Three.js / WebGPU 渲染层，轨道视图从 2D SVG 升级为 3D 空间。
+        用户可在 3D 空间中飞行穿梭，查看 Agent 内部状态和记忆关联。
+        支持 VR/AR 设备的沉浸式认知场体验。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-year">PHASE 04 · 2029-2032</div>
+      <div class="tl-title">v4.0 · 环境感知 + 多模态融合</div>
+      <div class="tl-desc">
+        NEXUS 不再是独立应用，而是操作系统级的认知叠加层。
+        Agent 感知全局上下文：当前窗口、文件、剪贴板、摄像头、麦克风。
+        支持眼动追踪交互、手势控制、脑机接口预研。
+        语音交互从 ASR/TTS 升级为实时语音流认知。
+      </div>
+    </div>
+    <div class="tl-item">
+      <div class="tl-dot"></div>
+      <div class="tl-year">PHASE 05 · 2033-2035</div>
+      <div class="tl-title">v5.0 · 完全空间认知场</div>
+      <div class="tl-desc">
+        界面与物理空间融合——AR 眼镜上的全息认知场。
+        Agent 以空间中的光点、声场、触觉反馈存在。
+        用户通过自然语言 + 手势 + 眼动 + 思维意图直接操控认知场。
+        「界面」概念消融，取而代之的是「认知共生」。
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════ TECH SPECS ════════════════ -->
+<section class="section" id="specs">
+  <div class="section-label">技术规格 / Technical Specifications</div>
+  <h2 class="section-title">Phase 1 落地方案</h2>
+  <p class="section-desc">
+    基于 KinetAios 现有 Electron + TypeScript 架构，Phase 1 的技术选型。
+  </p>
+
+  <table class="spec-table">
+    <thead>
+      <tr>
+        <th>维度</th>
+        <th>当前架构</th>
+        <th>NEXUS Phase 1</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>渲染层</td>
+        <td>Vanilla TS + HTML/CSS</td>
+        <td>SVG (静态轨道) + Canvas 2D (粒子/数据流) + CSS 动画</td>
+      </tr>
+      <tr>
+        <td>布局引擎</td>
+        <td>CSS Flexbox / Grid</td>
+        <td>径向布局算法 (d3-force 简化版) + CSS Grid fallback</td>
+      </tr>
+      <tr>
+        <td>状态管理</td>
+        <td>applyEvent → DOM diff</td>
+        <td>applyEvent → 虚拟认知场状态 → Canvas 重绘 + DOM overlay</td>
+      </tr>
+      <tr>
+        <td>Agent 模型</td>
+        <td>单引擎 × 单对话</td>
+        <td>Agent 节点 × Task 线程，每个节点绑定引擎+任务上下文</td>
+      </tr>
+      <tr>
+        <td>交互输入</td>
+        <td>textarea + 发送按钮</td>
+        <td>弧形输入区 + 语音流 + 节点拖拽 + 快捷指令面板</td>
+      </tr>
+      <tr>
+        <td>记忆可视化</td>
+        <td>memory-graph.html (静态 SVG)</td>
+        <td>可交互记忆星座 (d3-force + 缩放/搜索/编辑)</td>
+      </tr>
+      <tr>
+        <td>动画系统</td>
+        <td>CSS transitions + keyframes</td>
+        <td>Web Animation API + requestAnimationFrame 粒子系统</td>
+      </tr>
+      <tr>
+        <td>性能预算</td>
+        <td>DOM 操作 ~16ms/frame</td>
+        <td>Canvas 60fps (10k 粒子) + DOM overlay <8ms</td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- ════════════════ CTA ════════════════ -->
+<section class="cta">
+  <div class="cta-bg"></div>
+  <h2>下一步</h2>
+  <p>
+    如果方向认可，下一步是在 KinetAios 中实现 Phase 1 的轨道视图原型。
+    先做一个可交互的 demo——3 个 Agent 节点 + 弧形输入区 + 基础粒子效果。
+  </p>
+  <a href="#" class="cta-btn" onclick="alert('待实现 — 需确认方向后启动'); return false;">
+    启动 Phase 1 Prototype
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M5 12h14M12 5l7 7-7 7"/>
+    </svg>
+  </a>
+</section>
+
+<footer>
+  <span>NEXUS</span> · Spatial Cognition Surface · Design Proposal for KinetAios · 2025
+</footer>
+
+</body>
+</html>

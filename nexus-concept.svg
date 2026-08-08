@@ -1,0 +1,305 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+  <defs>
+    <radialGradient id="bgGrad" cx="42%" cy="48%" r="72%">
+      <stop offset="0%" stop-color="#23232b"/>
+      <stop offset="55%" stop-color="#1c1c22"/>
+      <stop offset="100%" stop-color="#141418"/>
+    </radialGradient>
+    <radialGradient id="goldGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8b339" stop-opacity="0.22"/>
+      <stop offset="40%" stop-color="#e8b339" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="coreGrad" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#fff8e8"/>
+      <stop offset="30%" stop-color="#e8b339"/>
+      <stop offset="70%" stop-color="#c8902a"/>
+      <stop offset="100%" stop-color="#8a6215"/>
+    </radialGradient>
+    <radialGradient id="nodeGrad" cx="35%" cy="35%" r="65%">
+      <stop offset="0%" stop-color="#f4d06f"/>
+      <stop offset="50%" stop-color="#e8b339"/>
+      <stop offset="100%" stop-color="#a87a20"/>
+    </radialGradient>
+    <radialGradient id="nodeGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8b339" stop-opacity="0.45"/>
+      <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="panelGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="50%" stop-color="#e8b339" stop-opacity="0.04"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0.06"/>
+    </linearGradient>
+    <linearGradient id="inputGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e8b339" stop-opacity="0.15"/>
+      <stop offset="50%" stop-color="#e8b339" stop-opacity="0.40"/>
+      <stop offset="100%" stop-color="#e8b339" stop-opacity="0.15"/>
+    </linearGradient>
+    <linearGradient id="flowGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#e8b339" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#f4d06f" stop-opacity="0.7"/>
+      <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="softBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="microBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="2"/>
+    </filter>
+    <filter id="glowBlur" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="12"/>
+    </filter>
+    <pattern id="grid" x="0" y="0" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#e8b339" stroke-width="0.3" opacity="0.06"/>
+    </pattern>
+    <path id="orbitPath1" d="M 500,400 m -160,0 a 160,52 0 1,0 320,0 a 160,52 0 1,0 -320,0" fill="none"/>
+    <path id="orbitPath2" d="M 500,400 m -110,0 a 110,110 0 1,0 220,0 a 110,110 0 1,0 -220,0" fill="none"/>
+    <path id="orbitPath3" d="M 500,400 m -230,0 a 230,80 0 1,0 460,0 a 230,80 0 1,0 -460,0" fill="none"/>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#bgGrad)"/>
+  <rect width="1200" height="800" fill="url(#grid)"/>
+  <circle cx="500" cy="400" r="340" fill="url(#goldGlow)" opacity="0.55"/>
+
+  <g stroke="#e8b339" stroke-width="1" fill="none" opacity="0.4">
+    <path d="M 30,30 L 30,72 M 30,30 L 72,30"/>
+    <path d="M 1170,30 L 1170,72 M 1170,30 L 1128,30"/>
+    <path d="M 30,770 L 30,728 M 30,770 L 72,770"/>
+    <path d="M 1170,770 L 1170,728 M 1170,770 L 1128,770"/>
+  </g>
+
+  <g font-family="'SF Mono','Fira Code',monospace">
+    <text x="42" y="50" fill="#e8b339" font-size="13" letter-spacing="6" opacity="0.85">NEXUS</text>
+    <text x="42" y="66" fill="#e8b339" font-size="8" letter-spacing="3" opacity="0.4">SPATIAL · COGNITION · SURFACE</text>
+  </g>
+
+  <!-- Orbit rings -->
+  <g fill="none" stroke="#e8b339" opacity="0.15">
+    <ellipse cx="500" cy="400" rx="160" ry="52" stroke-width="1"/>
+    <ellipse cx="500" cy="400" rx="110" ry="110" stroke-width="0.8"/>
+    <ellipse cx="500" cy="400" rx="230" ry="80" stroke-width="0.6"/>
+  </g>
+
+  <!-- Core -->
+  <circle cx="500" cy="400" r="80" fill="url(#coreGrad)" filter="url(#softBlur)" opacity="0.4"/>
+  <circle cx="500" cy="400" r="48" fill="url(#coreGrad)" filter="url(#microBlur)"/>
+  <circle cx="500" cy="400" r="42" fill="url(#coreGrad)"/>
+  <circle cx="500" cy="400" r="42" fill="none" stroke="#fff8e8" stroke-width="0.5" opacity="0.6"/>
+  <text x="500" y="404" text-anchor="middle" fill="#18181c" font-family="'SF Pro Display',sans-serif" font-size="9" font-weight="bold" letter-spacing="2">YOU</text>
+
+  <!-- Core pulse rings -->
+  <circle cx="500" cy="400" r="55" fill="none" stroke="#e8b339" stroke-width="1.5" opacity="0.5">
+    <animate attributeName="r" values="48;90;48" dur="3s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.5;0;0.5" dur="3s" repeatCount="indefinite"/>
+  </circle>
+  <circle cx="500" cy="400" r="55" fill="none" stroke="#e8b339" stroke-width="1" opacity="0.3">
+    <animate attributeName="r" values="48;120;48" dur="4s" begin="1s" repeatCount="indefinite"/>
+    <animate attributeName="opacity" values="0.3;0;0.3" dur="4s" begin="1s" repeatCount="indefinite"/>
+  </circle>
+
+  <!-- Data flow lines core→nodes -->
+  <g stroke="#e8b339" stroke-width="1" fill="none" opacity="0.2">
+    <line x1="500" y1="400" x2="340" y2="290"/>
+    <line x1="500" y1="400" x2="610" y2="290"/>
+    <line x1="500" y1="400" x2="390" y2="510"/>
+    <line x1="500" y1="400" x2="620" y2="500"/>
+    <line x1="500" y1="400" x2="270" y2="400"/>
+    <line x1="500" y1="400" x2="730" y2="400"/>
+    <line x1="500" y1="400" x2="500" y2="200"/>
+  </g>
+
+  <!-- Flowing particles along lines -->
+  <g fill="#f4d06f" filter="url(#microBlur)">
+    <circle r="2.5">
+      <animateMotion dur="2s" repeatCount="indefinite" path="M 500,400 L 340,290"/>
+    </circle>
+    <circle r="2">
+      <animateMotion dur="2.5s" repeatCount="indefinite" path="M 610,290 L 500,400"/>
+    </circle>
+    <circle r="2">
+      <animateMotion dur="3s" begin="0.5s" repeatCount="indefinite" path="M 500,400 L 390,510"/>
+    </circle>
+    <circle r="2.5">
+      <animateMotion dur="2.2s" repeatCount="indefinite" path="M 620,500 L 500,400"/>
+    </circle>
+  </g>
+
+  <!-- Agent nodes -->
+  <g font-family="'SF Pro Display',sans-serif">
+    <!-- Node: COGNITION (top) -->
+    <g transform="translate(500,200)">
+      <circle r="32" fill="url(#nodeGlow)"/>
+      <circle r="18" fill="#27272d" stroke="#e8b339" stroke-width="1.5"/>
+      <text y="4" text-anchor="middle" fill="#e8b339" font-size="7" font-weight="bold" letter-spacing="0.5">COG</text>
+      <text y="-26" text-anchor="middle" fill="#9696a0" font-size="6" letter-spacing="1">COGNITION</text>
+      <circle cx="14" cy="-14" r="2.5" fill="#4ec27a">
+        <animate attributeName="opacity" values="0.4;1;0.4" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <!-- Node: VISION (top-left) -->
+    <g transform="translate(340,290)">
+      <circle r="30" fill="url(#nodeGlow)"/>
+      <circle r="16" fill="#27272d" stroke="#e8b339" stroke-width="1.5"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="7" font-weight="bold">VIS</text>
+      <text y="-24" text-anchor="middle" fill="#9696a0" font-size="6" letter-spacing="1">VISION</text>
+      <circle cx="12" cy="-12" r="2.5" fill="#e8b339">
+        <animate attributeName="opacity" values="0.3;1;0.3" dur="2s" begin="0.3s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <!-- Node: REASONING (top-right) -->
+    <g transform="translate(610,290)">
+      <circle r="32" fill="url(#nodeGlow)"/>
+      <circle r="18" fill="#27272d" stroke="#e8b339" stroke-width="1.5"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="7" font-weight="bold">REA</text>
+      <text y="-26" text-anchor="middle" fill="#9696a0" font-size="6" letter-spacing="1">REASONING</text>
+      <circle cx="14" cy="-14" r="2.5" fill="#4ec27a"/>
+    </g>
+    <!-- Node: MEMORY (bottom-left) -->
+    <g transform="translate(390,510)">
+      <circle r="30" fill="url(#nodeGlow)"/>
+      <circle r="16" fill="#27272d" stroke="#e8b339" stroke-width="1.5"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="7" font-weight="bold">MEM</text>
+      <text y="26" text-anchor="middle" fill="#9696a0" font-size="6" letter-spacing="1">MEMORY</text>
+      <circle cx="-12" cy="12" r="2.5" fill="#6b9fef">
+        <animate attributeName="opacity" values="0.2;0.8;0.2" dur="1.8s" begin="0.7s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+    <!-- Node: ACTION (bottom-right) -->
+    <g transform="translate(620,500)">
+      <circle r="30" fill="url(#nodeGlow)"/>
+      <circle r="16" fill="#27272d" stroke="#e8b339" stroke-width="1.5"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="7" font-weight="bold">ACT</text>
+      <text y="26" text-anchor="middle" fill="#9696a0" font-size="6" letter-spacing="1">ACTION</text>
+      <circle cx="12" cy="12" r="2.5" fill="#4ec27a"/>
+    </g>
+    <!-- Node: PLANNING (far left) -->
+    <g transform="translate(270,400)">
+      <circle r="28" fill="url(#nodeGlow)" opacity="0.6"/>
+      <circle r="14" fill="#27272d" stroke="#e8b339" stroke-width="1" opacity="0.7"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="6" font-weight="bold" opacity="0.7">PLN</text>
+      <text y="-22" text-anchor="middle" fill="#65656f" font-size="5" letter-spacing="1">PLANNING</text>
+      <circle cx="-10" cy="0" r="2" fill="#65656f"/>
+    </g>
+    <!-- Node: LANGUAGE (far right) -->
+    <g transform="translate(730,400)">
+      <circle r="28" fill="url(#nodeGlow)" opacity="0.6"/>
+      <circle r="14" fill="#27272d" stroke="#e8b339" stroke-width="1" opacity="0.7"/>
+      <text y="3" text-anchor="middle" fill="#e8b339" font-size="6" font-weight="bold" opacity="0.7">LNG</text>
+      <text y="-22" text-anchor="middle" fill="#65656f" font-size="5" letter-spacing="1">LANGUAGE</text>
+      <circle cx="10" cy="0" r="2" fill="#e2614c">
+        <animate attributeName="opacity" values="0.2;1;0.2" dur="0.8s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+  </g>
+
+  <!-- Right info panel -->
+  <g transform="translate(880,80)">
+    <rect x="0" y="0" width="280" height="560" rx="16" fill="#1a1a1f" opacity="0.85"/>
+    <rect x="0" y="0" width="280" height="560" rx="16" fill="url(#panelGrad)"/>
+    <rect x="0" y="0" width="280" height="560" rx="16" fill="none" stroke="#e8b339" stroke-width="0.5" opacity="0.2"/>
+
+    <!-- Panel header -->
+    <text x="20" y="28" fill="#e8b339" font-family="'SF Pro Display',sans-serif" font-size="11" font-weight="bold" letter-spacing="2">COGNITIVE MESH</text>
+    <line x1="20" y1="38" x2="260" y2="38" stroke="#e8b339" stroke-width="0.5" opacity="0.15"/>
+    
+    <!-- Active task -->
+    <text x="20" y="58" fill="#65656f" font-family="'SF Mono',monospace" font-size="7" letter-spacing="1">ACTIVE TASK</text>
+    <text x="20" y="74" fill="#ebebef" font-family="'SF Pro Display',sans-serif" font-size="10">Refactor auth module</text>
+    <rect x="20" y="82" width="240" height="3" rx="1.5" fill="#27272d"/>
+    <rect x="20" y="82" width="158" height="3" rx="1.5" fill="#e8b339">
+      <animate attributeName="width" values="158;162;158" dur="2s" repeatCount="indefinite"/>
+    </rect>
+    <text x="260" y="74" text-anchor="end" fill="#e8b339" font-family="'SF Mono',monospace" font-size="8">66%</text>
+
+    <!-- Agent mesh status -->
+    <text x="20" y="108" fill="#65656f" font-family="'SF Mono',monospace" font-size="7" letter-spacing="1">AGENT MESH</text>
+    <g font-family="'SF Mono',monospace" font-size="8">
+      <circle cx="26" cy="124" r="3" fill="#4ec27a"/><text x="36" y="127" fill="#9696a0">COGNITION</text><text x="260" y="127" text-anchor="end" fill="#4ec27a">active</text>
+      <circle cx="26" cy="142" r="3" fill="#e8b339"/><text x="36" y="145" fill="#9696a0">VISION</text><text x="260" y="145" text-anchor="end" fill="#e8b339">scanning</text>
+      <circle cx="26" cy="160" r="3" fill="#4ec27a"/><text x="36" y="163" fill="#9696a0">REASONING</text><text x="260" y="163" text-anchor="end" fill="#4ec27a">active</text>
+      <circle cx="26" cy="178" r="3" fill="#6b9fef"/><text x="36" y="181" fill="#9696a0">MEMORY</text><text x="260" y="181" text-anchor="end" fill="#6b9fef">recalling</text>
+      <circle cx="26" cy="196" r="3" fill="#4ec27a"/><text x="36" y="199" fill="#9696a0">ACTION</text><text x="260" y="199" text-anchor="end" fill="#4ec27a">ready</text>
+      <circle cx="26" cy="214" r="3" fill="#65656f"/><text x="36" y="217" fill="#9696a0">PLANNING</text><text x="260" y="217" text-anchor="end" fill="#65656f">idle</text>
+      <circle cx="26" cy="232" r="3" fill="#e2614c"/><text x="36" y="235" fill="#9696a0">LANGUAGE</text><text x="260" y="235" text-anchor="end" fill="#e2614c">error</text>
+    </g>
+
+    <line x1="20" y1="250" x2="260" y2="250" stroke="#e8b339" stroke-width="0.5" opacity="0.15"/>
+
+    <!-- Neural signal -->
+    <text x="20" y="270" fill="#65656f" font-family="'SF Mono',monospace" font-size="7" letter-spacing="1">NEURAL SIGNAL</text>
+    <g transform="translate(20,280)">
+      <path d="M 0,20 L 15,20 L 18,8 L 22,32 L 26,12 L 30,28 L 35,18 L 50,18 L 53,6 L 57,34 L 61,14 L 65,26 L 70,20 L 85,20 L 88,10 L 92,30 L 96,16 L 100,24 L 105,20 L 120,20 L 123,8 L 127,32 L 131,12 L 135,28 L 140,20 L 155,20 L 158,10 L 162,30 L 166,16 L 170,24 L 175,20 L 190,20 L 193,6 L 197,34 L 201,14 L 205,26 L 210,20 L 225,20 L 228,12 L 232,28 L 236,18 L 240,22 L 240,20" fill="none" stroke="#e8b339" stroke-width="1" opacity="0.6"/>
+    </g>
+
+    <line x1="20" y1="320" x2="260" y2="320" stroke="#e8b339" stroke-width="0.5" opacity="0.15"/>
+
+    <!-- Metrics -->
+    <text x="20" y="340" fill="#65656f" font-family="'SF Mono',monospace" font-size="7" letter-spacing="1">METRICS</text>
+    <g font-family="'SF Mono',monospace" font-size="8">
+      <text x="20" y="358" fill="#9696a0">Throughput</text><text x="260" y="358" text-anchor="end" fill="#e8b339">847 tok/s</text>
+      <text x="20" y="376" fill="#9696a0">Entropy</text><text x="260" y="376" text-anchor="end" fill="#e8b339">0.312</text>
+      <text x="20" y="394" fill="#9696a0">Coherence</text><text x="260" y="394" text-anchor="end" fill="#4ec27a">94.2%</text>
+      <text x="20" y="412" fill="#9696a0">Latency</text><text x="260" y="412" text-anchor="end" fill="#e8b339">12ms</text>
+      <text x="20" y="430" fill="#9696a0">Cost (24h)</text><text x="260" y="430" text-anchor="end" fill="#e8b339">$0.847</text>
+      <text x="20" y="448" fill="#9696a0">Sessions</text><text x="260" y="448" text-anchor="end" fill="#e8b339">14</text>
+    </g>
+
+    <line x1="20" y1="464" x2="260" y2="464" stroke="#e8b339" stroke-width="0.5" opacity="0.15"/>
+
+    <!-- Memory clusters -->
+    <text x="20" y="484" fill="#65656f" font-family="'SF Mono',monospace" font-size="7" letter-spacing="1">MEMORY CLUSTERS</text>
+    <g transform="translate(20,494)">
+      <circle cx="8" cy="8" r="5" fill="#e8b339" opacity="0.7" filter="url(#microBlur)"/>
+      <text x="20" y="11" fill="#9696a0" font-family="'SF Mono',monospace" font-size="7">Episodic</text>
+      <circle cx="80" cy="8" r="4" fill="#6b9fef" opacity="0.6" filter="url(#microBlur)"/>
+      <text x="92" y="11" fill="#9696a0" font-family="'SF Mono',monospace" font-size="7">Semantic</text>
+      <circle cx="160" cy="8" r="3" fill="#4ec27a" opacity="0.5" filter="url(#microBlur)"/>
+      <text x="170" y="11" fill="#9696a0" font-family="'SF Mono',monospace" font-size="7">Procedural</text>
+    </g>
+    <g transform="translate(20,518)" font-family="'SF Mono',monospace" font-size="7" fill="#9696a0">
+      <text x="0" y="0">2,847 nodes</text>
+      <text x="100" y="0" opacity="0.5">·</text>
+      <text x="108" y="0">14,392 edges</text>
+      <text x="200" y="0" opacity="0.5">·</text>
+      <text x="208" y="0">density 0.71</text>
+    </g>
+  </g>
+
+  <!-- Bottom arc input -->
+  <g transform="translate(500,730)">
+    <path d="M -490,0 Q -300,-50 0,-50 Q 300,-50 490,0" fill="none" stroke="url(#inputGrad)" stroke-width="1.5" opacity="0.6"/>
+    <path d="M -470,-2 Q -300,-44 0,-44 Q 300,-44 470,-2" fill="none" stroke="#e8b339" stroke-width="0.5" opacity="0.2"/>
+    <path d="M -490,-2 Q -300,-52 0,-52 Q 300,-52 490,-2" fill="#18181c" opacity="0.5"/>
+    <text x="0" y="-22" text-anchor="middle" font-family="'SF Pro Display',sans-serif" font-size="13" fill="#e8b339" opacity="0.4" letter-spacing="1">Speak or think to reshape the cognitive field…</text>
+    <g transform="translate(-430,-22)" opacity="0.6">
+      <circle cx="0" cy="0" r="4" fill="none" stroke="#e8b339" stroke-width="1"/>
+      <circle cx="0" cy="0" r="1.5" fill="#e8b339">
+        <animate attributeName="opacity" values="0.3;1;0.3" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+      <text x="10" y="3" font-family="'SF Mono',monospace" font-size="7" fill="#e8b339" letter-spacing="1">NEURAL</text>
+    </g>
+    <g transform="translate(400,-22)" opacity="0.5">
+      <text x="-10" y="3" text-anchor="end" font-family="'SF Mono',monospace" font-size="7" fill="#e8b339" letter-spacing="1">DISPATCH</text>
+      <path d="M0,-4 L6,0 L0,4" fill="none" stroke="#e8b339" stroke-width="1.2"/>
+    </g>
+  </g>
+
+  <!-- Status bar -->
+  <g font-family="'SF Mono',monospace" opacity="0.3">
+    <text x="42" y="780" font-size="7" fill="#e8b339" letter-spacing="1">COGNITIVE MESH · STABLE</text>
+    <text x="578" y="780" font-size="7" fill="#e8b339" letter-spacing="1" text-anchor="middle">NEXUS SPATIAL COGNITION SURFACE</text>
+    <text x="1158" y="780" font-size="7" fill="#e8b339" letter-spacing="1" text-anchor="end">2034.01.01 · 03:47:22 UTC</text>
+  </g>
+
+  <!-- Floating particles -->
+  <g fill="#e8b339" opacity="0.3">
+    <circle cx="120" cy="180" r="1"><animate attributeName="opacity" values="0.1;0.5;0.1" dur="3s" repeatCount="indefinite"/></circle>
+    <circle cx="200" cy="500" r="0.8"><animate attributeName="opacity" values="0.1;0.4;0.1" dur="4s" repeatCount="indefinite"/></circle>
+    <circle cx="700" cy="150" r="1.2"><animate attributeName="opacity" values="0.2;0.6;0.2" dur="2.5s" repeatCount="indefinite"/></circle>
+    <circle cx="80" cy="620" r="0.8"><animate attributeName="opacity" values="0.1;0.4;0.1" dur="3.5s" repeatCount="indefinite"/></circle>
+    <circle cx="780" cy="680" r="1"><animate attributeName="opacity" values="0.1;0.5;0.1" dur="2.8s" repeatCount="indefinite"/></circle>
+    <circle cx="850" cy="200" r="1"><animate attributeName="opacity" values="0.2;0.5;0.2" dur="3.3s" repeatCount="indefinite"/></circle>
+    <circle cx="650" cy="640" r="0.8"><animate attributeName="opacity" values="0.1;0.4;0.1" dur="3.7s" repeatCount="indefinite"/></circle>
+    <circle cx="60" cy="400" r="0.8"><animate attributeName="opacity" values="0.1;0.4;0.1" dur="2.9s" repeatCount="indefinite"/></circle>
+  </g>
+</svg>

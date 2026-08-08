@@ -1,0 +1,367 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 800" width="1200" height="800">
+  <defs>
+    <style>@media (prefers-reduced-motion:reduce){animate,animateTransform,animateMotion{display:none}}</style>
+    <radialGradient id="iBg" cx="50%" cy="40%" r="80%">
+      <stop offset="0%" stop-color="#24242b"/>
+      <stop offset="60%" stop-color="#18181c"/>
+      <stop offset="100%" stop-color="#111114"/>
+    </radialGradient>
+    <linearGradient id="iPanel" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1e1e25" stop-opacity="0.95"/>
+      <stop offset="100%" stop-color="#1a1a1f" stop-opacity="0.95"/>
+    </linearGradient>
+    <radialGradient id="iCore" cx="35%" cy="35%" r="70%">
+      <stop offset="0%" stop-color="#fff0cc"/>
+      <stop offset="25%" stop-color="#e8b339"/>
+      <stop offset="70%" stop-color="#a06f10"/>
+      <stop offset="100%" stop-color="#5a3d08"/>
+    </radialGradient>
+    <radialGradient id="iCoreGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#e8b339" stop-opacity="0.4"/>
+      <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="iGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="iSoftGlow" x="-100%" y="-100%" width="300%" height="300%">
+      <feGaussianBlur stdDeviation="3.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="iParticle" x="-200%" y="-200%" width="500%" height="500%">
+      <feGaussianBlur stdDeviation="2.5" result="b"/>
+      <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <symbol id="iOrbitNode" overflow="visible">
+      <circle r="26" fill="currentColor" opacity="0.12"/>
+      <circle r="17" fill="currentColor" opacity="0.25"/>
+      <circle r="12" fill="currentColor" filter="url(#iSoftGlow)"/>
+      <circle r="12" fill="none" stroke="currentColor" stroke-width="1.2" opacity="0.7"/>
+      <circle r="5" fill="#fff" opacity="0.7"/>
+    </symbol>
+    <symbol id="iFlowNode" overflow="visible">
+      <circle r="24" fill="currentColor" opacity="0.08"/>
+      <circle r="16" fill="currentColor" opacity="0.18"/>
+      <circle r="13" fill="currentColor" filter="url(#iSoftGlow)"/>
+    </symbol>
+    <symbol id="iMemStar" overflow="visible">
+      <circle r="14" fill="currentColor" opacity="0.08"/>
+      <circle r="8" fill="currentColor" opacity="0.15"/>
+      <circle r="5" fill="currentColor" filter="url(#iParticle)"/>
+      <circle r="2" fill="#fff" opacity="0.85"/>
+    </symbol>
+    <marker id="iArrow" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+      <path d="M0,0 L7,3.5 L0,7 Z" fill="#e8b339" opacity="0.7"/>
+    </marker>
+    <pattern id="iGrid" width="40" height="40" patternUnits="userSpaceOnUse">
+      <path d="M40,0 L0,0 L0,40" fill="none" stroke="#ffffff" stroke-width="0.3" opacity="0.03"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="800" fill="url(#iBg)"/>
+  <rect width="1200" height="800" fill="url(#iGrid)"/>
+
+  <!-- Panel separators -->
+  <line x1="440" y1="20" x2="440" y2="780" stroke="#e8b339" stroke-width="0.5" opacity="0.08" stroke-dasharray="4 8"/>
+  <line x1="880" y1="20" x2="880" y2="780" stroke="#e8b339" stroke-width="0.5" opacity="0.08" stroke-dasharray="4 8"/>
+
+  <!-- ═══════ PANEL 1: ORBIT MODE ═══════ -->
+  <g>
+    <rect x="20" y="20" width="400" height="760" rx="16" fill="url(#iPanel)" opacity="0.5"/>
+    <text x="40" y="50" fill="#e8b339" font-family="'SF Pro Display',sans-serif" font-size="13" font-weight="bold" letter-spacing="2">ORBIT MODE</text>
+    <text x="40" y="66" fill="#666" font-family="'SF Mono',monospace" font-size="8" letter-spacing="1">轨道模式 · Multi-Agent Concurrent View</text>
+    <line x1="40" y1="76" x2="400" y2="76" stroke="#e8b339" stroke-width="0.5" opacity="0.1"/>
+
+    <!-- Orbit rings -->
+    <g fill="none" stroke="#e8b339" stroke-width="0.5" opacity="0.08">
+      <ellipse cx="220" cy="400" rx="140" ry="55"/>
+      <ellipse cx="220" cy="400" rx="95" ry="38"/>
+    </g>
+    <g fill="none" stroke="#e8b339" stroke-width="0.4" opacity="0.06" stroke-dasharray="2 6">
+      <ellipse cx="220" cy="400" rx="170" ry="70"/>
+    </g>
+
+    <!-- Core -->
+    <circle cx="220" cy="400" r="60" fill="url(#iCoreGlow)" opacity="0.6"/>
+    <circle cx="220" cy="400" r="22" fill="url(#iCore)" filter="url(#iGlow)"/>
+    <circle cx="220" cy="400" r="20" fill="url(#iCore)"/>
+    <circle cx="220" cy="400" r="28" fill="none" stroke="#e8b339" stroke-width="1" opacity="0.4">
+      <animate attributeName="r" values="24;40;24" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.4;0;0.4" dur="3s" repeatCount="indefinite"/>
+    </circle>
+    <text x="220" y="404" text-anchor="middle" fill="#18181c" font-size="8" font-weight="bold">USER</text>
+
+    <!-- Agent nodes -->
+    <!-- Active (green) top -->
+    <g transform="translate(220,320)" color="#4ec27a">
+      <use href="#iOrbitNode"/>
+      <circle r="22" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.3">
+        <animate attributeName="r" values="17;30;17" dur="1.5s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0.3;0;0.3" dur="1.5s" repeatCount="indefinite"/>
+      </circle>
+      <text y="40" text-anchor="middle" fill="#4ec27a" font-size="7" letter-spacing="1">AGENT-α</text>
+    </g>
+    <circle r="1.5" fill="#4ec27a" filter="url(#iParticle)">
+      <animateMotion dur="2s" repeatCount="indefinite" path="M 220,320 L 220,400"/>
+    </circle>
+
+    <!-- Active (green) bottom-left -->
+    <g transform="translate(140,460)" color="#4ec27a">
+      <use href="#iOrbitNode"/>
+      <text y="40" text-anchor="middle" fill="#4ec27a" font-size="7" letter-spacing="1">AGENT-β</text>
+    </g>
+    <circle r="1.5" fill="#4ec27a" filter="url(#iParticle)">
+      <animateMotion dur="2.5s" begin="0.5s" repeatCount="indefinite" path="M 140,460 L 220,400"/>
+    </circle>
+
+    <!-- Thinking (blue) top-right -->
+    <g transform="translate(310,350)" color="#6b9fef">
+      <use href="#iOrbitNode"/>
+      <!-- Thinking dots -->
+      <g fill="#fff" opacity="0.9">
+        <circle cx="-5" cy="0" r="1.5"><animate attributeName="opacity" values="0.2;1;0.2" dur="1s" repeatCount="indefinite"/></circle>
+        <circle cx="0" cy="0" r="1.5"><animate attributeName="opacity" values="0.2;1;0.2" dur="1s" begin="0.2s" repeatCount="indefinite"/></circle>
+        <circle cx="5" cy="0" r="1.5"><animate attributeName="opacity" values="0.2;1;0.2" dur="1s" begin="0.4s" repeatCount="indefinite"/></circle>
+      </g>
+      <text y="40" text-anchor="middle" fill="#6b9fef" font-size="7" letter-spacing="1">AGENT-γ</text>
+    </g>
+
+    <!-- Idle (gold dim) bottom-right -->
+    <g transform="translate(310,460)" color="#e8b339">
+      <use href="#iOrbitNode" opacity="0.5"/>
+      <text y="40" text-anchor="middle" fill="#e8b339" font-size="7" letter-spacing="1" opacity="0.6">AGENT-δ</text>
+    </g>
+
+    <!-- Error (red) far left -->
+    <g transform="translate(110,370)" color="#e2614c">
+      <use href="#iOrbitNode"/>
+      <text y="3" text-anchor="middle" fill="#fff" font-size="8" font-weight="bold">×</text>
+      <text y="40" text-anchor="middle" fill="#e2614c" font-size="7" letter-spacing="1">AGENT-ε</text>
+      <circle r="20" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.4">
+        <animate attributeName="opacity" values="0.4;0.1;0.4" dur="0.8s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+
+    <!-- Outer orbit particle -->
+    <circle r="1.5" fill="#e8b339" opacity="0.4" filter="url(#iParticle)">
+      <animateMotion dur="10s" repeatCount="indefinite" path="M 390,400 A 170,70 0 1,1 389.9,400.1 Z"/>
+    </circle>
+
+    <!-- Status legend -->
+    <g transform="translate(40,580)" font-family="'SF Mono',monospace" font-size="8">
+      <text x="0" y="0" fill="#666" letter-spacing="1">STATUS</text>
+      <g transform="translate(0,16)">
+        <circle cx="4" cy="0" r="4" fill="#4ec27a" filter="url(#iSoftGlow)"/>
+        <text x="14" y="3" fill="#aaa">active</text>
+        <text x="200" y="3" fill="#4ec27a" text-anchor="end">2</text>
+      </g>
+      <g transform="translate(0,32)">
+        <circle cx="4" cy="0" r="4" fill="#6b9fef" filter="url(#iSoftGlow)"/>
+        <text x="14" y="3" fill="#aaa">thinking</text>
+        <text x="200" y="3" fill="#6b9fef" text-anchor="end">1</text>
+      </g>
+      <g transform="translate(0,48)">
+        <circle cx="4" cy="0" r="4" fill="#e8b339" opacity="0.5"/>
+        <text x="14" y="3" fill="#aaa">idle</text>
+        <text x="200" y="3" fill="#e8b339" text-anchor="end" opacity="0.6">1</text>
+      </g>
+      <g transform="translate(0,64)">
+        <circle cx="4" cy="0" r="4" fill="#e2614c" filter="url(#iSoftGlow)"/>
+        <text x="14" y="3" fill="#aaa">error</text>
+        <text x="200" y="3" fill="#e2614c" text-anchor="end">1</text>
+      </g>
+    </g>
+
+    <text x="220" y="745" text-anchor="middle" fill="#666" font-size="10" letter-spacing="0.5">Agents orbit user intent · drag to reprioritize</text>
+  </g>
+
+  <!-- ═══════ PANEL 2: FLOW MODE ═══════ -->
+  <g>
+    <rect x="460" y="20" width="400" height="760" rx="16" fill="url(#iPanel)" opacity="0.5"/>
+    <text x="480" y="50" fill="#e8b339" font-family="'SF Pro Display',sans-serif" font-size="13" font-weight="bold" letter-spacing="2">FLOW MODE</text>
+    <text x="480" y="66" fill="#666" font-family="'SF Mono',monospace" font-size="8" letter-spacing="1">流模式 · Pipeline Execution Trace</text>
+    <line x1="480" y1="76" x2="840" y2="76" stroke="#e8b339" stroke-width="0.5" opacity="0.1"/>
+
+    <!-- Pipeline stages -->
+    <g transform="translate(620,120)">
+      <!-- INPUT -->
+      <g transform="translate(0,0)" color="#e8b339">
+        <use href="#iFlowNode"/>
+        <text y="30" text-anchor="middle" fill="#e8b339" font-size="8" font-weight="bold" letter-spacing="1">INPUT</text>
+      </g>
+      <line x1="0" y1="20" x2="0" y2="50" stroke="#e8b339" stroke-width="1" opacity="0.3" marker-end="url(#iArrow)"/>
+      <!-- PARSE -->
+      <g transform="translate(0,70)" color="#6b9fef">
+        <use href="#iFlowNode"/>
+        <text y="30" text-anchor="middle" fill="#6b9fef" font-size="8" font-weight="bold" letter-spacing="1">PARSE</text>
+      </g>
+      <line x1="0" y1="90" x2="0" y2="120" stroke="#e8b339" stroke-width="1" opacity="0.3" marker-end="url(#iArrow)"/>
+      <!-- PLAN -->
+      <g transform="translate(0,140)" color="#e8b339">
+        <use href="#iFlowNode"/>
+        <circle r="20" fill="none" stroke="currentColor" stroke-width="0.8" opacity="0.3">
+          <animate attributeName="r" values="16;26;16" dur="1.5s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.4;0;0.4" dur="1.5s" repeatCount="indefinite"/>
+        </circle>
+        <text y="30" text-anchor="middle" fill="#e8b339" font-size="8" font-weight="bold" letter-spacing="1">PLAN</text>
+        <text y="42" text-anchor="middle" fill="#666" font-size="6">▶ executing</text>
+      </g>
+      <line x1="0" y1="160" x2="0" y2="190" stroke="#e8b339" stroke-width="1" opacity="0.3" marker-end="url(#iArrow)"/>
+      <!-- EXECUTE -->
+      <g transform="translate(0,210)" color="#4ec27a">
+        <use href="#iFlowNode" opacity="0.5"/>
+        <text y="30" text-anchor="middle" fill="#4ec27a" font-size="8" font-weight="bold" letter-spacing="1" opacity="0.6">EXECUTE</text>
+      </g>
+      <line x1="0" y1="230" x2="0" y2="260" stroke="#e8b339" stroke-width="1" opacity="0.15" stroke-dasharray="2 3"/>
+      <!-- VERIFY -->
+      <g transform="translate(0,280)" color="#888" opacity="0.4">
+        <use href="#iFlowNode"/>
+        <text y="30" text-anchor="middle" fill="#888" font-size="8" font-weight="bold" letter-spacing="1">VERIFY</text>
+      </g>
+      <line x1="0" y1="300" x2="0" y2="330" stroke="#e8b339" stroke-width="1" opacity="0.1" stroke-dasharray="2 3"/>
+      <!-- OUTPUT -->
+      <g transform="translate(0,350)" color="#888" opacity="0.3">
+        <use href="#iFlowNode"/>
+        <text y="30" text-anchor="middle" fill="#888" font-size="8" font-weight="bold" letter-spacing="1">OUTPUT</text>
+      </g>
+
+      <!-- Flowing particles -->
+      <circle r="2" fill="#e8b339" filter="url(#iParticle)">
+        <animate attributeName="cy" values="0;380" dur="4s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="1.5" fill="#6b9fef" filter="url(#iParticle)">
+        <animate attributeName="cy" values="0;380" dur="4s" begin="1.3s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" begin="1.3s" repeatCount="indefinite"/>
+      </circle>
+      <circle r="1.5" fill="#4ec27a" filter="url(#iParticle)">
+        <animate attributeName="cy" values="0;380" dur="4s" begin="2.6s" repeatCount="indefinite"/>
+        <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1" dur="4s" begin="2.6s" repeatCount="indefinite"/>
+      </circle>
+    </g>
+
+    <!-- Metrics sidebar -->
+    <g transform="translate(740,120)" font-family="'SF Mono',monospace" font-size="7" fill="#888">
+      <text x="0" y="0" fill="#666" letter-spacing="1">METRICS</text>
+      <text x="0" y="16">Stage</text><text x="80" y="16" fill="#e8b339" text-anchor="end">3/6</text>
+      <text x="0" y="32">Latency</text><text x="80" y="32" fill="#e8b339" text-anchor="end">847ms</text>
+      <text x="0" y="48">Throughput</text><text x="80" y="48" fill="#e8b339" text-anchor="end">847 t/s</text>
+      <text x="0" y="64">Tokens</text><text x="80" y="64" fill="#e8b339" text-anchor="end">12,847</text>
+      <text x="0" y="80">Success</text><text x="80" y="80" fill="#4ec27a" text-anchor="end">94.2%</text>
+      <text x="0" y="96">Cost</text><text x="80" y="96" fill="#e8b339" text-anchor="end">$0.03</text>
+
+      <!-- Mini waveform -->
+      <g transform="translate(0,116)">
+        <text x="0" y="0" fill="#666" letter-spacing="1">SIGNAL</text>
+        <path d="M 0,20 L 8,20 L 10,14 L 12,26 L 14,16 L 16,24 L 18,18 L 24,20 L 26,12 L 28,28 L 30,16 L 32,24 L 34,20 L 40,20 L 42,14 L 44,26 L 46,18 L 48,22 L 50,20 L 56,20 L 58,12 L 60,28 L 62,16 L 64,24 L 66,20 L 72,20 L 74,16 L 76,24 L 78,18 L 80,20" fill="none" stroke="#e8b339" stroke-width="0.8" opacity="0.5"/>
+      </g>
+    </g>
+
+    <text x="660" y="745" text-anchor="middle" fill="#666" font-size="10" letter-spacing="0.5">Pipeline trace · tap any node to inspect</text>
+  </g>
+
+  <!-- ═══════ PANEL 3: CONSTELLATION ═══════ -->
+  <g>
+    <rect x="900" y="20" width="280" height="760" rx="16" fill="url(#iPanel)" opacity="0.5"/>
+    <text x="920" y="50" fill="#e8b339" font-family="'SF Pro Display',sans-serif" font-size="13" font-weight="bold" letter-spacing="2">CONSTELLATION</text>
+    <text x="920" y="66" fill="#666" font-family="'SF Mono',monospace" font-size="8" letter-spacing="1">星座模式 · Memory Graph Navigation</text>
+    <line x1="920" y1="76" x2="1160" y2="76" stroke="#e8b339" stroke-width="0.5" opacity="0.1"/>
+
+    <!-- Star field background -->
+    <g fill="#fff" opacity="0.2">
+      <circle cx="940" cy="120" r="0.5"/><circle cx="970" cy="140" r="0.4"/>
+      <circle cx="1050" cy="110" r="0.6"/><circle cx="1100" cy="130" r="0.5"/>
+      <circle cx="1150" cy="160" r="0.4"/><circle cx="930" cy="200" r="0.5"/>
+      <circle cx="1080" cy="190" r="0.4"/><circle cx="1130" cy="210" r="0.5"/>
+      <circle cx="960" cy="250" r="0.4"/><circle cx="1010" cy="230" r="0.5"/>
+      <circle cx="1090" cy="270" r="0.4"/><circle cx="950" cy="330" r="0.5"/>
+      <circle cx="1070" cy="350" r="0.4"/><circle cx="1140" cy="340" r="0.5"/>
+      <circle cx="990" cy="410" r="0.4"/><circle cx="1050" cy="420" r="0.5"/>
+      <circle cx="1110" cy="450" r="0.4"/><circle cx="940" cy="500" r="0.5"/>
+      <circle cx="1020" cy="510" r="0.4"/>
+    </g>
+
+    <!-- Nebula glows -->
+    <circle cx="990" cy="280" r="50" fill="#e8b339" opacity="0.04" filter="url(#iGlow)"/>
+    <circle cx="1080" cy="380" r="40" fill="#6b9fef" opacity="0.03" filter="url(#iGlow)"/>
+    <circle cx="1020" cy="480" r="35" fill="#4ec27a" opacity="0.03" filter="url(#iGlow)"/>
+
+    <!-- Constellation lines -->
+    <g stroke="#e8b339" stroke-width="0.5" fill="none" opacity="0.15">
+      <line x1="980" y1="200" x2="1050" y2="240"/>
+      <line x1="1050" y1="240" x2="990" y2="310"/>
+      <line x1="990" y1="310" x2="1060" y2="350"/>
+      <line x1="1060" y1="350" x2="1100" y2="300"/>
+      <line x1="1100" y1="300" x2="1050" y2="240"/>
+    </g>
+    <g stroke="#6b9fef" stroke-width="0.5" fill="none" opacity="0.12">
+      <line x1="970" y1="400" x2="1030" y2="430"/>
+      <line x1="1030" y1="430" x2="1090" y2="410"/>
+      <line x1="1090" y1="410" x2="1120" y2="460"/>
+      <line x1="1120" y1="460" x2="1060" y2="490"/>
+    </g>
+    <g stroke="#4ec27a" stroke-width="0.5" fill="none" opacity="0.1">
+      <line x1="980" y1="540" x2="1040" y2="560"/>
+      <line x1="1040" y1="560" x2="1100" y2="540"/>
+    </g>
+    <!-- Cross-links (dashed) -->
+    <g stroke="#888" stroke-width="0.3" fill="none" opacity="0.1" stroke-dasharray="2 4">
+      <line x1="990" y1="310" x2="970" y2="400"/>
+      <line x1="1060" y1="350" x2="1030" y2="430"/>
+      <line x1="1060" y1="490" x2="1040" y2="560"/>
+    </g>
+
+    <!-- Memory stars - Gold (episodic) -->
+    <g transform="translate(980,200)" color="#e8b339"><use href="#iMemStar"/></g>
+    <g transform="translate(1050,240)" color="#e8b339">
+      <use href="#iMemStar" transform="scale(1.2)">
+        <animate attributeName="opacity" values="0.5;1;0.5" dur="2s" repeatCount="indefinite"/>
+      </use>
+    </g>
+    <g transform="translate(1100,300)" color="#e8b339"><use href="#iMemStar" transform="scale(0.8)"/></g>
+    <g transform="translate(940,280)" color="#e8b339"><use href="#iMemStar" transform="scale(0.6)" opacity="0.6"/></g>
+
+    <!-- Memory stars - Blue (semantic) -->
+    <g transform="translate(970,400)" color="#6b9fef"><use href="#iMemStar" transform="scale(0.9)"/></g>
+    <g transform="translate(1030,430)" color="#6b9fef">
+      <use href="#iMemStar" transform="scale(1.1)">
+        <animate attributeName="opacity" values="0.4;1;0.4" dur="2.5s" begin="0.5s" repeatCount="indefinite"/>
+      </use>
+    </g>
+    <g transform="translate(1090,410)" color="#6b9fef"><use href="#iMemStar" transform="scale(0.7)"/></g>
+    <g transform="translate(1120,460)" color="#6b9fef"><use href="#iMemStar" transform="scale(0.85)"/></g>
+
+    <!-- Memory stars - Green (procedural) -->
+    <g transform="translate(980,540)" color="#4ec27a"><use href="#iMemStar" transform="scale(0.7)"/></g>
+    <g transform="translate(1040,560)" color="#4ec27a">
+      <use href="#iMemStar" transform="scale(0.9)">
+        <animate attributeName="opacity" values="0.3;0.9;0.3" dur="1.8s" begin="0.8s" repeatCount="indefinite"/>
+      </use>
+    </g>
+    <g transform="translate(1100,540)" color="#4ec27a"><use href="#iMemStar" transform="scale(0.5)" opacity="0.6"/></g>
+
+    <!-- Tiny scattered -->
+    <g transform="translate(950,350)" color="#e8b339"><use href="#iMemStar" transform="scale(0.4)" opacity="0.4"/></g>
+    <g transform="translate(1110,220)" color="#6b9fef"><use href="#iMemStar" transform="scale(0.45)" opacity="0.5"/></g>
+    <g transform="translate(930,470)" color="#4ec27a"><use href="#iMemStar" transform="scale(0.35)" opacity="0.4"/></g>
+    <g transform="translate(1130,380)" color="#e8b339"><use href="#iMemStar" transform="scale(0.4)" opacity="0.3"/></g>
+
+    <!-- Legend -->
+    <g transform="translate(920,620)">
+      <text x="0" y="0" fill="#666" font-family="system-ui,sans-serif" font-size="9" letter-spacing="1">MEMORY TYPES</text>
+      <g font-family="system-ui,sans-serif" font-size="8" fill="#aaa">
+        <circle cx="6" cy="16" r="4" fill="#e8b339" filter="url(#iSoftGlow)"/>
+        <text x="16" y="19">episodic</text>
+        <circle cx="6" cy="32" r="4" fill="#6b9fef" filter="url(#iSoftGlow)"/>
+        <text x="16" y="35">semantic</text>
+        <circle cx="6" cy="48" r="4" fill="#4ec27a" filter="url(#iSoftGlow)"/>
+        <text x="16" y="51">procedural</text>
+      </g>
+    </g>
+
+    <text x="1040" y="745" text-anchor="middle" fill="#666" font-size="10" letter-spacing="0.5">Memory graph · node size = recall strength</text>
+  </g>
+
+  <!-- Version footer -->
+  <text x="600" y="790" text-anchor="middle" fill="#444" font-family="system-ui,sans-serif" font-size="9" letter-spacing="2">NEXUS · INTERACTION PARADIGMS</text>
+</svg>
