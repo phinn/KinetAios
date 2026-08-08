@@ -1420,6 +1420,7 @@ function renderHead(conv: Conversation | undefined) {
     model.style.display = 'none';
     const sm0 = document.getElementById('submodel-input') as HTMLInputElement | null;
     if (sm0) { sm0.value = ''; sm0.style.display = 'none'; }
+    console.log('[submodel] empty conv branch, sm0 found:', !!sm0);
     const cs0 = document.getElementById('ctx-mode-select');
     if (cs0) cs0.style.display = 'none';
     const pb0 = document.getElementById('btn-persona');
@@ -1447,10 +1448,11 @@ function renderHead(conv: Conversation | undefined) {
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
-  // Sub-agent model picker in composer-bar — same visibility as main model
+  // Sub-agent model picker — mirror main model's visibility exactly
   const subModelEl = document.getElementById('submodel-input') as HTMLInputElement | null;
+  console.log('[submodel] updateHead:', { found: !!subModelEl, modelDisplay: model.style.display, engine: conv.engine });
   if (subModelEl) {
-    subModelEl.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
+    subModelEl.style.display = model.style.display;
     if (document.activeElement !== subModelEl) subModelEl.value = conv.subAgentModel ?? '';
   }
   syncEngineSelect(conv);
