@@ -16,6 +16,7 @@ const DEFAULTS: AppSettings = {
   planMode: false,
   enableCliEngines: false,
   defaultEngine: 'direct' as EngineKind,
+  subAgentModel: '',  // 子 agent 默认模型(空 = 跟随主 agent)
   priceInPerMTok: 0.07, // GLM ¥0.5/1M in ≈ $0.07
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',
@@ -58,6 +59,8 @@ const DEFAULTS: AppSettings = {
     secret: '',
     defaultCwd: '',
     engine: 'direct' as EngineKind,
+    model: '',
+    subAgentModel: '',
     streamReply: true,
   },
   // 飞书机器人:默认关闭,appId/appSecret 留空。
@@ -67,6 +70,8 @@ const DEFAULTS: AppSettings = {
     appSecret: '',
     defaultCwd: '',
     engine: 'direct' as EngineKind,
+    model: '',
+    subAgentModel: '',
     streamReply: true,
   },
 };

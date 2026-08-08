@@ -2144,6 +2144,8 @@ async function showSettings() {
           <option value="directV3" ${s.defaultEngine === 'directV3' ? 'selected' : ''}>Kaios v3 (Adaptive)</option>
           ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select></div>
+        <div class="field"><label>${tr('settings.subAgentModel')}</label><input id="s-subagent-model" type="text" value="${esc(s.subAgentModel ?? '')}" placeholder="${tr('settings.subAgentModelPh')}" /></div>
+        <div class="field-desc">${tr('settings.subAgentModel.desc')}</div>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
       </div>
@@ -2230,6 +2232,8 @@ async function showSettings() {
           <div class="field"><label>${tr('settings.wecom.engine')}</label><select id="s-wecom-engine">
             ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['directV3', 'Kaios V3'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select></div>
+          <div class="field"><label>${tr('settings.channel.model')}</label><input id="s-wecom-model" type="text" value="${esc(s.wecomBot?.model ?? '')}" placeholder="${tr('settings.channel.modelPh')}" /></div>
+          <div class="field"><label>${tr('settings.channel.subAgentModel')}</label><input id="s-wecom-submodel" type="text" value="${esc(s.wecomBot?.subAgentModel ?? '')}" placeholder="${tr('settings.channel.subAgentModelPh')}" /></div>
           <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
           <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
         </div>
@@ -2243,6 +2247,8 @@ async function showSettings() {
           <div class="field"><label>${tr('settings.feishu.engine')}</label><select id="s-feishu-engine">
             ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['directV3', 'Kaios V3'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.feishuBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select></div>
+          <div class="field"><label>${tr('settings.channel.model')}</label><input id="s-feishu-model" type="text" value="${esc(s.feishuBot?.model ?? '')}" placeholder="${tr('settings.channel.modelPh')}" /></div>
+          <div class="field"><label>${tr('settings.channel.subAgentModel')}</label><input id="s-feishu-submodel" type="text" value="${esc(s.feishuBot?.subAgentModel ?? '')}" placeholder="${tr('settings.channel.subAgentModelPh')}" /></div>
           <div class="field"><label>${tr('settings.feishu.streamReply')}</label><input type="checkbox" id="s-feishu-stream" ${s.feishuBot?.streamReply !== false ? 'checked' : ''} /></div>
           <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.feishu.cwd')}</label><input id="s-feishu-cwd" type="text" value="${esc(s.feishuBot?.defaultCwd ?? '')}" placeholder="${tr('settings.feishu.cwdPh')}" style="width:100%" /></div>
         </div>
@@ -2969,6 +2975,7 @@ function readSettingsForm(): AppSettings {
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
     enableCliEngines: (document.getElementById('s-cli') as HTMLInputElement).checked,
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
+    subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
@@ -3010,6 +3017,8 @@ function readSettingsForm(): AppSettings {
       secret: (document.getElementById('s-wecom-secret') as HTMLInputElement).value.trim(),
       defaultCwd: (document.getElementById('s-wecom-cwd') as HTMLInputElement).value.trim(),
       engine: (document.getElementById('s-wecom-engine') as HTMLSelectElement).value as EngineKind,
+      model: (document.getElementById('s-wecom-model') as HTMLInputElement).value.trim(),
+      subAgentModel: (document.getElementById('s-wecom-submodel') as HTMLInputElement).value.trim(),
       streamReply: (document.getElementById('s-wecom-stream') as HTMLInputElement).checked,
   },
   feishuBot: {
@@ -3018,6 +3027,8 @@ function readSettingsForm(): AppSettings {
     appSecret: (document.getElementById('s-feishu-secret') as HTMLInputElement).value.trim(),
     defaultCwd: (document.getElementById('s-feishu-cwd') as HTMLInputElement).value.trim(),
     engine: (document.getElementById('s-feishu-engine') as HTMLSelectElement).value as EngineKind,
+    model: (document.getElementById('s-feishu-model') as HTMLInputElement).value.trim(),
+    subAgentModel: (document.getElementById('s-feishu-submodel') as HTMLInputElement).value.trim(),
     streamReply: (document.getElementById('s-feishu-stream') as HTMLInputElement).checked,
     },
   };

@@ -1154,7 +1154,7 @@ const dispatchAgent: Tool = {
       },
       model: {
         type: 'string',
-        description: '子 agent 用的大模型(仅 Direct 引擎生效)。不传 = 复用主 agent 的 model。例:用便宜的 flash 做探索,用主力模型做分析。',
+        description: '子 agent 用的大模型(仅 Direct 引擎生效)。不传 = 依次回退:频道配置的子 Agent 模型 → 全局子 Agent 模型 → 主 agent 的 model。',
       },
       scope: {
         type: 'object',

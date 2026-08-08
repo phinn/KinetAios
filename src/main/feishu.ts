@@ -125,6 +125,10 @@ class FeishuBridge {
 
     conv = this.taskManager!.newConversation(cwd, engine as any);
     conv.feishuKey = key;
+    // 频道级模型覆盖 / Channel-level model overrides.
+    const cfg = getSettings().feishuBot;
+    if (cfg.model) conv.model = cfg.model;
+    conv.subAgentModel = cfg.subAgentModel || null;
     this.feishuSessions.set(key, conv.id);
     return conv;
   }
@@ -314,6 +318,8 @@ class FeishuBridge {
         const cwd = cfg.defaultCwd || os.homedir();
         const conv = this.taskManager!.newConversation(cwd, cfg.engine);
         conv.feishuKey = feishuKey;
+        if (cfg.model) conv.model = cfg.model;
+        conv.subAgentModel = cfg.subAgentModel || null;
         this.feishuSessions.set(feishuKey, conv.id);
         // 淘汰超额会话 / Evict excess conversations.
         this.evictIfNeeded(feishuKey);

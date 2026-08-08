@@ -88,6 +88,10 @@ class WeComBridge {
 
     conv = this.taskManager!.newConversation(cwd, engine as any);
     conv.wecomKey = key;
+    // 频道级模型覆盖 / Channel-level model overrides.
+    const cfg = getSettings().wecomBot;
+    if (cfg.model) conv.model = cfg.model;
+    conv.subAgentModel = cfg.subAgentModel || null;
     this.wecomSessions.set(key, conv.id);
     return conv;
   }
@@ -238,6 +242,8 @@ class WeComBridge {
         const cwd = cfg.defaultCwd || os.homedir();
         const conv = this.taskManager!.newConversation(cwd, cfg.engine);
         conv.wecomKey = wecomKey;
+        if (cfg.model) conv.model = cfg.model;
+        conv.subAgentModel = cfg.subAgentModel || null;
         this.wecomSessions.set(wecomKey, conv.id);
         this.evictIfNeeded(wecomKey);
         await this.replyFinal(frame, streamId, '✅ 已开启新对话');

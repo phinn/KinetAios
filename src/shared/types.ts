@@ -202,6 +202,7 @@ export type AppSettings = {
   // installing the CLI, else the engine just errors "找不到 CLI". Direct never needs this.
   enableCliEngines: boolean;
   defaultEngine: EngineKind; // 新会话默认引擎(direct / directV2 / claudeCode / codex)
+  subAgentModel: string;    // 子 agent (dispatch_agent) 默认模型(空 = 跟随主 agent 模型)
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default
   priceOutPerMTok: number;
   presetId: string;
@@ -261,6 +262,8 @@ export type WeComBotConfig = {
   secret: string;         // 机器人 Secret(企业微信后台获取)
   defaultCwd: string;     // 默认工作目录(空 = 用户主目录)
   engine: EngineKind;     // 处理企信消息使用的引擎(默认 direct)
+  model: string;          // 该频道使用的模型(空 = 使用全局默认模型)
+  subAgentModel: string;  // 子 agent / dispatch_agent 使用的模型(空 = 跟随主模型)
   streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
 };
 
@@ -271,6 +274,8 @@ export type FeishuBotConfig = {
   appSecret: string;      // 飞书应用 App Secret(开发者后台获取)
   defaultCwd: string;     // 默认工作目录(空 = 用户主目录)
   engine: EngineKind;     // 处理飞书消息使用的引擎(默认 direct)
+  model: string;          // 该频道使用的模型(空 = 使用全局默认模型)
+  subAgentModel: string;  // 子 agent / dispatch_agent 使用的模型(空 = 跟随主模型)
   streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
 };
 
@@ -545,6 +550,9 @@ export type Conversation = {
   /** 飞书会话映射 key(格式: `feishu:${open_id}`)。
    *  非空 = 该会话由飞书机器人创建,用于按用户复用会话避免每条消息新建频道。 */
   feishuKey?: string | null;
+  /** 子 agent (dispatch_agent) 使用的模型覆盖。
+   *  来源:频道配置(飞书/企微)或全局设置。空 = 跟随主 agent 模型。 */
+  subAgentModel?: string | null;
 };
 
 // 一个目录条目(files 窗口的文件树用)。path 是绝对路径(下次 listDir 的入参)。

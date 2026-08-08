@@ -54,6 +54,7 @@ export class TaskManager {
       id: rid(),
       engine: eng,
       model: getSettings().model,
+      subAgentModel: getSettings().subAgentModel || null,
       cwd,
       createdAt: Date.now(),
       updatedAt: Date.now(),

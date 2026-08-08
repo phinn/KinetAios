@@ -1236,12 +1236,17 @@ ${failedDetail || '  (无)'}
         if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens });
         return parts.join('\n');
       },
-      spawn: async ({ prompt: sub, signal: childSignal, engine, scope }) => {
+      spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
         // 跨引擎子任务(v2 也支持调用 claude/codex 一次性任务)
         if (engine === 'claudeCode' || engine === 'codex') {
           const { runCliOneShot } = await import('./engines');
           return await runCliOneShot(engine, sub, conv.cwd, childSignal);
         }
+        // 子 agent model 覆盖:优先级 = LLM 传参 > 频道配置(conv.subAgentModel) > 全局设置 > 主 agent。
+        // / Sub-agent model: LLM param > channel config > global setting > main agent.
+        const effectiveModel = model || conv.subAgentModel || getSettings().subAgentModel || undefined;
+        const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
+        const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
         // Direct 子任务:只读工具、独立上下文。
         // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
         // AbortSignal.any 在 Node 20+ 可用;旧版 fallback 到手动 AbortController。
@@ -1258,8 +1263,8 @@ ${failedDetail || '  (无)'}
         const { historyText } = await resolveSpawnHistory({
           scope: scopeResolved,
           parentHistory: conv.directHistory,
-          provider,
-          snap,
+          provider: subProvider,
+          snap: subSnap,
           signal: subAc.signal,
           onEvent,
         });
@@ -1267,10 +1272,10 @@ ${failedDetail || '  (无)'}
           ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
           : sub;
         const out = await runAgentLoop({
-          provider,
+          provider: subProvider,
           tools: readOnlyTools(),
           systemPrompt: SUBAGENT_PROMPT,
-          snapshot: snap,
+          snapshot: subSnap,
           userInput: finalPrompt,
           history: [], // P1:scope 已合并到 userInput,保持空 history
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },

@@ -333,9 +333,11 @@ class DirectEngine implements Engine {
         if (engine === 'claudeCode' || engine === 'codex') {
           return await runCliOneShot(engine, sub, conv.cwd, childSignal);
         }
-        // 子 agent model 覆盖:若指定了 model,构建新 snap + provider;否则复用主 agent 的。
-        const subSnap = model ? { ...snap, model } : snap;
-        const subProvider = model ? currentProvider(subSnap) : provider;
+        // 子 agent model 覆盖:优先级 = LLM 传参 > 频道配置(conv.subAgentModel) > 全局设置 > 主 agent。
+        // / Sub-agent model: LLM param > channel config > global setting > main agent.
+        const effectiveModel = model || conv.subAgentModel || getSettings().subAgentModel || undefined;
+        const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
+        const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
         // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
         const subAc = new AbortController();
         const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);

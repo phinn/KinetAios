@@ -559,6 +559,9 @@ const ZH_CN: Dict = {
   'settings.plan': '计划模式(只规划不执行)',
   'settings.cli': '启用 Claude Code / Codex 引擎(需本地装好 CLI,默认关)',
   'settings.defaultEngine': '默认引擎(新建会话时使用)',
+  'settings.subAgentModel': '子 Agent 模型',
+  'settings.subAgentModelPh': '如 glm-4-flash(空 = 跟随主模型)',
+  'settings.subAgentModel.desc': 'dispatch_agent / spawn_team 子任务使用的模型。空 = 跟随主 Agent 模型。可用便宜模型降低子任务成本。',
   'settings.voiceAutoSend': '语音实时输入(说话自动转写并发送,无需手动点发送)',
   'settings.price': '价格(USD / 1M tokens)·0=内置默认',
   'settings.save': '保存',
@@ -626,6 +629,10 @@ const ZH_CN: Dict = {
   'settings.feishu.streamReply': '流式回复',
   'settings.feishu.cwd': '默认工作目录',
   'settings.feishu.cwdPh': '空 = 用户主目录',
+  'settings.channel.model': '频道模型',
+  'settings.channel.modelPh': '空 = 使用全局默认模型',
+  'settings.channel.subAgentModel': '子 Agent 模型',
+  'settings.channel.subAgentModelPh': '空 = 跟随频道主模型',
 
   // ── 插件管理(动态渲染部分)──
   'settings.plugin.title': '插件管理',
@@ -1459,6 +1466,9 @@ const EN: Dict = {
   'settings.plan': 'Plan mode (plan only, no execution)',
   'settings.cli': 'Enable Claude Code / Codex engines (requires local CLI, off by default)',
   'settings.defaultEngine': 'Default engine (used for new conversations)',
+  'settings.subAgentModel': 'Sub-agent model',
+  'settings.subAgentModelPh': 'e.g. glm-4-flash (empty = follow main model)',
+  'settings.subAgentModel.desc': 'Model used by dispatch_agent / spawn_team sub-tasks. Empty = follow main agent model. Use a cheaper model to reduce sub-task costs.',
   'settings.voiceAutoSend': 'Live voice input (real-time transcription + auto-send, no manual submit)',
   'settings.price': 'Price (USD / 1M tokens) · 0 = built-in default',
   'settings.save': 'Save',
@@ -1526,6 +1536,10 @@ const EN: Dict = {
   'settings.feishu.streamReply': 'Stream reply',
   'settings.feishu.cwd': 'Default working directory',
   'settings.feishu.cwdPh': 'Empty = user home',
+  'settings.channel.model': 'Channel model',
+  'settings.channel.modelPh': 'Empty = use global default model',
+  'settings.channel.subAgentModel': 'Sub-agent model',
+  'settings.channel.subAgentModelPh': 'Empty = follow channel main model',
 
   // ── Plugins (dynamic render) ──
   'settings.plugin.title': 'Plugins',
@@ -2360,6 +2374,9 @@ const ZH_TW: Dict = {
   'settings.plan': '計畫模式(只規劃不執行)',
   'settings.cli': '啟用 Claude Code / Codex 引擎(需本地裝好 CLI,預設關)',
   'settings.defaultEngine': '預設引擎(新建對話時使用)',
+  'settings.subAgentModel': '子 Agent 模型',
+  'settings.subAgentModelPh': '如 glm-4-flash(空 = 跟隨主模型)',
+  'settings.subAgentModel.desc': 'dispatch_agent / spawn_team 子任務使用的模型。空 = 跟隨主 Agent 模型。可用便宜模型降低子任務成本。',
   'settings.voiceAutoSend': '語音即時輸入(說話自動轉寫並傳送,無需手動點傳送)',
   'settings.price': '價格(USD / 1M tokens)·0=內建預設',
   'settings.save': '儲存',
@@ -2427,6 +2444,10 @@ const ZH_TW: Dict = {
   'settings.feishu.streamReply': '串流回覆',
   'settings.feishu.cwd': '預設工作目錄',
   'settings.feishu.cwdPh': '空 = 使用者主目錄',
+  'settings.channel.model': '頻道模型',
+  'settings.channel.modelPh': '空 = 使用全域預設模型',
+  'settings.channel.subAgentModel': '子 Agent 模型',
+  'settings.channel.subAgentModelPh': '空 = 跟隨頻道主模型',
 
   // ── 外掛管理（動態渲染）──
   'settings.plugin.title': '外掛管理',
@@ -3260,6 +3281,9 @@ const JA: Dict = {
   'settings.plan': '計画モード(計画のみで実行しない)',
   'settings.cli': 'Claude Code / Codex エンジンを有効化(ローカル CLI 必要、デフォルトオフ)',
   'settings.defaultEngine': 'デフォルトエンジン(新規会話で使用)',
+  'settings.subAgentModel': 'サブエージェントモデル',
+  'settings.subAgentModelPh': '例: glm-4-flash(空 = メインモデルに追随)',
+  'settings.subAgentModel.desc': 'dispatch_agent / spawn_team サブタスクが使用するモデル。空 = メインエージェントモデルに追随。安価なモデルでサブタスクコストを削減。',
   'settings.voiceAutoSend': 'リアルタイム音声入力(話しながら自動文字起こし＆送信、手動送信不要)',
   'settings.price': '価格(USD / 1M tokens)・0=内蔵デフォルト',
   'settings.save': '保存',
@@ -3327,6 +3351,10 @@ const JA: Dict = {
   'settings.feishu.streamReply': 'ストリーミング返信',
   'settings.feishu.cwd': 'デフォルト作業ディレクトリ',
   'settings.feishu.cwdPh': '空 = ユーザーのホームディレクトリ',
+  'settings.channel.model': 'チャネルモデル',
+  'settings.channel.modelPh': '空 = グローバルデフォルトモデルを使用',
+  'settings.channel.subAgentModel': 'サブエージェントモデル',
+  'settings.channel.subAgentModelPh': '空 = チャネルメインモデルに追随',
 
   // ── プラグイン管理（動的レンダリング）──
   'settings.plugin.title': 'プラグイン管理',
