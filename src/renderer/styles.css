@@ -4720,6 +4720,99 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   color: var(--text);
 }
 
+/* Phase 2: 重置视图按钮 */
+.nexus-reset {
+  position: absolute;
+  top: 16px; left: 56px;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.nexus-reset:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+/* Phase 2: Overlay Markdown 样式 */
+.nx-md-code {
+  background: rgba(0,0,0,0.4);
+  border: 1px solid var(--border-soft);
+  border-radius: 6px;
+  padding: 8px 10px;
+  margin: 6px 0;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--accent);
+  overflow-x: auto;
+  white-space: pre;
+  line-height: 1.5;
+}
+
+code.nx-md-inline {
+  background: rgba(232,179,57,0.1);
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+  font-size: 11px;
+  color: var(--accent);
+}
+
+.nx-md-h1, .nx-md-h2, .nx-md-h3 {
+  font-weight: 600;
+  margin: 8px 0 4px;
+  color: var(--text);
+}
+
+.nx-md-h1 { font-size: 15px; }
+.nx-md-h2 { font-size: 13px; }
+.nx-md-h3 { font-size: 12px; }
+
+.nx-md-li {
+  margin-left: 4px;
+  line-height: 1.6;
+}
+
+.nx-msg-ai strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.nx-msg-ai a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.nx-msg-ai a:hover {
+  text-decoration: underline;
+}
+
+/* 滚动条优化 / Custom scrollbar for overlay panel body */
+.nx-panel-body::-webkit-scrollbar {
+  width: 4px;
+}
+
+.nx-panel-body::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.nx-panel-body::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 2px;
+}
+
+.nx-panel-body::-webkit-scrollbar-thumb:hover {
+  background: var(--text-faint);
+}
+
 /* 提示文字 */
 .nexus-hint {
   position: absolute;

@@ -4,11 +4,10 @@
 // 每个 Agent 是轨道上一颗发光节点,围绕中央意图核心运转。
 // 数据流以粒子形式在轨道间流动,实时呈现 Agent 的思维过程。
 //
-// Phase 1.5: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
+// Phase 2: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
 //          + hover tooltip + 双击跳转 + 右键菜单 + 自适应缩放 + 快捷指令
-//
-// Design: agents orbit a central "intent core". Data flows as particles.
-// Phase 1.5: SVG orbits + Canvas particles + DOM overlay + interactions. Zero dependencies.
+//          + 滚轮缩放/拖拽平移 + overlay 流式滚动跟随 + 节点连线
+// Phase 2: SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan. Zero dependencies.
 
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
@@ -40,6 +39,41 @@ function tr(key: string, params?: Record<string, string | number>): string {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── 轻量 Markdown 渲染 / Lightweight Markdown rendering ──
+// 支持:代码块(```...```),行内代码(`code`),粗体(**text**),标题(# ),
+// 无序列表(- ),链接 [text](url) — 足够 overlay 预览用。
+// Supports: code blocks, inline code, bold, headings, lists, links — enough for overlay preview.
+function simpleMarkdown(text: string): string {
+  let html = esc(text);
+
+  // 代码块 / Code blocks (```...```)
+  html = html.replace(/```(\w*)\n?([\s\S]*?)```/g, (_m, _lang, code) =>
+    `<pre class="nx-md-code">${code.trim()}</pre>`
+  );
+
+  // 行内代码 / Inline code
+  html = html.replace(/`([^`]+)`/g, '<code class="nx-md-inline">$1</code>');
+
+  // 粗体 / Bold
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+
+  // 标题 / Headings
+  html = html.replace(/^### (.+)$/gm, '<div class="nx-md-h3">$1</div>');
+  html = html.replace(/^## (.+)$/gm, '<div class="nx-md-h2">$1</div>');
+  html = html.replace(/^# (.+)$/gm, '<div class="nx-md-h1">$1</div>');
+
+  // 无序列表 / Unordered list items
+  html = html.replace(/^- (.+)$/gm, '<div class="nx-md-li">• $1</div>');
+
+  // 链接 / Links
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+
+  // 换行 / Line breaks
+  html = html.replace(/\n/g, '<br>');
+
+  return html;
 }
 
 // 引擎颜色 / Engine colors (matching existing palette)
@@ -99,6 +133,16 @@ let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let animationId = 0;
 let particles: Particle[] = [];
+
+// ── 视图变换(缩放/平移) / View transform (zoom/pan) ──
+let viewScale = 1;
+let viewOffsetX = 0;
+let viewOffsetY = 0;
+let isDragging = false;
+let dragStartX = 0;
+let dragStartY = 0;
+let dragStartOffX = 0;
+let dragStartOffY = 0;
 
 // ── 粒子系统 / Particle system ──
 // 当 Agent 正在运行时,从核心向节点发射粒子,模拟"意图流向 Agent"。
@@ -211,6 +255,9 @@ export function renderNexus(): void {
       <button class="nexus-back" id="nexus-back" title="${esc(tr('nexus.backToChat'))}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       </button>
+      <button class="nexus-reset" id="nexus-reset" title="${esc(tr('nexus.resetView'))}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
       <div class="nexus-hint" id="nexus-hint">${esc(tr('nexus.hint'))}</div>
       <div class="nexus-tooltip" id="nexus-tooltip" hidden></div>
       <div class="nexus-ctx-menu" id="nexus-ctx-menu" hidden></div>
@@ -242,11 +289,69 @@ export function renderNexus(): void {
   if (arcSend) arcSend.onclick = sendArcMessage;
   if (backBtn) backBtn.onclick = () => { if (cb) cb.selectChat(selectedNodeId || cb.order()[0] || ''); };
 
+  // Phase 2: 重置视图按钮 / Reset view button
+  const resetBtn = document.getElementById('nexus-reset');
+  if (resetBtn) resetBtn.onclick = () => {
+    viewScale = 1; viewOffsetX = 0; viewOffsetY = 0;
+    applyViewTransform();
+  };
+
   // 全局关闭右键菜单 / Global click closes context menu
   document.getElementById('nexus-stage')?.addEventListener('click', () => {
     const menu = document.getElementById('nexus-ctx-menu');
     if (menu) menu.hidden = true;
   });
+
+  // ── Phase 2: 滚轮缩放 + 拖拽平移 / Wheel zoom + drag pan ──
+  const stage = document.querySelector('.nexus-stage') as HTMLElement | null;
+  const svgWrap = document.getElementById('nexus-svg-wrap');
+
+  if (stage && svgWrap) {
+    // 滚轮缩放 / Wheel zoom
+    stage.addEventListener('wheel', (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? 0.9 : 1.1;
+      viewScale = Math.max(0.3, Math.min(3, viewScale * delta));
+      applyViewTransform();
+    }, { passive: false });
+
+    // 拖拽平移 / Drag pan (在 SVG 层上)
+    svgWrap.addEventListener('mousedown', (e: MouseEvent) => {
+      // 只在点击空白处(非节点)时启动拖拽 / Only start drag on empty space
+      const target = e.target as SVGElement;
+      if (target.hasAttribute('data-nid')) return;
+      isDragging = true;
+      dragStartX = e.clientX;
+      dragStartY = e.clientY;
+      dragStartOffX = viewOffsetX;
+      dragStartOffY = viewOffsetY;
+      svgWrap.style.cursor = 'grabbing';
+    });
+
+    svgWrap.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!isDragging) return;
+      viewOffsetX = dragStartOffX + (e.clientX - dragStartX);
+      viewOffsetY = dragStartOffY + (e.clientY - dragStartY);
+      applyViewTransform();
+    });
+
+    const endDrag = () => {
+      isDragging = false;
+      if (svgWrap) svgWrap.style.cursor = 'default';
+    };
+    svgWrap.addEventListener('mouseup', endDrag);
+    svgWrap.addEventListener('mouseleave', endDrag);
+
+    // 双击空白重置视图 / Double-click empty space resets view
+    svgWrap.addEventListener('dblclick', (e: MouseEvent) => {
+      const target = e.target as SVGElement;
+      if (target.hasAttribute('data-nid')) return;
+      viewScale = 1;
+      viewOffsetX = 0;
+      viewOffsetY = 0;
+      applyViewTransform();
+    });
+  }
 
   // 开始动画 / Start animation
   startAnimation();
@@ -343,6 +448,14 @@ let svgSize = 400;
 let svgCx = 200;
 let svgCy = 200;
 
+// ── 应用视图变换 / Apply view transform ──
+function applyViewTransform(): void {
+  const svg = document.querySelector('.nexus-svg-wrap svg') as SVGSVGElement | null;
+  if (svg) {
+    svg.style.transform = `translate(calc(-50% + ${viewOffsetX}px), calc(-50% + ${viewOffsetY}px)) scale(${viewScale})`;
+  }
+}
+
 // ── 渲染 SVG 轨道 / Render SVG orbits ──
 function renderSVG(): void {
   const wrap = document.getElementById('nexus-svg-wrap');
@@ -431,6 +544,33 @@ function renderSVG(): void {
   svg += `<circle cx="${cx}" cy="${cy}" r="4" fill="#e8b339"/>`;
   // 核心标签 / Core label
   svg += `<text x="${cx}" y="${cy + coreR + 16}" fill="rgba(232,179,57,0.5)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="1">INTENT CORE</text>`;
+
+  // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
+  for (const ring of rings) {
+    for (const node of ring.nodes) {
+      if (node.state !== 'running') continue;
+      const nx = cx + node.radius * Math.cos(node.angle);
+      const ny = cy + node.radius * Math.sin(node.angle);
+      const color = ENGINE_COLORS[node.engine] || '#e8b339';
+      // 虚线连接,带动画 / Dashed line with animation
+      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1" opacity="0.25" stroke-dasharray="3 6">
+        <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1s" repeatCount="indefinite"/>
+      </line>`;
+    }
+  }
+
+  // ── Phase 2: 选中节点 ↔ 核心高亮连线 / Selected ↔ core highlight line ──
+  if (selectedNodeId) {
+    for (const ring of rings) {
+      const node = ring.nodes.find(n => n.id === selectedNodeId);
+      if (node) {
+        const nx = cx + node.radius * Math.cos(node.angle);
+        const ny = cy + node.radius * Math.sin(node.angle);
+        const color = ENGINE_COLORS[node.engine] || '#e8b339';
+        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1.5" opacity="0.4"/>`;
+      }
+    }
+  }
 
   // ── Agent 节点 / Agent nodes ──
   for (const ring of rings) {
@@ -696,17 +836,17 @@ function updateOverlay(): void {
     return;
   }
 
-  // 渲染最近几轮对话 / Render recent turns
-  const recentTurns = conv.turns.slice(-5);
+  // 渲染最近几轮对话 / Render recent turns (full content, no truncation)
+  const recentTurns = conv.turns.slice(-8);
   let turnsHTML = '';
   for (const turn of recentTurns) {
     // 用户消息 / User message
     if (turn.prompt) {
-      turnsHTML += `<div class="nx-msg nx-msg-user">${esc(turn.prompt.slice(0, 200))}${turn.prompt.length > 200 ? '…' : ''}</div>`;
+      turnsHTML += `<div class="nx-msg nx-msg-user">${esc(turn.prompt)}</div>`;
     }
-    // AI 回复 / AI response
+    // AI 回复 / AI response (完整内容 + 基础 Markdown) / Full content + basic Markdown
     if (turn.answer) {
-      turnsHTML += `<div class="nx-msg nx-msg-ai">${esc(turn.answer.slice(0, 300))}${turn.answer.length > 300 ? '…' : ''}</div>`;
+      turnsHTML += `<div class="nx-msg nx-msg-ai">${simpleMarkdown(turn.answer)}</div>`;
     }
     // 工具调用摘要 / Tool call summary
     if (turn.steps && turn.steps.length > 0) {
@@ -714,7 +854,7 @@ function updateOverlay(): void {
       turnsHTML += `<div class="nx-msg nx-msg-tool">🔧 ${esc(toolNames)}</div>`;
     }
     if (turn.error) {
-      turnsHTML += `<div class="nx-msg nx-msg-error">⚠ ${esc(turn.error.slice(0, 150))}</div>`;
+      turnsHTML += `<div class="nx-msg nx-msg-error">⚠ ${esc(turn.error)}</div>`;
     }
   }
 
@@ -728,11 +868,17 @@ function updateOverlay(): void {
         <span class="nx-panel-title">${esc(conv.customTitle || conv.id.slice(0, 8))}</span>
         <span class="nx-panel-state">${esc(stateText)}</span>
       </div>
-      <div class="nx-panel-body">
+      <div class="nx-panel-body" id="nx-panel-body">
         ${turnsHTML || `<div class="nx-empty-turns">${esc(tr('nexus.noMessages'))}</div>`}
       </div>
     </div>
   `;
+
+  // Phase 2: 自动滚动到底部(流式回复时跟随) / Auto-scroll to bottom during streaming
+  const panelBody = document.getElementById('nx-panel-body');
+  if (panelBody) {
+    panelBody.scrollTop = panelBody.scrollHeight;
+  }
 }
 
 // ── 增量更新(流式事件到达时) / Incremental update (on streaming events) ──
