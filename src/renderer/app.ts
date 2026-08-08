@@ -4884,6 +4884,7 @@ function showNexus() {
     convs: () => convs,
     order: () => order,
     selectedId: () => selectedId,
+    changeCwd: (convId, newCwd) => { void api.setCwd(convId, newCwd); },
   });
   setNexusLang(lang);
   renderNexus();

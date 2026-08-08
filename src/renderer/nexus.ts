@@ -9,7 +9,8 @@
 //          + 滚轮缩放/拖拽平移 + overlay 流式滚动跟随 + 节点连线
 // Phase 3: 搜索过滤 + overlay 折叠 + 键盘快捷键(Tab/Esc)
 // Phase 4: 轨道折叠/展开 + 节点状态徽标 + 视图状态持久化 + 拖拽优化 + 性能降级
-// SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan + fold + badges. Zero dependencies.
+// Phase 5: Mini-map 缩略图导航 + 多选批量操作 + 节点拖拽到不同轨道
+// SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan + fold + badges + minimap + multiselect. Zero dependencies.
 
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
@@ -29,6 +30,8 @@ export interface NexusCallbacks {
   convs: () => Map<string, Conversation>;
   order: () => string[];
   selectedId: () => string | null;
+  // Phase 5: 移动会话到不同 cwd 轨道 / Move conversation to a different cwd orbit
+  changeCwd: (convId: string, newCwd: string) => void;
 }
 
 let cb: NexusCallbacks | null = null;
@@ -154,16 +157,30 @@ let overlayCollapsed = false;
 // ── Phase 4: 轨道折叠状态 / Orbit fold state ──
 let foldedCwds = new Set<string>();
 
+// ── Phase 5: 多选状态 / Multi-select state ──
+let selectedNodeIds = new Set<string>();
+let isMultiSelectDrag = false; // 正在框选 / Box-select in progress
+let boxSelectStartX = 0;
+let boxSelectStartY = 0;
+
+// ── Phase 5: 节点拖拽到不同轨道 / Node drag to different orbit ──
+let draggingNodeId: string | null = null;
+let dragHoverCwd: string | null = null; // 拖拽时悬停的目标轨道 / Hovered target orbit during drag
+
 // ── Phase 4: 视图状态持久化 / View state persistence ──
 // 用 sessionStorage 保存缩放/平移/折叠状态,刷新页面不丢。
 // Persist zoom/pan/fold in sessionStorage so page refresh won't lose them.
+// ── Phase 5: Mini-map 显隐 / Mini-map visibility ──
+let minimapVisible = true;
+
 const SS_KEY = 'nexus-view-state';
-interface NexusViewState { scale: number; offsetX: number; offsetY: number; folded: string[]; }
+interface NexusViewState { scale: number; offsetX: number; offsetY: number; folded: string[]; minimap: boolean; }
 function saveViewState(): void {
   try {
     const state: NexusViewState = {
       scale: viewScale, offsetX: viewOffsetX, offsetY: viewOffsetY,
       folded: Array.from(foldedCwds),
+      minimap: minimapVisible,
     };
     sessionStorage.setItem(SS_KEY, JSON.stringify(state));
   } catch { /* sessionStorage 可能不可用 */
@@ -178,6 +195,7 @@ function loadViewState(): void {
     viewOffsetX = s.offsetX ?? 0;
     viewOffsetY = s.offsetY ?? 0;
     foldedCwds = new Set(s.folded || []);
+    minimapVisible = s.minimap ?? true;
   } catch { /* ignore */
 }
 }
@@ -326,9 +344,24 @@ export function renderNexus(): void {
       <button class="nexus-collapse" id="nexus-collapse" title="${esc(tr('nexus.toggleOverlay'))}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       </button>
+      <button class="nexus-minimap-toggle" id="nexus-minimap-toggle" title="${esc(tr('nexus.toggleMinimap'))}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 9h6v6H9z" opacity="0.4"/></svg>
+      </button>
       <div class="nexus-hint" id="nexus-hint">${esc(tr('nexus.hint'))}</div>
       <div class="nexus-tooltip" id="nexus-tooltip" hidden></div>
       <div class="nexus-ctx-menu" id="nexus-ctx-menu" hidden></div>
+      <!-- Phase 5: Mini-map 缩略图导航 / Mini-map navigator -->
+      <div class="nexus-minimap" id="nexus-minimap" ${minimapVisible ? '' : 'style="display:none"'}>
+        <div class="nexus-minimap-title">${esc(tr('nexus.minimap'))}</div>
+        <div class="nexus-minimap-canvas" id="nexus-minimap-canvas"></div>
+      </div>
+      <!-- Phase 5: 多选工具栏 / Multi-select toolbar -->
+      <div class="nexus-multi-toolbar" id="nexus-multi-toolbar" hidden>
+        <span class="nx-multi-count" id="nx-multi-count"></span>
+        <button class="nx-multi-btn" data-maction="openAll">${esc(tr('nexus.multiOpen'))}</button>
+        <button class="nx-multi-btn nx-multi-danger" data-maction="cancelAll">${esc(tr('nexus.multiCancel'))}</button>
+        <button class="nx-multi-btn" data-maction="clear">${esc(tr('nexus.multiClear'))}</button>
+      </div>
     </div>
   `;
 
@@ -366,9 +399,12 @@ export function renderNexus(): void {
   if (resetBtn) resetBtn.onclick = () => {
     viewScale = 1; viewOffsetX = 0; viewOffsetY = 0;
     foldedCwds.clear();
+    selectedNodeIds.clear();
+    updateMultiToolbar();
     saveViewState();
     applyViewTransform();
     buildRings();
+    updateMinimap();
   };
 
   // Phase 3: 搜索栏 / Search bar
@@ -387,6 +423,17 @@ export function renderNexus(): void {
     const overlay = document.getElementById('nexus-overlay');
     if (overlay) overlay.style.display = overlayCollapsed ? 'none' : '';
     collapseBtn.style.color = overlayCollapsed ? 'var(--accent)' : '';
+  };
+
+  // Phase 5: Mini-map 显隐切换 / Mini-map visibility toggle
+  const minimapToggle = document.getElementById('nexus-minimap-toggle');
+  if (minimapToggle) minimapToggle.onclick = () => {
+    minimapVisible = !minimapVisible;
+    const mm = document.getElementById('nexus-minimap');
+    if (mm) mm.style.display = minimapVisible ? '' : 'none';
+    minimapToggle.style.color = minimapVisible ? '' : 'var(--text-faint)';
+    saveViewState();
+    if (minimapVisible) updateMinimap();
   };
 
   // Phase 3: 键盘快捷键 / Keyboard shortcuts
@@ -483,11 +530,124 @@ export function renderNexus(): void {
       applyViewTransform();
       saveViewState();
     });
+
+    // ── Phase 5: 节点拖拽到不同轨道 / Node drag to different orbit ──
+    // 在 SVG 节点 mousedown 时开始拖拽(如果拖到轨道标签上则移动 cwd)
+    svgWrap.addEventListener('mousedown', (e: MouseEvent) => {
+      const target = e.target as SVGElement;
+      const nid = target.getAttribute('data-nid');
+      if (!nid) return;
+      // Shift / Cmd+click 进入多选模式 / Shift/Cmd+click for multi-select
+      if (e.shiftKey || e.metaKey || e.ctrlKey) {
+        e.preventDefault();
+        if (selectedNodeIds.has(nid)) {
+          selectedNodeIds.delete(nid);
+        } else {
+          selectedNodeIds.add(nid);
+        }
+        updateMultiToolbar();
+        return;
+      }
+      // 单选时清除多选 / Clear multi-select on single pick
+      selectedNodeIds.clear();
+      updateMultiToolbar();
+      // 开始潜在拖拽 / Start potential drag
+      draggingNodeId = nid;
+      dragHoverCwd = null;
+    });
+
+    // 全局 mouseup 处理拖拽放置 / Global mouseup for drag drop
+    const handleNodeDrop = (e: MouseEvent) => {
+      if (!draggingNodeId) return;
+      // 检查是否落在轨道标签上 / Check if dropped on an orbit label
+      const el = document.elementFromPoint(e.clientX, e.clientY) as SVGElement | null;
+      const targetCwd = el?.getAttribute('data-fold') || el?.getAttribute('data-orbit-cwd');
+      if (targetCwd && cb) {
+        // 移动会话到新 cwd 轨道 / Move conversation to new cwd orbit
+        const node = rings.flatMap(r => r.nodes).find(n => n.id === draggingNodeId);
+        if (node && node.conv.cwd !== targetCwd) {
+          cb.changeCwd(draggingNodeId, targetCwd);
+          // rebuild rings after cwd change
+          buildRings();
+          updateOverlay();
+          updateMinimap();
+        }
+      }
+      // 清理拖拽状态 / Clean up drag state
+      if (dragHoverCwd) {
+        const hoverLabel = svgWrap.querySelector(`[data-orbit-cwd="${CSS.escape(dragHoverCwd)}"]`);
+        if (hoverLabel) hoverLabel.classList.remove('nx-drag-target');
+        dragHoverCwd = null;
+      }
+      draggingNodeId = null;
+    };
+    document.addEventListener('mouseup', handleNodeDrop, { once: true });
+
+    // 拖拽时高亮目标轨道 / Highlight target orbit during drag
+    svgWrap.addEventListener('mousemove', (e: MouseEvent) => {
+      if (!draggingNodeId) return;
+      const el = e.target as SVGElement;
+      const cwd = el.getAttribute('data-fold') || el.getAttribute('data-orbit-cwd');
+      if (cwd && cwd !== dragHoverCwd) {
+        // 移除旧高亮 / Remove old highlight
+        if (dragHoverCwd) {
+          const old = svgWrap.querySelector(`[data-orbit-cwd="${CSS.escape(dragHoverCwd)}"]`);
+          if (old) old.classList.remove('nx-drag-target');
+        }
+        dragHoverCwd = cwd;
+        const newEl = svgWrap.querySelector(`[data-orbit-cwd="${CSS.escape(cwd)}"]`);
+        if (newEl) newEl.classList.add('nx-drag-target');
+      }
+    });
+  }
+
+  // ── Phase 5: Mini-map 事件 / Mini-map events ──
+  const minimapEl = document.getElementById('nexus-minimap');
+  const minimapCanvas = document.getElementById('nexus-minimap-canvas');
+  if (minimapCanvas) {
+    let minimapDragging = false;
+    minimapCanvas.addEventListener('mousedown', (e: MouseEvent) => {
+      minimapDragging = true;
+      handleMinimapClick(e);
+    });
+    minimapCanvas.addEventListener('mousemove', (e: MouseEvent) => {
+      if (minimapDragging) handleMinimapClick(e);
+    });
+    document.addEventListener('mouseup', () => { minimapDragging = false; }, { once: true });
+  }
+
+  // Phase 5: 多选工具栏按钮 / Multi-select toolbar buttons
+  const multiToolbar = document.getElementById('nexus-multi-toolbar');
+  if (multiToolbar) {
+    multiToolbar.addEventListener('click', (e: MouseEvent) => {
+      const btn = (e.target as HTMLElement).closest('[data-maction]') as HTMLElement | null;
+      if (!btn || !cb) return;
+      const action = btn.dataset.maction;
+      switch (action) {
+        case 'openAll':
+          // 多选时打开第一个 / Open first selected when multiple
+          if (selectedNodeIds.size > 0) {
+            const first = Array.from(selectedNodeIds)[0];
+            selectedNodeId = first;
+            cb.selectChat(first);
+            updateOverlay();
+          }
+          break;
+        case 'cancelAll':
+          selectedNodeIds.forEach(id => cb!.cancel(id));
+          break;
+        case 'clear':
+          selectedNodeIds.clear();
+          updateMultiToolbar();
+          break;
+      }
+    });
   }
 
   // 开始动画 / Start animation
   startAnimation();
   updateOverlay();
+  updateMinimap();
 }
 
 // ── 发送弧形输入消息 / Send arc input message ──
@@ -583,6 +743,9 @@ function animate(): void {
   // Phase 4: 性能降级 — 大量节点时降低发射频率 / Degrade frequency under heavy load
   const emitChance = isHeavyLoad() ? 0.05 : 0.15;
   if (Math.random() < emitChance) emitParticlesToRunning();
+
+  // Phase 5: 定期更新 Mini-map(降频) / Update minimap at lower frequency
+  if (svgFrameSkip % 6 === 0) updateMinimap();
 }
 
 // ── SVG 尺寸缓存 / Cached SVG dimensions ──
@@ -692,7 +855,7 @@ function renderSVG(): void {
     const labelX = cx + r * Math.cos(-Math.PI / 2);
     const labelY = cy + r * Math.sin(-Math.PI / 2) - 8;
     const foldIcon = isFolded ? '▸' : '▾';
-    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.45'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="0.5" style="cursor:pointer" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
+    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.45'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="0.5" style="cursor:pointer" data-orbit-cwd="${esc(ring.cwd)}" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
   }
 
   // ── 核心意图球 / Central intent core ──
@@ -1036,6 +1199,114 @@ function emitParticlesToRunning(): void {
   }
 }
 
+
+// ── Phase 5: Mini-map 渲染 / Mini-map render ──
+// 简化的 SVG 缩略图:轨道圆环 + 节点点位 + 视口框。
+// Simplified SVG thumbnail: orbit rings + node dots + viewport rect.
+function updateMinimap(): void {
+  const el = document.getElementById('nexus-minimap-canvas');
+  if (!el) return;
+  if (rings.length === 0) {
+    el.innerHTML = `<div class="nx-minimap-empty">—</div>`;
+    return;
+  }
+
+  const maxR = Math.max(...rings.map(r => r.nodes[0]?.radius || 0), 100) + 40;
+  const miniSize = Math.max(maxR * 2, 200);
+  const miniCx = miniSize / 2;
+  const miniCy = miniSize / 2;
+  const scale = miniSize / svgSize; // 映射到 minimap 坐标 / Map to minimap coords
+
+  let svg = `<svg viewBox="0 0 ${miniSize} ${miniSize}" width="100%" height="100%">`;
+
+  // 轨道圆环 / Orbit circles
+  for (const ring of rings) {
+    if (foldedCwds.has(ring.cwd)) continue;
+    const r = (ring.nodes[0]?.radius || 0) * scale;
+    if (r > 0) {
+      svg += `<circle cx="${miniCx}" cy="${miniCy}" r="${r}" fill="none" stroke="rgba(255,255,255,0.08)" stroke-width="1"/>`;
+    }
+    // 节点点位 / Node dots
+    for (const node of ring.nodes) {
+      const nx = miniCx + r * Math.cos(node.angle);
+      const ny = miniCy + r * Math.sin(node.angle);
+      const color = ENGINE_COLORS[node.engine] || '#e8b339';
+      const isSel = node.id === selectedNodeId || selectedNodeIds.has(node.id);
+      const dotR = isSel ? 3 : 2;
+      svg += `<circle cx="${nx}" cy="${ny}" r="${dotR}" fill="${color}" opacity="${isSel ? 1 : 0.6}"/>`;
+    }
+  }
+
+  // 核心 / Core
+  svg += `<circle cx="${miniCx}" cy="${miniCy}" r="3" fill="rgba(232,179,57,0.8)"/>`;
+
+  // 视口指示框 / Viewport indicator rect
+  const stageEl = document.querySelector('.nexus-stage') as HTMLElement | null;
+  if (stageEl) {
+    const sw = stageEl.clientWidth;
+    const sh = stageEl.clientHeight;
+    // 视口在 SVG 坐标系中的大小 / Viewport size in SVG coords
+    const vpW = (sw / viewScale) * scale;
+    const vpH = (sh / viewScale) * scale;
+    // 视口中心偏移 / Viewport center offset
+    const vpCx = miniCx - viewOffsetX * scale / viewScale;
+    const vpCy = miniCy - viewOffsetY * scale / viewScale;
+    svg += `<rect x="${vpCx - vpW/2}" y="${vpCy - vpH/2}" width="${vpW}" height="${vpH}"
+      fill="rgba(232,179,57,0.05)" stroke="rgba(232,179,57,0.4)" stroke-width="1" stroke-dasharray="3 2"/>`;
+  }
+
+  svg += `</svg>`;
+  el.innerHTML = svg;
+}
+
+// ── Phase 5: Mini-map 点击导航 / Mini-map click navigation ──
+function handleMinimapClick(ev: MouseEvent): void {
+  const el = ev.currentTarget as HTMLElement;
+  const rect = el.getBoundingClientRect();
+  const px = ev.clientX - rect.left;
+  const py = ev.clientY - rect.top;
+  const ratio = el.clientWidth > 0 ? px / el.clientWidth : 0;
+  const ratioY = el.clientHeight > 0 ? py / el.clientHeight : 0;
+
+  // 将 minimap 点击位置映射回 SVG 坐标 / Map minimap click back to SVG coords
+  const svgX = ratio * svgSize;
+  const svgY = ratioY * svgSize;
+
+  // 计算需要的 viewOffset 使 SVG 中心对准点击点 / Compute viewOffset to center on click point
+  const stageEl = document.querySelector('.nexus-stage') as HTMLElement | null;
+  if (!stageEl) return;
+  viewOffsetX = -(svgX - svgCx) * viewScale;
+  viewOffsetY = -(svgY - svgCy) * viewScale;
+  applyViewTransform();
+  saveViewState();
+  updateMinimap();
+}
+
+// ── Phase 5: 多选工具栏更新 / Multi-select toolbar update ──
+function updateMultiToolbar(): void {
+  const toolbar = document.getElementById('nexus-multi-toolbar');
+  const count = document.getElementById('nx-multi-count');
+  if (!toolbar || !count) return;
+  const n = selectedNodeIds.size;
+  if (n < 2) {
+    toolbar.hidden = true;
+    return;
+  }
+  toolbar.hidden = false;
+  count.textContent = String(n);
+
+  // 隐藏 CancelAll 按钮如果没有 running 节点 / Hide cancel button if no running nodes
+  const hasRunning = Array.from(selectedNodeIds).some(id => {
+    const ring = rings.find(r => r.nodes.some(n => n.id === id));
+    const node = ring?.nodes.find(n => n.id === id);
+    return node?.state === 'running';
+  });
+  const cancelBtn = toolbar.querySelector('[data-maction="cancelAll"]') as HTMLElement | null;
+  if (cancelBtn) cancelBtn.style.display = hasRunning ? '' : 'none';
+
+  updateMinimap();
+}
+
 // ── DOM overlay:选中节点的对话流 / DOM overlay: conversation for selected node ──
 function updateOverlay(): void {
   const overlay = document.getElementById('nexus-overlay');
@@ -1117,6 +1388,7 @@ export function refreshNexusNode(conv: Conversation): void {
     requestAnimationFrame(() => {
       nexusOverlayPending = false;
       updateOverlay();
+      updateMinimap();
     });
   }
 }
@@ -1126,4 +1398,5 @@ export function nexusOnConversationChanged(): void {
   buildRings();
   if (cb) selectedNodeId = cb.selectedId();
   updateOverlay();
+  updateMinimap();
 }

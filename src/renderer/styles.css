@@ -4911,3 +4911,169 @@ code.nx-md-inline {
 @keyframes nxHintFade {
   to { opacity: 0.4; }
 }
+
+
+/* ═══ Phase 5: Mini-map / Multi-select / Node-drag styles ═══ */
+
+/* Mini-map toggle button */
+.nexus-minimap-toggle {
+  position: absolute;
+  top: 16px; right: 58px;
+  z-index: 11;
+  width: 36px; height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-dim);
+  cursor: pointer;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3), inset 0 1px 0 var(--glass-hi);
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.nexus-minimap-toggle:hover {
+  background: var(--glass-bg-hover);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.1);
+  transform: translateY(-1px);
+}
+
+.nexus-minimap-toggle:active {
+  transform: translateY(0) scale(0.96);
+}
+
+/* Mini-map container — 右下角液态玻璃缩略图 / Bottom-right liquid glass minimap */
+.nexus-minimap {
+  position: absolute;
+  bottom: 88px;
+  right: 16px;
+  width: 160px;
+  height: 160px;
+  z-index: 9;
+  border-radius: 14px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.nexus-minimap:hover {
+  opacity: 1;
+}
+
+.nexus-minimap-title {
+  font-size: 9px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  padding: 6px 10px 2px;
+  pointer-events: none;
+}
+
+.nexus-minimap-canvas {
+  flex: 1;
+  cursor: crosshair;
+  margin: 0 4px 4px;
+}
+
+.nexus-minimap-canvas svg {
+  width: 100%;
+  height: 100%;
+}
+
+.nx-minimap-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  color: var(--text-faint);
+  font-size: 18px;
+}
+
+/* Multi-select toolbar — 底部浮动 / Bottom floating toolbar */
+.nexus-multi-toolbar {
+  position: absolute;
+  bottom: 152px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 12;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: 22px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  border: 1px solid rgba(232,179,57,0.15);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
+  animation: nxMultiSlideIn 300ms var(--ease-out);
+}
+
+@keyframes nxMultiSlideIn {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px); }
+  to { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+.nx-multi-count {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  min-width: 20px;
+  text-align: center;
+}
+
+.nx-multi-btn {
+  font-size: 11px;
+  padding: 4px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.04);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all var(--dur-fast) var(--ease-out);
+  font-family: inherit;
+}
+
+.nx-multi-btn:hover {
+  background: rgba(255,255,255,0.08);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.12);
+}
+
+.nx-multi-btn:active {
+  transform: scale(0.95);
+}
+
+.nx-multi-danger:hover {
+  background: rgba(226,97,76,0.12);
+  color: var(--err);
+  border-color: rgba(226,97,76,0.2);
+}
+
+/* Node drag target highlight — 拖拽悬停的轨道标签高亮 / Drag-hovered orbit label */
+.nexus-svg-wrap .nx-drag-target {
+  fill: rgba(232,179,57,0.15) !important;
+  stroke: var(--accent) !important;
+  stroke-width: 2 !important;
+  cursor: copy !important;
+}
+
+/* 节点被多选时的高亮 / Multi-selected node highlight */
+.nexus-svg-wrap circle[data-multi="true"] {
+  filter: drop-shadow(0 0 6px var(--accent));
+}
+
+/* Phase 5: hint 更新(包含拖拽/多选) */
+.nexus-hint {
+  bottom: 92px;
+}
