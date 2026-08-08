@@ -21,6 +21,18 @@
   --danger: var(--err);
   --warn: #e8a838;
 
+  /* ═══ 液态玻璃 Surface Tokens ═══
+     Liquid Glass surface tokens — 用于 NEXUS 和其他需要毛玻璃效果的组件。
+     暗色默认:微透白的深灰玻璃 + 强模糊 + 高饱和。
+     各主题覆盖这些变量以获得对应的玻璃风格。 */
+  --glass-bg:       rgba(38,38,44,0.55);
+  --glass-bg-hover: rgba(48,48,56,0.68);
+  --glass-blur:     24px;
+  --glass-blur-lg:  36px;
+  --glass-saturate: 1.6;
+  --glass-bright:   1.02;
+  --glass-hi:       rgba(255,255,255,0.06);
+
   /* ═══ Shadow / Depth System ═══
      4 层投影系统 — 从微弱到深度,模拟 macOS Big Sur+ 的层次感。
      全站通过 var(--shadow-sm/md/lg/xl) 引用,确保一致。 */
@@ -870,19 +882,19 @@ a { color: var(--accent); }
 
 /* ── NEXUS Phase 1.5: Tooltip / Context Menu / Empty State ── */
 
-/* 节点 hover tooltip — 毛玻璃 / Glass tooltip */
+/* 节点 hover tooltip — 液态玻璃 / Liquid glass tooltip */
 .nexus-tooltip {
   position: absolute;
   z-index: 20;
   min-width: 160px;
   max-width: 240px;
   padding: 8px 12px;
-  background: rgba(39,39,45,0.85);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 10px;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 var(--glass-hi);
   pointer-events: none;
   animation: nxTooltipIn 140ms var(--ease-out);
 }
@@ -927,18 +939,18 @@ a { color: var(--accent); }
   margin: 0 2px;
 }
 
-/* 右键上下文菜单 — 毛玻璃 / Glass context menu */
+/* 右键上下文菜单 — 液态玻璃 / Liquid glass context menu */
 .nexus-ctx-menu {
   position: absolute;
   z-index: 30;
   min-width: 140px;
   padding: 4px;
-  background: rgba(39,39,45,0.88);
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border: 1px solid rgba(255,255,255,0.06);
   border-radius: 12px;
-  box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  box-shadow: 0 8px 28px rgba(0,0,0,0.6), inset 0 1px 0 var(--glass-hi);
   animation: nxMenuIn 120ms var(--ease-out);
 }
 
@@ -4494,10 +4506,14 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* 深空径向渐变背景 / Deep-space radial gradient background */
+  /* 液态玻璃底色:多层径向渐变光晕 / Liquid Glass base: multi-layer radial glows
+     关键:丰富的底层色彩让 backdrop-filter 产生真正的"玻璃感",
+     而不是一片死黑。三层光晕(中心金 + 左上紫 + 右下青)+ 深空底色。 */
   background:
-    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(232,179,57,0.04), transparent 70%),
-    radial-gradient(ellipse 100% 80% at 30% 20%, rgba(108,92,231,0.03), transparent 60%),
+    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(232,179,57,0.10), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 20% 25%, rgba(108,92,231,0.08), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(74,197,170,0.06), transparent 50%),
+    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(196,167,255,0.05), transparent 55%),
     var(--bg);
 }
 
@@ -4546,25 +4562,26 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   text-align: center;
   color: var(--text-faint);
   font-size: 13px;
-  background: rgba(33,33,38,0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border-radius: 14px;
-  border: 1px solid rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.3), inset 0 1px 0 var(--glass-hi);
 }
 
-/* 对话面板 — 毛玻璃 / Glass panel */
+/* 对话面板 — 液态玻璃 / Liquid Glass panel */
 .nx-panel {
-  background: rgba(33,33,38,0.72);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border-radius: 16px;
   border: 1px solid rgba(255,255,255,0.06);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   max-height: 100%;
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
 }
 
 .nx-panel-head {
@@ -4573,7 +4590,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   gap: 8px;
   padding: 12px 14px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
-  background: rgba(255,255,255,0.02);
+  background: linear-gradient(180deg, var(--glass-hi), rgba(255,255,255,0.02) 60%);
 }
 
 .nx-panel-dot {
@@ -4649,7 +4666,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   padding: 6px 8px;
 }
 
-/* 弧形输入区 — 底部居中毛玻璃 / Bottom-center glass input */
+/* 弧形输入区 — 底部居中液态玻璃 / Bottom-center liquid glass input */
 .nexus-arc-input {
   position: absolute;
   bottom: 24px;
@@ -4662,11 +4679,11 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   gap: 8px;
   padding: 8px 8px 8px 16px;
   border-radius: 28px;
-  background: rgba(33,33,38,0.72);
-  backdrop-filter: blur(20px) saturate(140%);
-  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border: 1px solid rgba(255,255,255,0.06);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
   transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
 }
 
@@ -4720,10 +4737,11 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   position: absolute;
   width: 34px; height: 34px;
   border-radius: 10px;
-  background: rgba(33,33,38,0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3), inset 0 1px 0 var(--glass-hi);
   color: var(--text-dim);
   display: flex;
   align-items: center;
@@ -4733,7 +4751,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nexus-back:hover, .nexus-reset:hover, .nexus-collapse:hover {
-  background: rgba(50,50,58,0.8);
+  background: var(--glass-bg-hover);
   color: var(--text);
   border-color: rgba(255,255,255,0.1);
   transform: translateY(-1px);
@@ -4761,7 +4779,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   z-index: 11;
 }
 
-/* Phase 3: 搜索栏 — 毛玻璃 / Glass search bar */
+/* Phase 3: 搜索栏 — 液态玻璃 / Liquid glass search bar */
 .nexus-search {
   position: absolute;
   top: 16px; left: 50%;
@@ -4773,10 +4791,11 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   gap: 8px;
   padding: 6px 12px;
   border-radius: 20px;
-  background: rgba(33,33,38,0.72);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 2px 10px rgba(0,0,0,0.3), inset 0 1px 0 var(--glass-hi);
   transition: border-color var(--dur-fast) var(--ease-out);
 }
 
