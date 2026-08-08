@@ -1418,8 +1418,10 @@ function renderHead(conv: Conversation | undefined) {
     cwd.value = '';
     model.value = '';
     model.style.display = 'none';
-    const sm0 = document.getElementById('submodel-input') as HTMLInputElement | null;
+    const sm0 = document.getElementById('chat-submodel') as HTMLInputElement | null;
     if (sm0) { sm0.value = ''; sm0.style.display = 'none'; }
+    const sm0sep = document.getElementById('chat-submodel-sep');
+    if (sm0sep) sm0sep.style.display = 'none';
     const cs0 = document.getElementById('ctx-mode-select');
     if (cs0) cs0.style.display = 'none';
     const pb0 = document.getElementById('btn-persona');
@@ -1447,11 +1449,14 @@ function renderHead(conv: Conversation | undefined) {
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
-  // Sub-agent model picker — same visibility rule as main model
-  const subModelEl = document.getElementById('submodel-input') as HTMLInputElement | null;
-  if (subModelEl) {
-    subModelEl.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
-    if (document.activeElement !== subModelEl) subModelEl.value = conv.subAgentModel ?? '';
+  // Sub-agent model picker in chat-head ch-env — visible for Direct family without profiles
+  const chSubModel = document.getElementById('chat-submodel') as HTMLInputElement | null;
+  const chSubSep = document.getElementById('chat-submodel-sep');
+  if (chSubModel) {
+    const show = isDirectFam && !hasProfiles;
+    chSubModel.style.display = show ? '' : 'none';
+    if (chSubSep) chSubSep.style.display = show ? '' : 'none';
+    if (document.activeElement !== chSubModel) chSubModel.value = conv.subAgentModel ?? '';
   }
   syncEngineSelect(conv);
   const parts: string[] = [];
@@ -3542,23 +3547,13 @@ function closeMoreMenu() {
     if (selectedId) api.setModel(selectedId, model.value.trim());
   });
 
-  // 动态创建子 Agent 模型输入框,插入到 model-input 之后 — 不依赖静态 HTML
-  let subModel: HTMLInputElement | null = document.getElementById('submodel-input') as HTMLInputElement | null;
-  if (!subModel) {
-    subModel = document.createElement('input');
-    subModel.id = 'submodel-input';
-    subModel.className = 'model-pill';
-    subModel.setAttribute('list', 'model-list');
-    subModel.setAttribute('placeholder', '子模型');
-    subModel.setAttribute('title', '子 Agent 模型(空 = 跟随主模型)');
-    subModel.style.maxWidth = '120px';
-    subModel.style.fontSize = '11px';
-    subModel.style.display = 'none';
-    model.insertAdjacentElement('afterend', subModel);
+  // 子 Agent 模型(chat-head ch-env 内)— change 时保存到会话
+  const chSubModel = document.getElementById('chat-submodel') as HTMLInputElement | null;
+  if (chSubModel) {
+    chSubModel.addEventListener('change', () => {
+      if (selectedId) api.setSubModel(selectedId, chSubModel.value.trim());
+    });
   }
-  subModel.addEventListener('change', () => {
-    if (selectedId && subModel) api.setSubModel(selectedId, subModel.value.trim());
-  });
 
   // 配置档下拉:切换时调用 setConvProfile,DirectEngine 运行时读取该 profile 的完整配置
   const profileSel = document.getElementById('profile-select') as HTMLSelectElement;
