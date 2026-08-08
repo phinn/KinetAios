@@ -4879,6 +4879,7 @@ function showNexus() {
     send: (id, text) => { void api.send(id, text); },
     cancel: (id) => { void api.cancel(id); },
     selectChat: (id) => { selectedId = id; renderSidebar(); },
+    exit: () => { hideNexus(); showChat(); },
     newTask: (_cwd) => { void newTaskInProject(_cwd); },
     convs: () => convs,
     order: () => order,

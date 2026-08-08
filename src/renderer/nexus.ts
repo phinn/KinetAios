@@ -24,6 +24,7 @@ export interface NexusCallbacks {
   send: (id: string, text: string) => void;
   cancel: (id: string) => void;
   selectChat: (id: string) => void;
+  exit: () => void; // 退出 NEXUS,返回聊天视图 / Exit NEXUS, return to chat view
   newTask: (cwd: string) => void;
   convs: () => Map<string, Conversation>;
   order: () => string[];
@@ -358,7 +359,7 @@ export function renderNexus(): void {
   }
 
   if (arcSend) arcSend.onclick = sendArcMessage;
-  if (backBtn) backBtn.onclick = () => { if (cb) cb.selectChat(selectedNodeId || cb.order()[0] || ''); };
+  if (backBtn) backBtn.onclick = () => { if (cb) cb.exit(); };
 
   // Phase 2: 重置视图按钮 / Reset view button
   const resetBtn = document.getElementById('nexus-reset');
@@ -394,12 +395,8 @@ export function renderNexus(): void {
     stageEl.tabIndex = 0; // 使其可聚焦以接收键盘事件
     stageEl.addEventListener('keydown', (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        selectedNodeId = null;
-        if (cb) {
-          const sid = cb.selectedId();
-          if (sid) cb.selectChat(sid);
-        }
-        updateOverlay();
+        // Escape:退出 NEXUS 返回聊天 / Exit NEXUS back to chat
+        if (cb) cb.exit();
         return;
       }
       // Tab / Shift+Tab 切换节点 / Cycle nodes
