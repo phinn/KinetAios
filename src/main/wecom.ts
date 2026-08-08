@@ -8,6 +8,7 @@ import os from 'node:os';
 import type { TaskManager } from './TaskManager';
 import type { Conversation } from '../shared/types';
 import { getSettings } from './settings';
+import * as store from './store';
 
 type WeComStatusEv = { type: string; data?: unknown };
 
@@ -92,6 +93,7 @@ class WeComBridge {
     const cfg = getSettings().wecomBot;
     if (cfg.model) conv.model = cfg.model;
     conv.subAgentModel = cfg.subAgentModel || null;
+    store.saveConversation(conv); // 持久化 wecomKey,重启后可恢复 / Persist wecomKey for restart recovery
     this.wecomSessions.set(key, conv.id);
     return conv;
   }
@@ -244,6 +246,7 @@ class WeComBridge {
         conv.wecomKey = wecomKey;
         if (cfg.model) conv.model = cfg.model;
         conv.subAgentModel = cfg.subAgentModel || null;
+        store.saveConversation(conv); // 持久化 wecomKey / Persist wecomKey
         this.wecomSessions.set(wecomKey, conv.id);
         this.evictIfNeeded(wecomKey);
         await this.replyFinal(frame, streamId, '✅ 已开启新对话');

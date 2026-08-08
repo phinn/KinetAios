@@ -10,6 +10,7 @@ import os from 'node:os';
 import type { TaskManager } from './TaskManager';
 import type { TaskStep, Conversation } from '../shared/types';
 import { getSettings } from './settings';
+import * as store from './store';
 
 type FeishuStatusEv = { type: string; data?: unknown };
 
@@ -129,6 +130,7 @@ class FeishuBridge {
     const cfg = getSettings().feishuBot;
     if (cfg.model) conv.model = cfg.model;
     conv.subAgentModel = cfg.subAgentModel || null;
+    store.saveConversation(conv); // 持久化 feishuKey,重启后可恢复 / Persist feishuKey for restart recovery
     this.feishuSessions.set(key, conv.id);
     return conv;
   }
@@ -385,6 +387,7 @@ class FeishuBridge {
         conv.feishuKey = feishuKey;
         if (cfg.model) conv.model = cfg.model;
         conv.subAgentModel = cfg.subAgentModel || null;
+        store.saveConversation(conv); // 持久化 feishuKey / Persist feishuKey
         this.feishuSessions.set(feishuKey, conv.id);
         // 淘汰超额会话 / Evict excess conversations.
         this.evictIfNeeded(feishuKey);
