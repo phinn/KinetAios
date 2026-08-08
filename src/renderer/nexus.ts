@@ -4,11 +4,11 @@
 // 每个 Agent 是轨道上一颗发光节点,围绕中央意图核心运转。
 // 数据流以粒子形式在轨道间流动,实时呈现 Agent 的思维过程。
 //
-// Phase 1: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
-// 不依赖任何外部库,纯 Vanilla TS + CSS + Canvas 2D。
+// Phase 1.5: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
+//          + hover tooltip + 双击跳转 + 右键菜单 + 自适应缩放 + 快捷指令
 //
 // Design: agents orbit a central "intent core". Data flows as particles.
-// Phase 1: SVG orbits + Canvas particles + DOM overlay. Zero dependencies.
+// Phase 1.5: SVG orbits + Canvas particles + DOM overlay + interactions. Zero dependencies.
 
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
@@ -81,7 +81,7 @@ interface OrbitNode {
   conv: Conversation;
   state: AgentState;
   engine: EngineKind;
-  // 极坐标位置(动画驱动) / Polar position (animation-driven)
+  // 极坐标位置(动画驱动) / Polar Position (animation-driven)
   angle: number;     // 当前角度(弧度) / current angle (rad)
   speed: number;     // 角速度(运行中加速) / angular velocity
   radius: number;    // 轨道半径 / orbit radius
@@ -95,7 +95,6 @@ interface OrbitRing {
 
 let rings: OrbitRing[] = [];
 let selectedNodeId: string | null = null;
-let nexusContainer: HTMLElement | null = null;
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let animationId = 0;
@@ -151,7 +150,6 @@ function buildRings(): void {
   }
 
   rings = [];
-  let ringIndex = 0;
   for (const [cwd, convs] of groups) {
     const nodes: OrbitNode[] = convs.map((conv, i) => {
       const nodeCount = convs.length;
@@ -164,20 +162,19 @@ function buildRings(): void {
         engine: conv.engine,
         angle: baseAngle,
         speed: state === 'running' ? 0.003 + Math.random() * 0.002 : 0.0008 + Math.random() * 0.0004,
-        radius: 0, // set by layout
+        radius: 0, // 由布局分配 / set by layout
       };
     });
-    rings.push({
-      cwd,
-      label: projName(cwd),
-      nodes,
-    });
-    ringIndex++;
+    rings.push({ cwd, label: projName(cwd), nodes });
   }
 
-  // 分配轨道半径 / Assign orbit radii
-  const ringRadius = 110; // 每环间距 / ring spacing
-  const baseRadius = 90;  // 最内圈半径 / innermost radius
+  // 自适应轨道间距 / Adaptive ring spacing
+  // 会话/项目多时自动压缩间距,避免视图爆炸 / Compress spacing when many rings
+  const ringCount = rings.length;
+  const maxRings = 8;
+  const compression = ringCount > maxRings ? maxRings / ringCount : 1;
+  const ringRadius = Math.max(60, 110 * compression); // 每环间距 / ring spacing
+  const baseRadius = Math.max(55, 90 * compression);  // 最内圈半径 / innermost radius
   rings.forEach((ring, i) => {
     const r = baseRadius + i * ringRadius;
     ring.nodes.forEach(n => { n.radius = r; });
@@ -188,7 +185,6 @@ function buildRings(): void {
 export function renderNexus(): void {
   const root = document.getElementById('nexus-canvas');
   if (!root) return;
-  nexusContainer = root;
 
   buildRings();
 
@@ -205,7 +201,7 @@ export function renderNexus(): void {
         <textarea class="nexus-arc-text" id="nexus-arc-text" rows="1"
           data-i18n-placeholder="nexus.inputPlaceholder"
           placeholder="${esc(tr('nexus.inputPlaceholder'))}"></textarea>
-        <button class="nexus-arc-send" id="nexus-arc-send">
+        <button class="nexus-arc-send" id="nexus-arc-send" title="${esc(tr('nexus.send'))}">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="22" y1="2" x2="11" y2="13"/>
             <polygon points="22 2 15 22 11 13 2 9 22 2"/>
@@ -216,6 +212,8 @@ export function renderNexus(): void {
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
       </button>
       <div class="nexus-hint" id="nexus-hint">${esc(tr('nexus.hint'))}</div>
+      <div class="nexus-tooltip" id="nexus-tooltip" hidden></div>
+      <div class="nexus-ctx-menu" id="nexus-ctx-menu" hidden></div>
     </div>
   `;
 
@@ -244,6 +242,12 @@ export function renderNexus(): void {
   if (arcSend) arcSend.onclick = sendArcMessage;
   if (backBtn) backBtn.onclick = () => { if (cb) cb.selectChat(selectedNodeId || cb.order()[0] || ''); };
 
+  // 全局关闭右键菜单 / Global click closes context menu
+  document.getElementById('nexus-stage')?.addEventListener('click', () => {
+    const menu = document.getElementById('nexus-ctx-menu');
+    if (menu) menu.hidden = true;
+  });
+
   // 开始动画 / Start animation
   startAnimation();
   updateOverlay();
@@ -256,10 +260,33 @@ function sendArcMessage(): void {
   if (!arcText) return;
   const text = arcText.value.trim();
   if (!text) return;
+
+  // 快捷指令 / Slash commands
+  if (text.startsWith('/')) {
+    const cmd = text.toLowerCase();
+    if (cmd === '/new' || cmd === '/n') {
+      cb.newTask('');
+      arcText.value = '';
+      arcText.style.height = 'auto';
+      return;
+    }
+    // /cancel → 取消当前选中会话 / Cancel selected conversation
+    if (cmd === '/cancel' && selectedNodeId) {
+      cb.cancel(selectedNodeId);
+      arcText.value = '';
+      arcText.style.height = 'auto';
+      return;
+    }
+    // 未知指令不发送 / Unknown command, no-op
+    arcText.value = '';
+    arcText.style.height = 'auto';
+    return;
+  }
+
   if (selectedNodeId) {
     cb.send(selectedNodeId, text);
   } else {
-    // 无选中节点 → 新任务 / No selected node → new task
+    // 无选中节点 → 发到第一个 / No selected node → send to first
     const firstOrder = cb.order()[0];
     if (firstOrder) {
       cb.send(firstOrder, text);
@@ -309,18 +336,45 @@ function animate(): void {
   if (Math.random() < 0.15) emitParticlesToRunning();
 }
 
+// ── SVG 尺寸缓存 / Cached SVG dimensions ──
+let svgSize = 400;
+let svgCx = 200;
+let svgCy = 200;
+
 // ── 渲染 SVG 轨道 / Render SVG orbits ──
 function renderSVG(): void {
   const wrap = document.getElementById('nexus-svg-wrap');
   if (!wrap) return;
 
+  // 空状态处理 / Empty state
+  if (rings.length === 0) {
+    wrap.innerHTML = `
+      <div class="nexus-empty-state">
+        <div class="nexus-empty-icon">
+          <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="3"/>
+            <ellipse cx="12" cy="12" rx="10" ry="4"/>
+            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/>
+            <ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/>
+          </svg>
+        </div>
+        <div class="nexus-empty-text">${esc(tr('nexus.emptyHint'))}</div>
+        <button class="nexus-empty-btn" id="nexus-empty-new">${esc(tr('nexus.createNew'))}</button>
+      </div>`;
+    const newBtn = document.getElementById('nexus-empty-new');
+    if (newBtn) newBtn.onclick = () => { cb?.newTask(''); };
+    svgSize = 400; svgCx = 200; svgCy = 200;
+    return;
+  }
+
   // 计算布局尺寸 / Calculate layout dimensions
-  const maxRadius = rings.length > 0
-    ? Math.max(...rings.map(r => r.nodes[0]?.radius || 0)) + 60
-    : 200;
+  const maxRadius = Math.max(...rings.map(r => r.nodes[0]?.radius || 0)) + 60;
   const size = Math.max(maxRadius * 2, 400);
-  const cx = size / 2;
-  const cy = size / 2;
+  svgSize = size;
+  svgCx = size / 2;
+  svgCy = size / 2;
+  const cx = svgCx;
+  const cy = svgCy;
 
   let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">`;
 
@@ -401,7 +455,7 @@ function renderSVG(): void {
         </circle>`;
       }
 
-      // 节点本体 / Node body
+      // 节点本体 / Node body — 含 data-nid 用于点击/hover/右键
       const gradId = `nx-node-${node.state}`;
       svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="url(#${gradId})" stroke="${color}" stroke-width="${isSelected ? 2 : 1}" opacity="${isSelected ? 1 : 0.85}" style="cursor:pointer" data-nid="${node.id}"/>`;
 
@@ -419,15 +473,134 @@ function renderSVG(): void {
   svg += `</svg>`;
   wrap.innerHTML = svg;
 
-  // 绑定节点点击 / Bind node clicks
+  // 绑定节点交互 / Bind node interactions
   wrap.querySelectorAll<SVGCircleElement>('[data-nid]').forEach(el => {
-    el.addEventListener('click', () => {
+    // 单击:选中节点 / Click: select node
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
       const nid = el.dataset.nid!;
       selectedNodeId = nid;
       if (cb) cb.selectChat(nid);
       updateOverlay();
-      renderSVG(); // 即时刷新选中态 / Immediate refresh
     });
+    // 双击:跳转到 chat 视图 / Dblclick: jump to chat view
+    el.addEventListener('dblclick', (e) => {
+      e.stopPropagation();
+      const nid = el.dataset.nid!;
+      if (cb) cb.selectChat(nid);
+    });
+    // hover:显示 tooltip / Hover: show tooltip
+    el.addEventListener('mouseenter', (e) => {
+      const nid = el.dataset.nid!;
+      showNodeTooltip(nid, e as MouseEvent);
+    });
+    el.addEventListener('mouseleave', () => {
+      hideNodeTooltip();
+    });
+    // 右键:上下文菜单 / Context menu
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const nid = el.dataset.nid!;
+      showContextMenu(nid, e as MouseEvent);
+    });
+  });
+}
+
+// ── 节点 tooltip / Node tooltip ──
+function showNodeTooltip(nid: string, ev: MouseEvent): void {
+  const tip = document.getElementById('nexus-tooltip');
+  if (!tip || !cb) return;
+  const conv = cb.convs().get(nid);
+  if (!conv) return;
+
+  const color = ENGINE_COLORS[conv.engine] || '#e8b339';
+  const state = agentState(conv);
+  const stateLabel = tr(`nexus.state${state.charAt(0).toUpperCase() + state.slice(1)}`);
+  const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
+  const turns = conv.turns.length;
+  const engineLabel = ENGINE_LABELS[conv.engine] || conv.engine;
+
+  tip.innerHTML = `
+    <div class="nx-tip-head">
+      <span class="nx-tip-dot" style="background:${color}"></span>
+      <span class="nx-tip-title">${esc(title)}</span>
+    </div>
+    <div class="nx-tip-meta">
+      <span style="color:${color}">${esc(engineLabel)}</span>
+      <span class="nx-tip-sep">·</span>
+      <span>${esc(stateLabel)}</span>
+      <span class="nx-tip-sep">·</span>
+      <span>${turns} ${esc(tr('nexus.turns'))}</span>
+    </div>
+  `;
+  tip.hidden = false;
+
+  // 定位(避免溢出) / Position (avoid overflow)
+  const stage = tip.parentElement?.getBoundingClientRect();
+  if (stage) {
+    const x = Math.min(ev.clientX - stage.left + 12, stage.width - 200);
+    const y = Math.min(ev.clientY - stage.top + 12, stage.height - 80);
+    tip.style.left = x + 'px';
+    tip.style.top = y + 'px';
+  }
+}
+
+function hideNodeTooltip(): void {
+  const tip = document.getElementById('nexus-tooltip');
+  if (tip) tip.hidden = true;
+}
+
+// ── 右键上下文菜单 / Context menu ──
+function showContextMenu(nid: string, ev: MouseEvent): void {
+  const menu = document.getElementById('nexus-ctx-menu');
+  if (!menu || !cb) return;
+
+  const conv = cb.convs().get(nid);
+  if (!conv) return;
+  const isRunning = conv.status === 'running';
+
+  menu.innerHTML = `
+    <button class="nx-ctx-item" data-action="open">${esc(tr('nexus.ctxOpen'))}</button>
+    <button class="nx-ctx-item" data-action="chat">${esc(tr('nexus.ctxChat'))}</button>
+    ${isRunning ? `<button class="nx-ctx-item nx-ctx-danger" data-action="cancel">${esc(tr('nexus.ctxCancel'))}</button>` : ''}
+    <div class="nx-ctx-divider"></div>
+    <button class="nx-ctx-item" data-action="copyid">${esc(tr('nexus.ctxCopyId'))}</button>
+  `;
+  menu.hidden = false;
+
+  // 定位 / Position
+  const stage = menu.parentElement?.getBoundingClientRect();
+  if (stage) {
+    const x = Math.min(ev.clientX - stage.left, stage.width - 160);
+    const y = Math.min(ev.clientY - stage.top, stage.height - 160);
+    menu.style.left = x + 'px';
+    menu.style.top = y + 'px';
+  }
+
+  // 绑定菜单项 / Bind menu items
+  menu.querySelectorAll<HTMLElement>('[data-action]').forEach(btn => {
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      menu.hidden = true;
+      switch (action) {
+        case 'open':
+          selectedNodeId = nid;
+          if (cb) cb.selectChat(nid);
+          updateOverlay();
+          break;
+        case 'chat':
+          if (cb) cb.selectChat(nid);
+          break;
+        case 'cancel':
+          if (cb) cb.cancel(nid);
+          break;
+        case 'copyid':
+          navigator.clipboard?.writeText(nid).catch(() => {});
+          break;
+      }
+    };
   });
 }
 
@@ -490,39 +663,16 @@ function emitParticlesToRunning(): void {
   const cx = canvas.width / 2;
   const cy = canvas.height / 2;
 
+  // 计算缩放比(SVG viewBox → Canvas 像素) / Compute scale (SVG viewBox → canvas px)
+  const scale = canvas.width / svgSize;
+
   for (const ring of rings) {
     for (const node of ring.nodes) {
       if (node.state !== 'running') continue;
-      // 计算 SVG 坐标对应 Canvas 坐标 / Map SVG coords to canvas
-      const svgWrap = document.getElementById('nexus-svg-wrap');
-      if (!svgWrap) continue;
-      const svgEl = svgWrap.querySelector('svg');
-      if (!svgEl) continue;
-      const svgRect = svgEl.getBoundingClientRect();
-      const stageRect = canvas.parentElement!.getBoundingClientRect();
-      // SVG 居中放置,计算偏移 / SVG is centered, calculate offset
-      const offsetX = (stageRect.width - svgRect.width) / 2 + svgRect.width / 2;
-      const offsetY = (stageRect.height - svgRect.height) / 2 + svgRect.height / 2;
-
-      // 使用相对坐标 / Use relative coordinates
-      const sizeAttr = svgEl.viewBox.baseVal;
-      const svgCx = sizeAttr.width / 2;
-      const svgCy = sizeAttr.height / 2;
-      const nodeX = svgCx + node.radius * Math.cos(node.angle);
-      const nodeY = svgCy + node.radius * Math.sin(node.angle);
-
-      // 将 SVG 内部坐标映射到屏幕 / Map SVG internal coords to screen
-      const scale = svgRect.width / sizeAttr.width;
-      const screenX = offsetX + (nodeX - svgCx) * scale - svgRect.width / 2 + svgRect.width / 2;
-      const screenY = offsetY + (nodeY - svgCy) * scale - svgRect.height / 2 + svgRect.height / 2;
-
-      // 简化:直接用核心到节点的方向 / Simplified: use direction from core to node
+      // canvas 坐标系:中心 = canvas 中心,偏移 = radius * cos/sin * scale
+      const canvasNodeX = cx + node.radius * Math.cos(node.angle) * scale;
+      const canvasNodeY = cy + node.radius * Math.sin(node.angle) * scale;
       const color = ENGINE_COLORS[node.engine] || '#e8b339';
-
-      // 在 canvas 坐标系发射 / Emit in canvas coordinate system
-      const canvasNodeX = cx + (nodeX - svgCx) * scale;
-      const canvasNodeY = cy + (nodeY - svgCy) * scale;
-
       spawnParticle(cx, cy, canvasNodeX, canvasNodeY, color);
     }
   }

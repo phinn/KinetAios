@@ -867,6 +867,158 @@ a { color: var(--accent); }
   background: linear-gradient(90deg, transparent, var(--accent-dim) 30%, var(--accent-dim) 70%, transparent);
   opacity: 0.6;
 }
+
+/* ── NEXUS Phase 1.5: Tooltip / Context Menu / Empty State ── */
+
+/* 节点 hover tooltip */
+.nexus-tooltip {
+  position: absolute;
+  z-index: 20;
+  min-width: 160px;
+  max-width: 240px;
+  padding: 8px 12px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  pointer-events: none;
+  animation: nxTooltipIn 120ms ease-out;
+}
+
+@keyframes nxTooltipIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.nx-tip-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.nx-tip-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nx-tip-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nx-tip-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+
+.nx-tip-sep {
+  color: var(--text-faint);
+  margin: 0 2px;
+}
+
+/* 右键上下文菜单 */
+.nexus-ctx-menu {
+  position: absolute;
+  z-index: 30;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  animation: nxMenuIn 100ms ease-out;
+}
+
+@keyframes nxMenuIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to   { opacity: 1; transform: scale(1); }
+}
+
+.nx-ctx-item {
+  display: block;
+  width: 100%;
+  padding: 7px 12px;
+  background: transparent;
+  border: none;
+  border-radius: 6px;
+  color: var(--text);
+  font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.nx-ctx-item:hover {
+  background: var(--bg-input);
+}
+
+.nx-ctx-item.nx-ctx-danger {
+  color: var(--err);
+}
+
+.nx-ctx-item.nx-ctx-danger:hover {
+  background: rgba(226,97,76,0.12);
+}
+
+.nx-ctx-divider {
+  height: 1px;
+  background: var(--border-soft);
+  margin: 4px 0;
+}
+
+/* 空轨道状态 */
+.nexus-empty-state {
+  position: absolute;
+  top: 50%; left: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+  color: var(--text-faint);
+}
+
+.nexus-empty-icon {
+  margin-bottom: 16px;
+  opacity: 0.3;
+  animation: nxEmptyPulse 3s ease-in-out infinite;
+}
+
+@keyframes nxEmptyPulse {
+  0%, 100% { opacity: 0.2; }
+  50%      { opacity: 0.45; }
+}
+
+.nexus-empty-text {
+  font-size: 13px;
+  margin-bottom: 20px;
+  color: var(--text-dim);
+}
+
+.nexus-empty-btn {
+  padding: 8px 20px;
+  border-radius: 20px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border: none;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  transition: transform 150ms ease, box-shadow 150ms ease;
+}
+
+.nexus-empty-btn:hover {
+  transform: scale(1.05);
+  box-shadow: 0 4px 16px rgba(232,179,57,0.3);
+}
 .sb-head { padding: 13px 14px; display: flex; align-items: center; gap: 8px; }
 .sb-head .brand { font-weight: 700; font-size: 14px; flex: 1; letter-spacing: -0.02em; }
 .sb-head .brand .spark { color: var(--accent); }
