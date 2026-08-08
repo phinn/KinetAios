@@ -1418,10 +1418,8 @@ function renderHead(conv: Conversation | undefined) {
     cwd.value = '';
     model.value = '';
     model.style.display = 'none';
-    const sm0 = document.getElementById('chat-submodel') as HTMLInputElement | null;
+    const sm0 = document.getElementById('submodel-input') as HTMLInputElement | null;
     if (sm0) { sm0.value = ''; sm0.style.display = 'none'; }
-    const sm0sep = document.getElementById('chat-submodel-sep');
-    if (sm0sep) sm0sep.style.display = 'none';
     const cs0 = document.getElementById('ctx-mode-select');
     if (cs0) cs0.style.display = 'none';
     const pb0 = document.getElementById('btn-persona');
@@ -1449,14 +1447,11 @@ function renderHead(conv: Conversation | undefined) {
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
-  // Sub-agent model picker in chat-head ch-env — visible for Direct family without profiles
-  const chSubModel = document.getElementById('chat-submodel') as HTMLInputElement | null;
-  const chSubSep = document.getElementById('chat-submodel-sep');
-  if (chSubModel) {
-    const show = isDirectFam && !hasProfiles;
-    chSubModel.style.display = show ? '' : 'none';
-    if (chSubSep) chSubSep.style.display = show ? '' : 'none';
-    if (document.activeElement !== chSubModel) chSubModel.value = conv.subAgentModel ?? '';
+  // Sub-agent model picker in composer-bar — same visibility as main model
+  const subModelEl = document.getElementById('submodel-input') as HTMLInputElement | null;
+  if (subModelEl) {
+    subModelEl.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
+    if (document.activeElement !== subModelEl) subModelEl.value = conv.subAgentModel ?? '';
   }
   syncEngineSelect(conv);
   const parts: string[] = [];
@@ -3547,11 +3542,11 @@ function closeMoreMenu() {
     if (selectedId) api.setModel(selectedId, model.value.trim());
   });
 
-  // 子 Agent 模型(chat-head ch-env 内)— change 时保存到会话
-  const chSubModel = document.getElementById('chat-submodel') as HTMLInputElement | null;
-  if (chSubModel) {
-    chSubModel.addEventListener('change', () => {
-      if (selectedId) api.setSubModel(selectedId, chSubModel.value.trim());
+  // 子 Agent 模型(composer-bar)— change 时保存到会话
+  const subModelInput = document.getElementById('submodel-input') as HTMLInputElement | null;
+  if (subModelInput) {
+    subModelInput.addEventListener('change', () => {
+      if (selectedId) api.setSubModel(selectedId, subModelInput.value.trim());
     });
   }
 
