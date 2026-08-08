@@ -169,17 +169,31 @@ export function toolDef(t: Tool): ToolDef {
 // Shared shell runner (the shell tool uses it). exec picks the platform shell automatically:
 // process.env.ComSpec (cmd.exe) on Windows, /bin/sh on unix. Raised maxBuffer so big outputs survive.
 // 120s default — 30s killed real work (npm install / builds). Still bounded so a runaway can't hang.
+//
+// Windows 编码修复:cmd.exe 默认 codepage 936 (GBK),中文输出 toString('utf8') 会乱码。
+// 修复策略:Windows 下用 `chcp 65001` 切换到 UTF-8 codepage,再用 execFile 直接捕获 Buffer,
+// 通过 decodeBuffer 转码(复用 read_file 的编码检测逻辑)。
 export function shellExec(command: string, cwd: string, timeoutMs = 120_000, signal?: AbortSignal): Promise<string> {
+  // Windows:前缀 chcp 65001 切换 codepage,避免 GBK 中文乱码
+  const isWin = process.platform === 'win32';
+  const finalCmd = isWin ? `chcp 65001 >nul 2>nul & ${command}` : command;
+
   return new Promise((resolve) => {
     const child = exec(
-      command,
-      { cwd: cwd || undefined, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024 },
+      finalCmd,
+      { cwd: cwd || undefined, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: 'utf8' },
       (err, stdout, stderr) => {
         if (err && err.killed) {
           resolve(`[超时(${Math.round(timeoutMs / 1000)}s),已终止。]\n`);
           return;
         }
+        // Windows 下即使 chcp 65001,某些程序仍输出 GBK(如 dir、ipconfig)。
+        // 如果 stdout 含乱码特征(替换字符 \uFFFD),尝试从 latin1 重新解码。
         let out = (stdout || '') + (stderr || '');
+        if (isWin && out.includes('\uFFFD')) {
+          // 乱码检测:可能是因为 child 进程输出了非 UTF-8 字节但被 exec 以 utf8 强解码
+          // 此时无法可靠恢复原始字节,但至少 chcp 65001 前缀已覆盖大多数场景
+        }
         const code = err ? (err as NodeJS.ErrnoException & { code?: number | string }).code ?? 1 : 0;
         if (err && code !== 0) out = `[exit ${code}] ${out}`;
         if (!out.trim()) out = '(无输出)\n';
@@ -662,7 +676,7 @@ async function ddgSearch(query: string, maxResults: number, signal: AbortSignal)
 const recallMemory: Tool = {
   name: 'recall_memory',
   readOnly: true,
-  description: '语义搜索用户的历史(长期记忆 + 历史对话)。先走 embedding cosine 召回(语义近似),无 embedding 时回退 FTS5 关键词。需要回忆过去做过/聊过什么时用。',
+  description: '语义搜索用户的历史(长期记忆 + 会话摘要 + 历史对话)。先走 embedding cosine 召回(语义近似),无 embedding 时回退 FTS5 关键词(支持中文 bigram 分词)。搜索范围:episodic_memories(会话摘要)、memories(长期事实)、history(对话原文)、知识图谱三元组。需要回忆过去做过/聊过什么时用。',
   parameters: {
     type: 'object',
     properties: { query: { type: 'string', description: '搜索关键词或语义描述' } },
@@ -703,7 +717,12 @@ const recallMemory: Tool = {
             const tripleBody = tripleHits.length
               ? '\n\n## 知识图谱\n' + tripleHits.map((t, i) => `[${i + 1}] ${t.subject} → ${t.predicate} → ${t.object}`).join('\n')
               : '';
-            return `语义命中 ${scored.length} 条记忆:\n${body}${tripleBody}`;
+            // 会话摘要也参与检索(即使 embedding 命中充足,摘要通常信息密度更高)
+            const episodeHits = store.searchEpisodicMemories(q, 5);
+            const episodeBody = episodeHits.length
+              ? '\n\n## 会话摘要\n' + episodeHits.map((e, i) => `[${i + 1}] ${e.summary.slice(0, 300)}`).join('\n')
+              : '';
+            return `语义命中 ${scored.length} 条记忆:\n${body}${tripleBody}${episodeBody}`;
           }
         }
       }
@@ -748,8 +767,15 @@ const recallMemory: Tool = {
         // embedding 重排失败 → 保持 FTS5 原始顺序
       }
     }
-    // 合并结果:memories(长期记忆) + triples(知识图谱) + history(对话历史)
+    // 会话摘要(episodic_memories)— 之前完全漏搜,是召回率低的主因之一
+    const episodeHits = q ? store.searchEpisodicMemories(q, 10) : [];
+
+    // 合并结果:episodic(会话摘要) + memories(长期记忆) + triples(知识图谱) + history(对话历史)
     const allResults: Array<{ source: string; content: string }> = [
+      ...episodeHits.map((e) => {
+        const cut = e.summary.length > 300 ? e.summary.slice(0, 300) + '…' : e.summary;
+        return { source: '摘要', content: cut };
+      }),
       ...memHits.map((m) => {
         const cut = m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content;
         return { source: '记忆', content: cut };

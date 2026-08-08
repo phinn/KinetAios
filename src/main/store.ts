@@ -136,18 +136,42 @@ export function appendMessage(role: string, content: string): void {
 export function search(q: string, limit = 20): Array<{ role: string; content: string }> {
   const fts = sanitize(q);
   if (!fts) return [];
-  return db
-    .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
-    .all(fts, limit) as Array<{ role: string; content: string }>;
+  try {
+    return db
+      .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+      .all(fts, limit) as Array<{ role: string; content: string }>;
+  } catch {
+    // FTS5 语法错误 → 用转义后的查询重试
+    const safe = q.replace(/["*]/g, ' ').trim();
+    if (!safe) return [];
+    return db
+      .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+      .all(sanitize(safe), limit) as Array<{ role: string; content: string }>;
+  }
 }
 
-// FTS5: wrap each whitespace-separated token in double-quotes. Same as Swift sanitize().
+// FTS5 查询构建:英文按空格分词 + 中文按 bigram 分词。
+// FTS5 默认 tokenizer (unicode61) 对中文按字符切分,搜"乱码"无法命中"中文乱码问题"。
+// bigram 分词把"乱码"拆成 "乱码"(整词匹配),同时用 OR 连接提高召回率。
 function sanitize(q: string): string {
-  return q
-    .split(/\s+/)
-    .filter(Boolean)
-    .map((t) => `"${t.replace(/"/g, '""')}"`)
-    .join(' ');
+  const tokens: string[] = [];
+  for (const part of q.split(/\s+/)) {
+    if (!part) continue;
+    // 英文/数字 token 直接加引号
+    if (/^[\x00-\x7F]+$/.test(part)) {
+      tokens.push(`"${part.replace(/"/g, '""')}"`);
+    } else {
+      // 中文:整词匹配 + bigram 子串(提高 FTS5 召回率)
+      tokens.push(`"${part.replace(/"/g, '""')}"`);
+      if (part.length > 2) {
+        for (let i = 0; i < part.length - 1; i++) {
+          tokens.push(`"${part.slice(i, i + 2)}"`);
+        }
+      }
+    }
+  }
+  // 用 OR 连接:任意 token 命中即召回,后续由 embedding 重排保证精确度
+  return tokens.length ? tokens.join(' OR ') : '';
 }
 
 // MARK: conversations + turns (restart recovery)
