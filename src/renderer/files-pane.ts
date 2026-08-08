@@ -23,6 +23,7 @@ interface WebviewLike {
   src: string;
   loadURL(url: string): void;
   goBack(): void;
+  canGoBack(): boolean;
   reload(): void;
   addEventListener(ev: string, cb: (e: { url: string }) => void): void;
   getGuestInstanceId(): number | undefined;
@@ -362,7 +363,8 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     currentAbs = abs;
     const absenc = abs.replace(/\\/g, '/').replace(/^\/+/, '');
     const url = 'file:///' + encodeURI(absenc);
-    webview.src = url;
+    // 只用 loadURL 产生导航历史条目；同时设 src 会触发两次导航导致历史栈混乱。
+    // / Use loadURL only (creates proper navigation history entry). Setting src + loadURL races.
     webview.loadURL(url);
     addr.value = url;
   }
@@ -414,7 +416,8 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
     const dir = await api.pickDirectory();
     if (dir) setCwd(dir);
   };
-  root.querySelector<HTMLElement>('[data-btn="back"]')!.onclick = () => webview.goBack();
+  const backBtn = root.querySelector<HTMLElement>('[data-btn="back"]')!;
+  backBtn.onclick = () => { if (webview.canGoBack()) webview.goBack(); };
   root.querySelector<HTMLElement>('[data-btn="reload"]')!.onclick = () => webview.reload();
 
   // ── Visual Inspector:圈选标注 → AI 改代码 ──
@@ -610,7 +613,11 @@ function mountSinglePanel(root: HTMLElement, lang: Lang, menu: HTMLElement, setM
   addr.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter') webview.loadURL(normalizeURL(addr.value));
   });
-  webview.addEventListener('did-navigate', (e) => (addr.value = e.url));
+  webview.addEventListener('did-navigate', (e) => {
+    addr.value = e.url;
+    backBtn.style.opacity = webview.canGoBack() ? '1' : '0.35';
+    backBtn.style.pointerEvents = webview.canGoBack() ? 'auto' : 'none';
+  });
   webview.addEventListener('did-navigate-in-page', (e) => (addr.value = e.url));
 
   // tab 切换:切到目标 tab 时,若已有当前文件,用对应 loader 重新加载内容。
