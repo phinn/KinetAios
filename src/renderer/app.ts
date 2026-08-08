@@ -3542,9 +3542,22 @@ function closeMoreMenu() {
     if (selectedId) api.setModel(selectedId, model.value.trim());
   });
 
-  const subModel = document.getElementById('submodel-input') as HTMLInputElement;
+  // 动态创建子 Agent 模型输入框,插入到 model-input 之后 — 不依赖静态 HTML
+  let subModel: HTMLInputElement | null = document.getElementById('submodel-input') as HTMLInputElement | null;
+  if (!subModel) {
+    subModel = document.createElement('input');
+    subModel.id = 'submodel-input';
+    subModel.className = 'model-pill';
+    subModel.setAttribute('list', 'model-list');
+    subModel.setAttribute('placeholder', '子模型');
+    subModel.setAttribute('title', '子 Agent 模型(空 = 跟随主模型)');
+    subModel.style.maxWidth = '120px';
+    subModel.style.fontSize = '11px';
+    subModel.style.display = 'none';
+    model.insertAdjacentElement('afterend', subModel);
+  }
   subModel.addEventListener('change', () => {
-    if (selectedId) api.setSubModel(selectedId, subModel.value.trim());
+    if (selectedId && subModel) api.setSubModel(selectedId, subModel.value.trim());
   });
 
   // 配置档下拉:切换时调用 setConvProfile,DirectEngine 运行时读取该 profile 的完整配置
