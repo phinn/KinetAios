@@ -255,6 +255,10 @@ function applyI18nDOM(): void {
       }
       if (currentView === 'town') refreshTownVillager(conv);
       if (currentView === 'nexus') refreshNexusNode(conv);
+    } else if (currentView === 'nexus') {
+      // NEXUS 视图下 token 也需要刷新 overlay,否则用户看不到流式回复。
+      // Nexus 内部已有 rAF 防抖,不会高频重建 DOM。
+      refreshNexusNode(conv);
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));

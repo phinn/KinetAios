@@ -286,9 +286,11 @@ function sendArcMessage(): void {
   if (selectedNodeId) {
     cb.send(selectedNodeId, text);
   } else {
-    // 无选中节点 → 发到第一个 / No selected node → send to first
+    // 无选中节点 → 发到第一个并选中它 / No selected node → send to first and select it
     const firstOrder = cb.order()[0];
     if (firstOrder) {
+      selectedNodeId = firstOrder;
+      cb.selectChat(firstOrder);
       cb.send(firstOrder, text);
     }
   }
@@ -734,6 +736,7 @@ function updateOverlay(): void {
 }
 
 // ── 增量更新(流式事件到达时) / Incremental update (on streaming events) ──
+let nexusOverlayPending = false;
 export function refreshNexusNode(conv: Conversation): void {
   // 更新对应节点的状态 / Update the corresponding node's state
   for (const ring of rings) {
@@ -745,8 +748,14 @@ export function refreshNexusNode(conv: Conversation): void {
     }
   }
   // 如果是当前选中的节点,更新 overlay / If it's the selected node, update overlay
+  // 用 rAF 防抖:高频 token 流时避免每帧全量 innerHTML 重建。
   if (conv.id === selectedNodeId) {
-    updateOverlay();
+    if (nexusOverlayPending) return;
+    nexusOverlayPending = true;
+    requestAnimationFrame(() => {
+      nexusOverlayPending = false;
+      updateOverlay();
+    });
   }
 }
 
