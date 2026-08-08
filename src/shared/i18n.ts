@@ -212,6 +212,8 @@ const ZH_CN: Dict = {
   'composer.persona': '替身画像',
 
   'model.title': '模型(Direct 引擎,每会话独立;回车应用)',
+  'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟随主模型)',
+  'model.subPh': '子模型',
   'model.ph': '模型',
   // 上下文模式 / Context mode selector (per-conversation, Direct engine only)
   'ctxMode.title': '上下文模式(每会话独立)',
@@ -1119,6 +1121,8 @@ const EN: Dict = {
   'composer.persona': 'Persona',
 
   'model.title': 'Model (Direct engine, per-session; Enter to apply)',
+  'model.subTitle': 'Sub-agent model (dispatch_agent / spawn_team; empty = follow main model)',
+  'model.subPh': 'Sub',
   'model.ph': 'Model',
   // Context mode selector (per-conversation, Direct engine only)
   'ctxMode.title': 'Context mode (per-session)',
@@ -2027,6 +2031,8 @@ const ZH_TW: Dict = {
   'composer.persona': '替身畫像',
 
   'model.title': '模型(Direct 引擎,每工作階段獨立;Enter 套用)',
+  'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟隨主模型)',
+  'model.subPh': '子模型',
   'model.ph': '模型',
   // 上下文模式 / Context mode selector
   'ctxMode.title': '上下文模式(每工作階段獨立)',
@@ -2934,6 +2940,8 @@ const JA: Dict = {
   'composer.persona': 'ペルソナ',
 
   'model.title': 'モデル(Direct エンジン、セッション単位、Enter で適用)',
+  'model.subTitle': 'サブエージェントモデル(dispatch_agent / spawn_team 用、空 = メインモデルに追随)',
+  'model.subPh': 'サブ',
   'model.ph': 'モデル',
   // コンテキストモード / Context mode selector
   'ctxMode.title': 'コンテキストモード(セッションごと)',

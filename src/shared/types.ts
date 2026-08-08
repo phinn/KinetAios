@@ -612,6 +612,7 @@ export interface KinetAPI {
   setCwd(id: string, cwd: string): Promise<boolean>;
   setEngine(id: string, engine: EngineKind): Promise<boolean>;
   setModel(id: string, model: string): Promise<boolean>;
+  setSubModel(id: string, model: string): Promise<boolean>;
   /** 切换会话使用的模型配置档(写入 profileId,引擎运行时读取 profile 配置) */
   setConvProfile(id: string, profileId: string | null): Promise<boolean>;
   /** 切换会话的上下文模式(standard / hifi) */

@@ -1418,6 +1418,8 @@ function renderHead(conv: Conversation | undefined) {
     cwd.value = '';
     model.value = '';
     model.style.display = 'none';
+    const sm0 = document.getElementById('submodel-input') as HTMLInputElement | null;
+    if (sm0) { sm0.value = ''; sm0.style.display = 'none'; }
     const cs0 = document.getElementById('ctx-mode-select');
     if (cs0) cs0.style.display = 'none';
     const pb0 = document.getElementById('btn-persona');
@@ -1445,6 +1447,12 @@ function renderHead(conv: Conversation | undefined) {
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
+  // Sub-agent model picker — same visibility rule as main model
+  const subModelEl = document.getElementById('submodel-input') as HTMLInputElement | null;
+  if (subModelEl) {
+    subModelEl.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
+    if (document.activeElement !== subModelEl) subModelEl.value = conv.subAgentModel ?? '';
+  }
   syncEngineSelect(conv);
   const parts: string[] = [];
   if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
@@ -3532,6 +3540,11 @@ function closeMoreMenu() {
   const model = document.getElementById('model-input') as HTMLInputElement;
   model.addEventListener('change', () => {
     if (selectedId) api.setModel(selectedId, model.value.trim());
+  });
+
+  const subModel = document.getElementById('submodel-input') as HTMLInputElement;
+  subModel.addEventListener('change', () => {
+    if (selectedId) api.setSubModel(selectedId, subModel.value.trim());
   });
 
   // 配置档下拉:切换时调用 setConvProfile,DirectEngine 运行时读取该 profile 的完整配置

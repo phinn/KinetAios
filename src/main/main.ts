@@ -778,6 +778,10 @@ function registerIpc(): void {
     taskManager.setModel(id, model);
     return true;
   });
+  ipcMain.handle('set-sub-model', (_e, id: string, model: string) => {
+    taskManager.setSubModel(id, model);
+    return true;
+  });
   // 切换会话的模型配置档 —— 写入 conv.profileId,DirectEngine 运行时读取。
   ipcMain.handle('set-conv-profile', (_e, id: string, profileId: string | null) => {
     taskManager.setConvProfile(id, profileId);

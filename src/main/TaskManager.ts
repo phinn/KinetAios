@@ -107,6 +107,13 @@ export class TaskManager {
     store.saveConversation(conv);
     this.emit.emitConversation(conv);
   }
+  setSubModel(id: string, model: string): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.subAgentModel = model.trim() || null;
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
 
   // 绑定/解绑会话的模型配置档 —— DirectEngine 运行时按 profileId 读取完整配置。
   setConvProfile(id: string, profileId: string | null): void {
