@@ -87,8 +87,9 @@ export class DirectV3Engine implements Engine {
         const scopeResolved = scope ?? { mode: 'none' as const };
         const subAc = new AbortController();
         const subTimer = setTimeout(() => subAc.abort(), 5 * 60 * 1000);
+        const onParentAbort = (): void => subAc.abort();
         if (signal.aborted) subAc.abort();
-        else signal.addEventListener('abort', () => subAc.abort(), { once: true });
+        else signal.addEventListener('abort', onParentAbort, { once: true });
 
         const { historyText } = await resolveSpawnHistory({
           scope: scopeResolved,
@@ -117,6 +118,7 @@ export class DirectV3Engine implements Engine {
           },
         });
         clearTimeout(subTimer);
+        signal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)

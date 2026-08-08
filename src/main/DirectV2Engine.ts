@@ -1247,9 +1247,11 @@ ${failedDetail || '  (无)'}
         // AbortSignal.any 在 Node 20+ 可用;旧版 fallback 到手动 AbortController。
         const subAc = new AbortController();
         const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
-        // 主 signal abort 时也 abort 子任务
+        // 主 signal abort 时也 abort 子任务。
+        // 必须在子任务结束后 removeEventListener,防止 dead listener 堆积在 parent signal 上。
+        const onParentAbort = (): void => subAc.abort();
         if (childSignal.aborted) subAc.abort();
-        else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
+        else childSignal.addEventListener('abort', onParentAbort, { once: true });
         // P1:复用 engines.resolveSpawnHistory 处理 scope(与 v1 一致)
         const { resolveSpawnHistory } = await import('./engines');
         const scopeResolved = scope ?? { mode: 'none' as const };
@@ -1280,6 +1282,7 @@ ${failedDetail || '  (无)'}
           },
         });
         clearTimeout(subTimer);
+        childSignal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)

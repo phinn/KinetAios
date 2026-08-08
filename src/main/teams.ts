@@ -63,11 +63,12 @@ export async function runMember(opts: {
   const { provider, snap, signal, cwd, confirm, convId, onTeamEvent } = runOpts;
   const history = parseMemberHistory(member.history);
 
-  // 超时控制
+  // 超时控制。必须在结束后 removeEventListener,防止 dead listener 堆积在 parent signal 上。
   const ac = new AbortController();
   const timer = setTimeout(() => ac.abort(), TEAM_TIMEOUT_MS);
+  const onParentAbort = (): void => ac.abort();
   if (signal.aborted) ac.abort();
-  else signal.addEventListener('abort', () => ac.abort(), { once: true });
+  else signal.addEventListener('abort', onParentAbort, { once: true });
 
   const memberPrompt = `# 团队成员身份\n你是 team "${member.team_id}" 中的成员 **${member.name}**(${member.role})。\n\n` +
     `# 团队领导指令\n${userMessage}\n\n` +
@@ -92,6 +93,7 @@ export async function runMember(opts: {
   });
 
   clearTimeout(timer);
+  signal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
 
   const answer = out
     .filter((m) => m.role === 'assistant' && typeof m.content === 'string')

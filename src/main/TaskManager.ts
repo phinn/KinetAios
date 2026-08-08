@@ -144,6 +144,8 @@ export class TaskManager {
     store.deleteConversation(id);
     this.convs.delete(id);
     this.order = this.order.filter((x) => x !== id);
+    delete this.lastEngine[id]; // P1: 清理引擎记录,防止 key 无限累积
+    this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
     this.emit.emitRemoved(id);
   }
 

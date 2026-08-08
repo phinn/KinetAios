@@ -186,10 +186,15 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000, sig
         resolve(out);
       },
     );
-    // 支持 abort:用户点"停止"时杀掉正在跑的子进程
+    // 支持 abort:用户点"停止"时杀掉正在跑的子进程。
+    // 必须在 child 正常退出时 removeEventListener,否则 dead listener 永久挂在 AbortSignal 上。
     if (signal) {
       if (signal.aborted) child.kill('SIGKILL');
-      else signal.addEventListener('abort', () => child.kill('SIGKILL'), { once: true });
+      else {
+        const onAbort = (): void => { void child.kill('SIGKILL'); };
+        signal.addEventListener('abort', onAbort, { once: true });
+        child.on('close', () => signal.removeEventListener('abort', onAbort));
+      }
     }
   });
 }

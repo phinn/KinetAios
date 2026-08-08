@@ -83,6 +83,7 @@ let arenaWin: BrowserWindow | null = null;
 let memoryGraphWin: BrowserWindow | null = null;
 let taskManager: TaskManager;
 let tray: Tray | null = null;
+let voiceChatRef: VoiceChat | null = null; // P0: 供 before-quit 清理 WebSocket
 let quitting = false;
 
 // MARK: shell-confirm bridge (main asks the dashboard window; user answers in a modal)
@@ -1992,6 +1993,8 @@ function registerIpc(): void {
   // ── 实时语音助手(豆包实时语音大模型)──
   // VoiceChat 管理器:WebSocket 双向音频流, renderer 通过 IPC 发送麦克风音频、接收 AI 音频。
   const voiceChat = new VoiceChat();
+  // 暴露到模块级,供 before-quit 清理 / Expose to module scope for before-quit cleanup.
+  voiceChatRef = voiceChat;
   // VoiceChat 事件 → 转发到 renderer
   voiceChat.onEvent((ev) => {
     // Buffer → base64(IPC 不能直接传 Buffer)
@@ -2377,6 +2380,9 @@ if (!gotLock) {
   app.on('before-quit', () => {
     quitting = true; // 让 dashboard 的 close handler 放行 —— 否则 Cmd+Q / 系统退出会被 hide 拦截,退不出来
     globalShortcut.unregisterAll();
+    try { voiceChatRef?.close(); } catch { /* ignore */ } // P0: 关闭 VoiceChat WebSocket,防止连接/定时器残留
+    try { getFeishuBridge().stop(); } catch { /* ignore */ } // 断开飞书 WS 长连接
+    try { getWeComBridge().stop(); } catch { /* ignore */ } // 断开企信 WS 长连接
     mcp.dispose(); // 关掉所有 MCP 子进程
     void localMcpServer.stop(); // 关掉本机 MCP HTTP server(多机协作)
     stopCronScheduler(); // 停掉 cron 定时器,否则进程延迟退出
