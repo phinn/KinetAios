@@ -51,7 +51,7 @@ export async function executeReActLoop(opts: StreamingExecOpts): Promise<ChatMsg
     history,
     ctx,
     signal,
-    maxTurns: maxTurns ?? 50,
+    maxTurns: maxTurns ?? 0,
     contextMode,
     hifiContextBudget: getSettings().hifiContextBudget,
     policy,

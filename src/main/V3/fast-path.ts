@@ -38,7 +38,7 @@ export async function executeFastPath(opts: FastPathOpts): Promise<ChatMsg[]> {
     history,
     ctx,
     signal,
-    maxTurns: 50,  // 不人为限制 — 让模型自然完成
+    maxTurns: 0,
     policy,
     onEvent,
   });

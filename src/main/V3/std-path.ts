@@ -40,7 +40,7 @@ export async function executeStdPath(opts: StdPathOpts): Promise<ChatMsg[]> {
     history,
     ctx,
     signal,
-    maxTurns: 50,
+    maxTurns: 0,
     policy,
     onEvent,
   });
