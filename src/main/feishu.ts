@@ -248,24 +248,6 @@ class FeishuBridge {
     const msg = event.message;
     if (!msg) return;
 
-    if (msg.message_type !== 'text') return;
-
-    // 解析消息内容(JSON: {"text":"实际内容"})
-    // / Parse message content (JSON: {"text":"actual content"})
-    let text: string;
-    try {
-      const parsed = JSON.parse(msg.content);
-      text = (parsed.text || '').trim();
-    } catch {
-      return;
-    }
-    if (!text) return;
-
-    // 去掉 @机器人 的 mention key(如 @_user_1)
-    // / Strip bot mention key (e.g. @_user_1)
-    text = text.replace(/@_user_\d+\s*/g, '').trim();
-    if (!text) return;
-
     const messageId = msg.message_id;
 
     // ── 幂等去重(同步,在任何 async 操作之前)
@@ -287,6 +269,89 @@ class FeishuBridge {
     const chatId = msg.chat_id;
     const isGroup = msg.chat_type === 'group';
     const feishuKey = isGroup ? `feishu:group:${chatId}` : `feishu:${senderId}`;
+
+    // ── 解析消息内容(文本 / 图片 / 文件 / 富文本) ──
+    // / Parse message content (text / image / file / post)
+    let text = '';
+    let downloadedFiles: string[] = [];
+    try {
+      const parsed = JSON.parse(msg.content);
+      if (msg.message_type === 'text') {
+        text = (parsed.text || '').trim();
+        // 去掉 @机器人 的 mention key(如 @_user_1)
+        // / Strip bot mention key (e.g. @_user_1)
+        text = text.replace(/@_user_\d+\s*/g, '').trim();
+      } else if (msg.message_type === 'image') {
+        // 图片消息: {"image_key":"img_xxx"}
+        // / Image message
+        const imageKey = parsed.image_key;
+        if (imageKey) {
+          const f = this.downloadResource(messageId, imageKey, 'image', '.png');
+          if (f) {
+            downloadedFiles.push(f);
+            text = `[用户发送了一张图片,已保存到 ${f}]`;
+          }
+        }
+      } else if (msg.message_type === 'file') {
+        // 文件消息: {"file_key":"file_xxx","file_name":"report.pdf"}
+        // / File message
+        const fileKey = parsed.file_key;
+        const fileName = parsed.file_name || fileKey;
+        if (fileKey) {
+          const ext = path.extname(fileName) || '.bin';
+          const f = this.downloadResource(messageId, fileKey, 'file', ext);
+          if (f) {
+            downloadedFiles.push(f);
+            text = `[用户发送了文件 ${fileName},已保存到 ${f}]`;
+          }
+        }
+      } else if (msg.message_type === 'post') {
+        // 富文本消息,提取所有文本段
+        // / Rich text post: extract all text segments
+        const lang = parsed.content ? Object.keys(parsed.content)[0] : 'zh_cn';
+        const content = parsed.content?.[lang];
+        if (Array.isArray(content)) {
+          for (const line of content) {
+            if (Array.isArray(line)) {
+              for (const node of line) {
+                if (node.tag === 'text') text += node.text || '';
+                if (node.tag === 'at') text += node.user_id ? `@${node.user_id} ` : '';
+              }
+              text += '\n';
+            }
+          }
+        }
+        text = text.trim();
+      } else if (msg.message_type === 'audio') {
+        // 语音消息: {"file_key":"file_v2_xxx","duration":1234}
+        const fileKey = parsed.file_key;
+        if (fileKey) {
+          const f = this.downloadResource(messageId, fileKey, 'file', '.mp3');
+          if (f) {
+            downloadedFiles.push(f);
+            text = `[用户发送了一段语音,已保存到 ${f}]`;
+          }
+        }
+      } else if (msg.message_type === 'media') {
+        // 视频消息: {"file_key":"file_v2_xxx","file_name":"video.mp4"}
+        const fileKey = parsed.file_key;
+        const fileName = parsed.file_name || fileKey;
+        if (fileKey) {
+          const ext = path.extname(fileName) || '.mp4';
+          const f = this.downloadResource(messageId, fileKey, 'file', ext);
+          if (f) {
+            downloadedFiles.push(f);
+            text = `[用户发送了视频 ${fileName},已保存到 ${f}]`;
+          }
+        }
+      }
+    } catch {
+      // content 解析失败,跳过
+      // / Failed to parse content, skip
+      return;
+    }
+
+    if (!text && downloadedFiles.length === 0) return;
 
     // ── 斜杠指令处理(同步快速回复,不走 Agent) ──
     // / Slash command handling (sync fast reply, no Agent invocation).
@@ -411,6 +476,35 @@ class FeishuBridge {
         console.log(`[feishu] 淘汰旧会话: ${convs[i].id} (${feishuKey})`);
       } catch { /* ignore */ }
     }
+  }
+
+  // ── 下载飞书消息中的资源文件(图片/文件/音频/视频) ──
+  // / Download resource files (images/files/audio/video) from Feishu messages.
+  // 同步启动下载,返回本地文件路径;调用方在 await 后使用。
+  // / Starts download synchronously, returns file path; caller awaits after.
+  private downloadResource(messageId: string, fileKey: string, type: string, ext: string): string {
+    // 保存到临时目录 / Save to temp directory
+    const tmpDir = path.join(os.tmpdir(), 'kinetaios-feishu');
+    if (!fs.existsSync(tmpDir)) fs.mkdirSync(tmpDir, { recursive: true });
+    const fileName = `${messageId.replace(/[^a-zA-Z0-9]/g, '_')}_${fileKey.replace(/[^a-zA-Z0-9]/g, '_')}${ext}`;
+    const filePath = path.join(tmpDir, fileName);
+
+    // 异步下载(不阻塞 handleIncoming) / Async download (non-blocking)
+    if (this.apiClient) {
+      this.apiClient.im.messageResource.get({
+        path: { message_id: messageId, file_key: fileKey },
+        params: { type },
+      }).then((res: any) => {
+        if (res?.writeFile) {
+          return res.writeFile(filePath);
+        }
+      }).then(() => {
+        console.log(`[feishu] 资源文件已下载: ${filePath}`);
+      }).catch((e: any) => {
+        console.error(`[feishu] 下载资源失败 (${fileKey}):`, e.message);
+      });
+    }
+    return filePath;
   }
 
   // ── 后台处理:实际执行 Agent 调用和飞书回复 ──
