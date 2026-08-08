@@ -4327,3 +4327,257 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .vc-hint {
   font-size: 12px; color: var(--text-faint);
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   NEXUS — 空间认知 Agent 界面 / Spatial Cognition Surface
+   轨道视图 + 粒子数据流 + 弧形输入区
+   ═══════════════════════════════════════════════════════════════ */
+
+#nexus-view {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+#nexus-canvas {
+  width: 100%;
+  height: 100%;
+}
+
+.nexus-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 粒子 Canvas — 全屏覆盖,置于 SVG 下方 */
+.nexus-particles {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* SVG 轨道层 */
+.nexus-svg-wrap {
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  z-index: 2;
+}
+
+/* 对话 overlay — 右侧浮动面板 */
+.nexus-overlay {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 320px;
+  max-height: calc(100% - 140px);
+  z-index: 10;
+  pointer-events: auto;
+}
+
+.nexus-empty {
+  padding: 20px;
+  text-align: center;
+  color: var(--text-faint);
+  font-size: 13px;
+  background: var(--bg-elev);
+  border-radius: 12px;
+  border: 1px solid var(--border-soft);
+}
+
+/* 对话面板 */
+.nx-panel {
+  background: var(--bg-elev);
+  border-radius: 14px;
+  border: 1px solid var(--border-soft);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  max-height: 100%;
+}
+
+.nx-panel-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-soft);
+  background: var(--bg-elev-2);
+}
+
+.nx-panel-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.nx-panel-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nx-panel-state {
+  font-size: 10px;
+  color: var(--text-faint);
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  margin-left: auto;
+}
+
+.nx-panel-body {
+  padding: 10px 14px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.nx-empty-turns {
+  color: var(--text-faint);
+  font-size: 12px;
+  text-align: center;
+  padding: 20px 0;
+}
+
+/* 消息气泡 */
+.nx-msg {
+  font-size: 12px;
+  line-height: 1.6;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  word-break: break-word;
+}
+
+.nx-msg-user {
+  background: var(--bg-input);
+  color: var(--text);
+}
+
+.nx-msg-ai {
+  background: transparent;
+  color: var(--text-dim);
+  border-left: 2px solid var(--accent-dim);
+  padding-left: 10px;
+}
+
+.nx-msg-tool {
+  color: var(--accent);
+  font-size: 11px;
+  opacity: 0.8;
+}
+
+.nx-msg-error {
+  color: var(--err);
+  font-size: 11px;
+  background: rgba(226,97,76,0.08);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+/* 弧形输入区 — 底部居中 */
+.nexus-arc-input {
+  position: absolute;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, 80%);
+  z-index: 10;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 8px 8px 8px 16px;
+  border-radius: 28px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(232,179,57,0.05);
+  transition: border-color 200ms ease, box-shadow 200ms ease;
+}
+
+.nexus-arc-input:focus-within {
+  border-color: rgba(232,179,57,0.4);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 16px rgba(232,179,57,0.1);
+}
+
+.nexus-arc-text {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 14px;
+  font-family: inherit;
+  line-height: 1.5;
+  resize: none;
+  max-height: 120px;
+  padding: 6px 0;
+}
+
+.nexus-arc-text::placeholder {
+  color: var(--text-faint);
+}
+
+.nexus-arc-send {
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-fg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: transform 150ms ease, opacity 150ms ease;
+}
+
+.nexus-arc-send:hover {
+  transform: scale(1.08);
+}
+
+.nexus-arc-send:active {
+  transform: scale(0.95);
+}
+
+/* 返回按钮 */
+.nexus-back {
+  position: absolute;
+  top: 16px; left: 16px;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.nexus-back:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+/* 提示文字 */
+.nexus-hint {
+  position: absolute;
+  bottom: 90px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-faint);
+  letter-spacing: 0.5px;
+  z-index: 5;
+  pointer-events: none;
+  opacity: 0.6;
+}

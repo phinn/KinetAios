@@ -7,6 +7,7 @@ import { renderMarkdown as md } from './markdown';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
 import { setTownLang, setTownHomeDir, setTownStyle, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
+import { setNexusLang, setNexusCallbacks, renderNexus, refreshNexusNode, nexusOnConversationChanged, stopNexusAnimation } from './nexus';
 
 declare global {
   interface Window {
@@ -19,7 +20,7 @@ const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
 let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
-let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' | string = 'chat';
+let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' | 'nexus' | string = 'chat';
 // 插件 panel 注册表: name → { title, icon, html }。init 时从 main 加载。
 // Plugin panel registry: name → { title, icon, html }. Loaded from main on init.
 let pluginPanelRegistry: Array<{ name: string; title: string; icon?: string; html: string }> = [];
@@ -176,6 +177,7 @@ function applyI18nDOM(): void {
     if (conv.id === selectedId) renderMain();
     if (currentView === 'workbench') renderWorkbench();
     if (currentView === 'town') townOnConversationChanged();
+    if (currentView === 'nexus') nexusOnConversationChanged();
     // 转发 conversation 更新给所有插件 iframe (替代轮询)
     // Forward conversation updates to all plugin iframes (replaces polling)
     // 每个插件收到的 target 必须匹配自己的 source 名
@@ -195,6 +197,7 @@ function applyI18nDOM(): void {
     renderMain();
     if (currentView === 'workbench') renderWorkbench();
     if (currentView === 'town') townOnConversationChanged();
+    if (currentView === 'nexus') nexusOnConversationChanged();
   });
   // 非 token 事件(tool/cost/status/context)的 renderMain 做 debounce:
   // AgentLoop 一轮 ReAct 可能连发多个 tool+cost 事件,每次 renderMain 全量重建 DOM +
@@ -251,6 +254,7 @@ function applyI18nDOM(): void {
         refreshWbCard(conv.cwd || '');
       }
       if (currentView === 'town') refreshTownVillager(conv);
+      if (currentView === 'nexus') refreshNexusNode(conv);
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
@@ -2022,6 +2026,7 @@ function applyTheme(theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 's
   document.documentElement.dataset.theme = theme;
   // SEED 主题切换时重渲小镇(SVG 风格跟随主题) / Re-render town on theme switch (SVG style follows theme)
   if (currentView === 'town') renderTown();
+  if (currentView === 'nexus') renderNexus();
 }
 
 async function showSettings() {
@@ -3381,7 +3386,8 @@ function closeMoreMenu() {
   document.getElementById('m-snap')!.onclick = () => { closeMoreMenu(); void openSnapshotPanel(); };
   document.getElementById('m-pipeline')!.onclick = () => { closeMoreMenu(); showPipeline(); };
   document.getElementById('m-templates')!.onclick = () => { closeMoreMenu(); showTemplates(); };
-  document.getElementById('m-town')!.onclick = () => { closeMoreMenu(); showTown(); };
+  document.getElementById('m-town')!.onclick = () => { closeMoreMenu(); hideNexus(); showTown(); };
+  document.getElementById('m-nexus')!.onclick = () => { closeMoreMenu(); showNexus(); };
   document.getElementById('m-cost')!.onclick = () => { closeMoreMenu(); showCost(); };
   document.getElementById('m-ctools')!.onclick = () => { closeMoreMenu(); showCTools(); };
   document.getElementById('m-timeline')!.onclick = () => { closeMoreMenu(); showTimeline(); };
@@ -4813,7 +4819,7 @@ function showTimeline() {
 }
 
 function hideAllViews(): void {
-  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view', 'town-view']) {
+  for (const id of ['chat-view', 'settings-view', 'workbench-view', 'pipeline-view', 'templates-view', 'cost-view', 'ctools-view', 'timeline-view', 'town-view', 'nexus-view']) {
     const el = document.getElementById(id)!;
     el.classList.remove('active');
     // 切走时重置滚动位置,避免回来时停在底部 / 布局错乱
@@ -4822,6 +4828,8 @@ function hideAllViews(): void {
   // 隐藏所有插件 panel 视图 + 容器 / Hide all plugin panel views + container
   document.querySelectorAll('.plugin-panel-view').forEach((el) => el.classList.remove('active'));
   document.getElementById('plugin-panels-container')?.classList.remove('active');
+  // 切走 NEXUS 时停止粒子动画(节省 CPU) / Stop NEXUS particle animation on switch
+  if (currentView !== 'nexus') stopNexusAnimation();
 }
 
 function showWorkbench() {
@@ -4853,6 +4861,32 @@ async function showTown() {
     }
   } catch { /* ignore — main may not be ready yet */ }
   renderTown();
+}
+
+// ── NEXUS:空间认知 Agent 界面 ──
+// 轨道视图 + 粒子数据流,复用现有会话数据。
+function showNexus() {
+  currentView = 'nexus';
+  hideAllViews();
+  document.getElementById('nexus-view')!.classList.add('active');
+  syncViewButtons();
+  // 注入回调 / Inject callbacks
+  setNexusCallbacks({
+    send: (id, text) => { void api.send(id, text); },
+    cancel: (id) => { void api.cancel(id); },
+    selectChat: (id) => { selectedId = id; renderSidebar(); },
+    newTask: (_cwd) => { void newTaskInProject(_cwd); },
+    convs: () => convs,
+    order: () => order,
+    selectedId: () => selectedId,
+  });
+  setNexusLang(lang);
+  renderNexus();
+}
+
+// 切走 NEXUS 时停止动画(节省 CPU) / Stop animation when leaving NEXUS
+function hideNexus() {
+  stopNexusAnimation();
 }
 
 // ── 插件 Panel 视图(v2.1: 渲染层扩展)──

@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; frame-src blob: data: file: http: https: srcdoc:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://unpkg.com;" />
   <title>KinetAios</title>
-  <link rel="stylesheet" href="styles.css?v=20250810i" />
+  <link rel="stylesheet" href="styles.css?v=20250810j" />
  <link rel="stylesheet" href="town.css" />
 </head>
 <body>
@@ -43,6 +43,7 @@
                 <button class="sb-more-item" id="m-ctools"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCTools">自定义工具</span></button>
                 <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
                 <button class="sb-more-item" id="m-town"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTown">小镇</span></button>
+                <button class="sb-more-item" id="m-nexus"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreNexus">NEXUS</span></button>
               </div>
             </div>
           </div>
@@ -252,6 +253,11 @@
       <div id="town-view" class="view">
         <div id="town-canvas"></div>
       </div>
+
+      <!-- NEXUS view(空间认知 Agent 界面:轨道视图 + 粒子数据流)-->
+      <div id="nexus-view" class="view">
+        <div id="nexus-canvas"></div>
+      </div>
       <!-- plugin panels(v2.1: 插件贡献的渲染层视图, 运行时动态注入)-->
       <div id="plugin-panels-container"></div>
 
@@ -414,6 +420,6 @@
 
     </div>
 
-  <script src="app.js?v=20250810i"></script>
+  <script src="app.js?v=20250810j"></script>
 </body>
 </html>
