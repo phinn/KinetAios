@@ -870,19 +870,21 @@ a { color: var(--accent); }
 
 /* ── NEXUS Phase 1.5: Tooltip / Context Menu / Empty State ── */
 
-/* 节点 hover tooltip */
+/* 节点 hover tooltip — 毛玻璃 / Glass tooltip */
 .nexus-tooltip {
   position: absolute;
   z-index: 20;
   min-width: 160px;
   max-width: 240px;
   padding: 8px 12px;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+  background: rgba(39,39,45,0.85);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
   pointer-events: none;
-  animation: nxTooltipIn 120ms ease-out;
+  animation: nxTooltipIn 140ms var(--ease-out);
 }
 
 @keyframes nxTooltipIn {
@@ -925,17 +927,19 @@ a { color: var(--accent); }
   margin: 0 2px;
 }
 
-/* 右键上下文菜单 */
+/* 右键上下文菜单 — 毛玻璃 / Glass context menu */
 .nexus-ctx-menu {
   position: absolute;
   z-index: 30;
   min-width: 140px;
   padding: 4px;
-  background: var(--bg-elev-2);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  box-shadow: 0 8px 24px rgba(0,0,0,0.5);
-  animation: nxMenuIn 100ms ease-out;
+  background: rgba(39,39,45,0.88);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: 12px;
+  box-shadow: 0 8px 28px rgba(0,0,0,0.6);
+  animation: nxMenuIn 120ms var(--ease-out);
 }
 
 @keyframes nxMenuIn {
@@ -4490,7 +4494,11 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   width: 100%;
   height: 100%;
   overflow: hidden;
-  background: var(--bg);
+  /* 深空径向渐变背景 / Deep-space radial gradient background */
+  background:
+    radial-gradient(ellipse 80% 60% at 50% 50%, rgba(232,179,57,0.04), transparent 70%),
+    radial-gradient(ellipse 100% 80% at 30% 20%, rgba(108,92,231,0.03), transparent 60%),
+    var(--bg);
 }
 
 #nexus-canvas {
@@ -4532,25 +4540,31 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   pointer-events: auto;
 }
 
+/* 空状态提示 / Empty state */
 .nexus-empty {
   padding: 20px;
   text-align: center;
   color: var(--text-faint);
   font-size: 13px;
-  background: var(--bg-elev);
-  border-radius: 12px;
-  border: 1px solid var(--border-soft);
+  background: rgba(33,33,38,0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.04);
 }
 
-/* 对话面板 */
+/* 对话面板 — 毛玻璃 / Glass panel */
 .nx-panel {
-  background: var(--bg-elev);
-  border-radius: 14px;
-  border: 1px solid var(--border-soft);
+  background: rgba(33,33,38,0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border-radius: 16px;
+  border: 1px solid rgba(255,255,255,0.06);
   overflow: hidden;
   display: flex;
   flex-direction: column;
   max-height: 100%;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4);
 }
 
 .nx-panel-head {
@@ -4558,8 +4572,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   align-items: center;
   gap: 8px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--border-soft);
-  background: var(--bg-elev-2);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  background: rgba(255,255,255,0.02);
 }
 
 .nx-panel-dot {
@@ -4609,8 +4623,9 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nx-msg-user {
-  background: var(--bg-input);
+  background: rgba(232,179,57,0.08);
   color: var(--text);
+  border: 1px solid rgba(232,179,57,0.06);
 }
 
 .nx-msg-ai {
@@ -4634,7 +4649,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   padding: 6px 8px;
 }
 
-/* 弧形输入区 — 底部居中 */
+/* 弧形输入区 — 底部居中毛玻璃 / Bottom-center glass input */
 .nexus-arc-input {
   position: absolute;
   bottom: 24px;
@@ -4647,15 +4662,17 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   gap: 8px;
   padding: 8px 8px 8px 16px;
   border-radius: 28px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 0 1px rgba(232,179,57,0.05);
-  transition: border-color 200ms ease, box-shadow 200ms ease;
+  background: rgba(33,33,38,0.72);
+  backdrop-filter: blur(20px) saturate(140%);
+  -webkit-backdrop-filter: blur(20px) saturate(140%);
+  border: 1px solid rgba(255,255,255,0.06);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 rgba(255,255,255,0.04);
+  transition: border-color 200ms var(--ease-out), box-shadow 200ms var(--ease-out);
 }
 
 .nexus-arc-input:focus-within {
-  border-color: rgba(232,179,57,0.4);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 16px rgba(232,179,57,0.1);
+  border-color: rgba(232,179,57,0.3);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(232,179,57,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
 .nexus-arc-text {
@@ -4698,73 +4715,53 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   transform: scale(0.95);
 }
 
-/* 返回按钮 */
+/* ── NEXUS 工具栏按钮统一样式 / Unified toolbar button ── */
+.nexus-back, .nexus-reset, .nexus-collapse {
+  position: absolute;
+  width: 34px; height: 34px;
+  border-radius: 10px;
+  background: rgba(33,33,38,0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.06);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out);
+}
+
+.nexus-back:hover, .nexus-reset:hover, .nexus-collapse:hover {
+  background: rgba(50,50,58,0.8);
+  color: var(--text);
+  border-color: rgba(255,255,255,0.1);
+  transform: translateY(-1px);
+}
+
+.nexus-back:active, .nexus-reset:active, .nexus-collapse:active {
+  transform: translateY(0) scale(0.96);
+}
+
+/* 返回按钮 / Back button */
 .nexus-back {
-  position: absolute;
   top: 16px; left: 16px;
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border-soft);
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
   z-index: 10;
-  transition: background 150ms ease, color 150ms ease;
 }
 
-.nexus-back:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
-}
-
-/* Phase 2: 重置视图按钮 */
+/* 重置视图按钮 / Reset view button */
 .nexus-reset {
-  position: absolute;
-  top: 16px; left: 56px;
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border-soft);
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  top: 16px; left: 58px;
   z-index: 10;
-  transition: background 150ms ease, color 150ms ease;
 }
 
-.nexus-reset:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
-}
-
-/* Phase 3: 折叠 overlay 按钮 */
+/* 折叠 overlay 按钮 / Collapse overlay button */
 .nexus-collapse {
-  position: absolute;
   top: 16px; right: 16px;
-  width: 32px; height: 32px;
-  border-radius: 8px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border-soft);
-  color: var(--text-dim);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
   z-index: 11;
-  transition: background 150ms ease, color 150ms ease;
 }
 
-.nexus-collapse:hover {
-  background: var(--bg-elev-2);
-  color: var(--text);
-}
-
-/* Phase 3: 搜索栏 */
+/* Phase 3: 搜索栏 — 毛玻璃 / Glass search bar */
 .nexus-search {
   position: absolute;
   top: 16px; left: 50%;
@@ -4776,13 +4773,15 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   gap: 8px;
   padding: 6px 12px;
   border-radius: 20px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border-soft);
-  transition: border-color 200ms ease;
+  background: rgba(33,33,38,0.72);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.06);
+  transition: border-color var(--dur-fast) var(--ease-out);
 }
 
 .nexus-search:focus-within {
-  border-color: rgba(232,179,57,0.4);
+  border-color: rgba(232,179,57,0.3);
 }
 
 .nexus-search-icon {
@@ -4878,13 +4877,18 @@ code.nx-md-inline {
 /* 提示文字 */
 .nexus-hint {
   position: absolute;
-  bottom: 90px;
+  bottom: 88px;
   left: 50%;
   transform: translateX(-50%);
-  font-size: 11px;
+  font-size: 10px;
   color: var(--text-faint);
-  letter-spacing: 0.5px;
+  letter-spacing: 1px;
   z-index: 5;
   pointer-events: none;
-  opacity: 0.6;
+  opacity: 0;
+  animation: nxHintFade 400ms var(--ease-out) 600ms forwards;
+}
+
+@keyframes nxHintFade {
+  to { opacity: 0.4; }
 }

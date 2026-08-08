@@ -261,8 +261,8 @@ function buildRings(): void {
   const ringCount = rings.length;
   const maxRings = 8;
   const compression = ringCount > maxRings ? maxRings / ringCount : 1;
-  const ringRadius = Math.max(60, 110 * compression); // 每环间距 / ring spacing
-  const baseRadius = Math.max(55, 90 * compression);  // 最内圈半径 / innermost radius
+  const ringRadius = Math.max(70, 130 * compression); // 每环间距 / ring spacing
+  const baseRadius = Math.max(65, 105 * compression);  // 最内圈半径 / innermost radius
   rings.forEach((ring, i) => {
     // Phase 4: 折叠的轨道不参与布局间距计算(占位极小) / Folded rings get minimal space
     if (foldedCwds.has(ring.cwd)) {
@@ -637,10 +637,15 @@ function renderSVG(): void {
 
   // ── 渐变定义 / Gradient defs ──
   svg += `<defs>`;
-  // 核心光晕 / Core glow
+  // 核心光晕(多层) / Core glow (multi-layer)
   svg += `<radialGradient id="nx-core-glow" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="#e8b339" stop-opacity="0.6"/>
-    <stop offset="40%" stop-color="#e8b339" stop-opacity="0.15"/>
+    <stop offset="0%" stop-color="#e8b339" stop-opacity="0.5"/>
+    <stop offset="30%" stop-color="#e8b339" stop-opacity="0.15"/>
+    <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+  </radialGradient>`;
+  svg += `<radialGradient id="nx-core-glow-inner" cx="50%" cy="50%" r="50%">
+    <stop offset="0%" stop-color="#f4d06f" stop-opacity="0.8"/>
+    <stop offset="60%" stop-color="#e8b339" stop-opacity="0.3"/>
     <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
   </radialGradient>`;
   // 节点状态渐变 / Node state gradients
@@ -663,31 +668,48 @@ function renderSVG(): void {
     <stop offset="60%" stop-color="#4ec27a"/>
     <stop offset="100%" stop-color="#1e5e3a"/>
   </radialGradient>`;
+  // 节点光晕渐变(按引擎色) / Node halo gradient (per engine)
+  for (const [engine, color] of Object.entries(ENGINE_COLORS)) {
+    const gid = `nx-halo-${engine}`;
+    svg += `<radialGradient id="${gid}" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.3"/>
+      <stop offset="50%" stop-color="${color}" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
+    </radialGradient>`;
+  }
   svg += `</defs>`;
 
   // ── 轨道环 / Orbit rings ──
   for (const ring of rings) {
     const r = ring.nodes[0]?.radius || 100;
     const isFolded = foldedCwds.has(ring.cwd);
-    // 轨道线 / Orbit line (折叠时用实线淡化 / folded = solid faint)
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,${isFolded ? '0.02' : '0.06'})" stroke-width="1" stroke-dasharray="${isFolded ? '1 6' : '2 4'}"/>`;
+    // 轨道线 — 双层:外发光 + 虚线 / Orbit line — double: outer glow + dashed
+    if (!isFolded) {
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,0.03)" stroke-width="3"/>`;
+    }
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,${isFolded ? '0.02' : '0.1'})" stroke-width="1" stroke-dasharray="${isFolded ? '1 6' : '2 4'}"/>`;
     // 轨道标签(可点击折叠/展开) / Orbit label (clickable to fold/unfold), top position
     const labelX = cx + r * Math.cos(-Math.PI / 2);
     const labelY = cy + r * Math.sin(-Math.PI / 2) - 8;
     const foldIcon = isFolded ? '▸' : '▾';
-    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.4'})" font-size="10" text-anchor="middle" font-family="system-ui" style="cursor:pointer" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
+    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.45'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="0.5" style="cursor:pointer" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
   }
 
   // ── 核心意图球 / Central intent core ──
-  const corePulse = 1 + Math.sin(Date.now() / 800) * 0.05;
-  const coreR = 28 * corePulse;
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 2.5}" fill="url(#nx-core-glow)"/>`;
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="rgba(232,179,57,0.08)" stroke="rgba(232,179,57,0.3)" stroke-width="1"/>`;
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 0.6}" fill="rgba(232,179,57,0.15)"/>`;
-  // 核心中心点 / Core center dot
-  svg += `<circle cx="${cx}" cy="${cy}" r="4" fill="#e8b339"/>`;
+  const corePulse = 1 + Math.sin(Date.now() / 800) * 0.06;
+  const coreR = 32 * corePulse;
+  // 外层大光晕 / Outer large halo
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 3}" fill="url(#nx-core-glow)"/>`;
+  // 内层亮光晕 / Inner bright halo
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 1.6}" fill="url(#nx-core-glow-inner)"/>`;
+  // 核心球体 / Core body
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="rgba(232,179,57,0.06)" stroke="rgba(232,179,57,0.25)" stroke-width="1"/>`;
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 0.7}" fill="rgba(232,179,57,0.1)" stroke="rgba(232,179,57,0.15)" stroke-width="0.5"/>`;
+  // 核心中心亮点 / Core center bright dot
+  svg += `<circle cx="${cx}" cy="${cy}" r="5" fill="#f4d06f"/>`;
+  svg += `<circle cx="${cx}" cy="${cy}" r="2.5" fill="#fff8e0"/>`;
   // 核心标签 / Core label
-  svg += `<text x="${cx}" y="${cy + coreR + 16}" fill="rgba(232,179,57,0.5)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="1">INTENT CORE</text>`;
+  svg += `<text x="${cx}" y="${cy + coreR + 18}" fill="rgba(232,179,57,0.4)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="2">INTENT CORE</text>`;
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
   for (const ring of rings) {
@@ -697,9 +719,10 @@ function renderSVG(): void {
       const nx = cx + node.radius * Math.cos(node.angle);
       const ny = cy + node.radius * Math.sin(node.angle);
       const color = ENGINE_COLORS[node.engine] || '#e8b339';
-      // 虚线连接,带动画 / Dashed line with animation
-      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1" opacity="0.25" stroke-dasharray="3 6">
-        <animate attributeName="stroke-dashoffset" from="0" to="-18" dur="1s" repeatCount="indefinite"/>
+      // 双层连线:外发光 + 流动虚线 / Double line: outer glow + flowing dash
+      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="2" opacity="0.08"/>`;
+      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1" opacity="0.35" stroke-dasharray="4 6">
+        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
       </line>`;
     }
   }
@@ -713,7 +736,9 @@ function renderSVG(): void {
         const nx = cx + node.radius * Math.cos(node.angle);
         const ny = cy + node.radius * Math.sin(node.angle);
         const color = ENGINE_COLORS[node.engine] || '#e8b339';
-        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1.5" opacity="0.4"/>`;
+        // 双层:外发光 + 实线 / Double: outer glow + solid
+        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="3" opacity="0.06"/>`;
+        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1.5" opacity="0.5"/>`;
       }
     }
   }
@@ -728,34 +753,38 @@ function renderSVG(): void {
       const isSelected = node.id === selectedNodeId;
       const color = ENGINE_COLORS[node.engine] || '#e8b339';
       const nodeR = isSelected ? 14 : 10;
+      const haloId = `nx-halo-${node.engine}`;
+
+      // 引擎色光晕(所有节点) / Engine-colored halo (all nodes)
+      svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 8}" fill="url(#${haloId})" opacity="${isSelected ? '0.8' : '0.5'}" style="pointer-events:none"/>`;
 
       // 选中光环 / Selection halo
       if (isSelected) {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 10}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.4">
-          <animate attributeName="r" values="${nodeR + 8};${nodeR + 14};${nodeR + 8}" dur="2s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.4;0.15;0.4" dur="2s" repeatCount="indefinite"/>
+        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 10}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.5">
+          <animate attributeName="r" values="${nodeR + 8};${nodeR + 16};${nodeR + 8}" dur="2.5s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.5;0.1;0.5" dur="2.5s" repeatCount="indefinite"/>
         </circle>`;
       }
 
       // 运行中脉冲 / Running pulse
       if (node.state === 'running') {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="none" stroke="${color}" stroke-width="1" opacity="0.3">
-          <animate attributeName="r" values="${nodeR};${nodeR + 12};${nodeR}" dur="1.5s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.5;0;0.5" dur="1.5s" repeatCount="indefinite"/>
+        svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="none" stroke="${color}" stroke-width="1" opacity="0.4">
+          <animate attributeName="r" values="${nodeR};${nodeR + 14};${nodeR}" dur="1.8s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.6;0;0.6" dur="1.8s" repeatCount="indefinite"/>
         </circle>`;
       }
 
       // 节点本体 / Node body — 含 data-nid 用于点击/hover/右键
       const gradId = `nx-node-${node.state}`;
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="url(#${gradId})" stroke="${color}" stroke-width="${isSelected ? 2 : 1}" opacity="${isSelected ? 1 : 0.85}" style="cursor:pointer" data-nid="${node.id}"/>`;
+      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="url(#${gradId})" stroke="${color}" stroke-width="${isSelected ? 2 : 1}" opacity="${isSelected ? 1 : 0.9}" style="cursor:pointer" data-nid="${node.id}"/>`;
 
       // 节点中心点 / Node center dot
       svg += `<circle cx="${x}" cy="${y}" r="3" fill="${color}" data-nid="${node.id}" style="cursor:pointer"/>`;
 
-      // 引擎标签(仅选中) / Engine label (only when selected)
-      if (isSelected) {
+      // 引擎标签(选中或运行中) / Engine label (selected or running)
+      if (isSelected || node.state === 'running') {
         const labelText = ENGINE_LABELS[node.engine] || node.engine;
-        svg += `<text x="${x}" y="${y - nodeR - 6}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui">${esc(labelText)}</text>`;
+        svg += `<text x="${x}" y="${y - nodeR - 8}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui" opacity="${isSelected ? '1' : '0.6'}">${esc(labelText)}</text>`;
       }
 
       // Phase 4: 节点状态徽标 / Node state badge (small indicator on node)
@@ -960,17 +989,25 @@ function updateParticles(): void {
     if (p.progress < 0.15) alpha *= p.progress / 0.15;
     else if (p.progress > 0.85) alpha *= (1 - p.progress) / 0.15;
 
+    // 外层光晕 / Outer glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 3, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha * 0.12;
+    ctx.fill();
+
+    // 中层光晕 / Mid glow
+    ctx.beginPath();
+    ctx.arc(p.x, p.y, p.size * 1.8, 0, Math.PI * 2);
+    ctx.fillStyle = p.color;
+    ctx.globalAlpha = alpha * 0.25;
+    ctx.fill();
+
+    // 核心 / Core
     ctx.beginPath();
     ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
     ctx.fillStyle = p.color;
     ctx.globalAlpha = alpha;
-    ctx.fill();
-
-    // 光晕 / Glow
-    ctx.beginPath();
-    ctx.arc(p.x, p.y, p.size * 2.5, 0, Math.PI * 2);
-    ctx.fillStyle = p.color;
-    ctx.globalAlpha = alpha * 0.15;
     ctx.fill();
   }
 
