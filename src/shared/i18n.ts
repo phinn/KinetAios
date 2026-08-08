@@ -892,6 +892,7 @@ const ZH_CN: Dict = {
   // ── 引擎 / Engine 下拉 ──
   'engine.direct': 'Kaios (Direct)',
   'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.directV3': 'Kaios v3 (Adaptive)',
   'engine.claudeCode': 'Claude Code',
   'engine.codex': 'Codex',
   'engine.team': 'Agent Team',
@@ -1790,6 +1791,7 @@ const EN: Dict = {
   // ── Engine dropdown ──
   'engine.direct': 'Kaios (Direct)',
   'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.directV3': 'Kaios v3 (Adaptive)',
   'engine.claudeCode': 'Claude Code',
   'engine.codex': 'Codex',
   'engine.team': 'Agent Team',
@@ -2689,6 +2691,7 @@ const ZH_TW: Dict = {
   // ── 引擎下拉 ──
   'engine.direct': 'Kaios (Direct)',
   'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.directV3': 'Kaios v3 (Adaptive)',
   'engine.claudeCode': 'Claude Code',
   'engine.codex': 'Codex',
   'engine.team': 'Agent Team',
@@ -3589,6 +3592,7 @@ const JA: Dict = {
   // ── エンジン選択 ──
   'engine.direct': 'Kaios (Direct)',
   'engine.directV2': 'Kaios v2 (Plan·Verify)',
+  'engine.directV3': 'Kaios v3 (Adaptive)',
   'engine.claudeCode': 'Claude Code',
   'engine.codex': 'Codex',
   'engine.team': 'Agent Team',

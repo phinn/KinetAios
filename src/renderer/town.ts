@@ -28,6 +28,7 @@ export type RemoteNodeInfo = {
 const ENGINE_COLORS: Record<EngineKind, string> = {
   direct: '#e8b339',
   directV2: '#6c5ce7',
+  directV3: '#00b894',
   claudeCode: '#d97757',
   codex: '#10a37f',
 };

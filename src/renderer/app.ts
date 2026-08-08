@@ -1437,7 +1437,7 @@ function renderHead(conv: Conversation | undefined) {
   // 配置档下拉:Direct 家族引擎(direct + directV2)+ 有配置档时显示
   const profileSel = document.getElementById('profile-select') as HTMLSelectElement | null;
   const hasProfiles = !!(profileSel && profileSel.options.length > 1);
-  const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2';
+  const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
   if (profileSel) {
     profileSel.value = conv.profileId || '';
     profileSel.style.display = (isDirectFam && hasProfiles) ? '' : 'none';
@@ -1497,7 +1497,7 @@ function syncEngineSelect(conv: Conversation | undefined) {
   const sel = document.getElementById('engine-select') as HTMLSelectElement;
   const current = conv?.engine ?? 'direct';
   // Direct 家族永远可用;CLI 引擎需要 enableCliEngines。
-  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'claudeCode', 'codex'] : ['direct', 'directV2'];
+  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'directV3', 'claudeCode', 'codex'] : ['direct', 'directV2', 'directV3'];
   if (!want.includes(current)) want.push(current);
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
@@ -2141,6 +2141,7 @@ async function showSettings() {
         <div class="field"><label>${tr('settings.defaultEngine')}</label><select id="s-default-engine">
           <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
           <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
+          <option value="directV3" ${s.defaultEngine === 'directV3' ? 'selected' : ''}>Kaios v3 (Adaptive)</option>
           ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select></div>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
@@ -2227,7 +2228,7 @@ async function showSettings() {
           <div class="field"><label>Bot ID</label><input id="s-wecom-botid" type="text" value="${esc(s.wecomBot?.botId ?? '')}" placeholder="${tr('settings.wecom.botIdPh')}" /></div>
           <div class="field"><label>Secret</label><div class="key-eye-wrap"><input id="s-wecom-secret" type="password" value="${esc(s.wecomBot?.secret ?? '')}" placeholder="${tr('settings.wecom.secretPh')}" /><span class="key-eye" data-target="s-wecom-secret">👁</span></div></div>
           <div class="field"><label>${tr('settings.wecom.engine')}</label><select id="s-wecom-engine">
-            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
+            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['directV3', 'Kaios V3'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.wecomBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select></div>
           <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
           <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
@@ -2240,7 +2241,7 @@ async function showSettings() {
           <div class="field"><label>App ID</label><input id="s-feishu-appid" type="text" value="${esc(s.feishuBot?.appId ?? '')}" placeholder="${tr('settings.feishu.appIdPh')}" /></div>
           <div class="field"><label>App Secret</label><div class="key-eye-wrap"><input id="s-feishu-secret" type="password" value="${esc(s.feishuBot?.appSecret ?? '')}" placeholder="${tr('settings.feishu.secretPh')}" /><span class="key-eye" data-target="s-feishu-secret">👁</span></div></div>
           <div class="field"><label>${tr('settings.feishu.engine')}</label><select id="s-feishu-engine">
-            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.feishuBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
+            ${[['direct', 'Kaios (Direct)'], ['directV2', 'Kaios V2'], ['directV3', 'Kaios V3'], ['claudeCode', 'Claude Code'], ['codex', 'Codex']].map(([v, label]) => `<option value="${v}" ${(s.feishuBot?.engine ?? 'direct') === v ? 'selected' : ''}>${label}</option>`).join('')}
           </select></div>
           <div class="field"><label>${tr('settings.feishu.streamReply')}</label><input type="checkbox" id="s-feishu-stream" ${s.feishuBot?.streamReply !== false ? 'checked' : ''} /></div>
           <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.feishu.cwd')}</label><input id="s-feishu-cwd" type="text" value="${esc(s.feishuBot?.defaultCwd ?? '')}" placeholder="${tr('settings.feishu.cwdPh')}" style="width:100%" /></div>
@@ -5275,7 +5276,7 @@ function handleSlash(composer: HTMLTextAreaElement): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   const v = composer.value;
   // Only while the user is still typing the name token (no space yet) and only for Direct family.
-  if (!conv || (conv.engine !== 'direct' && conv.engine !== 'directV2') || !v.startsWith('/') || /\s/.test(v.slice(1))) {
+  if (!conv || (conv.engine !== 'direct' && conv.engine !== 'directV2' && conv.engine !== 'directV3') || !v.startsWith('/') || /\s/.test(v.slice(1))) {
     closeSlash();
     return;
   }

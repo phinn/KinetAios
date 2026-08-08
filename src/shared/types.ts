@@ -23,7 +23,7 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 // (never/onFailure/onRequest/untrusted) — none of those need the multi-agent machinery, add when needed.
 export type ApprovalPolicy = 'always' | 'never';
 
-export type EngineKind = 'direct' | 'directV2' | 'claudeCode' | 'codex';
+export type EngineKind = 'direct' | 'directV2' | 'directV3' | 'claudeCode' | 'codex';
 
 // 上下文模式 —— 控制工具结果截断策略与上下文预算。以后可扩展更多模式(如 deep-research)。
 // Context mode — controls tool result truncation + context budget. Extensible for future modes.
@@ -75,6 +75,17 @@ export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
     appendStepSummary: true,
     stepSummaryMaxChars: 800,
     stepResultMaxChars: 6000,
+    subAgentScope: 'last_n_turns',
+  },
+  // v3 DirectV3:自适应流水线。Fast path 轻量(与 v1 类似),Std path 中等,
+  // Deep path 大量累积。这里给一个中等偏大的默认值,实际由 path 动态调整。
+  directV3: {
+    trimBudget: 60_000,
+    interStepCompactBudget: 60_000,
+    truncateThreshold: 10_000,
+    appendStepSummary: true,
+    stepSummaryMaxChars: 600,
+    stepResultMaxChars: 4000,
     subAgentScope: 'last_n_turns',
   },
   // Claude Code / Codex:外部 CLI 各自管自己的 context,这里只给个保底值(目前未触发)。
@@ -129,8 +140,8 @@ export function resolveEnginePolicy(
 ): EngineContextPolicy {
   const base = ENGINE_POLICIES[engine] || ENGINE_POLICIES.direct;
 
-  // directV2:动态预算
-  if (engine === 'directV2' && v2ModelWindow) {
+  // directV2/directV3:动态预算
+  if ((engine === 'directV2' || engine === 'directV3') && v2ModelWindow) {
     const ratio = v2BudgetRatio ?? V2_DEFAULT_BUDGET_RATIO;
     const { trim, compact, truncate } = v2BudgetFromWindow(v2ModelWindow, ratio);
     const hifiMul = mode === 'hifi' ? 2 : 1;
@@ -156,6 +167,7 @@ export function resolveEnginePolicy(
 export const ENGINE_LABELS: Record<EngineKind, string> = {
   direct: 'Kaios (Direct)',
   directV2: 'Kaios v2 (Plan·Verify)',
+  directV3: 'Kaios v3 (Adaptive)',
   claudeCode: 'Claude Code',
   codex: 'Codex',
 };

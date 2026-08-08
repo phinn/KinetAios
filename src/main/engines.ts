@@ -798,11 +798,13 @@ class CodexEngine implements Engine {
 }
 
 import { DirectV2Engine } from './DirectV2Engine';
+import { DirectV3Engine } from './V3';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   return new Map<EngineKind, Engine>([
     ['direct', new DirectEngine(confirm)],
     ['directV2', new DirectV2Engine(confirm)],
+    ['directV3', new DirectV3Engine(confirm)],
     ['claudeCode', new ClaudeCodeEngine()],
     ['codex', new CodexEngine()],
   ]);
