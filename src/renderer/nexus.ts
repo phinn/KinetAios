@@ -7,7 +7,9 @@
 // Phase 2: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
 //          + hover tooltip + 双击跳转 + 右键菜单 + 自适应缩放 + 快捷指令
 //          + 滚轮缩放/拖拽平移 + overlay 流式滚动跟随 + 节点连线
-// Phase 2: SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan. Zero dependencies.
+// Phase 3: 搜索过滤 + overlay 折叠 + 键盘快捷键(Tab/Esc)
+// Phase 4: 轨道折叠/展开 + 节点状态徽标 + 视图状态持久化 + 拖拽优化 + 性能降级
+// SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan + fold + badges. Zero dependencies.
 
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
@@ -148,6 +150,37 @@ let dragStartOffY = 0;
 let searchQuery = '';
 let overlayCollapsed = false;
 
+// ── Phase 4: 轨道折叠状态 / Orbit fold state ──
+let foldedCwds = new Set<string>();
+
+// ── Phase 4: 视图状态持久化 / View state persistence ──
+// 用 sessionStorage 保存缩放/平移/折叠状态,刷新页面不丢。
+// Persist zoom/pan/fold in sessionStorage so page refresh won't lose them.
+const SS_KEY = 'nexus-view-state';
+interface NexusViewState { scale: number; offsetX: number; offsetY: number; folded: string[]; }
+function saveViewState(): void {
+  try {
+    const state: NexusViewState = {
+      scale: viewScale, offsetX: viewOffsetX, offsetY: viewOffsetY,
+      folded: Array.from(foldedCwds),
+    };
+    sessionStorage.setItem(SS_KEY, JSON.stringify(state));
+  } catch { /* sessionStorage 可能不可用 */
+}
+}
+function loadViewState(): void {
+  try {
+    const raw = sessionStorage.getItem(SS_KEY);
+    if (!raw) return;
+    const s = JSON.parse(raw) as NexusViewState;
+    viewScale = s.scale ?? 1;
+    viewOffsetX = s.offsetX ?? 0;
+    viewOffsetY = s.offsetY ?? 0;
+    foldedCwds = new Set(s.folded || []);
+  } catch { /* ignore */
+}
+}
+
 // ── 粒子系统 / Particle system ──
 // 当 Agent 正在运行时,从核心向节点发射粒子,模拟"意图流向 Agent"。
 // Emits particles from core to running agents, simulating intent flow.
@@ -230,9 +263,24 @@ function buildRings(): void {
   const ringRadius = Math.max(60, 110 * compression); // 每环间距 / ring spacing
   const baseRadius = Math.max(55, 90 * compression);  // 最内圈半径 / innermost radius
   rings.forEach((ring, i) => {
-    const r = baseRadius + i * ringRadius;
-    ring.nodes.forEach(n => { n.radius = r; });
+    // Phase 4: 折叠的轨道不参与布局间距计算(占位极小) / Folded rings get minimal space
+    if (foldedCwds.has(ring.cwd)) {
+      ring.nodes.forEach(n => { n.radius = baseRadius + i * ringRadius; });
+    } else {
+      const r = baseRadius + i * ringRadius;
+      ring.nodes.forEach(n => { n.radius = r; });
+    }
   });
+}
+
+// ── Phase 4: 性能降级判断 / Performance tier ──
+// 节点总数超过阈值时降级粒子频率和 SVG 重绘频率。
+// Degrade particle frequency and SVG repaint when node count exceeds threshold.
+function totalNodeCount(): number {
+  return rings.reduce((sum, r) => sum + r.nodes.length, 0);
+}
+function isHeavyLoad(): boolean {
+  return totalNodeCount() > 40;
 }
 
 // ── 全量渲染 / Full render ──
@@ -287,6 +335,10 @@ export function renderNexus(): void {
   canvas = document.getElementById('nexus-particle-canvas') as HTMLCanvasElement;
   ctx = canvas?.getContext('2d') || null;
 
+  // Phase 4: 恢复视图状态 / Restore view state
+  loadViewState();
+  applyViewTransform();
+
   // 绑定事件 / Bind events
   const arcText = document.getElementById('nexus-arc-text') as HTMLTextAreaElement | null;
   const arcSend = document.getElementById('nexus-arc-send');
@@ -312,7 +364,10 @@ export function renderNexus(): void {
   const resetBtn = document.getElementById('nexus-reset');
   if (resetBtn) resetBtn.onclick = () => {
     viewScale = 1; viewOffsetX = 0; viewOffsetY = 0;
+    foldedCwds.clear();
+    saveViewState();
     applyViewTransform();
+    buildRings();
   };
 
   // Phase 3: 搜索栏 / Search bar
@@ -384,6 +439,7 @@ export function renderNexus(): void {
       const delta = e.deltaY > 0 ? 0.9 : 1.1;
       viewScale = Math.max(0.3, Math.min(3, viewScale * delta));
       applyViewTransform();
+      saveViewState();
     }, { passive: false });
 
     // 拖拽平移 / Drag pan (在 SVG 层上)
@@ -391,12 +447,15 @@ export function renderNexus(): void {
       // 只在点击空白处(非节点)时启动拖拽 / Only start drag on empty space
       const target = e.target as SVGElement;
       if (target.hasAttribute('data-nid')) return;
+      if (target.hasAttribute('data-fold')) return; // Phase 4: 轨道标签不触发拖拽
       isDragging = true;
       dragStartX = e.clientX;
       dragStartY = e.clientY;
       dragStartOffX = viewOffsetX;
       dragStartOffY = viewOffsetY;
       svgWrap.style.cursor = 'grabbing';
+      // Phase 4: 拖拽时隐藏 tooltip 防闪烁 / Hide tooltip during drag
+      hideNodeTooltip();
     });
 
     svgWrap.addEventListener('mousemove', (e: MouseEvent) => {
@@ -407,8 +466,11 @@ export function renderNexus(): void {
     });
 
     const endDrag = () => {
+      if (!isDragging) return;
       isDragging = false;
       if (svgWrap) svgWrap.style.cursor = 'default';
+      // Phase 4: 拖拽结束后保存视图状态 / Save view state after drag
+      saveViewState();
     };
     svgWrap.addEventListener('mouseup', endDrag);
     svgWrap.addEventListener('mouseleave', endDrag);
@@ -417,10 +479,12 @@ export function renderNexus(): void {
     svgWrap.addEventListener('dblclick', (e: MouseEvent) => {
       const target = e.target as SVGElement;
       if (target.hasAttribute('data-nid')) return;
+      if (target.hasAttribute('data-fold')) return;
       viewScale = 1;
       viewOffsetX = 0;
       viewOffsetY = 0;
       applyViewTransform();
+      saveViewState();
     });
   }
 
@@ -475,6 +539,8 @@ function sendArcMessage(): void {
 }
 
 // ── 动画循环 / Animation loop ──
+let svgFrameSkip = 0;
+
 function startAnimation(): void {
   cancelAnimationFrame(animationId);
   const loop = () => {
@@ -505,13 +571,21 @@ function animate(): void {
   }
 
   // 渲染 SVG / Render SVG
-  renderSVG();
+  // Phase 4: 大量节点时隔帧渲染 SVG(降低 innerHTML 重建开销) / Skip SVG frames under heavy load
+  svgFrameSkip++;
+  if (isHeavyLoad()) {
+    if (svgFrameSkip % 2 === 0) renderSVG();
+  } else {
+    renderSVG();
+  }
 
   // 更新 Canvas 粒子 / Update canvas particles
   updateParticles();
 
   // 定期发射粒子到运行中的节点 / Periodically emit particles to running nodes
-  if (Math.random() < 0.15) emitParticlesToRunning();
+  // Phase 4: 性能降级 — 大量节点时降低发射频率 / Degrade frequency under heavy load
+  const emitChance = isHeavyLoad() ? 0.05 : 0.15;
+  if (Math.random() < emitChance) emitParticlesToRunning();
 }
 
 // ── SVG 尺寸缓存 / Cached SVG dimensions ──
@@ -597,12 +671,14 @@ function renderSVG(): void {
   // ── 轨道环 / Orbit rings ──
   for (const ring of rings) {
     const r = ring.nodes[0]?.radius || 100;
-    // 轨道线 / Orbit line
-    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,0.06)" stroke-width="1" stroke-dasharray="2 4"/>`;
-    // 轨道标签 / Orbit label (上方位置 / top position)
+    const isFolded = foldedCwds.has(ring.cwd);
+    // 轨道线 / Orbit line (折叠时用实线淡化 / folded = solid faint)
+    svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,${isFolded ? '0.02' : '0.06'})" stroke-width="1" stroke-dasharray="${isFolded ? '1 6' : '2 4'}"/>`;
+    // 轨道标签(可点击折叠/展开) / Orbit label (clickable to fold/unfold), top position
     const labelX = cx + r * Math.cos(-Math.PI / 2);
     const labelY = cy + r * Math.sin(-Math.PI / 2) - 8;
-    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,0.4)" font-size="10" text-anchor="middle" font-family="system-ui">${esc(ring.label)}</text>`;
+    const foldIcon = isFolded ? '▸' : '▾';
+    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.4'})" font-size="10" text-anchor="middle" font-family="system-ui" style="cursor:pointer" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
   }
 
   // ── 核心意图球 / Central intent core ──
@@ -618,6 +694,7 @@ function renderSVG(): void {
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
   for (const ring of rings) {
+    if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
     for (const node of ring.nodes) {
       if (node.state !== 'running') continue;
       const nx = cx + node.radius * Math.cos(node.angle);
@@ -633,6 +710,7 @@ function renderSVG(): void {
   // ── Phase 2: 选中节点 ↔ 核心高亮连线 / Selected ↔ core highlight line ──
   if (selectedNodeId) {
     for (const ring of rings) {
+      if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
       const node = ring.nodes.find(n => n.id === selectedNodeId);
       if (node) {
         const nx = cx + node.radius * Math.cos(node.angle);
@@ -645,6 +723,8 @@ function renderSVG(): void {
 
   // ── Agent 节点 / Agent nodes ──
   for (const ring of rings) {
+    // Phase 4: 折叠的轨道跳过节点渲染 / Skip folded rings
+    if (foldedCwds.has(ring.cwd)) continue;
     for (const node of ring.nodes) {
       const x = cx + node.radius * Math.cos(node.angle);
       const y = cy + node.radius * Math.sin(node.angle);
@@ -680,6 +760,17 @@ function renderSVG(): void {
         const labelText = ENGINE_LABELS[node.engine] || node.engine;
         svg += `<text x="${x}" y="${y - nodeR - 6}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui">${esc(labelText)}</text>`;
       }
+
+      // Phase 4: 节点状态徽标 / Node state badge (small indicator on node)
+      if (node.state === 'error') {
+        svg += `<circle cx="${x + nodeR - 2}" cy="${y - nodeR + 2}" r="4" fill="#e2614c" stroke="#18181c" stroke-width="1.5" data-nid="${node.id}" style="pointer-events:none"/>`;
+        svg += `<text x="${x + nodeR - 2}" y="${y - nodeR + 5}" fill="white" font-size="7" text-anchor="middle" font-family="system-ui" font-weight="bold" style="pointer-events:none">!</text>`;
+      } else if (node.state === 'running') {
+        // 运行中:小旋转弧 / Running: small spinning arc
+        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="3.5" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="2 3" data-nid="${node.id}" style="pointer-events:none">
+          <animateTransform attributeName="transform" type="rotate" from="0 ${x + nodeR - 1} ${y - nodeR + 1}" to="360 ${x + nodeR - 1} ${y - nodeR + 1}" dur="1.5s" repeatCount="indefinite"/>
+        </circle>`;
+      }
     }
   }
 
@@ -704,6 +795,7 @@ function renderSVG(): void {
     });
     // hover:显示 tooltip / Hover: show tooltip
     el.addEventListener('mouseenter', (e) => {
+      if (isDragging) return; // Phase 4: 拖拽时禁用 tooltip / Skip tooltip during drag
       const nid = el.dataset.nid!;
       showNodeTooltip(nid, e as MouseEvent);
     });
@@ -716,6 +808,24 @@ function renderSVG(): void {
       e.stopPropagation();
       const nid = el.dataset.nid!;
       showContextMenu(nid, e as MouseEvent);
+    });
+  });
+
+  // Phase 4: 绑定轨道标签折叠 / Bind orbit label fold toggle
+  wrap.querySelectorAll<SVGTextElement>('[data-fold]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const cwd = el.dataset.fold!;
+      if (foldedCwds.has(cwd)) foldedCwds.delete(cwd);
+      else foldedCwds.add(cwd);
+      saveViewState();
+      buildRings();
+    });
+    el.addEventListener('mouseenter', () => {
+      el.style.fill = 'rgba(232,179,57,0.8)';
+    });
+    el.addEventListener('mouseleave', () => {
+      el.style.fill = foldedCwds.has(el.dataset.fold!) ? 'rgba(150,150,160,0.25)' : 'rgba(150,150,160,0.4)';
     });
   });
 }
@@ -880,6 +990,7 @@ function emitParticlesToRunning(): void {
   const scale = canvas.width / svgSize;
 
   for (const ring of rings) {
+    if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
     for (const node of ring.nodes) {
       if (node.state !== 'running') continue;
       // canvas 坐标系:中心 = canvas 中心,偏移 = radius * cos/sin * scale
