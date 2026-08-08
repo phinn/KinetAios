@@ -3328,6 +3328,44 @@ function closeMoreMenu() {
     sortBtn.classList.toggle('active', sortByRecent);
     renderSidebar();
   };
+  // ── 侧栏底部主题快捷切换弹出菜单 ──
+  // 点调色板按钮弹出主题选择,选择后立即切换 + 持久化,无需进设置页面。
+  const tpBtn = document.getElementById('sb-theme-toggle');
+  const tpPopup = document.getElementById('theme-popup');
+  if (tpBtn && tpPopup) {
+    // 标记当前激活的主题项。
+    const syncActiveTheme = () => {
+      const cur = document.documentElement.dataset.theme || 'dark';
+      tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
+        el.classList.toggle('active', el.dataset.theme === cur);
+      });
+    };
+    tpBtn.onclick = (e) => {
+      e.stopPropagation();
+      syncActiveTheme();
+      tpPopup.hidden = !tpPopup.hidden;
+    };
+    // 点外部关闭。
+    document.addEventListener('click', (e) => {
+      if (!tpPopup.hidden && !(e.target as HTMLElement)?.closest('#sb-theme-toggle, #theme-popup'))
+        tpPopup.hidden = true;
+    });
+    // 选中某个主题 → 立即应用 + 保存。
+    tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
+      el.onclick = async () => {
+        const theme = el.dataset.theme as AppSettings['theme'];
+        tpPopup.hidden = true;
+        applyTheme(theme);
+        // 持久化到 settings.json / persist to settings.json
+        const s = await api.getSettings();
+        if (s.theme !== theme) {
+          s.theme = theme;
+          await api.saveSettings(s);
+        }
+      };
+    });
+  }
+
   // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)
   document.getElementById('m-dashboard')!.onclick = () => { closeMoreMenu(); void api.openDashboard(); };
   document.getElementById('m-files')!.onclick = () => { closeMoreMenu();

@@ -950,6 +950,7 @@ a { color: var(--accent); }
   font-size: 11px; color: var(--text-faint);
   display: flex; align-items: center; gap: 6px;
   background: var(--surface-pane-footer, var(--bg-side));
+  position: relative; /* theme-popup 锚定 / anchor for theme-popup */
 }
 .sb-foot-info { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-foot-spacer { flex: 1; }
@@ -1764,6 +1765,63 @@ a { color: var(--accent); }
 .composer-more-menu .cm-item.active {
   color: var(--accent);
 }
+/* ── theme-popup — 侧栏底部主题快捷切换弹出菜单,向上展开 ── */
+.theme-popup {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  margin-bottom: 6px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  z-index: 60;
+  min-width: 130px;
+  animation: cm-pop var(--dur-fast, 0.15s) var(--ease-out, ease-out);
+}
+.theme-popup[hidden] { display: none; }
+.theme-popup .tp-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  font-size: 12.5px;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background var(--dur-fast, 0.15s), color var(--dur-fast, 0.15s);
+}
+.theme-popup .tp-item:hover {
+  background: var(--bg-input);
+  color: var(--text);
+}
+.theme-popup .tp-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+/* 主题色板小圆点 — 每个主题一个代表色 */
+.tp-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(128,128,128,.3);
+}
+.tp-sw-dark   { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+.tp-sw-light  { background: linear-gradient(135deg, #f5f5f5, #e8e8e8); }
+.tp-sw-aurora { background: linear-gradient(135deg, #c4a7ff, #7eaab5); }
+.tp-sw-serene { background: linear-gradient(135deg, #e8e0d0, #c8d0c5); }
+.tp-sw-tahoe  { background: linear-gradient(135deg, rgba(255,255,255,.6), rgba(100,140,200,.4)); backdrop-filter: blur(4px); }
+.tp-sw-sierra { background: linear-gradient(135deg, #e8c8a0, #d0a070); }
+.tp-sw-craft  { background: linear-gradient(135deg, #8b7355, #6b5b3f); }
+.tp-sw-seed   { background: linear-gradient(135deg, #2a4a3a, #1a2a1a); }
+
 .attach-row { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; }
 .attach-row:empty { display: none; }
 .chip { font-size: 11px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 3px 6px 3px 10px; display: inline-flex; align-items: center; gap: 6px; max-width: 240px; box-shadow: var(--shadow-xs); }

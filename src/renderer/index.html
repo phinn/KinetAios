@@ -52,6 +52,17 @@
       <div class="sb-foot" id="sb-foot">
         <span class="sb-foot-info">Kaios</span>
         <span class="sb-foot-spacer"></span>
+        <button class="sb-mode ghost" id="sb-theme-toggle" data-i18n-title="sidebar.themeMenu" title="切换主题"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20"/><path d="M12 2a14.5 14.5 0 010 20"/></svg></button>
+        <div id="theme-popup" class="theme-popup" hidden>
+          <button class="tp-item" data-theme="dark"><span class="tp-swatch tp-sw-dark"></span><span data-i18n="settings.theme.dark">暗色</span></button>
+          <button class="tp-item" data-theme="light"><span class="tp-swatch tp-sw-light"></span><span data-i18n="settings.theme.light">淡色</span></button>
+          <button class="tp-item" data-theme="aurora"><span class="tp-swatch tp-sw-aurora"></span><span data-i18n="settings.theme.aurora">极光</span></button>
+          <button class="tp-item" data-theme="serene"><span class="tp-swatch tp-sw-serene"></span><span data-i18n="settings.theme.serene">雅致</span></button>
+          <button class="tp-item" data-theme="tahoe"><span class="tp-swatch tp-sw-tahoe"></span><span data-i18n="settings.theme.tahoe">液态玻璃</span></button>
+          <button class="tp-item" data-theme="sierra"><span class="tp-swatch tp-sw-sierra"></span><span data-i18n="settings.theme.sierra">暖阳</span></button>
+          <button class="tp-item" data-theme="craft"><span class="tp-swatch tp-sw-craft"></span><span data-i18n="settings.theme.craft">方块世界</span></button>
+          <button class="tp-item" data-theme="seed"><span class="tp-swatch tp-sw-seed"></span><span data-i18n="settings.theme.seed">高达SEED</span></button>
+        </div>
         <button class="sb-mode sb-running ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
         <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
         <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
