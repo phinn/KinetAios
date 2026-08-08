@@ -144,6 +144,10 @@ let dragStartY = 0;
 let dragStartOffX = 0;
 let dragStartOffY = 0;
 
+// ── 搜索过滤 / Search filter ──
+let searchQuery = '';
+let overlayCollapsed = false;
+
 // ── 粒子系统 / Particle system ──
 // 当 Agent 正在运行时,从核心向节点发射粒子,模拟"意图流向 Agent"。
 // Emits particles from core to running agents, simulating intent flow.
@@ -188,6 +192,12 @@ function buildRings(): void {
   for (const id of orderList) {
     const c = convsMap.get(id);
     if (!c) continue;
+    // Phase 3: 搜索过滤 / Search filter
+    if (searchQuery) {
+      const title = (c.customTitle || c.turns[0]?.prompt || c.id).toLowerCase();
+      const engine = (c.engine || '').toLowerCase();
+      if (!title.includes(searchQuery) && !engine.includes(searchQuery)) continue;
+    }
     const cwd = c.cwd || '';
     if (!groups.has(cwd)) groups.set(cwd, []);
     groups.get(cwd)!.push(c);
@@ -236,9 +246,15 @@ export function renderNexus(): void {
   if (cb) selectedNodeId = cb.selectedId();
 
   root.innerHTML = `
-    <div class="nexus-stage">
+    <div class="nexus-stage" id="nexus-stage">
       <canvas class="nexus-particles" id="nexus-particle-canvas"></canvas>
       <div class="nexus-svg-wrap" id="nexus-svg-wrap"></div>
+      <div class="nexus-search" id="nexus-search">
+        <svg class="nexus-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+        <input class="nexus-search-input" id="nexus-search-input" type="text"
+          data-i18n-placeholder="nexus.searchPlaceholder"
+          placeholder="${esc(tr('nexus.searchPlaceholder'))}" />
+      </div>
       <div class="nexus-overlay" id="nexus-overlay"></div>
       <div class="nexus-arc-input" id="nexus-arc-input">
         <div class="nexus-arc-bg"></div>
@@ -257,6 +273,9 @@ export function renderNexus(): void {
       </button>
       <button class="nexus-reset" id="nexus-reset" title="${esc(tr('nexus.resetView'))}">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+      </button>
+      <button class="nexus-collapse" id="nexus-collapse" title="${esc(tr('nexus.toggleOverlay'))}">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
       </button>
       <div class="nexus-hint" id="nexus-hint">${esc(tr('nexus.hint'))}</div>
       <div class="nexus-tooltip" id="nexus-tooltip" hidden></div>
@@ -295,6 +314,58 @@ export function renderNexus(): void {
     viewScale = 1; viewOffsetX = 0; viewOffsetY = 0;
     applyViewTransform();
   };
+
+  // Phase 3: 搜索栏 / Search bar
+  const searchInput = document.getElementById('nexus-search-input') as HTMLInputElement | null;
+  if (searchInput) {
+    searchInput.addEventListener('input', () => {
+      searchQuery = searchInput.value.toLowerCase().trim();
+      buildRings();
+    });
+  }
+
+  // Phase 3: 折叠 overlay / Collapse overlay
+  const collapseBtn = document.getElementById('nexus-collapse');
+  if (collapseBtn) collapseBtn.onclick = () => {
+    overlayCollapsed = !overlayCollapsed;
+    const overlay = document.getElementById('nexus-overlay');
+    if (overlay) overlay.style.display = overlayCollapsed ? 'none' : '';
+    collapseBtn.style.color = overlayCollapsed ? 'var(--accent)' : '';
+  };
+
+  // Phase 3: 键盘快捷键 / Keyboard shortcuts
+  const stageEl = document.getElementById('nexus-stage');
+  if (stageEl) {
+    stageEl.tabIndex = 0; // 使其可聚焦以接收键盘事件
+    stageEl.addEventListener('keydown', (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        selectedNodeId = null;
+        if (cb) {
+          const sid = cb.selectedId();
+          if (sid) cb.selectChat(sid);
+        }
+        updateOverlay();
+        return;
+      }
+      // Tab / Shift+Tab 切换节点 / Cycle nodes
+      if (e.key === 'Tab' && cb) {
+        e.preventDefault();
+        const allNodes = rings.flatMap(r => r.nodes);
+        if (allNodes.length === 0) return;
+        const currentIdx = allNodes.findIndex(n => n.id === selectedNodeId);
+        let nextIdx: number;
+        if (e.shiftKey) {
+          nextIdx = currentIdx <= 0 ? allNodes.length - 1 : currentIdx - 1;
+        } else {
+          nextIdx = currentIdx >= allNodes.length - 1 ? 0 : currentIdx + 1;
+        }
+        const next = allNodes[nextIdx];
+        selectedNodeId = next.id;
+        cb.selectChat(next.id);
+        updateOverlay();
+      }
+    });
+  }
 
   // 全局关闭右键菜单 / Global click closes context menu
   document.getElementById('nexus-stage')?.addEventListener('click', () => {

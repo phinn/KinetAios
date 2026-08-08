@@ -4525,7 +4525,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 /* 对话 overlay — 右侧浮动面板 */
 .nexus-overlay {
   position: absolute;
-  top: 16px; right: 16px;
+  top: 56px; right: 16px;
   width: 320px;
   max-height: calc(100% - 140px);
   z-index: 10;
@@ -4740,6 +4740,68 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .nexus-reset:hover {
   background: var(--bg-elev-2);
   color: var(--text);
+}
+
+/* Phase 3: 折叠 overlay 按钮 */
+.nexus-collapse {
+  position: absolute;
+  top: 16px; right: 16px;
+  width: 32px; height: 32px;
+  border-radius: 8px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  color: var(--text-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 11;
+  transition: background 150ms ease, color 150ms ease;
+}
+
+.nexus-collapse:hover {
+  background: var(--bg-elev-2);
+  color: var(--text);
+}
+
+/* Phase 3: 搜索栏 */
+.nexus-search {
+  position: absolute;
+  top: 16px; left: 50%;
+  transform: translateX(-50%);
+  width: min(280px, 40%);
+  z-index: 11;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 20px;
+  background: var(--bg-elev);
+  border: 1px solid var(--border-soft);
+  transition: border-color 200ms ease;
+}
+
+.nexus-search:focus-within {
+  border-color: rgba(232,179,57,0.4);
+}
+
+.nexus-search-icon {
+  flex-shrink: 0;
+  color: var(--text-faint);
+}
+
+.nexus-search-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--text);
+  font-size: 13px;
+  font-family: inherit;
+}
+
+.nexus-search-input::placeholder {
+  color: var(--text-faint);
 }
 
 /* Phase 2: Overlay Markdown 样式 */
