@@ -267,7 +267,7 @@ function applyI18nDOM(): void {
 
   // 加载已保存的模型配置档到缓存 + 填充下拉
   api.getSettings().then((s) => { profileCache = s.modelProfiles || []; });
-  fillModelHints();
+  void fillModelHints();
   wireUi();
   initScrollBottomBtn();
   syncSidebarModeBtn();
@@ -5541,11 +5541,25 @@ const MODEL_HINTS = [
   'claude-sonnet-5', 'claude-haiku-4-5-20251001',
 ];
 
-function fillModelHints(): void {
+async function fillModelHints(): Promise<void> {
   const dl = document.getElementById('model-list')!;
-  dl.innerHTML = MODEL_HINTS.map((m) => `<option value="${esc(m)}"></option>`).join('');
+  const opts: string[] = [];
+  try {
+    const s = await api.getSettings();
+    // 全局默认模型 / Global default model
+    if (s.model) opts.push(s.model);
+    // 配置档里的模型 / Models from saved profiles
+    for (const p of s.modelProfiles || []) {
+      if (p.model && !opts.includes(p.model)) opts.push(p.model);
+    }
+    // subAgentModel 如果配了 / Configured sub-agent model
+    if (s.subAgentModel && !opts.includes(s.subAgentModel)) opts.push(s.subAgentModel);
+  } catch { /* ignore */ }
+  // 如果用户没配过任何模型,回退到内置列表 / Fallback to built-in hints
+  if (opts.length === 0) opts.push(...MODEL_HINTS);
+  dl.innerHTML = opts.map((m) => `<option value="${esc(m)}"></option>`).join('');
   // 同时填充 profile-select 下拉(从 settings 读取已保存的配置档)
-  void fillProfileSelect();
+  await fillProfileSelect();
 }
 
 /** 填充聊天界面的配置档下拉。返回当前 profiles 列表(给调用方用)。 */
