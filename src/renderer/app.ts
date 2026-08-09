@@ -1782,6 +1782,9 @@ function streamAppend(text: string) {
         if (target && streamRawText) {
           target.innerHTML = md(streamRawText);
           target.classList.add('streaming');
+          // markdown 重新渲染后高度可能增长(新段落 / 代码块),确保跟到底。
+          // Re-render may grow scrollHeight (new paragraphs / code blocks); follow.
+          scrollDown();
         }
       });
     }
@@ -1999,18 +2002,32 @@ function initScrollBottomBtn(): void {
 
   const update = () => {
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
-    // 维护 userAtBottom flag(scrollDown 用,避免每帧读 scrollHeight)。
-    userAtBottom = dist < 120;
     if (dist > 200) {
       btn.classList.add('visible');
     } else {
       btn.classList.remove('visible');
     }
   };
+  // 注意:userAtBottom 必须只由 scroll 事件更新,不能由 MO 触发。
+  // 流式 token 涌入时 scrollHeight 增大但 scrollTop 不会自动跟随(overflow-anchor: none),
+  // 此时 dist 临时 > 120,如果由 MO 更新 userAtBottom 会让 scrollDown 跳过滚动,
+  // 导致用户在新消息来时看不到内容(底部"塞"在视口下面)。
+  // userAtBottom must only be updated by the scroll event, not by MutationObserver:
+  // streaming tokens grow scrollHeight but scrollTop doesn't auto-follow
+  // (because overflow-anchor: none). A naive MO-triggered update would compute
+  // dist > 120 from the lag and wrongly set userAtBottom=false, causing
+  // scrollDown to skip the next frame and hiding the new content below the fold.
+  const onScroll = () => {
+    const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
+    userAtBottom = dist < 120;
+    update();
+  };
 
-  turns.addEventListener('scroll', update, { passive: true });
-  // 内容变化时也检查(新消息可能增加 scrollHeight) / Check on content changes
-  // 注意:流式 token 每次追加 textNode 都会触发 MutationObserver,用 debounce 避免频繁回调。
+  turns.addEventListener('scroll', onScroll, { passive: true });
+  // 内容变化时只检查按钮是否显示,不动 userAtBottom;真正跟随由 streamAppend
+  // 之后的 scrollDown() rAF 负责。
+  // MO only toggles the jump-to-bottom button; auto-follow is the job of
+  // scrollDown() in streamAppend (which reads the unchanged userAtBottom).
   let moTimer: ReturnType<typeof setTimeout> | null = null;
   const mo = new MutationObserver(() => {
     if (moTimer) return;
