@@ -4510,11 +4510,26 @@ button.sm { padding: 3px 8px; font-size: 11px; }
      关键:丰富的底层色彩让 backdrop-filter 产生真正的"玻璃感",
      而不是一片死黑。三层光晕(中心金 + 左上紫 + 右下青)+ 深空底色。 */
   background:
-    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(232,179,57,0.10), transparent 65%),
-    radial-gradient(ellipse 70% 60% at 20% 25%, rgba(108,92,231,0.08), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(74,197,170,0.06), transparent 50%),
-    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(196,167,255,0.05), transparent 55%),
+    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(232,179,57,0.12), transparent 65%),
+    radial-gradient(ellipse 70% 60% at 20% 25%, rgba(108,92,231,0.10), transparent 55%),
+    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(74,197,170,0.08), transparent 50%),
+    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(196,167,255,0.06), transparent 55%),
     var(--bg);
+}
+
+/* Phase 7: 微弱网格叠加(透视感) / Subtle grid overlay for perspective depth */
+#nexus-view::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(rgba(232,179,57,0.015) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(232,179,57,0.015) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.4) 0%, transparent 70%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.4) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
 }
 
 #nexus-canvas {
@@ -4529,13 +4544,18 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   overflow: hidden;
 }
 
-/* 粒子 Canvas — 全屏覆盖,置于 SVG 下方 */
+/* 粒子 Canvas — 全屏覆盖,置于星空层上方、SVG 下方 */
 .nexus-particles {
   position: absolute;
   top: 0; left: 0;
   width: 100%; height: 100%;
   pointer-events: none;
   z-index: 1;
+}
+
+/* Phase 7: 星空背景层 — 最底层 / Starfield background — bottom layer */
+.nexus-starfield {
+  z-index: 0 !important;
 }
 
 /* SVG 轨道层 */
@@ -4591,6 +4611,16 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   padding: 12px 14px;
   border-bottom: 1px solid rgba(255,255,255,0.04);
   background: linear-gradient(180deg, var(--glass-hi), rgba(255,255,255,0.02) 60%);
+  position: relative;
+}
+
+/* Phase 7: 面板顶部引擎色光带 / Engine color accent strip on panel top */
+.nx-panel-head::after {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(232,179,57,0.3), transparent);
 }
 
 .nx-panel-dot {
@@ -4629,24 +4659,27 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   padding: 20px 0;
 }
 
-/* 消息气泡 */
+/* 消息气泡 — Phase 7 精致化 / Phase 7 polished message bubbles */
 .nx-msg {
   font-size: 12px;
   line-height: 1.6;
   margin-bottom: 8px;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: 10px;
   word-break: break-word;
+  position: relative;
 }
 
 .nx-msg-user {
-  background: rgba(232,179,57,0.08);
+  background: linear-gradient(135deg, rgba(232,179,57,0.12), rgba(232,179,57,0.04));
   color: var(--text);
-  border: 1px solid rgba(232,179,57,0.06);
+  border: 1px solid rgba(232,179,57,0.1);
+  border-left: 3px solid rgba(232,179,57,0.4);
+  box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
 .nx-msg-ai {
-  background: transparent;
+  background: rgba(255,255,255,0.02);
   color: var(--text-dim);
   border-left: 2px solid var(--accent-dim);
   padding-left: 10px;
@@ -4655,15 +4688,20 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .nx-msg-tool {
   color: var(--accent);
   font-size: 11px;
-  opacity: 0.8;
+  opacity: 0.85;
+  background: rgba(232,179,57,0.04);
+  border-radius: 6px;
+  padding: 4px 8px;
+  border: 1px solid rgba(232,179,57,0.06);
 }
 
 .nx-msg-error {
   color: var(--err);
   font-size: 11px;
-  background: rgba(226,97,76,0.08);
+  background: rgba(226,97,76,0.1);
   border-radius: 6px;
   padding: 6px 8px;
+  border-left: 2px solid rgba(226,97,76,0.4);
 }
 
 /* 弧形输入区 — 底部居中液态玻璃 / Bottom-center liquid glass input */
@@ -4689,7 +4727,16 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 
 .nexus-arc-input:focus-within {
   border-color: rgba(232,179,57,0.3);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 20px rgba(232,179,57,0.08), inset 0 1px 0 rgba(255,255,255,0.04);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(232,179,57,0.12), inset 0 1px 0 rgba(255,255,255,0.04);
+}
+
+/* Phase 7: 输入区聚焦时底部光带 / Focus bottom glow strip */
+.nexus-arc-input:focus-within::after {
+  content: '';
+  position: absolute;
+  bottom: -1px; left: 20%; right: 20%;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(232,179,57,0.5), transparent);
 }
 
 .nexus-arc-text {
