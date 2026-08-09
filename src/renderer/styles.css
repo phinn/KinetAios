@@ -4506,28 +4506,23 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   width: 100%;
   height: 100%;
   overflow: hidden;
-  /* 液态玻璃底色:多层径向渐变光晕 / Liquid Glass base: multi-layer radial glows
-     关键:丰富的底层色彩让 backdrop-filter 产生真正的"玻璃感",
-     而不是一片死黑。三层光晕(中心金 + 左上紫 + 右下青)+ 深空底色。 */
+  /* Phase 8: 极简底色 — 单一冷光晕 + 深底。Less is more. */
   background:
-    radial-gradient(ellipse 60% 50% at 50% 50%, rgba(232,179,57,0.12), transparent 65%),
-    radial-gradient(ellipse 70% 60% at 20% 25%, rgba(108,92,231,0.10), transparent 55%),
-    radial-gradient(ellipse 50% 40% at 85% 75%, rgba(74,197,170,0.08), transparent 50%),
-    radial-gradient(ellipse 40% 30% at 50% 100%, rgba(196,167,255,0.06), transparent 55%),
+    radial-gradient(ellipse 70% 60% at 50% 45%, rgba(140,160,200,0.07), transparent 70%),
     var(--bg);
 }
 
-/* Phase 7: 微弱网格叠加(透视感) / Subtle grid overlay for perspective depth */
+/* Phase 8: 微弱网格 + 中心蒙版(几乎看不见,只在边缘感知) */
 #nexus-view::before {
   content: '';
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(rgba(232,179,57,0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(232,179,57,0.015) 1px, transparent 1px);
-  background-size: 60px 60px;
-  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.4) 0%, transparent 70%);
-  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.4) 0%, transparent 70%);
+    linear-gradient(rgba(170,180,200,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(170,180,200,0.012) 1px, transparent 1px);
+  background-size: 80px 80px;
+  mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.3) 0%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, rgba(0,0,0,0.3) 0%, transparent 75%);
   pointer-events: none;
   z-index: 0;
 }
@@ -4614,13 +4609,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   position: relative;
 }
 
-/* Phase 7: 面板顶部引擎色光带 / Engine color accent strip on panel top */
+/* Phase 8: 面板顶部冷白光带 / Cool-white accent strip on panel top */
 .nx-panel-head::after {
   content: '';
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(232,179,57,0.3), transparent);
+  background: linear-gradient(90deg, transparent, rgba(200,210,230,0.25), transparent);
 }
 
 .nx-panel-dot {
@@ -4671,10 +4666,11 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nx-msg-user {
-  background: linear-gradient(135deg, rgba(232,179,57,0.12), rgba(232,179,57,0.04));
+  /* Phase 8: 用户消息冷蓝调(主紫光系) */
+  background: linear-gradient(135deg, rgba(196,167,255,0.10), rgba(138,180,255,0.04));
   color: var(--text);
-  border: 1px solid rgba(232,179,57,0.1);
-  border-left: 3px solid rgba(232,179,57,0.4);
+  border: 1px solid rgba(196,167,255,0.10);
+  border-left: 3px solid rgba(196,167,255,0.40);
   box-shadow: 0 2px 8px rgba(0,0,0,0.2);
 }
 
@@ -4686,13 +4682,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nx-msg-tool {
-  color: var(--accent);
+  /* Phase 8: 工具调用冷白调 */
+  color: rgba(200,210,230,0.85);
   font-size: 11px;
-  opacity: 0.85;
-  background: rgba(232,179,57,0.04);
+  background: rgba(170,180,210,0.05);
   border-radius: 6px;
   padding: 4px 8px;
-  border: 1px solid rgba(232,179,57,0.06);
+  border: 1px solid rgba(170,180,210,0.08);
 }
 
 .nx-msg-error {
@@ -4726,17 +4722,17 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nexus-arc-input:focus-within {
-  border-color: rgba(232,179,57,0.3);
-  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(232,179,57,0.12), inset 0 1px 0 rgba(255,255,255,0.04);
+  border-color: rgba(196,167,255,0.30);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.4), 0 0 24px rgba(196,167,255,0.10), inset 0 1px 0 rgba(255,255,255,0.04);
 }
 
-/* Phase 7: 输入区聚焦时底部光带 / Focus bottom glow strip */
+/* Phase 8: 输入区聚焦时底部冷白光带 / Focus bottom cool-white strip */
 .nexus-arc-input:focus-within::after {
   content: '';
   position: absolute;
   bottom: -1px; left: 20%; right: 20%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(232,179,57,0.5), transparent);
+  background: linear-gradient(90deg, transparent, rgba(200,210,230,0.45), transparent);
 }
 
 .nexus-arc-text {
@@ -4847,7 +4843,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 .nexus-search:focus-within {
-  border-color: rgba(232,179,57,0.3);
+  /* Phase 8: 冷调 focus */
+  border-color: rgba(196,167,255,0.30);
 }
 
 .nexus-search-icon {
@@ -4885,12 +4882,13 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 }
 
 code.nx-md-inline {
-  background: rgba(232,179,57,0.1);
+  /* Phase 8: inline code 冷白底 */
+  background: rgba(170,180,210,0.10);
   padding: 1px 4px;
   border-radius: 3px;
   font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
   font-size: 11px;
-  color: var(--accent);
+  color: rgba(200,210,230,0.90);
 }
 
 .nx-md-h1, .nx-md-h2, .nx-md-h3 {
@@ -5061,7 +5059,7 @@ code.nx-md-inline {
   background: var(--glass-bg);
   backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
-  border: 1px solid rgba(232,179,57,0.15);
+  border: 1px solid rgba(196,167,255,0.18);
   box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
   animation: nxMultiSlideIn 300ms var(--ease-out);
 }
@@ -5074,7 +5072,7 @@ code.nx-md-inline {
 .nx-multi-count {
   font-size: 13px;
   font-weight: 700;
-  color: var(--accent);
+  color: rgba(200,210,230,0.90);
   min-width: 20px;
   text-align: center;
 }
@@ -5109,15 +5107,16 @@ code.nx-md-inline {
 
 /* Node drag target highlight — 拖拽悬停的轨道标签高亮 / Drag-hovered orbit label */
 .nexus-svg-wrap .nx-drag-target {
-  fill: rgba(232,179,57,0.15) !important;
-  stroke: var(--accent) !important;
+  /* Phase 8: 冷调紫 */
+  fill: rgba(196,167,255,0.15) !important;
+  stroke: rgba(196,167,255,0.7) !important;
   stroke-width: 2 !important;
   cursor: copy !important;
 }
 
 /* 节点被多选时的高亮 / Multi-selected node highlight */
 .nexus-svg-wrap circle[data-multi="true"] {
-  filter: drop-shadow(0 0 6px var(--accent));
+  filter: drop-shadow(0 0 6px rgba(196,167,255,0.5));
 }
 
 /* Phase 5: hint 更新(包含拖拽/多选) */

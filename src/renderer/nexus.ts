@@ -4,12 +4,11 @@
 // 每个 Agent 是轨道上一颗发光节点,围绕中央意图核心运转。
 // 数据流以粒子形式在轨道间流动,实时呈现 Agent 的思维过程。
 //
-// Phase 2: SVG 轨道 + Canvas 粒子 + DOM overlay(对话气泡 + 弧形输入区)
-//          + hover tooltip + 双击跳转 + 右键菜单 + 自适应缩放 + 快捷指令
-//          + 滚轮缩放/拖拽平移 + overlay 流式滚动跟随 + 节点连线
-// Phase 3: 搜索过滤 + overlay 折叠 + 键盘快捷键(Tab/Esc)
-// Phase 4: 轨道折叠/展开 + 节点状态徽标 + 视图状态持久化 + 拖拽优化 + 性能降级
-// Phase 5: Mini-map 缩略图导航 + 多选批量操作 + 节点拖拽到不同轨道
+// Phase 1-5: SVG 轨道 + Canvas 粒子 + DOM overlay + 交互 + 缩放/平移
+//          + 搜索 + 折叠 + 状态徽标 + 视图持久化 + Mini-map + 多选
+// Phase 6: 3D 等离子球体
+// Phase 7: 深空星空 + 等离子涡纹(被嫌丑,堆叠过重)
+// Phase 8: 极简重置 — 纯色实心节点 + 单一光晕核心 + 精简星空(60 颗) + 冷调玻璃底
 // SVG orbits + Canvas particles + DOM overlay + interactions + zoom/pan + fold + badges + minimap + multiselect. Zero dependencies.
 
 import type { Conversation, EngineKind } from '../shared/types';
@@ -83,12 +82,13 @@ function simpleMarkdown(text: string): string {
 }
 
 // 引擎颜色 / Engine colors (matching existing palette)
+// Phase 8: 液态玻璃白雾调 — 全部冷系,告别金色。
 const ENGINE_COLORS: Record<EngineKind, string> = {
-  direct: '#e8b339',
-  directV2: '#6c5ce7',
-  directV3: '#00b894',
-  claudeCode: '#d97757',
-  codex: '#10a37f',
+  direct: '#c4a7ff',    // Kaios — 主紫光(Aurora 强调色)
+  directV2: '#8ab4ff',  // Kaios v2 — 冷蓝
+  directV3: '#7eeab5',  // Kaios v3 — 薄荷绿
+  claudeCode: '#f0a8b8', // Claude — 雾粉(柔和,不像 #d97757 那么冲)
+  codex: '#8fd4d0',     // Codex — 青雾
 };
 
 const ENGINE_LABELS: Record<EngineKind, string> = {
@@ -230,9 +230,9 @@ function spawnParticle(fromX: number, fromY: number, toX: number, toY: number, c
   });
 }
 
-// ── Phase 7: 星空背景层 / Starfield background ──
-// 独立 Canvas 层,随机星点 + 闪烁,给深空底色增加层次感。
-// Separate canvas layer with random twinkling stars for deep-space depth.
+// ── Phase 8: 星空背景层 / Starfield background ──
+// 独立 Canvas 层,稀疏星点 + 微弱闪烁,只贡献空间感,不抢戏。
+// Phase 7 有 180 个 + 十字光芒,视觉太吵;Phase 8 砍到 60 个、放弃十字光芒。
 interface Star {
   x: number; y: number;
   size: number;
@@ -257,16 +257,22 @@ function generateStars(): void {
   if (!starCanvas) return;
   const w = starCanvas.clientWidth || 800;
   const h = starCanvas.clientHeight || 600;
-  const count = Math.min(180, Math.floor((w * h) / 6000));
+  // Phase 8: 砍到 60 个,大幅放宽星等差(少数大星 + 多数小星)。
+  const count = Math.min(60, Math.floor((w * h) / 14000));
   stars = [];
   for (let i = 0; i < count; i++) {
+    // 二项分布抽样,让大星只占约 10%
+    const tier = Math.random();
+    const size = tier < 0.85
+      ? 0.3 + Math.random() * 0.6         // 多数小星
+      : 0.9 + Math.random() * 0.8;        // 少数稍大
     stars.push({
       x: Math.random() * w,
       y: Math.random() * h,
-      size: 0.4 + Math.random() * 1.4,
-      baseAlpha: 0.15 + Math.random() * 0.45,
+      size,
+      baseAlpha: tier < 0.85 ? 0.10 + Math.random() * 0.25 : 0.45 + Math.random() * 0.25,
       twinklePhase: Math.random() * Math.PI * 2,
-      twinkleSpeed: 0.005 + Math.random() * 0.015,
+      twinkleSpeed: 0.003 + Math.random() * 0.008,
     });
   }
 }
@@ -282,22 +288,11 @@ function renderStarfield(): void {
   starCtx.clearRect(0, 0, starCanvas.width, starCanvas.height);
   for (const s of stars) {
     s.twinklePhase += s.twinkleSpeed;
-    const alpha = s.baseAlpha * (0.5 + 0.5 * Math.sin(s.twinklePhase));
+    const alpha = s.baseAlpha * (0.6 + 0.4 * Math.sin(s.twinklePhase));
     starCtx.beginPath();
     starCtx.arc(s.x, s.y, s.size, 0, Math.PI * 2);
-    starCtx.fillStyle = `rgba(220,220,240,${alpha})`;
+    starCtx.fillStyle = `rgba(220,225,240,${alpha})`;
     starCtx.fill();
-    // 微弱十字光芒(大星) / Cross glow for larger stars
-    if (s.size > 1.0) {
-      starCtx.strokeStyle = `rgba(220,220,240,${alpha * 0.25})`;
-      starCtx.lineWidth = 0.4;
-      starCtx.beginPath();
-      starCtx.moveTo(s.x - s.size * 3, s.y);
-      starCtx.lineTo(s.x + s.size * 3, s.y);
-      starCtx.moveTo(s.x, s.y - s.size * 3);
-      starCtx.lineTo(s.x, s.y + s.size * 3);
-      starCtx.stroke();
-    }
   }
 }
 
@@ -878,213 +873,78 @@ function renderSVG(): void {
   let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">`;
 
   // ── 渐变定义 / Gradient defs ──
-  // Phase 6: 全新视觉体系 — 深空等离子球体 / Deep-space plasma orb system
+  // Phase 8: 极简重置 — 一层光晕 + 一个球。Less is more.
+  // 经验法则:不要在 30px 的圆里堆 7 层滤镜,只让它自己呼吸。
   svg += `<defs>`;
-  // 核心大气光晕(远距离弥散) / Core atmospheric glow (far diffuse)
+  // 核心光晕(单层,冷白) / Core halo (single layer, cool white)
   svg += `<radialGradient id="nx-core-glow" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="#f4d06f" stop-opacity="0.35"/>
-    <stop offset="25%" stop-color="#e8b339" stop-opacity="0.12"/>
-    <stop offset="60%" stop-color="#c08820" stop-opacity="0.04"/>
-    <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+    <stop offset="0%" stop-color="rgba(232,238,248,0.28)"/>
+    <stop offset="40%" stop-color="rgba(180,200,240,0.10)"/>
+    <stop offset="100%" stop-color="rgba(180,200,240,0)"/>
   </radialGradient>`;
-  // 核心近场光晕 / Core near-field halo
-  svg += `<radialGradient id="nx-core-glow-inner" cx="50%" cy="50%" r="50%">
-    <stop offset="0%" stop-color="#ffe9a8" stop-opacity="0.9"/>
-    <stop offset="30%" stop-color="#f4d06f" stop-opacity="0.5"/>
-    <stop offset="70%" stop-color="#e8b339" stop-opacity="0.15"/>
-    <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
+  // 核心球体(从玻璃白到月灰) / Core body (glass-white to moon-grey)
+  svg += `<radialGradient id="nx-core-body" cx="38%" cy="32%" r="68%">
+    <stop offset="0%" stop-color="#f4f6fa"/>
+    <stop offset="55%" stop-color="#a8b0c2"/>
+    <stop offset="100%" stop-color="#4a5060"/>
   </radialGradient>`;
-  // 核心球体表面(球面光影) / Core body surface (spherical shading)
-  svg += `<radialGradient id="nx-core-body" cx="35%" cy="30%" r="75%">
-    <stop offset="0%" stop-color="#fff8e0"/>
-    <stop offset="15%" stop-color="#ffe19a"/>
-    <stop offset="45%" stop-color="#e8b339"/>
-    <stop offset="80%" stop-color="#9c6e1c"/>
-    <stop offset="100%" stop-color="#5c3f0e"/>
-  </radialGradient>`;
-  // 核心内核(高温白热) / Core inner (incandescent)
-  svg += `<radialGradient id="nx-core-inner" cx="40%" cy="35%" r="60%">
-    <stop offset="0%" stop-color="#ffffff"/>
-    <stop offset="30%" stop-color="#fff0c0"/>
-    <stop offset="70%" stop-color="#f4d06f" stop-opacity="0.6"/>
-    <stop offset="100%" stop-color="#e8b339" stop-opacity="0"/>
-  </radialGradient>`;
-
-  // ── 节点球体渐变(球面光影 / Spherical shading) ──
-  // running: 琥珀色等离子球 / Amber plasma orb
-  svg += `<radialGradient id="nx-node-running" cx="32%" cy="28%" r="72%">
-    <stop offset="0%" stop-color="#fff5d0"/>
-    <stop offset="20%" stop-color="#ffd680"/>
-    <stop offset="50%" stop-color="#e8b339"/>
-    <stop offset="80%" stop-color="#8a6018"/>
-    <stop offset="100%" stop-color="#4a3208"/>
-  </radialGradient>`;
-  // idle: 冷灰金属球 / Cool metallic sphere
-  svg += `<radialGradient id="nx-node-idle" cx="32%" cy="28%" r="72%">
-    <stop offset="0%" stop-color="#52525c"/>
-    <stop offset="40%" stop-color="#36363e"/>
-    <stop offset="80%" stop-color="#222228"/>
-    <stop offset="100%" stop-color="#121216"/>
-  </radialGradient>`;
-  // error: 熔岩红球 / Molten red orb
-  svg += `<radialGradient id="nx-node-error" cx="32%" cy="28%" r="72%">
-    <stop offset="0%" stop-color="#ffc4b8"/>
-    <stop offset="25%" stop-color="#ff8a76"/>
-    <stop offset="55%" stop-color="#e2614c"/>
-    <stop offset="85%" stop-color="#8a2a1c"/>
-    <stop offset="100%" stop-color="#4a1208"/>
-  </radialGradient>`;
-  // done: 翡翠绿球 / Emerald orb
-  svg += `<radialGradient id="nx-node-done" cx="32%" cy="28%" r="72%">
-    <stop offset="0%" stop-color="#c4f4d4"/>
-    <stop offset="25%" stop-color="#7ed99f"/>
-    <stop offset="55%" stop-color="#4ec27a"/>
-    <stop offset="85%" stop-color="#1e6e3e"/>
-    <stop offset="100%" stop-color="#0a3a1c"/>
-  </radialGradient>`;
-
-  // 节点玻璃高光(上半圆白色反射) / Node glass highlight (top reflection)
-  svg += `<radialGradient id="nx-node-glass-hi" cx="35%" cy="20%" r="40%">
-    <stop offset="0%" stop-color="#ffffff" stop-opacity="0.5"/>
-    <stop offset="50%" stop-color="#ffffff" stop-opacity="0.12"/>
-    <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
-  </radialGradient>`;
-
-  // 节点大气光晕(按引擎色) / Node atmospheric halo (per engine)
+  // 节点光晕(按引擎色,单层弥散) / Node halo (per engine, single-layer diffuse)
   for (const [engine, color] of Object.entries(ENGINE_COLORS)) {
     const gid = `nx-halo-${engine}`;
     svg += `<radialGradient id="${gid}" cx="50%" cy="50%" r="50%">
-      <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
-      <stop offset="30%" stop-color="${color}" stop-opacity="0.1"/>
-      <stop offset="70%" stop-color="${color}" stop-opacity="0.02"/>
+      <stop offset="0%" stop-color="${color}" stop-opacity="0.20"/>
+      <stop offset="60%" stop-color="${color}" stop-opacity="0.04"/>
       <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
     </radialGradient>`;
   }
 
-  // 节点边缘亮环渐变 / Node rim-light gradient (per engine)
-  for (const [engine, color] of Object.entries(ENGINE_COLORS)) {
-    svg += `<radialGradient id="nx-rim-${engine}" cx="50%" cy="50%" r="50%">
-      <stop offset="80%" stop-color="${color}" stop-opacity="0"/>
-      <stop offset="95%" stop-color="${color}" stop-opacity="0.4"/>
-      <stop offset="100%" stop-color="${color}" stop-opacity="0"/>
-    </radialGradient>`;
-  }
-
-  // 轨道渐变描边 / Orbit gradient stroke
-  svg += `<linearGradient id="nx-orbit-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-    <stop offset="0%" stop-color="rgba(232,179,57,0.15)"/>
-    <stop offset="50%" stop-color="rgba(232,179,57,0.04)"/>
-    <stop offset="100%" stop-color="rgba(232,179,57,0.15)"/>
-  </linearGradient>`;
-
-  // 模糊滤镜(用于光晕效果) / Blur filter for glow effects
+  // 单一模糊滤镜(光晕用) / Single blur filter
   svg += `<filter id="nx-glow-blur" x="-50%" y="-50%" width="200%" height="200%">
-    <feGaussianBlur stdDeviation="4"/>
-  </filter>`;
-  svg += `<filter id="nx-glow-blur-sm" x="-50%" y="-50%" width="200%" height="200%">
-    <feGaussianBlur stdDeviation="2"/>
+    <feGaussianBlur stdDeviation="3"/>
   </filter>`;
 
   svg += `</defs>`;
 
   // ── 轨道环 / Orbit rings ──
-  // Phase 7: 四层能量场轨道 — 外弥散 + 渐变描边 + 内层尘埃虚线 + 轨道光带
+  // Phase 8: 一条描边,没了。
   for (const ring of rings) {
     const r = ring.nodes[0]?.radius || 100;
     const isFolded = foldedCwds.has(ring.cwd);
     if (!isFolded) {
-      // 外层弥散光晕(最宽) / Outer diffuse glow (widest)
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,0.025)" stroke-width="10" filter="url(#nx-glow-blur)"/>`;
-      // 中层渐变描边 / Mid gradient stroke
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="url(#nx-orbit-grad)" stroke-width="1.5"/>`;
-      // 内层粒子尘埃虚线 / Inner dust dash
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,0.08)" stroke-width="0.8" stroke-dasharray="1 10"/>`;
-      // 轨道方向指示(微小光点沿轨道运动) / Orbit direction indicator (moving dot)
-      const orbitT = (Date.now() / 8000) % 1;
-      const dotAngle = orbitT * Math.PI * 2;
-      const dotX = cx + r * Math.cos(dotAngle);
-      const dotY = cy + r * Math.sin(dotAngle);
-      svg += `<circle cx="${dotX}" cy="${dotY}" r="1.5" fill="rgba(244,208,111,0.6)" filter="url(#nx-glow-blur-sm)"/>`;
+      // Phase 8: 单色 0.8 透明描边,一条够了。
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(180,190,210,0.08)" stroke-width="0.8"/>`;
     } else {
-      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(232,179,57,0.03)" stroke-width="0.8" stroke-dasharray="1 8"/>`;
+      svg += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="rgba(180,190,210,0.06)" stroke-width="0.8" stroke-dasharray="1 6"/>`;
     }
-    // 轨道标签(可点击折叠/展开) / Orbit label (clickable to fold/unfold), top position
+    // 轨道标签(可点击折叠/展开) / Orbit label (clickable to fold/unfold)
     const labelX = cx + r * Math.cos(-Math.PI / 2);
     const labelY = cy + r * Math.sin(-Math.PI / 2) - 8;
-    const foldIcon = isFolded ? '▸' : '▾';
-    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(150,150,160,${isFolded ? '0.25' : '0.45'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="0.5" style="cursor:pointer" data-orbit-cwd="${esc(ring.cwd)}" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)} (${ring.nodes.length})</text>`;
+    const foldIcon = isFolded ? '+' : '−';
+    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(170,178,195,${isFolded ? '0.30' : '0.50'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="1" style="cursor:pointer" data-orbit-cwd="${esc(ring.cwd)}" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)}</text>`;
   }
 
   // ── 核心意图球 / Central intent core ──
-  // Phase 7: 等离子涡纹核心 — 旋转能量纹路 + 辐射射线 + 多层光晕 + 脉动
-  const corePulse = 1 + Math.sin(Date.now() / 900) * 0.05;
-  const coreR = 34 * corePulse;
-  const coreTime = Date.now() / 1000;
-  const coreRotation = coreTime * 8; // 缓慢旋转 / slow rotation
-  // 远场弥散光晕(最大范围) / Far diffuse glow (widest)
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 4}" fill="url(#nx-core-glow)"/>`;
-  // 中场光晕 / Mid-field halo
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 2.2}" fill="url(#nx-core-glow-inner)"/>`;
-  // 能量辐射射线(8 条,随时间旋转) / Energy radiating rays (8 rays, rotating)
-  for (let i = 0; i < 8; i++) {
-    const rayAngle = (i / 8) * Math.PI * 2 + coreRotation * 0.02;
-    const rayLen = coreR * (1.8 + Math.sin(coreTime * 2 + i) * 0.3);
-    const rx1 = cx + coreR * 1.1 * Math.cos(rayAngle);
-    const ry1 = cy + coreR * 1.1 * Math.sin(rayAngle);
-    const rx2 = cx + rayLen * Math.cos(rayAngle);
-    const ry2 = cy + rayLen * Math.sin(rayAngle);
-    const rayOpacity = 0.06 + Math.sin(coreTime * 1.5 + i * 0.8) * 0.04;
-    svg += `<line x1="${rx1}" y1="${ry1}" x2="${rx2}" y2="${ry2}" stroke="#f4d06f" stroke-width="1" opacity="${Math.max(0.02, rayOpacity)}" stroke-linecap="round"/>`;
-  }
-  // 核心球体阴影 / Core drop shadow
-  svg += `<ellipse cx="${cx}" cy="${cy + coreR * 0.85}" rx="${coreR * 0.9}" ry="${coreR * 0.25}" fill="rgba(0,0,0,0.35)" filter="url(#nx-glow-blur)"/>`;
-  // 核心球体主体(球面渐变,光照中心随时间偏移) / Core body (gradient with dynamic light center)
-  const lightOffX = 35 + Math.sin(coreTime * 0.7) * 8;  // 光照中心偏移 / light center offset %
-  const lightOffY = 30 + Math.cos(coreTime * 0.5) * 6;
-  svg += `<radialGradient id="nx-core-body-dyn" cx="${lightOffX}%" cy="${lightOffY}%" r="75%">
-    <stop offset="0%" stop-color="#fff8e0"/>
-    <stop offset="15%" stop-color="#ffe19a"/>
-    <stop offset="45%" stop-color="#e8b339"/>
-    <stop offset="80%" stop-color="#9c6e1c"/>
-    <stop offset="100%" stop-color="#5c3f0e"/>
-  </radialGradient>`;
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body-dyn)"/>`;
-  // 核心边缘亮环(底光反射) / Core rim light (bottom bounce)
-  svg += `<path d="M ${cx - coreR * 0.7} ${cy + coreR * 0.45} A ${coreR * 0.7} ${coreR * 0.3} 0 0 0 ${cx + coreR * 0.7} ${cy + coreR * 0.45}" fill="none" stroke="rgba(255,220,130,0.25)" stroke-width="1"/>`;
-  // 核心高光(顶部白色反射) / Core specular highlight
-  svg += `<ellipse cx="${cx - coreR * 0.15}" cy="${cy - coreR * 0.3}" rx="${coreR * 0.4}" ry="${coreR * 0.22}" fill="rgba(255,255,255,0.3)" filter="url(#nx-glow-blur-sm)"/>`;
-  // 等离子涡纹(旋转的螺旋路径) / Plasma swirl (rotating spiral paths)
-  for (let i = 0; i < 3; i++) {
-    const swirl = coreRotation * (i % 2 === 0 ? 1 : -1) + i * 2;
-    let pathD = '';
-    for (let t = 0; t < 1; t += 0.05) {
-      const sr = coreR * 0.3 + t * coreR * 0.55;
-      const sa = swirl + t * Math.PI * 3;
-      const sx = cx + sr * Math.cos(sa);
-      const sy = cy + sr * Math.sin(sa);
-      pathD += t === 0 ? `M ${sx} ${sy}` : ` L ${sx} ${sy}`;
-    }
-    svg += `<path d="${pathD}" fill="none" stroke="rgba(255,240,192,${0.12 + Math.sin(coreTime + i) * 0.05})" stroke-width="1" stroke-linecap="round"/>`;
-  }
-  // 白热内核(高温中心) / Incandescent inner core
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 0.5}" fill="url(#nx-core-inner)"/>`;
-  svg += `<circle cx="${cx}" cy="${cy}" r="4" fill="#ffffff"/>`;
+  // Phase 8: 一层光晕 + 一个球 + 一个高光点。没有射线,没有涡纹。
+  const corePulse = 1 + Math.sin(Date.now() / 1500) * 0.04;
+  const coreR = 30 * corePulse;
+  // 远场光晕(单层,呼吸缩放) / Halo (single layer, breathing)
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 3.5}" fill="url(#nx-core-glow)"/>`;
+  // 核心球体 / Core body
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)"/>`;
   // 核心标签 / Core label
-  svg += `<text x="${cx}" y="${cy + coreR + 20}" fill="rgba(232,179,57,0.5)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="2.5" font-weight="600">INTENT CORE</text>`;
+  svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(170,178,195,0.45)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500">INTENT</text>`;
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
+  // Phase 8: 一条流动虚线,够了。
   for (const ring of rings) {
     if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
     for (const node of ring.nodes) {
       if (node.state !== 'running') continue;
       const nx = cx + node.radius * Math.cos(node.angle);
       const ny = cy + node.radius * Math.sin(node.angle);
-      const color = ENGINE_COLORS[node.engine] || '#e8b339';
-      // 三层连线:外发光 + 流动虚线 + 亮核 / Triple line: outer glow + flowing dash + bright core
-      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="4" opacity="0.05" filter="url(#nx-glow-blur)"/>`;
-      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1.5" opacity="0.15"/>`;
-      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1" opacity="0.4" stroke-dasharray="4 6">
-        <animate attributeName="stroke-dashoffset" from="0" to="-20" dur="1.2s" repeatCount="indefinite"/>
+      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.45" stroke-dasharray="3 5">
+        <animate attributeName="stroke-dashoffset" from="0" to="-16" dur="1.2s" repeatCount="indefinite"/>
       </line>`;
     }
   }
@@ -1097,106 +957,61 @@ function renderSVG(): void {
       if (node) {
         const nx = cx + node.radius * Math.cos(node.angle);
         const ny = cy + node.radius * Math.sin(node.angle);
-        const color = ENGINE_COLORS[node.engine] || '#e8b339';
-        // 三层:外发光模糊 + 亮实线 + 白热中线 / Triple: outer glow blur + bright solid + hot center
-        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="5" opacity="0.06" filter="url(#nx-glow-blur)"/>`;
-        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="1.5" opacity="0.55"/>`;
-        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="rgba(255,255,255,0.3)" stroke-width="0.5" opacity="0.5"/>`;
+        const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+        // Phase 8: 一条细线就够了,让节点的光晕自己说话。
+        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.55"/>`;
       }
     }
   }
 
   // ── Agent 节点 / Agent nodes ──
-  // Phase 7: 动态光照 3D 球体 — 光照中心随时间偏移(自转感) + 等离子纹理
-  const nodeTime = Date.now() / 1000;
+  // Phase 8: 纯色实心圆 + 单层光晕 + 1px 高光环。
+  // 状态靠颜色 + 边框 + 徽标表达,不再用球面渐变假装 3D。
   for (const ring of rings) {
     if (foldedCwds.has(ring.cwd)) continue;
     for (const node of ring.nodes) {
       const x = cx + node.radius * Math.cos(node.angle);
       const y = cy + node.radius * Math.sin(node.angle);
       const isSelected = node.id === selectedNodeId;
-      const color = ENGINE_COLORS[node.engine] || '#e8b339';
-      const nodeR = isSelected ? 15 : 11;
+      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      const nodeR = isSelected ? 9 : 7;
       const haloId = `nx-halo-${node.engine}`;
-      const rimId = `nx-rim-${node.engine}`;
-      const gradId = `nx-node-${node.state}`;
-      // 光照中心随节点角度偏移(模拟自转) / Light center shifts with angle (simulates rotation)
-      const nodeLightX = 32 + Math.sin(nodeTime * 1.5 + node.angle * 2) * 8;
-      const nodeLightY = 28 + Math.cos(nodeTime * 1.2 + node.angle) * 5;
-      const nodeDynGradId = `${gradId}-${node.id.slice(0, 6)}`;
+      const isRunning = node.state === 'running';
 
-      // 大气光晕(最外层弥散) / Atmospheric halo (outermost diffuse)
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 14}" fill="url(#${haloId})" opacity="${isSelected ? '0.9' : '0.55'}" style="pointer-events:none"/>`;
+      // 单层光晕 / Single-layer halo
+      const haloOpacity = isSelected ? 0.9 : (isRunning ? 0.75 : 0.4);
+      svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 10}" fill="url(#${haloId})" opacity="${haloOpacity}" style="pointer-events:none"/>`;
 
-      // 选中光环(脉冲扩散) / Selection halo (pulsing)
+      // 运行中:外圈脉冲(单一线条) / Running: outer pulse ring
+      if (isRunning) {
+        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 2}" fill="none" stroke="${color}" stroke-width="1" opacity="0.6">
+          <animate attributeName="r" values="${nodeR + 2};${nodeR + 10};${nodeR + 2}" dur="2s" repeatCount="indefinite"/>
+          <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
+        </circle>`;
+      }
+
+      // 节点主体:实心圆 + 1px 高光环 / Node body: solid circle + 1px rim
+      const fillOpacity = node.state === 'idle' ? 0.85 : 1;
+      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="${color}" fill-opacity="${fillOpacity}" stroke="rgba(255,255,255,0.4)" stroke-width="0.8" style="cursor:pointer" data-nid="${node.id}"/>`;
+
+      // 选中:加一圈细描边 / Selected: extra thin outline
       if (isSelected) {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 12}" fill="none" stroke="${color}" stroke-width="1.5" opacity="0.5">
-          <animate attributeName="r" values="${nodeR + 10};${nodeR + 20};${nodeR + 10}" dur="2.5s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.5;0.08;0.5" dur="2.5s" repeatCount="indefinite"/>
-        </circle>`;
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 6}" fill="none" stroke="${color}" stroke-width="1" opacity="0.3">
-          <animate attributeName="r" values="${nodeR + 5};${nodeR + 12};${nodeR + 5}" dur="2.5s" begin="0.4s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.3;0;0.3" dur="2.5s" begin="0.4s" repeatCount="indefinite"/>
-        </circle>`;
+        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 3}" fill="none" stroke="${color}" stroke-width="1" opacity="0.7"/>`;
       }
 
-      // 运行中脉冲 / Running pulse
-      if (node.state === 'running') {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="none" stroke="${color}" stroke-width="1" opacity="0.4">
-          <animate attributeName="r" values="${nodeR};${nodeR + 16};${nodeR}" dur="1.8s" repeatCount="indefinite"/>
-          <animate attributeName="opacity" values="0.6;0;0.6" dur="1.8s" repeatCount="indefinite"/>
-        </circle>`;
-      }
-
-      // 节点投影 / Node drop shadow
-      svg += `<ellipse cx="${x}" cy="${y + nodeR * 0.8}" rx="${nodeR * 0.8}" ry="${nodeR * 0.22}" fill="rgba(0,0,0,0.3)" filter="url(#nx-glow-blur-sm)" style="pointer-events:none"/>`;
-
-      // Phase 7: 动态光照球体渐变(每帧光照中心偏移) / Dynamic lit sphere gradient (light center shifts per frame)
-      svg += `<defs><radialGradient id="${nodeDynGradId}" cx="${nodeLightX}%" cy="${nodeLightY}%" r="72%">`;
-      if (node.state === 'running') {
-        svg += `<stop offset="0%" stop-color="#fff5d0"/><stop offset="20%" stop-color="#ffd680"/><stop offset="50%" stop-color="#e8b339"/><stop offset="80%" stop-color="#8a6018"/><stop offset="100%" stop-color="#4a3208"/>`;
-      } else if (node.state === 'error') {
-        svg += `<stop offset="0%" stop-color="#ffc4b8"/><stop offset="25%" stop-color="#ff8a76"/><stop offset="55%" stop-color="#e2614c"/><stop offset="85%" stop-color="#8a2a1c"/><stop offset="100%" stop-color="#4a1208"/>`;
-      } else if (node.state === 'done') {
-        svg += `<stop offset="0%" stop-color="#c4f4d4"/><stop offset="25%" stop-color="#7ed99f"/><stop offset="55%" stop-color="#4ec27a"/><stop offset="85%" stop-color="#1e6e3e"/><stop offset="100%" stop-color="#0a3a1c"/>`;
-      } else {
-        svg += `<stop offset="0%" stop-color="#52525c"/><stop offset="40%" stop-color="#36363e"/><stop offset="80%" stop-color="#222228"/><stop offset="100%" stop-color="#121216"/>`;
-      }
-      svg += `</radialGradient></defs>`;
-
-      // 节点球体主体(动态球面光影) / Node body (dynamic spherical gradient)
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="url(#${nodeDynGradId})" stroke="${color}" stroke-width="${isSelected ? 1.5 : 0.8}" stroke-opacity="${isSelected ? '0.8' : '0.4'}" opacity="${isSelected ? 1 : 0.95}" style="cursor:pointer" data-nid="${node.id}"/>`;
-
-      // 边缘亮环(底光反射效果) / Rim light (bounce light at bottom edge)
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="url(#${rimId})" style="pointer-events:none"/>`;
-
-      // 玻璃高光(顶部白色反射) / Glass specular highlight (top reflection)
-      svg += `<ellipse cx="${x - nodeR * 0.15}" cy="${y - nodeR * 0.3}" rx="${nodeR * 0.42}" ry="${nodeR * 0.25}" fill="url(#nx-node-glass-hi)" style="pointer-events:none"/>`;
-
-      // 节点核心亮点(引擎色) / Node center bright spot (engine color)
-      svg += `<circle cx="${x}" cy="${y}" r="${Math.max(2, nodeR * 0.22)}" fill="${color}" opacity="0.7" style="pointer-events:none"/>`;
-
-      // 引擎标签(选中或运行中) / Engine label (selected or running)
-      if (isSelected || node.state === 'running') {
+      // 引擎标签(仅选中) / Engine label (selected only)
+      if (isSelected) {
         const labelText = ENGINE_LABELS[node.engine] || node.engine;
-        // 标签背景(玻璃胶囊) / Label background (glass capsule)
         const labelW = labelText.length * 5.5 + 12;
-        svg += `<rect x="${x - labelW / 2}" y="${y - nodeR - 20}" width="${labelW}" height="14" rx="7" fill="rgba(20,20,24,0.7)" stroke="${color}" stroke-width="0.5" stroke-opacity="0.3" style="pointer-events:none"/>`;
-        svg += `<text x="${x}" y="${y - nodeR - 10}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui" opacity="${isSelected ? '1' : '0.7'}" style="pointer-events:none">${esc(labelText)}</text>`;
+        svg += `<rect x="${x - labelW / 2}" y="${y - nodeR - 18}" width="${labelW}" height="14" rx="7" fill="rgba(20,22,28,0.75)" stroke="${color}" stroke-width="0.5" stroke-opacity="0.5" style="pointer-events:none"/>`;
+        svg += `<text x="${x}" y="${y - nodeR - 8}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(labelText)}</text>`;
       }
 
-      // Phase 4: 节点状态徽标 / Node state badge
+      // 状态徽标(右上角小圆点) / Status badge (small dot, top-right)
       if (node.state === 'error') {
-        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="5" fill="#e2614c" stroke="#18181c" stroke-width="1.5" data-nid="${node.id}" style="pointer-events:none"/>`;
-        svg += `<text x="${x + nodeR - 1}" y="${y - nodeR + 4.5}" fill="white" font-size="8" text-anchor="middle" font-family="system-ui" font-weight="bold" style="pointer-events:none">!</text>`;
-      } else if (node.state === 'running') {
-        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="4" fill="none" stroke="${color}" stroke-width="1.5" stroke-dasharray="2 3" data-nid="${node.id}" style="pointer-events:none">
-          <animateTransform attributeName="transform" type="rotate" from="0 ${x + nodeR - 1} ${y - nodeR + 1}" to="360 ${x + nodeR - 1} ${y - nodeR + 1}" dur="1.5s" repeatCount="indefinite"/>
-        </circle>`;
+        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="3.5" fill="#e2614c" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
       } else if (node.state === 'done') {
-        // 完成状态:小对勾 / Done: small checkmark
-        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="4" fill="#4ec27a" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
-        svg += `<path d="M ${x + nodeR - 2.5} ${y - nodeR + 1} L ${x + nodeR - 1} ${y - nodeR + 2.5} L ${x + nodeR + 1} ${y - nodeR - 1}" fill="none" stroke="white" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" style="pointer-events:none"/>`;
+        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="3.5" fill="#4ec27a" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
       }
     }
   }
@@ -1249,10 +1064,10 @@ function renderSVG(): void {
       buildRings();
     });
     el.addEventListener('mouseenter', () => {
-      el.style.fill = 'rgba(232,179,57,0.8)';
+      el.style.fill = 'rgba(200,210,230,0.85)';
     });
     el.addEventListener('mouseleave', () => {
-      el.style.fill = foldedCwds.has(el.dataset.fold!) ? 'rgba(150,150,160,0.25)' : 'rgba(150,150,160,0.4)';
+      el.style.fill = foldedCwds.has(el.dataset.fold!) ? 'rgba(150,160,180,0.30)' : 'rgba(170,178,195,0.50)';
     });
   });
 }
@@ -1264,7 +1079,7 @@ function showNodeTooltip(nid: string, ev: MouseEvent): void {
   const conv = cb.convs().get(nid);
   if (!conv) return;
 
-  const color = ENGINE_COLORS[conv.engine] || '#e8b339';
+  const color = ENGINE_COLORS[conv.engine] || '#a8b0c2';
   const state = agentState(conv);
   const stateLabel = tr(`nexus.state${state.charAt(0).toUpperCase() + state.slice(1)}`);
   const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
@@ -1453,7 +1268,7 @@ function emitParticlesToRunning(): void {
       // canvas 坐标系:中心 = canvas 中心,偏移 = radius * cos/sin * scale
       const canvasNodeX = cx + node.radius * Math.cos(node.angle) * scale;
       const canvasNodeY = cy + node.radius * Math.sin(node.angle) * scale;
-      const color = ENGINE_COLORS[node.engine] || '#e8b339';
+      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
       // 正向:核心 → 节点(意图流) / Forward: core → node (intent flow)
       spawnParticle(cx, cy, canvasNodeX, canvasNodeY, color);
       // 逆向:节点 → 核心(结果回流),较低概率 / Reverse: node → core (result feedback), lower chance
@@ -1495,15 +1310,15 @@ function updateMinimap(): void {
     for (const node of ring.nodes) {
       const nx = miniCx + r * Math.cos(node.angle);
       const ny = miniCy + r * Math.sin(node.angle);
-      const color = ENGINE_COLORS[node.engine] || '#e8b339';
+      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
       const isSel = node.id === selectedNodeId || selectedNodeIds.has(node.id);
       const dotR = isSel ? 3 : 2;
       svg += `<circle cx="${nx}" cy="${ny}" r="${dotR}" fill="${color}" opacity="${isSel ? 1 : 0.6}"/>`;
     }
   }
 
-  // 核心 / Core
-  svg += `<circle cx="${miniCx}" cy="${miniCy}" r="3" fill="rgba(232,179,57,0.8)"/>`;
+  // 核心 / Core — Phase 8 冷白
+  svg += `<circle cx="${miniCx}" cy="${miniCy}" r="3" fill="rgba(200,210,230,0.85)"/>`;
 
   // 视口指示框 / Viewport indicator rect
   const stageEl = document.querySelector('.nexus-stage') as HTMLElement | null;
@@ -1517,7 +1332,7 @@ function updateMinimap(): void {
     const vpCx = miniCx - viewOffsetX * scale / viewScale;
     const vpCy = miniCy - viewOffsetY * scale / viewScale;
     svg += `<rect x="${vpCx - vpW/2}" y="${vpCy - vpH/2}" width="${vpW}" height="${vpH}"
-      fill="rgba(232,179,57,0.05)" stroke="rgba(232,179,57,0.4)" stroke-width="1" stroke-dasharray="3 2"/>`;
+      fill="rgba(170,180,210,0.05)" stroke="rgba(170,180,210,0.35)" stroke-width="1" stroke-dasharray="3 2"/>`;
   }
 
   svg += `</svg>`;
@@ -1610,7 +1425,7 @@ function updateOverlay(): void {
     }
   }
 
-  const stateColor = ENGINE_COLORS[conv.engine] || '#e8b339';
+  const stateColor = ENGINE_COLORS[conv.engine] || '#a8b0c2';
   const stateText = conv.status === 'running' ? tr('nexus.stateRunning') : (conv.turns.length > 0 ? tr('nexus.stateIdle') : tr('nexus.stateEmpty'));
 
   overlay.innerHTML = `
