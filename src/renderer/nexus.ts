@@ -831,6 +831,7 @@ let svgCy = 200;
 function applyViewTransform(): void {
   const svg = document.querySelector('.nexus-svg-wrap svg') as SVGSVGElement | null;
   if (svg) {
+    svg.style.transformOrigin = 'center';
     svg.style.transform = `translate(calc(-50% + ${viewOffsetX}px), calc(-50% + ${viewOffsetY}px)) scale(${viewScale})`;
   }
 }
@@ -870,7 +871,7 @@ function renderSVG(): void {
   const cx = svgCx;
   const cy = svgCy;
 
-  let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);">`;
+  let svg = `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}" style="position:absolute;top:50%;left:50%;transform:translate(calc(-50% + ${viewOffsetX}px), calc(-50% + ${viewOffsetY}px)) scale(${viewScale});transform-origin:center;">`;
 
   // ── 渐变定义 / Gradient defs ──
   // Phase 8: 极简重置 — 一层光晕 + 一个球。Less is more.
