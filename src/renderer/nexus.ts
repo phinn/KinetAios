@@ -135,6 +135,11 @@ interface OrbitRing {
 
 let rings: OrbitRing[] = [];
 let selectedNodeId: string | null = null;
+
+// Phase 9: overlay 模式 — 'agent' 显示选中节点详情, 'dashboard' 显示全局概览
+// Overlay mode — 'agent' for selected node detail, 'dashboard' for global overview
+type OverlayMode = 'agent' | 'dashboard';
+let overlayMode: OverlayMode = 'agent';
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
 let animationId = 0;
@@ -380,6 +385,8 @@ export function renderNexus(): void {
 
   // 选中当前会话 / Select current conversation
   if (cb) selectedNodeId = cb.selectedId();
+  // Phase 9: 有选中 → agent,无选中 → dashboard 模式 / Has selection → agent, no selection → dashboard
+  overlayMode = selectedNodeId ? 'agent' : 'dashboard';
 
   root.innerHTML = `
     <div class="nexus-stage" id="nexus-stage">
@@ -931,9 +938,9 @@ function renderSVG(): void {
   // 远场光晕(单层,呼吸缩放) / Halo (single layer, breathing)
   svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 3.5}" fill="url(#nx-core-glow)"/>`;
   // 核心球体 / Core body
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)"/>`;
+  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)" data-core="true" style="cursor:pointer"/>`;
   // 核心标签 / Core label
-  svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(170,178,195,0.45)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500">INTENT</text>`;
+  svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(170,178,195,0.45)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500" data-core="true" style="cursor:pointer;pointer-events:none">INTENT</text>`;
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
   // Phase 8: 一条流动虚线,够了。
@@ -967,7 +974,8 @@ function renderSVG(): void {
 
   // ── Agent 节点 / Agent nodes ──
   // Phase 8: 纯色实心圆 + 单层光晕 + 1px 高光环。
-  // 状态靠颜色 + 边框 + 徽标表达,不再用球面渐变假装 3D。
+  // Phase 9: 节点大小随 turn 数微调 + 选中时显示引擎标签(已有)。
+  // Node size scales subtly with turn count; status via color + border + badge.
   for (const ring of rings) {
     if (foldedCwds.has(ring.cwd)) continue;
     for (const node of ring.nodes) {
@@ -975,7 +983,10 @@ function renderSVG(): void {
       const y = cy + node.radius * Math.sin(node.angle);
       const isSelected = node.id === selectedNodeId;
       const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
-      const nodeR = isSelected ? 9 : 7;
+      // Phase 9: 节点大小 = 基础 7 + turn 数权重(上限 +4),选中 +2
+      // Node radius = base 7 + turn-count weight (max +4), selected +2
+      const turnBoost = Math.min(Math.floor(node.conv.turns.length / 5), 4);
+      const nodeR = (isSelected ? 9 : 7) + turnBoost;
       const haloId = `nx-halo-${node.engine}`;
       const isRunning = node.state === 'running';
 
@@ -998,6 +1009,15 @@ function renderSVG(): void {
       // 选中:加一圈细描边 / Selected: extra thin outline
       if (isSelected) {
         svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 3}" fill="none" stroke="${color}" stroke-width="1" opacity="0.7"/>`;
+      }
+
+      // Phase 9: 微标签 — turn 数 > 0 时显示简短标题 / Mini-label: short title when turns > 0
+      if (!isSelected && node.conv.turns.length > 0 && nodeR >= 8) {
+        const rawTitle = node.conv.customTitle || node.conv.turns[0]?.prompt || '';
+        const shortTitle = rawTitle.slice(0, 12).trim();
+        if (shortTitle) {
+          svg += `<text x="${x}" y="${y + nodeR + 11}" fill="rgba(170,178,195,0.38)" font-size="7.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
+        }
       }
 
       // 引擎标签(仅选中) / Engine label (selected only)
@@ -1027,6 +1047,7 @@ function renderSVG(): void {
       e.stopPropagation();
       const nid = el.dataset.nid!;
       selectedNodeId = nid;
+      overlayMode = 'agent'; // Phase 9: 节点点击 → agent 模式
       if (cb) cb.selectChat(nid);
       updateOverlay();
     });
@@ -1051,6 +1072,16 @@ function renderSVG(): void {
       e.stopPropagation();
       const nid = el.dataset.nid!;
       showContextMenu(nid, e as MouseEvent);
+    });
+  });
+
+  // Phase 9: 核心球点击 → dashboard 模式 / Core click → dashboard mode
+  wrap.querySelectorAll<SVGCircleElement>('[data-core="true"]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      e.stopPropagation();
+      overlayMode = 'dashboard';
+      selectedNodeId = null;
+      updateOverlay();
     });
   });
 
@@ -1086,6 +1117,11 @@ function showNodeTooltip(nid: string, ev: MouseEvent): void {
   const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
   const turns = conv.turns.length;
   const engineLabel = ENGINE_LABELS[conv.engine] || conv.engine;
+  // Phase 9: token + cost / Token + cost
+  const convTokens = conv.tokens || 0;
+  const tokStr = convTokens >= 1000 ? `${(convTokens / 1000).toFixed(1)}K` : `${convTokens}`;
+  const convCost = conv.cost || 0;
+  const costStr = convCost < 0.01 && convCost > 0 ? `$${convCost.toFixed(4)}` : `$${convCost.toFixed(2)}`;
 
   tip.innerHTML = `
     <div class="nx-tip-head">
@@ -1098,6 +1134,10 @@ function showNodeTooltip(nid: string, ev: MouseEvent): void {
       <span>${esc(stateLabel)}</span>
       <span class="nx-tip-sep">·</span>
       <span>${turns} ${esc(tr('nexus.turns'))}</span>
+      <span class="nx-tip-sep">·</span>
+      <span>${tokStr} tok</span>
+      <span class="nx-tip-sep">·</span>
+      <span>${costStr}</span>
     </div>
   `;
   tip.hidden = false;
@@ -1388,12 +1428,130 @@ function updateMultiToolbar(): void {
   updateMinimap();
 }
 
+// ── Phase 9: 全局仪表盘 overlay / Global dashboard overlay ──
+function updateDashboardOverlay(): void {
+  const overlay = document.getElementById('nexus-overlay');
+  if (!overlay || !cb) return;
+
+  const convsMap = cb.convs();
+  const allConvs = cb.order().map(id => convsMap.get(id)).filter(Boolean) as Conversation[];
+
+  let running = 0, idle = 0, error = 0, totalTokens = 0, totalCost = 0;
+  const engineCounts: Record<string, number> = {};
+
+  for (const conv of allConvs) {
+    const st = agentState(conv);
+    if (st === 'running') running++;
+    else if (st === 'error') error++;
+    else if (st === 'idle' || st === 'done') idle++;
+    totalTokens += conv.tokens || 0;
+    totalCost += conv.cost || 0;
+    engineCounts[conv.engine] = (engineCounts[conv.engine] || 0) + 1;
+  }
+
+  // 引擎分布条 / Engine distribution bar
+  const total = allConvs.length || 1;
+  let distHTML = '';
+  const engines = Object.entries(engineCounts).sort((a, b) => b[1] - a[1]);
+  for (const [engine, count] of engines) {
+    const pct = (count / total * 100).toFixed(0);
+    const color = ENGINE_COLORS[engine as EngineKind] || '#a8b0c2';
+    const label = ENGINE_LABELS[engine as EngineKind] || engine;
+    distHTML += `<div class="nx-dash-eng-row">
+      <span class="nx-dash-eng-dot" style="background:${color}"></span>
+      <span class="nx-dash-eng-label">${esc(label)}</span>
+      <div class="nx-dash-eng-bar"><div class="nx-dash-eng-fill" style="width:${pct}%;background:${color}"></div></div>
+      <span class="nx-dash-eng-count">${count}</span>
+    </div>`;
+  }
+
+  // 最近活跃(按 updatedAt 排序前 5) / Recent activity (top 5 by updatedAt)
+  const recent = [...allConvs]
+    .sort((a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt))
+    .slice(0, 5);
+  let recentHTML = '';
+  if (recent.length === 0) {
+    recentHTML = `<div class="nx-dash-empty">${esc(tr('nexus.dashNoRecent'))}</div>`;
+  } else {
+    for (const conv of recent) {
+      const color = ENGINE_COLORS[conv.engine] || '#a8b0c2';
+      const st = agentState(conv);
+      const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 30) || conv.id.slice(0, 8);
+      const turns = conv.turns.length;
+      recentHTML += `<div class="nx-dash-recent-item" data-nid="${conv.id}">
+        <span class="nx-dash-recent-dot" style="background:${color}"></span>
+        <span class="nx-dash-recent-title">${esc(title)}</span>
+        <span class="nx-dash-recent-meta ${st === 'running' ? 'nx-state-running' : ''}">${turns} ${esc(tr('nexus.turns'))}</span>
+      </div>`;
+    }
+  }
+
+  const costStr = totalCost < 0.01 ? `$${totalCost.toFixed(4)}` : `$${totalCost.toFixed(2)}`;
+  const tokStr = totalTokens >= 1000 ? `${(totalTokens / 1000).toFixed(1)}K` : `${totalTokens}`;
+
+  overlay.innerHTML = `
+    <div class="nx-panel nx-dash-panel">
+      <div class="nx-panel-head">
+        <span class="nx-panel-dot" style="background:rgba(200,210,230,0.6);box-shadow:0 0 8px rgba(200,210,230,0.3)"></span>
+        <span class="nx-panel-title">${esc(tr('nexus.dashboard'))}</span>
+        <span class="nx-panel-state">${allConvs.length} ${esc(tr('nexus.dashSessions'))}</span>
+      </div>
+      <div class="nx-panel-body" id="nx-panel-body">
+        <div class="nx-dash-stats">
+          <div class="nx-dash-stat ${running > 0 ? 'nx-stat-active' : ''}">
+            <div class="nx-dash-stat-val">${running}</div>
+            <div class="nx-dash-stat-label">${esc(tr('nexus.dashRunning'))}</div>
+          </div>
+          <div class="nx-dash-stat">
+            <div class="nx-dash-stat-val">${idle}</div>
+            <div class="nx-dash-stat-label">${esc(tr('nexus.dashIdle'))}</div>
+          </div>
+          <div class="nx-dash-stat ${error > 0 ? 'nx-stat-error' : ''}">
+            <div class="nx-dash-stat-val">${error}</div>
+            <div class="nx-dash-stat-label">${esc(tr('nexus.dashError'))}</div>
+          </div>
+        </div>
+        <div class="nx-dash-metrics">
+          <div class="nx-dash-metric">
+            <span class="nx-dash-metric-label">${esc(tr('nexus.dashTokens'))}</span>
+            <span class="nx-dash-metric-val">${tokStr}</span>
+          </div>
+          <div class="nx-dash-metric">
+            <span class="nx-dash-metric-label">${esc(tr('nexus.dashCost'))}</span>
+            <span class="nx-dash-metric-val">${costStr}</span>
+          </div>
+        </div>
+        <div class="nx-dash-section-title">${esc(tr('nexus.dashByEngine'))}</div>
+        <div class="nx-dash-eng-list">${distHTML}</div>
+        <div class="nx-dash-section-title">${esc(tr('nexus.dashRecent'))}</div>
+        <div class="nx-dash-recent-list">${recentHTML}</div>
+      </div>
+    </div>
+  `;
+
+  // 绑定最近活跃列表点击 → 切到该 Agent 详情 / Bind recent item click → switch to agent detail
+  overlay.querySelectorAll<HTMLElement>('[data-nid]').forEach(el => {
+    el.addEventListener('click', () => {
+      const nid = el.dataset.nid!;
+      selectedNodeId = nid;
+      overlayMode = 'agent';
+      if (cb) cb.selectChat(nid);
+      updateOverlay();
+    });
+  });
+}
+
 // ── DOM overlay:选中节点的对话流 / DOM overlay: conversation for selected node ──
 function updateOverlay(): void {
   const overlay = document.getElementById('nexus-overlay');
   if (!overlay || !cb) return;
 
-  if (!selectedNodeId) {
+  // Phase 9: 核心球点击 → dashboard 模式
+  if (overlayMode === 'dashboard' || !selectedNodeId) {
+    if (overlayMode === 'dashboard') {
+      updateDashboardOverlay();
+      return;
+    }
     overlay.innerHTML = `<div class="nexus-empty">${esc(tr('nexus.selectAgent'))}</div>`;
     return;
   }
@@ -1428,6 +1586,17 @@ function updateOverlay(): void {
 
   const stateColor = ENGINE_COLORS[conv.engine] || '#a8b0c2';
   const stateText = conv.status === 'running' ? tr('nexus.stateRunning') : (conv.turns.length > 0 ? tr('nexus.stateIdle') : tr('nexus.stateEmpty'));
+  const engineLabel = ENGINE_LABELS[conv.engine] || conv.engine;
+
+  // Phase 9: token / cost 指标 / Token / cost metrics
+  const convTokens = conv.tokens || 0;
+  const convCost = conv.cost || 0;
+  const tokStr = convTokens >= 1000 ? `${(convTokens / 1000).toFixed(1)}K` : `${convTokens}`;
+  const costStr = convCost < 0.01 && convCost > 0 ? `$${convCost.toFixed(4)}` : `$${convCost.toFixed(2)}`;
+
+  // Phase 9: 快捷操作栏 / Quick actions bar
+  const isRunning = conv.status === 'running';
+  const hasTurns = conv.turns.length > 0;
 
   overlay.innerHTML = `
     <div class="nx-panel">
@@ -1436,11 +1605,45 @@ function updateOverlay(): void {
         <span class="nx-panel-title">${esc(conv.customTitle || conv.id.slice(0, 8))}</span>
         <span class="nx-panel-state">${esc(stateText)}</span>
       </div>
+      <div class="nx-detail-meta">
+        <div class="nx-detail-chip"><span class="nx-detail-chip-label">${esc(engineLabel)}</span></div>
+        <div class="nx-detail-chip"><span class="nx-detail-chip-label">${esc(tr('nexus.detailTokens'))}</span><span class="nx-detail-chip-val">${tokStr}</span></div>
+        <div class="nx-detail-chip"><span class="nx-detail-chip-label">${esc(tr('nexus.detailCost'))}</span><span class="nx-detail-chip-val">${costStr}</span></div>
+        ${conv.model ? `<div class="nx-detail-chip"><span class="nx-detail-chip-val">${esc(conv.model)}</span></div>` : ''}
+      </div>
       <div class="nx-panel-body" id="nx-panel-body">
         ${turnsHTML || `<div class="nx-empty-turns">${esc(tr('nexus.noMessages'))}</div>`}
       </div>
+      <div class="nx-detail-actions">
+        <button class="nx-action-btn" data-action="continue" ${isRunning ? 'disabled' : ''}>${esc(tr('nexus.actContinue'))}</button>
+        <button class="nx-action-btn" data-action="summarize" ${!hasTurns ? 'disabled' : ''}>${esc(tr('nexus.actSummarize'))}</button>
+        <button class="nx-action-btn" data-action="export" ${!hasTurns ? 'disabled' : ''}>${esc(tr('nexus.actExport'))}</button>
+      </div>
     </div>
   `;
+
+  // Phase 9: 绑定快捷操作 / Bind quick actions
+  overlay.querySelectorAll<HTMLElement>('.nx-action-btn[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const action = btn.dataset.action;
+      if (!action || !cb) return;
+      const id = selectedNodeId!;
+      switch (action) {
+        case 'continue':
+          // 聚焦输入框 / Focus the input bar
+          const arc = document.getElementById('nexus-arc-text') as HTMLTextAreaElement | null;
+          if (arc) arc.focus();
+          break;
+        case 'summarize':
+          cb.send(id, '请总结当前对话的核心内容和关键结论。');
+          break;
+        case 'export':
+          // 用对话框让用户选择格式——这里直接发指令 / Send export command
+          cb.send(id, '/export md');
+          break;
+      }
+    });
+  });
 
   // Phase 2: 自动滚动到底部(流式回复时跟随) / Auto-scroll to bottom during streaming
   const panelBody = document.getElementById('nx-panel-body');
@@ -1461,9 +1664,9 @@ export function refreshNexusNode(conv: Conversation): void {
       break;
     }
   }
-  // 如果是当前选中的节点,更新 overlay / If it's the selected node, update overlay
+  // Phase 9: dashboard 模式也要更新 / Update dashboard too in dashboard mode
   // 用 rAF 防抖:高频 token 流时避免每帧全量 innerHTML 重建。
-  if (conv.id === selectedNodeId) {
+  if (overlayMode === 'dashboard' || conv.id === selectedNodeId) {
     if (nexusOverlayPending) return;
     nexusOverlayPending = true;
     requestAnimationFrame(() => {
@@ -1478,6 +1681,8 @@ export function refreshNexusNode(conv: Conversation): void {
 export function nexusOnConversationChanged(): void {
   buildRings();
   if (cb) selectedNodeId = cb.selectedId();
+  // Phase 9: 有选中节点 → agent 模式,否则保持 dashboard
+  if (selectedNodeId) overlayMode = 'agent';
   updateOverlay();
   updateMinimap();
 }
