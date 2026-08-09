@@ -1215,7 +1215,7 @@ a { color: var(--accent); }
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/
 .chat-head {
   padding: 7px 14px 5px; border-bottom: 1px solid var(--border);
-  display: flex; flex-direction: column; gap: 3px;
+  display: flex; flex-direction: column; gap: 3px; flex-shrink: 0;
   background: var(--surface-header, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);

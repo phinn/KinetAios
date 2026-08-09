@@ -1784,7 +1784,13 @@ function streamAppend(text: string) {
           target.classList.add('streaming');
           // markdown 重新渲染后高度可能增长(新段落 / 代码块),确保跟到底。
           // Re-render may grow scrollHeight (new paragraphs / code blocks); follow.
-          scrollDown();
+          // 同帧内同步滚动,避免再排一个 rAF 导致比渲染慢一帧。
+          // Scroll in the same frame — avoids lagging one frame behind render.
+          scrollDownScheduled = false;
+          if (userAtBottom) {
+            const turnsEl = document.getElementById('turns');
+            if (turnsEl) turnsEl.scrollTop = 999999;
+          }
         }
       });
     }
