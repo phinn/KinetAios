@@ -307,6 +307,11 @@ function projName(cwd: string): string {
   return base || cwd;
 }
 
+// ── SVG DOM 脏标记 / SVG DOM dirty flag ──
+// 结构变化(defs/轨道/节点数量)时设为 true,animate() 检测到后调 renderSVG() 全量重建。
+// Set true when structure changes. animate() checks and calls renderSVG() for full DOM rebuild.
+let svgStructureDirty = true;
+
 // ── 构建轨道环 / Build orbit rings ──
 function buildRings(): void {
   if (!cb) return;
@@ -364,6 +369,10 @@ function buildRings(): void {
       ring.nodes.forEach(n => { n.radius = r; });
     }
   });
+
+  // 标记 SVG 结构变脏,下一帧 animate() 会调 renderSVG() 全量重建。
+  // Mark SVG structure dirty — next animate() frame will full-rebuild via renderSVG().
+  svgStructureDirty = true;
 }
 
 // ── Phase 4: 性能降级判断 / Performance tier ──
@@ -805,16 +814,18 @@ function animate(): void {
   }
 
   // 渲染 SVG / Render SVG
-  // Phase 4: 大量节点时隔帧渲染 SVG(降低 innerHTML 重建开销) / Skip SVG frames under heavy load
+  // 不再每帧 innerHTML 重建 — 只在结构变脏时全量重建,否则只更新动态属性。
+  // No more innerHTML rebuild every frame — full rebuild only when dirty, else update attributes only.
   svgFrameSkip++;
 
   // Phase 7: 星空背景(低频更新,每 2 帧) / Starfield (every 2 frames)
   if (svgFrameSkip % 2 === 0) renderStarfield();
 
-  if (isHeavyLoad()) {
-    if (svgFrameSkip % 2 === 0) renderSVG();
+  if (svgStructureDirty) {
+    renderSVG();          // 全量重建 DOM + 绑定事件 / Full DOM rebuild + bind events
+    svgStructureDirty = false;
   } else {
-    renderSVG();
+    updateSVGDynamic();   // 只更新节点坐标/连线/核心呼吸 / Update positions only
   }
 
   // 更新 Canvas 粒子 / Update canvas particles
@@ -936,14 +947,16 @@ function renderSVG(): void {
   const corePulse = 1 + Math.sin(Date.now() / 1500) * 0.04;
   const coreR = 30 * corePulse;
   // 远场光晕(单层,呼吸缩放) / Halo (single layer, breathing)
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR * 3.5}" fill="url(#nx-core-glow)"/>`;
+  svg += `<circle id="nx-core-halo" cx="${cx}" cy="${cy}" r="${coreR * 3.5}" fill="url(#nx-core-glow)"/>`;
   // 核心球体 / Core body
-  svg += `<circle cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)" data-core="true" style="cursor:pointer"/>`;
+  svg += `<circle id="nx-core-body" cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)" data-core="true" style="cursor:pointer"/>`;
   // 核心标签 / Core label
   svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(170,178,195,0.45)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500" data-core="true" style="cursor:pointer;pointer-events:none">INTENT</text>`;
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
   // Phase 8: 一条流动虚线,够了。
+  // 容器 <g> 便于动态更新 / Container <g> for dynamic updates
+  svg += `<g id="nx-flow-lines">`;
   for (const ring of rings) {
     if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
     for (const node of ring.nodes) {
@@ -951,26 +964,16 @@ function renderSVG(): void {
       const nx = cx + node.radius * Math.cos(node.angle);
       const ny = cy + node.radius * Math.sin(node.angle);
       const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
-      svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.45" stroke-dasharray="3 5">
+      svg += `<line data-flow="${node.id}" x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.45" stroke-dasharray="3 5">
         <animate attributeName="stroke-dashoffset" from="0" to="-16" dur="1.2s" repeatCount="indefinite"/>
       </line>`;
     }
   }
+  svg += `</g>`;
 
   // ── Phase 2: 选中节点 ↔ 核心高亮连线 / Selected ↔ core highlight line ──
-  if (selectedNodeId) {
-    for (const ring of rings) {
-      if (foldedCwds.has(ring.cwd)) continue; // Phase 4: 跳过折叠轨道
-      const node = ring.nodes.find(n => n.id === selectedNodeId);
-      if (node) {
-        const nx = cx + node.radius * Math.cos(node.angle);
-        const ny = cy + node.radius * Math.sin(node.angle);
-        const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
-        // Phase 8: 一条细线就够了,让节点的光晕自己说话。
-        svg += `<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.55"/>`;
-      }
-    }
-  }
+  // 空容器,由 updateSVGDynamic() 动态填充 / Empty container, filled by updateSVGDynamic()
+  svg += `<g id="nx-sel-line"></g>`;
 
   // ── Agent 节点 / Agent nodes ──
   // Phase 8: 纯色实心圆 + 单层光晕 + 1px 高光环。
@@ -990,13 +993,17 @@ function renderSVG(): void {
       const haloId = `nx-halo-${node.engine}`;
       const isRunning = node.state === 'running';
 
+      // 用 <g> 容器包裹节点所有子元素,每帧只更新 transform 即可移动整个组。
+      // Wrap all node children in <g>, update transform per frame to move the whole group.
+      svg += `<g data-node-group="${node.id}" transform="translate(${x},${y})">`;
+
       // 单层光晕 / Single-layer halo
       const haloOpacity = isSelected ? 0.9 : (isRunning ? 0.75 : 0.4);
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 10}" fill="url(#${haloId})" opacity="${haloOpacity}" style="pointer-events:none"/>`;
+      svg += `<circle cx="0" cy="0" r="${nodeR + 10}" fill="url(#${haloId})" opacity="${haloOpacity}" style="pointer-events:none"/>`;
 
       // 运行中:外圈脉冲(单一线条) / Running: outer pulse ring
       if (isRunning) {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 2}" fill="none" stroke="${color}" stroke-width="1" opacity="0.6">
+        svg += `<circle cx="0" cy="0" r="${nodeR + 2}" fill="none" stroke="${color}" stroke-width="1" opacity="0.6">
           <animate attributeName="r" values="${nodeR + 2};${nodeR + 10};${nodeR + 2}" dur="2s" repeatCount="indefinite"/>
           <animate attributeName="opacity" values="0.6;0;0.6" dur="2s" repeatCount="indefinite"/>
         </circle>`;
@@ -1004,11 +1011,11 @@ function renderSVG(): void {
 
       // 节点主体:实心圆 + 1px 高光环 / Node body: solid circle + 1px rim
       const fillOpacity = node.state === 'idle' ? 0.85 : 1;
-      svg += `<circle cx="${x}" cy="${y}" r="${nodeR}" fill="${color}" fill-opacity="${fillOpacity}" stroke="rgba(255,255,255,0.4)" stroke-width="0.8" style="cursor:pointer" data-nid="${node.id}"/>`;
+      svg += `<circle cx="0" cy="0" r="${nodeR}" fill="${color}" fill-opacity="${fillOpacity}" stroke="rgba(255,255,255,0.4)" stroke-width="0.8" style="cursor:pointer" data-nid="${node.id}"/>`;
 
       // 选中:加一圈细描边 / Selected: extra thin outline
       if (isSelected) {
-        svg += `<circle cx="${x}" cy="${y}" r="${nodeR + 3}" fill="none" stroke="${color}" stroke-width="1" opacity="0.7"/>`;
+        svg += `<circle cx="0" cy="0" r="${nodeR + 3}" fill="none" stroke="${color}" stroke-width="1" opacity="0.7"/>`;
       }
 
       // Phase 9: 微标签 — turn 数 > 0 时显示简短标题 / Mini-label: short title when turns > 0
@@ -1016,7 +1023,7 @@ function renderSVG(): void {
         const rawTitle = node.conv.customTitle || node.conv.turns[0]?.prompt || '';
         const shortTitle = rawTitle.slice(0, 12).trim();
         if (shortTitle) {
-          svg += `<text x="${x}" y="${y + nodeR + 11}" fill="rgba(170,178,195,0.38)" font-size="7.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
+          svg += `<text x="0" y="${nodeR + 11}" fill="rgba(170,178,195,0.38)" font-size="7.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
         }
       }
 
@@ -1024,16 +1031,18 @@ function renderSVG(): void {
       if (isSelected) {
         const labelText = ENGINE_LABELS[node.engine] || node.engine;
         const labelW = labelText.length * 5.5 + 12;
-        svg += `<rect x="${x - labelW / 2}" y="${y - nodeR - 18}" width="${labelW}" height="14" rx="7" fill="rgba(20,22,28,0.75)" stroke="${color}" stroke-width="0.5" stroke-opacity="0.5" style="pointer-events:none"/>`;
-        svg += `<text x="${x}" y="${y - nodeR - 8}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(labelText)}</text>`;
+        svg += `<rect x="${-labelW / 2}" y="${-nodeR - 18}" width="${labelW}" height="14" rx="7" fill="rgba(20,22,28,0.75)" stroke="${color}" stroke-width="0.5" stroke-opacity="0.5" style="pointer-events:none"/>`;
+        svg += `<text x="0" y="${-nodeR - 8}" fill="${color}" font-size="9" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(labelText)}</text>`;
       }
 
       // 状态徽标(右上角小圆点) / Status badge (small dot, top-right)
       if (node.state === 'error') {
-        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="3.5" fill="#e2614c" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
+        svg += `<circle cx="${nodeR - 1}" cy="${-nodeR + 1}" r="3.5" fill="#e2614c" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
       } else if (node.state === 'done') {
-        svg += `<circle cx="${x + nodeR - 1}" cy="${y - nodeR + 1}" r="3.5" fill="#4ec27a" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
+        svg += `<circle cx="${nodeR - 1}" cy="${-nodeR + 1}" r="3.5" fill="#4ec27a" stroke="#18181c" stroke-width="1" data-nid="${node.id}" style="pointer-events:none"/>`;
       }
+
+      svg += `</g>`;
     }
   }
 
@@ -1104,7 +1113,98 @@ function renderSVG(): void {
   });
 }
 
-// ── 节点 tooltip / Node tooltip ──
+// ── 动态更新(每帧调用,不重建 DOM)/ Dynamic update (per-frame, no DOM rebuild) ──
+// 只更新 transform / cx / cy 等属性,保留事件绑定。
+// Updates only coordinates — event listeners remain intact.
+function updateSVGDynamic(): void {
+  const wrap = document.getElementById('nexus-svg-wrap');
+  if (!wrap) return;
+
+  const cx = svgCx;
+  const cy = svgCy;
+
+  // 核心球呼吸 / Core breathing
+  const corePulse = 1 + Math.sin(Date.now() / 1500) * 0.04;
+  const coreR = 30 * corePulse;
+  const halo = document.getElementById('nx-core-halo');
+  const body = document.getElementById('nx-core-body');
+  if (halo) halo.setAttribute('r', String(coreR * 3.5));
+  if (body) body.setAttribute('r', String(coreR));
+
+  // 节点位置更新(通过 <g> 的 transform)/ Update node positions via <g> transform
+  const flowLines: SVGGElement | null = wrap.querySelector('#nx-flow-lines');
+  const selLine: SVGGElement | null = wrap.querySelector('#nx-sel-line');
+
+  for (const ring of rings) {
+    if (foldedCwds.has(ring.cwd)) continue;
+    for (const node of ring.nodes) {
+      const x = cx + node.radius * Math.cos(node.angle);
+      const y = cy + node.radius * Math.sin(node.angle);
+      const g = wrap.querySelector<SVGGElement>(`[data-node-group="${CSS.escape(node.id)}"]`);
+      if (g) g.setAttribute('transform', `translate(${x},${y})`);
+
+      // 更新数据流连线(运行中节点)/ Update flow lines (running nodes)
+      if (node.state === 'running' && flowLines) {
+        let line = flowLines.querySelector(`[data-flow="${CSS.escape(node.id)}"]`);
+        if (!line) {
+          const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+          line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('data-flow', node.id);
+          line.setAttribute('stroke', color);
+          line.setAttribute('stroke-width', '0.8');
+          line.setAttribute('opacity', '0.45');
+          line.setAttribute('stroke-dasharray', '3 5');
+          const anim = document.createElementNS('http://www.w3.org/2000/svg', 'animate');
+          anim.setAttribute('attributeName', 'stroke-dashoffset');
+          anim.setAttribute('from', '0');
+          anim.setAttribute('to', '-16');
+          anim.setAttribute('dur', '1.2s');
+          anim.setAttribute('repeatCount', 'indefinite');
+          line.appendChild(anim);
+          flowLines.appendChild(line);
+        }
+        line.setAttribute('x1', String(cx));
+        line.setAttribute('y1', String(cy));
+        line.setAttribute('x2', String(x));
+        line.setAttribute('y2', String(y));
+      }
+    }
+  }
+
+  // 清除非运行节点的旧连线 / Remove stale flow lines
+  if (flowLines) {
+    flowLines.querySelectorAll('line[data-flow]').forEach(line => {
+      const fid = line.getAttribute('data-flow')!;
+      const node = rings.flatMap(r => r.nodes).find(n => n.id === fid);
+      if (!node || node.state !== 'running') line.remove();
+    });
+  }
+
+  // 选中节点高亮连线 / Selected node highlight line
+  if (selLine) {
+    selLine.innerHTML = '';
+    if (selectedNodeId) {
+      for (const ring of rings) {
+        if (foldedCwds.has(ring.cwd)) continue;
+        const node = ring.nodes.find(n => n.id === selectedNodeId);
+        if (node) {
+          const nx = cx + node.radius * Math.cos(node.angle);
+          const ny = cy + node.radius * Math.sin(node.angle);
+          const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          line.setAttribute('x1', String(cx));
+          line.setAttribute('y1', String(cy));
+          line.setAttribute('x2', String(nx));
+          line.setAttribute('y2', String(ny));
+          line.setAttribute('stroke', color);
+          line.setAttribute('stroke-width', '0.8');
+          line.setAttribute('opacity', '0.55');
+          selLine.appendChild(line);
+        }
+      }
+    }
+  }
+}
 function showNodeTooltip(nid: string, ev: MouseEvent): void {
   const tip = document.getElementById('nexus-tooltip');
   if (!tip || !cb) return;
