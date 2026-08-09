@@ -4566,7 +4566,9 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   position: absolute;
   top: 56px; right: 16px;
   width: 320px;
-  max-height: calc(100% - 140px);
+  height: calc(100% - 140px);
+  display: flex;
+  flex-direction: column;
   z-index: 10;
   pointer-events: auto;
 }
@@ -4595,7 +4597,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   overflow: hidden;
   display: flex;
   flex-direction: column;
-  max-height: 100%;
+  flex: 1;
+  min-height: 0;
   box-shadow: 0 8px 32px rgba(0,0,0,0.4), inset 0 1px 0 var(--glass-hi);
 }
 
@@ -4607,6 +4610,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   border-bottom: 1px solid rgba(255,255,255,0.04);
   background: linear-gradient(180deg, var(--glass-hi), rgba(255,255,255,0.02) 60%);
   position: relative;
+  flex-shrink: 0;
 }
 
 /* Phase 8: 面板顶部冷白光带 / Cool-white accent strip on panel top */
