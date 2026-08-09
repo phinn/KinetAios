@@ -597,18 +597,52 @@ async function runToolBatch(
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result, durationMs: dur }); // UI 拿原文(可点开看全)
-          return { c, result: truncateForModel(result, truncateThreshold), dur }; // 模型拿截断版
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: result.includes('__IMAGE_BASE64__') ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur }); // UI 不显示 base64
+          // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
+          const forModel = result.includes('__IMAGE_BASE64__') ? result : truncateForModel(result, truncateThreshold);
+          return { c, result: forModel, dur };
         }),
       );
-      for (const { c, result } of outs) results.push({ role: 'tool', tool_call_id: c.id, content: result });
+      for (const { c, result } of outs) {
+        // screenshot 工具返回 __IMAGE_BASE64__: 标记 → 转为多模态 tool 消息(文本+图片)
+        const imgIdx = result.indexOf('__IMAGE_BASE64__:');
+        if (imgIdx >= 0) {
+          const textPart = result.slice(0, imgIdx).trim();
+          const b64 = result.slice(imgIdx + '__IMAGE_BASE64__:'.length).trim();
+          results.push({
+            role: 'tool',
+            tool_call_id: c.id,
+            content: [
+              { type: 'text', text: textPart || 'Screenshot captured.' },
+              { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}`, detail: 'auto' } },
+            ],
+          });
+        } else {
+          results.push({ role: 'tool', tool_call_id: c.id, content: result });
+        }
+      }
     } else {
       // 写工具:串行单个执行。
       const t0 = Date.now();
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result, durationMs: dur });
-      results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result, truncateThreshold) });
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: result.includes('__IMAGE_BASE64__') ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur });
+      // 截图工具(只读,但防御性处理)—— 不截断 base64
+      const imgIdx2 = result.indexOf('__IMAGE_BASE64__:');
+      if (imgIdx2 >= 0) {
+        const textPart = result.slice(0, imgIdx2).trim();
+        const b64 = result.slice(imgIdx2 + '__IMAGE_BASE64__:'.length).trim();
+        results.push({
+          role: 'tool',
+          tool_call_id: call.id,
+          content: [
+            { type: 'text', text: textPart || 'Screenshot captured.' },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}`, detail: 'auto' } },
+          ],
+        });
+      } else {
+        results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result, truncateThreshold) });
+      }
       i++;
     }
   }

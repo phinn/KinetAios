@@ -472,10 +472,26 @@ class AnthropicProvider implements Provider {
         }
         anth.push({ role: 'assistant', content: blocks });
       } else if (role === 'tool') {
+        // Computer Use: tool result 可能是 ContentPart[](含截图 image_url)→ 转 Anthropic 格式。
+        let toolResultContent: string | any[];
+        if (Array.isArray(m.content)) {
+          toolResultContent = (m.content as Array<{ type: string; text?: string; image_url?: { url: string } }>).map((p) => {
+            if (p.type === 'text') return { type: 'text', text: p.text ?? '' };
+            if (p.type === 'image_url' && p.image_url) {
+              const url = p.image_url.url;
+              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
+              if (match) return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
+              return { type: 'image', source: { type: 'url', url } };
+            }
+            return { type: 'text', text: '' };
+          });
+        } else {
+          toolResultContent = content;
+        }
         const result = {
           type: 'tool_result',
           tool_use_id: (m.tool_call_id as string) ?? '',
-          content,
+          content: toolResultContent,
         };
         const last = anth[anth.length - 1];
         if (last && last.role === 'user' && Array.isArray(last.content) && last.content[0]?.type === 'tool_result') {

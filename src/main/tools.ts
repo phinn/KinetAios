@@ -1543,8 +1543,125 @@ const feishuSendFile: Tool = {
   },
 };
 
+// ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
+// Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
+// 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
+import { captureScreenshot, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+
+const screenshot: Tool = {
+  name: 'screenshot',
+  description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。',
+  parameters: { type: 'object', properties: {} },
+  readOnly: true,
+  async run() {
+    const r = await captureScreenshot();
+    if (!r.ok || !r.base64) return `❌ 截屏失败: ${r.error}`;
+    // 返回特殊格式:AgentLoop 会识别 __IMAGE_BASE64__ 前缀,将其转为 image_url content part 注入对话。
+    return `📷 截屏成功 (${r.width}×${r.height})\n__IMAGE_BASE64__:${r.base64}`;
+  },
+};
+
+const mouseAction: Tool = {
+  name: 'mouse_click',
+  description: '在屏幕指定坐标点击鼠标。需要先用 screenshot 截屏查看当前屏幕,确定要点击的位置坐标。坐标基于截图的像素分辨率。',
+  parameters: {
+    type: 'object',
+    properties: {
+      x: { type: 'number', description: 'X 坐标(屏幕像素)' },
+      y: { type: 'number', description: 'Y 坐标(屏幕像素)' },
+      button: { type: 'string', enum: ['left', 'right', 'middle'], description: '鼠标按键(默认 left)' },
+      double_click: { type: 'boolean', description: '是否双击(默认 false)' },
+    },
+    required: ['x', 'y'],
+  },
+  async run(args) {
+    const x = Number(args.x);
+    const y = Number(args.y);
+    if (isNaN(x) || isNaN(y)) return '❌ 无效坐标';
+    const r = await doMouseClick({
+      x, y,
+      button: (args.button as 'left' | 'right' | 'middle') || 'left',
+      doubleClick: Boolean(args.double_click),
+    });
+    return r.ok ? `✅ 鼠标点击 (${Math.round(x)}, ${Math.round(y)}) ${args.button || 'left'}${args.double_click ? ' 双击' : ''}` : `❌ ${r.error}`;
+  },
+};
+
+const mouseScrollTool: Tool = {
+  name: 'mouse_scroll',
+  description: '滚轮滚动。正数向上滚,负数向下滚。',
+  parameters: {
+    type: 'object',
+    properties: {
+      x: { type: 'number', description: 'X 坐标' },
+      y: { type: 'number', description: 'Y 坐标' },
+      clicks: { type: 'number', description: '滚动量(正=向上,负=向下)' },
+    },
+    required: ['x', 'y', 'clicks'],
+  },
+  async run(args) {
+    const r = await doMouseScroll(Number(args.x), Number(args.y), Number(args.clicks));
+    return r.ok ? `✅ 滚动 (${Math.round(Number(args.x))}, ${Math.round(Number(args.y))}) ${Number(args.clicks) > 0 ? '↑' : '↓'} ${Math.abs(Number(args.clicks))} clicks` : `❌ ${r.error}`;
+  },
+};
+
+const mouseDragTool: Tool = {
+  name: 'mouse_drag',
+  description: '从一点拖拽到另一点(用于拖拽文件、选中文本等)。',
+  parameters: {
+    type: 'object',
+    properties: {
+      from_x: { type: 'number', description: '起点 X' },
+      from_y: { type: 'number', description: '起点 Y' },
+      to_x: { type: 'number', description: '终点 X' },
+      to_y: { type: 'number', description: '终点 Y' },
+    },
+    required: ['from_x', 'from_y', 'to_x', 'to_y'],
+  },
+  async run(args) {
+    const r = await doMouseDrag(Number(args.from_x), Number(args.from_y), Number(args.to_x), Number(args.to_y));
+    return r.ok ? `✅ 拖拽 (${Math.round(Number(args.from_x))},${Math.round(Number(args.from_y))}) → (${Math.round(Number(args.to_x))},${Math.round(Number(args.to_y))})` : `❌ ${r.error}`;
+  },
+};
+
+const keyboardTypeTool: Tool = {
+  name: 'keyboard_type',
+  description: '输入文本(模拟键盘逐字输入)。先点击目标输入框,再调用此工具输入内容。',
+  parameters: {
+    type: 'object',
+    properties: {
+      text: { type: 'string', description: '要输入的文本' },
+    },
+    required: ['text'],
+  },
+  async run(args) {
+    const text = String(args.text ?? '');
+    if (!text) return '❌ 空文本';
+    const r = await doKeyboardType(text);
+    return r.ok ? `✅ 输入文本: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''} (${text.length} 字符)` : `❌ ${r.error}`;
+  },
+};
+
+const keyboardKeyTool: Tool = {
+  name: 'keyboard_key',
+  description: '按下按键或组合键。支持:Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, Home, End, PageUp, PageDown, Space。组合键用 + 连接,如 Ctrl+C, Shift+Home, Ctrl+Shift+Tab。',
+  parameters: {
+    type: 'object',
+    properties: {
+      key: { type: 'string', description: '按键名称或组合键(如 Enter, Ctrl+C, Alt+Tab)' },
+    },
+    required: ['key'],
+  },
+  async run(args) {
+    const key = String(args.key ?? '');
+    if (!key) return '❌ 空按键';
+    const r = await doKeyboardKey(key);
+    return r.ok ? `✅ 按键: ${key}` : `❌ ${r.error}`;
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, screenshot, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
