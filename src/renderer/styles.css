@@ -4645,6 +4645,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   padding: 10px 14px;
   overflow-y: auto;
   flex: 1;
+  min-height: 0;
 }
 
 .nx-empty-turns {
