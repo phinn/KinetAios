@@ -939,7 +939,7 @@ function renderSVG(): void {
     const labelX = cx + r * Math.cos(-Math.PI / 2);
     const labelY = cy + r * Math.sin(-Math.PI / 2) - 8;
     const foldIcon = isFolded ? '+' : '−';
-    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(170,178,195,${isFolded ? '0.30' : '0.50'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="1" style="cursor:pointer" data-orbit-cwd="${esc(ring.cwd)}" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)}</text>`;
+    svg += `<text x="${labelX}" y="${labelY}" fill="rgba(200,208,222,${isFolded ? '0.45' : '0.72'})" font-size="10" text-anchor="middle" font-family="system-ui" letter-spacing="1" style="cursor:pointer" data-orbit-cwd="${esc(ring.cwd)}" data-fold="${esc(ring.cwd)}">${foldIcon} ${esc(ring.label)}</text>`;
   }
 
   // ── 核心意图球 / Central intent core ──
@@ -951,7 +951,7 @@ function renderSVG(): void {
   // 核心球体 / Core body
   svg += `<circle id="nx-core-body" cx="${cx}" cy="${cy}" r="${coreR}" fill="url(#nx-core-body)" data-core="true" style="cursor:pointer"/>`;
   // 核心标签 / Core label
-  svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(170,178,195,0.45)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500" data-core="true" style="cursor:pointer;pointer-events:none">INTENT</text>`;
+  svg += `<text x="${cx}" y="${cy + coreR + 22}" fill="rgba(200,208,222,0.65)" font-size="9" text-anchor="middle" font-family="system-ui" letter-spacing="3" font-weight="500" data-core="true" style="cursor:pointer;pointer-events:none">INTENT</text>`;
 
   // ── Phase 2: 数据流连线(运行中节点 → 核心) / Data flow lines (running → core) ──
   // Phase 8: 一条流动虚线,够了。
@@ -1023,7 +1023,7 @@ function renderSVG(): void {
         const rawTitle = node.conv.customTitle || node.conv.turns[0]?.prompt || '';
         const shortTitle = rawTitle.slice(0, 12).trim();
         if (shortTitle) {
-          svg += `<text x="0" y="${nodeR + 11}" fill="rgba(170,178,195,0.38)" font-size="7.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
+          svg += `<text x="0" y="${nodeR + 12}" fill="rgba(200,208,222,0.72)" font-size="8.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
         }
       }
 
@@ -1108,7 +1108,7 @@ function renderSVG(): void {
       el.style.fill = 'rgba(200,210,230,0.85)';
     });
     el.addEventListener('mouseleave', () => {
-      el.style.fill = foldedCwds.has(el.dataset.fold!) ? 'rgba(150,160,180,0.30)' : 'rgba(170,178,195,0.50)';
+      el.style.fill = foldedCwds.has(el.dataset.fold!) ? 'rgba(200,208,222,0.45)' : 'rgba(200,208,222,0.72)';
     });
   });
 }
