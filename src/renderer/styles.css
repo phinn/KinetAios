@@ -1718,7 +1718,7 @@ a { color: var(--accent); }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
-#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 0 calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; }
+#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 16px calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; }
 
 /* 回到最新消息浮动按钮 / Floating "jump to bottom" button.
    bottom 使用 CSS 变量,由 JS 根据 composer 高度动态设置(--input-height)。 */
