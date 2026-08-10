@@ -3733,6 +3733,10 @@ function closeMoreMenu() {
     autosize(composer);
     handleSlash(composer);
   });
+  // 初始挂载时强制 autosize — 避免 placeholder 自动换行撑高空 textarea
+  // Force autosize on mount — long placeholder text would otherwise inflate scrollHeight
+  // (Chrome actually wraps placeholder across multiple lines and grows textarea height)
+  autosize(composer);
   // 延迟关闭,给 mousedown 标签拦截留时间;用 slashHolding flag 可靠取消。
   composer.addEventListener('blur', () => {
     setTimeout(() => { if (!slashHolding) closeSlash(); }, 150);
