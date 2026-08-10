@@ -1830,7 +1830,7 @@ a { color: var(--accent); }
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
-#input textarea { resize: none; width: 100%; min-height: 28px; max-height: 140px; border-color: transparent; background: transparent; }
+#input textarea { resize: none; width: 100%; min-height: 28px; max-height: 140px; border: none; background: transparent; padding: 4px 0; box-shadow: none; }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
 #input:has(.attach-row:not(:empty)) textarea { min-height: 22px; }
