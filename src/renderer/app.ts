@@ -145,6 +145,25 @@ function applyI18nDOM(): void {
       console.log('[F8 Layout Dump]\n' + msg);
       alert(msg);
     }
+    // F9 = 切换布局调试边框 / Toggle layout debug borders
+    if (e.key === 'F9') {
+      const styleId = '__layout_debug__';
+      let s = document.getElementById(styleId) as HTMLStyleElement | null;
+      if (s) { s.remove(); alert('布局边框已关'); return; }
+      s = document.createElement('style');
+      s.id = styleId;
+      s.textContent = `
+        #chat-view { outline: 2px solid red !important; }
+        #chat-content { outline: 2px solid orange !important; }
+        #turns { outline: 2px solid yellow !important; }
+        #input { outline: 2px solid lime !important; }
+        .attach-row { outline: 2px solid cyan !important; }
+        #composer { outline: 2px solid magenta !important; }
+        .composer-bar { outline: 2px solid pink !important; }
+      `;
+      document.head.appendChild(s);
+      alert('布局边框已开 (红/橙/黄/绿/青/紫/粉对应 7 层)');
+    }
   });
 
   try {
