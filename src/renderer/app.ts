@@ -1601,10 +1601,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     const body = document.createElement('div');
     body.className = 'ai-body';
     if (t.steps.length) {
-      const steps = document.createElement('div');
-      steps.className = 'steps';
-      for (const s of t.steps) steps.appendChild(renderStep(s));
-      body.appendChild(steps);
+      body.appendChild(buildStepsEl(t.steps, streaming));
     }
     const ans = document.createElement('div');
     ans.className = 'answer';
@@ -1721,6 +1718,29 @@ function avatarEl(kind: 'user' | 'ai'): HTMLElement {
   return a;
 }
 
+/** 构建步骤区:外层 <details> 可折叠,summary 显示工具数量。
+ *  流式期间默认展开(看到工具实时执行);已完成 turn 默认收起(降噪)。
+ *  Build steps container: outer <details> collapsible.
+ *  Streaming = expanded (live tool exec); finished = collapsed (noise reduction).
+ */
+function buildStepsEl(steps: { name: string; args: string; result: string }[], expanded: boolean): HTMLElement {
+  const wrap = document.createElement('details');
+  wrap.className = 'steps-wrap';
+  if (expanded) wrap.open = true;
+  const names = steps.map(s => s.name);
+  // 去重工具名,summary 只显示概要
+  const unique = [...new Set(names)];
+  const label = steps.length === 1
+    ? esc(unique[0])
+    : `${steps.length} 步 (${esc(unique.slice(0, 3).join(' · '))}${unique.length > 3 ? '…' : ''})`;
+  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${label}</span></summary>`;
+  const inner = document.createElement('div');
+  inner.className = 'steps';
+  for (const s of steps) inner.appendChild(renderStep(s));
+  wrap.appendChild(inner);
+  return wrap;
+}
+
 function renderStep(s: { name: string; args: string; result: string }): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -1782,11 +1802,9 @@ function updateLastTurnIncremental(): void {
   if (!turnEl) { renderMain(); return; }
   const t = conv.turns[lastTurnIdx];
   // 重建 steps 子树(根据 t.steps 重新生成),其他 turn 不动。
-  const oldSteps = turnEl.querySelector('.steps');
+  const oldSteps = turnEl.querySelector('.steps-wrap');
   if (t.steps.length) {
-    const fresh = document.createElement('div');
-    fresh.className = 'steps';
-    for (const s of t.steps) fresh.appendChild(renderStep(s));
+    const fresh = buildStepsEl(t.steps, true); // 流式增量:始终展开
     if (oldSteps) oldSteps.replaceWith(fresh);
     else turnEl.querySelector('.ai-body')?.prepend(fresh);
   } else if (oldSteps) {
