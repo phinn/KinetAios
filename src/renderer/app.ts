@@ -5440,8 +5440,6 @@ function autosize(el: HTMLTextAreaElement) {
   // 空内容时用最小高度,避免 padding/border 撑大 / Use min-height for empty content
   const h = el.value ? Math.min(el.scrollHeight, 140) : 28;
   el.style.height = h + 'px';
-  // 调试:打印 mount 时 textarea 真实尺寸
-  console.log('[autosize]', 'value=', JSON.stringify(el.value), 'scrollHeight=', el.scrollHeight, 'h=', h, 'box-sizing=', getComputedStyle(el).boxSizing, 'line-height=', getComputedStyle(el).lineHeight, 'min-height=', getComputedStyle(el).minHeight);
 }
 
 // ---------- slash skill menu (Direct only) ----------
