@@ -1532,11 +1532,9 @@ a { color: var(--accent); }
 /* ponytail: diff 高亮只到 +/-/@@ 行级(行首字符匹配),不到 token 粒度;够清楚就行。 */
 .git-diff .d-add,
 .git-diff .d-del {
-  display: inline-block;
+  display: block;
   padding: 1px 8px 1px 10px;
-  margin: 0 -14px;       /* 抵消 wrap 内边距,让色块贴合 wrap 边缘 */
-  width: calc(100% + 28px);
-  border-radius: 2px;
+  white-space: pre;
 }
 .git-diff .d-add { color: #50c878; background: rgba(80,200,120,.14); }
 .git-diff .d-add::before { content: '+'; opacity: .6; margin-right: 4px; }
@@ -1544,7 +1542,6 @@ a { color: var(--accent); }
 .git-diff .d-del::before { content: '−'; opacity: .6; margin-right: 4px; }
 .git-diff .d-hunk {
   display: block;
-  margin: 8px -14px 4px;
   padding: 4px 14px;
   color: var(--accent);
   background: rgba(127,127,255,.08);
