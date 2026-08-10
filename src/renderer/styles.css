@@ -1832,8 +1832,6 @@ a { color: var(--accent); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
 #input:has(.attach-row:not(:empty)) textarea { min-height: 22px; }
-/* 有附件时整体上移,补偿 attach-row 高度 / Lift #input up when attach-row is present */
-#input:has(.attach-row:not(:empty)) { padding-bottom: 2px; margin-bottom: -6px; }
 #input textarea:focus { border-color: transparent; box-shadow: none; }
 #input:focus-within { border-top-color: var(--accent-dim); }
 .composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 28px; flex-shrink: 0; }
