@@ -17,7 +17,7 @@ import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, val
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
-import { getSettings, saveSettings } from './settings';
+import { getSettings, saveSettings, snapshot } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
@@ -1004,10 +1004,11 @@ function registerIpc(): void {
   //      - 返回 data.totalBalance / balance / giftBalance
   // Coding Plan 用户(baseURL 含 /coding 或 /anthropic)走 1;普通 API 用户走 2。
   ipcMain.handle('get-balance', async () => {
-    const s = getSettings();
-    console.log('[get-balance] apiKey set:', !!s.apiKey, 'baseURL:', s.baseURL);
-    if (!s.apiKey) return { ok: false, message: '未设置 API Key' };
-    const baseURL = s.baseURL.replace(/\/+$/, '');
+    const snap = snapshot();
+    const apiKey = snap.apiKey;
+    const baseURL = snap.baseURL.replace(/\/+$/, '');
+    console.log('[get-balance] apiKey set:', !!apiKey, 'baseURL:', baseURL);
+    if (!apiKey) return { ok: false, message: '未设置 API Key' };
     const isCodingPlan = baseURL.includes('/coding') || baseURL.includes('/anthropic');
     console.log('[get-balance] isCodingPlan:', isCodingPlan, 'baseURL:', baseURL);
 
@@ -1022,7 +1023,7 @@ function registerIpc(): void {
         const resp = await fetch(url, {
           method: 'GET',
           // 智谱 quota API 的 Auth 头不加 Bearer 前缀(CC Switch 实测)
-          headers: { Authorization: s.apiKey, 'Content-Type': 'application/json', 'Accept-Language': 'en-US,en' },
+          headers: { Authorization: apiKey, 'Content-Type': 'application/json', 'Accept-Language': 'en-US,en' },
           signal: AbortSignal.timeout(15_000),
         });
         if (resp.status === 401 || resp.status === 403) {
@@ -1066,7 +1067,7 @@ function registerIpc(): void {
     try {
       const resp = await fetch(url, {
         method: 'GET',
-        headers: { Authorization: `Bearer ${s.apiKey}` },
+        headers: { Authorization: `Bearer ${apiKey}` },
         signal: AbortSignal.timeout(15_000),
       });
       if (!resp.ok) {
