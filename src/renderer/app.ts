@@ -5578,25 +5578,62 @@ function readTextTruncated(f: File, max: number): Promise<string> {
 }
 
 async function addFiles(files: File[]): Promise<void> {
+  // 先收集结果,循环结束后统一渲染 / 提示,避免 alert 在循环中阻塞 UI。
+  // Collect results first, render/alert once after loop — avoids blocking UI mid-iteration.
+  const newImages: { name: string; dataUrl: string }[] = [];
+  const newTexts: { name: string; content: string }[] = [];
+  const skipped: { name: string; reason: string }[] = [];
+
   for (const f of files) {
     if (/\.(png|jpe?g|gif|webp|bmp)$/i.test(f.name)) {
-      // 图片附件 → base64 data URL(多模态)
-      if (f.size > 10 * 1024 * 1024) { alert(tr('vision.tooLarge', { mb: 10 })); continue; }
+      // 图片附件 → base64 data URL(多模态) / Image attachment → base64 data URL (multimodal)
+      if (f.size > 10 * 1024 * 1024) { skipped.push({ name: f.name, reason: '>10MB' }); continue; }
       const dataUrl = await fileToDataUrl(f);
-      imageAttachments.push({ name: f.name, dataUrl });
+      if (dataUrl) {
+        newImages.push({ name: f.name, dataUrl });
+      } else {
+        skipped.push({ name: f.name, reason: 'read error' });
+      }
     } else if (isTextFile(f.name)) {
-      attachments.push({ name: f.name, content: await readTextTruncated(f, 20000) });
+      newTexts.push({ name: f.name, content: await readTextTruncated(f, 20000) });
+    } else {
+      // 二进制非图片文件:不支持纯文本读取,提示用户 / Binary non-image: can't read as text, notify user
+      skipped.push({ name: f.name, reason: 'binary' });
     }
   }
+
+  imageAttachments.push(...newImages);
+  attachments.push(...newTexts);
   renderAttach();
+
+  if (skipped.length) {
+    const detail = skipped.map((s) => `  • ${s.name} (${s.reason})`).join('\n');
+    alert(tr('attach.skipped', { list: detail }));
+  }
 }
 
-// File → base64 data URL(用于图片附件)
+// File → base64 data URL(用于图片附件) / File → base64 data URL (for image attachments)
+// 带 5 秒超时:防止畸形 / 过大文件导致 FileReader 永不回调,UI 卡死。
+// 5s timeout: prevents malformed / oversized files from hanging FileReader forever.
 function fileToDataUrl(f: File): Promise<string> {
   return new Promise((resolve) => {
+    let done = false;
     const r = new FileReader();
-    r.onload = () => resolve(String(r.result ?? ''));
-    r.onerror = () => resolve('');
+    const timer = setTimeout(() => {
+      if (!done) { done = true; resolve(''); }
+    }, 5000);
+    r.onload = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve(String(r.result ?? ''));
+    };
+    r.onerror = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      resolve('');
+    };
     r.readAsDataURL(f);
   });
 }

@@ -251,6 +251,7 @@ const ZH_CN: Dict = {
   'attach.lbl': '附件',
   'attach.dirAlert': '暂不支持文件夹,请拖单个文件(可多选),或用 选择。',
   'attach.missingAlert': '这些 @文件 没读到(不存在 / 非文本 / 不在工作目录内):\n{list}',
+  'attach.skipped': '以下文件未能添加(过大 / 二进制 / 读取失败):\n{list}',
 
   'composer.moreTools': '更多工具',
   'composer.skill': 'Skill',
@@ -1208,6 +1209,7 @@ const EN: Dict = {
   'attach.lbl': 'Files',
   'attach.dirAlert': "Folders aren't supported — drop individual files (multi-ok), or use attach.",
   'attach.missingAlert': "These @files couldn't be read (missing / non-text / outside cwd):\n{list}",
+  'attach.skipped': 'These files could not be added (too large / binary / read error):\n{list}',
 
   'composer.moreTools': 'More tools',
   'composer.skill': 'Skill',
@@ -2160,6 +2162,7 @@ const ZH_TW: Dict = {
   'attach.lbl': '附件',
   'attach.dirAlert': '暫不支援資料夾,請拖單個檔案(可多選),或用 選擇。',
   'attach.missingAlert': '這些 @檔案 沒讀到(不存在 / 非文字 / 不在工作目錄內):\n{list}',
+  'attach.skipped': '以下檔案未能新增(過大 / 二進位 / 讀取失敗):\n{list}',
 
   'composer.moreTools': '更多工具',
   'composer.skill': 'Skill',
@@ -3116,6 +3119,7 @@ const JA: Dict = {
   'attach.lbl': '添付',
   'attach.dirAlert': 'フォルダは未対応です — 個別ファイルをドロップ(複数可)するか で選択してください。',
   'attach.missingAlert': '以下の @ファイル が読めませんでした(不在 / 非テキスト / 作業ディレクトリ外):\n{list}',
+  'attach.skipped': '以下のファイルを追加できませんでした(サイズ超過 / バイナリ / 読み取りエラー):\n{list}',
 
   'composer.moreTools': 'その他ツール',
   'composer.skill': 'Skill',
