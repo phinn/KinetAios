@@ -497,7 +497,9 @@ const ZH_CN: Dict = {
   'prompt.deleteConfirm': '删除「{name}」?不可恢复。',
 
   'empty.noConv': '选择一个会话,或点 ＋ 新建',
+  'empty.noConvSub': 'KinetAios 支持多引擎、多会话并行',
   'empty.noTurns': '输入任务开始',
+  'empty.noTurnsSub': '支持 / 斜杠命令、拖拽附件、语音输入',
 
   'conv.rename': '改名',
   'conv.delete': '删除',
@@ -1456,7 +1458,9 @@ const EN: Dict = {
   'prompt.deleteConfirm': 'Delete "{name}"? This cannot be undone.',
 
   'empty.noConv': 'Pick a session, or click + to create',
+  'empty.noConvSub': 'KinetAios supports multi-engine, multi-session parallel',
   'empty.noTurns': 'Type a task to start',
+  'empty.noTurnsSub': 'Supports / slash commands, drag-and-drop files, voice input',
 
   'conv.rename': 'Rename',
   'conv.delete': 'Delete',
@@ -2410,7 +2414,9 @@ const ZH_TW: Dict = {
   'prompt.deleteConfirm': '刪除「{name}」?無法復原。',
 
   'empty.noConv': '選擇一個工作階段,或點 ＋ 新建',
+  'empty.noConvSub': 'KinetAios 支援多引擎、多工作階段並行',
   'empty.noTurns': '輸入任務開始',
+  'empty.noTurnsSub': '支援 / 斜線命令、拖曳附件、語音輸入',
 
   'conv.rename': '改名',
   'conv.delete': '刪除',
@@ -3368,7 +3374,9 @@ const JA: Dict = {
   'prompt.deleteConfirm': '「{name}」を削除します?元に戻せません。',
 
   'empty.noConv': 'セッションを選ぶか、＋ で新規作成',
+  'empty.noConvSub': 'KinetAios はマルチエンジン・マルチセッション並行対応',
   'empty.noTurns': 'タスクを入力して開始',
+  'empty.noTurnsSub': '/ スラッシュコマンド、ドラッグ添付、音声入力に対応',
 
   'conv.rename': '名前変更',
   'conv.delete': '削除',

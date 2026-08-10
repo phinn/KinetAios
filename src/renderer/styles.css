@@ -821,8 +821,8 @@ html, body { height: 100%; margin: 0; }
    webview 内的网页自带滚动条不动(那是页面作者决定的)。 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: content-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb { background: var(--text-faint); opacity: 0.35; border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: content-box; border: 2px solid transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 body {
   background: var(--bg);
@@ -1754,10 +1754,13 @@ a { color: var(--accent); }
 }
 /* 空状态 — 无会话 / 无消息时的引导提示 */
 .empty { text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; }
-.empty::before { content: ''; display: block; width: 48px; height: 48px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.5; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 24px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 24px no-repeat; }
+.empty::before { content: ''; display: block; width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.7; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; }
+.empty .empty-sub { display: block; margin-top: 6px; font-size: 12px; color: var(--text-faint); opacity: 0.7; }
 
 .turn { padding: 2px 0 10px; display: flex; flex-direction: column; gap: 8px; }
-.turn + .turn { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 4px; padding-top: 12px; }
+/* 只在含用户消息的 turn 前画分割线,AI 连续步骤间不画 — 减少视觉噪音 */
+.turn:has(.msg.user) + .turn,
+.turn + .turn:has(.msg.user) { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 4px; padding-top: 12px; }
 .turn:last-child { padding-bottom: 6px; }
 /* 单消息 turn(只有用户消息或只有 AI 消息)减少 gap */
 .turn:has(.msg:only-child) { gap: 0; }
@@ -1767,7 +1770,7 @@ a { color: var(--accent); }
 .avatar:hover { transform: scale(1.08); }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); }
-.msg .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
+.msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
 .msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
 .msg .ai-body { min-width: 0; flex: 1; }
 /* AI 消息容器:无气泡,但用 padding + 极淡底色做视觉分组 */

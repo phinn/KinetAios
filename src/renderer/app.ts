@@ -1373,11 +1373,11 @@ function renderMain() {
   // 离屏构建再一次性挂载,避免 innerHTML='' 后到新 DOM 创建之间的空白帧(闪屏)。
   // Build off-screen then attach in one pass — avoids a blank frame between clearing and repopulating.
   if (!conv) {
-    turns.replaceChildren(empty(tr('empty.noConv')));
+    turns.replaceChildren(empty(tr('empty.noConv'), tr('empty.noConvSub')));
     return;
   }
   if (!conv.turns.length) {
-    turns.replaceChildren(empty(tr('empty.noTurns')));
+    turns.replaceChildren(empty(tr('empty.noTurns'), tr('empty.noTurnsSub')));
     scrollDownForce();
     return;
   }
@@ -1987,10 +1987,16 @@ function openPreviewPane(): void {
   }
 }
 
-function empty(text: string): HTMLElement {
+function empty(text: string, sub?: string): HTMLElement {
   const d = document.createElement('div');
   d.className = 'empty';
   d.textContent = text;
+  if (sub) {
+    const s = document.createElement('span');
+    s.className = 'empty-sub';
+    s.textContent = sub;
+    d.appendChild(s);
+  }
   return d;
 }
 
