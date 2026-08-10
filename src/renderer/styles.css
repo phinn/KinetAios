@@ -1172,7 +1172,9 @@ a { color: var(--accent); }
 /* 需要自身滚动的视图(无内层滚动容器的) */
 #timeline-view, #ctools-view, #cost-view, #pipeline-view, #templates-view, #workbench-view { overflow-y: auto; }
 /* chat-view 不滚动 — 内部 #turns 自己滚 */
-#chat-view { overflow: hidden; display: flex; flex-direction: column; }
+#chat-view { overflow: hidden; }
+/* ID 选择器优先级高于 .view,这里需要在 .active 时才显式启用 flex 布局。 */
+#chat-view.active { display: flex; flex-direction: column; }
 
 /* sidebar 项目分组(按 cwd 聚合):.sb-proj 是单条 li,含 head + 嵌套 ul。 */
 #conv-list li.sb-proj { padding: 0; cursor: default; }
