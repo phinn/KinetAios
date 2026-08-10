@@ -209,6 +209,7 @@ export type AppSettings = {
   lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
   theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'; // 暗 / 淡色 / 极光 / 高雅淡色 / Tahoe 液态玻璃 / Sierra 暖色液态玻璃 / 我的世界像素风 / 高达SEED军事风
   townStyle: 'classic' | 'minecraft'; // 小镇视图风格:经典等距小房子 / 我的世界方块风
+  fontScale: number; // 全局字号缩放(%):100 = 默认 13px,112/125/150 放大字号
   // ── 模型配置档:保存多套完整 LLM 配置(含 apiKey/baseURL/model/protocol 等),聊天界面可快速切换 ──
   // 当前生效的配置 = 活跃 profile(若有),否则回退到全局 apiKey/baseURL/model 等(向后兼容)。
   modelProfiles: ModelProfile[];

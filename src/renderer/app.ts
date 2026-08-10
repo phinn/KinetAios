@@ -172,6 +172,7 @@ function applyI18nDOM(): void {
     lang = settings.lang;
     cliEnabled = settings.enableCliEngines;
     applyTheme(settings.theme);
+    applyFontScale(settings.fontScale ?? 100);
     const brand = await api.getBrand();
     PRODUCT = brand.productName;
     HOME_DIR = brand.homeDir;
@@ -2102,6 +2103,12 @@ function applyTheme(theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 's
   if (currentView === 'nexus') renderNexus();
 }
 
+/** 全局字号缩放:在 <html> 上设 fontSize,所有继承字号(含 .answer / .bubble)自动跟随 */
+/** Global font scaling: set fontSize on <html>, all inheriting elements follow. */
+function applyFontScale(scale: number): void {
+  document.documentElement.style.fontSize = `${(scale / 100) * 13}px`;
+}
+
 async function showSettings() {
   currentView = 'settings';
   hideAllViews();
@@ -2191,6 +2198,12 @@ async function showSettings() {
           <option value="sierra" ${s.theme === 'sierra' ? 'selected' : ''}>${tr('settings.theme.sierra')}</option>
           <option value="craft" ${s.theme === 'craft' ? 'selected' : ''}>${tr('settings.theme.craft')}</option>
           <option value="seed" ${s.theme === 'seed' ? 'selected' : ''}>${tr('settings.theme.seed')}</option>
+        </select></div>
+        <div class="field"><label>${tr('settings.fontScale')}</label><select id="s-font-scale">
+          <option value="100" ${(s.fontScale ?? 100) === 100 ? 'selected' : ''}>100%</option>
+          <option value="112" ${s.fontScale === 112 ? 'selected' : ''}>112%</option>
+          <option value="125" ${s.fontScale === 125 ? 'selected' : ''}>125%</option>
+          <option value="150" ${s.fontScale === 150 ? 'selected' : ''}>150%</option>
         </select></div>
         <div class="field"><label>${tr('settings.townStyle')}</label><select id="s-town-style">
           <option value="classic" ${(s.townStyle ?? 'classic') === 'classic' ? 'selected' : ''}>${tr('settings.townStyle.classic')}</option>
@@ -2414,6 +2427,7 @@ async function showSettings() {
     </div>`;
   // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
   document.getElementById('s-theme')!.onchange = () => applyTheme(readSettingsForm().theme);
+      document.getElementById('s-font-scale')!.onchange = () => applyFontScale(readSettingsForm().fontScale);
   // 版本号填充 / Fill version label.
   api.getBrand().then((b) => { const el = document.getElementById('s-version'); if (el) el.textContent = `v${b.version}`; });
   const apply = () => {
@@ -2590,6 +2604,7 @@ async function showSettings() {
     setTownStyle(ns.townStyle ?? 'classic'); // 同步小镇风格 / sync town style
     renderTown(); // 重渲小镇(风格可能变了) / re-render town (style may have changed)
     applyTheme(ns.theme);
+    applyFontScale(ns.fontScale ?? 100);
     applyI18nDOM();
     renderSidebar();
     renderMain();
@@ -3067,6 +3082,7 @@ function readSettingsForm(): AppSettings {
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
     theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft',
     townStyle: ((document.getElementById('s-town-style') as HTMLSelectElement)?.value as 'classic' | 'minecraft') || 'classic',
+    fontScale: Number((document.getElementById('s-font-scale') as HTMLSelectElement)?.value) || 100,
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
     v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,

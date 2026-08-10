@@ -23,6 +23,7 @@ const DEFAULTS: AppSettings = {
   lang: 'zh-CN',
   theme: 'dark',
   townStyle: 'classic', // 小镇视图风格:classic 经典等距小屋 / minecraft 我的世界方块风
+  fontScale: 100, // 全局字号缩放 100/112/125/150(%),默认 100。设置在"外观"页。
   // 模型配置档:用户在设置页保存的多套完整 LLM 配置。空数组 = 只有全局默认。
   modelProfiles: [],
   activeProfileId: null,
