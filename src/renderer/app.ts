@@ -5644,7 +5644,7 @@ function renderAttach(): void {
     .map((a, i) => `<span class="chip"><span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> ${esc(a.name)}</span><span class="chip-x" data-kind="file" data-i="${i}">×</span></span>`)
     .join('');
   const imgChips = imageAttachments
-    .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
+    .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" width="40" height="40" loading="lazy" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
     .join('');
   row.innerHTML = fileChips + imgChips;
   row.querySelectorAll<HTMLElement>('.chip-x').forEach((x) => {
@@ -5655,6 +5655,9 @@ function renderAttach(): void {
       renderAttach();
     };
   });
+  // 附件增删后 #input 高度变化,强制滚到底部确保输入框可见。
+  // Force scroll-to-bottom after attach row changes so input stays visible.
+  scrollDownForce();
 }
 
 // @文件引用:解析正文里的 @path,经 main 读 cwd 内文件(@ 前需非单词字符以避开 email)。返回读到的 + 失败的。
