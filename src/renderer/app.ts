@@ -1631,6 +1631,22 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       });
     }
     body.appendChild(ans);
+    // 常驻 meta 行:耗时 + token + cost / Persistent meta row: elapsed + tokens + cost
+    if (!streaming && (t.costUSD > 0 || t.tokensIn || t.tokensOut)) {
+      const meta = document.createElement('div');
+      meta.className = 'ai-meta';
+      const totalTok = (t.tokensIn ?? 0) + (t.tokensOut ?? 0);
+      // 估算耗时:与下一个 turn 的 ts 差值,或本 turn 到现在的差值
+      const nextTs = (i < conv.turns.length - 1) ? conv.turns[i + 1].ts : Date.now();
+      const elapsedMs = nextTs - t.ts;
+      const elapsedStr = elapsedMs >= 60000
+        ? `${Math.floor(elapsedMs / 60000)}m ${Math.round((elapsedMs % 60000) / 1000)}s`
+        : `${(elapsedMs / 1000).toFixed(1)}s`;
+      meta.innerHTML = `<span class="meta-item">⏱ ${elapsedStr}</span>`
+        + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item">${totalTok > 1000 ? (totalTok / 1000).toFixed(1) + 'k' : totalTok} tokens</span>` : '')
+        + (t.costUSD > 0 ? `<span class="meta-sep"></span><span class="meta-item">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '');
+      body.appendChild(meta);
+    }
     // 工具执行中:在 answer 下面单独显示「●●● 执行 X…」(statusNote)。作为兄弟元素,
     // 不污染 #streaming-answer 的文本追加路径。token 来时 applyEvent 清 statusNote,本块自动消失。
     if (streaming && conv.statusNote) {

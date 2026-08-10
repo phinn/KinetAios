@@ -1818,8 +1818,10 @@ a { color: var(--accent); }
 .answer .md-table tbody tr:hover td { background: var(--bg-elev); }
 
 .steps { margin: 8px 0; }
-.step { border-left: 2px solid var(--accent-dim); padding: 5px 12px; margin-bottom: 4px; background: var(--bg-elev); border-radius: 0 6px 6px 0; font-size: 12px; }
-.step .name { color: var(--accent); font-weight: 600; }
+.step { border-left: 1px solid var(--border-soft, var(--border)); padding: 4px 12px; margin-bottom: 2px; background: transparent; border-radius: 0 6px 6px 0; font-size: 12px; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.step:hover { background: var(--bg-elev); border-left-color: var(--accent-dim); }
+.step .name { color: var(--text-dim); font-weight: 500; transition: color var(--dur-fast) var(--ease-out); }
+.step:hover .name { color: var(--text); }
 .step details summary { cursor: pointer; color: var(--text-dim); }
 .step pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
 .turn .err { color: var(--err); }
@@ -1874,6 +1876,10 @@ a { color: var(--accent); }
 .composer-bar .tool#btn-persona:not(.active) { opacity: 0.4; }
 @keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 50, 50, 0.4); } 50% { box-shadow: 0 0 0 4px rgba(220, 50, 50, 0); } }
 /* AI 回复底部的小操作条(朗读 / 复制 / 分支)。默认隐藏,hover AI body 时显示 */
+/* AI 回复常驻 meta 行:耗时 + token + cost,低调但始终可见 */
+.ai-meta { display: flex; align-items: center; gap: 10px; margin-top: 6px; font-size: 11px; color: var(--text-faint); user-select: none; }
+.ai-meta .meta-item { display: inline-flex; align-items: center; gap: 3px; }
+.ai-meta .meta-sep { width: 1px; height: 10px; background: var(--border-soft, var(--border)); }
 .ai-actions { margin-top: 6px; display: flex; gap: 6px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
 .ai-actions .ghost { padding: 2px 8px; font-size: 12px; }
 .ai-body:hover .ai-actions { opacity: 1; }
