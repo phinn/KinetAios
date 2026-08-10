@@ -1831,9 +1831,12 @@ a { color: var(--accent); }
   z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
 #input textarea { resize: none; width: 100%; min-height: 28px; max-height: 140px; border-color: transparent; background: transparent; }
+/* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
+/* When attach-row has content, shrink textarea to keep composer-bar visible */
+#input:has(.attach-row:not(:empty)) textarea { min-height: 22px; }
 #input textarea:focus { border-color: transparent; box-shadow: none; }
 #input:focus-within { border-top-color: var(--accent-dim); }
-.composer-bar { display: flex; align-items: center; gap: 6px; position: relative; }
+.composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 28px; flex-shrink: 0; }
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
   background: var(--surface-chip-soft, rgba(255,255,255,.06));
@@ -1851,7 +1854,7 @@ a { color: var(--accent); }
 }
 .composer-bar .tool:active { transform: scale(0.92); }
 .composer-bar .tool .lbl { display: none; }
-.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: 11px; padding: 5px 8px; border-radius: 16px; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; }
+.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: 11px; padding: 3px 8px; border-radius: 16px; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; }
 .composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; }
 /* 上下文模式选择器:hifi 时强调色高亮,提醒用户在烧 token */
 .composer-bar #ctx-mode-select { min-width: 80px; max-width: 110px; }
