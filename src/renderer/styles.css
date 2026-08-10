@@ -1823,12 +1823,10 @@ a { color: var(--accent); }
    液态玻璃:半透明 + blur,透出底层背景渐变。*/
 #input {
   border-top: 1px solid var(--border-soft, var(--border));
-  padding: 6px 16px 8px; display: flex; flex-direction: column; gap: 4px;
-  position: relative; flex-shrink: 0;
+  padding: 4px 16px 4px; display: flex; flex-direction: column; gap: 3px;
+  flex-shrink: 0;
   background: var(--surface-input, var(--bg-side));
-  backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
-  z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
+  z-index: 50;
 }
 #input textarea { resize: none; width: 100%; min-height: 28px; max-height: 140px; border: none; background: transparent; padding: 4px 0; box-shadow: none; }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */

@@ -120,6 +120,33 @@ function applyI18nDOM(): void {
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
 
+  // 临时诊断:按 F8 打印 #input 布局链所有元素的实际渲染尺寸
+  // Temp diagnostic: press F8 to dump #input layout chain dimensions
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'F8') {
+      const ids = ['chat-view', 'chat-content', 'turns', 'input', 'attach-row', 'composer', 'composer-bar'];
+      const rows: string[] = [];
+      for (const id of ids) {
+        const el = document.getElementById(id) || document.querySelector('.' + id);
+        if (!el) { rows.push(`${id}: NOT FOUND`); continue; }
+        const r = el.getBoundingClientRect();
+        const cs = getComputedStyle(el);
+        rows.push(`${id}: ${Math.round(r.height)}h (top=${Math.round(r.top)}) pad=${cs.padding} margin=${cs.margin} border=${cs.borderWidth} flexS=${cs.flexShrink}`);
+      }
+      // Also log the window viewport height
+      rows.push(`viewport: ${window.innerHeight}`);
+      rows.push(`chat-content bottom: ${Math.round(document.getElementById('chat-content')?.getBoundingClientRect().bottom ?? -1)}`);
+      const inputEl = document.getElementById('input');
+      if (inputEl) {
+        const r = inputEl.getBoundingClientRect();
+        rows.push(`#input bottom: ${Math.round(r.bottom)} (距窗口底: ${window.innerHeight - Math.round(r.bottom)}px)`);
+      }
+      const msg = rows.join('\n');
+      console.log('[F8 Layout Dump]\n' + msg);
+      alert(msg);
+    }
+  });
+
   try {
     // 配置(语言 + 主题 + CLI 引擎开关)和产品名都启动时读一次。语言/主题切走后同步更新。
     const settings = await api.getSettings();
