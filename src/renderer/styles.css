@@ -1830,7 +1830,7 @@ a { color: var(--accent); }
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   z-index: 50;  /* 确保 #input(含 slash-menu)在 chat 内容之上,避免 backdrop-filter stacking context 遮挡 */
 }
-#input textarea { resize: none; width: 100%; min-height: 40px; max-height: 180px; border-color: transparent; background: transparent; }
+#input textarea { resize: none; width: 100%; min-height: 28px; max-height: 140px; border-color: transparent; background: transparent; }
 #input textarea:focus { border-color: transparent; box-shadow: none; }
 #input:focus-within { border-top-color: var(--accent-dim); }
 .composer-bar { display: flex; align-items: center; gap: 6px; position: relative; }
@@ -1838,8 +1838,8 @@ a { color: var(--accent); }
 .composer-bar .tool {
   background: var(--surface-chip-soft, rgba(255,255,255,.06));
   border: 1px solid var(--border-soft, var(--border));
-  color: var(--text-dim); padding: 5px; border-radius: 16px; font-size: 12px;
-  width: 30px; height: 30px;
+  color: var(--text-dim); padding: 4px; border-radius: 16px; font-size: 12px;
+  width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
   transition: color var(--dur-fast) var(--ease-out),
               border-color var(--dur-fast) var(--ease-out),
