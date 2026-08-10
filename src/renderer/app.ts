@@ -5438,7 +5438,7 @@ async function saveCtxInspector(): Promise<void> {
 function autosize(el: HTMLTextAreaElement) {
   el.style.height = 'auto';
   // 空内容时用最小高度,避免 padding/border 撑大 / Use min-height for empty content
-  const h = el.value ? Math.min(el.scrollHeight, 200) : 28;
+  const h = el.value ? Math.min(el.scrollHeight, 240) : 44;
   el.style.height = h + 'px';
 }
 

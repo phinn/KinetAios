@@ -1822,18 +1822,18 @@ a { color: var(--accent); }
    液态玻璃:半透明 + blur,透出底层背景渐变。*/
 #input {
   border-top: 1px solid var(--border-soft, var(--border));
-  padding: 6px 16px 8px; display: flex; flex-direction: column; gap: 4px;
+  padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 6px;
   position: absolute; bottom: 0; left: 0; right: 0;
   background: var(--surface-input, var(--bg-side));
   z-index: 50;
 }
-#input textarea { resize: none; width: 100%; min-height: 28px; max-height: 200px; border: none; background: transparent; padding: 4px 0; box-shadow: none; }
+#input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; padding: 6px 0; box-shadow: none; }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
-#input:has(.attach-row:not(:empty)) textarea { min-height: 22px; }
+#input:has(.attach-row:not(:empty)) textarea { min-height: 28px; }
 #input textarea:focus { border-color: transparent; box-shadow: none; }
 #input:focus-within { border-top-color: var(--accent-dim); }
-.composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 28px; flex-shrink: 0; }
+.composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 32px; flex-shrink: 0; }
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
   background: var(--surface-chip-soft, rgba(255,255,255,.06));
