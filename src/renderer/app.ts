@@ -5644,7 +5644,7 @@ function renderAttach(): void {
     .map((a, i) => `<span class="chip"><span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:3px"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><path d="M14 2v6h6"/></svg> ${esc(a.name)}</span><span class="chip-x" data-kind="file" data-i="${i}">×</span></span>`)
     .join('');
   const imgChips = imageAttachments
-    .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" width="40" height="40" loading="lazy" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
+    .map((a, i) => `<span class="chip img-chip"><img src="${a.dataUrl}" alt="${esc(a.name)}" width="32" height="32" loading="lazy" /><span class="chip-x" data-kind="img" data-i="${i}">×</span></span>`)
     .join('');
   row.innerHTML = fileChips + imgChips;
   row.querySelectorAll<HTMLElement>('.chip-x').forEach((x) => {

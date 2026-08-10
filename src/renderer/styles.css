@@ -1823,9 +1823,8 @@ a { color: var(--accent); }
    液态玻璃:半透明 + blur,透出底层背景渐变。*/
 #input {
   border-top: 1px solid var(--border-soft, var(--border));
-  padding: 8px 16px 10px; display: flex; flex-direction: column; gap: 6px;
+  padding: 6px 16px 8px; display: flex; flex-direction: column; gap: 4px;
   position: relative; flex-shrink: 0;
-  max-height: 40%;
   background: var(--surface-input, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
   -webkit-backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
@@ -1991,7 +1990,7 @@ a { color: var(--accent); }
 .tp-sw-craft  { background: linear-gradient(135deg, #8b7355, #6b5b3f); }
 .tp-sw-seed   { background: linear-gradient(135deg, #2a4a3a, #1a2a1a); }
 
-.attach-row { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 6px; max-height: 96px; overflow-y: auto; }
+.attach-row { flex: 0 0 100%; display: flex; flex-wrap: wrap; gap: 4px; max-height: 76px; overflow-y: auto; }
 .attach-row:empty { display: none; }
 .chip { font-size: 11px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 3px 6px 3px 10px; display: inline-flex; align-items: center; gap: 6px; max-width: 240px; box-shadow: var(--shadow-xs); }
 .chip > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -2508,7 +2507,7 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 
 /* ── 图片附件 chips ── */
 .img-chip { position: relative; padding: 2px; display: inline-flex; align-items: center; }
-.img-chip img { width: 40px; height: 40px; object-fit: cover; border-radius: 4px; pointer-events: none; }
+.img-chip img { width: 32px; height: 32px; object-fit: cover; border-radius: 4px; pointer-events: none; }
 .img-chip .chip-x { position: absolute; top: -4px; right: -4px; background: var(--err); color: #fff; border-radius: 50%; width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; font-size: 11px; line-height: 1; }
 
 /* ── 自定义工具视图 ── */
