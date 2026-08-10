@@ -1219,7 +1219,7 @@ a { color: var(--accent); }
 /* chat header — 标题行 + 配置行,视觉分组清晰。
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/
 .chat-head {
-  padding: 7px 14px 5px; border-bottom: 1px solid var(--border);
+  padding: 7px 20px 5px; border-bottom: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 3px; flex-shrink: 0;
   background: var(--surface-header, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
@@ -1718,7 +1718,7 @@ a { color: var(--accent); }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
-#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 16px calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; }
+#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 20px calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; }
 
 /* 回到最新消息浮动按钮 / Floating "jump to bottom" button.
    bottom 使用 CSS 变量,由 JS 根据 composer 高度动态设置(--input-height)。 */
@@ -1756,7 +1756,7 @@ a { color: var(--accent); }
 .empty { text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; }
 .empty::before { content: ''; display: block; width: 48px; height: 48px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.5; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 24px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 24px no-repeat; }
 
-.turn { padding: 2px 20px 10px; display: flex; flex-direction: column; gap: 8px; }
+.turn { padding: 2px 0 10px; display: flex; flex-direction: column; gap: 8px; }
 .turn + .turn { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 4px; padding-top: 12px; }
 .turn:last-child { padding-bottom: 6px; }
 /* 单消息 turn(只有用户消息或只有 AI 消息)减少 gap */
@@ -1825,7 +1825,7 @@ a { color: var(--accent); }
    液态玻璃:半透明 + blur,透出底层背景渐变。*/
 #input {
   border-top: 1px solid var(--border-soft, var(--border));
-  padding: 10px 16px 12px; display: flex; flex-direction: column; gap: 6px;
+  padding: 10px 20px 12px; display: flex; flex-direction: column; gap: 6px;
   position: absolute; bottom: 0; left: 0; right: 0;
   background: var(--surface-input, var(--bg-side));
   z-index: 50;
