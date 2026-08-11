@@ -3560,10 +3560,12 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   box-shadow: inset 0 -1px 0 #555, inset 0 1px 0 #555;
 }
 /* Craft: composer textarea — 确保文字高对比度(覆盖全局 craft textarea 的深底色) */
-[data-theme="craft"] #input textarea {
-  background: transparent;
-  color: var(--text);
-  border: none;
+[data-theme="craft"] #input textarea,
+[data-theme="craft"] #composer {
+  background: transparent !important;
+  color: #fff !important;
+  border: none !important;
+  -webkit-text-fill-color: #fff !important;
 }
 /* Craft: sidebar — 不透明方块面板,不用玻璃 */
 [data-theme="craft"] #sidebar {
