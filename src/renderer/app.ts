@@ -1628,22 +1628,6 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       });
     }
     body.appendChild(ans);
-    // 常驻 meta 行:耗时 + token + cost / Persistent meta row: elapsed + tokens + cost
-    if (!streaming && (t.costUSD > 0 || t.tokensIn || t.tokensOut)) {
-      const meta = document.createElement('div');
-      meta.className = 'ai-meta';
-      const totalTok = (t.tokensIn ?? 0) + (t.tokensOut ?? 0);
-      // 估算耗时:与下一个 turn 的 ts 差值,或本 turn 到现在的差值
-      const nextTs = (i < conv.turns.length - 1) ? conv.turns[i + 1].ts : Date.now();
-      const elapsedMs = nextTs - t.ts;
-      const elapsedStr = elapsedMs >= 60000
-        ? `${Math.floor(elapsedMs / 60000)}m ${Math.round((elapsedMs % 60000) / 1000)}s`
-        : `${(elapsedMs / 1000).toFixed(1)}s`;
-      meta.innerHTML = `<span class="meta-item">⏱ ${elapsedStr}</span>`
-        + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item">${totalTok > 1000 ? (totalTok / 1000).toFixed(1) + 'k' : totalTok} tokens</span>` : '')
-        + (t.costUSD > 0 ? `<span class="meta-sep"></span><span class="meta-item">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '');
-      body.appendChild(meta);
-    }
     // 工具执行中:在 answer 下面单独显示「●●● 执行 X…」(statusNote)。作为兄弟元素,
     // 不污染 #streaming-answer 的文本追加路径。token 来时 applyEvent 清 statusNote,本块自动消失。
     if (streaming && conv.statusNote) {
@@ -1660,47 +1644,64 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     }
     aiMsg.appendChild(avatarEl('ai'));
     aiMsg.appendChild(body);
-    // 非流式时给 AI 回复挂一个 🔊 朗读按钮(speechSynthesis 系统级 TTS,零依赖)。
+    // 合并 meta + actions 为单行:左侧耗时/token/cost,右侧操作图标。始终可见。
+    // Combined meta+actions row: left=elapsed/tokens/cost, right=action icons. Always visible.
     if (!streaming && t.answer) {
-      const bar = document.createElement('div');
-      bar.className = 'ai-actions';
+      const row = document.createElement('div');
+      row.className = 'ai-meta-row';
+      // 左侧 meta 信息 / Left: meta info
+      const metaLeft = document.createElement('div');
+      metaLeft.className = 'ai-meta-left';
+      const hasMeta = t.costUSD > 0 || t.tokensIn || t.tokensOut;
+      if (hasMeta) {
+        const totalTok = (t.tokensIn ?? 0) + (t.tokensOut ?? 0);
+        const nextTs = (i < conv.turns.length - 1) ? conv.turns[i + 1].ts : Date.now();
+        const elapsedMs = nextTs - t.ts;
+        const elapsedStr = elapsedMs >= 60000
+          ? `${Math.floor(elapsedMs / 60000)}m ${Math.round((elapsedMs % 60000) / 1000)}s`
+          : `${(elapsedMs / 1000).toFixed(1)}s`;
+        metaLeft.innerHTML = `<span class="meta-item">⏱ ${elapsedStr}</span>`
+          + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item">${totalTok > 1000 ? (totalTok / 1000).toFixed(1) + 'k' : totalTok} tok</span>` : '')
+          + (t.costUSD > 0 ? `<span class="meta-sep"></span><span class="meta-item">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '');
+      }
+      row.appendChild(metaLeft);
+      // 右侧操作图标 / Right: action icons
+      const actions = document.createElement('div');
+      actions.className = 'ai-meta-actions';
       const speak = document.createElement('button');
       speak.className = 'ghost ai-speak';
       speak.title = tr('voice.speak');
       speak.innerHTML = ICON.speak;
       speak.onclick = () => speakText(t.answer ?? '');
-      bar.appendChild(speak);
-      // 复制按钮:复制 AI 回复纯文本
+      actions.appendChild(speak);
       const copy = document.createElement('button');
       copy.className = 'ghost ai-copy';
       copy.title = tr('copy.text');
       copy.innerHTML = ICON.copy;
       copy.onclick = () => copyText(t.answer ?? '', copy);
-      bar.appendChild(copy);
-      // 分支按钮:从此 turn 分叉出新会话(类似 git branch)
+      actions.appendChild(copy);
       const branch = document.createElement('button');
       branch.className = 'ghost ai-branch';
       branch.title = tr('branch.from');
       branch.innerHTML = ICON.branch;
       branch.onclick = () => void branchFromTurn(conv.id, i);
-      bar.appendChild(branch);
-      // 回放按钮:逐步回放工具调用
+      actions.appendChild(branch);
       if (t.steps.length > 0) {
         const replay = document.createElement('button');
         replay.className = 'ghost ai-replay';
         replay.title = tr('replay.title');
         replay.innerHTML = ICON.replay;
         replay.onclick = () => openReplay(i);
-        bar.appendChild(replay);
+        actions.appendChild(replay);
       }
-      // 导出按钮:导出整个会话
       const exportBtn = document.createElement('button');
       exportBtn.className = 'ghost ai-export';
       exportBtn.title = tr('export.title');
       exportBtn.innerHTML = ICON.export;
       exportBtn.onclick = () => openExportMenu(conv.id);
-      bar.appendChild(exportBtn);
-      body.appendChild(bar);
+      actions.appendChild(exportBtn);
+      row.appendChild(actions);
+      body.appendChild(row);
     }
     wrap.appendChild(aiMsg);
   }
