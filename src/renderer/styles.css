@@ -1045,6 +1045,30 @@ a { color: var(--accent); }
 /* 高频按钮(＋ 📂 ⚙)+ 更多菜单(⋯):4 个按钮在 256px sidebar 里宽敞不挤。
    低频功能(仪表盘/文件/Arena/记忆/快照)收纳进 ⋯ 下拉,需要时点开。 */
 .sb-actions .ghost { padding: 5px 6px; font-size: 1rem; }
+/* 新建按钮视觉强调(唯一 CTA) / New-session is the primary CTA */
+#btn-new { color: var(--accent); }
+#btn-new:hover { background: var(--accent-glow); }
+/* 次要操作之间加分隔感 / Visual separator after primary action */
+.sb-sep { width: 1px; height: 16px; background: var(--border-soft); margin: 0 3px; flex-shrink: 0; }
+
+/* 搜索框 — sb-head 和 conv-list 之间,紧凑低存在感 */
+.sb-search {
+  padding: 0 10px 6px; display: flex; align-items: center; gap: 6px; position: relative;
+}
+.sb-search input {
+  flex: 1; min-width: 0; background: var(--bg-input); border: 1px solid var(--border-soft);
+  border-radius: 8px; padding: 4px 8px 4px 26px; font: inherit; font-size: 12px;
+  color: var(--text); outline: none; transition: border-color var(--dur-fast) var(--ease-out);
+}
+.sb-search input:focus { border-color: var(--accent); }
+.sb-search input::placeholder { color: var(--text-faint); }
+.sb-search-icon { color: var(--text-faint); position: absolute; left: 18px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.sb-search-clear {
+  position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-faint); padding: 2px; cursor: pointer;
+  display: flex; align-items: center; justify-content: center; border-radius: 4px;
+}
+.sb-search-clear:hover { color: var(--text); background: var(--bg-elev); }
 
 /* 弹层面板 ⋯ — 点击展开浮层网格,点外部收起 (Launchpad 风格) */
 .sb-more-wrap { position: relative; }
@@ -1100,14 +1124,18 @@ a { color: var(--accent); }
 #conv-list > li.active { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
 #conv-list > li.active .title { color: var(--accent); }
 #conv-list > li { position: relative; }
-#conv-list > li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
-#conv-list > li:hover .conv-actions { display: inline-flex; }
+/* conv-actions 通用样式见下方 .conv-actions 规则(渐变淡入) */
 .ca-btn { background: transparent; border: none; color: var(--text-dim); padding: 2px 5px; font-size: 12px; line-height: 1; cursor: pointer; }
 .ca-btn:hover { color: var(--text); }
 .ca-btn[data-act="ctx"]:hover { color: var(--accent); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
 #conv-list .title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 52px; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
+/* conv-actions:用 opacity + 渐变背景代替 display:none→block,避免突然弹出遮标题 */
+#conv-list .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 1px; padding: 0 6px 0 20px;
+  opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
+  background: linear-gradient(to right, transparent, var(--bg-elev) 40%); border-radius: 0 7px 7px 0; }
+#conv-list > li:hover .conv-actions { opacity: 1; pointer-events: auto; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.ready { background: var(--text-faint); }
 .dot.running { background: var(--run); box-shadow: 0 0 6px var(--run); animation: pulse 1.1s infinite; }
@@ -1152,8 +1180,6 @@ a { color: var(--accent); }
 #conv-list > li:not(.sb-proj) .sb-task-cwd { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #conv-list > li:not(.sb-proj) .sb-task-meta { display: flex; gap: 6px; align-items: center; width: 100%; }
 #conv-list > li:not(.sb-proj) .sb-task-time { font-size: 10.5px; color: var(--text-faint); white-space: nowrap; margin-left: auto; flex-shrink: 0; }
-#conv-list > li:not(.sb-proj) .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
-#conv-list > li:not(.sb-proj):hover .conv-actions { display: inline-flex; }
 /* grouped 模式:任务条目不显示 cwd(已有项目头),title 直接横排。 */
 .sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; justify-content: flex-start; }
 .sb-proj-tasks li .sb-task-cwd { display: none; }
@@ -1194,7 +1220,9 @@ a { color: var(--accent); }
 .sb-pname { flex: 1; font-weight: 600; font-size: 12px; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .sb-pcount { font-size: 10.5px; color: var(--text-faint); background: var(--bg-elev); padding: 1px 7px; border-radius: 9px; }
 .sb-pacts { display: none; }
-.sb-proj-tasks { list-style: none; margin: 0; padding: 0 0 4px; }
+.sb-proj-tasks { list-style: none; margin: 0; padding: 0 0 4px;
+  overflow: hidden; transition: max-height var(--dur-normal) var(--ease-out), opacity var(--dur-fast) var(--ease-out); max-height: 1000px; }
+.sb-proj-tasks.collapsed { max-height: 0; opacity: 0; padding: 0; }
 .sb-proj-tasks li {
   padding: 6px 10px 6px 28px; border-radius: 7px; cursor: pointer; margin: 0 4px 1px;
   display: flex; align-items: center; gap: 7px; position: relative;
@@ -1202,19 +1230,21 @@ a { color: var(--accent); }
 .sb-proj-tasks li:hover { background: var(--bg-elev); }
 .sb-proj-tasks li.active { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
 .sb-proj-tasks li.active .title { color: var(--accent); font-weight: 500; }
-/* 引擎指示点 — 颜色区分会话使用的引擎 / Engine indicator dot */
-.sb-proj-tasks li .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
-.sb-proj-tasks li .dot.ready { background: var(--text-faint); }
-.sb-proj-tasks li .dot.running { background: var(--run); box-shadow: 0 0 6px var(--run); animation: dot-pulse 1.5s ease-in-out infinite; }
-.sb-proj-tasks li .dot.error { background: var(--err); }
-.sb-proj-tasks li .dot.eng-direct,
-.sb-proj-tasks li .dot.eng-directV2 { background: var(--accent); }
-.sb-proj-tasks li .dot.eng-claudeCode { background: #d97757; }
-.sb-proj-tasks li .dot.eng-codex { background: #4ec27a; }
+/* 引擎指示点 — 颜色区分会话使用的引擎 / Engine indicator dot (grouped + flat 通用) */
+.dot.eng-direct,
+.dot.eng-directV2 { background: var(--accent); }
+.dot.eng-claudeCode { background: #d97757; }
+.dot.eng-codex { background: #4ec27a; }
+/* grouped 模式下点稍小 / Slightly smaller dot in grouped mode */
+.sb-proj-tasks li .dot { width: 7px; height: 7px; }
+.sb-proj-tasks li .dot.running { animation: dot-pulse 1.5s ease-in-out infinite; }
+@keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 48px; }
-.sb-proj-tasks li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
-.sb-proj-tasks li:hover .conv-actions { display: inline-flex; }
+.sb-proj-tasks li .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 1px; padding: 0 6px 0 16px;
+  opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
+  background: linear-gradient(to right, transparent, var(--bg-elev) 40%); border-radius: 0 7px 7px 0; }
+.sb-proj-tasks li:hover .conv-actions { opacity: 1; pointer-events: auto; }
 
 /* chat header — 标题行 + 配置行,视觉分组清晰。
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/

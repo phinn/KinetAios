@@ -31,6 +31,7 @@ let runningOnly = false;
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
 // 默认按最近活动排序(用户最关心最近活跃的频道)。
 let sortByRecent = true;
+let searchQuery = ''; // 侧栏搜索关键词(过滤会话标题) / Sidebar search filter
 let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
@@ -340,6 +341,11 @@ function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
   ul.innerHTML = '';
 
+  // 更新 sb-foot-info:显示会话总数 / 运行中数量,替代静态文本。
+  const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
+  const footInfo = document.getElementById('sb-foot-info');
+  if (footInfo) footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
+
   // 同步运行中筛选按钮:有 running 会话才显示按钮,且显示数量。
   // 如果筛选开着但已经没有 running 会话了,自动关闭筛选(避免空列表困惑)。
   const runningCount = order.filter((id) => convs.get(id)?.status === 'running').length;
@@ -353,6 +359,18 @@ function renderSidebar() {
   // 运行中筛选:只保留 running 的会话。
   let visibleOrder = runningOnly ? order.filter((id) => convs.get(id)?.status === 'running') : [...order];
 
+  // 搜索筛选:按标题/cwd 模糊匹配(大小写不敏感)。
+  if (searchQuery) {
+    const q = searchQuery.toLowerCase();
+    visibleOrder = visibleOrder.filter((id) => {
+      const c = convs.get(id);
+      if (!c) return false;
+      const title = (c.customTitle || c.turns[0]?.prompt || '').toLowerCase();
+      const cwd = (c.cwd || '').toLowerCase();
+      return title.includes(q) || cwd.includes(q);
+    });
+  }
+
   // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。
   if (sortByRecent) {
     visibleOrder.sort((a, b) => {
@@ -364,7 +382,7 @@ function renderSidebar() {
   }
 
   if (!visibleOrder.length) {
-    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(runningOnly ? tr('sidebar.runningEmpty') : tr('sidebar.empty')) + '</li>';
+    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(runningOnly ? tr('sidebar.runningEmpty') : searchQuery ? tr('sidebar.searchEmpty') : tr('sidebar.empty')) + '</li>';
     return;
   }
   // flat 模式 = 原始平铺;grouped = 按 cwd 分项目(默认)。
@@ -400,9 +418,16 @@ function renderSidebar() {
       `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
     head.onclick = (e) => {
       if ((e.target as HTMLElement)?.closest('[data-act]')) return;
-      if (collapsedProjects.has(cwd)) collapsedProjects.delete(cwd);
+      const wasCollapsed = collapsedProjects.has(cwd);
+      if (wasCollapsed) collapsedProjects.delete(cwd);
       else collapsedProjects.add(cwd);
-      renderSidebar();
+      // 就地切换 collapsed class + chevron,避免全量重渲保证动画连续。
+      const tasksUl = projLi.querySelector('.sb-proj-tasks');
+      const chevron = head.querySelector('.sb-chevron');
+      if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
+      if (chevron) chevron.innerHTML = wasCollapsed
+        ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
+        : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
     };
     head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
       e.stopPropagation();
@@ -410,12 +435,10 @@ function renderSidebar() {
     };
     head.title = cwd || tr('wb.ungrouped');
     projLi.appendChild(head);
-    if (!collapsed) {
-      const tasksUl = document.createElement('ul');
-      tasksUl.className = 'sb-proj-tasks';
-      for (const id of ids) tasksUl.appendChild(taskLi(id));
-      projLi.appendChild(tasksUl);
-    }
+    const tasksUl = document.createElement('ul');
+    tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
+    for (const id of ids) tasksUl.appendChild(taskLi(id));
+    projLi.appendChild(tasksUl);
     ul.appendChild(projLi);
   }
 }
@@ -3494,6 +3517,21 @@ function closeMoreMenu() {
     localStorage.setItem('sb-mode', sidebarMode);
     syncSidebarModeBtn();
     renderSidebar();
+  };
+  // 搜索框:实时过滤会话列表 / Search filter for sidebar
+  const searchInput = document.getElementById('sb-search-input') as HTMLInputElement;
+  const searchClear = document.getElementById('sb-search-clear')!;
+  searchInput.addEventListener('input', () => {
+    searchQuery = searchInput.value.trim();
+    searchClear.hidden = !searchQuery;
+    renderSidebar();
+  });
+  searchClear.onclick = () => {
+    searchInput.value = '';
+    searchQuery = '';
+    searchClear.hidden = true;
+    renderSidebar();
+    searchInput.focus();
   };
   // ⚡ 运行中筛选:点击切换 runningOnly,只显示 running 状态的会话。
   document.getElementById('sb-running-filter')!.onclick = () => {

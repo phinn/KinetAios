@@ -14,6 +14,7 @@
         <div class="brand" id="brand"><span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg></span> KinetAios</div>
         <div class="sb-actions">
           <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" title="新建会话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <span class="sb-sep"></span>
           <button class="ghost" id="btn-wb" data-i18n-title="wb.open" title="工作台"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
           <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
           <div class="sb-more-wrap">
@@ -49,9 +50,14 @@
           </div>
         </div>
       </div>
+      <div class="sb-search">
+        <svg class="sb-search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input type="text" id="sb-search-input" data-i18n-placeholder="sidebar.searchPlaceholder" placeholder="搜索会话…" autocomplete="off">
+        <button class="sb-search-clear" id="sb-search-clear" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
       <ul id="conv-list"></ul>
       <div class="sb-foot" id="sb-foot">
-        <span class="sb-foot-info">Kaios</span>
+        <span class="sb-foot-info" id="sb-foot-info">0 会话</span>
         <span class="sb-foot-spacer"></span>
         <button class="sb-mode ghost" id="sb-theme-toggle" data-i18n-title="sidebar.themeMenu" title="切换主题"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20"/><path d="M12 2a14.5 14.5 0 010 20"/></svg></button>
         <div id="theme-popup" class="theme-popup" hidden>
