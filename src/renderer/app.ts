@@ -1746,10 +1746,29 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   const el = document.createElement('div');
   el.className = 'step';
   const det = document.createElement('details');
-  det.innerHTML = `<summary><span class="name">${ICON.wrench} ${esc(s.name)}</span></summary><pre></pre><pre></pre>`;
-  const pres = det.querySelectorAll('pre');
-  pres[0].textContent = s.args;
-  pres[1].textContent = s.result.slice(0, 4000);
+  det.innerHTML = `<summary><span class="name">${ICON.wrench} ${esc(s.name)}</span></summary>`;
+  // 有内容才添加区块,避免空 pre 占位 / Skip empty sections to avoid blank gray blocks
+  if (s.args) {
+    const aLabel = document.createElement('div');
+    aLabel.className = 'step-label';
+    aLabel.textContent = 'Args';
+    const aPre = document.createElement('pre');
+    aPre.className = 'step-args';
+    aPre.textContent = s.args;
+    det.appendChild(aLabel);
+    det.appendChild(aPre);
+  }
+  const resultText = s.result.slice(0, 4000);
+  if (resultText) {
+    const rLabel = document.createElement('div');
+    rLabel.className = 'step-label';
+    rLabel.textContent = 'Result';
+    const rPre = document.createElement('pre');
+    rPre.className = 'step-result';
+    rPre.textContent = resultText;
+    det.appendChild(rLabel);
+    det.appendChild(rPre);
+  }
   el.appendChild(det);
   return el;
 }

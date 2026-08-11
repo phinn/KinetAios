@@ -1106,7 +1106,7 @@ a { color: var(--accent); }
 .ca-btn:hover { color: var(--text); }
 .ca-btn[data-act="ctx"]:hover { color: var(--accent); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
-#conv-list .title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+#conv-list .title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 52px; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.ready { background: var(--text-faint); }
@@ -1212,7 +1212,7 @@ a { color: var(--accent); }
 .sb-proj-tasks li .dot.eng-claudeCode { background: #d97757; }
 .sb-proj-tasks li .dot.eng-codex { background: #4ec27a; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.sb-proj-tasks li .title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.sb-proj-tasks li .title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 48px; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); display: none; gap: 2px; background: var(--bg-elev); padding: 2px; border-radius: 6px; }
 .sb-proj-tasks li:hover .conv-actions { display: inline-flex; }
 
@@ -1752,8 +1752,9 @@ a { color: var(--accent); }
   background: var(--bg-elev-2);
   color: var(--text);
 }
-/* 空状态 — 无会话 / 无消息时的引导提示 */
-.empty { text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; }
+/* 空状态 — 无会话 / 无消息时的引导提示。
+   合并 flex 布局(L2063 原有)与图标/居中样式,消除两条 .empty 规则冲突。 */
+.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; gap: 6px; }
 .empty::before { content: ''; display: block; width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.7; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 12px; color: var(--text-faint); opacity: 0.7; }
 
@@ -1801,7 +1802,7 @@ a { color: var(--accent); }
 .answer .ic { padding: 1px 6px; font-size: 12px; border: 1px solid var(--border-soft); }
 /* 代码块:语言标签 + 圆角容器 / Code block: language label + rounded container */
 .answer .code-block { position: relative; margin: 0 0 10px; }
-.answer .code-block .code-lang { position: absolute; top: 0; right: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 6px 0 6px; border-left: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; }
+.answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 6px 0 6px 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; }
 .answer .code-block .code { border-radius: 6px; margin: 0; }
 /* 代码块复制按钮:默认隐藏,hover 代码块时显示 */
 .answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: 5px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
@@ -1834,7 +1835,9 @@ a { color: var(--accent); }
 .step details summary::-webkit-details-marker { display: none; }
 .step details summary::before { content: '▸'; display: inline-block; width: 10px; font-size: 10px; color: var(--text-faint); transition: transform var(--dur-fast) var(--ease-out); }
 .step details[open] > summary::before { transform: rotate(90deg); }
-.step pre { margin: 6px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
+.step pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
+.step-label { font-size: 10px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
+.step-label:first-of-type { margin-top: 6px; }
 .turn .err { color: var(--err); }
 
 /* input — chat composer,产品最核心的交互入口。
@@ -2060,7 +2063,7 @@ a { color: var(--accent); }
 .mcp-tool { font-size: 10px; font-family: ui-monospace, "Cascadia Code", monospace; background: var(--bg-input); border: 1px solid var(--border); border-radius: 4px; padding: 1px 5px; color: var(--text-dim); }
 .mcp-empty { padding: 10px 6px; font-size: 12px; color: var(--text-faint); line-height: 1.6; }
 
-.empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; color: var(--text-faint); gap: 6px; }
+/* (原 .empty 冲突规则已合并至 L1756) */
 
 /* settings — 宽度跳变根治:
    overflow-y:scroll 始终显示滚动条(配合 ::-webkit-scrollbar width:8px),
