@@ -41,6 +41,13 @@ export function renderMarkdown(src: string): string {
       i++;
       continue;
     }
+    // ── 水平分割线 / Horizontal rule (---, ***, ___) ──
+    if (/^(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushPara();
+      out.push('<hr>');
+      i++;
+      continue;
+    }
     const h = line.match(/^(#{1,6})\s+(.*)$/);
     if (h) {
       flushPara();
@@ -89,6 +96,20 @@ export function renderMarkdown(src: string): string {
       continue;
     }
 
+    // ── 任务列表 / Task lists (- [ ] / - [x]) ──
+    if (/^[-*+]\s+\[[ xX]\]\s+/.test(line)) {
+      flushPara();
+      const items: string[] = [];
+      while (i < lines.length && /^[-*+]\s+\[[ xX]\]\s+/.test(lines[i])) {
+        const checked = /^\s*[-*+]\s+\[[xX]\]\s+/.test(lines[i]);
+        const text = lines[i].replace(/^[-*+]\s+\[[ xX]\]\s+/, '');
+        const cb = checked ? 'checked' : '';
+        items.push(`<li class="task-item"><input type="checkbox" ${cb} disabled /><span class="task-text${checked ? ' task-done' : ''}">${inline(text)}</span></li>`);
+        i++;
+      }
+      out.push(`<ul class="task-list">${items.join('')}</ul>`);
+      continue;
+    }
     // ── 无序列表 / Unordered lists ──
     if (/^[-*+]\s+/.test(line)) {
       flushPara();
@@ -124,12 +145,14 @@ function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Inline formatting on already-escaped text: code, links, bold, italic.
+// Inline formatting on already-escaped text: code, links, bold, italic, strikethrough, images.
 function inline(s: string): string {
   return s
     .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
+    .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, (_m, alt, src) => `<img src="${src.replace(/"/g, '&quot;')}" alt="${alt}" loading="lazy" />`)
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
     .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
     .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>')
     .replace(/(^|\W)_([^_]+)_/g, '$1<em>$2</em>');
 }

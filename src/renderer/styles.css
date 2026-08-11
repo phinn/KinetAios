@@ -1752,6 +1752,26 @@ a { color: var(--accent); }
   background: var(--bg-elev-2);
   color: var(--text);
 }
+/* 未读消息计数 badge / Unread message count badge */
+.scroll-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  min-width: 18px;
+  height: 18px;
+  border-radius: 9px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 18px;
+  text-align: center;
+  padding: 0 5px;
+  box-shadow: 0 2px 6px rgba(0,0,0,.3);
+  pointer-events: none;
+  animation: badge-pop 0.3s ease-out;
+}
+@keyframes badge-pop { from { transform: scale(0); } to { transform: scale(1); } }
 /* 空状态 — 无会话 / 无消息时的引导提示。
    合并 flex 布局(L2063 原有)与图标/居中样式,消除两条 .empty 规则冲突。 */
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; gap: 6px; }
@@ -1773,6 +1793,10 @@ a { color: var(--accent); }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); }
 .msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
 .msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
+/* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
+.msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+.msg.user .bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.msg.user .bubble strong { font-weight: 700; }
 .msg .ai-body { min-width: 0; flex: 1; }
 /* AI 消息容器:无气泡,但用 padding + 极淡底色做视觉分组 */
 .msg .ai-body .answer { margin-top: 0; }
@@ -1783,7 +1807,7 @@ a { color: var(--accent); }
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
 .answer.streaming { color: var(--text); }
-.answer.streaming::after { content: ''; display: inline-block; width: 1.5px; height: 0.9em; background: var(--accent); margin-left: 1px; vertical-align: text-bottom; animation: cursor-blink 1s step-end infinite; }
+.answer.streaming::after { content: ''; display: inline-block; width: 1.5px; height: 0.9em; background: var(--accent); margin-left: 1px; vertical-align: text-bottom; animation: cursor-blink 0.8s step-end infinite; }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: typing-blink 1.3s infinite ease-in-out; }
@@ -1798,6 +1822,15 @@ a { color: var(--accent); }
 .answer h1 { font-size: 17px; } .answer h2 { font-size: 15px; } .answer h3 { font-size: 14px; }
 .answer ul,.answer ol { margin: 0 0 8px; padding-left: 22px; }
 .answer blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
+.answer hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.answer img { max-width: 100%; border-radius: 8px; margin: 4px 0; }
+/* 任务列表:去除默认圆点,checkbox + 文本横排 / Task list: no bullets, checkbox + text inline */
+.answer .task-list { list-style: none; padding-left: 4px; }
+.answer .task-item { display: flex; align-items: flex-start; gap: 6px; padding: 1px 0; }
+.answer .task-item input[type="checkbox"] { margin-top: 3px; cursor: default; }
+.answer .task-text { flex: 1; }
+.answer .task-done { text-decoration: line-through; color: var(--text-faint); }
+.answer del { color: var(--text-faint); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: 6px; }
 .answer .ic { padding: 1px 6px; font-size: 12px; border: 1px solid var(--border-soft); }
 /* 代码块:语言标签 + 圆角容器 / Code block: language label + rounded container */
@@ -1895,7 +1928,7 @@ a { color: var(--accent); }
 .ai-meta-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
 .ai-meta-left .meta-item { display: inline-flex; align-items: center; gap: 2px; }
 .ai-meta-left .meta-sep { width: 1px; height: 10px; background: var(--border-soft, var(--border)); flex-shrink: 0; }
-.ai-meta-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+.ai-meta-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0.35; transition: opacity var(--dur-fast) var(--ease-out); }
 .ai-body:hover .ai-meta-actions { opacity: 1; }
 .ai-meta-actions .ghost { padding: 2px 6px; font-size: 12px; }
 /* 用户气泡悬浮复制按钮 — 默认隐藏,hover 才显示 */

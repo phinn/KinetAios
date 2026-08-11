@@ -31,6 +31,7 @@ let runningOnly = false;
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
 // 默认按最近活动排序(用户最关心最近活跃的频道)。
 let sortByRecent = true;
+let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
@@ -276,6 +277,8 @@ function applyI18nDOM(): void {
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
         if (renderMainPending) { renderMainPending = false; pendingFullRender = false; }
         renderMain();
+        // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
+        if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
       } else if (ev.type === 'status') {
         // status 事件(工具执行中 / 上下文压缩等)必须立即更新 DOM:
         // 走 debounce 会在下一帧丢失(如果 token 先到并清了 statusNote)。
@@ -1368,6 +1371,8 @@ function renderSideBySide(diff: string): string {
 
 function renderMain() {
   const conv = selectedId ? convs.get(selectedId) : undefined;
+  // 切换会话时重置未读计数 / Reset unread count when switching conversations
+  if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
   renderHead(conv);
   const turns = document.getElementById('turns')!;
   // 离屏构建再一次性挂载,避免 innerHTML='' 后到新 DOM 创建之间的空白帧(闪屏)。
@@ -1582,7 +1587,9 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const bubble = document.createElement('div');
   bubble.className = 'bubble';
   // 隐藏 \x00IMAGES...\x00 base64 块,只显示用户可见的文本
-  bubble.textContent = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
+  // 用户气泡渲染 inline markdown(code/link/bold/del),保持 pre-wrap 换行
+  const userText = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
+  bubble.innerHTML = inlineMd(userText);
   // 用户气泡悬浮复制按钮
   const uCopy = document.createElement('button');
   uCopy.className = 'ghost bubble-copy';
@@ -2119,6 +2126,7 @@ function initScrollBottomBtn(): void {
       btn.classList.add('visible');
     } else {
       btn.classList.remove('visible');
+      if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
     }
   };
   // 注意:userAtBottom 必须只由 scroll 事件更新,不能由 MO 触发。
@@ -2151,7 +2159,25 @@ function initScrollBottomBtn(): void {
   btn.addEventListener('click', () => {
     scrollDownForce();
     btn.classList.remove('visible');
+    if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
   });
+}
+
+// 更新 scroll-bottom-btn 上的未读计数 badge / Update unread badge on scroll-bottom-btn
+function updateBadge(): void {
+  const btn = document.getElementById('scroll-bottom-btn');
+  if (!btn) return;
+  let badge = btn.querySelector('.scroll-badge');
+  if (unreadCount > 0) {
+    if (!badge) {
+      badge = document.createElement('span');
+      badge.className = 'scroll-badge';
+      btn.appendChild(badge);
+    }
+    badge.textContent = unreadCount > 99 ? '99+' : String(unreadCount);
+  } else {
+    badge?.remove();
+  }
 }
 
 // ---------- settings ----------
@@ -3803,6 +3829,12 @@ function closeMoreMenu() {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       void send();
+    }
+    // Escape 清空输入框(slash menu 已关闭时) / Escape clears composer when slash menu is closed
+    if (e.key === 'Escape' && slashMenu.hidden) {
+      composer.value = '';
+      autosize(composer);
+      composer.focus();
     }
   });
   composer.addEventListener('input', () => {
@@ -5847,6 +5879,19 @@ async function fillProfileSelect(): Promise<any[]> {
 
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// 用户气泡 inline markdown:先 HTML 转义,再应用 inline 格式(code/link/bold/del)。
+// 不渲染 block 级(标题/列表/代码块),保持用户消息的简洁气泡形态。
+// Inline-only markdown for user bubbles: escape first, then apply inline formatting.
+function inlineMd(s: string): string {
+  const e = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return e
+    .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
+    .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
+    .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+    .replace(/~~([^~]+)~~/g, '<del>$1</del>')
+    .replace(/(^|[^*])\*([^*]+)\*/g, '$1<em>$2</em>');
 }
 
 // 长期记忆面板:modal 形态(不开新 BrowserWindow —— 列表轻量,modal 够用)。
