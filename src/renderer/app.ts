@@ -411,7 +411,7 @@ function renderSidebar() {
     const collapsed = collapsedProjects.has(cwd);
     const name = projName(cwd);
     head.innerHTML =
-      `<span class="sb-chevron">${collapsed ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>' : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'}</span>` +
+      `<span class="sb-chevron${collapsed ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>` +
       `<span class="sb-pico">${ICON.folder}</span>` +
       `<span class="sb-pname">${esc(name)}</span>` +
       `<span class="sb-pcount">${ids.length}</span>` +
@@ -425,9 +425,7 @@ function renderSidebar() {
       const tasksUl = projLi.querySelector('.sb-proj-tasks');
       const chevron = head.querySelector('.sb-chevron');
       if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
-      if (chevron) chevron.innerHTML = wasCollapsed
-        ? '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>'
-        : '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6l6 6-6 6"/></svg>';
+      if (chevron) chevron.classList.toggle('collapsed', !wasCollapsed);
     };
     head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
       e.stopPropagation();
