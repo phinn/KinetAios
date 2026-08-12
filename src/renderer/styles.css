@@ -1240,7 +1240,6 @@ a { color: var(--accent); }
 .sb-proj-tasks li .dot { width: 7px; height: 7px; }
 .sb-proj-tasks li .dot.running { animation: dot-pulse 1.5s ease-in-out infinite; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-@keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: 0.962rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 48px; }
 .sb-proj-tasks li:hover .sb-task-time { opacity: 0; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 1px; padding: 0 6px 0 16px;
@@ -1852,6 +1851,7 @@ a { color: var(--accent); }
 .answer a:hover { text-decoration-color: var(--accent); }
 .answer h1,.answer h2,.answer h3 { margin: 14px 0 6px; }
 .answer h1 { font-size: 1.308rem; } .answer h2 { font-size: 1.154rem; } .answer h3 { font-size: 1.077rem; }
+.answer h4,.answer h5,.answer h6 { margin: 10px 0 4px; font-size: 1rem; }
 .answer ul,.answer ol { margin: 0 0 8px; padding-left: 22px; }
 .answer blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
 .answer hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
