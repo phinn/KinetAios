@@ -47,6 +47,11 @@ function logFatal(kind: string, e: unknown): void {
 process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
+// 修正 app name:package.json name 是 "kinetaios-win",但任务栏/Dock hover tooltip 应显示 "KinetAios"。
+// 必须在 app.whenReady() 之前调用。
+// Fix app name: package.json name is "kinetaios-win", but taskbar/Dock tooltip should show "KinetAios".
+app.setName(getBrand().productName);
+
 // macOS 12 + Intel 上 GPU 渲染可能黑屏/白屏(Electron 31 已知问题)。
 // 多重兜底:disableHardwareAcceleration + GPU 相关 commandLine 开关。
 // 仅 macOS Intel(x64);Apple Silicon(arm64)GPU 驱动正常,保留硬件加速。
