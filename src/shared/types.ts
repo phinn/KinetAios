@@ -623,6 +623,8 @@ export interface KinetAPI {
   saveSettings(s: AppSettings): Promise<boolean>;
   /** 热切换应用图标(立即生效,无需重启) */
   setAppIcon(iconKey: string): Promise<boolean>;
+  /** 解析 icon 文件的 file:// URL(供 renderer <img> 使用,兼容打包/开发) */
+  resolveIconUrl(file: string): Promise<string>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
   /** 列出本地(Ollama 等)已安装的模型 */
   listLocalModels(baseURL?: string): Promise<{ ok: boolean; models: string[]; message: string }>;

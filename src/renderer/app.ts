@@ -2335,7 +2335,7 @@ async function showSettings() {
           ].map(opt => `
             <label class="icon-opt${(s.appIcon || 'k') === opt.key ? ' selected' : ''}" data-icon-key="${opt.key}">
               <input type="radio" name="app-icon" value="${opt.key}" ${(s.appIcon || 'k') === opt.key ? 'checked' : ''} style="display:none">
-              <img src="../../build/${opt.file}" alt="${opt.label}" class="icon-thumb">
+              <img data-icon-file="${opt.file}" alt="${opt.label}" class="icon-thumb">
               <span>${opt.label}</span>
             </label>`).join('')}
         </div>
@@ -2561,6 +2561,13 @@ async function showSettings() {
   // icon 选择器:点击即时切换(热生效,不等保存)
   const iconPicker = document.getElementById('s-icon-picker');
   if (iconPicker) {
+    // 异步加载 icon 缩略图(兼容打包后 resources/build/ 路径)
+    iconPicker.querySelectorAll('img[data-icon-file]').forEach((img) => {
+      const file = (img as HTMLImageElement).dataset.iconFile!;
+      api.resolveIconUrl(file).then((url) => {
+        if (url) (img as HTMLImageElement).src = url;
+      });
+    });
     iconPicker.querySelectorAll('.icon-opt').forEach((label) => {
       (label as HTMLElement).onclick = () => {
         const key = (label as HTMLElement).dataset.iconKey!;

@@ -22,6 +22,7 @@ const api: KinetAPI = {
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   setAppIcon: (iconKey) => ipcRenderer.invoke('set-app-icon', iconKey),
+  resolveIconUrl: (file) => ipcRenderer.invoke('resolve-icon-url', file),
   testConnection: (s?) => ipcRenderer.invoke('test-connection', s),
   listLocalModels: (baseURL?) => ipcRenderer.invoke('list-local-models', baseURL),
   getBalance: () => ipcRenderer.invoke('get-balance'),

@@ -39,6 +39,13 @@
           "**/*",
           "!**/examples/**"
         ]
+      },
+      {
+        "from": "build/",
+        "to": "build/",
+        "filter": [
+          "icon*.png"
+        ]
       }
     ],
     "mac": {

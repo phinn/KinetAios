@@ -270,6 +270,7 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
     'd4': 'icon-d4.png',
   };
   const fileName = iconFiles[key] || iconFiles['k'];
+  const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
   for (const candidate of [
     path.join(__dirname, '..', 'resources', fileName),
     path.join(__dirname, '..', '..', 'src', 'resources', fileName),
@@ -277,7 +278,9 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
     path.join(__dirname, '..', '..', 'src', 'resources', 'icon.png'),
     path.join(__dirname, '..', '..', 'build', fileName),
     path.join(__dirname, '..', '..', 'build', 'icon.png'),
-  ]) {
+    resBase ? path.join(resBase, fileName) : '',
+    resBase ? path.join(resBase, 'icon.png') : '',
+  ].filter(Boolean)) {
     try {
       if (fs.existsSync(candidate)) {
         _appIcon = nativeImage.createFromPath(candidate);
@@ -898,7 +901,19 @@ function registerIpc(): void {
     }
     return true;
   });
-  ipcMain.handle('list-skills', () => listSkills());
+  // renderer 请求 icon 文件的 file:// URL(兼容打包后 resources/build/ 和开发模式 build/)
+  ipcMain.handle('resolve-icon-url', (_e, file: string) => {
+    const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
+    for (const candidate of [
+      path.join(__dirname, '..', '..', 'build', file),
+      resBase ? path.join(resBase, file) : '',
+    ].filter(Boolean)) {
+      try {
+        if (fs.existsSync(candidate)) return 'file://' + candidate.replace(/\\/g, '/');
+      } catch { /* try next */ }
+    }
+    return '';
+  });
   ipcMain.handle('list-mcp', () => mcp.snapshot());
   ipcMain.handle('get-brand', () => getBrand());
 
