@@ -1121,7 +1121,8 @@ a { color: var(--accent); }
   transition: background var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out);
 }
 #conv-list > li:hover { background: var(--bg-elev); }
-#conv-list > li.active { background: var(--accent-glow); box-shadow: inset 2px 0 0 var(--accent); }
+#conv-list > li.active { background: var(--accent-glow); box-shadow: inset 3px 0 0 var(--accent); position: relative; }
+#conv-list > li.active::after { content: ''; position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 3px; height: 60%; background: var(--accent); border-radius: 0 2px 2px 0; box-shadow: 0 0 8px var(--accent-glow); }
 #conv-list > li.active .title { color: var(--accent); }
 #conv-list > li { position: relative; }
 /* conv-actions 通用样式见下方 .conv-actions 规则(渐变淡入) */
@@ -1781,7 +1782,8 @@ a { color: var(--accent); }
 }
 .scroll-bottom-btn:hover {
   background: var(--bg-elev-2);
-  color: var(--text);
+  color: var(--accent);
+  box-shadow: var(--shadow-md), 0 0 0 2px var(--accent-glow);
 }
 /* 未读消息计数 badge / Unread message count badge */
 .scroll-badge {
@@ -1810,6 +1812,9 @@ a { color: var(--accent); }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 12px; color: var(--text-faint); opacity: 0.7; }
 
 .turn { padding: 4px 0 12px; display: flex; flex-direction: column; gap: 10px; }
+/* AI turn 首次渲染时轻微淡入,减少突兀感 / Fade-in on first render */
+.turn .msg.ai .ai-body { animation: turn-fade-in 0.25s var(--ease-out) both; }
+@keyframes turn-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 /* 只在含用户消息的 turn 前画分割线,AI 连续步骤间不画 — 减少视觉噪音 */
 .turn:has(.msg.user) + .turn,
 .turn + .turn:has(.msg.user) { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 4px; padding-top: 12px; }
@@ -1821,9 +1826,10 @@ a { color: var(--accent); }
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
 .avatar:hover { transform: scale(1.08); }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
-.msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); }
+.msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); box-shadow: 0 0 0 1px rgba(232,179,57,0.06), var(--shadow-xs); }
 .msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
-.msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
+.msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); animation: bubble-pop 0.2s var(--ease-out) both; }
+@keyframes bubble-pop { from { opacity: 0; transform: scale(0.96) translateX(4px); } to { opacity: 1; transform: scale(1) translateX(0); } }
 /* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
 .msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
 .msg.user .bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
@@ -1838,7 +1844,7 @@ a { color: var(--accent); }
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
 .answer.streaming { color: var(--text); }
-.answer.streaming::after { content: ''; display: inline-block; width: 1.5px; height: 0.9em; background: var(--accent); margin-left: 1px; vertical-align: text-bottom; animation: cursor-blink 0.8s step-end infinite; }
+.answer.streaming::after { content: ''; display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; border-radius: 1px; animation: cursor-blink 0.9s step-end infinite; box-shadow: 0 0 4px var(--accent-glow); }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }
 .typing i { width: 6px; height: 6px; border-radius: 50%; background: var(--text-dim); animation: typing-blink 1.3s infinite ease-in-out; }
@@ -1847,14 +1853,15 @@ a { color: var(--accent); }
 @keyframes typing-blink { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
 .answer p { margin: 0 0 8px; }
 .answer p:last-child { margin-bottom: 0; }
-.answer a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim); text-underline-offset: 2px; }
+.answer a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim); text-underline-offset: 2px; transition: text-decoration-color var(--dur-fast) var(--ease-out); }
 .answer a:hover { text-decoration-color: var(--accent); }
+.answer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
 .answer h1,.answer h2,.answer h3 { margin: 14px 0 6px; }
 .answer h1 { font-size: 1.308rem; } .answer h2 { font-size: 1.154rem; } .answer h3 { font-size: 1.077rem; }
 .answer h4,.answer h5,.answer h6 { margin: 10px 0 4px; font-size: 1rem; }
 .answer ul,.answer ol { margin: 0 0 8px; padding-left: 22px; }
-.answer blockquote { margin: 0 0 8px; padding-left: 12px; border-left: 3px solid var(--border); color: var(--text-dim); }
-.answer hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+.answer blockquote { margin: 0 0 8px; padding: 4px 12px; border-left: 3px solid var(--accent-dim); color: var(--text-dim); background: rgba(255,255,255,0.015); border-radius: 0 4px 4px 0; }
+.answer hr { border: none; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent); margin: 14px 0; }
 .answer img { max-width: 100%; border-radius: 8px; margin: 4px 0; display: block; }
 /* 任务列表:去除默认圆点,checkbox + 文本横排 / Task list: no bullets, checkbox + text inline */
 .answer .task-list { list-style: none; padding-left: 4px; }
@@ -1864,26 +1871,31 @@ a { color: var(--accent); }
 .answer .task-done { text-decoration: line-through; color: var(--text-faint); }
 .answer del { color: var(--text-faint); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: 6px; }
-.answer .ic { padding: 1px 6px; font-size: 0.923rem; border: 1px solid var(--border-soft); }
-/* 代码块:语言标签 + 圆角容器 / Code block: language label + rounded container */
-.answer .code-block { position: relative; margin: 0 0 10px; }
-.answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 6px 0 6px 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; }
-.answer .code-block .code { border-radius: 6px; margin: 0; }
-/* 有语言标签时给代码区顶部留空间,避免遮挡第一行 / Reserve top padding when lang label exists */
+.answer .ic { padding: 1px 6px; font-size: 0.923rem; border: 1px solid var(--border-soft); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+/* 代码块:语言标签 + 圆角容器 + 左侧行号槽 / Code block: lang label + rounded container */
+.answer .code-block { position: relative; margin: 0 0 10px; border-radius: 8px; overflow: hidden; box-shadow: var(--shadow-xs); }
+.answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 0 6px 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; backdrop-filter: blur(4px); }
+.answer .code-block .code { border-radius: 0; margin: 0; }
+/* 有语言标签时给代码区顶部留空间 / Reserve top padding when lang label exists */
 .answer .code-block:has(.code-lang) .code { padding-top: 24px; }
 /* 代码块复制按钮:默认隐藏,hover 代码块时显示 */
 .answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: 5px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
 .answer .code-block:hover .code-copy { opacity: 0.6; }
-.answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); }
-.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 0.923rem; border: 1px solid var(--border-soft); }
+.answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); border-color: var(--accent-dim); }
+.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 0.923rem; border: 1px solid var(--border-soft); line-height: 1.55; }
+/* 代码块滚动条:更细更克制 / Code block scrollbar: thinner */
+.answer .code::-webkit-scrollbar { height: 6px; }
+.answer .code::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+.answer .code::-webkit-scrollbar-track { background: transparent; }
 
 /* ── Markdown 表格 / GFM tables ── */
-.answer .md-table-wrap { overflow-x: auto; margin: 0 0 10px; }
+.answer .md-table-wrap { overflow-x: auto; margin: 0 0 10px; border-radius: 8px; border: 1px solid var(--border-soft); }
 .answer .md-table { border-collapse: collapse; font-size: 0.962rem; width: 100%; min-width: 0; }
-.answer .md-table thead th { background: var(--bg-elev); color: var(--text); font-weight: 600; text-align: left; padding: 7px 12px; border-bottom: 2px solid var(--border); white-space: nowrap; }
+.answer .md-table thead th { background: var(--bg-elev); color: var(--text); font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); white-space: nowrap; position: sticky; top: 0; }
 .answer .md-table tbody td { padding: 6px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); }
+.answer .md-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
 .answer .md-table tbody tr:last-child td { border-bottom: none; }
-.answer .md-table tbody tr:hover td { background: var(--bg-elev); }
+.answer .md-table tbody tr:hover td { background: var(--bg-elev); color: var(--text); }
 
 .steps-wrap { margin: 8px 0; }
 .steps-wrap > summary { cursor: pointer; list-style: none; user-select: none; }
@@ -1907,7 +1919,7 @@ a { color: var(--accent); }
 .step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }
 .step-label { font-size: 10px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
 .step-label:first-of-type { margin-top: 6px; }
-.turn .err { color: var(--err); }
+.turn .err { color: var(--err); background: rgba(226,97,76,0.08); border-left: 3px solid var(--err); border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 4px 0; font-size: 0.923rem; }
 
 /* input — chat composer,产品最核心的交互入口。
    液态玻璃:半透明 + blur,透出底层背景渐变。*/
@@ -1977,7 +1989,8 @@ a { color: var(--accent); }
 }
 .bubble:hover .bubble-copy { opacity: 0.6; }
 .bubble-copy:hover { opacity: 1 !important; }
-.composer-bar .send { flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+.composer-bar .send { flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); box-shadow: 0 2px 8px rgba(232,179,57,0.25); }
+.composer-bar .send:active { transform: scale(0.92); }
 .composer-bar .send svg { transition: transform var(--dur-fast) var(--ease-out); }
 .composer-bar .send:hover svg { transform: translateX(1px) rotate(-5deg); }
 .composer-bar .send:disabled { opacity: 0.5; pointer-events: none; }
