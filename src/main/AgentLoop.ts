@@ -5,6 +5,120 @@ import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
+import { saveFact, loadFact } from './store';
+
+// ── File Operation Tracking (compaction 时程序化提取,不依赖 LLM 猜) ──
+// 借鉴 pi-main:从被 compact 的 tool_calls 中精确提取文件路径,持久化到 conv_facts,
+// 跨多轮 compaction 累积。compaction summary 末尾自动附加 <read-files> / <modified-files>。
+
+interface FileOps { read: Set<string>; written: Set<string>; edited: Set<string>; }
+
+function createFileOps(): FileOps {
+  return { read: new Set(), written: new Set(), edited: new Set() };
+}
+
+/**
+ * 从一批消息的 tool_calls 中提取文件操作(read_file/write_file/edit_file)。
+ * 精确匹配 arguments.path / arguments.file_path,不依赖 LLM 摘要。
+ */
+function extractFileOps(msgs: ChatMsg[]): FileOps {
+  const ops = createFileOps();
+  for (const m of msgs) {
+    if (!m.tool_calls) continue;
+    for (const tc of m.tool_calls) {
+      const name = tc.function.name;
+      let args: Record<string, unknown>;
+      try { args = JSON.parse(tc.function.arguments || '{}'); } catch { continue; }
+      // 匹配多种可能的路径字段名(path / file_path / filePath)
+      const p = (args.path ?? args.file_path ?? args.filePath) as string | undefined;
+      if (!p || typeof p !== 'string') continue;
+      switch (name) {
+        case 'read_file': ops.read.add(p); break;
+        case 'write_file': ops.written.add(p); break;
+        case 'edit_file': ops.edited.add(p); break;
+      }
+    }
+  }
+  return ops;
+}
+
+/**
+ * 把本轮提取的 FileOps merge 到 conv_facts 中已有的 file_registry(JSON)。
+ * modified = written ∪ edited;readOnly = read - modified。
+ */
+function mergeFileOpsWithPersisted(convId: string, newOps: FileOps): { readFiles: string[]; modifiedFiles: string[] } {
+  // 从 conv_facts 读取已有的 file_registry
+  let existing: { read: string[]; written: string[]; edited: string[] };
+  try {
+    const raw = loadFact(convId, 'file_registry');
+    existing = raw ? JSON.parse(raw) : { read: [], written: [], edited: [] };
+  } catch {
+    existing = { read: [], written: [], edited: [] };
+  }
+
+  const read = new Set([...existing.read, ...newOps.read]);
+  const written = new Set([...existing.written, ...newOps.written]);
+  const edited = new Set([...existing.edited, ...newOps.edited]);
+
+  // 持久化(累积)
+  saveFact(convId, 'file_registry', JSON.stringify({
+    read: [...read].sort(),
+    written: [...written].sort(),
+    edited: [...edited].sort(),
+  }));
+
+  // 计算:modified = written ∪ edited;readOnly = read - modified
+  const modified = new Set<string>([...written, ...edited]);
+  const readOnly = [...read].filter((f) => !modified.has(f)).sort();
+  return { readFiles: readOnly, modifiedFiles: [...modified].sort() };
+}
+
+/** 格式化文件列表为 XML 标签,append 到 compaction summary 末尾。 */
+function formatFileOps(readFiles: string[], modifiedFiles: string[]): string {
+  const sections: string[] = [];
+  if (readFiles.length > 0) sections.push(`<read-files>\n${readFiles.join('\n')}\n</read-files>`);
+  if (modifiedFiles.length > 0) sections.push(`<modified-files>\n${modifiedFiles.join('\n')}\n</modified-files>`);
+  if (sections.length === 0) return '';
+  return `\n\n${sections.join('\n\n')}`;
+}
+
+/**
+ * CLI 引擎(Claude Code / Codex)的 tool event 也可以调用此函数提取文件路径。
+ * 从 tool event 的 name + args 中解析,写入 conv_facts 的 file_registry。
+ */
+export function trackFileOpFromToolEvent(convId: string, name: string, argsStr: string): void {
+  let path: string | undefined;
+  switch (name) {
+    case 'Read': case 'read':
+    case 'Write': case 'write':
+    case 'Edit': case 'edit': case 'edit_file': case 'write_file': case 'read_file': {
+      // args 可能是 JSON 或自由文本
+      try {
+        const args = JSON.parse(argsStr);
+        path = args.path ?? args.file_path ?? args.filePath;
+      } catch {
+        // Claude Code 的 args 可能是 "path=xxx" 或纯路径
+        const m = argsStr.match(/path[=:]\s*"?([^\s"]+)/);
+        if (m) path = m[1];
+      }
+      break;
+    }
+    case 'shell': case 'Bash': {
+      // shell 命令里的文件路径太杂,跳过(shell 操作的文件不可靠)
+      return;
+    }
+    default: return;
+  }
+  if (!path || typeof path !== 'string') return;
+
+  const ops = createFileOps();
+  switch (name) {
+    case 'Read': case 'read': case 'read_file': ops.read.add(path); break;
+    case 'Write': case 'write': case 'write_file': ops.written.add(path); break;
+    case 'Edit': case 'edit': case 'edit_file': ops.edited.add(path); break;
+  }
+  mergeFileOpsWithPersisted(convId, ops);
+}
 
 export interface RunOpts {
   provider: Provider;
@@ -487,6 +601,7 @@ export async function compactHistory(
   snap: ConfigSnapshot,
   signal: AbortSignal,
   onEvent?: (e: AgentEvent) => void,
+  convId?: string, // 传入 convId 时启用文件追踪:程序化提取 + 持久化到 conv_facts + 注入 summary
 ): Promise<ChatMsg[]> {
   const memoryMsgs = msgs.filter((m) => m._memory);
   const pinnedMsgs = msgs.filter((m) => m._pinned);
@@ -496,24 +611,36 @@ export async function compactHistory(
   const rest = msgs.filter((m) => !m._memory && !m._pinned &&
     !(typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]')));
   const tail = trimHistoryToTokenBudget(rest, budget, snap.apiProtocol);
-  if (tail.length === rest.length) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 没超预算,无需摘要
+  if (tail.length === rest.length) {
+    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 没超预算,无需摘要
+  }
   const head = rest.slice(0, rest.length - tail.length);
   if (!head.length) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];
+  // 文件追踪:从被丢弃的 head 消息中程序化提取文件操作,merge 到 conv_facts 的 file_registry。
+  // 这比让 LLM 从 transcript 里"猜"文件路径精确得多,且跨多轮 compaction 累积不丢。
+  let fileAppendix = '';
+  if (convId) {
+    const ops = extractFileOps(head);
+    const { readFiles, modifiedFiles } = mergeFileOpsWithPersisted(convId, ops);
+    fileAppendix = formatFileOps(readFiles, modifiedFiles);
+  }
   try {
     // 结构化摘要 prompt:固定字段 → 信息密度远高于自由文本摘要。
     // 对标 Claude Code 的 compaction:保留"决策语义"而非原始文本片段。
+    // 注意:文件列表已从 tool_calls 程序化提取并 append 到摘要末尾(<read-files>/<modified-files>),
+    // 摘要 prompt 中【已改文件】字段改为可选(LLM 只需补充"为什么改"的语义,路径列表不需要重复)。
     const sys = `你是对话摘要器。把下面这段早期对话压成结构化中文摘要,严格按以下格式输出:
 
 【任务目标】一句话描述用户要完成什么
 【关键决策】列出已确定的技术方案/架构选择(每条一行,最多 5 条)
-【已改文件】列出被创建或修改的文件路径(每条一行)
+【已改文件】简述涉及哪些模块(只需语义描述如"AgentLoop.ts 的 compactHistory"或"无",精确路径列表已自动附加)
 【执行命令】列出关键 shell 命令及其结果(成功/失败)
 【重要结论】已完成步骤的核心产出(每条一行,最多 5 条)
 【待办事项】尚未完成的遗留问题
 
 规则:
 - 丢掉寒暄、一次性细节、中间探查过程(如 ls/cat 输出)
-- 保留文件路径、命令、错误信息、技术栈名称的原文
+- 保留命令、错误信息、技术栈名称的原文
 - 每个字段不超过 3 行;没有内容的字段写"无"
 - 不要输出任何标题/前言,直接从【任务目标】开始`;
 
@@ -546,14 +673,16 @@ export async function compactHistory(
     }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];
+    // 文件列表 append 到摘要末尾(程序化提取,100% 准确,不依赖 LLM)。
+    const finalSummary = fileAppendix ? `${summary}${fileAppendix}` : summary;
     // 发压缩事件 → renderer 高亮提示「已自动压缩 headTokens → summaryTokens」。
     if (onEvent) {
       const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * coefFor(snap.apiProtocol)) + 20, 0);
-      const summaryTokens = Math.floor(summary.length * coefFor(snap.apiProtocol)) + 20;
+      const summaryTokens = Math.floor(finalSummary.length * coefFor(snap.apiProtocol)) + 20;
       onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话结构化摘要)` });
       onEvent({ type: 'context', action: 'compacted', beforeTokens: headTokens, afterTokens: summaryTokens } as AgentEvent & { type: 'context' });
     }
-    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, { role: 'user', content: `[早期对话摘要]\n${summary}` }, ...tail];
+    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, { role: 'user', content: `[早期对话摘要]\n${finalSummary}` }, ...tail];
   } catch {
     return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
   }

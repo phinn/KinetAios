@@ -13,6 +13,7 @@ import os from 'node:os';
 import type { AgentEvent, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
+import { trackFileOpFromToolEvent } from './AgentLoop';
 import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
@@ -434,7 +435,7 @@ class DirectEngine implements Engine {
     if (!signal.aborted) {
       // P0-fix: interStepCompactBudget 现在有显式值(30K),不再需要 || fallback。
       // v1 单轮 ReAct 结束后压缩:历史 <30K 保留尾部,超出才调 LLM 摘要。
-      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent);
+      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id);
     } else {
       conv.directHistory = updated;
     }
@@ -661,6 +662,7 @@ class ClaudeCodeEngine implements Engine {
               const p = pending.get(b.tool_use_id ?? '');
               if (p) {
                 pending.delete(b.tool_use_id ?? '');
+                trackFileOpFromToolEvent(conv.id, p.name, p.args);
                 onEvent({ type: 'tool', name: p.name, args: p.args, result: txt });
               } else onEvent({ type: 'tool', name: 'tool', args: '', result: txt });
             }
@@ -751,7 +753,7 @@ class CodexEngine implements Engine {
               args: item.command ?? '',
               result: (item.aggregated_output ?? '') + (item.exit_code != null ? ` (exit ${item.exit_code})` : ''),
             });
-          else if (it === 'patch_applied') onEvent({ type: 'tool', name: 'patch', args: item.path ?? item.command ?? '', result: '已应用' });
+          else if (it === 'patch_applied') { trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: item.path ?? item.command ?? '' })); onEvent({ type: 'tool', name: 'patch', args: item.path ?? item.command ?? '', result: '已应用' }); }
           break;
         }
         case 'agent_message':
@@ -766,6 +768,7 @@ class CodexEngine implements Engine {
           break;
         }
         case 'patch_applied':
+          trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: obj.path ?? '' }));
           onEvent({ type: 'tool', name: 'patch', args: obj.path ?? '', result: '已应用' });
           break;
         case 'turn.completed': {

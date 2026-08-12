@@ -71,7 +71,8 @@ export async function finalizeContext(
   snap: ConfigSnapshot,
   signal: AbortSignal,
   onEvent: (e: AgentEvent) => void,
+  convId?: string,
 ): Promise<ChatMsg[]> {
   if (signal.aborted) return messages;
-  return compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent);
+  return compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent, convId);
 }

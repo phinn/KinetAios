@@ -1120,7 +1120,7 @@ ${failedDetail || '  (无)'}
     this.lastCompactFingerprints.set(conv.id, fingerprint);
     // P0-fix: 去掉 || fallback,directV2 的 interStepCompactBudget 由 v2BudgetFromWindow 动态计算,永远 > 0。
     // 如果用户故意设 ratio=0,trim 会算出 0 → compactHistory 会保留 0 条尾部 → 空历史,这是用户的选择。
-    return compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent);
+    return compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id);
   }
 
   /**
@@ -1168,6 +1168,7 @@ ${failedDetail || '  (无)'}
       snap,
       signal,
       onEvent, // P0-5: 传 onEvent → 摘要 LLM 的 cost/status 事件不再被吞
+      conv.id, // 文件追踪:程序化提取 + 持久化到 conv_facts
     );
   }
 

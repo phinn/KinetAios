@@ -247,7 +247,7 @@ export class DirectV3Engine implements Engine {
 
     // ── 最终上下文压缩 ──
     try {
-      conv.directHistory = await finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent);
+      conv.directHistory = await finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent, conv.id);
     } catch {
       conv.directHistory = updatedHistory;
     }

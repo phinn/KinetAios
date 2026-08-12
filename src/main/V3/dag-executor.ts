@@ -136,7 +136,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     if (!signal.aborted && levelIdx < levels.length - 1) {
       execHistory = await compactHistory(
         execHistory, policy.interStepCompactBudget,
-        provider, snapshot, signal, onEvent,
+        provider, snapshot, signal, onEvent, opts.ctx.convId,
       );
     }
   }
