@@ -271,6 +271,10 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
   };
   const fileName = iconFiles[key] || iconFiles['k'];
   for (const candidate of [
+    path.join(__dirname, '..', 'resources', fileName),
+    path.join(__dirname, '..', '..', 'src', 'resources', fileName),
+    path.join(__dirname, '..', 'resources', 'icon.png'),
+    path.join(__dirname, '..', '..', 'src', 'resources', 'icon.png'),
     path.join(__dirname, '..', '..', 'build', fileName),
     path.join(__dirname, '..', '..', 'build', 'icon.png'),
   ]) {
@@ -623,6 +627,10 @@ function pngChunk(type: string, data: Buffer): Buffer {
 function makeTrayIcon() {
   // 尝试从图标文件加载
   for (const candidate of [
+    path.join(__dirname, '..', 'resources', 'icon.png'),
+    path.join(__dirname, '..', '..', 'src', 'resources', 'icon.png'),
+    path.join(__dirname, '..', 'resources', 'icon.ico'),
+    path.join(__dirname, '..', '..', 'src', 'resources', 'icon.ico'),
     path.join(__dirname, '..', '..', 'build', 'icon.png'),
     path.join(__dirname, '..', '..', 'build', 'icon.ico'),
   ]) {
