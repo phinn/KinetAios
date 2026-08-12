@@ -271,20 +271,24 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
   };
   const fileName = iconFiles[key] || iconFiles['k'];
   const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
+  // 打包后 process.resourcesPath/build/ 最可靠,排最前;dev 模式靠 __dirname/../../build/
   for (const candidate of [
+    resBase ? path.join(resBase, fileName) : '',
+    resBase ? path.join(resBase, 'icon.png') : '',
+    path.join(__dirname, '..', '..', 'build', fileName),
+    path.join(__dirname, '..', '..', 'build', 'icon.png'),
     path.join(__dirname, '..', 'resources', fileName),
     path.join(__dirname, '..', '..', 'src', 'resources', fileName),
     path.join(__dirname, '..', 'resources', 'icon.png'),
     path.join(__dirname, '..', '..', 'src', 'resources', 'icon.png'),
-    path.join(__dirname, '..', '..', 'build', fileName),
-    path.join(__dirname, '..', '..', 'build', 'icon.png'),
-    resBase ? path.join(resBase, fileName) : '',
-    resBase ? path.join(resBase, 'icon.png') : '',
   ].filter(Boolean)) {
     try {
       if (fs.existsSync(candidate)) {
         _appIcon = nativeImage.createFromPath(candidate);
-        if (!_appIcon.isEmpty()) return _appIcon;
+        if (!_appIcon.isEmpty()) {
+          console.log(`[appIcon] loaded: ${candidate} (${_appIcon.getSize().width}x${_appIcon.getSize().height})`);
+          return _appIcon;
+        }
       }
     } catch {
       /* 路径不可达,试下一个 */
@@ -628,15 +632,34 @@ function pngChunk(type: string, data: Buffer): Buffer {
 // 托盘图标:优先用 build/icon.png resize 到 16×16(和应用图标统一);
 // 打包后路径不可达 → 回退到运行时生成的金色圆 PNG(无需图标资源文件)。
 function makeTrayIcon() {
-  // 尝试从图标文件加载
+  const s = getSettings();
+  const key = s.appIcon || 'k';
+  const iconFiles: Record<string, string> = {
+    'default': 'icon.png',
+    'bluepurple': 'icon-default-bluepurple.png',
+    'k': 'icon-e1-K.png',
+    'bg': 'icon-e1-bg.png',
+    'd1': 'icon-d1.png',
+    'd2': 'icon-d2.png',
+    'd3': 'icon-d3.png',
+    'd4': 'icon-d4.png',
+  };
+  const fileName = iconFiles[key] || iconFiles['k'];
+  const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
+  // 尝试从图标文件加载(优先 resourcesPath/build/,然后 dev 路径)
   for (const candidate of [
+    resBase ? path.join(resBase, fileName) : '',
+    resBase ? path.join(resBase, 'icon.png') : '',
+    path.join(__dirname, '..', '..', 'build', fileName),
+    path.join(__dirname, '..', '..', 'build', 'icon.png'),
+    path.join(__dirname, '..', 'resources', fileName),
     path.join(__dirname, '..', 'resources', 'icon.png'),
+    path.join(__dirname, '..', '..', 'src', 'resources', fileName),
     path.join(__dirname, '..', '..', 'src', 'resources', 'icon.png'),
     path.join(__dirname, '..', 'resources', 'icon.ico'),
     path.join(__dirname, '..', '..', 'src', 'resources', 'icon.ico'),
-    path.join(__dirname, '..', '..', 'build', 'icon.png'),
     path.join(__dirname, '..', '..', 'build', 'icon.ico'),
-  ]) {
+  ].filter(Boolean)) {
     try {
       if (fs.existsSync(candidate)) {
         const full = nativeImage.createFromPath(candidate);
@@ -886,18 +909,26 @@ function registerIpc(): void {
   // 热切换应用图标:清除缓存 → 重新加载 → 更新所有窗口 + macOS Dock
   ipcMain.handle('set-app-icon', (_e, iconKey: string) => {
     const s = getSettings();
-    if (s.appIcon === iconKey) return true;
-    saveSettings({ ...s, appIcon: iconKey });
     _appIcon = undefined;          // 清缓存,让 appIcon() 重新加载
     _appIconKey = null;
+    saveSettings({ ...s, appIcon: iconKey });
     const img = appIcon();
+    console.log(`[set-app-icon] key=${iconKey} img=${img ? img.getSize().width + 'x' + img.getSize().height : 'null'} isEmpty=${img ? img.isEmpty() : 'N/A'}`);
     if (img) {
       for (const win of BrowserWindow.getAllWindows()) {
-        try { win.setIcon(img); } catch { /* 某些平台不支持 */ }
+        try { win.setIcon(img); } catch (e) { console.log('[set-app-icon] setIcon error:', e); }
       }
       if (process.platform === 'darwin') {
         try { app.dock?.setIcon(img); } catch { /* 非 mac */ }
       }
+    }
+    // Windows: 更新托盘图标(tray icon 可以在运行时改变)
+    if (tray && !tray.isDestroyed()) {
+      try {
+        const ti = makeTrayIcon();
+        tray.setImage(ti);
+        console.log(`[set-app-icon] tray icon updated`);
+      } catch (e) { console.log('[set-app-icon] tray setImage error:', e); }
     }
     return true;
   });
@@ -905,8 +936,8 @@ function registerIpc(): void {
   ipcMain.handle('resolve-icon-url', (_e, file: string) => {
     const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
     for (const candidate of [
-      path.join(__dirname, '..', '..', 'build', file),
       resBase ? path.join(resBase, file) : '',
+      path.join(__dirname, '..', '..', 'build', file),
     ].filter(Boolean)) {
       try {
         if (fs.existsSync(candidate)) return 'file://' + candidate.replace(/\\/g, '/');
