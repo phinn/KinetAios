@@ -1,5 +1,93 @@
 # Release Notes
 
+## v2.9.0 — Computer Use · NEXUS 空间认知 · UI 大改版
+
+**发布日期：** 2026-08-13
+
+**从 v2.3.0 到 v2.9.0 — 151 commits。三个大方向：Computer Use 计算机使用、NEXUS 空间认知 Agent 界面、UI/UX 全面改版。**
+
+---
+
+### 🖥️ Computer Use 计算机使用（新）
+
+Agent 现在可以直接操控你的电脑屏幕：
+
+- **`screenshot()`** — Electron `desktopCapturer` 截屏，返回多模态图片直接注入 LLM 对话（GLM / OpenAI / Anthropic vision 均支持）
+- **`mouse_click(x, y, button, double_click)`** — 点击屏幕坐标（Win: PowerShell + `user32.dll` / Mac: `cliclick` / Linux: `xdotool`，零原生依赖）
+- **`mouse_scroll(x, y, clicks)`** — 滚轮滚动
+- **`mouse_drag(from_x, from_y, to_x, to_y)`** — 拖拽
+- **`keyboard_type(text)`** — 输入文本
+- **`keyboard_key(key)`** — 按键/组合键（`Enter` / `Ctrl+C` / `Alt+Tab` …）
+
+典型 ReAct 循环：截屏 → LLM 分析画面 → 点击/输入 → 再截屏确认。
+
+### 🌌 NEXUS 空间认知 Agent 界面（新）
+
+从纯装饰进化为实用 Agent 管控中心，9 个阶段迭代：
+
+- **轨道视图** — 会话按引擎/状态分布在同心轨道，缩放/平移/搜索过滤
+- **3D 等离子核心球** — 点击 INTENT 核心球切为全局仪表盘模式（会话统计 / Token + 花费 / 引擎分布图 / 活跃会话列表）
+- **节点信息密度** — 大小随 turn 数微调，turn > 0 显示微标签，tooltip 含 token + cost
+- **Agent 详情卡** — 引擎 + Token + Cost + 模型名指标条，底部快捷操作（继续 / 总结 / 导出）
+- **Mini-map 缩略图导航** + 多选批量操作 + 节点拖拽
+
+### 🎙️ 实时语音对话（v2.4.0 引入，持续修复）
+
+火山引擎豆包实时语音大模型 WebSocket 集成：
+
+- **全链路语音** — 说话 → ASR → 豆包 LLM → 自然 TTS
+- **并行 Agent 执行** — ASR 文本同时转发本地 Agent，结果通过 WS event 502 注入豆包 TTS 朗读
+- **频道绑定** — 语音会话绑定到发起时的活跃频道
+- **并发保护** — `agentBusy` 锁防 ASR 交错触发
+
+### 🎨 UI/UX 全面改版（v2.6.0 – v2.8.0）
+
+**布局与排版：**
+- Composer 高度上调（textarea 44px / 最大 240px / bar 32px）
+- 聊天区 padding 统一 20px，气泡拓宽
+- AI meta + actions 合并单行，工具步骤默认折叠可展开
+- 空状态引导增强，分割线减密，scrollbar 对比度提升
+
+**新功能：**
+- **全局字号设置** — 100 / 112 / 125 / 150%，四语言同步
+- **侧栏 6 项修复** — flat 引擎色 / conv-actions 渐变淡入 / 搜索框 / 按钮分组 / sb-foot 动态 / 折叠动画
+- **8 项 UX 增强** — markdown 补全 / 用户气泡渲染 / Escape 清空 / 光标提速 / meta 常显 / 未读 badge
+- **主题快捷切换** — 侧栏底部弹出菜单
+
+**Craft 主题修复：**
+- Composer 底色煤碳块凹槽 `#1e1e1e` + 3D 边框 + 白字
+- Textarea padding `8px 14px`，文字不再贴左
+- 深色继承链彻底覆盖
+
+### 🔒 安全加固
+
+- **webview-inspect 白名单化** — 从接受任意 JS 脚本改为 action 白名单，采集逻辑迁移到主进程
+- **MCP CORS 收紧** — 从 `*` 改为白名单
+
+### 🐛 重要修复
+
+| 问题 | 根因 |
+|---|---|
+| GLM API 500 | 孤儿 surrogate 字符导致 Python 服务端编码失败 |
+| DirectV2 crash recovery 误触发 | `finalizeContext` 异常导致 final checkpoint 未存 |
+| agentBusy 死锁 | ASR 回调 async fire-and-forget 异常导致锁永不释放 |
+| 语音消息发到错误频道 | `onUserMessage` 硬编码 `convs[0]` |
+| Switch 开关点击无效 | `.track` 盖在 `input` 上方拦截点击 |
+| 查余额无反应 | `get-balance` 只读全局 `apiKey`，未走 `snapshot()` |
+| 字号缩放不生效 | `body font` 简写硬编码 13px 覆盖 `<html>` 继承 |
+| 切到设置页 chat-view 不隐藏 | ID 优先级覆盖 `.view{display:none}` |
+| 飞书消息会话不隔离 | 未按 userid 复用频道 |
+| 截图 base64 撑爆 SQLite | `dropTransient` 清理持久化历史中的图片 |
+
+### 📦 工程与 CI
+
+- **Anthropic provider** — tool_result 多模态 `ContentPart[]` 正确转换（截图支持 Anthropic vision）
+- **GitHub Pages** — 改为 Actions 部署，仅 `docs/` 变更才触发
+- **SEO** — meta tags / OG cards / JSON-LD
+- **macOS DMG** — 同时打 x64 + arm64
+
+---
+
 ## v2.4.0 — 实时语音对话 & 安全加固
 
 **发布日期：** 2026-08-06
