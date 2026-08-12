@@ -51,6 +51,8 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。
 
+> ⚠️ **v2.9.0 userData 目录迁移** — 从 v2.9.0 起,Windows 的 userData 目录从 `%APPDATA%/kinetaios-win` 改为 `%APPDATA%/KinetAios`。新安装会自动使用新路径。**如果退回 2.9.0 之前的旧版本**,旧版会找不到数据(会话、设置全部消失)。解决办法:将 `%APPDATA%/KinetAios` 重命名为 `%APPData%/kinetaios-win` 即可恢复。
+
 **首次启动**:点右上角 ⚙ → 填 **API Key**(+ Base URL / 模型,默认 GLM 智谱)→ 「测试连接」通了再发任务。
 
 ### 从源码跑

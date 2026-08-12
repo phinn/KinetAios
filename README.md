@@ -59,6 +59,10 @@ Download the latest release:
 
 > Unsigned build → Windows SmartScreen / macOS Gatekeeper will warn; allow manually.
 
+> ⚠️ **v2.9.0 userData directory migration** — Starting from v2.9.0, the Windows `userData` directory changed from `%APPDATA%/kinetaios-win` to `%APPDATA%/KinetAios`. New installs automatically use the new path. **If you downgrade to a pre-2.9.0 build**, it will look for the old directory and appear empty (no conversations, no settings). To fix: rename `%APPDATA%/KinetAios` back to `%APPDATA%/kinetaios-win`.
+>
+> **v2.9.0+ 不建议退回旧版本。** 如需回退，手动将 `%APPDATA%/KinetAios` 重命名为 `%APPDATA%/kinetaios-win` 即可恢复旧版数据。
+
 **First launch**: click ⚙ top-right → fill in **API Key** (+ Base URL / model; default GLM Zhipu) → once "Test connection" passes, send a task.
 
 ### Run from source
