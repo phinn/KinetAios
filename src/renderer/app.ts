@@ -2320,6 +2320,27 @@ async function showSettings() {
         </select></div>
       </div>
       <div class="s-section">
+        <h3>${tr('settings.appIcon')}</h3>
+        <div class="field-desc">${tr('settings.appIcon.desc')}</div>
+        <div class="icon-picker" id="s-icon-picker">
+          ${[
+            { key: 'k', label: '渐变 K', file: 'icon-e1-K-256.png' },
+            { key: 'bg', label: '纯渐变', file: 'icon-e1-bg-256.png' },
+            { key: 'default', label: '原版', file: 'icon.png' },
+            { key: 'bluepurple', label: '蓝紫方块', file: 'icon-default-bluepurple-256.png' },
+            { key: 'd1', label: 'D1', file: 'icon-d1-256.png' },
+            { key: 'd2', label: 'D2', file: 'icon-d2-256.png' },
+            { key: 'd3', label: 'D3', file: 'icon-d3-256.png' },
+            { key: 'd4', label: 'D4', file: 'icon-d4-256.png' },
+          ].map(opt => `
+            <label class="icon-opt${(s.appIcon || 'k') === opt.key ? ' selected' : ''}" data-icon-key="${opt.key}">
+              <input type="radio" name="app-icon" value="${opt.key}" ${(s.appIcon || 'k') === opt.key ? 'checked' : ''} style="display:none">
+              <img src="../../build/${opt.file}" alt="${opt.label}" class="icon-thumb">
+              <span>${opt.label}</span>
+            </label>`).join('')}
+        </div>
+      </div>
+      <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
         <div class="field"><label>${tr('settings.closeBehavior')}</label><select id="s-close-behavior">
           <option value="quit" ${s.closeBehavior === 'quit' ? 'selected' : ''}>${tr('settings.closeBehavior.quit')}</option>
@@ -2537,6 +2558,21 @@ async function showSettings() {
   // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
   document.getElementById('s-theme')!.onchange = () => applyTheme(readSettingsForm().theme);
       document.getElementById('s-font-scale')!.onchange = () => applyFontScale(readSettingsForm().fontScale);
+  // icon 选择器:点击即时切换(热生效,不等保存)
+  const iconPicker = document.getElementById('s-icon-picker');
+  if (iconPicker) {
+    iconPicker.querySelectorAll('.icon-opt').forEach((label) => {
+      (label as HTMLElement).onclick = () => {
+        const key = (label as HTMLElement).dataset.iconKey!;
+        iconPicker.querySelectorAll('.icon-opt').forEach(l => l.classList.remove('selected'));
+        label.classList.add('selected');
+        iconPicker.querySelectorAll('input[name="app-icon"]').forEach((inp) => {
+          (inp as HTMLInputElement).checked = (inp as HTMLInputElement).value === key;
+        });
+        api.setAppIcon(key);  // 热切换,立即生效
+      };
+    });
+  }
   // 版本号填充 / Fill version label.
   api.getBrand().then((b) => { const el = document.getElementById('s-version'); if (el) el.textContent = `v${b.version}`; });
   const apply = () => {
@@ -3192,6 +3228,7 @@ function readSettingsForm(): AppSettings {
     theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft',
     townStyle: ((document.getElementById('s-town-style') as HTMLSelectElement)?.value as 'classic' | 'minecraft') || 'classic',
     fontScale: Number((document.getElementById('s-font-scale') as HTMLSelectElement)?.value) || 100,
+    appIcon: (document.querySelector('input[name="app-icon"]:checked') as HTMLInputElement)?.value || 'k',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
     v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,

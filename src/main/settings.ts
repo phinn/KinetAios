@@ -24,6 +24,7 @@ const DEFAULTS: AppSettings = {
   theme: 'dark',
   townStyle: 'classic', // 小镇视图风格:classic 经典等距小屋 / minecraft 我的世界方块风
   fontScale: 100, // 全局字号缩放 100/112/125/150(%),默认 100。设置在"外观"页。
+  appIcon: 'k',   // 应用图标: 'default'(原版) | 'bluepurple'(纯渐变) | 'k'(渐变+K) | 'd1'(D1蓝紫渐变)
   // 模型配置档:用户在设置页保存的多套完整 LLM 配置。空数组 = 只有全局默认。
   modelProfiles: [],
   activeProfileId: null,

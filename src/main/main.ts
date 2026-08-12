@@ -235,15 +235,31 @@ function createDashboard(): BrowserWindow {
   return win;
 }
 
-// 应用图标:build/icon.png(512×512 master)。dev 跑 npm start 时给 BrowserWindow 用,
-// 打包后由 .exe/.app 内嵌的 icon 接管。missing 时不报错(返回 undefined)。
+// 应用图标:根据 settings.appIcon 选择对应图标文件。
+// dev 跑 npm start 时给 BrowserWindow 用;打包后由 .exe/.app 内嵌的 icon 接管。missing 时不报错。
 let _appIcon: ReturnType<typeof nativeImage.createFromPath> | undefined;
+let _appIconKey: string | null = null; // 缓存当前 icon key,避免重复 load
 function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
-  if (_appIcon) return _appIcon;
-  // dev 跑 dist/main/main.js,从仓库根 build/icon.png 加载;打包后路径不可达 → 静默放弃。
+  const s = getSettings();
+  const key = s.appIcon || 'k';
+  if (_appIcon && _appIconKey === key) return _appIcon;
+  _appIconKey = key;
+  _appIcon = undefined;
+  // icon key → file name 映射
+  const iconFiles: Record<string, string> = {
+    'default': 'icon.png',
+    'bluepurple': 'icon-default-bluepurple.png',
+    'k': 'icon-e1-K.png',
+    'bg': 'icon-e1-bg.png',
+    'd1': 'icon-d1.png',
+    'd2': 'icon-d2.png',
+    'd3': 'icon-d3.png',
+    'd4': 'icon-d4.png',
+  };
+  const fileName = iconFiles[key] || iconFiles['k'];
   for (const candidate of [
+    path.join(__dirname, '..', '..', 'build', fileName),
     path.join(__dirname, '..', '..', 'build', 'icon.png'),
-    path.join(__dirname, '..', '..', 'build', 'icon.ico'),
   ]) {
     try {
       if (fs.existsSync(candidate)) {
@@ -840,6 +856,24 @@ function registerIpc(): void {
       getFeishuBridge().start().catch((e) => console.warn('[feishu] 重连失败:', e.message));
     } else if (!newFeishu?.enabled && oldFeishu?.enabled) {
       getFeishuBridge().stop();
+    }
+    return true;
+  });
+  // 热切换应用图标:清除缓存 → 重新加载 → 更新所有窗口 + macOS Dock
+  ipcMain.handle('set-app-icon', (_e, iconKey: string) => {
+    const s = getSettings();
+    if (s.appIcon === iconKey) return true;
+    saveSettings({ ...s, appIcon: iconKey });
+    _appIcon = undefined;          // 清缓存,让 appIcon() 重新加载
+    _appIconKey = null;
+    const img = appIcon();
+    if (img) {
+      for (const win of BrowserWindow.getAllWindows()) {
+        try { win.setIcon(img); } catch { /* 某些平台不支持 */ }
+      }
+      if (process.platform === 'darwin') {
+        try { app.dock?.setIcon(img); } catch { /* 非 mac */ }
+      }
     }
     return true;
   });

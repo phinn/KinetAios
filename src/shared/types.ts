@@ -210,6 +210,7 @@ export type AppSettings = {
   theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'; // 暗 / 淡色 / 极光 / 高雅淡色 / Tahoe 液态玻璃 / Sierra 暖色液态玻璃 / 我的世界像素风 / 高达SEED军事风
   townStyle: 'classic' | 'minecraft'; // 小镇视图风格:经典等距小房子 / 我的世界方块风
   fontScale: number; // 全局字号缩放(%):100 = 默认 13px,112/125/150 放大字号
+  appIcon: string;   // 应用图标选择: 'default' | 'bluepurple' | 'k' | 'd1' ...对应 build/icon-*.png
   // ── 模型配置档:保存多套完整 LLM 配置(含 apiKey/baseURL/model/protocol 等),聊天界面可快速切换 ──
   // 当前生效的配置 = 活跃 profile(若有),否则回退到全局 apiKey/baseURL/model 等(向后兼容)。
   modelProfiles: ModelProfile[];
@@ -620,6 +621,8 @@ export interface KinetAPI {
   setContextMode(id: string, mode: ContextMode): Promise<boolean>;
   getSettings(): Promise<AppSettings>;
   saveSettings(s: AppSettings): Promise<boolean>;
+  /** 热切换应用图标(立即生效,无需重启) */
+  setAppIcon(iconKey: string): Promise<boolean>;
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
   /** 列出本地(Ollama 等)已安装的模型 */
   listLocalModels(baseURL?: string): Promise<{ ok: boolean; models: string[]; message: string }>;

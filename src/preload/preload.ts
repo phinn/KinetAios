@@ -21,6 +21,7 @@ const api: KinetAPI = {
   setPersonaEnabled: (id, enabled) => ipcRenderer.invoke('set-persona-enabled', id, enabled),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
+  setAppIcon: (iconKey) => ipcRenderer.invoke('set-app-icon', iconKey),
   testConnection: (s?) => ipcRenderer.invoke('test-connection', s),
   listLocalModels: (baseURL?) => ipcRenderer.invoke('list-local-models', baseURL),
   getBalance: () => ipcRenderer.invoke('get-balance'),

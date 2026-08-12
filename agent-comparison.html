@@ -1,261 +1,592 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>三方 Agent 对比 · KinetAios / Claude Code / Codex</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Agent 五产品深度对比 — KinetAios · Claude Code · Codex · OpenCode · WorkBuddy</title>
 <style>
-  :root {
-    --bg: #f6f7f9;
-    --card: #ffffff;
-    --ink: #1f2328;
-    --muted: #6b7280;
-    --line: #e5e7eb;
-    --dim-bg: #f1f5f9;
-    --cc: #d97757;   /* Anthropic 橙 */
-    --direct: #2563eb; /* 蓝 */
-    --codex: #10a37f;  /* OpenAI 绿 */
-    --star: #fef3c7;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--ink);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC",
-      "Microsoft YaHei", Roboto, Helvetica, Arial, sans-serif;
-    line-height: 1.55;
-    -webkit-font-smoothing: antialiased;
-  }
-  .wrap { max-width: 1280px; margin: 0 auto; padding: 40px 24px 80px; }
-  header h1 { font-size: 28px; margin: 0 0 6px; letter-spacing: -0.01em; }
-  header p.sub { color: var(--muted); margin: 0 0 28px; font-size: 14px; }
-
-  .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-bottom: 28px; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; border-top: 3px solid var(--cc); }
-  .card.direct { border-top-color: var(--direct); }
-  .card.codex { border-top-color: var(--codex); }
-  .card h3 { margin: 0 0 4px; font-size: 15px; display: flex; align-items: center; gap: 8px; }
-  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--cc); display: inline-block; }
-  .card.direct .dot { background: var(--direct); }
-  .card.codex .dot { background: var(--codex); }
-  .card .path { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: var(--muted); word-break: break-all; margin: 2px 0 8px; }
-  .card .blurb { font-size: 13px; color: var(--ink); margin: 0; }
-
-  .table-shell { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--card); }
-  table { border-collapse: collapse; width: 100%; min-width: 980px; font-size: 13px; }
-  thead th {
-    position: sticky; top: 0; z-index: 3; background: var(--card);
-    text-align: left; padding: 12px 14px; border-bottom: 2px solid var(--line);
-    font-size: 13px; white-space: nowrap;
-  }
-  thead th.h-cc { color: var(--cc); }
-  thead th.h-direct { color: var(--direct); }
-  thead th.h-codex { color: var(--codex); }
-  tbody td { padding: 11px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  tbody tr:last-child td { border-bottom: none; }
-  tbody tr:hover td { background: #fafbfc; }
-  td.dim {
-    position: sticky; left: 0; z-index: 2; background: var(--dim-bg);
-    font-weight: 600; white-space: nowrap; border-right: 1px solid var(--line);
-  }
-  tbody tr:hover td.dim { background: #eef2f7; }
-  tr.star td { background: var(--star); }
-  tr.star:hover td { background: #fde68a; }
-  tr.star td.dim { background: #fde68a; }
-  .star-tag { color: #b45309; font-weight: 700; margin-left: 4px; }
-  code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-    font-size: 12px; background: #eef1f4; padding: 1px 5px; border-radius: 4px;
-    color: #24292f; word-break: break-word;
-  }
-  .yes { color: #047857; font-weight: 600; }
-  .no { color: #b91c1c; font-weight: 600; }
-
-  section.features { margin-top: 36px; display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .feat { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 18px; }
-  .feat h4 { margin: 0 0 8px; font-size: 14px; }
-  .feat.f-cc h4 { color: var(--cc); } .feat.f-direct h4 { color: var(--direct); } .feat.f-codex h4 { color: var(--codex); }
-  .feat p { margin: 0; font-size: 13px; color: var(--ink); }
-  footer { margin-top: 32px; padding: 18px 20px; background: var(--card); border: 1px solid var(--line); border-radius: 12px; font-size: 14px; }
-  footer strong { color: var(--ink); }
-  @media (max-width: 820px) {
-    .cards, section.features { grid-template-columns: 1fr; }
-  }
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0d0e12;--bg2:#15161c;--bg3:#1e1f27;--bd:#2a2b35;--tx:#e0e1e8;--tx2:#8b8d9a;--ac:#5b8def;--ac2:#c084fc;--gr:#34d399;--rd:#f87171;--yl:#fbbf24;--or:#fb923c}
+body{background:var(--bg);color:var(--tx);font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;font-size:14px;line-height:1.7;overflow-x:hidden}
+a{color:var(--ac);text-decoration:none}
+a:hover{text-decoration:underline}
+code{background:var(--bg3);padding:2px 6px;border-radius:4px;font-family:'SF Mono','Fira Code',monospace;font-size:12px;color:var(--ac2)}
+.wrap{max-width:1300px;margin:0 auto;padding:40px 24px 80px}
+.hero{text-align:center;padding:60px 20px 40px;background:linear-gradient(180deg,rgba(91,141,239,.08),transparent)}
+.hero h1{font-size:38px;font-weight:800;background:linear-gradient(135deg,#5b8def,#c084fc,#34d399);-webkit-background-clip:text;-webkit-text-fill-color:transparent;letter-spacing:-1px}
+.hero .sub{color:var(--tx2);font-size:15px;margin-top:12px}
+.hero .meta{margin-top:16px;font-size:12px;color:var(--tx2)}
+.badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:11px;font-weight:600;margin:0 3px}
+.b-blue{background:rgba(91,141,239,.15);color:#7aa6f7}
+.b-purple{background:rgba(192,132,252,.15);color:#c89ff5}
+.b-green{background:rgba(52,211,153,.15);color:#5fe0b0}
+.b-red{background:rgba(248,113,113,.15);color:#f99494}
+.b-orange{background:rgba(251,146,60,.15);color:#fcb684}
+.section{margin-top:56px}
+.section h2{font-size:24px;font-weight:700;margin-bottom:20px;padding-bottom:12px;border-bottom:1px solid var(--bd);display:flex;align-items:center;gap:8px}
+.section h2 .num{background:var(--bg3);color:var(--ac);width:32px;height:32px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center;font-size:14px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin:16px 0}
+th,td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--bd);vertical-align:top}
+th{background:var(--bg2);font-weight:600;color:var(--tx);font-size:12px;text-transform:uppercase;letter-spacing:.5px;position:sticky;top:0}
+tr:hover td{background:rgba(255,255,255,.02)}
+.score{font-size:20px;font-weight:800}
+.s-high{color:var(--gr)}.s-mid{color:var(--yl)}.s-low{color:var(--rd)}
+.card{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:24px;margin-bottom:20px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;left:0;top:0;width:4px;height:100%}
+.card.kinet::before{background:linear-gradient(180deg,#5b8def,#c084fc)}
+.card.claude::before{background:linear-gradient(180deg,#d97757,#e9a87b)}
+.card.codex::before{background:linear-gradient(180deg,#10a37f,#1ee9b8)}
+.card.opencode::before{background:linear-gradient(180deg,#c084fc,#f472b6)}
+.card.workbuddy::before{background:linear-gradient(180deg,#34d399,#5fc8f5)}
+.card h3{font-size:18px;margin-bottom:4px;display:flex;align-items:center;gap:10px}
+.card .tag{font-size:11px;color:var(--tx2)}
+.card h4{font-size:14px;font-weight:600;margin:16px 0 8px;color:var(--ac)}
+.card ul{margin-left:18px}
+.card li{margin-bottom:4px}
+.pros{color:var(--gr)}.cons{color:var(--rd)}
+.pros::before{content:'✅ '}.cons::before{content:'❌ '}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.grid5{display:grid;grid-template-columns:repeat(5,1fr);gap:12px}
+@media(max-width:900px){.grid5{grid-template-columns:1fr}.grid2{grid-template-columns:1fr}}
+.radar-wrap{display:flex;justify-content:center;margin:24px 0}
+.bar-chart{margin:20px 0}
+.bar-row{display:flex;align-items:center;gap:12px;margin-bottom:8px}
+.bar-label{width:140px;font-size:12px;text-align:right;flex-shrink:0}
+.bar-track{flex:1;height:24px;background:var(--bg3);border-radius:6px;overflow:hidden;position:relative}
+.bar-fill{height:100%;border-radius:6px;display:flex;align-items:center;justify-content:flex-end;padding-right:8px;font-size:11px;font-weight:700;color:#fff;transition:width .8s ease}
+.bar-val{width:50px;font-size:12px;font-weight:600;flex-shrink:0}
+.verdict{background:linear-gradient(135deg,rgba(91,141,239,.08),rgba(192,132,252,.08));border:1px solid rgba(91,141,239,.2);border-radius:16px;padding:32px;margin-top:40px}
+.verdict h2{border:none;padding:0;margin-bottom:16px}
+.verdict p{margin-bottom:10px;line-height:1.8}
+.kv{display:flex;gap:8px;margin:2px 0}
+.kv .k{color:var(--tx2);width:120px;flex-shrink:0;font-size:12px}
+.kv .v{font-size:13px}
+.toc{background:var(--bg2);border:1px solid var(--bd);border-radius:12px;padding:20px;margin:24px 0}
+.toc a{display:block;padding:4px 0;font-size:13px}
+.toc a::before{content:'› ';color:var(--ac)}
+.diff{background:#1a1a20;border-radius:8px;padding:12px;margin:8px 0;font-family:monospace;font-size:12px;white-space:pre-wrap;color:var(--tx2)}
+.note{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.2);border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px}
+.note::before{content:'⚠️ '}
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header>
-    <h1>KinetAios · Claude Code · Codex 三方对比</h1>
-    <p class="sub">KinetAios(自研引擎 Kaios) · Claude Code(Anthropic) · Codex(OpenAI)—— 同一 ReAct 骨架,差异在执行安全 / 上下文管理 / 子任务三条副线</p>
-  </header>
+<div class="hero">
+<h1>AI Agent 五产品深度对比</h1>
+<div class="sub">KinetAios · Claude Code · Codex CLI · OpenCode · WorkBuddy</div>
+<div class="meta">基于源码阅读 + 官方文档 · 2025-08</div>
+<div style="margin-top:16px">
+<span class="badge b-blue">KinetAios v2.7 · 33K LOC</span>
+<span class="badge b-orange">Claude Code · 闭源</span>
+<span class="badge b-green">Codex · Rust+TS · 105K⭐</span>
+<span class="badge b-purple">OpenCode · Effect · 666K LOC</span>
+<span class="badge b-green">WorkBuddy · 腾讯</span>
+</div>
+</div>
 
-  <div class="cards">
-    <div class="card">
-      <h3><span class="dot"></span>Claude Code</h3>
-      <div class="path">agent-code-rev-main</div>
-      <p class="blurb">TypeScript,Claude Code 源码级重构。最完备的 agent 抽象,subagent 全家桶,prompt-cache 友好的分段 system prompt。</p>
-    </div>
-    <div class="card direct">
-      <h3><span class="dot"></span>KinetAios</h3>
-      <div class="path">KinetAiosWin/src/main</div>
-      <p class="blurb">TypeScript / Electron。概念同构的最小实现,独有 GLM 直连 + OpenAI↔Anthropic 双向;补齐压缩 / 并行+subagent / 重试,持续迭代 git_diff 工具、长 tool 结果自动截断、🧠 Memory 面板。</p>
-    </div>
-    <div class="card codex">
-      <h3><span class="dot"></span>Codex · OpenAI</h3>
-      <div class="path">codex-main (codex-rs, Rust)</div>
-      <p class="blurb">Rust 工作区(~90 crate)。唯一带 OS 级沙盒执行 + Guardian 自动审查 + Responses API WebSocket 传输。</p>
-    </div>
-  </div>
+<!-- ════════ Section 9: 定位差异 ════════ -->
+<div class="section" id="s9">
+<h2><span class="num">9</span> 定位差异：谁解决什么问题</h2>
 
-  <div class="table-shell">
-  <table>
-    <thead>
-      <tr>
-        <th class="dim">维度</th>
-        <th class="h-cc">Claude Code</th>
-        <th class="h-direct">KinetAios</th>
-        <th class="h-codex">Codex · OpenAI</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td class="dim">语言 / 形态</td>
-        <td>TS,REPL / SDK 库</td>
-        <td>TS,Electron 后端</td>
-        <td>Rust 工作区 + TS npm 壳</td>
-      </tr>
-      <tr>
-        <td class="dim">主循环</td>
-        <td>两层:<code>QueryEngine.submitMessage</code> → <code>queryLoop</code>(<code>query.ts:241</code>)</td>
-        <td>一层:<code>runAgentLoop</code>(<code>AgentLoop.ts:21</code>)</td>
-        <td>三层:<code>Op</code> 通道 → <code>submission_loop</code> → <code>run_turn</code> ReAct(<code>turn.rs:225</code>)</td>
-      </tr>
-      <tr>
-        <td class="dim">停止判定</td>
-        <td>无 tool_use → <code>stopHooks</code> + 多种恢复,<code>reason</code> 状态机</td>
-        <td>无 tool_calls → <code>done</code>;<code>Infinity</code> 轮靠停止;reactive 超长自缩重试本轮</td>
-        <td>无 tool_use → <code>run_turn_stop_hooks</code>(可重入),否则 break;token 超限 → autocompact 后 continue</td>
-      </tr>
-      <tr>
-        <td class="dim">流式边执行工具</td>
-        <td class="yes">有 · <code>StreamingToolExecutor</code> 模型边吐边跑</td>
-        <td class="no">无 · 先收完 tool_calls 再执行</td>
-        <td class="yes">有 · <code>FuturesOrdered</code> 工具产出即 spawn,流不停</td>
-      </tr>
-      <tr>
-        <td class="dim">工具并行</td>
-        <td>有 · <code>runTools</code> 按 <code>isConcurrencySafe</code> 分批(只读并发 10)</td>
-        <td>有 · <code>runToolBatch</code>(连续只读 <code>Promise.all</code> / 写串行)</td>
-        <td>有 · <code>RwLock</code> 门控(<code>parallel.rs</code>):并行读锁、独占写锁</td>
-      </tr>
-      <tr>
-        <td class="dim">工具清单(特色)</td>
-        <td>Bash / FileEdit / Glob / Grep / <strong>Agent</strong> / Task …(数十个,feature flag 展开)</td>
-        <td>shell / read_file / write_file / edit_file / grep / glob / web_fetch / recall_memory / <strong>git_diff</strong>(只读免确认) / <strong>dispatch_agent</strong> —— 共 10 个</td>
-        <td>shell、<strong>unified_exec</strong>(后台进程)、<strong>apply_patch</strong>、plan、tool_search、<strong>spawn_agent</strong> 系列、MCP</td>
-      </tr>
-      <tr>
-        <td class="dim">工具结果回传</td>
-        <td><code>mapToolResultToToolResultBlockParam</code> → tool_result block</td>
-        <td><code>{role:'tool', tool_call_id, content}</code>,原序回填;长结果(&gt;8192 字符)头尾 3K + 中间省略</td>
-        <td><code>ResponseItem::FunctionCallOutput</code> 追加进 ContextManager</td>
-      </tr>
-      <tr>
-        <td class="dim">事件流</td>
-        <td><code>Message</code> union + SDKMessage(多态丰富)</td>
-        <td>统一 <code>AgentEvent</code> 7 类,<code>applyEvent</code> 单点 fold</td>
-        <td><code>EventMsg</code> 枚举(~380 行)经 <code>Session::send_event</code></td>
-      </tr>
-      <tr>
-        <td class="dim">上下文压缩</td>
-        <td>五级:toolResultBudget→snip→microcompact→contextCollapse→autocompact + reactive</td>
-        <td>三级:<code>sanitizeToolPairs</code> 修配对 + <code>compactHistory</code> LLM摘要 + reactive 超长砍预算15K重试</td>
-        <td>autocompact(内联摘要或<strong>远程 <code>/responses/compact</code></strong>)+ pre-sampling + rollout 截断 + WorldState 增量 diff</td>
-      </tr>
-      <tr>
-        <td class="dim">token 预算</td>
-        <td><code>taskBudget</code> 跨 compact 边界 + max_output_tokens 三段恢复</td>
-        <td>30000(<code>length*0.6</code> 初始估算 + 每轮 API 真实 prompt_tokens 滑动平均自校准);reactive 砍半 15000</td>
-        <td><code>context_window.rs</code> / <code>token_budget.rs</code> 追踪 limit,溢出触发 autocompact</td>
-      </tr>
-      <tr>
-        <td class="dim">Subagent / 多 agent</td>
-        <td><code>AgentTool</code>→<code>runAgent</code> 递归调 <code>query()</code>,支持 background / team / swarm</td>
-        <td><code>dispatch_agent</code> 复用 <code>runAgentLoop</code>(只读子集,maxTurns 8),同步最小版</td>
-        <td><code>spawn_agent</code> 系列(<code>AgentControl</code>),子线程<strong>继承 provider/批准/沙盒</strong>,有深度限制</td>
-      </tr>
-      <tr>
-        <td class="dim">Provider / 传输</td>
-        <td>Anthropic(含 Bedrock / Vertex)</td>
-        <td>GLM / OpenAI / Anthropic <strong>双向</strong></td>
-        <td>Responses API,<strong>HTTP/SSE 或 WebSocket</strong>(粘性路由);可选 Bedrock / Ollama / LMStudio</td>
-      </tr>
-      <tr>
-        <td class="dim">Retry / 恢复</td>
-        <td><code>withRetry</code>(429/500/529)+ fallback model + 非流式兜底 + VCR</td>
-        <td><code>fetchUntil200</code>(429/5xx/网络错退避 3 次,只覆盖建连→200)</td>
-        <td><code>responses_retry</code> 指数退避 → <strong>传输回退(WS→HTTPS)</strong>;无通用 model fallback</td>
-      </tr>
-      <tr class="star">
-        <td class="dim">★ 沙盒执行<span class="star-tag">差异核心</span></td>
-        <td class="no">无 · 靠 permission 确认拦截</td>
-        <td class="no">无 · shell 确认桥 <code>confirm()</code></td>
-        <td class="yes">OS 级 · macOS Seatbelt / Linux bubblewrap+landlock / Windows 受限令牌;<code>ToolOrchestrator</code> 批准→沙盒→拒绝则升级</td>
-      </tr>
-      <tr>
-        <td class="dim">System prompt</td>
-        <td>静态可缓存段 + 动态段,<code>DYNAMIC_BOUNDARY</code> cache</td>
-        <td>单字符串拼接:base(中文)+ skill + AGENTS.md + memory;子 agent <code>SUBAGENT_PROMPT</code></td>
-        <td>三层:模型专属 <code>.md</code> + 权限/沙盒模板 + AGENTS.md;行为在工具层非 prompt 层</td>
-      </tr>
-      <tr>
-        <td class="dim">Permission / 批准</td>
-        <td>5 种 mode + auto classifier 旁路</td>
-        <td>二值 <code>approval</code> + shell 确认模态</td>
-        <td><code>AskForApproval</code> + PermissionProfile + <strong>Guardian 自动审查</strong></td>
-      </tr>
-      <tr>
-        <td class="dim">MCP</td>
-        <td><code>MCPConnectionManager</code> 全 transport</td>
-        <td><code>McpRegistry</code> 只 stdio,3 处 config</td>
-        <td><code>McpManager</code> + rmcp-client / codex-mcp crate</td>
-      </tr>
-      <tr>
-        <td class="dim">Memory 长期记忆</td>
-        <td>CLAUDE.md + typed memory(<code>memdir</code>,分文件 append-only)</td>
-        <td>SQLite <code>memories</code>(加 <code>conversation_id</code> 列)done 后 LLM 抽"用户事实",注入 strip shell 元字符;<strong>🧠 面板 UI</strong>(按频道过滤 / 行内编辑 / 删除 / JSON 导入导出)</td>
-        <td><code>memories/read</code> + <code>write</code>,经 <code>/memories/trace_summarize</code> 远程生成</td>
-      </tr>
-      <tr>
-        <td class="dim">持久化 / resume</td>
-        <td>transcript JSONL,subagent 走 sidechain</td>
-        <td>SQLite(conversations / turns / history FTS5 / memories)</td>
-        <td><code>codex-rollout</code>:磁盘 + SQLite,支持 <code>--resume</code> / fork / archive</td>
-      </tr>
-    </tbody>
-  </table>
-  </div>
+<div class="card kinet">
+<h3>🔵 KinetAios — 「Agent 仪表盘」</h3>
+<p><b>核心价值:</b> 一个桌面应用同时跑五个引擎, 统一 UI, 统一记忆, 统一工具链。</p>
+<p><b>不跟谁竞争:</b> 不跟 Claude Code 拼单引擎智能度; 不跟 Codex 拼沙箱安全; 不跟 WorkBuddy 拉普通用户。</p>
+<p><b>真正的对手:</b> 没有。多引擎热切 + Memory Blocks + NEXUS 可视化 + 飞书/企微集成的组合, 目前市场上没有同类产品。最接近的是 Cursor 的 Composer, 但那是 IDE 内的, 不是独立 Agent 仪表盘。</p>
+<p><b>适合:</b> 想同时用 Claude + GPT + 国产模型的开发者; 需要长期记忆跨会话的场景; 嵌入式/工业领域的开发者 (23 个专用插件); 需要通过飞书/企微远程控制 Agent 的场景。</p>
+</div>
 
-  <section class="features">
-    <div class="feat f-cc">
-      <h4>Claude Code 的差异化</h4>
-      <p>工程完备度最高 + prompt-cache 友好的分段 system prompt + subagent 全家桶。抽象最重(<code>Tool&lt;I,O,P&gt;</code> 泛型 + Zod + 巨型 <code>ToolUseContext</code>)。</p>
-    </div>
-    <div class="feat f-direct">
-      <h4>KinetAios 的差异化</h4>
-      <p>概念同构的最小实现,骨架与 Claude Code 一致但去尽复杂度;独有的 GLM 直连 + 协议双向。补齐三块后核心能力已追平,只是深度浅。持续迭代:git_diff 工具、长 tool 结果自动截断、Memory 面板(per-conv 标签 + 行内编辑 + JSON 导入导出)。</p>
-    </div>
-    <div class="feat f-codex">
-      <h4>Codex 的差异化</h4>
-      <p>唯一带 OS 级沙盒执行 + Guardian 自动审查 + WebSocket 传输 + 远程 compact。Rust 多 crate 架构最重,把"安全执行"做成一等公民。</p>
-    </div>
-  </section>
+<div class="card claude">
+<h3>🟠 Claude Code — 「最强单引擎 CLI」</h3>
+<p><b>核心价值:</b> Claude 模型直驱 + 极致工具质量 + MCP 生态 + 社区网络效应。</p>
+<p><b>适合:</b> Claude 重度用户; 习惯终端工作流的开发者; 需要稳定可靠的 coding agent 的团队。</p>
+<p><b>天花板:</b> 只能用 Claude 模型。无长期记忆。闭源不可定制。</p>
+</div>
 
-  <footer>
-    <strong>一句话定位:</strong>Claude Code = 最完备的 agent 抽象;KinetAios = 最精简的同构骨架(够用、可读、易改);Codex = 最硬核的安全执行工程。三者 ReAct 骨架完全一致,差异全在<strong>执行安全、上下文管理、子任务</strong>三条副线。
-  </footer>
+<div class="card codex">
+<h3>🟢 Codex CLI — 「最安全的 Agent」</h3>
+<p><b>核心价值:</b> Rust 原生性能 + OS 级沙箱 + OpenAI 模型 + 开源社区 (105K star)。</p>
+<p><b>适合:</b> 安全敏感的代码场景; OpenAI 重度用户; 需要审计 Agent 行为的合规场景。</p>
+<p><b>天花板:</b> 只能用 OpenAI 模型。无长期记忆。TUI 交互受限。</p>
+</div>
+
+<div class="card opencode">
+<h3>🟣 OpenCode — 「架构最先进」</h3>
+<p><b>核心价值:</b> Effect 函数式架构 + Event Sourcing + Context Source 注册表 + 自研 TUI。</p>
+<p><b>适合:</b> 架构研究者; 想学习"正确"做 Agent 的人; 需要 crash-proof 的场景。</p>
+<p><b>天花板:</b> Effect beta 依赖是定时炸弹; 666K 行代码贡献门槛极高; 实际用户少。</p>
+</div>
+
+<div class="card workbuddy">
+<h3>🟢 WorkBuddy — 「职场人 AI 工作台」</h3>
+<p><b>核心价值:</b> 非技术人员用自然语言完成办公任务 + 腾讯生态 + Skill 市场。</p>
+<p><b>适合:</b> HR / 运营 / 产品经理; 需要做 PPT/报告/数据分析的白领; 企微/QQ 用户。</p>
+<p><b>天花板:</b> 不做编程; 数据在云端; 闭源无定制能力。</p>
+</div>
+</div>
+
+<!-- ════════ Section 10: 战略建议 ════════ -->
+<div class="section" id="s10">
+<h2><span class="num">10</span> 对 KinetAios 的战略建议</h2>
+
+<div class="verdict">
+<h2>竞品启示与行动项</h2>
+
+<p><b>1. 保持多引擎差异化 (独占优势, 不需要学竞品)</b></p>
+<p style="color:var(--tx2);padding-left:16px">KinetAios 是唯一能在同一 UI 里热切 Direct/DirectV2/DirectV3/Claude Code/Codex 的产品。Claude Code 和 Codex 都是单引擎锁定。OpenCode 虽然 multi-provider 但 agent loop 只有一个。这是核心壁垒, 继续加固。</p>
+
+<p><b>2. 学 Codex: 补沙箱短板 (高优先级)</b></p>
+<p style="color:var(--tx2);padding-left:16px">当前 KinetAios 安全靠 confirm 弹窗, 是五个产品中最弱的。Codex 用 bwrap/seatbelt 做了 OS 级隔离。建议: Windows 上至少做 <code>AppContainer</code> 或 <code>Job Object</code> 级别的进程限制, 限制 Agent fork 出的子进程的文件系统/网络访问范围。不需要做到 Codex 那么重, 但要比 confirm 弹窗强。</p>
+
+<p><b>3. 学 Claude Code: 补工具质量 (中优先级)</b></p>
+<p style="color:var(--tx2);padding-left:16px">Claude Code 的 6 件套 (Bash/Edit/Write/Read/Glob/Grep) 每个都打磨得极好。KinetAios 的 grep 和 glob 是自己实现的, 功能可以但边界 case 处理不如 Claude Code 细。建议逐个工具做"边缘 case 清单"测试。</p>
+
+<p><b>4. 学 OpenCode: 部分借鉴 Context 设计 (低优先级, 选择性搬)</b></p>
+<p style="color:var(--tx2);padding-left:16px"><b>不要搬:</b> Context Source 注册表 (320 行类型体操, KinetAios 的 string[] 拼接够用); Durable Inbox (admit→promote 两阶段, 单进程不需要); Event Sourcing (一个 turn 存 JSON blob 的简单模型更好)。</p>
+<p style="color:var(--tx2);padding-left:16px"><b>可以借:</b> Context Epoch 的 baseline + snapshot 概念 — 把 Memory Blocks 的状态 hash 化, 只有变化时重新注入, 减少 token 消耗。steer/queue 的概念 — 未来支持"中途打断 LLM 重新指方向"时可以参考。</p>
+
+<p><b>5. 学 WorkBuddy: 补非技术用户路径 (探索性)</b></p>
+<p style="color:var(--tx2);padding-left:16px">WorkBuddy 的"自然语言 → 任务拆解 → 执行 → 交付 PPT/报告"的模式, 面向 10x 更大的用户群体。KinetAios 的 office-suite 插件已经有雏形。如果要做 To B / To 普通用户, 可以在 DirectV3 自适应流水线上叠一层"办公场景路由", 根据意图自动选插件。</p>
+
+<p><b>6. 不需要学的: Effect 全家桶 / Rust 重写</b></p>
+<p style="color:var(--tx2);padding-left:16px">OpenCode 的 Effect 4.0-beta 是维护噩梦。Codex 的 Rust 重写对 KinetAios 没有参考价值 (KinetAios 是 Electron 应用, 不是 CLI)。TypeScript + better-sqlite3 的技术栈是正确的选择 — 保持不变。</p>
+
+</div>
+
+<div style="margin-top:40px;text-align:center;color:var(--tx2);font-size:12px;padding:24px;border-top:1px solid var(--bd)">
+<p>AI Agent 五产品深度对比 · 基于源码阅读 + 官方文档 · 2025-08</p>
+<p>KinetAios v2.7 · 33K LOC TypeScript · Electron + better-sqlite3 + FTS5 · GPL v3</p>
+</div>
+
+</div>
 </div>
 </body>
 </html>
+<div class="wrap">
+
+<div class="toc">
+<a href="#s1">1. 概览速查表</a>
+<a href="#s2">2. 技术栈对比</a>
+<a href="#s3">3. Agent 架构深度拆解（逐产品）</a>
+<a href="#s4">4. 工具链对比</a>
+<a href="#s5">5. 记忆与会话管理</a>
+<a href="#s6">6. 安全模型</a>
+<a href="#s7">7. 可扩展性生态</a>
+<a href="#s8">8. 综合评分雷达</a>
+<a href="#s9">9. 定位差异：谁解决什么问题</a>
+<a href="#s10">10. 对 KinetAios 的战略建议</a>
+</div>
+
+<!-- ════════ Section 1: 概览速查表 ════════ -->
+<div class="section" id="s1">
+<h2><span class="num">1</span> 概览速查表</h2>
+<table>
+<thead><tr><th>维度</th><th>KinetAios</th><th>Claude Code</th><th>Codex CLI</th><th>OpenCode</th><th>WorkBuddy</th></tr></thead>
+<tbody>
+<tr><td><b>开发商</b></td><td>独立开发者</td><td>Anthropic</td><td>OpenAI</td><td>开源社区</td><td>腾讯</td></tr>
+<tr><td><b>开源</b></td><td>✅ GPL v3</td><td>❌ 闭源 npm 包</td><td>✅ Apache 2.0</td><td>✅ MIT</td><td>❌ 闭源</td></tr>
+<tr><td><b>平台</b></td><td>Win + macOS 桌面</td><td>CLI (跨平台)</td><td>CLI + Desktop App</td><td>CLI (TUI)</td><td>Win + macOS 桌面</td></tr>
+<tr><td><b>代码量</b></td><td>~33K TS</td><td>未知(打包)</td><td>codex-rs (Rust) + TS</td><td>~666K TS (32 子包)</td><td>未知</td></tr>
+<tr><td><b>目标用户</b></td><td>开发者/极客</td><td>开发者</td><td>开发者</td><td>开发者/架构师</td><td>普通职场人</td></tr>
+<tr><td><b>定价</b></td><td>BYOK (自带 API Key)</td><td>Pro/Max 订阅 或 API</td><td>ChatGPT Plus/Pro 或 API</td><td>免费 (BYOK)</td><td>Credits 套餐</td></tr>
+<tr><td><b>多模型</b></td><td>✅ 任意 OpenAI 兼容</td><td>仅 Claude</td><td>仅 OpenAI</td><td>✅ 多 Provider</td><td>✅ 多 Provider</td></tr>
+<tr><td><b>多引擎并行</b></td><td>✅ 五引擎热切</td><td>❌</td><td>❌</td><td>❌ 单引擎</td><td>✅ 多 Agent 并行</td></tr>
+<tr><td><b>本地优先</b></td><td>✅ 数据不出本机</td><td>⚠️ API 通信</td><td>⚠️ API 通信</td><td>✅ BYOK</td><td>❌ 云端托管</td></tr>
+<tr><td><b>长期记忆</b></td><td>FTS5 + 向量 + Memory Blocks</td><td>CLAUDE.md + 会话内</td><td>AGENTS.md + 会话内</td><td>会话内</td><td>专家知识库</td></tr>
+<tr><td><b>MCP 协议</b></td><td>✅ Client + Server</td><td>✅ Client</td><td>✅ Client</td><td>✅ Client + Server</td><td>❌</td></tr>
+<tr><td><b>插件系统</b></td><td>✅ 23 个内置</td><td>⚠️ 仅 MCP</td><td>⚠️ 仅 MCP</td><td>✅ 内置 + MCP</td><td>Skill 市场</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ════════ Section 2: 技术栈 ════════ -->
+<div class="section" id="s2">
+<h2><span class="num">2</span> 技术栈对比</h2>
+<div class="grid2">
+<div class="card kinet">
+<h3>KinetAios <span class="badge b-blue">v2.7</span></h3>
+<p class="tag">Electron + TypeScript + better-sqlite3</p>
+<div class="kv"><span class="k">运行时</span><span class="v">Electron (Node.js 主进程 + vanilla TS 渲染)</span></div>
+<div class="kv"><span class="k">构建</span><span class="v">tsc + esbuild (renderer bundle)</span></div>
+<div class="kv"><span class="k">存储</span><span class="v">better-sqlite3 (同步, WAL, FTS5)</span></div>
+<div class="kv"><span class="k">前端</span><span class="v">无框架, vanilla TS + HTML/CSS</span></div>
+<div class="kv"><span class="k">IPC</span><span class="v">contextBridge + ipcMain/ipcRenderer</span></div>
+<div class="kv"><span class="k">CL 依赖</span><span class="v">spawn claude/codex (.cmd 走 shell:true)</span></div>
+<div class="kv"><span class="k">代码量</span><span class="v">main 20K + shared 5K + renderer 14K = ~33K</span></div>
+</div>
+<div class="card claude">
+<h3>Claude Code <span class="badge b-orange">闭源</span></h3>
+<p class="tag">@anthropic-ai/claude-code (npm)</p>
+<div class="kv"><span class="k">运行时</span><span class="v">Node.js CLI (打包发行)</span></div>
+<div class="kv"><span class="k">输出</span><span class="v">stream-json (NDJSON 流式)</span></div>
+<div class="kv"><span class="k">协议</span><span class="v">Anthropic Messages API (SSE)</span></div>
+<div class="kv"><span class="k">会话</span><span class="v">--resume [session_id] 持久化</span></div>
+<div class="kv"><span class="k">MCP</span><span class="v">✅ Client (stdio + SSE)</span></div>
+<div class="kv"><span class="k">工具</span><span class="v">Bash, Edit, Write, Read, Glob, Grep, +MCP</span></div>
+<div class="kv"><span class="k">权限</span><span class="v">plan / acceptEdits / bypassPermissions</span></div>
+</div>
+<div class="card codex">
+<h3>Codex CLI <span class="badge b-green">105K⭐</span></h3>
+<p class="tag">codex-rs (Rust) + codex-cli (TS wrapper)</p>
+<div class="kv"><span class="k">运行时</span><span class="v">Rust 原生二进制 + Node.js CLI shim</span></div>
+<div class="kv"><span class="k">构建</span><span class="v">cargo + Bazel monorepo</span></div>
+<div class="kv"><span class="k">sandbox</span><span class="v">bwrap (Linux) / seatbelt (macOS) / 原生</span></div>
+<div class="kv"><span class="k">协议</span><span class="v">OpenAI Responses API</span></div>
+<div class="kv"><span class="k">输出</span><span class="v">codex exec --json (JSONL 流式)</span></div>
+<div class="kv"><span class="k">模块</span><span class="v">60+ Rust crate (core/tui/exec/mcp/hooks...)</span></div>
+<div class="kv"><span class="k">TUI</span><span class="v">自研 (ratatui 风格)</span></div>
+</div>
+<div class="card opencode">
+<h3>OpenCode <span class="badge b-purple">Effect</span></h3>
+<p class="tag">Bun + Effect + SolidJS + Drizzle ORM</p>
+<div class="kv"><span class="k">运行时</span><span class="v">Bun (TypeScript 原生)</span></div>
+<div class="kv"><span class="k">框架</span><span class="v">Effect (函数式效应系统, 4.0-beta)</span></div>
+<div class="kv"><span class="k">存储</span><span class="v">SQLite (Drizzle ORM) + Event Sourcing</span></div>
+<div class="kv"><span class="k">TUI</span><span class="v">自研 opentui (SolidJS 信号 → 终端渲染)</span></div>
+<div class="kv"><span class="k">monorepo</span><span class="v">32 个子包, 666K 行 TS</span></div>
+<div class="kv"><span class="k">SDK 生成</span><span class="v">HttpApi → IR → Effect/Promise 双 SDK</span></div>
+<div class="kv"><span class="k">Provider</span><span class="v">多 Provider (OpenAI/Anthropic/Google/自定义)</span></div>
+</div>
+<div class="card workbuddy">
+<h3>WorkBuddy <span class="badge b-green">腾讯</span></h3>
+<p class="tag">腾讯出品, 2026-03 上线</p>
+<div class="kv"><span class="k">运行时</span><span class="v">桌面客户端 (Win/macOS)</span></div>
+<div class="kv"><span class="k">定位</span><span class="v">全场景 AI 办公工作台</span></div>
+<div class="kv"><span class="k">目标用户</span><span class="v">普通职场人 (非开发者)</span></div>
+<div class="kv"><span class="k">模型</span><span class="v">多 Provider + 自定义 (TokenHub)</span></div>
+<div class="kv"><span class="k">任务托管</span><span class="v">云端 7×24 持续执行</span></div>
+<div class="kv"><span class="k">生态</span><span class="v">QQ/企微 + Skill 市场 + 专家系统</span></div>
+<div class="kv"><span class="k">多 Agent</span><span class="v">✅ 并行执行 + 结果汇总</span></div>
+</div>
+</div>
+
+<!-- ════════ Section 3: Agent 架构深度拆解 ════════ -->
+<div class="section" id="s3">
+<h2><span class="num">3</span> Agent 架构深度拆解（逐产品）</h2>
+
+<!-- KinetAios -->
+<div class="card kinet">
+<h3>🔵 KinetAios — 五引擎热切 + ReAct/Plan-Execute 双模 <span class="badge b-blue">v2.7</span></h3>
+<p class="tag">源码: src/main/AgentLoop.ts (670行) + DirectV2Engine.ts (1300行) + engines.ts (822行) + TaskManager.ts (1217行)</p>
+
+<h4>核心架构：三进程桥 + 五引擎</h4>
+<ul>
+<li><b>主进程 (main)</b>: Electron 主进程, 全 Node 权限。拥有 AgentLoop / DirectV2 / DirectV3 ReAct 引擎、SQLite、IPC handlers、CLI spawn、全局热键</li>
+<li><b>渲染进程 (renderer)</b>: vanilla TS dashboard + Quick Panel。无 Node 权限 (contextIsolation: true), 只能通过 preload 暴露的 KinetAPI 调主进程</li>
+<li><b>preload 桥</b>: 唯一的进程间通道。KinetAPI 接口 (shared/types.ts) 是三端同步的契约</li>
+</ul>
+<p><b>五种引擎:</b></p>
+<ul>
+<li><code>direct</code> — v1 ReAct 单轮快响应 (15K trim budget, 4K truncate)</li>
+<li><code>directV2</code> — Plan-Verify-Judge 四层多步累积 (80K trim, 12K truncate, appendStepSummary)</li>
+<li><code>directV3</code> — 自适应流水线 (Fast/Std/Deep 三档自动路由)</li>
+<li><code>claudeCode</code> — spawn <code>claude -p --output-format stream-json</code>, NDJSON 解析, --resume 续会话</li>
+<li><code>codex</code> — spawn <code>codex exec --json</code>, JSONL 解析</li>
+</ul>
+
+<h4>关键设计：ENGINE_POLICIES 策略包</h4>
+<p>不同引擎有完全不同的上下文需求,用一个 <code>EngineContextPolicy</code> 对象集中管理所有"上下文魔数":</p>
+<div class="diff">direct:     { trimBudget: 15K,  truncate: 4K,  appendStepSummary: false }
+directV2:   { trimBudget: 80K,  truncate: 12K, appendStepSummary: true, stepSummaryMaxChars: 800 }
+directV3:   { trimBudget: 60K,  truncate: 10K, appendStepSummary: true }
+claudeCode: { trimBudget: 15K,  truncate: 4K   }  // CLI 各管自己的 context</div>
+<p>v2 还有动态预算计算: <code>trimBudget = modelWindow * ratio</code>, 切模型(GLM-4.6 128K → GLM-5.2 1M)只改设置不改代码。</p>
+
+<h4>Memory Blocks 三层记忆</h4>
+<ul>
+<li><b>结构化常驻记忆</b>: user_profile / project_context / active_goals, 每轮注入到 context</li>
+<li><b>长期事实记忆</b>: 每轮自动从对话提取, FTS5 + 向量检索 (memory_embeddings 表)</li>
+<li><b>会话摘要</b>: 会话结束自动生成 episodic 摘要</li>
+</ul>
+
+<p class="pros">优势: 多引擎热切是独有差异化; Memory Blocks 设计优于竞品的静态 CLAUDE.md; 33K 行代码做到的功能密度极高</p>
+<p class="cons">劣势: 单进程并发上限; 无 sandbox 隔离 (靠用户 confirm); Effect 全家桶(OpenCode) 和 Rust 原生沙箱(Codex)的工程质量更高</p>
+</div>
+
+<!-- Claude Code -->
+<div class="card claude">
+<h3>🟠 Claude Code — 闭源 CLI Agent + MCP 生态 <span class="badge b-orange">Anthropic</span></h3>
+<p class="tag">@anthropic-ai/claude-code · NDJSON 流式输出 · --resume session 持久化</p>
+
+<h4>核心架构</h4>
+<ul>
+<li><b>单一 CLI 界面</b>: 终端交互式 TUI, 支持 <code>-p</code> 非交互模式 + <code>--output-format stream-json</code></li>
+<li><b>内置工具集</b>: Bash, Edit, Write, Read, Glob, Grep — 六件套, 简洁克制</li>
+<li><b>Agent Loop</b>: Anthropic Messages API + tool_use/tool_result 循环 (闭源, 无法审查细节)</li>
+<li><b>MCP Client</b>: 支持 stdio + SSE 两种 transport, 可接入任意 MCP server</li>
+<li><b>会话管理</b>: <code>--resume [session_id]</code> 续接历史会话, session 持久化在 ~/.claude/</li>
+<li><b>权限模型</b>: 三档 — <code>plan</code> (只读), <code>acceptEdits</code> (文件写入), <code>bypassPermissions</code> (完全)</li>
+</ul>
+
+<h4>Hook 系统</h4>
+<p>Claude Code 支持 <code>PreToolUse</code> / <code>PostToolUse</code> 等 hook, 允许在工具执行前后注入自定义逻辑。这是安全管控的关键机制。</p>
+
+<h4>跨平台 CLI spawn 细节</h4>
+<p>KinetAios 在调用 Claude Code 时, 针对 Windows 的 .cmd shim 做了特殊处理 (CVE-2024-27980):</p>
+<div class="diff">// .cmd/.bat 走 shell:true, .exe/unix 直接 spawn
+// prompt 通过 stdin 传入, argv 只传 flag (防 cmd 注入)
+// taskkill /PID xxx /T /F 杀进程树 (kill 只杀 cmd.exe)</div>
+
+<p class="pros">优势: 工具质量极高(Edit/Read 体验最好); 权限模型清晰; MCP 生态最大; 社区资源丰富</p>
+<p class="cons">劣势: 仅支持 Claude 模型(无多模型); 闭源无法审查 agent loop; 无长期记忆(靠 CLAUDE.md 静态文件); 无可视化 dashboard</p>
+</div>
+
+<!-- Codex -->
+<div class="card codex">
+<h3>🟢 Codex CLI — Rust 原生 + 三级沙箱 <span class="badge b-green">105K⭐</span></h3>
+<p class="tag">github.com/openai/codex · codex-rs (60+ Rust crate) · Apache 2.0</p>
+
+<h4>核心架构</h4>
+<ul>
+<li><b>Rust 核心</b>: codex-rs/ 下 60+ crate — core, exec, tui, mcp-server, protocol, sandboxing, hooks, memories, file-watcher...</li>
+<li><b>多入口</b>: <code>codex</code> (TUI), <code>codex exec</code> (CLI one-shot), <code>codex app</code> (桌面应用), Codex Web (云端)</li>
+<li><b>沙箱</b>: 三级隔离 — <code>read-only</code> / <code>workspace-write</code> / <code>danger-full-access</code></li>
+<li><b>OS 级隔离</b>: Linux bwrap + macOS seatbelt, 真正的进程级沙箱 (不是 confirm 弹窗)</li>
+<li><b>模型</b>: OpenAI Responses API, 签 ChatGPT 账号或 API key</li>
+</ul>
+
+<h4>codex-rs 模块全景</h4>
+<div class="diff">agent-graph-store   → Agent 任务图持久化
+agent-identity      → 多 Agent 身份管理
+core                → 核心 Agent Loop
+exec                → CLI one-shot 执行
+execpolicy          → 命令执行策略
+file-search         → 文件搜索 (类似 glob)
+hooks               → 工具执行 hook
+linux-sandbox       → bwrap 隔离
+mcp-server          → MCP 服务端
+memories            → 记忆系统
+process-hardening   → 进程加固
+sandboxing          → 沙箱抽象层
+skills              → Skill 系统
+tools               → 内置工具集
+tui                 → 终端 UI</div>
+
+<h4>与 KinetAios 的集成</h4>
+<p>KinetAios 的 <code>CodexEngine</code> spawn <code>codex exec --json</code>, 解析 JSONL 输出:
+<code>codex exec --json --sandbox read-only|workspace-write|danger-full-access</code></p>
+
+<p class="pros">优势: Rust 性能 + 安全; OS 级沙箱远超 confirm 弹窗; 开源社区活跃 (105K star); 多入口设计灵活</p>
+<p class="cons">劣势: 仅 OpenAI 模型; 无长期记忆 (靠 AGENTS.md); 无 dashboard; TUI 交互受限; 编译复杂</p>
+</div>
+
+<!-- OpenCode -->
+<div class="card opencode">
+<h3>🟣 OpenCode — 效应系统 + 事件溯源 <span class="badge b-purple">666K LOC</span></h3>
+<p class="tag">Bun + Effect 4.0-beta + SolidJS TUI + Drizzle ORM · MIT</p>
+
+<h4>核心架构</h4>
+<ul>
+<li><b>Effect 全线</b>: 32 个子包全部基于 Effect 函数式效应系统 — Layer/Context/Service 模式</li>
+<li><b>Event Sourcing</b>: V2 Session Core — 每个操作 (PromptAdmitted/Prompted/ToolCalled/ToolSettled) 都是 durable event, 写入 SQLite event log, 再 project 到 session_message 表</li>
+<li><b>Context Source 注册表</b>: 声明式上下文管理 — 每个 Source 声明 key/codec/load/baseline/update, 用 Schema.Codec 做值等价比较实现真 diff</li>
+<li><b>Durable Inbox</b>: prompt 写入 SQLite 后再执行, crash 可恢复; steer/queue 双优先级队列</li>
+<li><b>自研 opentui</b>: SolidJS 信号系统 → 终端渲染, 不依赖 blessed/ink</li>
+<li><b>SDK Contract IR</b>: HttpApi 定义 → 编译成 IR → 自动发射 Effect/Promise 双 SDK</li>
+</ul>
+
+<h4>Context Source 与 Durable Inbox 实评</h4>
+<p>基于源码精读 (320 行 index.ts + 174 行 context-epoch.ts + 288 行 input.ts):</p>
+<ul>
+<li class="pros">变更检测是真 diff (Schema.toEquivalence(codec)), 不是全量重发</li>
+<li class="pros">Snapshot 持久化到 session_context_epoch 表, crash 后可 reconcile</li>
+<li class="cons">为两个 String 类型 source (environment + date) 造了 320 行泛型类型擦除系统 — 过度工程</li>
+<li class="cons">reconcile 状态机三路分支 (Unchanged/Updated/ReplacementResult) 对"更新 system prompt"操作过重</li>
+<li class="cons">registry 的 load 并行执行无依赖编排能力</li>
+<li class="cons">单节点并发模型 (RunCoordinator 用内存 Map), 多进程无防护</li>
+</ul>
+
+<p class="pros">优势: 架构设计最先进 (Context Source / Durable Inbox / SDK IR); crash recovery 完整; 自研 TUI</p>
+<p class="cons">劣势: Effect 全线 beta (4.0.0-beta.83) = 维护噩梦; 666K 行 monorepo 贡献门槛极高; V1/V2 双轨迁移未完成; 实际内置 source 只有 2 个</p>
+</div>
+
+<!-- WorkBuddy -->
+<div class="card workbuddy">
+<h3>🟢 WorkBuddy — 职场 AI 工作台 <span class="badge b-green">腾讯</span></h3>
+<p class="tag">2026-03 上线 · 桌面客户端 · Token Credits 套餐 · 适配 QQ/企微生态</p>
+
+<h4>核心定位：非技术人员的 Agent</h4>
+<ul>
+<li><b>自然语言任务下达</b>: "帮我做一份上周销售数据汇总PPT" → 自动拆解 → 执行 → 交付</li>
+<li><b>多模态产物</b>: 文档/PPT/表格/图表/图片 — 不只输出文字, 直接产出可用文件</li>
+<li><b>本地文件操作</b>: 授权目录内读写, 批量处理, 成果保存到本地</li>
+<li><b>云端 7×24 托管</b>: 长任务在云端持续执行, 关闭客户端不中断</li>
+<li><b>多 Agent 并行</b>: 同一目标拆分给多个 Agent 同时处理, 结果统一汇总</li>
+<li><b>Skill 市场 (SkillHub)</b>: 100+ 领域专家 (招聘/投研/前端/法务/营销), 开箱即用</li>
+<li><b>企业自定义专家</b>: 上传岗位说明书 + SOP + 知识库 → 构建专属专家</li>
+</ul>
+
+<h4>与开发者 Agent 的本质差异</h4>
+<table>
+<tr><th>维度</th><th>开发者 Agent (KinetAios/CC/Codex/OC)</th><th>WorkBuddy</th></tr>
+<tr><td>核心工具</td><td>shell / file I/O / code search</td><td>文档生成 / 数据分析 / PPT / 邮件</td></tr>
+<tr><td>目标</td><td>写代码 / 修 bug / 重构</td><td>做报告 / 整理数据 / 生成文档</td></tr>
+<tr><td>用户</td><td>开发者 (懂 CLI)</td><td>HR / 运营 / 产品经理</td></tr>
+<tr><td>交付物</td><td>代码变更 / 分析报告</td><td>PPT / Excel / Word / 图片</td></tr>
+<tr><td>执行环境</td><td>本地终端</td><td>桌面 UI + 云端</td></tr>
+<tr><td>数据隐私</td><td>本地优先 (BYOK)</td><td>云端处理 (需信任腾讯云)</td></tr>
+</table>
+
+<p class="pros">优势: 面向 10x 更大的用户群体 (非开发者); 多 Agent 并行 + 云端托管; 腾讯生态整合 (企微/QQ); Skill 市场降低门槛</p>
+<p class="cons">劣势: 闭源; 无代码能力 (不做编程); 数据在云端 (隐私存疑); 无 MCP/插件生态; 依赖 Credits 套餐</p>
+</div>
+
+</div>
+
+<!-- ════════ Section 4: 工具链 ════════ -->
+<div class="section" id="s4">
+<h2><span class="num">4</span> 工具链对比</h2>
+<table>
+<thead><tr><th>工具能力</th><th>KinetAios</th><th>Claude Code</th><th>Codex</th><th>OpenCode</th><th>WorkBuddy</th></tr></thead>
+<tbody>
+<tr><td><b>Shell 执行</b></td><td>✅ exec + confirm</td><td>✅ Bash tool</td><td>✅ Rust 原生</td><td>✅ Effect wrapped</td><td>❌</td></tr>
+<tr><td><b>文件读</b></td><td>✅ read_file (行范围)</td><td>✅ Read tool</td><td>✅ file-system crate</td><td>✅ fs-util</td><td>✅ 授权目录</td></tr>
+<tr><td><b>文件写</b></td><td>✅ write_file + edit_file</td><td>✅ Write + Edit</td><td>✅ apply-patch</td><td>✅</td><td>✅ 本地写入</td></tr>
+<tr><td><b>Grep/Glob</b></td><td>✅ grep + glob 工具</td><td>✅ 内置</td><td>✅ file-search crate</td><td>✅</td><td>❌</td></tr>
+<tr><td><b>网页搜索</b></td><td>✅ web_search + web_fetch</td><td>⚠️ 需 MCP</td><td>⚠️ 需 MCP</td><td>⚠️ 需 MCP</td><td>❌</td></tr>
+<tr><td><b>记忆检索</b></td><td>✅ recall_memory (FTS5+向量)</td><td>❌ 仅 CLAUDE.md</td><td>❌ 仅 AGENTS.md</td><td>⚠️ 会话内</td><td>✅ 专家知识库</td></tr>
+<tr><td><b>Computer Use</b></td><td>✅ screenshot+click+type</td><td>⚠️ Claude Desktop</td><td>❌</td><td>❌</td><td>✅ 本地操作</td></tr>
+<tr><td><b>Sub-agent</b></td><td>✅ dispatch_agent (跨引擎)</td><td>✅ (内部)</td><td>✅ agent-graph</td><td>❌</td><td>✅ 多 Agent 并行</td></tr>
+<tr><td><b>Team/Group</b></td><td>✅ spawn_team + broadcast</td><td>❌</td><td>❌</td><td>❌</td><td>✅ (企业版)</td></tr>
+<tr><td><b>MCP Client</b></td><td>✅ stdio + SSE</td><td>✅</td><td>✅</td><td>✅</td><td>❌</td></tr>
+<tr><td><b>MCP Server</b></td><td>✅ 自带 mcp-server.ts</td><td>❌</td><td>✅ mcp-server crate</td><td>✅</td><td>❌</td></tr>
+<tr><td><b>插件系统</b></td><td>✅ 23 内置 plugin.json</td><td>⚠️ 仅 MCP 外接</td><td>⚠️ core-plugins crate</td><td>✅ 内置 + MCP</td><td>Skill 市场</td></tr>
+<tr><td><b>Sandbox 隔离</b></td><td>⚠️ confirm 弹窗</td><td>⚠️ plan mode</td><td>✅ OS 级沙箱</td><td>⚠️</td><td>N/A</td></tr>
+<tr><td><b>定时任务</b></td><td>✅ cron_tasks 表</td><td>❌</td><td>❌</td><td>❌</td><td>✅ 云端托管</td></tr>
+<tr><td><b>语音交互</b></td><td>✅ VoiceChat.ts</td><td>❌</td><td>❌</td><td>❌</td><td>❌</td></tr>
+<tr><td><b>消息平台</b></td><td>✅ 飞书 + 企微</td><td>❌</td><td>❌</td><td>❌</td><td>✅ QQ + 企微</td></tr>
+</tbody>
+</table>
+
+<div class="note">KinetAios 在工具链的"广度"上领先所有竞品 — 是唯一同时拥有 Computer Use + 语音 + 飞书/企微 + FTS5 记忆 + 跨引擎 sub-agent 的产品。Claude Code 和 Codex 的工具少而精 (6 件套), 但靠 MCP 外接扩展。</div>
+</div>
+
+<!-- ════════ Section 5: 记忆与会话 ════════ -->
+<div class="section" id="s5">
+<h2><span class="num">5</span> 记忆与会话管理</h2>
+
+<table>
+<thead><tr><th>维度</th><th>KinetAios</th><th>Claude Code</th><th>Codex</th><th>OpenCode</th><th>WorkBuddy</th></tr></thead>
+<tbody>
+<tr><td><b>会话持久化</b></td><td>SQLite (conversations + turns JSON)</td><td>~/.claude/ (session 文件)</td><td>thread-store crate</td><td>SQLite Event Log + Projection</td><td>云端</td></tr>
+<tr><td><b>跨会话记忆</b></td><td>FTS5 + 向量 + Memory Blocks + 三元组 + 摘要</td><td>CLAUDE.md (静态)</td><td>AGENTS.md (静态)</td><td>会话内 Snapshot</td><td>专家知识库</td></tr>
+<tr><td><b>记忆检索</b></td><td>recall_memory (语义 + FTS5 bigram)</td><td>❌ 无检索</td><td>❌ 无检索</td><td>会话内全量</td><td>专家匹配</td></tr>
+<tr><td><b>自动提取</b></td><td>✅ 每轮提取事实 → memories 表</td><td>❌ 手动编辑</td><td>❌ 手动编辑</td><td>❌</td><td>✅ 知识库沉淀</td></tr>
+<tr><td><b>会话摘要</b></td><td>✅ episodic 摘要 + ⭐ 评级</td><td>❌</td><td>❌</td><td>✅ Compaction</td><td>✅</td></tr>
+<tr><td><b>Context 压缩</b></td><td>reactive trim + compactHistory</td><td>模型端自动</td><td>模型端自动</td><td>Context Source diff + Epoch</td><td>云端处理</td></tr>
+<tr><td><b>crash 恢复</b></td><td>✅ turns 持久化 + v2_state checkpoint</td><td>✅ --resume</td><td>✅ thread-store</td><td>✅ Durable Inbox (最完整)</td><td>✅ 云端</td></tr>
+</tbody>
+</table>
+
+<h4 style="margin-top:24px">记忆方案分层</h4>
+<div class="grid2">
+<div class="card kinet" style="margin:0">
+<h4>🔵 KinetAios: 最丰富的记忆栈</h4>
+<ul>
+<li><b>Memory Blocks</b>: user_profile / project_context / active_goals — 每轮注入, 结构化</li>
+<li><b>FTS5 history 表</b>: 全量对话文本索引, recall_memory 用 bigram 分词</li>
+<li><b>memory_embeddings 表</b>: 向量检索 (embedding model), 语义近似召回</li>
+<li><b>memories 表</b>: 自动提取的事实, 带权重 + 使用计数</li>
+<li><b>memory_triples 表</b>: 知识图谱 (subject-predicate-object)</li>
+<li><b>episodic 摘要</b>: 会话结束自动生成, ⭐ 评级, recall_memory 可搜</li>
+<li><b>conv_facts 表</b>: 会话级锚点 (remember_fact / recall_fact)</li>
+</ul>
+<p class="pros">六层记忆系统, 任何竞品都没有这么深。FTS5 + 向量双通道检索是硬核优势。</p>
+</div>
+<div class="card opencode" style="margin:0">
+<h4>🟣 OpenCode: 最"正确"的设计</h4>
+<ul>
+<li><b>Context Source 注册表</b>: 声明式, 有类型, 可增量 diff — 但实际只有 2 个 source</li>
+<li><b>Context Epoch</b>: baseline + snapshot 持久化到 SQLite, crash 可 reconcile</li>
+<li><b>Compaction</b>: 上下文溢出时自动摘要压缩, 压缩后发 replacement</li>
+<li><b>Durable Inbox</b>: prompt → SQLite → wake → drain, steer/queue 双优先级</li>
+</ul>
+<p class="cons">设计比实现更令人印象深刻 — 复杂度高但内置 source 少, 投入产出比存疑。</p>
+</div>
+</div>
+</div>
+
+<!-- ════════ Section 6: 安全模型 ════════ -->
+<div class="section" id="s6">
+<h2><span class="num">6</span> 安全模型对比</h2>
+<table>
+<thead><tr><th>安全维度</th><th>KinetAios</th><th>Claude Code</th><th>Codex</th><th>OpenCode</th><th>WorkBuddy</th></tr></thead>
+<tbody>
+<tr><td><b>沙箱类型</b></td><td>用户 confirm 弹窗</td><td>plan/acceptEdits/bypass</td><td>OS 级沙箱 (bwrap/seatbelt)</td><td>Effect scoped</td><td>N/A (云端隔离)</td></tr>
+<tr><td><b>Shell 确认</b></td><td>✅ 每次执行前弹窗</td><td>✅ 按 permission mode</td><td>✅ 按沙箱级别</td><td>✅ permission layer</td><td>N/A</td></tr>
+<tr><td><b>文件写入保护</b></td><td>confirm 弹窗</td><td>acceptEdits 门槛</td><td>workspace-write 限制路径</td><td>⚠️</td><td>授权目录</td></tr>
+<tr><td><b>SSRF 防护</b></td><td>✅ isPrivateHost 全面</td><td>❌</td><td>❌</td><td>❌</td><td>N/A</td></tr>
+<tr><td><b>错误脱敏</b></td><td>✅ sanitizeError</td><td>❌</td><td>❌</td><td>❌</td><td>N/A</td></tr>
+<tr><td><b>API Key 存储</b></td><td>plaintext (MVP 约束)</td><td>OS keychain</td><td>keyring-store crate</td><td>环境变量</td><td>云端账户</td></tr>
+<tr><td><b>Prompt 注入面</b></td><td>stdin 传 prompt (防 cmd 元字符)</td><td>argv 直传</td><td>argv 直传</td><td>N/A (无 CLI)</td><td>N/A</td></tr>
+</tbody>
+</table>
+<div class="note">KinetAios 的 <code>isPrivateHost()</code> SSRF 防护覆盖了 IPv4 私有段/loopback/link-local/CGNAT/IPv6 ULA/mDNS/metadata 端点, 是五个产品中最全面的。Codex 的 OS 级沙箱 (bwrap/seatbelt) 在隔离强度上最强。</div>
+</div>
+
+<!-- ════════ Section 7: 可扩展性 ════════ -->
+<div class="section" id="s7">
+<h2><span class="num">7</span> 可扩展性与生态</h2>
+<div class="grid2">
+<div>
+<h4 style="margin-bottom:12px">插件/扩展体系</h4>
+<table>
+<thead><tr><th>产品</th><th>机制</th><th>数量</th></tr></thead>
+<tbody>
+<tr><td><b>KinetAios</b></td><td>plugin.json + JS 脚本 + MCP</td><td>23 内置 + MCP</td></tr>
+<tr><td><b>Claude Code</b></td><td>MCP only</td><td>社区生态</td></tr>
+<tr><td><b>Codex</b></td><td>core-plugins crate + MCP</td><td>少量内置 + MCP</td></tr>
+<tr><td><b>OpenCode</b></td><td>内置 + MCP</td><td>有限</td></tr>
+<tr><td><b>WorkBuddy</b></td><td>Skill 市场 (SkillHub)</td><td>100+ 专家</td></tr>
+</tbody>
+</table>
+</div>
+<div>
+<h4 style="margin-bottom:12px">KinetAios 23 个内置插件</h4>
+<div style="font-size:12px;color:var(--tx2);line-height:1.8">brainstorm · hw-diag · modbus-dev · serial-comm · ota-dev · low-altitude · arduino-dev · office-suite · platformio-dev · logic-analyzer · cpp-learning · mqtt-dev · ble-dev · math-practice · sensor-lookup · nestjs-dev · examples/echo ...</div>
+<p style="font-size:12px;color:var(--tx2);margin-top:8px">覆盖: 嵌入式开发 (Arduino/ESP32/PlatformIO/串口/BLE/I2C/传感器) · 工业协议 (Modbus/MQTT) · 低空经济 (无人机/气象/空域) · Web 开发 (NestJS) · 办公套件 · 教育</p>
+</div>
+</div>
+<h4>跨平台 CLI 兼容性 (KinetAios 独有挑战)</h4>
+<table>
+<thead><tr><th>问题</th><th>KinetAios 处理</th><th>影响</th></tr></thead>
+<tbody>
+<tr><td>.cmd shim spawn (CVE-2024-27980)</td><td>shell:true 路由 .cmd, 直接 spawn .exe</td><td>Windows 兼容</td></tr>
+<tr><td>GUI 启动 PATH 缺失</td><td>binEnv() 增加 npm 全局目录</td><td>Electron 找到 claude/codex</td></tr>
+<tr><td>Prompt 注入风险</td><td>stdin 传 prompt, argv 只传 flag</td><td>防 &|> 注入</td></tr>
+<tr><td>进程树 kill</td><td>taskkill /PID /T /F</td><td>避免孤儿计费进程</td></tr>
+<tr><td>跨引擎上下文保持</td><td>crossEngineContext 摘要注入</td><td>切引擎不丢上下文</td></tr>
+</tbody>
+</table>
+</div>
+
+<!-- ════════ Section 8: 评分 ════════ -->
+<div class="section" id="s8">
+<h2><span class="num">8</span> 综合评分</h2>
+<table>
+<thead><tr><th>维度 (10分制)</th><th>KinetAios</th><th>Claude Code</th><th>Codex</th><th>OpenCode</th><th>WorkBuddy</th></tr></thead>
+<tbody>
+<tr><td><b>Agent 智能度</b></td><td class="s-mid">7.5</td><td class="s-high">9.0</td><td class="s-high">8.5</td><td class="s-mid">7.5</td><td class="s-mid">7.0</td></tr>
+<tr><td><b>工具丰富度</b></td><td class="s-high">9.0</td><td class="s-mid">7.0</td><td class="s-mid">7.5</td><td class="s-mid">7.0</td><td class="s-mid">6.5</td></tr>
+<tr><td><b>记忆系统</b></td><td class="s-high">9.5</td><td class="s-low">4.0</td><td class="s-low">4.0</td><td class="s-high">8.0</td><td class="s-mid">6.0</td></tr>
+<tr><td><b>多模型/引擎</b></td><td class="s-high">9.5</td><td class="s-low">2.0</td><td class="s-low">2.0</td><td class="s-mid">7.0</td><td class="s-mid">7.0</td></tr>
+<tr><td><b>安全/沙箱</b></td><td class="s-mid">6.0</td><td class="s-mid">7.0</td><td class="s-high">9.5</td><td class="s-mid">6.5</td><td class="s-mid">7.0</td></tr>
+<tr><td><b>可扩展性</b></td><td class="s-high">8.5</td><td class="s-mid">7.0</td><td class="s-mid">7.5</td><td class="s-high">8.5</td><td class="s-mid">7.0</td></tr>
+<tr><td><b>工程质量</b></td><td class="s-mid">7.0</td><td class="s-high">8.5</td><td class="s-high">9.0</td><td class="s-mid">7.0</td><td>?</td></tr>
+<tr><td><b>UX/可视化</b></td><td class="s-high">8.5</td><td class="s-mid">6.0</td><td class="s-mid">6.5</td><td class="s-mid">6.0</td><td class="s-high">8.5</td></tr>
+<tr><td><b>开源/社区</b></td><td class="s-high">8.0</td><td class="s-low">3.0</td><td class="s-high">9.5</td><td class="s-high">8.0</td><td class="s-low">2.0</td></tr>
+<tr><td><b>目标场景覆盖</b></td><td class="s-mid">7.0</td><td class="s-high">8.0</td><td class="s-high">8.0</td><td class="s-high">8.0</td><td class="s-high">9.0</td></tr>
+<tr style="border-top:2px solid var(--bd)"><td><b>加权总分</b></td><td class="score s-high">8.1</td><td class="score s-mid">6.5</td><td class="score s-mid">7.0</td><td class="score s-mid">7.4</td><td class="score s-mid">6.6</td></tr>
+</tbody>
+</table>
+<h4>维度可视化 (各维度最强产品)</h4>
+<div class="bar-chart">
+<div class="bar-row"><div class="bar-label">记忆系统</div><div class="bar-track"><div class="bar-fill" style="width:95%;background:linear-gradient(90deg,#5b8def,#7aa6f7)">9.5</div></div><div class="bar-val">KinetAios</div></div>
+<div class="bar-row"><div class="bar-label">多模型/引擎</div><div class="bar-track"><div class="bar-fill" style="width:95%;background:linear-gradient(90deg,#5b8def,#c084fc)">9.5</div></div><div class="bar-val">KinetAios</div></div>
+<div class="bar-row"><div class="bar-label">工具丰富度</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:linear-gradient(90deg,#5b8def,#34d399)">9.0</div></div><div class="bar-val">KinetAios</div></div>
+<div class="bar-row"><div class="bar-label">Agent 智能度</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:linear-gradient(90deg,#d97757,#e9a87b)">9.0</div></div><div class="bar-val">Claude Code</div></div>
+<div class="bar-row"><div class="bar-label">安全/沙箱</div><div class="bar-track"><div class="bar-fill" style="width:95%;background:linear-gradient(90deg,#10a37f,#1ee9b8)">9.5</div></div><div class="bar-val">Codex</div></div>
+<div class="bar-row"><div class="bar-label">工程质量</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:linear-gradient(90deg,#10a37f,#1ee9b8)">9.0</div></div><div class="bar-val">Codex</div></div>
+<div class="bar-row"><div class="bar-label">架构设计</div><div class="bar-track"><div class="bar-fill" style="width:85%;background:linear-gradient(90deg,#c084fc,#f472b6)">8.5</div></div><div class="bar-val">OpenCode</div></div>
+<div class="bar-row"><div class="bar-label">场景覆盖</div><div class="bar-track"><div class="bar-fill" style="width:90%;background:linear-gradient(90deg,#34d399,#5fc8f5)">9.0</div></div><div class="bar-val">WorkBuddy</div></div>
+</div>
+</div>
