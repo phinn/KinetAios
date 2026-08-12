@@ -1912,7 +1912,7 @@ a { color: var(--accent); }
   background: var(--surface-input, var(--bg-side));
   z-index: 50;
 }
-#input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 6px 0; box-shadow: none; }
+#input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 8px 14px; box-sizing: border-box; box-shadow: none; }
 #input textarea::placeholder { color: var(--text-dim); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
@@ -3571,7 +3571,8 @@ button.sm { padding: 3px 8px; font-size: 11px; }
   border-right-color: #555 !important;
   border-bottom-color: #555 !important;
   border-radius: 0 !important;
-  padding: 6px 10px !important;
+  padding: 8px 14px !important;
+  box-sizing: border-box !important;
   box-shadow: inset 1px 1px 0 #000, inset -1px -1px 0 #333 !important;
 }
 /* Craft: sidebar — 不透明方块面板,不用玻璃 */
