@@ -1062,7 +1062,7 @@ a { color: var(--accent); }
 }
 .sb-search input:focus { border-color: var(--accent); }
 .sb-search input::placeholder { color: var(--text-faint); }
-.sb-search-icon { color: var(--text-faint); position: absolute; left: 18px; top: 50%; transform: translateY(-50%); pointer-events: none; }
+.sb-search-icon { color: var(--text-faint); position: absolute; left: 16px; top: 50%; transform: translateY(-50%); pointer-events: none; }
 .sb-search-clear {
   position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: var(--text-faint); padding: 2px; cursor: pointer;
@@ -1132,6 +1132,7 @@ a { color: var(--accent); }
 #conv-list .title { font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 52px; }
 #conv-list .meta { font-size: 11px; color: var(--text-faint); display: flex; gap: 8px; align-items: center; }
 /* conv-actions:用 opacity + 渐变背景代替 display:none→block,避免突然弹出遮标题 */
+#conv-list > li:not(.sb-proj):hover .sb-task-time { opacity: 0; }
 #conv-list .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 1px; padding: 0 6px 0 20px;
   opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
   background: linear-gradient(to right, transparent, var(--bg-elev) 40%); border-radius: 0 7px 7px 0; }
@@ -1241,6 +1242,7 @@ a { color: var(--accent); }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: 12.5px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 48px; }
+.sb-proj-tasks li:hover .sb-task-time { opacity: 0; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 1px; padding: 0 6px 0 16px;
   opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
   background: linear-gradient(to right, transparent, var(--bg-elev) 40%); border-radius: 0 7px 7px 0; }
@@ -1785,18 +1787,18 @@ a { color: var(--accent); }
 /* 未读消息计数 badge / Unread message count badge */
 .scroll-badge {
   position: absolute;
-  top: -4px;
-  right: -4px;
-  min-width: 18px;
-  height: 18px;
-  border-radius: 9px;
+  top: -3px;
+  right: -3px;
+  min-width: 15px;
+  height: 15px;
+  border-radius: 8px;
   background: var(--accent);
   color: #fff;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 700;
-  line-height: 18px;
+  line-height: 15px;
   text-align: center;
-  padding: 0 5px;
+  padding: 0 3px;
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
   pointer-events: none;
   animation: badge-pop 0.3s ease-out;
@@ -1808,7 +1810,7 @@ a { color: var(--accent); }
 .empty::before { content: ''; display: block; width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.7; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 12px; color: var(--text-faint); opacity: 0.7; }
 
-.turn { padding: 2px 0 10px; display: flex; flex-direction: column; gap: 8px; }
+.turn { padding: 4px 0 12px; display: flex; flex-direction: column; gap: 10px; }
 /* 只在含用户消息的 turn 前画分割线,AI 连续步骤间不画 — 减少视觉噪音 */
 .turn:has(.msg.user) + .turn,
 .turn + .turn:has(.msg.user) { border-top: 1px solid var(--border-soft, var(--border)); margin-top: 4px; padding-top: 12px; }
@@ -1821,7 +1823,7 @@ a { color: var(--accent); }
 .avatar:hover { transform: scale(1.08); }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); }
-.msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-wrap; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
+.msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
 .msg.user .bubble { border-top-right-radius: 5px; background: var(--accent-glow); border-color: var(--accent-dim); }
 /* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
 .msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
@@ -1867,6 +1869,8 @@ a { color: var(--accent); }
 .answer .code-block { position: relative; margin: 0 0 10px; }
 .answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: 10px; font-family: ui-monospace, monospace; color: var(--text-faint); background: var(--bg-elev); padding: 2px 8px; border-radius: 6px 0 6px 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.04em; pointer-events: none; z-index: 1; }
 .answer .code-block .code { border-radius: 6px; margin: 0; }
+/* 有语言标签时给代码区顶部留空间,避免遮挡第一行 / Reserve top padding when lang label exists */
+.answer .code-block:has(.code-lang) .code { padding-top: 24px; }
 /* 代码块复制按钮:默认隐藏,hover 代码块时显示 */
 .answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: 5px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
 .answer .code-block:hover .code-copy { opacity: 0.6; }
@@ -1899,6 +1903,8 @@ a { color: var(--accent); }
 .step details summary::before { content: '▸'; display: inline-block; width: 10px; font-size: 10px; color: var(--text-faint); transition: transform var(--dur-fast) var(--ease-out); }
 .step details[open] > summary::before { transform: rotate(90deg); }
 .step pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
+/* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
+.step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; }
 .step-label { font-size: 10px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
 .step-label:first-of-type { margin-top: 6px; }
 .turn .err { color: var(--err); }
@@ -2134,8 +2140,8 @@ a { color: var(--accent); }
    避免 display:none→block 切换 panel 时滚动条出现/消失导致宽度跳变。
    注意:scrollbar-gutter:stable 在有 ::-webkit-scrollbar 自定义时无效(Chromium 已知行为)。 */
 #settings-view { overflow: hidden; }
-#settings { width: 100%; padding: 28px 24px 48px; overflow-y: scroll; max-width: 720px; margin: 0 auto; flex: 1; min-height: 0; box-sizing: border-box; }
-#settings .card { width: 100%; max-width: 620px; box-sizing: border-box; overflow: hidden; }
+#settings { width: 100%; padding: 28px 24px 48px; overflow-y: scroll; max-width: 860px; margin: 0 auto; flex: 1; min-height: 0; box-sizing: border-box; }
+#settings .card { width: 100%; max-width: 760px; box-sizing: border-box; overflow: hidden; }
 #settings h2 { margin: 0 0 4px; font-size: 20px; font-weight: 700; letter-spacing: -0.02em; }
 #settings .sub { color: var(--text-dim); margin-bottom: 20px; font-size: 1rem; line-height: 1.6; }
 
@@ -5499,4 +5505,24 @@ code.nx-md-inline {
 .nx-action-btn:disabled {
   opacity: 0.35;
   cursor: default;
+}
+
+/* ═══ 窄窗口响应式适配 / Narrow window responsive ═══
+   窗口缩到最小宽度(480px)时,隐藏非必要 UI 元素,防止按钮挤一团。 */
+@media (max-width: 600px) {
+  /* 隐藏工具按钮文字(本来就是 display:none,但额外保险) */
+  .composer-bar .tool .lbl { display: none !important; }
+  /* 压缩环境胶囊最大宽度 */
+  .ch-env { max-width: 50%; }
+  /* model-pill 缩窄 */
+  .composer-bar .model-pill { max-width: 90px; font-size: 10px; }
+  .composer-bar #submodel-input { max-width: 70px; min-width: 50px; }
+  /* ctx-mode-select 缩窄 */
+  .composer-bar #ctx-mode-select { max-width: 70px; min-width: 50px; }
+  /* sidebar 会话列表隐藏 cwd,只留标题 */
+  #conv-list > li:not(.sb-proj) .sb-task-cwd { display: none; }
+  /* 分割线/divider 缩窄 */
+  .composer-bar .bar-divider { margin: 0 1px; }
+  /* chat-head 配置区收紧 */
+  .ch-config { gap: 4px; }
 }

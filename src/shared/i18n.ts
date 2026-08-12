@@ -257,6 +257,7 @@ const ZH_CN: Dict = {
   'attach.skipped': '以下文件未能添加(过大 / 二进制 / 读取失败):\n{list}',
 
   'composer.moreTools': '更多工具',
+  'composer.send': '发送',
   'composer.skill': 'Skill',
   'composer.mcp': 'MCP',
   'composer.voiceChat': '语音对话',
@@ -506,6 +507,7 @@ const ZH_CN: Dict = {
 
   'conv.rename': '改名',
   'conv.delete': '删除',
+  'conv.ctx': '上下文检查器',
 
   'engine.switchConfirm': '切换引擎会清空当前上下文(Direct 对话历史 / Claude·Codex 的会话续接)。继续?',
 
@@ -1221,6 +1223,7 @@ const EN: Dict = {
   'attach.skipped': 'These files could not be added (too large / binary / read error):\n{list}',
 
   'composer.moreTools': 'More tools',
+  'composer.send': 'Send',
   'composer.skill': 'Skill',
   'composer.mcp': 'MCP',
   'composer.voiceChat': 'Voice chat',
@@ -1470,6 +1473,7 @@ const EN: Dict = {
 
   'conv.rename': 'Rename',
   'conv.delete': 'Delete',
+  'conv.ctx': 'Context inspector',
 
   'engine.switchConfirm': 'Switching engines clears the current context (Direct history / Claude·Codex session resume). Continue?',
 
@@ -2180,6 +2184,7 @@ const ZH_TW: Dict = {
   'attach.skipped': '以下檔案未能新增(過大 / 二進位 / 讀取失敗):\n{list}',
 
   'composer.moreTools': '更多工具',
+  'composer.send': '傳送',
   'composer.skill': 'Skill',
   'composer.mcp': 'MCP',
   'composer.voiceChat': '語音對話',
@@ -2429,6 +2434,7 @@ const ZH_TW: Dict = {
 
   'conv.rename': '改名',
   'conv.delete': '刪除',
+  'conv.ctx': '上下文檢查器',
 
   'engine.switchConfirm': '切換引擎會清空當前情境(Direct 對話歷史 / Claude·Codex 的工作階段續接)。繼續?',
 
@@ -3143,6 +3149,7 @@ const JA: Dict = {
   'attach.skipped': '以下のファイルを追加できませんでした(サイズ超過 / バイナリ / 読み取りエラー):\n{list}',
 
   'composer.moreTools': 'その他ツール',
+  'composer.send': '送信',
   'composer.skill': 'Skill',
   'composer.mcp': 'MCP',
   'composer.voiceChat': '音声チャット',
@@ -3392,6 +3399,7 @@ const JA: Dict = {
 
   'conv.rename': '名前変更',
   'conv.delete': '削除',
+  'conv.ctx': 'コンテキストインスペクター',
 
   'engine.switchConfirm': 'エンジン切り替えで現在のコンテキストがクリアされます(Direct 履歴 / Claude·Codex のセッション再開)。続けますか?',
 
