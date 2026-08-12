@@ -1750,7 +1750,7 @@ a { color: var(--accent); }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
-#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 20px calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; }
+#turns { flex: 1; min-height: 0; overflow-y: scroll; padding: 10px 20px calc(var(--input-h, 74px) + 8px); overflow-anchor: none; position: relative; scroll-padding-bottom: calc(var(--input-h, 74px) + 16px); }
 
 /* 回到最新消息浮动按钮 / Floating "jump to bottom" button.
    bottom 使用 CSS 变量,由 JS 根据 composer 高度动态设置(--input-height)。 */
@@ -1875,7 +1875,7 @@ a { color: var(--accent); }
 .answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: 5px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
 .answer .code-block:hover .code-copy { opacity: 0.6; }
 .answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); }
-.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 12px; border: 1px solid var(--border-soft); }
+.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 0.923rem; border: 1px solid var(--border-soft); }
 
 /* ── Markdown 表格 / GFM tables ── */
 .answer .md-table-wrap { overflow-x: auto; margin: 0 0 10px; }
@@ -1902,9 +1902,9 @@ a { color: var(--accent); }
 .step details summary::-webkit-details-marker { display: none; }
 .step details summary::before { content: '▸'; display: inline-block; width: 10px; font-size: 10px; color: var(--text-faint); transition: transform var(--dur-fast) var(--ease-out); }
 .step details[open] > summary::before { transform: rotate(90deg); }
-.step pre { margin: 4px 0 0; white-space: pre-wrap; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
+.step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 11px; color: var(--text-dim); user-select: text; }
 /* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
-.step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; }
+.step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }
 .step-label { font-size: 10px; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
 .step-label:first-of-type { margin-top: 6px; }
 .turn .err { color: var(--err); }
@@ -4288,7 +4288,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 
 /* ── 远程 Agent 直播面板 ── */
 .live-panel {
-  position: fixed; bottom: 16px; right: 16px; width: 380px; max-height: 320px;
+  position: fixed; bottom: 16px; right: 16px; width: 380px; max-width: calc(100vw - 32px); max-height: 320px;
   background: var(--bg-elev); border: 1px solid var(--border);
   border-radius: 10px; box-shadow: 0 10px 40px rgba(0,0,0,0.4);
   z-index: 1500; display: flex; flex-direction: column; overflow: hidden;
@@ -4682,7 +4682,7 @@ button.sm { padding: 3px 8px; font-size: 11px; }
 .nexus-overlay {
   position: absolute;
   top: 56px; right: 16px;
-  width: 320px;
+  width: 320px; max-width: calc(100% - 32px);
   height: calc(100% - 140px);
   display: flex;
   flex-direction: column;
@@ -5532,4 +5532,10 @@ code.nx-md-inline {
   .composer-bar .bar-divider { margin: 0 1px; }
   /* chat-head 配置区收紧 */
   .ch-config { gap: 4px; }
+  /* NEXUS overlay 适配窄窗口 */
+  .nexus-overlay { width: calc(100% - 32px); max-width: none; right: 16px; }
+  /* live-panel 适配窄窗口 */
+  .live-panel { width: calc(100vw - 32px); }
+  /* nexus-minimap 缩小 */
+  .nexus-minimap { width: 120px; height: 120px; }
 }
