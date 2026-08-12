@@ -1243,9 +1243,9 @@ ${failedDetail || '  (无)'}
           const { runCliOneShot } = await import('./engines');
           return await runCliOneShot(engine, sub, conv.cwd, childSignal);
         }
-        // 子 agent model 覆盖:优先级 = LLM 传参 > 频道配置(conv.subAgentModel) > 全局设置 > 主 agent。
-        // / Sub-agent model: LLM param > channel config > global setting > main agent.
-        const effectiveModel = model || conv.subAgentModel || getSettings().subAgentModel || undefined;
+        // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型。LLM 传的 model 参数不再覆盖用户配置。
+        // / Sub-agent model: channel config > global setting > main agent. LLM model param is ignored to prevent hallucinated model names.
+        const effectiveModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
         const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
         const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
         // Direct 子任务:只读工具、独立上下文。
