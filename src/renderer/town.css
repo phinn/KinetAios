@@ -51,14 +51,14 @@
   flex-wrap: wrap;
 }
 .town-title {
-  font-size: 18px;
+  font-size: 1.3846rem;
   font-weight: 700;
   display: flex;
   align-items: center;
   gap: 6px;
 }
 .town-sub {
-  font-size: 12px;
+  font-size: 0.9231rem;
   color: var(--text-dim);
   flex: 1 1 320px;
   line-height: 1.5;
@@ -93,7 +93,7 @@
 
 /* 屋顶标签(项目名) / Roof label (project name) */
 .house-roof-label {
-  font-size: 13px;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--text);
   margin-bottom: 4px;
@@ -123,11 +123,11 @@
   margin-top: 6px;
 }
 .house-stats {
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-dim);
 }
 .house-last {
-  font-size: 10px;
+  font-size: 0.7692rem;
   color: var(--text-faint);
 }
 .house-last.running {
@@ -159,7 +159,7 @@
 }
 .villager-wrap:active { transform: scale(1.05); }
 .villager-name {
-  font-size: 9px;
+  font-size: 0.6923rem;
   color: var(--text-faint);
   max-width: 48px;
   white-space: nowrap;
@@ -214,7 +214,7 @@
   opacity: 1;
 }
 .town-newtask {
-  font-size: 11px;
+  font-size: 0.8462rem;
   padding: 4px 10px;
 }
 
@@ -223,7 +223,7 @@
   text-align: center;
   color: var(--text-dim);
   padding: 80px 20px;
-  font-size: 14px;
+  font-size: 1.0769rem;
   animation: fadeIn var(--dur-slow) var(--ease-out);
 }
 
@@ -292,7 +292,7 @@
   min-width: 0;
 }
 .tp-name {
-  font-size: 14px;
+  font-size: 1.0769rem;
   font-weight: 700;
   color: var(--text);
   white-space: nowrap;
@@ -300,7 +300,7 @@
   text-overflow: ellipsis;
 }
 .tp-engine {
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-dim);
 }
 .tp-state { transition: color var(--dur-normal) var(--ease-out); }
@@ -308,7 +308,7 @@
 .tp-state.vs-error { color: #ef4444; }
 .tp-state.vs-done { color: #22c55e; }
 .tp-cwd {
-  font-size: 10px;
+  font-size: 0.7692rem;
   color: var(--text-faint);
   white-space: nowrap;
   overflow: hidden;
@@ -319,7 +319,7 @@
 }
 .tp-status-note {
   padding: 6px 16px;
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-dim);
   background: var(--bg);
   border-bottom: 1px solid var(--border);
@@ -336,7 +336,7 @@
   margin-bottom: 14px;
 }
 .tp-label {
-  font-size: 11px;
+  font-size: 0.8462rem;
   color: var(--text-dim);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -344,7 +344,7 @@
   font-weight: 600;
 }
 .tp-prompt {
-  font-size: 13px;
+  font-size: 1rem;
   color: var(--text);
   line-height: 1.5;
   background: var(--bg);
@@ -352,7 +352,7 @@
   padding: 8px 10px;
 }
 .tp-answer {
-  font-size: 12px;
+  font-size: 0.9231rem;
   color: var(--text-dim);
   line-height: 1.5;
   white-space: pre-wrap;
@@ -373,7 +373,7 @@
 }
 @keyframes tp-step-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
   margin-bottom: 4px;
-  font-size: 11px;
+  font-size: 0.8462rem;
 }
 .tp-step-tool {
   font-weight: 600;
@@ -386,7 +386,7 @@
 .tp-step-args, .tp-step-result {
   margin: 4px 0 0;
   padding: 0;
-  font-size: 10px;
+  font-size: 0.7692rem;
   color: var(--text-dim);
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   white-space: pre-wrap;
@@ -407,7 +407,7 @@
   border: 1px solid rgba(239,68,68,0.3);
   border-radius: 6px;
   padding: 8px 10px;
-  font-size: 12px;
+  font-size: 0.9231rem;
   color: #ef4444;
   margin-bottom: 14px;
   animation: tp-error-in var(--dur-slow) var(--ease-out);
@@ -433,7 +433,7 @@
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: 1rem;
   outline: none;
   transition: border-color var(--dur-fast) var(--ease-out);
 }
@@ -443,7 +443,7 @@
 }
 .tp-send {
   padding: 7px 14px;
-  font-size: 12px;
+  font-size: 0.9231rem;
   white-space: nowrap;
 }
 .tp-actions {
@@ -451,7 +451,7 @@
   gap: 6px;
 }
 .tp-actions button {
-  font-size: 11px;
+  font-size: 0.8462rem;
   padding: 5px 10px;
 }
 .tp-actions button:disabled {
@@ -783,7 +783,7 @@
 /* ═══════════════════════════════════════ */
 
 .town-remote-header {
-  font-size: 15px;
+  font-size: 1.1538rem;
   font-weight: 600;
   color: var(--text);
   opacity: 0.7;
@@ -794,7 +794,7 @@
 }
 
 .town-remote-sub {
-  font-size: 12px;
+  font-size: 0.9231rem;
   color: var(--muted);
   margin-bottom: 10px;
 }
@@ -828,7 +828,7 @@
   border: 1px solid var(--border);
   background: var(--bg);
   color: var(--text);
-  font-size: 13px;
+  font-size: 1rem;
   font-family: inherit;
   resize: vertical;
   box-sizing: border-box;
@@ -849,7 +849,7 @@
   gap: 8px;
   padding: 8px 0;
   color: var(--muted);
-  font-size: 13px;
+  font-size: 1rem;
 }
 
 /* 小 spinner / Tiny spinner */
