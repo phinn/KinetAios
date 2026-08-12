@@ -1898,7 +1898,7 @@ a { color: var(--accent); }
 /* ── Markdown 表格 / GFM tables ── */
 .answer .md-table-wrap { overflow-x: auto; margin: 0 0 10px; border-radius: 8px; border: 1px solid var(--border-soft); }
 .answer .md-table { border-collapse: collapse; font-size: 0.962rem; width: 100%; min-width: 0; }
-.answer .md-table thead th { background: rgba(33,33,38,0.85); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); color: var(--text); font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1; box-shadow: 0 1px 0 rgba(0,0,0,0.12); }
+.answer .md-table thead th { background: var(--bg-elev); color: var(--text); font-weight: 600; text-align: left; padding: 8px 12px; border-bottom: 2px solid var(--border); white-space: nowrap; position: sticky; top: 0; z-index: 1; }
 .answer .md-table tbody td { padding: 6px 12px; border-bottom: 1px solid var(--border-soft); color: var(--text-dim); }
 .answer .md-table tbody tr:nth-child(even) td { background: rgba(255,255,255,0.015); }
 .answer .md-table tbody tr:last-child td { border-bottom: none; }
