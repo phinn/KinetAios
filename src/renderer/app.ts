@@ -457,9 +457,12 @@ function taskLi(id: string): HTMLElement {
   const timeStr = fmtRelative(ts);
   li.innerHTML = `<span class="dot ${cls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${timeStr}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
+    if (selectedId === id) return; // 已经在当前频道,不重复渲染
+    // 就地切换 active class,避免全量销毁+重建 sidebar DOM(减少内存抖动)
+    document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+    li.classList.add('active');
     selectedId = id;
     showChat();
-    renderSidebar();
   };
   li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
     btn.onclick = (e) => {
@@ -1392,8 +1395,19 @@ function renderSideBySide(diff: string): string {
 }
 
 
+// 渲染令牌:每次 renderMain 递增,rAF 回调检查 token 是否匹配,
+// 不匹配说明已经切走了,直接中止 — 避免旧频道的 fillBatch rAF 链泄漏内存。
+// Render token: incremented per renderMain; rAF callbacks check it to bail early
+// when the user has already switched to another conversation.
+let renderToken = 0;
+
 function renderMain() {
+  renderToken++;
+  const token = renderToken;
   const conv = selectedId ? convs.get(selectedId) : undefined;
+  // 切频道时清理流式 buffer,避免残留旧频道的文本 / Clear streaming buffer on switch
+  streamRawText = '';
+  streamRenderScheduled = false;
   // 切换会话时重置未读计数 / Reset unread count when switching conversations
   if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
   renderHead(conv);
@@ -1435,6 +1449,9 @@ function renderMain() {
     if (!atBottom) return;
     let fillScheduled = false;
     const fillBatch_run = () => {
+      // 渲染令牌不匹配 = 用户已切到别的频道,中止旧频道的增量补全。
+      // Render token mismatch = user switched away; abort stale fill chain.
+      if (token !== renderToken) { fillScheduled = false; return; }
       fillScheduled = false;
       if (cursor <= 0) return;
       const end = cursor;
@@ -2044,6 +2061,9 @@ function showPreviewTab(): void {
 function showPreviewEmpty(): void {
   const body = document.getElementById('preview-body');
   if (!body) return;
+  // 清理上一个 blob URL(避免切频道后泄漏)
+  const oldIframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
+  if (oldIframe?.dataset.blobUrl) { URL.revokeObjectURL(oldIframe.dataset.blobUrl); delete oldIframe.dataset.blobUrl; }
   body.innerHTML = `<div class="preview-empty">
     <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
       <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>
