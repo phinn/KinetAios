@@ -47,10 +47,18 @@ function logFatal(kind: string, e: unknown): void {
 process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
-// 修正 app name:package.json name 是 "kinetaios-win",但任务栏/Dock hover tooltip 应显示 "KinetAios"。
-// 必须在 app.whenReady() 之前调用。
-// Fix app name: package.json name is "kinetaios-win", but taskbar/Dock tooltip should show "KinetAios".
+// userData 统一到 productName(KinetAios);旧目录名是 package.json 的 name("kinetaios-win")。
+// setName 必须在 whenReady 前。旧目录存在 ⟺ pre-bug 老用户 ⟺ 它就是权威数据,
+// 整体搬到新路径;并存的 KinetAios 只会是 bug 期残留(缓存/默认配置),直接覆盖。
 app.setName(getBrand().productName);
+try {
+  const ud = app.getPath('userData');                       // .../KinetAios (setName 后)
+  const old = path.join(path.dirname(ud), 'kinetaios-win'); // .../kinetaios-win
+  if (fs.existsSync(old)) {
+    if (fs.existsSync(ud)) fs.rmSync(ud, { recursive: true, force: true });
+    fs.renameSync(old, ud);
+  }
+} catch { /* 迁移失败不阻塞启动;旧目录仍在,下次启动再试 */ }
 
 // macOS 12 + Intel 上 GPU 渲染可能黑屏/白屏(Electron 31 已知问题)。
 // 多重兜底:disableHardwareAcceleration + GPU 相关 commandLine 开关。
