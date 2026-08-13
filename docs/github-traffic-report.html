@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios · GitHub 访问分析报告</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+:root {
+  --bg: #0d1117;
+  --card: #161b22;
+  --card-2: #1c2128;
+  --border: #30363d;
+  --text: #e6edf3;
+  --dim: #8b949e;
+  --accent: #58a6ff;
+  --green: #3fb950;
+  --orange: #d29922;
+  --red: #f85149;
+  --purple: #bc8cff;
+  --cyan: #39d2c0;
+}
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, 'Segoe UI', 'Noto Sans SC', sans-serif;
+  padding: 24px;
+  max-width: 1400px;
+  margin: 0 auto;
+}
+h1 { font-size: 28px; margin-bottom: 4px; }
+h2 { font-size: 18px; color: var(--accent); margin: 32px 0 12px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.subtitle { color: var(--dim); font-size: 14px; margin-bottom: 24px; }
+
+/* KPI Cards */
+.kpi-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
+.kpi-grid-2 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 8px; }
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 18px 16px;
+  text-align: center;
+}
+.kpi .num { font-size: 32px; font-weight: 700; }
+.kpi .label { font-size: 12px; color: var(--dim); margin-top: 4px; }
+.kpi .sub { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.kpi.green .num { color: var(--green); }
+.kpi.blue .num { color: var(--accent); }
+.kpi.orange .num { color: var(--orange); }
+.kpi.purple .num { color: var(--purple); }
+.kpi.cyan .num { color: var(--cyan); }
+
+/* Chart containers */
+.chart-row { display: grid; gap: 12px; margin-bottom: 12px; }
+.chart-row.cols-2 { grid-template-columns: 1fr 1fr; }
+.chart-row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+.chart-box {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+}
+.chart-box .title { font-size: 13px; color: var(--dim); margin-bottom: 8px; }
+.chart { width: 100%; }
+
+/* Table */
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border); }
+th { color: var(--dim); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+td.num { text-align: right; font-variant-numeric: tabular-nums; }
+
+/* Insight cards */
+.insights { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 12px; }
+.insight {
+  background: var(--card-2);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--accent);
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.insight.warn { border-left-color: var(--orange); }
+.insight.good { border-left-color: var(--green); }
+.insight.bad { border-left-color: var(--red); }
+.insight h3 { font-size: 13px; margin-bottom: 6px; }
+.insight p { font-size: 12px; color: var(--dim); line-height: 1.6; }
+.insight .tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 4px; margin-left: 6px; }
+
+/* Heatmap */
+.heatmap-info { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; margin-top: 8px; }
+.heat-cell { text-align: center; padding: 8px 4px; border-radius: 4px; font-size: 11px; }
+.heat-label { font-size: 11px; color: var(--dim); margin-bottom: 2px; }
+.heat-val { font-size: 16px; font-weight: 700; }
+
+/* Timeline */
+.timeline-item { display: flex; align-items: flex-start; gap: 12px; padding: 10px 0; border-bottom: 1px solid var(--border); }
+.timeline-item:last-child { border-bottom: none; }
+.tl-dot { width: 10px; height: 10px; border-radius: 50%; margin-top: 5px; flex-shrink: 0; }
+.tl-date { font-size: 12px; color: var(--dim); white-space: nowrap; width: 90px; flex-shrink: 0; }
+.tl-version { font-size: 13px; font-weight: 600; color: var(--accent); width: 64px; flex-shrink: 0; }
+.tl-desc { font-size: 12px; color: var(--text); line-height: 1.5; }
+
+/* Phase bar */
+.phase-bar { display: flex; height: 32px; border-radius: 6px; overflow: hidden; margin: 12px 0 8px; }
+.phase-seg { display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; }
+.phase-legend { display: flex; gap: 16px; font-size: 11px; color: var(--dim); }
+.phase-legend span::before { content: '●'; margin-right: 4px; }
+
+/* Responsive */
+@media (max-width: 900px) {
+  .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  .kpi-grid-2 { grid-template-columns: repeat(2, 1fr); }
+  .chart-row.cols-2, .chart-row.cols-3 { grid-template-columns: 1fr; }
+  .insights { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<h1>📊 KinetAios · GitHub 访问分析报告</h1>
+<p class="subtitle">数据周期：2026-07-09 → 2026-08-12（35 天）｜ 生成日期：2026-08-13</p>
+
+<!-- ===== KPI CARDS ===== -->
+<h2>核心指标</h2>
+<div class="kpi-grid">
+  <div class="kpi green">
+    <div class="num">908</div>
+    <div class="label">总 Clones</div>
+    <div class="sub">34 天累计</div>
+  </div>
+  <div class="kpi blue">
+    <div class="num">659</div>
+    <div class="label">总 Commits</div>
+    <div class="sub">659 pushes</div>
+  </div>
+  <div class="kpi orange">
+    <div class="num">19</div>
+    <div class="label">Releases</div>
+    <div class="sub">v1.0.0 → v2.9.0</div>
+  </div>
+  <div class="kpi purple">
+    <div class="num">35,908</div>
+    <div class="label">代码行数 (TS)</div>
+    <div class="sub">48 源文件</div>
+  </div>
+  <div class="kpi cyan">
+    <div class="num">26.7</div>
+    <div class="label">日均 Clone</div>
+    <div class="sub">活跃日均 30.3</div>
+  </div>
+</div>
+
+<!-- ===== PHASE BAR ===== -->
+<h2>开发阶段</h2>
+<div class="phase-bar">
+  <div class="phase-seg" style="width:20%;background:#238636;color:#fff;">首发冲刺<br>v1.0-v1.2</div>
+  <div class="phase-seg" style="width:31%;background:#30363d;color:#8b949e;">低谷休耕<br>7/16-7/26</div>
+  <div class="phase-seg" style="width:49%;background:#1f6feb;color:#fff;">二次爆发<br>v1.3-v2.9</div>
+</div>
+<div class="phase-legend">
+  <span style="color:#3fb950;">冲刺期 (7/9-7/15): 261 clone / 日均 37</span>
+  <span style="color:#8b949e;">低谷期 (7/16-7/26): 18 clone / 日均 1.6</span>
+  <span style="color:#58a6ff;">爆发期 (7/27-8/12): 629 clone / 日均 37</span>
+</div>
+
+<!-- ===== CLONE vs COMMIT ===== -->
+<h2>Clone 与 Commit 日时序对比</h2>
+<div class="chart-box">
+  <div class="title">每日 Clone 次数 vs Commit 数量（7/9 – 8/12）</div>
+  <div id="chart-clone-commit" class="chart" style="height:340px;"></div>
+</div>
+
+<!-- ===== CUMULATIVE ===== -->
+<div class="chart-row cols-2" style="margin-top:12px;">
+  <div class="chart-box">
+    <div class="title">累计 Clone 增长曲线</div>
+    <div id="chart-cumulative" class="chart" style="height:280px;"></div>
+  </div>
+  <div class="chart-box">
+    <div class="title">Clone 7 日滚动平均（趋势线）</div>
+    <div id="chart-rolling" class="chart" style="height:280px;"></div>
+  </div>
+</div>
+
+<!-- ===== HOURLY ===== -->
+<h2>提交时间分布</h2>
+<div class="chart-row cols-2">
+  <div class="chart-box">
+    <div class="title">一天 24 小时提交分布（你的工作时区 UTC+8）</div>
+    <div id="chart-hourly" class="chart" style="height:260px;"></div>
+  </div>
+  <div class="chart-box">
+    <div class="title">一周 7 天提交分布</div>
+    <div id="chart-weekly" class="chart" style="height:260px;"></div>
+  </div>
+</div>
+
+<!-- ===== COMMIT TYPE BREAKDOWN ===== -->
+<h2>提交类型分析</h2>
+<div class="chart-row cols-2">
+  <div class="chart-box">
+    <div class="title">Commit 类型分布</div>
+    <div id="chart-commit-type" class="chart" style="height:280px;"></div>
+  </div>
+  <div class="chart-box">
+    <div class="title">功能模块 Commit 分布（按 scope）</div>
+    <div id="chart-scope" class="chart" style="height:280px;"></div>
+  </div>
+</div>
+
+<!-- ===== VERSION TIMELINE ===== -->
+<h2>版本发布时间线</h2>
+<div class="chart-box">
+  <div class="title">19 个版本，31 天 — 每个版本对应的累计 Commit 数</div>
+  <div id="chart-versions" class="chart" style="height:300px;"></div>
+</div>
+
+<!-- ===== VERSION TABLE ===== -->
+<div class="chart-box" style="margin-top:12px;">
+  <div class="title">版本详情</div>
+  <table>
+    <thead>
+      <tr><th>版本</th><th>发布日期</th><th>累计 Commits</th><th>间隔天数</th><th>关键特性</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="tl-version">v1.0.0</td><td>2026-07-12</td><td class="num">52</td><td class="num">—</td><td>三引擎架构 + 9 工具 + SQLite FTS5 + MCP + 4 语言 i18n</td></tr>
+      <tr><td class="tl-version">v1.1.0</td><td>2026-07-14</td><td class="num">101</td><td class="num">2</td><td>Ollama 本地模型 + Embedding 语义召回 + 编码检测 + 应用图标</td></tr>
+      <tr><td class="tl-version">v1.2.0</td><td>2026-07-15</td><td class="num">114</td><td class="num">1</td><td>多引擎 Arena 对比 + 文件快照回滚 + 跨引擎子任务 + 知识图谱</td></tr>
+      <tr><td class="tl-version">v1.3.0</td><td>2026-07-15</td><td class="num">138</td><td class="num">0</td><td>Plugin SDK v1 + 定时任务 + Watch 模式 + 语音 + 记忆三元组</td></tr>
+      <tr><td class="tl-version">v1.4.0</td><td>2026-07-17</td><td class="num">228</td><td class="num">2</td><td>轻量代码编辑器 + 力导向图可视化 + macOS Dock 图标</td></tr>
+      <tr><td class="tl-version">v1.5.0</td><td>2026-07-28</td><td class="num">230</td><td class="num">11</td><td>Markdown 编辑器 + RAG 管线 + 独立嵌入模型</td></tr>
+      <tr><td class="tl-version">v1.6.0</td><td>2026-08-01</td><td class="num">302</td><td class="num">4</td><td>Dot/Slash 双命令菜单 + i18n 解耦重构</td></tr>
+      <tr><td class="tl-version">v1.7.0</td><td>2026-08-02</td><td class="num">332</td><td class="num">1</td><td>Memory Blocks + Importance Scoring + Episodic + Idle Reflection</td></tr>
+      <tr><td class="tl-version">v1.8.0</td><td>2026-08-03</td><td class="num">353</td><td class="num">1</td><td>流式渲染大修 + Git 同步状态 + V2 引擎上下文修复</td></tr>
+      <tr><td class="tl-version">v1.9.0</td><td>2026-08-04</td><td class="num">380</td><td class="num">1</td><td>V2 引擎 Plan-Execute-Verify-Judge 四层架构上线</td></tr>
+      <tr><td class="tl-version">v2.0.0</td><td>2026-08-05</td><td class="num">427</td><td class="num">1</td><td>V2 稳定 + GFM 表格 + 四引擎对比报告 + 流式抖动根因修复</td></tr>
+      <tr><td class="tl-version">v2.1.0</td><td>2026-08-06</td><td class="num">478</td><td class="num">1</td><td>安全加固：webview 白名单 + MCP CORS 收紧 + Anthropic vision</td></tr>
+      <tr><td class="tl-version">v2.2.0</td><td>2026-08-06</td><td class="num">485</td><td class="num">0</td><td>企业微信机器人 WebSocket 接入 + 记忆系统深度对比文档</td></tr>
+      <tr><td class="tl-version">v2.3.0</td><td>2026-08-06</td><td class="num">487</td><td class="num">0</td><td>飞书机器人 WebSocket + Agent 文件自动回传</td></tr>
+      <tr><td class="tl-version">v2.5.0</td><td>2026-08-07</td><td class="num">534</td><td class="num">1</td><td>飞书/企微消息 Tab + macOS Intel/ARM CI 分离</td></tr>
+      <tr><td class="tl-version">v2.6.0</td><td>2026-08-09</td><td class="num">581</td><td class="num">2</td><td>NEXUS Phase 1-5：轨道视图 + Mini-map + 节点拖拽</td></tr>
+      <tr><td class="tl-version">v2.7.0</td><td>2026-08-10</td><td class="num">618</td><td class="num">1</td><td>Computer Use + NEXUS Phase 6-9：等离子球体 → 实用管控中心</td></tr>
+      <tr><td class="tl-version">v2.8.0</td><td>2026-08-12</td><td class="num">638</td><td class="num">2</td><td>UI/UX 全面改版：全局字号 + 工具折叠 + Composer Craft 主题</td></tr>
+      <tr><td class="tl-version">v2.9.0</td><td>2026-08-13</td><td class="num">659</td><td class="num">1</td><td>Computer Use 完整化 + NEXUS 实用化 + 企微 Skill 调用</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- ===== INSIGHTS ===== -->
+<h2>关键洞察</h2>
+<div class="insights">
+  <div class="insight warn">
+    <h3>⚠️ Clone 与 Commit 高度耦合<span class="tag" style="background:#d29922;color:#000;">核心问题</span></h3>
+    <p>峰值 Clone 日（8/6 = 80 次）恰好是 Commit 峰值日。Clone 曲线几乎完全跟随 Commit 节奏，说明流量来源是「你 push → CI/Actions 触发 → 自动 clone」，而非外部用户主动发现。缺乏独立于 Commit 的外部流量 spike。</p>
+  </div>
+  <div class="insight good">
+    <h3>✅ 开发节奏极为强势<span class="tag" style="background:#3fb950;color:#000;">优势</span></h3>
+    <p>35 天 19 个版本、659 commits、36K 行 TypeScript。"一天一个版本"的节奏在开源 solo 开发者中属于顶级。可直接作为推广卖点："19 releases in 31 days"。</p>
+  </div>
+  <div class="insight warn">
+    <h3>📉 7/16-7/26 存在 10 天断层<span class="tag" style="background:#d29922;color:#000;">需关注</span></h3>
+    <p>7/17 之后近 10 天几乎零 clone 零 commit。此期间项目完全沉寂。好在 7/27 后强势恢复并超越首周热度。建议后续推广避免长时间无更新——对算法推荐不友好。</p>
+  </div>
+  <div class="insight bad">
+    <h3>❌ 未接入 GitHub Traffic API<span class="tag" style="background:#f85149;color:#fff;">数据缺失</span></h3>
+    <p>本报告仅有 Clone 数据（手动导出），缺少 Views（访客数/PV）、访客地域分布、Referrer 来源分析。建议安装 <code>gh</code> CLI 并授权，以获取完整流量画像：<code>gh api repos/phinn/KinetAios/traffic/views</code></p>
+  </div>
+  <div class="insight">
+    <h3>🕐 工作时段：深夜 + 下午双峰</h3>
+    <p>提交高峰在 23:00-01:00（深夜冲刺）和 15:00-16:00（下午高效期）。凌晨 2 点后骤降，7 点前几乎不写代码。典型的「夜猫子 + 下午专注」双模节奏。</p>
+  </div>
+  <div class="insight">
+    <h3>📌 周三是最活跃日</h3>
+    <p>周三 commits 最多（131），周二和周四次之。周末明显下降但不为零——说明你周末也在写代码，只是节奏放缓。日均 commit 在工作日/周末比为 1.6:1。</p>
+  </div>
+  <div class="insight warn">
+    <h3>🔧 Fix : Feat = 1.85 : 1<span class="tag" style="background:#d29922;color:#000;">质量信号</span></h3>
+    <p>314 个 fix vs 170 个 feat。修复占比 48%——对 MVP 阶段正常，但也说明功能上线后返工率偏高。建议加强发布前验证（typecheck + 关键路径手测），降低 fix 频率。</p>
+  </div>
+  <div class="insight">
+    <h3>🎯 模块聚焦：UI/Voice/NEXUS/V2</h3>
+    <p>按 scope 看，UI 修复最多（68），其次是语音（voice: 13 fix+feat）、V2 引擎（v2: 10+9）、NEXUS（nexus: 9+4）。这四个模块消耗了 >60% 的开发精力，也是项目的核心差异化所在。</p>
+  </div>
+</div>
+
+<!-- ===== RECOMMENDATIONS ===== -->
+<h2>推广建议</h2>
+<div class="chart-box">
+  <table>
+    <thead>
+      <tr><th width="24">优先级</th><th>行动项</th><th>预期效果</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>🔴 P0</td><td><b>安装 gh CLI 接入 Traffic API</b>，获取 Views / Visitor / Referrer / Geo 数据</td><td>补全流量画像，找到真实来源</td></tr>
+      <tr><td>🔴 P0</td><td><b>在非 commit 日制造外部 spike</b>：Product Hunt 发布 / HN 帖 / V2EX 帖 / 小红书</td><td>打破「clone = commit」循环，引入真实用户流量</td></tr>
+      <tr><td>🟡 P1</td><td><b>设置 GitHub Topics</b>：ai-agent, claude-code, codex, mcp, electron, local-first</td><td>提升 GitHub 搜索可发现性</td></tr>
+      <tr><td>🟡 P1</td><td><b>完善 README 首屏</b>：加 NEXUS 动图 / Computer Use 演示 / 竞品对比表</td><td>提高 star 转化率</td></tr>
+      <tr><td>🟡 P1</td><td><b>发 GitHub Release Notes</b>（不只是 tag），附变更摘要 + 截图</td><td>Release 页是 GitHub 自然流量的核心入口</td></tr>
+      <tr><td>🟢 P2</td><td><b>提交 AlternativeTo / Open Source Builders</b>等目录站</td><td>长尾 SEO 流量</td></tr>
+      <tr><td>🟢 P2</td><td><b>提交 awesome-* 列表</b>：awesome-ai-agents, awesome-electron, awesome-cli</td><td>社区背书 + 持续引流量</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+// ===== DATA =====
+const dates = ['07-09','07-10','07-11','07-12','07-13','07-14','07-15','07-16','07-17','07-18','07-19','07-20','07-21','07-22','07-23','07-24','07-25','07-26','07-27','07-28','07-29','07-30','07-31','08-01','08-02','08-03','08-04','08-05','08-06','08-07','08-08','08-09','08-10','08-12'];
+const clones = [18,56,20,58,33,41,35,2,11,0,1,1,1,1,0,1,0,0,18,32,16,7,31,56,35,24,68,39,80,45,43,25,48,62];
+const commits = [3,20,6,28,27,27,37,59,22,0,0,0,0,0,0,0,0,0,0,18,11,3,34,32,25,18,38,61,37,39,35,15,23,22];
+
+// ===== CHART 1: CLONE vs COMMIT =====
+const cc = echarts.init(document.getElementById('chart-clone-commit'));
+cc.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  legend: { data: ['Clones', 'Commits'], textStyle: { color: '#8b949e' }, top: 0 },
+  grid: { left: 50, right: 20, bottom: 30, top: 35 },
+  xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10, rotate: 45 } },
+  yAxis: [
+    { type: 'value', name: 'Clones', nameTextStyle: { color: '#8b949e' }, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+    { type: 'value', name: 'Commits', nameTextStyle: { color: '#8b949e' }, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { show: false } }
+  ],
+  series: [
+    { name: 'Clones', type: 'bar', data: clones, itemStyle: { color: '#58a6ff', borderRadius: [3,3,0,0] }, barWidth: '40%' },
+    { name: 'Commits', type: 'line', yAxisIndex: 1, data: commits, smooth: true, lineStyle: { color: '#3fb950', width: 2 }, itemStyle: { color: '#3fb950' }, symbol: 'circle', symbolSize: 5 }
+  ]
+});
+
+// ===== CHART 2: CUMULATIVE =====
+let cum = 0;
+const cumData = clones.map(v => cum += v);
+const c2 = echarts.init(document.getElementById('chart-cumulative'));
+c2.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  grid: { left: 50, right: 20, bottom: 30, top: 20 },
+  xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10, rotate: 45 } },
+  yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  series: [{ type: 'line', data: cumData, smooth: true, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(88,166,255,0.4)' }, { offset: 1, color: 'rgba(88,166,255,0.02)' }] } }, lineStyle: { color: '#58a6ff', width: 2 }, itemStyle: { color: '#58a6ff' }, symbol: 'none' }]
+});
+
+// ===== CHART 3: ROLLING 7-DAY AVG =====
+const rolling = clones.map((_, i) => {
+  const start = Math.max(0, i - 6);
+  const slice = clones.slice(start, i + 1);
+  return +(slice.reduce((a, b) => a + b, 0) / slice.length).toFixed(1);
+});
+const c3 = echarts.init(document.getElementById('chart-rolling'));
+c3.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  grid: { left: 50, right: 20, bottom: 30, top: 20 },
+  xAxis: { type: 'category', data: dates, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10, rotate: 45 } },
+  yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  series: [{ type: 'line', data: rolling, smooth: true, lineStyle: { color: '#d29922', width: 3 }, itemStyle: { color: '#d29922' }, symbol: 'none', markLine: { silent: true, data: [{ yAxis: 26.7, lineStyle: { color: '#f85149', type: 'dashed' }, label: { formatter: '均值 26.7', color: '#f85149' } }] } }]
+});
+
+// ===== CHART 4: HOURLY =====
+const hours = ['00','01','02','07','08','09','10','11','12','13','14','15','16','17','18','19','20','21','22','23'];
+const hourData = [85,63,16,3,7,17,17,32,18,43,29,38,59,29,20,20,19,42,42,68];
+const c4 = echarts.init(document.getElementById('chart-hourly'));
+c4.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  grid: { left: 45, right: 20, bottom: 30, top: 20 },
+  xAxis: { type: 'category', data: hours.map(h => h + ':00'), axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10 } },
+  yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  series: [{ type: 'bar', data: hourData, itemStyle: { color: function(p) { const h = parseInt(hours[p.dataIndex]); if (h >= 23 || h <= 1) return '#bc8cff'; if (h >= 14 && h <= 17) return '#3fb950'; return '#30363d'; }, borderRadius: [3,3,0,0] } }]
+});
+
+// ===== CHART 5: WEEKLY =====
+const c5 = echarts.init(document.getElementById('chart-weekly'));
+c5.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  grid: { left: 45, right: 20, bottom: 30, top: 20 },
+  xAxis: { type: 'category', data: ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'], axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' } },
+  yAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  series: [{ type: 'bar', data: [68,92,131,120,115,73,68], itemStyle: { color: function(p) { return p.dataIndex === 2 ? '#58a6ff' : '#30363d'; }, borderRadius: [3,3,0,0] }, label: { show: true, position: 'top', color: '#8b949e' } }]
+});
+
+// ===== CHART 6: COMMIT TYPE =====
+const c6 = echarts.init(document.getElementById('chart-commit-type'));
+c6.setOption({
+  tooltip: { backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  legend: { orient: 'vertical', left: 'right', top: 'center', textStyle: { color: '#8b949e', fontSize: 11 } },
+  series: [{
+    type: 'pie', radius: ['45%', '70%'], center: ['38%', '50%'],
+    label: { show: true, color: '#e6edf3', fontSize: 11, formatter: '{b}\n{c} ({d}%)' },
+    data: [
+      { name: 'fix', value: 314, itemStyle: { color: '#f85149' } },
+      { name: 'feat', value: 170, itemStyle: { color: '#3fb950' } },
+      { name: 'docs', value: 69, itemStyle: { color: '#58a6ff' } },
+      { name: 'chore', value: 22, itemStyle: { color: '#8b949e' } },
+      { name: 'refactor', value: 20, itemStyle: { color: '#d29922' } },
+      { name: 'ci', value: 5, itemStyle: { color: '#bc8cff' } },
+      { name: '其他', value: 59, itemStyle: { color: '#30363d' } }
+    ]
+  }]
+});
+
+// ===== CHART 7: SCOPE =====
+const c7 = echarts.init(document.getElementById('chart-scope'));
+c7.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' } },
+  grid: { left: 80, right: 20, bottom: 20, top: 20 },
+  xAxis: { type: 'value', axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  yAxis: { type: 'category', data: ['NEXUS','Voice','V2 Engine','UI','Feishu','i18n','Team','Plugin','Security','Memory'].reverse(), axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' } },
+  series: [{ type: 'bar', data: [9,13,19,68,8,3,3,6,1,2].reverse().map((v, i) => ({ value: v, itemStyle: { color: ['#58a6ff','#3fb950','#d29922','#f85149','#bc8cff','#39d2c0','#8b949e','#30363d','#238636','#1f6feb'][9-i], borderRadius: [0,3,3,0] }})), barWidth: '60%' }]
+});
+
+// ===== CHART 8: VERSIONS =====
+const vLabels = ['v1.0','v1.1','v1.2','v1.3','v1.4','v1.5','v1.6','v1.7','v1.8','v1.9','v2.0','v2.1','v2.2','v2.3','v2.5','v2.6','v2.7','v2.8','v2.9'];
+const vDates = ['7/12','7/14','7/15','7/15','7/17','7/28','8/1','8/2','8/3','8/4','8/5','8/6','8/6','8/6','8/7','8/9','8/10','8/12','8/13'];
+const vCommits = [52,101,114,138,228,230,302,332,353,380,427,478,485,487,534,581,618,638,659];
+const c8 = echarts.init(document.getElementById('chart-versions'));
+c8.setOption({
+  tooltip: { trigger: 'axis', backgroundColor: '#161b22', borderColor: '#30363d', textStyle: { color: '#e6edf3' }, formatter: function(params) { const p = params[0]; return vLabels[p.dataIndex] + ' (' + vDates[p.dataIndex] + ')<br/>累计 commits: ' + p.value; } },
+  grid: { left: 50, right: 30, bottom: 60, top: 30 },
+  xAxis: { type: 'category', data: vLabels, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e', fontSize: 10, rotate: 45 } },
+  yAxis: { type: 'value', name: '累计 Commits', nameTextStyle: { color: '#8b949e' }, axisLine: { lineStyle: { color: '#30363d' } }, axisLabel: { color: '#8b949e' }, splitLine: { lineStyle: { color: '#21262d' } } },
+  series: [{ type: 'line', data: vCommits, smooth: true, lineStyle: { color: '#58a6ff', width: 2 }, itemStyle: { color: '#58a6ff' }, areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(88,166,255,0.3)' }, { offset: 1, color: 'rgba(88,166,255,0.02)' }] } }, symbol: 'circle', symbolSize: 6, markPoint: { data: [{ type: 'max', name: '峰值' }] } }]
+});
+
+// ===== RESIZE =====
+window.addEventListener('resize', () => {
+  [cc, c2, c3, c4, c5, c6, c7, c8].forEach(c => c.resize());
+});
+</script>
+
+</body>
+</html>
