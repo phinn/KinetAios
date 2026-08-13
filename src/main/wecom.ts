@@ -9,6 +9,7 @@ import type { TaskManager } from './TaskManager';
 import type { Conversation } from '../shared/types';
 import { getSettings } from './settings';
 import * as store from './store';
+import { loadSkillBody, listSkills } from './skills';
 
 type WeComStatusEv = { type: string; data?: unknown };
 
@@ -231,10 +232,11 @@ class WeComBridge {
   }
 
   // ── 斜杠指令处理 / Slash command handling ──
-  // / Users send /new, /reset, /list, /switch, /context in WeCom to manage sessions.
+  // / Users send /new, /reset, /list, /switch, /context, /skills in WeCom to manage sessions.
+  // / Returns true if handled (reply sent); false if the message should flow to the agent (skill invocation).
   private async handleSlashCommand(
     text: string, wecomKey: string, frame: WsFrameHeaders, streamId: string,
-  ): Promise<void> {
+  ): Promise<boolean> {
     const parts = text.toLowerCase().trim().split(/\s+/);
     const command = parts[0];
 
@@ -250,7 +252,7 @@ class WeComBridge {
         this.wecomSessions.set(wecomKey, conv.id);
         this.evictIfNeeded(wecomKey);
         await this.replyFinal(frame, streamId, '✅ 已开启新对话');
-        return;
+        return true;
       }
       case '/reset': {
         const conv = this.findConvByWecomKey(wecomKey);
@@ -260,13 +262,13 @@ class WeComBridge {
         } else {
           await this.replyFinal(frame, streamId, '当前没有活跃会话');
         }
-        return;
+        return true;
       }
       case '/list': {
         const convs = this.listUserConversations(wecomKey).slice(0, 5);
         if (convs.length === 0) {
           await this.replyFinal(frame, streamId, '暂无历史会话');
-          return;
+          return true;
         }
         const lines = convs.map((c, i) => {
           const time = new Date(c.updatedAt || c.createdAt).toLocaleString('zh-CN');
@@ -275,26 +277,26 @@ class WeComBridge {
           return `${i + 1}. ${title}\n   ${time} · ${c.turns.length} 轮${active}`;
         });
         await this.replyFinal(frame, streamId, `📋 会话列表:\n\n${lines.join('\n\n')}\n\n输入 /switch <编号> 切换`);
-        return;
+        return true;
       }
       case '/switch': {
         const idx = parseInt(parts[1], 10) - 1;
         const convs = this.listUserConversations(wecomKey);
         if (isNaN(idx) || idx < 0 || idx >= convs.length) {
           await this.replyFinal(frame, streamId, '❌ 无效编号,输入 /list 查看可用会话');
-          return;
+          return true;
         }
         const target = convs[idx];
         this.wecomSessions.set(wecomKey, target.id);
         const title = target.customTitle || target.turns[0]?.prompt?.slice(0, 30) || '新对话';
         await this.replyFinal(frame, streamId, `✅ 已切换到: ${title}`);
-        return;
+        return true;
       }
       case '/context': {
         const conv = this.findConvByWecomKey(wecomKey);
         if (!conv) {
           await this.replyFinal(frame, streamId, '当前没有活跃会话');
-          return;
+          return true;
         }
         const time = new Date(conv.createdAt).toLocaleString('zh-CN');
         await this.replyFinal(frame, streamId,
@@ -305,18 +307,46 @@ class WeComBridge {
           `累计费用: $${conv.cost.toFixed(4)}\n` +
           `工作目录: ${conv.cwd}`
         );
-        return;
+        return true;
       }
-      default:
+      case '/skills': {
+        const skills = listSkills();
+        if (skills.length === 0) {
+          await this.replyFinal(frame, streamId, '暂无可用 Skill\n\nSkill 目录:\n~/.claude/commands/\n~/.codex/skills/\n<plugin>/commands/');
+          return true;
+        }
+        const lines = skills.slice(0, 20).map((s, i) => {
+          const desc = s.description ? ` — ${s.description.slice(0, 40)}` : '';
+          return `${i + 1}. \`/${s.name}\`${desc}`;
+        });
+        const hint = skills.length > 20 ? `\n\n(仅显示前 20 个,共 ${skills.length} 个)` : '';
+        await this.replyFinal(frame, streamId, `📋 可用 Skill:\n\n${lines.join('\n')}${hint}\n\n发送 /<skill名> 来调用`);
+        return true;
+      }
+      default: {
+        // 检查是否是 skill 调用(如 /review, /deploy 等)。
+        // / Check if this is a skill invocation (e.g. /review, /deploy).
+        const skillMatch = command.match(/^\/([\w-]+)/);
+        if (skillMatch) {
+          const body = loadSkillBody(skillMatch[1]);
+          if (body != null) {
+            // 是 skill → 不拦截,让消息走 agent(TaskManager.send 会解析 /name 并注入 skillBlock)。
+            // / Is a skill → don't intercept; let the message flow to agent.
+            return false;
+          }
+        }
         await this.replyFinal(frame, streamId,
           '可用指令:\n' +
           '/new — 开启新对话\n' +
           '/reset — 清空当前对话上下文\n' +
           '/list — 查看历史会话\n' +
           '/switch <编号> — 切换到指定会话\n' +
-          '/context — 查看当前会话信息'
+          '/context — 查看当前会话信息\n' +
+          '/skills — 查看可用 Skill\n' +
+          '/<skill名> — 调用指定 Skill'
         );
-        return;
+        return true;
+      }
     }
   }
 
@@ -341,11 +371,12 @@ class WeComBridge {
     const streamId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const replyFrame: WsFrameHeaders = { headers: frame.headers };
 
-    // ── 斜杠指令(同步快速回复,不走 Agent) ──
-    // / Slash commands (fast reply, no Agent).
+    // ── 斜杠指令(同步快速回复,不走 Agent)或 Skill 调用 ──
+    // / Slash commands (fast reply) or skill invocations (flow to agent).
     if (text.startsWith('/')) {
-      await this.handleSlashCommand(text, wecomKey, replyFrame, streamId);
-      return;
+      const handled = await this.handleSlashCommand(text, wecomKey, replyFrame, streamId);
+      if (handled) return; // 命令已处理(已回复)
+      // handled === false → 是 skill 调用,继续走 agent
     }
 
     // ── 入 per-user 串行队列:同一用户的消息按顺序处理 ──

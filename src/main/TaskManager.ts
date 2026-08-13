@@ -1072,7 +1072,7 @@ function isCliEngine(e: EngineKind): boolean {
 // Direct 家族引擎(direct + directV2)共享 directHistory 上下文。
 // 切换引擎时,同族之间保留上下文,跨族(→ CLI)清空。
 function isDirectFamily(e: EngineKind): boolean {
-  return e === 'direct' || e === 'directV2';
+  return e === 'direct' || e === 'directV2' || e === 'directV3';
 }
 
 // cwd must exist and be a directory; otherwise CLIs ENOENT with an opaque message.
