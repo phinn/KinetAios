@@ -447,6 +447,7 @@ function renderSidebar() {
 }
 
 // 单条任务条目(grouped 模式作 .sb-proj-tasks 子项;flat 模式作 #conv-list 顶层 li)。
+// 对齐 SwiftUI ChatRow: 20×20 圆角引擎图标 + 标题 + meta(轮数·时间)
 // flat 模式下额外渲染一行 cwd basename(因为没了项目头),CSS 控制只在 flat 显示。
 function taskLi(id: string): HTMLElement {
   const c = convs.get(id)!;
@@ -454,11 +455,17 @@ function taskLi(id: string): HTMLElement {
   if (id === selectedId) li.classList.add('active');
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
-  const cls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
-  const engCls = c.engine ? ` eng-${c.engine}` : '';
   const ts = c.updatedAt ?? c.createdAt;
   const timeStr = fmtRelative(ts);
-  li.innerHTML = `<span class="dot ${cls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${timeStr}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  // 呼吸灯小圆点 — 运行中脉冲发光,空闲静态引擎色
+  const dotCls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+  const engCls = c.engine ? ` eng-${c.engine}` : '';
+  // meta 行:运行中显示 "运行中";否则显示 "N 轮 · 时间"
+  const turnCount = c.turns.length;
+  const metaText = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
+  // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
+  li.title = `${title}\n${c.cwd || ''}`;
+  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     if (selectedId === id) return; // 已经在当前频道,不重复渲染
     // 就地切换 active class,避免全量销毁+重建 sidebar DOM(减少内存抖动)
