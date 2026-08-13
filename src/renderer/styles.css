@@ -892,6 +892,24 @@ a { color: var(--accent); }
 
 #app { display: flex; height: 100vh; }
 
+/* ── 侧边栏折叠态 / Sidebar collapsed state ── */
+#sidebar.collapsed { width: 48px; }
+#sidebar.collapsed > .sb-head,
+#sidebar.collapsed > .sb-search,
+#sidebar.collapsed > #conv-list,
+#sidebar.collapsed > .sb-foot { display: none; }
+
+/* 折叠态图标栏 / Collapsed icon rail */
+.sb-rail {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; padding: 10px 0; width: 100%; flex: 1;
+}
+.sb-rail .ghost { padding: 7px; font-size: 1.154rem; }
+.sb-rail-spacer { flex: 1; }
+
+/* 折叠过渡 / Collapse transition */
+#sidebar { transition: width 200ms var(--ease-out); }
+
 /* sidebar — 侧栏容器,液态玻璃下面是半透明面板,实色主题保持分层 */
 #sidebar {
   width: 256px; flex-shrink: 0;

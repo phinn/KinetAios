@@ -28,6 +28,8 @@ let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 
 let pluginPanelRegistry: Array<{ name: string; title: string; icon?: string; html: string }> = [];
 // 侧栏显示模式:grouped(按 cwd 分项目)或 flat(原始平铺)。localStorage 持久化。
 let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'grouped' | 'flat') || 'grouped';
+// 侧边栏折叠状态(收起为图标栏)/ Sidebar collapsed state (icon rail when collapsed)
+let sidebarCollapsed = localStorage.getItem('sb-collapsed') === '1';
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
@@ -3565,6 +3567,31 @@ function wireUi() {
     if (document.getElementById('settings-view')!.classList.contains('active')) showChat();
     else showSettings();
   };
+
+  // ── 侧边栏折叠/展开 / Sidebar collapse toggle ──
+  const applySidebarCollapsed = () => {
+    const sb = document.getElementById('sidebar')!;
+    const rail = document.getElementById('sb-rail')!;
+    sb.classList.toggle('collapsed', sidebarCollapsed);
+    rail.hidden = !sidebarCollapsed;
+    localStorage.setItem('sb-collapsed', sidebarCollapsed ? '1' : '0');
+  };
+  (window as any).__applySidebarCollapsed = applySidebarCollapsed;
+
+  document.getElementById('btn-collapse-sidebar')!.onclick = () => {
+    sidebarCollapsed = true;
+    applySidebarCollapsed();
+  };
+  document.getElementById('rail-expand')!.onclick = () => {
+    sidebarCollapsed = false;
+    applySidebarCollapsed();
+  };
+  // 折叠态图标栏的快捷按钮 / Rail icon shortcuts
+  document.getElementById('rail-new')!.onclick = () => document.getElementById('btn-new')!.click();
+  document.getElementById('rail-wb')!.onclick = () => document.getElementById('btn-wb')!.click();
+  document.getElementById('rail-settings')!.onclick = () => document.getElementById('btn-settings')!.click();
+  // 初始化折叠状态 / Apply persisted collapsed state on load
+  applySidebarCollapsed();
 
 // 收起 ⋯ 更多菜单 (Launchpad 风格浮层)
 // Close the ⋯ more panel (Launchpad-style overlay)
