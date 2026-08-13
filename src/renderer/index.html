@@ -4,20 +4,20 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; frame-src blob: data: file: http: https: srcdoc:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://unpkg.com;" />
   <title>KinetAios</title>
-  <link rel="stylesheet" href="styles.css?v=20250811a" />
+  <link rel="stylesheet" href="styles.css?v=20250813a" />
  <link rel="stylesheet" href="town.css" />
 </head>
 <body>
   <div id="app">
-    <aside id="sidebar">
+    <aside id="sidebar" role="navigation" aria-label="Sidebar">
       <div class="sb-head">
         <div class="brand" id="brand"><span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg></span> KinetAios</div>
         <div class="sb-actions">
-          <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" title="新建会话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
-          <button class="ghost" id="btn-wb" data-i18n-title="wb.open" title="工作台"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
-          <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" title="设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+          <button class="ghost" id="btn-new" data-i18n-title="sidebar.newSession" data-i18n-aria="a11y.newSession" aria-label="新建会话" title="新建会话"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
+          <button class="ghost" id="btn-wb" data-i18n-title="wb.open" data-i18n-aria="a11y.workbench" aria-label="工作台" title="工作台"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+          <button class="ghost" id="btn-settings" data-i18n-title="sidebar.settings" data-i18n-aria="a11y.settings" aria-label="设置" title="设置"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
           <div class="sb-more-wrap">
-            <button class="ghost" id="btn-more" data-i18n-title="sidebar.more" title="更多"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+            <button class="ghost" id="btn-more" data-i18n-title="sidebar.more" data-i18n-aria="a11y.more" aria-label="更多功能" title="更多"><svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
             <div class="sb-more-menu" id="sb-more-menu">
               <div class="sb-more-section-label" data-i18n="sidebar.moreViews">视图</div>
               <div class="sb-more-grid">
@@ -54,7 +54,7 @@
         <input type="text" id="sb-search-input" data-i18n-placeholder="sidebar.searchPlaceholder" placeholder="搜索会话…" autocomplete="off">
         <button class="sb-search-clear" id="sb-search-clear" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
-      <ul id="conv-list"></ul>
+      <ul id="conv-list" role="listbox" aria-label="会话列表"></ul>
       <div class="sb-foot" id="sb-foot">
         <span class="sb-foot-info" id="sb-foot-info">0 会话</span>
         <span class="sb-foot-spacer"></span>
@@ -122,7 +122,7 @@
           <button id="scroll-bottom-btn" class="scroll-bottom-btn" data-i18n-title="scrollBottom.title" title="回到最新消息" aria-label="回到最新消息"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
           <div id="input">
             <div id="attach-row" class="attach-row"></div>
-            <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" placeholder="给 KinetAios 下达任务…"></textarea>
+            <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" data-i18n-aria="a11y.chatInput" aria-label="输入消息… (Enter 发送, Shift+Enter 换行)" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
               <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
@@ -136,7 +136,7 @@
               <select id="profile-select" class="model-pill" style="max-width:140px;display:none" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
               <select id="ctx-mode-select" class="model-pill" style="max-width:100px" data-i18n-title="ctxMode.title" title="上下文模式"></select>
               <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
-              <button class="primary send" id="btn-send" data-i18n-title="composer.send" title="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
+              <button class="primary send" id="btn-send" data-i18n-title="composer.send" data-i18n-aria="a11y.sendMessage" aria-label="发送" title="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
               <div id="composer-more-menu" class="composer-more-menu" hidden>
                 <button class="cm-item" id="cm-skill" data-i18n-title="skill.title"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/></svg><span data-i18n="composer.skill">Skill</span></button>
                 <button class="cm-item" id="cm-mcp" data-i18n-title="mcp.title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18M3 9h18M3 15h18"/></svg><span data-i18n="composer.mcp">MCP</span></button>
@@ -293,7 +293,7 @@
   </div>
 
   <!-- shell confirm modal -->
-  <div id="modal">
+  <div id="modal" role="dialog" aria-modal="true" aria-label="命令执行确认">
     <div class="modal-card">
       <h3 data-i18n="modal.title">要执行 shell 命令?</h3>
       <pre id="modal-cmd"></pre>
@@ -306,7 +306,7 @@
   </div>
 
   <!-- 输入对话框(Electron 不支持 window.prompt(),用自定义 modal)-->
-  <div id="prompt-modal">
+  <div id="prompt-modal" role="dialog" aria-modal="true">
     <div class="modal-card">
       <h3 id="prompt-title">改名</h3>
       <input id="prompt-input" />
@@ -318,7 +318,7 @@
   </div>
 
   <!-- 项目背景编辑器(workbench 卡片「背景」按钮弹出;写 cwd/KINET-CONTEXT.md)-->
-  <div id="context-modal">
+  <div id="context-modal" role="dialog" aria-modal="true">
     <div class="modal-card cm-card">
       <h3 id="cm-title" data-i18n="wb.contextTitle">项目背景(KINET-CONTEXT.md)</h3>
       <div class="cm-cwd" id="cm-cwd"></div>
@@ -333,7 +333,7 @@
   </div>
 
   <!-- 长期记忆面板(🧠 按钮):列表 + scope 切换 + 视图切换(facts/graph)+ 行内编辑/删除 -->
-  <div id="memory-modal">
+  <div id="memory-modal" role="dialog" aria-modal="true" aria-label="长期记忆">
     <div class="modal-card mm-card">
       <div class="mm-head">
         <h3 data-i18n="mem.title">长期记忆</h3>
@@ -353,7 +353,7 @@
   </div>
 
   <!-- 快照面板(⏪ 按钮):write_file/edit_file 写前自动存原文,这里 list + restore -->
-  <div id="snapshot-modal">
+  <div id="snapshot-modal" role="dialog" aria-modal="true" aria-label="快照与回滚">
     <div class="modal-card mm-card snap-card">
       <div class="mm-head">
         <h3 data-i18n="snap.title">快照与回滚</h3>
@@ -368,7 +368,7 @@
   </div>
 
   <!-- 定时任务面板(📅):cron 表达式 + prompt,匹配时自动起会话 -->
-  <div id="cron-modal">
+  <div id="cron-modal" role="dialog" aria-modal="true" aria-label="定时任务">
     <div class="modal-card mm-card cron-card">
       <div class="mm-head">
         <h3 data-i18n="cron.title">定时任务</h3>
@@ -380,7 +380,7 @@
   </div>
 
   <!-- 上下文检查器:查看/编辑 Direct 引擎的 directHistory(实际发给 LLM 的消息列表)-->
-  <div id="ctx-inspector-modal">
+  <div id="ctx-inspector-modal" role="dialog" aria-modal="true" aria-label="上下文检查器">
     <div class="ctx-insp-card">
       <div class="ctx-insp-head">
         <h3 data-i18n="ctxInsp.title">上下文检查器</h3>
@@ -403,7 +403,7 @@
   </div>
 
   <!-- 全局搜索浮层(Ctrl+Shift+F):跨所有会话 FTS5 搜索历史对话 -->
-  <div id="search-overlay" class="search-overlay" style="display:none;">
+  <div id="search-overlay" class="search-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="搜索所有对话">
     <div class="search-overlay-card">
       <div class="search-overlay-head">
         <input type="text" id="search-input" class="search-overlay-input" data-i18n-placeholder="search.placeholder" placeholder="搜索所有对话…" autocomplete="off" />
@@ -414,7 +414,7 @@
   </div>
 
   <!-- 远程 Agent 直播面板:实时显示远程节点的 Agent 执行过程 -->
-  <div id="live-panel" class="live-panel" style="display:none;">
+  <div id="live-panel" class="live-panel" style="display:none;" role="region" aria-label="远程协作直播">
     <div class="live-panel-head">
       <span class="live-dot" id="live-dot"></span>
       <span id="live-title" data-i18n="live.title">远程协作直播</span>
@@ -425,6 +425,6 @@
 
     </div>
 
-  <script src="app.js?v=20250810k"></script>
+  <script src="app.js?v=20250813a"></script>
 </body>
 </html>
