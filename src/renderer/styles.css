@@ -904,10 +904,9 @@ a { color: var(--accent); }
 #sidebar.collapsed > .sb-foot { display: none; }
 
 /* 折叠态图标栏 / Collapsed icon rail */
-.sb-rail { display: none; width: 100%; flex: 1; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; }
+.sb-rail { display: none; width: 100%; flex-direction: column; align-items: center; gap: 4px; padding: 10px 0; }
 #sidebar.collapsed .sb-rail { display: flex; }
 .sb-rail .ghost { padding: 7px; font-size: 1.154rem; }
-.sb-rail-spacer { flex: 1; }
 
 /* sidebar — 侧栏容器,液态玻璃下面是半透明面板,实色主题保持分层 */
 #sidebar {
