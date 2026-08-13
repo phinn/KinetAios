@@ -1082,16 +1082,21 @@ a { color: var(--accent); }
   transform: scale(1.05);
   box-shadow: var(--shadow-accent);
 }
-.sb-head { padding: 13px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; position: relative; }
-.sb-head .brand { font-weight: 700; font-size: 1.077rem; flex: 1; min-width: 0; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.sb-head .brand .spark { color: var(--accent); flex-shrink: 0; }
-.sb-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; padding-right: 32px; }
-/* 折叠按钮绝对定位在 .sb-head 右上角,不挤压 sb-actions 空间 */
-.sb-collapse-btn { position: absolute; top: 9px; right: 8px; padding: 5px 6px; z-index: 2; }
+.sb-head { padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+/* 第一行:品牌名左 + 折叠按钮右 — flex 水平,brand 占满剩余空间,按钮始终可见 */
+.sb-head-row { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.sb-head-row .brand { font-weight: 700; font-size: 0.92rem; flex: 1; min-width: 0; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: flex; align-items: center; gap: 5px; }
+.sb-head-row .brand .spark { color: var(--accent); flex-shrink: 0; }
+.sb-head-row .brand .brand-name { flex-shrink: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+#sidebar.collapsed .brand-name { display: none; }
+/* 折叠按钮 — 第一行末尾,正常流 flex-shrink:0,绝不脱离 flow */
+.sb-collapse-btn { flex-shrink: 0; padding: 5px 6px; font-size: 0.92rem; }
 #sidebar.collapsed .sb-collapse-btn { display: none; }
+/* 第二行:4 个图标按钮 — 不再被 brand 挤压,独立一整行 */
+.sb-actions { display: flex; gap: 2px; align-items: center; flex-wrap: nowrap; }
 /* 高频按钮(＋ 📂 ⚙)+ 更多菜单(⋯):4 个按钮在 256px sidebar 里宽敞不挤。
    低频功能(仪表盘/文件/Arena/记忆/快照)收纳进 ⋯ 下拉,需要时点开。 */
-.sb-actions .ghost { padding: 5px 6px; font-size: 1rem; }
+.sb-actions .ghost { padding: 5px 4px; font-size: 0.92rem; }
 /* 新建按钮视觉强调(唯一 CTA) / New-session is the primary CTA */
 #btn-new { color: var(--accent); }
 #btn-new:hover { background: var(--accent-glow); }
