@@ -1082,9 +1082,9 @@ a { color: var(--accent); }
   transform: scale(1.05);
   box-shadow: var(--shadow-accent);
 }
-.sb-head { padding: 13px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
-.sb-head .brand { font-weight: 700; font-size: 1.077rem; flex-shrink: 0; letter-spacing: -0.02em; white-space: nowrap; }
-.sb-head .brand .spark { color: var(--accent); }
+.sb-head { padding: 13px 14px; display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; min-width: 0; }
+.sb-head .brand { font-weight: 700; font-size: 1.077rem; flex: 1; min-width: 0; letter-spacing: -0.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sb-head .brand .spark { color: var(--accent); flex-shrink: 0; }
 .sb-actions { display: flex; gap: 2px; align-items: center; flex-shrink: 0; }
 /* 高频按钮(＋ 📂 ⚙)+ 更多菜单(⋯):4 个按钮在 256px sidebar 里宽敞不挤。
    低频功能(仪表盘/文件/Arena/记忆/快照)收纳进 ⋯ 下拉,需要时点开。 */
