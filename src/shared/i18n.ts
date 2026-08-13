@@ -62,6 +62,17 @@ const ZH_CN: Dict = {
   'sidebar.moreMGraph': '记忆图谱',
   'sidebar.moreExport': '导出会话',
 
+  // 右键上下文菜单 / Context menu
+  'ctx.select': '切换到此会话',
+  'ctx.rename': '重命名…',
+  'ctx.newTask': '新建会话在此项目',
+  'ctx.copyId': '复制会话 ID',
+  'ctx.copyCwd': '复制工作目录',
+  'ctx.copyTitle': '复制标题',
+  'ctx.delete': '删除会话',
+  'ctx.collapseAll': '折叠所有项目',
+  'ctx.expandAll': '展开所有项目',
+
   'time.justNow': '刚刚',
   'time.minutesAgo': '{n} 分钟前',
   'time.hoursAgo': '{n} 小时前',
@@ -1102,6 +1113,17 @@ const EN: Dict = {
   'sidebar.moreTimeline': 'Memory Timeline',
   'sidebar.moreMGraph': 'Memory Graph',
   'sidebar.moreExport': 'Export',
+
+  // Context menu
+  'ctx.select': 'Switch to this session',
+  'ctx.rename': 'Rename…',
+  'ctx.newTask': 'New session in this project',
+  'ctx.copyId': 'Copy session ID',
+  'ctx.copyCwd': 'Copy working directory',
+  'ctx.copyTitle': 'Copy title',
+  'ctx.delete': 'Delete session',
+  'ctx.collapseAll': 'Collapse all projects',
+  'ctx.expandAll': 'Expand all projects',
 
   'time.justNow': 'just now',
   'time.minutesAgo': '{n}m ago',
@@ -2144,6 +2166,17 @@ const ZH_TW: Dict = {
   'sidebar.moreMGraph': '記憶圖譜',
   'sidebar.moreExport': '匯出會話',
 
+  // 右鍵選單 / Context menu
+  'ctx.select': '切換到此工作階段',
+  'ctx.rename': '重新命名…',
+  'ctx.newTask': '在此專案新增工作階段',
+  'ctx.copyId': '複製工作階段 ID',
+  'ctx.copyCwd': '複製工作目錄',
+  'ctx.copyTitle': '複製標題',
+  'ctx.delete': '刪除工作階段',
+  'ctx.collapseAll': '收合所有專案',
+  'ctx.expandAll': '展開所有專案',
+
   'time.justNow': '剛剛',
   'time.minutesAgo': '{n} 分鐘前',
   'time.hoursAgo': '{n} 小時前',
@@ -3176,6 +3209,17 @@ const JA: Dict = {
   'sidebar.moreTimeline': 'メモリタイムライン',
   'sidebar.moreMGraph': 'メモリグラフ',
   'sidebar.moreExport': 'エクスポート',
+
+  // コンテキストメニュー / Context menu
+  'ctx.select': 'このセッションに切り替え',
+  'ctx.rename': '名前を変更…',
+  'ctx.newTask': 'このプロジェクトに新規セッション',
+  'ctx.copyId': 'セッション ID をコピー',
+  'ctx.copyCwd': '作業ディレクトリをコピー',
+  'ctx.copyTitle': 'タイトルをコピー',
+  'ctx.delete': 'セッションを削除',
+  'ctx.collapseAll': 'すべてのプロジェクトを折りたたむ',
+  'ctx.expandAll': 'すべてのプロジェクトを展開',
 
   'time.justNow': 'たった今',
   'time.minutesAgo': '{n} 分前',
