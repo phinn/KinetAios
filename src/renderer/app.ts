@@ -549,11 +549,11 @@ function fmtRelative(ts: number): string {
   const now = Date.now();
   const diff = now - ts;
   const min = 60000, hour = 3600000, day = 86400000;
-  if (diff < min) return '刚刚';
-  if (diff < hour) return `${Math.floor(diff / min)}分钟前`;
-  if (diff < day) return `${Math.floor(diff / hour)}小时前`;
-  if (diff < 2 * day) return '昨天';
-  if (diff < 7 * day) return `${Math.floor(diff / day)}天前`;
+  if (diff < min) return tr('sidebar.justNow');
+  if (diff < hour) return tr('sidebar.minutesAgo', { n: Math.floor(diff / min) });
+  if (diff < day) return tr('sidebar.hoursAgo', { n: Math.floor(diff / hour) });
+  if (diff < 2 * day) return tr('sidebar.yesterday');
+  if (diff < 7 * day) return tr('sidebar.daysAgo', { n: Math.floor(diff / day) });
   const d = new Date(ts);
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
