@@ -195,6 +195,10 @@ export class DirectV2Engine implements Engine {
     this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
     this.lastCompactFingerprints.delete(conv.id); // P0-2: 重置当前会话的 compact 缓存
 
+    // Skill 标记:在首个 status 中显示,让用户知道 skill 已加载(不被后续 status 闪掉)。
+    // / Skill tag shown in the first status so the user knows the skill was loaded.
+    const skillTag = skillBlock ? `📦 ${conv.turns[conv.turns.length - 1]?.prompt?.match(/^\/([\w-]+)/)?.[1] ?? 'skill'} | ` : '';
+
     // P2-1: Crash recovery — 检查是否有未完成的 checkpoint(非 final)。
     // 如果存在且 plan 有未完成步骤,从 checkpoint 恢复 plan + execHistory,跳过已完成步骤。
     const ckpt = store.loadLatestV2Checkpoint(conv.id);
@@ -274,10 +278,10 @@ export class DirectV2Engine implements Engine {
       execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 40_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
       const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
-      onEvent({ type: 'status', text: `📋 v2: 恢复计划(${plan.steps.length} 步,已完成 ${doneCount},剩余 ${remaining.length})— 跳过规划阶段` });
+      onEvent({ type: 'status', text: `${skillTag}📋 v2: 恢复计划(${plan.steps.length} 步,已完成 ${doneCount},剩余 ${remaining.length})— 跳过规划阶段` });
     } else {
     // ── 正常路径:Planner 探查 + 规划 ──
-    onEvent({ type: 'status', text: '🧠 v2: 规划中...' });
+    onEvent({ type: 'status', text: `${skillTag}🧠 v2: 规划中...` });
 
     const plannerTools = [...readOnlyTools(), ...(await mcp.directTools(2000))];
     const plannerMessages = await runAgentLoop({
@@ -324,7 +328,7 @@ export class DirectV2Engine implements Engine {
       // 简单任务退化为 v1 模式:planner 用只读工具探查后直接给了答案。
       // 但如果任务需要写操作(创建文件/修改代码),planner 没有写工具 → 模型会说"我无法创建文件"。
       // 修复:退化时用完整工具集(含 write_file/shell)再跑一轮,让模型真正执行任务。
-      onEvent({ type: 'status', text: '⚡ v2: 任务简单,直接执行(完整工具集)' });
+      onEvent({ type: 'status', text: `${skillTag}⚡ v2: 任务简单,直接执行(完整工具集)` });
       // P2-1-fix: 退化路径也要 trim plannerMessages,防止探查阶段的大段工具输出撑爆 executor。
       // 不像正常路径那样只取 planConclusion —— 退化场景没有 plan,executor 需要探查发现的文件路径。
       const fallbackPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);

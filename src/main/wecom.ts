@@ -330,8 +330,14 @@ class WeComBridge {
         if (skillMatch) {
           const body = loadSkillBody(skillMatch[1]);
           if (body != null) {
-            // 是 skill → 不拦截,让消息走 agent(TaskManager.send 会解析 /name 并注入 skillBlock)。
-            // / Is a skill → don't intercept; let the message flow to agent.
+            // 是 skill → 提示用户已加载,然后让消息走 agent。
+            // / Is a skill → notify user, then let the message flow to agent.
+            const cfg = getSettings().wecomBot;
+            if (cfg.streamReply && this.ws) {
+              try {
+                await this.ws!.replyStreamNonBlocking(frame, streamId, `📦 已加载技能: ${skillMatch[1]}\n⏳ 正在执行…`, false);
+              } catch { /* ignore */ }
+            }
             return false;
           }
         }
@@ -411,8 +417,10 @@ class WeComBridge {
       data: { userid, chatid, text: text.slice(0, 100), chattype: frame.body?.chattype },
     });
 
-    // 流式模式:先发"思考中"首帧 / Stream mode: send "thinking" first frame
-    if (cfg.streamReply && this.ws) {
+    // 流式模式:先发"思考中"首帧(skill 调用已在 handleSlashCommand 发过提示,跳过)。
+    // / Stream mode: send "thinking" first frame (skill invocations already showed a hint).
+    const isSkillInvocation = text.startsWith('/') && loadSkillBody(text.match(/^\/([\w-]+)/)?.[1] ?? '') != null;
+    if (cfg.streamReply && this.ws && !isSkillInvocation) {
       try {
         await this.ws.replyStreamNonBlocking(replyFrame, streamId, '⏳ 正在思考…', false);
       } catch (e) {

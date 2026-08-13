@@ -204,7 +204,8 @@ export class DirectV3Engine implements Engine {
 
     // ── 路由分类 ──
     const route = routeTask(prompt, conv.directHistory, { hasGoal: !!conv.goal });
-    onEvent({ type: 'status', text: `🧭 v3: 路由 → ${route.toUpperCase()}` });
+    const skillTag = skillBlock ? `📦 ${prompt.match(/^\/([\w-]+)/)?.[1] ?? 'skill'} | ` : '';
+    onEvent({ type: 'status', text: `${skillTag}🧭 v3: 路由 → ${route.toUpperCase()}` });
 
     // ── 执行 ──
     let updatedHistory: ChatMsg[] = conv.directHistory;
