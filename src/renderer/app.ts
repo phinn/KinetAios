@@ -4,6 +4,8 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import { t, engineLabel, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
+import { uxToast } from './ux-toast';
+import { trapFocus, saveFocus } from './focus-manager';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
 import { setTownLang, setTownHomeDir, setTownStyle, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
@@ -111,6 +113,7 @@ function applyI18nDOM(): void {
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(lang, el.dataset.i18n!); });
   document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => { el.title = t(lang, el.dataset.i18nTitle!); });
   document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => { (el as HTMLInputElement).placeholder = t(lang, el.dataset.i18nPlaceholder!); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => { el.setAttribute('aria-label', t(lang, el.dataset.i18nAria!)); });
   // 模式按钮的 title 跟随当前模式(不是静态 key),applyI18nDOM 会重写 title,这里补回去。
   syncSidebarModeBtn();
 }
@@ -145,13 +148,13 @@ function applyI18nDOM(): void {
       }
       const msg = rows.join('\n');
       console.log('[F8 Layout Dump]\n' + msg);
-      alert(msg);
+      uxToast.err(msg);
     }
     // F9 = 切换布局调试边框 / Toggle layout debug borders
     if (e.key === 'F9') {
       const styleId = '__layout_debug__';
       let s = document.getElementById(styleId) as HTMLStyleElement | null;
-      if (s) { s.remove(); alert('布局边框已关'); return; }
+      if (s) { s.remove(); uxToast.info(tr('toast.layoutBorderOff')); return; }
       s = document.createElement('style');
       s.id = styleId;
       s.textContent = `
@@ -164,7 +167,7 @@ function applyI18nDOM(): void {
         .composer-bar { outline: 2px solid pink !important; }
       `;
       document.head.appendChild(s);
-      alert('布局边框已开 (红/橙/黄/绿/青/紫/粉对应 7 层)');
+      uxToast.info(tr('toast.layoutBorderOn'));
     }
   });
 
@@ -501,6 +504,7 @@ function fmtRelative(ts: number): string {
 // Electron renderer 不支持 window.prompt(),用自定义输入 modal 替代。
 // 全局 Escape / backdrop 关闭时通过 activePromptDone 触发同一个 resolver。
 let activePromptDone: ((v: string | null) => void) | null = null;
+let promptFocusRestore: (() => void) | null = null;
 function showPrompt(title: string, def: string): Promise<string | null> {
   const modal = document.getElementById('prompt-modal')!;
   document.getElementById('prompt-title')!.textContent = title;
@@ -509,6 +513,7 @@ function showPrompt(title: string, def: string): Promise<string | null> {
   modal.classList.add('show');
   input.focus();
   input.select();
+  promptFocusRestore = trapFocus(modal);
   return new Promise((resolve) => {
     const ok = document.getElementById('prompt-ok')!;
     const cancel = document.getElementById('prompt-cancel')!;
@@ -520,6 +525,7 @@ function showPrompt(title: string, def: string): Promise<string | null> {
       input.onkeydown = null;
       activePromptDone = null;
       modal.classList.remove('show');
+      if (promptFocusRestore) { promptFocusRestore(); promptFocusRestore = null; }
       resolve(v);
     };
     activePromptDone = done;
@@ -531,7 +537,10 @@ function showPrompt(title: string, def: string): Promise<string | null> {
     };
   });
 }
-function dismissPrompt(): void { activePromptDone?.(null); }
+function dismissPrompt(): void {
+  if (promptFocusRestore) { promptFocusRestore(); promptFocusRestore = null; }
+  activePromptDone?.(null);
+}
 
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
 async function renameConv(id: string) {
@@ -770,7 +779,7 @@ async function teamSendToMember(teamId: string, memberName: string): Promise<voi
   try {
     const r = await api.sendToTeamMember(teamId, memberName, message);
     if (!r.ok) {
-      alert(r.error ?? '发送失败');
+      uxToast.err(r.error ?? tr('toast.sendFailed', { msg: '' }));
       // 失败也清除 live status,从 DB 读真实状态
       teamLiveStatus.delete(liveKey);
       await refreshTeamPane();
@@ -787,7 +796,7 @@ async function teamSendToMember(teamId: string, memberName: string): Promise<voi
     // 再渲染一次确保 UI 与 DB 一致
     renderTeamPane();
   } catch (e) {
-    alert(`发送失败: ${(e as Error)?.message ?? e}`);
+    uxToast.err(tr('toast.sendFailed', { msg: (e as Error)?.message ?? String(e) }));
     teamLiveStatus.delete(liveKey);
     await refreshTeamPane();
   }
@@ -808,7 +817,7 @@ async function teamBroadcast(teamId: string): Promise<void> {
   try {
     const r = await api.broadcastToTeam(teamId, message);
     if (!r.ok) {
-      alert(r.error ?? '广播失败');
+      uxToast.err(r.error ?? tr('toast.broadcastFailed', { msg: '' }));
       // 清除 live status,从 DB 读真实状态
       for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
       await refreshTeamPane();
@@ -818,7 +827,7 @@ async function teamBroadcast(teamId: string): Promise<void> {
     for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
     await refreshTeamPane();
   } catch (e) {
-    alert(`广播失败: ${(e as Error)?.message ?? e}`);
+    uxToast.err(tr('toast.broadcastFailed', { msg: (e as Error)?.message ?? String(e) }));
     for (const m of members) teamLiveStatus.delete(`${teamId}/${m.name}`);
     await refreshTeamPane();
   }
@@ -888,10 +897,10 @@ function showTeamCreateDialog(): void {
       const [name, role] = part.trim().split(':').map(s => s?.trim());
       if (name && role) members.push({ name, role });
     }
-    if (members.length === 0 || !selectedId) { alert(tr('team.dialog.formatErr')); return; }
+    if (members.length === 0 || !selectedId) { uxToast.warn(tr('toast.teamFormatErr')); return; }
     close();
     const r = await api.createTeam(selectedId, members);
-    if (!r.ok || !r.team_id) { alert(r.error ?? tr('team.dialog.createFail')); return; }
+    if (!r.ok || !r.team_id) { uxToast.err(r.error ?? tr('toast.teamCreateFail')); return; }
     await refreshTeamPane();
   };
   requestAnimationFrame(() => { overlay!.classList.add('show'); ta.focus(); });
@@ -1132,18 +1141,9 @@ function renderGit(): void {
 }
 
 // ── Git 操作:执行 git action → toast 反馈 → 自动刷新 snapshot ──
-let gitToastTimer: ReturnType<typeof setTimeout> | null = null;
+// gitToast 已迁移到统一 uxToast 系统 / gitToast migrated to unified uxToast system
 function gitToast(msg: string, ok: boolean): void {
-  let el = document.querySelector<HTMLDivElement>('.git-toast');
-  if (!el) {
-    el = document.createElement('div');
-    el.className = 'git-toast';
-    document.body.appendChild(el);
-  }
-  el.textContent = msg;
-  el.className = `git-toast ${ok ? 'ok' : 'err'} show`;
-  if (gitToastTimer) clearTimeout(gitToastTimer);
-  gitToastTimer = setTimeout(() => { el!.classList.remove('show'); }, ok ? 2500 : 5000);
+  uxToast[ok ? 'ok' : 'err'](msg);
 }
 
 function setGitActionsDisabled(disabled: boolean): void {
@@ -3404,27 +3404,30 @@ async function initPersonaTab(existing: string): Promise<void> {
   };
 }
 
+// showMsg 已迁移到统一 uxToast 系统 / showMsg migrated to unified uxToast system
 function showMsg(text: string, ok: boolean) {
-  const el = document.getElementById('s-msg')!;
-  el.textContent = text;
-  el.className = 'test-msg ' + (ok ? 'ok' : 'bad');
+  uxToast[ok ? 'ok' : 'err'](text);
 }
 
 // ---------- shell confirm modal ----------
 let currentConfirm: string | null = null;
+let confirmFocusRestore: (() => void) | null = null;
 function showConfirm(id: string, cmd: string) {
   if (currentConfirm && currentConfirm !== id) api.confirmResponse(currentConfirm, false); // deny stacked
   currentConfirm = id;
   document.getElementById('modal-cmd')!.textContent = cmd;
   const noAsk = document.getElementById('modal-noask') as HTMLInputElement | null;
   if (noAsk) noAsk.checked = false;
-  document.getElementById('modal')!.classList.add('show');
+  const modalEl = document.getElementById('modal')!;
+  modalEl.classList.add('show');
+  confirmFocusRestore = trapFocus(modalEl);
 }
 async function closeConfirm(approved: boolean) {
   const noAsk = (document.getElementById('modal-noask') as HTMLInputElement | null)?.checked;
   if (currentConfirm) api.confirmResponse(currentConfirm, approved);
   currentConfirm = null;
   document.getElementById('modal')!.classList.remove('show');
+  if (confirmFocusRestore) { confirmFocusRestore(); confirmFocusRestore = null; }
   // "don't ask again" → flip the global approval policy to never (persists to settings.json).
   if (approved && noAsk) {
     const s = await api.getSettings();
@@ -3978,7 +3981,7 @@ function closeMoreMenu() {
         if (ent?.isDirectory) { hasDir = true; break; }
       }
     }
-    if (hasDir) alert(tr('attach.dirAlert'));
+    if (hasDir) uxToast.warn(tr('toast.dirAlert'));
     const files = Array.from(e.dataTransfer?.files ?? []);
     if (files.length) void addFiles(files);
   });
@@ -4062,7 +4065,7 @@ function closeMoreMenu() {
         if (!fullDataUrl) {
           // 两条路径都失败 → 弹提示而非静默
           console.warn('[capture] 全屏截图失败:desktopCapturer 和 getDisplayMedia 都没拿到画面');
-          alert(tr('vision.captureErr', { msg: 'No screen capture (permission denied?)' }));
+          uxToast.err(tr('toast.captureErr', { msg: 'No screen capture (permission denied?)' }));
           return;
         }
         console.log('[capture] 全屏截图成功, dataUrl length =', fullDataUrl.length);
@@ -4076,7 +4079,7 @@ function closeMoreMenu() {
         (document.getElementById('composer') as HTMLTextAreaElement).focus();
       } catch (e) {
         captureBtn.classList.remove('loading');
-        alert(tr('vision.captureErr', { msg: (e as Error)?.message ?? String(e) }));
+        uxToast.err(tr('toast.captureErr', { msg: (e as Error)?.message ?? String(e) }));
       }
     };
   }
@@ -4389,7 +4392,7 @@ function wireVoice(): void {
         const r = await api.transcribeAudio(b64, mime);
         btn.classList.remove('loading');
         if (!r.ok || !r.text) {
-          if (r.error) alert(tr('voice.transcribeErr', { msg: r.error }));
+          if (r.error) uxToast.err(tr('toast.transcribeErr', { msg: r.error }));
           return;
         }
         const text = r.text.trim();
@@ -4412,9 +4415,9 @@ function wireVoice(): void {
       btn.classList.remove('listening');
       const err = (e as Error)?.message ?? String(e);
       if (err.includes('Permission') || err.includes('NotAllowed') || err.includes('denied')) {
-        alert(tr('voice.micDenied'));
+        uxToast.err(tr('toast.micDenied'));
       } else {
-        alert(tr('voice.transcribeErr', { msg: err }));
+        uxToast.err(tr('toast.transcribeErr', { msg: err }));
       }
     }
   };
@@ -4431,9 +4434,9 @@ async function startVAD(): Promise<void> {
   } catch (e) {
     const err = (e as Error)?.message ?? String(e);
     if (err.includes('Permission') || err.includes('NotAllowed') || err.includes('denied')) {
-      alert(tr('voice.micDenied'));
+      uxToast.err(tr('toast.micDenied'));
     } else {
-      alert(tr('voice.transcribeErr', { msg: err }));
+      uxToast.err(tr('toast.transcribeErr', { msg: err }));
     }
     return;
   }
@@ -4636,12 +4639,7 @@ function wireVoiceChat(): void {
     if (!vc?.enable || !vc?.appId || !vc?.accessToken) {
       btnChat.classList.add('pulse');
       setTimeout(() => btnChat.classList.remove('pulse'), 600);
-      // 临时在 composer-bar 上方提示 / show toast above composer
-      const toast = document.createElement('div');
-      toast.textContent = tr('voice.chatNeedConfig');
-      toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:rgba(40,40,50,0.95);color:#e8c07d;padding:8px 16px;border-radius:8px;font-size:13px;z-index:10000;pointer-events:none;white-space:nowrap';
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 3000);
+      uxToast.warn(tr('toast.voiceChatNeedConfig'));
       return;
     }
     if (vcActive) {
@@ -5024,13 +5022,13 @@ async function send() {
       const imgs = imageAttachments.map((a) => JSON.stringify(a));
       text += `\n\x00IMAGES${JSON.stringify(imgs)}\x00`;
     }
-    if (at.missing.length) alert(tr('attach.missingAlert', { list: at.missing.join('\n') }));
+    if (at.missing.length) uxToast.warn(tr('toast.missingFiles', { list: at.missing.join('\n') }));
     if (currentView !== 'chat') showChat();
     // 先发送,成功后再清空(IPC 失败时用户数据不丢失)
     try {
       await api.send(selectedId, text);
     } catch (e) {
-      alert(tr('send.failed', { msg: (e as Error)?.message ?? String(e) }));
+      uxToast.err(tr('toast.sendFailed', { msg: (e as Error)?.message ?? String(e) }));
       return; // 不清空,用户可重试
     }
     // 发送成功 → 清空 composer + 附件 + 强制滚到最新消息
@@ -5868,7 +5866,7 @@ async function addFiles(files: File[]): Promise<void> {
 
   if (skipped.length) {
     const detail = skipped.map((s) => `  • ${s.name} (${s.reason})`).join('\n');
-    alert(tr('attach.skipped', { list: detail }));
+    uxToast.info(tr('toast.skippedFiles', { list: detail }));
   }
 }
 
@@ -6073,7 +6071,7 @@ async function renderMemoryList(): Promise<void> {
     row.querySelector<HTMLElement>('.mm-del')!.onclick = async () => {
       if (!confirm(tr('mem.delConfirm'))) return;
       const r = await api.memoryDelete(id);
-      if (!r.ok) { alert(r.error ?? '删除失败'); return; }
+      if (!r.ok) { uxToast.err(tr('toast.deleteFailed', { msg: r.error ?? '' })); return; }
       await renderMemoryList();
     };
   });
@@ -6142,7 +6140,7 @@ async function renderGraphList(
     row.querySelector<HTMLElement>('.mm-del')!.onclick = async () => {
       if (!confirm(tr('graph.delConfirm'))) return;
       const r = await api.memoryTripleDelete(id);
-      if (!r.ok) { alert(r.error ?? '删除失败'); return; }
+      if (!r.ok) { uxToast.err(tr('toast.deleteFailed', { msg: r.error ?? '' })); return; }
       await renderMemoryGraph();
     };
   });
@@ -6585,7 +6583,7 @@ async function renderSnapshotList(): Promise<void> {
       if (!confirm(tr('snap.restoreConfirm'))) return;
       const res = await api.snapshotRestore(cwd, id);
       if (!res.ok) {
-        alert(res.error ?? 'restore failed');
+        uxToast.err(tr('toast.restoreFailed', { msg: res.error ?? '' }));
         return;
       }
       await renderSnapshotList();
@@ -6702,7 +6700,7 @@ function editCronItem(id: string | null): void {
     const cwd = (document.getElementById('ce-cwd') as HTMLInputElement).value.trim();
     if (!cron || !prompt) return;
     const v = await api.cronValidate(cron);
-    if (!v.ok) { alert(v.error); return; }
+    if (!v.ok) { uxToast.err(v.error ?? tr('toast.error')); return; }
     if (id) {
       await api.cronUpdate(id, { cron, prompt, cwd: cwd || undefined });
     } else {
@@ -7232,7 +7230,7 @@ function openCToolEditor(existing: { id: string; name: string; description: stri
   document.getElementById('ct-cancel')!.onclick = () => modal.remove();
   document.getElementById('ct-save')!.onclick = async () => {
     const name = (document.getElementById('ct-name') as HTMLInputElement).value.trim();
-    if (!name) { alert(tr('ctool.nameRequired')); return; }
+    if (!name) { uxToast.warn(tr('toast.ctoolNameRequired')); return; }
     await api.customToolSave({
       id: existing?.id ?? '',
       name,
@@ -7365,7 +7363,7 @@ function openReplay(turnIdx: number): void {
   const conv = convs.get(selectedId);
   if (!conv) return;
   const turn = conv.turns[turnIdx];
-  if (!turn || !turn.steps.length) { alert(tr('replay.noSteps')); return; }
+  if (!turn || !turn.steps.length) { uxToast.info(tr('toast.replayNoSteps')); return; }
   let stepIdx = 0;
   let playing = false;
   let timer: ReturnType<typeof setInterval> | null = null;
@@ -7437,14 +7435,17 @@ const searchInput = document.getElementById('search-input') as HTMLInputElement;
 const searchResults = document.getElementById('search-results')!;
 let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
+let searchFocusRestore: (() => void) | null = null;
 function openSearch(): void {
   searchOverlay.style.display = 'flex';
   searchInput.value = '';
   searchResults.innerHTML = '';
   searchInput.focus();
+  searchFocusRestore = trapFocus(searchOverlay);
 }
 function closeSearch(): void {
   searchOverlay.style.display = 'none';
+  if (searchFocusRestore) { searchFocusRestore(); searchFocusRestore = null; }
 }
 
 function escHtml(s: string): string {

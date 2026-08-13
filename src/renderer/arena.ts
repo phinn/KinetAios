@@ -4,6 +4,7 @@
 import type { KinetAPI, AgentEvent, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
 import type { Lang } from '../shared/i18n';
+import { uxToast } from './ux-toast';
 
 declare global {
   interface Window {
@@ -85,11 +86,11 @@ function renderCols(): void {
 // Diff 对比:调主进程 computeLineDiff → 显示 colored diff
 async function showArenaDiff(left: Col, right: Col): Promise<void> {
   if (left.answer === right.answer) {
-    alert(t(lang, 'arena.diffEmpty'));
+    uxToast.info(t(lang, 'toast.arenaDiffEmpty'));
     return;
   }
   const r = await window.kinet.arenaDiff(left.id!, right.id!);
-  if (!r.ok || !r.diff) { alert(r.error ?? 'Diff failed'); return; }
+  if (!r.ok || !r.diff) { uxToast.err(r.error ?? 'Diff failed'); return; }
   const panel = document.getElementById('arena-diff-panel')!;
   const diffHtml = r.diff.split('\n').map((line) => {
     const e = escapeHtml(line);
