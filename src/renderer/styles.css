@@ -1207,6 +1207,34 @@ a { color: var(--accent); }
 .sb-running.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
 /* 🕐 排序按钮:激活态用强调色 */
 #sb-sort-toggle.active { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+/* mode 切换按钮:grouped 显示 grid 图标,flat 显示 list 图标 */
+.sb-mode-icon { display: none; }
+#sb-mode-toggle[data-mode="grouped"] .sb-mode-icon.sb-mode-flat { display: inline; }
+#sb-mode-toggle[data-mode="flat"] .sb-mode-icon.sb-mode-grouped { display: inline; }
+
+/* 右键上下文菜单 / Context menu */
+.ctx-menu {
+  position: fixed; z-index: 10002; min-width: 200px; max-width: 280px;
+  background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 10px;
+  padding: 4px; box-shadow: 0 12px 40px rgba(0,0,0,.4), 0 0 0 1px rgba(255,255,255,.03);
+  animation: ctx-pop var(--dur-fast) var(--ease-out);
+}
+.ctx-menu[hidden] { display: none; }
+@keyframes ctx-pop { from { opacity: 0; transform: scale(0.95) translateY(-4px); } to { opacity: 1; transform: none; } }
+.ctx-item {
+  display: flex; align-items: center; gap: 10px; width: 100%;
+  padding: 7px 10px; border-radius: 6px; background: transparent; border: none;
+  color: var(--text); font: inherit; font-size: 0.846rem; cursor: pointer; text-align: left;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+.ctx-item:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.ctx-item:active { transform: scale(0.98); }
+.ctx-ico { width: 18px; font-size: 0.923rem; text-align: center; color: var(--text-dim); flex-shrink: 0; }
+.ctx-key { margin-left: auto; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
+.ctx-sep { height: 1px; background: var(--border-soft); margin: 4px 6px; }
+.ctx-item.ctx-danger { color: var(--err); }
+.ctx-item.ctx-danger:hover { background: color-mix(in srgb, var(--err) 12%, transparent); }
+.ctx-item.ctx-danger .ctx-ico { color: var(--err); }
 .sb-run-badge { font-size: 0.615rem; font-weight: 700; background: var(--run); color: var(--accent-fg); border-radius: 7px; padding: 0 4px; margin-left: 2px; line-height: 13px; min-width: 13px; text-align: center; }
 .sb-running.active .sb-run-badge { background: var(--accent); }
 

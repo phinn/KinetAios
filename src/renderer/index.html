@@ -47,7 +47,7 @@
         </div>
         <button class="sb-mode sb-running ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
         <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
-        <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg></button>
+        <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg class="sb-mode-icon sb-mode-grouped" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg><svg class="sb-mode-icon sb-mode-flat" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h12M3 12h9M3 18h6"/></svg></button>
       </div>
       <!-- 折叠态图标栏(展开时隐藏)/ Collapsed icon rail (hidden when expanded) -->
       <div class="sb-rail" id="sb-rail">
@@ -84,6 +84,28 @@
           <button class="sb-more-item" id="m-town"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTown">小镇</span></button>
           <button class="sb-more-item" id="m-nexus"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreNexus">NEXUS</span></button>
         </div>
+      </div>
+
+      <!-- 会话右键菜单 / Session context menu -->
+      <div class="ctx-menu" id="ctx-conv-menu" hidden>
+        <button class="ctx-item" data-act="select"><span class="ctx-ico">↪</span><span data-i18n="ctx.select">切换到此会话</span><span class="ctx-key">↵</span></button>
+        <button class="ctx-item" data-act="rename"><span class="ctx-ico">✎</span><span data-i18n="ctx.rename">重命名…</span><span class="ctx-key">F2</span></button>
+        <button class="ctx-item" data-act="ctx"><span class="ctx-ico">🔍</span><span data-i18n="conv.ctx">查看上下文</span></button>
+        <div class="ctx-sep"></div>
+        <button class="ctx-item" data-act="copy-id"><span class="ctx-ico">#</span><span data-i18n="ctx.copyId">复制会话 ID</span></button>
+        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico">📁</span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
+        <button class="ctx-item" data-act="copy-title"><span class="ctx-ico">T</span><span data-i18n="ctx.copyTitle">复制标题</span></button>
+        <div class="ctx-sep"></div>
+        <button class="ctx-item ctx-danger" data-act="delete"><span class="ctx-ico">🗑</span><span data-i18n="ctx.delete">删除会话</span><span class="ctx-key">Del</span></button>
+      </div>
+
+      <!-- 项目头右键菜单 / Project header context menu -->
+      <div class="ctx-menu" id="ctx-proj-menu" hidden>
+        <button class="ctx-item" data-act="new"><span class="ctx-ico">＋</span><span data-i18n="ctx.newTask">新建会话在此项目</span><span class="ctx-key">N</span></button>
+        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico">📁</span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
+        <div class="ctx-sep"></div>
+        <button class="ctx-item" data-act="collapse-all"><span class="ctx-ico">⌄</span><span data-i18n="ctx.collapseAll">折叠所有项目</span></button>
+        <button class="ctx-item" data-act="expand-all"><span class="ctx-ico">⌃</span><span data-i18n="ctx.expandAll">展开所有项目</span></button>
       </div>
     </aside>
 

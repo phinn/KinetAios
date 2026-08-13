@@ -33,8 +33,8 @@ let sidebarCollapsed = localStorage.getItem('sb-collapsed') === '1';
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
-// 默认按最近活动排序(用户最关心最近活跃的频道)。
-let sortByRecent = true;
+// 默认按最近活动排序(用户最关心最近活跃的频道)。持久化到 localStorage。
+let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
 let searchQuery = ''; // 侧栏搜索关键词(过滤会话标题) / Sidebar search filter
 let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
@@ -342,6 +342,46 @@ function applyI18nDOM(): void {
 
 // ---------- sidebar ----------
 // 两种模式:grouped(按 cwd 分项目)和 flat(原始平铺)。底部按钮切换。
+// 侧栏右键菜单状态与函数(模块顶层,renderSidebar 也要调用 showConvMenu)
+let ctxTargetConvId: string | null = null; // 当前右键菜单作用的会话 id
+let ctxTargetProjCwd: string | null = null; // 当前右键菜单作用的项目 cwd
+let ctxConvMenu: HTMLElement; // 会话右键菜单 DOM(在 wireUI 时迁移到 body)
+let ctxProjMenu: HTMLElement; // 项目右键菜单 DOM
+
+// 显示会话菜单 — 锚到点击位置,视口边缘钳位
+function showConvMenu(convId: string, x: number, y: number): void {
+  ctxTargetConvId = convId;
+  ctxTargetProjCwd = null;
+  ctxProjMenu.hidden = true;
+  ctxConvMenu.hidden = false;
+  requestAnimationFrame(() => {
+    const r = ctxConvMenu.getBoundingClientRect();
+    const maxX = window.innerWidth - r.width - 4;
+    const maxY = window.innerHeight - r.height - 4;
+    ctxConvMenu.style.left = Math.min(x, maxX) + 'px';
+    ctxConvMenu.style.top = Math.min(y, maxY) + 'px';
+  });
+}
+function showProjMenu(cwd: string, x: number, y: number): void {
+  ctxTargetProjCwd = cwd;
+  ctxTargetConvId = null;
+  ctxConvMenu.hidden = true;
+  ctxProjMenu.hidden = false;
+  requestAnimationFrame(() => {
+    const r = ctxProjMenu.getBoundingClientRect();
+    const maxX = window.innerWidth - r.width - 4;
+    const maxY = window.innerHeight - r.height - 4;
+    ctxProjMenu.style.left = Math.min(x, maxX) + 'px';
+    ctxProjMenu.style.top = Math.min(y, maxY) + 'px';
+  });
+}
+function closeAllCtxMenus(): void {
+  ctxConvMenu.hidden = true;
+  ctxProjMenu.hidden = true;
+  ctxTargetConvId = null;
+  ctxTargetProjCwd = null;
+}
+
 function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
   ul.innerHTML = '';
@@ -437,6 +477,11 @@ function renderSidebar() {
       void newTaskInProject(cwd);
     };
     head.title = cwd || tr('wb.ungrouped');
+    // 右键项目头:折叠/展开全部 / 复制 cwd 等
+    head.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      showProjMenu(cwd, e.clientX, e.clientY);
+    });
     projLi.appendChild(head);
     const tasksUl = document.createElement('ul');
     tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
@@ -452,6 +497,7 @@ function renderSidebar() {
 function taskLi(id: string): HTMLElement {
   const c = convs.get(id)!;
   const li = document.createElement('li');
+  li.dataset.cid = id;
   if (id === selectedId) li.classList.add('active');
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
@@ -465,6 +511,11 @@ function taskLi(id: string): HTMLElement {
   const metaText = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
   // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
   li.title = `${title}\n${c.cwd || ''}`;
+  // 右键唤起上下文菜单(默认浏览器菜单会被阻止)
+  li.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showConvMenu(id, e.clientX, e.clientY);
+  });
   li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   li.onclick = () => {
     if (selectedId === id) return; // 已经在当前频道,不重复渲染
@@ -3635,11 +3686,12 @@ function closeMoreMenu() {
     runningOnly = !runningOnly;
     renderSidebar();
   };
-  // 🕐 按最近活动排序:点击切换 sortByRecent,按 updatedAt 倒序排列。默认开启。
+  // 🕐 按最近活动排序:点击切换 sortByRecent,按 updatedAt 倒序排列。状态持久化。
   const sortBtn = document.getElementById('sb-sort-toggle')!;
   sortBtn.classList.toggle('active', sortByRecent);
   sortBtn.onclick = () => {
     sortByRecent = !sortByRecent;
+    localStorage.setItem('sb-sort-recent', sortByRecent ? '1' : '0');
     sortBtn.classList.toggle('active', sortByRecent);
     renderSidebar();
   };
@@ -3727,6 +3779,95 @@ function closeMoreMenu() {
   moreOverlay.onclick = () => closeMoreMenuPanel();
   // Esc 键关闭
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMoreMenuPanel(); });
+
+  // ── 侧栏右键上下文菜单 ──
+  // 复制/重命名/删除等操作。菜单 DOM 同样迁移到 body 顶层(避开 sidebar stacking context)。
+  ctxConvMenu = document.getElementById('ctx-conv-menu')!;
+  ctxProjMenu = document.getElementById('ctx-proj-menu')!;
+  document.body.appendChild(ctxConvMenu);
+  document.body.appendChild(ctxProjMenu);
+
+  // 会话菜单 action 处理 / Session menu action handlers
+  ctxConvMenu.querySelectorAll<HTMLElement>('.ctx-item').forEach((btn) => {
+    btn.onclick = async () => {
+      const id = ctxTargetConvId;
+      closeAllCtxMenus();
+      if (!id) return;
+      const c = convs.get(id);
+      if (!c) return;
+      switch (btn.dataset.act) {
+        case 'select':
+          if (selectedId !== id) {
+            document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+            selectedId = id;
+            showChat();
+            // 高亮目标行
+            requestAnimationFrame(() => {
+              document.querySelector(`#conv-list li[data-cid="${CSS.escape(id)}"]`)?.classList.add('active');
+            });
+          }
+          break;
+        case 'rename':
+          await renameConv(id);
+          break;
+        case 'ctx':
+          await openCtxInspector(id);
+          break;
+        case 'copy-id':
+          await copyText(id, btn);
+          break;
+        case 'copy-cwd':
+          await copyText(c.cwd || '', btn);
+          break;
+        case 'copy-title':
+          await copyText(c.customTitle || c.turns[0]?.prompt.slice(0, 80) || '', btn);
+          break;
+        case 'delete':
+          await deleteConv(id);
+          break;
+      }
+    };
+  });
+
+  // 项目菜单 action 处理 / Project menu action handlers
+  ctxProjMenu.querySelectorAll<HTMLElement>('.ctx-item').forEach((btn) => {
+    btn.onclick = async () => {
+      const cwd = ctxTargetProjCwd;
+      closeAllCtxMenus();
+      switch (btn.dataset.act) {
+        case 'new':
+          if (cwd != null) await newTaskInProject(cwd);
+          break;
+        case 'copy-cwd':
+          await copyText(cwd || '', btn);
+          break;
+        case 'collapse-all':
+          // 把所有 cwd 都加进 collapsedProjects
+          collapsedProjects.clear();
+          for (const id of order) {
+            const cc = convs.get(id);
+            if (cc) collapsedProjects.add(cc.cwd || '');
+          }
+          renderSidebar();
+          break;
+        case 'expand-all':
+          collapsedProjects.clear();
+          renderSidebar();
+          break;
+      }
+    };
+  });
+
+  // 全局事件:点别处 / Esc / 滚轮 关闭菜单
+  document.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    if (!t?.closest('.ctx-menu')) closeAllCtxMenus();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') closeAllCtxMenus();
+  });
+  // 滚轮/滚动时关闭菜单(避免菜单飘在错位位置)
+  document.addEventListener('scroll', closeAllCtxMenus, true);
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
@@ -5380,19 +5521,14 @@ function syncViewButtons(): void {
   document.getElementById('btn-settings')!.classList.toggle('active', currentView === 'settings');
 }
 
-// 侧栏底部模式按钮:grouped 时显示 ▤(下一步变 flat);flat 时显示 ▦(下一步变 grouped)。
+// 侧栏底部模式按钮:用 data-mode 切换 SVG(不覆盖 textContent 保留 SVG)。
+// grouped → 显示 list 图标(下一步变 flat);flat → 显示 grid 图标(下一步变 grouped)。
 // 图标始终代表「点一下会变成什么」,与播放/暂停按钮同理。
 function syncSidebarModeBtn(): void {
   const btn = document.getElementById('sb-mode-toggle')!;
-  if (sidebarMode === 'grouped') {
-    btn.textContent = '▤';
-    btn.title = tr('sidebar.modeFlat');
-    btn.dataset.i18nTitle = 'sidebar.modeFlat';
-  } else {
-    btn.textContent = '▦';
-    btn.title = tr('sidebar.modeGrouped');
-    btn.dataset.i18nTitle = 'sidebar.modeGrouped';
-  }
+  btn.dataset.mode = sidebarMode;
+  btn.title = tr(sidebarMode === 'grouped' ? 'sidebar.modeFlat' : 'sidebar.modeGrouped');
+  btn.dataset.i18nTitle = sidebarMode === 'grouped' ? 'sidebar.modeFlat' : 'sidebar.modeGrouped';
 }
 
 // ---------- workbench(项目卡片总览)----------
