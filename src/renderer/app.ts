@@ -3569,14 +3569,12 @@ function wireUi() {
   };
 
   // ── 侧边栏折叠/展开 / Sidebar collapse toggle ──
+  // 折叠时隐藏品牌/搜索/列表/底栏文字;头部/底部的图标按钮仍然可见,
+  // 通过 CSS 改 `.collapsed` 类的样式来调整布局(垂直居中、wrap)。
   const applySidebarCollapsed = () => {
-    const sb = document.getElementById('sidebar')!;
-    const rail = document.getElementById('sb-rail')!;
-    sb.classList.toggle('collapsed', sidebarCollapsed);
-    rail.hidden = !sidebarCollapsed;
+    document.getElementById('sidebar')!.classList.toggle('collapsed', sidebarCollapsed);
     localStorage.setItem('sb-collapsed', sidebarCollapsed ? '1' : '0');
   };
-  (window as any).__applySidebarCollapsed = applySidebarCollapsed;
 
   document.getElementById('btn-collapse-sidebar')!.onclick = () => {
     sidebarCollapsed = true;
