@@ -4,36 +4,36 @@
   <meta charset="UTF-8" />
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob:; frame-src blob: data: file: http: https: srcdoc:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline' https://unpkg.com;" />
   <title>KinetAios</title>
-  <link rel="stylesheet" href="styles.css?v=20250813a" />
+  <link rel="stylesheet" href="styles.css?v=20250814a" />
  <link rel="stylesheet" href="town.css" />
 </head>
 <body>
   <div id="app">
     <aside id="sidebar" role="navigation" aria-label="Sidebar">
+      <!-- 品牌区 — 极简,名字+折叠 -->
       <div class="sb-brand">
         <span class="sb-brand-spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg></span>
         <span class="sb-brand-name">KinetAios</span>
         <button class="ghost sb-icon-btn sb-collapse-btn" id="btn-collapse-sidebar" data-i18n-title="sidebar.collapse" data-i18n-aria="a11y.collapseSidebar" aria-label="收起侧边栏" title="收起侧边栏"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
       </div>
+      <!-- 搜索栏 — 搜索框 + 新建按钮 -->
       <div class="sb-topbar">
-        <button class="ghost sb-icon-btn sb-new-btn" id="btn-new" data-i18n-title="sidebar.newSession" data-i18n-aria="a11y.newSession" aria-label="新建会话" title="新建会话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
         <div class="sb-search">
-          <svg class="sb-search-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+          <svg class="sb-search-icon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
           <input type="text" id="sb-search-input" data-i18n-placeholder="sidebar.searchPlaceholder" placeholder="搜索会话…" autocomplete="off" />
           <button class="sb-search-clear" id="sb-search-clear" hidden><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
         </div>
-      </div>
-      <div class="sb-tools">
-        <button class="ghost sb-mini-btn" id="btn-wb" data-i18n-title="wb.open" data-i18n-aria="a11y.workbench" aria-label="工作台" title="工作台"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
-        <button class="ghost sb-mini-btn" id="btn-settings" data-i18n-title="sidebar.settings" data-i18n-aria="a11y.settings" aria-label="设置" title="设置"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
-        <div class="sb-more-wrap">
-          <button class="ghost sb-mini-btn" id="btn-more" data-i18n-title="sidebar.more" data-i18n-aria="a11y.more" aria-label="更多功能" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
-        </div>
+        <button class="ghost sb-icon-btn sb-new-btn" id="btn-new" data-i18n-title="sidebar.newSession" data-i18n-aria="a11y.newSession" aria-label="新建会话" title="新建会话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <ul id="conv-list" role="listbox" aria-label="会话列表"></ul>
+      <!-- 底栏 — 左:计数;右:工具按钮组 -->
       <div class="sb-foot" id="sb-foot">
         <span class="sb-foot-info" id="sb-foot-info">0 会话</span>
         <span class="sb-foot-spacer"></span>
+        <button class="sb-mode ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
+        <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
+        <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg class="sb-mode-icon sb-mode-grouped" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg><svg class="sb-mode-icon sb-mode-flat" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h12M3 12h9M3 18h6"/></svg></button>
+        <span class="sb-foot-sep"></span>
         <button class="sb-mode ghost" id="sb-theme-toggle" data-i18n-title="sidebar.themeMenu" title="切换主题"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20"/><path d="M12 2a14.5 14.5 0 010 20"/></svg></button>
         <div id="theme-popup" class="theme-popup" hidden>
           <button class="tp-item" data-theme="dark"><span class="tp-swatch tp-sw-dark"></span><span data-i18n="settings.theme.dark">暗色</span></button>
@@ -45,9 +45,11 @@
           <button class="tp-item" data-theme="craft"><span class="tp-swatch tp-sw-craft"></span><span data-i18n="settings.theme.craft">方块世界</span></button>
           <button class="tp-item" data-theme="seed"><span class="tp-swatch tp-sw-seed"></span><span data-i18n="settings.theme.seed">高达SEED</span></button>
         </div>
-        <button class="sb-mode sb-running ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
-        <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
-        <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg class="sb-mode-icon sb-mode-grouped" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg><svg class="sb-mode-icon sb-mode-flat" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h12M3 12h9M3 18h6"/></svg></button>
+        <button class="sb-mode ghost sb-mini-btn" id="btn-wb" data-i18n-title="wb.open" data-i18n-aria="a11y.workbench" aria-label="工作台" title="工作台"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
+        <button class="sb-mode ghost sb-mini-btn" id="btn-settings" data-i18n-title="sidebar.settings" data-i18n-aria="a11y.settings" aria-label="设置" title="设置"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
+        <div class="sb-more-wrap">
+          <button class="sb-mode ghost sb-mini-btn" id="btn-more" data-i18n-title="sidebar.more" data-i18n-aria="a11y.more" aria-label="更多功能" title="更多"><svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button>
+        </div>
       </div>
       <!-- 折叠态图标栏(展开时隐藏)/ Collapsed icon rail (hidden when expanded) -->
       <div class="sb-rail" id="sb-rail">
