@@ -180,6 +180,8 @@ export class VoiceChat {
     this.userMsgCb = null;
     this.agentBusy = false;
     this.lastUserText = '';
+    // 清空事件回调,防止 close→setState('idle')→emit 时往已销毁的 renderer 发消息
+    this.cb = null;
     if (this.ws) {
       try {
         if (this.ws.readyState === WebSocket.OPEN) {
@@ -192,7 +194,7 @@ export class VoiceChat {
       } catch { /* ignore */ }
       this.ws = null;
     }
-    this.setState('idle');
+    this.state = 'idle'; // 直接设值,不走 setState/emit
   }
 
   /** 发送音频数据(由 renderer IPC 调用) / Send audio chunk (called from renderer via IPC) */

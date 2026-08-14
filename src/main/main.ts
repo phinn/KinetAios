@@ -2107,7 +2107,10 @@ function registerIpc(): void {
     const payload: VoiceChatEventPayload = ev.type === 'aiAudio'
       ? { type: 'aiAudio', data: (ev as any).data.toString('base64') }
       : ev as any;
-    dashboardWin?.webContents.send('voice-chat-event', payload);
+    // 防御:renderer 已销毁时不发送(app 退出 / 窗口关闭后的在途回调)
+    if (dashboardWin && !dashboardWin.isDestroyed() && !dashboardWin.webContents.isDestroyed()) {
+      dashboardWin.webContents.send('voice-chat-event', payload);
+    }
   });
 
   // 用户语音 → 转发给当前活跃频道的 Agent 执行
