@@ -63,19 +63,44 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     const level = levels[levelIdx];
     onEvent({ type: 'status', text: `🔄 v3: 执行第 ${levelIdx + 1}/${levels.length} 层 (${level.length} 个节点)` });
 
-    // 同层节点并行执行
-    const results = await Promise.allSettled(
-      level.map((node) => executeNode(node, {
+    // M3-fix: 同层节点按"是否含写操作"分流。
+    // 旧实现:同层全部 Promise.all 并行,各节点持完整工具集(含 shell/write_file),
+    // 两个写节点同时写同一文件 = 竞态。
+    // 新策略:节点按 planner 标注的 tools 字段判定——纯只读节点照常并行,
+    // 任何含写工具(shell/write_file/edit_file/excel_write…)的节点强制串行。
+    const { parallelSafe, mustSerialize } = partitionByWrite(level, tools);
+    if (mustSerialize.length > 0 && mustSerialize.length < level.length) {
+      onEvent({ type: 'status', text: `🔀 v3: 同层 ${mustSerialize.length} 个写节点转串行(避免写竞态)` });
+    }
+
+    // 只读节点并行跑;写节点逐个串行(两者共享同一 execHistory 快照,层末统一合并)
+    // 注意:结果按 [parallelSafe..., mustSerialize...] 顺序拼接,与 orderedNodes 对齐。
+    const orderedNodes = [...parallelSafe, ...mustSerialize];
+    const results: Array<PromiseSettledResult<NodeExecResult>> = await Promise.allSettled(
+      parallelSafe.map((node) => executeNode(node, {
         provider, tools, systemPrompt, memoryBlock,
         snapshot, ctx, signal, policy,
         history: execHistory,  // 各节点共享当前 execHistory 快照
         onEvent,
       })),
     );
+    for (const node of mustSerialize) {
+      if (signal.aborted) break;
+      try {
+        results.push({ status: 'fulfilled', value: await executeNode(node, {
+          provider, tools, systemPrompt, memoryBlock,
+          snapshot, ctx, signal, policy,
+          history: execHistory,
+          onEvent,
+        }) });
+      } catch (err) {
+        results.push({ status: 'rejected', reason: err });
+      }
+    }
 
-    // 处理结果
-    for (let i = 0; i < results.length; i++) {
-      const node = level[i]!;
+    // 处理结果(与 orderedNodes 按索引配对 — level 原序已因分流打乱)
+    for (let i = 0; i < orderedNodes.length; i++) {
+      const node = orderedNodes[i]!;
       const result = results[i];
 
       if (result!.status === 'fulfilled' && result!.value.success) {
@@ -257,6 +282,33 @@ async function runVerify(
   } catch {
     return { passed: false, output: '验证命令执行失败' };
   }
+}
+
+// ────────────────────────────────────────────────────────────────────────
+// M3: 同层节点按写操作分流
+// ────────────────────────────────────────────────────────────────────────
+
+/**
+ * 判断一个节点是否纯只读(按 planner 标注的 tools + parallelizable)。
+ * 保守原则:tools 字段缺失/含未知工具名时视为写节点(宁可串行,不可竞态);
+ * 即使标注只读,只要 parallelizable=false 也强制串行(planner 显式要求)。
+ */
+function nodeIsReadonlySafe(node: DAGNode, knownReadonly: Set<string>): boolean {
+  if (!node.parallelizable) return false;
+  if (!Array.isArray(node.tools) || node.tools.length === 0) return false;
+  return node.tools.every((t) => knownReadonly.has(t));
+}
+
+/** 将同层节点分为 [可并行只读, 需串行含写] 两组。 */
+function partitionByWrite(level: DAGNode[], tools: Tool[]) {
+  const knownReadonly = new Set(tools.filter((t) => t.readOnly).map((t) => t.name));
+  const parallelSafe: DAGNode[] = [];
+  const mustSerialize: DAGNode[] = [];
+  for (const node of level) {
+    if (nodeIsReadonlySafe(node, knownReadonly)) parallelSafe.push(node);
+    else mustSerialize.push(node);
+  }
+  return { parallelSafe, mustSerialize };
 }
 
 // ────────────────────────────────────────────────────────────────────────
