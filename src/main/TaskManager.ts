@@ -51,6 +51,25 @@ export class TaskManager {
     return this.convs.get(id);
   }
 
+  // 懒加载 hydrate:send 前 turns 必须就位(engine 取 lastTurn.prompt / applyEvent 追加 turn)。
+  // Hydrate before send — engines read the last turn and applyEvent appends to it.
+  private ensureTurns(id: string): void {
+    const conv = this.convs.get(id);
+    if (!conv || conv.turnsLoaded !== false) return;
+    conv.turns = store.loadConvTurns(id);
+    conv.turnsLoaded = true;
+  }
+
+  // 公开 hydrate:renderer/IPC 消费点(export、voice、arena-diff)按需拉 turns。
+  hydrate(id: string): Conversation | undefined {
+    const conv = this.convs.get(id);
+    if (conv && conv.turnsLoaded === false) {
+      conv.turns = store.loadConvTurns(id);
+      conv.turnsLoaded = true;
+    }
+    return conv;
+  }
+
   newConversation(cwd: string, engine?: EngineKind): Conversation {
     const eng = engine ?? getSettings().defaultEngine ?? 'direct';
     const conv: Conversation = {
@@ -90,6 +109,7 @@ export class TaskManager {
     // 跨族切换才清空上下文(同族 direct ↔ directV2 保留)
     if (!isDirectFamily(engine) || !isDirectFamily(this.lastEngine[id] ?? engine)) {
       // 生成上下文摘要,让新引擎知道之前做了什么(仅当有实质性对话时)
+      this.ensureTurns(id); // 摘要需要读全部 turns
       const validTurns = conv.turns.filter((t) => t.prompt || t.answer);
       if (validTurns.length > 0) {
         conv.crossEngineContext = buildCrossEngineSummary(validTurns, oldEngine);
@@ -200,6 +220,7 @@ export class TaskManager {
     }
     this.goalLoopStopped.add(id); // 通知 goal loop 停止
     const conv = this.convs.get(id);
+    this.ensureTurns(id); // cancel 要写 lastTurn(done/error 标记),先 hydrate
     if (conv && conv.status === 'running') {
       const turn = conv.turns[conv.turns.length - 1];
       if (turn && !turn.done) {
@@ -216,6 +237,7 @@ export class TaskManager {
   async send(id: string, text: string): Promise<void> {
     const conv = this.convs.get(id);
     if (!conv) return;
+    this.ensureTurns(id); // 懒加载:engine 读 lastTurn.prompt,turns 必须先就位
     const prompt = text.trim();
     if (!prompt || conv.status === 'running') return;
 
@@ -303,6 +325,10 @@ export class TaskManager {
       const refContents: string[] = [];
       for (const refId of refIds) {
         const refConv = this.convs.get(refId);
+        if (refConv && refConv.turnsLoaded === false) {
+          refConv.turns = store.loadConvTurns(refId); // 懒加载:引用频道按需拉全文
+          refConv.turnsLoaded = true;
+        }
         if (refConv && refConv.turns.length > 0) {
           const lastTurn = refConv.turns[refConv.turns.length - 1];
           const title = refConv.customTitle || refConv.turns[0]?.prompt.slice(0, 30) || refId;
@@ -946,7 +972,12 @@ export class TaskManager {
   // 新会话引擎/模型/cwd 与源会话一致,但 directHistory 清空(新上下文)。
   branchFrom(srcConvId: string, turnIdx: number): Conversation | null {
     const src = this.convs.get(srcConvId);
-    if (!src || turnIdx < 0 || turnIdx >= src.turns.length) return null;
+    if (!src) return null;
+    if (src.turnsLoaded === false) {
+      src.turns = store.loadConvTurns(srcConvId); // 分支需要源频道 turns,懒加载
+      src.turnsLoaded = true;
+    }
+    if (turnIdx < 0 || turnIdx >= src.turns.length) return null;
     const conv: Conversation = {
       id: rid(),
       engine: src.engine,
@@ -980,7 +1011,7 @@ export class TaskManager {
       const snap = snapshot();
       const recentTurns = store.loadRecentTurns(200);
       const memories = store.loadMemories();
-      const conversations = store.loadConversations();
+      const conversations = store.loadConversationsFull(); // 画像分析需要全部 turns
 
       if (recentTurns.length === 0 && memories.length === 0) {
         return { ok: false, error: '历史数据不足,无法生成画像(需要至少一轮对话或一条记忆)' };

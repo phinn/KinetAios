@@ -539,6 +539,11 @@ export type Conversation = {
   directHistory: ChatMsg[]; // Direct-only OpenAI-format, persisted for cross-turn + restart context
   engineSessionId: string | null; // claude/codex session id → --resume next turn (persisted)
   turns: Turn[];
+  // 懒加载标记:turns 未加载(head 模式)时消费方需先 hydrate(loadConvTurns)。
+  // undefined = 旧路径/新频道,视为已加载(turns 本来就是空的)。
+  turnsLoaded?: boolean;
+  turnCount?: number; // 频道总轮数(head 模式下侧栏/NEXUS 直接用,不用拉 turns)
+  firstPrompt?: string; // 首条 prompt(标题兜底,替代 turns[0]?.prompt)
   status: ConvStatus;
   statusNote: string | null;
   cost: number;
@@ -608,6 +613,8 @@ export type GitActionResult = { ok: boolean; message?: string; error?: string };
 // The API the preload exposes to the renderer via contextBridge (window.kinet).
 export interface KinetAPI {
   getConversations(): Promise<Conversation[]>;
+  // 懒加载:按需拉取单个频道的全部 turns(head 模式启动后,切频道时调用)
+  getTurns(convId: string): Promise<Turn[]>;
   newConversation(cwd?: string, engine?: EngineKind): Promise<Conversation>;
   send(id: string, text: string): Promise<boolean>;
   cancel(id: string): Promise<boolean>;

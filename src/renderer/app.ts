@@ -228,8 +228,15 @@ function applyI18nDOM(): void {
   }
 
   api.onConversation((conv) => {
-    const isNew = !convs.has(conv.id);
-    convs.set(conv.id, conv);
+    const prev = convs.get(conv.id);
+    const isNew = !prev;
+    if (prev && prev.turnsLoaded === true && conv.turnsLoaded !== true) {
+      // LRU 保护:本地已加载 turns,但广播来的是 head 态(另一个消费点触发)—— 保留本地 turns
+      // Local turns are loaded but broadcast is head-only — keep local copy.
+      convs.set(conv.id, { ...conv, turns: prev.turns, turnsLoaded: true });
+    } else {
+      convs.set(conv.id, conv);
+    }
     if (isNew) order.unshift(conv.id);
     renderSidebar();
     if (conv.id === selectedId) renderMain();
@@ -414,7 +421,7 @@ function renderSidebar() {
     visibleOrder = visibleOrder.filter((id) => {
       const c = convs.get(id);
       if (!c) return false;
-      const title = (c.customTitle || c.turns[0]?.prompt || '').toLowerCase();
+      const title = (c.customTitle || c.firstPrompt || c.turns[0]?.prompt || '').toLowerCase();
       const cwd = (c.cwd || '').toLowerCase();
       return title.includes(q) || cwd.includes(q);
     });
@@ -506,14 +513,14 @@ function taskLi(id: string): HTMLElement {
   li.dataset.cid = id;
   if (id === selectedId) li.classList.add('active');
   const last = c.turns[c.turns.length - 1];
-  const title = c.customTitle || (c.turns[0]?.prompt.slice(0, 40)) || tr('head.newConv');
+  const title = c.customTitle || (c.firstPrompt?.slice(0, 40)) || (c.turns[0]?.prompt?.slice(0, 40)) || tr('head.newConv');
   const ts = c.updatedAt ?? c.createdAt;
   const timeStr = fmtRelative(ts);
   // 呼吸灯小圆点 — 运行中脉冲发光,空闲静态引擎色
   const dotCls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
   const engCls = c.engine ? ` eng-${c.engine}` : '';
   // meta 行:运行中显示 "运行中";否则显示 "N 轮 · 时间"
-  const turnCount = c.turns.length;
+  const turnCount = c.turnCount ?? c.turns.length;
   const metaText = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
   // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
   li.title = `${title}\n${c.cwd || ''}`;
@@ -642,14 +649,14 @@ function dismissPrompt(): void {
 async function renameConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
-  const cur = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '';
+  const cur = c.customTitle || c.firstPrompt?.slice(0, 40) || c.turns[0]?.prompt?.slice(0, 40) || '';
   const name = await showPrompt(tr('prompt.nameTitle'), cur);
   if (name != null) await api.rename(id, name);
 }
 async function deleteConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
-  const name = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || tr('prompt.deleteFallback');
+  const name = c.customTitle || c.firstPrompt?.slice(0, 40) || c.turns[0]?.prompt?.slice(0, 40) || tr('prompt.deleteFallback');
   if (confirm(tr('prompt.deleteConfirm', { name }))) await api.deleteConversation(id);
 }
 
@@ -1495,6 +1502,46 @@ function renderSideBySide(diff: string): string {
 // when the user has already switched to another conversation.
 let renderToken = 0;
 
+// ── Turns 懒加载 + LRU ──
+// 启动只载 head(turnCount/firstPrompt),切频道时按需拉 turns。
+// 内存里最多保 8 个频道的 turns(近者优先),超载置回 head 模式,GC 可回收。
+// Running 频道永不淘汰(流式事件还在往 turns 里写)。
+const TURNS_LRU_MAX = 8;
+const turnsLru: string[] = []; // 最近使用的 convId,尾部 = 最新
+
+function touchTurnsLru(convId: string): void {
+  const i = turnsLru.indexOf(convId);
+  if (i >= 0) turnsLru.splice(i, 1);
+  turnsLru.push(convId);
+  // 淘汰:最久未用且非 running 的频道 → 置回 head 模式(主进程侧数据不动,只清 renderer 副本)
+  while (turnsLru.length > TURNS_LRU_MAX) {
+    const evict = turnsLru.shift();
+    if (!evict || evict === selectedId) continue;
+    const ec = convs.get(evict);
+    if (!ec || ec.turnsLoaded !== true) continue;
+    if (ec.status === 'running') { touchTurnsLru(evict); continue; } // running 不淘汰,重新排队
+    ec.turns = [];
+    ec.turnsLoaded = false;
+  }
+}
+
+// 异步拉 turns;期间先渲染空态/骨架,到了再全量渲染。带 renderToken 防串台。
+async function ensureTurnsLoaded(conv: Conversation, token: number): Promise<boolean> {
+  if (conv.turnsLoaded !== false) return true; // 已加载(含 undefined 旧路径)
+  const id = conv.id;
+  try {
+    const turns = await api.getTurns(id);
+    if (token !== renderToken || selectedId !== id) return false; // 已切走,丢弃
+    if (convs.get(id) !== conv) return false; // 对象已被替换
+    conv.turns = turns;
+    conv.turnsLoaded = true;
+    touchTurnsLru(id);
+    return true;
+  } catch {
+    return false; // 拉取失败:保持 head 态,显示空列表(不崩)
+  }
+}
+
 function renderMain() {
   renderToken++;
   const token = renderToken;
@@ -1511,6 +1558,14 @@ function renderMain() {
   // Build off-screen then attach in one pass — avoids a blank frame between clearing and repopulating.
   if (!conv) {
     turns.replaceChildren(empty(tr('empty.noConv'), tr('empty.noConvSub')));
+    return;
+  }
+  // 懒加载:head 模式(未拉 turns)先挂载加载态,异步拉到后再渲染。
+  // Lazy: head-mode convs show a loading state until turns arrive.
+  if (conv.turnsLoaded === false) {
+    turns.replaceChildren(empty('…', tr('empty.noTurns')));
+    scrollDownForce();
+    void ensureTurnsLoaded(conv, token).then((ok) => { if (ok && token === renderToken) renderMain(); });
     return;
   }
   if (!conv.turns.length) {
@@ -1644,7 +1699,7 @@ function renderHead(conv: Conversation | undefined) {
   const last = conv.turns[conv.turns.length - 1];
   const cls = conv.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
   dot.className = `dot ${cls}`;
-  title.textContent = conv.customTitle || conv.turns[0]?.prompt.slice(0, 60) || tr('head.newConv');
+  title.textContent = conv.customTitle || conv.firstPrompt?.slice(0, 60) || conv.turns[0]?.prompt?.slice(0, 60) || tr('head.newConv');
   if (document.activeElement !== cwd) cwd.value = conv.cwd;
   // 配置档下拉:Direct 家族引擎(direct + directV2)+ 有配置档时显示
   const profileSel = document.getElementById('profile-select') as HTMLSelectElement | null;
@@ -3936,7 +3991,7 @@ function closeMoreMenu() {
           await copyText(c.cwd || '', btn);
           break;
         case 'copy-title':
-          await copyText(c.customTitle || c.turns[0]?.prompt.slice(0, 80) || '', btn);
+          await copyText(c.customTitle || c.firstPrompt?.slice(0, 80) || c.turns[0]?.prompt?.slice(0, 80) || '', btn);
           break;
         case 'delete':
           await deleteConv(id);

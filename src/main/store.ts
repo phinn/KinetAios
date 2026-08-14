@@ -283,6 +283,16 @@ function loadTurns(convId: string): Turn[] {
   return rows.map((r) => parseTurn(r.data));
 }
 
+export function loadConversationsFull(): Conversation[] {
+  // 全量加载(仅 generatePersona / 需要逐频道 turns 的分析场景用;UI 启动不要用)。
+  const convs = loadConversations();
+  for (const c of convs) {
+    c.turns = loadTurns(c.id);
+    c.turnsLoaded = true;
+  }
+  return convs;
+}
+
 // Tolerant decode — old blobs may miss cost/token fields (mirrors Swift init(from:)).
 function parseTurn(data: string): Turn {
   try {
@@ -294,12 +304,33 @@ function parseTurn(data: string): Turn {
   }
 }
 
+// 懒加载:按需读取单个频道的全部 turns(启动不再全量加载 —— turns 表可能上百 MB)。
+// Lazy load: fetch all turns of one conv on demand (startup no longer loads everything).
+export function loadConvTurns(convId: string): Turn[] {
+  return loadTurns(convId);
+}
+
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
       'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
+  // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
+  // Aggregate turn meta (count/cost/tokens) in one SQL pass — never load turn bodies here.
+  const metaRows = db
+    .prepare(
+      `SELECT conv_id,
+              COUNT(*) AS n,
+              SUM(COALESCE(json_extract(data,'$.costUSD'),0)) AS cost,
+              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)+COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens
+       FROM turns GROUP BY conv_id;`,
+    )
+    .all() as Array<{ conv_id: string; n: number; cost: number | null; tokens: number | null }>;
+  const meta = new Map(metaRows.map((m) => [m.conv_id, m]));
+  const firstPromptStmt = db.prepare(
+    `SELECT json_extract(data,'$.prompt') AS p FROM turns WHERE conv_id=? ORDER BY created_at LIMIT 1;`,
+  );
   return rows.map((r) => {
     let directHistory: ChatMsg[] = [];
     try {
@@ -308,7 +339,10 @@ export function loadConversations(): Conversation[] {
     } catch {
       /* leave empty */
     }
-    const turns = loadTurns(r.id);
+    const m = meta.get(r.id);
+    // 首条 prompt 只取标题所需(侧栏/NEXUS 标题兜底),不加载 turns 本体。
+    // First prompt for sidebar titles only — turn bodies stay unloaded.
+    const firstPrompt = (firstPromptStmt.get(r.id) as { p: string | null } | undefined)?.p ?? '';
     const engine: EngineKind = (['direct', 'directV2', 'directV3', 'claudeCode', 'codex'] as const).includes(r.engine as EngineKind)
       ? (r.engine as EngineKind)
       : 'direct';
@@ -322,12 +356,15 @@ export function loadConversations(): Conversation[] {
       customTitle: r.custom_title || null,
       directHistory,
       engineSessionId: r.engine_session_id || null,
-      turns,
+      turns: [],
+      turnsLoaded: false, // head 模式:turns 未加载,消费方按需 loadConvTurns hydrate
+      turnCount: m?.n ?? 0,
+      firstPrompt,
       status: 'ready',
       statusNote: null,
-      // Backfill aggregate cost/tokens on load — turns persist the real numbers.
-      cost: turns.reduce((s, t) => s + (t.costUSD ?? 0), 0),
-      tokens: turns.reduce((s, t) => s + (t.tokensIn ?? 0) + (t.tokensOut ?? 0), 0),
+      // Backfill aggregate cost/tokens on load — SQL 聚合 turns 的真实数字。
+      cost: m?.cost ?? 0,
+      tokens: m?.tokens ?? 0,
       // 恢复分支信息(branchFrom 创建的关系)和 pipeline 标记 —— 重启后任务图边不丢。
       branchInfo: r.branch_info ? (() => { try { return JSON.parse(r.branch_info); } catch { return null; } })() : null,
       pipelineId: r.pipeline_id ?? null,
@@ -1088,7 +1125,7 @@ export function loadTaskGraph(): { nodes: TaskGraphNode[]; edges: TaskGraphEdge[
     cwd: c.cwd,
     createdAt: c.createdAt,
     customTitle: c.customTitle,
-    turns: c.turns.length,
+    turns: c.turnCount ?? c.turns.length, // head 模式:SQL 聚合计数,不拉 turns
     cost: c.cost,
   }));
   // 边:分支 + 引用(pipeline/dispatch 从 branchInfo 和 conv_refs 推断)

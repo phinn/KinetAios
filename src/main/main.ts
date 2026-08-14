@@ -857,6 +857,13 @@ function buildCollectScript(x1: number, y1: number, x2: number, y2: number): str
 
 function registerIpc(): void {
   ipcMain.handle('get-conversations', () => taskManager.list());
+
+  // 懒加载:renderer 切频道时按需拉 turns(head 模式启动不载全文)
+  // Lazy: renderer fetches turns on conversation switch.
+  ipcMain.handle('get-turns', (_e, convId: string) => {
+    const conv = taskManager.hydrate(convId);
+    return conv ? conv.turns : [];
+  });
   ipcMain.handle('new-conversation', (_e, cwd?: string, engine?: EngineKind) => {
     const conv = taskManager.newConversation(cwd || os.homedir(), engine);
     // 新会话:自动检测该 cwd 的 .kinet-watch.json,有就起 watcher。
@@ -1759,7 +1766,7 @@ function registerIpc(): void {
   // ── 会话导出 ──
   ipcMain.handle('export-conversation', async (_e, convId: string, format: string) => {
     try {
-      const conv = taskManager.get(convId);
+      const conv = taskManager.hydrate(convId); // 导出需要全部 turns,懒加载
       if (!conv) return { ok: false, error: t(getSettings().lang, 'common.convNotFound') };
       const brand = getBrand();
       let content = '';
@@ -1789,8 +1796,8 @@ function registerIpc(): void {
   // ── Arena Diff ──
   ipcMain.handle('arena-diff', (_e, leftConvId: string, rightConvId: string) => {
     try {
-      const left = taskManager.get(leftConvId);
-      const right = taskManager.get(rightConvId);
+      const left = taskManager.hydrate(leftConvId); // diff 读 lastTurn.answer,懒加载
+      const right = taskManager.hydrate(rightConvId);
       if (!left || !right) return { ok: false, error: t(getSettings().lang, 'common.convNotFound') };
       const leftText = left.turns[left.turns.length - 1]?.answer ?? '';
       const rightText = right.turns[right.turns.length - 1]?.answer ?? '';
@@ -1845,15 +1852,15 @@ function registerIpc(): void {
   ipcMain.handle('search-conversations', (_e, query: string) => {
     const q = (query ?? '').toLowerCase().trim();
     const all = taskManager.list();
-    if (!q) return all.slice(0, 20).map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+    if (!q) return all.slice(0, 20).map((c) => ({ id: c.id, title: c.customTitle || c.firstPrompt?.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turnCount ?? c.turns.length, lastActive: c.createdAt }));
     return all
       .filter((c) => {
         const title = (c.customTitle || '').toLowerCase();
-        const firstPrompt = (c.turns[0]?.prompt || '').toLowerCase();
+        const firstPrompt = (c.firstPrompt || '').toLowerCase();
         return title.includes(q) || firstPrompt.includes(q) || c.id.toLowerCase().includes(q);
       })
       .slice(0, 20)
-      .map((c) => ({ id: c.id, title: c.customTitle || c.turns[0]?.prompt.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turns.length, lastActive: c.createdAt }));
+      .map((c) => ({ id: c.id, title: c.customTitle || c.firstPrompt?.slice(0, 40) || c.id.slice(0, 8), engine: c.engine, turns: c.turnCount ?? c.turns.length, lastActive: c.createdAt }));
   });
 
   // ── 全局对话搜索:FTS5 全文搜索 + 关联会话标题 ──
@@ -1964,7 +1971,7 @@ function registerIpc(): void {
   // ── 会话交接:导出会话状态 ──
   ipcMain.handle('export-session-state', (_e, convId: string) => {
     try {
-      const conv = taskManager.get(convId);
+      const conv = taskManager.hydrate(convId); // 交接导出含全部 turns,懒加载
       if (!conv) return { ok: false, error: '会话不存在' };
       const state = {
         version: 1,
@@ -2170,7 +2177,7 @@ function registerIpc(): void {
     try {
       // 从语音发起的频道提取项目上下文,注入语音对话的 system_role
       // Extract project context from the conversation where voice was triggered
-      const activeConv = taskManager.get(convId) || null;
+      const activeConv = taskManager.hydrate(convId) || null; // 语音上下文读最近 3 轮,懒加载
       let contextHint: string | undefined;
       if (activeConv?.cwd) {
         const projName = activeConv.cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || activeConv.cwd;

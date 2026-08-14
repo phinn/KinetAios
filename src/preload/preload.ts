@@ -6,6 +6,7 @@ import type { KinetAPI, ChatMsg } from '../shared/types';
 
 const api: KinetAPI = {
   getConversations: () => ipcRenderer.invoke('get-conversations'),
+  getTurns: (convId) => ipcRenderer.invoke('get-turns', convId),
   newConversation: (cwd, engine) => ipcRenderer.invoke('new-conversation', cwd, engine),
   send: (id, text) => ipcRenderer.invoke('send', id, text),
   cancel: (id) => ipcRenderer.invoke('cancel', id),

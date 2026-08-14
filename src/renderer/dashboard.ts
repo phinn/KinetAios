@@ -286,8 +286,8 @@ function renderDashboard(): void {
     const ar = a.status === 'running' ? 1 : 0;
     const br = b.status === 'running' ? 1 : 0;
     if (ar !== br) return br - ar;
-    const at = a.turns[a.turns.length - 1]?.ts ?? 0;
-    const bt = b.turns[b.turns.length - 1]?.ts ?? 0;
+    const at = a.turns[a.turns.length - 1]?.ts ?? a.updatedAt ?? 0;
+    const bt = b.turns[b.turns.length - 1]?.ts ?? b.updatedAt ?? 0;
     return bt - at;
   });
   const table = document.getElementById('dash-table')!;
@@ -298,7 +298,7 @@ function renderDashboard(): void {
       <th>${esc(tr('dash.col.name'))}</th><th>${esc(tr('dash.col.engine'))}</th><th>${esc(tr('dash.col.model'))}</th>
       <th>${esc(tr('dash.col.status'))}</th><th>${esc(tr('dash.col.tokens'))}</th><th>${esc(tr('dash.col.cost'))}</th><th>${esc(tr('dash.col.last'))}</th>
     </tr></thead><tbody>` + sorted.map((c) => {
-      const name = c.customTitle || c.turns[0]?.prompt.slice(0, 40) || '—';
+      const name = c.customTitle || c.firstPrompt?.slice(0, 40) || c.turns[0]?.prompt?.slice(0, 40) || '—';
       const last = c.turns[c.turns.length - 1];
       const isRun = c.status === 'running';
       const status = isRun ? (c.statusNote ? esc(c.statusNote) : esc(tr('dash.status.running'))) : esc(tr('dash.status.ready'));

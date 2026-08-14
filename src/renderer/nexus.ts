@@ -325,7 +325,7 @@ function buildRings(): void {
     if (!c) continue;
     // Phase 3: 搜索过滤 / Search filter
     if (searchQuery) {
-      const title = (c.customTitle || c.turns[0]?.prompt || c.id).toLowerCase();
+      const title = (c.customTitle || c.firstPrompt || c.turns[0]?.prompt || c.id).toLowerCase();
       const engine = (c.engine || '').toLowerCase();
       if (!title.includes(searchQuery) && !engine.includes(searchQuery)) continue;
     }
@@ -988,7 +988,7 @@ function renderSVG(): void {
       const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
       // Phase 9: 节点大小 = 基础 7 + turn 数权重(上限 +4),选中 +2
       // Node radius = base 7 + turn-count weight (max +4), selected +2
-      const turnBoost = Math.min(Math.floor(node.conv.turns.length / 5), 4);
+      const turnBoost = Math.min(Math.floor((node.conv.turnCount ?? node.conv.turns.length) / 5), 4);
       const nodeR = (isSelected ? 9 : 7) + turnBoost;
       const haloId = `nx-halo-${node.engine}`;
       const isRunning = node.state === 'running';
@@ -1019,8 +1019,8 @@ function renderSVG(): void {
       }
 
       // Phase 9: 微标签 — turn 数 > 0 时显示简短标题 / Mini-label: short title when turns > 0
-      if (!isSelected && node.conv.turns.length > 0 && nodeR >= 8) {
-        const rawTitle = node.conv.customTitle || node.conv.turns[0]?.prompt || '';
+      if (!isSelected && (node.conv.turnCount ?? node.conv.turns.length) > 0 && nodeR >= 8) {
+        const rawTitle = node.conv.customTitle || node.conv.firstPrompt || node.conv.turns[0]?.prompt || '';
         const shortTitle = rawTitle.slice(0, 12).trim();
         if (shortTitle) {
           svg += `<text x="0" y="${nodeR + 12}" fill="rgba(200,208,222,0.72)" font-size="8.5" text-anchor="middle" font-family="system-ui" style="pointer-events:none">${esc(shortTitle)}</text>`;
@@ -1214,8 +1214,8 @@ function showNodeTooltip(nid: string, ev: MouseEvent): void {
   const color = ENGINE_COLORS[conv.engine] || '#a8b0c2';
   const state = agentState(conv);
   const stateLabel = tr(`nexus.state${state.charAt(0).toUpperCase() + state.slice(1)}`);
-  const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
-  const turns = conv.turns.length;
+  const title = conv.customTitle || conv.firstPrompt?.slice(0, 40) || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
+  const turns = conv.turnCount ?? conv.turns.length;
   const engineLabel = ENGINE_LABELS[conv.engine] || conv.engine;
   // Phase 9: token + cost / Token + cost
   const convTokens = conv.tokens || 0;

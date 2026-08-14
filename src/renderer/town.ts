@@ -1158,7 +1158,7 @@ export function renderTown(): void {
       for (const c of agents) {
         totalTokens += c.tokens;
         totalCost += c.cost;
-        const t = c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
+        const t = c.turns[c.turns.length - 1]?.ts ?? c.updatedAt ?? c.createdAt;
         if (t > lastTs) lastTs = t;
         if (c.status === 'running') running = true;
       }
@@ -1177,7 +1177,7 @@ export function renderTown(): void {
         <div class="house-villagers">
           ${agents.map((c) => {
             const vs = villagerState(c);
-            const label = c.customTitle || c.turns[0]?.prompt?.slice(0, 16) || '…';
+            const label = c.customTitle || c.firstPrompt?.slice(0, 16) || c.turns[0]?.prompt?.slice(0, 16) || '…';
             return `<div class="villager-wrap vs-${vs}" data-conv-id="${esc(c.id)}" data-engine="${c.engine}" title="${esc(label)}">
               ${effStyle() === 'minecraft' ? mcVillagerSVG(c.engine, vs) : effStyle() === 'seed' ? seedVillagerSVG(c.engine, vs) : villagerSVG(c.engine, vs)}
               <span class="villager-name">${esc(label)}</span>
@@ -1471,7 +1471,7 @@ export function refreshTownVillager(conv: Conversation): void {
   const engine = conv.engine;
   wrap.className = `villager-wrap vs-${vs}`;
   wrap.dataset.engine = engine;
-  const label = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 16) || '…';
+  const label = conv.customTitle || conv.firstPrompt?.slice(0, 16) || conv.turns[0]?.prompt?.slice(0, 16) || '…';
   wrap.title = label;
   wrap.querySelector('.villager-name')!.textContent = label;
   const svgContainer = wrap.querySelector('.villager-svg');
@@ -1490,7 +1490,7 @@ export function refreshTownVillager(conv: Conversation): void {
       let totalTokens = 0, totalCost = 0, lastTs = 0, running = false;
       for (const c of agents) {
         totalTokens += c.tokens; totalCost += c.cost;
-        const t = c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
+        const t = c.turns[c.turns.length - 1]?.ts ?? c.updatedAt ?? c.createdAt;
         if (t > lastTs) lastTs = t;
         if (c.status === 'running') running = true;
       }
