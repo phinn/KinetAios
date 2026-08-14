@@ -427,7 +427,9 @@ function renderSidebar() {
   }
 
   if (!visibleOrder.length) {
-    ul.innerHTML = '<li style="color:var(--text-faint);cursor:default">' + esc(runningOnly ? tr('sidebar.runningEmpty') : searchQuery ? tr('sidebar.searchEmpty') : tr('sidebar.empty')) + '</li>';
+    const emptyIcon = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>';
+    const emptyText = runningOnly ? tr('sidebar.runningEmpty') : searchQuery ? tr('sidebar.searchEmpty') : tr('sidebar.empty');
+    ul.innerHTML = '<li class="sb-empty"><span class="sb-empty-icon">' + emptyIcon + '</span><span class="sb-empty-text">' + esc(emptyText) + '</span></li>';
     return;
   }
   // flat 模式 = 原始平铺;grouped = 按 cwd 分项目(默认)。
@@ -1463,9 +1465,10 @@ function renderMain() {
   renderToken++;
   const token = renderToken;
   const conv = selectedId ? convs.get(selectedId) : undefined;
-  // 切频道时清理流式 buffer,避免残留旧频道的文本 / Clear streaming buffer on switch
+  // 切频道时清理流式 buffer + artifact 定时器,避免残留旧频道的文本/误触发 / Clear buffers on switch
   streamRawText = '';
   streamRenderScheduled = false;
+  if (artifactDebounce) { clearTimeout(artifactDebounce); artifactDebounce = null; }
   // 切换会话时重置未读计数 / Reset unread count when switching conversations
   if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
   renderHead(conv);
@@ -2200,11 +2203,15 @@ function scrollDownForce() {
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
 /** 用户滚离底部时显示浮动箭头,点击回到底部。 */
 // Show floating arrow when user scrolls up; click to jump to bottom.
+// Guard: 防止 reload 后重复创建 Observer(内存泄漏)
+let scrollBottomInited = false;
 function initScrollBottomBtn(): void {
   const turns = document.getElementById('turns');
   const btn = document.getElementById('scroll-bottom-btn');
   const input = document.getElementById('input');
   if (!turns || !btn) return;
+  if (scrollBottomInited) return; // 已初始化过,不重复 / Already inited, skip
+  scrollBottomInited = true;
 
   // 动态测量 #input 高度(含 attach-row 展开),更新 CSS 变量 → scroll-bottom-btn 自动跟随。
   // Measure #input height (including attach-row expansion), update CSS var for dynamic button position.

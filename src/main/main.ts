@@ -208,9 +208,12 @@ function createDashboard(): BrowserWindow {
         try { taskManager.cancel(conv.id); } catch { /* already torn down */ }
       }
     }
-    // OOM crash 后自动重载页面(1 秒延迟让 GC 回收旧 frame)。
-    // Auto-reload after OOM (1s delay lets GC reclaim the dead frame).
-    if (details.reason === 'oom' || details.reason === 'crashed') {
+    // 渲染进程崩溃/被杀后自动重载(1 秒延迟让 GC 回收旧 frame)。
+    // Auto-reload after render process crash (1s delay lets GC reclaim the dead frame).
+    // killed: 系统杀进程(Windows 常见,GPU 崩溃/资源压力)
+    // oom: 内存不足
+    // crashed: V8 崩溃
+    if (details.reason === 'oom' || details.reason === 'crashed' || details.reason === 'killed') {
       setTimeout(() => {
         deadFrames.delete(win);
         if (!win.isDestroyed()) {
