@@ -351,8 +351,11 @@ class DirectEngine implements Engine {
         // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
         const subAc = new AbortController();
         const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
+        // M2-fix: 具名 listener,finally 中 removeEventListener — 否则匿名闭包在主 signal 上累积泄漏
+        // (长会话多次 dispatch_agent 会触发 Node MaxListeners 警告,闭包持有 subAc 造成内存滞留)。
+        const onParentAbort = (): void => subAc.abort();
         if (childSignal.aborted) subAc.abort();
-        else childSignal.addEventListener('abort', () => subAc.abort(), { once: true });
+        else childSignal.addEventListener('abort', onParentAbort, { once: true });
         // P1:解析 scope → 实际要注入的 history + 拼接后 prompt。
         // 子任务的 SUBAGENT_PROMPT 末尾追加一段 history 摘要 + parent 上下文,作为事实锚点参考。
         // 注意:不直接传 ChatMsg[] history 给 runAgentLoop(避免子 agent 的 response 模型看到父级 tool_calls),
@@ -369,22 +372,28 @@ class DirectEngine implements Engine {
         const finalPrompt = resolved.historyText
           ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${resolved.historyText}\n---`
           : sub;
-        const out = await runAgentLoop({
-          provider: subProvider,
-          tools: readOnlyTools(),
-          systemPrompt: SUBAGENT_PROMPT,
-          snapshot: subSnap,
-          userInput: finalPrompt,
-          history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
-          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
-          signal: subAc.signal,
-          maxTurns: 8,
-          onEvent: (e) => {
-            if (e.type === 'cost') onEvent(e);
-            else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
-          },
-        });
-        clearTimeout(subTimer);
+        let out: Awaited<ReturnType<typeof runAgentLoop>>;
+        try {
+          out = await runAgentLoop({
+            provider: subProvider,
+            tools: readOnlyTools(),
+            systemPrompt: SUBAGENT_PROMPT,
+            snapshot: subSnap,
+            userInput: finalPrompt,
+            history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
+            signal: subAc.signal,
+            maxTurns: 8,
+            onEvent: (e) => {
+              if (e.type === 'cost') onEvent(e);
+              else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+            },
+          });
+        } finally {
+          // M2-fix: 无论正常/异常都要清理 — runAgentLoop 抛错时 timer + listener 也会泄漏
+          clearTimeout(subTimer);
+          childSignal.removeEventListener('abort', onParentAbort);
+        }
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)
