@@ -229,6 +229,10 @@ export class DirectV3Engine implements Engine {
       }
     } catch (e) {
       const errMsg = (e as Error)?.message ?? String(e);
+      // M4-note: V3 无 checkpoint 体系(不存任何非 final checkpoint),
+      // 因此异常/abort 路径只回写 directHistory 即可,不存在 V2 那种
+      // "残留非 final checkpoint → 误触发 crash recovery"问题。
+      // 若未来给 V3 加 checkpoint,此处必须同步补存 final。
       if (signal.aborted) {
         conv.directHistory = updatedHistory;
         onEvent({ type: 'done' });

@@ -23,10 +23,20 @@ const DEEP_SIGNALS = [
 
 // fast 信号:这些模式几乎总是单步可完成
 const FAST_SIGNALS = [
-  '什么是', '什么是', '解释一下', '解释', '说明', '说说',
+  '什么是', '解释一下', '解释', '说明', '说说',
   '读取', '查看', '看看', '打开',
   '搜索', 'grep', '查找', 'find', 'search',
   '总结', '摘要', 'translate', '翻译',
+];
+
+// L2-fix: 多步任务信号 — 出现这些词说明任务需要多轮工具/多文件关联,
+// 即使命中 fast 信号也不能进 fast path(maxTurns=5 会截断)。
+// 典型误吞场景:"读取 A.xlsx 和 B.xlsx 然后交叉分析" → 命中"读取"被路由到 fast。
+const MULTI_STEP_SIGNALS = [
+  '交叉分析', '关联分析', '对比分析', '分析一下', '统计分析',
+  '数据透视', '汇总统计', '批量处理', '交叉', '关联',
+  '合并', 'merge', 'join', '然后', '再', '接着', '之后',
+  '全部', '所有', '多个', '各自', '分别',
 ];
 
 // 写操作信号:即使看起来简单,也需要 std(因为有副作用,需要更多上下文)
@@ -55,6 +65,8 @@ export function routeTask(
   const hasDeepSignal = DEEP_SIGNALS.some((s) => lower.includes(s.toLowerCase()));
   const hasFastSignal = FAST_SIGNALS.some((s) => text.includes(s));
   const hasWriteSignal = WRITE_SIGNALS.some((s) => lower.includes(s.toLowerCase()));
+  // L2-fix: 多步信号压制 fast(交叉分析/合并/批量等任务 5 轮跑不完)
+  const hasMultiStepSignal = MULTI_STEP_SIGNALS.some((s) => text.includes(s));
 
   // ── Deep path 判定(高阈值,避免误判)──
   // 条件 1: 明确的 deep 关键词 + 多文件路径
@@ -66,11 +78,12 @@ export function routeTask(
 
   // ── Fast path 判定(保守,优先级低于 deep)──
   // 条件 1: fast 信号 + 短文本 + 无写操作 + 无多文件
-  if (hasFastSignal && text.length < 300 && !hasWriteSignal && fileCount <= 1) {
+  // L2-fix: 多步信号(交叉分析/合并/批量…)压制 fast — "读取A和B然后交叉分析"不能进 5 轮上限的 fast
+  if (hasFastSignal && text.length < 300 && !hasWriteSignal && !hasMultiStepSignal && fileCount <= 1) {
     return 'fast';
   }
   // 条件 2: 纯问答(无任何工具信号) + 短文本
-  if (!hasWriteSignal && fileCount === 0 && text.length < 150 && isQuestion(text)) {
+  if (!hasWriteSignal && !hasMultiStepSignal && fileCount === 0 && text.length < 150 && isQuestion(text)) {
     return 'fast';
   }
 
