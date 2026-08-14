@@ -1,10 +1,11 @@
 // V3 Streaming Tool Executor — 核心执行引擎
 //
 // 改进 vs V2 的 runAgentLoop:
-// 1. 复用 runAgentLoop 的 ReAct loop,但按 path 调整 maxTurns 和上下文策略
-// 2. Fast path: maxTurns=5,轻量 trim
-// 3. Std path: maxTurns=20,标准 trim,带 embedded verify
-// 4. Deep path: 每步 maxTurns=8,步骤间压缩
+// 1. 复用 runAgentLoop 的 ReAct loop,按 path 调整上下文策略;fast/std 主循环
+//    轮数跟随用户设置(maxTurns 不传),不再内部硬编码压制用户配置
+// 2. Fast path: 轻量 trim(router 保证简单任务才进)
+// 3. Std path: 标准 trim,带 embedded verify
+// 4. Deep path: 每步 maxTurns=8(子环节保险丝),步骤间压缩
 //
 // 不重新发明 runAgentLoop(它已经处理了 SSE 解析、工具执行、上下文压缩、
 // abort、error recovery),而是用不同的策略包配置它。
@@ -51,7 +52,7 @@ export async function executeReActLoop(opts: StreamingExecOpts): Promise<ChatMsg
     history,
     ctx,
     signal,
-    maxTurns: maxTurns ?? 0,
+    maxTurns: maxTurns, // undefined → AgentLoop 读 settings.maxTurns;不再 ?? 0(那会让 undefined 变 Infinity 绕过用户设置)
     contextMode,
     hifiContextBudget: getSettings().hifiContextBudget,
     policy,

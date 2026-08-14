@@ -30,7 +30,7 @@ const FAST_SIGNALS = [
 ];
 
 // L2-fix: 多步任务信号 — 出现这些词说明任务需要多轮工具/多文件关联,
-// 即使命中 fast 信号也不能进 fast path(maxTurns=5 会截断)。
+// 不能进 fast path(fast 的轻上下文策略不适合多步任务,即使轮数已跟随用户设置)。
 // 典型误吞场景:"读取 A.xlsx 和 B.xlsx 然后交叉分析" → 命中"读取"被路由到 fast。
 const MULTI_STEP_SIGNALS = [
   '交叉分析', '关联分析', '对比分析', '分析一下', '统计分析',

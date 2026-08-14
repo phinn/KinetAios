@@ -1,9 +1,9 @@
 // V3 Fast Path — 单轮 ReAct,零开销
 //
 // 适用于:读文件、查文档、grep、简单问答。
-// 本质就是 V1 Direct 的 runAgentLoop,但 maxTurns 限制更紧(5 轮)。
+// 本质就是 V1 Direct 的 runAgentLoop — 轮数上限跟随用户设置(maxTurns),
+// 由 router 保证只有简单任务进这条路径(轻上下文策略)。
 // 没有 Plan、没有 Judge、没有 Verify。
-// 注意:maxTurns 必须显式传 5 —— AgentLoop 中 0 = Infinity(fast path 不设限会无限烧 token)。
 
 import type { AgentEvent, ChatMsg, ConfigSnapshot, EngineContextPolicy } from '../../shared/types';
 import { executeReActLoop, finalizeContext, type StreamingExecOpts } from './streaming-executor';
@@ -39,7 +39,10 @@ export async function executeFastPath(opts: FastPathOpts): Promise<ChatMsg[]> {
     history,
     ctx,
     signal,
-    maxTurns: 5, // H1-fix: 0 在 AgentLoop 中 = Infinity,fast path 必须显式限 5 轮
+    // maxTurns 不传 → 跟随用户设置(settings.maxTurns)。
+    // 旧实现硬编码 5 会经 AgentLoop 的 min(internal, userMax) 永远压制用户设置,
+    // 用户调高轮数对 fast path 从不生效 — 主循环轮数必须尊重用户配置。
+    // fast 的"快"来自 router 分流 + 轻上下文策略,不来自砍轮数。
     policy,
     onEvent,
   });

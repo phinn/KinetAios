@@ -1,8 +1,7 @@
 // V3 Standard Path — Streaming ReAct,中等复杂度
 //
 // 适用于:修 bug、写功能、搜索+总结等需要多轮工具调用的任务。
-// 与 Fast path 的区别:maxTurns 更多(20),允许更多轮工具调用。
-// 注意:maxTurns 必须显式传 20 —— AgentLoop 中 0 = Infinity(std path 不设限会无限烧 token)。
+// 轮数上限跟随用户设置(maxTurns),与 Fast path 的差异在上下文策略(标准 trim + 嵌入式验证)。
 // 与 Deep path 的区别:不生成 DAG plan,直接 ReAct loop。
 //
 // 取消了 V2 的独立 Judge — 模型在回答中自带完成判断,不需要额外 LLM 调用。
@@ -41,7 +40,9 @@ export async function executeStdPath(opts: StdPathOpts): Promise<ChatMsg[]> {
     history,
     ctx,
     signal,
-    maxTurns: 20, // H1-fix: 0 在 AgentLoop 中 = Infinity,std path 必须显式限 20 轮
+    // maxTurns 不传 → 跟随用户设置(settings.maxTurns)。
+    // 旧实现硬编码 20 会经 AgentLoop 的 min(internal, userMax) 永远压制用户设置 —
+    // 用户设 50 时 std path 依然 20 轮截断,设置形同虚设。
     policy,
     onEvent,
   });

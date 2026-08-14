@@ -4,9 +4,9 @@
 //   User Input → Router(fast/std/deep) → 各路径执行 → Unified Output
 //
 // 三条路径:
-//   Fast: 单轮 ReAct(5 turns),零开销 — 简单问答、读文件、grep
-//   Std:  Streaming ReAct(20 turns)— 修 bug、写功能
-//   Deep: DAG Plan + 并行执行 + 嵌入式验证 — 跨文件重构
+//   Fast: 单轮 ReAct,零开销 — 简单问答、读文件、grep(轮数跟随用户设置)
+//   Std:  Streaming ReAct — 修 bug、写功能(轮数跟随用户设置)
+//   Deep: DAG Plan + 并行执行 + 嵌入式验证 — 跨文件重构(每步 8 轮保险丝)
 //
 // V3 相对 V2 的核心改进:
 // 1. 自适应路由 — 60%+ 任务走零开销 Fast path
