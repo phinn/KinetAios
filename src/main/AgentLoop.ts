@@ -151,9 +151,19 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
   // reactive trim 预算:从策略包取(覆盖硬编码 15K)。hifi 模式策略 trimBudget 已翻倍,不用再读 hifiContextBudget。
   const trimBudget = opts.policy?.trimBudget ?? 15_000;
-  // 从设置读 maxTurns(0 = 无限);子 agent 调用时可通过 opts.maxTurns 显式覆盖。
-  const cfgMax = opts.maxTurns ?? getSettings().maxTurns ?? 50;
-  const maxTurns = cfgMax > 0 ? cfgMax : Infinity;
+  // maxTurns 解析(修复:用户设置曾被 V3 硬编码完全无视):
+  // - settings.maxTurns 是全局天花板;opts.maxTurns(内部路径上限,如 fast=5/std=20)只在比它更紧时生效。
+  // - 用户设 0 = 无限 → 全链路不限轮,内部硬编码上限全部失效。
+  // User setting is the global ceiling; internal path caps only apply when tighter.
+  const userMax = getSettings().maxTurns ?? 50;
+  let maxTurns: number;
+  if (userMax <= 0) {
+    maxTurns = Infinity; // 用户显式要求无限
+  } else if (opts.maxTurns != null && opts.maxTurns > 0) {
+    maxTurns = Math.min(opts.maxTurns, userMax); // 内部上限与用户天花板取紧
+  } else {
+    maxTurns = userMax; // 无内部上限 → 用用户设置(含 opts.maxTurns===0 的历史语义)
+  }
   const defs: ToolDef[] = tools.map(toolDef);
 
   // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
