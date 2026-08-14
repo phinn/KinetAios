@@ -848,6 +848,8 @@ html, body { height: 100%; margin: 0; }
 ::-webkit-scrollbar-thumb { background: var(--text-faint); opacity: 0.35; border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
 ::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: content-box; border: 2px solid transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
+/* 选中文字 accent 色 / Text selection in accent color */
+::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); }
 body {
   background: var(--bg);
   color: var(--text);
@@ -1917,6 +1919,10 @@ a { color: var(--accent); }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 0.923rem; color: var(--text-faint); opacity: 0.7; }
 
 .turn { padding: 4px 0 12px; display: flex; flex-direction: column; gap: 10px; }
+/* 日期分割线 — 跨天 turn 之间的居中标记 / Date divider between turns crossing days */
+.date-divider { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; user-select: none; }
+.date-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent); }
+.date-divider-text { font-size: 0.73rem; color: var(--text-faint); letter-spacing: 0.3px; padding: 1px 10px; background: var(--bg-elev-2, var(--bg-elev)); border: 1px solid var(--border-soft); border-radius: 10px; white-space: nowrap; }
 /* AI turn 首次渲染时轻微淡入,减少突兀感 / Fade-in on first render */
 .turn .msg.ai .ai-body { animation: turn-fade-in 0.25s var(--ease-out) both; }
 @keyframes turn-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
@@ -1930,6 +1936,15 @@ a { color: var(--accent); }
 .msg.user { flex-direction: row-reverse; } /* 头像在右 */
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
 .avatar:hover { transform: scale(1.08); }
+/* AI 头像 streaming 呼吸光晕 / AI avatar breathing glow while streaming */
+.msg.ai .avatar { transition: transform var(--dur-fast) var(--ease-out), box-shadow 0.6s ease-in-out; }
+.turn.streaming .msg.ai .avatar {
+  animation: avatar-glow 1.6s ease-in-out infinite;
+}
+@keyframes avatar-glow {
+  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
+  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+}
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-xs); }
 .msg .bubble { max-width: 85%; padding: 9px 13px; border-radius: 14px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; }
@@ -1989,6 +2004,16 @@ a { color: var(--accent); }
 .answer .code-block:hover .code-copy { opacity: 0.6; }
 .answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); border-color: var(--accent-dim); }
 .answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 0.923rem; border: 1px solid var(--border-soft); line-height: 1.55; }
+/* 带行号代码块:span.cl + CSS counter / Numbered code lines via counter */
+.answer .code.has-ln { counter-reset: cline; padding-left: 8px; }
+.answer .code.has-ln .cl { display: block; counter-increment: cline; }
+.answer .code.has-ln .cl::before {
+  content: counter(cline);
+  display: inline-block; width: 2.2em; margin-right: 12px;
+  text-align: right; color: var(--text-faint); opacity: 0.45;
+  font-size: 0.846rem; user-select: none; position: sticky; left: 0;
+}
+.answer .code.has-ln .cl:hover::before { color: var(--accent); opacity: 0.8; }
 /* 代码块滚动条:更细更克制 / Code block scrollbar: thinner */
 .answer .code::-webkit-scrollbar { height: 6px; }
 .answer .code::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
