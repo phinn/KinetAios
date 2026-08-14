@@ -37,6 +37,10 @@ let runningOnly = false;
 let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
 let searchQuery = ''; // 侧栏搜索关键词(过滤会话标题) / Sidebar search filter
 let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
+// 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
+// Per-conversation drafts: save on switch away, restore on switch back. Memory-only.
+const convDrafts = new Map<string, string>();
+let draftPrevId: string | null = null; // showChat 上次处理的频道,用于检测切换 / last conv id showChat saw
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
@@ -545,6 +549,23 @@ function projName(cwd: string): string {
   return base || cwd;
 }
 
+// 草稿保存/恢复:切频道时 composer 内容跟随频道走,不丢字也不串台。
+// Draft save/restore so composer content follows the conversation.
+function saveDraft(id: string | null): void {
+  if (!id) return;
+  const composer = document.getElementById('composer') as HTMLTextAreaElement | null;
+  if (!composer) return;
+  const v = composer.value;
+  if (v) convDrafts.set(id, v);
+  else convDrafts.delete(id);
+}
+function restoreDraft(id: string | null): void {
+  const composer = document.getElementById('composer') as HTMLTextAreaElement | null;
+  if (!composer) return;
+  composer.value = id ? (convDrafts.get(id) ?? '') : '';
+  autosize(composer);
+}
+
 // 相对时间格式化:刚刚 / N分钟前 / N小时前 / 昨天 / MM-DD / YYYY-MM-DD。
 // Relative time formatter for sidebar list items.
 function fmtRelative(ts: number): string {
@@ -560,6 +581,19 @@ function fmtRelative(ts: number): string {
   const m = String(d.getMonth() + 1).padStart(2, '0');
   const dd = String(d.getDate()).padStart(2, '0');
   if (diff < 365 * day) return `${m}-${dd}`;
+  return `${d.getFullYear()}-${m}-${dd}`;
+}
+
+// 日期分割线文案:今天/昨天/具体日期 / Date divider label
+function fmtDateLabel(ts: number): string {
+  const now = new Date();
+  const d = new Date(ts);
+  const day = 86400000;
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  if (ts >= todayStart) return tr('date.today');
+  if (ts >= todayStart - day) return tr('date.yesterday');
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
   return `${d.getFullYear()}-${m}-${dd}`;
 }
 
@@ -1495,7 +1529,18 @@ function renderMain() {
   const frag = document.createDocumentFragment();
   for (let i = startIdx; i < total; i++) frag.appendChild(renderTurn(conv, i));
   turns.replaceChildren(frag);
-  scrollDownForce();
+  // 滚动位置恢复:切回频道时滚到上次浏览处(而不是强制跳底)。
+  // 注意必须在首批 30 turn 挂载后立即恢复,否则 scrollDownForce 会先跳底。
+  // Restore saved scroll position if the user wasn't at bottom when switching away.
+  if (scrollRestorePending != null) {
+    const target = scrollRestorePending;
+    scrollRestorePending = null;
+    turns.scrollTop = target;
+    userAtBottom = Math.abs(turns.scrollHeight - turns.scrollTop - turns.clientHeight) < 120;
+    scrollRestoredMid = !userAtBottom;
+  } else {
+    scrollDownForce();
+  }
   // 剩余 turn 用 idle 回调增量补(头插)。补完后用户向上滚就能看到。
   // Idle-fill earlier turns in the background (prepended to the top).
   if (startIdx > 0) {
@@ -1506,8 +1551,12 @@ function renderMain() {
     // 如果用户已经向上滚了,说明在看历史,不要 prepend 干扰视口。
     // Only background-fill when the user is at the bottom (auto-scroll following).
     // If they scrolled up to read history, don't prepend and shift the viewport.
+    // 例外:滚动恢复场景(切回频道停在中部)必须补全,否则向上翻顶不到历史。
+    // Exception: scroll-restore case must still fill, or scrolling up hits a wall.
+    const restoredMid = scrollRestoredMid;
+    scrollRestoredMid = false;
     const atBottom = turns.scrollHeight - turns.scrollTop - turns.clientHeight < 100;
-    if (!atBottom) return;
+    if (!atBottom && !restoredMid) return;
     let fillScheduled = false;
     const fillBatch_run = () => {
       // 渲染令牌不匹配 = 用户已切到别的频道,中止旧频道的增量补全。
@@ -1680,7 +1729,18 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const isLast = i === conv.turns.length - 1;
   const streaming = isLast && conv.status === 'running' && !t.done;
   const wrap = document.createElement('div');
-  wrap.className = 'turn';
+  wrap.className = 'turn' + (streaming ? ' streaming' : '');
+  // 日期分割线:与前一个 turn 不同天时,插入分割标记 / Date divider between turns on different days
+  const prev = conv.turns[i - 1];
+  if (prev) {
+    const d1 = new Date(prev.ts), d2 = new Date(t.ts);
+    if (d1.toDateString() !== d2.toDateString()) {
+      const div = document.createElement('div');
+      div.className = 'date-divider';
+      div.innerHTML = `<span class="date-divider-line"></span><span class="date-divider-text">${fmtDateLabel(t.ts)}</span><span class="date-divider-line"></span>`;
+      wrap.appendChild(div);
+    }
+  }
 
   // 用户消息:头像在右、气泡在左(行内靠右)
   const userMsg = document.createElement('div');
@@ -2198,6 +2258,30 @@ function scrollDownForce() {
   userAtBottom = true;
   const el = document.getElementById('turns');
   if (el) el.scrollTop = 999999;
+}
+
+// ── 滚动位置记忆:切频道时保存/恢复 scrollTop ──
+// 切走时记录当前滚动位置;切回时恢复。如果用户本来就在底部(或从未滚动过),
+// 恢复 null → 维持"新会话跳底"的默认行为。
+// Scroll position memory: save on switch away, restore on switch back.
+const convScrollMemory = new Map<string, number>();
+let scrollRestorePending: number | null = null;
+let scrollRestoredMid = false; // 恢复后停在中部 → 强制启动历史补全链 / restored mid-scroll → force fill chain
+
+function scrollMemorySave(id: string | null): void {
+  if (!id) return;
+  const el = document.getElementById('turns');
+  if (!el) return;
+  const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+  // 在底部附近 → 不记位置,切回时走默认"跳底"
+  convScrollMemory.set(id, dist < 120 ? -1 : el.scrollTop);
+}
+function scrollMemoryRestore(id: string | null): number | null {
+  if (!id) return null;
+  const v = convScrollMemory.get(id);
+  convScrollMemory.delete(id);
+  if (v == null || v === -1) return null;
+  return v;
 }
 
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
@@ -5221,6 +5305,7 @@ async function send() {
     renderAttach();
     composer.value = '';
     autosize(composer);
+    convDrafts.delete(selectedId); // 发送成功,清掉该频道草稿
     document.getElementById('composer')!.focus();
     // 发送后强制滚到底部;一层 rAF 确保 onConversation → renderMain 已渲染新 turn DOM。
     // scrollDownForce 现在是同步的,所以延迟一帧即可。
@@ -5232,6 +5317,17 @@ async function send() {
 }
 
 function showChat() {
+  // 草稿跟随:切频道前保存旧频道草稿。所有切换路径(town/搜索/右键/侧栏)都经过 showChat。
+  // Draft follows conversation: every switch path goes through showChat.
+  if (draftPrevId !== selectedId) {
+    saveDraft(draftPrevId);
+    restoreDraft(selectedId);
+    // 滚动位置跟随:记住旧频道 scrollTop,新频道恢复到上次浏览处(不在底部时不强制跳底)。
+    // Scroll position follows: save old conv scrollTop, restore new conv to where it was.
+    scrollMemorySave(draftPrevId);
+    scrollRestorePending = scrollMemoryRestore(selectedId);
+    draftPrevId = selectedId;
+  }
   currentView = 'chat';
   hideAllViews();
   document.getElementById('chat-view')!.classList.add('active');

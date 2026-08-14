@@ -9,7 +9,14 @@ export function renderMarkdown(src: string): string {
   let text = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
     const i = blocks.length;
     const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
-    blocks.push(`<div class="code-block">${langLabel}<pre class="code"><code>${esc(code.replace(/\n$/, ''))}</code></pre></div>`);
+    // 行号:每行包 span.cl,CSS counter 显示行号(>12 行才显示,短代码块不加噪)
+    // Line numbers via CSS counter; only for blocks longer than 12 lines.
+    const raw = code.replace(/\n$/, '');
+    const lineCount = raw.split('\n').length;
+    const numbered = lineCount > 12
+      ? raw.split('\n').map((l: string) => `<span class="cl">${esc(l)}</span>`).join('\n')
+      : esc(raw);
+    blocks.push(`<div class="code-block">${langLabel}<pre class="code${lineCount > 12 ? ' has-ln' : ''}"><code>${numbered}</code></pre></div>`);
     return `\x00${i}\x00`;
   });
 
