@@ -1964,6 +1964,7 @@ a { color: var(--accent); }
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
 .answer.streaming { color: var(--text); }
+.answer.stream-overflow { white-space: pre-wrap; word-break: break-word; font-family: var(--mono, ui-monospace, monospace); font-size: 0.9em; opacity: 0.85; }
 .answer.streaming::after { content: ''; display: inline-block; width: 2px; height: 1em; background: var(--accent); margin-left: 2px; vertical-align: text-bottom; border-radius: 1px; animation: cursor-blink 0.9s step-end infinite; box-shadow: 0 0 4px var(--accent-glow); }
 @keyframes cursor-blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
 .typing { display: inline-flex; gap: 5px; padding: 6px 2px; }

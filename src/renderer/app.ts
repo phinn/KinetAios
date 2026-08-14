@@ -1778,10 +1778,12 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       ans.classList.add('streaming');
       // 同步 streamRawText buffer:renderMain 重建 DOM 时需重置 buffer 到当前 answer。
       streamRawText = t.answer ?? '';
-      if (t.answer) ans.innerHTML = md(t.answer);
+      // 超长 answer 只渲染头部(完整文本仍在 t.answer,done 后 copy/speak 取全文)。
+      if (t.answer) ans.innerHTML = md(clipForUi(t.answer));
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
-      ans.innerHTML = md(t.answer);
+      // 非流式同样截断:UI 层防御超长 answer(见 clipForUi 注释)。
+      ans.innerHTML = md(clipForUi(t.answer));
       // 非流式:给每个代码块挂复制按钮 / Non-streaming: attach copy button to each code block.
       ans.querySelectorAll('.code-block').forEach(cb => {
         const btn = document.createElement('button');
@@ -2042,6 +2044,26 @@ function streamAppend(text: string) {
     }
     // 累积原始文本到 buffer(不直接操作 DOM textNode)。
     streamRawText += text;
+    // 超长流式输出防御:超过阈值后放弃 markdown 重渲(每帧全量 md() 是 O(n²),
+    // 几百 KB 文本必然卡死),退化为纯文本追加 + 提示。done 后 renderTurn 走 clipForUi。
+    // Long-stream guard: past the cap, full md() re-render each frame is O(n²).
+    // Fall back to plain-text append; final render after done clips via clipForUi.
+    if (streamRawText.length > UI_TEXT_LIMIT) {
+      if (!el.classList.contains('stream-overflow')) {
+        el.classList.add('stream-overflow');
+        el.textContent = streamRawText.slice(0, UI_TEXT_LIMIT)
+          + `\n\n… [${tr('ui.omitted', { n: String(streamRawText.length - UI_TEXT_LIMIT) })}]`;
+      } else {
+        // 已进入 overflow 模式:只更新计数,不重建文本(避免每 token 一次全文重写)。
+        const tail = el.lastChild;
+        if (tail && tail.nodeType === Node.TEXT_NODE) {
+          tail.textContent = `\n\n… [${tr('ui.omitted', { n: String(streamRawText.length - UI_TEXT_LIMIT) })}]`;
+        }
+      }
+      scrollDown();
+      scheduleArtifactCheck();
+      return;
+    }
     // rAF 节流:每帧最多一次 md 渲染。
     if (!streamRenderScheduled) {
       streamRenderScheduled = true;
@@ -6256,8 +6278,20 @@ function esc(s: string): string {
 // 用户气泡 inline markdown:先 HTML 转义,再应用 inline 格式(code/link/bold/del)。
 // 不渲染 block 级(标题/列表/代码块),保持用户消息的简洁气泡形态。
 // Inline-only markdown for user bubbles: escape first, then apply inline formatting.
+// UI 层防御:超长 prompt(如误贴整份崩溃报告/日志,可达数 MB)若全文 innerHTML 进
+// pre-wrap 气泡,布局引擎要测量几万行 → 主线程卡死 + 渲染进程 OOM 崩溃。
+// 这里截断的只是显示层;数据不动,复制按钮仍取 t.prompt 全文。
+// UI guard: megabyte-scale pastes would freeze layout for tens of thousands of lines.
+// Display-only clip — the copy button still copies the full t.prompt.
+const UI_TEXT_LIMIT = 5000;
+function clipForUi(s: string): string {
+  if (s.length <= UI_TEXT_LIMIT) return s;
+  const omitted = s.length - UI_TEXT_LIMIT;
+  return s.slice(0, UI_TEXT_LIMIT) + `\n\n… [${tr('ui.omitted', { n: String(omitted) })}]`;
+}
 function inlineMd(s: string): string {
-  const e = s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const clipped = clipForUi(s);
+  const e = clipped.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
   return e
     .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
