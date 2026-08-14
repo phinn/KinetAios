@@ -15,9 +15,9 @@ AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-> 🚀 **We're live on Product Hunt today** — [upvote & say hi](https://www.producthunt.com/products/kinet-aios)
-
 ![KinetAios hero screenshot](documents/hero.png)
+
+![Three engines running side-by-side](documents/demo-arena.gif)
 
 ![KinetAios v2.1.0](documents/kinetaios-v2.1.0.png)
 

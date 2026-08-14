@@ -15,9 +15,11 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-![KinetAios hero screenshot](docs/hero.png)
+![KinetAios hero screenshot](documents/hero.png)
 
-![KinetAios v2.1.0](docs/kinetaios-v2.1.0.png)
+![三引擎并跑演示](documents/demo-arena.gif)
+
+![KinetAios v2.1.0](documents/kinetaios-v2.1.0.png)
 
 本地 AI agent 仪表盘,**跨平台(Windows 11 + macOS)**。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。**无需账号,无需中继服务器 —— 你的 LLM API key 就是唯一凭证。**
 
