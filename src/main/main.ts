@@ -179,8 +179,13 @@ const emitter: TaskManagerEmitter = {
     if (!getSettings().notifyOnDone) return;
     const win = dashboardWin;
     if (!win || win.isDestroyed()) return;
-    // 用户正盯着窗口看(聚焦且未最小化)→ 不打扰
-    if (!win.isMinimized() && win.isFocused()) return;
+    // 用户正盯着任何一个 KinetAios 窗口看(聚焦且未最小化)→ 不打扰。
+    // 只查 dashboard 会漏:用户盯着 quick 面板/Arena 看流式输出时,
+    // dashboard 失焦会被误判"没人在看"→ 弹通知骚扰。
+    const watching = [dashboardWin, quickWin, arenaWin].some(
+      (w) => w && !w.isDestroyed() && !w.isMinimized() && w.isFocused(),
+    );
+    if (watching) return;
     // 30s 合并窗口:同一频道重复完成只通知首条
     const now = Date.now();
     const last = notifyLastAt.get(conv.id) ?? 0;
