@@ -1547,8 +1547,7 @@ function renderMain() {
   const token = renderToken;
   const conv = selectedId ? convs.get(selectedId) : undefined;
   // 切频道时清理流式 buffer + artifact 定时器,避免残留旧频道的文本/误触发 / Clear buffers on switch
-  streamRawText = '';
-  streamRenderScheduled = false;
+  resetStreamRender();
   if (artifactDebounce) { clearTimeout(artifactDebounce); artifactDebounce = null; }
   // 切换会话时重置未读计数 / Reset unread count when switching conversations
   if (unreadCount > 0) { unreadCount = 0; updateBadge(); }
@@ -2084,6 +2083,53 @@ function updateLastTurnIncremental(): void {
 // rAF 每帧最多做一次 md(buffer) → innerHTML 替换。
 let streamRawText = '';
 let streamRenderScheduled = false;
+// ── 稳定前缀渲染 / Stable-prefix streaming render ──
+// 每帧全量 md(buffer) 会让「未闭合语法」反复变形:段落先按两段渲染、
+// 换行到达后合并成一段(margin 消失),标题/围栏/列表成形时块高度再变。
+// 贴底滚动下,块高度任何一次回缩都把整个会话往上弹 → 上下抖动。
+// 这与滚动时机无关(滚动是幂等贴底的),根源是内容高度震荡。
+// 方案:buffer 切成「已完成块前缀」+「未闭合尾部」。前缀只 parse 一次
+// (高度单调不回缩),尾部按纯文本逐帧追加;done 后 renderTurn 走完整 md。
+// Full-buffer md() each frame re-parses open syntax: paragraphs merge when
+// the newline lands (margin collapses), headings/fences re-shape — block
+// heights oscillate, and bottom-locked scroll turns every shrink into a
+// bounce. Split into a completed prefix (parsed once, monotonic height)
+// plus a plain-text tail; the final md() still runs on done.
+let streamStableLen = 0;   // 已闭合前缀的字符边界(最后一个围栏外空行后)
+let streamMdLen = 0;       // 已转成 HTML 的字符数(== streamStableHtml 覆盖范围)
+let streamStableHtml = ''; // 前缀 HTML(只增,不重算)
+let streamScanPos = 0;     // 增量扫描位置
+let streamInFence = false; // 扫描点是否处于 ``` / ~~~ 围栏内
+
+function resetStreamRender(): void {
+  streamRawText = '';
+  streamStableLen = 0;
+  streamMdLen = 0;
+  streamStableHtml = '';
+  streamScanPos = 0;
+  streamInFence = false;
+  streamRenderScheduled = false;
+}
+
+/** 增量推进稳定边界到最后一个「围栏外空行」。空行是块级边界,前缀独立
+ *  parse 的结果与整体 parse 一致(跨空行块如松散列表除外,极少见,
+ *  出现也只是短暂样式差,不影响高度稳定性)。Incrementally advance the
+ *  stable boundary to the last blank line outside a code fence. */
+function advanceStablePrefix(text: string): void {
+  let pos = streamScanPos;
+  for (;;) {
+    const nl = text.indexOf('\n', pos);
+    if (nl === -1) break;
+    const line = text.slice(pos, nl);
+    if (/^\s*(```|~~~)/.test(line)) streamInFence = !streamInFence;
+    pos = nl + 1;
+    // 空行(且不在围栏内)= 安全块级边界;边界含空行本身,保证前缀自包含。
+    if (!streamInFence && pos < text.length && text[pos] === '\n') {
+      streamStableLen = pos + 1;
+    }
+  }
+  streamScanPos = pos;
+}
 
 function streamAppend(text: string) {
   let el = document.getElementById('streaming-answer');
@@ -2094,7 +2140,7 @@ function streamAppend(text: string) {
   if (el) {
     const hadTyping = el.querySelector('.typing');
     if (hadTyping) {
-      streamRawText = ''; // 首个 token:清掉思考三点 + 重置 buffer
+      resetStreamRender(); // 首个 token:清掉思考三点 + 重置 buffer 与稳定前缀
       el.textContent = '';
     }
     // 累积原始文本到 buffer(不直接操作 DOM textNode)。
@@ -2119,19 +2165,23 @@ function streamAppend(text: string) {
       scheduleArtifactCheck();
       return;
     }
-    // rAF 节流:每帧最多一次 md 渲染。
+    // rAF 节流:每帧最多一次渲染。
     if (!streamRenderScheduled) {
       streamRenderScheduled = true;
       requestAnimationFrame(() => {
         streamRenderScheduled = false;
         const target = document.getElementById('streaming-answer');
         if (target && streamRawText) {
-          target.innerHTML = md(streamRawText);
+          // 推进稳定边界,前缀 HTML 只算一次;未闭合尾部纯文本追加。
+          advanceStablePrefix(streamRawText);
+          if (streamStableLen > streamMdLen) {
+            streamStableHtml += md(streamRawText.slice(streamMdLen, streamStableLen));
+            streamMdLen = streamStableLen;
+          }
+          const tailText = streamRawText.slice(streamMdLen);
+          target.innerHTML = streamStableHtml + (tailText ? `<p>${esc(tailText)}</p>` : '');
           target.classList.add('streaming');
-          // markdown 重新渲染后高度可能增长(新段落 / 代码块),确保跟到底。
-          // Re-render may grow scrollHeight (new paragraphs / code blocks); follow.
-          // 同帧内同步滚动,避免再排一个 rAF 导致比渲染慢一帧。
-          // Scroll in the same frame — avoids lagging one frame behind render.
+          // 同帧内同步滚动(内容高度只增不缩,不会再弹)。
           scrollDownScheduled = false;
           if (userAtBottom) {
             const turnsEl = document.getElementById('turns');
