@@ -3793,7 +3793,7 @@ function closeMoreMenu() {
   if (tpBtn && tpPopup) {
     // 标记当前激活的主题项。
     const syncActiveTheme = () => {
-      const cur = document.documentElement.dataset.theme || 'dark';
+      const cur = document.documentElement.dataset.theme || 'tahoe';
       tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
         el.classList.toggle('active', el.dataset.theme === cur);
       });

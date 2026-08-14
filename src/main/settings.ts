@@ -21,7 +21,7 @@ const DEFAULTS: AppSettings = {
   priceOutPerMTok: 0.21, // GLM ¥1.5/1M out ≈ $0.21
   presetId: 'glm',
   lang: 'zh-CN',
-  theme: 'dark',
+  theme: 'tahoe', // 默认液态玻璃( Tahoe );曾为 'dark',新装首启即呈现玻璃质感
   townStyle: 'classic', // 小镇视图风格:classic 经典等距小屋 / minecraft 我的世界方块风
   fontScale: 100, // 全局字号缩放 100/112/125/150(%),默认 100。设置在"外观"页。
   appIcon: 'k',   // 应用图标: 'default'(原版) | 'bluepurple'(纯渐变) | 'k'(渐变+K) | 'd1'(D1蓝紫渐变)
