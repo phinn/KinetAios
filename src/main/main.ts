@@ -190,11 +190,12 @@ const emitter: TaskManagerEmitter = {
     const title = kind === 'error'
       ? `${getBrand().productName} · ${t(lang, 'notify.errorTitle')}`
       : `${getBrand().productName} · ${t(lang, 'notify.doneTitle')}`;
-    // 正文:频道标题 + 答案首行(≤80 字);错误时显示错误信息首行
+    // 正文:频道标题(customTitle 或首条 prompt 截断,与侧栏一致)+ 答案首行(≤80 字)
     const lastTurn = conv.turns[conv.turns.length - 1];
     const snippet = (kind === 'error' ? (lastTurn?.error ?? '') : (lastTurn?.answer ?? ''))
       .replace(/[#*`>\-\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
-    const body = `${conv.customTitle || t(lang, 'notify.noTitle')}${snippet ? '\n' + snippet : ''}`;
+    const convTitle = conv.customTitle || conv.turns[0]?.prompt.slice(0, 40) || t(lang, 'notify.noTitle');
+    const body = `${convTitle}${snippet ? '\n' + snippet : ''}`;
     try {
       const n = new Notification({ title, body: body.slice(0, 120) });
       n.on('click', () => { showDashboard(); });
