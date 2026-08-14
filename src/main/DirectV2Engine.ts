@@ -302,6 +302,9 @@ export class DirectV2Engine implements Engine {
     });
 
     if (signal.aborted) {
+      // H3-fix: abort 也存 final checkpoint — 否则残留的非 final checkpoint 会触发下次 send 误 resume 旧 plan。
+      // 语义:用户主动停止 = 放弃当前任务,下次 send 是新任务,不应续跑旧 plan。
+      store.saveV2Checkpoint(conv.id, 'final', JSON.stringify({ steps: [], summary: 'aborted' }), JSON.stringify(plannerMessages), 'final');
       conv.directHistory = plannerMessages;
       onEvent({ type: 'done' });
       return;
@@ -320,6 +323,8 @@ export class DirectV2Engine implements Engine {
     if (!hasNewAssistant && !signal.aborted) {
       onEvent({ type: 'status', text: '⚠️ v2: 规划阶段未产生有效输出(可能是 API 错误),请重试' });
       onEvent({ type: 'error', message: 'v2 规划阶段失败:模型未返回有效内容。请检查 API 连接后重试。' });
+      // H3-fix: 失败路径也要存 final,防止残留旧 checkpoint 导致下次 send 误 resume。
+      store.saveV2Checkpoint(conv.id, 'final', JSON.stringify({ steps: [], summary: 'planner-failed' }), JSON.stringify(plannerMessages), 'final');
       conv.directHistory = plannerMessages;
       return;
     }
@@ -511,6 +516,9 @@ export class DirectV2Engine implements Engine {
     }
 
     if (signal.aborted) {
+      // H3-fix: abort 也存 final checkpoint(同 planner abort 路径)。
+      // 用户停止 = 放弃任务;且 replan 递归内 abort 返回后也会落到这里,统一收口。
+      store.saveV2Checkpoint(conv.id, 'final', JSON.stringify(plan), JSON.stringify(execHistory), 'final');
       conv.directHistory = execHistory;
       onEvent({ type: 'done' });
       return;
