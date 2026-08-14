@@ -11,6 +11,7 @@ import type { Tool, ToolCtx } from '../tools';
 import { readOnlyTools } from '../tools';
 import { generateDAGPlan, type DAGPlan } from './dag-planner';
 import { executeDAG } from './dag-executor';
+import { executeStdPath } from './std-path';
 
 export interface DeepPathOpts {
   provider: Provider;
@@ -46,12 +47,13 @@ export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
     signal,
     planToolDefs,
     onEvent as (e: { type: string; [k: string]: unknown }) => void,
+    ctx,      // M1-fix: 传 ctx 让 planner 走 runAgentLoop 多轮探查
+    policy,
   );
 
   if (!plan) {
     // 规划失败 → 退化为 std path
     onEvent({ type: 'status', text: '🔄 v3: 规划失败,退化为标准执行' });
-    const { executeStdPath } = await import('./std-path');
     return executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, policy, onEvent });
   }
 

@@ -7,9 +7,11 @@
 // DAG Plan:有向无环图,节点之间有依赖关系。
 // 同层节点(无互相依赖)可并行执行,不同层串行。
 
-import type { ChatMsg, ConfigSnapshot } from '../../shared/types';
-import type { Provider, ToolDef, Completion } from '../glm';
-
+import type { ChatMsg, ConfigSnapshot, EngineContextPolicy, AgentEvent } from '../../shared/types';
+import { runAgentLoop } from '../AgentLoop';
+import type { Provider, ToolDef } from '../glm';
+import type { Tool, ToolCtx } from '../tools';
+import { readOnlyTools } from '../tools';
 // ────────────────────────────────────────────────────────────────────────
 // DAG 数据结构
 // ────────────────────────────────────────────────────────────────────────
@@ -109,15 +111,33 @@ const PLAN_SYSTEM_SUFFIX = `
 `;
 
 // ────────────────────────────────────────────────────────────────────────
+// submit_plan 伪工具:run 执行器,让 planner 走 runAgentLoop 时工具表完整可用
+// ────────────────────────────────────────────────────────────────────────
+
+const submitPlanPseudoTool: Tool = {
+  name: 'submit_plan',
+  description: SUBMIT_PLAN_TOOL.function.description,
+  parameters: SUBMIT_PLAN_TOOL.function.parameters as Record<string, unknown>,
+  readOnly: true, // 不产生副作用:只解析入参,由 planner 拦截
+  run: async () => 'PLAN_SUBMITTED', // 实际解析在 runAgentLoop 返回的 history 里做,这里只回占位
+};
+
+// ────────────────────────────────────────────────────────────────────────
 // Plan 生成
 // ────────────────────────────────────────────────────────────────────────
 
 /**
- * 用 forced tool_use 生成 DAG plan。
- * 模型被强制要求调用 submit_plan 工具,从 tool arguments 直接提取结构化数据。
+ * M1-fix: 用 runAgentLoop 生成 DAG plan(planner 可多轮探查)。
  *
- * 注意:这里不调 runAgentLoop(避免复杂的中间状态),而是直接调 provider.streamComplete。
- * Planner 只需要一轮:模型探查 + 规划。
+ * 旧实现单轮 streamComplete,planner 无工具执行能力 → deep 任务(恰恰最需要
+ * 先 grep/read 探查的)全凭想象规划,plan 质量差。
+ *
+ * 新实现:submit_plan 作为工具注入 runAgentLoop。模型先用只读工具探查
+ * (grep/read_file 等),探查完自然调用 submit_plan 提交结构化 plan。
+ * runAgentLoop 执行该工具(返回占位结果),我们再从返回的 history 尾部
+ * 提取 submit_plan 的 tool call,解析 arguments。
+ *
+ * 与 V2 planner 的探查模式对齐,同时保留 forced-tool 结构化输出的可靠性。
  */
 export async function generateDAGPlan(
   userInput: string,
@@ -126,46 +146,54 @@ export async function generateDAGPlan(
   provider: Provider,
   snap: ConfigSnapshot,
   signal: AbortSignal,
-  tools: ToolDef[],  // 传入只读工具让 planner 可以探查
+  readOnlyToolDefs: ToolDef[],  // 只读工具 defs(用于探查)
   onEvent: (e: { type: string; text?: string; token?: string; [k: string]: unknown }) => void,
+  ctx?: ToolCtx,
+  policy?: EngineContextPolicy,
 ): Promise<DAGPlan | null> {
   onEvent({ type: 'status', text: '🧠 v3: 规划中...' });
 
   try {
-    // Planner 可以做多轮 ReAct 探查,用 runAgentLoop + forced tool
-    // 但为简化,这里用两阶段:
-    // 1) 如果模型需要探查,它在回答中会用只读工具(由 runAgentLoop 处理)
-    // 2) 探查完成后调用 submit_plan
-    //
-    // 方案:给 runAgentLoop 传入 submit_plan 作为额外工具,模型探查完自然调它。
-    // 但 runAgentLoop 不会特殊处理 submit_plan → 我们在 history 尾部找 tool_call。
-    //
-    // 更可靠的方案:planner 只做一轮 streamComplete,模型已经有 history 可以参考。
-    // 如果模型需要探查,应该已经在 fast/std path 的前几轮完成了。
+    // 从 ToolDef 还原 Tool(defs 是工具表的投影,这里需要可执行的 run)
+    // 若调用方没传 ctx(旧签名),退化为单轮 streamComplete 保底。
+    if (!ctx) {
+      return await generateDAGPlanLegacy(userInput, history, systemPrompt, provider, snap, signal, readOnlyToolDefs, onEvent);
+    }
 
-    const messages: ChatMsg[] = [
-      { role: 'system', content: systemPrompt + PLAN_SYSTEM_SUFFIX },
-      ...history.filter((m) => !m._memory),
-      { role: 'user', content: userInput },
-    ];
+    // planner 专用 Tool 数组:只读探查工具 + submit_plan 伪工具
+    const readOnlyRunnables = readOnlyToolsFromDefs(readOnlyToolDefs);
+    const plannerTools: Tool[] = [...readOnlyRunnables, submitPlanPseudoTool];
 
-    const completion = await provider.streamComplete(
-      messages,
-      [...tools, SUBMIT_PLAN_TOOL],
-      snap,
+    const planHistory = await runAgentLoop({
+      provider,
+      tools: plannerTools,
+      systemPrompt: systemPrompt + PLAN_SYSTEM_SUFFIX,
+      snapshot: snap,
+      userInput,
+      history: history.filter((m) => !m._memory),
+      ctx,
       signal,
-      (token) => {
-        // 规划阶段也流式输出(让用户看到规划思路)
-        onEvent({ type: 'plan_token', token });
+      maxTurns: 10, // 探查轮次上限:足够 grep/read 几轮再规划,不至于无限烧
+      policy,
+      onEvent: (ev) => {
+        if (ev.type === 'done' || ev.type === 'error') return; // 由 V3 统一发
+        if (ev.type === 'token') {
+          onEvent({ type: 'plan_token', token: ev.text }); // 规划思路流式输出(AgentEvent.token 的载荷字段是 text)
+          return;
+        }
+        if (ev.type === 'status') {
+          onEvent({ type: 'status', text: `v3: [plan] ${ev.text}` });
+          return;
+        }
+        onEvent(ev);
       },
-    );
+    });
 
-    // 从 completion 中找 submit_plan tool call
-    const planCall = completion.toolCalls.find((tc) => tc.name === 'submit_plan');
+    // 从 history 尾部找 submit_plan 的 assistant tool call(倒序找最近一次)
+    const planCall = findSubmitPlanCall(planHistory);
     if (!planCall) {
-      // 模型没调 submit_plan — 可能是任务太简单不需要 plan
-      // 检查是否有文本回答(可能是对话型回复)
-      if (completion.content?.trim()) {
+      // 模型探查完直接给了文本结论(任务太简单/对话型回复)→ 退化为 std path
+      if (planHistory.some((m) => m.role === 'assistant' && typeof m.content === 'string' && m.content.trim())) {
         onEvent({ type: 'status', text: '💡 v3: 模型未生成 plan,退化为 std path' });
         return null;
       }
@@ -192,6 +220,76 @@ export async function generateDAGPlan(
   }
 }
 
+/** 从 runAgentLoop 返回的 history 中提取最近一次 submit_plan tool call。 */
+function findSubmitPlanCall(msgs: ChatMsg[]): { arguments: string } | null {
+  for (let i = msgs.length - 1; i >= 0; i--) {
+    const m = msgs[i]!;
+    const calls = (m as { tool_calls?: Array<{ function: { name: string; arguments: string } }> }).tool_calls;
+    if (!Array.isArray(calls)) continue;
+    const hit = calls.find((c) => c.function?.name === 'submit_plan');
+    if (hit) return { arguments: hit.function.arguments };
+  }
+  return null;
+}
+
+/** ToolDef[] → 可执行 Tool[](从全局只读工具表按名字匹配 run 实现)。 */
+function readOnlyToolsFromDefs(defs: ToolDef[]): Tool[] {
+  // deep-path 传入的 readOnlyToolDefs 本来就是 readOnlyTools() 的投影,
+  // 直接用全量只读表(名字集合一致,保证 run 一定找得到)。
+  return readOnlyTools().filter((t) => defs.some((d) => d.function.name === t.name));
+}
+
+/** 旧版单轮规划(streamComplete),作为无 ctx 时的保底路径。 */
+async function generateDAGPlanLegacy(
+  userInput: string,
+  history: ChatMsg[],
+  systemPrompt: string,
+  provider: Provider,
+  snap: ConfigSnapshot,
+  signal: AbortSignal,
+  tools: ToolDef[],
+  onEvent: (e: { type: string; text?: string; token?: string; [k: string]: unknown }) => void,
+): Promise<DAGPlan | null> {
+  const messages: ChatMsg[] = [
+    { role: 'system', content: systemPrompt + PLAN_SYSTEM_SUFFIX },
+    ...history.filter((m) => !m._memory),
+    { role: 'user', content: userInput },
+  ];
+
+  const completion = await provider.streamComplete(
+    messages,
+    [...tools, SUBMIT_PLAN_TOOL],
+    snap,
+    signal,
+    (token) => {
+      onEvent({ type: 'plan_token', token });
+    },
+  );
+
+  const planCall = completion.toolCalls.find((tc) => tc.name === 'submit_plan');
+  if (!planCall) {
+    if (completion.content?.trim()) {
+      onEvent({ type: 'status', text: '💡 v3: 模型未生成 plan,退化为 std path' });
+      return null;
+    }
+    onEvent({ type: 'status', text: '⚠️ v3: 规划失败(模型未调用 submit_plan)' });
+    return null;
+  }
+
+  const plan = parseDAGFromToolArgs(planCall.arguments);
+  if (!plan) {
+    onEvent({ type: 'status', text: '⚠️ v3: plan 解析失败' });
+    return null;
+  }
+
+  onEvent({
+    type: 'status',
+    text: `📋 v3: 规划完成 — ${plan.nodes.length} 个节点, ${countParallelizable(plan)} 个可并行`,
+  });
+
+  return plan;
+}
+
 /**
  * 从 submit_plan 工具的 arguments 中解析 DAG plan。
  * arguments 是 JSON 字符串,直接 JSON.parse 即可 — 不需要 brace-counting。
@@ -214,14 +312,19 @@ function parseDAGFromToolArgs(argsJson: string): DAGPlan | null {
 
     if (!Array.isArray(raw.nodes) || raw.nodes.length === 0) return null;
 
+    // L4-fix: 元素类型严格校验 — LLM 偶尔会把 tools/deps 输出成嵌套对象/数字数组,
+    // 只查 Array.isArray 会让脏元素漏进 executor(node.tools.every 判写工具时炸)。
+    const cleanStrArr = (v: unknown): string[] =>
+      Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+
     const nodes: DAGNode[] = raw.nodes.map((n, i) => ({
       id: String(n.id ?? i + 1),
       title: String(n.title ?? `步骤 ${i + 1}`),
       action: String(n.action ?? ''),
-      tools: Array.isArray(n.tools) ? n.tools : [],
-      verify: n.verify ? String(n.verify) : undefined,
-      parallelizable: n.parallelizable ?? true,
-      deps: Array.isArray(n.deps) ? n.deps : [],
+      tools: cleanStrArr(n.tools),
+      verify: typeof n.verify === 'string' && n.verify.trim() ? n.verify : undefined,
+      parallelizable: typeof n.parallelizable === 'boolean' ? n.parallelizable : true,
+      deps: cleanStrArr(n.deps),
       status: 'pending' as const,
       retryCount: 0,
     }));
