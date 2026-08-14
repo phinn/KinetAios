@@ -1,6 +1,6 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, session, shell, Tray, webContents } from 'electron';
+import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
@@ -171,7 +171,43 @@ const emitter: TaskManagerEmitter = {
     safeSend(arenaWin, 'conversation-removed', convId);
   },
   confirm,
+  // ── 任务完成通知(设置开关 notifyOnDone,默认关)──
+  // 最小化/失焦时:系统通知(点击恢复窗口)+ 任务栏闪烁 + macOS dock bounce。
+  // 30s 合并窗口:同一频道短时间多次完成只通知一次(防轰炸)。
+  notifyDone(conv: Conversation, kind: 'done' | 'error', wasCancelled: boolean) {
+    if (wasCancelled) return; // 用户主动取消不通知
+    if (!getSettings().notifyOnDone) return;
+    const win = dashboardWin;
+    if (!win || win.isDestroyed()) return;
+    // 用户正盯着窗口看(聚焦且未最小化)→ 不打扰
+    if (!win.isMinimized() && win.isFocused()) return;
+    // 30s 合并窗口:同一频道重复完成只通知首条
+    const now = Date.now();
+    const last = notifyLastAt.get(conv.id) ?? 0;
+    if (now - last < 30_000) return;
+    notifyLastAt.set(conv.id, now);
+    const lang = getSettings().lang;
+    const title = kind === 'error'
+      ? `${getBrand().productName} · ${t(lang, 'notify.errorTitle')}`
+      : `${getBrand().productName} · ${t(lang, 'notify.doneTitle')}`;
+    // 正文:频道标题 + 答案首行(≤80 字);错误时显示错误信息首行
+    const lastTurn = conv.turns[conv.turns.length - 1];
+    const snippet = (kind === 'error' ? (lastTurn?.error ?? '') : (lastTurn?.answer ?? ''))
+      .replace(/[#*`>\-\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 80);
+    const body = `${conv.customTitle || t(lang, 'notify.noTitle')}${snippet ? '\n' + snippet : ''}`;
+    try {
+      const n = new Notification({ title, body: body.slice(0, 120) });
+      n.on('click', () => { showDashboard(); });
+      n.show();
+    } catch { /* 通知权限被拒/系统不支持 → 静默 */ }
+    // 任务栏闪烁(Windows)/ dock 无操作;聚焦后 Electron 自动停闪
+    if (process.platform === 'win32') win.once('focus', () => win.flashFrame(false));
+    win.flashFrame(true);
+    if (process.platform === 'darwin') app.dock?.bounce('informational');
+  },
 };
+// 通知合并窗口的状态:convId → 上次通知时间戳 / dedupe map for notifyDone
+const notifyLastAt = new Map<string, number>();
 
 // MARK: Team 事件广播(独立通道,不走 AgentEvent)
 export function emitTeamEvent(teamId: string, ev: import('../shared/types').TeamEvent): void {

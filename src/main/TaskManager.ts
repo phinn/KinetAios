@@ -15,6 +15,9 @@ export interface TaskManagerEmitter {
   emitConversation(conv: Conversation): void;
   emitRemoved(convId: string): void;
   confirm(cmd: string): Promise<boolean>;
+  // 任务完成通知钩子:turn 真正结束(done/error)且非用户主动取消时调用。
+  // 由 main.ts 实现系统通知(最小化/失焦时才发)。TaskManager 不关心窗口状态。
+  notifyDone(conv: Conversation, kind: 'done' | 'error', wasCancelled: boolean): void;
 }
 
 export class TaskManager {
@@ -442,6 +445,11 @@ export class TaskManager {
     applyEvent(conv, ev);
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);
+    // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
+    // 但 abort 可能引发 engine 内部 error 事件 → 用 signal.aborted 区分)。
+    if (ev.type === 'done' || ev.type === 'error') {
+      this.emit.notifyDone(conv, ev.type === 'done' ? 'done' : 'error', signal.aborted);
+    }
     const t = conv.turns[conv.turns.length - 1];
     if (ev.type === 'done' && t?.answer) {
       this.extractMemories(t, prompt, conv.id, signal).catch(() => {});

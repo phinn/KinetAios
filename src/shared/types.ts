@@ -235,6 +235,9 @@ export type AppSettings = {
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
   voiceAutoSend: boolean;
+  // ── 任务完成通知 ── 最小化/失焦时任务完成发系统通知 + 任务栏闪烁。
+  // 默认关闭(不影响现有用户),稳定后再改默认开。
+  notifyOnDone: boolean;
   // ── 高保真模式上下文预算(token)── 控制高保真模式的 reactive trim / compactHistory 预算上限。
   // 默认 200000(GLM-5.2 有 1M 窗口,留余量给 system prompt + 多轮对话)。
   hifiContextBudget: number;
