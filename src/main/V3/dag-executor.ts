@@ -17,10 +17,8 @@ import { runAgentLoop, compactHistory } from '../AgentLoop';
 import type { Provider } from '../glm';
 import { priceUSD } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
+import { shellExec } from '../tools';
 import { getSettings } from '../settings';
-import { exec } from 'node:child_process';
-import { promisify } from 'node:util';
-const execAsync = promisify(exec);
 import type { DAGNode, DAGPlan } from './dag-planner';
 
 const MAX_STEP_RETRIES = 2;
@@ -212,7 +210,7 @@ async function executeNode(
 
     // 嵌入式验证:如果节点有 verify 命令,自动执行
     if (node.verify && !signal.aborted) {
-      const verifyResult = await runVerify(node.verify, ctx);
+      const verifyResult = await runVerify(node.verify, ctx, signal);
       if (!verifyResult.passed) {
         return {
           success: false,
@@ -231,30 +229,33 @@ async function executeNode(
 }
 
 // ────────────────────────────────────────────────────────────────────────
-// 嵌入式验证 — 自动执行,无弹窗
+// 嵌入式验证 — 首次走 confirm 审批,同节点重试免弹(与 V2 runVerify 对齐)
 // ────────────────────────────────────────────────────────────────────────
+
+/** 已 confirm 过的 verify 命令(同命令重试不再弹窗)。 */
+const verifyApproved = new Set<string>();
 
 async function runVerify(
   command: string,
   ctx: ToolCtx,
+  signal: AbortSignal,
 ): Promise<{ passed: boolean; output: string }> {
+  // H2-fix: verify 命令来自 planner LLM 输出,必须走 confirm 审批,不能绕过直接 exec。
+  // 同一命令 confirm 过一次后跳过(同节点 retry / 多节点复用相同验证命令场景)。
+  if (!verifyApproved.has(command)) {
+    const approved = await ctx.confirm(`[v3 验证] ${command}`);
+    if (!approved) return { passed: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过,不阻塞流程
+    verifyApproved.add(command);
+  }
+
   try {
-    // verify 命令直接执行(不经过 confirm,因为这是 planner 定义的自动验证)
-    const { stdout, stderr } = await execAsync(command, {
-      cwd: ctx.cwd,
-      timeout: 60_000,
-      maxBuffer: 1024 * 1024,
-    });
-    const output = (stdout + stderr).trim();
-    // 大多数验证工具(tsc, eslint):有 stderr 输出 = 有错误
-    const passed = stderr.trim() === '' || !/error/i.test(stderr);
+    // 与 V2 一致:走 shellExec 统一执行路径(超时/退出码格式化一致),120s
+    const output = await shellExec(command, ctx.cwd, 120_000, signal);
+    // shellExec 非零退出码加 [exit N] 前缀;超时返回 [超时(Ns),已终止。] — 两种都判为失败
+    const passed = !/\[exit \d+\]/.test(output) && !output.startsWith('[超时');
     return { passed, output: output.slice(0, 500) };
-  } catch (e) {
-    // 非零退出码 = 验证失败
-    const output = (e as { stdout?: string; stderr?: string })?.stdout
-      ?? (e as Error)?.message
-      ?? String(e);
-    return { passed: false, output: String(output).slice(0, 500) };
+  } catch {
+    return { passed: false, output: '验证命令执行失败' };
   }
 }
 
