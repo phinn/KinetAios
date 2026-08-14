@@ -41,6 +41,18 @@ import { executeStdPath } from './std-path';
 import { executeDeepPath } from './deep-path';
 import { finalizeContext } from './streaming-executor';
 
+// 终态事件闸门:拦截 ReAct 内层的 done/error,只放行中间事件。
+// V3 的终态 done/error 由 index.run 统一发出 — 否则 runAgentLoop 正常完成
+// 时会先发一个 done,收尾再发一个(双发);maxTurns 耗尽时先 error 后 done,
+// error 语义被 done 覆盖(applyEvent 先设 t.error,后到的 done 又标记完成)。
+// 与 V2 forwardEvent / dag-executor 的拦截同一模式。
+function terminalGate(onEvent: (e: AgentEvent) => void): (e: AgentEvent) => void {
+  return (e) => {
+    if (e.type === 'done' || e.type === 'error') return;
+    onEvent(e);
+  };
+}
+
 export class DirectV3Engine implements Engine {
   readonly name = 'directV3' as const;
 
@@ -214,17 +226,23 @@ export class DirectV3Engine implements Engine {
       if (route === 'fast') {
         updatedHistory = await executeFastPath({
           provider, tools, systemPrompt, memoryBlock, snapshot: snap,
-          userInput, history: conv.directHistory, ctx, signal, policy, onEvent,
+          userInput, history: conv.directHistory, ctx, signal, policy,
+          // 终态事件归 index 统一发:拦截 ReAct 内部的 done/error,防止双发
+          // (双发会让 extractMemories 跑两次、notifyDone 触发两次、maxTurns
+          // 截断时 error 语义被后续 done 覆盖 — 任务明明失败却显示成功)。
+          onEvent: terminalGate(onEvent),
         });
       } else if (route === 'std') {
         updatedHistory = await executeStdPath({
           provider, tools, systemPrompt, memoryBlock, snapshot: snap,
-          userInput, history: conv.directHistory, ctx, signal, policy, onEvent,
+          userInput, history: conv.directHistory, ctx, signal, policy,
+          onEvent: terminalGate(onEvent),
         });
       } else {
         updatedHistory = await executeDeepPath({
           provider, tools, systemPrompt, memoryBlock, snapshot: snap,
-          userInput, history: conv.directHistory, ctx, signal, policy, onEvent,
+          userInput, history: conv.directHistory, ctx, signal, policy,
+          onEvent: terminalGate(onEvent),
         });
       }
     } catch (e) {
@@ -238,9 +256,11 @@ export class DirectV3Engine implements Engine {
         onEvent({ type: 'done' });
         return;
       }
+      // 保留首条 error 的原始信息(不再被 done 覆盖语义);done 仅用于
+      // 恢复会话状态 — applyEvent(error) 已把 t.error/done/status 落好,
+      // 这里的 done 只是把 status 拉回 ready(error 分支同样会设,保险)。
       onEvent({ type: 'error', message: `v3 引擎出错: ${errMsg}` });
       conv.directHistory = updatedHistory;
-      onEvent({ type: 'done' });
       return;
     }
 
