@@ -23,7 +23,19 @@ export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | '
 // (never/onFailure/onRequest/untrusted) — none of those need the multi-agent machinery, add when needed.
 export type ApprovalPolicy = 'always' | 'never';
 
-export type EngineKind = 'direct' | 'directV2' | 'directV3' | 'claudeCode' | 'codex';
+// 内置引擎种类。插件引擎(Plugin SDK v3)用 `plugin:<name>` 前缀,不在此穷举。
+// Builtin engine kinds. Plugin engines use the `plugin:<name>` prefix (Plugin SDK v3).
+export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'claudeCode' | 'codex';
+export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'claudeCode', 'codex'];
+export type EngineKind = BuiltinEngineKind | `plugin:${string}`;
+
+// 插件引擎 id ↔ 插件名。plugin:foo ↔ foo。 / Plugin engine id ↔ plugin name.
+export function pluginEngineName(engine: string): string {
+  return engine.startsWith('plugin:') ? engine.slice('plugin:'.length) : engine;
+}
+export function isPluginEngine(engine: string): engine is `plugin:${string}` {
+  return engine.startsWith('plugin:');
+}
 
 // 上下文模式 —— 控制工具结果截断策略与上下文预算。以后可扩展更多模式(如 deep-research)。
 // Context mode — controls tool result truncation + context budget. Extensible for future modes.
@@ -53,7 +65,9 @@ export type EngineContextPolicy = {
   subAgentScope: 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
 };
 
-export const ENGINE_POLICIES: Record<EngineKind, EngineContextPolicy> = {
+// 插件引擎无静态策略(不进 Direct 家族 history 管理),回落 direct 兜底。
+// Plugin engines fall back to the Direct policy — they manage context like a black box.
+export const ENGINE_POLICIES: Record<BuiltinEngineKind, EngineContextPolicy> = {
   // v1 Direct:单 ReAct,短对话快响应,默认轻量。
   // interStepCompactBudget: v1 单轮 ReAct 不需要多步累积压缩,但 compactHistory 需要一个显式预算。
   // 设 30K(与旧版 fallback 一致):历史 <30K 直接保留尾部,超出才调 LLM 摘要。
@@ -138,7 +152,9 @@ export function resolveEnginePolicy(
   v2ModelWindow?: number,
   v2BudgetRatio?: number,
 ): EngineContextPolicy {
-  const base = ENGINE_POLICIES[engine] || ENGINE_POLICIES.direct;
+  // 插件引擎:没有静态策略条目 → 回落 direct 兜底(与 store 读档降级一致)。
+  // Plugin engines have no static entry → Direct fallback (same as store load degradation).
+  const base = ENGINE_POLICIES[engine as BuiltinEngineKind] || ENGINE_POLICIES.direct;
 
   // directV2/directV3:动态预算
   if ((engine === 'directV2' || engine === 'directV3') && v2ModelWindow) {
@@ -164,7 +180,9 @@ export function resolveEnginePolicy(
   }
   return base;
 }
-export const ENGINE_LABELS: Record<EngineKind, string> = {
+// 引擎显示名(内置)。插件引擎的 label 走 engineLabel() 的 plugin: 分支。
+// Display names (builtin). Plugin engines label via engineLabel()'s plugin: branch.
+export const ENGINE_LABELS: Record<BuiltinEngineKind, string> = {
   direct: 'Kaios (Direct)',
   directV2: 'Kaios v2 (Plan·Verify)',
   directV3: 'Kaios v3 (Adaptive)',
@@ -693,7 +711,7 @@ export interface KinetAPI {
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
   // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt / panel。列出 + 重载 + 安装 + 卸载。
-  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string }>; error?: string }>;
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string } }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
   pluginInstall(sourcePath: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   pluginUninstall(name: string): Promise<{ ok: boolean; error?: string }>;
