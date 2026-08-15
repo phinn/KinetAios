@@ -21,7 +21,7 @@ import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
 import { getBrand } from './brand';
-import { pluginSystemPrompts } from './plugins';
+import { pluginSystemPrompts, pluginEngines, type PluginEngineSpec } from './plugins';
 
 export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、搜索网页、抓取网页、搜索历史记忆来帮用户完成任务。
 该用工具就果断用,不要只给步骤。需要回忆过去做过/聊过的事,用 recall_memory 搜历史。
@@ -646,6 +646,9 @@ export interface CliEngineConfig {
   /** 退出兜底覆写(返回 undefined 走默认文案)。codex 用它拼 exit code +
    *  stderr tail + 版本提示;claude 不需要(走默认)。 */
   onExitFallback?: (p: { code: number; conv: Conversation }) => string | undefined;
+  /** 退出码 0 且无终态事件 → 补 done 而非报错(plain 协议 CLI 用:
+   *  整段 stdout 当答案,正常退出即完成)。 */
+  exitZeroAsDone?: boolean;
 }
 
 class CliEngineAdapter implements Engine {
@@ -695,6 +698,11 @@ class CliEngineAdapter implements Engine {
     const exitCode = await runBin(bin, args, { cwd, signal, onLine });
     if (signal.aborted) return; // user cancelled — not an error
     if (!sawTerminal) {
+      // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
+      if (this.cfg.exitZeroAsDone && exitCode === 0) {
+        onEvent({ type: 'done' });
+        return;
+      }
       // 退出兜底:config 可覆写(拼 exit code / stderr tail / 版本提示)。
       const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { code: exitCode, tail: '' });
       onEvent({ type: 'error', message: fallback });
@@ -925,7 +933,7 @@ import { DirectV2Engine } from './DirectV2Engine';
 import { DirectV3Engine } from './V3';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
-  return new Map<EngineKind, Engine>([
+  const engines = new Map<EngineKind, Engine>([
     ['direct', new DirectEngine(confirm)],
     ['directV2', new DirectV2Engine(confirm)],
     ['directV3', new DirectV3Engine(confirm)],
@@ -934,4 +942,142 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
     ['claudeCode', new CliEngineAdapter(claudeCliConfig())],
     ['codex', new CliEngineAdapter(codexCliConfig())],
   ]);
+  // 插件引擎(Plugin SDK v3):plugin:<name> 注册,复用 CliEngineAdapter 骨架。
+  // 与内置 id 冲突不可能(前缀隔离),插件之间重名 → 后者覆盖(与 tools 摊平同语义)。
+  for (const { pluginName, spec } of pluginEngines()) {
+    engines.set(`plugin:${pluginName}` as EngineKind, new CliEngineAdapter(pluginCliConfig(pluginName, spec)));
+  }
+  return engines;
+}
+
+// MARK: 插件引擎(Plugin SDK v3)
+// ─────────────────────────────────────────────────────────────────────────
+// PluginEngineSpec(声明式 manifest 字段)→ CliEngineConfig 的转换层。
+// 插件不写 JS 解析器;行→事件映射从 protocol 预设选:
+//   ndjson      {"type":"token","text":..} / {"type":"tool",...} / {"type":"done"} / {"type":"error","message":..}
+//   jsonl-claude  claude -p --output-format stream-json 兼容(复用 claudeParseLine 语义)
+//   jsonl-codex   codex exec --json 兼容(复用 codexParseLine 语义)
+//   plain        整段 stdout 当 token 流(非 JSON 行原样发 token,退出时无 done → 兜底 error;
+//                退出码 0 → 适配器在 close 后补一个 done,见 protocolPlain 的 flush)
+function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineConfig {
+  const label = spec.label ?? pluginName;
+  const protocol = spec.protocol ?? 'plain';
+  return {
+    name: `plugin:${pluginName}` as EngineKind,
+    bin: spec.bin,
+    notFoundKey: 'eng.pluginNotFound',
+    noResultKey: 'eng.pluginNoResult',
+    buildArgs: ({ prompt, inject, cwd, sessionId }) => {
+      const args = [...(spec.args ?? [])];
+      for (const f of spec.cwdFlags ?? []) args.push(f.replace('{cwd}', cwd));
+      if (spec.resume && sessionId) args.push(spec.resume.resumeFlag, sessionId);
+      const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
+      if (spec.inject === 'system') {
+        const flag = spec.systemFlag ?? '--append-system-prompt';
+        if (head) args.push(flag, head);
+        if (spec.appendPrompt !== false) args.push(prompt);
+      } else {
+        // 默认 prompt 注入(与 codex 同构):注入块 --- 分隔后置 prompt。
+        const full = head ? `${head}\n\n---\n\n${prompt}` : prompt;
+        if (spec.appendPrompt !== false) args.push(full);
+      }
+      return args;
+    },
+    parseLine: pluginProtocolParser(protocol, pluginName),
+    // plain:CLI 正常退出即完成,答案由 token 流发完;非零退出仍走兜底报错。
+    exitZeroAsDone: protocol === 'plain',
+  };
+}
+
+// protocol 预设 → parseLine。per-conv 跨行状态(ndjson 的 pending tool 表等)复用
+// claude/codex 的 conv-id Map 机制;plain 无状态。
+function pluginProtocolParser(protocol: string, pluginName: string): (line: string, ctx: CliLineParseCtx) => void {
+  switch (protocol) {
+    case 'jsonl-claude': {
+      // 复用 claudeParseLine:pending tool_use 配对表已按 conv.id 隔离。
+      const inner = claudeParseLine;
+      return (line, ctx) => inner(line, ctx);
+    }
+    case 'jsonl-codex':
+      return codexParseLine;
+    case 'ndjson': {
+      const pending = new Map<string, Map<string, { name: string; args: string }>>();
+      return (line, { conv, emit }) => {
+        let obj: Record<string, any>;
+        try {
+          obj = JSON.parse(line);
+        } catch {
+          return; // 非 JSON 行忽略(与 claude/codex 同策略)
+        }
+        let m = pending.get(conv.id);
+        if (!m) {
+          m = new Map();
+          pending.set(conv.id, m);
+        }
+        switch (obj.type as string) {
+          case 'session':
+            if (obj.session_id) emit({ type: 'sessionStarted', id: obj.session_id });
+            break;
+          case 'token':
+            if (typeof obj.text === 'string') emit({ type: 'token', text: obj.text });
+            break;
+          case 'tool_start':
+            if (obj.id) m.set(String(obj.id), { name: obj.name ?? 'tool', args: safeStringify(obj.args ?? {}) });
+            break;
+          case 'tool_end': {
+            const p = m.get(String(obj.id ?? ''));
+            if (p) {
+              m.delete(String(obj.id));
+              trackFileOpFromToolEvent(conv.id, p.name, p.args);
+              emit({ type: 'tool', name: p.name, args: p.args, result: typeof obj.result === 'string' ? obj.result : safeStringify(obj.result ?? '') });
+            } else if (typeof obj.result === 'string') emit({ type: 'tool', name: obj.name ?? 'tool', args: safeStringify(obj.args ?? {}), result: obj.result });
+            break;
+          }
+          case 'tool':
+            trackFileOpFromToolEvent(conv.id, String(obj.name ?? 'tool'), safeStringify(obj.args ?? {}));
+            emit({ type: 'tool', name: String(obj.name ?? 'tool'), args: safeStringify(obj.args ?? {}), result: typeof obj.result === 'string' ? obj.result : safeStringify(obj.result ?? '') });
+            break;
+          case 'cost':
+            emit({ type: 'cost', usd: Number(obj.usd) || 0, tokens: Number(obj.tokens) || 0 });
+            break;
+          case 'error':
+            emit({ type: 'error', message: String(obj.message ?? `${pluginName} error`) });
+            break;
+          case 'done':
+            emit({ type: 'done' });
+            break;
+        }
+      };
+    }
+    case 'plain':
+    default:
+      // 整行当 token。done 由适配器退出兜底补(退出码 0 且无终态 → 不可行,适配器只兜 error;
+      // 所以 plain 协议约定:CLI 正常退出前最后一行输出 JSON {"type":"done"} 也会被解析。
+      // 更简单的兜底:退出码 0 且从未发过 done → 这里跟踪不了,靠 onExitFallback 判 code===0 补 done)。
+      return (line, { emit }) => {
+        const tr = line.trim();
+        if (!tr) return;
+        // 行内嵌单个 JSON 终态对象也认(宽松):{"type":"done"} / {"type":"error","message":..}
+        if (tr.startsWith('{') && tr.endsWith('}')) {
+          try {
+            const obj = JSON.parse(tr);
+            if (obj && obj.type === 'done') {
+              emit({ type: 'done' });
+              return;
+            }
+            if (obj && obj.type === 'error') {
+              emit({ type: 'error', message: String(obj.message ?? 'error') });
+              return;
+            }
+            if (obj && obj.type === 'sessionStarted' && typeof obj.id === 'string') {
+              emit({ type: 'sessionStarted', id: obj.id });
+              return;
+            }
+          } catch {
+            /* 不是 JSON → 当普通文本 */
+          }
+        }
+        emit({ type: 'token', text: line + '\n' });
+      };
+  }
 }
