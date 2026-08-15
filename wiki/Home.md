@@ -30,11 +30,12 @@ See [[Getting-Started]] for details.
 | Feature | Entry | Wiki page |
 |---|---|---|
 | Three switchable engines (Direct / Claude Code / Codex) | Session header engine selector | [[Engines]] |
+| Plugin engines v3 (any CLI agent as `plugin:<name>`, manifest-only) | Engine dropdown, after installing the plugin | [[Plugins]] |
 | Direct engine internals (ReAct, compaction, calibration) | — | [[Direct-Engine]] |
 | 12 built-in tools + web_search/web_fetch | Auto-injected | [[Tools-and-MCP]] |
 | MCP client + MCP server (remote agent) | 🔌 button / config | [[Tools-and-MCP]] |
 | Long-term memory + memory graph | 🧠 button | [[Long-Term-Memory]] |
-| Plugin system v2.2 (tools/panels/hooks) | 🔌 Plugins button | [[Plugin-System]] |
+| Plugin system v2.2 (tools/panels/hooks) | 🔌 Plugins button | [[Plugins]] |
 | Skills / Commands / Agents | `/` or ⚡ | [[Skills]] |
 | Pipeline (cross-engine orchestration) | Programmatic | [[Pipeline]] |
 | Session branching + export/import | Context menu / MCP | [[Session-Management]] |

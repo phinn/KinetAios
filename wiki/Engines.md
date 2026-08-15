@@ -1,8 +1,8 @@
 > 🌐 Language: **English** | [中文](Engines.zh-CN.md)
 
-# Three Engines
+# Engines
 
-KinetAios supports three switchable agent engines, each session picks one independently. **Switching engines clears cross-engine context** (the three engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`).
+KinetAios supports three **built-in** agent engines, each session picks one independently. **Switching engines clears cross-engine context** (the engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`). On top of these, **plugin engines** (SDK v3) can register any external CLI agent as `plugin:<name>` — see [[Plugins]].
 
 ## One-liner
 
@@ -11,6 +11,7 @@ KinetAios supports three switchable agent engines, each session picks one indepe
 | **Direct (Kaios)** | Built-in ReAct loop, talks directly to LLM provider | The 10 tools in `tools.ts` + MCP | You want tool/cost/step control |
 | **Claude Code** | Spawns `claude -p --output-format stream-json` | Claude Code's own (Read/Write/Edit/Bash/Glob/Grep) | You're a Claude Code CLI user |
 | **Codex** | Spawns `codex exec --json` | Codex's own | You're a Codex CLI user |
+| **plugin:<name>** | Spawns whatever CLI the plugin declares | The CLI's own | You want to wire up another CLI agent (zero code, manifest-only) |
 
 CLI engines need their CLIs installed locally; they're off by default. ⚙ → Behavior → "Enable CLI engines" turns on PATH scanning.
 
@@ -52,6 +53,17 @@ Spawns `codex exec --json --skip-git-repo-check -C <cwd> --add-dir <cwd> -s <san
 | Inject memory/rules | codex has no `--append-system-prompt` flag → rules + context + memory prepended to prompt |
 
 Event model: see `CodexEngine` around `engines.ts:349`.
+
+## Plugin engines (SDK v3)
+
+Any external CLI agent can be registered as an engine with a manifest-only plugin — no JS. The engine shows up as `plugin:<name>` in the dropdown and runs on the **same `CliEngineAdapter` skeleton** as Claude Code / Codex (spawn → line parsing → resume → exit fallback), configured by a declarative spec in `plugin.json`:
+
+- `bin` — CLI to spawn (resolved like claude/codex)
+- `protocol` — one of `ndjson` / `jsonl-claude` / `jsonl-codex` / `plain` (line→event presets)
+- `resume` — which event field carries the session id + how to resume (`--resume <id>` flag or codex-style subcommand)
+- `inject` — persona/rules/memory via `--append-system-prompt`-style flag or prepended to prompt
+
+Details and a runnable example (`git` wrapped as an engine): [[Plugins]].
 
 ## Cross-platform CLI spawn (important)
 

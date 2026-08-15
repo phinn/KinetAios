@@ -30,11 +30,12 @@ npm start
 | 功能 | 入口 | Wiki 页面 |
 |---|---|---|
 | 三引擎切换(Direct / Claude Code / Codex) | 会话头部引擎选择器 | [[Engines]] |
+| 插件引擎 v3(任意 CLI agent 注册为 `plugin:<name>`,纯 manifest) | 装好插件后的引擎下拉 | [[Plugins]] |
 | Direct 引擎内幕(ReAct, 压缩, 校准) | — | [[Direct-Engine]] |
 | 12 个内置工具 + web_search/web_fetch | 自动注入 | [[Tools-and-MCP]] |
 | MCP 客户端 + MCP 服务端(远程 agent) | 🔌 按钮 / 配置 | [[Tools-and-MCP]] |
 | 长期记忆 + 记忆图谱 | 🧠 按钮 | [[Long-Term-Memory]] |
-| 插件系统 v2.2(工具/面板/hooks) | 🔌 插件按钮 | [[Plugin-System]] |
+| 插件系统 v2.2(工具/面板/hooks) | 🔌 插件按钮 | [[Plugins]] |
 | Skills / Commands / Agents | `/` 或 ⚡ | [[Skills]] |
 | Pipeline(跨引擎编排) | 编程式调用 | [[Pipeline]] |
 | 会话分支 + 导出/导入 | 右键菜单 / MCP | [[Session-Management]] |

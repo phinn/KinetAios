@@ -1,8 +1,8 @@
 > 🌐 Language: [English](Engines) | **中文**
 
-# 三引擎
+# 引擎
 
-KinetAios 支持三个可切换的 agent 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(三套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。
+KinetAios 支持三个**内置** agent 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(几套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。在此之上,**插件引擎**(SDK v3)能把任意外部 CLI agent 注册为 `plugin:<name>` —— 见 [[Plugins]]。
 
 ## 一句话区分
 
@@ -11,6 +11,7 @@ KinetAios 支持三个可切换的 agent 引擎,每个会话独立选。**切换
 | **Direct (Kaios)** | 内置 ReAct loop,直连 LLM provider | 本仓库 `tools.ts` 的 10 个工具 + MCP | 想自己控工具、控成本、看每步 |
 | **Claude Code** | spawn `claude -p --output-format stream-json` | Claude Code 自带(Read/Write/Edit/Bash/Glob/Grep) | 已习惯 Claude Code CLI 的流 |
 | **Codex** | spawn `codex exec --json` | Codex 自带 | 已习惯 Codex CLI 的流 |
+| **plugin:<name>** | spawn 插件声明的任意 CLI | 该 CLI 自带 | 想接入其它 CLI agent(零代码,纯 manifest) |
 
 CLI 引擎需要先在本机装好 CLI;默认关。⚙ → 行为 → 「启用 CLI 引擎」打开,才会扫 PATH。
 
@@ -52,6 +53,17 @@ spawn `codex exec --json --skip-git-repo-check -C <cwd> --add-dir <cwd> -s <sand
 | 注入记忆/规则 | codex 没有 `--append-system-prompt` flag → rules + context + memory 前置拼到 prompt |
 
 事件模型见 `engines.ts:349` 附近的 `CodexEngine`。
+
+## 插件引擎(SDK v3)
+
+任意外部 CLI agent 都能用纯 manifest 插件注册成引擎 —— 零 JS。引擎以 `plugin:<name>` 出现在下拉里,跑在与 Claude Code / Codex **同一套 `CliEngineAdapter` 骨架**上(spawn → 逐行解析 → resume → 退出兜底),由 `plugin.json` 的声明式 spec 配置:
+
+- `bin` — 要 spawn 的 CLI(解析方式同 claude/codex)
+- `protocol` — 四选一:`ndjson` / `jsonl-claude` / `jsonl-codex` / `plain`(行→事件预设)
+- `resume` — 哪个事件字段携带 session id + 续接方式(`--resume <id>` flag 或 codex 式子命令)
+- `inject` — persona/规则/记忆走 `--append-system-prompt` 式 flag 或前置拼 prompt
+
+细节与可跑示例(裸 `git` 包装成引擎)见 [[Plugins]]。
 
 ## 跨平台 CLI spawn(重要)
 
