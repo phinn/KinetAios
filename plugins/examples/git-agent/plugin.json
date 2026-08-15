@@ -1,0 +1,16 @@
+{
+  "name": "git-agent",
+  "version": "1.0.0",
+  "description": "示例插件引擎(Plugin SDK v3):把 git CLI 包装为 plugin:git-agent 引擎,plain 协议整段输出当答案。验证引擎贡献点全链路。",
+  "author": "KinetAios",
+  "category": "dev",
+  "engines": [],
+  "engine": {
+    "bin": "git",
+    "protocol": "plain",
+    "args": ["--no-pager"],
+    "label": "Git Agent",
+    "cwdFlags": ["-C", "{cwd}"],
+    "inject": "prompt"
+  }
+}
