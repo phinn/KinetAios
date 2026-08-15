@@ -42,6 +42,35 @@ export interface PluginManifest {
   panel?: string; // HTML 文件路径(相对插件目录)
   panelTitle?: string; // panel 在侧栏菜单中显示的标题
   panelIcon?: string; // panel 在侧栏菜单中的 SVG 图标文件路径
+  // v3 新增: 引擎贡献点 —— 声明一个外部 CLI agent, 注册为 `plugin:<name>` 引擎,
+  // 复用 CliEngineAdapter 的 spawn/解析/终态契约/退出兜底骨架(Plugin SDK v3)。
+  // 贡献引擎的插件, 其 manifest.engines 字段不再表示"作用范围"而是被忽略(引擎本身即入口)。
+  engine?: PluginEngineSpec;
+}
+
+// v3: 插件引擎声明 —— 声明式 CliEngineConfig 子集。
+// 插件不需要写 JS 解析器;行→事件映射从 protocol 预设里选(见 engines.ts engineProtocol())。
+export interface PluginEngineSpec {
+  /** CLI 可执行名(resolveBin 查 PATH + 常见安装目录)。 */
+  bin: string;
+  /** 协议预设: ndjson(逐行 JSON.tool/.text/.done)/ jsonl-claude(claude stream-json 兼容)/
+   *  jsonl-codex(codex exec --json 兼容)/ plain(整段 stdout 当文本)。默认 plain。 */
+  protocol?: 'ndjson' | 'jsonl-claude' | 'jsonl-codex' | 'plain';
+  /** argv 前缀(在 prompt 之前)。resume 子命令等复杂 argv 不支持 —— 需要时升级写 CliEngineConfig 插件。 */
+  args?: string[];
+  /** prompt 是否作为最后一个 argv 追加。默认 true。false 时 args 必须自含全部参数。 */
+  appendPrompt?: boolean;
+  /** 会话续接: 从哪个事件字段读 session id(如 session_id / thread_id)。
+   *  设置后每次 run 注入 `${resumeFlag} <id>`(在 args 之后、prompt 之前)。 */
+  resume?: { idField: string; resumeFlag: string };
+  /** 注入方式: system(拼 --append-system-prompt 风格 flag)或 prompt(前置拼 prompt,--- 分隔)。
+   *  默认 prompt(与 codex 同)。systemFlag 仅 inject=system 时用,默认 '--append-system-prompt'。 */
+  inject?: 'prompt' | 'system';
+  systemFlag?: string;
+  /** label 在 UI 下拉/NEXUS 显示(不填 = 插件名)。 */
+  label?: string;
+  /** 额外的 cwd flag 模板;{cwd} 占位符替换(如 ["--add-dir","{cwd}"])。 */
+  cwdFlags?: string[];
 }
 
 export interface LoadedPlugin {
@@ -403,6 +432,8 @@ export function pluginListSnap(): Array<{
   enabled: boolean;
   error?: string;
   dir: string;
+  // v3: 引擎贡献摘要(有 engine 贡献点时非空)。renderer 用于下拉注入 + label 表。
+  engine?: { bin: string; label?: string; protocol?: string };
 }> {
   return loadPlugins().map((p) => {
     const cat = p.manifest.category ?? 'misc';
@@ -437,8 +468,31 @@ export function pluginListSnap(): Array<{
       enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,
+      engine: p.manifest.engine ? { bin: p.manifest.engine.bin, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
     };
   });
+}
+
+// ── 导出: 插件引擎(v3 新增) ──────────────────────────────
+
+// 给 buildEngines 用: 所有【已启用】插件贡献的引擎清单(engine spec 校验过的)。
+// bin 缺失/protocol 非法 → 跳过并记 error(引擎不注册,但不阻断其它插件)。
+export function pluginEngines(): Array<{ pluginName: string; spec: PluginEngineSpec }> {
+  const out: Array<{ pluginName: string; spec: PluginEngineSpec }> = [];
+  for (const p of loadPlugins()) {
+    if (!isPluginEnabled(p.manifest.name)) continue;
+    const spec = p.manifest.engine;
+    if (!spec || typeof spec.bin !== 'string' || !spec.bin.trim()) continue;
+    out.push({ pluginName: p.manifest.name, spec });
+  }
+  return out;
+}
+
+// 给 i18n engineLabel 用: 插件引擎的显示名(label 或插件名)。
+export function pluginEngineLabel(pluginName: string): string | undefined {
+  const p = loadPlugins().find((x) => x.manifest.name === pluginName && x.manifest.engine);
+  if (!p) return undefined;
+  return p.manifest.engine!.label ?? p.manifest.name;
 }
 
 // ── 导出: 安装/卸载(v2 新增) ──────────────────────────────
