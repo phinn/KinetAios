@@ -2,7 +2,7 @@
 // Three engines now (Direct / Claude Code / Codex); each implements the Engine interface.
 import fs from 'node:fs';
 import type { AgentEvent, ChatMsg, Conversation, ContextMode, EngineKind, Turn } from '../shared/types';
-import { applyEvent, newTurn, rid } from '../shared/types';
+import { applyEvent, newTurn, rid, isPluginEngine } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -34,6 +34,15 @@ export class TaskManager {
 
   constructor(private emit: TaskManagerEmitter) {
     this.engines = buildEngines(emit.confirm);
+  }
+
+  // 插件引擎热注册(Plugin SDK v3):plugin-reload / install / uninstall / toggle 后
+  // 由 main.ts 调用,重建引擎表。运行中的会话不受影响(aborts 持有旧 engine 引用,
+  // run 到完为止);新 send 走新表。builtin id 不变,已注册的 plugin: 项增删覆盖。
+  // Hot-reregister plugin engines after plugin cache invalidation. In-flight runs
+  // keep their old engine reference; new sends dispatch through the fresh table.
+  rebuildEngines(): void {
+    this.engines = buildEngines(this.emit.confirm);
   }
 
   load(): void {
@@ -1105,7 +1114,9 @@ ${memorySamples || '(无记忆)'}`;
 }
 
 function isCliEngine(e: EngineKind): boolean {
-  return e === 'claudeCode' || e === 'codex';
+  // 内置 CLI(claudeCode/codex)+ 插件引擎(全部走外部 CLI spawn,同属 CLI 类)。
+  // Builtin CLI engines + plugin engines (all spawn external CLIs — same class).
+  return e === 'claudeCode' || e === 'codex' || isPluginEngine(e);
 }
 
 // Direct 家族引擎(direct + directV2)共享 directHistory 上下文。

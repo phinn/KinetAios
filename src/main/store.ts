@@ -5,7 +5,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
 import type { ChatMsg, Conversation, EngineKind, Turn } from '../shared/types';
-import { newTurn } from '../shared/types';
+import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind } from '../shared/types';
 
 let db: Database.Database;
 
@@ -343,7 +343,11 @@ export function loadConversations(): Conversation[] {
     // 首条 prompt 只取标题所需(侧栏/NEXUS 标题兜底),不加载 turns 本体。
     // First prompt for sidebar titles only — turn bodies stay unloaded.
     const firstPrompt = (firstPromptStmt.get(r.id) as { p: string | null } | undefined)?.p ?? '';
-    const engine: EngineKind = (['direct', 'directV2', 'directV3', 'claudeCode', 'codex'] as const).includes(r.engine as EngineKind)
+    // 引擎白名单:内置 5 种直接放行;plugin:<name> 放行(引擎不存在时 send 会报 unknownEngine,
+    // 不会崩)。其余未知字符串降级 direct(旧库脏数据防御)。
+    // Builtin kinds pass; plugin: ids pass (missing engine surfaces as unknownEngine on send,
+    // never a crash). Anything else degrades to direct (dirty-db defense).
+    const engine: EngineKind = BUILTIN_ENGINE_KINDS.includes(r.engine as BuiltinEngineKind) || isPluginEngine(r.engine)
       ? (r.engine as EngineKind)
       : 'direct';
     const conv: Conversation = {
