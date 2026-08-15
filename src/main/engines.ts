@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { AgentEvent, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
+import type { AgentEvent, AppSettings, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { trackFileOpFromToolEvent } from './AgentLoop';
@@ -604,220 +604,321 @@ function safeStringify(v: unknown): string {
   }
 }
 
-// MARK: Claude Code (claude -p --output-format stream-json). Verbatim port of the Swift parser.
-class ClaudeCodeEngine implements Engine {
-  readonly name = 'claudeCode' as const;
+// MARK: CLI 引擎适配器 / CLI engine adapter
+// ─────────────────────────────────────────────────────────────────────────
+// ClaudeCodeEngine / CodexEngine 的公共骨架:拼 prompt、resolveBin、resume、
+// 逐行解析、退出兜底全部收在这里;差异(bin、argv 模板、行→事件映射、memory
+// 注入方式、退出文案)下沉为 CliEngineConfig。这也是第三方 agent 插件化
+// (plugin:<name> 引擎)的地基 —— 插件引擎将以 config + 行解析钩子注册,
+// 复用同一套 spawn/解析/兜底骨架。行为与拆分前逐行等价。
+// Shared skeleton for Claude Code / Codex engines. Differences (bin, argv
+// template, line→event mapping, memory injection, exit fallback) live in
+// config. This is the groundwork for plugin-provided engines.
+export interface CliLineParseCtx {
+  conv: Conversation;
+  emit: (e: AgentEvent) => void;
+}
+
+export interface CliEngineConfig {
+  /** 引擎 id(= Engine.name,插件化后为 plugin:<name>)。 */
+  name: EngineKind;
+  /** CLI 可执行名(resolveBin 用)。 */
+  bin: string;
+  /** CLI 不在 PATH 时的报错文案 key。 */
+  notFoundKey: string;
+  /** 退出时未见终态事件的报错文案 key。 */
+  noResultKey: string;
+  /** argv 组装(含 resume 与 memory 注入;prompt 由适配器拼好传入)。 */
+  buildArgs: (p: {
+    prompt: string;
+    /** 注入块的结构化 parts —— 各引擎自行决定怎么注入(claude 拼一起走
+     *  --append-system-prompt,codex 各自 trim 后 --- join 前置拼 prompt)。 */
+    inject: { persona: string; sourceHint: string; rules: string; context: string; memory: string };
+    cwd: string;
+    sessionId: string | null;
+    s: AppSettings;
+  }) => string[];
+  /** 单行 stdout/stderr → AgentEvent。 */
+  parseLine: (line: string, ctx: CliLineParseCtx) => void;
+  /** run 开始时重置跨行状态(去重表 / pending 表)—— 原版引擎每轮新建,
+   *  持久化会导致跨轮相同文本被误判重复。 */
+  beginRun?: (convId: string) => void;
+  /** 退出兜底覆写(返回 undefined 走默认文案)。codex 用它拼 exit code +
+   *  stderr tail + 版本提示;claude 不需要(走默认)。 */
+  onExitFallback?: (p: { code: number; conv: Conversation }) => string | undefined;
+}
+
+class CliEngineAdapter implements Engine {
+  readonly name: EngineKind;
+  constructor(private cfg: CliEngineConfig) {
+    this.name = cfg.name;
+  }
+
   async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
-    // 跨引擎上下文:切到 Claude Code 时注入(首次消费后清除)
+    // 跨引擎上下文:切到 CLI 引擎时注入(首次消费后清除)
+    // Cross-engine context: injected when switching to a CLI engine, consumed once.
     const crossCtx = conv.crossEngineContext;
     if (crossCtx) conv.crossEngineContext = null;
     const prompt = [basePrompt, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
     const cwd = conv.cwd;
     const s = getSettings();
-    const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
-    const bin = resolveBin('claude');
+    const bin = resolveBin(this.cfg.bin);
     if (!bin.found) {
-      onEvent({ type: 'error', message: t(s.lang, 'eng.claudeNotFound') });
+      onEvent({ type: 'error', message: t(s.lang, this.cfg.notFoundKey) });
       return;
     }
-    const args = [
-      '-p', prompt,
-      '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
-      '--permission-mode', permissionMode,
-      '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep',
-      '--add-dir', cwd,
-    ];
-    if (conv.engineSessionId) args.push('--resume', conv.engineSessionId);
-    // KINET.md 规则 + KINET-CONTEXT.md 背景 + memory —— 同一个 flag 只能传一次,顺序拼接。
+    // KINET.md 规则 + KINET-CONTEXT.md 背景 + memory —— 注入方式因引擎而异(buildArgs 决定)。
     // goal 不注入 CLI 引擎:Claude Code / Codex 自带 CLAUDE.md / AGENTS.md 等机制管理目标。
-    const append = personaSection(conv) + sourceHintSection(conv) + (rulesBlock ?? '') + (contextBlock ?? '') + memoryBlock;
-    if (append.trim()) args.push('--append-system-prompt', append);
-
-    let sawResult = false;
-    const pending = new Map<string, { name: string; args: string }>();
-    const onLine = (line: string): void => {
-      let obj: Record<string, any>;
-      try {
-        obj = JSON.parse(line);
-      } catch {
-        return;
-      }
-      const type: string = obj.type;
-      if (type === 'system') {
-        const sub = obj.subtype;
-        if (sub === 'init' && obj.session_id) onEvent({ type: 'sessionStarted', id: obj.session_id });
-        else if (sub === 'api_retry')
-          onEvent({ type: 'status', text: t(s.lang, 'eng.apiRetry', { error: obj.error ?? '', status: obj.error_status ?? '', attempt: obj.attempt ?? 0, max: obj.max_retries ?? 0 }) });
-        else if (sub === 'status' && obj.status === 'requesting') onEvent({ type: 'status', text: t(s.lang, 'eng.requesting') });
-      } else if (type === 'stream_event') {
-        const delta = obj.event?.delta;
-        if (delta?.type === 'text_delta' && delta.text) onEvent({ type: 'token', text: delta.text });
-      } else if (type === 'assistant') {
-        const content = obj.message?.content;
-        if (Array.isArray(content))
-          for (const b of content)
-            if (b.type === 'tool_use') pending.set(b.id ?? '', { name: b.name ?? '', args: safeStringify(b.input ?? {}) });
-      } else if (type === 'user') {
-        const content = obj.message?.content;
-        if (Array.isArray(content))
-          for (const b of content)
-            if (b.type === 'tool_result') {
-              const txt = Array.isArray(b.content)
-                ? b.content.map((x: Record<string, any>) => x.text || '').join('')
-                : typeof b.content === 'string'
-                  ? b.content
-                  : '';
-              const p = pending.get(b.tool_use_id ?? '');
-              if (p) {
-                pending.delete(b.tool_use_id ?? '');
-                trackFileOpFromToolEvent(conv.id, p.name, p.args);
-                onEvent({ type: 'tool', name: p.name, args: p.args, result: txt });
-              } else onEvent({ type: 'tool', name: 'tool', args: '', result: txt });
-            }
-      } else if (type === 'result') {
-        sawResult = true;
-        // total_cost_usd is the cost of THIS `claude -p` invocation (one per turn, even with
-        // --resume), so += accumulates correctly across turns. No per-turn token breakdown is
-        // reported here, so the turn's tokensIn/Out stay 0 (only the $ total is known).
-        const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
-        if (!Number.isNaN(c)) onEvent({ type: 'cost', usd: c, tokens: 0 });
-        const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
-        if (isErr) onEvent({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
-        else onEvent({ type: 'done' });
-      }
+    const inject = {
+      persona: personaSection(conv),
+      sourceHint: sourceHintSection(conv),
+      rules: rulesBlock ?? '',
+      context: contextBlock ?? '',
+      memory: memoryBlock,
     };
 
-    await runBin(bin, args, { cwd, signal, onLine });
+    // 终态标记由适配器托管:包装 emit 截获 done/error/sessionStarted,
+    // 保证 --resume 记账与「恰好一次终态」契约不侵入各引擎解析器。
+    // The adapter owns terminal-state bookkeeping by wrapping emit, so
+    // parsers stay pure line→event mappings.
+    let sawTerminal = false;
+    const emit = (e: AgentEvent): void => {
+      if (e.type === 'sessionStarted') conv.engineSessionId = e.id;
+      if (e.type === 'done' || e.type === 'error') sawTerminal = true;
+      onEvent(e);
+    };
+    this.cfg.beginRun?.(conv.id);
+    const onLine = (line: string): void => this.cfg.parseLine(line, { conv, emit });
+
+    const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s });
+    const exitCode = await runBin(bin, args, { cwd, signal, onLine });
     if (signal.aborted) return; // user cancelled — not an error
-    if (!sawResult) onEvent({ type: 'error', message: t(s.lang, 'eng.claudeNoResult') });
+    if (!sawTerminal) {
+      // 退出兜底:config 可覆写(拼 exit code / stderr tail / 版本提示)。
+      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { code: exitCode, tail: '' });
+      onEvent({ type: 'error', message: fallback });
+    }
   }
 }
 
-// MARK: Codex (codex exec --json). Verbatim port of the Swift parser.
-class CodexEngine implements Engine {
-  readonly name = 'codex' as const;
-  async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
-    const basePrompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
-    // 跨引擎上下文:切到 Codex 时注入(首次消费后清除)
-    const crossCtx = conv.crossEngineContext;
-    if (crossCtx) conv.crossEngineContext = null;
-    const prompt = [basePrompt, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
-    const cwd = conv.cwd;
-    const s = getSettings();
-    const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;
-    const bin = resolveBin('codex');
-    if (!bin.found) {
-      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNotFound') });
-      return;
+// MARK: Claude Code config(claude -p --output-format stream-json)
+// 行解析器为纯函数风格;跨行状态(pending tool_use 配对表)按 conv.id 存放。
+const claudePending = new Map<string, Map<string, { name: string; args: string }>>();
+function claudePendingOf(convId: string): Map<string, { name: string; args: string }> {
+  let m = claudePending.get(convId);
+  if (!m) {
+    m = new Map();
+    claudePending.set(convId, m);
+  }
+  return m;
+}
+
+function claudeParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
+  let obj: Record<string, any>;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    return;
+  }
+  const s = getSettings();
+  const pending = claudePendingOf(conv.id);
+  const type: string = obj.type;
+  if (type === 'system') {
+    const sub = obj.subtype;
+    if (sub === 'init' && obj.session_id) emit({ type: 'sessionStarted', id: obj.session_id });
+    else if (sub === 'api_retry')
+      emit({ type: 'status', text: t(s.lang, 'eng.apiRetry', { error: obj.error ?? '', status: obj.error_status ?? '', attempt: obj.attempt ?? 0, max: obj.max_retries ?? 0 }) });
+    else if (sub === 'status' && obj.status === 'requesting') emit({ type: 'status', text: t(s.lang, 'eng.requesting') });
+  } else if (type === 'stream_event') {
+    const delta = obj.event?.delta;
+    if (delta?.type === 'text_delta' && delta.text) emit({ type: 'token', text: delta.text });
+  } else if (type === 'assistant') {
+    const content = obj.message?.content;
+    if (Array.isArray(content))
+      for (const b of content)
+        if (b.type === 'tool_use') pending.set(b.id ?? '', { name: b.name ?? '', args: safeStringify(b.input ?? {}) });
+  } else if (type === 'user') {
+    const content = obj.message?.content;
+    if (Array.isArray(content))
+      for (const b of content)
+        if (b.type === 'tool_result') {
+          const txt = Array.isArray(b.content)
+            ? b.content.map((x: Record<string, any>) => x.text || '').join('')
+            : typeof b.content === 'string'
+              ? b.content
+              : '';
+          const p = pending.get(b.tool_use_id ?? '');
+          if (p) {
+            pending.delete(b.tool_use_id ?? '');
+            trackFileOpFromToolEvent(conv.id, p.name, p.args);
+            emit({ type: 'tool', name: p.name, args: p.args, result: txt });
+          } else emit({ type: 'tool', name: 'tool', args: '', result: txt });
+        }
+  } else if (type === 'result') {
+    // total_cost_usd is the cost of THIS `claude -p` invocation (one per turn, even with
+    // --resume), so += accumulates correctly across turns. No per-turn token breakdown is
+    // reported here, so the turn's tokensIn/Out stay 0 (only the $ total is known).
+    const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
+    if (!Number.isNaN(c)) emit({ type: 'cost', usd: c, tokens: 0 });
+    const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
+    if (isErr) emit({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
+    else emit({ type: 'done' });
+  }
+}
+
+export function claudeCliConfig(): CliEngineConfig {
+  return {
+    name: 'claudeCode',
+    bin: 'claude',
+    notFoundKey: 'eng.claudeNotFound',
+    noResultKey: 'eng.claudeNoResult',
+    beginRun: (convId) => claudePending.delete(convId),
+    buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
+      const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
+      const args = [
+        '-p', prompt,
+        '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
+        '--permission-mode', permissionMode,
+        '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep',
+        '--add-dir', cwd,
+      ];
+      if (sessionId) args.push('--resume', sessionId);
+      // 同一个 flag 只能传一次,顺序拼接。/ One flag once, concatenated in order.
+      const memoryInject = inject.persona + inject.sourceHint + inject.rules + inject.context + inject.memory;
+      if (memoryInject.trim()) args.push('--append-system-prompt', memoryInject);
+      return args;
+    },
+    parseLine: claudeParseLine,
+  };
+}
+
+// MARK: Codex config(codex exec --json)
+// 跨行状态(stderrTail / seenAgentText)按 conv.id 存放。
+const codexStates = new Map<string, { stderrTail: string[]; seenAgentText: Set<string> }>();
+function codexStateOf(convId: string): { stderrTail: string[]; seenAgentText: Set<string> } {
+  let m = codexStates.get(convId);
+  if (!m) {
+    m = { stderrTail: [], seenAgentText: new Set() };
+    codexStates.set(convId, m);
+  }
+  return m;
+}
+
+function codexParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
+  let obj: Record<string, any>;
+  try {
+    obj = JSON.parse(line);
+  } catch {
+    const tr = line.trim();
+    if (tr) {
+      const st = codexStateOf(conv.id);
+      st.stderrTail.push(tr);
+      if (st.stderrTail.length > 8) st.stderrTail.shift();
     }
-    // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
-    // goal 不注入 CLI 引擎:Claude Code / Codex 自带目标管理机制。
-    const head = [personaSection(conv).trim(), sourceHintSection(conv).trim(), (rulesBlock ?? '').trim(), (contextBlock ?? '').trim(), (memoryBlock ?? '').trim()].filter(Boolean).join('\n\n---\n\n');
-    const fullPrompt = head ? `${head}\n\n---\n\n${prompt}` : prompt;
-    // exec-level flags (--json/-C/--add-dir/-s/--skip-git-repo-check) MUST precede the resume subcommand,
-    // else clap parses them as resume args and exits status=2.
-    const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwd, '--add-dir', cwd, '-s', CODEX_SANDBOX[sandboxKind]];
-    if (conv.engineSessionId) args.push('resume', conv.engineSessionId);
-    args.push(fullPrompt);
+    return;
+  }
+  const s = getSettings();
+  const st = codexStateOf(conv.id);
+  // codex emits agent_message both as a top-level event and inside item.completed (same text).
+  // Dedup by text so the answer isn't doubled. Token fragments differ, so this only catches repeats.
+  const emitMsg = (text: string): void => {
+    if (text && !st.seenAgentText.has(text)) {
+      st.seenAgentText.add(text);
+      emit({ type: 'token', text });
+    }
+  };
+  switch (obj.type as string) {
+    case 'thread.started':
+      if (obj.thread_id) emit({ type: 'sessionStarted', id: obj.thread_id });
+      break;
+    case 'turn.started':
+      emit({ type: 'status', text: t(s.lang, 'eng.requesting') });
+      break;
+    case 'item.completed': {
+      const item = obj.item;
+      const it = item?.type;
+      if (it === 'agent_message' && typeof item.text === 'string') emitMsg(item.text);
+      else if (it === 'command_execution')
+        emit({
+          type: 'tool',
+          name: 'shell',
+          args: item.command ?? '',
+          result: (item.aggregated_output ?? '') + (item.exit_code != null ? ` (exit ${item.exit_code})` : ''),
+        });
+      else if (it === 'patch_applied') { trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: item.path ?? item.command ?? '' })); emit({ type: 'tool', name: 'patch', args: item.path ?? item.command ?? '', result: '已应用' }); }
+      break;
+    }
+    case 'agent_message':
+      if (typeof obj.message === 'string') emitMsg(obj.message);
+      break;
+    case 'command_executed': {
+      const argv = obj.command?.argv;
+      const name = argv?.[0] ?? 'shell';
+      const a = Array.isArray(argv) ? argv.slice(1).map(String).join(' ') : '';
+      const out = (obj.stdout ?? '') + (obj.stderr ? `\n[stderr]${obj.stderr}` : '');
+      emit({ type: 'tool', name, args: a, result: out });
+      break;
+    }
+    case 'patch_applied':
+      trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: obj.path ?? '' }));
+      emit({ type: 'tool', name: 'patch', args: obj.path ?? '', result: '已应用' });
+      break;
+    case 'turn.completed': {
+      const num = (v: unknown): number => (typeof v === 'number' ? v : parseInt(String(v), 10) || 0);
+      const cost = obj.total_cost_usd ?? obj.cost_usd;
+      const inT = num(obj.usage?.input_tokens);
+      const outT = num(obj.usage?.output_tokens);
+      if (typeof cost === 'number') {
+        emit({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT });
+      } else if (obj.usage && inT + outT > 0) {
+        // No cost field → estimate from token counts. Codex's own model isn't known here, so
+        // this falls back to the Direct model's rate (rough — prefer when Codex reports cost).
+        const usd = priceUSD(getSettings().model, inT, outT);
+        emit({ type: 'cost', usd, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
+      }
+      emit({ type: 'done' });
+      break;
+    }
+    case 'turn.failed':
+      emit({ type: 'error', message: obj.error?.message ?? (typeof obj.error === 'string' ? obj.error : t(s.lang, 'eng.codexFailed')) });
+      break;
+    case 'error':
+      if (obj.message) emit({ type: 'status', text: t(s.lang, 'eng.codexMsg', { msg: obj.message }) });
+      break;
+  }
+}
 
-    let sawTurnEnd = false;
-    const stderrTail: string[] = [];
-    // codex emits agent_message both as a top-level event and inside item.completed (same text).
-    // Dedup by text so the answer isn't doubled. Token fragments differ, so this only catches repeats.
-    const seenAgentText = new Set<string>();
-    const emitMsg = (text: string): void => {
-      if (text && !seenAgentText.has(text)) {
-        seenAgentText.add(text);
-        onEvent({ type: 'token', text });
-      }
-    };
-    const onLine = (line: string): void => {
-      let obj: Record<string, any>;
-      try {
-        obj = JSON.parse(line);
-      } catch {
-        const t = line.trim();
-        if (t) {
-          stderrTail.push(t);
-          if (stderrTail.length > 8) stderrTail.shift();
-        }
-        return;
-      }
-      switch (obj.type as string) {
-        case 'thread.started':
-          if (obj.thread_id) onEvent({ type: 'sessionStarted', id: obj.thread_id });
-          break;
-        case 'turn.started':
-          onEvent({ type: 'status', text: t(s.lang, 'eng.requesting') });
-          break;
-        case 'item.completed': {
-          const item = obj.item;
-          const it = item?.type;
-          if (it === 'agent_message' && typeof item.text === 'string') emitMsg(item.text);
-          else if (it === 'command_execution')
-            onEvent({
-              type: 'tool',
-              name: 'shell',
-              args: item.command ?? '',
-              result: (item.aggregated_output ?? '') + (item.exit_code != null ? ` (exit ${item.exit_code})` : ''),
-            });
-          else if (it === 'patch_applied') { trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: item.path ?? item.command ?? '' })); onEvent({ type: 'tool', name: 'patch', args: item.path ?? item.command ?? '', result: '已应用' }); }
-          break;
-        }
-        case 'agent_message':
-          if (typeof obj.message === 'string') emitMsg(obj.message);
-          break;
-        case 'command_executed': {
-          const argv = obj.command?.argv;
-          const name = argv?.[0] ?? 'shell';
-          const a = Array.isArray(argv) ? argv.slice(1).map(String).join(' ') : '';
-          const out = (obj.stdout ?? '') + (obj.stderr ? `\n[stderr]${obj.stderr}` : '');
-          onEvent({ type: 'tool', name, args: a, result: out });
-          break;
-        }
-        case 'patch_applied':
-          trackFileOpFromToolEvent(conv.id, 'edit_file', JSON.stringify({ path: obj.path ?? '' }));
-          onEvent({ type: 'tool', name: 'patch', args: obj.path ?? '', result: '已应用' });
-          break;
-        case 'turn.completed': {
-          sawTurnEnd = true;
-          const num = (v: unknown): number => (typeof v === 'number' ? v : parseInt(String(v), 10) || 0);
-          const cost = obj.total_cost_usd ?? obj.cost_usd;
-          const inT = num(obj.usage?.input_tokens);
-          const outT = num(obj.usage?.output_tokens);
-          if (typeof cost === 'number') {
-            onEvent({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT });
-          } else if (obj.usage && inT + outT > 0) {
-            // No cost field → estimate from token counts. Codex's own model isn't known here, so
-            // this falls back to the Direct model's rate (rough — prefer when Codex reports cost).
-            const usd = priceUSD(getSettings().model, inT, outT);
-            onEvent({ type: 'cost', usd, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
-          }
-          onEvent({ type: 'done' });
-          break;
-        }
-        case 'turn.failed':
-          sawTurnEnd = true;
-          onEvent({ type: 'error', message: obj.error?.message ?? (typeof obj.error === 'string' ? obj.error : t(s.lang, 'eng.codexFailed')) });
-          break;
-        case 'error':
-          if (obj.message) onEvent({ type: 'status', text: t(s.lang, 'eng.codexMsg', { msg: obj.message }) });
-          break;
-      }
-    };
-
-    const code = await runBin(bin, args, { cwd, signal, onLine });
-    if (signal.aborted) return;
-    if (!sawTurnEnd) {
-      const tail = stderrTail.length ? ' — ' + stderrTail.join(' | ') : '';
-      // CLI 版本不兼容时的友好提示(flag 改名/移除等)。
+export function codexCliConfig(): CliEngineConfig {
+  return {
+    name: 'codex',
+    bin: 'codex',
+    notFoundKey: 'eng.codexNotFound',
+    noResultKey: 'eng.codexNoResult',
+    beginRun: (convId) => codexStates.delete(convId),
+    // 退出兜底:拼真实 exit code + stderr tail;CLI 版本不兼容时给友好提示。
+    onExitFallback: ({ code, conv }) => {
+      const s = getSettings();
+      const tail = codexStateOf(conv.id).stderrTail.join(' | ');
       const versionHint = /unknown flag|unrecognized|unexpected argument/i.test(tail)
         ? '\n💡 可能是 Codex CLI 版本不兼容,请检查并更新 codex 后重试。'
         : '';
-      onEvent({ type: 'error', message: t(s.lang, 'eng.codexNoResult', { code, tail }) + versionHint });
-    }
-  }
+      return t(s.lang, 'eng.codexNoResult', { code, tail: tail ? ' — ' + tail : '' }) + versionHint;
+    },
+    buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
+      const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;
+      // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
+      const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
+      const fullPrompt = head ? `${head}\n\n---\n\n${prompt}` : prompt;
+      // exec-level flags (--json/-C/--add-dir/-s/--skip-git-repo-check) MUST precede the resume subcommand,
+      // else clap parses them as resume args and exits status=2.
+      const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwd, '--add-dir', cwd, '-s', CODEX_SANDBOX[sandboxKind]];
+      if (sessionId) args.push('resume', sessionId);
+      args.push(fullPrompt);
+      return args;
+    },
+    parseLine: codexParseLine,
+  };
 }
 
 import { DirectV2Engine } from './DirectV2Engine';
@@ -828,7 +929,9 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
     ['direct', new DirectEngine(confirm)],
     ['directV2', new DirectV2Engine(confirm)],
     ['directV3', new DirectV3Engine(confirm)],
-    ['claudeCode', new ClaudeCodeEngine()],
-    ['codex', new CodexEngine()],
+    // CLI 引擎走 CliEngineAdapter:config 驱动,插件引擎将复用同一骨架。
+    // CLI engines via CliEngineAdapter — config-driven, shared with plugin engines.
+    ['claudeCode', new CliEngineAdapter(claudeCliConfig())],
+    ['codex', new CliEngineAdapter(codexCliConfig())],
   ]);
 }
