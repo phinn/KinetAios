@@ -1503,6 +1503,7 @@ function registerIpc(): void {
     try {
       invalidatePluginCache();
       const items = pluginListSnap();
+      taskManager.rebuildEngines(); // v3: 插件引擎表可能变化 — rebuild engine registry.
       return { ok: true, count: items.length };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -1511,14 +1512,18 @@ function registerIpc(): void {
   // v2: 安装(复制目录) + 卸载(删除目录)。
   ipcMain.handle('plugin-install', (_e, sourcePath: string) => {
     try {
-      return installPlugin(sourcePath);
+      const r = installPlugin(sourcePath);
+      taskManager.rebuildEngines(); // v3: 新插件可能贡献引擎 — rebuild engine registry.
+      return r;
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
   ipcMain.handle('plugin-uninstall', (_e, name: string) => {
     try {
-      return uninstallPlugin(name);
+      const r = uninstallPlugin(name);
+      taskManager.rebuildEngines(); // v3: 卸载的插件引擎立即失效 — rebuild engine registry.
+      return r;
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
@@ -1526,7 +1531,9 @@ function registerIpc(): void {
   // v2: 启用/禁用插件(不删除,只是从工具/prompt/命令注入中排除)。
   ipcMain.handle('plugin-toggle', (_e, name: string, enabled: boolean) => {
     try {
-      return togglePlugin(name, enabled);
+      const r = togglePlugin(name, enabled);
+      taskManager.rebuildEngines(); // v3: 禁/启可能增删插件引擎 — rebuild engine registry.
+      return r;
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

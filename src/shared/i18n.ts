@@ -902,6 +902,8 @@ const ZH_CN: Dict = {
   'eng.codexFailed': 'codex 轮失败',
   'eng.codexMsg': 'codex: {msg}',
   'eng.codexNoResult': 'codex 未返回结果(status={code}){tail}',
+  'eng.pluginNotFound': '找不到 {bin} CLI。装好它或加进 PATH。',
+  'eng.pluginNoResult': '{label} 未返回结果(status={code}){tail}',
   'eng.apiRetry': '模型 {error}(HTTP {status}),重试 {attempt}/{max}…',
 
   'al.ctxTooLong': '上下文过长,已压缩历史并重试。',
@@ -1966,6 +1968,8 @@ const EN: Dict = {
   'eng.codexFailed': 'codex turn failed',
   'eng.codexMsg': 'codex: {msg}',
   'eng.codexNoResult': 'codex returned no result (status={code}){tail}',
+  'eng.pluginNotFound': '{bin} CLI not found. Install it or add to PATH.',
+  'eng.pluginNoResult': '{label} returned no result (status={code}){tail}',
   'eng.apiRetry': 'Model {error} (HTTP {status}), retry {attempt}/{max}…',
 
   'al.ctxTooLong': 'Context too long — compacted history and retrying.',
@@ -3024,6 +3028,8 @@ const ZH_TW: Dict = {
   'eng.codexFailed': 'codex 輪失敗',
   'eng.codexMsg': 'codex: {msg}',
   'eng.codexNoResult': 'codex 未回傳結果(status={code}){tail}',
+  'eng.pluginNotFound': '找不到 {bin} CLI。裝好它或加進 PATH。',
+  'eng.pluginNoResult': '{label} 未回傳結果(status={code}){tail}',
   'eng.apiRetry': '模型 {error}(HTTP {status}),重試 {attempt}/{max}…',
 
   'al.ctxTooLong': '上下文過長,已壓縮歷史並重試。',
@@ -4087,6 +4093,8 @@ const JA: Dict = {
   'eng.codexFailed': 'codex ターン失敗',
   'eng.codexMsg': 'codex: {msg}',
   'eng.codexNoResult': 'codex が結果を返しませんでした(status={code}){tail}',
+  'eng.pluginNotFound': '{bin} CLI が見つかりません。インストールするか PATH に追加してください。',
+  'eng.pluginNoResult': '{label} が結果を返しませんでした(status={code}){tail}',
   'eng.apiRetry': 'モデル {error}(HTTP {status})、リトライ {attempt}/{max}…',
 
   'al.ctxTooLong': 'コンテキストが長すぎます — 履歴を圧縮して再試行します。',
@@ -4290,7 +4298,21 @@ export function t(lang: Lang, key: string, params?: Record<string, string | numb
 
 // EngineKind 的本地化标签(UI 字符串,产品名 Kaios/Codex/Claude Code 保留英文)。
 // 取代 types.ts 的 ENGINE_LABELS 常量,供所有下拉/dashboard/模板等位置使用。
+// 插件引擎(plugin:<name>)无 i18n key → 查 renderer 注入的 label 表,兜底显示插件名。
 import type { EngineKind } from './types';
+import { isPluginEngine, pluginEngineName } from './types';
+
+// 插件引擎 label 表(plugin:<name> → 显示名)。renderer 启动时从 pluginList 灌入。
+// Plugin engine labels, populated by the renderer from pluginList at boot.
+let pluginLabels: Record<string, string> = {};
+export function setPluginEngineLabels(map: Record<string, string>): void {
+  pluginLabels = map;
+}
+
 export function engineLabel(lang: Lang, kind: EngineKind): string {
+  if (isPluginEngine(kind)) {
+    const name = pluginEngineName(kind);
+    return pluginLabels[name] ?? name;
+  }
   return t(lang, 'engine.' + kind);
 }
