@@ -1,8 +1,8 @@
-// Plugin SDK v2: 用户把插件目录丢进 <userData>/plugins/<name>/, 本 loader 扫一遍加载。
-// ponytail: 工具扩展(Tool[])优先 —— Engine 注册要实现完整 AgentEvent 流式契约, SDK v2 留白。
+// Plugin SDK v3: 用户把插件目录丢进 <userData>/plugins/<name>/, 本 loader 扫一遍加载。
+// v3 新增: engine 贡献点(外部 CLI agent 注册为 plugin:<name> 引擎, 复用 CliEngineAdapter, 零 JS)。
+// v2: slashCommands / systemPrompt / hooks 贡献点 + 分类/图标/权限/引擎范围元数据。
 // 信任模型: 同 VSCode 扩展, 用户自己装的本地代码 = 完全信任; 无沙箱(沙箱会卡死 sync API)。
 // 热重载: 不做了, 改完插件重启 app。后续要的话加个 watch + invalidate cache。
-// v2 新增: slashCommands / systemPrompt / hooks 贡献点 + 分类/图标/权限/引擎范围元数据。
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
@@ -489,11 +489,8 @@ export function pluginEngines(): Array<{ pluginName: string; spec: PluginEngineS
 }
 
 // 给 i18n engineLabel 用: 插件引擎的显示名(label 或插件名)。
-export function pluginEngineLabel(pluginName: string): string | undefined {
-  const p = loadPlugins().find((x) => x.manifest.name === pluginName && x.manifest.engine);
-  if (!p) return undefined;
-  return p.manifest.engine!.label ?? p.manifest.name;
-}
+// renderer 侧已通过 pluginList 拉取 engine 摘要并调 setPluginEngineLabels 灌入,
+// 主进程不再需要单独查询 —— 此函数保留给未来 NEXUS 主进程渲染用(当前无调用方)。
 
 // ── 导出: 安装/卸载(v2 新增) ──────────────────────────────
 

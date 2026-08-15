@@ -624,10 +624,12 @@ export interface CliEngineConfig {
   name: EngineKind;
   /** CLI 可执行名(resolveBin 用)。 */
   bin: string;
-  /** CLI 不在 PATH 时的报错文案 key。 */
+  /** CLI 不在 PATH 时的报错文案 key(可带 {bin} 占位符)。 */
   notFoundKey: string;
-  /** 退出时未见终态事件的报错文案 key。 */
+  /** 退出时未见终态事件的报错文案 key(可带 {label}/{code}/{tail} 占位符)。 */
   noResultKey: string;
+  /** 显示名(notFound/noResult 文案里的 {label})。插件引擎用 spec.label。 */
+  label?: string;
   /** argv 组装(含 resume 与 memory 注入;prompt 由适配器拼好传入)。 */
   buildArgs: (p: {
     prompt: string;
@@ -668,7 +670,7 @@ class CliEngineAdapter implements Engine {
     const s = getSettings();
     const bin = resolveBin(this.cfg.bin);
     if (!bin.found) {
-      onEvent({ type: 'error', message: t(s.lang, this.cfg.notFoundKey) });
+      onEvent({ type: 'error', message: t(s.lang, this.cfg.notFoundKey, { bin: this.cfg.bin }) });
       return;
     }
     // KINET.md 规则 + KINET-CONTEXT.md 背景 + memory —— 注入方式因引擎而异(buildArgs 决定)。
@@ -704,7 +706,8 @@ class CliEngineAdapter implements Engine {
         return;
       }
       // 退出兜底:config 可覆写(拼 exit code / stderr tail / 版本提示)。
-      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { code: exitCode, tail: '' });
+      const label = this.cfg.label ?? String(this.cfg.name);
+      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { label, code: exitCode, tail: '' });
       onEvent({ type: 'error', message: fallback });
     }
   }
@@ -965,6 +968,7 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
   return {
     name: `plugin:${pluginName}` as EngineKind,
     bin: spec.bin,
+    label,
     notFoundKey: 'eng.pluginNotFound',
     noResultKey: 'eng.pluginNoResult',
     buildArgs: ({ prompt, inject, cwd, sessionId }) => {
