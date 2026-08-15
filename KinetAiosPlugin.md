@@ -49,6 +49,20 @@ plugins/<plugin-name>/
 
   // ── 引擎范围 / Engine scope ──
   "engines": ["direct"],         // 默认 ["direct"]；可多选 ["direct","claudeCode","codex"]
+                                 // 注意：声明了 engine 贡献点时此字段被忽略（引擎本身即入口）
+
+  // ── v3 引擎贡献点 / Engine contribution（把外部 CLI agent 注册为引擎）──
+  "engine": {
+    "bin": "my-agent",           // CLI 可执行名（resolveBin 查 PATH + 常见安装目录）
+    "protocol": "plain",         // ndjson / jsonl-claude / jsonl-codex / plain，默认 plain
+    "args": ["--no-color"],      // argv 前缀（prompt 之前）
+    "cwdFlags": ["--add-dir", "{cwd}"],  // {cwd} 占位符替换
+    "inject": "prompt",          // prompt（--- 分隔前置，同 codex）或 system（--append-system-prompt 风格）
+    "systemFlag": "--system",    // 仅 inject=system 时的 flag，默认 --append-system-prompt
+    "appendPrompt": true,        // prompt 是否作最后 argv 追加，默认 true
+    "resume": { "idField": "session_id", "resumeFlag": "--resume" },
+    "label": "My Agent"          // UI 下拉/NEXUS 显示名，缺省用插件名
+  },
 
   // ── 权限声明（告知性质，不做运行时拦截） ──
   "permissions": ["shell", "fs", "network"],
@@ -164,6 +178,30 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - 面板内通过 `window.kinet`（preload）与主进程通信
 - `panelTitle` + `panelIcon` 控制侧栏菜单显示
 - **修改 panel.html 需要重启 app**（srcdoc 不热更新）
+
+### 4e. Engine（v3 插件引擎）
+
+把任意外部 CLI agent 注册为 `plugin:<name>` 引擎，**零 JS 代码** —— 纯 manifest 声明（见第 2 节 `engine` 字段）。
+
+**工作方式**：
+- 复用 Claude Code / Codex 同一套 `CliEngineAdapter` 骨架：spawn → 逐行解析 → 终态契约 → 退出兜底
+- 会话续接：`resume.idField` 声明从哪个事件字段读 session id（ndjson/jsonl 协议），下轮自动拼 `${resumeFlag} <id>`
+- persona / 记忆 / 项目上下文注入：`inject: "prompt"`（默认，与 codex 同构，`---` 分隔前置）或 `"system"`（`--append-system-prompt` 风格 flag）
+- 协议预设四选一：
+
+| protocol | 行格式 | 适用 |
+|----------|--------|------|
+| `ndjson` | `{"type":"token","text":..}` / `{"type":"tool",...}` / `{"type":"done"}` / `{"type":"error","message":..}` | 自己写的 CLI |
+| `jsonl-claude` | `claude -p --output-format stream-json` 兼容 | claude 协议兼容 agent |
+| `jsonl-codex` | `codex exec --json` 兼容 | codex 协议兼容 agent |
+| `plain` | 整段 stdout 当答案文本流 | git 之类普通 CLI |
+
+**示例**：`plugins/examples/git-agent/plugin.json`（把 `git --no-pager -C <cwd>` 包装成引擎，plain 协议）。
+
+**注意**：
+- 协议错误的 JSON 行会被静默忽略（保留原始行到日志）；plain 协议下非零退出码走错误兜底
+- 安装/卸载/启停插件后引擎表**热重建**（无需重启 app），进行中的会话不受影响
+- 复杂 argv（如 resume 子命令形式 `myagent session resume <id>`）暂不支持 —— 需要时在 `src/main/engines.ts` 的 `pluginCliConfig` 升级
 
 ## 5. 图标（可选但建议）
 
