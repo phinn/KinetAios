@@ -1956,18 +1956,21 @@ function buildStepsEl(steps: { name: string; args: string; result: string }[], e
   const wrap = document.createElement('details');
   wrap.className = 'steps-wrap';
   if (expanded) wrap.open = true;
-  const names = steps.map(s => s.name);
-  // 去重工具名,summary 只显示概要
-  const unique = [...new Set(names)];
-  const label = steps.length === 1
-    ? esc(unique[0])
-    : `${steps.length} 步 (${esc(unique.slice(0, 3).join(' · '))}${unique.length > 3 ? '…' : ''})`;
-  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${label}</span></summary>`;
+  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${stepsSummaryLabel(steps)}</span></summary>`;
   const inner = document.createElement('div');
   inner.className = 'steps';
   for (const s of steps) inner.appendChild(renderStep(s));
   wrap.appendChild(inner);
   return wrap;
+}
+
+// steps summary 概要文案:buildStepsEl 全量构建与流式增量补挂共用。
+// Summary label for steps; shared by full build and streaming incremental append.
+function stepsSummaryLabel(steps: { name: string }[]): string {
+  const unique = [...new Set(steps.map(s => s.name))];
+  return steps.length === 1
+    ? esc(unique[0])
+    : `${steps.length} 步 (${esc(unique.slice(0, 3).join(' · '))}${unique.length > 3 ? '…' : ''})`;
 }
 
 function renderStep(s: { name: string; args: string; result: string }): HTMLElement {
@@ -1982,7 +1985,7 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
     aLabel.textContent = 'Args';
     const aPre = document.createElement('pre');
     aPre.className = 'step-args';
-    aPre.textContent = s.args;
+    aPre.textContent = s.args.slice(0, 4000); // args 同步截断:write_file 等工具会把整个文件内容塞进 args(库内实测单条 50KB+)
     det.appendChild(aLabel);
     det.appendChild(aPre);
   }
@@ -2049,12 +2052,31 @@ function updateLastTurnIncremental(): void {
   const turnEl = ansEl.closest('.turn') as HTMLElement | null;
   if (!turnEl) { renderMain(); return; }
   const t = conv.turns[lastTurnIdx];
-  // 重建 steps 子树(根据 t.steps 重新生成),其他 turn 不动。
+  // steps 增量更新:只 append 新增的 step(按序号对齐),不再全量重建子树。
+  // 全量 buildStepsEl 在多步任务下是 O(n²):每来一个 tool 事件就重建
+  // 几十个 <details>(流式态全部展开)+ scrollDownForce 强制 reflow,长任务直接卡死。
+  // Incremental steps update: append only new steps instead of rebuilding the subtree.
   const oldSteps = turnEl.querySelector('.steps-wrap');
   if (t.steps.length) {
-    const fresh = buildStepsEl(t.steps, true); // 流式增量:始终展开
-    if (oldSteps) oldSteps.replaceWith(fresh);
-    else turnEl.querySelector('.ai-body')?.prepend(fresh);
+    if (oldSteps) {
+      const inner = oldSteps.querySelector('.steps') as HTMLElement | null;
+      const have = inner ? inner.children.length : 0;
+      if (inner && t.steps.length > have) {
+        // 只补挂新增 step(库里的 steps 只追加不修改,序号即稳定对齐)
+        const frag = document.createDocumentFragment();
+        for (let si = have; si < t.steps.length; si++) frag.appendChild(renderStep(t.steps[si]));
+        inner.appendChild(frag);
+        // 概要计数同步(steps.length 变化)
+        const cnt = oldSteps.querySelector('.steps-count');
+        if (cnt) cnt.textContent = `🔧 ${stepsSummaryLabel(t.steps)}`;
+      } else if (!inner) {
+        const fresh = buildStepsEl(t.steps, true);
+        oldSteps.replaceWith(fresh);
+      }
+    } else {
+      const fresh = buildStepsEl(t.steps, true); // 流式增量:始终展开
+      turnEl.querySelector('.ai-body')?.prepend(fresh);
+    }
   } else if (oldSteps) {
     oldSteps.remove();
   }
