@@ -1,7 +1,7 @@
 // Dashboard window: token consumption + per-session agent status + Arena 深度统计。
 // Pure frontend aggregation over the live convs map + arenaStats backend data。
 // 雷达图 + 趋势线图 + 引擎对比表(SVG, 零依赖)。
-import { applyEvent, ENGINE_LABELS } from '../shared/types';
+import { applyEvent } from '../shared/types';
 import type { AgentEvent, Conversation, EngineKind, KinetAPI } from '../shared/types';
 import { t, engineLabel, type Lang } from '../shared/i18n';
 

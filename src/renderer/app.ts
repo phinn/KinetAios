@@ -1,7 +1,7 @@
 // Dashboard renderer. Vanilla TS — no framework. Holds a local copy of conversations,
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
-import { t, engineLabel, LANGS, type Lang } from '../shared/i18n';
+import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
@@ -1764,11 +1764,15 @@ function renderHead(conv: Conversation | undefined) {
 // Rebuild the engine dropdown from the toggle. Direct is always present; Claude/Codex only when
 // enabled. If the active conversation is already on a CLI engine while disabled, keep showing it
 // (read-only-ish) so the value isn't blanked — switching away is still allowed, back is not.
+// 插件引擎下拉注入:pluginList 返回的 engine 贡献点 → plugin:<name> 选项。
+// Plugin engines → plugin:<name> options. Empty until the async list resolves (boot).
+let pluginEngineIds: EngineKind[] = [];
+
 function syncEngineSelect(conv: Conversation | undefined) {
   const sel = document.getElementById('engine-select') as HTMLSelectElement;
   const current = conv?.engine ?? 'direct';
-  // Direct 家族永远可用;CLI 引擎需要 enableCliEngines。
-  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'directV3', 'claudeCode', 'codex'] : ['direct', 'directV2', 'directV3'];
+  // Direct 家族永远可用;CLI 引擎需要 enableCliEngines(插件引擎同属 CLI 类,同开关)。
+  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'directV3', 'claudeCode', 'codex', ...pluginEngineIds] : ['direct', 'directV2', 'directV3'];
   if (!want.includes(current)) want.push(current);
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
@@ -3269,7 +3273,7 @@ async function showSettings() {
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'] as const;
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
-  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string }> = [];
+  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string } }> = [];
 
   const renderPluginStats = (): void => {
     const el = document.getElementById('s-plugin-stats')!;
@@ -3453,6 +3457,15 @@ async function showSettings() {
   const renderPlugins = async (): Promise<void> => {
     const msg = document.getElementById('s-plugins-msg')!;
     const r = await api.pluginList();
+    // v3: 引擎贡献点 → 全局 label 表(engineLabel 用)+ 下拉注入列表 + 刷新下拉。
+    const enginePlugins = (r.ok && r.items ? r.items : []).filter((p) => p.engine && p.enabled);
+    setPluginEngineLabels(Object.fromEntries(enginePlugins.map((p) => [p.name, p.engine!.label ?? p.name])));
+    const next = enginePlugins.map((p) => `plugin:${p.name}` as EngineKind).sort();
+    const changed = next.length !== pluginEngineIds.length || next.some((e, i) => e !== pluginEngineIds[i]);
+    if (changed) {
+      pluginEngineIds = next;
+      syncEngineSelect(convs.get(selectedId ?? ''));
+    }
     if (!r.ok || !r.items) {
       pluginCache = [];
       document.getElementById('s-plugins')!.innerHTML = `<div class="s-plugin-empty">${esc(r.error ?? 'error')}</div>`;
@@ -3979,6 +3992,18 @@ function closeMoreMenu() {
   // 插件 Panel 入口(v2.1): 动态添加到 ⋯ 更多菜单底部
   // Plugin Panel entries (v2.1): dynamically appended to the ⋯ more menu
   void loadPluginPanels().then(() => { rebuildPluginPanelMenu(); });
+
+  // 插件引擎下拉(v3): boot 即拉 pluginList,不等设置页打开 —— label 表 +
+  // plugin:<name> 选项必须先于用户点下拉就位。与 renderPlugins 里的逻辑同源
+  // (renderPlugins 开设置页时再刷一次,拿最新状态)。
+  // Plugin engines (v3): fetch at boot so the dropdown is ready before first click.
+  void api.pluginList().then((r) => {
+    if (!r.ok || !r.items) return;
+    const eps = r.items.filter((p) => p.engine && p.enabled);
+    setPluginEngineLabels(Object.fromEntries(eps.map((p) => [p.name, p.engine!.label ?? p.name])));
+    pluginEngineIds = eps.map((p) => `plugin:${p.name}` as EngineKind).sort();
+    syncEngineSelect(convs.get(selectedId ?? ''));
+  });
 
   // ⋯ 更多菜单(Launchpad 风格浮层):点击切换 open,点遮罩收起
   // 关键:菜单 DOM 必须迁移到 <body> 下,否则 #sidebar 的 backdrop-filter

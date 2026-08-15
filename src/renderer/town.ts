@@ -25,7 +25,7 @@ export type RemoteNodeInfo = {
 };
 
 // 引擎颜色 / Engine colors (muted, sophisticated tones)
-const ENGINE_COLORS: Record<EngineKind, string> = {
+const ENGINE_COLORS: Partial<Record<EngineKind, string>> = {
   direct: '#e8b339',
   directV2: '#6c5ce7',
   directV3: '#00b894',

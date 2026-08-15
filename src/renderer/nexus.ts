@@ -83,7 +83,7 @@ function simpleMarkdown(text: string): string {
 
 // 引擎颜色 / Engine colors (matching existing palette)
 // Phase 8: 液态玻璃白雾调 — 全部冷系,告别金色。
-const ENGINE_COLORS: Record<EngineKind, string> = {
+const ENGINE_COLORS: Partial<Record<EngineKind, string>> = {
   direct: '#c4a7ff',    // Kaios — 主紫光(Aurora 强调色)
   directV2: '#8ab4ff',  // Kaios v2 — 冷蓝
   directV3: '#7eeab5',  // Kaios v3 — 薄荷绿
@@ -91,7 +91,7 @@ const ENGINE_COLORS: Record<EngineKind, string> = {
   codex: '#8fd4d0',     // Codex — 青雾
 };
 
-const ENGINE_LABELS: Record<EngineKind, string> = {
+const ENGINE_LABELS: Partial<Record<EngineKind, string>> = {
   direct: 'Kaios',
   directV2: 'Kaios v2',
   directV3: 'Kaios v3',
