@@ -60,7 +60,9 @@ plugins/<plugin-name>/
     "inject": "prompt",          // prompt（--- 分隔前置，同 codex）或 system（--append-system-prompt 风格）
     "systemFlag": "--system",    // 仅 inject=system 时的 flag，默认 --append-system-prompt
     "appendPrompt": true,        // prompt 是否作最后 argv 追加，默认 true
-    "resume": { "idField": "session_id", "resumeFlag": "--resume" },
+    "resume": { "idField": "session_id", "resumeFlag": "--resume", "mode": "flag" },
+                                 // mode: flag(默认)= `--resume <id>`;subcommand = resumeFlag
+                                 // 按空格切开前置(如 "session resume" → `session resume <id>`,codex 式)
     "label": "My Agent"          // UI 下拉/NEXUS 显示名，缺省用插件名
   },
 
@@ -199,9 +201,11 @@ description: 命令的一句话说明（用户输入 / 时看到）
 **示例**：`plugins/examples/git-agent/plugin.json`（把 `git --no-pager -C <cwd>` 包装成引擎，plain 协议）。
 
 **注意**：
-- 协议错误的 JSON 行会被静默忽略（保留原始行到日志）；plain 协议下非零退出码走错误兜底
-- 安装/卸载/启停插件后引擎表**热重建**（无需重启 app），进行中的会话不受影响
-- 复杂 argv（如 resume 子命令形式 `myagent session resume <id>`）暂不支持 —— 需要时在 `src/main/engines.ts` 的 `pluginCliConfig` 升级
+- 非法 spec(protocol 拼错 / bin 缺失 / resume 残缺)→ 引擎不注册,设置页插件卡片显示红徽章,悬停看具体错误
+- plain 协议:stderr 从答案流剥离;非零退出时最后 8 行 stderr 拼进错误信息(如 git 的 usage 报错)
+- 协议错误的 JSON 行会被静默忽略;plain 协议下非零退出码走错误兜底
+- 安装/卸载/启停插件后引擎表**热重建**(无需重启 app),进行中的会话不受影响
+- 复杂 argv(多个位置参数、prompt 非末位)仍不支持 —— 需要时在 `src/main/engines.ts` 的 `pluginCliConfig` 升级
 
 ## 5. 图标（可选但建议）
 
