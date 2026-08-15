@@ -61,8 +61,10 @@ export interface PluginEngineSpec {
   /** prompt 是否作为最后一个 argv 追加。默认 true。false 时 args 必须自含全部参数。 */
   appendPrompt?: boolean;
   /** 会话续接: 从哪个事件字段读 session id(如 session_id / thread_id)。
-   *  设置后每次 run 注入 `${resumeFlag} <id>`(在 args 之后、prompt 之前)。 */
-  resume?: { idField: string; resumeFlag: string };
+   *  设置后每次 run 注入 resume 参数 —— flag 模式(默认)拼 `${resumeFlag} <id>`,
+   *  subcommand 模式拼 `${resumeFlag} <id>`(如 `myagent session resume <id>`,
+   *  resumeFlag 填 "session resume")。注入位置都在 args 之后、prompt 之前。 */
+  resume?: { idField: string; resumeFlag: string; mode?: 'flag' | 'subcommand' };
   /** 注入方式: system(拼 --append-system-prompt 风格 flag)或 prompt(前置拼 prompt,--- 分隔)。
    *  默认 prompt(与 codex 同)。systemFlag 仅 inject=system 时用,默认 '--append-system-prompt'。 */
   inject?: 'prompt' | 'system';
@@ -434,6 +436,8 @@ export function pluginListSnap(): Array<{
   dir: string;
   // v3: 引擎贡献摘要(有 engine 贡献点时非空)。renderer 用于下拉注入 + label 表。
   engine?: { bin: string; label?: string; protocol?: string };
+  // v3: engine spec 校验错误(非空 = 引擎未注册,设置页卡片亮红)。如 protocol 拼错。
+  engineError?: string;
 }> {
   return loadPlugins().map((p) => {
     const cat = p.manifest.category ?? 'misc';
@@ -469,20 +473,38 @@ export function pluginListSnap(): Array<{
       error: p.error,
       dir: p.dir,
       engine: p.manifest.engine ? { bin: p.manifest.engine.bin, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
+      engineError: p.manifest.engine ? validateEngineSpec(p.manifest.engine) : undefined,
     };
   });
 }
 
 // ── 导出: 插件引擎(v3 新增) ──────────────────────────────
 
+// protocol 合法值表(与 engines.ts pluginProtocolParser 的 case 一一对应)。
+export const PLUGIN_ENGINE_PROTOCOLS = ['ndjson', 'jsonl-claude', 'jsonl-codex', 'plain'] as const;
+
+// 校验 engine spec,返回错误信息(合法返回 undefined)。loadPlugins 后、注册/列出前调用。
+export function validateEngineSpec(spec: PluginEngineSpec): string | undefined {
+  if (typeof spec.bin !== 'string' || !spec.bin.trim()) return 'engine.bin missing';
+  const p = spec.protocol ?? 'plain';
+  if (!(PLUGIN_ENGINE_PROTOCOLS as readonly string[]).includes(p)) {
+    return `engine.protocol "${p}" not in [${PLUGIN_ENGINE_PROTOCOLS.join(', ')}]`;
+  }
+  if (spec.resume && (typeof spec.resume.idField !== 'string' || !spec.resume.resumeFlag)) {
+    return 'engine.resume needs idField + resumeFlag';
+  }
+  return undefined;
+}
+
 // 给 buildEngines 用: 所有【已启用】插件贡献的引擎清单(engine spec 校验过的)。
-// bin 缺失/protocol 非法 → 跳过并记 error(引擎不注册,但不阻断其它插件)。
+// spec 非法 → 跳过(引擎不注册,但 error 经 pluginList 透出到设置页卡片,不阻断其它插件)。
 export function pluginEngines(): Array<{ pluginName: string; spec: PluginEngineSpec }> {
   const out: Array<{ pluginName: string; spec: PluginEngineSpec }> = [];
   for (const p of loadPlugins()) {
     if (!isPluginEnabled(p.manifest.name)) continue;
     const spec = p.manifest.engine;
     if (!spec || typeof spec.bin !== 'string' || !spec.bin.trim()) continue;
+    if (validateEngineSpec(spec)) continue;
     out.push({ pluginName: p.manifest.name, spec });
   }
   return out;
