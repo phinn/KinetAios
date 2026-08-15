@@ -3273,13 +3273,13 @@ async function showSettings() {
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'] as const;
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
-  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string } }> = [];
+  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string }; engineError?: string }> = [];
 
   const renderPluginStats = (): void => {
     const el = document.getElementById('s-plugin-stats')!;
     const total = pluginCache.length;
     const enabled = pluginCache.filter((p) => p.enabled).length;
-    const errored = pluginCache.filter((p) => p.error).length;
+    const errored = pluginCache.filter((p) => p.error || p.engineError).length;
     const tools = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.toolCount, 0);
     const cmds = pluginCache.filter((p) => p.enabled).reduce((s, p) => s + p.slashCommandCount, 0);
     el.innerHTML = `
@@ -3332,9 +3332,9 @@ async function showSettings() {
 
   // 渲染单个插件卡片 — Render a single plugin card.
   const renderPluginCard = (p: typeof pluginCache[number]): string => {
-    const hasError = !!p.error;
+    const hasError = !!p.error || !!p.engineError;
     const errBadge = hasError
-      ? `<span class="s-plugin-err" title="${esc(p.error ?? '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(tr('settings.plugins.loadFailed'))}</span>`
+      ? `<span class="s-plugin-err" title="${esc(p.error ?? p.engineError ?? '')}"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:2px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg> ${esc(p.error ? tr('settings.plugins.loadFailed') : tr('settings.plugins.engineInvalid'))}</span>`
       : '';
     const permTags = (p.permissions ?? [])
       .map((perm) => `<span class="s-plugin-perm">${esc(perm)}</span>`)
@@ -3458,7 +3458,7 @@ async function showSettings() {
     const msg = document.getElementById('s-plugins-msg')!;
     const r = await api.pluginList();
     // v3: 引擎贡献点 → 全局 label 表(engineLabel 用)+ 下拉注入列表 + 刷新下拉。
-    const enginePlugins = (r.ok && r.items ? r.items : []).filter((p) => p.engine && p.enabled);
+    const enginePlugins = (r.ok && r.items ? r.items : []).filter((p) => p.engine && p.enabled && !p.engineError);
     setPluginEngineLabels(Object.fromEntries(enginePlugins.map((p) => [p.name, p.engine!.label ?? p.name])));
     const next = enginePlugins.map((p) => `plugin:${p.name}` as EngineKind).sort();
     const changed = next.length !== pluginEngineIds.length || next.some((e, i) => e !== pluginEngineIds[i]);
@@ -3999,7 +3999,7 @@ function closeMoreMenu() {
   // Plugin engines (v3): fetch at boot so the dropdown is ready before first click.
   void api.pluginList().then((r) => {
     if (!r.ok || !r.items) return;
-    const eps = r.items.filter((p) => p.engine && p.enabled);
+    const eps = r.items.filter((p) => p.engine && p.enabled && !p.engineError);
     setPluginEngineLabels(Object.fromEntries(eps.map((p) => [p.name, p.engine!.label ?? p.name])));
     pluginEngineIds = eps.map((p) => `plugin:${p.name}` as EngineKind).sort();
     syncEngineSelect(convs.get(selectedId ?? ''));

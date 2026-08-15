@@ -545,10 +545,12 @@ function resolveBin(name: string): ResolvedBin {
 }
 
 // Spawn a resolved bin, stream stdout+stderr line-by-line, kill on abort. Resolves to exit code.
+// stderr 默认与 stdout 合流(同一 onLine —— claude/codex 解析器靠它收集 stderr tail);
+// 传 onStderr 时 stderr 单独分流(plain 协议用:stdout 当答案,stderr 只做错误上下文)。
 function runBin(
   bin: ResolvedBin,
   args: string[],
-  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void },
+  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void },
 ): Promise<number> {
   return new Promise((resolve) => {
     const spawnOpts: import('node:child_process').SpawnOptions = {
@@ -568,7 +570,22 @@ function runBin(
       }
     };
     child.stdout?.on('data', onChunk);
-    child.stderr?.on('data', onChunk);
+    if (opts.onStderr) {
+      // 分流模式:stderr 单独缓冲,不污染 stdout 的答案流。
+      let ebuf = '';
+      const onErrChunk = (d: Buffer | string): void => {
+        ebuf += d.toString();
+        let nl: number;
+        while ((nl = ebuf.indexOf('\n')) >= 0) {
+          opts.onStderr!(ebuf.slice(0, nl).replace(/\r$/, ''));
+          ebuf = ebuf.slice(nl + 1);
+        }
+      };
+      child.stderr?.on('data', onErrChunk);
+      child.on('close', () => { if (ebuf.trim()) opts.onStderr!(ebuf); });
+    } else {
+      child.stderr?.on('data', onChunk);
+    }
     const onAbort = (): void => {
       try {
         if (process.platform === 'win32' && child.pid != null) {
@@ -651,6 +668,9 @@ export interface CliEngineConfig {
   /** 退出码 0 且无终态事件 → 补 done 而非报错(plain 协议 CLI 用:
    *  整段 stdout 当答案,正常退出即完成)。 */
   exitZeroAsDone?: boolean;
+  /** stderr 分流:plain 协议把 stderr 从答案流剥离,非零退出时拼进错误兜底。
+   *  claude/codex 不分流(stderr 混流进 onLine,由解析器自己收集 tail)。 */
+  splitStderr?: boolean;
 }
 
 class CliEngineAdapter implements Engine {
@@ -695,9 +715,17 @@ class CliEngineAdapter implements Engine {
     };
     this.cfg.beginRun?.(conv.id);
     const onLine = (line: string): void => this.cfg.parseLine(line, { conv, emit });
+    // stderr 分流模式(plain 协议):tail 缓冲供非零退出兜底引用。
+    const stderrTail: string[] = [];
+    const onStderr = this.cfg.splitStderr
+      ? (line: string): void => {
+          stderrTail.push(line.trim());
+          if (stderrTail.length > 8) stderrTail.shift();
+        }
+      : undefined;
 
     const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s });
-    const exitCode = await runBin(bin, args, { cwd, signal, onLine });
+    const exitCode = await runBin(bin, args, { cwd, signal, onLine, onStderr });
     if (signal.aborted) return; // user cancelled — not an error
     if (!sawTerminal) {
       // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
@@ -707,7 +735,8 @@ class CliEngineAdapter implements Engine {
       }
       // 退出兜底:config 可覆写(拼 exit code / stderr tail / 版本提示)。
       const label = this.cfg.label ?? String(this.cfg.name);
-      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { label, code: exitCode, tail: '' });
+      const tail = stderrTail.join(' | ');
+      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { label, code: exitCode, tail: tail ? ' — ' + tail : '' });
       onEvent({ type: 'error', message: fallback });
     }
   }
@@ -974,7 +1003,11 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
     buildArgs: ({ prompt, inject, cwd, sessionId }) => {
       const args = [...(spec.args ?? [])];
       for (const f of spec.cwdFlags ?? []) args.push(f.replace('{cwd}', cwd));
-      if (spec.resume && sessionId) args.push(spec.resume.resumeFlag, sessionId);
+      if (spec.resume && sessionId) {
+        // flag 模式: --resume <id>;subcommand 模式: session resume <id>(resumeFlag 可含空格)。
+        if (spec.resume.mode === 'subcommand') args.push(...spec.resume.resumeFlag.split(/\s+/), sessionId);
+        else args.push(spec.resume.resumeFlag, sessionId);
+      }
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
       if (spec.inject === 'system') {
         const flag = spec.systemFlag ?? '--append-system-prompt';
@@ -990,6 +1023,8 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
     parseLine: pluginProtocolParser(protocol, pluginName),
     // plain:CLI 正常退出即完成,答案由 token 流发完;非零退出仍走兜底报错。
     exitZeroAsDone: protocol === 'plain',
+    // plain:stderr 从答案流剥离,非零退出时拼进错误(如 git 的 usage 报错)。
+    splitStderr: protocol === 'plain',
   };
 }
 
