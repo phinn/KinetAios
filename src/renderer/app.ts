@@ -2447,9 +2447,24 @@ function scrollDown() {
     if (!userAtBottom) return;
     const el = document.getElementById('turns');
     if (!el) return;
-    // scrollTop = 超大值 → 浏览器自动 clamp 到 scrollHeight - clientHeight。
-    // 不需要先读 scrollHeight,避免强制同步布局。
+    // content-visibility: auto 下屏外 turn 用 160px 占位,真实高度 >> 占位,
+    // 直接 scrollTop=999999 会被 clamp 到中间位置 → 视觉跳到上方。
+    // 临 时剥离视口下方 turn 的 content-visibility,让 scrollHeight 用真实尺寸。
+    // Under content-visibility: auto, offscreen turns use 160px placeholder which
+    // is far below real height → scrollTop=999999 clamps to the middle.
+    // Strip content-visibility from below-viewport turns so scrollHeight is real.
+    const removed: HTMLElement[] = [];
+    for (const t of el.querySelectorAll('.turn')) {
+      const h = t as HTMLElement;
+      if (h.style.contentVisibility === 'visible') continue;
+      const r = h.getBoundingClientRect();
+      if (r.top >= el.clientHeight) {
+        h.style.contentVisibility = 'visible';
+        removed.push(h);
+      }
+    }
     el.scrollTop = 999999;
+    for (const h of removed) h.style.contentVisibility = '';
   });
 }
 
@@ -2458,7 +2473,29 @@ function scrollDownForce() {
   scrollDownScheduled = false;
   userAtBottom = true;
   const el = document.getElementById('turns');
-  if (el) el.scrollTop = 999999;
+  if (!el) return;
+  // content-visibility: auto 下屏外 turn 用 contain-intrinsic-size=160px 占位,
+  // 真实高度远超占位,直接 scrollTop=999999 会被 clamp 到中间位置。
+  // 临时给视口下方所有 turn 移除 content-visibility,让 scrollHeight 用真实尺寸,
+  // 然后再恢复(跳过布局的优化在下一帧继续生效)。
+  // Under content-visibility: auto, offscreen turns use contain-intrinsic-size=160px
+  // which is far below real height, so scrollTop=999999 gets clamped to the middle.
+  // Temporarily strip content-visibility from turns below the viewport so scrollHeight
+  // uses real sizes; restore immediately so the skipped-layout optimization stays in effect.
+  const removed: HTMLElement[] = [];
+  for (const t of el.querySelectorAll('.turn')) {
+    const h = t as HTMLElement;
+    if (h.style.contentVisibility === 'visible') continue;
+    // 强制 layout 这一个 turn,得到真实 boundingClientRect
+    const r = h.getBoundingClientRect();
+    if (r.top >= el.clientHeight) {
+      h.style.contentVisibility = 'visible';
+      removed.push(h);
+    }
+  }
+  el.scrollTop = 999999;
+  // 下一帧恢复 content-visibility:auto,Chromium 此时已用真实高度 layout
+  for (const h of removed) h.style.contentVisibility = '';
 }
 
 // ── 滚动位置记忆:切频道时保存/恢复 scrollTop ──
