@@ -40,6 +40,7 @@ const DEFAULTS: AppSettings = {
   // 远程 MCP server 列表默认为空(用户在设置里添加其它机器)。
   remoteMcpServers: [],
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
+  pluginSettings: {},  // v3.1: 插件引擎设置用户值 { pluginName: { key: value } }
   voiceAutoSend: false, // 语音实时输入默认关闭(开启后 Web Speech API 实时转写 + VAD 自动发送)
   notifyOnDone: false, // 任务完成通知默认关闭(开启后最小化/失焦时发系统通知+任务栏闪烁)
   hifiContextBudget: 200000, // 高保真模式上下文预算(默认 200K token,适配 GLM-5.2 的 1M 窗口)

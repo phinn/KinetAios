@@ -249,6 +249,9 @@ export type AppSettings = {
   remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
   // ── 插件管理:被禁用的插件 name 列表(空 = 全部启用) ──
   disabledPlugins: string[];
+  // ── 插件引擎设置(v3.1):用户在插件卡片填的占位符值 { pluginName: { key: value } } ──
+  // 引擎注册时对 bin/args/cwdFlags/systemFlag 做 {key} 插值;{cwd} 保留给运行时。
+  pluginSettings: Record<string, Record<string, string>>;
   // ── 语音实时输入(Web Speech API)── 开启后语音按钮切到实时模式:
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
@@ -711,12 +714,14 @@ export interface KinetAPI {
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
   // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt / panel。列出 + 重载 + 安装 + 卸载。
-  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string }; engineError?: string }>; error?: string }>;
+  pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string }; engineError?: string; engineSettings?: Array<{ key: string; label?: string; placeholder?: string; default?: string; secret?: boolean }>; engineSettingsValues?: Record<string, string> }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;
   pluginInstall(sourcePath: string): Promise<{ ok: boolean; name?: string; error?: string }>;
   pluginUninstall(name: string): Promise<{ ok: boolean; error?: string }>;
   // 启用/禁用插件(不删除,只是从工具/prompt/命令注入中排除)。
   pluginToggle(name: string, enabled: boolean): Promise<{ ok: boolean; error?: string }>;
+  // v3.1: 保存插件引擎设置(占位符值)。保存后主进程热重建引擎表,插值立即生效。
+  pluginEngineSettingsSave(name: string, values: Record<string, string>): Promise<{ ok: boolean; error?: string }>;
   // Plugin SDK v2.1: 渲染层扩展 —— 插件声明 panel.html, 返回 HTML 内容供 renderer 注入。
   // Panel 插件获得一个独立的全屏视图 (像 workbench / town 一样), 由插件自己管理 UI。
   pluginPanels(): Promise<{ ok: boolean; items?: Array<{ name: string; title: string; icon?: string; html: string }>; error?: string }>;

@@ -73,6 +73,24 @@ export interface PluginEngineSpec {
   label?: string;
   /** 额外的 cwd flag 模板;{cwd} 占位符替换(如 ["--add-dir","{cwd}"])。 */
   cwdFlags?: string[];
+  /** 运行时设置(v3.1):声明用户可填的占位符。bin/args/cwdFlags/systemFlag 里
+   *  的 `{key}` 在引擎注册时用用户值(settings.json pluginSettings)替换。
+   *  `{cwd}` 是保留字(运行时替换工作目录),不能作为 key。 */
+  settings?: PluginEngineSettingSpec[];
+}
+
+// v3.1: 引擎设置项 — 声明式 schema,插件卡片详情面板渲染输入框。
+export interface PluginEngineSettingSpec {
+  /** 占位符名:{key}。保留字 cwd 不可用。 */
+  key: string;
+  /** UI 显示名(缺省 = key)。 */
+  label?: string;
+  /** 输入框 placeholder。 */
+  placeholder?: string;
+  /** 未填时的默认值(也用于占位符插值回退)。 */
+  default?: string;
+  /** true = 密码框(API key 类)。值仍明文存 settings.json(与 apiKey 同策略,MVP 约束)。 */
+  secret?: boolean;
 }
 
 export interface LoadedPlugin {
@@ -438,6 +456,10 @@ export function pluginListSnap(): Array<{
   engine?: { bin: string; label?: string; protocol?: string };
   // v3: engine spec 校验错误(非空 = 引擎未注册,设置页卡片亮红)。如 protocol 拼错。
   engineError?: string;
+  // v3.1: 引擎设置 schema(详情面板渲染输入框用)。
+  engineSettings?: PluginEngineSettingSpec[];
+  // v3.1: 用户已填的设置值(secret 项不回传,回显空 = 未改)。
+  engineSettingsValues?: Record<string, string>;
 }> {
   return loadPlugins().map((p) => {
     const cat = p.manifest.category ?? 'misc';
@@ -474,6 +496,18 @@ export function pluginListSnap(): Array<{
       dir: p.dir,
       engine: p.manifest.engine ? { bin: p.manifest.engine.bin, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
       engineError: p.manifest.engine ? validateEngineSpec(p.manifest.engine) : undefined,
+      // v3.1: settings schema + 当前值(secret 值不回传 renderer,防泄漏)。
+      engineSettings: p.manifest.engine?.settings ?? undefined,
+      engineSettingsValues: (() => {
+        const vals = getSettings().pluginSettings?.[p.manifest.name];
+        if (!vals || !p.manifest.engine?.settings) return undefined;
+        const out: Record<string, string> = {};
+        for (const s of p.manifest.engine.settings) {
+          if (s.secret) continue; // 密码框回显空,占位提示"已配置"
+          out[s.key] = vals[s.key] ?? '';
+        }
+        return out;
+      })(),
     };
   });
 }
@@ -492,6 +526,14 @@ export function validateEngineSpec(spec: PluginEngineSpec): string | undefined {
   }
   if (spec.resume && (typeof spec.resume.idField !== 'string' || !spec.resume.resumeFlag)) {
     return 'engine.resume needs idField + resumeFlag';
+  }
+  // v3.1: settings schema 校验 — key 必须为合法占位符名(字母数字-_),cwd 保留。
+  if (spec.settings) {
+    if (!Array.isArray(spec.settings)) return 'engine.settings must be an array';
+    for (const s of spec.settings) {
+      if (!s || typeof s.key !== 'string' || !/^[\w-]+$/.test(s.key)) return `engine.settings key "${s?.key}" invalid`;
+      if (s.key === 'cwd') return 'engine.settings key "cwd" is reserved';
+    }
   }
   return undefined;
 }
@@ -586,6 +628,37 @@ export function togglePlugin(name: string, enabled: boolean): { ok: boolean; err
 }
 
 // ── 导出: Panel 数据(v2.1 新增 — 渲染层扩展) ────────────────
+
+// v3.1: 保存插件引擎设置(用户在插件卡片填的占位符值)。
+// 只收 schema 里声明过的 key(白名单);secret 值空串 = 不修改(保留原值)。
+// Save engine settings — whitelist keys to the manifest schema; empty secret = keep existing.
+export function savePluginEngineSettings(
+  pluginName: string,
+  values: Record<string, string>,
+): { ok: boolean; error?: string } {
+  try {
+    const plugin = loadPlugins().find((p) => p.manifest.name === pluginName);
+    if (!plugin) return { ok: false, error: `plugin "${pluginName}" not found` };
+    const schema = plugin.manifest.engine?.settings;
+    if (!schema?.length) return { ok: false, error: 'plugin has no engine.settings' };
+    const s = getSettings();
+    const prev = { ...(s.pluginSettings?.[pluginName] ?? {}) };
+    for (const item of schema) {
+      const v = values[item.key];
+      if (typeof v !== 'string') continue; // 未提交的 key 保持原值
+      if (v === '') {
+        // 非-secret 清空 = 显式恢复默认;secret 清空 = 保留已存值(空 = "不改")
+        if (!item.secret) delete prev[item.key];
+        continue;
+      }
+      prev[item.key] = v;
+    }
+    saveSettings({ ...s, pluginSettings: { ...(s.pluginSettings ?? {}), [pluginName]: prev } });
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
 
 // 返回所有已启用且有 panel 的插件, 含 HTML 内容供 renderer 注入。
 export function pluginPanelsSnap(): Array<{ name: string; title: string; icon?: string; html: string }> {

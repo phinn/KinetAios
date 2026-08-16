@@ -994,15 +994,25 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
 function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineConfig {
   const label = spec.label ?? pluginName;
   const protocol = spec.protocol ?? 'plain';
+  // v3.1: 设置占位符插值(注册期)。用户值来自 settings.pluginSettings,
+  // 未填回落 schema default,再不回落原样保留(可能是 {cwd} 运行时占位符)。
+  // Interpolate {key} placeholders from user settings at registration time.
+  const userVals = getSettings().pluginSettings?.[pluginName] ?? {};
+  const interp = (s: string): string =>
+    s.replace(/\{([\w-]+)\}/g, (m, k: string) => {
+      if (k in userVals && userVals[k] !== '') return userVals[k];
+      const d = spec.settings?.find((x) => x.key === k)?.default;
+      return d !== undefined && d !== '' ? d : m; // 保留原占位符({cwd} 等)
+    });
   return {
     name: `plugin:${pluginName}` as EngineKind,
-    bin: spec.bin,
+    bin: interp(spec.bin),
     label,
     notFoundKey: 'eng.pluginNotFound',
     noResultKey: 'eng.pluginNoResult',
     buildArgs: ({ prompt, inject, cwd, sessionId }) => {
-      const args = [...(spec.args ?? [])];
-      for (const f of spec.cwdFlags ?? []) args.push(f.replace('{cwd}', cwd));
+      const args = [...(spec.args ?? [])].map(interp);
+      for (const f of spec.cwdFlags ?? []) args.push(interp(f).replace('{cwd}', cwd));
       if (spec.resume && sessionId) {
         // flag 模式: --resume <id>;subcommand 模式: session resume <id>(resumeFlag 可含空格)。
         if (spec.resume.mode === 'subcommand') args.push(...spec.resume.resumeFlag.split(/\s+/), sessionId);
@@ -1010,7 +1020,7 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
       }
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
       if (spec.inject === 'system') {
-        const flag = spec.systemFlag ?? '--append-system-prompt';
+        const flag = interp(spec.systemFlag ?? '--append-system-prompt');
         if (head) args.push(flag, head);
         if (spec.appendPrompt !== false) args.push(prompt);
       } else {
