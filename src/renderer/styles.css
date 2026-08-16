@@ -1919,6 +1919,10 @@ a { color: var(--accent); }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 0.923rem; color: var(--text-faint); opacity: 0.7; }
 
 .turn { padding: 4px 0 12px; display: flex; flex-direction: column; gap: 10px; }
+/* 屏幕外 turn 跳过布局/渲染(巨型会话防卡死)。屏幕外的 answer 不再参与字体
+ * 整形/布局;进入视口前用 contain-intrinsic-size 占位防止滚动条跳动。
+ * Skips layout/paint for offscreen turns; massive-conversation guard. */
+.turn { content-visibility: auto; contain-intrinsic-size: auto 160px; }
 /* 日期分割线 — 跨天 turn 之间的居中标记 / Date divider between turns crossing days */
 .date-divider { display: flex; align-items: center; gap: 10px; margin: 6px 0 2px; user-select: none; }
 .date-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent); }
