@@ -2442,6 +2442,17 @@ a { color: var(--accent); }
 .s-plugin-detail-cmd-desc { color: var(--muted); font-size: 0.846rem; }
 .s-plugin-detail-perms { display: flex; flex-wrap: wrap; gap: 4px; }
 .s-plugin-detail-prompt { background: rgba(0,0,0,.2); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font-size: 0.846rem; color: var(--muted); max-height: 200px; overflow-y: auto; border: 1px solid var(--border); }
+/* v3.1 引擎设置输入区 — Engine settings inputs (manifest engine.settings schema). */
+.s-plugin-engine-setting { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
+.s-plugin-engine-setting-label { min-width: 110px; font-size: 0.846rem; color: var(--muted); flex-shrink: 0; }
+.s-plugin-engine-setting input[type='text'], .s-plugin-engine-setting input[type='password'] {
+  flex: 1; min-width: 0; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--border);
+  background: rgba(0,0,0,.2); color: var(--text); font-size: 0.846rem;
+}
+.s-plugin-engine-setting input:focus { outline: none; border-color: var(--accent); }
+.s-plugin-engine-setting-actions { margin-top: 8px; display: flex; justify-content: flex-end; }
+.s-plugin-engine-setting-save { padding: 4px 12px; border-radius: 6px; border: 1px solid var(--accent-dim); background: var(--accent-dim); color: var(--text); font-size: 0.846rem; cursor: pointer; }
+.s-plugin-engine-setting-save:hover { background: var(--accent); }
 .s-plugin-detail-path { font-size: 0.769rem; color: var(--muted); word-break: break-all; }
 .s-plugin-detail-error { background: rgba(255,0,0,.05); padding: 8px; border-radius: 4px; white-space: pre-wrap; word-break: break-word; font-size: 0.846rem; color: var(--danger); border: 1px solid rgba(255,0,0,.15); }
 

@@ -12,7 +12,7 @@ import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, 
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
-import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap } from './plugins';
+import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap, savePluginEngineSettings } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
@@ -1533,6 +1533,16 @@ function registerIpc(): void {
     try {
       const r = togglePlugin(name, enabled);
       taskManager.rebuildEngines(); // v3: 禁/启可能增删插件引擎 — rebuild engine registry.
+      return r;
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  // v3.1: 保存插件引擎设置(占位符值) — 保存后热重建引擎(bin/args 插值立即生效)。
+  ipcMain.handle('plugin-engine-settings-save', (_e, name: string, values: Record<string, string>) => {
+    try {
+      const r = savePluginEngineSettings(name, values ?? {});
+      if (r.ok) taskManager.rebuildEngines();
       return r;
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };

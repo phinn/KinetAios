@@ -60,6 +60,7 @@ let localMcpServerCache: AppSettings['localMcpServer'] = { enabled: false, port:
 let remoteMcpServersCache: AppSettings['remoteMcpServers'] = [];
 // 插件禁用列表缓存(由插件面板通过 pluginToggle IPC 直接修改,save settings 时原样回写)。
 let disabledPluginsCache: string[] = [];
+let lastSettingsSnapshot: AppSettings | null = null; // v3.1: 最近一次拉取的完整 settings(readSettingsForm 原样透传 pluginSettings 用)
 // 模型配置档缓存(设置页保存时原样回写,不在 readSettingsForm 里从 DOM 读)
 let profileCache: any[] = [];
 // 正在编辑的配置档 ID(null = 新建模式,有值 = 编辑模式)
@@ -2567,6 +2568,7 @@ async function showSettings() {
   localMcpServerCache = s.localMcpServer ?? { enabled: false, port: 18109, token: '' };
   remoteMcpServersCache = s.remoteMcpServers ?? [];
   disabledPluginsCache = s.disabledPlugins ?? [];
+  lastSettingsSnapshot = s;
   const root = document.getElementById('settings')!;
   root.innerHTML = `
     <div class="card">
@@ -3312,7 +3314,7 @@ async function showSettings() {
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'] as const;
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
-  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string }; engineError?: string }> = [];
+  let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin: string; label?: string; protocol?: string }; engineError?: string; engineSettings?: Array<{ key: string; label?: string; placeholder?: string; default?: string; secret?: boolean }>; engineSettingsValues?: Record<string, string> }> = [];
 
   const renderPluginStats = (): void => {
     const el = document.getElementById('s-plugin-stats')!;
@@ -3421,7 +3423,29 @@ async function showSettings() {
       ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailPrompt')}</div><pre class="s-plugin-detail-prompt">${esc(p.systemPrompt.slice(0, 500))}${p.systemPrompt.length > 500 ? '…' : ''}</pre></div>`
       : '';
 
+    // v3.1: 引擎设置输入框(manifest engine.settings 声明)。secret 回显空;
+    // 已配置的 secret 用 placeholder 提示。保存后热重建引擎,插值立即生效。
+    const engineSettingsUi = (p.engineSettings?.length && !p.engineError)
+      ? `<div class="s-plugin-detail-section" data-engine-settings="${esc(p.name)}">
+          <div class="s-plugin-detail-label">${tr('settings.plugin.engineSettings')}</div>
+          ${p.engineSettings.map((s) => {
+            const cur = p.engineSettingsValues?.[s.key] ?? '';
+            const isSet = !!cur || (!!s.secret && !!p.engineSettingsValues && false);
+            const hint = s.secret && cur ? tr('settings.plugin.engineSecretSet') : (s.placeholder ?? '');
+            return `<div class="s-plugin-engine-setting">
+              <label class="s-plugin-engine-setting-label">${esc(s.label ?? s.key)}</label>
+              <input type="${s.secret ? 'password' : 'text'}" data-setting-key="${esc(s.key)}"
+                value="${esc(s.secret ? '' : cur)}" placeholder="${esc(hint)}" autocomplete="off" />
+            </div>`;
+          }).join('')}
+          <div class="s-plugin-engine-setting-actions">
+            <button class="s-plugin-engine-setting-save" data-save-settings="${esc(p.name)}">${tr('settings.plugin.engineSave')}</button>
+          </div>
+        </div>`
+      : '';
+
     return `<div class="s-plugin-detail" data-detail-for="${esc(p.name)}" style="display:none">
+      ${engineSettingsUi}
       ${tools ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailTools', { n: p.tools!.length })}</div><div class="s-plugin-detail-list">${tools}</div></div>` : ''}
       ${cmds ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailCmds', { n: p.slashCommands!.length })}</div><div class="s-plugin-detail-list">${cmds}</div></div>` : ''}
       ${perms ? `<div class="s-plugin-detail-section"><div class="s-plugin-detail-label">${tr('settings.plugin.detailPerms')}</div><div class="s-plugin-detail-perms">${perms}</div></div>` : ''}
@@ -3470,6 +3494,28 @@ async function showSettings() {
           msg.style.color = 'var(--danger)';
           msg.textContent = r.error ?? 'error';
         }
+      };
+    });
+
+    // v3.1: 引擎设置保存 — 收集 section 内输入框,调 IPC,成功后局部刷新卡片。
+    el.querySelectorAll<HTMLButtonElement>('.s-plugin-engine-setting-save').forEach((btn) => {
+      btn.onclick = async () => {
+        const name = btn.dataset.saveSettings!;
+        const section = btn.closest<HTMLElement>('[data-engine-settings]')!;
+        const values: Record<string, string> = {};
+        section.querySelectorAll<HTMLInputElement>('[data-setting-key]').forEach((inp) => {
+          values[inp.dataset.settingKey!] = inp.value;
+        });
+        const r = await api.pluginEngineSettingsSave(name, values);
+        const msg = document.getElementById('s-plugins-msg')!;
+        if (r.ok) {
+          msg.style.color = 'var(--ok)';
+          msg.textContent = tr('settings.plugin.engineSaved');
+        } else {
+          msg.style.color = 'var(--danger)';
+          msg.textContent = r.error ?? 'error';
+        }
+        await renderPlugins(); // 刷新回显(secret 已配置提示)
       };
     });
 
@@ -3603,6 +3649,8 @@ function readSettingsForm(): AppSettings {
     },
     remoteMcpServers: remoteMcpServersCache,
     disabledPlugins: disabledPluginsCache,
+    // v3.1: 插件引擎设置不经设置表单(插件卡片自己管),原样透传最近快照。
+    pluginSettings: lastSettingsSnapshot?.pluginSettings ?? {},
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
     persona: (document.getElementById('s-persona-editor') as HTMLTextAreaElement)?.value ?? '', // 替身画像(从编辑器读)

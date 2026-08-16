@@ -1,16 +1,24 @@
 {
   "name": "git-agent",
-  "version": "1.0.0",
-  "description": "示例插件引擎(Plugin SDK v3):把 git CLI 包装为 plugin:git-agent 引擎,plain 协议整段输出当答案。验证引擎贡献点全链路。",
+  "version": "1.1.0",
+  "description": "示例插件引擎(Plugin SDK v3):把 git CLI 包装为 plugin:git-agent 引擎,plain 协议整段输出当答案。v3.1 演示 engine.settings 运行时设置(gitBin 占位符)。",
   "author": "KinetAios",
   "category": "dev",
   "engines": [],
   "engine": {
-    "bin": "git",
+    "bin": "{gitBin}",
     "protocol": "plain",
     "args": ["--no-pager"],
     "label": "Git Agent",
     "cwdFlags": ["-C", "{cwd}"],
-    "inject": "prompt"
+    "inject": "prompt",
+    "settings": [
+      {
+        "key": "gitBin",
+        "label": "git 可执行文件",
+        "placeholder": "默认 git(或填绝对路径,如 /opt/homebrew/bin/git)",
+        "default": "git"
+      }
+    ]
   }
 }

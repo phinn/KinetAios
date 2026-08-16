@@ -63,7 +63,11 @@ plugins/<plugin-name>/
     "resume": { "idField": "session_id", "resumeFlag": "--resume", "mode": "flag" },
                                  // mode: flag(默认)= `--resume <id>`;subcommand = resumeFlag
                                  // 按空格切开前置(如 "session resume" → `session resume <id>`,codex 式)
-    "label": "My Agent"          // UI 下拉/NEXUS 显示名，缺省用插件名
+    "label": "My Agent",         // UI 下拉/NEXUS 显示名，缺省用插件名
+    "settings": [                // v3.1: 运行时设置 —— 用户在插件卡片填值，注册期插值
+      { "key": "apiKey", "label": "API Key", "secret": true, "placeholder": "sk-..." },
+      { "key": "model", "label": "模型", "default": "pro" }
+    ]
   },
 
   // ── 权限声明（告知性质，不做运行时拦截） ──
@@ -206,6 +210,14 @@ description: 命令的一句话说明（用户输入 / 时看到）
 - 协议错误的 JSON 行会被静默忽略;plain 协议下非零退出码走错误兜底
 - 安装/卸载/启停插件后引擎表**热重建**(无需重启 app),进行中的会话不受影响
 - 复杂 argv(多个位置参数、prompt 非末位)仍不支持 —— 需要时在 `src/main/engines.ts` 的 `pluginCliConfig` 升级
+
+**运行时设置(v3.1)**：manifest `engine.settings` 声明 schema,插件卡片详情面板出现输入框:
+
+- `bin` / `args` / `cwdFlags` / `systemFlag` 里的 `{key}` 占位符在引擎注册时用用户值替换
+- 插值优先级:用户值 > schema `default` > 保留原占位符(`{cwd}` 是运行时保留字,不可作 key)
+- `secret: true` → 密码框;值不回传 renderer(回显"已配置"),空提交 = 不修改
+- 值存 `settings.json` 的 `pluginSettings.<插件名>`,保存后引擎热重建立即生效
+- 非 secret 项清空 = 恢复 default(或保留原占位符)
 
 ## 5. 图标（可选但建议）
 
