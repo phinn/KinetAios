@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios GitHub 流量报告 v3 — Traffic API 实测 — 2026-08-16</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root{--bg:#0b0e14;--panel:#141925;--panel2:#1a2130;--line:#232b3d;--txt:#dde3ee;--dim:#8b96ab;--acc:#5ea2ff;--good:#4ade80;--warn:#facc15;--bad:#f87171;--purple:#a78bfa}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--txt);font:14px/1.7 -apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:32px 24px 60px}
+  .wrap{max-width:1200px;margin:0 auto}
+  header{border:1px solid var(--line);border-radius:14px;padding:28px 32px;background:linear-gradient(135deg,#141925 0%,#101623 100%);margin-bottom:24px}
+  h1{font-size:22px;font-weight:700;letter-spacing:.3px}h1 span{color:var(--acc)}
+  .sub{color:var(--dim);font-size:13px;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:20px}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--dim);margin-top:2px}
+  .kpi .d{font-size:11px;margin-top:6px;padding:2px 8px;border-radius:20px;display:inline-block}
+  .up{background:rgba(74,222,128,.12);color:var(--good)}.warn{background:rgba(250,204,21,.12);color:var(--warn)}
+  .flat{background:rgba(139,150,171,.15);color:var(--dim)}.bad{background:rgba(248,113,113,.12);color:var(--bad)}
+  h2{font-size:16px;font-weight:700;margin:36px 0 14px;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:4px;height:18px;background:var(--acc);border-radius:2px;display:inline-block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .panel h3{font-size:13px;font-weight:600;color:var(--dim);margin-bottom:12px;letter-spacing:.5px;text-transform:uppercase}
+  .chart{width:100%;height:300px}.chart-sm{width:100%;height:250px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--dim);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+  td{padding:8px 10px;border-bottom:1px solid rgba(35,43,61,.5)}tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .t-zero{background:rgba(248,113,113,.12);color:var(--bad)}
+  .t-ok{background:rgba(74,222,128,.12);color:var(--good)}
+  .t-mute{background:rgba(167,139,250,.12);color:var(--purple)}
+  .t-wait{background:rgba(250,204,21,.12);color:var(--warn)}
+  .insight{border-left:3px solid var(--acc);background:var(--panel2);border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:12px;font-size:13.5px}
+  .insight b{color:var(--acc)}
+  .insight.warn{border-left-color:var(--warn)}.insight.warn b{color:var(--warn)}
+  .insight.bad{border-left-color:var(--bad)}.insight.bad b{color:var(--bad)}
+  .insight.good{border-left-color:var(--good)}.insight.good b{color:var(--good)}
+  code{background:rgba(94,162,255,.12);padding:1px 6px;border-radius:4px;font-size:12px;color:var(--acc)}
+  footer{margin-top:40px;color:var(--dim);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>KinetAios · GitHub 流量报告 <span>v3</span> — Traffic API 实测</h1>
+  <div class="sub">数据窗口 2026-08-02 → 2026-08-16(14 天,GitHub API 上限)· fine-grained token 拉取 · 2026-08-16 生成</div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">56</div><div class="l">独立访客(14天)</div><div class="d flat">≈4 人/天</div></div>
+    <div class="kpi"><div class="v">528</div><div class="l">Views 总量</div><div class="d warn">含 8/6 刷量异常</div></div>
+    <div class="kpi"><div class="v">8</div><div class="l">Stars</div><div class="d up">访客→星 ≈14%</div></div>
+    <div class="kpi"><div class="v">365</div><div class="l">Clone uniques</div><div class="d bad">绝大多数为机器人</div></div>
+    <div class="kpi"><div class="v">0</div><div class="l">Reddit/HN 引荐</div><div class="d bad">全部渠道白投</div></div>
+  </div>
+</header>
+
+<!-- ============ 颠覆性发现 ============ -->
+<h2>三个颠覆之前结论的发现</h2>
+<div class="insight bad"><b>发现 1:Reddit / HN / awesome 清单的引荐数为 0。</b>Referrers 实测:github.com 内部 76、自己官网 phinn.github.io 34、Bing 13、YouTube 2、Google 1——<b>没有一条来自 reddit.com、news.ycombinator.com 或任何清单站</b>。v2 报告里"+2 星归因 weekly thread"是错的:那条评论没有带来任何可测流量。真实来源是 GitHub 站内(topics/搜索/explore)和 Bing 搜索。</div>
+<div class="insight good"><b>发现 2:转化率高得反常,问题 100% 在量不在质。</b>14 天 56 个独立访客 → 8 星 ≈ 14%(近期 +2 星来自约 10 个 uniques,≈20%)。行业均值 1-3%。意味着只要把日独立访客做到 50-100,按现转化率月增 150-300 星。产品门面(desc/homepage/GIF/README)已经能打,不需要再打磨转化,全部精力应该投向引流。</div>
+<div class="insight warn"><b>发现 3:Clone 数据 95% 是机器人,以后不要参考。</b>8/6 当天 views uniques=5 人、clone uniques 却有 80「人」——5 个访客不可能产生 80 个克隆者。这是 GitHub 生态的已知现象(安全扫描器/爬虫批量 clone 小仓库)。clones 1159 总量看似漂亮,作流量信号已废,判断热度只看 views uniques。</div>
+
+<!-- ============ 图表 ============ -->
+<h2>流量明细(Traffic API 原始数据)</h2>
+<div class="grid2">
+  <div class="panel"><h3>Views:总量 vs 独立访客/天</h3><div id="c-views" class="chart"></div></div>
+  <div class="panel"><h3>Clones(灰)= 机器人噪声,不作为信号</h3><div id="c-clones" class="chart"></div></div>
+</div>
+<div class="grid2" style="margin-top:16px">
+  <div class="panel"><h3>Referrer 来源(14 天)</h3><div id="c-ref" class="chart"></div></div>
+  <div class="panel"><h3>热门路径 Top 10</h3>
+    <table>
+      <tr><th>路径</th><th>views</th><th>uniques</th><th>解读</th></tr>
+      <tr><td>/ (Overview)</td><td>107</td><td>34</td><td>主门面,转化入口</td></tr>
+      <tr><td>/graphs/traffic</td><td>83</td><td><b>1</b></td><td>本人刷流量页 😅</td></tr>
+      <tr><td>/actions + runs</td><td>46</td><td>3-5</td><td>基本是本人+CI</td></tr>
+      <tr><td>/releases/tag/<b>v1.4.0</b></td><td>27</td><td><b>18</b></td><td>⚠️ 最大外部谜团:18 个独立访客看 7 月的旧版本</td></tr>
+      <tr><td>/releases/tag/v2.4.0</td><td>36</td><td>3</td><td>8/4 release 当日访客</td></tr>
+      <tr><td>/releases/tag/v2.9.0</td><td>32</td><td>2</td><td>8/12 tag</td></tr>
+      <tr><td>/releases 列表</td><td>19</td><td>6</td><td>下载入口有人用</td></tr>
+      <tr><td>/blob/main/README.zh-CN.md</td><td>7</td><td>6</td><td>中文读者真实存在</td></tr>
+    </table>
+  </div>
+</div>
+
+<!-- ============ 谜团 ============ -->
+<h2>待解谜团:v1.4.0 老版本页面 18 个独立访客</h2>
+<div class="insight warn"><b>全仓库「非本人」流量里最大的一股(18 uniques)指向 7 月的 v1.4.0 release 页。</b>近 14 天内既无宣传指向它,README 也不链接它。最可能的解释:Product Hunt 7/13 首发时留的下载链接至今仍被 PH 页面/收藏夹引流,或某处技术清单收录了该版本。行动:在 v1.4.0 release 描述里补一句「最新版见 Releases 主页 + GitHub 链接」,把这段存量流量导回主页面。</div>
+
+<!-- ============ 渠道修正 ============ -->
+<h2>渠道战略修正(基于实测数据)</h2>
+<div class="panel">
+<table>
+  <tr><th>渠道</th><th>实测引荐</th><th>修正后定位</th></tr>
+  <tr><td>GitHub 站内(topics/搜索/explore)</td><td><span class="tag t-ok">76 views 第一大来源</span></td><td>已自然生效;检查 topics 覆盖度,保持</td></tr>
+  <tr><td>官网 phinn.github.io</td><td><span class="tag t-ok">34 views</span></td><td>有效漏斗!官网→repo 已打通,SEO 继续养</td></tr>
+  <tr><td>Bing 搜索</td><td><span class="tag t-ok">13 views / 6 uniques</span></td><td><b>意外亮点:秒杀 Google(1)</b>。提交 Bing Webmaster Tools + sitemap,零成本放大</td></tr>
+  <tr><td>Reddit weekly thread</td><td><span class="tag t-zero">0</span></td><td>降级:每周顺手回访,不再当主渠道</td></tr>
+  <tr><td>Show HN</td><td><span class="tag t-zero">0(flagged)</span></td><td>维持 2-3 周养号计划,仍是最大未引爆杠杆</td></tr>
+  <tr><td>r/LocalLLaMA 养号</td><td><span class="tag t-wait">未发</span></td><td>维持 W1-W4 计划</td></tr>
+  <tr><td>awesome PR #1397</td><td><span class="tag t-wait">未合并</span></td><td>等合并,合并后在此报告验证其真实引流</td></tr>
+  <tr><td>YouTube</td><td><span class="tag t-ok">2 views</span></td><td>demo 视频外漏,量小但存在,视频描述补 repo 链接</td></tr>
+</table>
+</div>
+
+<!-- ============ 结论 ============ -->
+<h2>最终结论</h2>
+<div class="insight good"><b>一句话:转化率 14% 说明「看到的人会 star」,日访客 4 人说明「没人看到」。</b>所有优化点只剩一个——把 56/14天 做到 500+/14天。路径优先级:① Show HN 复活(单次可达千级曝光)→ ② LocalLLaMA 帖 → ③ Bing/官网 SEO 放大(已验证有效,只差提交 sitemap)→ ④ awesome 合并长尾。代码侧无需任何配合改动。</div>
+
+<footer>KinetAios · 内部分发分析 · 数据源:GitHub Traffic API(views/clones/referrers/paths, fine-grained PAT)· v3 替代 v2 的推测归因</footer>
+</div>
+
+<script>
+const CS={txt:'#dde3ee',dim:'#8b96ab',line:'#232b3d',acc:'#5ea2ff'};
+const charts=[];
+function mk(id,opt){const c=echarts.init(document.getElementById(id));opt.textStyle={fontFamily:'-apple-system,Segoe UI,Roboto,sans-serif',color:CS.txt};opt.backgroundColor='transparent';c.setOption(opt);charts.push(c);return c}
+const ax=(n)=>({type:'category',name:n,nameLocation:'end',axisLine:{lineStyle:{color:CS.line}},axisTick:{show:false},axisLabel:{color:CS.dim,fontSize:11}});
+const vx=()=>({type:'value',splitLine:{lineStyle:{color:'rgba(35,43,61,.6)'}},axisLabel:{color:CS.dim,fontSize:11}});
+
+const DAYS=['08-02','08-03','08-04','08-05','08-06','08-07','08-08','08-09','08-10','08-11','08-12','08-13','08-14','08-15'];
+const V=[21,11,37,10,164,62,22,8,51,19,54,15,29,25], VU=[4,5,16,3,5,4,3,3,7,7,6,4,4,7];
+const C=[73,47,175,111,176,93,76,35,78,44,134,73,21,23], CU=[35,24,68,39,80,45,43,25,48,26,62,35,15,14];
+
+mk('c-views',{tooltip:{trigger:'axis'},legend:{data:['views 总量','独立访客'],textStyle:{color:CS.dim},top:0},
+grid:{l:36,r:16,t:34,b:44},xAxis:ax(''),yAxis:vx(),
+series:[
+ {name:'views 总量',type:'bar',data:V,itemStyle:{color:p=>p.dataIndex===4?'rgba(248,113,113,.5)':'rgba(94,162,255,.45)',borderRadius:[3,3,0,0]}},
+ {name:'独立访客',type:'line',data:VU,lineStyle:{color:'#4ade80',width:2.5},itemStyle:{color:'#4ade80'},symbolSize:7}],
+graphic:[{type:'text',right:30,top:90,style:{text:'← 8/6 刷量:\n164 views 仅 5 人',fill:'#f87171',fontSize:11,lineHeight:16}}]});
+
+mk('c-clones',{tooltip:{trigger:'axis'},legend:{data:['clones 总量','clone uniques'],textStyle:{color:CS.dim},top:0},
+grid:{l:36,r:16,t:34,b:44},xAxis:ax(''),yAxis:vx(),
+series:[
+ {name:'clones 总量',type:'bar',data:C,itemStyle:{color:'rgba(100,116,139,.45)',borderRadius:[3,3,0,0]}},
+ {name:'clone uniques',type:'line',data:CU,lineStyle:{color:'#a78bfa',width:2},itemStyle:{color:'#a78bfa'},symbolSize:6}],
+graphic:[{type:'text',right:24,top:90,style:{text:'机器人噪声 ↗ 8/6:\n5 个访客≠80 个克隆者',fill:'#a78bfa',fontSize:11,lineHeight:16}}]});
+
+mk('c-ref',{tooltip:{trigger:'item',formatter:'{b}<br/>{c} views'},
+series:[{type:'pie',radius:['42%','70%'],center:['50%','54%'],label:{color:CS.dim,formatter:'{b}\n{c} ({d}%)',fontSize:11},
+data:[
+ {value:76,name:'github.com 站内',itemStyle:{color:'#5ea2ff'}},
+ {value:34,name:'官网 phinn.github.io',itemStyle:{color:'#4ade80'}},
+ {value:13,name:'Bing',itemStyle:{color:'#facc15'}},
+ {value:2,name:'YouTube',itemStyle:{color:'#f87171'}},
+ {value:1,name:'Google',itemStyle:{color:'#a78bfa'}},
+ {value:0,name:'Reddit / HN / 清单站 = 0',itemStyle:{color:'#334155'}}]}]});
+
+window.addEventListener('resize',()=>charts.forEach(c=>c.resize()));
+</script>
+</body>
+</html>
