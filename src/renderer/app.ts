@@ -294,9 +294,9 @@ function applyI18nDOM(): void {
       } else if (ev.type === 'done' || ev.type === 'error') {
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
         if (renderMainPending) { renderMainPending = false; pendingFullRender = false; }
-        // 用户不在底部 → 记录视口锚点(最顶可见 turn + 偏移),重渲染后恢复到同一位置。
+        // hold 模式(看历史/已取消)→ 记录视口锚点,重渲染后恢复到同一位置。
         // 绝对 scrollTop 在内容高度变化(markdown 重渲)后无意义,必须锚定到 turn。
-        // Not at bottom → anchor to the topmost visible turn so the re-render
+        // Hold mode → anchor to the topmost visible turn so the re-render
         // (which changes content height via markdown re-parse) restores the same view.
         if (!userAtBottom) captureScrollAnchor();
         renderMain();
@@ -1617,25 +1617,21 @@ function renderMain() {
     return;
   }
   // 懒加载:head 模式(未拉 turns)先挂载加载态,异步拉到后再渲染。
+  // 注意不许 scrollDownForce:那会把 pin 模式砸成 follow,
+  // 真正的视口恢复等 turns 到齐后的 renderMain 再做。
   // Lazy: head-mode convs show a loading state until turns arrive.
+  // NO scrollDownForce here — it would clobber a pending pin restore.
   if (conv.turnsLoaded === false) {
     turns.replaceChildren(empty('…', tr('empty.noTurns')));
-    scrollDownForce();
     void ensureTurnsLoaded(conv, token).then((ok) => { if (ok && token === renderToken) renderMain(); });
     return;
   }
+  // 空会话:占位符不满一屏,无需滚动,也不许碰模式状态。
+  // Empty conv: placeholder fits the viewport — no scrolling, no mode changes.
   if (!conv.turns.length) {
     turns.replaceChildren(empty(tr('empty.noTurns'), tr('empty.noTurnsSub')));
-    scrollDownForce();
     return;
   }
-  // 用户不在底部(正在读历史)或刚取消 → 任何 renderMain 都不许跳底,锚定视口。
-  // done 事件后 main 还会广播 conversation-update 触发第二次 renderMain,
-  // 锚点必须在每次"不在底部"的重渲染前重新捕获,不能只捕获一次。
-  // replaceChildren 会把 scrollTop 重置为 0,必须显式恢复。
-  // Not at bottom (reading history) or just cancelled → anchor the viewport on
-  // every re-render. conversation-update arrives AFTER done and re-renders too.
-  if ((scrollFrozen || !userAtBottom) && scrollAnchorTurnIdx == null) captureScrollAnchor();
   // 分批渲染:长对话一次全量渲染会卡死主线程(几百轮 Markdown + DOM 节点),
   // 表现就是「切频道后空白几百 ms 到几秒」。先挂最近 30 个 turn 让用户看到内容,
   // 剩余的用 idle 回调增量挂上去,边滚边补。
@@ -1646,74 +1642,47 @@ function renderMain() {
   const startIdx = Math.max(0, total - FIRST_BATCH);
   const frag = document.createDocumentFragment();
   for (let i = startIdx; i < total; i++) frag.appendChild(renderTurn(conv, i));
-  turns.replaceChildren(frag);
-  // 滚动位置恢复:切回频道时滚到上次浏览处(而不是强制跳底)。
-  // 注意必须在首批 30 turn 挂载后立即恢复,否则 scrollDownForce 会先跳底。
-  // Restore saved scroll position if the user wasn't at bottom when switching away.
-  if (scrollRestorePending != null) {
+  // 全量重建视口恢复(单一决策点,三态互斥,消费即清零):
+  //   pin   = 切会话带回的记忆位置 → 挂载后直接设 scrollTop 一次
+  //   hold  = 看历史/已取消 → 挂载前抓锚点,挂载后按 turn 锚点复原位
+  //   follow = 跟随底部 → 挂载后贴底
+  //   pin/hold 分支提前 return(follow 之外的路径不走 idle 补全启动)。
+  // Full rebuild viewport restore — one decision point, mutually exclusive,
+  // each mode consumes and clears its state (no residue across renders).
+  if (viewMode === 'pin' && scrollRestorePending != null) {
     const target = scrollRestorePending;
     scrollRestorePending = null;
+    turns.replaceChildren(frag);
     turns.scrollTop = target;
-    userAtBottom = Math.abs(turns.scrollHeight - turns.scrollTop - turns.clientHeight) < 120;
+    const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
+    userAtBottom = dist < BOTTOM_EPS;
     scrollRestoredMid = !userAtBottom;
-  } else if (scrollAnchorTurnIdx != null) {
-    // done/error/cancel 后的重渲染:按锚点(turn index + 偏移)恢复视口,
-    // 内容高度变化(markdown 重渲)也能回到同一位置。
-    // Re-render after done/error/cancel: restore viewport by turn anchor —
-    // survives content-height changes from markdown re-parse.
+    viewMode = userAtBottom ? 'follow' : 'hold';
+    scrollAnchorTurnIdx = null;
+    // 历史补全:pin 恢复无论落在底部还是中部都需要,否则向上翻顶不到头。
+    // History fill always needed after pin restore, or scrolling up hits a wall.
+    if (startIdx > 0) startIdleFill(turns, conv, token, startIdx);
+    return;
+  }
+  if (viewMode === 'hold' || !userAtBottom) {
+    // hold 或不在底部:重建前用当前 DOM 抓锚点(没有新鲜锚点时)。
+    // done 后 main 还会广播 conversation-update 触发第二次 renderMain,
+    // 每次重建都要重新捕获,不能依赖上一次的锚点残留。
+    if (scrollAnchorTurnIdx == null) captureScrollAnchor();
+    turns.replaceChildren(frag);
     applyScrollAnchor();
   } else {
+    turns.replaceChildren(frag);
     scrollDownForce();
   }
-  // 剩余 turn 用 idle 回调增量补(头插)。补完后用户向上滚就能看到。
+  // 剩余 turn 用 idle 回调增量补(头插)。只在 follow(底部跟随)或 pin 中部恢复时启动。
+  // 用户在看历史(hold)时绝不 prepend —— 头插会把视口顶飞。
   // Idle-fill earlier turns in the background (prepended to the top).
-  if (startIdx > 0) {
-    const remaining = startIdx;
-    let cursor = remaining;
-    const fillBatch = 20;
-    // 只在用户停在底部(自动跟随)时做增量补全;
-    // 如果用户已经向上滚了,说明在看历史,不要 prepend 干扰视口。
-    // Only background-fill when the user is at the bottom (auto-scroll following).
-    // If they scrolled up to read history, don't prepend and shift the viewport.
-    // 例外:滚动恢复场景(切回频道停在中部)必须补全,否则向上翻顶不到历史。
-    // Exception: scroll-restore case must still fill, or scrolling up hits a wall.
-    const restoredMid = scrollRestoredMid;
-    scrollRestoredMid = false;
-    const atBottom = turns.scrollHeight - turns.scrollTop - turns.clientHeight < 100;
-    if (!atBottom && !restoredMid) return;
-    let fillScheduled = false;
-    const fillBatch_run = () => {
-      // 渲染令牌不匹配 = 用户已切到别的频道,中止旧频道的增量补全。
-      // Render token mismatch = user switched away; abort stale fill chain.
-      if (token !== renderToken) { fillScheduled = false; return; }
-      fillScheduled = false;
-      if (cursor <= 0) return;
-      const end = cursor;
-      const begin = Math.max(0, end - fillBatch);
-      const frag2 = document.createDocumentFragment();
-      // 记录挂载前的 scrollTop,头插 DOM 会把视口往下推,需要补偿。
-      // Record scrollTop before prepend; the inserted nodes push viewport down.
-      const beforeTop = turns.scrollTop;
-      const beforeHeight = turns.scrollHeight;
-      for (let i = begin; i < end; i++) frag2.appendChild(renderTurn(conv, i));
-      turns.prepend(frag2);
-      const afterHeight = turns.scrollHeight;
-      turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
-      cursor = begin;
-      if (cursor > 0) {
-        fillScheduled = true;
-        // 用 double-rAF 分帧:确保浏览器渲染完当前帧再插下一批,
-        // 避免连续 prepend + scrollTop 修正导致的抖动。
-        // Use double-rAF to let the browser paint between batches.
-        requestAnimationFrame(() => requestAnimationFrame(fillBatch_run));
-      }
-    };
-    fillScheduled = true;
-    // 首批延迟一帧,让首批 30 个 turn 先稳定渲染再补历史。
-    // Delay first fill by a frame so the initial 30 turns paint first.
-    requestAnimationFrame(() => requestAnimationFrame(() => {
-      if (fillScheduled) fillBatch_run();
-    }));
+  // Only when following the bottom or restored mid-list; never while reading history.
+  const restoredMid = scrollRestoredMid;
+  scrollRestoredMid = false;
+  if (startIdx > 0 && (userAtBottom || restoredMid)) {
+    startIdleFill(turns, conv, token, startIdx);
   }
   // 切会话后,文件 tab 若已挂,跟着换 cwd(切到当前会话的 cwd)。
   if (activeTab === 'files' && filesController) filesController.setCwd(conv.cwd);
@@ -1735,6 +1704,37 @@ function renderMain() {
     currentArtifactHtml = null;
     if (activeTab === 'preview') showPreviewEmpty();
   }
+}
+
+/** 历史补全链:头插早期 turn,double-rAF 分帧,prepend 后补偿 scrollTop。
+ *  renderToken 不匹配(用户已切走)立即中止,防旧频道闭包驻留。 */
+function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fromIdx: number): void {
+  const fillBatch = 20;
+  let cursor = fromIdx;
+  let fillScheduled = false;
+  const fillBatch_run = () => {
+    if (token !== renderToken) { fillScheduled = false; return; }
+    fillScheduled = false;
+    if (cursor <= 0) return;
+    const end = cursor;
+    const begin = Math.max(0, end - fillBatch);
+    const frag2 = document.createDocumentFragment();
+    const beforeTop = turns.scrollTop;
+    const beforeHeight = turns.scrollHeight;
+    for (let i = begin; i < end; i++) frag2.appendChild(renderTurn(conv, i));
+    turns.prepend(frag2);
+    const afterHeight = turns.scrollHeight;
+    turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
+    cursor = begin;
+    if (cursor > 0) {
+      fillScheduled = true;
+      requestAnimationFrame(() => requestAnimationFrame(fillBatch_run));
+    }
+  };
+  fillScheduled = true;
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (fillScheduled) fillBatch_run();
+  }));
 }
 
 function renderHead(conv: Conversation | undefined) {
@@ -2106,8 +2106,8 @@ function updateStreamingStatus(conv: Conversation): void {
     if (oldStatus) { oldStatus.remove(); heightChanged = true; }
   }
   // streaming-status 的创建/移除改变了内容高度,同步贴底(低频操作,不防抖)。
-  // 冻结中(用户已取消)不许滚动 —— DOM 若有变化也不跟滚。
-  if (heightChanged && !scrollFrozen) {
+  // hold(看历史/已取消)不许滚动 —— DOM 变了也不跟滚。
+  if (heightChanged && userAtBottom && !scrollFrozen) {
     scrollDownForce();
   }
 }
@@ -2171,7 +2171,8 @@ function updateLastTurnIncremental(): void {
   }
   // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底。
   // 低频操作(tool/status event),直接 scrollDownForce 不走 rAF。
-  scrollDownForce();
+  // hold(看历史/已取消)不滚 —— scrollDownForce 自身也判 viewMode。
+  if (userAtBottom && !scrollFrozen) scrollDownForce();
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
@@ -2230,8 +2231,8 @@ function advanceStablePrefix(text: string): void {
 }
 
 function streamAppend(text: string) {
-  // 冻结中(用户已取消):完全忽略残余 token —— 连 DOM 都不碰。
-  // renderMain 在冻结中也不重建,所以 streaming-answer 元素保持取消瞬间的原样。
+  // 硬冻结(用户已取消):完全忽略残余 token —— 连 DOM 都不碰。
+  // renderMain 在冻结中也不重建,streaming-answer 元素保持取消瞬间的原样。
   // Frozen (user cancelled): ignore residual tokens entirely — no DOM touch.
   if (scrollFrozen) return;
   let el = document.getElementById('streaming-answer');
@@ -2300,12 +2301,9 @@ function streamAppend(text: string) {
             streamTailEl.textContent = tailText;
           }
           target.classList.add('streaming');
-          // 同帧内同步滚动(内容高度只增不缩,不会再弹)。
-          scrollDownScheduled = false;
-          if (userAtBottom) {
-            const turnsEl = document.getElementById('turns');
-            if (turnsEl) turnsEl.scrollTop = 999999;
-          }
+          // 内容增长跟随(状态机内聚:rAF 防抖 + viewMode 判断 + cv 剥离贴底)。
+          // 稳定前缀渲染下高度只增不缩,不会再弹。
+          scrollDown();
         }
       });
     }
@@ -2474,68 +2472,61 @@ function empty(text: string, sub?: string): HTMLElement {
   return d;
 }
 
-// ── 滚动控制 ──
-// 核心问题:每 token 同步读 scrollHeight + 设 scrollTop 会强制 reflow,
-// 高频 token (20-50/s) 下 reflow 堵塞主线程 → 帧丢失 → 视觉抖动(一跳一跳)。
+// ── 滚动控制(单一状态机)/ Scroll control (single state machine) ──
 //
-// 方案:
-// - streamAppend 后走 rAF 防抖(scrollDown),一帧只滚一次,不强制 reflow。
-// - 用 flag(userAtBottom)在 scroll event 中被动维护,不在 rAF 里读 scrollHeight。
-// - scrollDownForce 用于发送/切会话/done 等低频同步场景。
+// 设计原则 / Design:
+// 1. 视口模式只有一个真值 `follow`,三个互斥状态:
+//    - 'follow'  : 用户在底部 → 内容增长自动贴底(流式期间每帧跟随)
+//    - 'hold'    : 用户在看历史/已取消 → 一切程序滚动禁止;重渲染按 turn 锚点复原位
+//    - 'pin'     : 切会话恢复 → 用记忆的 scrollTop 复位一次性消费
+//    谁该滚、谁不该滚,只看这一个变量,不再有 7 个 flag 互相打架。
+//    One source of truth. No flag soup.
+// 2. userAtBottom 只由 scroll 事件维护(scroll 事件是唯一能区分
+//    「程序设置 scrollTop」与「内容增长导致 dist 变化」的信号,
+//    在 scroll 回调里读 layout 是被动且准确的)。
+// 3. 底部阈值统一 BOTTOM_EPS,不再 100/120 混用。
+// 4. content-visibility: auto 的屏外 turn 永远是 160px 占位(读 scrollHeight
+//    不会让 Chromium 布局它们),贴底前必须剥离视口下方 turn 的 cv 强制真实布局,
+//    否则 scrollTop=scrollHeight 被 clamp 到列表中间。剥离集中在一个函数。
+// 5. 锚点恢复只在 renderMain 的全量重建路径消费一次,消费即清零,
+//    不允许锚点跨渲染残留(历史 bug 根源之一)。
 
-let scrollDownScheduled = false;
-// 用户是否在底部附近(passive scroll event 维护,避免主动读 layout)。
+const BOTTOM_EPS = 120;
+
+/** 视口状态:'follow' 跟随底部 | 'hold' 冻结(看历史/已取消) | 'pin' 一次性恢复记忆位置 */
+let viewMode: 'follow' | 'hold' | 'pin' = 'follow';
+let scrollDownScheduled = false; // rAF 防抖标记(跟随模式的内容跟随)
+/** 兼容旧名:大量调用点读它。真实来源是 viewMode,由 syncAtBottomFlag() 维护。 */
 let userAtBottom = true;
-/** 用户点「取消」后冻结一切程序滚动:残余 token/done renderMain/任何路径都
- * 不许再动滚动条。只有用户亲自滚轮/按键/发新消息/切会话才解冻。
- * Freeze ALL programmatic scrolling after user cancel. Only a real user
- * interaction (wheel / key / new send / conv switch) unfreezes it. */
+/** 用户点「取消」后的硬冻结:连 scroll 事件都不许把 hold 升级回 follow,
+ *  只有 wheel/keydown/pointerdown/发送/切会话等真实交互解冻。
+ *  防取消瞬间的惯性滚动/程序滚动把视口拽走。 */
 let scrollFrozen = false;
+/** pin 模式的一次性目标 scrollTop(scrollMemoryRestore 产出) */
+let scrollRestorePending: number | null = null;
+/** pin 恢复后停在中部 → 允许历史补全链启动(否则补全会把视口顶飞) */
+let scrollRestoredMid = false;
+/** 重渲染锚点:最顶可见 turn 的 idx + 视口顶相对该 turn 顶的偏移。
+ *  renderMain 全量重建前捕获,重建后 applyScrollAnchor 消费一次即清零。 */
+let scrollAnchorTurnIdx: number | null = null;
+let scrollAnchorOffset = 0;
 
-function scrollDown() {
-  if (scrollFrozen) return;
-  if (scrollDownScheduled) return;
-  scrollDownScheduled = true;
-  requestAnimationFrame(() => {
-    scrollDownScheduled = false;
-    if (!userAtBottom) return;
-    const el = document.getElementById('turns');
-    if (!el) return;
-    // content-visibility: auto 下从未渲染过的屏外 turn 始终用 160px 占位
-    // (读 offsetHeight/scrollHeight 不会让 Chromium 对它们做真实布局),
-    // scrollTop = scrollHeight 会被 clamp 到占位中间 → 贴不到底。
-    // 必须临时剥离视口下方 turn 的 content-visibility,用真实尺寸再贴底。
-    // Under content-visibility: auto, never-rendered offscreen turns keep
-    // the 160px placeholder (reading offsetHeight does NOT force real layout
-    // for them), so scrollTop = scrollHeight clamps mid-list. Temporarily
-    // strip content-visibility from below-viewport turns to get real sizes.
-    const stripped: HTMLElement[] = [];
-    for (const t of el.querySelectorAll('.turn')) {
-      const h = t as HTMLElement;
-      if (h.style.contentVisibility === 'visible') continue;
-      const r = h.getBoundingClientRect();
-      if (r.top >= el.clientHeight) {
-        h.style.contentVisibility = 'visible';
-        stripped.push(h);
-      }
-    }
-    el.scrollTop = el.scrollHeight;
-    for (const h of stripped) h.style.contentVisibility = '';
-  });
+function syncAtBottomFlag(): void {
+  userAtBottom = viewMode === 'follow';
 }
 
-/** 强制立即滚到底(同步),用于切换会话 / 发送新消息 / done 等场景。
- * @param force 绕过 scrollFrozen 冻结(仅限用户显式操作:发送/切会话/点回底按钮)。 */
-function scrollDownForce(force = false) {
-  if (scrollFrozen && !force) return;
-  scrollDownScheduled = false;
+/** 真实用户交互(滚轮/键盘/拖滚动条/点按钮)→ 解除硬冻结。 */
+function userUnfreeze(): void {
   scrollFrozen = false;
-  userAtBottom = true;
-  scrollAnchorTurnIdx = null; // 显式贴底 = 锚点作废,防止残留锚点在下次渲染拉回旧位置
-  const el = document.getElementById('turns');
-  if (!el) return;
-  // 见 scrollDown() 注释:content-visibility 占位高度会让 scrollTop=scrollHeight
-  // clamp 错位,剥离视口下方 turn 后用真实尺寸贴底。
+}
+
+function turnsEl(): HTMLElement | null {
+  return document.getElementById('turns');
+}
+
+/** content-visibility 剥离贴底:临时把视口下方 turn 的 cv 置 visible,
+ *  scrollTop 用真实布局贴底后再还原。占位高度会让 scrollTop 被 clamp 错位。 */
+function snapToBottomReal(el: HTMLElement): void {
   const stripped: HTMLElement[] = [];
   for (const t of el.querySelectorAll('.turn')) {
     const h = t as HTMLElement;
@@ -2550,59 +2541,74 @@ function scrollDownForce(force = false) {
   for (const h of stripped) h.style.contentVisibility = '';
 }
 
-// ── 滚动位置记忆:切频道时保存/恢复 scrollTop ──
-// 切走时记录当前滚动位置;切回时恢复。如果用户本来就在底部(或从未滚动过),
-// 恢复 null → 维持"新会话跳底"的默认行为。
-// Scroll position memory: save on switch away, restore on switch back.
-const convScrollMemory = new Map<string, number>();
-let scrollRestorePending: number | null = null;
-let scrollRestoredMid = false; // 恢复后停在中部 → 强制启动历史补全链 / restored mid-scroll → force fill chain
-/** done/error 等终态事件重渲染前的滚动位置:渲染后恢复,防止强制跳底把用户拽走。 */
-let scrollKeepPending: number | null = null;
-/** 视口锚点:重渲染导致内容高度变化时,按「最顶可见 turn + 该 turn 内偏移」恢复,
- * 而不是绝对 scrollTop(markdown 重渲后 scrollHeight 变了,绝对值会错位)。
- * Viewport anchor for re-renders: restore by (topmost visible turn, offset
- * within it) — absolute scrollTop is meaningless once content height changes. */
-let scrollAnchorTurnIdx: number | null = null;
-let scrollAnchorOffset = 0;
+/** 内容增长的自动跟随(rAF 防抖,每帧最多一次)。
+ *  仅 follow 模式生效;hold/pin 一律不动。 */
+function scrollDown(): void {
+  if (viewMode !== 'follow' || scrollFrozen) return;
+  if (scrollDownScheduled) return;
+  scrollDownScheduled = true;
+  requestAnimationFrame(() => {
+    scrollDownScheduled = false;
+    if (viewMode !== 'follow' || scrollFrozen) return;
+    const el = turnsEl();
+    if (el) snapToBottomReal(el);
+  });
+}
 
-/** 抓取当前视口锚点:从当前 scrollTop 向下找第一个 turn 顶边 >= 视口顶的元素。
- * (content-visibility 下读 offsetTop 集中在首批 30 turn,成本可控。) */
+/** 显式贴底:用户主动操作(发送/切会话/点回底按钮)或默认路径。
+ *  - force=true:用户显式意愿,无视冻结,切换到 follow 模式。
+ *  - force=false:程序默认(空会话等)只在前台非冻结时执行。 */
+function scrollDownForce(force = false): void {
+  if (scrollFrozen && !force) return;
+  scrollDownScheduled = false;
+  scrollFrozen = false;
+  viewMode = 'follow';
+  syncAtBottomFlag();
+  scrollAnchorTurnIdx = null; // 显式贴底 = 锚点作废
+  const el = turnsEl();
+  if (el) snapToBottomReal(el);
+}
+
+/** 抓取视口锚点(最顶可见 turn + 偏移)。hold 模式下重渲染前调用。 */
 function captureScrollAnchor(): void {
-  const turnsEl = document.getElementById('turns');
-  if (!turnsEl) return;
-  const top = turnsEl.getBoundingClientRect().top;
-  const turnEls = turnsEl.querySelectorAll<HTMLElement>('.turn[data-idx]');
-  for (const t of turnEls) {
+  const el = turnsEl();
+  if (!el) return;
+  const top = el.getBoundingClientRect().top;
+  for (const t of el.querySelectorAll<HTMLElement>('.turn[data-idx]')) {
     const r = t.getBoundingClientRect();
-    if (r.bottom > top + 4) { // 第一个底部越过视口顶的 turn = 锚点
+    if (r.bottom > top + 4) {
       scrollAnchorTurnIdx = Number(t.dataset.idx);
-      scrollAnchorOffset = r.top - top; // 负数=turn 顶部在视口上方,截掉的部分
+      scrollAnchorOffset = r.top - top;
       return;
     }
   }
 }
 
-/** 渲染后按锚点恢复视口;锚点 turn 不存在(被删)则退回 force 贴底。 */
+/** 按锚点恢复视口;锚点失效(被删)则贴底。消费即清零。 */
 function applyScrollAnchor(): void {
-  const turnsEl = document.getElementById('turns');
-  if (!turnsEl || scrollAnchorTurnIdx == null) { scrollDownForce(true); return; }
-  const target = turnsEl.querySelector<HTMLElement>(`.turn[data-idx="${scrollAnchorTurnIdx}"]`);
+  const el = turnsEl();
+  const idx = scrollAnchorTurnIdx;
   scrollAnchorTurnIdx = null;
+  if (!el || idx == null) { scrollDownForce(true); return; }
+  const target = el.querySelector<HTMLElement>(`.turn[data-idx="${idx}"]`);
   if (!target) { scrollDownForce(true); return; }
-  void turnsEl.offsetHeight; // 强制 layout,offsetTop 才是新鲜值
-  turnsEl.scrollTop = target.offsetTop - scrollAnchorOffset;
-  userAtBottom = Math.abs(turnsEl.scrollHeight - turnsEl.scrollTop - turnsEl.clientHeight) < 120;
+  void el.offsetHeight; // 强制 layout,offsetTop 才新鲜
+  el.scrollTop = target.offsetTop - scrollAnchorOffset;
+  const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
+  userAtBottom = dist < BOTTOM_EPS;
+  if (!userAtBottom) viewMode = 'hold';
   scrollRestoredMid = !userAtBottom;
 }
 
+// ── 滚动位置记忆:切频道保存/恢复 scrollTop ──
+const convScrollMemory = new Map<string, number>();
 function scrollMemorySave(id: string | null): void {
   if (!id) return;
-  const el = document.getElementById('turns');
+  const el = turnsEl();
   if (!el) return;
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
   // 在底部附近 → 不记位置,切回时走默认"跳底"
-  convScrollMemory.set(id, dist < 120 ? -1 : el.scrollTop);
+  convScrollMemory.set(id, dist < BOTTOM_EPS ? -1 : el.scrollTop);
 }
 function scrollMemoryRestore(id: string | null): number | null {
   if (!id) return null;
@@ -2658,9 +2664,18 @@ function initScrollBottomBtn(): void {
   // (because overflow-anchor: none). A naive MO-triggered update would compute
   // dist > 120 from the lag and wrongly set userAtBottom=false, causing
   // scrollDown to skip the next frame and hiding the new content below the fold.
+  // ── 状态机核心转换:scroll 事件 ──
+  // userAtBottom/viewMode 只在这里被内容几何更新(程序滚动也会经过这里,
+  // 但程序滚动总是贴底 → dist≈0 → follow,自洽)。MO 不许改这些状态
+  // (流式 token 增大 scrollHeight 时 dist 临时变大,MO 更新会误判 hold,
+  //  导致 scrollDown 跳过 → 新内容藏在视口下面)。
+  // State machine transition: scroll event is the ONLY place that updates
+  // userAtBottom/viewMode from geometry. MutationObserver must NOT touch it.
   const onScroll = () => {
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
-    userAtBottom = dist < 120;
+    userAtBottom = dist < BOTTOM_EPS;
+    if (!scrollFrozen) viewMode = userAtBottom ? 'follow' : 'hold';
+    // 硬冻结中即便几何到底也不升级 follow(取消后的惯性滚动不许拽回)
     update();
   };
 
@@ -2668,9 +2683,9 @@ function initScrollBottomBtn(): void {
   // 程序设置 scrollTop 也会触发 scroll 事件,所以解冻只认 wheel/keydown/pointerdown。
   // Real user scrolling (wheel / trackpad / keys / scrollbar drag) unfreezes.
   // Programmatic scrollTop also fires scroll events — hence wheel/keydown/pointer only.
-  turns.addEventListener('wheel', () => { scrollFrozen = false; }, { passive: true });
-  turns.addEventListener('keydown', () => { scrollFrozen = false; });
-  turns.addEventListener('pointerdown', () => { scrollFrozen = false; });
+  turns.addEventListener('wheel', userUnfreeze, { passive: true });
+  turns.addEventListener('keydown', userUnfreeze);
+  turns.addEventListener('pointerdown', userUnfreeze);
 
   turns.addEventListener('scroll', onScroll, { passive: true });
   // 内容变化时只检查按钮是否显示,不动 userAtBottom;真正跟随由 streamAppend
@@ -5668,12 +5683,13 @@ async function send() {
     const conv = convs.get(selectedId);
     if (conv) conv.status = 'ready';
     renderHead(conv);
-    // 用户主动取消 → 冻结一切程序滚动:残余 token、done/error 的 renderMain、
+    // 用户主动取消 → hold + 硬冻结:残余 token、done/error 的 renderMain、
     // 任何路径都不许再动滚动条。只有用户亲自滚轮/发新消息/切会话才解冻。
-    // User-initiated cancel → freeze ALL programmatic scrolling. Residual
-    // tokens and the done/error re-render must not move the viewport.
-    // Only a real user action (wheel / send / switch) unfreezes.
+    // User-initiated cancel → hold + hard freeze. Residual tokens and the
+    // done/error re-render must not move the viewport. Only a real user
+    // action (wheel / send / switch) unfreezes.
     scrollFrozen = true;
+    viewMode = 'hold';
     userAtBottom = false;
     scrollDownScheduled = false;
     try { await api.cancel(selectedId); } finally { sending = false; }
@@ -5703,16 +5719,18 @@ async function send() {
     }
     if (at.missing.length) uxToast.warn(tr('toast.missingFiles', { list: at.missing.join('\n') }));
     if (currentView !== 'chat') showChat();
-    // 用户显式发送 = 解冻 + 跟随底部。必须在 await api.send 之前:
-    // conversation-update 广播先于 invoke reply 到达 renderer,若此刻仍冻结,
-    // renderMain 走冻结分支吞掉新 turn(用户消息不渲染、滚动不贴底)。
+    // 用户显式发送 = 解冻 + 切回 follow 模式。必须在 await api.send 之前:
+    // conversation-update 广播先于 invoke reply 到达 renderer,若此刻仍 hold/冻结,
+    // renderMain 会走锚点恢复分支,新 turn 渲染了但视口留在旧位置。
     // Explicit send unfreezes + follows bottom — BEFORE the await: the
     // conversation-update broadcast reaches the renderer before the invoke
-    // reply; if still frozen, renderMain's frozen branch swallows the new
-    // turn entirely (message not rendered, no scroll to bottom).
+    // reply; if still hold/frozen, renderMain restores the old anchor and
+    // the new turn renders off-screen.
     scrollFrozen = false;
+    viewMode = 'follow';
     userAtBottom = true;
-    scrollAnchorTurnIdx = null; // 旧锚点残留会让 renderMain 走 applyScrollAnchor 拉回旧位置
+    scrollAnchorTurnIdx = null; // 旧锚点残留会让 renderMain 拉回旧位置
+    scrollRestorePending = null;
     // 先发送,成功后再清空(IPC 失败时用户数据不丢失)
     try {
       await api.send(selectedId, text);
@@ -5753,6 +5771,9 @@ function showChat() {
     scrollMemorySave(draftPrevId);
     scrollRestorePending = scrollMemoryRestore(selectedId);
     scrollFrozen = false; // 切会话 = 用户显式操作 → 解冻
+    // 有记忆位置 → pin 模式(一次性恢复);否则 follow(跳底看最新)
+    viewMode = scrollRestorePending != null ? 'pin' : 'follow';
+    syncAtBottomFlag();
     draftPrevId = selectedId;
   }
   currentView = 'chat';
@@ -6611,9 +6632,11 @@ function renderAttach(): void {
       renderAttach();
     };
   });
-  // 附件增删后 #input 高度变化,强制滚到底部确保输入框可见。
-  // Force scroll-to-bottom after attach row changes so input stays visible.
-  scrollDownForce();
+  // 附件增删会改变 #input 高度(--input-h 变量由 observer 自动同步),
+  // #input 在滚动容器外,不需要也不应该动聊天滚动条 —— 看历史的用户
+  // 加个附件就被拽到底部是纯 bug。此处原 scrollDownForce() 已删。
+  // Attach changes resize #input (outside the scroll container); the CSS var
+  // observer handles positioning. Never touch chat scroll here.
 }
 
 // @文件引用:解析正文里的 @path,经 main 读 cwd 内文件(@ 前需非单词字符以避开 email)。返回读到的 + 失败的。
