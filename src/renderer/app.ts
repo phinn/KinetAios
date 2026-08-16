@@ -2122,16 +2122,16 @@ let streamRenderScheduled = false;
 // bounce. Split into a completed prefix (parsed once, monotonic height)
 // plus a plain-text tail; the final md() still runs on done.
 let streamStableLen = 0;   // 已闭合前缀的字符边界(最后一个围栏外空行后)
-let streamMdLen = 0;       // 已转成 HTML 的字符数(== streamStableHtml 覆盖范围)
-let streamStableHtml = ''; // 前缀 HTML(只增,不重算)
+let streamMdLen = 0;       // 已转成 HTML 的字符数(== 前缀 DOM 已覆盖范围)
 let streamScanPos = 0;     // 增量扫描位置
 let streamInFence = false; // 扫描点是否处于 ``` / ~~~ 围栏内
+let streamTailEl: HTMLElement | null = null; // 尾部纯文本节点(只改 textContent,不重建)
 
 function resetStreamRender(): void {
   streamRawText = '';
   streamStableLen = 0;
   streamMdLen = 0;
-  streamStableHtml = '';
+  streamTailEl = null;
   streamScanPos = 0;
   streamInFence = false;
   streamRenderScheduled = false;
@@ -2198,14 +2198,31 @@ function streamAppend(text: string) {
         streamRenderScheduled = false;
         const target = document.getElementById('streaming-answer');
         if (target && streamRawText) {
-          // 推进稳定边界,前缀 HTML 只算一次;未闭合尾部纯文本追加。
+          // 推进稳定边界:前缀 delta 只 parse 一次并 insertAdjacentHTML 追加,
+          // 尾部单独一个 <p> 节点只更新 textContent。
+          // 不再整树 innerHTML 赋值 —— 那会把已渲染前缀也重新 parse + 重建 +
+          // 重排版,大代码块(围栏内无空行,稳定边界推不动)时退化为 O(n²),
+          // 字体整形摊满所有 worker 线程,直接卡死。
+          // Incremental DOM: append prefix delta via insertAdjacentHTML,
+          // update tail via textContent only. Never re-parse the settled prefix.
           advanceStablePrefix(streamRawText);
           if (streamStableLen > streamMdLen) {
-            streamStableHtml += md(streamRawText.slice(streamMdLen, streamStableLen));
+            const deltaHtml = md(streamRawText.slice(streamMdLen, streamStableLen));
+            // 首个 delta 前必须清空占位(typing dots / 旧内容)
+            if (!streamTailEl) target.textContent = '';
+            streamTailEl?.remove();
+            target.insertAdjacentHTML('beforeend', deltaHtml);
             streamMdLen = streamStableLen;
           }
           const tailText = streamRawText.slice(streamMdLen);
-          target.innerHTML = streamStableHtml + (tailText ? `<p>${esc(tailText)}</p>` : '');
+          if (tailText) {
+            if (!streamTailEl || !streamTailEl.isConnected) {
+              if (!streamTailEl && !target.querySelector('p')) target.textContent = '';
+              streamTailEl = document.createElement('p');
+              target.appendChild(streamTailEl);
+            }
+            streamTailEl.textContent = tailText;
+          }
           target.classList.add('streaming');
           // 同帧内同步滚动(内容高度只增不缩,不会再弹)。
           scrollDownScheduled = false;
