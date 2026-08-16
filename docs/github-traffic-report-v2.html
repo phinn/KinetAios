@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios GitHub 访问数据报告 v2 — 2026-08-16</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+<style>
+  :root{--bg:#0b0e14;--panel:#141925;--panel2:#1a2130;--line:#232b3d;--txt:#dde3ee;--dim:#8b96ab;--acc:#5ea2ff;--good:#4ade80;--warn:#facc15;--bad:#f87171;--purple:#a78bfa}
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:var(--bg);color:var(--txt);font:14px/1.7 -apple-system,"SF Pro Text","Segoe UI",Roboto,sans-serif;padding:32px 24px 60px}
+  .wrap{max-width:1200px;margin:0 auto}
+  header{border:1px solid var(--line);border-radius:14px;padding:28px 32px;background:linear-gradient(135deg,#141925 0%,#101623 100%);margin-bottom:24px}
+  h1{font-size:22px;font-weight:700;letter-spacing:.3px}
+  h1 span{color:var(--acc)}
+  .sub{color:var(--dim);font-size:13px;margin-top:6px}
+  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:14px;margin-top:20px}
+  .kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:14px 16px}
+  .kpi .v{font-size:26px;font-weight:700;font-variant-numeric:tabular-nums}
+  .kpi .l{font-size:12px;color:var(--dim);margin-top:2px}
+  .kpi .d{font-size:11px;margin-top:6px;padding:2px 8px;border-radius:20px;display:inline-block}
+  .up{background:rgba(74,222,128,.12);color:var(--good)} .down{background:rgba(248,113,113,.12);color:var(--bad)}
+  .flat{background:rgba(139,150,171,.15);color:var(--dim)} .warn{background:rgba(250,204,21,.12);color:var(--warn)}
+  h2{font-size:16px;font-weight:700;margin:36px 0 14px;display:flex;align-items:center;gap:10px}
+  h2::before{content:"";width:4px;height:18px;background:var(--acc);border-radius:2px;display:inline-block}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  .grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:16px}
+  @media(max-width:900px){.grid2,.grid3{grid-template-columns:1fr}}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+  .panel h3{font-size:13px;font-weight:600;color:var(--dim);margin-bottom:12px;letter-spacing:.5px;text-transform:uppercase}
+  .chart{width:100%;height:300px}
+  .chart-sm{width:100%;height:240px}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{color:var(--dim);text-align:left;font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+  td{padding:8px 10px;border-bottom:1px solid rgba(35,43,61,.5)}
+  tr:last-child td{border-bottom:none}
+  .tag{display:inline-block;padding:1px 8px;border-radius:4px;font-size:11px;font-weight:600}
+  .t-ok{background:rgba(74,222,128,.12);color:var(--good)}
+  .t-wait{background:rgba(250,204,21,.12);color:var(--warn)}
+  .t-dead{background:rgba(248,113,113,.12);color:var(--bad)}
+  .t-mute{background:rgba(167,139,250,.12);color:var(--purple)}
+  .insight{border-left:3px solid var(--acc);background:var(--panel2);border-radius:0 10px 10px 0;padding:14px 18px;margin-bottom:12px;font-size:13.5px}
+  .insight b{color:var(--acc)}
+  .insight.warn{border-left-color:var(--warn)} .insight.warn b{color:var(--warn)}
+  .insight.bad{border-left-color:var(--bad)} .insight.bad b{color:var(--bad)}
+  .insight.good{border-left-color:var(--good)} .insight.good b{color:var(--good)}
+  footer{margin-top:40px;color:var(--dim);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>KinetAios · GitHub 访问数据报告 <span>v2</span></h1>
+  <div class="sub">数据窗口 2026-07-09 → 2026-08-16(39 天)· 生成于 2026-08-16 · 前版:docs/github-traffic-report.html(8/14)</div>
+  <div class="kpis">
+    <div class="kpi"><div class="v">8</div><div class="l">Stars</div><div class="d up">+2 / 48h</div></div>
+    <div class="kpi"><div class="v">734</div><div class="l">Commits(主仓库)</div><div class="d flat">37 天持续</div></div>
+    <div class="kKi" style="display:contents"></div>
+    <div class="kpi"><div class="v">19</div><div class="l">Tags(v1.0→v3.1)</div><div class="d flat">节奏稳定</div></div>
+    <div class="kpi"><div class="v">2</div><div class="l">Forks</div><div class="d flat">—</div></div>
+    <div class="kpi"><div class="v">1</div><div class="l">外部分发事件</div><div class="d warn">仅 weekly thread</div></div>
+  </div>
+</header>
+
+<!-- ============ 渠道状态总览 ============ -->
+<h2>分发渠道状态(8/16 快照)</h2>
+<div class="panel" style="margin-bottom:16px">
+<table>
+  <tr><th>渠道</th><th>状态</th><th>流量贡献</th><th>下一步</th></tr>
+  <tr><td>r/ChatGPTCoding weekly thread</td><td><span class="tag t-ok">存活</span></td><td>慢漏,本轮 +2 星大概率源于此</td><td>不动,让它漏</td></tr>
+  <tr><td>awesome-ai-agents PR #1397</td><td><span class="tag t-wait">等合并</span></td><td>合并后长尾反链</td><td>e2b Discord 催进(可选)</td></tr>
+  <tr><td>Show HN id=49301221</td><td><span class="tag t-dead">flagged</span></td><td>0 — LLM 文案触发 spam 过滤器</td><td>2-3 周 HN 养号 + 本人重写文案</td></tr>
+  <tr><td>r/ChatGPTCoding 独立帖</td><td><span class="tag t-dead">被删</span></td><td>0 — self-promo</td><td>不再发独立帖</td></tr>
+  <tr><td>r/LocalLLaMA</td><td><span class="tag t-mute">养号中</span></td><td>0 — karma=1</td><td>new 排序抢答 ROCm/Ollama 题</td></tr>
+  <tr><td>目录站(AltTo/SaaSHub 等)</td><td><span class="tag t-mute">长尾</span></td><td>≈0 即时,反链价值</td><td>不再投入</td></tr>
+</table>
+</div>
+
+<!-- ============ 核心洞察 ============ -->
+<h2>核心洞察</h2>
+<div class="insight good"><b>48 小时 +2 星(6→8)是 5 周来第一次外部驱动增长。</b>期间仓库零 push 推广、零发帖,唯一变化是 weekly thread 评论 + 仓库门面修缮(desc/homepage/GIF/banner 清理)。虽然样本极小,但验证了之前的诊断:不是产品问题,是分发问题——门面修好后,少量精准流量也能转化。</div>
+<div class="insight"><b>转化漏斗初步成形:曝光→repo visit→star。</b>8/15-16 两天 star +2,而前 5 周平均周增速 <1。推算 weekly thread 精准曝光 ~100-200 次 → 2 star ≈ 1-2% 转化,符合"精准小流量"预期。要在 30 天内到 100 星,按此转化率需 ~5000-10000 精准曝光——只有 Show HN 上首页 / LocalLLaMA 高赞帖 / awesome 合并三件事能达到这个量级。</div>
+<div class="insight warn"><b>三个高杠杆渠道全部押在未来 2-4 周:</b>Show HN 复活(养号 + 本人重写文案)、LocalLLaMA 攒 karma、PR #1397 合并。当前唯一"活着"的 weekly thread 每周贡献 ≈2 星。增长曲线的下一个拐点完全取决于这三件事的执行,而不是再加码目录站。</div>
+<div class="insight bad"><b>代码产出与星数严重脱节:37 天 734 commits、19 个 tag、48 个 TS 文件 3.6 万行,却只有 8 星。</b>这是典型的"build in dark"。开发节奏(几乎每日 push)不必降,但推广节奏必须从"月度脉冲"改为"周度脉冲"——每周至少一个外部曝光事件(评论/答题主战场贴/渠道动作),和 commit 一样排进日程。</div>
+
+<!-- ============ 图表区 ============ -->
+<h2>数据明细</h2>
+<div class="grid2">
+  <div class="panel"><h3>Star 增长(按已知节点)</h3><div id="c-star" class="chart"></div></div>
+  <div class="panel"><h3>提交节奏 vs 星数(近 37 天)</h3><div id="c-commit" class="chart"></div></div>
+</div>
+<div class="grid3" style="margin-top:16px">
+  <div class="panel"><h3>Commit 类型分布(734)</h3><div id="c-type" class="chart-sm"></div></div>
+  <div class="panel"><h3>feat scope Top</h3><div id="c-scope" class="chart-sm"></div></div>
+  <div class="panel"><h3>版本发布节奏(v1.0→v3.1)</h3><div id="c-tag" class="chart-sm"></div></div>
+</div>
+
+<h2>30 天行动方案(对应洞察)</h2>
+<div class="panel">
+<table>
+  <tr><th>周</th><th>主战场动作</th><th>杠杆</th><th>验证指标</th></tr>
+  <tr><td>W1(本周)</td><td>HN 每日 2-3 条本人评论(Electron/TS/agent 架构)+ LocalLLaMA new 排序抢答</td><td>账号可信度</td><td>HN karma ≥5,Reddit karma ≥20</td></tr>
+  <tr><td>W2</td><td>继续养号;PR #1397 若未动 → e2b Discord 催;备 Show HN 叙事素材(只给中文结构,英文本人写)</td><td>渠道存货</td><td>素材文档完成</td></tr>
+  <tr><td>W3</td><td><b>Show HN 复活首发</b>(text 帖,博客式叙事,遵守 Tom 全部要点)</td><td>★★★</td><td>上 new 页前排;HN→repo referral</td></tr>
+  <tr><td>W4</td><td>r/LocalLLaMA Project flair 帖(karma 达标后);r/Ollama 备选</td><td>★★</td><td>帖子存活 + 存活 24h</td></tr>
+</table>
+</div>
+
+<footer>KinetAios · 内部分发分析 · 数据源:GitHub API(匿名)/ git log / 会话记录 · v2 替代 8/14 版</footer>
+</div>
+
+<script>
+const CS={bg:'transparent',txt:'#dde3ee',dim:'#8b96ab',line:'#232b3d',acc:'#5ea2ff'};
+function mk(id,opt){const c=echarts.init(document.getElementById(id),null,{renderer:'canvas'});opt.textStyle={fontFamily:'-apple-system,Segoe UI,Roboto,sans-serif',color:CS.txt};opt.backgroundColor='transparent';c.setOption(opt);window['__c_'+id]=c;return c}
+const axis=(name)=>({type:'category',name,nameLocation:'end',axisLine:{lineStyle:{color:CS.line}},axisTick:{show:false},axisLabel:{color:CS.dim}});
+const valAx=(name)=>({type:'value',name,nameLocation:'end',splitLine:{lineStyle:{color:'rgba(35,43,61,.6)'}},axisLabel:{color:CS.dim}});
+
+/* Star 增长 */
+mk('c-star',{tooltip:{trigger:'axis'},grid:{l:40,r:20,t:30,b:40},
+ xAxis:axis(''),yAxis:valAx('stars'),
+ series:[{type:'line',smooth:false,step:'end',data:[['07-09',0],['07-13',1],['07-20',2],['07-27',3],['08-03',4],['08-10',5],['08-11',6],['08-14',6],['08-15',7],['08-16',8]],
+ lineStyle:{color:CS.acc,width:2.5},itemStyle:{color:CS.acc},
+ areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(94,162,255,.35)'},{offset:1,color:'rgba(94,162,255,0)'}])},
+ markPoint:{data:[{coord:['08-15',7],value:'+1',itemStyle:{color:'#4ade80'}},{coord:['08-16',8],value:'+1',itemStyle:{color:'#4ade80'}}]}}]});
+
+/* Commits vs stars */
+mk('c-commit',{tooltip:{trigger:'axis'},legend:{data:['commits/天','stars(累计)'],textStyle:{color:CS.dim},top:0},
+ grid:{l:40,r:40,t:40,b:40},
+ xAxis:axis(''),yAxis:[valAx('commits'),{...valAx('stars'),splitLine:{show:false}}],
+ series:[
+  {name:'commits/天',type:'bar',data:(()=>{const d={};[['07-09',1],['07-12',1],['07-13',27],['07-14',27],['07-15',37],['07-16',59],['07-17',22],['07-28',18],['07-29',11],['07-30',3],['07-31',34],['08-01',32],['08-02',25],['08-03',18],['08-04',38],['08-05',61],['08-06',37],['08-07',39],['08-08',35],['08-09',15],['08-10',9],['08-11',22],['08-12',24],['08-13',31],['08-14',20],['08-15',10],['08-16',10]].forEach(x=>d[x[0]]=x[1]);return d})(),
+   itemStyle:{color:'rgba(167,139,250,.55)',borderRadius:[3,3,0,0]}},
+  {name:'stars(累计)',type:'line',yAxisIndex:1,step:'end',data:{'07-09':0,'07-13':1,'07-20':2,'07-27':3,'08-03':4,'08-10':5,'08-11':6,'08-14':6,'08-15':7,'08-16':8},
+   lineStyle:{color:CS.acc,width:2},itemStyle:{color:CS.acc}}]});
+
+/* Commit types */
+mk('c-type',{tooltip:{trigger:'item'},series:[{type:'pie',radius:['45%','72%'],center:['50%','52%'],
+ label:{color:CS.dim,formatter:'{b}\n{c}'},
+ data:[{value:342,name:'fix',itemStyle:{color:'#5ea2ff'}},{value:190,name:'feat',itemStyle:{color:'#4ade80'}},{value:75,name:'docs',itemStyle:{color:'#a78bfa'}},{value:25,name:'chore',itemStyle:{color:'#facc15'}},{value:21,name:'refactor',itemStyle:{color:'#f472b6'}},{value:36,name:'style/ui/design',itemStyle:{color:'#38bdf8'}},{value:45,name:'其他(perf/ci/polish…)',itemStyle:{color:'#64748b'}}]}]});
+
+/* feat scope */
+mk('c-scope',{tooltip:{},grid:{l:70,r:30,t:10,b:30},xAxis:valAx(''),yAxis:{type:'category',inverse:true,axisLabel:{color:CS.txt,fontSize:12},axisLine:{lineStyle:{color:CS.line}}},
+ series:[{type:'bar',barWidth:14,data:[['engines',2],['i18n',2],['memory',2],['sidebar',2],['team',2],['wecom',2],['feishu',3],['v2',3],['voice',3],['nexus',4],['ui',5],['plugins',7]].map(x=>({value:x[1],name:x[0]})),
+ itemStyle:{color:new echarts.graphic.LinearGradient(1,0,0,0,[{offset:0,color:'#5ea2ff'},{offset:1,color:'#a78bfa'}]),borderRadius:[0,3,3,0]},
+ label:{show:true,position:'right',color:CS.dim}}]});
+
+/* tags timeline */
+mk('c-tag',{tooltip:{trigger:'axis'},grid:{l:40,r:20,t:30,b:40},
+ xAxis:axis(''),yAxis:valAx('累计 tag 数'),
+ series:[{type:'line',step:'end',data:[['v1.0.0',1],['v1.2',2],['v1.4',3],['v1.6',4],['v1.8',5],['v2.0',6],['v2.2',7],['v2.3',8],['v2.5',9],['v2.6',10],['v2.7',11],['v2.8',12],['v2.9',13],['v3.0',14],['v3.1',15],['(今)',15]],
+ lineStyle:{color:'#4ade80',width:2},itemStyle:{color:'#4ade80'},
+ areaStyle:{color:'rgba(74,222,128,.12)'}}]});
+window.addEventListener('resize',()=>Object.keys(window).filter(k=>k.startsWith('__c_')).forEach(k=>window[k].resize()));
+</script>
+</body>
+</html>
