@@ -5703,6 +5703,16 @@ async function send() {
     }
     if (at.missing.length) uxToast.warn(tr('toast.missingFiles', { list: at.missing.join('\n') }));
     if (currentView !== 'chat') showChat();
+    // 用户显式发送 = 解冻 + 跟随底部。必须在 await api.send 之前:
+    // conversation-update 广播先于 invoke reply 到达 renderer,若此刻仍冻结,
+    // renderMain 走冻结分支吞掉新 turn(用户消息不渲染、滚动不贴底)。
+    // Explicit send unfreezes + follows bottom — BEFORE the await: the
+    // conversation-update broadcast reaches the renderer before the invoke
+    // reply; if still frozen, renderMain's frozen branch swallows the new
+    // turn entirely (message not rendered, no scroll to bottom).
+    scrollFrozen = false;
+    userAtBottom = true;
+    scrollAnchorTurnIdx = null; // 旧锚点残留会让 renderMain 走 applyScrollAnchor 拉回旧位置
     // 先发送,成功后再清空(IPC 失败时用户数据不丢失)
     try {
       await api.send(selectedId, text);
@@ -5725,8 +5735,7 @@ async function send() {
     // 发送后强制滚到底部;一层 rAF 确保 onConversation → renderMain 已渲染新 turn DOM。
     // scrollDownForce 现在是同步的,所以延迟一帧即可。
     // Force scroll after send; delay 1 frame so the new turn DOM is present.
-    // 用户发送 = 显式操作 → 解冻。
-    scrollFrozen = false;
+    // 解冻已在 await api.send 之前完成(见上);这里仅强制贴底。
     requestAnimationFrame(() => scrollDownForce(true));
   } finally {
     sending = false;
