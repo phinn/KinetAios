@@ -316,7 +316,7 @@ function applyI18nDOM(): void {
       }
     }
     if (ev.type !== 'token') {
-      renderSidebar();
+      refreshSidebarLi(convId); // 增量:只改 dot/meta,不重建整列表(全量重建在多步任务下烧 GPU)
       if (currentView === 'workbench' && (ev.type === 'cost' || ev.type === 'done' || ev.type === 'error')) {
         // ponytail: 增量刷新单卡;新任务/删除走 onConversation → 全量 renderWorkbench,这里只更新统计/时间/图标。
         refreshWbCard(conv.cwd || '');
@@ -392,6 +392,36 @@ function closeAllCtxMenus(): void {
   ctxProjMenu.hidden = true;
   ctxTargetConvId = null;
   ctxTargetProjCwd = null;
+}
+
+// 侧边栏增量更新:agent 事件流(tool/cost 等,多步任务上百个)不再全量重建
+// 73 个 <li>(innerHTML 解析 + 事件绑定 + 布局/整形/绘制,GPU 烧到 50%),
+// 只就地刷新该会话 li 的呼吸灯 class 和 meta 文字。
+// 全量重建仍保留给结构性变化(增删会话/搜索/排序),走 renderSidebar()。
+// Incremental sidebar update: patch dot class + meta text in place instead
+// of rebuilding the whole list on every agent event.
+function refreshSidebarLi(convId: string): void {
+  const c = convs.get(convId);
+  if (!c) return;
+  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
+  if (!li) { renderSidebar(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 兜底全量
+  const last = c.turns[c.turns.length - 1];
+  const dot = li.querySelector('.dot');
+  if (dot) {
+    const dotCls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+    const engCls = c.engine ? ` eng-${c.engine}` : '';
+    dot.className = `dot ${dotCls}${engCls}`;
+  }
+  const timeEl = li.querySelector('.sb-task-time');
+  if (timeEl) {
+    const turnCount = c.turnCount ?? c.turns.length;
+    const ts = c.updatedAt ?? c.createdAt;
+    timeEl.textContent = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${fmtRelative(ts)}` : fmtRelative(ts));
+  }
+  // 底部统计(总数·运行数)也是纯文本,就地刷新。
+  const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
+  const footInfo = document.getElementById('sb-foot-info');
+  if (footInfo) footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
 }
 
 function renderSidebar() {
