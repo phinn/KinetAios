@@ -7849,7 +7849,7 @@ function openReplay(turnIdx: number): void {
             ${step.durationMs != null ? `<span class="replay-dur">${tr('replay.duration', { ms: step.durationMs })}</span>` : ''}
             <div class="replay-section">
               <div class="replay-label">${tr('replay.toolCall')}</div>
-              <pre class="replay-args">${esc(step.args)}</pre>
+              <pre class="replay-args">${esc(step.args.slice(0, 4000))}</pre>
             </div>
             <div class="replay-section">
               <div class="replay-label">${tr('replay.result')}</div>
