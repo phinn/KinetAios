@@ -1941,13 +1941,18 @@ a { color: var(--accent); }
 .avatar { width: 30px; height: 30px; border-radius: 50%; flex-shrink: 0; display: flex; align-items: center; justify-content: center; box-shadow: var(--shadow-xs); transition: transform var(--dur-fast) var(--ease-out); }
 .avatar:hover { transform: scale(1.08); }
 /* AI 头像 streaming 呼吸光晕 / AI avatar breathing glow while streaming */
-.msg.ai .avatar { transition: transform var(--dur-fast) var(--ease-out), box-shadow 0.6s ease-in-out; }
-.turn.streaming .msg.ai .avatar {
+/* 性能:光晕用 ::after 伪元素 + opacity 动画(合成层),box-shadow 动画会每帧触发 paint */
+/* perf: glow via ::after pseudo + opacity animation (compositor-only); animating box-shadow forces repaint every frame */
+.msg.ai .avatar { position: relative; transition: transform var(--dur-fast) var(--ease-out); }
+.turn.streaming .msg.ai .avatar::after {
+  content: ''; position: absolute; inset: -6px; border-radius: 50%;
+  background: radial-gradient(circle, color-mix(in srgb, var(--accent) 35%, transparent) 0%, transparent 70%);
+  opacity: 0; pointer-events: none;
   animation: avatar-glow 1.6s ease-in-out infinite;
 }
 @keyframes avatar-glow {
-  0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 35%, transparent); }
-  50% { box-shadow: 0 0 0 6px color-mix(in srgb, var(--accent) 0%, transparent); }
+  0%, 100% { opacity: 0.55; }
+  50%      { opacity: 0; }
 }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-xs); }
@@ -2048,7 +2053,7 @@ a { color: var(--accent); }
 .step.running { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-glow), transparent 70%); }
 .step.running .name { color: var(--accent); }
 .step.running::before { content: ''; position: absolute; left: -1px; top: 0; bottom: 0; width: 2px; background: var(--accent); border-radius: 1px; animation: step-run-pulse 1.2s ease-in-out infinite; }
-@keyframes step-run-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; box-shadow: 0 0 6px var(--accent); } }
+@keyframes step-run-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 .step .name { color: var(--text-dim); font-weight: 500; transition: color var(--dur-fast) var(--ease-out); }
 .step:hover .name { color: var(--text); }
 .step details summary { cursor: pointer; color: var(--text-dim); list-style: none; }
@@ -2083,6 +2088,7 @@ a { color: var(--accent); }
 .composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 32px; flex-shrink: 0; }
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
+  position: relative; /* 供 listening::after 麦克风脉冲环定位 / anchor for listening::after mic pulse ring */
   background: var(--surface-chip-soft, rgba(255,255,255,.06));
   border: 1px solid var(--border-soft, var(--border));
   color: var(--text-dim); padding: 4px; border-radius: 16px; font-size: 0.923rem;
@@ -2107,13 +2113,15 @@ a { color: var(--accent); }
 /* 工具按钮组与配置选择器之间的分隔线 / Divider between tools and config selectors */
 .composer-bar .bar-divider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
 /* 语音输入按钮:listening 状态红点闪烁 */
-.composer-bar .tool.listening { color: var(--danger); border-color: var(--danger); animation: mic-pulse 1.2s ease-in-out infinite; }
+.composer-bar .tool.listening { color: var(--danger); border-color: var(--danger); } /* 动画移至 ::after 脉冲环 / animation moved to ::after pulse ring */
 .composer-bar .tool.disabled { opacity: 0.4; cursor: not-allowed; }
 .composer-bar .tool.loading { opacity: 0.5; pointer-events: none; }
 /* 替身画像 toggle: active 时 accent 色高亮,关闭时半透明,与一次性按钮区分 */
 .composer-bar .tool#btn-persona.active { color: var(--accent); border-color: var(--accent-dim); background: var(--accent-dim-soft, rgba(255,255,255,.08)); }
 .composer-bar .tool#btn-persona:not(.active) { opacity: 0.4; }
-@keyframes mic-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(220, 50, 50, 0.4); } 50% { box-shadow: 0 0 0 4px rgba(220, 50, 50, 0); } }
+/* 性能:用 outline 静态环 + opacity 动画替代 box-shadow 动画(避免每帧 paint)/ perf: static outline ring + opacity anim instead of animating box-shadow */
+.composer-bar .tool.listening::after { content: ''; position: absolute; inset: -3px; border-radius: inherit; border: 2px solid rgba(220, 50, 50, 0.4); pointer-events: none; animation: mic-pulse 1.2s ease-in-out infinite; }
+@keyframes mic-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
 /* AI 回复合并行:左侧 meta(耗时/token/cost)+ 右侧操作图标。常驻可见 */
 /* Combined meta+actions row: left=meta info, right=action icons. Always visible. */
 .ai-meta-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.846rem; color: var(--text-faint); user-select: none; }
