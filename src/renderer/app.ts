@@ -2539,11 +2539,22 @@ function snapToBottomReal(el: HTMLElement): void {
       stripped.push(h);
     }
   }
-  el.scrollTop = el.scrollHeight;
+  // 先钳制到「真实末尾」:scrollHeight 此时包含 strip 区占位高度 + 未 strip 真实高度,
+  // 设到这里可能落到真实末尾下方一大截(尤其只 strip 了少量大头 turn 时)。
+  // / Clamp to real bottom first — scrollHeight here mixes stripped placeholders
+  // + real heights of unstipped turns, so setting scrollTop = scrollHeight may
+  // land far below the actual content end (causing large empty gap below).
+  {
+    void el.offsetHeight;
+    const realBottom = el.scrollHeight - lastStrippedPlaceholder(el);
+    const target = Math.min(el.scrollHeight, realBottom);
+    el.scrollTop = target;
+  }
   // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 必须再贴一次,
-  // 否则视口停在旧 scrollHeight 处,表现为"发送后滚到上面去了"。
+  // 否则视口停在旧 scrollHeight 处,表现为"发送后滚到上面去了"或"AI 回答后下方一大片空白"。
   // / Restoring content-visibility changes real heights — snap again or the
-  // viewport rests at the stale scrollHeight (looks like it scrolled up).
+  // viewport rests at the stale scrollHeight (looks like it scrolled up or
+  // shows a big empty gap after an AI answer).
   if (stripped.length) {
     void el.offsetHeight;
     el.scrollTop = el.scrollHeight;
@@ -2554,6 +2565,18 @@ function snapToBottomReal(el: HTMLElement): void {
   requestAnimationFrame(() => {
     if (viewMode === 'follow' && !scrollFrozen) el.scrollTop = el.scrollHeight;
   });
+}
+
+/** 已 strip 设了 visible 的 turn 的"占位高度"之和(他们当前还没渲染真实内容)。
+ *  scrollHeight − 这个值 = 真实内容末端位置。用于钳制贴底不超过真实末尾。 */
+function lastStrippedPlaceholder(el: HTMLElement): number {
+  let total = 0;
+  for (const t of el.querySelectorAll<HTMLElement>('.turn')) {
+    if (t.style.contentVisibility === 'visible') continue;
+    const ph = (t as any).offsetHeight; // 占位高度(content-visibility: auto 状态下)
+    if (ph > 0) total += ph;
+  }
+  return total;
 }
 
 /** 内容增长的自动跟随(rAF 防抖,每帧最多一次)。
