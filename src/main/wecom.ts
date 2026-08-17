@@ -5,6 +5,8 @@
 import { WSClient, WSAuthFailureError, WSReconnectExhaustedError } from '@wecom/aibot-node-sdk';
 import type { WsFrame, TextMessage, VoiceMessage, WsFrameHeaders } from '@wecom/aibot-node-sdk';
 import os from 'node:os';
+import fsp from 'node:fs/promises';
+import nodePath from 'node:path';
 import type { TaskManager } from './TaskManager';
 import type { Conversation } from '../shared/types';
 import { getSettings } from './settings';
@@ -20,6 +22,12 @@ class WeComBridge {
   /** wecomKey → convId 映射(内存缓存,启动时从 SQLite 重建)。 */
   // / wecomKey → convId mapping (in-memory cache, rebuilt from SQLite on start).
   private wecomSessions = new Map<string, string>();
+  /** wecomKey → 最近一条可回复 frame(被动回复通道有时效,仅工具回发文件用)。 */
+  // / wecomKey → latest replyable frame (passive reply channel; used by file send).
+  private lastFrames = new Map<string, WsFrameHeaders>();
+  /** 最近活跃会话的 wecomKey(最后收到消息的那个),工具回发文件用。 */
+  // / wecomKey of the most recent chat (last message received); used by file send.
+  private activeWecomKey: string | null = null;
   /** per-userKey 串行队列,保证同一用户的消息按顺序处理。 */
   // / Per-userKey serial queue: messages from the same user are processed in order.
   private userQueues = new Map<string, Promise<void>>();
@@ -376,6 +384,10 @@ class WeComBridge {
 
     const streamId = `s_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const replyFrame: WsFrameHeaders = { headers: frame.headers };
+    // 存最近 frame 供工具被动回复(wecom_send_file 用,被动通道有时效限制)
+    // / Keep latest frame for passive replies from tools (has expiry window).
+    this.lastFrames.set(wecomKey, replyFrame);
+    this.activeWecomKey = wecomKey;
 
     // ── 斜杠指令(同步快速回复,不走 Agent)或 Skill 调用 ──
     // / Slash commands (fast reply) or skill invocations (flow to agent).
@@ -452,9 +464,31 @@ class WeComBridge {
     this.broadcast({ type: 'message_replied', data: { userid, chatid } });
   }
 
+  /** 将磁盘文件发送到最近活跃的企业微信会话(上传临时素材 + 被动回复媒体)。 */
+  // / Send a file to the most recent WeCom chat (uploadMedia + replyMedia).
+  async sendFileToActiveChat(filePath: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.activeWecomKey) return { ok: false, error: '没有活跃的企业微信会话' };
+    return this.sendFileToChat(this.activeWecomKey, filePath);
+  }
+
+  /** 将磁盘文件发送到指定 wecomKey 的最近会话(上传临时素材 + 被动回复媒体)。 */
+  // / Send a file to the latest chat of a wecomKey (uploadMedia + replyMedia).
+  async sendFileToChat(wecomKey: string, filePath: string): Promise<{ ok: boolean; error?: string }> {
+    if (!this.ws || !this._connected) return { ok: false, error: '企业微信未连接' };
+    const frame = this.lastFrames.get(wecomKey);
+    if (!frame) return { ok: false, error: '该会话暂无可回复的消息通道(用户需先发一条消息)' };
+    try {
+      const buf = await fsp.readFile(filePath);
+      const up = await this.ws.uploadMedia(buf, { type: 'file', filename: nodePath.basename(filePath) });
+      await this.ws.replyMedia(frame, 'file', up.media_id);
+      return { ok: true };
+    } catch (e: any) {
+      return { ok: false, error: e?.message ?? String(e) };
+    }
+  }
+
   // ── 最终回复 / Final reply ──
-  private async replyFinal(frame: WsFrameHeaders, streamId: string, content: string): Promise<void> {
-    if (!this.ws) return;
+  private async replyFinal(frame: WsFrameHeaders, streamId: string, content: string): Promise<void> {    if (!this.ws) return;
     const cfg = getSettings().wecomBot;
 
     // 截断超长消息(企信 markdown 限制 20480 字节 ≈ ~6000 汉字)

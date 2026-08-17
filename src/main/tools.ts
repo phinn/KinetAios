@@ -1502,6 +1502,43 @@ const videoGen: Tool = {
   },
 };
 
+// ── wecom_send_file: 将磁盘文件发送到当前企业微信会话 ──
+// Send a file on disk to the current WeCom chat.
+// 仅在企业微信通道会话中可用(bridge 有活跃会话即视为企微环境)。
+// / Only available in WeCom channel sessions.
+const wecomSendFile: Tool = {
+  name: 'wecom_send_file',
+  description: '将磁盘上已有的文件发送到当前企业微信会话。支持文档(pdf/xlsx/docx/csv/txt)、图片(png/jpg/gif/webp)、压缩包(zip)等,单文件最大 50MB。仅在会话来自企业微信通道时有效。如果用户要求发送已有文件,请用此工具,不要用 write_file。',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '文件路径(绝对或相对路径)' },
+    },
+    required: ['path'],
+  },
+  async run(args, ctx) {
+    const p = expandPath((args.path as string) ?? '', ctx.cwd);
+    if (!p) return '缺少 path 参数';
+
+    if (!fs.existsSync(p)) return `文件不存在: ${p}`;
+    const stat = fs.statSync(p);
+    if (stat.size === 0) return `文件为空: ${p}`;
+    if (stat.size > 50 * 1024 * 1024) return `文件超过 50MB 上限: ${(stat.size / 1048576).toFixed(1)}MB`;
+
+    try {
+      const { getWeComBridge } = await import('./wecom');
+      const bridge = getWeComBridge();
+      const res = await bridge.sendFileToActiveChat(p);
+      if (res.ok) {
+        return `✅ 已发送文件到企业微信会话: ${path.basename(p)} (${(stat.size / 1024).toFixed(1)} KB)`;
+      }
+      return `❌ 发送失败: ${res.error}`;
+    } catch (e: any) {
+      return `❌ 发送失败: ${sanitizeError(e)}`;
+    }
+  },
+};
+
 // ── feishu_send_file: 将磁盘文件发送到当前飞书频道 ──
 // / Send a file from disk to the active Feishu chat.
 // 仅在飞书频道会话中可用(Agent 通过 conv.feishuKey 判断)。
@@ -1661,7 +1698,7 @@ const keyboardKeyTool: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, screenshot, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
