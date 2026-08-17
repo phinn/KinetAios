@@ -2540,7 +2540,20 @@ function snapToBottomReal(el: HTMLElement): void {
     }
   }
   el.scrollTop = el.scrollHeight;
-  for (const h of stripped) h.style.contentVisibility = '';
+  // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 必须再贴一次,
+  // 否则视口停在旧 scrollHeight 处,表现为"发送后滚到上面去了"。
+  // / Restoring content-visibility changes real heights — snap again or the
+  // viewport rests at the stale scrollHeight (looks like it scrolled up).
+  if (stripped.length) {
+    void el.offsetHeight;
+    el.scrollTop = el.scrollHeight;
+  }
+  // 异步布局兜底(markdown/图片/字体晚到会继续增高):延迟一帧再贴一次,幂等无害。
+  // / Late async layout (markdown/images/fonts) keeps growing content — one
+  // deferred re-snap, idempotent and harmless.
+  requestAnimationFrame(() => {
+    if (viewMode === 'follow' && !scrollFrozen) el.scrollTop = el.scrollHeight;
+  });
 }
 
 /** 内容增长的自动跟随(rAF 防抖,每帧最多一次)。
