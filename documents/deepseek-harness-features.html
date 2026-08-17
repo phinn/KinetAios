@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>DeepSeek Chat 网页版功能全景 — DeepSeek Harness Features Map</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#11151a; --panel-2:#161b22; --line:#1f2630;
+    --text:#e6e8eb; --dim:#9aa3ad; --muted:#6b7280; --accent:#4f8cff;
+    --accent-2:#7c5cff; --ok:#3fb27f; --warn:#d4a017; --danger:#e5484d;
+    --code:#0e1217; --tag:#1c2430;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0;background:var(--bg);color:var(--text);font:14px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+  .container{max-width:1240px;margin:0 auto;padding:32px 24px 80px}
+  .hero{padding:28px 28px;background:linear-gradient(135deg,#0e1320 0%,#11151a 60%);border:1px solid var(--line);border-radius:16px;margin-bottom:28px}
+  .hero h1{margin:0 0 8px;font-size:28px;letter-spacing:-0.01em}
+  .hero .lede{margin:0;color:var(--dim);font-size:14.5px;max-width:760px}
+  .meta{display:flex;gap:14px;margin-top:14px;font-size:12.5px;color:var(--muted)}
+  .meta b{color:var(--dim);font-weight:600}
+
+  section{margin:36px 0}
+  h2{font-size:20px;margin:0 0 4px;letter-spacing:-0.01em;border-bottom:1px solid var(--line);padding-bottom:10px}
+  h2 .sub{display:block;font-size:12px;color:var(--muted);font-weight:400;margin-top:4px;letter-spacing:0}
+  h3{font-size:15px;margin:18px 0 8px;color:var(--text)}
+
+  /* 功能网格 */
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;transition:border-color .15s}
+  .card:hover{border-color:#2c3645}
+  .card .name{font-weight:600;font-size:14.5px;display:flex;align-items:center;gap:8px}
+  .card .desc{color:var(--dim);font-size:13px;margin-top:6px;line-height:1.5}
+  .card .pillrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+  .pill{font-size:11px;padding:2px 8px;border-radius:999px;background:var(--tag);color:var(--dim);border:1px solid var(--line)}
+  .pill.ok{background:rgba(63,178,127,.12);color:#7fd2a4;border-color:rgba(63,178,127,.25)}
+  .pill.warn{background:rgba(212,160,23,.12);color:#e8c168;border-color:rgba(212,160,23,.25)}
+  .pill.danger{background:rgba(229,72,77,.12);color:#ef8b8e;border-color:rgba(229,72,77,.25)}
+  .pill.info{background:rgba(79,140,255,.12);color:#9ab8ff;border-color:rgba(79,140,255,.25)}
+
+  /* 表 */
+  table{width:100%;border-collapse:collapse;margin-top:8px;font-size:13px}
+  th,td{padding:8px 10px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{background:var(--panel-2);font-weight:600;color:var(--dim);font-size:12px;letter-spacing:0.02em;text-transform:uppercase}
+  td code{background:var(--code);padding:1px 6px;border-radius:4px;font-size:12px;color:#cfd6df}
+  tr:hover td{background:rgba(255,255,255,.02)}
+
+  /* 流程图 */
+  .flow{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:12px 0;padding:14px;background:var(--panel);border:1px solid var(--line);border-radius:10px}
+  .flow .node{padding:8px 14px;background:var(--panel-2);border:1px solid var(--line);border-radius:8px;font-size:13px}
+  .flow .arrow{color:var(--muted);font-size:18px}
+
+  /* 对比块 */
+  .compare{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:10px}
+  .compare > div{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:14px}
+  .compare h4{margin:0 0 6px;font-size:13.5px;color:var(--accent)}
+  .compare ul{margin:6px 0 0;padding-left:18px;font-size:13px;color:var(--dim)}
+  .compare li{margin:3px 0}
+
+  /* 提示框 */
+  .note{background:var(--panel);border-left:3px solid var(--accent);padding:12px 14px;border-radius:0 8px 8px 0;font-size:13px;color:var(--dim);margin:12px 0}
+  .note.warn{border-left-color:var(--warn)}
+  .note strong{color:var(--text)}
+
+  /* 折叠 */
+  details{border:1px solid var(--line);border-radius:10px;padding:10px 14px;margin:8px 0;background:var(--panel)}
+  details > summary{cursor:pointer;font-weight:600;font-size:13.5px;color:var(--text);list-style:none}
+  details > summary::-webkit-details-marker{display:none}
+  details > summary::before{content:"� ";color:var(--muted);display:inline-block;width:14px}
+  details[open] > summary::before{content:"▾ "}
+  details .inner{padding:10px 0 4px 14px;border-top:1px solid var(--line);margin-top:10px;font-size:13px;color:var(--dim)}
+
+  /* 锚 */
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:18px 0;padding:12px;background:var(--panel);border:1px solid var(--line);border-radius:10px;font-size:12.5px}
+  .toc a{color:var(--dim);padding:4px 10px;border-radius:6px;background:var(--tag)}
+  .toc a:hover{background:#232b36;color:var(--text);text-decoration:none}
+
+  .kbd{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:var(--code);padding:1px 6px;border-radius:4px;border:1px solid var(--line);font-size:12px}
+
+  footer{margin-top:60px;padding-top:20px;border-top:1px solid var(--line);color:var(--muted);font-size:12px;text-align:center}
+</style>
+</head>
+<body>
+<div class="container">
+
+<div class="hero">
+  <h1>DeepSeek Chat 网页版功能全景 <span style="color:var(--muted);font-size:18px;font-weight:400">DeepSeek Harness Features Map</span></h1>
+  <p class="lede">面向 chat.deepseek.com(及国内 chat.deepseek.cn / APP)网页端的功能模块拆解,按对话输入、会话管理、模型/思考、联网/工具、内容渲染、设置/账户 6 大域划分,每模块标出 UI 触发点、数据流、限制与已知痛点。骨架版,后续补 UI 截图/版本差异。</p>
+  <div class="meta">
+    <span><b>数据源:</b> 公开产品界面 + 已知功能文档</span>
+    <span><b>范围:</b> chat.deepseek.com 网页端(桌面浏览器)</span>
+    <span><b>覆盖模型:</b> DeepSeek-V3 / DeepSeek-V3.1 / DeepSeek-V3.2-Exp / DeepSeek-R1</span>
+  </div>
+  <div class="toc">
+    <a href="#input">① 输入与附件</a>
+    <a href="#thinking">② 模型与深度思考</a>
+    <a href="#network">③ 联网与工具</a>
+    <a href="#render">④ 内容渲染</a>
+    <a href="#session">⑤ 会话管理</a>
+    <a href="#account">⑥ 账户与设置</a>
+    <a href="#arch">架构与数据流</a>
+    <a href="#compare">与 KinetAios 对比</a>
+    <a href="#gaps">已知缺失</a>
+  </div>
+</div>
+
+<!-- ============ 1 ============ -->
+<section id="input">
+  <h2>① 输入与附件 <span class="sub">Input &amp; Attachments</span></h2>
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">💬 多行文本输入框</div>
+      <div class="desc">底部固定输入框,自动伸缩高度(上限 ~6 行)。Enter 发送、Shift+Enter 换行。空行不影响发送。</div>
+      <div class="pillrow"><span class="pill info">UI: composer</span><span class="pill">Enter / Shift+Enter</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📎 文件 / 图片附件</div>
+      <div class="desc">支持拖拽与点击上传,常见格式: PDF / DOCX / XLSX / TXT / MD / 代码文件 / 图片。图片走多模态 VLM,文档走 OCR + 抽取文字作为上下文。</div>
+      <div class="pillrow"><span class="pill info">单文件 ~50MB</span><span class="pill warn">文档解析质量参差</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🎙️ 语音输入</div>
+      <div class="desc">麦克风按钮 → 浏览器 Web Speech API(或自研 ASR)转写为文本注入输入框,不直接发送。需要授权麦克风。</div>
+      <div class="pillrow"><span class="pill">Web Speech</span><span class="pill warn">需授权</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📋 粘贴自动检测</div>
+      <div class="desc">粘贴大段文本时提示"检测到 N 字,已附加为上下文";粘贴图片自动上传为附件。</div>
+      <div class="pillrow"><span class="pill">剪贴板监听</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">�️ 中断生成</div>
+      <div class="desc">流式期间输入框旁 Stop 按钮,中断当前生成。已生成的 token 保留,后续可继续。</div>
+      <div class="pillrow"><span class="pill">SSE cancel</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">↩️ 重生成 / 编辑重发</div>
+      <div class="desc">AI 回复下方:复制、点赞、点踩、重新生成;用户消息:编辑后重发(分支成新会话线)。</div>
+      <div class="pillrow"><span class="pill info">分支会话</span><span class="pill">反馈回流训练</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 2 ============ -->
+<section id="thinking">
+  <h2>② 模型与深度思考 <span class="sub">Model &amp; Reasoning</span></h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">🧠 深度思考(R1)Toggle</div>
+      <div class="desc">顶部模型选择器旁"深度思考"开关。开启走 DeepSeek-R1(高推理),关闭走 V3(快对话)。两套系统提示词与采样参数。</div>
+      <div class="pillrow"><span class="pill info">推理模式</span><span class="pill warn">R1 慢 + 长 CoT</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🔀 模型切换</div>
+      <div class="desc">下拉选择 V3 / V3.1 / V3.2-Exp / R1,会话级生效。不同模型计费单价不同。</div>
+      <div class="pillrow"><span class="pill">会话级</span><span class="pill warn">跨模型上下文不互通上下文窗口不同</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📜 思维链展示</div>
+      <div class="desc">R1 模式下默认折叠"思考过程",可点开查看完整 CoT;展开后与最终答复分两栏/两块渲染。</div>
+      <div class="pillrow"><span class="pill">折叠 / 展开</span><span class="pill info">可复制</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🌊 流式输出</div>
+      <div class="desc">SSE 流式 token,首字延迟 1-3s。Markdown 实时解析、代码块带语法高亮。流式期间不阻塞输入框,但可中断。</div>
+      <div class="pillrow"><span class="pill">SSE</span><span class="pill">Markdown 实时</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🎛️ 高级参数</div>
+      <div class="desc">设置 → 模型参数: Temperature / Top-P / Max Tokens / System Prompt(F12 改 system prompt 注入)。</div>
+      <div class="pillrow"><span class="pill">Temperature</span><span class="pill">Top-P</span><span class="pill warn">Max Tokens</span></div>
+    </div>
+
+  </div>
+
+  <details>
+    <summary>R1 与 V3 在 harness 层的关键差异</summary>
+    <div class="inner">
+      <ul>
+        <li><b>Prompt 模板不同:</b> R1 用 chat template 加 reasoning system prompt,V3 用普通 instruct template。</li>
+        <li><b>解析策略:</b> R1 解析 <code>&lt;think&gt;...&lt;/think&gt;</code> 区段折叠,V3 直接当正文。</li>
+        <li><b>采样参数:</b> R1 倾向 temperature=0.6,top_p=0.95;V3 默认 1.0 / 1.0。</li>
+        <li><b>工具调用:</b> 早期 R1 无 function calling,网页版以提示词工程包装;V3 / V3.2 原生支持。</li>
+        <li><b>上下文窗口:</b> V3 系列 64K-128K,R1 网页版 32K 上下文(CoT 占用大)。</li>
+      </ul>
+    </div>
+  </details>
+</section>
+
+<!-- ============ 3 ============ -->
+<section id="network">
+  <h2>③ 联网与工具 <span class="sub">Web &amp; Tools</span></h2>
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">🌐 联网搜索</div>
+      <div class="desc">输入框旁"联网"开关。开启后模型自动调用内置搜索引擎,回复带引用角标 [1] [2] + 底部来源列表(标题 / URL / 摘要)。</div>
+      <div class="pillrow"><span class="pill info">原生工具</span><span class="pill">引用 [n]</span><span class="pill warn">仅中文站优</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">� 文件读取 / 解析</div>
+      <div class="desc">上传附件被自动解析(图片走 VLM、文档走 OCR + 抽取),解析结果注入 prompt 上下文。解析失败的图片 / 扫描件会有提示。</div>
+      <div class="pillrow"><span class="pill">PDF/DOCX/XLSX</span><span class="pill">图片 OCR</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🧮 代码执行(受限)</div>
+      <div class="desc">部分版本提供 Python 沙箱执行(类似 ChatGPT Code Interpreter),可生成图表 / 跑数据。沙箱无网络、有限内存与时长。</div>
+      <div class="pillrow"><span class="pill warn">沙箱无网</span><span class="pill">Python</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🔌 API 工具(开发者)</div>
+      <div class="desc">API 平台支持 function calling;网页版未暴露完整 function call UI,仅通过 system prompt 间接用。</div>
+      <div class="pillrow"><span class="pill">function_call</span><span class="pill warn">网页端受限</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 4 ============ -->
+<section id="render">
+  <h2>④ 内容渲染 <span class="sub">Content Rendering</span></h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">📝 Markdown 实时解析</div>
+      <div class="desc">流式期间按块增量渲染(避免每 token 全量重 parse)。支持标题、列表、引用、表格、分隔线、行内 code、链接。</div>
+      <div class="pillrow"><span class="pill">块级增量</span><span class="pill">表格 / 列表</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">💻 代码块 + 高亮</div>
+      <div class="desc">围栏代码块带语法高亮(类 prism / shiki),右上角"复制"按钮与"运行"(若启用代码执行)。语言标签。</div>
+      <div class="pillrow"><span class="pill">语法高亮</span><span class="pill">一键复制</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🧮 LaTeX 公式</div>
+      <div class="desc">行内 <code>$...$</code> 与块级 <code>$$...$$</code> 走 KaTeX 渲染。失败时降级为纯文本。</div>
+      <div class="pillrow"><span class="pill">KaTeX</span><span class="pill warn">降级路径</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🖼️ 图片 / 图表预览</div>
+      <div class="desc">模型生成图片(如 R1 思维链配图、或代码执行输出的图表)内联预览,带"查看大图"。</div>
+      <div class="pillrow"><span class="pill">内联</span><span class="pill">查看大图</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📚 引用角标 + 来源列表</div>
+      <div class="desc">联网模式下角标 [n] 跳到文末来源,带标题 / 域名 / 时间。来源可点开新窗口。</div>
+      <div class="pillrow"><span class="pill info">角标跳转</span><span class="pill">来源元数据</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🎨 主题切换</div>
+      <div class="desc">浅色 / 深色 / 跟随系统。背景可设纯色 / 渐变。</div>
+      <div class="pillrow"><span class="pill">3 模式</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 5 ============ -->
+<section id="session">
+  <h2>⑤ 会话管理 <span class="sub">Session Management</span></h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">🗂️ 左侧会话列表</div>
+      <div class="desc">按时间倒序(今天 / 昨天 / 上周 / 更早)。标题自动取首问摘要或用户手动改。会话可重命名、置顶、删除、分享。</div>
+      <div class="pillrow"><span class="pill">分组</span><span class="pill">置顶 / 删</span><span class="pill">分享</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🔍 跨会话搜索</div>
+      <div class="desc">顶部搜索框:关键词全文匹配标题 + 消息内容(后端 FTS5 / Elasticsearch)。支持时间过滤。</div>
+      <div class="pillrow"><span class="pill">FTS</span><span class="pill">时间过滤</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🌿 分支 / 编辑重发</div>
+      <div class="desc">用户消息可编辑后重发,生成新分支并排展示;每分支独立滚动上下文。原分支保留。</div>
+      <div class="pillrow"><span class="pill info">并行分支</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📤 导出</div>
+      <div class="desc">单会话: 复制 / 下载为 Markdown / 图片长截图。多会话: 暂不支持批量导出。</div>
+      <div class="pillrow"><span class="pill">Markdown</span><span class="pill">图片长截图</span><span class="pill warn">无 PDF</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">� 分享链接</div>
+      <div class="desc">单会话生成可读分享链接(只读快照,过期可设)。</div>
+      <div class="pillrow"><span class="pill">只读</span><span class="pill warn">可过期</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📌 临时对话</div>
+      <div class="desc">入口"临时对话":不写入历史、不参与 recall / 训练数据。关闭即清空。</div>
+      <div class="pillrow"><span class="pill info">无痕</span><span class="pill">不训练</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 6 ============ -->
+<section id="account">
+  <h2>⑥ 账户与设置 <span class="sub">Account &amp; Settings</span></h2>
+
+  <div class="grid">
+
+    <div class="card">
+      <div class="name">🔑 登录方式</div>
+      <div class="desc">手机号 / 邮箱 / 微信扫码 / Google。手机号需 +86 验证。</div>
+      <div class="pillrow"><span class="pill">手机 / 邮箱</span><span class="pill">微信</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">💎 会员体系</div>
+      <div class="desc">免费版有 RPM 限速(如 20-50 次 / 天),会员解锁更高 RPM / 优先推理资源。</div>
+      <div class="pillrow"><span class="pill warn">限速</span><span class="pill">付费提速</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">�️ 个性化设置</div>
+      <div class="desc">模型默认 / 系统提示 / 语言 / 数据训练开关 / 历史记录保留。</div>
+      <div class="pillrow"><span class="pill">System Prompt</span><span class="pill">训练 opt-out</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">📜 使用统计</div>
+      <div class="desc">今日 / 本周 token 用量、对话次数、文件上传量、联网调用次数。</div>
+      <div class="pillrow"><span class="pill">token 用量</span><span class="pill">工具调用</span></div>
+    </div>
+
+    <div class="card">
+      <div class="name">🔐 API Key 管理</div>
+      <div class="desc">跳转到 platform.deepseek.com 创建 key,网页端不直接用 key(走账户 token)。</div>
+      <div class="pillrow"><span class="pill warn">跳转平台</span></div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============ 架构 ============ -->
+<section id="arch">
+  <h2>架构与数据流 <span class="sub">Architecture &amp; Data Flow</span></h2>
+
+  <h3>前端 → 后端主链路</h3>
+  <div class="flow">
+    <div class="node">UI 输入</div><div class="arrow">→</div>
+    <div class="node">客户端组装 messages</div><div class="arrow">→</div>
+    <div class="node">SSE POST /v1/chat/completions</div><div class="arrow">→</div>
+    <div class="node">网关: 鉴权 + 限流</div><div class="arrow">→</div>
+    <div class="node">推理集群(自研 HAProxy + Triton)</div><div class="arrow">→</div>
+    <div class="node">token 流回客户端</div>
+  </div>
+
+  <h3>关键模块清单</h3>
+  <table>
+    <thead>
+      <tr><th>层</th><th>组件</th><th>职责</th><th>已知约束</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>前端</td><td><code>chat.deepseek.com</code></td><td>React + 自研组件库,Markdown 实时渲染,SSE 解析</td><td>大文档解析弱</td></tr>
+      <tr><td>前端</td><td>富文本编辑器</td><td>ProseMirror 类;附件 / @引用</td><td>不支持协同编辑</td></tr>
+      <tr><td>网关</td><td>Nginx + Lua</td><td>鉴权、RPM 限流、模型路由</td><td>高峰排队</td></tr>
+      <tr><td>编排</td><td>推理平台</td><td>请求排队、KV cache 复用、模型路由</td><td>R1 与 V3 资源池分立</td></tr>
+      <tr><td>模型</td><td>DeepSeek-V3 / R1</td><td>自研 MoE / 稠密架构,MLA 注意力</td><td>上下文窗口受限</td></tr>
+      <tr><td>工具</td><td>搜索 / 代码沙箱</td><td>仅原生内置工具,无开放生态</td><td>无 MCP / 插件机制</td></tr>
+      <tr><td>存储</td><td>会话库 + 向量库</td><td>用户消息持久化、跨会话记忆</td><td>向量库用途有限</td></tr>
+    </tbody>
+  </table>
+
+  <div class="note"><strong>关键观察:</strong> DeepSeek Chat 网页版是一个典型的"对话优先 + 内置工具"形态,没有插件生态,工具调用能力主要服务于"联网 + 代码执行"两个内置场景,不像 Claude Code / Cursor 那样深度集成 Agent 工具链。</div>
+</section>
+
+<!-- ============ 对比 ============ -->
+<section id="compare">
+  <h2>与 KinetAios 对比 <span class="sub">DeepSeek vs KinetAios</span></h2>
+  <div class="compare">
+    <div>
+      <h4>🟦 DeepSeek Chat</h4>
+      <ul>
+        <li>对话优先,工具能力薄弱(仅联网 + 代码沙箱)</li>
+        <li>模型选择 + 深度思考 toggle 是核心差异点</li>
+        <li>用户上下文管理简陋(无显式 persona / ctx mode)</li>
+        <li>无插件生态、无 MCP</li>
+        <li>记忆为云端跨会话,用户不可控</li>
+        <li>本地优先的桌面端能力 = 无</li>
+      </ul>
+    </div>
+    <div>
+      <h4>🟧 KinetAios</h4>
+      <ul>
+        <li>多引擎(Direct / DirectV2 / V3 / Claude Code / Codex / 插件)</li>
+        <li>工具链丰富: shell / read_file / write_file / web_fetch / recall_memory / MCP</li>
+        <li>会话级 persona toggle + ctx mode(low / mid / high fidelity)</li>
+        <li>插件 SDK v3:声明式 manifest 可贡献新引擎</li>
+        <li>长期记忆五层(SQLite + Embedding + FTS5),完全本地</li>
+        <li>桌面端(Electron),本地优先,数据不出端</li>
+      </ul>
+    </div>
+  </div>
+  <div class="note warn"><strong>对标差距:</strong> DeepSeek 的"深度思考 toggle + 流式 CoT 折叠"是非常直观的 UX 设计,KinetAios 在 DirectV2 / V3 模式下也可加类似可视化,但目前只在 settings 里开关 plan 模式,UI 表达弱。</div>
+</section>
+
+<!-- ============ 缺失 ============ -->
+<section id="gaps">
+  <h2>已知缺失与待补 <span class="sub">Known Gaps</span></h2>
+  <table>
+    <thead><tr><th>域</th><th>DeepSeek 缺失项</th><th>对应 KinetAios 实现</th></tr></thead>
+    <tbody>
+      <tr><td>工具</td><td>无 function call 开放、无插件</td><td>tools.ts + Plugin SDK v3</td></tr>
+      <tr><td>上下文</td><td>跨模型上下文窗口不互通</td><td>buildCrossEngineSummary 摘要注入</td></tr>
+      <tr><td>记忆</td><td>云端、不可控</td><td>本地五层、可读、可改</td></tr>
+      <tr><td>协作</td><td>无分支可视化 / 无 diff</td><td>无(可作 v4 方向)</td></tr>
+      <tr><td>导出</td><td>无 PDF 导出 / 无批量</td><td>无(可作 wiki 方向)</td></tr>
+      <tr><td>开发者</td><td>网页版无 system prompt 实时调</td><td>settings 暴露 system prompt</td></tr>
+      <tr><td>本地化</td><td>无桌面端</td><td>Electron 桌面端</td></tr>
+    </tbody>
+  </table>
+</section>
+
+<footer>
+  骨架版本 · 2026-08-16 · DeepSeek Harness Features Map<br>
+  数据基于公开产品界面,具体 UI 细节请以 chat.deepseek.com 实际页面为准
+</footer>
+
+</div>
+</body>
+</html>
