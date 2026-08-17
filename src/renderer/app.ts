@@ -1445,19 +1445,9 @@ function colorGitDiff(s: string): string {
     }).join('\n');
     return `${metaHtml}<pre class="git-diff">${html}</pre>`;
   }
-  // 每个文件段:文件名标题栏 + stat + diff body
+  // 每个文件段:文件名标题栏 + stat + 左右对比表(与单文件 diff 一致的 VS Code 风格)
+  // / Per file: header bar + stat + side-by-side table (same VS Code-style as single-file diff)
   const segHtml = segments.map((seg) => {
-    const bodyHtml = seg.lines
-      .filter((l) => !l.startsWith('diff --git') && !l.startsWith('index '))
-      .map((line) => {
-        const e = esc(line);
-        if (line.startsWith('+++') || line.startsWith('---')) return `<span class="d-hunk">${e}</span>`;
-        if (line.startsWith('+')) return `<span class="d-add">${e}</span>`;
-        if (line.startsWith('-')) return `<span class="d-del">${e}</span>`;
-        if (line.startsWith('@@')) return `<span class="d-hunk">${e}</span>`;
-        return e;
-      })
-      .join('\n');
     const addN = seg.stat.match(/\+(\d+)/)?.[1] ?? '0';
     const delN = seg.stat.match(/-(\d+)/)?.[1] ?? '0';
     const fpath = esc(seg.header);
@@ -1466,7 +1456,11 @@ function colorGitDiff(s: string): string {
     const nameHtml = sepIdx >= 0
       ? `<span class="d-file-dir">${fpath.slice(0, sepIdx + 1)}</span>${fpath.slice(sepIdx + 1)}`
       : fpath;
-    return `<div class="d-file-header"><span class="d-file-icon"></span><span class="d-file-name">${nameHtml}</span><span class="d-file-stat"><span class="d-add-count">+${addN}</span> <span class="d-del-count">-${delN}</span></span></div><pre class="git-diff">${bodyHtml}</pre>`;
+    const header = `<div class="d-file-header"><span class="d-file-icon"></span><span class="d-file-name">${nameHtml}</span><span class="d-file-stat"><span class="d-add-count">+${addN}</span> <span class="d-del-count">-${delN}</span></span></div>`;
+    // 把段还原成完整 unified diff 文本,交给 side-by-side 渲染器
+    // / Rebuild segment text and hand it to the side-by-side renderer
+    const segDiff = ['diff --git a/x b/x', ...seg.lines.filter((l) => !l.startsWith('index '))].join('\n');
+    return `<div class="d-file-block">${header}${renderSideBySide(segDiff)}</div>`;
   }).join('');
   return `${metaHtml}${segHtml}`;
 }
@@ -1520,7 +1514,15 @@ function renderSideBySide(diff: string): string {
   flushRuns();
   const body = rows
     .map((r) => {
-      if (r.kind === 'hunk') return `<tr class="ss-hunk"><td colspan="4">${esc(r.text)}</td></tr>`;
+      if (r.kind === 'hunk') {
+        // hunk 头去掉裸 @@ 语法,只留可读的行号区间 + 函数上下文(VS Code 风格)
+        // / VS Code-style hunk header: readable line ranges + function context
+        const m = r.text.match(/@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@\s*(.*)/);
+        const label = m
+          ? `@@ ${m[2] === '0' ? '新文件' : `修改前 ${m[1]}${m[2] && m[2] !== '1' ? `,${m[2]}` : ''} 行 → 修改后 ${m[3]}${m[4] && m[4] !== '1' ? `,${m[4]}` : ''} 行`}${m[5] ? ` · ${esc(m[5])}` : ''}`
+          : esc(r.text);
+        return `<tr class="ss-hunk"><td colspan="4">${label}</td></tr>`;
+      }
       if (r.kind === 'ctx')
         return `<tr><td class="ss-num">${r.ln}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td><td class="ss-num">${r.rn}</td><td class="ss-txt">${esc(r.text) || '&nbsp;'}</td></tr>`;
       // 修改行:做 word-level diff

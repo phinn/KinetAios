@@ -1778,6 +1778,10 @@ a { color: var(--accent); }
   z-index: 1;
 }
 .d-file-header:first-child { margin-top: 0; border-top: none; }
+/* 全量 diff 的文件块:header + ss 表贴合成一张卡 */
+.d-file-block { margin: 0 12px 14px; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; background: var(--bg-elev); }
+.d-file-block .d-file-header { margin: 0; border: none; border-bottom: 1px solid var(--border); border-radius: 0; background: var(--bg-side); }
+.d-file-block .git-ss-wrap { margin: 0; border: none; border-radius: 0; box-shadow: none; }
 .d-file-icon {
   width: 16px; height: 16px;
   border-radius: 3px;
@@ -1865,13 +1869,18 @@ a { color: var(--accent); }
 .git-ss tr.ss-mod td:nth-child(4) { background: rgba(80,200,120,.10); border-left: 3px solid rgba(80,200,120,.45); }
 .git-ss tr.ss-mod td:nth-child(2) + td,
 .git-ss tr.ss-mod td:nth-child(4) { box-shadow: inset 1px 0 0 var(--border); }
-/* word-level diff 高亮:修改行中变化的字符 */
-.git-ss mark {
-  background: color-mix(in srgb, var(--accent) 45%, transparent);
+/* word-level diff 高亮:左侧(旧)红调、右侧(新)绿调,与行背景同色系(VS Code 风格) */
+.git-ss td:nth-child(2) mark {
+  background: rgba(220,80,80,.38);
   color: inherit;
   border-radius: 2px;
-  padding: 0 2px;
-  font-weight: 600;
+  padding: 0 1px;
+}
+.git-ss td:nth-child(4) mark {
+  background: rgba(80,200,120,.35);
+  color: inherit;
+  border-radius: 2px;
+  padding: 0 1px;
 }
 /* legacy compat — .ch-goal uses ch-row */
 .ch-goal { align-items: center; gap: 6px; padding: 4px 10px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 6px; font-size: 0.923rem; }
