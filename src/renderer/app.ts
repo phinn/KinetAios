@@ -1651,21 +1651,6 @@ function renderMain() {
   //   pin/hold 分支提前 return(follow 之外的路径不走 idle 补全启动)。
   // Full rebuild viewport restore — one decision point, mutually exclusive,
   // each mode consumes and clears its state (no residue across renders).
-  if (viewMode === 'pin' && scrollRestorePending != null) {
-    const target = scrollRestorePending;
-    scrollRestorePending = null;
-    turns.replaceChildren(frag);
-    turns.scrollTop = target;
-    const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
-    userAtBottom = dist < BOTTOM_EPS;
-    scrollRestoredMid = !userAtBottom;
-    viewMode = userAtBottom ? 'follow' : 'hold';
-    scrollAnchorTurnIdx = null;
-    // 历史补全:pin 恢复无论落在底部还是中部都需要,否则向上翻顶不到头。
-    // History fill always needed after pin restore, or scrolling up hits a wall.
-    if (startIdx > 0) startIdleFill(turns, conv, token, startIdx);
-    return;
-  }
   if (viewMode === 'hold' || !userAtBottom) {
     // hold 或不在底部:重建前用当前 DOM 抓锚点(没有新鲜锚点时)。
     // done 后 main 还会广播 conversation-update 触发第二次 renderMain,
@@ -2504,9 +2489,6 @@ let userAtBottom = true;
  *  只有 wheel/keydown/pointerdown/发送/切会话等真实交互解冻。
  *  防取消瞬间的惯性滚动/程序滚动把视口拽走。 */
 let scrollFrozen = false;
-/** pin 模式的一次性目标 scrollTop(scrollMemoryRestore 产出) */
-let scrollRestorePending: number | null = null;
-/** pin 恢复后停在中部 → 允许历史补全链启动(否则补全会把视口顶飞) */
 let scrollRestoredMid = false;
 /** 重渲染锚点:最顶可见 turn 的 idx + 视口顶相对该 turn 顶的偏移。
  *  renderMain 全量重建前捕获,重建后 applyScrollAnchor 消费一次即清零。 */
@@ -2616,22 +2598,7 @@ function applyScrollAnchor(): void {
 }
 
 // ── 滚动位置记忆:切频道保存/恢复 scrollTop ──
-const convScrollMemory = new Map<string, number>();
-function scrollMemorySave(id: string | null): void {
-  if (!id) return;
-  const el = turnsEl();
-  if (!el) return;
-  const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
-  // 在底部附近 → 不记位置,切回时走默认"跳底"
-  convScrollMemory.set(id, dist < BOTTOM_EPS ? -1 : el.scrollTop);
-}
-function scrollMemoryRestore(id: string | null): number | null {
-  if (!id) return null;
-  const v = convScrollMemory.get(id);
-  convScrollMemory.delete(id);
-  if (v == null || v === -1) return null;
-  return v;
-}
+// ── (滚动位置记忆已移除:切频道总是跳底看最新) ──
 
 // ---------- 回到最新消息按钮 / Jump-to-bottom button ----------
 /** 用户滚离底部时显示浮动箭头,点击回到底部。 */
@@ -5745,7 +5712,6 @@ async function send() {
     viewMode = 'follow';
     userAtBottom = true;
     scrollAnchorTurnIdx = null; // 旧锚点残留会让 renderMain 拉回旧位置
-    scrollRestorePending = null;
     // 先发送,成功后再清空(IPC 失败时用户数据不丢失)
     try {
       await api.send(selectedId, text);
@@ -5781,13 +5747,10 @@ function showChat() {
   if (draftPrevId !== selectedId) {
     saveDraft(draftPrevId);
     restoreDraft(selectedId);
-    // 滚动位置跟随:记住旧频道 scrollTop,新频道恢复到上次浏览处(不在底部时不强制跳底)。
-    // Scroll position follows: save old conv scrollTop, restore new conv to where it was.
-    scrollMemorySave(draftPrevId);
-    scrollRestorePending = scrollMemoryRestore(selectedId);
+    // 切频道总是跳到最新消息底部(不做滚动位置记忆)。
+    // / Switching conversations always jumps to the latest message at bottom.
     scrollFrozen = false; // 切会话 = 用户显式操作 → 解冻
-    // 有记忆位置 → pin 模式(一次性恢复);否则 follow(跳底看最新)
-    viewMode = scrollRestorePending != null ? 'pin' : 'follow';
+    viewMode = 'follow';
     syncAtBottomFlag();
     draftPrevId = selectedId;
   }
