@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://phinn.github.io/KinetAios/sitemap.xml
