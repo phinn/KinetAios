@@ -558,6 +558,24 @@ async function gitDiffAsync(cwd: string, opts: { file?: string; hash?: string; s
       args = ['show', opts.hash];
     } else if (opts.file) {
       if (!safeRef(opts.file)) return { ok: false, error: `不安全的文件路径: "${opts.file}"` };
+      // untracked 文件没有 index 记录,git diff 返回空 → 用 --no-index 对 /dev/null 生成"整文件新增"diff
+      // / untracked files have no index entry; diff against /dev/null to show the whole file as new
+      let untracked = false;
+      try {
+        const st = await runGit(['status', '--porcelain', '--', opts.file], cwd);
+        untracked = st.trimStart().startsWith('??');
+      } catch { /* status 失败按普通 diff 处理 */ }
+      if (untracked) {
+        // --no-index 有差异时退出码为 1,runGit 会抛错,这里单独容错取 stdout
+        try {
+          const diff = await runGit(['diff', '--no-index', '--', '/dev/null', opts.file], cwd);
+          return { ok: true, diff };
+        } catch (err) {
+          const stdout = (err as { stdout?: string })?.stdout;
+          if (typeof stdout === 'string' && stdout.includes('diff --git')) return { ok: true, diff: stdout };
+          throw err;
+        }
+      }
       // 单文件:staged 看 index vs HEAD,unstaged 看 working tree vs index
       args = opts.staged
         ? ['diff', '--cached', '--', opts.file]
