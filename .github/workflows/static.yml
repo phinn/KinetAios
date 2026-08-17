@@ -11,6 +11,8 @@ on:
       - 'docs/**/*.png'
       - 'docs/**/*.jpg'
       - 'docs/**/*.svg'
+      - 'docs/**/*.xml'
+      - 'docs/**/*.txt'
       - '.github/workflows/static.yml'
   workflow_dispatch:
 
