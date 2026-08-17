@@ -1706,16 +1706,34 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
     const end = cursor;
     const begin = Math.max(0, end - fillBatch);
     const frag2 = document.createDocumentFragment();
+    const wasAtBottom = viewMode === 'follow' && !scrollFrozen;
     const beforeTop = turns.scrollTop;
     const beforeHeight = turns.scrollHeight;
     for (let i = begin; i < end; i++) frag2.appendChild(renderTurn(conv, i));
     turns.prepend(frag2);
-    const afterHeight = turns.scrollHeight;
-    turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
+    if (wasAtBottom) {
+      // 在底部跟随:头插后直接贴底。不能用"高度增量补偿"——content-visibility
+      // 占位高度≠真实渲染高度,逐批补偿会漂移,最终停在离底部一截的位置
+      // (表现为:切频道后滚动条没到底部)。
+      // / At bottom: snap to bottom after prepend. Height-delta compensation
+      // drifts because placeholder heights differ from real rendered heights.
+      turns.scrollTop = turns.scrollHeight;
+    } else {
+      const afterHeight = turns.scrollHeight;
+      turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
+    }
     cursor = begin;
     if (cursor > 0) {
       fillScheduled = true;
       requestAnimationFrame(() => requestAnimationFrame(fillBatch_run));
+    } else if (wasAtBottom) {
+      // 全部补完后再贴一次底兜底(最后一批异步渲染仍可能漂移)。
+      // / Final re-snap after all batches settle.
+      requestAnimationFrame(() => {
+        if (token === renderToken && viewMode === 'follow' && !scrollFrozen) {
+          turns.scrollTop = turns.scrollHeight;
+        }
+      });
     }
   };
   fillScheduled = true;
