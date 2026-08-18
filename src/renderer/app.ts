@@ -1717,7 +1717,7 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
       // (表现为:切频道后滚动条没到底部)。
       // / At bottom: snap to bottom after prepend. Height-delta compensation
       // drifts because placeholder heights differ from real rendered heights.
-      setProgScrollTop(turns, turns.scrollHeight);
+      setProgScrollTop(turns, clampedBottom(turns));
     } else {
       const afterHeight = turns.scrollHeight;
       setProgScrollTop(turns, beforeTop + (afterHeight - beforeHeight));
@@ -1731,7 +1731,7 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
       // / Final re-snap after all batches settle.
       requestAnimationFrame(() => {
         if (token === renderToken && viewMode === 'follow' && !scrollFrozen) {
-          setProgScrollTop(turns, turns.scrollHeight);
+          setProgScrollTop(turns, clampedBottom(turns));
         }
       });
     }
@@ -2553,32 +2553,29 @@ function snapToBottomReal(el: HTMLElement): void {
       stripped.push(h);
     }
   }
-  // 先钳制到「真实末尾」:scrollHeight 此时包含 strip 区占位高度 + 未 strip 真实高度,
-  // 设到这里可能落到真实末尾下方一大截(尤其只 strip 了少量大头 turn 时)。
-  // / Clamp to real bottom first — scrollHeight here mixes stripped placeholders
-  // + real heights of unstipped turns, so setting scrollTop = scrollHeight may
-  // land far below the actual content end (causing large empty gap below).
-  {
-    void el.offsetHeight;
-    const realBottom = el.scrollHeight - lastStrippedPlaceholder(el);
-    const target = Math.min(el.scrollHeight, realBottom);
-    setProgScrollTop(el, target);
-  }
-  // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 必须再贴一次,
-  // 否则视口停在旧 scrollHeight 处,表现为"发送后滚到上面去了"或"AI 回答后下方一大片空白"。
-  // / Restoring content-visibility changes real heights — snap again or the
-  // viewport rests at the stale scrollHeight (looks like it scrolled up or
-  // shows a big empty gap after an AI answer).
+  // 所有贴底点统一走同一个钳制目标:scrollHeight 混含 strip 区占位高度,
+  // 直接设 scrollHeight 会落到真实末尾下方;而钳制值/裸值交替设置正是
+  // 流式期间「上下抖动」的来源。/ One clamped target everywhere — mixing
+  // clamped and raw scrollHeight across the three snap points was the jitter.
+  void el.offsetHeight;
+  setProgScrollTop(el, clampedBottom(el));
+  // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 再贴一次。
+  // / Restoring content-visibility changes real heights — snap again.
   if (stripped.length) {
     void el.offsetHeight;
-    setProgScrollTop(el, el.scrollHeight);
+    setProgScrollTop(el, clampedBottom(el));
   }
   // 异步布局兜底(markdown/图片/字体晚到会继续增高):延迟一帧再贴一次,幂等无害。
-  // / Late async layout (markdown/images/fonts) keeps growing content — one
-  // deferred re-snap, idempotent and harmless.
+  // / Late async layout keeps growing content — one deferred re-snap.
   requestAnimationFrame(() => {
-    if (viewMode === 'follow' && !scrollFrozen) setProgScrollTop(el, el.scrollHeight);
+    if (viewMode === 'follow' && !scrollFrozen) setProgScrollTop(el, clampedBottom(el));
   });
+}
+
+/** 真实内容末尾(钳制):scrollHeight 减去仍处于占位态的 turn 高度之和。 */
+function clampedBottom(el: HTMLElement): number {
+  const realBottom = el.scrollHeight - lastStrippedPlaceholder(el);
+  return Math.min(el.scrollHeight, realBottom);
 }
 
 /** 已 strip 设了 visible 的 turn 的"占位高度"之和(他们当前还没渲染真实内容)。
