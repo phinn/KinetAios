@@ -67,11 +67,11 @@ Download the latest release:
 
 ## Kinet Suite
 
-KinetAios is part of the Kinet product family:
+KinetAios is part of the [Kinet product family](https://phinn.github.io/kinetapp/index.html):
 
 - **KinetFit** — smart health & fitness companion
 - **KinetAgent** — AI automation assistant
-- **KinetBrief** — intelligent briefing & note app ([website](https://phinn.github.io/kinetbrief/))
+- **KinetBrief** — intelligent briefing & note app
 
 ## Run from source
 

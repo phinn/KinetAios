@@ -59,11 +59,11 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 ## Kinet 产品家族
 
-KinetAios 是 Kinet 产品家族的一员:
+KinetAios 是 [Kinet 产品家族](https://phinn.github.io/kinetapp/index.html)的一员:
 
 - **KinetFit** — 智能健康管理助手
 - **KinetAgent** — AI 自动化助手
-- **KinetBrief** — 智能信息简报 / 笔记应用([官网](https://phinn.github.io/kinetbrief/))
+- **KinetBrief** — 智能信息简报 / 笔记应用
 
 ### 从源码跑
 
