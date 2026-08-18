@@ -2572,23 +2572,20 @@ function snapToBottomReal(el: HTMLElement): void {
   });
 }
 
-/** 真实内容末尾(钳制):scrollHeight 减去仍处于占位态的 turn 高度之和。 */
+/** 真实内容末尾(钳制):直接量最后一个子元素的底边(相对滚动容器)。
+ *  不能用 scrollHeight − 占位总和:auto 态 turn 靠近视口时已真实渲染,
+ *  offsetHeight=真实高度,扣掉会把目标钉在真底上方(滚动条到不了底部)。 */
 function clampedBottom(el: HTMLElement): number {
-  const realBottom = el.scrollHeight - lastStrippedPlaceholder(el);
-  return Math.min(el.scrollHeight, realBottom);
+  const last = el.lastElementChild as HTMLElement | null;
+  if (!last) return el.scrollHeight;
+  const elTop = el.getBoundingClientRect().top;
+  const bottom = last.getBoundingClientRect().bottom - elTop + el.scrollTop;
+  return Math.min(el.scrollHeight, Math.max(0, bottom));
 }
 
-/** 已 strip 设了 visible 的 turn 的"占位高度"之和(他们当前还没渲染真实内容)。
- *  scrollHeight − 这个值 = 真实内容末端位置。用于钳制贴底不超过真实末尾。 */
-function lastStrippedPlaceholder(el: HTMLElement): number {
-  let total = 0;
-  for (const t of el.querySelectorAll<HTMLElement>('.turn')) {
-    if (t.style.contentVisibility === 'visible') continue;
-    const ph = (t as any).offsetHeight; // 占位高度(content-visibility: auto 状态下)
-    if (ph > 0) total += ph;
-  }
-  return total;
-}
+// lastStrippedPlaceholder 已废弃删除:scrollHeight − 占位总和的算法在 auto 态
+// turn 靠近视口时(已真实渲染)会扣掉真实高度,导致贴底目标偏小。
+// / Removed: superseded by clampedBottom() which measures the real last element.
 
 /** 内容增长的自动跟随(rAF 防抖,每帧最多一次)。
  *  仅 follow 模式生效;hold/pin 一律不动。 */
