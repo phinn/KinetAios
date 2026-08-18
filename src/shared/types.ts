@@ -321,7 +321,7 @@ export type SkillType = 'skill' | 'command' | 'agent';
 export type SkillInfo = {
   name: string;
   description: string;
-  source: 'claude' | 'codex' | 'plugin' | 'builtin';
+  source: 'kinetaios' | 'claude' | 'codex' | 'plugin' | 'builtin';
   type: SkillType;
   category?: string; // 自动推断的分类(marketing/dev/design/review/ops/docs/media/other)
 };

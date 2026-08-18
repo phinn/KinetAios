@@ -45,7 +45,7 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 type ScanRoot = {
   dir: string;
-  source: 'claude' | 'codex';
+  source: 'claude' | 'codex' | 'kinetaios';
   type: SkillType;
   mode: 'file' | 'skill-dir'; // file=目录下 *.md(name=文件名);skill-dir=<name>/SKILL.md
 };
@@ -54,6 +54,11 @@ type ScanRoot = {
 function roots(): ScanRoot[] {
   const home = os.homedir();
   return [
+    // KinetAios 原生目录,先扫 → 同名先到先得时优先于 ~/.claude / ~/.codex。
+    // / Native dir scanned first — wins name conflicts over claude/codex.
+    { dir: path.join(home, '.kinetaios', 'skills'), source: 'kinetaios', type: 'skill', mode: 'skill-dir' },
+    { dir: path.join(home, '.kinetaios', 'commands'), source: 'kinetaios', type: 'command', mode: 'file' },
+    { dir: path.join(home, '.kinetaios', 'agents'), source: 'kinetaios', type: 'agent', mode: 'file' },
     { dir: path.join(home, '.claude', 'skills'), source: 'claude', type: 'skill', mode: 'skill-dir' },
     { dir: path.join(home, '.claude', 'commands'), source: 'claude', type: 'command', mode: 'file' },
     { dir: path.join(home, '.claude', 'agents'), source: 'claude', type: 'agent', mode: 'file' },
@@ -99,7 +104,7 @@ let cache: Map<string, Skill> | null = null;
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  const add = (name: string, description: string, source: 'claude' | 'codex', type: SkillType, body: string, dir: string): void => {
+  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios', type: SkillType, body: string, dir: string): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
     map.set(key, { name, description, source, type, body, dir, category: inferCategory(name, description) });
