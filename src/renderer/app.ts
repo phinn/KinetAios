@@ -1717,10 +1717,10 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
       // (表现为:切频道后滚动条没到底部)。
       // / At bottom: snap to bottom after prepend. Height-delta compensation
       // drifts because placeholder heights differ from real rendered heights.
-      turns.scrollTop = turns.scrollHeight;
+      setProgScrollTop(turns, turns.scrollHeight);
     } else {
       const afterHeight = turns.scrollHeight;
-      turns.scrollTop = beforeTop + (afterHeight - beforeHeight);
+      setProgScrollTop(turns, beforeTop + (afterHeight - beforeHeight));
     }
     cursor = begin;
     if (cursor > 0) {
@@ -1731,7 +1731,7 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
       // / Final re-snap after all batches settle.
       requestAnimationFrame(() => {
         if (token === renderToken && viewMode === 'follow' && !scrollFrozen) {
-          turns.scrollTop = turns.scrollHeight;
+          setProgScrollTop(turns, turns.scrollHeight);
         }
       });
     }
@@ -2501,6 +2501,20 @@ const BOTTOM_EPS = 120;
 /** 视口状态:'follow' 跟随底部 | 'hold' 冻结(看历史/已取消) | 'pin' 一次性恢复记忆位置 */
 let viewMode: 'follow' | 'hold' | 'pin' = 'follow';
 let scrollDownScheduled = false; // rAF 防抖标记(跟随模式的内容跟随)
+/** 程序自身设置 scrollTop(scrollDown / snapToBottomReal 等)时短暂为 true,
+ *  onScroll 看到此标志就跳过状态机判定 —— 否则「scrollHeight 抖动 → dist 临时
+ *  变大 → 误判 hold → 下一帧 scrollDown 跳过 → 视口卡住」的死循环,表现为
+ *  「滚动条乱跳」。 / Skip state-machine transition when we set scrollTop
+ *  ourselves — prevents content-visibility scrollHeight jitter from
+ *  short-circuiting follow mode mid-stream. */
+let programmaticScroll = 0;
+/** 程序设置 scrollTop 的唯一入口:计数控制 onScroll 不做状态机转换。
+ *  scroll 事件在设置后、下一帧前同步派发,rAF 里清零是安全的。 */
+function setProgScrollTop(el: HTMLElement, v: number): void {
+  programmaticScroll++;
+  el.scrollTop = v;
+  requestAnimationFrame(() => { programmaticScroll = Math.max(0, programmaticScroll - 1); });
+}
 /** 兼容旧名:大量调用点读它。真实来源是 viewMode,由 syncAtBottomFlag() 维护。 */
 let userAtBottom = true;
 /** 用户点「取消」后的硬冻结:连 scroll 事件都不许把 hold 升级回 follow,
@@ -2548,7 +2562,7 @@ function snapToBottomReal(el: HTMLElement): void {
     void el.offsetHeight;
     const realBottom = el.scrollHeight - lastStrippedPlaceholder(el);
     const target = Math.min(el.scrollHeight, realBottom);
-    el.scrollTop = target;
+    setProgScrollTop(el, target);
   }
   // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 必须再贴一次,
   // 否则视口停在旧 scrollHeight 处,表现为"发送后滚到上面去了"或"AI 回答后下方一大片空白"。
@@ -2557,13 +2571,13 @@ function snapToBottomReal(el: HTMLElement): void {
   // shows a big empty gap after an AI answer).
   if (stripped.length) {
     void el.offsetHeight;
-    el.scrollTop = el.scrollHeight;
+    setProgScrollTop(el, el.scrollHeight);
   }
   // 异步布局兜底(markdown/图片/字体晚到会继续增高):延迟一帧再贴一次,幂等无害。
   // / Late async layout (markdown/images/fonts) keeps growing content — one
   // deferred re-snap, idempotent and harmless.
   requestAnimationFrame(() => {
-    if (viewMode === 'follow' && !scrollFrozen) el.scrollTop = el.scrollHeight;
+    if (viewMode === 'follow' && !scrollFrozen) setProgScrollTop(el, el.scrollHeight);
   });
 }
 
@@ -2631,7 +2645,7 @@ function applyScrollAnchor(): void {
   const target = el.querySelector<HTMLElement>(`.turn[data-idx="${idx}"]`);
   if (!target) { scrollDownForce(true); return; }
   void el.offsetHeight; // 强制 layout,offsetTop 才新鲜
-  el.scrollTop = target.offsetTop - scrollAnchorOffset;
+  setProgScrollTop(el, target.offsetTop - scrollAnchorOffset);
   const dist = el.scrollHeight - el.scrollTop - el.clientHeight;
   userAtBottom = dist < BOTTOM_EPS;
   if (!userAtBottom) viewMode = 'hold';
@@ -2695,6 +2709,11 @@ function initScrollBottomBtn(): void {
   // State machine transition: scroll event is the ONLY place that updates
   // userAtBottom/viewMode from geometry. MutationObserver must NOT touch it.
   const onScroll = () => {
+    // 程序自身设置的 scrollTop 不参与状态机判定 —— content-visibility 占位
+    // 高度抖动会让 dist 临时越界,误判 hold 后 scrollDown 跳过 → 视口卡住乱跳。
+    // / Programmatic scrolls bypass state transitions: scrollHeight jitter
+    // under content-visibility would otherwise flip follow→hold mid-stream.
+    if (programmaticScroll > 0) { update(); return; }
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
     userAtBottom = dist < BOTTOM_EPS;
     if (!scrollFrozen) viewMode = userAtBottom ? 'follow' : 'hold';
