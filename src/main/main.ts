@@ -1016,6 +1016,10 @@ function registerIpc(): void {
     return '';
   });
   ipcMain.handle('list-mcp', () => mcp.snapshot());
+  // skill 列表(~/.kinetaios + ~/.claude + ~/.codex + plugins)。曾丢失导致
+  // renderer invoke reject → slash 菜单/skill 按钮无响应。
+  // / Skill listing — losing this handler broke the slash menu & skill button.
+  ipcMain.handle('list-skills', () => listSkills());
   ipcMain.handle('get-brand', () => getBrand());
 
   // ── 多机协作:远程节点信息 + 远程任务调用 ──
