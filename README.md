@@ -65,7 +65,15 @@ Download the latest release:
 
 **First launch**: click ⚙ top-right → fill in **API Key** (+ Base URL / model; default GLM Zhipu) → once "Test connection" passes, send a task.
 
-### Run from source
+## Kinet Suite
+
+KinetAios is part of the Kinet product family:
+
+- **KinetFit** — smart health & fitness companion
+- **KinetAgent** — AI automation assistant
+- **KinetBrief** — intelligent briefing & note app ([website](https://phinn.github.io/kinetbrief/))
+
+## Run from source
 
 Requires **Node.js 18+** and internet (the `better-sqlite3` native module needs to compile).
 

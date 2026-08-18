@@ -57,6 +57,14 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 **首次启动**:点右上角 ⚙ → 填 **API Key**(+ Base URL / 模型,默认 GLM 智谱)→ 「测试连接」通了再发任务。
 
+## Kinet 产品家族
+
+KinetAios 是 Kinet 产品家族的一员:
+
+- **KinetFit** — 智能健康管理助手
+- **KinetAgent** — AI 自动化助手
+- **KinetBrief** — 智能信息简报 / 笔记应用([官网](https://phinn.github.io/kinetbrief/))
+
 ### 从源码跑
 
 需要 **Node.js 18+** 和联网(native 模块 `better-sqlite3` 要编译)。
