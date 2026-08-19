@@ -1201,8 +1201,13 @@ ${failedDetail || '  (无)'}
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
         const { emitTeamEvent } = await import('./main');
 
+        // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 spawn 对齐)。
+        // / Align team members with spawn's sub-agent model resolution.
+        const teamModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
+        const teamSnap = teamModel ? { ...snap, model: teamModel } : snap;
+        const teamProvider = teamModel ? currentProvider(teamSnap) : provider;
         const runOpts = {
-          provider, snap, signal,
+          provider: teamProvider, snap: teamSnap, signal,
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
