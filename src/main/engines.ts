@@ -1151,6 +1151,11 @@ function pluginProtocolParser(protocol: string, pluginName: string): (line: stri
               emit({ type: 'sessionStarted', id: obj.id });
               return;
             }
+            if (obj && obj.type === 'cost') {
+              const usd = Number(obj.usd);
+              emit({ type: 'cost', usd: Number.isNaN(usd) ? 0 : usd, tokens: Number(obj.tokens) || 0, tokensIn: Number(obj.tokensIn) || 0, tokensOut: Number(obj.tokensOut) || 0 });
+              return;
+            }
           } catch {
             /* 不是 JSON → 当普通文本 */
           }
