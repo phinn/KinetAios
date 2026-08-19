@@ -14,7 +14,6 @@ const DEFAULTS: AppSettings = {
   approval: 'always',
   sandbox: 'workspaceWrite',
   planMode: false,
-  enableCliEngines: false,
   defaultEngine: 'direct' as EngineKind,
   subAgentModel: '',  // 子 agent 默认模型(空 = 跟随主 agent)
   priceInPerMTok: 0.07, // GLM ¥0.5/1M in ≈ $0.07

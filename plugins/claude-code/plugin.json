@@ -1,0 +1,14 @@
+{
+  "name": "claude-code",
+  "version": "1.0.0",
+  "description": "Claude Code 引擎(内置):spawn 本地 claude CLI,stream-json 协议,支持 --resume 续接。需本地安装 claude 并登录。",
+  "author": "KinetAios",
+  "category": "dev",
+  "keywords": ["claude", "anthropic", "engine", "cli"],
+  "engines": [],
+  "engine": {
+    "bin": "claude",
+    "protocol": "jsonl-claude",
+    "label": "Claude Code"
+  }
+}

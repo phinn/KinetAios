@@ -983,14 +983,19 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
     ['direct', new DirectEngine(confirm)],
     ['directV2', new DirectV2Engine(confirm)],
     ['directV3', new DirectV3Engine(confirm)],
-    // CLI 引擎走 CliEngineAdapter:config 驱动,插件引擎将复用同一骨架。
-    // CLI engines via CliEngineAdapter — config-driven, shared with plugin engines.
-    ['claudeCode', new CliEngineAdapter(claudeCliConfig())],
-    ['codex', new CliEngineAdapter(codexCliConfig())],
   ]);
-  // 插件引擎(Plugin SDK v3):plugin:<name> 注册,复用 CliEngineAdapter 骨架。
+  // claudeCode / codex v3.2 插件化:插件目录 plugins/claude-code、plugins/codex 提供
+  // manifest(设置页可单独开关),但引擎仍走内置 config(保 sandbox 映射 / --resume /
+  // 语义化报错),不走声明式 pluginCliConfig。开关以插件启停为准(替代 enableCliEngines)。
+  // claudeCode/codex are now plugin-gated: manifests live in plugins/, engines still
+  // use builtin configs; enabling is per-plugin (replaces the global enableCliEngines).
+  const pluginNames = new Set(pluginEngines().map((p) => p.pluginName));
+  if (pluginNames.has('claude-code')) engines.set('claudeCode', new CliEngineAdapter(claudeCliConfig()));
+  if (pluginNames.has('codex')) engines.set('codex', new CliEngineAdapter(codexCliConfig()));
+  // 其余插件引擎(Plugin SDK v3):plugin:<name> 注册,复用 CliEngineAdapter 骨架。
   // 与内置 id 冲突不可能(前缀隔离),插件之间重名 → 后者覆盖(与 tools 摊平同语义)。
   for (const { pluginName, spec } of pluginEngines()) {
+    if (pluginName === 'claude-code' || pluginName === 'codex') continue; // 已按内置 config 注册
     engines.set(`plugin:${pluginName}` as EngineKind, new CliEngineAdapter(pluginCliConfig(pluginName, spec)));
   }
   return engines;

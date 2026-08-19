@@ -218,7 +218,6 @@ export type AppSettings = {
   planMode: boolean;
   // Claude Code + Codex shell out to locally-installed CLIs. Off by default — turn on only after
   // installing the CLI, else the engine just errors "找不到 CLI". Direct never needs this.
-  enableCliEngines: boolean;
   defaultEngine: EngineKind; // 新会话默认引擎(direct / directV2 / claudeCode / codex)
   subAgentModel: string;    // 子 agent (dispatch_agent) 默认模型(空 = 跟随主 agent 模型)
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default

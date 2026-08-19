@@ -2,7 +2,7 @@
 // Three engines now (Direct / Claude Code / Codex); each implements the Engine interface.
 import fs from 'node:fs';
 import type { AgentEvent, ChatMsg, Conversation, ContextMode, EngineKind, Turn } from '../shared/types';
-import { applyEvent, newTurn, rid, isPluginEngine } from '../shared/types';
+import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -112,7 +112,7 @@ export class TaskManager {
   setEngine(id: string, engine: EngineKind): void {
     const conv = this.convs.get(id);
     if (!conv || conv.engine === engine) return;
-    if (isCliEngine(engine) && !getSettings().enableCliEngines) return; // toggle off → refuse
+    if (!this.engines.has(engine)) return; // 插件关闭 → 引擎未注册 → 拒绝 / unregistered → refuse
     const oldEngine = conv.engine;
     conv.engine = engine;
     // 跨族切换才清空上下文(同族 direct ↔ directV2 保留)
@@ -263,9 +263,9 @@ export class TaskManager {
       return;
     }
 
-    // CLI engines need the toggle on (and the CLI installed). Guard here so a stale renderer
+    // Engine must be registered (plugin enabled). Guard here so a stale renderer
     // dropdown can't dispatch into a disabled engine.
-    if (isCliEngine(conv.engine) && !getSettings().enableCliEngines) {
+    if (!this.engines.has(conv.engine)) {
       this.failTurn(conv, prompt, t(getSettings().lang, 'tmgr.engineDisabled'));
       return;
     }
@@ -1111,12 +1111,6 @@ ${memorySamples || '(无记忆)'}`;
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   }
-}
-
-function isCliEngine(e: EngineKind): boolean {
-  // 内置 CLI(claudeCode/codex)+ 插件引擎(全部走外部 CLI spawn,同属 CLI 类)。
-  // Builtin CLI engines + plugin engines (all spawn external CLIs — same class).
-  return e === 'claudeCode' || e === 'codex' || isPluginEngine(e);
 }
 
 // Direct 家族引擎(direct + directV2)共享 directHistory 上下文。

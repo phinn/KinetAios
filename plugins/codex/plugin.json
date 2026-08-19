@@ -1,0 +1,14 @@
+{
+  "name": "codex",
+  "version": "1.0.0",
+  "description": "Codex 引擎(内置):spawn 本地 codex CLI,exec --json 协议,支持 resume。需本地安装 codex 并登录。",
+  "author": "KinetAios",
+  "category": "dev",
+  "keywords": ["codex", "openai", "engine", "cli"],
+  "engines": [],
+  "engine": {
+    "bin": "codex",
+    "protocol": "jsonl-codex",
+    "label": "Codex"
+  }
+}

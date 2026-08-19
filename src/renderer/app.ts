@@ -21,7 +21,6 @@ const api: KinetAPI = window.kinet;
 const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;
-let cliEnabled = false; // mirrors settings.enableCliEngines — gates the engine dropdown
 let currentView: 'chat' | 'settings' | 'workbench' | 'pipeline' | 'templates' | 'cost' | 'ctools' | 'timeline' | 'town' | 'nexus' | string = 'chat';
 // 插件 panel 注册表: name → { title, icon, html }。init 时从 main 加载。
 // Plugin panel registry: name → { title, icon, html }. Loaded from main on init.
@@ -182,7 +181,6 @@ function applyI18nDOM(): void {
     // 配置(语言 + 主题 + CLI 引擎开关)和产品名都启动时读一次。语言/主题切走后同步更新。
     const settings = await api.getSettings();
     lang = settings.lang;
-    cliEnabled = settings.enableCliEngines;
     applyTheme(settings.theme);
     applyFontScale(settings.fontScale ?? 100);
     const brand = await api.getBrand();
@@ -1843,11 +1841,20 @@ function renderHead(conv: Conversation | undefined) {
 // Plugin engines → plugin:<name> options. Empty until the async list resolves (boot).
 let pluginEngineIds: EngineKind[] = [];
 
+// 内置引擎插件 manifest name → 内置引擎 id(claudeCode/codex 保持老 id,老会话不迁移)。
+// Builtin engine plugins keep their legacy engine ids — no conversation migration needed.
+const BUILTIN_ENGINE_PLUGINS: Record<string, EngineKind> = { 'claude-code': 'claudeCode', 'codex': 'codex' };
+
+function engineIdOf(name: string): EngineKind {
+  return BUILTIN_ENGINE_PLUGINS[name] ?? (`plugin:${name}` as EngineKind);
+}
+
 function syncEngineSelect(conv: Conversation | undefined) {
   const sel = document.getElementById('engine-select') as HTMLSelectElement;
   const current = conv?.engine ?? 'direct';
-  // Direct 家族永远可用;CLI 引擎需要 enableCliEngines(插件引擎同属 CLI 类,同开关)。
-  const want: EngineKind[] = cliEnabled ? ['direct', 'directV2', 'directV3', 'claudeCode', 'codex', ...pluginEngineIds] : ['direct', 'directV2', 'directV3'];
+  // Direct 家族永远可用;claudeCode/codex/deepseek-harness 等引擎类插件由各自插件开关控制
+  // (pluginEngineIds 同时包含内置映射(claude-code→claudeCode 等)和 plugin:<name>)。
+  const want: EngineKind[] = ['direct', 'directV2', 'directV3', ...pluginEngineIds];
   if (!want.includes(current)) want.push(current);
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
@@ -2912,7 +2919,6 @@ async function showSettings() {
       <div class="s-section">
         <h3>${tr('settings.sec.agent')}</h3>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
-        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cli" ${s.enableCliEngines ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cli">${tr('settings.cli')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-notify-done" ${s.notifyOnDone ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-notify-done">${tr('settings.notifyOnDone')}</label></div>
         <div class="field-desc">${tr('settings.notifyOnDone.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
@@ -2929,7 +2935,8 @@ async function showSettings() {
           <option value="direct" ${s.defaultEngine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
           <option value="directV2" ${s.defaultEngine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
           <option value="directV3" ${s.defaultEngine === 'directV3' ? 'selected' : ''}>Kaios v3 (Adaptive)</option>
-          ${s.enableCliEngines ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option><option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
+          ${pluginEngineIds.includes('claudeCode' as EngineKind) ? `<option value="claudeCode" ${s.defaultEngine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option>` : ''}
+          ${pluginEngineIds.includes('codex' as EngineKind) ? `<option value="codex" ${s.defaultEngine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select></div>
         <div class="field"><label>${tr('settings.subAgentModel')}</label><input id="s-subagent-model" type="text" value="${esc(s.subAgentModel ?? '')}" placeholder="${tr('settings.subAgentModelPh')}" /></div>
         <div class="field-desc">${tr('settings.subAgentModel.desc')}</div>
@@ -3308,7 +3315,6 @@ async function showSettings() {
   document.getElementById('s-save')!.onclick = async () => {
     const ns = readSettingsForm();
     await api.saveSettings(ns);
-    cliEnabled = ns.enableCliEngines;
     profileCache = ns.modelProfiles || []; // 同步缓存
     lang = ns.lang; // 语言切了 → 刷静态文本 + 重渲(侧栏/主区/设置面板自身)
     setTownLang(lang); // 同步小镇视图语言 / sync town view lang
@@ -3761,7 +3767,7 @@ async function showSettings() {
     // v3: 引擎贡献点 → 全局 label 表(engineLabel 用)+ 下拉注入列表 + 刷新下拉。
     const enginePlugins = (r.ok && r.items ? r.items : []).filter((p) => p.engine && p.enabled && !p.engineError);
     setPluginEngineLabels(Object.fromEntries(enginePlugins.map((p) => [p.name, p.engine!.label ?? p.name])));
-    const next = enginePlugins.map((p) => `plugin:${p.name}` as EngineKind).sort();
+    const next = enginePlugins.map((p) => engineIdOf(p.name)).sort();
     const changed = next.length !== pluginEngineIds.length || next.some((e, i) => e !== pluginEngineIds[i]);
     if (changed) {
       pluginEngineIds = next;
@@ -3837,7 +3843,6 @@ function readSettingsForm(): AppSettings {
     approval: (document.getElementById('s-approval') as HTMLSelectElement).value as AppSettings['approval'],
     sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
-    enableCliEngines: (document.getElementById('s-cli') as HTMLInputElement).checked,
     notifyOnDone: (document.getElementById('s-notify-done') as HTMLInputElement).checked,
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
@@ -4304,7 +4309,7 @@ function closeMoreMenu() {
     if (!r.ok || !r.items) return;
     const eps = r.items.filter((p) => p.engine && p.enabled && !p.engineError);
     setPluginEngineLabels(Object.fromEntries(eps.map((p) => [p.name, p.engine!.label ?? p.name])));
-    pluginEngineIds = eps.map((p) => `plugin:${p.name}` as EngineKind).sort();
+    pluginEngineIds = eps.map((p) => engineIdOf(p.name)).sort();
     syncEngineSelect(convs.get(selectedId ?? ''));
   });
 
@@ -7583,8 +7588,8 @@ function renderPipelineStages(): void {
         <select class="pl-stage-engine">
           <option value="direct" ${s.engine === 'direct' ? 'selected' : ''}>${tr('engine.direct')}</option>
           <option value="directV2" ${s.engine === 'directV2' ? 'selected' : ''}>${tr('engine.directV2')}</option>
-          ${cliEnabled ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option>` : ''}
-          ${cliEnabled ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
+          ${pluginEngineIds.includes('claudeCode' as EngineKind) ? `<option value="claudeCode" ${s.engine === 'claudeCode' ? 'selected' : ''}>${tr('engine.claudeCode')}</option>` : ''}
+          ${pluginEngineIds.includes('codex' as EngineKind) ? `<option value="codex" ${s.engine === 'codex' ? 'selected' : ''}>${tr('engine.codex')}</option>` : ''}
         </select>
         ${pipelineStages.length > 1 ? `<button class="ghost pl-stage-del" data-idx="${i}">✕</button>` : ''}
       </div>
