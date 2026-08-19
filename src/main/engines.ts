@@ -815,10 +815,16 @@ function claudeParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
         }
   } else if (type === 'result') {
     // total_cost_usd is the cost of THIS `claude -p` invocation (one per turn, even with
-    // --resume), so += accumulates correctly across turns. No per-turn token breakdown is
-    // reported here, so the turn's tokensIn/Out stay 0 (only the $ total is known).
+    // --resume), so += accumulates correctly across turns. Claude ≥2.1 result also carries
+    // full usage (input / cache_read / output) — pass them through for the per-turn split.
     const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
-    if (!Number.isNaN(c)) emit({ type: 'cost', usd: c, tokens: 0 });
+    if (!Number.isNaN(c)) {
+      const u = obj.usage ?? {};
+      const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+      const inT = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
+      const outT = num(u.output_tokens);
+      emit({ type: 'cost', usd: c, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
+    }
     const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
     if (isErr) emit({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
     else emit({ type: 'done' });
