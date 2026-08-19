@@ -108,7 +108,10 @@ let confirmSeq = 0;
 const CONFIRM_TIMEOUT_MS = 300_000;
 
 function confirm(cmd: string): Promise<boolean> {
-  if (getSettings().approval === 'never') return Promise.resolve(true);
+  const s = getSettings();
+  // 自动放行:approval=never 或 sandbox=fullAccess(完全访问 = 信任一切操作,与 CLI 引擎 bypassPermissions 对齐)。
+  // / Auto-approve: approval=never OR sandbox=fullAccess (matches CLI engines' bypassPermissions).
+  if (s.approval === 'never' || s.sandbox === 'fullAccess') return Promise.resolve(true);
   const id = `c${process.pid}_${confirmSeq++}`;
   const win = dashboardWin;
   if (!win || win.isDestroyed()) return Promise.resolve(false);

@@ -10,7 +10,7 @@ import { promisify } from 'node:util';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import type { AgentEvent, AppSettings, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
+import type { AgentEvent, AppSettings, ApprovalPolicy, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory } from './AgentLoop';
 import { trackFileOpFromToolEvent } from './AgentLoop';
@@ -458,6 +458,15 @@ class DirectEngine implements Engine {
 
 // MARK: CLI spawn helpers (shared by Claude Code + Codex)
 
+// approval=never(自动放行)要传导给 CLI 引擎:映射到各 CLI 的最高放行档。
+// / approval=never must propagate to CLI engines: maps to each CLI's most permissive tier.
+// 注意:Direct 引擎的 confirm() 已在 main.ts 短路;这里是 Claude/Codex 通道。
+// Note: Direct's confirm() short-circuits in main.ts; this covers Claude/Codex only.
+function effectiveSandbox(s: { sandbox: SandboxMode; approval: ApprovalPolicy; planMode: boolean }): SandboxMode {
+  if (s.planMode) return 'readOnly'; // plan 模式优先于放行(只读规划)
+  if (s.approval === 'never') return 'fullAccess';
+  return s.sandbox;
+}
 const CLAUDE_PERM: Record<SandboxMode, string> = {
   readOnly: 'plan',
   workspaceWrite: 'acceptEdits',
@@ -820,7 +829,7 @@ export function claudeCliConfig(): CliEngineConfig {
     noResultKey: 'eng.claudeNoResult',
     beginRun: (convId) => claudePending.delete(convId),
     buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
-      const permissionMode = s.planMode ? 'plan' : CLAUDE_PERM[s.sandbox];
+      const permissionMode = CLAUDE_PERM[effectiveSandbox(s)];
       const args = [
         '-p', prompt,
         '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
@@ -951,7 +960,7 @@ export function codexCliConfig(): CliEngineConfig {
       return t(s.lang, 'eng.codexNoResult', { code, tail: tail ? ' — ' + tail : '' }) + versionHint;
     },
     buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
-      const sandboxKind: SandboxMode = s.planMode ? 'readOnly' : s.sandbox;
+      const sandboxKind = effectiveSandbox(s);
       // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
       const fullPrompt = head ? `${head}\n\n---\n\n${prompt}` : prompt;
