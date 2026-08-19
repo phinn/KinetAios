@@ -1,6 +1,6 @@
 {
   "name": "kinetaios-win",
-  "version": "3.1.3",
+  "version": "3.2.0",
   "description": "KinetAios — Local-first multi-engine AI agent dashboard. Run Claude Code, Codex, and DirectV2 ReAct side-by-side. Long-term memory, 27 plugins, MCP integration. Windows & macOS. GPL v3.",
   "author": "Kinet",
   "main": "dist/main/main.js",
