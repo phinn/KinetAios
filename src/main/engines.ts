@@ -574,6 +574,10 @@ function runBin(
       ...(bin.shell ? { shell: true } : {}),
     };
     const child = spawn(bin.cmd, args, spawnOpts);
+    // codex 0.135+ 在 stdin 保持打开时会等 "additional input from stdin"(EOF)。
+    // 我们从不写 stdin → 立即关闭,防止 CLI 卡在读 stdin。/ Close stdin immediately:
+    // codex waits for stdin EOF ("Reading additional input from stdin...") otherwise.
+    try { child.stdin?.end(); } catch { /* already closed */ }
     let buf = '';
     const onChunk = (d: Buffer | string): void => {
       buf += d.toString();
