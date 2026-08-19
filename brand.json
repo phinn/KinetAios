@@ -1,4 +1,5 @@
 {
   "productName": "KinetAios",
-  "_comment": "改 productName 即可改所有界面显示的应用名。启动时读取。"
+  "icon": "icon.png",
+  "_comment": "改 productName 即可改所有界面显示的应用名;icon 指定 build/ 下的图标文件名,留空用默认 icon.png。启动时读取。"
 }

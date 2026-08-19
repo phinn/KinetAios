@@ -5,7 +5,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export type Brand = { productName: string; homeDir: string; version: string };
+export type Brand = { productName: string; homeDir: string; version: string; icon?: string };
 
 // 版本号从 package.json 读,不硬编码 / Version from package.json, never hardcode.
 import pkg from '../../package.json';
@@ -19,6 +19,7 @@ export function getBrand(): Brand {
     // __dirname = dist/main → ../brand.json = dist/brand.json
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'brand.json'), 'utf8')) as Partial<Brand>;
     if (raw.productName) b = { ...b, productName: raw.productName };
+    if (raw.icon) b = { ...b, icon: raw.icon };
   } catch {
     /* 文件缺失/损坏 → 用默认 */
   }

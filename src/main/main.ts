@@ -314,7 +314,10 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
     'd3': 'icon-d3.png',
     'd4': 'icon-d4.png',
   };
-  const fileName = iconFiles[key] || iconFiles['k'];
+  // brand.json 的 icon 字段最高优先级:改品牌时图标跟着走(打包 exe 内嵌图标除外)。
+  // / brand.json icon wins — follows the brand (except packaged exe's embedded icon).
+  const brandIcon = getBrand().icon;
+  const fileName = brandIcon || iconFiles[key] || iconFiles['k'];
   const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
   // 打包后 process.resourcesPath/build/ 最可靠,排最前;dev 模式靠 __dirname/../../build/
   for (const candidate of [
@@ -707,7 +710,7 @@ function makeTrayIcon() {
     'd3': 'icon-d3.png',
     'd4': 'icon-d4.png',
   };
-  const fileName = iconFiles[key] || iconFiles['k'];
+  const fileName = getBrand().icon || iconFiles[key] || iconFiles['k'];
   const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
   // 尝试从图标文件加载(优先 resourcesPath/build/,然后 dev 路径)
   for (const candidate of [
