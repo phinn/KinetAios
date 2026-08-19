@@ -1,0 +1,24 @@
+{
+  "name": "deepseek-harness",
+  "version": "1.0.0",
+  "description": "DeepSeek Harness(dsh)插件引擎:调用本地 deepseek-harness 仓库的 headless profile,一次性执行任务并返回最终回答。需在 ~/.dsh/.env 配置 DEEPSEEK_API_KEY。",
+  "author": "KinetAios",
+  "category": "dev",
+  "keywords": ["deepseek", "harness", "dsh", "agent", "cli"],
+  "engines": [],
+  "engine": {
+    "bin": "pnpm",
+    "protocol": "plain",
+    "args": ["--dir", "{dshDir}", "dsh", "--profile", "headless"],
+    "label": "DeepSeek Harness",
+    "inject": "prompt",
+    "settings": [
+      {
+        "key": "dshDir",
+        "label": "deepseek-harness 仓库路径",
+        "placeholder": "如 /Users/phinn/Documents/ai/deepseek-harness",
+        "default": "/Users/phinn/Documents/ai/deepseek-harness"
+      }
+    ]
+  }
+}
