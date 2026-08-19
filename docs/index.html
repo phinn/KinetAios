@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <!-- ===== SEO META ===== -->
-<title>KinetAios — Local-First AI Agent Dashboard | Claude Code + Codex + ReAct</title>
-<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 DirectV2 / Claude Code / Codex 三个引擎，支持跨引擎长期记忆、17 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。开源 GPL v3，Windows & macOS。">
+<title>KinetAios — Local-First AI Agent Dashboard | Direct V3 + Claude Code + Codex + DeepSeek Harness</title>
+<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 四个引擎家族，支持跨引擎长期记忆、27 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。开源 GPL v3，Windows & macOS。">
 <meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, MCP, Electron, TypeScript, 飞书Bot, 企微Bot, 多Agent, 跨引擎记忆, 本地 AI, AI 工作台, 开源 AI Agent, KinetAios">
 <meta name="author" content="Kinet">
 <meta name="robots" content="index, follow">
@@ -23,7 +23,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="KinetAios">
 <meta property="og:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta property="og:description" content="Run Claude Code, Codex, and a built-in ReAct engine side-by-side from one window. Cross-engine long-term memory, 17 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta property="og:description" content="Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families in one window. Cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
 <meta property="og:url" content="https://phinn.github.io/KinetAios/">
 <meta property="og:image" content="https://phinn.github.io/KinetAios/og-image.png">
 <meta property="og:locale" content="zh_CN">
@@ -34,7 +34,7 @@
 <!-- ===== Twitter Card ===== -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta name="twitter:description" content="Three AI engines in one window. Claude Code + Codex + DirectV2 ReAct. Cross-engine memory, 17 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta name="twitter:description" content="Four engine families in one window: Direct V1/V2/V3, Claude Code, Codex, DeepSeek Harness. Cross-engine memory, 27 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
 <meta name="twitter:image" content="https://phinn.github.io/KinetAios/og-image.png">
 
 <!-- ===== JSON-LD 结构化数据 ===== -->
@@ -43,7 +43,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "KinetAios",
-  "description": "Local-first multi-engine AI agent dashboard. Run Claude Code, Codex, and a built-in ReAct engine side-by-side with cross-engine long-term memory, 17 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
+  "description": "Local-first multi-engine AI agent dashboard. Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families side-by-side with cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows 11, macOS",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
@@ -53,14 +53,15 @@
     "priceCurrency": "USD"
   },
   "programmingLanguage": "TypeScript",
-  "softwareVersion": "2.6.0",
+  "softwareVersion": "3.2.0",
   "url": "https://phinn.github.io/KinetAios/",
   "downloadUrl": "https://github.com/phinn/KinetAios/releases",
   "featureList": [
-    "Multi-engine: DirectV2 / Claude Code / Codex",
+    "Four engine families: Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness",
+    "Direct V3 with intent router (fast/standard/deep) and DAG-parallel tool execution",
     "Plan-Execute-Verify-Judge 4-layer architecture",
     "Cross-engine persistent long-term memory (SQLite + FTS5 + semantic recall)",
-    "17 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
+    "27 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
     "MCP client + server (bidirectional, remote agent control)",
     "Feishu + Enterprise WeChat Bot remote control",
     "Multi-agent teams + sub-agent dispatch",
@@ -168,7 +169,7 @@ h1 .grad{background:var(--grad);-webkit-background-clip:text;background-clip:tex
 @keyframes typeBounce{0%,60%,100%{opacity:.3;transform:scale(.8)}30%{opacity:1;transform:scale(1.2)}}
 
 /* ===== ENGINES ===== */
-.engines{display:grid;grid-template-columns:repeat(3,1fr);gap:18px}
+.engines{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:18px}
 .eng-card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:28px 24px;position:relative;overflow:hidden;transition:transform .2s,border-color .2s}
 .eng-card:hover{transform:translateY(-3px);border-color:var(--mint)}
 .eng-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px;opacity:.8}
@@ -355,13 +356,23 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)">▶</div>
-            <div class="nm">Direct V2</div>
+            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)">⚡</div>
+            <div class="nm">Direct V3</div>
             <div class="st run">running</div>
+          </div>
+          <div class="eng-row">
+            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">▶</div>
+            <div class="nm">Direct V2</div>
+            <div class="st">idle</div>
           </div>
           <div class="eng-row">
             <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)">{}</div>
             <div class="nm">Codex</div>
+            <div class="st">idle</div>
+          </div>
+          <div class="eng-row">
+            <div class="ic" style="background:rgba(255,215,95,.12);color:var(--gold)">⚡</div>
+            <div class="nm">DeepSeek</div>
             <div class="st">idle</div>
           </div>
           <!-- mini sparkline -->
@@ -439,6 +450,12 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <div class="tags"><span class="tag">refactor</span><span class="tag">debug</span><span class="tag">test</span></div>
       </div>
       <div class="eng-card">
+        <div class="top"><div class="ic">▶</div><h3>Direct V3</h3></div>
+        <div class="for">DAG parallel · intent router</div>
+        <p data-i18n="eng_g3"></p>
+        <div class="tags"><span class="tag">fast</span><span class="tag">deep</span><span class="tag">DAG</span></div>
+      </div>
+      <div class="eng-card">
         <div class="top"><div class="ic">▶</div><h3>Direct V2</h3></div>
         <div class="for">copy · research · chat</div>
         <p data-i18n="eng_g"></p>
@@ -449,6 +466,12 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <div class="for">code · patch · exec</div>
         <p data-i18n="eng_o"></p>
         <div class="tags"><span class="tag">patch</span><span class="tag">exec</span><span class="tag">sandbox</span></div>
+      </div>
+      <div class="eng-card">
+        <div class="top"><div class="ic">⚡</div><h3>DeepSeek Harness</h3></div>
+        <div class="for">reasoning · long context</div>
+        <p data-i18n="eng_d"></p>
+        <div class="tags"><span class="tag">reasoning</span><span class="tag">128K</span><span class="tag">dsh</span></div>
       </div>
     </div>
   </div>
@@ -462,7 +485,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <p class="h-sub" data-i18n="arc_sub"></p>
     <div class="dag-wrap">
       <!-- DAG SVG -->
-      <svg class="dag-svg" viewBox="0 0 400 320" xmlns="http://www.w3.org/2000/svg">
+      <svg class="dag-svg" viewBox="0 0 560 320" xmlns="http://www.w3.org/2000/svg">
         <defs>
           <linearGradient id="nodeMint" x1="0" y1="0" x2="1" y2="1">
             <stop offset="0%" stop-color="#00E5B5" stop-opacity=".2"/>
@@ -476,44 +499,63 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             <stop offset="0%" stop-color="#FF9A5C" stop-opacity=".2"/>
             <stop offset="100%" stop-color="#FFD75F" stop-opacity=".1"/>
           </linearGradient>
+          <linearGradient id="nodeGold" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0%" stop-color="#FFD75F" stop-opacity=".2"/>
+            <stop offset="100%" stop-color="#FF9A5C" stop-opacity=".1"/>
+          </linearGradient>
         </defs>
 
-        <!-- edges -->
-        <line class="dag-edge active" x1="200" y1="40" x2="90" y2="130"/>
-        <line class="dag-edge active" x1="200" y1="40" x2="200" y2="130"/>
-        <line class="dag-edge active" x1="200" y1="40" x2="310" y2="130"/>
-        <line class="dag-edge" x1="90" y1="170" x2="200" y2="250"/>
-        <line class="dag-edge" x1="200" y1="170" x2="200" y2="250"/>
-        <line class="dag-edge" x1="310" y1="170" x2="200" y2="250"/>
+        <!-- edges: scheduler -> 5 agents -->
+        <line class="dag-edge active" x1="280" y1="40" x2="60" y2="130"/>
+        <line class="dag-edge active" x1="280" y1="40" x2="170" y2="130"/>
+        <line class="dag-edge active" x1="280" y1="40" x2="280" y2="130"/>
+        <line class="dag-edge active" x1="280" y1="40" x2="390" y2="130"/>
+        <line class="dag-edge active" x1="280" y1="40" x2="500" y2="130"/>
+        <!-- agent -> shared services -->
+        <line class="dag-edge" x1="60" y1="170" x2="280" y2="250"/>
+        <line class="dag-edge" x1="170" y1="170" x2="280" y2="250"/>
+        <line class="dag-edge" x1="280" y1="170" x2="280" y2="250"/>
+        <line class="dag-edge" x1="390" y1="170" x2="280" y2="250"/>
+        <line class="dag-edge" x1="500" y1="170" x2="280" y2="250"/>
 
         <!-- central node: Scheduler -->
         <g class="dag-node">
-          <rect x="150" y="10" width="100" height="36" rx="8" fill="url(#nodeMint)" stroke="#00E5B5"/>
-          <text x="200" y="33" text-anchor="middle" fill="#00E5B5" font-weight="600">AgentScheduler</text>
+          <rect x="230" y="10" width="100" height="36" rx="8" fill="url(#nodeMint)" stroke="#00E5B5"/>
+          <text x="280" y="33" text-anchor="middle" fill="#00E5B5" font-weight="600">AgentScheduler</text>
         </g>
 
-        <!-- agent nodes -->
+        <!-- agent nodes (5 engines) -->
         <g class="dag-node">
-          <rect x="40" y="125" width="100" height="44" rx="8" fill="url(#nodePurple)" stroke="#9B7EFF"/>
-          <text x="90" y="144" text-anchor="middle">Claude Code</text>
-          <text x="90" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">code agent</text>
+          <rect x="10" y="125" width="100" height="44" rx="8" fill="url(#nodePurple)" stroke="#9B7EFF"/>
+          <text x="60" y="144" text-anchor="middle">Claude Code</text>
+          <text x="60" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">code agent</text>
         </g>
         <g class="dag-node">
-          <rect x="150" y="125" width="100" height="44" rx="8" fill="url(#nodeMint)" stroke="#00E5B5"/>
-          <text x="200" y="144" text-anchor="middle">Direct V2</text>
-          <text x="200" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">copy agent</text>
+          <rect x="120" y="125" width="100" height="44" rx="8" fill="url(#nodeMint)" stroke="#00E5B5"/>
+          <text x="170" y="144" text-anchor="middle">Direct V3</text>
+          <text x="170" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">DAG agent</text>
         </g>
         <g class="dag-node">
-          <rect x="260" y="125" width="100" height="44" rx="8" fill="url(#nodeOrange)" stroke="#FF9A5C"/>
-          <text x="310" y="144" text-anchor="middle">Codex</text>
-          <text x="310" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">patch agent</text>
+          <rect x="230" y="125" width="100" height="44" rx="8" fill="url(#nodeMint)" stroke="#00B5E5"/>
+          <text x="280" y="144" text-anchor="middle">Direct V2</text>
+          <text x="280" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">copy agent</text>
+        </g>
+        <g class="dag-node">
+          <rect x="340" y="125" width="100" height="44" rx="8" fill="url(#nodeOrange)" stroke="#FF9A5C"/>
+          <text x="390" y="144" text-anchor="middle">Codex</text>
+          <text x="390" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">patch agent</text>
+        </g>
+        <g class="dag-node">
+          <rect x="450" y="125" width="100" height="44" rx="8" fill="url(#nodeGold)" stroke="#FFD75F"/>
+          <text x="500" y="144" text-anchor="middle">DeepSeek</text>
+          <text x="500" y="160" text-anchor="middle" fill="#8B97A3" font-size="9">reasoning</text>
         </g>
 
         <!-- shared services -->
         <g class="dag-node">
-          <rect x="130" y="245" width="140" height="44" rx="8" fill="rgba(20,27,34,.8)" stroke="#2A3540"/>
-          <text x="200" y="264" text-anchor="middle">ToolBus + Memory</text>
-          <text x="200" y="280" text-anchor="middle" fill="#5A6571" font-size="9">shell · read_file · recall · web</text>
+          <rect x="210" y="245" width="140" height="44" rx="8" fill="rgba(20,27,34,.8)" stroke="#2A3540"/>
+          <text x="280" y="264" text-anchor="middle">ToolBus + Memory</text>
+          <text x="280" y="280" text-anchor="middle" fill="#5A6571" font-size="9">shell · read_file · recall · web</text>
         </g>
 
         <!-- animated dots on active edges -->
@@ -656,7 +698,7 @@ const I18N = {
   "zh-Hans": {
     badge:"Windows & macOS · 多 AI 引擎并发的 AI 总机",
     h1:'你的 Mac 的 <span class="grad">AI 总机</span><br>一个面板,多个 AI 同时干活',
-    sub:"Claude Code、Codex、Direct V2,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四个引擎家族,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
     dl:"下载试用", learn:"了解更多",
     m_sessions:"会话", m_engines:"引擎",
     m_prompt:"把这份产品文档改成给客户看的推广文案,要直白",
@@ -675,8 +717,10 @@ const I18N = {
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每个引擎一个独立 agent,各自循环、各自状态、各自产出。互不阻塞,你只管下达任务。",
     eng_c:"长代码任务主力。会调工具、改文件、跑命令,从重构到 debug 一条龙。",
+    eng_g3:"最新自研引擎。意图路由器按查询自动选 fast / standard / deep 三档执行路径,deep 路径把工具调用构建为 DAG 并行执行,多步任务真实加速。",
     eng_g:"自研引擎,Plan-Execute-Verify-Judge 四层架构。工具并发、子 Agent 派发、上下文压缩,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系代码引擎。patch / exec / 沙盒写,任务清晰、产出可控。",
+    eng_d:"DeepSeek 推理引擎,擅长长上下文复杂推理任务。spawn dsh CLI,OpenAI 兼容 SSE,自带 token 计费。",
     arc_title:"多 Agent 并发调度",
     arc_sub:"AgentScheduler 做 DAG 拓扑调度,每个 agent 独立循环但共享工具总线和跨引擎记忆。",
     arc_1t:"DAG 调度器", arc_1:"拓扑排序依赖关系,空闲即派任务,阻塞的 agent 不影响其他 agent。",
@@ -701,7 +745,7 @@ const I18N = {
     pr_sub:"API key 走系统 Keychain,对话存本地 SQLite,不上传任何后台。跨平台 Electron,资源占用低。",
     fq_title:"常见问题",
     q_1:"这跟 Raycast / Alfred 是一回事吗?", a_1:"不一样。Raycast 是启动器,KinetAios 是 AI 总机——多 agent 引擎并发的运行时,重点不是「快速启动 app」而是「让多个 AI 同时帮你干活、状态全可见」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是单引擎。KinetAios 把 Claude Code / Codex / Direct V2 装进同一面板,并发跑、状态全可见、跨引擎 resume——同时管多个 agent 是它做不了的。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是单引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 装进同一面板——四个引擎家族,各自并发跑、状态全可见、跨引擎 resume。同时管多个 agent,是单引擎桌面版做不了的。",
     q_3:"数据去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);对话和记忆在本地 SQLite;不上传任何后台。你的引擎、你的 key、你的数据。",
     q_4:"Claude Code / Codex 怎么用?需要自己配?", a_4:"KinetAios 自动发现已装的 claude / codex CLI。没装的话,设置页有引导。Direct 引擎只需 API key。",
     q_5:"支持什么模型?", a_5:"Direct 引擎看你接的 key(默认 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本机 CLI 配置(可走任何它们支持的模型)。引擎 ≠ 模型。",
@@ -713,7 +757,7 @@ const I18N = {
   "zh-Hant": {
     badge:"Windows & macOS · 多 AI 引擎併發的 AI 總機",
     h1:'你的 Mac 的 <span class="grad">AI 總機</span><br>一個面板,多個 AI 同時幹活',
-    sub:"Claude Code、Codex、Direct V2,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四個引擎家族,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
     dl:"下載試用", learn:"了解更多",
     m_sessions:"會話", m_engines:"引擎",
     m_prompt:"把這份產品文件改成給客戶看的推廣文案,要直白",
@@ -732,8 +776,10 @@ const I18N = {
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每個引擎一個獨立 agent,各自循環、各自狀態、各自產出。互不阻塞,你只管下達任務。",
     eng_c:"長程式碼任務主力。會調工具、改檔案、跑命令,從重構到 debug 一條龍。",
+    eng_g3:"最新自研引擎。意圖路由器按查詢自動選 fast / standard / deep 三檔執行路徑,deep 路徑把工具呼叫建構為 DAG 平行執行,多步任務真實加速。",
     eng_g:"自研引擎,Plan-Execute-Verify-Judge 四層架構。工具併發、子 Agent 派發、上下文壓縮,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系程式碼引擎。patch / exec / 沙盒寫,任務清晰、產出可控。",
+    eng_d:"DeepSeek 推理引擎,擅長長上下文複雜推理任務。spawn dsh CLI,OpenAI 相容 SSE,自帶 token 計費。",
     arc_title:"多 Agent 併發調度",
     arc_sub:"AgentScheduler 做 DAG 拓撲調度,每個 agent 獨立循環但共享工具匯流排和跨引擎記憶。",
     arc_1t:"DAG 調度器", arc_1:"拓撲排序依賴關係,閒置即派任務,阻塞的 agent 不影響其他 agent。",
@@ -758,7 +804,7 @@ const I18N = {
     pr_sub:"API key 走系統 Keychain,對話存本地 SQLite,不上傳任何後台。跨平台 Electron,資源佔用低。",
     fq_title:"常見問題",
     q_1:"這跟 Raycast / Alfred 是一回事嗎?", a_1:"不一樣。Raycast 是啟動器,KinetAios 是 AI 總機——多 agent 引擎併發的執行時,重點不是「快速啟動 app」而是「讓多個 AI 同時幫你幹活、狀態全可見」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Claude Code / Codex / Direct V2 裝進同一面板,併發跑、狀態全可見、跨引擎 resume——同時管多個 agent 是它做不了的。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 裝進同一面板——四個引擎家族,各自併發跑、狀態全可見、跨引擎 resume。同時管多個 agent,是單引擎桌面版做不了的。",
     q_3:"資料去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);對話和記憶在本地 SQLite;不上傳任何後台。你的引擎、你的 key、你的資料。",
     q_4:"Claude Code / Codex 怎麼用?需要自己配?", a_4:"KinetAios 自動發現已裝的 claude / codex CLI。沒裝的話,設定頁有引導。Direct 引擎只需 API key。",
     q_5:"支援什麼模型?", a_5:"Direct 引擎看你接的 key(預設 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本機 CLI 配置(可走任何它們支援的模型)。引擎 ≠ 模型。",
@@ -770,7 +816,7 @@ const I18N = {
   "en": {
     badge:"Windows & macOS · Multi-engine AI switchboard",
     h1:'Your Mac\'s <span class="grad">AI Switchboard</span><br>One panel, multiple AIs working at once',
-    sub:"Claude Code, Codex, Direct V2 — each running independently, all status visible. Code, copy, research, each engine has its strength.",
+    sub:"Direct V1 / V2 / V3, Claude Code, Codex, DeepSeek Harness — four engine families, each running independently, all status visible. Code, copy, research — each engine has its strength.",
     dl:"Download", learn:"Learn more",
     m_sessions:"Sessions", m_engines:"Engines",
     m_prompt:"Turn this product doc into customer-facing marketing copy, keep it punchy",
@@ -789,8 +835,10 @@ const I18N = {
     eng_title:"Multiple AI engines, each on its own",
     eng_sub:"Each engine runs as an independent agent — own loop, own status, own output. No blocking. You just hand out tasks.",
     eng_c:"Heavy-lift code tasks. Calls tools, edits files, runs commands — refactor to debug in one flow.",
+    eng_g3:"Latest built-in engine. Intent router picks fast / standard / deep path per query; the deep path executes tool calls as a DAG with parallel branches — real speedups on multi-step tasks.",
     eng_g:"Built-in engine with Plan-Execute-Verify-Judge architecture. Concurrent tools, sub-agent dispatch, context compaction — 1/3 token usage.",
     eng_o:"OpenAI-family code engine. Patch / exec / sandbox writes. Clean tasks, controlled output.",
+    eng_d:"DeepSeek reasoning engine — long-context complex reasoning. Spawns dsh CLI, OpenAI-compatible SSE, built-in token metering.",
     arc_title:"Multi-Agent Concurrent Scheduling",
     arc_sub:"AgentScheduler does DAG topology dispatch. Each agent loops independently but shares ToolBus and cross-engine memory.",
     arc_1t:"DAG Scheduler", arc_1:"Topological dependency sorting. Idle agents pick up tasks; blocked ones don't hold up others.",
@@ -815,7 +863,7 @@ const I18N = {
     pr_sub:"API keys in OS Keychain (DPAPI / Keychain), conversations in local SQLite, no backend upload. Cross-platform Electron, low footprint.",
     fq_title:"FAQ",
     q_1:"Is this like Raycast / Alfred?", a_1:"No. Raycast is a launcher; KinetAios is an AI switchboard — a multi-agent concurrent runtime. The point isn't 'quick app launch' but 'multiple AIs working for you simultaneously, all visible.' They coexist fine.",
-    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Claude Code / Codex / Direct V2 in one panel — concurrent, all-visible, cross-engine resume. Managing multiple agents at once is what they can't do.",
+    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness in one panel — four engine families running concurrently, all-visible, cross-engine resume. Managing multiple agents at once is what single-engine desktops can't do.",
     q_3:"Where does my data go?", a_3:"API key in OS Keychain (DPAPI / Keychain); conversations and memory in local SQLite; no backend upload. Your engines, your keys, your data.",
     q_4:"How do Claude Code / Codex work? Do I need to configure them?", a_4:"KinetAios auto-discovers installed claude / codex CLIs. If not installed, settings page has a guide. Direct engine only needs an API key.",
     q_5:"Which models are supported?", a_5:"Direct engine depends on your key (default glm-4-plus / glm-4-flash); Claude Code / Codex follow your local CLI config (any model they support). Engine ≠ model.",
@@ -827,7 +875,7 @@ const I18N = {
   "ja": {
     badge:"Windows & macOS · マルチエンジン AI 総合受付",
     h1:'Mac の <span class="grad">AI 総合受付</span><br>1 パネルで複数 AI が同時に稼働',
-    sub:"Claude Code、Codex、Direct V2 を直結。それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——4つのエンジンファミリー、それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
     dl:"ダウンロード", learn:"詳細",
     m_sessions:"セッション", m_engines:"エンジン",
     m_prompt:"この製品ドキュメントを顧客向けの販促コピーに変更。ストレートに",
@@ -846,8 +894,10 @@ const I18N = {
     eng_title:"マルチ AI エンジン、それぞれ独立",
     eng_sub:"各エンジンが独立 agent として稼動。独自ループ、独自ステータス、独自アウトプット。互いにブロックしない。タスクを渡すだけ。",
     eng_c:"長期コードタスクの主力。ツール呼び、ファイル編集、コマンド実行。リファクタから debug まで一気通貫。",
+    eng_g3:"最新の自研エンジン。意図ルーターがクエリごとに fast / standard / deep パスを選択、deep パスはツール呼びを DAG で並行実行。複数ステップタスクに本物の高速化。",
     eng_g:"自研エンジン、Plan-Execute-Verify-Judge 4層アーキテクチャ。ツール並行、サブ Agent 派遣、コンテキスト圧縮。Token 消費 3分の1。",
     eng_o:"OpenAI 系コードエンジン。patch / exec / サンドボックス書き。タスク明確、アウトプット制御可能。",
+    eng_d:"DeepSeek 推論エンジン、長コンテキスト複雑推論が得意。dsh CLI を spawn、OpenAI 互換 SSE、token 計量内蔵。",
     arc_title:"マルチ Agent 並行スケジューリング",
     arc_sub:"AgentScheduler が DAG トポロジー調度を行う。各 agent は独立ループだが ToolBus とクロスエンジン記憶を共有。",
     arc_1t:"DAG スケジューラー", arc_1:"依存関係をトポロジカルソート。空き agent にタスクを割り当て、ブロックされた agent は他に影響しない。",
@@ -872,7 +922,7 @@ const I18N = {
     pr_sub:"API key は OS Keychain (DPAPI / Keychain)、対話はローカル SQLite、バックエンド送信なし。クロスプラットフォーム Electron、低リソース。",
     fq_title:"よくある質問",
     q_1:"Raycast / Alfred と同じですか?", a_1:"違います。Raycast はランチャー、KinetAios は AI 総合受付——マルチ agent エンジンの並行ランタイム。「アプリの高速起動」ではなく「複数 AI が同時に作業、ステータスすべて可視」が目的。共存可能です。",
-    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Claude Code / Codex / Direct V2 を1パネルに。並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理は他にはできない機能です。",
+    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness を1パネルに収めます——4つのエンジン家族が並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理はシングルエンジンにはできない機能です。",
     q_3:"データはどこへ?", a_3:"API key は OS Keychain (DPAPI / Keychain)、対話と記憶はローカル SQLite、バックエンド送信なし。あなたのエンジン、あなたの key、あなたのデータ。",
     q_4:"Claude Code / Codex の使い方は? 自分で設定?", a_4:"KinetAios がインストール済みの claude / codex CLI を自動検出。未インストールの場合は設定ページにガイド。Direct エンジンは API key のみ。",
     q_5:"対応モデルは?", a_5:"Direct エンジンは鍵次第(デフォルト glm-4-plus / glm-4-flash)、Claude Code / Codex はローカル CLI 設定に従う(対応する任意のモデル)。エンジン ≠ モデル。",
