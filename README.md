@@ -17,13 +17,11 @@ AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 
 ![KinetAios hero screenshot](documents/hero.png)
 
-![Three engines running side-by-side](documents/demo-arena.gif)
+![Four engines running side-by-side](documents/demo-arena.gif)
 
-![KinetAios v2.1.0](documents/kinetaios-v2.1.0.png)
+> 📊 **[查看完整四引擎对比报告 →](documents/excel-cross-analysis-engines.html)** — Direct V1 / Direct V2 / Direct V3 (DAG parallel) / Claude Code / Codex / DeepSeek Harness 在真实数据分析场景下的全维度评估。
 
-> 📊 **[查看完整四引擎对比报告 →](documents/excel-cross-analysis-engines.html)** — V1 Direct / V2 Direct / Claude Code / Codex 在真实数据分析场景下的全维度评估。
-
-**A local-first, multi-engine AI agent dashboard.** Run Claude Code, Codex, and a built-in ReAct loop side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
+**A local-first, multi-engine AI agent dashboard.** Run **Direct (V1 ReAct / V2 / V3 DAG-parallel), Claude Code, Codex, and DeepSeek Harness** side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
 
 English | [简体中文](README.zh-CN.md)
 
@@ -31,11 +29,11 @@ English | [简体中文](README.zh-CN.md)
 
 ## Why KinetAios?
 
-Most AI clients lock you into one provider, lose context when you switch engines, and route your conversations through a relay server. KinetAios runs **three engines from one window**, with cross-engine long-term memory and **no account**.
+Most AI clients lock you into one provider, lose context when you switch engines, and route your conversations through a relay server. KinetAios runs **four engines from one window**, with cross-engine long-term memory and **no account**.
 
 |  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
-| Four-engine switch (Direct V1/V2 / Claude Code / Codex) | ✅ | — | — | — | — |
+| Four-engine switch (Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness) | ✅ | — | — | — | — |
 | Messaging channels (Feishu + WeCom bot) | ✅ | — | — | — | — |
 | Local SQLite + automatic long-term memory | ✅ | — | — | — | — |
 | Cross-engine memory (one user profile, all engines) | ✅ | — | — | — | — |
@@ -54,7 +52,7 @@ Most AI clients lock you into one provider, lose context when you switch engines
 
 Download the latest release:
 
-- **Windows** — [`KinetAios-Setup-2.5.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer)
+- **Windows** — [`KinetAios-Setup-3.2.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer)
 - **macOS** — see [releases](https://github.com/phinn/KinetAios/releases/latest)
 
 > Unsigned build → Windows SmartScreen / macOS Gatekeeper will warn; allow manually.
@@ -93,8 +91,10 @@ npm start
 ### Four engines (switchable per session; switching clears cross-engine context)
 - **Direct V1 (Kaios)**: built-in ReAct loop + GLM/OpenAI-compatible & Anthropic **dual-protocol SSE streaming** provider, with tool-level concurrency, sub-agent dispatch, context compaction, and retry.
 - **Direct V2**: next-gen ReAct with Plan-Execute-Verify-Judge architecture, streaming tool calls, and enhanced reasoning. Shared tool set with V1.
+- **Direct V3**: latest, with **intent router** that picks `fast` / `standard` / `deep` paths per query, and the `deep` path executes tool calls as a **DAG with parallel branches** for real speedups on multi-step tasks.
 - **Claude Code**: spawns `claude -p --output-format stream-json`, parses NDJSON, resumes via `--resume`.
 - **Codex**: spawns `codex exec --json`, parses JSONL, `resume` continuation.
+- **DeepSeek Harness** *(3.0+)*: spawns the `dsh` CLI, OpenAI-compatible SSE, OpenAI / Pi-AI provider adapters with retry and token metering. Switchable per session like the others.
 
 ### Direct tools (20+)
 `shell` (confirm before exec), `read_file`, `write_file`, `edit_file` (precise replacement), `grep` (recursive content search), `glob` (list files), `web_fetch` (SSRF-protected, Jina Reader fallback), `web_search` (Bing → DuckDuckGo), `recall_memory`, `git_diff` (read-only), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with independent context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `feishu_send_file` (send files to Feishu chat). Plugin-injected tools may add more.
@@ -110,7 +110,7 @@ npm start
 
 ### Skills / Commands / Agents / Plugins
 - Scans Claude Code's skills + commands + agents and Codex's skills. `/` menu or ⚡ button.
-- **Plugin system v2.2**: plugins can contribute tools, slash commands, hooks, and full-screen panels. Per-need injection (keyword matching saves ~60% tokens). Built-in plugins: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude, and more.
+- **Plugin SDK v3**: plugins can contribute tools, slash commands, hooks, and full-screen panels. Per-need injection (keyword matching saves ~60% tokens). Built-in plugins: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude, and more.
 
 ### Sidebar (left → right)
 - **＋** New session.
@@ -191,7 +191,7 @@ KinetAiosWin/
       mcp.ts                # MCP client (scan + stdio + reconnect)
       mcp-server.ts         # MCP server (HTTP+SSE, run_agent, token auth)
       skills.ts             # skills/commands/agents/plugin scan
-      plugins.ts            # plugin loader (v2.2: tools/slashCommands/hooks/panels)
+      plugins.ts            # plugin loader (SDK v3: tools/slashCommands/hooks/panels)
       store.ts              # better-sqlite3 + FTS5
       settings.ts           # config (encrypted API key persistence, lang, embeddings)
     preload/preload.ts      # the narrow API exposed via contextBridge

@@ -17,9 +17,7 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 ![KinetAios hero screenshot](documents/hero.png)
 
-![三引擎并跑演示](documents/demo-arena.gif)
-
-![KinetAios v2.1.0](documents/kinetaios-v2.1.0.png)
+![四引擎并跑演示](documents/demo-arena.gif)
 
 本地 AI agent 仪表盘,**跨平台(Windows 11 + macOS)**。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。**无需账号,无需中继服务器 —— 你的 LLM API key 就是唯一凭证。**
 
@@ -27,11 +25,11 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 ## 为什么选 KinetAios?
 
-大多数 AI 客户端把你锁定在一个 provider 上,切引擎就丢上下文,对话还要走中继服务器。KinetAios **一个窗口跑三个引擎**,跨引擎长期记忆,**无需账号**。
+大多数 AI 客户端把你锁定在一个 provider 上,切引擎就丢上下文,对话还要走中继服务器。KinetAios **一个窗口跑四个引擎**,跨引擎长期记忆,**无需账号**。
 
 |  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
-| 三引擎切换(Direct / Claude Code / Codex) | ✅ | — | — | — | — |
+| 四引擎切换(Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness) | ✅ | — | — | — | — |
 | 本地 SQLite + 自动长期记忆 | ✅ | — | — | — | — |
 | 跨引擎记忆(一个用户画像,所有引擎共享) | ✅ | — | — | — | — |
 | 多并行会话 | ✅ | — | ✅ | — | ✅ |
@@ -48,7 +46,7 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 下载最新发布:
 
-- **Windows** — [`KinetAios-Setup-1.0.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS 安装包)
+- **Windows** — [`KinetAios-Setup-3.2.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS 安装包)
 - **macOS** — 见 [releases](https://github.com/phinn/KinetAios/releases/latest)
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。
@@ -82,12 +80,15 @@ npm start
 
 ## 功能
 
-### 三个引擎(每会话可切,切换清跨引擎上下文)
-- **Direct(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
+### 四个引擎(每会话可切,切换清跨引擎上下文)
+- **Direct V1(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
+- **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,共享 V1 工具集。
+- **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**,多步任务有真实加速。
 - **Claude Code**:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex**:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
+- **DeepSeek Harness** *(3.0+)*:spawn `dsh` CLI,OpenAI 兼容 SSE,内置 OpenAI / Pi-AI Provider 适配 + 重试 + token 计费。和其他引擎一样可按会话切换。
 
-### Direct 工具(12 个)
+### Direct 工具(20+)
 `shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`(SSRF 防护 + Jina Reader 回退)、`web_search`(Bing → DuckDuckGo 回退)、`recall_memory`、`git_diff`(只读、免确认)、`dispatch_agent`(只读子 agent —— 独立上下文)、`flight_plan`(插件可注入更多工具)。
 
 ### MCP 集成(客户端 + 服务端)
@@ -101,7 +102,7 @@ npm start
 
 ### Skills / Commands / Agents / 插件
 - 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。
-- **插件系统 v2.2**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。内置插件:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude 等。
+- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。内置插件:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude 等。
 
 ### 侧边栏按钮(从左到右)
 - **＋** 新建会话。
@@ -182,7 +183,7 @@ KinetAiosWin/
       mcp.ts                # MCP 客户端(扫描 + stdio + 重连)
       mcp-server.ts         # MCP 服务端(HTTP+SSE, run_agent, token 鉴权)
       skills.ts             # skills/commands/agents/plugin 扫描
-      plugins.ts            # 插件加载器(v2.2: 工具/slash命令/hooks/面板)
+      plugins.ts            # 插件加载器(SDK v3: 工具/slash命令/hooks/面板)
       store.ts              # better-sqlite3 + FTS5
       settings.ts           # 配置(API key 加密落盘, lang, embedding)
     preload/preload.ts      # contextBridge 暴露的窄 API
