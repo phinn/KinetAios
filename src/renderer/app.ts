@@ -2168,10 +2168,11 @@ function updateStreamingStatus(conv: Conversation): void {
   } else {
     if (oldStatus) { oldStatus.remove(); heightChanged = true; }
   }
-  // streaming-status 的创建/移除改变了内容高度,同步贴底(低频操作,不防抖)。
+  // streaming-status 的创建/移除改变了内容高度,同步贴底。
+  // ⚠️ 轻量 scrollDown,禁 scrollDownForce(status 事件在多步任务下同样高频,全量 strip 会卡死)。
   // hold(看历史/已取消)不许滚动 —— DOM 变了也不跟滚。
   if (heightChanged && userAtBottom && !scrollFrozen) {
-    scrollDownForce();
+    scrollDown();
   }
 }
 
@@ -2233,9 +2234,15 @@ function updateLastTurnIncremental(): void {
     if (txt) txt.textContent = conv.statusNote ?? '';
   }
   // DOM 结构改变(steps 重建 / streaming-status 增删)后,同步贴底。
-  // 低频操作(tool/status event),直接 scrollDownForce 不走 rAF。
-  // hold(看历史/已取消)不滚 —— scrollDownForce 自身也判 viewMode。
-  if (userAtBottom && !scrollFrozen) scrollDownForce();
+  // ⚠️ 必须走轻量 scrollDown(clampedBottom 只量最后一个子元素),不能用 scrollDownForce:
+  // scrollDownForce → snapToBottomReal 会遍历全部 .turn 做 getBoundingClientRect + 2 次强制 reflow,
+  // 多步任务(DAG 几十步、每步多个 tool 事件)下每个 tool/cost 事件触发一次全量 strip 循环,
+  // 长会话几百 turn → O(n) reflow 风暴,主线程直接卡死。
+  // hold(看历史/已取消)不滚 —— scrollDown 自身判 viewMode。
+  // In-stream incremental scroll MUST use the light path (clampedBottom measures only the
+  // last child). scrollDownForce's snapToBottomReal walks every .turn with getBoundingClientRect
+  // + 2 forced reflows — one per tool/cost event in a multi-step task → O(n) reflow storm → UI freeze.
+  if (userAtBottom && !scrollFrozen) scrollDown();
 }
 
 // 流式 token:增量追加(不全量重设 textContent,避免长答案 O(n²) 重渲)。
