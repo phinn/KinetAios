@@ -47,12 +47,15 @@ function logFatal(kind: string, e: unknown): void {
 process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
-// userData 统一到 productName(KinetAios);旧目录名是 package.json 的 name("kinetaios-win")。
+// ⚠️ userData 目录名永远固定为 'KinetAios',不随 brand.json 改名变化 ——
+// 用户数据(kinet.db/settings/plugins)终身只认这一个目录,避免改名后"数据丢失"假象。
+// 显示名(窗口标题/通知/Dock)仍走 getBrand().productName,两者解耦。
 // setName 必须在 whenReady 前。
 // ⚠️ 只在 ud 不存在时单向搬迁 old→ud;绝不删除/覆盖任何已存在的 KinetAios 目录。
 // 历史事故:旧版在两边并存时 rmSync(ud)(assumed KinetAios 是残留),导致源码运行
 // 重新生成空 kinetaios-win 后,打包版启动直接删光用户全部数据(不进回收站)。
-app.setName(getBrand().productName);
+const USERDATA_DIR = 'KinetAios';
+app.setName(USERDATA_DIR);
 try {
   const ud = app.getPath('userData');                       // .../KinetAios (setName 后)
   const old = path.join(path.dirname(ud), 'kinetaios-win'); // .../kinetaios-win
