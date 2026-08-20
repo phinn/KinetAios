@@ -2476,6 +2476,32 @@ if (!gotLock) {
   });
 
   app.whenReady().then(() => {
+    // ── 内存哨兵:周期采样所有进程内存,增量写 userData/mem-watch.log ──
+    // 目的:renderer/主进程渐进泄漏定位。之前"内存爆掉"无现场,只能靠事后曲线回溯。
+    // Memory sentinel: periodic RSS sampling of every process, append to mem-watch.log.
+    let memPrev = '';
+    setInterval(() => {
+      try {
+        const mu = process.memoryUsage();
+        const parts = [`main rss=${(mu.rss / 1048576).toFixed(0)}M heap=${(mu.heapUsed / 1048576).toFixed(0)}M`];
+        for (const [name, win] of [['dash', dashboardWin], ['quick', quickWin], ['arena', arenaWin]] as const) {
+          if (win && !win.isDestroyed()) {
+            void win.webContents.executeJavaScript('performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576)+"M" : "?"', true)
+              .then((heap: string) => {
+                const l = `${new Date().toISOString()} ${name} jsHeap=${heap}\n`;
+                require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'), l);
+              }).catch(() => { /* frame destroyed */ });
+          }
+        }
+        const line = `${new Date().toISOString()} ${parts.join(' ')}\n`;
+        // 只在有变化时写(≥8MB delta),避免日志噪音
+        if (Math.abs(line.length - memPrev.length) > 2 || memPrev === '') {
+          // ponytail: 采样粒度 60s,足够捕捉渐进泄漏;精确归因再用 DevTools heap snapshot
+          require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'), line);
+        }
+        memPrev = line;
+      } catch { /* 窗口销毁竞态,忽略 */ }
+    }, 60_000);
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
     // 但清空菜单后 Cmd/Ctrl+Shift+I 快捷键失效 → 手动注册。
