@@ -6452,7 +6452,20 @@ async function saveCtxInspector(): Promise<void> {
   }
 }
 
+// IME 组合期间跳过 autosize:每次 input 事件同步读 scrollHeight 会强制 reflow,
+// 中文拼音逐字母触发 → 组合期间高频 reflow 叠加渲染进程繁忙时阻塞 IME 消息泵,
+// 表现为输入框"打不出字"。compositionend 后补一次即可。
+// Skip autosize during IME composition — sync scrollHeight read forces reflow per
+// keystroke; under streaming load this blocks the IME pump and freezes typing.
+let autosizeSkip = false;
+document.getElementById('composer')?.addEventListener('compositionstart', () => { autosizeSkip = true; });
+document.getElementById('composer')?.addEventListener('compositionend', () => {
+  autosizeSkip = false;
+  autosize(document.getElementById('composer') as HTMLTextAreaElement);
+});
 function autosize(el: HTMLTextAreaElement) {
+  const isComposer = el.id === 'composer';
+  if (autosizeSkip && isComposer) return;
   el.style.height = 'auto';
   // 空内容时用最小高度,避免 padding/border 撑大 / Use min-height for empty content
   const h = el.value ? Math.min(el.scrollHeight, 240) : 44;
