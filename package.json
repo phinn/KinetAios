@@ -52,14 +52,14 @@
       "target": [
         "dmg"
       ],
-      "icon": "src/resources/icon.png",
+      "icon": "src/resources/icon-e1-K.png",
       "minimumSystemVersion": "10.15.0"
     },
     "win": {
       "target": [
         "nsis"
       ],
-      "icon": "src/resources/icon.png"
+      "icon": "src/resources/icon.ico"
     },
     "nsis": {
       "oneClick": false,
