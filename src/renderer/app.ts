@@ -2599,7 +2599,9 @@ function turnsEl(): HTMLElement | null {
 }
 
 /** content-visibility 剥离贴底:临时把视口下方 turn 的 cv 置 visible,
- *  scrollTop 用真实布局贴底后再还原。占位高度会让 scrollTop 被 clamp 错位。 */
+ *  量出真实末尾后立刻恢复为 auto。占位高度会让 scrollTop 被 clamp 错位。
+ *  ⚠️ 一帧只写一次 scrollTop:strip 前后布局不同,clampedBottom 值也不同,
+ *  多次写不同目标正是流式期间「滚动条上下抖动」的根因(Windows 高 DPI 更明显)。 */
 function snapToBottomReal(el: HTMLElement): void {
   const stripped: HTMLElement[] = [];
   for (const t of el.querySelectorAll('.turn')) {
@@ -2611,21 +2613,23 @@ function snapToBottomReal(el: HTMLElement): void {
       stripped.push(h);
     }
   }
-  // 所有贴底点统一走同一个钳制目标:scrollHeight 混含 strip 区占位高度,
-  // 直接设 scrollHeight 会落到真实末尾下方;而钳制值/裸值交替设置正是
-  // 流式期间「上下抖动」的来源。/ One clamped target everywhere — mixing
-  // clamped and raw scrollHeight across the three snap points was the jitter.
-  void el.offsetHeight;
-  setProgScrollTop(el, clampedBottom(el));
-  // 恢复 content-visibility 后真实高度 ≠ 占位高度,scrollHeight 会变 → 再贴一次。
-  // / Restoring content-visibility changes real heights — snap again.
+  let target: number;
   if (stripped.length) {
+    void el.offsetHeight; // strip 后强制 layout,量真实末尾
+    target = clampedBottom(el);
+    for (const h of stripped) h.style.contentVisibility = ''; // 恢复 auto,防布局残留累积
+    void el.offsetHeight; // 恢复后占位高度回落
+    target = Math.min(target, el.scrollHeight); // scrollHeight 收缩后浏览器侧再钳
+  } else {
     void el.offsetHeight;
-    setProgScrollTop(el, clampedBottom(el));
+    target = clampedBottom(el);
   }
+  setProgScrollTop(el, target); // 全程唯一一次 scrollTop 写入
   // 异步布局兜底(markdown/图片/字体晚到会继续增高):延迟一帧再贴一次,幂等无害。
-  // / Late async layout keeps growing content — one deferred re-snap.
+  // 去重:同帧内若 scrollDown 已排了新的 snap,旧兜底直接跳过,避免同帧两次写不同目标。
+  // / Late async layout keeps growing content — one deferred re-snap, deduped.
   requestAnimationFrame(() => {
+    if (scrollDownScheduled) return; // 已有更新的 snap 排队,让位
     if (viewMode === 'follow' && !scrollFrozen) setProgScrollTop(el, clampedBottom(el));
   });
 }
