@@ -2659,7 +2659,12 @@ function scrollDown(): void {
     scrollDownScheduled = false;
     if (viewMode !== 'follow' || scrollFrozen) return;
     const el = turnsEl();
-    if (el) snapToBottomReal(el);
+    // 高频路径(流式 token 每帧):轻量贴底 — 只量最后一个子元素,不做 strip 循环。
+    // snapToBottomReal 遍历全部 turn 的 getBoundingClientRect + 2 次强制 reflow,
+    // 长会话(几百 turn)下每帧 O(n) 布局读取会吃满主线程,卡 UI/IME。
+    // strip 校正只在低频 scrollDownForce(用户显式操作/tool 事件)时执行。
+    // High-frequency path: measure last child only — no strip loop, no forced reflow storm.
+    if (el) setProgScrollTop(el, clampedBottom(el));
   });
 }
 
