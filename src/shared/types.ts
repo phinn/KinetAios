@@ -350,6 +350,7 @@ export type AgentEvent =
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
   | { type: 'context'; action: 'compacted' | 'trimmed'; beforeTokens: number; afterTokens: number } // 上下文压缩事件 → renderer 可视化
+  | { type: 'traj'; records: TrajRecord[] } // 轨迹:本轮模型真实看到的 messages 快照(含 system/记忆注入/压缩摘要)
   | { type: 'done' }
   | { type: 'error'; message: string };
 
@@ -383,6 +384,16 @@ export type TaskStep = {
   durationMs?: number; // 工具执行耗时(回放用)
 };
 
+// ── Trajectory(轨迹):把"模型真实看到的 messages"可见化 ──
+// 参考 deepseek-harness 的 Trajectory 视图:按轮次记录 system / user / context(记忆注入等隐形消息)
+// / compacted(压缩摘要)/ message(assistant)/ tool(工具往返),供前端检查器透视。
+// Trajectory records: make invisible context injections / compaction / tool turns inspectable.
+export type TrajRecord = {
+  kind: 'system' | 'user' | 'context' | 'compacted' | 'message' | 'tool';
+  role: string; // 原始 role(system/user/assistant/tool)
+  text: string; // 内容预览(截断)
+};
+
 export type Turn = {
   id: string;
   prompt: string;
@@ -395,6 +406,7 @@ export type Turn = {
   tokensIn: number;
   tokensOut: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
+  traj?: TrajRecord[]; // 轨迹:本 turn 最终发给模型的完整 messages 快照(system+memory+history+user)
 };
 
 export type ConvStatus = 'ready' | 'running';
@@ -950,6 +962,10 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       break;
     case 'sessionStarted':
       conv.engineSessionId = ev.id;
+      break;
+    case 'traj':
+      // 多次 runAgentLoop(v2 planner/executor/replan)各自快照 → 拼接保留全程轨迹
+      t.traj = [...(t.traj ?? []), ...ev.records];
       break;
     case 'done':
       conv.statusNote = null;

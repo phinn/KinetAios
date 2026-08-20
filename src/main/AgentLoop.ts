@@ -254,6 +254,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
 
     messages.push(completion.rawAssistant);
     if (completion.toolCalls.length === 0) {
+      onEvent({ type: 'traj', records: snapshotTraj(messages) });
       onEvent({ type: 'done' });
       return dropTransient(messages);
     }
@@ -446,6 +447,40 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
     if (ctx.signal?.aborted) return '[已停止]';
     return `工具出错: ${e}`;
   }
+}
+
+// 轨迹快照:把最终 messages 转成可持久化的 TrajRecord 列表。
+// - system → system;_memory → context(记忆注入);content 以 [早期对话摘要] 开头 → compacted
+// - tool role / 带 tool_calls 的 assistant → tool;其余 assistant → message
+// 每条截断 2K 字符(traj 只做透视,不做回放)。
+// Snapshot final messages into TrajRecords for the Trajectory inspector.
+const TRAJ_TEXT_LIMIT = 2000;
+function snapshotTraj(messages: ChatMsg[]): import('../shared/types').TrajRecord[] {
+  const out: import('../shared/types').TrajRecord[] = [];
+  for (const m of messages) {
+    const text = typeof m.content === 'string'
+      ? m.content
+      : Array.isArray(m.content)
+        ? m.content.map((p) => p.type === 'text' ? p.text : `[${p.type}]`).join('')
+        : '';
+    const kind: import('../shared/types').TrajRecord['kind'] = m._memory
+      ? 'context'
+      : m.role === 'system'
+        ? 'system'
+        : typeof text === 'string' && text.startsWith('[早期对话摘要]')
+          ? 'compacted'
+          : m.role === 'tool' || (m.tool_calls && m.tool_calls.length)
+            ? 'tool'
+            : m.role === 'assistant'
+              ? 'message'
+              : 'user';
+    out.push({
+      kind,
+      role: m.role,
+      text: text.length > TRAJ_TEXT_LIMIT ? text.slice(0, TRAJ_TEXT_LIMIT) + '\n…[截断]' : text,
+    });
+  }
+  return out;
 }
 
 // Drop transient messages (system prompt + the in-flight memory marker msg) before persisting

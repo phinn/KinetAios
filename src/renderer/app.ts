@@ -2,7 +2,7 @@
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -2011,12 +2011,63 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       exportBtn.innerHTML = ICON.export;
       exportBtn.onclick = () => openExportMenu(conv.id);
       actions.appendChild(exportBtn);
+      // 轨迹按钮:透视本 turn 模型真实看到的完整 messages(system/记忆注入/压缩摘要/工具往返)
+      if (t.traj?.length) {
+        const trajBtn = document.createElement('button');
+        trajBtn.className = 'ghost ai-traj';
+        trajBtn.title = tr('traj.title');
+        trajBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>';
+        trajBtn.onclick = () => openTrajInspector(t);
+        actions.appendChild(trajBtn);
+      }
       row.appendChild(actions);
       body.appendChild(row);
     }
     wrap.appendChild(aiMsg);
   }
   return wrap;
+}
+
+// ── Trajectory 检查器 ──
+// 参考 dsh Trajectory:按记录类型着色,展开看完整内容。透视"模型到底看到了什么"。
+const TRAJ_BADGE: Record<string, { label: string; cls: string }> = {
+  system: { label: 'system', cls: 't-system' },
+  user: { label: 'user', cls: 't-user' },
+  context: { label: 'context', cls: 't-context' },
+  compacted: { label: 'compacted', cls: 't-compacted' },
+  message: { label: 'assistant', cls: 't-message' },
+  tool: { label: 'tool', cls: 't-tool' },
+};
+
+function openTrajInspector(t: Turn): void {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  const records = t.traj ?? [];
+  const counts = records.reduce<Record<string, number>>((acc, r) => { acc[r.kind] = (acc[r.kind] ?? 0) + 1; return acc; }, {});
+  const summary = Object.entries(counts).map(([k, n]) => `${TRAJ_BADGE[k]?.label ?? k}×${n}`).join(' · ');
+  const box = document.createElement('div');
+  box.className = 'traj-modal';
+  box.innerHTML = `
+    <div class="traj-head">
+      <div class="traj-title">${tr('traj.title')} <span class="traj-count">(${records.length})</span></div>
+      <div class="traj-summary">${esc(summary)}</div>
+      <button class="ghost traj-close">✕</button>
+    </div>
+    <div class="traj-list"></div>`;
+  overlay.appendChild(box);
+  const list = box.querySelector('.traj-list')!;
+  records.forEach((r, idx) => {
+    const badge = TRAJ_BADGE[r.kind] ?? { label: r.kind, cls: 't-user' };
+    const row = document.createElement('details');
+    row.className = 'traj-row ' + badge.cls;
+    const preview = r.text.replace(/\s+/g, ' ').slice(0, 160);
+    row.innerHTML = `<summary><span class="traj-idx">#${idx + 1}</span><span class="traj-badge">${badge.label}</span><span class="traj-role">${esc(r.role)}</span><span class="traj-preview">${esc(preview)}${r.text.length > 160 ? '…' : ''}</span></summary><pre class="traj-full"></pre>`;
+    (row.querySelector('.traj-full') as HTMLElement).textContent = r.text;
+    list.appendChild(row);
+  });
+  (box.querySelector('.traj-close') as HTMLElement).onclick = () => overlay.remove();
+  overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
+  document.body.appendChild(overlay);
 }
 
 function avatarEl(kind: 'user' | 'ai'): HTMLElement {
