@@ -48,15 +48,16 @@ process.on('uncaughtException', (e) => logFatal('uncaughtException', e));
 process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 
 // userData 统一到 productName(KinetAios);旧目录名是 package.json 的 name("kinetaios-win")。
-// setName 必须在 whenReady 前。旧目录存在 ⟺ pre-bug 老用户 ⟺ 它就是权威数据,
-// 整体搬到新路径;并存的 KinetAios 只会是 bug 期残留(缓存/默认配置),直接覆盖。
+// setName 必须在 whenReady 前。
+// ⚠️ 只在 ud 不存在时单向搬迁 old→ud;绝不删除/覆盖任何已存在的 KinetAios 目录。
+// 历史事故:旧版在两边并存时 rmSync(ud)(assumed KinetAios 是残留),导致源码运行
+// 重新生成空 kinetaios-win 后,打包版启动直接删光用户全部数据(不进回收站)。
 app.setName(getBrand().productName);
 try {
   const ud = app.getPath('userData');                       // .../KinetAios (setName 后)
   const old = path.join(path.dirname(ud), 'kinetaios-win'); // .../kinetaios-win
-  if (fs.existsSync(old)) {
-    if (fs.existsSync(ud)) fs.rmSync(ud, { recursive: true, force: true });
-    fs.renameSync(old, ud);
+  if (fs.existsSync(old) && !fs.existsSync(ud)) {
+    fs.renameSync(old, ud); // 单向迁移,仅目标不存在时;失败不阻塞启动,下次再试
   }
 } catch { /* 迁移失败不阻塞启动;旧目录仍在,下次启动再试 */ }
 
