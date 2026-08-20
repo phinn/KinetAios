@@ -1091,8 +1091,14 @@ ${failedDetail || '  (无)'}
   // 如果全部透传,applyEvent 会在每步之间把 conv.status 设成 ready + 触发 extractMemories。
   // 解决:中间的 done/error 被吞掉,只在 run() 的最终退出点手动发一次 done。
   private forwardEvent(ev: AgentEvent, onEvent: (e: AgentEvent) => void): void {
-    // done/error 不转发 —— 由 run() 在最终退出时统一发
-    if (ev.type === 'done' || ev.type === 'error') return;
+    // done/error 不转发 —— 由 run() 在最终退出时统一发。
+    // 但 error 不能静默吞掉:planner/executor 内部的网络/API 错误如果不可见,
+    // 表现为"执行到一半静默停了"。转为 status 透出,终态仍由 run() 统一收口。
+    if (ev.type === 'error') {
+      onEvent({ type: 'status', text: `⚠️ ${ev.message}` });
+      return;
+    }
+    if (ev.type === 'done') return;
     if (ev.type === 'status') {
       const text = ev.text.startsWith('v2:') ? ev.text : `v2: ${ev.text}`;
       onEvent({ type: 'status', text });
