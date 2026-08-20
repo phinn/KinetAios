@@ -59,7 +59,7 @@
       "target": [
         "nsis"
       ],
-      "icon": "src/resources/icon.ico"
+      "icon": "src/resources/icon.png"
     },
     "nsis": {
       "oneClick": false,
