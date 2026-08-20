@@ -2480,29 +2480,22 @@ if (!gotLock) {
 
   app.whenReady().then(() => {
     // ── 内存哨兵:周期采样所有进程内存,增量写 userData/mem-watch.log ──
-    // 目的:renderer/主进程渐进泄漏定位。之前"内存爆掉"无现场,只能靠事后曲线回溯。
-    // Memory sentinel: periodic RSS sampling of every process, append to mem-watch.log.
-    let memPrev = '';
+    // v2: 改用 app.getAppMetrics() 拿全部子进程(GPU/Utility/renderer)真实 RSS,每分钟无条件写。
+    // v1 的"行长度变化检测"吞掉了 main 行(数值变但长度几乎不变);且 renderer jsHeap 平稳
+    // 不代表没泄漏 —— 原生内存(DOM/纹理/blob)泄漏在 jsHeap 之外,必须看进程级 RSS。
+    // v2: use getAppMetrics for real per-process RSS; write unconditionally every tick.
     setInterval(() => {
       try {
         const mu = process.memoryUsage();
-        const parts = [`main rss=${(mu.rss / 1048576).toFixed(0)}M heap=${(mu.heapUsed / 1048576).toFixed(0)}M`];
-        for (const [name, win] of [['dash', dashboardWin], ['quick', quickWin], ['arena', arenaWin]] as const) {
-          if (win && !win.isDestroyed()) {
-            void win.webContents.executeJavaScript('performance.memory ? Math.round(performance.memory.usedJSHeapSize/1048576)+"M" : "?"', true)
-              .then((heap: string) => {
-                const l = `${new Date().toISOString()} ${name} jsHeap=${heap}\n`;
-                require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'), l);
-              }).catch(() => { /* frame destroyed */ });
-          }
+        const parts = [`main rss=${(mu.rss / 1048576).toFixed(0)}M jsHeap=${(mu.heapUsed / 1048576).toFixed(0)}M`];
+        for (const m of app.getAppMetrics()) {
+          if (m.type === 'Browser' || m.memory.workingSetSize === 0) continue;
+          const role = m.type === 'Tab' ? 'renderer' : m.type.toLowerCase();
+          parts.push(`${role}(${m.pid}) rss=${(m.memory.workingSetSize / 1024).toFixed(0)}M`);
         }
-        const line = `${new Date().toISOString()} ${parts.join(' ')}\n`;
-        // 只在有变化时写(≥8MB delta),避免日志噪音
-        if (Math.abs(line.length - memPrev.length) > 2 || memPrev === '') {
-          // ponytail: 采样粒度 60s,足够捕捉渐进泄漏;精确归因再用 DevTools heap snapshot
-          require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'), line);
-        }
-        memPrev = line;
+        // ponytail: 60s 采样,足够捕捉渐进泄漏;精确归因再用 DevTools heap snapshot
+        require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'),
+          `${new Date().toISOString()} ${parts.join(' ')}\n`);
       } catch { /* 窗口销毁竞态,忽略 */ }
     }, 60_000);
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
