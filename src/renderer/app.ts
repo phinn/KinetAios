@@ -1796,11 +1796,17 @@ function renderHead(conv: Conversation | undefined) {
   stat.textContent = parts.join(' · ');
   status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
   // 发送按钮:运行中显示停止图标,否则发送图标。
+  // ⚠️ 只在状态真正变化时才写 innerHTML —— renderHead 每次 status 事件都会跑,
+  // 高频重写 SVG 会销毁重建 DOM,按钮/图标视觉上"一直闪"。
+  // Only touch DOM when the state actually changed — status events run this
+  // at high frequency and rewriting the SVG each time causes visible flicker.
   sendBtn.classList.toggle('stop', conv.status === 'running');
-  if (conv.status === 'running') {
-    sendBtn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>';
-  } else {
-    sendBtn.innerHTML = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
+  const wantStop = conv.status === 'running';
+  if (sendBtn.dataset.stopIcon !== String(wantStop)) {
+    sendBtn.dataset.stopIcon = String(wantStop);
+    sendBtn.innerHTML = wantStop
+      ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>'
+      : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
   }
   // 会话目标条:有 goal 时显示;goal loop 运行中加 pulse 动画
   const goalBar = document.getElementById('goal-bar');
