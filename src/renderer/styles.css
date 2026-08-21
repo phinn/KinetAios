@@ -1983,7 +1983,10 @@ a { color: var(--accent); }
 .date-divider-line { flex: 1; height: 1px; background: linear-gradient(90deg, transparent, var(--border) 20%, var(--border) 80%, transparent); }
 .date-divider-text { font-size: 0.73rem; color: var(--text-faint); letter-spacing: 0.3px; padding: 1px 10px; background: var(--bg-elev-2, var(--bg-elev)); border: 1px solid var(--border-soft); border-radius: 10px; white-space: nowrap; }
 /* AI turn 首次渲染时轻微淡入,减少突兀感 / Fade-in on first render */
-.turn .msg.ai .ai-body { animation: turn-fade-in 0.25s var(--ease-out) both; }
+/* ⚠️ 只作用于最后一个 turn —— renderMain 全量重建时所有 turn 都是新 DOM,
+   若全部动画会整屏重放淡入(每次 done/flush/conversation 广播闪一次)。
+   Only the last turn animates: full rebuilds replay this on EVERY turn otherwise. */
+.turn:last-child .msg.ai .ai-body { animation: turn-fade-in 0.25s var(--ease-out) both; }
 @keyframes turn-fade-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 /* 只在含用户消息的 turn 前画分割线,AI 连续步骤间不画 — 减少视觉噪音 */
 .turn:has(.msg.user) + .turn,
