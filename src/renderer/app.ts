@@ -236,9 +236,13 @@ function applyI18nDOM(): void {
     } else {
       convs.set(conv.id, conv);
     }
-    if (isNew) order.unshift(conv.id);
-    renderSidebar();
-    if (conv.id === selectedId) renderMain();
+    if (isNew) { order.unshift(conv.id); renderSidebar(); }
+    else refreshSidebarLi(conv.id);
+    // onAgentEvent 的 done/error 已调 renderMain();这里再调会双重全量重建
+    // (renderMain 遍历所有 turn 做 markdown 渲染,长会话 O(n) CPU)。
+    // 用 scheduleRenderMain(debounce→updateLastTurnIncremental) 替代:
+    // 只增量更新最后一个 turn + head,不重建整列;已在下一帧排队则合并。
+    if (conv.id === selectedId) scheduleRenderMain();
     if (currentView === 'workbench') renderWorkbench();
     if (currentView === 'town') townOnConversationChanged();
     if (currentView === 'nexus') nexusOnConversationChanged();
