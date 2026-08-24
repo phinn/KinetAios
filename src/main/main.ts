@@ -161,6 +161,13 @@ function safeSend(win: BrowserWindow | null, channel: string, data: unknown): vo
   // wc.send 在某些 Electron 版本中异步 reject ("Render frame was disposed"),
   // 无法 try/catch 捕获;用 wc.on('did-start-navigation') 在重载时清除 deadFrames 标记。
 }
+// 广播瘦身:巨型会话(带截图/超长 answer,单 conv turns 可达 25MB)若每个事件
+// 都整包 structured clone 过 IPC,流式期间 tool/status 连发 → 双进程 GC 风暴 →
+// renderer 卡死/进程 gone(2026-08-24 两次卡死的根因)。
+// renderer 侧已有 head 态兼容路径(LRU 保护 + ensureTurnsLoaded),所以这里
+// 超阈值时剥掉 turns 只带最后一个 turn,让 renderer 走懒加载。
+// Broadcast slimming: oversized convs are sent head-only; renderer lazy-loads turns.
+const IPC_TURNS_CHAR_LIMIT = 600_000; // ~600KB 字符 ≈ 1.2MB UTF-16
 
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
@@ -168,10 +175,26 @@ const emitter: TaskManagerEmitter = {
     safeSend(quickWin, 'agent-event', { convId, ev });
     safeSend(arenaWin, 'agent-event', { convId, ev });
   },
+  // Broadcast slimming: see IPC_TURNS_CHAR_LIMIT above.
   emitConversation(conv: Conversation) {
-    safeSend(dashboardWin, 'conversation', conv);
-    safeSend(quickWin, 'conversation', conv);
-    safeSend(arenaWin, 'conversation', conv);
+    let payload = conv;
+    if (conv.turnsLoaded !== false) {
+      // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
+      let weight = 0;
+      for (const t of conv.turns) {
+        weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
+        if (t.steps) for (const s of t.steps) {
+          weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
+        }
+      }
+      if (weight > IPC_TURNS_CHAR_LIMIT) {
+        const last = conv.turns[conv.turns.length - 1];
+        payload = { ...conv, turns: last ? [last] : [], turnsLoaded: false };
+      }
+    }
+    safeSend(dashboardWin, 'conversation', payload);
+    safeSend(quickWin, 'conversation', payload);
+    safeSend(arenaWin, 'conversation', payload);
   },
   emitRemoved(convId) {
     safeSend(dashboardWin, 'conversation-removed', convId);
