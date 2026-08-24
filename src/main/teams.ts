@@ -20,9 +20,9 @@ import type { Provider } from './glm';
 import { runAgentLoop } from './AgentLoop';
 import * as store from './store';
 import { readOnlyTools } from './tools';
-import { SUBAGENT_PROMPT } from './engines';
+import { SUBAGENT_PROMPT, SUBAGENT_TIMEOUT_MS } from './engines';
 
-const TEAM_TIMEOUT_MS = 3 * 60 * 1000; // 单次 member 回答 3 分钟超时
+const TEAM_TIMEOUT_MS = SUBAGENT_TIMEOUT_MS; // 单次 member 回答超时(与 dispatch_agent 对齐,8min)
 
 /**
  * 解析 member history(JSON 字符串 → ChatMsg[]),失败回退空数组。
@@ -83,7 +83,7 @@ export async function runMember(opts: {
     history,
     ctx: { cwd, confirm, convId },
     signal: ac.signal,
-    maxTurns: 8,
+    maxTurns: 15,
     onEvent: (e) => {
       if (!onTeamEvent) return;
       if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });

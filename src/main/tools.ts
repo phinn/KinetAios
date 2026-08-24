@@ -1137,7 +1137,7 @@ const dispatchAgent: Tool = {
   name: 'dispatch_agent',
   description:
     '派发一个独立子任务给子 agent(独立上下文)。默认走 Direct 引擎(只读工具集:read_file/grep/glob/web_fetch/recall_memory/recall_fact)。设 engine=claudeCode 或 codex 跨引擎:走对应 CLI 的 one-shot(同样只读)。用于并行探索或大任务分解,可以借力更强的模型完成子任务。子 agent 不能写文件、不能起 shell、不能再派发子任务;完成后用文本汇报结果。\n\n' +
-    '**model 参数(Direct 引擎)**:通常不需要传。留空 = 自动使用频道/全局配置的子 Agent 模型,未配置则跟随主 agent 模型。仅在明确需要切换模型时传入。\n\n' +
+    '**model 参数**:已忽略 — 子 agent 模型由设置决定(频道子模型 > 全局子 Agent 模型 > 主模型),传了也无效,不要传。\n\n' +
     '**scope 参数(关键)**:决定子 agent 拿到多少 parent conversation 历史。\n' +
     '- "none"(默认):子 agent 完全独立,只看到 prompt。最便宜,适合"独立探索/查文档"任务。\n' +
     '- "last_n_turns":注入 parent 最近 N 轮 user/assistant(默认 N=3)。子 agent 知道"在干嘛",适合"基于刚才对话的延伸任务"。\n' +
@@ -1198,7 +1198,12 @@ const dispatchAgent: Tool = {
         scope,
       });
     } catch (e) {
-      return `子任务出错: ${(e as Error)?.message ?? e}`;
+      const err = e as Error;
+      // 超时 abort 的错误信息要可读 — "operation aborted" 会让主 agent 盲目原样重试
+      if (err?.name === 'AbortError' || /abort/i.test(err?.message ?? '')) {
+        return '子任务超时或被取消(8 分钟上限)。建议:把任务拆小(一次只查一个目标),或换更具体的 prompt 减少探查轮数,不要原样重试同一个任务。';
+      }
+      return `子任务出错: ${err?.message ?? e}`;
     }
   },
 };

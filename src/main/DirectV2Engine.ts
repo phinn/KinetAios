@@ -36,6 +36,7 @@ import {
   sourceHintSection,
   loadProjectRules,
   SUBAGENT_PROMPT,
+  SUBAGENT_TIMEOUT_MS,
   type Engine,
   type EngineRunOpts,
 } from './engines';
@@ -1272,10 +1273,11 @@ ${failedDetail || '  (无)'}
         const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
         const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
         // Direct 子任务:只读工具、独立上下文。
-        // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        // 超时保护:合并主 signal + timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        // SUBAGENT_TIMEOUT_MS = 8min(与 v1 spawn / teams 对齐;3 分钟对多轮 ReAct 不够,见 engines.ts 注释)。
         // AbortSignal.any 在 Node 20+ 可用;旧版 fallback 到手动 AbortController。
         const subAc = new AbortController();
-        const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
+        const subTimer = setTimeout(() => subAc.abort(), SUBAGENT_TIMEOUT_MS);
         // 主 signal abort 时也 abort 子任务。
         // 必须在子任务结束后 removeEventListener,防止 dead listener 堆积在 parent signal 上。
         const onParentAbort = (): void => subAc.abort();
@@ -1304,7 +1306,7 @@ ${failedDetail || '  (无)'}
           history: [], // P1:scope 已合并到 userInput,保持空 history
           ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
           signal: subAc.signal,
-          maxTurns: 8,
+          maxTurns: 15,
           onEvent: (e) => {
             if (e.type === 'cost') onEvent(e);
             else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });

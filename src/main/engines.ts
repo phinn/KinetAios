@@ -84,10 +84,29 @@ export function personaSection(conv?: Conversation): string {
   return `\n\n# 🧬 替身画像(用户做事风格)\n以下是用户本人的做事风格画像。请在回答风格、方案选择、代码风格上尽量贴合画像描述,就像用户本人在操作一样:\n\n${persona}`;
 }
 
+// 子 agent 超时(ms)。8 分钟:子任务是多轮 ReAct + web/grep 工具链,3 分钟会频繁误杀
+// 中途 abort → 整个结果丢弃返回 "operation aborted",看起来就是"超时不可用"。
+// / Sub-agent timeout. 8min: multi-turn ReAct with web/grep tools needs more than 3min.
+export const SUBAGENT_TIMEOUT_MS = 8 * 60 * 1000;
+
 // 子 agent 系统提示(Direct 的 dispatch_agent 用)。只读工具,完成后文本汇报。
 export const SUBAGENT_PROMPT = `你是子 agent,在主 agent 派发下独立完成一个子任务。
+
+## 工具边界
 你只有只读工具(read_file / grep / glob / web_search / web_fetch / recall_memory / recall_fact)—— 不能写文件、不能起 shell、不能再派发子任务。
-聚焦完成给定目标,结束后用简洁中文文本汇报结果(结论 / 找到的东西 / 关键路径),不要寒暄。`;
+
+## 执行纪律(防跑偏)
+1. **只做 prompt 里写明的事**。prompt 没要求的不做:不发散、不建议方案、不评审无关代码。
+2. 开工前先用一句话在心里锚定"任务目标 + 交付物是什么",所有工具调用必须服务于它。
+3. 探查要**有终止条件**:找到答案或确认"找不到"(说明查了哪里、为什么没有),不要为了"更全面"无限多查。
+4. 工具调用失败 2 次同一目标 → 换路径(grep 换 glob、web 换本地),不要原样重试。
+5. 禁止臆测。所有结论必须有工具返回的证据支撑;没证据就明说"未找到",宁可交白卷也不编造。
+
+## 汇报格式(最终回复)
+- 第一行:**结论一句话**(直接回答任务问题,不要"经过分析我认为"之类的铺垫)。
+- 之后:关键证据(文件路径:行号 / 链接 / 数据),最多 10 条,每条一行。
+- 找不到时:明确说"未找到",列出查过的位置,方便主 agent 换方向。
+- 不要寒暄,不要总结执行过程,不要输出你调用过哪些工具。`;
 
 /**
  * P1:resolveSpawnHistory — 按 scope 策略把 parent history 转成一段文本。
@@ -353,9 +372,10 @@ class DirectEngine implements Engine {
         const effectiveModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
         const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
         const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
-        // 超时保护:合并主 signal + 3 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        // 超时保护:合并主 signal + 8 分钟 timeout,防止 API hang 导致 dispatch_agent 永久阻塞。
+        // (3 分钟对多轮 ReAct + web/grep 工具链不够,频繁误杀 → 见 SUBAGENT_TIMEOUT_MS)
         const subAc = new AbortController();
-        const subTimer = setTimeout(() => subAc.abort(), 3 * 60 * 1000);
+        const subTimer = setTimeout(() => subAc.abort(), SUBAGENT_TIMEOUT_MS);
         // M2-fix: 具名 listener,finally 中 removeEventListener — 否则匿名闭包在主 signal 上累积泄漏
         // (长会话多次 dispatch_agent 会触发 Node MaxListeners 警告,闭包持有 subAc 造成内存滞留)。
         const onParentAbort = (): void => subAc.abort();
@@ -388,7 +408,7 @@ class DirectEngine implements Engine {
             history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
             ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
             signal: subAc.signal,
-            maxTurns: 8,
+            maxTurns: 15,
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
               else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
