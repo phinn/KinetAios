@@ -226,6 +226,12 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('feishu-event');
     ipcRenderer.on('feishu-event', (_e: IpcRendererEvent, ev: { type: string; data?: unknown }) => cb(ev));
   },
+
+  // ── 卡死取证心跳 / Freeze-watchdog heartbeat ──
+  // renderer 主线程每秒发一次;main 侧停摆 >5s 即抓调用栈(见 main.ts freeze watchdog)。
+  startHeartbeat: () => {
+    setInterval(() => ipcRenderer.send('renderer-heartbeat'), 1000);
+  },
 };
 
 // ArrayBuffer → base64(语音音频传输用)

@@ -18,6 +18,8 @@ declare global {
 }
 
 const api: KinetAPI = window.kinet;
+// 卡死取证心跳(与 dashboard 相同;quick panel 也可能卡死)
+try { api.startHeartbeat?.(); } catch { /* 旧 preload 无此方法 */ }
 const convs = new Map<string, Conversation>();
 let order: string[] = [];
 let selectedId: string | null = null;

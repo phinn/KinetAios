@@ -8,6 +8,9 @@ import { t, engineLabel, type Lang } from '../shared/i18n';
 declare global { interface Window { kinet: KinetAPI } }
 
 const api = window.kinet;
+// 卡死取证心跳:主线程被长任务占住时 setInterval 回调停发,main 侧据此抓栈。
+// Freeze watchdog heartbeat: silence >5s in main triggers a stack sample.
+try { api.startHeartbeat?.(); } catch { /* 旧 preload 无此方法 */ }
 const convs = new Map<string, Conversation>();
 let lang: Lang = 'zh-CN';
 const ns = 'http://www.w3.org/2000/svg';

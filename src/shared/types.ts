@@ -645,6 +645,9 @@ export type GitActionResult = { ok: boolean; message?: string; error?: string };
 // The API the preload exposes to the renderer via contextBridge (window.kinet).
 export interface KinetAPI {
   getConversations(): Promise<Conversation[]>;
+  // 卡死取证:启动 renderer 心跳(main 侧停摆 >5s 抓调用栈,见 freeze watchdog)
+  startHeartbeat(): void;
+
   // 懒加载:按需拉取单个频道的全部 turns(head 模式启动后,切频道时调用)
   getTurns(convId: string): Promise<Turn[]>;
   newConversation(cwd?: string, engine?: EngineKind): Promise<Conversation>;

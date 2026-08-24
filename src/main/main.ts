@@ -2521,6 +2521,43 @@ if (!gotLock) {
           `${new Date().toISOString()} ${parts.join(' ')}\n`);
       } catch { /* 窗口销毁竞态,忽略 */ }
     }, 60_000);
+    // ── 卡死自动取证:renderer 每秒心跳,main 侧监测 ──
+    // 「UI 卡死但进程没崩」(pid 不变、crash.log 无记录)时,唯一可靠的诊断是卡死瞬间的
+    // renderer 调用栈。事后(重启后)再查什么都晚了。方案:preload 暴露的窗口每秒向 main
+    // 发心跳;main 发现停摆超 5s 即用 macOS `sample` 抓 3s 调用栈写入 userData/freeze-sample.txt
+    // (Windows 上退化为仅记录事件)。恢复后再卡死可多次取证,每次追加。
+    // Freeze watchdog: renderer heartbeats every second; main samples the hung
+    // renderer process to capture the exact call stack for post-mortem analysis.
+    let lastBeat = Date.now();
+    let sampling = false;
+    let freezeReported = false;
+    ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); });
+    setInterval(() => {
+      const silent = Date.now() - lastBeat;
+      if (silent < 5000 || sampling) return;
+      if (!freezeReported) {
+        freezeReported = true;
+        try {
+          require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
+            `\n===== ${new Date().toISOString()} renderer heartbeat silent ${silent}ms =====\n`);
+        } catch { /* ignore */ }
+      }
+      const tab = app.getAppMetrics().find((m) => m.type === 'Tab');
+      if (!tab || process.platform !== 'darwin') return;
+      sampling = true;
+      const { execFile } = require('child_process') as typeof import('child_process');
+      execFile('/usr/bin/sample', [String(tab.pid), '3', '-file', require('path').join(app.getPath('userData'), 'renderer.sample')], { timeout: 15000 }, (err) => {
+        sampling = false;
+        if (!err) {
+          try {
+            const fs = require('fs');
+            const p = require('path').join(app.getPath('userData'), 'renderer.sample');
+            const head = fs.readFileSync(p, 'utf8').split('\n').slice(0, 120).join('\n');
+            fs.appendFileSync(require('path').join(app.getPath('userData'), 'freeze-sample.txt'), head + '\n');
+          } catch { /* ignore */ }
+        }
+      });
+    }, 1000);
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。
     // 但清空菜单后 Cmd/Ctrl+Shift+I 快捷键失效 → 手动注册。
