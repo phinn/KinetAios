@@ -2198,6 +2198,15 @@ function updateLastTurnIncremental(): void {
   const turnEl = ansEl.closest('.turn') as HTMLElement | null;
   if (!turnEl) { renderMain(); return; }
   const t = conv.turns[lastTurnIdx];
+  // Cancel-fix:取消路径不走 done/error 事件 → 没人触发全量 renderMain,
+  // 流式态 DOM(.turn.streaming + 三点占位 + streaming-status)会原样残留。
+  // 检测"DOM 仍流式但数据已终态"(t.done / status ready)→ 就地替换最后 turn,
+  // 与 renderMain 冻结分支同策略:不重建整列,只换尾部,上方视口零跳动。
+  if (turnEl.classList.contains('streaming') && (t.done || conv.status !== 'running')) {
+    const turnsEl = document.getElementById('turns')!;
+    turnsEl.replaceChild(renderTurn(conv, lastTurnIdx), turnEl);
+    return;
+  }
   // steps 增量更新:只 append 新增的 step(按序号对齐),不再全量重建子树。
   // 全量 buildStepsEl 在多步任务下是 O(n²):每来一个 tool 事件就重建
   // 几十个 <details>(流式态全部展开)+ scrollDownForce 强制 reflow,长任务直接卡死。
