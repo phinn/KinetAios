@@ -315,9 +315,29 @@ async function ollamaStream(
   onToken: (t: string) => void,
   wireMsgs: Record<string, unknown>[],
 ): Promise<Completion> {
+  // Ollama 原生端点要求 tool_calls[].function.arguments 是 JSON **对象**,不接受
+  // OpenAI 格式的字符串 —— 原样回灌会在第二轮(带工具往返历史)报
+  // HTTP 400 "Value looks like object, but can't find closing '}' symbol"
+  // (服务端 buger/jsonparser 把 string 当 object 扫描)。发送前统一转成对象。
+  // Ollama's native endpoint demands object-typed tool arguments, unlike the
+  // OpenAI wire format — convert string arguments back to parsed objects.
+  const ollamaMsgs = wireMsgs.map((m) => {
+    if (!Array.isArray((m as { tool_calls?: unknown[] }).tool_calls)) return m;
+    return {
+      ...m,
+      tool_calls: ((m as { tool_calls: Array<Record<string, unknown>> }).tool_calls).map((tc) => {
+        const fn = (tc.function ?? {}) as { name?: string; arguments?: unknown };
+        if (typeof fn.arguments !== 'string') return tc;
+        let parsed: unknown = {};
+        try { parsed = JSON.parse(fn.arguments); } catch { /* 非法 JSON → 空对象,宁可丢参不可 400 */ }
+        if (parsed === null || typeof parsed !== 'object') parsed = {};
+        return { ...tc, function: { ...fn, arguments: parsed } };
+      }),
+    };
+  });
   const body: Record<string, unknown> = {
     model: snap.model,
-    messages: wireMsgs,
+    messages: ollamaMsgs,
     stream: true,
     options: { num_ctx: 32768 },
   };
