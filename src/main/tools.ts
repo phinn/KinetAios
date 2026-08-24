@@ -592,23 +592,25 @@ const webSearch: Tool = {
       duckduckgo: { label: 'DuckDuckGo', fn: () => ddgSearch(q, maxResults, signal) },
     };
 
-    // 用户设置的引擎优先,其余按固定序回退。
+    // 用户设置的引擎优先,其余按固定序回退。失败的引擎记录原因,结果里标注 —— 静默回退会让用户误以为设置没生效。
     const { getSettings } = await import('./settings');
     const preferred = getSettings().searchEngine ?? 'bing';
     const order = [preferred, ...Object.keys(engines).filter((k) => k !== preferred)];
+    const failed: string[] = [];
 
     for (const key of order) {
       const e = engines[key];
       if (!e) continue;
       try {
         const results = await e.fn();
-        if (results.length > 0) return format(e.label, results);
-      } catch {
-        // 该引擎失败/无结果 → 尝试下一个
+        if (results.length > 0) return format(e.label, results) + (failed.length ? `\n\n(注:${failed.join(';')} → 已回退到 ${e.label})` : '');
+        failed.push(`${e.label}:无结果`);
+      } catch (err) {
+        failed.push(`${e.label}:${err instanceof Error ? err.message.slice(0, 60) : '失败'}`);
       }
     }
 
-    return `搜索「${q}」失败:所有搜索引擎均不可用。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
+    return `搜索「${q}」失败:所有搜索引擎均不可用(${failed.join(';')})。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
   },
 };
 
