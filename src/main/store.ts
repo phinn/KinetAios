@@ -720,7 +720,7 @@ export function saveV2Checkpoint(convId: string, stepId: string, planJson: strin
      ON CONFLICT(conv_id, step_id) DO UPDATE SET
        row_type=excluded.row_type, plan_json=excluded.plan_json,
        history_json=excluded.history_json, created_at=excluded.created_at;`
-  ).run(convId, stepId, rowType, planJson, historyJson, Date.now() / 1000);
+  ).run(convId, stepId, rowType, planJson, historyJson, Date.now()); // H4-fix: 毫秒精度,避免同秒 tie 使 final 墓碑行输给 step 行
 }
 
 export function loadV2Checkpoint(convId: string, stepId: string): { plan_json: string; history_json: string; row_type: string; created_at: number } | null {
@@ -729,7 +729,11 @@ export function loadV2Checkpoint(convId: string, stepId: string): { plan_json: s
 }
 
 export function loadLatestV2Checkpoint(convId: string): { step_id: string; plan_json: string; history_json: string; row_type: string; created_at: number } | null {
-  const row = db.prepare('SELECT step_id, plan_json, history_json, row_type, created_at FROM v2_state WHERE conv_id=? ORDER BY created_at DESC LIMIT 1;').get(convId) as { step_id: string; plan_json: string; history_json: string; row_type: string; created_at: number } | undefined;
+  // H4-fix: 顺序必须让 final 墓碑行(用户 abort/正常结束)优先于同秒的 step checkpoint。
+  // 旧版 created_at 是秒级精度:abort 写入的 final 行与最后一个 step 行常落在同一秒,
+  // tie 时可能返回 step 行 → 误触发 crash recovery,把用户刚取消的旧 plan 恢复续跑。
+  // 修复:① created_at 改毫秒精度(新值 >> 旧秒值,排序仍兼容);② tie 时用 rowid DESC 决胜。
+  const row = db.prepare('SELECT step_id, plan_json, history_json, row_type, created_at FROM v2_state WHERE conv_id=? ORDER BY created_at DESC, rowid DESC LIMIT 1;').get(convId) as { step_id: string; plan_json: string; history_json: string; row_type: string; created_at: number } | undefined;
   return row ?? null;
 }
 
