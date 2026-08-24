@@ -437,6 +437,13 @@ function refreshSidebarLi(convId: string): void {
     const engCls = c.engine ? ` eng-${c.engine}` : '';
     dot.className = `dot ${dotCls}${engCls}`;
   }
+  // 标题也要就地刷新:rename 后 onConversation → refreshSidebarLi,若只更新 dot/时间,
+  // 侧栏会一直显示旧名字(此前靠全量 renderSidebar 兜底,增量优化后丢了)。
+  const titleEl = li.querySelector('.title');
+  if (titleEl) {
+    const title = c.customTitle || (c.firstPrompt?.slice(0, 40)) || (c.turns[0]?.prompt?.slice(0, 40)) || tr('head.newConv');
+    titleEl.textContent = title;
+  }
   const timeEl = li.querySelector('.sb-task-time');
   if (timeEl) {
     const turnCount = c.turnCount ?? c.turns.length;
