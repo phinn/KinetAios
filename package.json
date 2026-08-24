@@ -53,7 +53,12 @@
         "dmg"
       ],
       "icon": "src/resources/icon-e1-K.png",
-      "minimumSystemVersion": "10.15.0"
+      "minimumSystemVersion": "10.15.0",
+      "afterSign": "scripts/notarize.js",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
     },
     "win": {
       "target": [

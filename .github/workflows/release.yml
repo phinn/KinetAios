@@ -48,6 +48,31 @@ jobs:
 
       - run: npm install --no-audit --no-fund
 
+      # macOS: 导入 Developer ID 证书到临时 keychain(打 tag 发 Release 时才签,手动 dispatch 不签不公证)
+      - name: Import Developer ID cert
+        if: matrix.mac_arch != '' && startsWith(github.ref, 'refs/tags/v')
+        env:
+          MAC_CERT_P12: ${{ secrets.MAC_CERT_P12 }}
+          MAC_CERT_PASSWORD: ${{ secrets.MAC_CERT_PASSWORD }}
+        run: |
+          CERT_FILE=$(mktemp -d)/cert.p12
+          echo "$MAC_CERT_P12" | base64 --decode > "$CERT_FILE"
+          security create-keychain -p "" build.keychain-db
+          security import "$CERT_FILE" -k build.keychain-db -P "$MAC_CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "" build.keychain-db
+          security list-keychain -s build.keychain-db login.keychain-db
+          rm -f "$CERT_FILE"
+
+      # macOS 公证凭据(打 tag 时) — scripts/notarize.js afterSign 钩子读取
+      - name: Set notarize env
+        if: matrix.mac_arch != '' && startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: |
+          echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
+          echo "APPLE_APP_PASSWORD=${{ secrets.APPLE_APP_PASSWORD }}" >> "$GITHUB_ENV"
+          echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
+          echo "CSC_NAME=Developer ID Application: JUNJIE SHEN (M92UKS6NA2)" >> "$GITHUB_ENV"
+
       - shell: bash
         run: |
           set -o pipefail
