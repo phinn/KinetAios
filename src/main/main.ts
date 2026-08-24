@@ -314,11 +314,11 @@ function createDashboard(): BrowserWindow {
       const outFile = path.join(app.getPath('userData'), 'unresponsive-sample.txt');
       if (process.platform === 'darwin') {
         // sample <pid> <dur> -file <path>;webContents 没 pid → 用 win.webContents
-        // 的 osProcessId(Electron 22+)。失败静默。
-        const pid = win.webContents.osProcessId;
+        // 的 getOSProcessId()(Electron 22+)。失败静默。
+        const pid = win.webContents.getOSProcessId();
         if (pid) execFileSync('/usr/bin/sample', [String(pid), '3', '-mayDie', '-file', outFile], { timeout: 15000 });
       } else {
-        fs.appendFileSync(outFile, `\n[${new Date().toISOString()}] win unresponsive (pid=${win.webContents.osProcessId})\n`);
+        fs.appendFileSync(outFile, `\n[${new Date().toISOString()}] win unresponsive (pid=${win.webContents.getOSProcessId()})\n`);
       }
     } catch (e) {
       try { fs.appendFileSync(path.join(app.getPath('userData'), 'unresponsive-sample.txt'), `sample failed: ${e}\n`); } catch { /* ignore */ }
