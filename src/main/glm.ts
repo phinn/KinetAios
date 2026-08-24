@@ -165,10 +165,22 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
   const reader = resp.body!.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  // 流静默看门狗:连接建立后对端长时间既不发数据也不断开(网络半死/网关吞流)时,
+  // reader.read() 会永远挂起 → AgentLoop 永挂 → 三进程全闲、UI 永远 running。
+  // 每收到一个 chunk 重置计时;超过 STALL_MS 无任何字节则抛错,交给上层重试/终止。
+  // / Stall watchdog: if the stream goes silent (no bytes at all) for STALL_MS,
+  // abort the read instead of awaiting forever. Thinking 模型静默期也远小于此值
+  // (SSE 有 keep-alive 注释或心跳 chunk)。
+  const STALL_MS = 300_000; // 5 分钟无字节 = 判死
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const stall = new Promise<never>((_, reject) => {
+    stallTimer = setTimeout(() => reject(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+  });
   try {
     for (;;) {
-      const { value, done } = await reader.read();
+      const { value, done } = await Promise.race([reader.read(), stall]);
       if (done) break;
+      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } // 收到数据 → 撤 watchdog(整流读完后无需再计时)
       buf += dec.decode(value, { stream: true });
       let idx: number;
       while ((idx = buf.indexOf('\n')) >= 0) {
@@ -179,6 +191,7 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
     }
     if (buf.trim()) yield buf;
   } finally {
+    if (stallTimer) clearTimeout(stallTimer);
     // 确保释放 reader(abort/异常/break 时也清理,避免 TCP 连接泄漏)。
     // 先 releaseLock(让 body 可被再次获取或 GC),cancel 的 Promise fire-and-forget。
     // Node 16+ 的 releaseLock 在 cancel 未完成时调用是安全的(generator 即将终结)。
@@ -366,11 +379,18 @@ async function ollamaStream(
   if (!reader) throw new GLMError('noBody');
   const decoder = new TextDecoder();
   let buf = '';
+  // 流静默看门狗(同 sseLines):连接半死时 reader.read() 永挂。
+  const STALL_MS = 300_000;
+  let stallTimer: ReturnType<typeof setTimeout> | null = null;
 
   try {
+    const stall = new Promise<never>((_, reject) => {
+      stallTimer = setTimeout(() => reject(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+    });
     for (;;) {
-      const { done, value } = await reader.read();
+      const { done, value } = await Promise.race([reader.read(), stall]);
       if (done) break;
+      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
       buf += decoder.decode(value, { stream: true });
       const lines = buf.split('\n');
       buf = lines.pop() ?? '';
@@ -406,6 +426,7 @@ async function ollamaStream(
       }
     }
   } finally {
+    if (stallTimer) clearTimeout(stallTimer);
     // 必须释放 reader:否则底层 TCP 连接挂着,abort 后流不真正关闭。
     // Must release+cancel reader — otherwise TCP connection leaks and abort doesn't close the stream.
     try { reader.releaseLock(); } catch { /* already released */ }
