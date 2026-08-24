@@ -5,7 +5,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import zlib from 'node:zlib';
 import os from 'node:os';
-import { execFile } from 'node:child_process';
+import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories } from './store';
@@ -301,7 +301,37 @@ function createDashboard(): BrowserWindow {
       }, 1000);
     }
   });
-  win.webContents.on('unresponsive', () => logFatal('unresponsive', 'webContents unresponsive'));
+  // 卡死黑匣子:unresponsive 触发时 1)记录日志 2)sample 抓 renderer 全线程栈到
+  // unresponsive-sample.txt(macOS)/ pslist(Windows)3)10s 后若恢复记 responsive。
+  // 此前多次"卡死"crash.log 零 unresponsive 记录 —— 定性存疑,需现场证据。
+  // Black box: on unresponsive, log + sample the renderer threads for autopsy.
+  let unresponsiveSampling = false;
+  win.webContents.on('unresponsive', () => {
+    logFatal('unresponsive', 'webContents unresponsive');
+    if (unresponsiveSampling) return;
+    unresponsiveSampling = true;
+    try {
+      const outFile = path.join(app.getPath('userData'), 'unresponsive-sample.txt');
+      if (process.platform === 'darwin') {
+        // sample <pid> <dur> -file <path>;webContents 没 pid → 用 win.webContents
+        // 的 osProcessId(Electron 22+)。失败静默。
+        const pid = win.webContents.osProcessId;
+        if (pid) execFileSync('/usr/bin/sample', [String(pid), '3', '-mayDie', '-file', outFile], { timeout: 15000 });
+      } else {
+        fs.appendFileSync(outFile, `\n[${new Date().toISOString()}] win unresponsive (pid=${win.webContents.osProcessId})\n`);
+      }
+    } catch (e) {
+      try { fs.appendFileSync(path.join(app.getPath('userData'), 'unresponsive-sample.txt'), `sample failed: ${e}\n`); } catch { /* ignore */ }
+    }
+    // 10s 后若恢复记一笔,区分"短暂忙"与"永久死"。
+    setTimeout(() => {
+      if (!win.isDestroyed() && !win.webContents.isCrashed() && win.webContents.isLoading() === false) {
+        // 没有可靠 API 判 responsive;用 ping 副作用不可行,只能记录观察窗口结束。
+        fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), `[${new Date().toISOString()}] unresponsive +10s: win still alive\n`);
+      }
+      unresponsiveSampling = false;
+    }, 10000);
+  });
   // 页面重载时清除 deadFrames 标记,恢复事件推送。
   // Clear dead-frame flag on manual reload (Ctrl+R / navigation).
   win.webContents.on('did-start-navigation', (_e, _url, isInPlace) => {
