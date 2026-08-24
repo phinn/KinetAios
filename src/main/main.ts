@@ -177,6 +177,13 @@ const emitter: TaskManagerEmitter = {
   },
   // Broadcast slimming: see IPC_TURNS_CHAR_LIMIT above.
   emitConversation(conv: Conversation) {
+    // turnCount 归一化:turnCount 只在启动加载时由 SQL 聚合写入,运行期 push 新 turn
+    // 从不更新 → 广播里 turnCount 恒为旧值,renderer 侧按 turnCount 判断"有新 turn"
+    // 的合并逻辑永远不触发(用户消息不上屏)。turns 在内存时以真实长度为准,单一出口覆盖
+    // send/goal/failTurn/delete 所有路径。
+    // Normalize turnCount here: it's only seeded from SQL at load; keep it in sync
+    // with in-memory turns so consumers can trust it on every broadcast.
+    if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
     let payload = conv;
     if (conv.turnsLoaded !== false) {
       // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
