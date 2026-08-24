@@ -551,7 +551,7 @@ const webFetch: Tool = {
 };
 
 // web_search: 多搜索引擎回退,适配大陆网络。
-// 回退顺序:Bing 中国版(大陆直连) → DuckDuckGo(需翻墙)。
+// 回退顺序:搜狗(大陆直连,相关性最好) → Bing RSS(结构化) → Bing 中国版 HTML → DuckDuckGo。
 // 模型不需要关心用了哪个引擎,只看结果。
 const webSearch: Tool = {
   name: 'web_search',
@@ -571,28 +571,41 @@ const webSearch: Tool = {
     const maxResults = Math.min(Number(args.max_results ?? 8), 15);
     const signal = ctx?.signal ?? AbortSignal.timeout(20_000);
 
-    // ── 搜索引擎 1: Bing 中国版(大陆直连,最可靠) ──
+    const format = (results: Array<{ title: string; snippet: string; url: string }>) =>
+      `搜索「${q}」返回 ${results.length} 条结果:\n\n${results
+        .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
+        .join('\n\n')}`;
+
+    // ── 引擎 1: 搜狗(大陆直连;实测相关性最好) ──
+    // Bing 在大陆网络下被地域重写:英文 query 混入中文市场结果("M2 MacBook" →
+    // 广义货币供应量/BMW M2),小模型拿到的全是垃圾。搜狗对中英文 query 都准。
     try {
-      const results = await bingSearch(q, maxResults, signal);
-      if (results.length > 0) {
-        const body = results
-          .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
-          .join('\n\n');
-        return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
-      }
+      const results = await sogouSearch(q, maxResults, signal);
+      if (results.length > 0) return format(results);
     } catch {
-      // Bing 失败 → 尝试下一个引擎
+      // 搜狗失败 → 尝试下一个引擎
     }
 
-    // ── 搜索引擎 2: DuckDuckGo HTML(大陆需翻墙,作为备用) ──
+    // ── 引擎 2: Bing RSS(结构化 XML,干净 URL + 真实摘要) ──
+    try {
+      const results = await bingRssSearch(q, maxResults, signal);
+      if (results.length > 0) return format(results);
+    } catch {
+      // RSS 失败 → 尝试下一个引擎
+    }
+
+    // ── 引擎 3: Bing 中国版 HTML(大陆直连备用) ──
+    try {
+      const results = await bingSearch(q, maxResults, signal);
+      if (results.length > 0) return format(results);
+    } catch {
+      // Bing HTML 失败 → 尝试下一个引擎
+    }
+
+    // ── 引擎 4: DuckDuckGo HTML(大陆需翻墙,最后备用) ──
     try {
       const results = await ddgSearch(q, maxResults, signal);
-      if (results.length > 0) {
-        const body = results
-          .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
-          .join('\n\n');
-        return `搜索「${q}」返回 ${results.length} 条结果:\n\n${body}`;
-      }
+      if (results.length > 0) return format(results);
     } catch {
       // DDG 也失败
     }
@@ -600,6 +613,73 @@ const webSearch: Tool = {
     return `搜索「${q}」失败:所有搜索引擎均不可用。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
   },
 };
+
+// 搜狗搜索 —— 解析 www.sogou.com/web?query=... 结果页。
+// 结果在 <h3 class="vr-title"><a href="/link?url=...">;href 是中转跳转,
+// 需请求中转页解析 window.location.replace("真实URL")。
+// 摘要结构不稳,取不到就空,靠 web_fetch 兜底 —— 标题+URL 对模型已够选条目。
+async function sogouSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
+  const resp = await fetch(`https://www.sogou.com/web?query=${encodeURIComponent(query)}`, {
+    headers: { ...BROWSER_HEADERS, Referer: 'https://www.sogou.com/' },
+    signal,
+    redirect: 'follow',
+  });
+  if (!resp.ok) throw new Error(`Sogou HTTP ${resp.status}`);
+  const html = await resp.text();
+  // 搜狗无结果/风控页:无 vr-title 块 → 返回空,自然回退到下一引擎
+  const items = [...html.matchAll(/<h3[^>]*vr-title[^>]*>\s*<a[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi)].slice(0, maxResults);
+  if (!items.length) return [];
+
+  // 中转 URL 解析:每个结果多一次请求,并发执行(串行 8 条会拖到数秒)
+  const resolved = await Promise.all(items.map(async (m): Promise<{ title: string; url: string } | null> => {
+    const title = m[2].replace(/<[^>]+>/g, '').replace(/&#39;|&apos;/g, "'").replace(/&quot;/g, '"').replace(/&amp;/g, '&').trim();
+    let link = m[1].replace(/&amp;/g, '&');
+    if (link.startsWith('/')) link = 'https://www.sogou.com' + link;
+    if (!/^https?:\/\/www\.sogou\.com\/link/.test(link)) return { title, url: link }; // 直链(微信公众号等)
+    try {
+      const r = await fetch(link, {
+        headers: { ...BROWSER_HEADERS, Referer: 'https://www.sogou.com/' },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      });
+      const loc = r.headers.get('location'); // 情况 A: 302
+      if (loc && /^https?:/.test(loc)) return { title, url: loc };
+      const t = await r.text(); // 情况 B: 200 + JS redirect 页
+      const jm = t.match(/window\.location\.replace\("([^"]+)"\)/) ?? t.match(/URL='?([^"'>]+)/i);
+      if (jm && /^https?:/.test(jm[1])) return { title, url: jm[1] };
+    } catch { /* 单条解析失败丢弃 */ }
+    return null;
+  }));
+  return resolved.filter((r): r is { title: string; url: string } => !!r && !!r.title)
+    .map((r) => ({ title: r.title, snippet: '', url: r.url }));
+}
+
+// Bing RSS 搜索 —— global.bing.com/search?format=rss 返回结构化 XML:
+// 每个 <item> 含干净的 <title>/<link>(真实 URL,无 ck/a 跳转)/<description>(摘要)。
+// RSS 端点不受 HTML 页面地域重写影响,英文 query 不会混入中文市场结果。
+async function bingRssSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
+  const rssUrl = `https://global.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(maxResults + 5, 20)}&format=rss`;
+  const resp = await fetch(rssUrl, {
+    headers: { ...BROWSER_HEADERS, 'Accept': 'application/rss+xml,application/xml,text/xml,*/*' },
+    signal,
+    redirect: 'follow',
+  });
+  if (!resp.ok) throw new Error(`Bing RSS HTTP ${resp.status}`);
+  const xml = await resp.text();
+
+  const results: Array<{ title: string; snippet: string; url: string }> = [];
+  const items = xml.split(/<item>/i);
+  for (let i = 1; i < items.length && results.length < maxResults; i++) {
+    const item = items[i].split(/<\/item>/i)[0];
+    const title = (item.match(/<title>([\s\S]*?)<\/title>/i)?.[1] ?? '').replace(/<!\[CDATA\[|\]\]>/g, '').trim();
+    const link = (item.match(/<link>([\s\S]*?)<\/link>/i)?.[1] ?? '').trim();
+    const snippet = (item.match(/<description>([\s\S]*?)<\/description>/i)?.[1] ?? '')
+      .replace(/<!\[CDATA\[|\]\]>/g, '').replace(/<[^>]+>/g, '').trim();
+    if (!title || !link || !/^https?:/.test(link)) continue;
+    results.push({ title, snippet, url: link });
+  }
+  return results;
+}
 
 // Bing 中国版搜索解析 —— 解析 cn.bing.com/search?q=... 的 HTML 结果页。
 // b_algo 块含 <h2><a href> 标题</a></h2> 和 <p class="b_lineclamp*"> 摘要。
