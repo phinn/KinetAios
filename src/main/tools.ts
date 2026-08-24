@@ -658,12 +658,19 @@ async function sogouSearch(query: string, maxResults: number, signal: AbortSigna
 // 大陆网络需科学上网;可用时质量最好。结构简单:h3 定位块内 <a href="/url?q=..."> 或直链。
 async function googleSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
   const resp = await fetch(`https://www.google.com/search?q=${encodeURIComponent(query)}&num=${Math.min(maxResults + 3, 20)}&hl=zh-CN`, {
-    headers: { ...BROWSER_HEADERS, Referer: 'https://www.google.com/' },
+    headers: {
+      ...BROWSER_HEADERS,
+      Referer: 'https://www.google.com/',
+      // SOCS=CAI 跳过欧盟/部分地区 consent 弹窗 —— 无 cookie 时 Google 会 302 到 consent.google.com,
+      // follow 后拿到的是同意页(无结果块),曾被误判为"无结果"静默回退 Bing。
+      Cookie: 'SOCS=CAI; CONSENT=YES+cb',
+    },
     signal,
     redirect: 'follow',
   });
   if (!resp.ok) throw new Error(`Google HTTP ${resp.status}`);
   const html = await resp.text();
+  if (/consent\.google\.|before you continue/i.test(html)) throw new Error('Google consent 页(被风控拦截)');
   // 风控/验证页无结果块 → 返回空,自然回退
   const blocks = [...html.matchAll(/<a[^>]+href="(\/url\?q=|https?:\/\/[^"]*)"[^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>/gi)].slice(0, maxResults);
   const results: Array<{ title: string; snippet: string; url: string }> = [];
