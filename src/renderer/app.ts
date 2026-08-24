@@ -234,7 +234,23 @@ function applyI18nDOM(): void {
     if (prev && prev.turnsLoaded === true && conv.turnsLoaded !== true) {
       // LRU 保护:本地已加载 turns,但广播来的是 head 态(另一个消费点触发)—— 保留本地 turns
       // Local turns are loaded but broadcast is head-only — keep local copy.
-      convs.set(conv.id, { ...conv, turns: prev.turns, turnsLoaded: true });
+      // 但瘦身广播(emitConversation 超 600K 时 turns=[最后一个turn])携带了新 turn:
+      // 直接丢弃会让新发的 user turn 不上屏(执行照跑、UI 无显示)。按 turnCount 判断有新增
+      // 就把广播里的最新 turn 追加/替换到本地副本尾部。
+      // Slim broadcast (turns=[last]) carries the NEW turn — merge it in, otherwise
+      // the just-sent user message never renders while the task runs headless.
+      const merged = { ...conv, turns: prev.turns, turnsLoaded: true };
+      if (conv.turns.length && (conv.turnCount ?? prev.turns.length) > prev.turns.length) {
+        const fresh = conv.turns[conv.turns.length - 1];
+        const prevLast = prev.turns[prev.turns.length - 1];
+        // 同一轮(pending turn 已存在)→ 替换;新一轮 → 追加。
+        if (prevLast && prevLast.prompt === fresh.prompt && !prevLast.done && !prevLast.answer) {
+          merged.turns = [...prev.turns.slice(0, -1), fresh];
+        } else {
+          merged.turns = [...prev.turns, fresh];
+        }
+      }
+      convs.set(conv.id, merged);
     } else {
       convs.set(conv.id, conv);
     }
