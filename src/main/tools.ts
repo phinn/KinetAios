@@ -603,6 +603,12 @@ const webSearch: Tool = {
       if (!e) continue;
       try {
         const results = await e.fn();
+        // 相关性护栏:结果与 query 无一词交集 = 疑似被地域劫持/降级(实测 Bing 对中文
+        // 长尾 query 曾整页返回无关结果但 HTTP 200,静默采信会误导模型)。视同失败,落下一引擎。
+        if (results.length > 0 && !isRelevant(q, results)) {
+          failed.push(`${e.label}:结果与查询无关(疑似劫持)`);
+          continue;
+        }
         if (results.length > 0) return format(e.label, results) + (failed.length ? `\n\n(注:${failed.join(';')} → 已回退到 ${e.label})` : '');
         failed.push(`${e.label}:无结果`);
       } catch (err) {
@@ -684,11 +690,34 @@ async function googleSearch(query: string, maxResults: number, signal: AbortSign
   return results;
 }
 
+// 相关性判定:query 分词(中文按 2 字滑窗,英文按词)后,至少一个词出现在
+// 任一结果的 title/snippet 中才算相关。宽松设计 —— 只拦截"整页无关"的劫持场景,
+// 不追求精确匹配。
+function isRelevant(query: string, results: Array<{ title: string; snippet: string; url: string }>): boolean {
+  const tokens = new Set<string>();
+  for (const w of query.split(/\s+/)) {
+    if (!w) continue;
+    if (/[\u4e00-\u9fff]/.test(w)) {
+      for (let i = 0; i + 2 <= w.length; i++) tokens.add(w.slice(i, i + 2));
+      if (w.length === 1) tokens.add(w);
+    } else if (w.length >= 2) {
+      tokens.add(w.toLowerCase());
+    }
+  }
+  if (tokens.size === 0) return true;
+  const hay = results.map((r) => `${r.title} ${r.snippet}`.toLowerCase()).join(' ');
+  for (const t of tokens) if (hay.includes(t)) return true;
+  return false;
+}
+
 // Bing RSS 搜索 —— global.bing.com/search?format=rss 返回结构化 XML:
 // 每个 <item> 含干净的 <title>/<link>(真实 URL,无 ck/a 跳转)/<description>(摘要)。
 // RSS 端点不受 HTML 页面地域重写影响,英文 query 不会混入中文市场结果。
 async function bingRssSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
-  const rssUrl = `https://global.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(maxResults + 5, 20)}&format=rss`;
+  // 显式锁定 zh-CN 市场:无 mkt 参数时 Bing 按 IP/UA 猜市场,中文长尾 query 曾被
+  // 按台湾区返回完全无关结果(如查"剑鱼标讯"返回台湾地检署公告)。英文 query 不受影响。
+  const isZh = /[\u4e00-\u9fff]/.test(query);
+  const rssUrl = `https://global.bing.com/search?q=${encodeURIComponent(query)}&count=${Math.min(maxResults + 5, 20)}&format=rss${isZh ? '&setmkt=zh-CN&setlang=zh-CN' : ''}`;
   const resp = await fetch(rssUrl, {
     headers: { ...BROWSER_HEADERS, 'Accept': 'application/rss+xml,application/xml,text/xml,*/*' },
     signal,
