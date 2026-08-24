@@ -54,7 +54,7 @@
       ],
       "icon": "src/resources/icon-e1-K.png",
       "minimumSystemVersion": "10.15.0",
-      "afterSign": "scripts/notarize.js",
+      "notarize": true,
       "hardenedRuntime": true,
       "gatekeeperAssess": false,
       "entitlements": "build/entitlements.mac.plist",
