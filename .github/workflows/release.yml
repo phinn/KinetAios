@@ -71,7 +71,7 @@ jobs:
           echo "APPLE_ID=${{ secrets.APPLE_ID }}" >> "$GITHUB_ENV"
           echo "APPLE_APP_SPECIFIC_PASSWORD=${{ secrets.APPLE_APP_PASSWORD }}" >> "$GITHUB_ENV"
           echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
-          echo "CSC_NAME=Developer ID Application: JUNJIE SHEN (M92UKS6NA2)" >> "$GITHUB_ENV"
+          echo "CSC_NAME=JUNJIE SHEN (M92UKS6NA2)" >> "$GITHUB_ENV"
 
       - shell: bash
         run: |
