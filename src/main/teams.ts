@@ -83,7 +83,7 @@ export async function runMember(opts: {
     history,
     ctx: { cwd, confirm, convId },
     signal: ac.signal,
-    maxTurns: 15,
+    // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
     onEvent: (e) => {
       if (!onTeamEvent) return;
       if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });

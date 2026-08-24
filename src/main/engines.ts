@@ -408,7 +408,7 @@ class DirectEngine implements Engine {
             history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
             ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id },
             signal: subAc.signal,
-            maxTurns: 15,
+            // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
               else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
