@@ -191,6 +191,8 @@ export const ENGINE_LABELS: Record<BuiltinEngineKind, string> = {
 };
 // Sandbox controls what spawned CLIs (claude --permission-mode / codex -s) may do.
 export type SandboxMode = 'readOnly' | 'workspaceWrite' | 'fullAccess';
+// web_search 搜索引擎:bing(默认) / sogou / google / duckduckgo
+export type SearchEngine = 'bing' | 'sogou' | 'google' | 'duckduckgo';
 
 // 模型配置档 — 保存完整 LLM 连接信息,聊天界面可快速切换。
 // A saved model profile — contains everything needed to connect to an LLM provider.
@@ -274,6 +276,9 @@ export type AppSettings = {
   voiceChat: VoiceChatConfig;
   // ── MiniMax 文生视频 API Key ── 留空 = 工具调用时提示用户去设置。
   minimaxApiKey: string;
+  // ── web_search 搜索引擎选择 ── 'bing'(默认,大陆直连质量稳) | 'sogou' | 'google'(需科学上网) | 'duckduckgo'。
+  // 所选引擎优先,失败自动回退到其余引擎,不影响可用性。
+  searchEngine: SearchEngine;
   // ── 企业微信智能机器人 ── WebSocket 长连接模式,接收企信消息并路由到 Agent 引擎处理。
   wecomBot: WeComBotConfig;
   // ── 飞书机器人 ── WebSocket 长连接模式,接收飞书消息并路由到 Agent 引擎处理。

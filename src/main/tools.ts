@@ -550,9 +550,9 @@ const webFetch: Tool = {
   },
 };
 
-// web_search: 多搜索引擎回退,适配大陆网络。
-// 回退顺序:搜狗(大陆直连,相关性最好) → Bing RSS(结构化) → Bing 中国版 HTML → DuckDuckGo。
-// 模型不需要关心用了哪个引擎,只看结果。
+// web_search: 搜索引擎可配置 + 自动回退,适配大陆网络。
+// 设置页可选引擎(bing/sogou/google/duckduckgo);所选引擎优先,
+// 失败或无结果时按序回退到其余引擎,模型不需要关心用了哪个引擎。
 const webSearch: Tool = {
   name: 'web_search',
   readOnly: true,
@@ -571,43 +571,41 @@ const webSearch: Tool = {
     const maxResults = Math.min(Number(args.max_results ?? 8), 15);
     const signal = ctx?.signal ?? AbortSignal.timeout(20_000);
 
-    const format = (results: Array<{ title: string; snippet: string; url: string }>) =>
-      `搜索「${q}」返回 ${results.length} 条结果:\n\n${results
+    const format = (engine: string, results: Array<{ title: string; snippet: string; url: string }>) =>
+      `搜索「${q}」返回 ${results.length} 条结果(引擎 ${engine}):\n\n${results
         .map((r, i) => `[${i + 1}] ${r.title}\n    ${r.url}\n    ${r.snippet}`)
         .join('\n\n')}`;
 
-    // ── 引擎 1: 搜狗(大陆直连;实测相关性最好) ──
-    // Bing 在大陆网络下被地域重写:英文 query 混入中文市场结果("M2 MacBook" →
-    // 广义货币供应量/BMW M2),小模型拿到的全是垃圾。搜狗对中英文 query 都准。
-    try {
-      const results = await sogouSearch(q, maxResults, signal);
-      if (results.length > 0) return format(results);
-    } catch {
-      // 搜狗失败 → 尝试下一个引擎
-    }
+    // 各引擎实现。bing 两级(RSS → HTML)都在一个 entry 里,失败再走下一个引擎。
+    type EngineFn = () => Promise<Array<{ title: string; snippet: string; url: string }>>;
+    const engines: Record<string, { label: string; fn: EngineFn }> = {
+      bing: {
+        label: 'Bing',
+        // RSS(结构化,URL/摘要干净)优先;无结果再走中国版 HTML 兜底
+        fn: async () => {
+          const rss = await bingRssSearch(q, maxResults, signal);
+          return rss.length > 0 ? rss : await bingSearch(q, maxResults, signal);
+        },
+      },
+      sogou: { label: '搜狗', fn: () => sogouSearch(q, maxResults, signal) },
+      google: { label: 'Google', fn: () => googleSearch(q, maxResults, signal) },
+      duckduckgo: { label: 'DuckDuckGo', fn: () => ddgSearch(q, maxResults, signal) },
+    };
 
-    // ── 引擎 2: Bing RSS(结构化 XML,干净 URL + 真实摘要) ──
-    try {
-      const results = await bingRssSearch(q, maxResults, signal);
-      if (results.length > 0) return format(results);
-    } catch {
-      // RSS 失败 → 尝试下一个引擎
-    }
+    // 用户设置的引擎优先,其余按固定序回退。
+    const { getSettings } = await import('./settings');
+    const preferred = getSettings().searchEngine ?? 'bing';
+    const order = [preferred, ...Object.keys(engines).filter((k) => k !== preferred)];
 
-    // ── 引擎 3: Bing 中国版 HTML(大陆直连备用) ──
-    try {
-      const results = await bingSearch(q, maxResults, signal);
-      if (results.length > 0) return format(results);
-    } catch {
-      // Bing HTML 失败 → 尝试下一个引擎
-    }
-
-    // ── 引擎 4: DuckDuckGo HTML(大陆需翻墙,最后备用) ──
-    try {
-      const results = await ddgSearch(q, maxResults, signal);
-      if (results.length > 0) return format(results);
-    } catch {
-      // DDG 也失败
+    for (const key of order) {
+      const e = engines[key];
+      if (!e) continue;
+      try {
+        const results = await e.fn();
+        if (results.length > 0) return format(e.label, results);
+      } catch {
+        // 该引擎失败/无结果 → 尝试下一个
+      }
     }
 
     return `搜索「${q}」失败:所有搜索引擎均不可用。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
@@ -652,6 +650,29 @@ async function sogouSearch(query: string, maxResults: number, signal: AbortSigna
   }));
   return resolved.filter((r): r is { title: string; url: string } => !!r && !!r.title)
     .map((r) => ({ title: r.title, snippet: '', url: r.url }));
+}
+
+// Google 搜索 —— 解析 www.google.com/search 的 HTML 结果页。
+// 大陆网络需科学上网;可用时质量最好。结构简单:h3 定位块内 <a href="/url?q=..."> 或直链。
+async function googleSearch(query: string, maxResults: number, signal: AbortSignal): Promise<Array<{ title: string; snippet: string; url: string }>> {
+  const resp = await fetch(`https://www.google.com/search?q=${encodeURIComponent(query)}&num=${Math.min(maxResults + 3, 20)}&hl=zh-CN`, {
+    headers: { ...BROWSER_HEADERS, Referer: 'https://www.google.com/' },
+    signal,
+    redirect: 'follow',
+  });
+  if (!resp.ok) throw new Error(`Google HTTP ${resp.status}`);
+  const html = await resp.text();
+  // 风控/验证页无结果块 → 返回空,自然回退
+  const blocks = [...html.matchAll(/<a[^>]+href="(\/url\?q=|https?:\/\/[^"]*)"[^>]*>\s*<h3[^>]*>([\s\S]*?)<\/h3>/gi)].slice(0, maxResults);
+  const results: Array<{ title: string; snippet: string; url: string }> = [];
+  for (const m of blocks) {
+    let url = m[1];
+    if (url.startsWith('/url?q=')) url = decodeURIComponent(url.slice(7).split('&')[0]);
+    if (!/^https?:/.test(url) || url.includes('google.com')) continue;
+    const title = m[2].replace(/<[^>]+>/g, '').trim();
+    if (title) results.push({ title, snippet: '', url });
+  }
+  return results;
 }
 
 // Bing RSS 搜索 —— global.bing.com/search?format=rss 返回结构化 XML:
