@@ -366,7 +366,7 @@ let _appIcon: ReturnType<typeof nativeImage.createFromPath> | undefined;
 let _appIconKey: string | null = null; // 缓存当前 icon key,避免重复 load
 function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
   const s = getSettings();
-  const key = s.appIcon || 'k';
+  const key = (s.appIcon || 'k') + '|' + (getBrand().icon ?? '');
   if (_appIcon && _appIconKey === key) return _appIcon;
   _appIconKey = key;
   _appIcon = undefined;
@@ -388,6 +388,7 @@ function appIcon(): ReturnType<typeof nativeImage.createFromPath> | undefined {
   const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
   // 打包后 process.resourcesPath/build/ 最可靠,排最前;dev 模式靠 __dirname/../../build/
   for (const candidate of [
+    path.join(app.getPath('userData'), 'icons', fileName),  // 外置图标:brand.icon 可指向这里,打包版免重打包
     resBase ? path.join(resBase, fileName) : '',
     resBase ? path.join(resBase, 'icon.png') : '',
     path.join(__dirname, '..', '..', 'build', fileName),
@@ -781,6 +782,7 @@ function makeTrayIcon() {
   const resBase = process.resourcesPath ? path.join(process.resourcesPath, 'build') : '';
   // 尝试从图标文件加载(优先 resourcesPath/build/,然后 dev 路径)
   for (const candidate of [
+    path.join(app.getPath('userData'), 'icons', fileName),  // 外置图标:brand.icon 可指向这里,打包版免重打包
     resBase ? path.join(resBase, fileName) : '',
     resBase ? path.join(resBase, 'icon.png') : '',
     path.join(__dirname, '..', '..', 'build', fileName),
