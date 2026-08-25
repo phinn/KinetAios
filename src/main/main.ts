@@ -4,19 +4,11 @@
 // 菜单栏/标题显示名从 brand.json 读。setPath 先钉死目录,之后 setName 随便改都不影响目录。
 import { app as __app } from 'electron';
 import __path from 'node:path';
-import __fs from 'node:fs';
 const USERDATA_DIR = 'KinetAios';
 __app.setPath('userData', __path.join(__app.getPath('appData'), USERDATA_DIR));
-// 显示名:读 userData/brand.json(外置覆盖)→ 项目根 brand.json → 默认。仅影响菜单栏,不影响目录。
-try {
-  const __embedded = __path.join(__dirname, '..', '..', 'brand.json');
-  for (const p of [__path.join(__app.getPath('userData'), 'brand.json'), __embedded]) {
-    if (__fs.existsSync(p)) {
-      const n = JSON.parse(__fs.readFileSync(p, 'utf8')).productName;
-      if (n) { __app.setName(n); break; }
-    }
-  }
-} catch { /* brand 读取失败保持默认名,不阻塞启动 */ }
+// 显示名(菜单栏/getName)与 getBrand 同源:userData/brand.json 外置覆盖 → 内嵌 dist/brand.json。
+// 必须在 whenReady 前调;路径逻辑只此一份,别再手写 brand 解析。
+__app.setName(getBrand().productName);
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
