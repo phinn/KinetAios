@@ -91,6 +91,10 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, conv_id TEXT, summary TEXT,
       importance INTEGER DEFAULT 5, tags TEXT,
       created_at REAL);
+    -- FTS history 的 rowid → conv_id 映射。旁表而非给 FTS5 加列:ALTER 语义不透明,
+    -- 旁表 O(1) 查,旧数据无映射 → 搜索命中但无"所属会话"链接(可接受降级)。
+    -- / rowid → conv_id side map for FTS history; replaces the 50× full-table LIKE scan.
+    CREATE TABLE IF NOT EXISTS history_conv(id INTEGER PRIMARY KEY, conv_id TEXT);
   `);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
@@ -132,8 +136,10 @@ function stmt(sql: string): Database.Statement {
 }
 
 // MARK: message-level FTS (recall_memory searches this)
-export function appendMessage(role: string, content: string): void {
-  stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, content);
+export function appendMessage(role: string, content: string, convId?: string): void {
+  const r = stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, content);
+  // convId 映射入旁表 —— searchEnriched 用它 O(1) 反查,替代 turns LIKE 全表扫(380ms/次)。
+  if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
 }
 
 export function search(q: string, limit = 20): Array<{ role: string; content: string }> {
@@ -318,6 +324,9 @@ export function loadConversations(): Conversation[] {
     .all() as ConvRow[];
   // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
   // Aggregate turn meta (count/cost/tokens) in one SQL pass — never load turn bodies here.
+  // ponytail: json_extract 全表 C 侧解析,实测 160MB turns = 743ms,仅启动跑一次(侧栏刷新
+  // 走内存 list(),不走这里)。若库涨到数秒级,升级为 conv 级 rollup 列(turns 是流式
+  // UPSERT,增量维护会漂移,别省这一步)。direct_history 同理全库仅 5.8MB,不值得懒加载。
   const metaRows = db
     .prepare(
       `SELECT conv_id,
@@ -1156,25 +1165,22 @@ export function loadTaskGraph(): { nodes: TaskGraphNode[]; edges: TaskGraphEdge[
 }
 
 // MARK: searchEnriched — FTS5 全文搜索 + 关联会话信息
-// history 表没有 conv_id,通过 turns 表的 data JSON 反查会话。
+// conv_id 从 history_conv 旁表 O(1) 查(旧数据无映射 → convId null,仅缺"跳会话"链接)。
 export function searchEnriched(q: string, limit = 50): Array<{ role: string; content: string; convId: string | null; convTitle: string | null }> {
   const fts = sanitize(q);
   if (!fts) return [];
   const results = db
-    .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
-    .all(fts, limit) as Array<{ role: string; content: string }>;
-  // 用 turns 表反查 conv_id:取 content 前 50 字符做 LIKE 匹配。
-  const stmtConv = db.prepare('SELECT conv_id FROM turns WHERE data LIKE ? LIMIT 1;');
+    .prepare('SELECT rowid, role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+    .all(fts, limit) as Array<{ rowid: number; role: string; content: string }>;
+  const stmtConv = db.prepare('SELECT conv_id FROM history_conv WHERE id=?;');
   const stmtTitle = db.prepare('SELECT engine, cwd, custom_title FROM conversations WHERE id=?;');
   return results.map((r) => {
     let convId: string | null = null;
     let convTitle: string | null = null;
     try {
-      const snippet = r.content.slice(0, 50).replace(/[%_]/g, (c) => '%' + c);
-      const row = stmtConv.get(`%${snippet}%`) as { conv_id: string } | undefined;
-      if (row) {
-        convId = row.conv_id;
-        const meta = stmtTitle.get(row.conv_id) as { engine: string; cwd: string; custom_title: string | null } | undefined;
+      convId = (stmtConv.get(r.rowid) as { conv_id: string } | undefined)?.conv_id ?? null;
+      if (convId) {
+        const meta = stmtTitle.get(convId) as { engine: string; cwd: string; custom_title: string | null } | undefined;
         if (meta?.custom_title) convTitle = meta.custom_title;
       }
     } catch { /* best-effort */ }
@@ -1198,9 +1204,20 @@ export function arenaAggregate(): Array<{
 }> {
   // 1. cost_log 聚合
   const costRows = db.prepare('SELECT engine, amount, tokens, ts FROM cost_log ORDER BY ts ASC;').all() as Array<{ engine: string; amount: number; tokens: number; ts: number }>;
-  // 2. turns 里的 steps(工具调用)统计
+  // 2. turns 里的 steps(工具调用)统计 —— 全 SQL 聚合(json_each),不把 160MB data 拉进 JS。
+  //    实测 427MB 库:SQL 367ms / 旧 JS 全读+parse 秒级且瞬时 +2×库大小内存。
   const convRows = db.prepare('SELECT id, engine FROM conversations;').all() as Array<{ id: string; engine: string }>;
-  const turnRows = db.prepare('SELECT conv_id, data FROM turns;').all() as Array<{ conv_id: string; data: string }>;
+  const turnStats = new Map(
+    (db.prepare(
+      `SELECT c.engine AS engine, COUNT(DISTINCT t.id) AS turnCount,
+              COUNT(js.value) AS totalTools,
+              COALESCE(SUM(COALESCE(json_extract(js.value,'$.durationMs'),0)),0) AS totalDuration
+       FROM turns t JOIN conversations c ON c.id=t.conv_id
+       LEFT JOIN json_each(COALESCE(json_extract(t.data,'$.steps'),'[]')) js
+       GROUP BY c.engine;`,
+    ).all() as Array<{ engine: string; turnCount: number; totalTools: number; totalDuration: number }>)
+      .map((s) => [s.engine, s]),
+  );
   // 按 engine 聚合
   const engines = new Set<string>(['direct', 'claudeCode', 'codex']);
   for (const r of costRows) engines.add(r.engine);
@@ -1215,20 +1232,11 @@ export function arenaAggregate(): Array<{
     const costs = costRows.filter((r) => r.engine === engine);
     const totalCost = costs.reduce((s, r) => s + r.amount, 0);
     const totalTokens = costs.reduce((s, r) => s + r.tokens, 0);
-    // 工具调用数:遍历该 engine 的 turns → 解析 data JSON → 统计 steps 数组长度
-    let totalTools = 0;
-    let totalDuration = 0;
-    let turnCount = 0;
-    const engineConvIds = new Set(convRows.filter((c) => c.engine === engine).map((c) => c.id));
-    for (const t of turnRows) {
-      if (!engineConvIds.has(t.conv_id)) continue;
-      try {
-        const parsed = JSON.parse(t.data) as { steps?: Array<{ durationMs?: number }> };
-        totalTools += parsed.steps?.length ?? 0;
-        for (const s of parsed.steps ?? []) totalDuration += s.durationMs ?? 0;
-        turnCount++;
-      } catch { /* skip */ }
-    }
+    // 工具调用数/耗时:SQL 聚合结果直读
+    const st = turnStats.get(engine);
+    const totalTools = st?.totalTools ?? 0;
+    const totalDuration = st?.totalDuration ?? 0;
+    const turnCount = st?.turnCount ?? 0;
     // cost by day (最近 7 天)
     const now = Date.now();
     const dayMs = 86400_000;

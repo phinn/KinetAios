@@ -257,7 +257,7 @@ export class TaskManager {
       const turn = conv.turns[conv.turns.length - 1];
       turn.error = t(getSettings().lang, 'tmgr.badCwd', { cwd: conv.cwd || '(空)' });
       turn.done = true;
-      store.appendMessage('user', prompt);
+      store.appendMessage('user', prompt, conv.id);
       store.saveTurn(conv.id, turn);
       this.emit.emitConversation(conv);
       return;
@@ -288,7 +288,7 @@ export class TaskManager {
       return;
     }
 
-    store.appendMessage('user', prompt);
+    store.appendMessage('user', prompt, conv.id);
     conv.turns.push(newTurn(prompt));
     conv.status = 'running';
     conv.statusNote = null;
@@ -420,7 +420,7 @@ export class TaskManager {
 
       // 准备下一轮:发一个简短的 continue prompt(goal 已在 systemPrompt 里,这里只需推动)
       const continuePrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
-      store.appendMessage('user', continuePrompt);
+      store.appendMessage('user', continuePrompt, conv.id);
       conv.turns.push(newTurn(continuePrompt));
       conv.status = 'running';
       this.emit.emitConversation(conv);
@@ -470,7 +470,7 @@ export class TaskManager {
     const t = conv.turns[conv.turns.length - 1];
     t.error = message;
     t.done = true;
-    store.appendMessage('user', prompt);
+    store.appendMessage('user', prompt, conv.id);
     store.saveTurn(conv.id, t);
     this.emit.emitConversation(conv);
   }
@@ -508,19 +508,19 @@ export class TaskManager {
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume
         break;
       case 'tool':
-        store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`);
+        store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`, conv.id);
         break;
       case 'cost':
         store.saveTurn(conv.id, t);
         break;
       case 'done':
         if (t.answer) {
-          store.appendMessage('assistant', t.answer);
+          store.appendMessage('assistant', t.answer, conv.id);
           store.saveTurn(conv.id, t);
         }
         break;
       case 'error':
-        store.appendMessage('assistant', `⚠️ ${ev.message}`);
+        store.appendMessage('assistant', `⚠️ ${ev.message}`, conv.id);
         break;
     }
   }
