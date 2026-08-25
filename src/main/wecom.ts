@@ -13,6 +13,23 @@ import { getSettings } from './settings';
 import * as store from './store';
 import { loadSkillBody, listSkills } from './skills';
 
+// wecom 文件日志:安装版(npm start 之外)看不到 stdout,连接失败/收包情况会被
+// 静默吞掉(macOS 安装版"消息没反应"排查需要)。写到 userData/wecom.log,500KB 轮转。
+// File logger for packaged builds where stdout is invisible. Rotates at 500KB.
+let _logFd: number | null = null;
+function wlog(...args: unknown[]): void {
+  const line = `[${new Date().toISOString()}] ${args.map(a => (a instanceof Error ? a.stack ?? a.message : typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}\n`;
+  console.log('[wecom]', ...args);
+  try {
+    // lazy import cycle-safe:用 electron app 于文件模块顶部已就绪
+    const { app } = require('electron');
+    const p = nodePath.join(app.getPath('userData'), 'wecom.log');
+    const fsp_ = require('node:fs');
+    try { if (fsp_.statSync(p).size > 500_000) fsp_.renameSync(p, p + '.old'); } catch { /* 不存在 */ }
+    fsp_.appendFileSync(p, line);
+  } catch { /* ignore */ }
+}
+
 type WeComStatusEv = { type: string; data?: unknown };
 
 class WeComBridge {
@@ -50,7 +67,7 @@ class WeComBridge {
         this.wecomSessions.set(c.wecomKey, c.id);
       }
     }
-    console.log(`[wecom] 会话索引已恢复: ${this.wecomSessions.size} 条映射`);
+    wlog(`会话索引已恢复: ${this.wecomSessions.size} 条映射`);
   }
 
   /** 查找 wecomKey 对应的会话:先查内存 Map,miss 时查 SQLite fallback。 */
@@ -157,6 +174,7 @@ class WeComBridge {
       });
       this.setupHandlers();
       this.ws.connect();
+      wlog('connect() 已发起, botId=' + cfg.botId);
       return { ok: true };
     } catch (e: any) {
       this.broadcast({ type: 'error', data: { message: e.message } });
@@ -182,7 +200,7 @@ class WeComBridge {
 
     // 文本消息 / Text message
     ws.on('message.text', (data: WsFrame<TextMessage>) => {
-      this.handleIncoming(data).catch((e) => console.error('[wecom] handleIncoming:', e));
+      this.handleIncoming(data).catch((e) => wlog('handleIncoming:', e));
     });
 
     // 语音消息(SDK 已转文本)/ Voice message (SDK provides transcribed text)
@@ -198,7 +216,7 @@ class WeComBridge {
             text: { content: voiceBody.voice.content },
           } as any,
         };
-        this.handleIncoming(asText).catch((e) => console.error('[wecom] voice:', e));
+        this.handleIncoming(asText).catch((e) => wlog('voice:', e));
       }
     });
 
@@ -211,7 +229,7 @@ class WeComBridge {
     ws.on('authenticated', () => {
       this._connected = true;
       this.broadcast({ type: 'connected' });
-      console.log('[wecom] WebSocket 已连接并认证');
+      wlog('WebSocket 已连接并认证');
     });
 
     // 断开 / Disconnected
@@ -235,7 +253,7 @@ class WeComBridge {
       } else {
         this.broadcast({ type: 'error', data: { message: err.message } });
       }
-      console.error('[wecom] error:', err.message);
+      wlog('error:', err.message, err);
     });
   }
 
@@ -366,13 +384,14 @@ class WeComBridge {
 
   // ── 处理收到的企信消息 → 路由到 TaskManager ──
   private async handleIncoming(frame: WsFrame<TextMessage>): Promise<void> {
-    if (!this.ws || !this.taskManager) return;
+    if (!this.ws || !this.taskManager) { wlog('handleIncoming 丢弃: ws/taskManager 为空'); return; }
     const body = frame.body;
     if (!body) return;
 
     const reqId = frame.headers.req_id;
     const text = body.text?.content?.trim();
     if (!text) return;
+    wlog(`收到消息 reqId=${reqId} text=${text.slice(0, 100)}`);
 
     const cfg = getSettings().wecomBot;
     const userid = body.from?.userid || 'unknown';
@@ -436,7 +455,7 @@ class WeComBridge {
       try {
         await this.ws.replyStreamNonBlocking(replyFrame, streamId, '⏳ 正在思考…', false);
       } catch (e) {
-        console.warn('[wecom] stream first frame failed:', e);
+        wlog('stream first frame failed:', e);
       }
     }
 
@@ -445,7 +464,7 @@ class WeComBridge {
     try {
       await this.taskManager.send(convId, text);
     } catch (e: any) {
-      console.error('[wecom] Agent error:', e);
+      wlog('Agent error:', e);
       await this.replyFinal(replyFrame, streamId, `❌ 内部错误: ${e.message}`);
       return;
     }
@@ -511,7 +530,7 @@ class WeComBridge {
         });
       }
     } catch (e: any) {
-      console.error('[wecom] reply failed:', e.message);
+      wlog('reply failed:', e);
       // 回退:纯文本 / Fallback: plain text
       try {
         await this.ws.reply(frame, {
@@ -519,7 +538,7 @@ class WeComBridge {
           text: { content: clipped.slice(0, 2048) },
         });
       } catch (e2: any) {
-        console.error('[wecom] text fallback failed:', e2.message);
+        wlog('text fallback failed:', e2);
       }
     }
   }
