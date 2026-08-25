@@ -10,6 +10,9 @@ import { currentProvider, embed } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 
+// P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
+const MAIN_TURNS_LRU_MAX = 8;
+
 export interface TaskManagerEmitter {
   emitEvent(convId: string, ev: AgentEvent): void;
   emitConversation(conv: Conversation): void;
@@ -30,6 +33,8 @@ export class TaskManager {
   private lastEngine: Record<string, EngineKind> = {};
   // P3: done 事件计数器,用于触发周期性 idle reflection(每 5 次 done 触发一次记忆 GC)
   private doneCounter = 0;
+  // P1: turns LRU —— hydrate 过的会话按最近使用排序,超上限逐出回 head 模式
+  private turnsLru: string[] = [];
   private engines: Map<EngineKind, Engine>;
 
   constructor(private emit: TaskManagerEmitter) {
@@ -63,20 +68,39 @@ export class TaskManager {
   // 懒加载 hydrate:send 前 turns 必须就位(engine 取 lastTurn.prompt / applyEvent 追加 turn)。
   // Hydrate before send — engines read the last turn and applyEvent appends to it.
   private ensureTurns(id: string): void {
-    const conv = this.convs.get(id);
-    if (!conv || conv.turnsLoaded !== false) return;
-    conv.turns = store.loadConvTurns(id);
-    conv.turnsLoaded = true;
+    this.hydrate(id);
   }
 
   // 公开 hydrate:renderer/IPC 消费点(export、voice、arena-diff)按需拉 turns。
+  // P1:hydrate 后跑 LRU 逐出 —— 之前 hydrate 过的 turns 终身驻留主进程,
+  // 多会话长会话下内存单调上涨(单 conv turns 可达 25MB)。
   hydrate(id: string): Conversation | undefined {
     const conv = this.convs.get(id);
     if (conv && conv.turnsLoaded === false) {
       conv.turns = store.loadConvTurns(id);
       conv.turnsLoaded = true;
     }
+    if (conv) {
+      const i = this.turnsLru.indexOf(id);
+      if (i >= 0) this.turnsLru.splice(i, 1);
+      this.turnsLru.push(id);
+      this.evictTurnsLRU(id);
+    }
     return conv;
+  }
+
+  // LRU 淘汰:超出上限的非 running 会话置回 head 模式(turns=[], turnsLoaded=false),
+  // 切回时 get-turns 会重新 hydrate。全 running 时本次不淘汰,下次 hydrate 再试。
+  private evictTurnsLRU(keep: string): void {
+    for (const id of [...this.turnsLru]) {
+      if (this.turnsLru.length <= MAIN_TURNS_LRU_MAX) break;
+      if (id === keep) continue;
+      const c = this.convs.get(id);
+      if (!c || c.turnsLoaded !== true || c.status === 'running') continue;
+      this.turnsLru.splice(this.turnsLru.indexOf(id), 1);
+      c.turns = [];
+      c.turnsLoaded = false;
+    }
   }
 
   newConversation(cwd: string, engine?: EngineKind): Conversation {
@@ -187,6 +211,8 @@ export class TaskManager {
     delete this.lastEngine[id]; // P1: 清理引擎记录,防止 key 无限累积
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
     this.extractionLocks.delete(id); // P1: 清理 extraction lock,防止残留 resolved Promise 堆积
+    this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
+    for (const e of this.engines.values()) e.releaseConv?.(id); // P1: 引擎侧 per-conv 状态(codexStates / V2 fingerprints…)
     this.emit.emitRemoved(id);
   }
 

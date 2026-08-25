@@ -215,6 +215,7 @@ const emitter: TaskManagerEmitter = {
     safeSend(arenaWin, 'conversation', payload);
   },
   emitRemoved(convId) {
+    notifyLastAt.delete(convId); // P1: 会话删除即清,防 Map 无限累积
     safeSend(dashboardWin, 'conversation-removed', convId);
     safeSend(arenaWin, 'conversation-removed', convId);
   },

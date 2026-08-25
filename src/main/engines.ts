@@ -241,6 +241,9 @@ export interface EngineRunOpts {
 export interface Engine {
   readonly name: EngineKind;
   run(opts: EngineRunOpts): Promise<void>;
+  // 会话删除时释放引擎侧 per-conv 状态(codexStates / V2 fingerprints…)。
+  // 可选:无 per-conv 状态的引擎不用实现。/ Release per-conv state on conversation delete.
+  releaseConv?(convId: string): void;
 }
 
 // 项目规则文件注入 system prompt —— 约定大于配置。
@@ -700,6 +703,8 @@ export interface CliEngineConfig {
   /** run 开始时重置跨行状态(去重表 / pending 表)—— 原版引擎每轮新建,
    *  持久化会导致跨轮相同文本被误判重复。 */
   beginRun?: (convId: string) => void;
+  /** 会话删除时释放引擎侧 per-conv 状态(与 Engine.releaseConv 同义,CLI 配置版)。 */
+  releaseConv?: (convId: string) => void;
   /** 退出兜底覆写(返回 undefined 走默认文案)。codex 用它拼 exit code +
    *  stderr tail + 版本提示;claude 不需要(走默认)。 */
   onExitFallback?: (p: { code: number; conv: Conversation }) => string | undefined;
@@ -715,6 +720,10 @@ class CliEngineAdapter implements Engine {
   readonly name: EngineKind;
   constructor(private cfg: CliEngineConfig) {
     this.name = cfg.name;
+  }
+
+  releaseConv(convId: string): void {
+    this.cfg.releaseConv?.(convId);
   }
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
@@ -858,6 +867,7 @@ export function claudeCliConfig(): CliEngineConfig {
     notFoundKey: 'eng.claudeNotFound',
     noResultKey: 'eng.claudeNoResult',
     beginRun: (convId) => claudePending.delete(convId),
+    releaseConv: (convId) => claudePending.delete(convId), // P1: 会话删除即清(同 codexStates)
     buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
       const permissionMode = CLAUDE_PERM[effectiveSandbox(s)];
       const args = [
@@ -980,6 +990,7 @@ export function codexCliConfig(): CliEngineConfig {
     notFoundKey: 'eng.codexNotFound',
     noResultKey: 'eng.codexNoResult',
     beginRun: (convId) => codexStates.delete(convId),
+    releaseConv: (convId) => codexStates.delete(convId), // P1: 会话删除也清(seenAgentText 持有整段输出文本)
     // 退出兜底:拼真实 exit code + stderr tail;CLI 版本不兼容时给友好提示。
     onExitFallback: ({ code, conv }) => {
       const s = getSettings();

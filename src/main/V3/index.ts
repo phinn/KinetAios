@@ -108,34 +108,39 @@ export class DirectV3Engine implements Engine {
         if (signal.aborted) subAc.abort();
         else signal.addEventListener('abort', onParentAbort, { once: true });
 
-        const { historyText } = await resolveSpawnHistory({
-          scope: scopeResolved,
-          parentHistory: conv.directHistory,
-          provider: subProvider,
-          snap: subSnap,
-          signal: subAc.signal,
-          onEvent,
-        });
-        const finalPrompt = historyText
-          ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
-          : sub;
-        const out = await runAgentLoop({
-          provider: subProvider,
-          tools: readOnlyTools(),
-          systemPrompt: SUBAGENT_PROMPT,
-          snapshot: subSnap,
-          userInput: finalPrompt,
-          history: [],
-          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
-          signal: subAc.signal,
-          maxTurns: 8,
-          onEvent: (e) => {
-            if (e.type === 'cost') onEvent(e);
-            else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
-          },
-        });
-        clearTimeout(subTimer);
-        signal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
+        // M2-fix(v1/v2 同款):清理放 finally —— 抛错路径不再漏定时器和 parent listener。
+        let out;
+        try {
+          const { historyText } = await resolveSpawnHistory({
+            scope: scopeResolved,
+            parentHistory: conv.directHistory,
+            provider: subProvider,
+            snap: subSnap,
+            signal: subAc.signal,
+            onEvent,
+          });
+          const finalPrompt = historyText
+            ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
+            : sub;
+          out = await runAgentLoop({
+            provider: subProvider,
+            tools: readOnlyTools(),
+            systemPrompt: SUBAGENT_PROMPT,
+            snapshot: subSnap,
+            userInput: finalPrompt,
+            history: [],
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
+            signal: subAc.signal,
+            maxTurns: 8,
+            onEvent: (e) => {
+              if (e.type === 'cost') onEvent(e);
+              else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+            },
+          });
+        } finally {
+          clearTimeout(subTimer);
+          signal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
+        }
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)

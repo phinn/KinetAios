@@ -192,6 +192,10 @@ export class DirectV2Engine implements Engine {
   private lastCompactFingerprints = new Map<string, string>();
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
+  releaseConv(convId: string): void {
+    this.lastCompactFingerprints.delete(convId); // P1: 会话删除即释放,不再等下次 run 重置
+  }
+
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
     this.lastCompactFingerprints.delete(conv.id); // P0-2: 重置当前会话的 compact 缓存
@@ -1286,34 +1290,40 @@ ${failedDetail || '  (无)'}
         // P1:复用 engines.resolveSpawnHistory 处理 scope(与 v1 一致)
         const { resolveSpawnHistory } = await import('./engines');
         const scopeResolved = scope ?? { mode: 'none' as const };
-        const { historyText } = await resolveSpawnHistory({
-          scope: scopeResolved,
-          parentHistory: conv.directHistory,
-          provider: subProvider,
-          snap: subSnap,
-          signal: subAc.signal,
-          onEvent,
-        });
-        const finalPrompt = historyText
-          ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
-          : sub;
-        const out = await runAgentLoop({
-          provider: subProvider,
-          tools: readOnlyTools(),
-          systemPrompt: SUBAGENT_PROMPT,
-          snapshot: subSnap,
-          userInput: finalPrompt,
-          history: [], // P1:scope 已合并到 userInput,保持空 history
-          ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
-          signal: subAc.signal,
-          // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
-          onEvent: (e) => {
-            if (e.type === 'cost') onEvent(e);
-            else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
-          },
-        });
-        clearTimeout(subTimer);
-        childSignal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
+        // M2-fix(v1 同款):清理放 finally —— runAgentLoop/resolveSpawnHistory 抛错时
+        // 不再漏 8min 定时器和挂在 parent signal 上的 listener。
+        let out;
+        try {
+          const { historyText } = await resolveSpawnHistory({
+            scope: scopeResolved,
+            parentHistory: conv.directHistory,
+            provider: subProvider,
+            snap: subSnap,
+            signal: subAc.signal,
+            onEvent,
+          });
+          const finalPrompt = historyText
+            ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
+            : sub;
+          out = await runAgentLoop({
+            provider: subProvider,
+            tools: readOnlyTools(),
+            systemPrompt: SUBAGENT_PROMPT,
+            snapshot: subSnap,
+            userInput: finalPrompt,
+            history: [], // P1:scope 已合并到 userInput,保持空 history
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
+            signal: subAc.signal,
+            // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
+            onEvent: (e) => {
+              if (e.type === 'cost') onEvent(e);
+              else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+            },
+          });
+        } finally {
+          clearTimeout(subTimer);
+          childSignal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
+        }
         const text = out
           .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
           .map((m) => m.content)

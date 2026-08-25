@@ -252,6 +252,10 @@ function applyI18nDOM(): void {
         }
       }
       convs.set(conv.id, merged);
+    } else if (conv.id !== selectedId && prev?.turnsLoaded !== true && conv.turnsLoaded !== false && conv.turns.length > 1) {
+      // P1: 非选中且本地未加载的会话 —— 丢弃广播带来的全量 turns 存 head 态(与主进程
+      // LRU 同策略),防止未打开会话的历史经广播常驻 renderer 堆。切换时 ensureTurnsLoaded 按需拉。
+      convs.set(conv.id, { ...conv, turns: conv.turns.slice(-1), turnsLoaded: false });
     } else {
       convs.set(conv.id, conv);
     }

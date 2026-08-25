@@ -48,6 +48,9 @@ export interface DAGExecResult {
  * 执行 DAG plan:拓扑排序 → 分层并行 → 每步 ReAct loop。
  */
 export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
+  // P1:verifyApproved 只在单次 DAG 执行内有效(V2 runVerify 的 run 级作用域同款)——
+  // 之前是模块级只增不清,批准过的命令全文永久驻留,且跨任务复用审批有安全隐患。
+  verifyApproved.clear();
   const { plan, provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent } = opts;
 
   const completed = new Set<string>();
