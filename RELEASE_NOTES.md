@@ -1,5 +1,42 @@
 # Release Notes
 
+## v3.3.0 — 品牌解耦 · 性能与卡死根治 · 搜索引擎链路
+
+**发布日期：** 2026-08-25(自 v3.2.9 起 28 commits)
+
+### 🏷️ 品牌与目录彻底解耦
+
+- **userData 目录写死 KinetAios** —— `setPath('userData', appData/KinetAios)` 钉死,不读 package.json/brand.json;改任何品牌配置,数据目录永远不变(c536141 / dc3702f)
+- **菜单栏/窗口标题显示名从 brand.json 读** —— 改 `brand.json` 的 `productName` 即可改所有界面显示的应用名;支持 `userData/brand.json` 外置覆盖 + 外置 icons 目录(a1970c1 / ef3f0f2)
+- **icon 留空回落 settings.appIcon** —— 品牌图标与用户设置图标不再互相打架(cd5edfd / bef5cf0)
+- 修复 CJS 编译后 TDZ 初始化崩溃(286554b)、侧栏品牌名不刷新(eb27d90)
+
+### 🧊 卡死/性能根治(多起 8-24 事故同族)
+
+- **SSE/Ollama 流读取静默看门狗** —— provider 流式无响应时不再永久死等,5 分钟静默超时走错误路径(49943df)
+- **dedupMemories O(n²) 卡死** —— 每对记忆重建分词改预计算+预过滤+事件循环让出,主进程分钟级卡死消除(dc3702f)
+- **IPC 瘦身** —— 广播与 get-conversations 剥离 directHistory,消灭巨型会话载荷(5389cdf)
+- **会话生命周期补全** —— turns LRU 逐出 + per-conv 状态释放,长会话不再累积(6234e65)
+- **全表扫描消灭** —— arena 聚合纯 SQL 化、searchEnriched 旁表反查(e2599df)
+- **cron 重入门闩 + 退出 cancelAll** —— 防任务滚雪球与孤儿 CLI 进程(0b9275a)
+- **FTS 入库截断 + WAL 退出截断 + 日志轮转**(89b4aee)
+- **用户消息不上屏系列修复** —— 瘦身广播新 turn 合并(bc1bba4)、turnCount 归一化(e2ce135)、侧栏改名刷新(5347645)
+- **unresponsive 黑匣子** —— 卡死时自动 sample renderer 线程栈到 unresponsive-sample.txt(039a630)
+
+### 🔍 web_search 引擎链路
+
+- **搜索引擎可选**(bing/sogou/google/duckduckgo)+ 失败自动回退,回退显式标注原因
+- **Bing 中文 query 锁定 zh-CN 市场** + 全引擎相关性护栏(劫持页自动落下一引擎)(44b7b1e)
+- **googleSearch 加 SOCS consent cookie**,被 consent 页拦截时显式报错而非静默 0 结果(d73acf1)
+
+### 🩺 可观测性
+
+- **wecom 文件日志 wecom.log** —— 安装版消息无反应可离线排查,500KB 轮转(79dca23)
+- feishu/wecom 中文日志改英文,消除 Windows cmd GBK 终端乱码(3e0b972)
+- maxTurns 默认 50 → 0(无限)
+
+---
+
 ## v2.9.0 — Computer Use · NEXUS 空间认知 · UI 大改版
 
 **发布日期：** 2026-08-13
