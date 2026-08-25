@@ -2987,6 +2987,14 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
   color: var(--text-faint);
   opacity: 0.6;
 }
+/* 选区视觉 / Selection visuals:
+   文字本身 transparent(高亮靠底层 .ce-highlight),选区只靠背景色表达。
+   必须显式覆盖全局 ::selection —— 全局规则把 color 设回 var(--text) 会与
+   底层 token 文字重叠错位(粗体行度量不一致最明显),表现为"选中态看不清"。 */
+.ce-input::selection {
+  background: color-mix(in srgb, var(--accent) 55%, transparent);
+  color: transparent;
+}
 /* 滚动条美化 / Custom scrollbar */
 .ce-input::-webkit-scrollbar,
 .ce-highlight::-webkit-scrollbar { width: 8px; height: 8px; }
