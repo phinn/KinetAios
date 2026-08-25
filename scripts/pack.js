@@ -23,6 +23,26 @@ const env = useMirror
     }
   : { ...process.env };
 
+// brand.json 的 productName/icon 同样应用到打包产物(exe 文件名/快捷方式、内嵌图标)。
+// 不透传的话,exe 图标永远是 package.json 里写死的 src/resources/icon.ico。
+// / Apply brand.json productName/icon to build artifacts (exe name, embedded icon).
+const fs = require('node:fs');
+const path = require('node:path');
+const brandCfg = [];
+try {
+  const brand = JSON.parse(fs.readFileSync('brand.json', 'utf8'));
+  if (brand.productName) brandCfg.push(`--config.productName=${brand.productName}`);
+  if (brand.icon) {
+    const p = ['build', 'src/resources'].map((d) => path.join(d, brand.icon)).find((f) => fs.existsSync(f));
+    if (p) {
+      // win 收 ico/png(electron-builder 会转),mac 只收 png
+      if (p.endsWith('.png')) brandCfg.push(`--config.mac.icon=${p}`);
+      brandCfg.push(`--config.win.icon=${p}`);
+    } else console.warn(`[pack] brand.icon=${brand.icon} 在 build/ 和 src/resources/ 都找不到,沿用默认图标`);
+  }
+  if (brandCfg.length) console.log(`[pack] brand 覆盖 electron-builder: ${brandCfg.join(' ')}`);
+} catch { /* brand.json 缺失/损坏 → 用 package.json 默认 */ }
+
 let ebArgs;
 if (arg === 'dir') {
   ebArgs = ['--win', '--dir'];
@@ -38,6 +58,7 @@ if (arg === 'dir') {
 }
 
 console.log(`[pack] build → electron-builder ${ebArgs.join(' ')}(${useMirror ? 'npmmirror 镜像' : '官方源'})`);
+ebArgs = [...ebArgs, ...brandCfg];
 
 const r1 = spawnSync('npm', ['run', 'build'], { stdio: 'inherit', shell: true });
 if (r1.status !== 0) {
