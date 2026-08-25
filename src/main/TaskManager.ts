@@ -203,6 +203,13 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  // P1: 退出前取消所有运行中会话 —— abort 触发各引擎 kill 子进程,防孤儿 CLI 继续计费。
+  cancelAll(): void {
+    for (const [id, c] of this.convs) {
+      if (c.status === 'running') this.cancel(id);
+    }
+  }
+
   deleteConversation(id: string): void {
     this.cancel(id);
     store.deleteConversation(id);

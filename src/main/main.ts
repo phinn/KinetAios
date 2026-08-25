@@ -2698,9 +2698,22 @@ if (!gotLock) {
       id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled,
       lastRun: r.lastRun ?? undefined, createdAt: r.createdAt,
     })));
+    // cron 任务 → 最近一次派发的会话 id(重入门闩用)
+    const cronConvByTask = new Map<string, string>();
     setDispatcher((task) => {
       try {
+        // 重入门闩:同任务上一轮会话还在跑就跳过本次触发 —— 跑 10 分钟的
+        // * * * * * 任务之前每分钟再起一个,滚雪球出 N 个并发实例。
+        const prevId = cronConvByTask.get(task.id);
+        if (prevId) {
+          const prev = taskManager.get(prevId);
+          if (prev && prev.status === 'running') {
+            console.log(`[cron] 任务 ${task.id} 上一轮仍在运行,跳过本次触发`);
+            return;
+          }
+        }
         const conv = taskManager.newConversation(task.cwd || os.homedir());
+        cronConvByTask.set(task.id, conv.id); // 每任务只留最新 conv id,有界
         taskManager.send(conv.id, task.prompt);
         touchCronLastRun(task.id, Date.now());
       } catch (e) {
@@ -2740,6 +2753,9 @@ if (!gotLock) {
 
   app.on('before-quit', () => {
     quitting = true; // 让 dashboard 的 close handler 放行 —— 否则 Cmd+Q / 系统退出会被 hide 拦截,退不出来
+    // P1: 先 cancel 所有运行中会话 —— abort 信号触发各引擎的 taskkill/kill,
+    // 防 CLI 子进程孤儿化(退出后继续跑、继续计费、继续写文件)。
+    try { taskManager.cancelAll(); } catch { /* ignore */ }
     globalShortcut.unregisterAll();
     try { voiceChatRef?.close(); } catch { /* ignore */ } // P0: 关闭 VoiceChat WebSocket,防止连接/定时器残留
     try { getFeishuBridge().stop(); } catch { /* ignore */ } // 断开飞书 WS 长连接
