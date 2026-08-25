@@ -192,7 +192,10 @@ const emitter: TaskManagerEmitter = {
     // Normalize turnCount here: it's only seeded from SQL at load; keep it in sync
     // with in-memory turns so consumers can trust it on every broadcast.
     if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
-    let payload = conv;
+    // directHistory(Direct 会话完整 LLM 消息,MB 级)永不进广播 —— 2026-08 卡死事故的
+    // 同族载荷,turns 修了它漏了。上下文检查器走 get-conversation-context 按需拉;
+    // renderer 只在引擎切换确认处读 .length,[] 语义足够。
+    let payload: Conversation = { ...conv, directHistory: [] };
     if (conv.turnsLoaded !== false) {
       // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
       let weight = 0;
@@ -204,7 +207,7 @@ const emitter: TaskManagerEmitter = {
       }
       if (weight > IPC_TURNS_CHAR_LIMIT) {
         const last = conv.turns[conv.turns.length - 1];
-        payload = { ...conv, turns: last ? [last] : [], turnsLoaded: false };
+        payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
       }
     }
     safeSend(dashboardWin, 'conversation', payload);
@@ -954,7 +957,8 @@ function buildCollectScript(x1: number, y1: number, x2: number, y2: number): str
 }
 
 function registerIpc(): void {
-  ipcMain.handle('get-conversations', () => taskManager.list());
+  // directHistory MB 级,不随列表下发;上下文检查器按需走 get-conversation-context。
+  ipcMain.handle('get-conversations', () => taskManager.list().map((c) => ({ ...c, directHistory: [] })));
 
   // 懒加载:renderer 切频道时按需拉 turns(head 模式启动不载全文)
   // Lazy: renderer fetches turns on conversation switch.
