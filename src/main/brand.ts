@@ -17,9 +17,15 @@ const DEFAULT: Brand = { productName: 'KinetAios', homeDir: os.homedir(), versio
 let cache: Brand | null = null;
 
 // 外部覆盖文件:打包版也生效,用户可随时改不用重打包。
-// / External override file: works in packaged builds, no rebuild needed.
+// ⚠️ 不用 getPath('userData'):它会在首次访问时**创建**目录,而本模块可能在
+// main.ts 的 setName('KinetAios') 之前被求值(engines.ts 顶层 baseSystemPrompt),
+// 那样就会创建出 ../kinetaios-win(见 main.ts 历史事故注释)。appData 不创建目录。
+// 'KinetAios' 必须与 main.ts 的 USERDATA_DIR 一致。
+// / External override file. ⚠️ NOT getPath('userData') — that CREATES the dir on
+// first access, and this module can be evaluated before main.ts setName() runs,
+// which would create ../kinetaios-win. appData never creates; matches USERDATA_DIR.
 export function brandOverridePath(): string {
-  return path.join(app.getPath('userData'), 'brand.json');
+  return path.join(app.getPath('appData'), 'KinetAios', 'brand.json');
 }
 
 export function getBrand(): Brand {

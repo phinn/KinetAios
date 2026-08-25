@@ -1,5 +1,12 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
+// ⚠️ setName 必须先于一切 import 执行:任何模块(engines→getBrand→brandOverridePath)在顶层
+// 调 getPath('userData') 都会把默认名 kinetaios-win 缓存死,后续 setName 无效 → 数据"丢失"。
+// / setName MUST run before all imports — any top-level getPath('userData') in an imported
+// / module caches the default dir name and permanently defeats setName.
+import { app as __app } from 'electron';
+const USERDATA_DIR = 'KinetAios';
+__app.setName(USERDATA_DIR);
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -50,12 +57,10 @@ process.on('unhandledRejection', (e) => logFatal('unhandledRejection', e));
 // ⚠️ userData 目录名永远固定为 'KinetAios',不随 brand.json 改名变化 ——
 // 用户数据(kinet.db/settings/plugins)终身只认这一个目录,避免改名后"数据丢失"假象。
 // 显示名(窗口标题/通知/Dock)仍走 getBrand().productName,两者解耦。
-// setName 必须在 whenReady 前。
 // ⚠️ 只在 ud 不存在时单向搬迁 old→ud;绝不删除/覆盖任何已存在的 KinetAios 目录。
 // 历史事故:旧版在两边并存时 rmSync(ud)(assumed KinetAios 是残留),导致源码运行
 // 重新生成空 kinetaios-win 后,打包版启动直接删光用户全部数据(不进回收站)。
-const USERDATA_DIR = 'KinetAios';
-app.setName(USERDATA_DIR);
+// setName 已提前到文件头部(所有 import 之前)。
 try {
   const ud = app.getPath('userData');                       // .../KinetAios (setName 后)
   const old = path.join(path.dirname(ud), 'kinetaios-win'); // .../kinetaios-win
