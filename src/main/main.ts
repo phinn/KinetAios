@@ -1,12 +1,22 @@
 // Electron main: app lifecycle, dashboard + quick windows, global shortcut, IPC, shell-confirm bridge.
 // ponytail: no tray icon for MVP (would need an .ico asset) — the taskbar icon + global shortcut cover it.
-// ⚠️ setName 必须先于一切 import 执行:任何模块(engines→getBrand→brandOverridePath)在顶层
-// 调 getPath('userData') 都会把默认名 kinetaios-win 缓存死,后续 setName 无效 → 数据"丢失"。
-// / setName MUST run before all imports — any top-level getPath('userData') in an imported
-// / module caches the default dir name and permanently defeats setName.
+// ⚠️ 目录与品牌解耦:userData 永远固定为 KinetAios(不读 package.json/brand.json),
+// 菜单栏/标题显示名从 brand.json 读。setPath 先钉死目录,之后 setName 随便改都不影响目录。
 import { app as __app } from 'electron';
+import __path from 'node:path';
+import __fs from 'node:fs';
 const USERDATA_DIR = 'KinetAios';
-__app.setName(USERDATA_DIR);
+__app.setPath('userData', __path.join(__app.getPath('appData'), USERDATA_DIR));
+// 显示名:读 userData/brand.json(外置覆盖)→ 项目根 brand.json → 默认。仅影响菜单栏,不影响目录。
+try {
+  const __embedded = __path.join(__dirname, '..', '..', 'brand.json');
+  for (const p of [__path.join(__app.getPath('userData'), 'brand.json'), __embedded]) {
+    if (__fs.existsSync(p)) {
+      const n = JSON.parse(__fs.readFileSync(p, 'utf8')).productName;
+      if (n) { __app.setName(n); break; }
+    }
+  }
+} catch { /* brand 读取失败保持默认名,不阻塞启动 */ }
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -1832,9 +1842,9 @@ function registerIpc(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
-  ipcMain.handle('memory-dedup', () => {
+  ipcMain.handle('memory-dedup', async () => {
     try {
-      const pruned = dedupMemories(0.65);
+      const pruned = await dedupMemories(0.65);
       return { ok: true, pruned };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -2575,7 +2585,8 @@ if (!gotLock) {
     let lastBeat = Date.now();
     let sampling = false;
     let freezeReported = false;
-    ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); });
+    // 心跳恢复即复位标记:每次卡死episode都有自己的标题行(旧版只写第一次,后续卡死无标题难定位)。
+    ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); freezeReported = false; });
     setInterval(() => {
       const silent = Date.now() - lastBeat;
       if (silent < 5000 || sampling) return;
@@ -2583,24 +2594,43 @@ if (!gotLock) {
         freezeReported = true;
         try {
           require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
-            `\n===== ${new Date().toISOString()} renderer heartbeat silent ${silent}ms =====\n`);
+            `\n===== ${new Date().toISOString()} heartbeat silent ${silent}ms (main pid=${process.pid}) =====\n`);
         } catch { /* ignore */ }
       }
-      const tab = app.getAppMetrics().find((m) => m.type === 'Tab');
-      if (!tab || process.platform !== 'darwin') return;
+      if (process.platform !== 'darwin') return;
       sampling = true;
       const { execFile } = require('child_process') as typeof import('child_process');
-      execFile('/usr/bin/sample', [String(tab.pid), '3', '-file', require('path').join(app.getPath('userData'), 'renderer.sample')], { timeout: 15000 }, (err) => {
-        sampling = false;
-        if (!err) {
+      const ud = app.getPath('userData');
+      const grab = (pid: number, tag: string): void => {
+        execFile('/usr/bin/sample', [String(pid), '3', '-file', require('path').join(ud, `${tag}.sample`)], { timeout: 15000 }, (err) => {
+          if (!err) {
+            try {
+              const fs = require('fs');
+              const p = require('path').join(ud, `${tag}.sample`);
+              const head = fs.readFileSync(p, 'utf8').split('\n').slice(0, 120).join('\n');
+              fs.appendFileSync(require('path').join(ud, 'freeze-sample.txt'), `--- ${tag} ---\n${head}\n`);
+            } catch { /* ignore */ }
+          }
+        });
+      };
+      // 教训(2026-08 卡死排查):心跳停摆的主因是 main 自己忙转(dedupMemories O(n²) 卡 4 分钟),
+      // renderer 只是陪绑 —— 所以 main 和 renderer 都采样,main 是重点。
+      // / Sample BOTH: past freezes were main-process stalls; the renderer was always idle.
+      grab(process.pid, 'main');
+      const tab = app.getAppMetrics().find((m) => m.type === 'Tab');
+      if (tab) {
+        execFile('/usr/bin/sample', [String(tab.pid), '3', '-file', require('path').join(ud, 'renderer.sample')], { timeout: 15000 }, () => {
+          sampling = false;
           try {
             const fs = require('fs');
-            const p = require('path').join(app.getPath('userData'), 'renderer.sample');
+            const p = require('path').join(ud, 'renderer.sample');
             const head = fs.readFileSync(p, 'utf8').split('\n').slice(0, 120).join('\n');
-            fs.appendFileSync(require('path').join(app.getPath('userData'), 'freeze-sample.txt'), head + '\n');
+            fs.appendFileSync(require('path').join(ud, 'freeze-sample.txt'), `--- renderer ---\n${head}\n`);
           } catch { /* ignore */ }
-        }
-      });
+        });
+      } else {
+        setTimeout(() => { sampling = false; }, 4000); // 无窗口时等采样结束再放开
+      }
     }, 1000);
     // Windows 默认菜单条(File/Edit/View/Help)丑且无功能 → 全局清空,所有窗口都不显示。
     // devtools 仍可右键 Inspect 打开;reload/fullscreen 在生产 app 里也不需要快捷键。

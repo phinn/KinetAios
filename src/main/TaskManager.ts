@@ -853,7 +853,7 @@ export class TaskManager {
   // 在会话 done 事件后异步触发,也可以通过设置面板手动触发。
   // 不用 LLM(成本高 + 慢),用规则:dedupMemories(已有) + decayMemories(已有) + 新增 importance-based prune。
   async runIdleReflection(): Promise<{ deduped: number; decayed: number; lowImportancePruned: number }> {
-    const deduped = store.dedupMemories(0.65);
+    const deduped = await store.dedupMemories(0.65); // async 让出事件循环,不再卡死主进程
     const decayed = store.decayMemories();
     // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
     const lowImportancePruned = store.pruneLowImportanceMemories(2);

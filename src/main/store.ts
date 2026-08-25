@@ -452,51 +452,54 @@ export function searchMemoryTriples(q: string, limit = 10): Array<{ subject: str
   ).all(like, like, like, limit) as Array<{ subject: string; predicate: string; object: string }>;
 }
 
-// ── 存量记忆去重清理:文本相似度(规范化+包含检测+bigram Jaccard)合并重复 ──
-// 返回被删除的条数。threshold 以下视为重复,保留最早创建的那条。
-// textSimilarity 取 max(包含比, bigram Jaccard),适配 5-30 字的短记忆。
-function memTextSimilarity(aRaw: string, bRaw: string): number {
-  const norm = (s: string): string => {
-    let r = s.replace(/^用户/, '').trim();
-    r = r.replace(/[（(].*?[)）]/g, '');
-    r = r.replace(/\s+/g, '').toLowerCase();
-    return r;
-  };
-  const a = norm(aRaw);
-  const b = norm(bRaw);
-  if (!a || !b) return 0;
-  if (a.includes(b) || b.includes(a)) {
-    const shorter = Math.min(a.length, b.length);
-    const longer = Math.max(a.length, b.length);
-    return shorter > 3 ? shorter / longer : 0;
-  }
-  const tokens = (s: string): Set<string> => {
-    const t = new Set<string>();
-    for (const w of s.match(/[a-z0-9]+/g) ?? []) t.add(w);
-    for (let i = 0; i < s.length - 1; i++) t.add(s.slice(i, i + 2));
-    return t;
-  };
-  const ta = tokens(a);
-  const tb = tokens(b);
-  if (!ta.size || !tb.size) return 0;
-  let inter = 0;
-  for (const t of ta) if (tb.has(t)) inter++;
-  return inter / (ta.size + tb.size - inter);
-}
+// (memTextSimilarity 已并入 dedupMemories 的预计算 —— 旧版每对重建,是卡死根因)
 
-export function dedupMemories(threshold = 0.65): number {
+// ⚠️ 历史事故(2026-08):旧版每「对」都重新归一化+分词(3 正则 + 2 个 Set),1 万条记忆
+// = 6000 万对 × 重建 → 主进程分钟级纯 JS 忙转,UI 卡死(每 5 次 done 自动触发一次)。
+// 修法:① 每条记忆只归一化/分词一次;② Jaccard ≤ min/max,尺寸比预过滤跳过绝大多数对;
+// ③ async + 定期 setImmediate 让事件循环喘气,跑着的时候 UI 不冻结。
+// / Was O(n²) pairs × per-pair re-tokenize → minutes-long main-thread stall. Precompute
+// tokens once, size-ratio prefilter (Jaccard ≤ min/max), yield to the event loop.
+export async function dedupMemories(threshold = 0.65): Promise<number> {
   const all = db.prepare('SELECT id, content, created_at FROM memories ORDER BY created_at ASC;').all() as Array<{
     id: string; content: string; created_at: number;
   }>;
 
-  const toDelete = new Set<string>();
+  // 与旧 memTextSimilarity 同一套归一化/分词,只是每条只做一次。
+  const items = all.map((m) => {
+    const s = m.content
+      .replace(/^用户/, '')
+      .trim()
+      .replace(/[（(].*?[)）]/g, '')
+      .replace(/\s+/g, '')
+      .toLowerCase();
+    const tokens = new Set<string>();
+    for (const w of s.match(/[a-z0-9]+/g) ?? []) tokens.add(w);
+    for (let i = 0; i < s.length - 1; i++) tokens.add(s.slice(i, i + 2));
+    return { id: m.id, size: tokens.size, tokens };
+  });
 
-  for (let i = 0; i < all.length; i++) {
-    if (toDelete.has(all[i].id)) continue;
-    for (let j = i + 1; j < all.length; j++) {
-      if (toDelete.has(all[j].id)) continue;
-      if (memTextSimilarity(all[i].content, all[j].content) >= threshold) {
-        toDelete.add(all[j].id); // 删后来的,保留 i(更早创建)
+  const toDelete = new Set<string>();
+  let lastYield = Date.now();
+  for (let i = 0; i < items.length; i++) {
+    if (toDelete.has(items[i].id)) continue;
+    // ponytail: 每憋满 50ms 就让出事件循环 —— 主进程单次阻塞 ≤50ms,UI 不冻结
+    if (Date.now() - lastYield > 50) {
+      await new Promise((r) => setImmediate(r));
+      lastYield = Date.now();
+    }
+    const a = items[i];
+    for (let j = i + 1; j < items.length; j++) {
+      if (toDelete.has(items[j].id)) continue;
+      const b = items[j];
+      // Jaccard ≤ min/max:token 数比例达不到阈值的不可能命中,跳过交集计算
+      const lo = a.size < b.size ? a : b;
+      const hi = a.size < b.size ? b : a;
+      if (lo.size < hi.size * threshold) continue;
+      let inter = 0;
+      for (const t of lo.tokens) if (hi.tokens.has(t)) inter++;
+      if (inter / (a.size + b.size - inter) >= threshold) {
+        toDelete.add(b.id); // 删后来的,保留 i(更早创建)
       }
     }
   }
