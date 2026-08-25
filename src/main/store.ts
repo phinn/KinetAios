@@ -126,6 +126,12 @@ export function initStore(): void {
   initMemoryBlocks();
 }
 
+// P1: 退出前截断 WAL(WAL 通常几 MB,毫秒级)。VACUUM 不做 —— 433MB 库会分钟级阻塞,
+// 删除释放的空间不回收;库真过大时手动 VACUUM 一次即可。
+export function checkpointWal(): void {
+  try { db.pragma('wal_checkpoint(TRUNCATE)'); } catch { /* busy:有未完成事务时忽略 */ }
+}
+
 // Prepared statement 缓存:热路径函数(appendMessage/saveTurn 等)每次调用都 prepare,
 // 产生大量临时 Statement JS 对象 + GC 压力。缓存复用,避免内存抖动。
 const stmtCache = new Map<string, Database.Statement>();
@@ -136,8 +142,13 @@ function stmt(sql: string): Database.Statement {
 }
 
 // MARK: message-level FTS (recall_memory searches this)
+// ponytail: FTS 只服务搜索,行内容封顶 4K —— 工具结果全文(8-12KB)曾是 433MB 库的主要增长源;
+// 搜索命中显示前 4K 足够,需要全文去 turns 里看。
+const FTS_CONTENT_CAP = 4_000;
+
 export function appendMessage(role: string, content: string, convId?: string): void {
-  const r = stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, content);
+  const capped = content.length > FTS_CONTENT_CAP ? content.slice(0, FTS_CONTENT_CAP) + '\n…[FTS 截断,全文见会话]' : content;
+  const r = stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, capped);
   // convId 映射入旁表 —— searchEnriched 用它 O(1) 反查,替代 turns LIKE 全表扫(380ms/次)。
   if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
 }

@@ -395,6 +395,10 @@ export class TaskManager {
       refBlock,
       signal: ac.signal,
       onEvent: (ev) => this.applyAndPersist(conv, id, ev, prompt, ac.signal),
+    }).then(() => {
+      // P1: 正常结束也清 V2 checkpoint —— 之前只在异常/下次 send 清,正常完成的会话
+      // 中间快照(N 步各存一份越来越大的 history JSON)永久留库。
+      if (conv.engine === 'directV2') store.clearV2State(conv.id);
     }).catch((e) => {
       // 引擎抛错 → 确保不会永久卡在 running 状态
       const msg = e instanceof Error ? e.message : String(e);
@@ -471,6 +475,9 @@ export class TaskManager {
         contextBlock: loadContextBlock(conv.cwd),
         signal: ac.signal,
         onEvent: (ev) => this.applyAndPersist(conv, id, ev, continuePrompt, ac.signal),
+      }).then(() => {
+        // P1: 同 send 路径,正常结束清 V2 checkpoint。
+        if (conv.engine === 'directV2') store.clearV2State(conv.id);
       }).catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
         this.applyAndPersist(conv, id, { type: 'error', message: msg }, continuePrompt, ac.signal);

@@ -19,7 +19,7 @@ import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
-import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories } from './store';
+import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
@@ -2553,6 +2553,16 @@ if (!gotLock) {
     }
   });
 
+  // ponytail: 追加前查大小,超 cap 轮转留一代 .old(wecom.log 同款)—— freeze-sample.txt
+  // 曾无声涨到 17MB。不引日志库,两处调用够本。
+  function appendCapped(file: string, data: string, cap = 5 * 1024 * 1024): void {
+    try {
+      const fs = require('fs') as typeof import('fs');
+      if (fs.existsSync(file) && fs.statSync(file).size > cap) fs.renameSync(file, `${file}.old`);
+      fs.appendFileSync(file, data);
+    } catch { /* ignore */ }
+  }
+
   app.whenReady().then(() => {
     // ── 内存哨兵:周期采样所有进程内存,增量写 userData/mem-watch.log ──
     // v2: 改用 app.getAppMetrics() 拿全部子进程(GPU/Utility/renderer)真实 RSS,每分钟无条件写。
@@ -2569,7 +2579,7 @@ if (!gotLock) {
           parts.push(`${role}(${m.pid}) rss=${(m.memory.workingSetSize / 1024).toFixed(0)}M`);
         }
         // ponytail: 60s 采样,足够捕捉渐进泄漏;精确归因再用 DevTools heap snapshot
-        require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'mem-watch.log'),
+        appendCapped(require('path').join(app.getPath('userData'), 'mem-watch.log'),
           `${new Date().toISOString()} ${parts.join(' ')}\n`);
       } catch { /* 窗口销毁竞态,忽略 */ }
     }, 60_000);
@@ -2591,8 +2601,8 @@ if (!gotLock) {
       if (!freezeReported) {
         freezeReported = true;
         try {
-          require('fs').appendFileSync(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
-            `\n===== ${new Date().toISOString()} heartbeat silent ${silent}ms (main pid=${process.pid}) =====\n`);
+          appendCapped(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
+            `\n===== ${new Date().toISOString()} heartbeat silent ${silent}ms (main pid=${process.pid}) =====\n`, 10 * 1024 * 1024);
         } catch { /* ignore */ }
       }
       if (process.platform !== 'darwin') return;
@@ -2606,7 +2616,7 @@ if (!gotLock) {
               const fs = require('fs');
               const p = require('path').join(ud, `${tag}.sample`);
               const head = fs.readFileSync(p, 'utf8').split('\n').slice(0, 120).join('\n');
-              fs.appendFileSync(require('path').join(ud, 'freeze-sample.txt'), `--- ${tag} ---\n${head}\n`);
+              appendCapped(require('path').join(ud, 'freeze-sample.txt'), `--- ${tag} ---\n${head}\n`, 10 * 1024 * 1024);
             } catch { /* ignore */ }
           }
         });
@@ -2623,7 +2633,7 @@ if (!gotLock) {
             const fs = require('fs');
             const p = require('path').join(ud, 'renderer.sample');
             const head = fs.readFileSync(p, 'utf8').split('\n').slice(0, 120).join('\n');
-            fs.appendFileSync(require('path').join(ud, 'freeze-sample.txt'), `--- renderer ---\n${head}\n`);
+            appendCapped(require('path').join(ud, 'freeze-sample.txt'), `--- renderer ---\n${head}\n`, 10 * 1024 * 1024);
           } catch { /* ignore */ }
         });
       } else {
@@ -2764,6 +2774,7 @@ if (!gotLock) {
     void localMcpServer.stop(); // 关掉本机 MCP HTTP server(多机协作)
     stopCronScheduler(); // 停掉 cron 定时器,否则进程延迟退出
     for (const cwd of listWatchers()) stopWatcher(cwd); // 关闭所有文件监听器
+    checkpointWal(); // 截断 WAL(cancelAll 已把收尾写入冲刷完)
     tray?.destroy(); // 销毁托盘,否则 macOS 上进程残留、退不干净
   });
 }
