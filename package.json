@@ -44,7 +44,8 @@
         "from": "build/",
         "to": "build/",
         "filter": [
-          "icon*.png"
+          "icon*",
+          "*.ico"
         ]
       }
     ],
