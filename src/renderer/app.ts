@@ -207,8 +207,9 @@ function applyI18nDOM(): void {
       remoteTask: async (serverName, prompt) => api.callRemoteAgent(serverName, prompt),
     };
     setTownCallbacks(townCallbacks);
+    // 侧栏品牌名:index.html 的 <span id="brand">,只改文本(spark 图标是旁边的兄弟节点,别重复注入)
     const brandEl = document.getElementById('brand');
-    if (brandEl) brandEl.innerHTML = '<span class="spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/></svg></span> ' + esc(PRODUCT);
+    if (brandEl) brandEl.textContent = PRODUCT;
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
     applyI18nDOM();
 
