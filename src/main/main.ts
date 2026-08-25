@@ -4,6 +4,8 @@
 // 菜单栏/标题显示名从 brand.json 读。setPath 先钉死目录,之后 setName 随便改都不影响目录。
 import { app as __app } from 'electron';
 import __path from 'node:path';
+import { getBrand } from './brand'; // ⚠️ 必须在这组 import 里:编译成 CJS 后 require 按声明顺序排放,
+// 放后面的组会在 setPath/setName 语句之后才 require → TDZ "Cannot access before initialization"
 const USERDATA_DIR = 'KinetAios';
 __app.setPath('userData', __path.join(__app.getPath('appData'), USERDATA_DIR));
 // 显示名(菜单栏/getName)与 getBrand 同源:userData/brand.json 外置覆盖 → 内嵌 dist/brand.json。
@@ -33,7 +35,6 @@ import { listSkills } from './skills';
 import { mcp } from './mcp';
 import { localMcpServer } from './mcp-server';
 import { allTools } from './tools';
-import { getBrand } from './brand';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import { VoiceChat } from './VoiceChat';
