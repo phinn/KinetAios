@@ -3051,7 +3051,7 @@ async function showSettings() {
         </select></div>
         <div class="field"><label>${tr('settings.subAgentModel')}</label><input id="s-subagent-model" type="text" value="${esc(s.subAgentModel ?? '')}" placeholder="${tr('settings.subAgentModelPh')}" /></div>
         <div class="field-desc">${tr('settings.subAgentModel.desc')}</div>
-        <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 50}" style="max-width:100px" /></div>
+        <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 0}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
         <div class="field"><label>${tr('settings.searchEngine')}</label>
         <select id="s-search-engine" style="max-width:200px">
