@@ -31,10 +31,11 @@ export function brandOverridePath(): string {
 export function getBrand(): Brand {
   if (cache) return cache;
   let b: Brand = { ...DEFAULT };
+  let src = '默认(brand.json 缺失)';
   // 1) 内嵌默认 / embedded defaults(__dirname = dist/main → ../brand.json = dist/brand.json)
   try {
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'brand.json'), 'utf8')) as Partial<Brand>;
-    if (raw.productName) b = { ...b, productName: raw.productName };
+    if (raw.productName) { b = { ...b, productName: raw.productName }; src = `内嵌 dist/brand.json (${__dirname}/../brand.json)`; }
     if (raw.icon) b = { ...b, icon: raw.icon };
   } catch {
     /* 文件缺失/损坏 → 用默认 */
@@ -42,12 +43,14 @@ export function getBrand(): Brand {
   // 2) 外部覆盖 / external override(userData/brand.json),最高优先级
   try {
     const raw = JSON.parse(fs.readFileSync(brandOverridePath(), 'utf8')) as Partial<Brand>;
-    if (raw.productName) b = { ...b, productName: raw.productName };
+    if (raw.productName) { b = { ...b, productName: raw.productName }; src = `外置覆盖 ${brandOverridePath()} ← 优先级最高,改名请改这个或删掉它`; }
     // icon 允许显式清空:"" → 清掉内嵌值,回落 settings.appIcon
     b = { ...b, ...(raw.icon !== undefined ? { icon: raw.icon || undefined } : {}) };
   } catch {
     /* 无外部文件 → 用内嵌 */
   }
+  // 启动打一行来源:排查"改了 brand.json 不生效"类问题(外置文件静默覆盖是惯犯)
+  console.log(`[brand] productName=${b.productName} 来源: ${src}`);
   cache = b;
   return b;
 }
