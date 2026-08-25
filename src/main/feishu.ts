@@ -76,7 +76,7 @@ class FeishuBridge {
         this.feishuSessions.set(c.feishuKey, c.id);
       }
     }
-    console.log(`[feishu] 会话索引已恢复: ${this.feishuSessions.size} 条映射`);
+    console.log(`[feishu] session index restored: ${this.feishuSessions.size} mappings`);
   }
 
   /** 查找 feishuKey 对应的会话:先查内存 Map,miss 时查 SQLite fallback。 */
@@ -120,7 +120,7 @@ class FeishuBridge {
       const oldest = userConvs.pop()!;
       try {
         this.taskManager?.deleteConversation(oldest.id);
-        console.log(`[feishu] 淘汰旧会话: ${oldest.id} (${key})`);
+        console.log(`[feishu] evict old session: ${oldest.id} (${key})`);
       } catch { /* ignore */ }
     }
 
@@ -195,7 +195,7 @@ class FeishuBridge {
         onReady: () => {
           this._connected = true;
           this.broadcast({ type: 'connected' });
-          console.log('[feishu] WebSocket 长连接已建立');
+          console.log('[feishu] WebSocket connected');
         },
         onError: (err: Error) => {
           this._connected = false;
@@ -205,12 +205,12 @@ class FeishuBridge {
         onReconnecting: () => {
           this._connected = false;
           this.broadcast({ type: 'reconnecting' });
-          console.log('[feishu] 重连中…');
+          console.log('[feishu] reconnecting...');
         },
         onReconnected: () => {
           this._connected = true;
           this.broadcast({ type: 'connected' });
-          console.log('[feishu] 重连成功');
+          console.log('[feishu] reconnected');
         },
       });
 
@@ -256,7 +256,7 @@ class FeishuBridge {
     // 飞书 WS 长连接在 ack 超时后会重新投递同一条消息,用 message_id 去重。
     // / Idempotency: dedup by message_id BEFORE any async work (sync check).
     if (this.processedMsgIds.has(messageId)) {
-      console.log(`[feishu] 跳过重复消息: ${messageId}`);
+      console.log(`[feishu] skip duplicate message: ${messageId}`);
       return;
     }
     this.processedMsgIds.add(messageId);
@@ -476,7 +476,7 @@ class FeishuBridge {
     for (let i = FeishuBridge.MAX_SESSIONS_PER_USER; i < convs.length; i++) {
       try {
         this.taskManager?.deleteConversation(convs[i].id);
-        console.log(`[feishu] 淘汰旧会话: ${convs[i].id} (${feishuKey})`);
+        console.log(`[feishu] evict old session: ${convs[i].id} (${feishuKey})`);
       } catch { /* ignore */ }
     }
   }
@@ -502,7 +502,7 @@ class FeishuBridge {
           return res.writeFile(filePath);
         }
       }).then(() => {
-        console.log(`[feishu] 资源文件已下载: ${filePath}`);
+        console.log(`[feishu] resource downloaded: ${filePath}`);
       }).catch((e: any) => {
         console.error(`[feishu] 下载资源失败 (${fileKey}):`, e.message);
       });
@@ -725,7 +725,7 @@ class FeishuBridge {
               content: JSON.stringify({ image_key: imageKey }),
             },
           });
-          console.log('[feishu] 已发送图片:', fileName);
+          console.log('[feishu] image sent:', fileName);
         } else {
           // 文件:im.file.create → reply msg_type='file'
           // / File: upload → get file_key → reply as file message
@@ -749,7 +749,7 @@ class FeishuBridge {
               content: JSON.stringify({ file_key: fileKey }),
             },
           });
-          console.log('[feishu] 已发送文件:', fileName);
+          console.log('[feishu] file sent:', fileName);
         }
       } catch (e: any) {
         console.error(`[feishu] 上传/发送失败 ${fileName}:`, e.message);

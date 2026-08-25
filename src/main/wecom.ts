@@ -67,7 +67,7 @@ class WeComBridge {
         this.wecomSessions.set(c.wecomKey, c.id);
       }
     }
-    wlog(`会话索引已恢复: ${this.wecomSessions.size} 条映射`);
+    wlog(`session index restored: ${this.wecomSessions.size} mappings`);
   }
 
   /** 查找 wecomKey 对应的会话:先查内存 Map,miss 时查 SQLite fallback。 */
@@ -109,7 +109,7 @@ class WeComBridge {
       const oldest = userConvs.pop()!;
       try {
         this.taskManager?.deleteConversation(oldest.id);
-        console.log(`[wecom] 淘汰旧会话: ${oldest.id} (${key})`);
+        console.log(`[wecom] evict old session: ${oldest.id} (${key})`);
       } catch { /* ignore */ }
     }
 
@@ -145,7 +145,7 @@ class WeComBridge {
     for (let i = WeComBridge.MAX_SESSIONS_PER_USER; i < convs.length; i++) {
       try {
         this.taskManager?.deleteConversation(convs[i].id);
-        console.log(`[wecom] 淘汰旧会话: ${convs[i].id} (${wecomKey})`);
+        console.log(`[wecom] evict old session: ${convs[i].id} (${wecomKey})`);
       } catch { /* ignore */ }
     }
   }
@@ -174,7 +174,7 @@ class WeComBridge {
       });
       this.setupHandlers();
       this.ws.connect();
-      wlog('connect() 已发起, botId=' + cfg.botId);
+      wlog('connect() started, botId=' + cfg.botId);
       return { ok: true };
     } catch (e: any) {
       this.broadcast({ type: 'error', data: { message: e.message } });
@@ -229,7 +229,7 @@ class WeComBridge {
     ws.on('authenticated', () => {
       this._connected = true;
       this.broadcast({ type: 'connected' });
-      wlog('WebSocket 已连接并认证');
+      wlog('WebSocket connected and authenticated');
     });
 
     // 断开 / Disconnected
@@ -384,14 +384,14 @@ class WeComBridge {
 
   // ── 处理收到的企信消息 → 路由到 TaskManager ──
   private async handleIncoming(frame: WsFrame<TextMessage>): Promise<void> {
-    if (!this.ws || !this.taskManager) { wlog('handleIncoming 丢弃: ws/taskManager 为空'); return; }
+    if (!this.ws || !this.taskManager) { wlog('handleIncoming dropped: ws/taskManager is null'); return; }
     const body = frame.body;
     if (!body) return;
 
     const reqId = frame.headers.req_id;
     const text = body.text?.content?.trim();
     if (!text) return;
-    wlog(`收到消息 reqId=${reqId} text=${text.slice(0, 100)}`);
+    wlog(`message received reqId=${reqId} text=${text.slice(0, 100)}`);
 
     const cfg = getSettings().wecomBot;
     const userid = body.from?.userid || 'unknown';
