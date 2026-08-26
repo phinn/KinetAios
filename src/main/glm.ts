@@ -320,6 +320,40 @@ class OpenAICompatibleProvider implements Provider {
 // Ollama 原生 /api/chat 流式:每行一个 JSON(非 SSE),字段 message.content 做 token,
 // tool_calls 在 message.tool_calls 里(非 streaming 时一次性返回)。
 // 只有走原生端点才能设 options.num_ctx(OpenAI 兼容层 /v1/ 不透传 options)。
+
+// ── 同模型串行闸 / Per-model serialization gate ──────────────────────────────
+// Ollama 的 runner 复用是"单 runner 单请求":num_ctx 32768 的 KV cache 很大,
+// 并发请求到达时 Ollama 不会再塞进同一 runner,而是【再加载一份同模型】——
+// 多频道(企微/飞书/主界面)同时提问 → 同一模型启动 N 份,互相挤爆 VRAM。
+// 这里按 baseURL+model 串行化:同模型请求排队复用单个 runner;
+// 不同模型仍可并行(各自 runner)。keep_alive 30m 减少空闲后反复 load/unload。
+// 闸的粒度 = 单次 HTTP 流(发起到读完),请求从不嵌套,无死锁风险;
+// 排队中收到 abort 的请求直接跳过不再发出。Map 按 distinct model 数有界。
+// / Serialize requests per (baseURL, model): Ollama loads a *second copy* of the
+// same model on concurrent requests (one runner per request with big num_ctx),
+// which multiplies VRAM usage across channels. Queue instead; keep runner warm.
+// Gate granularity = one HTTP stream (never nests → no deadlock). Aborted
+// waiters skip their turn instead of firing the request.
+const ollamaGates = new Map<string, Promise<void>>();
+async function withOllamaGate<T>(key: string, signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+  const prev = ollamaGates.get(key) ?? Promise.resolve();
+  let release!: () => void;
+  const turn = new Promise<void>((r) => { release = r; });
+  ollamaGates.set(key, prev.then(() => turn));
+  // 排队期间被 abort → 放弃本轮(释放闸位),不发请求。
+  // / Aborted while queued → give up the turn (release the gate), skip the request.
+  const onAbort = (): void => release();
+  signal.addEventListener('abort', onAbort, { once: true });
+  try {
+    await prev.catch(() => {});
+    if (signal.aborted) throw new Error('aborted');
+    return await fn();
+  } finally {
+    signal.removeEventListener('abort', onAbort);
+    release();
+  }
+}
+
 async function ollamaStream(
   _messages: ChatMsg[],
   tools: ToolDef[],
@@ -352,6 +386,7 @@ async function ollamaStream(
     model: snap.model,
     messages: ollamaMsgs,
     stream: true,
+    keep_alive: '30m',
     options: { num_ctx: 32768 },
   };
   if (tools.length) {
@@ -363,6 +398,18 @@ async function ollamaStream(
 
   // /api/chat 端点:从 baseURL 去掉 /v1 后缀,加上 /api/chat。
   const base = snap.baseURL.replace(/\/v1\/?$/, '');
+  const gateKey = `${base}|${snap.model}`;
+  return withOllamaGate(gateKey, signal, () => ollamaStreamInner(base, body, signal, onToken));
+}
+
+// 闸内实际执行:fetch + NDJSON 流解析(原 ollamaStream 主体)。
+// / Inner body: fetch + NDJSON stream parsing (runs inside the serialization gate).
+async function ollamaStreamInner(
+  base: string,
+  body: Record<string, unknown>,
+  signal: AbortSignal,
+  onToken: (t: string) => void,
+): Promise<Completion> {
   const resp = await fetchUntil200(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
