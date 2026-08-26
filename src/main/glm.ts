@@ -343,7 +343,10 @@ async function withOllamaGate<T>(key: string, limit: number, signal: AbortSignal
   // held = 我占着一个闸位(active 已为我 +1,或由前手移交)。
   // / held = I own a slot (counted in active, or handed off by a predecessor).
   let held = false;
-  let offAbort: (() => void) | null = null;
+  // 默认 no-op:闭包内赋值不会被 TS CFA 追踪,non-null 默认值保证 finally 总可调用。
+  // / Default no-op: closure assignment isn't tracked by TS CFA; a non-null
+  // default keeps the finally-call always typed callable.
+  let detach: () => void = () => {};
   await new Promise<void>((resolve) => {
     if (g.active < limit) { g.active++; held = true; resolve(); return; }
     const waiter = {
@@ -361,13 +364,13 @@ async function withOllamaGate<T>(key: string, limit: number, signal: AbortSignal
       resolve();
     };
     signal.addEventListener('abort', onAbort, { once: true });
-    offAbort = (): void => signal.removeEventListener('abort', onAbort);
+    detach = (): void => signal.removeEventListener('abort', onAbort);
   });
   try {
     if (signal.aborted || !held) throw new Error('aborted');
     return await fn();
   } finally {
-    offAbort?.();
+    detach();
     if (held) {
       // 释放:优先把闸位移交队首等待者(active 不变);无人接手则归还计数,全空删 key。
       // / Release: hand the slot to the head waiter (active unchanged); else
