@@ -242,6 +242,7 @@ export type AppSettings = {
   budget: BudgetAlert;     // 成本预算 / 熔断
   maxTurns: number;        // Direct 引擎单轮对话最大 ReAct 循环数(防 tool_call 死循环;0 = 无限)
   ollamaParallel: number;  // Ollama 同模型最大在途请求数(对齐服务端 OLLAMA_NUM_PARALLEL;1 = 串行,防 runner 复制)
+  ollamaNumCtx: number;    // Ollama 每请求上下文窗口(KV cache 按 slot×num_ctx 预分配;0/缺省 = 32768)
   // ── 窗口关闭行为 ── quit = 退出应用(默认);minimize = 最小化到任务栏;tray = 最小化到系统托盘。
   closeBehavior: 'quit' | 'minimize' | 'tray';
   // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──

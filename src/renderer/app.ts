@@ -3060,6 +3060,8 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
         <div class="field"><label>${tr('settings.ollamaParallel')}</label><input id="s-ollama-parallel" type="number" min="1" max="16" value="${s.ollamaParallel ?? 1}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.ollamaParallel.desc')}</div>
+        <div class="field"><label>${tr('settings.ollamaNumCtx')}</label><input id="s-ollama-numctx" type="number" min="2048" max="262144" step="1024" value="${s.ollamaNumCtx ?? 32768}" style="max-width:120px" /></div>
+        <div class="field-desc">${tr('settings.ollamaNumCtx.desc')}</div>
         <div class="field"><label>${tr('settings.searchEngine')}</label>
         <select id="s-search-engine" style="max-width:200px">
           <option value="bing" ${!s.searchEngine || s.searchEngine === 'bing' ? 'selected' : ''}>Bing</option>
@@ -3982,6 +3984,7 @@ function readSettingsForm(): AppSettings {
     appIcon: (document.querySelector('input[name="app-icon"]:checked') as HTMLInputElement)?.value || 'k',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
     ollamaParallel: Math.max(1, Number((document.getElementById('s-ollama-parallel') as HTMLInputElement).value) || 1),
+    ollamaNumCtx: Math.max(2048, Number((document.getElementById('s-ollama-numctx') as HTMLInputElement).value) || 32768),
     searchEngine: ((document.getElementById('s-search-engine') as HTMLSelectElement)?.value || 'bing') as AppSettings['searchEngine'],
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
     v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,

@@ -418,7 +418,11 @@ async function ollamaStream(
     messages: ollamaMsgs,
     stream: true,
     keep_alive: '30m',
-    options: { num_ctx: 32768 },
+    // num_ctx 与并发数联动:KV cache 按 slot×num_ctx 预分配,
+    // ollamaParallel × num_ctx 过大时服务端会 OOM/杀 runner。
+    // / num_ctx scales with parallelism: KV cache is pre-allocated per
+    // slot×num_ctx; a too-large product OOMs the server and kills the runner.
+    options: { num_ctx: getSettings().ollamaNumCtx || 32768 },
   };
   if (tools.length) {
     body.tools = tools.map((t) => ({
