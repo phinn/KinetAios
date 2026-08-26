@@ -3058,6 +3058,8 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.subAgentModel.desc')}</div>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 0}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
+        <div class="field"><label>${tr('settings.ollamaParallel')}</label><input id="s-ollama-parallel" type="number" min="1" max="16" value="${s.ollamaParallel ?? 1}" style="max-width:100px" /></div>
+        <div class="field-desc">${tr('settings.ollamaParallel.desc')}</div>
         <div class="field"><label>${tr('settings.searchEngine')}</label>
         <select id="s-search-engine" style="max-width:200px">
           <option value="bing" ${!s.searchEngine || s.searchEngine === 'bing' ? 'selected' : ''}>Bing</option>
@@ -3979,6 +3981,7 @@ function readSettingsForm(): AppSettings {
     fontScale: Number((document.getElementById('s-font-scale') as HTMLSelectElement)?.value) || 100,
     appIcon: (document.querySelector('input[name="app-icon"]:checked') as HTMLInputElement)?.value || 'k',
     maxTurns: Number((document.getElementById('s-maxturns') as HTMLInputElement).value) || 0,
+    ollamaParallel: Math.max(1, Number((document.getElementById('s-ollama-parallel') as HTMLInputElement).value) || 1),
     searchEngine: ((document.getElementById('s-search-engine') as HTMLSelectElement)?.value || 'bing') as AppSettings['searchEngine'],
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
     v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,

@@ -321,36 +321,64 @@ class OpenAICompatibleProvider implements Provider {
 // tool_calls 在 message.tool_calls 里(非 streaming 时一次性返回)。
 // 只有走原生端点才能设 options.num_ctx(OpenAI 兼容层 /v1/ 不透传 options)。
 
-// ── 同模型串行闸 / Per-model serialization gate ──────────────────────────────
-// Ollama 的 runner 复用是"单 runner 单请求":num_ctx 32768 的 KV cache 很大,
-// 并发请求到达时 Ollama 不会再塞进同一 runner,而是【再加载一份同模型】——
-// 多频道(企微/飞书/主界面)同时提问 → 同一模型启动 N 份,互相挤爆 VRAM。
-// 这里按 baseURL+model 串行化:同模型请求排队复用单个 runner;
-// 不同模型仍可并行(各自 runner)。keep_alive 30m 减少空闲后反复 load/unload。
-// 闸的粒度 = 单次 HTTP 流(发起到读完),请求从不嵌套,无死锁风险;
-// 排队中收到 abort 的请求直接跳过不再发出。Map 按 distinct model 数有界。
-// / Serialize requests per (baseURL, model): Ollama loads a *second copy* of the
-// same model on concurrent requests (one runner per request with big num_ctx),
-// which multiplies VRAM usage across channels. Queue instead; keep runner warm.
-// Gate granularity = one HTTP stream (never nests → no deadlock). Aborted
-// waiters skip their turn instead of firing the request.
-const ollamaGates = new Map<string, Promise<void>>();
-async function withOllamaGate<T>(key: string, signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
-  const prev = ollamaGates.get(key) ?? Promise.resolve();
-  let release!: () => void;
-  const turn = new Promise<void>((r) => { release = r; });
-  ollamaGates.set(key, prev.then(() => turn));
-  // 排队期间被 abort → 放弃本轮(释放闸位),不发请求。
-  // / Aborted while queued → give up the turn (release the gate), skip the request.
-  const onAbort = (): void => release();
-  signal.addEventListener('abort', onAbort, { once: true });
+// ── 同模型并发闸(可配并发数信号量) / Per-model semaphore gate ────────────────
+// Ollama 单 runner 多 slot(OLLAMA_NUM_PARALLEL),KV cache 按 slot×num_ctx 预分配;
+// 客户端在途请求数一旦超过服务端 slot 数,Ollama 会【再加载一份同模型】挤爆 VRAM。
+// 这里按 baseURL+model 做信号量:同模型最多 N 个在途请求(N=settings.ollamaParallel,
+// 默认 1=串行;设成服务端 OLLAMA_NUM_PARALLEL 的值即可真并发,如 96GB Studio = 6)。
+// 闸粒度 = 单次 HTTP 流(发起到读完),请求从不嵌套,无死锁;
+// 排队中收到 abort 的请求从等待队列摘除,直接跳过不再发出。Map 按 distinct model 数有界。
+// / Per-(baseURL, model) semaphore: cap in-flight requests at settings.
+// ollamaParallel (default 1) to match server-side OLLAMA_NUM_PARALLEL slots —
+// exceeding it makes Ollama load a second copy of the model. Aborted waiters are
+// removed from the queue and skip their turn. Bounded by distinct model count.
+const ollamaGates = new Map<string, { active: number; waiters: Array<{ grant: () => void; dead: boolean }> }>();
+async function withOllamaGate<T>(key: string, limit: number, signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+  let gate = ollamaGates.get(key);
+  if (!gate) {
+    gate = { active: 0, waiters: [] };
+    ollamaGates.set(key, gate);
+  }
+  const g = gate;
+  // held = 我占着一个闸位(active 已为我 +1,或由前手移交)。
+  // / held = I own a slot (counted in active, or handed off by a predecessor).
+  let held = false;
+  let offAbort: (() => void) | null = null;
+  await new Promise<void>((resolve) => {
+    if (g.active < limit) { g.active++; held = true; resolve(); return; }
+    const waiter = {
+      dead: false,
+      grant: (): void => { held = true; resolve(); },
+    };
+    g.waiters.push(waiter);
+    // 排队中被 abort → 自摘出队并醒来;未持闸位,finally 不做移交/归还。
+    // / Aborted while queued → unqueue self and wake; no slot owned → no handoff.
+    const onAbort = (): void => {
+      if (held) return; // 已在跑:abort 由 fetch(signal) 自然传导 / already running
+      waiter.dead = true;
+      const i = g.waiters.indexOf(waiter);
+      if (i >= 0) g.waiters.splice(i, 1);
+      resolve();
+    };
+    signal.addEventListener('abort', onAbort, { once: true });
+    offAbort = (): void => signal.removeEventListener('abort', onAbort);
+  });
   try {
-    await prev.catch(() => {});
-    if (signal.aborted) throw new Error('aborted');
+    if (signal.aborted || !held) throw new Error('aborted');
     return await fn();
   } finally {
-    signal.removeEventListener('abort', onAbort);
-    release();
+    offAbort?.();
+    if (held) {
+      // 释放:优先把闸位移交队首等待者(active 不变);无人接手则归还计数,全空删 key。
+      // / Release: hand the slot to the head waiter (active unchanged); else
+      // decrement; drop the key when fully idle so the Map stays bounded.
+      const next = g.waiters.shift();
+      if (next) next.grant();
+      else {
+        g.active--;
+        if (g.active === 0 && g.waiters.length === 0) ollamaGates.delete(key);
+      }
+    }
   }
 }
 
@@ -399,7 +427,10 @@ async function ollamaStream(
   // /api/chat 端点:从 baseURL 去掉 /v1 后缀,加上 /api/chat。
   const base = snap.baseURL.replace(/\/v1\/?$/, '');
   const gateKey = `${base}|${snap.model}`;
-  return withOllamaGate(gateKey, signal, () => ollamaStreamInner(base, body, signal, onToken));
+  // 并发上限对齐服务端 OLLAMA_NUM_PARALLEL(设置里可调,默认 1=串行)。
+  // / Concurrency cap mirrors server-side OLLAMA_NUM_PARALLEL (setting, default 1).
+  const limit = Math.max(1, getSettings().ollamaParallel || 1);
+  return withOllamaGate(gateKey, limit, signal, () => ollamaStreamInner(base, body, signal, onToken));
 }
 
 // 闸内实际执行:fetch + NDJSON 流解析(原 ollamaStream 主体)。
