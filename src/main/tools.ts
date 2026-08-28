@@ -1727,18 +1727,23 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshot, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { captureScreenshotWithHide, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
 
 const screenshot: Tool = {
   name: 'screenshot',
-  description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。',
-  parameters: { type: 'object', properties: {} },
+  description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。传 hide_self=true 会先最小化 KinetAios 自身窗口再截图(截完自动还原),适合"看用户屏幕上别的内容"的场景,用户不用手动移开窗口。',
+  parameters: {
+    type: 'object',
+    properties: {
+      hide_self: { type: 'boolean', description: '截图前最小化 KinetAios 自身窗口,截完自动还原(默认 false)' },
+    },
+  },
   readOnly: true,
-  async run() {
-    const r = await captureScreenshot();
+  async run(args: any) {
+    const r = await captureScreenshotWithHide(Boolean(args?.hide_self));
     if (!r.ok || !r.base64) return `❌ 截屏失败: ${r.error}`;
     // 返回特殊格式:AgentLoop 会识别 __IMAGE_BASE64__ 前缀,将其转为 image_url content part 注入对话。
-    return `📷 截屏成功 (${r.width}×${r.height})\n__IMAGE_BASE64__:${r.base64}`;
+    return `📷 截屏成功 (${r.width}×${r.height})${args?.hide_self ? ' [已隐藏自身窗口]' : ''}\n__IMAGE_BASE64__:${r.base64}`;
   },
 };
 

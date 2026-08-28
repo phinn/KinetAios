@@ -4,7 +4,7 @@
 // 计算机使用:截屏 + 鼠标 + 键盘,无原生依赖。
 // Screenshots: Electron desktopCapturer (main process).
 // Mouse/Keyboard: PowerShell (Windows) / cliclick (macOS) / xdotool (Linux).
-import { desktopCapturer, screen as electronScreen } from 'electron';
+import { desktopCapturer, screen as electronScreen, BrowserWindow } from 'electron';
 import { exec } from 'node:child_process';
 
 // ── Screenshot ── 截屏,返回 base64 PNG + 屏幕尺寸
@@ -18,6 +18,34 @@ export interface ScreenshotResult {
 }
 
 export async function captureScreenshot(): Promise<ScreenshotResult> {
+  return captureScreenshotWithHide(false);
+}
+
+// hide_self=true: 截图前最小化本 app 所有可见窗口,截完还原 —— 用户不用手动移开 KinetAios。
+// Hide own windows before capture, restore after — so KinetAios itself isn't in the shot.
+export async function captureScreenshotWithHide(hideSelf: boolean): Promise<ScreenshotResult> {
+  const hidden: BrowserWindow[] = [];
+  if (hideSelf) {
+    for (const w of BrowserWindow.getAllWindows()) {
+      if (w.isVisible() && !w.isMinimized()) {
+        w.minimize();
+        hidden.push(w);
+      }
+    }
+    // 等窗口真正落下再截,否则截到的是最小化动画中间帧
+    if (hidden.length) await new Promise((r) => setTimeout(r, 350));
+  }
+  try {
+    const r = await captureScreenInner();
+    return r;
+  } finally {
+    for (const w of hidden) {
+      try { w.restore(); } catch { /* already gone */ }
+    }
+  }
+}
+
+async function captureScreenInner(): Promise<ScreenshotResult> {
   try {
     const primaryDisplay = electronScreen.getPrimaryDisplay();
     const { width, height } = primaryDisplay.size;
