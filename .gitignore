@@ -10,3 +10,6 @@ tmp_demo/
 *.mov
 tmp_ocr/
 tmp_*/
+# 商业交付文档(不入库)
+KinetAios-完全操作手册-客户版.md
+KinetAios-完全操作手册-客户版.pdf
