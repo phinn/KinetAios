@@ -4861,10 +4861,12 @@ function closeMoreMenu() {
 
   // 📷 区域截图:点按钮 → 全屏截图 → overlay 框选区域 → canvas 裁剪 → 附件。
   // 流程:先调 captureScreen 拿全屏,再让用户在 overlay 上拖拽选区,裁剪后得到区域截图。
-  const captureBtn = document.getElementById('btn-capture');
-  if (captureBtn) {
+  // hideSelf=true 走"隐藏截图":main 先最小化本 app 窗口再截,截完自动还原。
+  const bindCapture = (btnId: string, hideSelf: boolean): void => {
+    const captureBtn = document.getElementById(btnId) as HTMLButtonElement | null;
+    if (!captureBtn) return;
     captureBtn.onclick = async () => {
-      console.log('[capture] 按钮点击');
+      console.log('[capture] 按钮点击', btnId, 'hideSelf =', hideSelf);
       captureBtn.classList.add('loading');
       try {
         // 步骤 1:拿全屏截图(main 进程 desktopCapturer 优先,回退 getDisplayMedia)
@@ -4872,7 +4874,7 @@ function closeMoreMenu() {
 
         // 路径 1:desktopCapturer(main 进程)
         try {
-          const r = await api.captureScreen();
+          const r = await api.captureScreen(hideSelf);
           console.log('[capture] desktopCapturer result:', r.ok, r.error ?? '', 'dataUrl len:', r.dataUrl?.length ?? 0);
           if (r.ok && r.dataUrl && r.dataUrl.length > 1000) fullDataUrl = r.dataUrl;
           else if (!r.ok) console.warn('[capture] desktopCapturer returned error:', r.error);
@@ -4940,7 +4942,9 @@ function closeMoreMenu() {
         uxToast.err(tr('toast.captureErr', { msg: (e as Error)?.message ?? String(e) }));
       }
     };
-  }
+  };
+  bindCapture('btn-capture', false);
+  bindCapture('btn-capture-hide', true);
 
   // ── 区域截图 overlay:全屏显示截图 + 拖拽选区 → 裁剪返回 dataUrl ──
   // 复用 inspect overlay 的模式:全屏遮罩 + crosshair + 选择框。

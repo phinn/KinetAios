@@ -142,7 +142,7 @@ const api: KinetAPI = {
   // 记忆同步
   syncMemoriesWithRemote: (serverName) => ipcRenderer.invoke('sync-memories-remote', serverName),
   // 系统级截图
-  captureScreen: () => ipcRenderer.invoke('capture-screen'),
+  captureScreen: (hideSelf?: boolean) => ipcRenderer.invoke('capture-screen', hideSelf),
   // 语音转写
   transcribeAudio: (base64: string, mime: string) => ipcRenderer.invoke('transcribe-audio', base64, mime),
   // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)

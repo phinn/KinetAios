@@ -37,6 +37,7 @@ import { localMcpServer } from './mcp-server';
 import { allTools } from './tools';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
+import { withSelfHidden } from './computer-use';
 import { VoiceChat } from './VoiceChat';
 import { getWeComBridge, setTaskManagerForWeCom } from './wecom';
 import { getFeishuBridge, setTaskManagerForFeishu } from './feishu';
@@ -2165,25 +2166,28 @@ function registerIpc(): void {
   // ── 系统级截图 ──
   // desktopCapturer 在 main 进程可用,但 macOS 需要屏幕录制权限。
   // 如果 main 进程拿不到(权限/版本差异),回退到 renderer 的 getUserMedia。
-  ipcMain.handle('capture-screen', async () => {
+  // hideSelf=true: 截图前最小化本 app 窗口,截完还原(按钮"隐藏截图"路径)。
+  ipcMain.handle('capture-screen', async (_e, hideSelf?: boolean) => {
     try {
-      console.log('[main] capture-screen: requesting desktopCapturer...');
-      const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
-      console.log('[main] capture-screen: got', sources.length, 'sources');
-      if (!sources.length) return { ok: false, error: t(getSettings().lang, 'common.noScreen') };
-      // 取整个虚拟桌面(包含多显示器)或第一个源
-      const source = sources.find((s) => s.display_id === '') || sources[0];
-      const thumb = source.thumbnail;
-      // macOS 无屏幕录制权限时 thumbnail 为空 nativeImage → isEmpty() = true
-      if (thumb.isEmpty()) {
-        console.log('[main] capture-screen: thumbnail is EMPTY (screen permission not granted?)');
-        return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
-      }
-      const dataUrl = thumb.toDataURL();
-      console.log('[main] capture-screen: dataUrl length =', dataUrl?.length);
-      // 空图也会产生 ~100 字节的 PNG,真正截图至少几万字节
-      if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
-      return { ok: true, dataUrl };
+      return await withSelfHidden(Boolean(hideSelf), async () => {
+        console.log('[main] capture-screen: requesting desktopCapturer...');
+        const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1920, height: 1080 } });
+        console.log('[main] capture-screen: got', sources.length, 'sources');
+        if (!sources.length) return { ok: false, error: t(getSettings().lang, 'common.noScreen') };
+        // 取整个虚拟桌面(包含多显示器)或第一个源
+        const source = sources.find((s) => s.display_id === '') || sources[0];
+        const thumb = source.thumbnail;
+        // macOS 无屏幕录制权限时 thumbnail 为空 nativeImage → isEmpty() = true
+        if (thumb.isEmpty()) {
+          console.log('[main] capture-screen: thumbnail is EMPTY (screen permission not granted?)');
+          return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
+        }
+        const dataUrl = thumb.toDataURL();
+        console.log('[main] capture-screen: dataUrl length =', dataUrl?.length);
+        // 空图也会产生 ~100 字节的 PNG,真正截图至少几万字节
+        if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: t(getSettings().lang, 'common.emptyCapture') };
+        return { ok: true, dataUrl };
+      });
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

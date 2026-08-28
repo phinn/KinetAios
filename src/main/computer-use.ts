@@ -24,6 +24,12 @@ export async function captureScreenshot(): Promise<ScreenshotResult> {
 // hide_self=true: 截图前最小化本 app 所有可见窗口,截完还原 —— 用户不用手动移开 KinetAios。
 // Hide own windows before capture, restore after — so KinetAios itself isn't in the shot.
 export async function captureScreenshotWithHide(hideSelf: boolean): Promise<ScreenshotResult> {
+  return withSelfHidden(hideSelf, captureScreenInner);
+}
+
+// 通用包装:最小化自身窗口 → 执行 fn → 还原。供按钮截图等其他截图路径复用。
+// Generic wrapper: minimize own windows → run fn → restore. Reusable by other capture paths.
+export async function withSelfHidden<T>(hideSelf: boolean, fn: () => Promise<T>): Promise<T> {
   const hidden: BrowserWindow[] = [];
   if (hideSelf) {
     for (const w of BrowserWindow.getAllWindows()) {
@@ -32,12 +38,10 @@ export async function captureScreenshotWithHide(hideSelf: boolean): Promise<Scre
         hidden.push(w);
       }
     }
-    // 等窗口真正落下再截,否则截到的是最小化动画中间帧
     if (hidden.length) await new Promise((r) => setTimeout(r, 350));
   }
   try {
-    const r = await captureScreenInner();
-    return r;
+    return await fn();
   } finally {
     for (const w of hidden) {
       try { w.restore(); } catch { /* already gone */ }

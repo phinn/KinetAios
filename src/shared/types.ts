@@ -829,8 +829,8 @@ export interface KinetAPI {
   importSessionState(sessionJson: string): Promise<{ ok: boolean; convId?: string; error?: string }>;
   // ── 记忆同步(多机共享记忆)──
   syncMemoriesWithRemote(serverName: string): Promise<{ ok: boolean; added?: number; total?: number; error?: string }>;
-  // ── 系统级截图(renderer getDisplayMedia → canvas 截帧)──
-  captureScreen(): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
+  // ── 系统级截图(renderer getDisplayMedia → canvas 截帧;hideSelf=先最小化自身窗口)──
+  captureScreen(hideSelf?: boolean): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   // ── 语音转写(renderer 录音 → main 调 /audio/transcriptions)──
   transcribeAudio(base64: string, mime: string): Promise<{ ok: boolean; text?: string; error?: string }>;
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
