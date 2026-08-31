@@ -399,11 +399,29 @@ async function ollamaStream(
   // (服务端 buger/jsonparser 把 string 当 object 扫描)。发送前统一转成对象。
   // Ollama's native endpoint demands object-typed tool arguments, unlike the
   // OpenAI wire format — convert string arguments back to parsed objects.
+  //
+  // 同理 content 数组(截图/图片附件的多模态格式)也不认 —— 原生 ChatRequest.content
+  // 只收 string,图片要放消息级 images 字段(base64,不带 data: 前缀)。带图消息一旦进
+  // history,之后每轮请求都会带上它 → 每轮 400 "cannot unmarshal array into ... content"。
   const ollamaMsgs = wireMsgs.map((m) => {
-    if (!Array.isArray((m as { tool_calls?: unknown[] }).tool_calls)) return m;
+    let msg = m;
+    if (Array.isArray((m as { content?: unknown }).content)) {
+      const parts = (m as { content: Array<{ type: string; text?: string; image_url?: { url: string } }> }).content;
+      const texts: string[] = [];
+      const images: string[] = [];
+      for (const p of parts) {
+        if (p.type === 'text' && p.text) texts.push(p.text);
+        else if (p.type === 'image_url' && p.image_url?.url) {
+          const b64 = p.image_url.url.replace(/^data:image\/[\w.+-]+;base64,/, '');
+          if (b64 !== p.image_url.url && b64) images.push(b64); // 只收 data: URL;http 远图原生端点不拉,丢弃
+        }
+      }
+      msg = { ...m, content: texts.join('\n'), ...(images.length ? { images } : {}) };
+    }
+    if (!Array.isArray((msg as { tool_calls?: unknown[] }).tool_calls)) return msg;
     return {
-      ...m,
-      tool_calls: ((m as { tool_calls: Array<Record<string, unknown>> }).tool_calls).map((tc) => {
+      ...msg,
+      tool_calls: ((msg as { tool_calls: Array<Record<string, unknown>> }).tool_calls).map((tc) => {
         const fn = (tc.function ?? {}) as { name?: string; arguments?: unknown };
         if (typeof fn.arguments !== 'string') return tc;
         let parsed: unknown = {};
