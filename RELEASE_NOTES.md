@@ -1,5 +1,13 @@
 # Release Notes
 
+## v3.4.2 — CI 发布链路修复
+
+**发布日期：** 2026-08-31(自 v3.4.1 起 1 commit)
+
+### 🔧 CI
+
+- **release notes 抽取 ReferenceError 根治(7db1f96)** —— workflow 中 bash 双引号内 JS 裸用 TAG 变量不会被内插,ReferenceError 使三个 job 构建产物全部成功却死在收尾 step,Release 从未创建(v3.3.1/v3.4.1 两次被吞)。TAG 移入 node -e 内声明,抽不到段落时正常回落 GH 自动 notes
+
 ## v3.4.1 — Direct 截图误判根治(GLM 400 [1214])
 
 **发布日期：** 2026-08-31(自 v3.3.1 起 2 commits)
