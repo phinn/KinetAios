@@ -128,15 +128,16 @@ jobs:
       # 打 tag 时:把构建产物贴到 GH Release
       # body 优先取 RELEASE_NOTES.md 里 "## <tag>" 起到下一个 "## " 或文件尾的段落;
       # 抽不到(如忘写)回落 GH 自动生成,保证 Release 永不为空。
+      # 注意:TAG 必须在 node -e 内声明(bash 声明后 JS 里裸写 TAG.replace 不会被 bash 内插 → ReferenceError)。
       # / On tag push: attach artifacts. Body extracts the "## <tag>" section
       # from RELEASE_NOTES.md, falling back to GH-generated notes if absent.
       - name: Extract release notes body
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
         run: |
-          TAG="${GITHUB_REF_NAME#v}"
           node -e "
             const fs = require('fs');
+            const TAG = '${GITHUB_REF_NAME#v}'; // bash 内插为 JS 字符串字面量;此前裸用 TAG 变量 → ReferenceError 炸掉整个 step
             const md = fs.readFileSync('RELEASE_NOTES.md', 'utf8');
             const m = md.match(new RegExp('(^|\\\\n)## v' + TAG.replace(/[.*+?^\${}()|[\]\\\\]/g, '\\\\$&') + '(?![0-9])[^\\\\n]*\\\\n([\\\\s\\\\S]*?)(?=\\\\n## |\\\\n*\$)', ''));
             const body = m ? m[2].trim() : '';

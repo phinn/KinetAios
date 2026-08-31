@@ -1,5 +1,15 @@
 # Release Notes
 
+## v3.4.1 — Direct 截图误判根治(GLM 400 [1214])
+
+**发布日期：** 2026-08-31(自 v3.3.1 起 2 commits)
+
+### 🐛 DirectEngine 死循环根治
+
+- **`__IMAGE_BASE64__` 标记伪造防护** —— agent 用 read_file/grep 读到 AgentLoop.ts 源码中的标记字面量时,不再误判为截图(d1572a3)。此前剩余 JS 源码被拼进畸形 data: URL 发给智谱,被映射成缺 file_url 的 file 块 → 400 [1214] 且每轮重试持续触发,DirectEngine 卡死
+- **截图判定收敛** —— 新增 `parseScreenshotResult()`:payload 必须纯 base64 且 ≥100 字符才认定截图;5 处判定点(UI 显示/免截断/多模态转换)统一走它
+- **glm.ts 纵深防御** —— 畸形 data: URL 直接丢弃降级为文本,不再以 url-source 发给兼容层(anthImagePart 收敛两处转换)
+
 ## v3.3.1 — Ollama 并发根治 · 编辑器选区修复
 
 **发布日期：** 2026-08-26(自 v3.3.0 起 6 commits)
