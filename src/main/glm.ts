@@ -526,6 +526,16 @@ async function ollamaStreamInner(
   return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut };
 }
 
+// image_url → Anthropic image block。data: URL 的 payload 必须是纯 base64 才转 base64 source;
+// 畸形 data: URL(含换行/非 base64 字符)降级丢弃 —— GLM 会把它映射成缺 file_url 的 file 块 → 400 [1214]。
+function anthImagePart(p: { image_url?: { url: string } }): { type: 'image'; source: Record<string, string> } | null {
+  const url = p.image_url?.url ?? '';
+  const m = url.match(/^data:(image\/[\w.+-]+);base64,([A-Za-z0-9+/=\s]+)$/);
+  if (m) return { type: 'image', source: { type: 'base64', media_type: m[1], data: m[2].replace(/\s+/g, '') } };
+  if (/^data:/.test(url)) return null; // 畸形 data: URL → 丢弃图片,保留文本
+  return { type: 'image', source: { type: 'url', url } };
+}
+
 // MARK: Anthropic protocol (/v1/messages, x-api-key + anthropic-version). Bidirectional OpenAI↔Anthropic.
 class AnthropicProvider implements Provider {
   async streamComplete(
@@ -551,12 +561,7 @@ class AnthropicProvider implements Provider {
         if (Array.isArray(m.content)) {
           anthContent = (m.content as Array<{ type: string; text?: string; image_url?: { url: string } }>).map((p) => {
             if (p.type === 'text') return { type: 'text', text: p.text ?? '' };
-            if (p.type === 'image_url' && p.image_url) {
-              const url = p.image_url.url;
-              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
-              if (match) return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
-              return { type: 'image', source: { type: 'url', url } };
-            }
+            if (p.type === 'image_url' && p.image_url) return anthImagePart(p) ?? { type: 'text', text: '' };
             return { type: 'text', text: '' };
           });
         } else {
@@ -603,12 +608,7 @@ class AnthropicProvider implements Provider {
         if (Array.isArray(m.content)) {
           toolResultContent = (m.content as Array<{ type: string; text?: string; image_url?: { url: string } }>).map((p) => {
             if (p.type === 'text') return { type: 'text', text: p.text ?? '' };
-            if (p.type === 'image_url' && p.image_url) {
-              const url = p.image_url.url;
-              const match = url.match(/^data:(image\/\w+);base64,(.+)$/);
-              if (match) return { type: 'image', source: { type: 'base64', media_type: match[1], data: match[2] } };
-              return { type: 'image', source: { type: 'url', url } };
-            }
+            if (p.type === 'image_url' && p.image_url) return anthImagePart(p) ?? { type: 'text', text: '' };
             return { type: 'text', text: '' };
           });
         } else {

@@ -771,24 +771,22 @@ async function runToolBatch(
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: result.includes('__IMAGE_BASE64__') ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur }); // UI 不显示 base64
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur }); // UI 不显示 base64
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
-          const forModel = result.includes('__IMAGE_BASE64__') ? result : truncateForModel(result, truncateThreshold);
+          const forModel = parseScreenshotResult(result) ? result : truncateForModel(result, truncateThreshold);
           return { c, result: forModel, dur };
         }),
       );
       for (const { c, result } of outs) {
         // screenshot 工具返回 __IMAGE_BASE64__: 标记 → 转为多模态 tool 消息(文本+图片)
-        const imgIdx = result.indexOf('__IMAGE_BASE64__:');
-        if (imgIdx >= 0) {
-          const textPart = result.slice(0, imgIdx).trim();
-          const b64 = result.slice(imgIdx + '__IMAGE_BASE64__:'.length).trim();
+        const shot = parseScreenshotResult(result);
+        if (shot) {
           results.push({
             role: 'tool',
             tool_call_id: c.id,
             content: [
-              { type: 'text', text: textPart || 'Screenshot captured.' },
-              { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}`, detail: 'auto' } },
+              { type: 'text', text: shot.textPart || 'Screenshot captured.' },
+              { type: 'image_url', image_url: { url: `data:image/png;base64,${shot.b64}`, detail: 'auto' } },
             ],
           });
         } else {
@@ -800,18 +798,16 @@ async function runToolBatch(
       const t0 = Date.now();
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: result.includes('__IMAGE_BASE64__') ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur });
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur });
       // 截图工具(只读,但防御性处理)—— 不截断 base64
-      const imgIdx2 = result.indexOf('__IMAGE_BASE64__:');
-      if (imgIdx2 >= 0) {
-        const textPart = result.slice(0, imgIdx2).trim();
-        const b64 = result.slice(imgIdx2 + '__IMAGE_BASE64__:'.length).trim();
+      const shot = parseScreenshotResult(result);
+      if (shot) {
         results.push({
           role: 'tool',
           tool_call_id: call.id,
           content: [
-            { type: 'text', text: textPart || 'Screenshot captured.' },
-            { type: 'image_url', image_url: { url: `data:image/png;base64,${b64}`, detail: 'auto' } },
+            { type: 'text', text: shot.textPart || 'Screenshot captured.' },
+            { type: 'image_url', image_url: { url: `data:image/png;base64,${shot.b64}`, detail: 'auto' } },
           ],
         });
       } else {
@@ -821,6 +817,18 @@ async function runToolBatch(
     }
   }
   return results;
+}
+
+// ponytail: __IMAGE_BASE64__ 标记可能被"读源码 / grep 命中字面量"伪造(2026-08-31 的 GLM 1214 事故:
+// agent read_file 读到本标记所在源码段,剩余 JS 源码被拼进 data: URL 发给 GLM → 400 [1214])。
+// payload 必须是纯 base64 且够长才认定为真截图,否则当普通文本。
+const IMG_MARKER = '__IMAGE_BASE64__:';
+function parseScreenshotResult(result: string): { textPart: string; b64: string } | null {
+  const idx = result.indexOf(IMG_MARKER);
+  if (idx < 0) return null;
+  const b64 = result.slice(idx + IMG_MARKER.length).trim();
+  if (b64.length < 100 || !/^[A-Za-z0-9+/=\r\n]+$/.test(b64)) return null;
+  return { textPart: result.slice(0, idx).trim(), b64 };
 }
 
 // 长 tool result 截断喂模型(不影响 UI 看完整原文)。read_file 一个 4MB 文件 / shell 几 MB 输出
