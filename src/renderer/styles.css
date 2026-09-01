@@ -1453,16 +1453,16 @@ a { color: var(--accent); }
 /* chat-content 包 #turns + #input;chat-files-pane 内联文件浏览器。两者互斥(由 tab 切换)。 */
 .chat-content { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .chat-content[hidden] { display: none; }
-.chat-files-pane { position: absolute; top: 0; right: 0; bottom: 0; width: min(640px, 72vw); display: flex; flex-direction: column; min-height: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.32); overflow: hidden; z-index: 60; animation: fd-slide 0.2s var(--ease-out); }
+.chat-files-pane { width: min(640px, 72vw); flex: none; display: flex; flex-direction: column; min-height: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); animation: fd-slide 0.2s var(--ease-out); }
 
-/* ─── 文件抽屉:Codex 式浮层 ───
-   从右滑入、悬浮在对话之上(不挤压 chat-content),圆角左缘 + 投影 + 滑入动画。
-   host 覆盖整个 chat-split 但 pointer-events:none,点击穿透到聊天区。 */
-.chat-split { flex: 1; display: flex; min-height: 0; position: relative; }
+/* ─── 文件抽屉:Codex 式停靠面板 ───
+   从右缘展开、占住右侧宽度,chat-content 被挤窄(reflow),不是浮层。
+   Files drawer docks at the right edge; the chat column shrinks to make room. */
+.chat-split { flex: 1; display: flex; min-height: 0; }
 .chat-split[hidden] { display: none; } /* 非对话 tab 时整个分屏容器必须隐藏,否则空壳占 flex:1 把 files/git 等面板压扁 */
 .chat-split .chat-content { flex: 1; min-width: 0; }
-#file-drawer-host { position: absolute; top: 0; right: 0; bottom: 0; z-index: 70; pointer-events: none; }
-.fd-root { position: relative; height: 100%; display: flex; flex-direction: column; min-width: 0; pointer-events: auto; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.32); overflow: hidden; animation: fd-slide 0.2s var(--ease-out); }
+#file-drawer-host { display: flex; min-width: 0; flex: none; }
+.fd-root { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); animation: fd-slide 0.2s var(--ease-out); }
 @keyframes fd-slide { from { transform: translateX(48px); opacity: 0; } }
 .fd-root[hidden] { display: none; }
 .fd-resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
