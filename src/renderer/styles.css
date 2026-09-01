@@ -1459,6 +1459,7 @@ a { color: var(--accent); }
    chat-split 横向排开;抽屉 hidden 时 chat-content 独占(flex:1)。
    Split layout: chat column + file drawer; drawer hidden → chat full width. */
 .chat-split { flex: 1; display: flex; min-height: 0; }
+.chat-split[hidden] { display: none; } /* 非对话 tab 时整个分屏容器必须隐藏,否则空壳占 flex:1 把 files/git 等面板压扁 */
 .chat-split .chat-content { flex: 1; min-width: 0; }
 #file-drawer-host { display: flex; min-width: 0; }
 .fd-root { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); }

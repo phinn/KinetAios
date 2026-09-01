@@ -742,6 +742,9 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team'): 
   document.getElementById('tab-preview')!.classList.toggle('active', tab === 'preview');
   document.getElementById('tab-team')!.classList.toggle('active', tab === 'team');
   document.getElementById('chat-content')!.hidden = tab !== 'chat';
+  // 分屏容器整体跟 chat-content 同步显隐:否则空 .chat-split 占 flex:1,
+  // 文件/Git 等面板被压到下半屏(4459003 引入布局回归)。
+  document.querySelector<HTMLElement>('.chat-split')!.hidden = tab !== 'chat';
   document.getElementById('chat-files-pane')!.hidden = tab !== 'files';
   document.getElementById('chat-git-pane')!.hidden = tab !== 'git';
   document.getElementById('chat-rules-pane')!.hidden = tab !== 'rules';
