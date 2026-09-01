@@ -122,7 +122,11 @@ function applyI18nDOM(): void {
   document.documentElement.lang = lang;
   document.querySelectorAll<HTMLElement>('[data-i18n]').forEach((el) => { el.textContent = t(lang, el.dataset.i18n!); });
   document.querySelectorAll<HTMLElement>('[data-i18n-title]').forEach((el) => { el.title = t(lang, el.dataset.i18nTitle!); });
-  document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => { (el as HTMLInputElement).placeholder = t(lang, el.dataset.i18nPlaceholder!); });
+  document.querySelectorAll<HTMLElement>('[data-i18n-placeholder]').forEach((el) => {
+    // placeholder 里含 {product} 这类模板变量时必须带参替换,否则字面量漏给用户。
+    // Placeholders may contain {product}-style params — always pass them through t().
+    (el as HTMLInputElement).placeholder = t(lang, el.dataset.i18nPlaceholder!, { product: PRODUCT });
+  });
   document.querySelectorAll<HTMLElement>('[data-i18n-aria]').forEach((el) => { el.setAttribute('aria-label', t(lang, el.dataset.i18nAria!)); });
   // 模式按钮的 title 跟随当前模式(不是静态 key),applyI18nDOM 会重写 title,这里补回去。
   syncSidebarModeBtn();
@@ -766,6 +770,13 @@ function showTab(tab: 'chat' | 'git' | 'rules' | 'preview' | 'team'): void {
 
 // 「文件」抽屉(Codex 式):不再整屏切 tab,从右滑入悬浮在对话之上。
 // Files drawer: slides over the conversation; the chat stays visible.
+// 宽度:左缘拖拽调宽,localStorage 持久化(默认 640,320 ~ innerWidth-420 夹取)。
+function cfpClamp(w: number): number { return Math.min(Math.max(w, 320), Math.max(400, window.innerWidth - 420)); }
+function cfpApplyWidth(): void {
+  const pane = document.getElementById('chat-files-pane')!;
+  const saved = Number(localStorage.getItem('cfp-width') ?? 640);
+  pane.style.width = cfpClamp(Number.isFinite(saved) ? saved : 640) + 'px';
+}
 function toggleFilesDrawer(open?: boolean): void {
   const pane = document.getElementById('chat-files-pane')!;
   const to = open ?? pane.hidden;
@@ -773,6 +784,7 @@ function toggleFilesDrawer(open?: boolean): void {
   pane.hidden = !to;
   document.getElementById('tab-files')!.classList.toggle('active', to);
   if (!to) return;
+  cfpApplyWidth();
   if (!filesController) {
     // files-pane.ts 的 querySelector 都基于 root(pane),不会越界。
     // ponytail: 用当前 lang 挂载;切语言后需要重挂(简化:暂不处理,首次挂载语言固定)。
@@ -4588,6 +4600,21 @@ function closeMoreMenu() {
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
   document.getElementById('tab-files')!.onclick = () => toggleFilesDrawer();
   document.getElementById('btn-files-close')!.onclick = () => toggleFilesDrawer(false);
+  // 文件抽屉左缘拖拽调宽(chip 抽屉同款交互),松手持久化
+  const cfpPane = document.getElementById('chat-files-pane')!;
+  cfpPane.querySelector<HTMLElement>('.cfp-resizer')!.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = cfpPane.getBoundingClientRect().width;
+    const move = (ev: MouseEvent): void => { cfpPane.style.width = cfpClamp(startW + (startX - ev.clientX)) + 'px'; };
+    const up = (): void => {
+      localStorage.setItem('cfp-width', String(Math.round(cfpPane.getBoundingClientRect().width)));
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  });
   document.getElementById('tab-git')!.onclick = () => showTab('git');
   // 右侧文件抽屉(聊天流点文件 chip 展开)/ right-side file drawer for chat file chips
   fileDrawer = mountFileDrawer(document.getElementById('file-drawer-host')!, tr);
