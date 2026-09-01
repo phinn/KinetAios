@@ -6,6 +6,7 @@ import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSn
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
+import { mountFileDrawer, type FileDrawer } from './file-drawer';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { CodeEditor } from './code-editor';
 import { setTownLang, setTownHomeDir, setTownStyle, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
@@ -69,6 +70,7 @@ let editingProfileId: string | null = null;
 // 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
+let fileDrawer: FileDrawer | null = null; // 右侧文件抽屉(聊天流点文件 chip 展开)
 let activeTab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
 // view.contentHTML 是已转义 + 按行包好 .d-add/.d-del/.d-hunk 的安全 HTML。
@@ -2152,6 +2154,26 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   el.className = 'step';
   const det = document.createElement('details');
   det.innerHTML = `<summary><span class="name">${ICON.wrench} ${esc(s.name)}</span></summary>`;
+  // 文件类工具(read_file/write_file/edit_file):args 里的 path 渲染成可点 chip,
+  // 点击 → 右侧文件抽屉打开该文件(DeepSeek/Codex 式左右分屏)。
+  // File tools: render path arg as clickable chip → open in right drawer.
+  if (s.name === 'read_file' || s.name === 'write_file' || s.name === 'edit_file') {
+    try {
+      const argPath = String(JSON.parse(s.args)?.path ?? '');
+      if (argPath && fileDrawer) {
+        const chipRow = document.createElement('div');
+        chipRow.className = 'step-files';
+        const chip = document.createElement('button');
+        chip.className = 'fd-chip';
+        chip.title = argPath;
+        const short = argPath.split(/[\\/]/).pop() || argPath;
+        chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
+        chip.onclick = () => { void fileDrawer?.open(argPath); };
+        chipRow.appendChild(chip);
+        det.appendChild(chipRow);
+      }
+    } catch { /* args 非 JSON(流式中间态)→ 无 chip,不影响原有渲染 */ }
+  }
   // 有内容才添加区块,避免空 pre 占位 / Skip empty sections to avoid blank gray blocks
   if (s.args) {
     const aLabel = document.createElement('div');
@@ -4558,6 +4580,8 @@ function closeMoreMenu() {
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
   document.getElementById('tab-files')!.onclick = () => showTab('files');
   document.getElementById('tab-git')!.onclick = () => showTab('git');
+  // 右侧文件抽屉(聊天流点文件 chip 展开)/ right-side file drawer for chat file chips
+  fileDrawer = mountFileDrawer(document.getElementById('file-drawer-host')!, tr);
   document.getElementById('btn-git-refresh')!.onclick = () => {
     const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
     if (cwd) void refreshGit(cwd);
@@ -5947,6 +5971,15 @@ function showChat() {
     viewMode = 'follow';
     syncAtBottomFlag();
     draftPrevId = selectedId;
+    // 切会话收起文件抽屉:新会话的文件属于新 cwd,旧 tab 留着只会误导。
+    // Drawer per conversation: collapse on switch (tabs belong to the old cwd).
+    fileDrawer?.close();
+    // 抽屉相对路径解析跟随当前会话 cwd(前缀拼 cwd;已是绝对路径则原样)。
+    // Relative paths resolve against the active conv cwd; absolute pass through.
+    if (fileDrawer) {
+      const cwd = selectedId ? convs.get(selectedId)?.cwd ?? null : null;
+      fileDrawer.setPathResolver(cwd ? (p) => /^[A-Za-z]:[\\/]|^\//.test(p) ? p : cwd.replace(/[\\/]+$/, '') + '/' + p.replace(/^\.\//, '') : null);
+    }
   }
   currentView = 'chat';
   hideAllViews();

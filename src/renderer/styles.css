@@ -1454,6 +1454,40 @@ a { color: var(--accent); }
 .chat-content { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .chat-content[hidden] { display: none; }
 .chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+
+/* ─── 左右分屏:对话 | 文件抽屉(DeepSeek/Codex 式)───
+   chat-split 横向排开;抽屉 hidden 时 chat-content 独占(flex:1)。
+   Split layout: chat column + file drawer; drawer hidden → chat full width. */
+.chat-split { flex: 1; display: flex; min-height: 0; }
+.chat-split .chat-content { flex: 1; min-width: 0; }
+#file-drawer-host { display: flex; min-width: 0; }
+.fd-root { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); }
+.fd-root[hidden] { display: none; }
+.fd-resizer { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
+.fd-resizer:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
+.fd-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.fd-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 8px; border-bottom: 1px solid var(--border-soft, var(--border)); overflow-x: auto; scrollbar-width: none; flex: none; }
+.fd-tabs::-webkit-scrollbar { display: none; }
+.fd-tab { display: inline-flex; align-items: center; gap: 5px; max-width: 200px; padding: 4px 8px; border-radius: 6px; font-size: 0.812rem; color: var(--text-dim); background: transparent; border: none; cursor: pointer; white-space: nowrap; flex: none; transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.fd-tab:hover { background: var(--bg-elev); color: var(--text); }
+.fd-tab.active { background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--text); }
+.fd-tab-name { overflow: hidden; text-overflow: ellipsis; }
+.fd-tab-x { opacity: 0.45; font-size: 0.7rem; padding: 0 1px; border-radius: 3px; }
+.fd-tab-x:hover { opacity: 1; background: var(--bg-elev); }
+.fd-close { margin-left: auto; flex: none; border: none; background: transparent; color: var(--text-faint); cursor: pointer; padding: 4px 6px; border-radius: 6px; transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.fd-close:hover { background: var(--bg-elev); color: var(--text); }
+.fd-body { flex: 1; display: flex; min-height: 0; position: relative; }
+.fd-pane { display: none; flex: 1; min-width: 0; }
+.fd-pane.active { display: flex; }
+.fd-editor-host { flex: 1; min-width: 0; }
+.fd-empty { position: absolute; inset: 36px 0 0; display: flex; align-items: center; justify-content: center; color: var(--text-faint); font-size: 0.846rem; pointer-events: none; }
+
+/* 聊天流里的文件 chip:工具 step 下方一行,点击开抽屉。
+   File chip row under a tool step; click → open drawer. */
+.step-files { display: flex; flex-wrap: wrap; gap: 4px; padding: 2px 0 2px 22px; }
+.fd-chip { display: inline-flex; align-items: center; gap: 4px; max-width: 260px; padding: 1.5px 8px; border-radius: 999px; font-size: 0.769rem; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); background: var(--bg-elev); border: 1px solid var(--border-soft, var(--border)); cursor: pointer; transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.fd-chip:hover { color: var(--accent); border-color: var(--accent-dim); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.fd-chip .fd-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-files-pane[hidden] { display: none; }
 
 /* 多面板标签栏 / Multi-panel tab bar — 液态玻璃,
