@@ -1453,7 +1453,7 @@ a { color: var(--accent); }
 /* chat-content 包 #turns + #input;chat-files-pane 内联文件浏览器。两者互斥(由 tab 切换)。 */
 .chat-content { flex: 1; display: flex; flex-direction: column; min-height: 0; position: relative; }
 .chat-content[hidden] { display: none; }
-.chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.chat-files-pane { position: absolute; top: 0; right: 0; bottom: 0; width: min(640px, 72vw); display: flex; flex-direction: column; min-height: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.32); overflow: hidden; z-index: 60; animation: fd-slide 0.2s var(--ease-out); }
 
 /* ─── 文件抽屉:Codex 式浮层 ───
    从右滑入、悬浮在对话之上(不挤压 chat-content),圆角左缘 + 投影 + 滑入动画。
@@ -1482,6 +1482,11 @@ a { color: var(--accent); }
 .fd-chip:hover { color: var(--accent); border-color: var(--accent-dim); background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .fd-chip .fd-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .chat-files-pane[hidden] { display: none; }
+/* 文件抽屉头部:标题 + ✕(files-pane.ts 的 panelBar innerHTML 重建不会碰到它) */
+.cfp-top { display: flex; align-items: center; gap: 8px; padding: 8px 8px 8px 14px; border-bottom: 1px solid var(--border-soft, var(--border)); flex: none; }
+.cfp-title { flex: 1; min-width: 0; font-size: 0.846rem; font-weight: 600; color: var(--text-dim); }
+.cfp-close { flex: none; border: none; background: transparent; color: var(--text-faint); cursor: pointer; padding: 4px 6px; border-radius: 6px; display: inline-flex; transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
+.cfp-close:hover { background: var(--bg-elev); color: var(--text); }
 
 /* 多面板标签栏 / Multi-panel tab bar — 液态玻璃,
    跟 .chat-head / #input 同族表面,统一走 --surface-pane-foot */

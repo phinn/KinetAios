@@ -189,15 +189,20 @@
           </div>
           </div>
           <div id="file-drawer-host"></div>
-        </div>
-        <div id="chat-files-pane" class="chat-files-pane" hidden>
-          <!-- 多面板标签栏(Mounted by files-pane.ts) -->
-          <div class="files-panel-bar" id="files-panel-bar"></div>
-          <div class="files-panel-host" id="files-panel-host"></div>
-          <div id="files-menu" class="files-menu" hidden>
-            <div class="fm-item" id="fm-open" data-i18n="files.openInBrowser">在浏览器中打开</div>
-            <div class="fm-item" id="fm-edit" data-i18n="files.openInEditor">在编辑器中打开</div>
-            <div class="fm-item" id="fm-copy" data-i18n="files.copyPath">复制路径</div>
+          <!-- 文件抽屉:不再整屏切换 tab,从右滑入悬浮在对话之上(Codex 式) -->
+          <div id="chat-files-pane" class="chat-files-pane" hidden>
+            <div class="cfp-top">
+              <span class="cfp-title" data-i18n="tabs.files">文件</span>
+              <button class="cfp-close" id="btn-files-close" data-i18n-title="fd.close" title="收起文件面板"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+            </div>
+            <!-- 多面板标签栏(Mounted by files-pane.ts) -->
+            <div class="files-panel-bar" id="files-panel-bar"></div>
+            <div class="files-panel-host" id="files-panel-host"></div>
+            <div id="files-menu" class="files-menu" hidden>
+              <div class="fm-item" id="fm-open" data-i18n="files.openInBrowser">在浏览器中打开</div>
+              <div class="fm-item" id="fm-edit" data-i18n="files.openInEditor">在编辑器中打开</div>
+              <div class="fm-item" id="fm-copy" data-i18n="files.copyPath">复制路径</div>
+            </div>
           </div>
         </div>
         <div id="chat-git-pane" class="chat-git-pane" hidden>

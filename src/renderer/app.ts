@@ -71,7 +71,7 @@ let editingProfileId: string | null = null;
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
 let fileDrawer: FileDrawer | null = null; // 右侧文件抽屉(聊天流点文件 chip 展开)
-let activeTab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team' = 'chat';
+let activeTab: 'chat' | 'git' | 'rules' | 'preview' | 'team' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
 // view.contentHTML 是已转义 + 按行包好 .d-add/.d-del/.d-hunk 的安全 HTML。
 let gitState: { snapshot?: GitSnapshot; view: { kind: 'history' } | { kind: 'diff'; title: string; contentHTML: string }; lastCwd: string; busy: boolean } = {
@@ -732,11 +732,10 @@ async function deleteConv(id: string) {
 
 // ---------- main pane ----------
 // 聊天 tab 切换(对话 / 文件 / Git / 规则)。文件 tab 首次点才挂 mountFilesPane;切会话后切回任一 tab 都同步 cwd。
-function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team'): void {
+function showTab(tab: 'chat' | 'git' | 'rules' | 'preview' | 'team'): void {
   if (activeTab === tab) return;
   activeTab = tab;
   document.getElementById('tab-chat')!.classList.toggle('active', tab === 'chat');
-  document.getElementById('tab-files')!.classList.toggle('active', tab === 'files');
   document.getElementById('tab-git')!.classList.toggle('active', tab === 'git');
   document.getElementById('tab-rules')!.classList.toggle('active', tab === 'rules');
   document.getElementById('tab-preview')!.classList.toggle('active', tab === 'preview');
@@ -745,30 +744,12 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team'): 
   // 分屏容器整体跟 chat-content 同步显隐:否则空 .chat-split 占 flex:1,
   // 文件/Git 等面板被压到下半屏(4459003 引入布局回归)。
   document.querySelector<HTMLElement>('.chat-split')!.hidden = tab !== 'chat';
-  document.getElementById('chat-files-pane')!.hidden = tab !== 'files';
   document.getElementById('chat-git-pane')!.hidden = tab !== 'git';
   document.getElementById('chat-rules-pane')!.hidden = tab !== 'rules';
   document.getElementById('chat-preview-pane')!.hidden = tab !== 'preview';
   document.getElementById('chat-team-pane')!.hidden = tab !== 'team';
-  if (tab === 'files') {
-    if (!filesController) {
-      const pane = document.getElementById('chat-files-pane')!;
-      // files-pane.ts 的 querySelector 都基于 root(pane),不会越界。
-      // ponytail: 用当前 lang 挂载;切语言后需要重挂(简化:暂不处理,首次挂载语言固定)。
-      filesController = mountFilesPane(pane, lang);
-      // Visual Inspector:用户在预览中圈选+输入意图后,发给当前活跃会话
-      filesController.onInspect = (prompt: string) => {
-        const conv = selectedId ? convs.get(selectedId) : undefined;
-        if (!conv) return; // 无活跃会话时静默忽略 / Silently ignore if no active conversation
-        // 自动切回聊天 tab 让用户看到 AI 正在处理 / Switch to chat tab
-        showTab('chat');
-        // 直接发送 prompt 到当前活跃会话 / Send prompt directly to active conversation
-        void api.send(conv.id, prompt);
-      };
-    }
-    const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
-    filesController.setCwd(cwd);
-  }
+  // 抽屉挂在 .chat-split 内,切走对话 tab 时同步收起,避免状态与视图脱节
+  if (tab !== 'chat') { document.getElementById('chat-files-pane')!.hidden = true; document.getElementById('tab-files')!.classList.remove('active'); }
   if (tab === 'git') {
     const cwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
     if (cwd && cwd !== gitState.lastCwd) void refreshGit(cwd);
@@ -781,6 +762,30 @@ function showTab(tab: 'chat' | 'files' | 'git' | 'rules' | 'preview' | 'team'): 
   if (tab === 'team') {
     void refreshTeamPane();
   }
+}
+
+// 「文件」抽屉(Codex 式):不再整屏切 tab,从右滑入悬浮在对话之上。
+// Files drawer: slides over the conversation; the chat stays visible.
+function toggleFilesDrawer(open?: boolean): void {
+  const pane = document.getElementById('chat-files-pane')!;
+  const to = open ?? pane.hidden;
+  if (to) showTab('chat'); // 抽屉挂在 .chat-split 里,其他 tab 下先切回对话
+  pane.hidden = !to;
+  document.getElementById('tab-files')!.classList.toggle('active', to);
+  if (!to) return;
+  if (!filesController) {
+    // files-pane.ts 的 querySelector 都基于 root(pane),不会越界。
+    // ponytail: 用当前 lang 挂载;切语言后需要重挂(简化:暂不处理,首次挂载语言固定)。
+    filesController = mountFilesPane(pane, lang);
+    // Visual Inspector:用户在预览中圈选+输入意图后,发给当前活跃会话
+    filesController.onInspect = (prompt: string) => {
+      const conv = selectedId ? convs.get(selectedId) : undefined;
+      if (!conv) return; // 无活跃会话时静默忽略 / Silently ignore if no active conversation
+      // 直接发送 prompt 到当前活跃会话 / Send prompt directly to active conversation
+      void api.send(conv.id, prompt);
+    };
+  }
+  filesController.setCwd(selectedId ? convs.get(selectedId)?.cwd ?? '' : '');
 }
 
 // ---------- Team 面板 ----------
@@ -1709,7 +1714,7 @@ function renderMain() {
     startIdleFill(turns, conv, token, startIdx);
   }
   // 切会话后,文件 tab 若已挂,跟着换 cwd(切到当前会话的 cwd)。
-  if (activeTab === 'files' && filesController) filesController.setCwd(conv.cwd);
+  if (!document.getElementById('chat-files-pane')!.hidden) filesController?.setCwd(conv.cwd);
   // git tab:cwd 变了就重抓 snapshot(切会话是最常见的触发)。
   if (activeTab === 'git' && conv.cwd !== gitState.lastCwd) void refreshGit(conv.cwd);
   // rules tab:cwd 变了就重载 KINET.md。
@@ -4581,7 +4586,8 @@ function closeMoreMenu() {
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
-  document.getElementById('tab-files')!.onclick = () => showTab('files');
+  document.getElementById('tab-files')!.onclick = () => toggleFilesDrawer();
+  document.getElementById('btn-files-close')!.onclick = () => toggleFilesDrawer(false);
   document.getElementById('tab-git')!.onclick = () => showTab('git');
   // 右侧文件抽屉(聊天流点文件 chip 展开)/ right-side file drawer for chat file chips
   fileDrawer = mountFileDrawer(document.getElementById('file-drawer-host')!, tr);
