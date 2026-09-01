@@ -1455,16 +1455,17 @@ a { color: var(--accent); }
 .chat-content[hidden] { display: none; }
 .chat-files-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 
-/* ─── 左右分屏:对话 | 文件抽屉(DeepSeek/Codex 式)───
-   chat-split 横向排开;抽屉 hidden 时 chat-content 独占(flex:1)。
-   Split layout: chat column + file drawer; drawer hidden → chat full width. */
-.chat-split { flex: 1; display: flex; min-height: 0; }
+/* ─── 文件抽屉:Codex 式浮层 ───
+   从右滑入、悬浮在对话之上(不挤压 chat-content),圆角左缘 + 投影 + 滑入动画。
+   host 覆盖整个 chat-split 但 pointer-events:none,点击穿透到聊天区。 */
+.chat-split { flex: 1; display: flex; min-height: 0; position: relative; }
 .chat-split[hidden] { display: none; } /* 非对话 tab 时整个分屏容器必须隐藏,否则空壳占 flex:1 把 files/git 等面板压扁 */
 .chat-split .chat-content { flex: 1; min-width: 0; }
-#file-drawer-host { display: flex; min-width: 0; }
-.fd-root { position: relative; display: flex; flex-direction: column; min-width: 0; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); }
+#file-drawer-host { position: absolute; top: 0; right: 0; bottom: 0; z-index: 70; pointer-events: none; }
+.fd-root { position: relative; height: 100%; display: flex; flex-direction: column; min-width: 0; pointer-events: auto; background: var(--bg-panel, var(--bg-elev)); border-left: 1px solid var(--border); border-radius: 12px 0 0 12px; box-shadow: -16px 0 40px rgba(0, 0, 0, 0.32); overflow: hidden; animation: fd-slide 0.2s var(--ease-out); }
+@keyframes fd-slide { from { transform: translateX(48px); opacity: 0; } }
 .fd-root[hidden] { display: none; }
-.fd-resizer { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
+.fd-resizer { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 5; }
 .fd-resizer:hover { background: color-mix(in srgb, var(--accent) 35%, transparent); }
 .fd-main { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .fd-tabs { display: flex; align-items: center; gap: 2px; padding: 4px 6px 4px 8px; border-bottom: 1px solid var(--border-soft, var(--border)); overflow-x: auto; scrollbar-width: none; flex: none; }

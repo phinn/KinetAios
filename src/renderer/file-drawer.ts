@@ -1,4 +1,5 @@
-// 右侧文件抽屉(File Drawer)—— DeepSeek/Codex 式「对话 | 文件」左右分屏。
+// 右侧文件抽屉(File Drawer)—— Codex 式浮层:从右滑入,悬浮在对话之上,
+// 不挤压聊天区(布局见 styles.css .fd-root)。Esc / 收起按钮关闭。
 // 聊天流里工具 step(read_file/write_file/edit_file)渲染文件 chip,点击 →
 // 抽屉展开该文件(CodeEditor 只读)。多文件多 tab,收起抽屉不丢 tab。
 //
@@ -166,6 +167,12 @@ export function mountFileDrawer(host: HTMLElement, tr: TrFn): FileDrawer {
   }
 
   function close(): void { root.hidden = true; }
+
+  // Esc 收起抽屉(Codex 式)。capture 阶段吃掉事件,避免同时触发
+  // app.ts 的「Esc 清空输入框」等其他全局 Esc 行为。
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !root.hidden) { e.stopPropagation(); close(); }
+  }, true);
 
   return {
     open,
