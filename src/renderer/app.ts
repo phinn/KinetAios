@@ -3016,6 +3016,26 @@ async function showSettings() {
             <button id="s-profile-save" class="btn-sm" style="white-space:nowrap">${tr('settings.profile.add')}</button>
           </div>
         </div>
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.846rem">${tr('settings.profile.balanceHeader')}</summary>
+          <div class="field-desc" style="margin-top:6px">${tr('settings.profile.balanceHint')}</div>
+          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
+            <label>${tr('settings.profile.balanceUrl')}</label>
+            <input id="s-profile-balance-url" placeholder="${tr('settings.profile.balanceUrlPh')}" />
+          </div>
+          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
+            <label>${tr('settings.profile.balanceKey')}</label>
+            <div class="key-eye-wrap"><input id="s-profile-balance-key" type="password" placeholder="${tr('settings.profile.balanceKeyPh')}" /><span class="key-eye" data-target="s-profile-balance-key">👁</span></div>
+          </div>
+          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
+            <label>${tr('settings.profile.balanceAuth')}</label>
+            <select id="s-profile-balance-auth">
+              <option value="bearer">${tr('settings.profile.balanceAuthBearer')}</option>
+              <option value="raw">${tr('settings.profile.balanceAuthRaw')}</option>
+              <option value="x-api-key">${tr('settings.profile.balanceAuthXApiKey')}</option>
+            </select>
+          </div>
+        </details>
       </div>
       </div><!-- /model panel -->
 
@@ -3512,6 +3532,10 @@ async function showSettings() {
     const name = (document.getElementById('s-profile-name') as HTMLInputElement).value.trim();
     if (!name) { showMsg(tr('settings.profile.nameRequired'), false); return; }
     const form = readSettingsForm();
+    // 余额独立配置(独立于主表单 key/baseURL)
+    const balanceUrl = (document.getElementById('s-profile-balance-url') as HTMLInputElement).value.trim();
+    const balanceApiKey = (document.getElementById('s-profile-balance-key') as HTMLInputElement).value.trim();
+    const balanceAuthScheme = ((document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value || 'bearer') as 'bearer' | 'raw' | 'x-api-key';
     const cur = await api.getSettings();
     let profiles = cur.modelProfiles || [];
     if (editingProfileId) {
@@ -3526,6 +3550,9 @@ async function showSettings() {
         reasoning: form.reasoning,
         priceInPerMTok: form.priceInPerMTok,
         priceOutPerMTok: form.priceOutPerMTok,
+        balanceUrl,
+        balanceApiKey,
+        balanceAuthScheme,
       } : p);
       showMsg(tr('settings.profile.updated', { name }), true);
     } else {
@@ -3540,6 +3567,9 @@ async function showSettings() {
         reasoning: form.reasoning,
         priceInPerMTok: form.priceInPerMTok,
         priceOutPerMTok: form.priceOutPerMTok,
+        balanceUrl,
+        balanceApiKey,
+        balanceAuthScheme,
         createdAt: Date.now(),
       };
       profiles = [...profiles, profile];
@@ -3551,6 +3581,9 @@ async function showSettings() {
     // 重置为新建模式
     editingProfileId = null;
     (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = 'bearer';
     const saveBtn = document.getElementById('s-profile-save')!;
     saveBtn.textContent = tr('settings.profile.add');
     (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
@@ -3566,12 +3599,18 @@ async function showSettings() {
     (document.getElementById('s-reason') as HTMLSelectElement).value = pf.reasoning;
     (document.getElementById('s-pin') as HTMLInputElement).value = pf.priceInPerMTok;
     (document.getElementById('s-pout') as HTMLInputElement).value = pf.priceOutPerMTok;
+    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = pf.balanceUrl || '';
+    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = pf.balanceApiKey || '';
+    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = pf.balanceAuthScheme || 'bearer';
   }
 
   // 取消编辑:回到新建模式 / Cancel edit: back to create mode
   document.getElementById('s-profile-cancel')!.onclick = () => {
     editingProfileId = null;
     (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = '';
+    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = 'bearer';
     document.getElementById('s-profile-save')!.textContent = tr('settings.profile.add');
     (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
   };
