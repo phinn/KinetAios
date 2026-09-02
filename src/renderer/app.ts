@@ -1837,6 +1837,11 @@ function renderHead(conv: Conversation | undefined) {
     profileSel.value = conv.profileId || '';
     profileSel.style.display = (isDirectFam && hasProfiles) ? '' : 'none';
   }
+  // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义);气泡随会话切换关闭
+  const balBtn = document.getElementById('btn-balance') as HTMLButtonElement | null;
+  if (balBtn) balBtn.hidden = !(isDirectFam && hasProfiles);
+  const balPop = document.getElementById('balance-pop');
+  if (balPop) balPop.hidden = true;
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
@@ -4786,6 +4791,55 @@ function closeMoreMenu() {
   if (subModelInput) {
     subModelInput.addEventListener('change', () => {
       if (selectedId) api.setSubModel(selectedId, subModelInput.value.trim());
+    });
+  }
+
+  // 余额查询(composer-bar)— 查当前会话所用配置档(无则全局),结果弹气泡展示。
+  // 走同一个 get-balance IPC;显示逻辑与设置页 s-balance 一致,但独立 formatResetTime 由下方共用。
+  const balBtn = document.getElementById('btn-balance') as HTMLButtonElement | null;
+  const balPop = document.getElementById('balance-pop') as HTMLDivElement | null;
+  if (balBtn && balPop) {
+    const closePop = (e: MouseEvent): void => {
+      if (balPop.hidden) return;
+      const t = e.target as Node;
+      if (balPop.contains(t) || balBtn.contains(t)) return;
+      balPop.hidden = true;
+    };
+    document.addEventListener('click', closePop);
+    balBtn.addEventListener('click', async () => {
+      if (!balPop.hidden) { balPop.hidden = true; return; } // 再点一次 = 收起
+      balPop.hidden = false;
+      balPop.innerHTML = `<span class="bp-dim">${esc(tr('balance.loading'))}</span>`;
+      balBtn.classList.add('loading');
+      try {
+        // 查询账号跟随 composer 当前选中的配置档(实时读下拉,不等会话对象回写):
+        // 下拉可见且选中了某档 = 查该档账号;未选/无配置档 = null → 全局默认账号。
+        const psel = document.getElementById('profile-select') as HTMLSelectElement | null;
+        const pid = (psel && psel.style.display !== 'none' && psel.value) ? psel.value : null;
+        const r = await api.getBalance(pid);
+        if (r.ok && r.codingPlan) {
+          const parts: string[] = [];
+          if (r.level) parts.push(`📦 ${r.level}`);
+          if (r.tiers && r.tiers.length > 0) {
+            for (const t of r.tiers) {
+              const label = t.window === '5h' ? tr('settings.balance.window5h') : tr('settings.balance.week');
+              const resetStr = t.reset ? ` ${formatResetTime(t.reset)}` : '';
+              parts.push(`${label}: ${t.pct.toFixed(1)}%${resetStr}`);
+            }
+          } else {
+            parts.push(tr('settings.balance.noData'));
+          }
+          balPop.innerHTML = esc(parts.join('\n'));
+        } else if (r.ok) {
+          balPop.innerHTML = esc(tr('settings.balance.result', { balance: r.balance ?? '-', left: r.left ?? '-', gift: r.gift ?? '-' }));
+        } else {
+          balPop.innerHTML = `<span class="bp-err">${esc(r.message || tr('balance.fail'))}</span>`;
+        }
+      } catch (e) {
+        balPop.innerHTML = `<span class="bp-err">${esc(tr('balance.fail'))}: ${esc((e as Error).message)}</span>`;
+      } finally {
+        balBtn.classList.remove('loading');
+      }
     });
   }
 

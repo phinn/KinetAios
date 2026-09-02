@@ -173,6 +173,8 @@
               <input class="model-pill" id="submodel-input" list="model-list" data-i18n-title="model.subTitle" title="子Agent模型(空=跟随主模型)" data-i18n-placeholder="model.subPh" placeholder="子模型" />
               <datalist id="model-list"></datalist>
               <select id="profile-select" class="model-pill" style="max-width:140px;display:none" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
+              <button id="btn-balance" class="tool btn-balance" data-i18n-title="balance.title" title="查询当前配置的余额/用量" hidden><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>
+              <div id="balance-pop" class="balance-pop" hidden></div>
               <select id="ctx-mode-select" class="model-pill" style="max-width:100px" data-i18n-title="ctxMode.title" title="上下文模式"></select>
               <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
               <button class="primary send" id="btn-send" data-i18n-title="composer.send" data-i18n-aria="a11y.sendMessage" aria-label="发送" title="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
