@@ -3719,6 +3719,20 @@ async function showSettings() {
           // 普通按量计费 — 显示余额
           showMsg(tr('settings.balance.result', { balance: r.balance ?? '-', left: r.left ?? '-', gift: r.gift ?? '-' }), true);
         }
+      } else if (r.webUrl) {
+        // provider 不开放 API 余额查询 — 文本提示 + 在 s-msg 行末追加一个去网页的链接
+        showMsg(r.message || tr('balance.fail'), false);
+        const a = document.createElement('a');
+        a.href = r.webUrl;
+        a.target = '_blank';
+        a.rel = 'noopener';
+        a.className = 'bp-link';
+        a.textContent = tr('balance.openConsole');
+        const host = document.getElementById('s-msg');
+        if (host) {
+          host.appendChild(document.createTextNode(' '));
+          host.appendChild(a);
+        }
       } else {
         showMsg(r.message || tr('balance.fail'), false);
       }
@@ -4871,6 +4885,11 @@ function closeMoreMenu() {
           balPop.innerHTML = esc(parts.join('\n'));
         } else if (r.ok) {
           balPop.innerHTML = esc(tr('settings.balance.result', { balance: r.balance ?? '-', left: r.left ?? '-', gift: r.gift ?? '-' }));
+        } else if (r.webUrl) {
+          // 该 provider 不开放 API 余额查询(典型:MiniMax 普通 API key → token_type_mismatch),
+          // 给个去网页控制台的链接,总比干瞪眼强。
+          const link = esc(r.webUrl);
+          balPop.innerHTML = `<span class="bp-err">${esc(r.message || tr('balance.fail'))}<br><a href="${link}" target="_blank" rel="noopener" class="bp-link">${esc(tr('balance.openConsole'))}</a></span>`;
         } else {
           balPop.innerHTML = `<span class="bp-err">${esc(r.message || tr('balance.fail'))}</span>`;
         }

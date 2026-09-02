@@ -2209,6 +2209,8 @@ a { color: var(--accent); }
 .balance-pop { position: absolute; bottom: calc(100% + 8px); right: 0; min-width: 200px; max-width: 320px; background: var(--bg-elev, #1e1f24); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; font-size: 0.846rem; line-height: 1.5; color: var(--text); box-shadow: 0 8px 24px rgba(0,0,0,.35); z-index: 60; white-space: pre-line; }
 .balance-pop .bp-err { color: var(--danger); }
 .balance-pop .bp-dim { color: var(--text-dim); font-size: 0.769rem; }
+.bp-link { color: var(--accent, #4dabff); text-decoration: underline; margin-left: 0.25rem; }
+.bp-link:hover { color: var(--accent-hover, #228be6); }
 /* 工具按钮组与配置选择器之间的分隔线 / Divider between tools and config selectors */
 .composer-bar .bar-divider { width: 1px; height: 20px; background: var(--border); flex-shrink: 0; margin: 0 2px; }
 /* 语音输入按钮:listening 状态红点闪烁 */
