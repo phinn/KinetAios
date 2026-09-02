@@ -910,6 +910,7 @@ const ZH_CN: Dict = {
   'balance.title': '查询当前配置的余额/用量',
   'balance.unsupported': '当前端点不支持余额查询',
   'balance.fail': '查询失败',
+  'balance.openConsole': '去网页控制台查看 →',
 
   'tmgr.cancelled': '已取消',
   'tmgr.stopped': '已停止',
@@ -2003,6 +2004,7 @@ const EN: Dict = {
   'balance.title': 'Query balance/usage of current profile',
   'balance.unsupported': 'This endpoint does not support balance query',
   'balance.fail': 'Query failed',
+  'balance.openConsole': 'Open web console →',
 
   'tmgr.cancelled': 'Cancelled',
   'tmgr.stopped': 'Stopped',
@@ -3090,6 +3092,7 @@ const ZH_TW: Dict = {
   'balance.title': '查詢目前配置的餘額/用量',
   'balance.unsupported': '目前端點不支援餘額查詢',
   'balance.fail': '查詢失敗',
+  'balance.openConsole': '前往網頁控制台查看 →',
 
   'tmgr.cancelled': '已取消',
   'tmgr.stopped': '已停止',
@@ -4182,6 +4185,7 @@ const JA: Dict = {
   'balance.title': '現在の設定の残高/使用量を照会',
   'balance.unsupported': 'このエンドポイントは残高照会に対応していません',
   'balance.fail': '確認失敗',
+  'balance.openConsole': 'ウェブコンソールで確認 →',
 
   'tmgr.cancelled': 'キャンセルしました',
   'tmgr.stopped': '停止しました',
