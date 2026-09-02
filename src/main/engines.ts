@@ -79,8 +79,14 @@ export function sourceHintSection(conv?: Conversation): string {
 // conv.personaEnabled === false 时跳过(会话级开关,默认开)。
 export function personaSection(conv?: Conversation): string {
   if (conv?.personaEnabled === false) return '';
-  const persona = getSettings().persona?.trim();
+  let persona = getSettings().persona?.trim();
   if (!persona) return '';
+  // 长度护栏:画像随每个请求的 system prompt 注入,超大画像(手贴/异常生成)
+  // 会让所有会话 token 静默膨胀。截断到 16K 字符并标注,语义主体保留。
+  // Length guard: persona rides every request's system prompt; clamp oversized ones.
+  if (persona.length > 16_000) {
+    persona = persona.slice(0, 16_000) + '\n\n(画像过长已截断:原 ' + getSettings()!.persona!.length + ' 字符,请到设置精简)';
+  }
   return `\n\n# 🧬 替身画像(用户做事风格)\n以下是用户本人的做事风格画像。请在回答风格、方案选择、代码风格上尽量贴合画像描述,就像用户本人在操作一样:\n\n${persona}`;
 }
 

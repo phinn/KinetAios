@@ -1060,7 +1060,7 @@ export class TaskManager {
       const snap = snapshot();
       const recentTurns = store.loadRecentTurns(200);
       const memories = store.loadMemories();
-      const conversations = store.loadConversationsFull(); // 画像分析需要全部 turns
+      const conversations = store.loadConversations(); // 只要数量填 stats,不载 turns(loadConversationsFull 全量拉 turns 纯浪费)
 
       if (recentTurns.length === 0 && memories.length === 0) {
         return { ok: false, error: '历史数据不足,无法生成画像(需要至少一轮对话或一条记忆)' };
