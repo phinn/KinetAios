@@ -685,6 +685,17 @@ const ZH_CN: Dict = {
   'settings.profile.deleted': '已删除',
   'settings.profile.nameRequired': '请输入配置名',
   'settings.profile.emptyHint2': '暂无配置档。填好上方 API 配置后,在底部输入名称点「添加」。',
+  // 余额独立配置(profile 级,覆盖默认按 baseURL 推断)
+  'settings.profile.balanceHeader': '余额查询配置(可选)',
+  'settings.profile.balanceHint': '留空 = 按 baseURL 自动推断(智谱 / 智谱 Coding Plan / MiniMax)。当余额接口和 chat 接口不在同 host,或需要单独 admin key 时,在这里填。',
+  'settings.profile.balanceUrl': '余额 URL',
+  'settings.profile.balanceUrlPh': '如 https://api.minimaxi.com/v1/account/balance(留空 = 自动)',
+  'settings.profile.balanceKey': '余额 Key',
+  'settings.profile.balanceKeyPh': '留空 = 复用主 API Key',
+  'settings.profile.balanceAuth': 'Auth 方式',
+  'settings.profile.balanceAuthBearer': 'Bearer(OpenAI 兼容)',
+  'settings.profile.balanceAuthRaw': '裸 token(智谱 quota)',
+  'settings.profile.balanceAuthXApiKey': 'x-api-key header',
 
   // ── 实时语音助手 ──
   'settings.voice.title': '实时语音助手',
@@ -1768,6 +1779,17 @@ const EN: Dict = {
   'settings.profile.deleted': 'Deleted',
   'settings.profile.nameRequired': 'Please enter a profile name',
   'settings.profile.emptyHint2': 'No profiles yet. Configure the API above, enter a name, and click "Add".',
+  // Balance query config (profile-level, overrides default baseURL inference)
+  'settings.profile.balanceHeader': 'Balance query (optional)',
+  'settings.profile.balanceHint': 'Leave empty = auto-infer from baseURL (Zhipu / Zhipu Coding Plan / MiniMax). Fill in when the balance endpoint differs from chat or requires a separate admin key.',
+  'settings.profile.balanceUrl': 'Balance URL',
+  'settings.profile.balanceUrlPh': 'e.g. https://api.minimaxi.com/v1/account/balance (empty = auto)',
+  'settings.profile.balanceKey': 'Balance Key',
+  'settings.profile.balanceKeyPh': 'Empty = reuse main API key',
+  'settings.profile.balanceAuth': 'Auth scheme',
+  'settings.profile.balanceAuthBearer': 'Bearer (OpenAI-compatible)',
+  'settings.profile.balanceAuthRaw': 'Raw token (Zhipu quota)',
+  'settings.profile.balanceAuthXApiKey': 'x-api-key header',
 
   // ── Voice Assistant ──
   'settings.voice.title': 'Realtime Voice',
@@ -2845,6 +2867,17 @@ const ZH_TW: Dict = {
   'settings.profile.deleted': '已刪除',
   'settings.profile.nameRequired': '請輸入設定名稱',
   'settings.profile.emptyHint2': '暫無設定檔。填好上方 API 設定後，在底部輸入名稱點「新增」。',
+  // 餘額獨立設定(profile 級,覆蓋預設按 baseURL 推斷)
+  'settings.profile.balanceHeader': '餘額查詢設定（選填）',
+  'settings.profile.balanceHint': '留空 = 按 baseURL 自動推斷（智譜 / 智譜 Coding Plan / MiniMax）。當餘額介面與 chat 介面不在同 host，或需要單獨 admin key 時在此填寫。',
+  'settings.profile.balanceUrl': '餘額 URL',
+  'settings.profile.balanceUrlPh': '如 https://api.minimaxi.com/v1/account/balance（留空 = 自動）',
+  'settings.profile.balanceKey': '餘額 Key',
+  'settings.profile.balanceKeyPh': '留空 = 複用主 API Key',
+  'settings.profile.balanceAuth': 'Auth 方式',
+  'settings.profile.balanceAuthBearer': 'Bearer（OpenAI 相容）',
+  'settings.profile.balanceAuthRaw': '裸 token（智譜 quota）',
+  'settings.profile.balanceAuthXApiKey': 'x-api-key header',
 
   // ── 即時語音助手 ──
   'settings.voice.title': '即時語音助手',
@@ -3925,6 +3958,17 @@ const JA: Dict = {
   'settings.profile.deleted': '削除しました',
   'settings.profile.nameRequired': 'プロファイル名を入力してください',
   'settings.profile.emptyHint2': 'プロファイルなし。上の API 設定を入力し、名前を入れて「追加」をクリック',
+  // 残高独立設定（プロフィールレベル、baseURL 自動推測を上書き）
+  'settings.profile.balanceHeader': '残高照会設定（任意）',
+  'settings.profile.balanceHint': '空欄 = baseURL から自動推測（智譜 / 智譜 Coding Plan / MiniMax）。残高エンドポイントがチャットと異なる、または別 admin key が必要な場合はここで設定。',
+  'settings.profile.balanceUrl': '残高 URL',
+  'settings.profile.balanceUrlPh': '例: https://api.minimaxi.com/v1/account/balance（空欄 = 自動）',
+  'settings.profile.balanceKey': '残高 Key',
+  'settings.profile.balanceKeyPh': '空欄 = メイン API Key を再利用',
+  'settings.profile.balanceAuth': '認証方式',
+  'settings.profile.balanceAuthBearer': 'Bearer（OpenAI 互換）',
+  'settings.profile.balanceAuthRaw': '素のトークン（智譜 quota）',
+  'settings.profile.balanceAuthXApiKey': 'x-api-key ヘッダー',
 
   // ── リアルタイム音声アシスタント ──
   'settings.voice.title': 'リアルタイム音声',
