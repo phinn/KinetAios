@@ -680,8 +680,8 @@ export interface KinetAPI {
   testConnection(s?: AppSettings): Promise<{ ok: boolean; message: string }>;
   /** 列出本地(Ollama 等)已安装的模型 */
   listLocalModels(baseURL?: string): Promise<{ ok: boolean; models: string[]; message: string }>;
-  /** 查询智谱 API 账户状态: Coding Plan 用量或钱包余额 */
-  getBalance(): Promise<{
+  /** 查询智谱 API 账户状态: Coding Plan 用量或钱包余额(profileId = 会话级配置档,空 = 全局) */
+  getBalance(profileId?: string | null): Promise<{
     ok: boolean;
     codingPlan?: boolean;
     level?: string;                        // 套餐等级 Lite/Pro/Max

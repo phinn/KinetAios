@@ -896,7 +896,8 @@ const ZH_CN: Dict = {
   'testConn.ok': '连接成功',
   'balance.query': '查余额',
   'balance.loading': '查询中…',
-  'balance.unsupported': '当前端点不支持余额查询(仅智谱开放平台)',
+  'balance.title': '查询当前配置的余额/用量',
+  'balance.unsupported': '当前端点不支持余额查询',
   'balance.fail': '查询失败',
 
   'tmgr.cancelled': '已取消',
@@ -1977,7 +1978,8 @@ const EN: Dict = {
   'testConn.ok': 'Connection OK',
   'balance.query': 'Balance',
   'balance.loading': 'Loading…',
-  'balance.unsupported': 'This endpoint does not support balance query (Zhipu only)',
+  'balance.title': 'Query balance/usage of current profile',
+  'balance.unsupported': 'This endpoint does not support balance query',
   'balance.fail': 'Query failed',
 
   'tmgr.cancelled': 'Cancelled',
@@ -3052,7 +3054,8 @@ const ZH_TW: Dict = {
   'testConn.ok': '連線成功',
   'balance.query': '查餘額',
   'balance.loading': '查詢中…',
-  'balance.unsupported': '目前端點不支援餘額查詢(僅智譜開放平台)',
+  'balance.title': '查詢目前配置的餘額/用量',
+  'balance.unsupported': '目前端點不支援餘額查詢',
   'balance.fail': '查詢失敗',
 
   'tmgr.cancelled': '已取消',
@@ -4132,7 +4135,8 @@ const JA: Dict = {
   'testConn.ok': '接続成功',
   'balance.query': '残高確認',
   'balance.loading': '確認中…',
-  'balance.unsupported': 'このエンドポイントは残高照会に対応していません(Zhipuのみ)',
+  'balance.title': '現在の設定の残高/使用量を照会',
+  'balance.unsupported': 'このエンドポイントは残高照会に対応していません',
   'balance.fail': '確認失敗',
 
   'tmgr.cancelled': 'キャンセルしました',
