@@ -28,7 +28,7 @@ import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, val
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
-import { getSettings, saveSettings, snapshot } from './settings';
+import { getSettings, saveSettings, snapshot, balanceSnapshot } from './settings';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
@@ -1263,94 +1263,64 @@ function registerIpc(): void {
   //   2. 钱包余额: GET {baseURL}/balance (标准 OpenAI 兼容端点)
   //      - Auth 头加 Bearer 前缀
   //      - 返回 data.totalBalance / balance / giftBalance
-  // Coding Plan 用户(baseURL 含 /coding 或 /anthropic)走 1;普通 API 用户走 2。
+  // 配置路由:profile.balanceUrl 显式配 > baseURL 关键字自动推断(MiniMax / CodingPlan / 智谱)。
+  // 详见 settings.balanceSnapshot。
   ipcMain.handle('get-balance', async (_e, profileId?: string | null) => {
     // profileId: 会话级配置档 id(null/undefined = 全局 activeProfile)。与 TaskManager 的 snapshot 语义一致。
-    const snap = snapshot(profileId ?? null);
-    const apiKey = snap.apiKey;
-    const baseURL = snap.baseURL.replace(/\/+$/, '');
-    console.log('[get-balance] apiKey set:', !!apiKey, 'baseURL:', baseURL);
-    if (!apiKey) return { ok: false, message: '未设置 API Key' };
-    const isCodingPlan = baseURL.includes('/coding') || baseURL.includes('/anthropic');
-    const isMiniMax = /minimax/i.test(baseURL);
-    console.log('[get-balance] isCodingPlan:', isCodingPlan, 'isMiniMax:', isMiniMax, 'baseURL:', baseURL);
+    const bal = balanceSnapshot(profileId ?? null);
+    console.log('[get-balance] provider:', bal.provider, 'url:', bal.url, 'scheme:', bal.authScheme, 'keySet:', !!bal.apiKey);
+    if (!bal.apiKey) return { ok: false, message: '未设置 API Key' };
+    if (!bal.url) return { ok: false, message: '当前端点不支持余额查询' };
 
-    // ── MiniMax 开放平台:查余额 ──
-    // 端点 GET /v1/account/balance (api.minimaxi.com)。
-    // 探测发现只有 /v1/account/balance 返回 401(authentication_error),其他 /v1/billing|/v1/wallet 等全部 404。
-    // baseURL 自动兼容 api.minimax.chat / api.minimaxi.com / *.minimax.* 等任意 host。
-    if (isMiniMax) {
-      try {
-        const host = baseURL.toLowerCase().includes('api.minimax.chat')
-          ? 'https://api.minimaxi.com' // api.minimax.chat 是官网反向代理,不走 API;余额端点固定在 api.minimaxi.com
-          : `https://${new URL(baseURL).host}`;
-        const url = `${host}/v1/account/balance`;
-        const resp = await fetch(url, {
-          method: 'GET',
-          headers: { Authorization: `Bearer ${apiKey}` },
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (!resp.ok) {
-          if (resp.status === 401) {
-            return { ok: false, message: 'API Key 无效或已过期' };
-          }
-          if (resp.status === 403) {
-            // MiniMax 区分 admin key / 普通 key:普通 key(包括 sk-cp- coding plan 系列)无法查余额。
-            const detail = await resp.text().catch(() => '');
-            if (/token_type_mismatch|admin key/i.test(detail)) {
-              return { ok: false, message: '该 Key 类型不支持查询余额(需 admin key),请到 MiniMax 控制台查看余额' };
-            }
-            return { ok: false, message: 'API Key 无权访问余额接口,请到 MiniMax 控制台查看' };
-          }
-          const detail = await resp.text().catch(() => '');
-          return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
-        }
-        const j = await resp.json() as Record<string, any>;
-        // 探测已知错误结构 {error:{type,code,message,request_id}};成功响应结构未知,
-        // 暂按 {data:{balance,left,gift}} / {balance,left,gift} 双猜,兜底 '?'。
-        const data = (j as any)?.data ?? j ?? {};
-        return {
-          ok: true,
-          codingPlan: false,
-          provider: 'minimax',
-          balance: String(data?.balance ?? data?.totalBalance ?? data?.total ?? '?'),
-          left: String(data?.left ?? data?.available ?? data?.balance ?? '?'),
-          gift: String(data?.gift ?? data?.giftBalance ?? '0'),
-        };
-      } catch (e) {
-        return { ok: false, message: (e as Error)?.message ?? String(e) };
-      }
-    }
+    // 根据 authScheme 构造 Authorization / 自定义 header
+    const buildAuth = (key: string): Record<string, string> => {
+      if (bal.authScheme === 'raw') return { Authorization: key }; // 智谱 quota:裸 token
+      if (bal.authScheme === 'x-api-key') return { 'x-api-key': key }; // MiniMax / 部分 Anthropic 兼容
+      return { Authorization: `Bearer ${key}` }; // OpenAI 兼容标准
+    };
 
-    // ── Coding Plan:查用量 ──
-    if (isCodingPlan) {
-      // quota 端点固定在 open.bigmodel.cn 或 api.z.ai,不走 /coding 或 /anthropic 路径
-      const host = baseURL.toLowerCase().includes('bigmodel.cn') ? 'https://open.bigmodel.cn'
-        : baseURL.toLowerCase().includes('z.ai') ? 'https://api.z.ai'
-        : `https://${new URL(baseURL).host}`;
-      const url = `${host}/api/monitor/usage/quota/limit`;
-      try {
-        const resp = await fetch(url, {
-          method: 'GET',
-          // 智谱 quota API 的 Auth 头不加 Bearer 前缀(CC Switch 实测)
-          headers: { Authorization: apiKey, 'Content-Type': 'application/json', 'Accept-Language': 'en-US,en' },
-          signal: AbortSignal.timeout(15_000),
-        });
-        if (resp.status === 401 || resp.status === 403) {
+    const doFetch = async (): Promise<Response> => fetch(bal.url, {
+      method: 'GET',
+      headers: {
+        ...buildAuth(bal.apiKey),
+        'Content-Type': 'application/json',
+        'Accept-Language': 'en-US,en',
+      },
+      signal: AbortSignal.timeout(15_000),
+    });
+
+    try {
+      const resp = await doFetch();
+
+      // ── 错误统一处理 ──
+      if (!resp.ok) {
+        const detail = await resp.text().catch(() => '');
+        if (resp.status === 401) {
           return { ok: false, message: 'API Key 无效或已过期' };
         }
-        if (!resp.ok) {
-          const detail = await resp.text().catch(() => '');
-          return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
+        if (resp.status === 403) {
+          // MiniMax 区分 admin key / 普通 key:普通 key(包括 sk-cp- coding plan 系列)无法查余额。
+          if (/token_type_mismatch|admin key/i.test(detail)) {
+            return { ok: false, message: '该 Key 类型不支持查询余额(需 admin key),请到 MiniMax 控制台查看余额' };
+          }
+          return { ok: false, message: 'API Key 无权访问余额接口' };
         }
-        const j = await resp.json() as Record<string, any>;
-        // 业务级错误:{ success: false, msg: "..." }
-        if (j?.success === false) {
-          return { ok: false, message: j?.msg || 'API 返回错误' };
+        if (resp.status === 404) {
+          return { ok: false, message: '当前 API 端点不支持余额查询' };
         }
+        return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
+      }
+
+      const j = await resp.json() as Record<string, any>;
+      // 业务级错误:{ success: false, msg: "..." }
+      if (j?.success === false) {
+        return { ok: false, message: j?.msg || 'API 返回错误' };
+      }
+
+      // ── Coding Plan:解析 limits[] → tiers ──
+      if (bal.provider === 'zhipu-coding-plan') {
         const data = j?.data ?? {};
         const level = data?.level ? String(data.level) : undefined; // 套餐等级 Lite/Pro/Max
-        // 解析 limits[] → tiers
         const tiers: Array<{ window: string; pct: number; reset?: string }> = [];
         const limits = data?.limits;
         if (Array.isArray(limits)) {
@@ -1358,41 +1328,26 @@ function registerIpc(): void {
             if (!String(item?.type || '').toUpperCase().includes('TOKENS_LIMIT')) continue;
             const unit = item?.unit;
             const pct = Number(item?.percentage ?? 0);
-            const resetMs = item?.nextResetTime; // 毫秒时间戳
+            const resetMs = item?.nextResetTime;
             let window = '';
             if (unit === 3) window = '5h';
             else if (unit === 6) window = 'weekly';
-            else continue; // 只认 unit 3/6(CC Switch 同策略)
+            else continue;
             tiers.push({ window, pct, reset: resetMs ? String(resetMs) : undefined });
           }
         }
         return { ok: true, codingPlan: true, level, tiers };
-      } catch (e) {
-        return { ok: false, message: (e as Error)?.message ?? String(e) };
       }
-    }
 
-    // ── 普通智谱 API:查余额 ──
-    const url = baseURL + '/balance';
-    try {
-      const resp = await fetch(url, {
-        method: 'GET',
-        headers: { Authorization: `Bearer ${apiKey}` },
-        signal: AbortSignal.timeout(15_000),
-      });
-      if (!resp.ok) {
-        const detail = await resp.text().catch(() => '');
-        if (resp.status === 404) return { ok: false, message: '当前 API 端点不支持余额查询(仅智谱开放平台支持)' };
-        return { ok: false, message: `查询失败 (HTTP ${resp.status}): ${detail.slice(0, 200)}` };
-      }
-      const j = await resp.json() as Record<string, any>;
-      const data = j?.data ?? j;
+      // ── 标准余额接口(MiniMax / 智谱开放 / 自定义):data?.{balance,left,gift} 双兜底 ──
+      const data = (j as any)?.data ?? j ?? {};
       return {
         ok: true,
         codingPlan: false,
-        balance: String(data?.totalBalance ?? data?.total ?? '?'),
-        left: String(data?.balance ?? data?.left ?? '?'),
-        gift: String(data?.giftBalance ?? data?.gift ?? '0'),
+        provider: bal.provider,
+        balance: String(data?.totalBalance ?? data?.balance ?? data?.total ?? '?'),
+        left: String(data?.left ?? data?.available ?? data?.balance ?? '?'),
+        gift: String(data?.gift ?? data?.giftBalance ?? '0'),
       };
     } catch (e) {
       return { ok: false, message: (e as Error)?.message ?? String(e) };
