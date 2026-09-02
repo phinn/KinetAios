@@ -705,6 +705,8 @@ export interface KinetAPI {
     left?: string;
     gift?: string;
     message?: string;
+    provider?: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';  // 失败/成功都透传,前端决定 UI 路径
+    webUrl?: string;                       // provider=minimax 时,token_type_mismatch 引导用户去网页控制台看余额
   }>;
   listSkills(): Promise<SkillInfo[]>;
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
