@@ -207,6 +207,21 @@ export type ModelProfile = {
   priceInPerMTok: number;
   priceOutPerMTok: number;
   createdAt: number;
+  // ── 余额查询独立配置(留空 = 走系统默认推断 baseURL → MiniMax/智谱/Coding Plan)──
+  // 一些 provider 的余额接口和 chat 接口不在同一 host,或者需要单独的 admin key(比如
+  // MiniMax 普通 key 调不了 /v1/account/余额),给每个 profile 单独配 url/key/auth 是最干净的方案。
+  balanceUrl: string;                  // '' = 按 baseURL 自动推断
+  balanceApiKey: string;               // '' = 复用主 apiKey
+  balanceAuthScheme: 'bearer' | 'raw' | 'x-api-key'; // Auth 头格式:'bearer' = "Bearer <key>";'raw' = "<key>"(裸 token,智谱 quota 模式);'x-api-key' = 走 x-api-key header
+};
+
+/** 余额查询快照:profile 显式配置 > baseURL 自动推断。 */
+export type BalanceSnapshot = {
+  url: string;
+  apiKey: string;
+  authScheme: 'bearer' | 'raw' | 'x-api-key';
+  /** provider 标签:MiniMax / zhipu-coding-plan / zhipu-open,给 UI/日志识别用。 */
+  provider: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';
 };
 
 export type AppSettings = {
