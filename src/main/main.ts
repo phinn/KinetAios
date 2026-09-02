@@ -1236,7 +1236,10 @@ function registerIpc(): void {
       );
       return { ok: true, message: t(getSettings().lang, 'testConn.ok') };
     } catch (e) {
-      return { ok: false, message: (e as Error)?.message ?? String(e) };
+      return {
+        ok: false,
+        message: (e as Error)?.message ?? String(e),
+      };
     }
   });
 
@@ -1301,7 +1304,18 @@ function registerIpc(): void {
         if (resp.status === 403) {
           // MiniMax 区分 admin key / 普通 key:普通 key(包括 sk-cp- coding plan 系列)无法查余额。
           if (/token_type_mismatch|admin key/i.test(detail)) {
-            return { ok: false, message: '该 Key 类型不支持查询余额(需 admin key),请到 MiniMax 控制台查看余额' };
+            // 平台拒绝普通 API key 查余额(MiniMax 故意不开放),UI 给出网页入口。
+            const webUrl = bal.provider === 'minimax'
+              ? 'https://platform.minimaxi.com/console/usage'
+              : undefined;
+            return {
+              ok: false,
+              provider: bal.provider,
+              webUrl,
+              message: webUrl
+                ? '该 Key 类型不支持 API 余额查询,请到网页控制台查看用量'
+                : '该 Key 类型不支持查询余额(需 admin key)',
+            };
           }
           return { ok: false, message: 'API Key 无权访问余额接口' };
         }
