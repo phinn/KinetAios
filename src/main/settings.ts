@@ -2,7 +2,7 @@
 import path from 'node:path';
 import fs from 'node:fs';
 import { app, safeStorage } from 'electron';
-import type { AppSettings, ConfigSnapshot, EmbedSnapshot, EngineKind } from '../shared/types';
+import type { AppSettings, ConfigSnapshot, EmbedSnapshot, EngineKind, BalanceSnapshot } from '../shared/types';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
 const DEFAULTS: AppSettings = {
@@ -171,4 +171,61 @@ export function embedSnapshot(): EmbedSnapshot {
   let model = s.embedModel || 'embedding-3';
   if (baseURL.includes('localhost:11434')) model = 'nomic-embed-text';
   return { baseURL, apiKey, model };
+}
+
+// 余额查询快照:profile.balanceUrl 显式配置优先;空则按 baseURL 关键字自动推断。
+// 与 snapshot(profileId) 的 profile 解析语义一致(指定 id → activeProfileId → 全局默认)。
+export function balanceSnapshot(profileId?: string | null): BalanceSnapshot {
+  const s = getSettings();
+  const pid = profileId ?? s.activeProfileId;
+  const profile = pid ? s.modelProfiles.find((p) => p.id === pid) : null;
+
+  // 解析 baseURL 和主 apiKey(用于 profile 没配 balanceUrl 时推断 host)
+  const baseURL = (profile?.baseURL || s.baseURL).replace(/\/+$/, '');
+  const mainKey = profile?.apiKey || s.apiKey;
+
+  // 1) profile 显式配了 balanceUrl → 严格按 profile 来
+  if (profile && profile.balanceUrl) {
+    return {
+      url: profile.balanceUrl,
+      apiKey: profile.balanceApiKey || mainKey,
+      authScheme: profile.balanceAuthScheme || 'bearer',
+      provider: 'custom',
+    };
+  }
+
+  // 2) 推断模式:按 baseURL 关键字路由
+  //    - MiniMax 系列(/minimax/i):固定走 api.minimaxi.com/v1/account/balance,Auth Bearer
+  //    - 智谱 Coding Plan(baseURL 含 /coding 或 /anthropic):走 open.bigmodel.cn 或 api.z.ai 的 quota 端点,Auth 裸 token
+  //    - 智谱开放平台:走 baseURL/balance,Auth Bearer
+  //    - 其他:返回空 url,handler 会回退到"不支持"提示
+  if (/minimax/i.test(baseURL)) {
+    const host = baseURL.toLowerCase().includes('api.minimax.chat')
+      ? 'https://api.minimaxi.com'
+      : `https://${new URL(baseURL).host}`;
+    return {
+      url: `${host}/v1/account/balance`,
+      apiKey: mainKey,
+      authScheme: 'bearer',
+      provider: 'minimax',
+    };
+  }
+  if (baseURL.includes('/coding') || baseURL.includes('/anthropic')) {
+    const host = baseURL.toLowerCase().includes('bigmodel.cn') ? 'https://open.bigmodel.cn'
+      : baseURL.toLowerCase().includes('z.ai') ? 'https://api.z.ai'
+      : `https://${new URL(baseURL).host}`;
+    return {
+      url: `${host}/api/monitor/usage/quota/limit`,
+      apiKey: mainKey,
+      authScheme: 'raw',
+      provider: 'zhipu-coding-plan',
+    };
+  }
+  // 智谱开放平台(默认走 baseURL/balance);非智谱端点查不到会自然 404
+  return {
+    url: `${baseURL}/balance`,
+    apiKey: mainKey,
+    authScheme: 'bearer',
+    provider: 'zhipu-open',
+  };
 }
