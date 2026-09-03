@@ -45,6 +45,8 @@ export interface MemberRunOpts {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
   convId: string;
+  /** 跨项目记忆开关(会话级,false = member 的 recall 只看本会话) */
+  crossProjectMemory?: boolean;
   /** Team 事件回调(发射到 renderer) */
   onTeamEvent?: (memberName: string, ev: TeamEvent) => void;
 }
@@ -81,7 +83,7 @@ export async function runMember(opts: {
     snapshot: snap,
     userInput: memberPrompt,
     history,
-    ctx: { cwd, confirm, convId },
+    ctx: { cwd, confirm, convId, crossProjectMemory: opts.runOpts.crossProjectMemory },
     signal: ac.signal,
     // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
     onEvent: (e) => {

@@ -108,6 +108,7 @@ export function initStore(): void {
     ['high_fidelity', 'INTEGER'], // deprecated: 旧列,保留做 migration 兼容(见 context_mode)
     ['context_mode', 'TEXT'],     // 上下文模式:standard(默认) / hifi(不截断+大预算) / 未来可扩展
     ['persona_enabled', 'INTEGER'], // 替身画像开关:1 = 注入(默认), 0 = 本会话关闭
+    ['cross_project_memory', 'INTEGER'], // 跨项目记忆开关:1 = 全局检索(默认), 0 = 仅本会话
     ['updated_at', 'REAL'],       // 最后活动时间:每次 saveTurn / saveConversation 时更新。用于侧栏"按最近活动排序"
     ['sub_agent_model', 'TEXT'],  // 子 agent 模型(空 = 跟随主模型),每会话独立保存
     ['wecom_key', 'TEXT'],        // 企微会话来源 key(userid),用于按用户复用会话
@@ -153,20 +154,47 @@ export function appendMessage(role: string, content: string, convId?: string): v
   if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
 }
 
-export function search(q: string, limit = 20): Array<{ role: string; content: string }> {
+export function search(q: string, limit = 20, restrictConvId?: string): Array<{ role: string; content: string }> {
   const fts = sanitize(q);
   if (!fts) return [];
   try {
-    return db
-      .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
-      .all(fts, limit) as Array<{ role: string; content: string }>;
+    if (restrictConvId) {
+      // 跨项目记忆关闭:JOIN 旁表把 FTS 命中限制在本会话(rowid → conv_id 映射)。
+      const rows = db
+        .prepare(
+          `SELECT h.role, h.content FROM history h
+           JOIN history_conv hc ON hc.id = h.rowid
+           WHERE history MATCH ? AND hc.conv_id = ? ORDER BY h.rowid DESC LIMIT ?;`,
+        )
+        .all(fts, restrictConvId, limit) as Array<{ role: string; content: string }>;
+      if (rows.length) return rows;
+      // history Match 语法歧义时 SQLite 报错会走 catch;无命中则正常落空 → 继续走转义重试逻辑。
+    } else {
+      const rows = db
+        .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
+        .all(fts, limit) as Array<{ role: string; content: string }>;
+      if (rows.length) return rows;
+    }
   } catch {
     // FTS5 语法错误 → 用转义后的查询重试
-    const safe = q.replace(/["*]/g, ' ').trim();
-    if (!safe) return [];
+  }
+  const safe = q.replace(/["*]/g, ' ').trim();
+  if (!safe) return [];
+  try {
+    if (restrictConvId) {
+      return db
+        .prepare(
+          `SELECT h.role, h.content FROM history h
+           JOIN history_conv hc ON hc.id = h.rowid
+           WHERE history MATCH ? AND hc.conv_id = ? ORDER BY h.rowid DESC LIMIT ?;`,
+        )
+        .all(sanitize(safe), restrictConvId, limit) as Array<{ role: string; content: string }>;
+    }
     return db
       .prepare('SELECT role, content FROM history WHERE history MATCH ? ORDER BY rowid DESC LIMIT ?;')
       .all(sanitize(safe), limit) as Array<{ role: string; content: string }>;
+  } catch {
+    return [];
   }
 }
 
@@ -211,6 +239,7 @@ type ConvRow = {
   high_fidelity: number;
   context_mode: string | null;
   persona_enabled: number | null;
+  cross_project_memory: number | null;
   updated_at: number | null;
   sub_agent_model: string | null;
   wecom_key: string | null;
@@ -219,13 +248,14 @@ type ConvRow = {
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
        high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, persona_enabled=excluded.persona_enabled,
-       updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key;`,
+       updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key,
+       cross_project_memory=excluded.cross_project_memory;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
@@ -237,7 +267,8 @@ export function saveConversation(c: Conversation): void {
     c.updatedAt ?? Date.now(),
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
-    c.feishuKey ?? null);
+    c.feishuKey ?? null,
+    c.crossProjectMemory === false ? 0 : 1);
 }
 
 export function updateConversationMeta(c: Conversation): void {
@@ -396,6 +427,7 @@ export function loadConversations(): Conversation[] {
       profileId: r.profile_id ?? null,
       contextMode: r.context_mode === 'hifi' ? 'hifi' : (r.high_fidelity ? 'hifi' : 'standard'), // 优先读 context_mode,旧数据从 high_fidelity 迁移
       personaEnabled: r.persona_enabled === 0 ? false : true, // 0 = 显式关闭,其余(含 null/旧数据) = 默认开
+      crossProjectMemory: r.cross_project_memory === 0 ? false : true, // 0 = 显式关闭,其余 = 默认开
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,
       feishuKey: r.feishu_key ?? null,
@@ -454,8 +486,16 @@ export function memoryCount(): number {
 
 // 关键词搜索 memories 表(LIKE 模糊匹配,不依赖 FTS5 也不依赖 embedding)。
 // 无 embedding 接口时 recall_memory 用此作为记忆搜索的 fallback。
-export function searchMemories(q: string, limit = 20): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
+// restrictConvId:传入时只返回该会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时用)。
+export function searchMemories(q: string, limit = 20, restrictConvId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  if (restrictConvId) {
+    return db.prepare(
+      `SELECT id, content, conversation_id, importance FROM memories
+       WHERE content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
+       ORDER BY importance DESC, created_at DESC LIMIT ?;`,
+    ).all(like, restrictConvId, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
+  }
   return db.prepare(
     `SELECT id, content, conversation_id, importance FROM memories WHERE content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
   ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
@@ -463,8 +503,17 @@ export function searchMemories(q: string, limit = 20): Array<{ id: string; conte
 
 // 关键词搜索 memory_triples 表(subject / predicate / object 三列任意 LIKE 匹配)。
 // recall_memory 和 memoryBlock 注入时调用,让知识图谱不再只写不读。
-export function searchMemoryTriples(q: string, limit = 10): Array<{ subject: string; predicate: string; object: string }> {
+// restrictConvId:传入时只返回该会话产生或无归属(conversation_id IS NULL)的三元组。
+export function searchMemoryTriples(q: string, limit = 10, restrictConvId?: string): Array<{ subject: string; predicate: string; object: string }> {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  if (restrictConvId) {
+    return db.prepare(
+      `SELECT subject, predicate, object FROM memory_triples
+       WHERE (subject LIKE ? ESCAPE '\\' OR predicate LIKE ? ESCAPE '\\' OR object LIKE ? ESCAPE '\\')
+         AND (conversation_id IS NULL OR conversation_id = ?)
+       ORDER BY created_at DESC LIMIT ?;`,
+    ).all(like, like, like, restrictConvId, limit) as Array<{ subject: string; predicate: string; object: string }>;
+  }
   return db.prepare(
     `SELECT subject, predicate, object FROM memory_triples
      WHERE subject LIKE ? ESCAPE '\\' OR predicate LIKE ? ESCAPE '\\' OR object LIKE ? ESCAPE '\\'
@@ -638,8 +687,12 @@ export function loadEpisodicMemories(limit = 20): EpisodicMemory[] {
     .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
 }
 
-export function searchEpisodicMemories(q: string, limit = 5): EpisodicMemory[] {
+export function searchEpisodicMemories(q: string, limit = 5, restrictConvId?: string): EpisodicMemory[] {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  if (restrictConvId) {
+    return (db.prepare('SELECT id, conv_id AS convId, summary, importance, tags, created_at AS createdAt FROM episodic_memories WHERE (summary LIKE ? ESCAPE \'\\\' OR tags LIKE ? ESCAPE \'\\\') AND conv_id = ? ORDER BY importance DESC, created_at DESC LIMIT ?;').all(like, like, restrictConvId, limit) as Array<{ id: string; convId: string; summary: string; importance: number; tags: string | null; createdAt: number }>)
+      .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
+  }
   return (db.prepare('SELECT id, conv_id AS convId, summary, importance, tags, created_at AS createdAt FROM episodic_memories WHERE summary LIKE ? ESCAPE \'\\\' OR tags LIKE ? ESCAPE \'\\\' ORDER BY importance DESC, created_at DESC LIMIT ?;').all(like, like, limit) as Array<{ id: string; convId: string; summary: string; importance: number; tags: string | null; createdAt: number }>)
     .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
 }
@@ -889,10 +942,15 @@ export function setMemoryEmbedding(memoryId: string, vec: number[], model: strin
 export function deleteMemoryEmbedding(memoryId: string): void {
   if (hasTable('memory_embeddings')) db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(memoryId);
 }
-export function listMemoryEmbeddings(): MemoryEmbeddingRow[] {
-  const rows = db.prepare(
-    'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
-  ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string }>;
+export function listMemoryEmbeddings(restrictConvId?: string): MemoryEmbeddingRow[] {
+  // restrictConvId:只取本会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时)。
+  const rows = restrictConvId
+    ? db.prepare(
+        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.conversation_id IS NULL OR m.conversation_id = ?;',
+      ).all(restrictConvId) as Array<{ memoryId: string; vec: Uint8Array; content: string }>
+    : db.prepare(
+        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
+      ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string }>;
   return rows.map((r) => ({
     memoryId: r.memoryId,
     content: r.content,

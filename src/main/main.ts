@@ -1016,6 +1016,11 @@ function registerIpc(): void {
     taskManager.setPersonaEnabled(id, enabled);
     return true;
   });
+  // 会话级跨项目记忆开关(false = recall/注入只看本会话)。
+  ipcMain.handle('set-cross-project-memory', (_e, id: string, enabled: boolean) => {
+    taskManager.setCrossProjectMemory(id, enabled);
+    return true;
+  });
 
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('save-settings', (_e, s: AppSettings) => {

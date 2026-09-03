@@ -1899,6 +1899,9 @@ function renderHead(conv: Conversation | undefined) {
     // 保持 proxy 按钮隐藏 — 不覆盖 inline display:none。
     if (cmPersona) cmPersona.classList.toggle('active', enabled);
   }
+  // 跨项目记忆 toggle:同步高亮。crossProjectMemory !== false = 开(默认)。
+  const cmXpmem = document.getElementById('cm-xpmem');
+  if (cmXpmem) cmXpmem.classList.toggle('active', conv.crossProjectMemory !== false);
 }
 
 // Rebuild the engine dropdown from the toggle. Direct is always present; Claude/Codex only when
@@ -4748,6 +4751,17 @@ function closeMoreMenu() {
       personaBtn.classList.toggle('active', newEnabled);
       const cmp = document.getElementById('cm-persona');
       if (cmp) cmp.classList.toggle('active', newEnabled);
+    };
+  }
+  // 跨项目记忆 toggle:false = recall/自动注入只看本会话(防多任务线串扰)。
+  const xpmemBtn = document.getElementById('cm-xpmem');
+  if (xpmemBtn) {
+    xpmemBtn.onclick = () => {
+      if (!selectedId) return;
+      const conv = convs.get(selectedId);
+      const newEnabled = !(conv?.crossProjectMemory !== false);
+      void api.setCrossProjectMemory(selectedId, newEnabled);
+      xpmemBtn.classList.toggle('active', newEnabled);
     };
   }
   // 清除目标:发送 /goal(无参数)清除

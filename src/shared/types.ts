@@ -605,6 +605,10 @@ export type Conversation = {
   branchInfo?: BranchInfo | null; // 分支来源(null/undefined = 原创会话)
   pipelineId?: string | null; // 如果由 pipeline 创建,记录 pipeline id
   personaEnabled?: boolean; // 替身画像开关(默认 true;false = 本会话不注入 persona)
+  /** 跨项目记忆开关(默认 true;false = 本会话只看自己的数据,不检索其他会话的
+   *  历史/摘要/长期事实/图谱 —— 防多任务线串扰)。
+   *  Cross-project memory switch: false = recall + auto-injection stay session-local. */
+  crossProjectMemory?: boolean;
   /** 跨引擎切换时自动生成的上下文摘要(让新引擎知道之前做了什么)。
    *  首次 run 后消费并清除。null = 无待注入摘要。 */
   crossEngineContext?: string | null;
@@ -686,6 +690,8 @@ export interface KinetAPI {
   setConvProfile(id: string, profileId: string | null): Promise<boolean>;
   /** 切换会话的上下文模式(standard / hifi) */
   setContextMode(id: string, mode: ContextMode): Promise<boolean>;
+  /** 切换会话的跨项目记忆开关(true = 默认全局检索;false = 仅本会话) */
+  setCrossProjectMemory(id: string, enabled: boolean): Promise<boolean>;
   getSettings(): Promise<AppSettings>;
   saveSettings(s: AppSettings): Promise<boolean>;
   /** 热切换应用图标(立即生效,无需重启) */

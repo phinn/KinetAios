@@ -20,6 +20,7 @@ const api: KinetAPI = {
   setConvProfile: (id, profileId) => ipcRenderer.invoke('set-conv-profile', id, profileId),
   setContextMode: (id, mode) => ipcRenderer.invoke('set-context-mode', id, mode),
   setPersonaEnabled: (id, enabled) => ipcRenderer.invoke('set-persona-enabled', id, enabled),
+  setCrossProjectMemory: (id, enabled) => ipcRenderer.invoke('set-cross-project-memory', id, enabled),
   getSettings: () => ipcRenderer.invoke('get-settings'),
   saveSettings: (s) => ipcRenderer.invoke('save-settings', s),
   setAppIcon: (iconKey) => ipcRenderer.invoke('set-app-icon', iconKey),

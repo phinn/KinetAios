@@ -203,6 +203,15 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  // 会话级跨项目记忆开关 —— false = 检索/注入只看本会话,防止多任务线串扰。
+  setCrossProjectMemory(id: string, enabled: boolean): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.crossProjectMemory = enabled;
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   // P1: 退出前取消所有运行中会话 —— abort 触发各引擎 kill 子进程,防孤儿 CLI 继续计费。
   cancelAll(): void {
     for (const [id, c] of this.convs) {
@@ -569,6 +578,8 @@ export class TaskManager {
   // P0: Memory Blocks(结构化常驻记忆,XML-like 格式注入)+ 检索式记忆(embedding/FTS5)+ episodic 摘要。
   private async memoryBlock(conv: Conversation): Promise<string> {
     let out = '';
+    // 跨项目记忆开关:false = 自动注入也只看本会话(+无归属全局记忆),与 recall_memory 工具同规则。
+    const restrict = conv.crossProjectMemory === false ? conv.id : undefined;
 
     // ── P0: Memory Blocks(结构化核心记忆,每轮都注入,类似 Letta Memory Blocks)──
     const blocks = store.loadMemoryBlocks();
@@ -587,7 +598,9 @@ export class TaskManager {
     const query = recentUserMsgs.join(' ').slice(0, 500);
 
     // ── P1: 加权检索式记忆(importance * 0.5 + recency * 0.3 + relevance * 0.2)──
-    const recalled = await this.recallForInjection(query);
+    const recalled = restrict
+      ? await this.recallForInjectionSession(query, restrict)
+      : await this.recallForInjection(query);
     const limited = recalled.map((m) => shellSafeMemory(m.content));
 
     if (limited.length) {
@@ -599,13 +612,14 @@ export class TaskManager {
     }
     // 知识图谱三元组注入。
     if (query) {
-      const triples = store.searchMemoryTriples(query, 5);
+      const triples = store.searchMemoryTriples(query, 5, restrict);
       if (triples.length) {
         out += '\n\n## 用户知识图谱(语义关系)\n' + triples.map((t) => `- ${t.subject} —${t.predicate}→ ${t.object}`).join('\n');
       }
     }
     // ── P2: Episodic Memory(最近会话摘要,帮助回忆"上次做了什么")──
-    const episodes = store.loadEpisodicMemories(5);
+    // 跨项目记忆关闭 → 只取本会话自己的摘要(避免其他任务线的摘要混入导致指令串扰)。
+    const episodes = restrict ? store.loadEpisodicMemories(20).filter((e) => e.convId === conv.id).slice(0, 5) : store.loadEpisodicMemories(5);
     if (episodes.length) {
       out += '\n\n## 最近会话摘要\n' + episodes.map((e) => {
         const date = new Date(e.createdAt).toISOString().slice(0, 10);
@@ -622,8 +636,7 @@ export class TaskManager {
 
   // 三级回退检索:embedding cosine → FTS5 → recent-N 兜底。
   // P1: 结果按 importance * 0.5 + recency * 0.3 + relevance * 0.2 加权排序。
-  private async recallForInjection(query: string): Promise<Array<{ content: string }>> {
-    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
+  private async recallForInjection(query: string): Promise<Array<{ content: string }>> {    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
 
     // 1. embedding cosine 检索(有 embedding 且 query 非空时)→ P1 加权重排
     if (query) {
@@ -676,6 +689,24 @@ export class TaskManager {
 
     // 3. recent-N 兜底(无 query / 检索无结果时,取最新的 N 条)
     return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
+  }
+
+  // 跨项目记忆关闭时的会话内检索:逻辑同上,但所有来源限定本会话(+无归属全局记忆)。
+  // Session-restricted variant of recallForInjection — same fallback chain, filtered sources.
+  private recallForInjectionSession(query: string, convId: string): Promise<Array<{ content: string }>> {
+    const INJECT_LIMIT = 15;
+    if (query) {
+      try {
+        const embedRows = store.listMemoryEmbeddings(convId);
+        if (embedRows.length) return Promise.resolve(embedRows.slice(0, INJECT_LIMIT).map(({ content }) => ({ content })));
+      } catch { /* fallthrough */ }
+      try {
+        const ftsHits = store.searchMemories(query, INJECT_LIMIT, convId);
+        if (ftsHits.length >= 2) return Promise.resolve(ftsHits.map(({ content }) => ({ content })));
+      } catch { /* fallthrough */ }
+    }
+    // recent-N 兜底:全局记忆(无归属)仍可注入 —— 会话内无历史时冷启动需要基本上下文。
+    return Promise.resolve(store.loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === convId).slice(0, INJECT_LIMIT).map(({ content }) => ({ content })));
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).

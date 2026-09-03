@@ -150,6 +150,9 @@ export interface ToolCtx {
   teamRun?: (a: { teamId: string; memberNames: string[]; message: string }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
+  // 跨项目记忆开关:显式 false = recall_memory 只检索本会话(+无归属全局记忆)。
+  // cross-project memory switch threaded from conversation so recall can self-restrict.
+  crossProjectMemory?: boolean;
   sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
 }
 
@@ -815,19 +818,22 @@ async function ddgSearch(query: string, maxResults: number, signal: AbortSignal)
 const recallMemory: Tool = {
   name: 'recall_memory',
   readOnly: true,
-  description: '语义搜索用户的历史(长期记忆 + 会话摘要 + 历史对话)。先走 embedding cosine 召回(语义近似),无 embedding 时回退 FTS5 关键词(支持中文 bigram 分词)。搜索范围:episodic_memories(会话摘要)、memories(长期事实)、history(对话原文)、知识图谱三元组。需要回忆过去做过/聊过什么时用。',
+  description: '语义搜索用户的历史(长期记忆 + 会话摘要 + 历史对话)。先走 embedding cosine 召回(语义近似),无 embedding 时回退 FTS5 关键词(支持中文 bigram 分词)。搜索范围:episodic_memories(会话摘要)、memories(长期事实)、history(对话原文)、知识图谱三元组。需要回忆过去做过/聊过什么时用。注:当前会话若关闭了「跨项目记忆」,只返回本会话及全局(无归属)记忆。',
   parameters: {
     type: 'object',
     properties: { query: { type: 'string', description: '搜索关键词或语义描述' } },
     required: ['query'],
   },
-  async run(args) {
+  async run(args, ctx) {
     const q = (args.query as string) ?? '';
+    // 跨项目记忆开关:会话级 crossProjectMemory === false 时,检索只看本会话
+    // (conversation_id 归属本会话的 + 无归属的全局记忆)。convId 从 ctx 带入。
+    const restrict = ctx.crossProjectMemory === false ? (ctx.convId ?? undefined) : undefined;
     // 三级检索:embedding cosine(facts)→ FTS5 召回 + embedding 重排(history)→ 关键词兜底。
     // ponytail ceiling:embedding 只覆盖 memories 表(facts);history 表用 FTS5 召回 + embedding 重排(无存储,实时算)。
     try {
       // Stage 1:语义召回 facts(embedding cosine top-K)
-      const embedRows = store.listMemoryEmbeddings();
+      const embedRows = store.listMemoryEmbeddings(restrict);
       if (embedRows.length) {
         const { embed } = await import('./glm');
         const { snapshot } = await import('./settings');
@@ -852,12 +858,12 @@ const recallMemory: Tool = {
               })
               .join('\n');
             // 知识图谱三元组也参与检索
-            const tripleHits = store.searchMemoryTriples(q, 5);
+            const tripleHits = store.searchMemoryTriples(q, 5, restrict);
             const tripleBody = tripleHits.length
               ? '\n\n## 知识图谱\n' + tripleHits.map((t, i) => `[${i + 1}] ${t.subject} → ${t.predicate} → ${t.object}`).join('\n')
               : '';
             // 会话摘要也参与检索(即使 embedding 命中充足,摘要通常信息密度更高)
-            const episodeHits = store.searchEpisodicMemories(q, 5);
+            const episodeHits = store.searchEpisodicMemories(q, 5, restrict);
             const episodeBody = episodeHits.length
               ? '\n\n## 会话摘要\n' + episodeHits.map((e, i) => `[${i + 1}] ${e.summary.slice(0, 300)}`).join('\n')
               : '';
@@ -870,17 +876,17 @@ const recallMemory: Tool = {
     }
     // Stage 2:FTS5 召回(宽)+ embedding 重排(准)—— 对 history 表(对话原文)。
     // 无 embedding 或 facts 语义命中 <3 条时走此路径。
-    const memHits = store.searchMemories(q, 20);
+    const memHits = store.searchMemories(q, 20, restrict);
     // 知识图谱三元组也参与检索(之前只写不读)
-    const tripleHits = q ? store.searchMemoryTriples(q, 10) : [];
+    const tripleHits = q ? store.searchMemoryTriples(q, 10, restrict) : [];
     // FTS5 fallback —— 覆盖对话历史(role/content 全文索引)。
     // FTS5 特殊字符(" * NEAR 等)可能导致语法错误 → try/catch
     let hits: Array<{ role: string; content: string }> = [];
     try {
-      hits = store.search(q, 30); // 多取一些供重排
+      hits = store.search(q, 30, restrict); // 多取一些供重排
     } catch {
       // FTS5 语法错误 → 用转义后的查询重试
-      hits = store.search(q.replace(/["*]/g, ' '), 30);
+      hits = store.search(q.replace(/["*]/g, ' '), 30, restrict);
     }
     // 对 FTS5 结果做 embedding 重排(如果有 embedding 接口)——提升语义精确度。
     if (hits.length > 3) {
@@ -907,7 +913,7 @@ const recallMemory: Tool = {
       }
     }
     // 会话摘要(episodic_memories)— 之前完全漏搜,是召回率低的主因之一
-    const episodeHits = q ? store.searchEpisodicMemories(q, 10) : [];
+    const episodeHits = q ? store.searchEpisodicMemories(q, 10, restrict) : [];
 
     // 合并结果:episodic(会话摘要) + memories(长期记忆) + triples(知识图谱) + history(对话历史)
     const allResults: Array<{ source: string; content: string }> = [

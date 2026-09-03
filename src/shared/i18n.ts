@@ -284,6 +284,7 @@ const ZH_CN: Dict = {
   'composer.mcp': 'MCP',
   'composer.voiceChat': '语音对话',
   'composer.persona': '替身画像',
+  'composer.xpmem': '跨项目记忆',
 
   'model.title': '模型(Direct 引擎,每会话独立;回车应用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟随主模型)',
@@ -294,6 +295,7 @@ const ZH_CN: Dict = {
   'ctxMode.standard': '标准',
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身画像(开/关) — 开启后 AI 模仿你的做事风格',
+  'xpmem.toggle': '跨项目记忆(开/关) — 关闭后本会话只检索自己的历史与记忆,不串其他会话',
 
   'skill.title': '选择 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -1380,6 +1382,7 @@ const EN: Dict = {
   'composer.mcp': 'MCP',
   'composer.voiceChat': 'Voice chat',
   'composer.persona': 'Persona',
+  'composer.xpmem': 'Cross-project memory',
 
   'model.title': 'Model (Direct engine, per-session; Enter to apply)',
   'model.subTitle': 'Sub-agent model (dispatch_agent / spawn_team; empty = follow main model)',
@@ -1390,6 +1393,7 @@ const EN: Dict = {
   'ctxMode.standard': 'Standard',
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'Persona (on/off) — AI mimics your working style when on',
+  'xpmem.toggle': 'Cross-project memory (on/off) — when off, this session only searches its own history and memories',
 
   'skill.title': 'Pick a skill (Direct)',
   'skill.lbl': 'Skill',
@@ -2470,6 +2474,7 @@ const ZH_TW: Dict = {
   'composer.mcp': 'MCP',
   'composer.voiceChat': '語音對話',
   'composer.persona': '替身畫像',
+  'composer.xpmem': '跨專案記憶',
 
   'model.title': '模型(Direct 引擎,每工作階段獨立;Enter 套用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟隨主模型)',
@@ -2480,6 +2485,7 @@ const ZH_TW: Dict = {
   'ctxMode.standard': '標準',
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身畫像(開/關) — 開啟後 AI 模仿你的做事風格',
+  'xpmem.toggle': '跨專案記憶(開/關) — 關閉後本工作階段只檢索自己的歷史與記憶',
 
   'skill.title': '選擇 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -3563,6 +3569,7 @@ const JA: Dict = {
   'composer.mcp': 'MCP',
   'composer.voiceChat': '音声チャット',
   'composer.persona': 'ペルソナ',
+  'composer.xpmem': 'プロジェクト横断メモリ',
 
   'model.title': 'モデル(Direct エンジン、セッション単位、Enter で適用)',
   'model.subTitle': 'サブエージェントモデル(dispatch_agent / spawn_team 用、空 = メインモデルに追随)',
@@ -3573,6 +3580,7 @@ const JA: Dict = {
   'ctxMode.standard': '標準',
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'ペルソナ(オン/オフ) — オン時、AI があなたの作業スタイルを模倣',
+  'xpmem.toggle': 'プロジェクト横断メモリ(オン/オフ) — オフ時、このセッションは自分の履歴とメモリのみ検索',
 
   'skill.title': 'Skill を選択(Direct)',
   'skill.lbl': 'Skill',

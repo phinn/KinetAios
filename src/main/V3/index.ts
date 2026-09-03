@@ -89,6 +89,7 @@ export class DirectV3Engine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
+      crossProjectMemory: conv.crossProjectMemory !== false, // 默认开;false = recall 限本会话
       sandbox: getSettings().sandbox,
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
         // 跨引擎子任务(V3 也支持调用 claude/codex 一次性任务)
@@ -129,7 +130,7 @@ export class DirectV3Engine implements Engine {
             snapshot: subSnap,
             userInput: finalPrompt,
             history: [],
-            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, sandbox: 'readOnly' as const },
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory !== false, sandbox: 'readOnly' as const },
             signal: subAc.signal,
             maxTurns: 8,
             onEvent: (e) => {
@@ -157,6 +158,7 @@ export class DirectV3Engine implements Engine {
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
+          crossProjectMemory: conv.crossProjectMemory !== false, // 透传给 team member 的 recall
           onTeamEvent: (memberName: string, ev: import('../../shared/types').TeamEvent) => {
             emitTeamEvent(teamId, ev);
           },
