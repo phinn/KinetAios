@@ -956,6 +956,9 @@ export function rid(): string {
 
 // Apply one streaming event to a conversation's current (last) turn. Single source of truth —
 // main calls it then persists; renderer calls it to update the view. Mirrors Swift apply().
+// 单 turn traj 记录上限(条)。每条文本截断 2K,200 条 ≈ 400KB 封顶。
+const TRAJ_MAX_RECORDS = 200;
+
 export function applyEvent(conv: Conversation, ev: AgentEvent): void {
   const t = conv.turns[conv.turns.length - 1];
   if (!t) return;
@@ -990,10 +993,16 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
     case 'sessionStarted':
       conv.engineSessionId = ev.id;
       break;
-    case 'traj':
-      // 多次 runAgentLoop(v2 planner/executor/replan)各自快照 → 拼接保留全程轨迹
-      t.traj = [...(t.traj ?? []), ...ev.records];
+    case 'traj': {
+      // 多次 runAgentLoop(v2 planner/executor/replan)各自快照 → 拼接保留全程轨迹。
+      // 总量护栏:实测 977 个 turn 的 traj 占 83MB,长任务多轮快照拼接会滚雪球。
+      // 超限保留「最早的 system/context + 最新的全部」——透视价值集中在新轨迹。
+      const merged = [...(t.traj ?? []), ...ev.records];
+      t.traj = merged.length <= TRAJ_MAX_RECORDS
+        ? merged
+        : [...merged.slice(0, 4), ...merged.slice(merged.length - TRAJ_MAX_RECORDS + 4)];
       break;
+    }
     case 'done':
       conv.statusNote = null;
       t.done = true;

@@ -735,6 +735,10 @@ export async function compactHistory(
 
 // Run a turn's tool calls:连续的只读(readOnly)工具并发执行,含写的工具串行。
 // 结果按原 toolCalls 顺序回填 messages(配对靠 tool_call_id)。abort 时补"已停止"占位以维持配对。
+// UI 侧 tool result 截断上限:steps.result 会持久化入库,UI 只渲染前 4K(与 renderStep 截断对齐),
+// 全量入库曾让 history.db turns 表膨胀到 298MB。
+const STEP_RESULT_UI_LIMIT = 4000;
+
 async function runToolBatch(
   calls: { id: string; name: string; arguments: string }[],
   tools: Tool[],
@@ -771,7 +775,8 @@ async function runToolBatch(
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur }); // UI 不显示 base64
+          const uiResult = parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur }); // UI 不显示 base64
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
           const forModel = parseScreenshotResult(result) ? result : truncateForModel(result, truncateThreshold);
           return { c, result: forModel, dur };
@@ -798,7 +803,7 @@ async function runToolBatch(
       const t0 = Date.now();
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : result, durationMs: dur });
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur });
       // 截图工具(只读,但防御性处理)—— 不截断 base64
       const shot = parseScreenshotResult(result);
       if (shot) {
