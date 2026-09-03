@@ -57,6 +57,16 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 > 🐋 **想一个 key 用遍所有模型?** 选 **OrcaRouter** 预设 —— OpenAI 兼容网关,200+ 模型、自适应路由、零加价。通过[这个链接](https://www.orcarouter.ai/ref/ref_1ed8570b7192ed54082b)注册可支持本项目(5% 推荐额度)。
 
+OrcaRouter provider 配置(内置预设 `orcarouter`):
+
+```yaml
+provider: orcarouter          # 设置 → 预设 → OrcaRouter (多模型路由)
+protocol: openai              # OpenAI 兼容
+base_url: https://api.orcarouter.ai/v1
+api_key: sk-orca-...          # 在 OrcaRouter 控制台创建
+model: orcarouter/auto        # 自适应路由;也可指定 vendor/model,如 anthropic/claude-opus-4.8
+```
+
 ## Kinet 产品家族
 
 KinetAios 是 [Kinet 产品家族](https://phinn.github.io/kinetapp/index.html)的一员:

@@ -65,6 +65,16 @@ Download the latest release:
 
 > 🐋 **Want one key for every model?** Pick the **OrcaRouter** preset — an OpenAI-compatible gateway with 200+ models, adaptive routing and zero token markup. Sign up via [this link](https://www.orcarouter.ai/ref/ref_1ed8570b7192ed54082b) to support the project (5% referral credit).
 
+OrcaRouter provider configuration (built-in preset `orcarouter`):
+
+```yaml
+provider: orcarouter          # Settings → Preset → OrcaRouter (multi-model routing)
+protocol: openai              # OpenAI-compatible
+base_url: https://api.orcarouter.ai/v1
+api_key: sk-orca-...          # from the OrcaRouter console
+model: orcarouter/auto        # adaptive routing; or any vendor/model e.g. anthropic/claude-opus-4.8
+```
+
 ## Kinet Suite
 
 KinetAios is part of the [Kinet product family](https://phinn.github.io/kinetapp/index.html):
