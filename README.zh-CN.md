@@ -46,7 +46,7 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 下载最新发布:
 
-- **Windows** — [`KinetAios-Setup-3.3.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS 安装包)
+- **Windows** — [`KinetAios-Setup-3.5.0.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS 安装包)
 - **macOS** — 见 [releases](https://github.com/phinn/KinetAios/releases/latest)
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。
