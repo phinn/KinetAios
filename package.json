@@ -2,7 +2,20 @@
   "name": "kinetaios-win",
   "version": "3.5.0",
   "description": "KinetAios — Local-first multi-engine AI agent dashboard. Run Claude Code, Codex, and DirectV2 ReAct side-by-side. Long-term memory, 27 plugins, MCP integration. Windows & macOS. GPL v3.",
-  "author": "Kinet",
+  "keywords": [
+    "ai-agent",
+    "orcarouter",
+    "llm-gateway",
+    "claude-code",
+    "codex",
+    "electron",
+    "local-first"
+  ],
+  "homepage": "https://phinn.github.io/KinetAios/",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/phinn/KinetAios.git"
+  },
   "main": "dist/main/main.js",
   "scripts": {
     "build": "tsc -p tsconfig.main.json && esbuild src/renderer/app.ts src/renderer/quick.ts src/renderer/dashboard.ts src/renderer/files.ts src/renderer/arena.ts src/renderer/memory-graph.ts --bundle --format=iife --outdir=dist/renderer && node -e \"const fs=require('fs');fs.cpSync('src/renderer','dist/renderer',{recursive:true,filter:f=>f==='src/renderer'||!f.endsWith('.ts')})\" && node -e \"try{require('fs').copyFileSync('brand.json','dist/brand.json')}catch(e){}\" && node -e \"try{require('fs').cpSync('src/resources','dist/resources',{recursive:true})}catch(e){}\"",
