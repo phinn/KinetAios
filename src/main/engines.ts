@@ -480,7 +480,22 @@ class DirectEngine implements Engine {
     if (!signal.aborted) {
       // P0-fix: interStepCompactBudget 现在有显式值(30K),不再需要 || fallback。
       // v1 单轮 ReAct 结束后压缩:历史 <30K 保留尾部,超出才调 LLM 摘要。
-      conv.directHistory = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id);
+      const compacted = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id);
+      // compaction/spill:压缩丢掉的 head 原文存证入事件流。
+      // dropped 用引用集合差(memory/pinned 会被 compactHistory 重排,不能按位置 diff);
+      // 摘要失败/未超预算时 dropped 为空,appendEvent 照写(空 spill = 那轮压缩无事发生,序列完整可审计)。
+      if (conv.turns.length) {
+        const turnId = conv.turns[conv.turns.length - 1].id;
+        const kept = new Set(compacted);
+        const dropped = updated.filter((m) => !kept.has(m));
+        const summaryMsg = compacted.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+        store.appendEvent(conv.id, turnId, {
+          type: 'compaction/spill',
+          dropped,
+          summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
+        });
+      }
+      conv.directHistory = compacted;
     } else {
       conv.directHistory = updated;
     }

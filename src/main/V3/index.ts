@@ -279,7 +279,19 @@ export class DirectV3Engine implements Engine {
 
     // ── 最终上下文压缩 ──
     try {
-      conv.directHistory = await finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent, conv.id);
+      const compacted = await finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent, conv.id);
+      // compaction/spill:压缩丢掉的 head 原文存证入事件流(与 v1/v2 同构)。
+      if (conv.turns.length) {
+        const kept = new Set(compacted);
+        const dropped = updatedHistory.filter((m) => !kept.has(m));
+        const summaryMsg = compacted.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+        store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, {
+          type: 'compaction/spill',
+          dropped,
+          summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
+        });
+      }
+      conv.directHistory = compacted;
     } catch {
       conv.directHistory = updatedHistory;
     }

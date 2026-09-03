@@ -431,6 +431,23 @@ export type Turn = {
   traj?: TrajRecord[]; // 轨迹:本 turn 最终发给模型的完整 messages 快照(system+memory+history+user)
 };
 
+// ── conv_events:append-only 事件日志(参考 deepseek-harness Session)──
+// 事实源 = 事件流;turns.data 是派生快照缓存,conv_events 是"到底发生过什么"的权威存证。
+// 与 harness 的差异(有意收窄):不存 token 级 chunk(直接落 SQLite,流式碎片纯浪费),
+// done 时一条完整 assistant/message;tool result 截 4K(全文在 turns 快照)。
+// conv_events: append-only event log — the source of truth; turns.data stays as derived cache.
+export type ConvEvent =
+  | { type: 'user/message'; text: string }
+  | { type: 'assistant/message'; text: string }
+  | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number }
+  | { type: 'turn/error'; message: string }
+  | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number }
+  | { type: 'compaction/spill'; dropped: ChatMsg[]; summary?: string } // compactHistory 丢掉的 head 原文存证
+  | { type: 'context/edit'; before: number; after: number } // 手动编辑上下文:记条数变化(前后文不入事件流,见 turns.traj)
+  | { type: 'goal/set'; goal: string }
+  | { type: 'goal/clear' }
+  | { type: 'session/started'; engine: string; sessionId: string };
+
 export type ConvStatus = 'ready' | 'running';
 
 // ── AgentTeams:多 agent 团队协作 ──

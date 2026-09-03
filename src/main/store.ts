@@ -5,7 +5,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
 import type { ChatMsg, Conversation, EngineKind, Turn } from '../shared/types';
-import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind } from '../shared/types';
+import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind, type ConvEvent } from '../shared/types';
 
 let db: Database.Database;
 
@@ -35,6 +35,14 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY, conv_id TEXT, data TEXT, created_at REAL);
     CREATE INDEX IF NOT EXISTS turns_conv ON turns(conv_id);
+    CREATE TABLE IF NOT EXISTS conv_events(
+      seq INTEGER PRIMARY KEY AUTOINCREMENT,
+      conv_id TEXT NOT NULL,
+      turn_id TEXT NOT NULL,
+      type TEXT NOT NULL,
+      data TEXT,
+      ts REAL NOT NULL);
+    CREATE INDEX IF NOT EXISTS idx_events_conv ON conv_events(conv_id, seq);
     CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, content TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS memory_triples(
       id TEXT PRIMARY KEY, subject TEXT, predicate TEXT, object TEXT,
@@ -304,10 +312,30 @@ export function saveTurn(convId: string, t: Turn): void {
   touchConversation(convId);
 }
 
+// ── conv_events:append-only 事件日志 ──
+// 只增不改:写入点把事件 append 进来,快照(turns)由各写入点照旧维护。
+// 衍生统计/回放/排查全部走这里,不再依赖"快照恰好对得上"的假设。
+export function appendEvent(convId: string, turnId: string, ev: ConvEvent): void {
+  stmt('INSERT INTO conv_events(conv_id, turn_id, type, data, ts) VALUES(?,?,?,?,?);').run(
+    convId,
+    turnId,
+    ev.type,
+    JSON.stringify(ev),
+    Date.now(),
+  );
+}
+
+export function loadEvents(convId: string, afterSeq = 0): Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> {
+  const rows = stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND seq>? ORDER BY seq;')
+    .all(convId, afterSeq) as Array<{ seq: number; turn_id: string; type: string; data: string; ts: number }>;
+  return rows.map((r) => ({ seq: r.seq, turnId: r.turn_id, type: r.type, data: JSON.parse(r.data) as ConvEvent, ts: r.ts }));
+}
+
 export function deleteConversation(id: string): void {
   // 事务保证原子性 —— 崩溃不会留孤儿 turns
   db.transaction(() => {
     stmt('DELETE FROM turns WHERE conv_id=?;').run(id);
+    stmt('DELETE FROM conv_events WHERE conv_id=?;').run(id);
     stmt('DELETE FROM cost_log WHERE conv_id=?;').run(id);
     stmt('DELETE FROM memory_triples WHERE conversation_id=?;').run(id);
     // 级联清理该会话产生的记忆 + 向量 + meta(避免孤儿数据)
@@ -322,6 +350,7 @@ export function deleteConversation(id: string): void {
 
 export function deleteTurns(convId: string): void {
   stmt('DELETE FROM turns WHERE conv_id=?;').run(convId);
+  stmt('DELETE FROM conv_events WHERE conv_id=?;').run(convId);
 }
 
 function loadTurns(convId: string): Turn[] {

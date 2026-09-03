@@ -324,6 +324,7 @@ export class TaskManager {
       t.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
       t.done = true;
       conv.turns.push(t);
+      store.appendEvent(conv.id, t.id, goalText ? { type: 'goal/set', goal: goalText } : { type: 'goal/clear' });
       conv.updatedAt = Date.now(); // /goal 也算活动。
       store.saveTurn(conv.id, t);
       this.emit.emitConversation(conv);
@@ -332,6 +333,7 @@ export class TaskManager {
 
     store.appendMessage('user', prompt, conv.id);
     conv.turns.push(newTurn(prompt));
+    store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, { type: 'user/message', text: prompt });
     conv.status = 'running';
     conv.statusNote = null;
     conv.updatedAt = Date.now(); // 用户发消息也算活动,更新时间戳。
@@ -468,6 +470,7 @@ export class TaskManager {
       const continuePrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
       store.appendMessage('user', continuePrompt, conv.id);
       conv.turns.push(newTurn(continuePrompt));
+      store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, { type: 'user/message', text: continuePrompt });
       conv.status = 'running';
       this.emit.emitConversation(conv);
 
@@ -520,6 +523,8 @@ export class TaskManager {
     t.error = message;
     t.done = true;
     store.appendMessage('user', prompt, conv.id);
+    store.appendEvent(conv.id, t.id, { type: 'user/message', text: prompt });
+    store.appendEvent(conv.id, t.id, { type: 'turn/error', message });
     store.saveTurn(conv.id, t);
     this.emit.emitConversation(conv);
   }
@@ -555,21 +560,41 @@ export class TaskManager {
     switch (ev.type) {
       case 'sessionStarted':
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume
+        if (conv.engineSessionId) {
+          store.appendEvent(conv.id, t.id, { type: 'session/started', engine: conv.engine, sessionId: conv.engineSessionId });
+        }
         break;
       case 'tool':
         store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`, conv.id);
+        store.appendEvent(conv.id, t.id, {
+          type: 'tool/call',
+          name: ev.name,
+          args: ev.args,
+          result: ev.result.length > 4_000 ? ev.result.slice(0, 4_000) + '…[截断,全文见 turns 快照]' : ev.result,
+        });
         break;
       case 'cost':
         store.saveTurn(conv.id, t);
+        store.appendEvent(conv.id, t.id, {
+          type: 'turn/meta',
+          costUSD: ev.usd,
+          tokensIn: ev.tokensIn ?? ev.tokens,
+          tokensOut: ev.tokensOut ?? 0,
+        });
         break;
       case 'done':
         if (t.answer) {
           store.appendMessage('assistant', t.answer, conv.id);
           store.saveTurn(conv.id, t);
         }
+        if (t.costUSD > 0) {
+          store.appendEvent(conv.id, t.id, { type: 'turn/meta', costUSD: t.costUSD, tokensIn: t.tokensIn ?? 0, tokensOut: t.tokensOut ?? 0 });
+        }
+        store.appendEvent(conv.id, t.id, { type: 'assistant/message', text: t.answer || '' });
         break;
       case 'error':
         store.appendMessage('assistant', `⚠️ ${ev.message}`, conv.id);
+        store.appendEvent(conv.id, t.id, { type: 'turn/error', message: ev.message });
         break;
     }
   }
@@ -1040,8 +1065,12 @@ export class TaskManager {
     const conv = this.convs.get(convId);
     if (!conv) return { ok: false, error: '会话不存在' };
     if (conv.status === 'running') return { ok: false, error: '会话运行中,无法修改上下文' };
-    // 替换 directHistory + 持久化
+    // 替换 directHistory + 持久化(事件流留痕:只记条数变化,人工编辑的前后文不进事件流)
+    const before = conv.directHistory?.length ?? 0;
     conv.directHistory = history;
+    if (conv.turns.length) {
+      store.appendEvent(convId, conv.turns[conv.turns.length - 1].id, { type: 'context/edit', before, after: history.length });
+    }
     store.saveDirectHistory(conv);
     this.emit.emitConversation(conv);
     return { ok: true };
