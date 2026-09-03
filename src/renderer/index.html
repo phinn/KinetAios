@@ -81,6 +81,7 @@
         <div class="sb-more-section-label" data-i18n="sidebar.moreTools">工具</div>
         <div class="sb-more-grid">
           <button class="sb-more-item" id="m-snap"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 109-9 9 9 0 00-7.5 4"/><path d="M3 4v4h4"/><path d="M12 8v4l3 2"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreSnapshot">快照与回滚</span></button>
+          <button class="sb-more-item" id="m-events"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.35-4.35"/><path d="M8 11h6M11 8v6"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreEvents">上下文考古</span></button>
           <button class="sb-more-item" id="m-ctools"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCTools">自定义工具</span></button>
           <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
           <button class="sb-more-item" id="m-town"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTown">小镇</span></button>
@@ -414,6 +415,18 @@
         <button class="ghost" id="snap-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="mm-list" id="snap-list"></div>
+    </div>
+  </div>
+
+  <!-- 上下文考古面板(🔬):conv_events 事件流透视 —— 到底发生过什么(append-only 事实源) -->
+  <div id="events-modal" role="dialog" aria-modal="true" aria-label="上下文考古">
+    <div class="modal-card mm-card snap-card">
+      <div class="mm-head">
+        <h3 data-i18n="ev.title">上下文考古</h3>
+        <span class="mm-from" id="ev-count"></span>
+        <button class="ghost" id="ev-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
+      </div>
+      <div class="mm-list" id="ev-list"></div>
     </div>
   </div>
 

@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding, loadEvents } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -2017,9 +2017,13 @@ function registerIpc(): void {
     return results;
   });
 
+  // ── 上下文考古:读取会话的事件流(conv_events,append-only 事实源)──
+  ipcMain.handle('conv-events', (_e, convId: string, afterSeq = 0) => {
+    return loadEvents(convId, afterSeq);
+  });
+
   // ── 记忆图谱数据:返回三元组 + 节点列表(给 renderer 力导向图用) + 溯源 + 冲突 ──
-  ipcMain.handle('memory-graph-data', () => {
-    const triples = loadMemoryTriples();
+  ipcMain.handle('memory-graph-data', () => {    const triples = loadMemoryTriples();
     // 提取唯一节点(subject + object 去重)
     const nodeSet = new Set<string>();
     for (const t of triples) {

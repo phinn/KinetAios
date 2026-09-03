@@ -2791,6 +2791,11 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .mm-triple-node { padding: 2px 8px; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 4px; }
 .mm-triple-arrow { color: var(--accent); font-size: 0.923rem; }
 
+/* 上下文考古(ev)面板:事件行 —— 图标 + 标题 + 正文 */
+.ev-row { gap: 2px; }
+.ev-icon { font-size: 0.923rem; }
+.ev-body { font-size: 0.846rem; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; max-height: 120px; overflow-y: auto; user-select: text; background: var(--bg-elev); border-radius: 6px; padding: 6px 8px; }
+
 /* Memory Graph 力导向图可视化 / Force-directed graph visualization */
 .mm-graph-wrap { position: relative; width: 100%; height: 100%; min-height: 400px; overflow: hidden; border-radius: 8px; background: var(--code-bg); }
 .mm-graph-canvas { display: block; width: 100%; height: 100%; cursor: default; }

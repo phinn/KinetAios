@@ -89,6 +89,8 @@ export class DirectV3Engine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
+      // 当前轮 id:dag-executor 层间压缩的 spill 存证要用(V3 执行器内部拿不到 conv.turns)。
+      turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {

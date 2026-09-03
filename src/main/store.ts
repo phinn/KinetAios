@@ -394,7 +394,72 @@ function loadTurns(convId: string): Turn[] {
   const rows = stmt('SELECT data FROM turns WHERE conv_id=? ORDER BY created_at;').all(convId) as Array<{
     data: string;
   }>;
-  return rows.map((r) => parseTurn(r.data));
+  const cached = rows.map((r) => parseTurn(r.data));
+  // 派生化自愈:turns.data 只是缓存(事件流才是事实源)。事件流重建版只用来「补洞」——
+  // 缓存可解析的轮原样保留(它是超集:含 pinned/traj 等不入事件流的字段),
+  // 缓存缺失/残废的轮由事件流顶上;事件流覆盖不到的(阶段1之前的本地历史)也保留。
+  // Self-heal: event-rebuilt turns only fill holes; parseable cache wins (superset with pinned/traj).
+  const healed = rebuildTurnsFromEvents(convId);
+  if (healed.length === 0) return cached;
+  const merged = new Map(cached.filter((t) => t.prompt).map((t) => [t.id, t]));
+  for (const t of healed) {
+    if (!merged.get(t.id)) merged.set(t.id, t);
+  }
+  return [...merged.values()].sort((a, b) => a.ts - b.ts);
+}
+
+// ── 事件流 → turns 重建(派生缓存自愈):按 turn_id 分组 fold conv_events。
+// 用途:loadTurns 里给缓存缺失/残废的轮「补洞」(缓存可解析的轮优先,它含 pinned/traj)。
+// 能恢复的:user/message→prompt、assistant/message→answer、tool/call→steps、
+//          turn/error、turn/meta(cost/tokens)。
+// 恢复不了的:pinned(用户锁定标记,属 UI 元数据不在事件流)、traj(体积大,当时就没入事件流)。
+export function rebuildTurnsFromEvents(convId: string): Turn[] {
+  const events = loadEvents(convId);
+  if (events.length === 0) return [];
+  const byTurn = new Map<string, Turn>();
+  const order: string[] = [];
+  const ensure = (turnId: string): Turn => {
+    let t = byTurn.get(turnId);
+    if (!t) {
+      t = newTurn('');
+      t.id = turnId;
+      byTurn.set(turnId, t);
+      order.push(turnId);
+    }
+    return t;
+  };
+  for (const e of events) {
+    const t = ensure(e.turnId);
+    switch (e.data.type) {
+      case 'user/message':
+        t.prompt = e.data.text || t.prompt;
+        break;
+      case 'assistant/message':
+        t.answer = e.data.text;
+        t.done = true;
+        break;
+      case 'tool/call':
+        t.steps.push({ id: `${e.seq}`, name: e.data.name, args: e.data.args, result: e.data.result, ts: e.ts, durationMs: e.data.durationMs });
+        break;
+      case 'turn/error':
+        t.error = e.data.message;
+        t.done = true;
+        break;
+      case 'turn/meta':
+        t.costUSD = e.data.costUSD;
+        t.tokensIn = e.data.tokensIn;
+        t.tokensOut = e.data.tokensOut;
+        break;
+      // compaction/spill / context/edit / goal/* / session/*:不映射进 turns
+    }
+  }
+  // ts:按组内最早事件时间
+  const firstTs = new Map<string, number>();
+  for (const e of events) {
+    const cur = firstTs.get(e.turnId);
+    if (cur === undefined || e.ts < cur) firstTs.set(e.turnId, e.ts);
+  }
+  return order.map((id) => ({ ...byTurn.get(id)!, ts: firstTs.get(id) ?? byTurn.get(id)!.ts }));
 }
 
 export function loadConversationsFull(): Conversation[] {

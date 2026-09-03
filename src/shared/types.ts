@@ -864,6 +864,8 @@ export interface KinetAPI {
   arenaStats(): Promise<Array<{ engine: string; sessions: number; totalCost: number; totalTokens: number; totalTools: number; avgCost: number; avgTokens: number; avgTools: number; avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }> }>>;
   // ── 记忆图谱窗口 ──
   openMemoryGraph(): Promise<boolean>;
+  // ── 上下文考古:读取会话事件流(conv_events,append-only 事实源)──
+  convEvents(convId: string, afterSeq?: number): Promise<Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }>>;
   // ── 远程 Agent 直播状态 ──
   remoteAgentStatus(): Promise<{ active: boolean; events: Array<{ type: string; ts: number; text?: string; name?: string; usd?: number; tokens?: number; message?: string; prompt?: string; summary?: string }>; eventCount: number }>;
   // ── 会话交接(多机协作)──

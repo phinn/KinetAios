@@ -150,6 +150,9 @@ export interface ToolCtx {
   teamRun?: (a: { teamId: string; memberNames: string[]; message: string }) => Promise<string>;
   signal?: AbortSignal;
   convId?: string;
+  // 当前 turn id:层间压缩(dag-executor)等拿不到 conv.turns 的场景用来给 spill 存证挂轮次。
+  // current turn id — lets mid-level compaction (dag-executor) attribute spill events to a turn.
+  turnId?: string;
   // 跨项目记忆开关:显式 false = recall_memory 只检索本会话(+无归属全局记忆)。
   // cross-project memory switch threaded from conversation so recall can self-restrict.
   crossProjectMemory?: boolean;

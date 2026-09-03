@@ -4809,6 +4809,10 @@ function closeMoreMenu() {
     await renderSnapshotList();
   };
 
+  // 上下文考古面板(🔬)。
+  document.getElementById('m-events')!.onclick = () => { closeMoreMenu(); void openEventsPanel(); };
+  document.getElementById('ev-close')!.onclick = () => document.getElementById('events-modal')!.classList.remove('show');
+
   // 全局:Escape 关 modal + 点 backdrop 关 modal(三个 modal 都安全,等同 cancel)。
   document.addEventListener('keydown', (e) => {
     // 全局搜索快捷键 Ctrl+Shift+F / Cmd+Shift+F
@@ -7710,6 +7714,83 @@ function relativize(abs: string, cwd: string): string {
     return rel || abs;
   }
   return abs;
+}
+
+// ── 上下文考古面板(🔬):透视 conv_events 事件流 —— "到底发生过什么"。
+// 与 UI 时间线的区别:时间线显示 turns(派生快照),这里显示 append-only 事实源,
+// 包括 UI 看不到的:compaction/spill(压缩丢掉的原文)、goal 存证、context/edit、session/started。
+// Context archaeology: inspect the append-only event log (source of truth), incl. spills invisible in the UI.
+type ConvEventRow = { seq: number; turnId: string; type: string; data: { type: string; [k: string]: unknown }; ts: number };
+function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body: string } {
+  const d = ev as never as Record<string, unknown>;
+  switch (ev.type) {
+    case 'user/message':
+      return { icon: '👤', title: tr('ev.user'), body: String(d.text ?? '') };
+    case 'assistant/message':
+      return { icon: '🤖', title: tr('ev.assistant'), body: String(d.text ?? '') };
+    case 'tool/call': {
+      const result = String(d.result ?? '');
+      const dur = d.durationMs ? ` · ${Math.round(Number(d.durationMs))}ms` : '';
+      return { icon: '🔧', title: `${tr('ev.tool')}: ${String(d.name ?? '')}${dur}`, body: result };
+    }
+    case 'turn/error':
+      return { icon: '❌', title: tr('ev.error'), body: String(d.message ?? '') };
+    case 'turn/meta':
+      return { icon: '📊', title: tr('ev.meta'), body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
+    case 'compaction/spill': {
+      const dropped = Array.isArray(d.dropped) ? d.dropped.length : 0;
+      const summary = d.summary ? String(d.summary) : '';
+      return { icon: '🗜️', title: `${tr('ev.spill')} (${dropped} ${tr('ev.spillMsgs')})`, body: summary || `—` };
+    }
+    case 'context/edit':
+      return { icon: '✏️', title: tr('ev.ctxEdit'), body: `${d.before} → ${d.after}` };
+    case 'goal/set':
+      return { icon: '🎯', title: tr('ev.goalSet'), body: String(d.goal ?? '') };
+    case 'goal/clear':
+      return { icon: '🎯', title: tr('ev.goalClear'), body: '—' };
+    case 'goal/complete':
+      return { icon: '✅', title: tr('ev.goalComplete'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
+    case 'goal/limit':
+      return { icon: '⚠️', title: tr('ev.goalLimit'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
+    case 'session/started':
+      return { icon: '🔗', title: tr('ev.session'), body: `${d.engine} · ${String(d.sessionId ?? '').slice(0, 12)}…` };
+    default:
+      return { icon: '·', title: ev.type, body: JSON.stringify(ev).slice(0, 400) };
+  }
+}
+async function openEventsPanel(): Promise<void> {
+  const modal = document.getElementById('events-modal')!;
+  modal.classList.add('show');
+  const listEl = document.getElementById('ev-list')!;
+  const countEl = document.getElementById('ev-count')!;
+  if (!selectedId) {
+    countEl.textContent = '';
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('ev.noConv'))}</div>`;
+    return;
+  }
+  let rows: ConvEventRow[];
+  try {
+    rows = (await api.convEvents(selectedId)) as ConvEventRow[];
+  } catch (e) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(String((e as Error)?.message ?? e))}</div>`;
+    return;
+  }
+  if (!rows.length) {
+    countEl.textContent = '';
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('ev.empty'))}</div>`;
+    return;
+  }
+  countEl.textContent = `${rows.length} events`;
+  listEl.innerHTML = rows
+    .map((r) => {
+      const { icon, title, body } = evLabel({ type: r.type, ...(r.data as object) } as ConvEventRow['data']);
+      const when = new Date(r.ts).toLocaleString();
+      return `<div class="mm-row ev-row" title="seq=${r.seq} · turn=${esc(r.turnId)}">
+        <div class="mm-text"><span class="ev-icon">${icon}</span> <b>${esc(title)}</b> <span class="mm-from">${esc(when)}</span></div>
+        ${body && body !== '—' ? `<div class="ev-body">${esc(body.length > 2000 ? body.slice(0, 2000) + '…' : body)}</div>` : ''}
+      </div>`;
+    })
+    .join('');
 }
 
 const PRESETS = [

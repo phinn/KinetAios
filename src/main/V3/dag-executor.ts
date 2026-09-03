@@ -13,7 +13,7 @@
 // └────────────────────────────────────────────┘
 
 import type { AgentEvent, ChatMsg, ConfigSnapshot, EngineContextPolicy } from '../../shared/types';
-import { runAgentLoop, compactHistory } from '../AgentLoop';
+import { runAgentLoop, compactHistory, compactWithSpill } from '../AgentLoop';
 import type { Provider } from '../glm';
 import { priceUSD } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
@@ -158,12 +158,11 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
       }
     }
 
-    // 层间上下文压缩
+    // 层间上下文压缩(compaction seam:ctx.turnId 在 → spill 存证归一;不在 → 只压缩不存证)
     if (!signal.aborted && levelIdx < levels.length - 1) {
-      execHistory = await compactHistory(
-        execHistory, policy.interStepCompactBudget,
-        provider, snapshot, signal, onEvent, opts.ctx.convId,
-      );
+      execHistory = await compactWithSpill(execHistory, () =>
+        compactHistory(execHistory, policy.interStepCompactBudget, provider, snapshot, signal, onEvent, opts.ctx.convId),
+      { convId: opts.ctx.convId ?? '', turnId: opts.ctx.turnId });
     }
   }
 
