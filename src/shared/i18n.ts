@@ -896,6 +896,7 @@ const ZH_CN: Dict = {
   'preset.glm-anthropic': 'GLM 智谱 (Anthropic 协议)',
   'preset.qwen': '阿里通义 (DashScope)',
   'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
+  'preset.orcarouter': 'OrcaRouter (多模型路由)',
   'preset.custom': '自定义',
   'preset.deepseek': 'DeepSeek',
 
@@ -1991,6 +1992,7 @@ const EN: Dict = {
   'preset.glm-anthropic': 'GLM (Zhipu, Anthropic API)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
   'preset.ollama': 'Local Ollama (llama3.2 / qwen2.5 etc.)',
+  'preset.orcarouter': 'OrcaRouter (multi-model routing)',
   'preset.custom': 'Custom',
   'preset.deepseek': 'DeepSeek',
 
@@ -3079,6 +3081,7 @@ const ZH_TW: Dict = {
   'preset.glm-anthropic': 'GLM 智譜 (Anthropic 協議)',
   'preset.qwen': '阿里通義 (DashScope)',
   'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
+  'preset.orcarouter': 'OrcaRouter (多模型路由)',
   'preset.custom': '自訂',
   'preset.deepseek': 'DeepSeek',
 
@@ -4172,6 +4175,7 @@ const JA: Dict = {
   'preset.glm-anthropic': 'GLM (Zhipu, Anthropic API)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
   'preset.ollama': 'ローカル Ollama (llama3.2 / qwen2.5 等)',
+  'preset.orcarouter': 'OrcaRouter (マルチモデルルーティング)',
   'preset.custom': 'カスタム',
   'preset.deepseek': 'DeepSeek',
 
