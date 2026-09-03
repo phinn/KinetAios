@@ -55,6 +55,8 @@ Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作
 
 **首次启动**:点右上角 ⚙ → 填 **API Key**(+ Base URL / 模型,默认 GLM 智谱)→ 「测试连接」通了再发任务。
 
+> 🐋 **想一个 key 用遍所有模型?** 选 **OrcaRouter** 预设 —— OpenAI 兼容网关,200+ 模型、自适应路由、零加价。通过[这个链接](https://www.orcarouter.ai/ref/ref_1ed8570b7192ed54082b)注册可支持本项目(5% 推荐额度)。
+
 ## Kinet 产品家族
 
 KinetAios 是 [Kinet 产品家族](https://phinn.github.io/kinetapp/index.html)的一员:
@@ -143,7 +145,7 @@ npm start
 `Ctrl/Cmd+K` 浮层搜索所有会话 —— 匹配 prompt 文本、回答文本和工具输出。
 
 ### 设置(⚙️)
-- **接口**:provider(OpenAI / Anthropic)、base URL、模型、key。GLM / DeepSeek / OpenAI / Anthropic 预设。智谱余额查询按钮。safeStorage 加密存储。
+- **接口**:provider(OpenAI / Anthropic)、base URL、模型、key。GLM / DeepSeek / OrcaRouter / OpenAI / Anthropic 预设。智谱余额查询按钮。safeStorage 加密存储。
 - **行为**:shell 审批模式、sandbox 级别、计划模式、CLI 引擎开关、关窗行为(退出 / 最小化 / 托盘)。
 - **价格**:每个模型的输入/输出价格,用于成本计算。
 - **界面**:语言(English / 简体中文 / 繁體中文 / 日本語)、主题(dark / light,实时预览)。

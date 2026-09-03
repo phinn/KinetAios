@@ -63,6 +63,8 @@ Download the latest release:
 
 **First launch**: click ⚙ top-right → fill in **API Key** (+ Base URL / model; default GLM Zhipu) → once "Test connection" passes, send a task.
 
+> 🐋 **Want one key for every model?** Pick the **OrcaRouter** preset — an OpenAI-compatible gateway with 200+ models, adaptive routing and zero token markup. Sign up via [this link](https://www.orcarouter.ai/ref/ref_1ed8570b7192ed54082b) to support the project (5% referral credit).
+
 ## Kinet Suite
 
 KinetAios is part of the [Kinet product family](https://phinn.github.io/kinetapp/index.html):
@@ -151,7 +153,7 @@ Chain multiple stages, each specifying an engine + prompt. Previous stage's outp
 Overlay (`Ctrl/Cmd+K`) searches across all conversations — matches prompt text, answer text, and tool output.
 
 ### Settings (⚙️)
-- **API**: provider (OpenAI / Anthropic), base URL, model, key. GLM / DeepSeek / OpenAI / Anthropic presets. Balance check button (GLM Zhipu). Encrypted via safeStorage.
+- **API**: provider (OpenAI / Anthropic), base URL, model, key. GLM / DeepSeek / OrcaRouter / OpenAI / Anthropic presets. Balance check button (GLM Zhipu). Encrypted via safeStorage.
 - **Behavior**: shell approval mode, sandbox level, plan mode, CLI engine toggle, close behavior (quit / minimize / tray).
 - **Pricing**: per-model input/output prices for cost calculation.
 - **Interface**: language (English / 简体中文 / 繁體中文 / 日本語), theme (dark / light, live preview).
