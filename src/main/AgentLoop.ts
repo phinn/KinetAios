@@ -5,7 +5,33 @@ import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
-import { saveFact, loadFact } from './store';
+import { saveFact, loadFact, appendEvent } from './store';
+
+// ── compaction seam:压缩的唯一入口。所有引擎经此调 compactHistory,spill 存证在此归一,
+// 引擎侧不再各自复制「引用集合差 + appendEvent」逻辑(此前 v1/v2/V3 共 4 份拷贝)。
+// dropped = 引用集合差(memory/pinned 会被 compactHistory 重排,不能按位置 diff)。
+// 空 dropped 也照写:空 spill = 那轮压缩无事发生,事件序列完整可审计。
+export async function compactWithSpill(
+  before: ChatMsg[],
+  compact: () => Promise<ChatMsg[]>,
+  opts: { convId: string; turnId?: string },
+): Promise<ChatMsg[]> {
+  const after = await compact();
+  if (!opts.turnId) return after; // 拿不到 turn_id(如 V3 dag 层间压缩)→ 只压缩不存证
+  try {
+    const kept = new Set(after);
+    const dropped = before.filter((m) => !kept.has(m));
+    const summaryMsg = after.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+    appendEvent(opts.convId, opts.turnId, {
+      type: 'compaction/spill',
+      dropped,
+      summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
+    });
+  } catch {
+    // 存证失败不拖垮压缩本身(事件流是审计增强,不是功能依赖)
+  }
+  return after;
+}
 
 // ── File Operation Tracking (compaction 时程序化提取,不依赖 LLM 猜) ──
 // 借鉴 pi-main:从被 compact 的 tool_calls 中精确提取文件路径,持久化到 conv_facts,

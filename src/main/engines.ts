@@ -12,7 +12,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentEvent, AppSettings, ApprovalPolicy, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory } from './AgentLoop';
+import { runAgentLoop, compactHistory, compactWithSpill } from './AgentLoop';
 import { trackFileOpFromToolEvent } from './AgentLoop';
 import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
@@ -478,23 +478,10 @@ class DirectEngine implements Engine {
     // abort 后 signal 已触发 → compactHistory 的摘要 LLM 调用也会被 abort(catch 后丢 head)。
     // 所以 abort 路径跳过 compactHistory,直接用 finalizeAbortedMessages 返回的完整 messages。
     if (!signal.aborted) {
-      // P0-fix: interStepCompactBudget 现在有显式值(30K),不再需要 || fallback。
-      // v1 单轮 ReAct 结束后压缩:历史 <30K 保留尾部,超出才调 LLM 摘要。
-      const compacted = await compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id);
-      // compaction/spill:压缩丢掉的 head 原文存证入事件流。
-      // dropped 用引用集合差(memory/pinned 会被 compactHistory 重排,不能按位置 diff);
-      // 摘要失败/未超预算时 dropped 为空,appendEvent 照写(空 spill = 那轮压缩无事发生,序列完整可审计)。
-      if (conv.turns.length) {
-        const turnId = conv.turns[conv.turns.length - 1].id;
-        const kept = new Set(compacted);
-        const dropped = updated.filter((m) => !kept.has(m));
-        const summaryMsg = compacted.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
-        store.appendEvent(conv.id, turnId, {
-          type: 'compaction/spill',
-          dropped,
-          summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
-        });
-      }
+      // compaction seam:经唯一入口压缩,spill 存证在 AgentLoop.compactWithSpill 归一。
+      const compacted = await compactWithSpill(updated, () =>
+        compactHistory(updated, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id),
+      { convId: conv.id, turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined });
       conv.directHistory = compacted;
     } else {
       conv.directHistory = updated;

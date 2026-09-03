@@ -33,7 +33,7 @@ import {
   type Engine,
   type EngineRunOpts,
 } from '../engines';
-import { runAgentLoop, compactHistory } from '../AgentLoop';
+import { runAgentLoop, compactHistory, compactWithSpill } from '../AgentLoop';
 
 import { routeTask } from './router';
 import { executeFastPath } from './fast-path';
@@ -277,20 +277,11 @@ export class DirectV3Engine implements Engine {
       return;
     }
 
-    // ── 最终上下文压缩 ──
+    // ── 最终上下文压缩(compaction seam:spill 存证在 AgentLoop.compactWithSpill 归一)──
     try {
-      const compacted = await finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent, conv.id);
-      // compaction/spill:压缩丢掉的 head 原文存证入事件流(与 v1/v2 同构)。
-      if (conv.turns.length) {
-        const kept = new Set(compacted);
-        const dropped = updatedHistory.filter((m) => !kept.has(m));
-        const summaryMsg = compacted.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
-        store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, {
-          type: 'compaction/spill',
-          dropped,
-          summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
-        });
-      }
+      const compacted = await compactWithSpill(updatedHistory, () =>
+        finalizeContext(updatedHistory, policy, provider, snap, signal, onEvent, conv.id),
+      { convId: conv.id, turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined });
       conv.directHistory = compacted;
     } catch {
       conv.directHistory = updatedHistory;
