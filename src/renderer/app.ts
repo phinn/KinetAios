@@ -4,47 +4,6 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
-
-// ── DeepSeek 式文件路径 chip:扫 answer 容器文本节点,把文件样式的路径换成可点 chip ──
-// (点开右侧文件抽屉)。只匹配「有扩展名 + 路径分隔符」的 token,误伤率低。
-const FILE_PATH_RE = /(?:[A-Za-z]:)?(?:[.~]?[\\/][\w.-]+)+\.[A-Za-z]{1,6}(?=[\s).,;:!?]|$)/g;
-function linkifyFilePaths(root: HTMLElement): void {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const hits: { node: Text; ranges: [number, number][] }[] = [];
-  while (walker.nextNode()) {
-    const node = walker.currentNode as Text;
-    const parent = node.parentElement;
-    if (!parent || parent.closest('pre, code, a, button, .fd-chip')) continue; // 代码块/已有链接不动
-    const text = node.textContent ?? '';
-    FILE_PATH_RE.lastIndex = 0;
-    const ranges: [number, number][] = [];
-    let m: RegExpExecArray | null;
-    while ((m = FILE_PATH_RE.exec(text))) {
-      // 至少含一个路径分隔符(纯 "readme.md" 单词不算)
-      if (m[0].includes('/') || m[0].includes('\\')) ranges.push([m.index, m.index + m[0].length]);
-    }
-    if (ranges.length) hits.push({ node, ranges });
-  }
-  for (const { node, ranges } of hits) {
-    const text = node.textContent ?? '';
-    const frag = document.createDocumentFragment();
-    let pos = 0;
-    for (const [a, b] of ranges) {
-      if (a > pos) frag.appendChild(document.createTextNode(text.slice(pos, a)));
-      const p = text.slice(a, b);
-      const chip = document.createElement('button');
-      chip.className = 'fd-chip inline-path';
-      chip.title = p;
-      const short = p.split(/[\\/]/).pop() || p;
-      chip.innerHTML = `<span class="fd-chip-name">${short.replace(/&/g, '&amp;').replace(/</g, '&lt;')}</span>`;
-      chip.onclick = () => { void fileDrawer?.open(p); };
-      frag.appendChild(chip);
-      pos = b;
-    }
-    if (pos < text.length) frag.appendChild(document.createTextNode(text.slice(pos)));
-    node.parentNode?.replaceChild(frag, node);
-  }
-}
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
 import { mountFileDrawer, type FileDrawer } from './file-drawer';
@@ -112,7 +71,7 @@ let editingProfileId: string | null = null;
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
 let fileDrawer: FileDrawer | null = null; // 右侧文件抽屉(聊天流点文件 chip 展开)
-let activeTab: 'chat' | 'git' | 'rules' | 'preview' | 'team' | 'traj' = 'chat';
+let activeTab: 'chat' | 'git' | 'rules' | 'preview' | 'team' = 'chat';
 // git tab 状态:最近一次 snapshot + 当前右侧视图(history 默认 / 点文件或提交切到 diff)。
 // view.contentHTML 是已转义 + 按行包好 .d-add/.d-del/.d-hunk 的安全 HTML。
 let gitState: { snapshot?: GitSnapshot; view: { kind: 'history' } | { kind: 'diff'; title: string; contentHTML: string }; lastCwd: string; busy: boolean } = {
@@ -777,12 +736,9 @@ async function deleteConv(id: string) {
 
 // ---------- main pane ----------
 // 聊天 tab 切换(对话 / 文件 / Git / 规则)。文件 tab 首次点才挂 mountFilesPane;切会话后切回任一 tab 都同步 cwd。
-function showTab(tab: 'chat' | 'git' | 'rules' | 'preview' | 'team' | 'traj'): void {
+function showTab(tab: 'chat' | 'git' | 'rules' | 'preview' | 'team'): void {
   if (activeTab === tab) return;
   activeTab = tab;
-  document.getElementById('tab-traj')!.classList.toggle('active', tab === 'traj');
-  document.getElementById('chat-traj-pane')!.hidden = tab !== 'traj';
-  if (tab === 'traj') renderTrajPane();
   document.getElementById('tab-chat')!.classList.toggle('active', tab === 'chat');
   document.getElementById('tab-git')!.classList.toggle('active', tab === 'git');
   document.getElementById('tab-rules')!.classList.toggle('active', tab === 'rules');
@@ -2037,7 +1993,6 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       // 非流式同样截断:UI 层防御超长 answer(见 clipForUi 注释)。
       ans.innerHTML = md(clipForUi(t.answer));
       // 非流式:给每个代码块挂复制按钮 / Non-streaming: attach copy button to each code block.
-      linkifyFilePaths(ans); // markdown 里的文件路径 → 可点 chip(打开右侧抽屉)
       ans.querySelectorAll('.code-block').forEach(cb => {
         const btn = document.createElement('button');
         btn.className = 'code-copy ghost';
@@ -2140,70 +2095,6 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   return wrap;
 }
 
-// ── Trajectory Tab:整会话轨迹透视(按 turn 分组,复用 inspector 的行渲染逻辑) ──
-function renderTrajPane(): void {
-  const conv = selectedId ? convs.get(selectedId) : undefined;
-  const list = document.getElementById('traj-pane-list');
-  if (!list) return;
-  list.innerHTML = '';
-  if (!conv || !conv.turns.some(t => t.traj?.length)) {
-    list.innerHTML = '<div class="traj-empty">当前会话还没有轨迹记录。轨迹在对话运行时生成:透视模型真实看到的完整 messages(system / 记忆注入 / 压缩摘要 / 工具往返)。</div>';
-    return;
-  }
-  conv.turns.forEach((t, i) => {
-    if (!t.traj?.length) return;
-    const group = document.createElement('details');
-    group.className = 'traj-turn-group';
-    const preview = (t.prompt || '').replace(/\s+/g, ' ').slice(0, 60);
-    group.innerHTML = `<summary><span class="traj-turn-idx">Turn ${i + 1}</span><span class="traj-turn-preview">${esc(preview)}${(t.prompt || '').length > 60 ? '…' : ''}</span><span class="traj-turn-n">${t.traj.length} 条</span></summary>`;
-    const inner = document.createElement('div');
-    inner.className = 'traj-turn-records';
-    t.traj.forEach((r, idx) => {
-      const badge = TRAJ_BADGE[r.kind] ?? { label: r.kind, cls: 't-user' };
-      const row = document.createElement('details');
-      row.className = 'traj-row ' + badge.cls;
-      const rp = r.text.replace(/\s+/g, ' ').slice(0, 160);
-      row.innerHTML = `<summary><span class="traj-idx">#${idx + 1}</span><span class="traj-badge">${badge.label}</span><span class="traj-preview">${esc(rp)}${r.text.length > 160 ? '…' : ''}</span></summary><pre class="traj-full"></pre>`;
-      (row.querySelector('.traj-full') as HTMLElement).textContent = r.text;
-      inner.appendChild(row);
-    });
-    group.appendChild(inner);
-    list.appendChild(group);
-  });
-}
-
-// ── DeepSeek 式底部统计条:当前会话 turns/steps/LLM 耗时/Tool 耗时/吞吐 ──
-// 数据全部来自已有 Turn 字段(steps[].durationMs 求和 = Tool 时间;turn 时间差 − tool ≈ LLM 时间)。
-function renderConvStats(conv: Conversation): void {
-  const bar = document.getElementById('conv-stats-bar');
-  if (!bar) return;
-  const turns = conv.turns;
-  if (!turns.length) { bar.hidden = true; return; }
-  let steps = 0, toolMs = 0, tokIn = 0, tokOut = 0, cost = 0, spanMs = 0;
-  for (let ti = 0; ti < turns.length; ti++) {
-    const t = turns[ti];
-    steps += t.steps.length;
-    for (const st of t.steps) toolMs += st.durationMs ?? 0;
-    tokIn += t.tokensIn; tokOut += t.tokensOut; cost += t.costUSD;
-    // 索引循环替代 turns.indexOf(t)(O(n²) → O(n);3000+ turns 时 indexOf 每 turn 线性扫会卡 UI)
-    const nextTs = (ti < turns.length - 1) ? turns[ti + 1].ts : (t.done ? t.ts + 30000 : Date.now());
-    spanMs += Math.max(0, Math.min(nextTs - t.ts, 3600_000)); // 单 turn 上限 1h 防异常间隔
-  }
-  const llmMs = Math.max(0, spanMs - toolMs);
-  const totalTok = tokIn + tokOut;
-  const tps = llmMs > 0 && tokOut > 0 ? (tokOut / (llmMs / 1000)).toFixed(1) : null;
-  const fmtMs = (ms: number) => ms >= 60000 ? `${Math.floor(ms / 60000)}m${Math.round((ms % 60000) / 1000)}s` : `${(ms / 1000).toFixed(1)}s`;
-  bar.innerHTML =
-    `<span class="cs-item">${turns.length} turns</span><span class="cs-sep"></span>` +
-    `<span class="cs-item">${steps} steps</span><span class="cs-sep"></span>` +
-    `<span class="cs-item" title="LLM 推理总耗时(≈会话时长−工具耗时)">LLM ${fmtMs(llmMs)}</span><span class="cs-sep"></span>` +
-    `<span class="cs-item" title="工具执行总耗时">Tool ${fmtMs(toolMs)}</span>` +
-    (tps ? `<span class="cs-sep"></span><span class="cs-item" title="输出吞吐(按 LLM 净时长估)">${tps} tok/s</span>` : '') +
-    (totalTok > 0 ? `<span class="cs-sep"></span><span class="cs-item">${totalTok > 1000 ? (totalTok / 1000).toFixed(1) + 'k' : totalTok} tok</span>` : '') +
-    (cost > 0 ? `<span class="cs-sep"></span><span class="cs-item">$\${cost < 0.01 ? cost.toFixed(4) : cost.toFixed(2)}</span>` : '');
-  bar.hidden = false;
-}
-
 // ── Trajectory 检查器 ──
 // 参考 dsh Trajectory:按记录类型着色,展开看完整内容。透视"模型到底看到了什么"。
 const TRAJ_BADGE: Record<string, { label: string; cls: string }> = {
@@ -2266,7 +2157,7 @@ function buildStepsEl(steps: { name: string; args: string; result: string }[], e
   const wrap = document.createElement('details');
   wrap.className = 'steps-wrap';
   if (expanded) wrap.open = true;
-  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count"><b class="steps-n">${steps.length}</b> ${steps.length === 1 ? 'tool call' : 'tool calls'} · ${stepsSummaryLabel(steps)}</span></summary>`;
+  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${stepsSummaryLabel(steps)}</span></summary>`;
   const inner = document.createElement('div');
   inner.className = 'steps';
   for (const s of steps) inner.appendChild(renderStep(s));
@@ -2278,7 +2169,9 @@ function buildStepsEl(steps: { name: string; args: string; result: string }[], e
 // Summary label for steps; shared by full build and streaming incremental append.
 function stepsSummaryLabel(steps: { name: string }[]): string {
   const unique = [...new Set(steps.map(s => s.name))];
-  return esc(unique.slice(0, 3).join(' · ')) + (unique.length > 3 ? ' …' : '');
+  return steps.length === 1
+    ? esc(unique[0])
+    : `${steps.length} 步 (${esc(unique.slice(0, 3).join(' · '))}${unique.length > 3 ? '…' : ''})`;
 }
 
 function renderStep(s: { name: string; args: string; result: string }): HTMLElement {
@@ -2375,7 +2268,6 @@ function updateLastTurnIncremental(): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   if (!conv || !conv.turns.length) { renderMain(); return; }
   renderHead(conv);
-  renderConvStats(conv);
   const lastTurnIdx = conv.turns.length - 1;
   // 找到当前 streaming-answer 所在 turn(最近的那个 .turn)
   const ansEl = document.getElementById('streaming-answer');
@@ -2408,7 +2300,7 @@ function updateLastTurnIncremental(): void {
         inner.appendChild(frag);
         // 概要计数同步(steps.length 变化)
         const cnt = oldSteps.querySelector('.steps-count');
-        if (cnt) cnt.innerHTML = `<b class="steps-n">${t.steps.length}</b> ${t.steps.length === 1 ? 'tool call' : 'tool calls'} · ${stepsSummaryLabel(t.steps)}`;
+        if (cnt) cnt.textContent = `🔧 ${stepsSummaryLabel(t.steps)}`;
       } else if (!inner) {
         const fresh = buildStepsEl(t.steps, true);
         oldSteps.replaceWith(fresh);
@@ -4763,27 +4655,7 @@ function closeMoreMenu() {
   document.addEventListener('scroll', closeAllCtxMenus, true);
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
-  // ── 内联权限模式(DeepSeek 式:模式切换零跳转) ──
-  const permSel = document.getElementById('perm-mode-select') as HTMLSelectElement;
-  const planBtn = document.getElementById('btn-plan-quick') as HTMLButtonElement;
-  void api.getSettings().then((st) => {
-    permSel.value = st.sandbox ?? 'workspaceWrite';
-    planBtn.classList.toggle('plan-on', !!st.planMode);
-    planBtn.classList.toggle('plan-off', !st.planMode);
-  });
-  permSel.onchange = async () => {
-    const cur = await api.getSettings();
-    await api.saveSettings({ ...cur, sandbox: permSel.value as AppSettings['sandbox'] });
-  };
-  planBtn.onclick = async () => {
-    const cur = await api.getSettings();
-    const next = !cur.planMode;
-    await api.saveSettings({ ...cur, planMode: next });
-    planBtn.classList.toggle('plan-on', next);
-    planBtn.classList.toggle('plan-off', !next);
-  };
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');
-  document.getElementById('tab-traj')!.onclick = () => showTab('traj');
   document.getElementById('tab-files')!.onclick = () => toggleFilesDrawer();
   document.getElementById('btn-files-close')!.onclick = () => toggleFilesDrawer(false);
   // 文件抽屉左缘拖拽调宽(chip 抽屉同款交互),松手持久化

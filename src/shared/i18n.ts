@@ -99,7 +99,6 @@ const ZH_CN: Dict = {
   'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '对话',
-  'tabs.traj': '轨迹',
   'tabs.files': '文件',
   'tabs.git': 'Git',
   'tabs.rules': '规则',
@@ -1195,7 +1194,6 @@ const EN: Dict = {
   'head.ctxInspectorBtn': 'Context',
 
   'tabs.chat': 'Chat',
-  'tabs.traj': 'Trajectory',
   'tabs.files': 'Files',
   'tabs.git': 'Git',
   'tabs.rules': 'Rules',
@@ -2291,7 +2289,6 @@ const ZH_TW: Dict = {
   'head.ctxInspectorBtn': '上下文',
 
   'tabs.chat': '對話',
-  'tabs.traj': '軌跡',
   'tabs.files': '檔案',
   'tabs.git': 'Git',
   'tabs.rules': '規則',
@@ -3379,7 +3376,6 @@ const JA: Dict = {
   'head.ctxInspectorBtn': 'コンテキスト',
 
   'tabs.chat': 'チャット',
-  'tabs.traj': 'トラジェクトリ',
   'tabs.files': 'ファイル',
   'tabs.git': 'Git',
   'tabs.rules': 'ルール',
