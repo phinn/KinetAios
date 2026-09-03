@@ -826,9 +826,8 @@ const recallMemory: Tool = {
   },
   async run(args, ctx) {
     const q = (args.query as string) ?? '';
-    // 跨项目记忆开关:会话级 crossProjectMemory === false 时,检索只看本会话
-    // (conversation_id 归属本会话的 + 无归属的全局记忆)。convId 从 ctx 带入。
-    const restrict = ctx.crossProjectMemory === false ? (ctx.convId ?? undefined) : undefined;
+    // 跨项目记忆开关:仅 crossProjectMemory === true 时全局检索;否则(默认)只看本会话
+    const restrict = ctx.crossProjectMemory === true ? undefined : (ctx.convId ?? undefined);
     // 三级检索:embedding cosine(facts)→ FTS5 召回 + embedding 重排(history)→ 关键词兜底。
     // ponytail ceiling:embedding 只覆盖 memories 表(facts);history 表用 FTS5 召回 + embedding 重排(无存储,实时算)。
     try {

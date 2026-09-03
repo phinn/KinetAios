@@ -310,7 +310,7 @@ class DirectEngine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
-      crossProjectMemory: conv.crossProjectMemory !== false, // 默认开;false = recall 限本会话
+      crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
       // P2:AgentTeams 调度。broadcast 时并行,team_send 时单 member。结果拼成文本返回给主 LLM。
       teamRun: async ({ teamId, memberNames, message }) => {
@@ -327,7 +327,7 @@ class DirectEngine implements Engine {
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
-          crossProjectMemory: conv.crossProjectMemory !== false, // 透传给 team member 的 recall
+          crossProjectMemory: conv.crossProjectMemory === true, // 透传给 team member 的 recall(默认关)
           onTeamEvent: (memberName: string, ev: import('../shared/types').TeamEvent) => {
             emitTeamEvent(teamId, ev);
           },
@@ -417,7 +417,7 @@ class DirectEngine implements Engine {
             snapshot: subSnap,
             userInput: finalPrompt,
             history: [], // P1:scope 切片已合并到 userInput,这里保持空 history
-            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory !== false },
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory === true },
             signal: subAc.signal,
             // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
             onEvent: (e) => {

@@ -579,7 +579,7 @@ export class TaskManager {
   private async memoryBlock(conv: Conversation): Promise<string> {
     let out = '';
     // 跨项目记忆开关:false = 自动注入也只看本会话(+无归属全局记忆),与 recall_memory 工具同规则。
-    const restrict = conv.crossProjectMemory === false ? conv.id : undefined;
+    const restrict = conv.crossProjectMemory === true ? undefined : conv.id;
 
     // ── P0: Memory Blocks(结构化核心记忆,每轮都注入,类似 Letta Memory Blocks)──
     const blocks = store.loadMemoryBlocks();

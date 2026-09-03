@@ -1206,7 +1206,7 @@ ${failedDetail || '  (无)'}
       confirm: this.confirm,
       signal,
       convId: conv.id,
-      crossProjectMemory: conv.crossProjectMemory !== false, // 默认开;false = recall 限本会话
+      crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
       // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
       teamRun: async ({ teamId, memberNames, message }) => {
@@ -1223,7 +1223,7 @@ ${failedDetail || '  (无)'}
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
-          crossProjectMemory: conv.crossProjectMemory !== false, // 透传给 team member 的 recall
+          crossProjectMemory: conv.crossProjectMemory === true, // 透传给 team member 的 recall(默认关)
           onTeamEvent: (memberName: string, ev: import('../shared/types').TeamEvent) => {
             emitTeamEvent(teamId, ev);
           },
@@ -1314,7 +1314,7 @@ ${failedDetail || '  (无)'}
             snapshot: subSnap,
             userInput: finalPrompt,
             history: [], // P1:scope 已合并到 userInput,保持空 history
-            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory !== false, sandbox: 'readOnly' as const },
+            ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory === true, sandbox: 'readOnly' as const },
             signal: subAc.signal,
             // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
             onEvent: (e) => {

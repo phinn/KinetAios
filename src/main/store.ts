@@ -108,7 +108,7 @@ export function initStore(): void {
     ['high_fidelity', 'INTEGER'], // deprecated: 旧列,保留做 migration 兼容(见 context_mode)
     ['context_mode', 'TEXT'],     // 上下文模式:standard(默认) / hifi(不截断+大预算) / 未来可扩展
     ['persona_enabled', 'INTEGER'], // 替身画像开关:1 = 注入(默认), 0 = 本会话关闭
-    ['cross_project_memory', 'INTEGER'], // 跨项目记忆开关:1 = 全局检索(默认), 0 = 仅本会话
+    ['cross_project_memory', 'INTEGER'], // 跨项目记忆开关:1 = 全局检索, 0/NULL = 仅本会话(默认)
     ['updated_at', 'REAL'],       // 最后活动时间:每次 saveTurn / saveConversation 时更新。用于侧栏"按最近活动排序"
     ['sub_agent_model', 'TEXT'],  // 子 agent 模型(空 = 跟随主模型),每会话独立保存
     ['wecom_key', 'TEXT'],        // 企微会话来源 key(userid),用于按用户复用会话
@@ -268,7 +268,7 @@ export function saveConversation(c: Conversation): void {
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
     c.feishuKey ?? null,
-    c.crossProjectMemory === false ? 0 : 1);
+    c.crossProjectMemory === true ? 1 : 0);
 }
 
 export function updateConversationMeta(c: Conversation): void {
@@ -427,7 +427,7 @@ export function loadConversations(): Conversation[] {
       profileId: r.profile_id ?? null,
       contextMode: r.context_mode === 'hifi' ? 'hifi' : (r.high_fidelity ? 'hifi' : 'standard'), // 优先读 context_mode,旧数据从 high_fidelity 迁移
       personaEnabled: r.persona_enabled === 0 ? false : true, // 0 = 显式关闭,其余(含 null/旧数据) = 默认开
-      crossProjectMemory: r.cross_project_memory === 0 ? false : true, // 0 = 显式关闭,其余 = 默认开
+      crossProjectMemory: r.cross_project_memory === 1, // 1 = 开;NULL/0 = 关(每频道默认关)
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,
       feishuKey: r.feishu_key ?? null,
