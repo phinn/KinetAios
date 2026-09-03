@@ -5,6 +5,7 @@
 AI agent dashboard | local-first AI | multi-engine agent | Claude Code GUI | Codex GUI |
 ReAct agent | AI coding assistant | MCP client | Electron AI | TypeScript AI agent |
 Ollama desktop | AMD Radeon AI | offline AI agent | open source AI agent |
+OrcaRouter | orcarouter provider | orcarouter preset | api.orcarouter.ai | LLM gateway |
 AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 -->
 
@@ -24,6 +25,8 @@ AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 **A local-first, multi-engine AI agent dashboard.** Run **Direct (V1 ReAct / V2 / V3 DAG-parallel), Claude Code, Codex, and DeepSeek Harness** side-by-side from one window. Local SQLite history + long-term memory that extracts durable facts automatically. **No account, no relay server — your LLM API key is the only auth.**
 
 English | [简体中文](README.zh-CN.md)
+
+> 🔌 **Works with [OrcaRouter](https://www.orcarouter.ai)** — built-in provider preset (OpenAI-compatible gateway, 200+ models, adaptive routing). See the [integration guide](docs/orcarouter.md) for the provider configuration (base URL `https://api.orcarouter.ai/v1`, model `orcarouter/auto`).
 
 ---
 

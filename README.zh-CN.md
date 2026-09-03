@@ -4,10 +4,13 @@
 <!--
 AI agent 仪表盘 | 本地优先 AI | 多引擎 Agent | Claude Code 界面 | Codex 界面 |
 ReAct 循环 | AI 编程助手 | MCP 客户端 | Electron AI | TypeScript Agent |
-Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作台
+Ollama 桌面端 | AMD Radeon AI | 离线 AI Agent | 开源 AI Agent | AI 工作台 |
+OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 -->
 
 [English](README.md) | 简体中文
+
+> 🔌 **已接入 [OrcaRouter](https://www.orcarouter.ai)** —— 内置 provider 预设(OpenAI 兼容网关,200+ 模型,自适应路由)。provider 配置(base URL `https://api.orcarouter.ai/v1`、模型 `orcarouter/auto`)见[集成文档](docs/orcarouter.md)。
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
