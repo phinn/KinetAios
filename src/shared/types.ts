@@ -446,6 +446,8 @@ export type ConvEvent =
   | { type: 'context/edit'; before: number; after: number } // 手动编辑上下文:记条数变化(前后文不入事件流,见 turns.traj)
   | { type: 'goal/set'; goal: string }
   | { type: 'goal/clear' }
+  | { type: 'goal/complete'; rounds: number } // goal loop 检测到 [GOAL_COMPLETE]:持久存证(rounds = 实际推进的轮数)
+  | { type: 'goal/limit'; rounds: number } // goal loop 触及最大轮数上限未完成:持久存证
   | { type: 'session/started'; engine: string; sessionId: string };
 
 export type ConvStatus = 'ready' | 'running';

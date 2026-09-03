@@ -331,6 +331,43 @@ export function loadEvents(convId: string, afterSeq = 0): Array<{ seq: number; t
   return rows.map((r) => ({ seq: r.seq, turnId: r.turn_id, type: r.type, data: JSON.parse(r.data) as ConvEvent, ts: r.ts }));
 }
 
+// ── Goal 投影(参考 deepseek-harness goal 域):goal 状态 = 事件日志的严格 fold,不单独建表。
+// goal/set|clear|complete|limit + user/message 是唯一事实源;conversations.goal 列是热缓存(写路径双写)。
+// rounds:当前目标下被 admitted 的 user/message 数(goal loop 自动 continue 也算 —— 它们同样在推进目标)。
+// 每次从头全量重放(不用 afterSeq 增量 —— 增量无法跨段携带 rounds/phase,且单会话事件量级小,重放成本可忽略)。
+export type GoalProjection = {
+  goal: string | null;              // 当前目标(null = 无活跃目标)
+  phase: 'active' | 'complete' | 'limit' | 'cleared';
+  rounds: number;                   // 当前目标下已推进的轮数
+};
+export function projectGoal(convId: string): GoalProjection {
+  const events = loadEvents(convId);
+  const p: GoalProjection = { goal: null, phase: 'cleared', rounds: 0 };
+  for (const e of events) {
+    switch (e.data.type) {
+      case 'goal/set':
+        p.goal = e.data.goal;
+        p.phase = 'active';
+        p.rounds = 0;
+        break;
+      case 'goal/clear':
+        p.goal = null;
+        p.phase = 'cleared';
+        break;
+      case 'goal/complete':
+        p.phase = 'complete';
+        break;
+      case 'goal/limit':
+        p.phase = 'limit';
+        break;
+      case 'user/message':
+        if (p.goal && p.phase === 'active') p.rounds++;
+        break;
+    }
+  }
+  return p;
+}
+
 export function deleteConversation(id: string): void {
   // 事务保证原子性 —— 崩溃不会留孤儿 turns
   db.transaction(() => {

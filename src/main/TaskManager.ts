@@ -448,6 +448,9 @@ export class TaskManager {
   private async runGoalLoop(conv: Conversation, id: string, initialAc: AbortController): Promise<void> {
     const GOAL_MAX_ITERATIONS = 20; // 防止无限循环
     this.goalLoopStopped.delete(id); // 清除上次的取消标记
+    // P2(goal 域):轮数上限从投影取 —— goal/set 后累计的 user/message 轮数持久在事件流里,
+    // 重启不再重置(GOAL_MAX_ITERATIONS 只是单次循环的迭代保护,持久记账以投影为准)。
+    const admittedRounds = () => store.projectGoal(conv.id).rounds;
     // 用户取消会 abort 当前 ac,循环检测到后退出
     let currentAc = initialAc;
     for (let iter = 0; iter < GOAL_MAX_ITERATIONS; iter++) {
@@ -460,6 +463,8 @@ export class TaskManager {
         lastTurn.answer = lastTurn.answer.replace(/\s*\[GOAL_COMPLETE\]\s*/g, '').trim();
         store.saveTurn(conv.id, lastTurn);
         conv.statusNote = '✅ 目标已完成';
+        // goal/complete 持久存证:目标完成不再是进程内一次性状态,重启后仍可查。
+        store.appendEvent(conv.id, lastTurn.id, { type: 'goal/complete', rounds: admittedRounds() });
         this.emit.emitConversation(conv);
         break;
       }
@@ -507,6 +512,17 @@ export class TaskManager {
         store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0));
       }
       if (goalTurn?.error) break; // 出错 → 停止循环
+    }
+    // P2(goal 域):循环走完 iter 上限仍未完成 → goal/limit 持久存证(投影轮数)。
+    // 区分:用户取消/出错/会话删除不记 limit,只有"轮数用尽还没到 [GOAL_COMPLETE]"才算。
+    if (conv.goal && !conv.turns[conv.turns.length - 1]?.error) {
+      const proj = store.projectGoal(conv.id);
+      if (proj.phase === 'active' && proj.rounds >= GOAL_MAX_ITERATIONS) {
+        const lastTurn = conv.turns[conv.turns.length - 1];
+        if (lastTurn) store.appendEvent(conv.id, lastTurn.id, { type: 'goal/limit', rounds: proj.rounds });
+        conv.statusNote = `⚠️ 已推进 ${proj.rounds} 轮未达目标,自动循环暂停(可 /goal 重设或继续对话)`;
+        this.emit.emitConversation(conv);
+      }
     }
     // 循环结束 → 确保状态恢复 + 清理标记
     this.goalLoopStopped.delete(id);
