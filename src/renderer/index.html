@@ -144,6 +144,7 @@
               <button class="cht" id="tab-git" data-i18n="tabs.git">Git</button>
               <button class="cht" id="tab-rules" data-i18n="tabs.rules">规则</button>
               <button class="cht" id="tab-preview" data-i18n="tabs.preview" title="Artifact 预览">预览</button>
+              <button class="cht" id="tab-traj" data-i18n="tabs.traj" title="Trajectory:模型真实看到的完整上下文透视">轨迹</button>
               <button class="cht" id="tab-team" data-i18n="tabs.team">Team</button>
             </span>
           </div>
@@ -158,11 +159,18 @@
           <div id="chat-content" class="chat-content">
           <div id="turns"></div>
           <button id="scroll-bottom-btn" class="scroll-bottom-btn" data-i18n-title="scrollBottom.title" title="回到最新消息" aria-label="回到最新消息"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
+          <div id="conv-stats-bar" hidden></div>
           <div id="input">
             <div id="attach-row" class="attach-row"></div>
             <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" data-i18n-aria="a11y.chatInput" aria-label="输入消息… (Enter 发送, Shift+Enter 换行)" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
               <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
+              <select id="perm-mode-select" class="model-pill perm-pill" title="权限模式:只读 / 工作区写入 / 完全访问">
+                <option value="readOnly">只读</option>
+                <option value="workspaceWrite">写工作区</option>
+                <option value="fullAccess">全权</option>
+              </select>
+              <button id="btn-plan-quick" class="model-pill perm-pill plan-off" title="计划模式(只规划不执行)">Plan</button>
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
               <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
               <button class="tool" id="btn-capture-hide" data-i18n-title="vision.captureHideTip" title="隐藏截图(最小化本窗口后截屏,截完自动还原)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/><line x1="3" y1="3" x2="21" y2="21"/></svg></button>
@@ -238,7 +246,8 @@
             </div>
           </div>
         </div>
-        <div id="chat-rules-pane" class="chat-rules-pane" hidden>
+        <div id="chat-traj-pane" class="chat-side-pane" hidden><div id="traj-pane-list" class="traj-list"></div></div>
+          <div id="chat-rules-pane" class="chat-rules-pane" hidden>
           <div class="rules-head">
             <span class="rules-title" data-i18n="rules.title">项目规则(KINET.md)</span>
             <span class="rules-spacer"></span>
