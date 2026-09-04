@@ -385,6 +385,40 @@ async function withOllamaGate<T>(key: string, limit: number, signal: AbortSignal
   }
 }
 
+// Ollama 原生 /api/chat 不接受 OpenAI 多模态 content 数组:Go 侧 Message.Content 是
+// string 类型,数组直接 400 "cannot unmarshal array ... ChatRequest.messages.content
+// of type string"。带图消息(截图/粘贴图)一进当轮历史,后续每轮请求都会 400 ——
+// 表现为「上下文一长就报错」。发送前统一扁平化:
+//   - text parts        → 顺序拼接为字符串 content
+//   - user/assistant 图 → data: base64 剥出,放消息级 images[](Ollama 原生视觉格式,
+//                          llava/qwen-vl 等视觉模型走该字段;纯文本模型由服务端报可读错误)
+//   - tool 消息图       → 文本占位(tool 历史整个 ReAct 循环存活,塞 base64 会每轮重发
+//                          烧 token;且 Ollama 对 tool 消息 images 的支持依赖模型模板,不可靠)
+// Ollama's native /api/chat cannot take OpenAI multimodal content arrays — the Go
+// struct types Content as string and 400s on arrays, so any image-bearing message
+// 400s every round it stays in history. Flatten before send: text parts concatenate
+// into content; images on user/assistant messages become base64 entries in the
+// message-level images[] (Ollama's native vision field); images on tool messages
+// degrade to a text note (tool history persists the whole loop — re-sending base64
+// every round burns tokens, and tool-message images depend on model templates).
+function ollamaFlattenContent(m: Record<string, unknown>): Record<string, unknown> {
+  if (!Array.isArray(m.content)) return m;
+  const texts: string[] = [];
+  const images: string[] = [];
+  for (const p of m.content as Array<{ type: string; text?: string; image_url?: { url?: string } }>) {
+    if (p.type === 'text' && p.text) texts.push(p.text);
+    else if (p.type === 'image_url' && p.image_url?.url) {
+      if (m.role === 'tool') { texts.push('[图片已省略:视觉内容不随工具结果回传]'); continue; }
+      const dm = /^data:[^;,]+;base64,([A-Za-z0-9+/=\s]+)$/.exec(p.image_url.url);
+      if (dm) images.push(dm[1].replace(/\s+/g, ''));
+      else texts.push(`[图片无法传递: ${p.image_url.url.slice(0, 120)}]`);
+    }
+  }
+  const out: Record<string, unknown> = { ...m, content: texts.join('\n') };
+  if (images.length) out.images = images;
+  return out;
+}
+
 async function ollamaStream(
   _messages: ChatMsg[],
   tools: ToolDef[],
@@ -403,7 +437,10 @@ async function ollamaStream(
   // 同理 content 数组(截图/图片附件的多模态格式)也不认 —— 原生 ChatRequest.content
   // 只收 string,图片要放消息级 images 字段(base64,不带 data: 前缀)。带图消息一旦进
   // history,之后每轮请求都会带上它 → 每轮 400 "cannot unmarshal array into ... content"。
-  const ollamaMsgs = wireMsgs.map((m) => {
+  // content 数组扁平化必须在 tool_calls 参数转换之后套一层(数组是另一条 400 路径)。
+  // / Flatten multimodal content arrays AFTER the tool_calls conversion (the array is
+  // / a separate 400 path from string-typed tool arguments).
+  const ollamaMsgs = wireMsgs.map(ollamaFlattenContent).map((m) => {
     let msg = m;
     if (Array.isArray((m as { content?: unknown }).content)) {
       const parts = (m as { content: Array<{ type: string; text?: string; image_url?: { url: string } }> }).content;
