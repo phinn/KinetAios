@@ -2762,6 +2762,9 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 /* 长期记忆面板(🧠)+ 快照面板(⏪):modal 形态,头(scope 切换 + 关闭)+ 列表。 */
 #memory-modal, #snapshot-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
 #memory-modal.show, #snapshot-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
+/* 上下文考古面板:与 memory/snapshot 同构的 fixed 覆盖层 + 居中(缺这条会掉到文档流底部) */
+#events-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
+#events-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
 .mm-card { width: 720px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; }
 .mm-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .mm-head h3 { margin: 0; flex: 0 0 auto; font-size: 1.154rem; }
