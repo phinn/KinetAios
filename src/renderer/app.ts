@@ -265,6 +265,7 @@ function applyI18nDOM(): void {
     } else {
       convs.set(conv.id, conv);
     }
+    if (conv.status === 'running') ensureElapsedTicker();
     if (isNew) { order.unshift(conv.id); renderSidebar(); }
     else refreshSidebarLi(conv.id);
     // onAgentEvent 的 done/error 已调 renderMain();这里再调会双重全量重建
@@ -1796,6 +1797,50 @@ function startIdleFill(turns: HTMLElement, conv: Conversation, token: number, fr
   }));
 }
 
+// 运行计时格式化:<1h 显示 mm:ss,≥1h 显示 h:mm:ss。
+// Elapsed-time formatter: mm:ss under an hour, h:mm:ss beyond.
+function fmtElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const ss = s % 60;
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${pad(m)}:${pad(ss)}`;
+}
+// 每秒 ticker:存在 running 会话时逐秒刷新 header 计时(只碰 stat 节点,不重跑整个 renderHead,
+// 避免高频重写 sendBtn/选择器等引发闪烁)。无 running 会话时 ticker 空转一次即停表。
+// Per-second ticker: refresh only the head stat while a conversation is running; idle-stops otherwise.
+let elapsedTicker: ReturnType<typeof setInterval> | null = null;
+function ensureElapsedTicker(): void {
+  if (elapsedTicker) return;
+  elapsedTicker = setInterval(() => {
+    const anyRunning = [...convs.values()].some((c) => c.status === 'running');
+    if (!anyRunning) {
+      const self = elapsedTicker as unknown as number;
+      elapsedTicker = null;
+      clearInterval(self);
+      // 停表时把计时从 stat 里刷掉(最后一次 status 变化事件可能早于 ticker 停止)。
+      const conv = convs.get(selectedId ?? '');
+      if (conv) renderHead(conv);
+      return;
+    }
+    const conv = convs.get(selectedId ?? '');
+    if (conv && conv.status === 'running') {
+      const last = conv.turns[conv.turns.length - 1];
+      if (last?.ts) {
+        const stat = document.getElementById('head-stat');
+        if (stat) {
+          const parts: string[] = [];
+          if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
+          if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
+          parts.push(`⏱ ${fmtElapsed(Date.now() - last.ts)}`);
+          stat.textContent = parts.join(' · ');
+        }
+      }
+    }
+  }, 1000);
+}
+
 function renderHead(conv: Conversation | undefined) {
   const dot = document.getElementById('head-dot')!;
   const title = document.getElementById('head-title')!;
@@ -1854,6 +1899,11 @@ function renderHead(conv: Conversation | undefined) {
   const parts: string[] = [];
   if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
+  // 运行计时:running 且当前轮有起始 ts → 追加 ⏱ mm:ss/t(hh:mm:ss)。ticker 每秒只刷 stat。
+  // Execution timer: while running, append elapsed time of the current turn to the head stat.
+  if (conv.status === 'running' && last && last.ts) {
+    parts.push(`⏱ ${fmtElapsed(Date.now() - last.ts)}`);
+  }
   stat.textContent = parts.join(' · ');
   status.textContent = conv.status === 'running' && conv.statusNote ? conv.statusNote : '';
   // 发送按钮:运行中显示停止图标,否则发送图标。
@@ -2233,6 +2283,7 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
 // status 事件专用:同步更新 head-status 文字 + streaming-status DOM。
 // 不走 debounce,避免和 token 事件的 statusNote 清除竞态(下一帧丢显示)。
 function updateStreamingStatus(conv: Conversation): void {
+  ensureElapsedTicker();
   renderHead(conv);
   const turnEl = document.getElementById('streaming-answer')?.closest('.turn') ?? null;
   if (!turnEl) return;
