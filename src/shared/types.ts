@@ -289,6 +289,14 @@ export type AppSettings = {
   // 替身模式开启后注入 Direct 引擎 systemPrompt,让 AI 模仿用户风格自主执行任务。
   // 空字符串 = 未生成,替身功能不可用。
   persona: string;
+  // ── Goal 监工模式(Supervisor ↔ Worker)── 替身画像当监工,逐轮验收 Worker 产物并
+  // 提出新要求;配 failover 模型链支持过夜长跑(额度尽/5h 上限自动切下一个模型)。
+  goalSupervisorEnabled: boolean;   // true = Supervisor 验收制(需 persona 非空);false = 旧自检模式
+  goalSupervisorModel: string;      // Supervisor 用的模型(如 glm-4.5-air,便宜快)。空 = 跟随当前会话模型
+  goalProfileChain: string[];       // failover 链:profileId 有序列表。当前模型 quota/auth 错 → 按序切换
+  goalMaxIterations: number;        // goal loop 轮数上限(默认 20;过夜建议 100+)
+  goalMaxHours: number;             // 最长运行小时数(0 = 不限时)。超时自动停,防过夜烧穿
+  goalMaxCostUSD: number;           // 成本硬顶 USD(0 = 不限)。目标累计 cost 超过即停
   // ── 实时语音助手(豆包实时语音大模型)── WebSocket 双向音频流,实时说话→实时回复。
   // 配置火山引擎实时语音 API 凭据和音色。
   voiceChat: VoiceChatConfig;
@@ -449,6 +457,8 @@ export type ConvEvent =
   | { type: 'goal/clear' }
   | { type: 'goal/complete'; rounds: number } // goal loop 检测到 [GOAL_COMPLETE]:持久存证(rounds = 实际推进的轮数)
   | { type: 'goal/limit'; rounds: number } // goal loop 触及最大轮数上限未完成:持久存证
+  | { type: 'goal/supervisor'; verdict: 'continue' | 'complete'; requirement: string } // Supervisor(替身监工)验收结果存证
+  | { type: 'goal/failover'; from: string; to: string; reason: string } // 模型接力存证:from/to = profile 名,reason = 触发原因
   | { type: 'session/started'; engine: string; sessionId: string }
   // AgentTeams 过程存证:成员状态/工具调用入库,考古面板可回放子代理轨迹。
   // Agent teams forensics: member lifecycle + tool calls land in the event stream.

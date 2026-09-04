@@ -1025,6 +1025,14 @@ function registerIpc(): void {
   ipcMain.handle('get-settings', () => getSettings());
   ipcMain.handle('save-settings', (_e, s: AppSettings) => {
     const old = getSettings();
+    // Goal 监工参数归一化:防负数/NaN/非数组从渲染层漏进来(main 侧白名单式兜底)。
+    const norm = (v: unknown, d: number): number => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : d);
+    s.goalSupervisorEnabled = Boolean(s.goalSupervisorEnabled);
+    s.goalSupervisorModel = typeof s.goalSupervisorModel === 'string' ? s.goalSupervisorModel.trim() : '';
+    s.goalProfileChain = Array.isArray(s.goalProfileChain) ? s.goalProfileChain.filter((x) => typeof x === 'string' && x) : [];
+    s.goalMaxIterations = Math.max(1, Math.floor(norm(s.goalMaxIterations, 20)));
+    s.goalMaxHours = norm(s.goalMaxHours, 0);
+    s.goalMaxCostUSD = norm(s.goalMaxCostUSD, 0);
     saveSettings(s);
     rebuildTrayMenu(); // 语言切换后托盘菜单跟随
     // 多机协作:remote server 配置变化 → 刷新 MCP 远程连接。
