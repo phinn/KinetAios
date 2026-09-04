@@ -35,6 +35,7 @@ const DEFAULTS: AppSettings = {
   maxTurns: 0,             // Direct 引擎单轮最大 ReAct 循环数(默认 0 = 无限)
   ollamaParallel: 1,       // Ollama 同模型最大在途请求数(默认 1=串行;对齐服务端 OLLAMA_NUM_PARALLEL 可放开并发)
   ollamaNumCtx: 32768,     // Ollama 每请求 num_ctx(KV cache = slot×num_ctx;调高并发时可能需调低,如 16384)
+  computerUseBackground: false, // Computer Use 后台模式:鼠标/键盘走 PostMessage 后台投递,不动真实光标/焦点(仅 Windows;默认关 = 原前台方式)
   closeBehavior: 'minimize', // 窗口关闭行为:quit 退出 / minimize 最小化到任务栏 / tray 最小化到托盘
   // 多机协作:默认关闭 MCP Server;端口 18109;token 空 = 不鉴权(仅局域网内信任环境用)。
   localMcpServer: { enabled: false, port: 18109, token: '' },

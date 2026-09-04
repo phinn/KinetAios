@@ -3213,6 +3213,8 @@ async function showSettings() {
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-plan" ${s.planMode ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-plan">${tr('settings.plan')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-notify-done" ${s.notifyOnDone ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-notify-done">${tr('settings.notifyOnDone')}</label></div>
         <div class="field-desc">${tr('settings.notifyOnDone.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cu-background" ${s.computerUseBackground ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cu-background">${tr('settings.computerUseBackground')}</label></div>
+        <div class="field-desc">${tr('settings.computerUseBackground.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
         <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
           <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
@@ -4181,6 +4183,7 @@ function readSettingsForm(): AppSettings {
     sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
     notifyOnDone: (document.getElementById('s-notify-done') as HTMLInputElement).checked,
+    computerUseBackground: Boolean((document.getElementById('s-cu-background') as HTMLInputElement)?.checked),
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
