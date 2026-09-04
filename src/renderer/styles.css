@@ -2680,6 +2680,8 @@ body.dash { overflow-y: auto; user-select: none; }
 .typing-note { display: inline-flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: 0.962rem; }
 .streaming-status { display: flex; align-items: center; gap: 7px; color: var(--text-dim); font-size: 0.962rem; margin-top: 4px; }
 .streaming-status .typing-text { white-space: pre-wrap; }
+/* 流式 token 速率指示(600ms 刷新,done 后随 renderTurn 重建消失) */
+.stream-rate { color: var(--text-faint); font-size: 0.846rem; margin-top: 4px; font-variant-numeric: tabular-nums; }
 
 /* .files-editor 的 display:flex 盖过 UA 默认 [hidden]{display:none},
    不加这条 editorPane.hidden=true 实际不隐藏 → 空编辑器盖住 webview。 */

@@ -325,6 +325,7 @@ function applyI18nDOM(): void {
         streamAppend(ev.text);
       } else if (ev.type === 'done' || ev.type === 'error') {
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
+        stopStreamRate(); // 速率 interval 先停,避免 append 到已被重建的 DOM
         if (renderMainPending) { renderMainPending = false; pendingFullRender = false; }
         // hold 模式(看历史/已取消)→ 记录视口锚点,重渲染后恢复到同一位置。
         // 绝对 scrollTop 在内容高度变化(markdown 重渲)后无意义,必须锚定到 turn。
@@ -2434,6 +2435,50 @@ function resetStreamRender(): void {
   streamRenderScheduled = false;
 }
 
+// ── 流式 token 速率指示 / Streaming token-rate indicator ──
+// 每 token 只推 performance.now() 时间戳;600ms interval 计算 5s 滑动窗口速率。
+// 工具执行停顿期窗口排空 → 显示暂停而非假速率;窗口空则只显示累计 token 数。
+// 挂在 .ai-body 底部(streaming-status 的兄弟),done 的 renderTurn 重建后自然消失。
+// Per-token cost is one timestamp push; a 600ms interval computes a 5s sliding-window
+// rate. During tool pauses the window drains (pause shown, not a fake rate); when the
+// window is empty only the running total is shown. Lives at the bottom of .ai-body
+// (sibling of streaming-status); done's renderTurn rebuild naturally removes it.
+let streamRateTimer: ReturnType<typeof setInterval> | null = null;
+let streamTokenTimes: number[] = [];
+let streamTokenTotal = 0;
+
+function startStreamRate(): void {
+  stopStreamRate();
+  const el = document.createElement('div');
+  el.className = 'stream-rate';
+  el.id = 'stream-rate';
+  document.querySelector('#streaming-answer')?.closest('.ai-body')?.appendChild(el);
+  streamRateTimer = setInterval(updateStreamRate, 600);
+}
+
+function stopStreamRate(): void {
+  if (streamRateTimer) { clearInterval(streamRateTimer); streamRateTimer = null; }
+  document.getElementById('stream-rate')?.remove();
+  // 计数一并清零:否则残留的 streamTokenTotal 让下一轮 firstToken 判定失效,
+  // 速率条再也不出现。/ Reset counters too — stale totals would break the next
+  // turn's firstToken check and the indicator would never appear again.
+  streamTokenTotal = 0;
+  streamTokenTimes = [];
+}
+
+function updateStreamRate(): void {
+  const el = document.getElementById('stream-rate');
+  if (!el) { stopStreamRate(); return; }
+  const now = performance.now();
+  // 丢弃滑窗之外的旧时间戳;窗口空 = 停顿期,不显示速率。
+  // / Drop timestamps outside the window; empty window = paused, no rate shown.
+  while (streamTokenTimes.length && now - streamTokenTimes[0] > 5000) streamTokenTimes.shift();
+  const span = streamTokenTimes.length ? (now - streamTokenTimes[0]) / 1000 : 0;
+  const rate = span > 0.2 ? streamTokenTimes.length / span : 0;
+  const totalStr = streamTokenTotal > 1000 ? (streamTokenTotal / 1000).toFixed(1) + 'k' : String(streamTokenTotal);
+  el.textContent = rate > 0 ? `⚡ ${rate.toFixed(1)} tok/s · ${totalStr} tok` : `⏸ ${totalStr} tok`;
+}
+
 /** 增量推进稳定边界到最后一个「围栏外空行」。空行是块级边界,前缀独立
  *  parse 的结果与整体 parse 一致(跨空行块如松散列表除外,极少见,
  *  出现也只是短暂样式差,不影响高度稳定性)。Incrementally advance the
@@ -2459,6 +2504,7 @@ function streamAppend(text: string) {
   // renderMain 在冻结中也不重建,streaming-answer 元素保持取消瞬间的原样。
   // Frozen (user cancelled): ignore residual tokens entirely — no DOM touch.
   if (scrollFrozen) return;
+  const firstToken = streamTokenTotal === 0;
   let el = document.getElementById('streaming-answer');
   if (!el) {
     renderMain();
@@ -2472,6 +2518,11 @@ function streamAppend(text: string) {
     }
     // 累积原始文本到 buffer(不直接操作 DOM textNode)。
     streamRawText += text;
+    // 速率统计:每 token 只推一个时间戳(便宜),DOM 由 interval 低频更新。
+    // / Rate stats: push a timestamp per token (cheap); DOM updates on a slow interval.
+    if (firstToken) startStreamRate();
+    streamTokenTotal++;
+    streamTokenTimes.push(performance.now());
     // 超长流式输出防御:超过阈值后放弃 markdown 重渲(每帧全量 md() 是 O(n²),
     // 几百 KB 文本必然卡死),退化为纯文本追加 + 提示。done 后 renderTurn 走 clipForUi。
     // Long-stream guard: past the cap, full md() re-render each frame is O(n²).
