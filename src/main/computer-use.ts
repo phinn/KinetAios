@@ -5,7 +5,7 @@
 // Screenshots: Electron desktopCapturer (main process).
 // Mouse/Keyboard: PowerShell (Windows) / cliclick (macOS) / xdotool (Linux).
 import { desktopCapturer, screen as electronScreen, BrowserWindow } from 'electron';
-import { exec } from 'node:child_process';
+import { exec, execSync } from 'node:child_process';
 
 // ── Screenshot ── 截屏,返回 base64 PNG + 屏幕尺寸
 export interface ScreenshotResult {
@@ -410,6 +410,8 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
 // approximation without full focus tracking). macOS/Linux lack a reliable equivalent
 // (CGEventPostToPid breaks on sandboxed/secure-input apps) and fall back to the
 // foreground path, noted in the result.
+// macOS 后台文本边界:目标 app 必须是"命令快捷键可达"状态(菜单命令走 CGEventPostToPid
+// 有效,如 Chrome Cmd+T/L/V);正文逐字符合成事件会被丢弃 → 走剪贴板粘贴(bgTypeMac)。
 
 let bgLastClickHwnd: number | null = null; // 后台键盘宿主:最后一次后台点击命中的窗口 / keyboard target from last bg click
 let bgLastClickPid: number | null = null;  // macOS 侧同语义:最后一次后台点击命中的进程 / same on macOS (pid)
@@ -524,33 +526,42 @@ if (!pid) { 'ERR nopoint' } else {
   }
 }
 
-// 文本:逐字符 keydown/keyup + CGEventKeyboardSetUnicodeString 挂 Unicode。
+// 文本输入:macOS 后台。Chrome 等对 CGEventKeyboardSetUnicodeString 合成事件直接丢弃
+// (正文键入要求窗口是 key window,后台模式从不激活窗口),逐字符路径实测无效。
+// 改走剪贴板粘贴:pbpaste 保存原值 → pbcopy 写入目标文本 → Cmd+V 后台投递 → 延迟恢复原值。
+// ponytail: 仅文本可恢复(非文本剪贴板如图片/文件引用会被目标文本覆盖,丢失);
+// 天花板 = NSPasteboard 多类型快照回写,升级路径明确。
 async function bgTypeMac(text: string): Promise<{ ok: boolean; error?: string }> {
   if (!bgLastClickPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 mouse_click 一次(后台模式点击不占焦点)' };
-  // 文本经 base64 进 JXA,规避 shell 引号转义
-  const b64 = Buffer.from(text, 'utf8').toString('base64');
-  const script = `
-ObjC.import('CoreGraphics');
-ObjC.import('Foundation');
-var pid = ${bgLastClickPid};
-var str = ObjC.unwrap($.NSString.alloc.initWithDataEncoding($.NSData.alloc.initWithBase64EncodedStringOptions('${b64}', 0), $.NSUTF8StringEncoding));
-if (str === null || str === undefined) { 'ERR b64' } else {
-  for (var i = 0; i < str.length; i++) {
-    var ch = str.charAt(i);
-    if (ch === '\\n') ch = '\\r';
-    var d = $.CGEventCreateKeyboardEvent($(), 0, true);
-    $.CGEventKeyboardSetUnicodeString(d, ch.length, ch);
-    $.CGEventPostToPid(pid, d);
-    var u = $.CGEventCreateKeyboardEvent($(), 0, false);
-    $.CGEventKeyboardSetUnicodeString(u, ch.length, ch);
-    $.CGEventPostToPid(pid, u);
-  }
-  'OK';
-}
-`;
   try {
-    const out = (await osascriptJxa(script, Math.min(30000, 5000 + text.length * 20))).trim();
-    if (out.includes('ERR b64')) return { ok: false, error: '文本解码失败' };
+    // 1) 保存原剪贴板(仅文本可恢复;图片等非文本读出为空 → 不恢复,见上方 ponytail)
+    let prev: string | null = null;
+    try { prev = execSync('pbpaste', { encoding: 'utf8', timeout: 2000 }); } catch { prev = null; }
+    // 2) 目标文本经 base64 写入剪贴板(规避 shell 引号/换行转义)
+    const b64 = Buffer.from(text, 'utf8').toString('base64');
+    execSync(`printf '%s' '${b64}' | base64 -d | pbcopy`, { timeout: 2000 });
+    // 3) Cmd+V(v=9)后台投递给锁定 pid
+    const script = `
+ObjC.import('CoreGraphics');
+var pid = ${bgLastClickPid};
+var flag = $.kCGEventFlagMaskCommand;
+var d = $.CGEventCreateKeyboardEvent($(), 9, true);
+var u = $.CGEventCreateKeyboardEvent($(), 9, false);
+$.CGEventSetFlags(d, flag); $.CGEventSetFlags(u, flag);
+$.CGEventPostToPid(pid, d); $.CGEventPostToPid(pid, u);
+'OK';
+`;
+    const out = (await osascriptJxa(script, 5000)).trim();
+    if (out !== 'OK') return { ok: false, error: out || 'JXA 执行失败' };
+    // 4) 延迟恢复原剪贴板(给目标 app 读取留 1.2s;原值为空 = 本来就空或非文本,不恢复)
+    if (prev) {
+      setTimeout(() => {
+        try {
+          const r64 = Buffer.from(prev, 'utf8').toString('base64');
+          execSync(`printf '%s' '${r64}' | base64 -d | pbcopy`, { timeout: 2000 });
+        } catch { /* 恢复失败不致命 */ }
+      }, 1200);
+    }
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
