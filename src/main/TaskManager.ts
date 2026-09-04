@@ -6,7 +6,7 @@ import { applyEvent, newTurn, rid } from '../shared/types';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
-import { currentProvider, embed } from './glm';
+import { currentProvider, embed, GLMError, supervisorComplete } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 
@@ -445,18 +445,111 @@ export class TaskManager {
 
   // Goal 自动循环:每轮结束后检查是否完成,未完成则自动 dispatch 下一轮。
   // 取消机制:用户点 Stop → cancel() → ac.abort() + conv.status='ready' → 循环检测到后退出。
+  //
+  // v3.5.6 监工模式:goalSupervisorEnabled 且 persona 非空时,每轮 Worker 干完后由 Supervisor
+  // (替身画像注入的便宜模型)验收:输出 continue + 下一条具体要求(打回重做/提出新要求),或
+  // complete(替身点头才算完)。否则退化为旧模式(Worker 自报 [GOAL_COMPLETE] 即完成)。
+  // failover:goalProfileChain 非空时,Worker 报 quota/auth 错 → 按序切下一个 profile 接着跑
+  // (network/other 不切,同模型退避重试由 glm 层负责)。过夜保险丝:轮数/小时/成本三重上限。
   private async runGoalLoop(conv: Conversation, id: string, initialAc: AbortController): Promise<void> {
-    const GOAL_MAX_ITERATIONS = 20; // 防止无限循环
+    const S = getSettings();
+    const maxIter = Math.max(1, S.goalMaxIterations || 20);
+    const startedAt = Date.now();
+    const maxMs = (S.goalMaxHours || 0) * 3600_000;
+    const maxCost = S.goalMaxCostUSD || 0;
+    const failoverChain = (S.goalProfileChain || []).filter(Boolean);
+    const supervisorOn = Boolean(S.goalSupervisorEnabled) && !!S.persona?.trim();
+    // 当前生效的 failover 档(相对 chain 的指针;-1 = 会话自己绑的 profile / 主配置)
+    let chainIdx = -1;
+    let consecutiveNoProgress = 0; // 连续无实质产出轮数(防原地打转,监工模式专用)
+    let lastStat = '';
+
     this.goalLoopStopped.delete(id); // 清除上次的取消标记
     // P2(goal 域):轮数上限从投影取 —— goal/set 后累计的 user/message 轮数持久在事件流里,
     // 重启不再重置(GOAL_MAX_ITERATIONS 只是单次循环的迭代保护,持久记账以投影为准)。
     const admittedRounds = () => store.projectGoal(conv.id).rounds;
     // 用户取消会 abort 当前 ac,循环检测到后退出
     let currentAc = initialAc;
-    for (let iter = 0; iter < GOAL_MAX_ITERATIONS; iter++) {
+
+    // 切换 failover 链上的下一个模型。返回 null = 链尽(真停);否则返回新 profile 显示名。
+    const nextFailover = (): { name: string } | null => {
+      const cand = failoverChain.findIndex((_, i) => i > chainIdx);
+      if (cand < 0) return null;
+      chainIdx = cand;
+      const pid = failoverChain[chainIdx];
+      const pf = S.modelProfiles.find((p) => p.id === pid);
+      if (!pf) return null;
+      this.setConvProfile(id, pf.id); // 复用现有绑定逻辑:profileId + model 显示名 + 持久化 + 广播
+      return { name: pf.name };
+    };
+
+    // Supervisor 验收:把替身画像 + 本轮产出 + git 变化喂给监工模型,要 JSON 裁决。
+    // 返回 null = 监工调用失败(降级:按旧模式继续跑,不打断过夜任务)。
+    const supervise = async (answer: string, signal: AbortSignal): Promise<{ verdict: 'continue' | 'complete'; requirement: string } | null> => {
+      let diffStat = '';
+      try {
+        diffStat = require('node:child_process').execFileSync('git', ['diff', '--stat', 'HEAD'], { cwd: conv.cwd, encoding: 'utf8', timeout: 5000 }).slice(-2000);
+      } catch { /* 非 git 目录/无变化 —— diffStat 留空即可,监工不依赖它 */ }
+      const sys = `${S.persona}\n\n---\n你是上面这位用户的「替身监工」。一个 AI Worker 正在替你自主推进目标。你要以这位用户的口味验收产出:挑剔、结果导向、拒绝表面功夫。只输出一个 JSON 对象,不要任何解释:
+{"verdict":"continue","requirement":"给 Worker 的下一条具体要求"}
+或
+{"verdict":"complete","requirement":"一句验收通过的理由"}
+verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。`;
+      const user = `目标:「${conv.goal}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
+      try {
+        // 监工模型:goalSupervisorModel 非空 → 找同名/同 model 字段的 profile 或直接当 model id 用;
+        // 空 → 跟随会话当前模型(snapshot(null) = 主配置/会话 profile)。
+        let supProfileId: string | null = null;
+        if (S.goalSupervisorModel) {
+          const pf = S.modelProfiles.find((p) => p.id === S.goalSupervisorModel || p.model === S.goalSupervisorModel);
+          supProfileId = pf?.id ?? null;
+        }
+        const comp = await supervisorComplete(
+          [{ role: 'system', content: sys }, { role: 'user', content: user }],
+          supProfileId, signal,
+        );
+        const lo = comp.content.indexOf('{');
+        const hi = comp.content.lastIndexOf('}');
+        if (lo < 0 || hi <= lo) return null;
+        const obj = JSON.parse(comp.content.slice(lo, hi + 1)) as { verdict?: string; requirement?: string };
+        if (obj.verdict !== 'continue' && obj.verdict !== 'complete') return null;
+        return { verdict: obj.verdict, requirement: (obj.requirement || '').trim() };
+      } catch {
+        return null; // 监工挂了不阻断任务 —— 降级为无监工模式
+      }
+    };
+
+    for (let iter = 0; iter < maxIter; iter++) {
+      // ── 过夜保险丝:时长 / 成本硬顶(轮数上限就是 for 边界)──
+      if (maxMs > 0 && Date.now() - startedAt > maxMs) {
+        conv.statusNote = `⏰ 已运行 ${((Date.now() - startedAt) / 3600_000).toFixed(1)}h 达到时长上限,goal 循环暂停`;
+        this.emit.emitConversation(conv);
+        break;
+      }
+      if (maxCost > 0 && conv.cost > maxCost) {
+        conv.statusNote = `💰 累计 $${conv.cost.toFixed(2)} 达到成本上限,goal 循环暂停`;
+        this.emit.emitConversation(conv);
+        break;
+      }
+
       // 检查上一轮的结果
       const lastTurn = conv.turns[conv.turns.length - 1];
       if (!lastTurn?.answer) break;
+      // 出错 → 先试 failover,链尽才停。quota/auth = 换模型有意义;network/other 不换。
+      if (lastTurn.error) {
+        const cls = GLMError.classify(lastTurn.error);
+        if ((cls === 'quota' || cls === 'auth') && chainIdx < failoverChain.length - 1) {
+          const nx = nextFailover();
+          if (nx) {
+            const turn = conv.turns[conv.turns.length - 1];
+            store.appendEvent(conv.id, turn.id, { type: 'goal/failover', from: (turn.error || '').slice(0, 120), to: nx.name, reason: cls });
+            conv.statusNote = `⚡ 模型 ${cls === 'quota' ? '额度耗尽' : '鉴权失败'} → 切换到 ${nx.name} 继续`;
+            this.emit.emitConversation(conv);
+            continue; // 不消耗轮数语义上的"完成",直接重试下一轮(换模型后重发推动)
+          }
+        }
+        break; // 不可恢复错误或链尽
+      }
       // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环
       if (lastTurn.answer.includes('[GOAL_COMPLETE]')) {
         // 去掉标记文本,给用户一个干净的结尾
@@ -468,14 +561,41 @@ export class TaskManager {
         this.emit.emitConversation(conv);
         break;
       }
+
+      // ── Supervisor 验收(监工模式):替身点头才算完,continue 则 requirement 当下一轮驱动 ──
+      let nextPrompt = '';
+      if (supervisorOn) {
+        const verdict = await supervise(lastTurn.answer, currentAc.signal);
+        if (verdict) {
+          const turn = conv.turns[conv.turns.length - 1];
+          store.appendEvent(conv.id, turn.id, { type: 'goal/supervisor', verdict: verdict.verdict, requirement: verdict.requirement });
+          if (verdict.verdict === 'complete') {
+            conv.statusNote = `✅ 替身验收通过:${verdict.requirement}`;
+            store.appendEvent(conv.id, turn.id, { type: 'goal/complete', rounds: admittedRounds() });
+            this.emit.emitConversation(conv);
+            break;
+          }
+          nextPrompt = verdict.requirement;
+          // 防原地打转:监工连续 5 轮都要求返工且 git 无新变化 → 停下来等人
+          let stat = '';
+          try { stat = require('node:child_process').execFileSync('git', ['diff', '--stat', 'HEAD'], { cwd: conv.cwd, encoding: 'utf8' }); } catch { /* noop */ }
+          if (stat === lastStat) consecutiveNoProgress++; else consecutiveNoProgress = 0;
+          lastStat = stat;
+          if (consecutiveNoProgress >= 5) {
+            conv.statusNote = '🌀 连续 5 轮无实质进展,goal 循环暂停(替身的要求可能超出单轮能力,请人工介入)';
+            this.emit.emitConversation(conv);
+            break;
+          }
+        }
+      }
+      if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
+
       // 用户取消(cancel 会 abort + 设 goalLoopStopped)或会话被删除 → 停止
       if (currentAc.signal.aborted || this.goalLoopStopped.has(id) || !this.convs.has(id)) break;
 
-      // 准备下一轮:发一个简短的 continue prompt(goal 已在 systemPrompt 里,这里只需推动)
-      const continuePrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
-      store.appendMessage('user', continuePrompt, conv.id);
-      conv.turns.push(newTurn(continuePrompt));
-      store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, { type: 'user/message', text: continuePrompt });
+      store.appendMessage('user', nextPrompt, conv.id);
+      conv.turns.push(newTurn(nextPrompt));
+      store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, { type: 'user/message', text: nextPrompt });
       conv.status = 'running';
       this.emit.emitConversation(conv);
 
@@ -491,13 +611,13 @@ export class TaskManager {
         rulesBlock: loadRulesBlock(conv.cwd),
         contextBlock: loadContextBlock(conv.cwd),
         signal: ac.signal,
-        onEvent: (ev) => this.applyAndPersist(conv, id, ev, continuePrompt, ac.signal),
+        onEvent: (ev) => this.applyAndPersist(conv, id, ev, nextPrompt, ac.signal),
       }).then(() => {
         // P1: 同 send 路径,正常结束清 V2 checkpoint。
         if (conv.engine === 'directV2') store.clearV2State(conv.id);
       }).catch((e) => {
         const msg = e instanceof Error ? e.message : String(e);
-        this.applyAndPersist(conv, id, { type: 'error', message: msg }, continuePrompt, ac.signal);
+        this.applyAndPersist(conv, id, { type: 'error', message: msg }, nextPrompt, ac.signal);
         // P0-fix: 同上,清除 V2 checkpoint 防误 resume。
         if (conv.engine === 'directV2') store.clearV2State(conv.id);
       }).finally(() => {
@@ -511,13 +631,13 @@ export class TaskManager {
       if (goalTurn && goalTurn.costUSD > 0) {
         store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0));
       }
-      if (goalTurn?.error) break; // 出错 → 停止循环
+      // 出错不在循环尾 break —— 回到循环头由 failover 逻辑判定是否换模型续跑
     }
     // P2(goal 域):循环走完 iter 上限仍未完成 → goal/limit 持久存证(投影轮数)。
-    // 区分:用户取消/出错/会话删除不记 limit,只有"轮数用尽还没到 [GOAL_COMPLETE]"才算。
+    // 区分:用户取消/出错/会话删除/保险丝触发不记 limit,只有"轮数用尽还没完成"才算。
     if (conv.goal && !conv.turns[conv.turns.length - 1]?.error) {
       const proj = store.projectGoal(conv.id);
-      if (proj.phase === 'active' && proj.rounds >= GOAL_MAX_ITERATIONS) {
+      if (proj.phase === 'active' && proj.rounds >= maxIter) {
         const lastTurn = conv.turns[conv.turns.length - 1];
         if (lastTurn) store.appendEvent(conv.id, lastTurn.id, { type: 'goal/limit', rounds: proj.rounds });
         conv.statusNote = `⚠️ 已推进 ${proj.rounds} 轮未达目标,自动循环暂停(可 /goal 重设或继续对话)`;
