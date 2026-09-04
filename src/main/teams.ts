@@ -89,7 +89,14 @@ export async function runMember(opts: {
     onEvent: (e) => {
       if (!onTeamEvent) return;
       if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });
-      else if (e.type === 'tool') onTeamEvent(member.name, { type: 'memberTool', memberName: member.name, toolName: e.name, toolResult: '' });
+      else if (e.type === 'tool') {
+        // args/result 全量透传:成员卡片可见「调了什么工具、参数、拿到什么」。
+        // Full args/result passthrough — the member card shows what each member is actually doing.
+        onTeamEvent(member.name, { type: 'memberTool', memberName: member.name, toolName: e.name, toolResult: e.result, toolArgs: e.args, durationMs: e.durationMs });
+        // 同步入 conv_events(考古面板可回放);teamId 冗余进 member 字段,失败不拖垮执行。
+        // Also persisted into the conv event stream for forensics; best-effort, never breaks the run.
+        try { store.appendEvent(convId, 'team', { type: 'team/tool', member: member.name, name: e.name, args: e.args.slice(0, 4000), result: e.result.slice(0, 4000), durationMs: e.durationMs }); } catch { /* 存证失败不拖垮 */ }
+      }
       else if (e.type === 'cost') onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens });
     },
   });
@@ -123,14 +130,17 @@ export async function runMembersParallel(opts: {
   const results = await Promise.allSettled(
     members.map(async (m) => {
       runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'running' });
+      try { store.appendEvent(runOpts.convId, 'team', { type: 'team/status', member: m.name, status: 'running' }); } catch { /* 存证失败不拖垮 */ }
       try {
         const r = await runMember({ member: m, userMessage: message, runOpts });
         runOpts.onTeamEvent?.(m.name, { type: 'memberDone', memberName: m.name, answer: r.answer });
         runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'done' });
+        try { store.appendEvent(runOpts.convId, 'team', { type: 'team/done', member: m.name, answer: r.answer.slice(0, 4000) }); } catch { /* 存证失败不拖垮 */ }
         return { name: m.name, answer: r.answer, newHistory: r.newHistory, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
       } catch (e) {
         const errMsg = (e as Error)?.message ?? String(e);
         runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'failed' });
+        try { store.appendEvent(runOpts.convId, 'team', { type: 'team/status', member: m.name, status: `failed: ${errMsg.slice(0, 500)}` }); } catch { /* 存证失败不拖垮 */ }
         // 失败时保留原有 history(不清空),避免丢失 member 累积的对话上下文
         const oldHistory = parseMemberHistory(m.history);
         return { name: m.name, answer: `错误: ${errMsg}`, newHistory: oldHistory, tokensIn: 0, tokensOut: 0, error: errMsg };

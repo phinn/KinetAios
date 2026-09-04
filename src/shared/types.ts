@@ -448,7 +448,12 @@ export type ConvEvent =
   | { type: 'goal/clear' }
   | { type: 'goal/complete'; rounds: number } // goal loop 检测到 [GOAL_COMPLETE]:持久存证(rounds = 实际推进的轮数)
   | { type: 'goal/limit'; rounds: number } // goal loop 触及最大轮数上限未完成:持久存证
-  | { type: 'session/started'; engine: string; sessionId: string };
+  | { type: 'session/started'; engine: string; sessionId: string }
+  // AgentTeams 过程存证:成员状态/工具调用入库,考古面板可回放子代理轨迹。
+  // Agent teams forensics: member lifecycle + tool calls land in the event stream.
+  | { type: 'team/status'; member: string; status: string }
+  | { type: 'team/tool'; member: string; name: string; args: string; result: string; durationMs?: number }
+  | { type: 'team/done'; member: string; answer: string };
 
 export type ConvStatus = 'ready' | 'running';
 
@@ -480,7 +485,7 @@ export type TeamInfo = {
 export type TeamEvent =
   | { type: 'memberStatus'; memberName: string; status: MemberStatus }
   | { type: 'memberToken'; memberName: string; text: string }
-  | { type: 'memberTool'; memberName: string; toolName: string; toolResult: string }
+  | { type: 'memberTool'; memberName: string; toolName: string; toolResult: string; toolArgs?: string; durationMs?: number }
   | { type: 'memberCost'; memberName: string; usd: number; tokens: number }
   | { type: 'memberDone'; memberName: string; answer: string };
 

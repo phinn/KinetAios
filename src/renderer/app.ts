@@ -924,9 +924,13 @@ function handleTeamEvent(teamId: string, ev: TeamEvent): void {
       break;
     }
     case 'memberTool': {
-      // 工具调用事件:在 preview 里追加提示
+      // 工具调用事件:preview 追加一行「— 工具名(参数摘要)」,并用 hover title 带 result 明细。
+      // Tool call line with args summary inline; full result rides on the title tooltip.
+      const argSumm = (ev.toolArgs ?? '').replace(/\s+/g, ' ').slice(0, 80);
+      const resSumm = (ev.toolResult ?? '').replace(/\s+/g, ' ').slice(0, 300);
+      const dur = ev.durationMs ? ` · ${Math.round(ev.durationMs)}ms` : '';
       const prev = teamLiveStatus.get(liveKey) ?? { status: 'running' as MemberStatus, partial: '' };
-      prev.partial += `\n— ${ev.toolName}\n`;
+      prev.partial += `\n— ${ev.toolName}${dur}${argSumm ? `(${argSumm})` : ''}\n  ↳ ${resSumm || '(无结果)'}\n`;
       teamLiveStatus.set(liveKey, prev);
       updateMemberCardPartial(liveKey, prev.partial);
       break;
@@ -7795,6 +7799,15 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
     }
     case 'context/edit':
       return { icon: '✏️', title: tr('ev.ctxEdit'), body: `${d.before} → ${d.after}` };
+    case 'team/status':
+      return { icon: '👥', title: `${d.member} · ${String(d.status ?? '').slice(0, 120)}`, body: '' };
+    case 'team/tool': {
+      const result = String(d.result ?? '');
+      const dur = d.durationMs ? ` · ${Math.round(Number(d.durationMs))}ms` : '';
+      return { icon: '🔧', title: `[${d.member}] ${String(d.name ?? '')}${dur}`, body: result };
+    }
+    case 'team/done':
+      return { icon: '✅', title: `${d.member} · done`, body: String(d.answer ?? '') };
     case 'goal/set':
       return { icon: '🎯', title: tr('ev.goalSet'), body: String(d.goal ?? '') };
     case 'goal/clear':

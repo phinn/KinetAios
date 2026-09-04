@@ -422,7 +422,9 @@ class DirectEngine implements Engine {
             // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
-              else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+              // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。
+              // Pass sub-agent tool events through as real tool steps so the chat stream can expand args/result.
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs });
             },
           });
         } finally {
