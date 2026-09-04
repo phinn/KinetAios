@@ -65,6 +65,7 @@ let disabledPluginsCache: string[] = [];
 let lastSettingsSnapshot: AppSettings | null = null; // v3.1: 最近一次拉取的完整 settings(readSettingsForm 原样透传 pluginSettings 用)
 // 模型配置档缓存(设置页保存时原样回写,不在 readSettingsForm 里从 DOM 读)
 let profileCache: any[] = [];
+let goalChainCache: string[] = []; // goal 监工:模型接力链缓存(设置面板打开时从 settings 同步,增删后随保存写回)
 // 正在编辑的配置档 ID(null = 新建模式,有值 = 编辑模式)
 let editingProfileId: string | null = null;
 // 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
@@ -3078,6 +3079,7 @@ async function showSettings() {
         <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
         <button class="s-tab" data-stab="messaging">${tr('settings.tab.messaging')}</button>
         <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
+        <button class="s-tab" data-stab="goal">${tr('settings.tab.goal')}</button>
         <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
       </div>
 
@@ -3419,6 +3421,59 @@ async function showSettings() {
         </div>
       </div>
       </div><!-- /mesh panel -->
+
+      <div class="s-tab-panel" data-panel="goal" style="display:none">
+      <div class="s-section">
+        <h3>🎯 ${tr('settings.goal.title')}</h3>
+        <div class="field-desc">${tr('settings.goal.desc')}</div>
+
+        <!-- 替身监工 -->
+        <div class="s-sub-panel">
+          <label class="switch-label" style="margin-bottom:8px">
+            <span class="switch"><input type="checkbox" id="s-goal-supervisor" ${s.goalSupervisorEnabled ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
+            <span class="s-sub-panel-title">${tr('settings.goal.supervisorTitle')}</span>
+          </label>
+          <div class="s-sub-panel-desc-indent">${tr('settings.goal.supervisorDesc')}</div>
+          <div class="field-desc" style="margin:6px 0 0 46px">${s.persona?.trim() ? tr('settings.goal.personaOk') : tr('settings.goal.personaEmpty')}</div>
+          <div style="display:grid;grid-template-columns:130px 1fr;gap:8px 10px;align-items:center;margin:10px 0 0 46px">
+            <label class="field-desc" style="margin:0">${tr('settings.goal.supervisorModel')}</label>
+            <select id="s-goal-sup-model">
+              <option value="">${tr('settings.goal.supModelFollow')}</option>
+              ${profileCache.map((p: any) => `<option value="${esc(p.id)}" ${s.goalSupervisorModel === p.id ? 'selected' : ''}>${esc(p.name)} (${esc(p.model)})</option>`).join('')}
+            </select>
+          </div>
+        </div>
+
+        <!-- 模型接力链 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.goal.chainTitle')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.goal.chainDesc')}</div>
+          <div id="s-goal-chain-list" style="width:100%;display:flex;flex-direction:column;gap:4px;margin:8px 0"></div>
+          <div style="display:grid;grid-template-columns:1fr auto;gap:8px;align-items:center">
+            <select id="s-goal-chain-add">
+              <option value="">${tr('settings.goal.chainPick')}</option>
+              ${profileCache.map((p: any) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.model)})</option>`).join('')}
+            </select>
+            <button id="s-goal-chain-addbtn" class="btn-sm">${tr('settings.goal.chainAdd')}</button>
+          </div>
+        </div>
+
+        <!-- 过夜保险丝 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.goal.fuseTitle')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.goal.fuseDesc')}</div>
+          <div style="display:grid;grid-template-columns:130px 100px 130px 100px;gap:8px 10px;align-items:center;margin-top:8px">
+            <label class="field-desc" style="margin:0">${tr('settings.goal.maxIter')}</label>
+            <input id="s-goal-maxiter" type="number" min="1" value="${s.goalMaxIterations ?? 20}" />
+            <label class="field-desc" style="margin:0">${tr('settings.goal.maxHours')}</label>
+            <input id="s-goal-maxhours" type="number" min="0" step="0.5" value="${s.goalMaxHours ?? 0}" />
+            <label class="field-desc" style="margin:0">${tr('settings.goal.maxCost')}</label>
+            <input id="s-goal-maxcost" type="number" min="0" step="0.5" value="${s.goalMaxCostUSD ?? 0}" />
+            <span class="field-desc" style="margin:0">${tr('settings.goal.zeroUnlimited')}</span>
+          </div>
+        </div>
+      </div>
+      </div><!-- /goal panel -->
 
       <div class="s-footer">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
@@ -3786,6 +3841,36 @@ async function showSettings() {
     });
   }
   void renderProfileList();
+
+  // ── Goal 监工:模型接力链列表(goalProfileChain 有序数组,UI 上可增删)──
+  goalChainCache = lastSettingsSnapshot?.goalProfileChain ?? [];
+  const renderGoalChain = (): void => {
+    const box = document.getElementById('s-goal-chain-list');
+    if (!box) return;
+    if (goalChainCache.length === 0) {
+      box.innerHTML = `<div style="color:var(--muted);font-size:12px">${tr('settings.goal.chainEmpty')}</div>`;
+      return;
+    }
+    box.innerHTML = goalChainCache.map((pid, i) => {
+      const pf = profileCache.find((p: any) => p.id === pid);
+      return `<div class="profile-item"><span class="pf-name">${i + 1}. ${esc(pf?.name ?? pid)}</span><span class="pf-info">${esc(pf?.model ?? '')}</span><button class="ghost btn-xs" data-goal-chain-del="${esc(pid)}" style="color:var(--danger)">✕</button></div>`;
+    }).join('');
+    box.querySelectorAll('[data-goal-chain-del]').forEach((btn) => {
+      (btn as HTMLElement).onclick = () => {
+        goalChainCache = goalChainCache.filter((x) => x !== (btn as HTMLElement).dataset.goalChainDel);
+        renderGoalChain();
+      };
+    });
+  };
+  renderGoalChain();
+  document.getElementById('s-goal-chain-addbtn')!.onclick = () => {
+    const sel = document.getElementById('s-goal-chain-add') as HTMLSelectElement;
+    if (sel.value && !goalChainCache.includes(sel.value)) {
+      goalChainCache.push(sel.value);
+      renderGoalChain();
+    }
+    sel.value = '';
+  };
 
   document.getElementById('s-test')!.onclick = async () => {
     showMsg(tr('settings.testing'), false);
@@ -4217,6 +4302,13 @@ function readSettingsForm(): AppSettings {
     pluginSettings: lastSettingsSnapshot?.pluginSettings ?? {},
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
+    // Goal 监工参数(goal tab):链缓存由 renderGoalChain 的增删维护,保存时写回。
+    goalSupervisorEnabled: Boolean((document.getElementById('s-goal-supervisor') as HTMLInputElement)?.checked),
+    goalSupervisorModel: ((document.getElementById('s-goal-sup-model') as HTMLSelectElement)?.value ?? ''),
+    goalProfileChain: goalChainCache,
+    goalMaxIterations: Number((document.getElementById('s-goal-maxiter') as HTMLInputElement)?.value) || 20,
+    goalMaxHours: Number((document.getElementById('s-goal-maxhours') as HTMLInputElement)?.value) || 0,
+    goalMaxCostUSD: Number((document.getElementById('s-goal-maxcost') as HTMLInputElement)?.value) || 0,
     persona: (document.getElementById('s-persona-editor') as HTMLTextAreaElement)?.value ?? '', // 替身画像(从编辑器读)
     voiceChat: {
       appId: (document.getElementById('s-vc-appid') as HTMLInputElement).value.trim(),
