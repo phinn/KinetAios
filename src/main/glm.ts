@@ -1,7 +1,7 @@
 // LLM providers — SSE streaming over OpenAI-compatible and Anthropic protocols.
 // Verbatim port of Swift GLMProvider.swift. Node global fetch + a web ReadableStream reader.
 import type { ChatMsg, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
-import { getSettings } from './settings';
+import { getSettings, snapshot } from './settings';
 
 // Sanitize orphan surrogates from strings before JSON serialization.
 // Node JSON.stringify turns lone surrogates (e.g. \uD83D from a truncated emoji) into literal
@@ -38,8 +38,29 @@ export type Completion = {
 };
 
 export class GLMError extends Error {
-  constructor(public kind: 'noKey' | 'http' | 'noBody', public code = 0, public detail = '') {
+  // cls 错误大类:network(超时/断连/5xx,换模型无用) / quota(429+额度类文案,含订阅周期上限) /
+  // auth(401/402,换 key 才有用) / other。goal loop failover 只在 quota/auth 时切换模型。
+  constructor(public kind: 'noKey' | 'http' | 'noBody', public code = 0, public detail = '', public cls: 'network' | 'quota' | 'auth' | 'other' = 'other') {
     super(kind === 'noKey' ? 'no API key' : kind === 'noBody' ? 'no response body' : `HTTP ${code}${detail ? `: ${detail}` : ''}`);
+  }
+
+  // 错误分类器:GLMError 看状态码,裸 Error 看文案关键词。quota 判定覆盖中英文额度话术
+  // (「余额不足」/「usage limit」/「5 hour」等 —— 各家订阅制 5h 窗口文案不统一,只能关键词扫)。
+  static classify(e: unknown): 'network' | 'quota' | 'auth' | 'other' {
+    if (e instanceof GLMError) return GLMError.classifyText(e.code, e.detail);
+    const msg = e instanceof Error ? e.message : String(e);
+    if (/余额不足|usage limit|quota|insufficient|额度|5\s*hour|rate.?limit/i.test(msg)) return 'quota';
+    if (/401|403|unauthorized|invalid.?api.?key/i.test(msg)) return 'auth';
+    if (/timeout|ECONNRESET|ENOTFOUND|fetch failed|network|aborted/i.test(msg)) return 'network';
+    return 'other';
+  }
+
+  // 状态码 + 响应文本 → 分类。429 默认当 network(retryable),但文案带额度话术时当 quota(failover)。
+  static classifyText(code: number, detail: string): 'network' | 'quota' | 'auth' | 'other' {
+    if (code === 401 || code === 402 || code === 403) return 'auth';
+    if (code === 429) return /余额|quota|limit|insufficient|usage|额度|5\s*hour|5h/i.test(detail) ? 'quota' : 'network';
+    if (code >= 500 || code === 529) return 'network';
+    return 'other';
   }
 }
 
@@ -96,7 +117,7 @@ async function fetchUntil200(url: string, init: RequestInit): Promise<Response> 
       await sleep(backoffMs(attempt), signal);
       continue;
     }
-    throw new GLMError('http', resp.status, detail);
+    throw new GLMError('http', resp.status, detail, GLMError.classifyText(resp.status, detail));
   }
 }
 
@@ -770,4 +791,17 @@ class AnthropicProvider implements Provider {
       input_schema: fn.parameters ?? { type: 'object', properties: {} },
     };
   }
+}
+
+// MARK: supervisor — goal 监工用的无工具单发调用。与记忆提取同一模式:
+// snapshot(profileId) 取配置 → currentProvider(...).streamComplete 单发,空 tools,
+// onToken 丢弃(监工不流式)。供 TaskManager.runGoalLoop 做 continue/complete 判定。
+// Supervisor-only call helper: single completion, no tools, no streaming UI.
+export async function supervisorComplete(
+  messages: ChatMsg[],
+  profileId: string | null,
+  signal?: AbortSignal,
+): Promise<Completion> {
+  const snap = snapshot(profileId);
+  return currentProvider(snap).streamComplete(messages, [], snap, signal ?? AbortSignal.timeout(120_000), () => {});
 }
