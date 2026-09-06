@@ -534,37 +534,45 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 
       // 检查上一轮的结果
       const lastTurn = conv.turns[conv.turns.length - 1];
-      if (!lastTurn?.answer) break;
-      // 出错 → 先试 failover,链尽才停。quota/auth = 换模型有意义;network/other 不换。
+      if (!lastTurn) break;
+
+      // ── failover:上一轮报 quota/auth 错 → 换链上下一个模型接着跑。
+      // v3.5.6 修复:必须排在 answer 检查之前 —— 出错轮 answer 恒空,原写法 failover
+      // 是死代码,429 直接 break 停机。出错轮无产出,跳过完成判定/监工验收,
+      // 构造重试 prompt 直接落到本轮 dispatch(底部统一推新 turn,不会原地重试同一轮)。
+      let failoverRetry = '';
       if (lastTurn.error) {
         const cls = GLMError.classify(lastTurn.error);
         if ((cls === 'quota' || cls === 'auth') && chainIdx < failoverChain.length - 1) {
           const nx = nextFailover();
           if (nx) {
-            const turn = conv.turns[conv.turns.length - 1];
-            store.appendEvent(conv.id, turn.id, { type: 'goal/failover', from: (turn.error || '').slice(0, 120), to: nx.name, reason: cls });
+            store.appendEvent(conv.id, lastTurn.id, { type: 'goal/failover', from: (lastTurn.error || '').slice(0, 120), to: nx.name, reason: cls });
             conv.statusNote = `⚡ 模型 ${cls === 'quota' ? '额度耗尽' : '鉴权失败'} → 切换到 ${nx.name} 继续`;
             this.emit.emitConversation(conv);
-            continue; // 不消耗轮数语义上的"完成",直接重试下一轮(换模型后重发推动)
+            failoverRetry = `⚠️ 上一模型不可用(${cls === 'quota' ? '额度耗尽' : '鉴权失败'}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
           }
         }
-        break; // 不可恢复错误或链尽
+        if (!failoverRetry) break; // network/other 换模型无意义;或链已用尽 → 真停
       }
-      // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环
-      if (lastTurn.answer.includes('[GOAL_COMPLETE]')) {
-        // 去掉标记文本,给用户一个干净的结尾
-        lastTurn.answer = lastTurn.answer.replace(/\s*\[GOAL_COMPLETE\]\s*/g, '').trim();
-        store.saveTurn(conv.id, lastTurn);
-        conv.statusNote = '✅ 目标已完成';
-        // goal/complete 持久存证:目标完成不再是进程内一次性状态,重启后仍可查。
-        store.appendEvent(conv.id, lastTurn.id, { type: 'goal/complete', rounds: admittedRounds() });
-        this.emit.emitConversation(conv);
-        break;
+
+      // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环(failover 重试轮无产出,跳过)
+      if (!failoverRetry) {
+        if (!lastTurn.answer) break; // 正常轮无产出(被取消等)→ 停
+        if (lastTurn.answer.includes('[GOAL_COMPLETE]')) {
+          // 去掉标记文本,给用户一个干净的结尾
+          lastTurn.answer = lastTurn.answer.replace(/\s*\[GOAL_COMPLETE\]\s*/g, '').trim();
+          store.saveTurn(conv.id, lastTurn);
+          conv.statusNote = '✅ 目标已完成';
+          // goal/complete 持久存证:目标完成不再是进程内一次性状态,重启后仍可查。
+          store.appendEvent(conv.id, lastTurn.id, { type: 'goal/complete', rounds: admittedRounds() });
+          this.emit.emitConversation(conv);
+          break;
+        }
       }
 
       // ── Supervisor 验收(监工模式):替身点头才算完,continue 则 requirement 当下一轮驱动 ──
-      let nextPrompt = '';
-      if (supervisorOn) {
+      let nextPrompt = failoverRetry; // failover 重试轮:跳过监工验收(无产出可验),直接推重试
+      if (!nextPrompt && supervisorOn) {
         const verdict = await supervise(lastTurn.answer, currentAc.signal);
         if (verdict) {
           const turn = conv.turns[conv.turns.length - 1];
