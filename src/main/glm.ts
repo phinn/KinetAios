@@ -49,16 +49,19 @@ export class GLMError extends Error {
   static classify(e: unknown): 'network' | 'quota' | 'auth' | 'other' {
     if (e instanceof GLMError) return GLMError.classifyText(e.code, e.detail);
     const msg = e instanceof Error ? e.message : String(e);
-    if (/余额不足|usage limit|quota|insufficient|额度|5\s*hour|rate.?limit/i.test(msg)) return 'quota';
+    if (/(^|[^\d.])4\d{2}([^\d]|$)/.test(msg) && /余额|quota|limit|insufficient|usage|额度|上限|5\s*hour|5\s*小时|5h/i.test(msg)) return 'quota';
+    if (/余额不足|使用上限|配额|额度|usage limit|quota|insufficient|5\s*hour|5\s*小时|rate.?limit/i.test(msg)) return 'quota';
     if (/401|403|unauthorized|invalid.?api.?key/i.test(msg)) return 'auth';
-    if (/timeout|ECONNRESET|ENOTFOUND|fetch failed|network|aborted/i.test(msg)) return 'network';
+    if (/(^|[^\d.])5\d{2}([^\d]|$)/.test(msg) || /timeout|ECONNRESET|ENOTFOUND|fetch failed|network|aborted/i.test(msg)) return 'network';
     return 'other';
   }
 
-  // 状态码 + 响应文本 → 分类。429 默认当 network(retryable),但文案带额度话术时当 quota(failover)。
+  // 状态码 + 响应文本 → 分类。429 一律当 quota(failover 换模型):凡是 429 都意味着当前
+  // 供给方短时间内进不来量 —— 不管是账号额度耗尽还是全局限流,退避重试都解不了(过夜场景
+  // 等 5h 窗口重置纯属浪费),切链才有意义。纯瞬时限流由 glm 层 RETRYABLE_STATUS 先消化。
   static classifyText(code: number, detail: string): 'network' | 'quota' | 'auth' | 'other' {
     if (code === 401 || code === 402 || code === 403) return 'auth';
-    if (code === 429) return /余额|quota|limit|insufficient|usage|额度|5\s*hour|5h/i.test(detail) ? 'quota' : 'network';
+    if (code === 429) return 'quota';
     if (code >= 500 || code === 529) return 'network';
     return 'other';
   }
