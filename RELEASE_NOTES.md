@@ -1,5 +1,88 @@
 # Release Notes
 
+## v3.5.7 — Goal Failover 死代码根治(429 真切链)
+
+**发布日期：** 2026-09-06(自 v3.5.6 起 3 commits)
+
+### 🐛 Goal 模式可靠性
+
+- **failover 死代码根治(58ae165)** —— Goal 主循环 `if(!lastTurn?.answer) break` 排在 failover 检查之前,出错轮 answer 恒空直接停机,接力链分支从未执行过(conv_events 实证:goal/supervisor 19 条 vs goal/failover 0 条)。修复后出错轮构造断点续做 prompt(不重做已完成部分)换模型继续,network/链尽才真停;failover 轮跳过监工验收(无产出可验)
+- **错误分类器中文话术补齐(8086b0d)** —— 裸文本正则此前不认「5 小时的使用上限/配额/使用上限」等中文额度报错(订阅制中文 429 全漏判 other);另 429 一律判 quota 触发切链 —— 能漏到 goal loop 的 429 都是退避重试救不动的,等 5h 窗口重置纯属浪费过夜时间,纯瞬时限流由 glm 层指数退避先消化;裸文本 5xx 补判 network
+
+## v3.5.6 — Goal 监工模式(替身验收 · 模型接力 · 过夜保险丝)
+
+**发布日期：** 2026-09-04(自 v3.5.5 起 5 commits)
+
+### 🌙 Goal 监工模式
+
+- **Supervisor↔Worker 循环** —— 替身(Supervisor)逐轮验收 Worker 产出,verdict=continue 时 requirement 作为下一轮驱动;点头才算完成,目标真正收口(3bf52ad)
+- **模型接力链 failover** —— 有序 profile 链,quota/auth 类错误自动切下一个模型接着跑;监工模型可跟随会话或独立指定(3795a48)
+- **过夜保险丝三重上限** —— 轮数/时长/成本(goalMaxIterations/Hours/CostUSD),0 = 不限;替身画像未生成时监工开关不生效,运行时退化旧模式
+- **设置页新增 Goal tab(274ef09)** —— 监工开关/监工模型/接力链编辑器/保险丝参数;goal 域事件类型补齐(ea6f44a)
+
+## v3.5.5 — Computer Use 后台输入链路
+
+**发布日期：** 2026-09-04(自 v3.5.4 起 3 commits)
+
+### 🖱 Computer Use(macOS)
+
+- **后台投递 CGEventPostToPid** —— 点击锁 pid 后 Cmd+L/输入/Enter 全程后台投递,光标不动;点击/滚轮/拖拽/键盘四入口按 computerUseBackground 分流(c277dad)
+- **后台文本输入改剪贴板粘贴** —— CGEventKeyboardSetUnicodeString 合成事件被 Chrome 丢弃,改 pbcopy→Cmd+V→延迟恢复原剪贴板(2e48bc7)
+- **deepUnwrap 命中测试实锤修复** —— JXA `ObjC.deepUnwrap` 对 CGWindowListCopyWindowInfo 返回 undefined,`|| []` 兜底导致永远「未命中窗口」;改 castRefToObject 逐字段桥接,实测 21 个 layer-0 窗口枚举成功
+
+## v3.5.4 — Ollama 多模态根治 · 流式速率
+
+**发布日期：** 2026-09-04(自 v3.5.3 起 4 commits)
+
+### 🐛 Ollama
+
+- **带图历史每轮 400 根治(a8dc78d)** —— 截图产生的多模态 content 数组直接发给 `/api/chat` 的 Go string 结构体必炸;发送前 `ollamaFlattenContent` 扁平化:user 图片剥成 Ollama 原生 `images[]`(base64 裸串),tool 图片降级文本占位防每轮重发 base64
+
+### ✨ UI
+
+- **流式 token 速率指示(6887436)** —— 5s 滑动窗口速率 + 累计 tok 数,零 DOM 开销(只 push 时间戳,600ms 刷一次);工具停顿显 ⏸ 防假速率
+
+## v3.5.3 — 子代理透视 · 派生自愈
+
+**发布日期：** 2026-09-04(自 v3.5.2 起 6 commits)
+
+### 🌐 Teams
+
+- **子代理过程全量可见(1324b2e)** —— memberTool args/result 透传、dispatch_agent 工具步骤进主聊天流、team/* 事件入 conv_events 考古可回放
+
+### 🔧 可靠性
+
+- **turns 派生化自愈(a962ed0)** —— 事件日志三步收尾:conv_events append-only 事件日志(e587fc3)→ goal 域投影=事件流严格 fold(8a9070d)→ turns 派生自愈 + 上下文考古 UI;压缩唯一入口 compactWithSpill seam,spill 存证归一(6c5c39b)
+- **执行计时** —— header stat 运行中追加 ⏱ 实时耗时,1s ticker 空闲自停(65d4888)
+
+## v3.5.2 — 跨项目记忆默认关闭
+
+**发布日期：** 2026-09-03(自 v3.5.1 起 2 commits)
+
+### 🔒 隐私
+
+- **「跨项目记忆」默认关闭(8864357)** —— recall/注入默认限定本会话,显式开启(`=== true`)才跨项目;防止多项目混跑时记忆串味
+
+## v3.5.1 — OrcaRouter 预设 · 余额查询 · 轨迹透视
+
+**发布日期：** 2026-09-03(自 v3.5.0 起 14 commits)
+
+### ✨ 功能
+
+- **余额查询** —— profile 级余额查询配置(balanceUrl/Key/AuthScheme),MiniMax 余额分支 + 403 token_type_mismatch 识别并引导网页控制台;composer 余额按钮气泡跟随配置档实时查询
+- **OrcaRouter 预设** —— OpenAI 兼容多模型网关预设 + README 挂推广链接
+- **轨迹透视 Tab(5ff0c80)** —— DeepSeek 式执行轨迹查看 + 会话统计条;替身画像注入长度护栏,生成统计不再全量拉 turns
+- **CI:tag 发版自动同步 README 安装包版本号(64eb1c8)**
+
+## v3.5.0 — 文件抽屉 · 余额面板
+
+**发布日期：** 2026-09-02(自 v3.4.3 起 14 commits)
+
+### ✨ UI
+
+- **Codex 式文件抽屉** —— 「文件」从整屏 tab 改右侧停靠抽屉,悬浮对话之上,左缘拖拽调宽(localStorage 持久化);聊天流文件 chip 点击直开
+- **布局修复** —— 非对话 tab 聊天区半屏空白修复(5b9692f)
+
 ## v3.4.2 — CI 发布链路修复
 
 **发布日期：** 2026-08-31(自 v3.4.1 起 1 commit)
