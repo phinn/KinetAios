@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios 隐私政策 | Privacy Policy</title>
+<style>
+  :root { --bg:#0b0e14; --fg:#e6e8ee; --dim:#9aa3b2; --line:#1e2430; --acc:#5b8cff; }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.75 -apple-system,"PingFang SC","Segoe UI",sans-serif; max-width:820px; margin:0 auto; padding:64px 24px; }
+  h1 { font-size:32px; margin-bottom:8px; }
+  h2 { font-size:20px; margin:40px 0 12px; color:var(--acc); }
+  p, li { color:var(--dim); margin-bottom:12px; }
+  ul { padding-left:24px; margin-bottom:16px; }
+  table { width:100%; border-collapse:collapse; margin:16px 0; font-family:"SF Mono",Menlo,monospace; font-size:14px; }
+  td { border:1px solid var(--line); padding:10px 14px; }
+  td:first-child { color:var(--acc); white-space:nowrap; }
+  .up { margin-top:48px; font-size:13px; color:#5a6373; }
+  a { color:var(--acc); }
+</style>
+</head>
+<body>
+<h1>KinetAios 隐私政策</h1>
+<p>生效日期:2026-09-07 · 本政策适用于 KinetAios(macOS / Windows 桌面应用)。</p>
+
+<h2>一句话版本</h2>
+<p>KinetAios 是本地优先(Local-First)应用:<strong>你的所有数据都只存在你自己的电脑里,我们没有任何服务器,不收集、不上传、不追踪。</strong></p>
+
+<h2>1. 我们收集什么</h2>
+<p>什么都不收集。应用不内嵌任何账号系统、统计 SDK、崩溃上报或广告组件;不存在开发者侧的数据服务器。</p>
+
+<h2>2. 数据存在哪里</h2>
+<table>
+  <tr><td>API Key</td><td>操作系统钥匙串(macOS Keychain / Windows DPAPI),仅本机</td></tr>
+  <tr><td>对话与记忆</td><td>本机 SQLite 数据库(应用沙盒容器内),仅本机</td></tr>
+  <tr><td>遥测数据</td><td>无</td></tr>
+  <tr><td>上传</td><td>从不(除下述第 3 条)</td></tr>
+</table>
+
+<h2>3. 唯一的数据出设备场景</h2>
+<p>当你使用 AI 对话功能时,应用会把当前会话上下文发送到<strong>你自己在设置中配置的第三方大模型服务商 API 地址</strong>(如 OpenAI、Anthropic、智谱、本地 ollama 等)。该传输由你发起、指向你指定的服务,受该服务商隐私政策约束;KinetAios 本身不中转、不存储、不查看这些请求。不配置任何 API Key 时,应用不会发出任何网络请求(语音、MCP、更新检查等联网功能同理,均需你主动启用并填写你自己提供的地址)。</p>
+
+<h2>4. 权限使用</h2>
+<ul>
+  <li><strong>麦克风</strong>:仅当你主动开启语音对话时采集音频做实时识别,不在后台录音。</li>
+  <li><strong>屏幕截图</strong>:仅当你调用截图工具时使用,需系统授权。</li>
+  <li><strong>文件访问</strong>:仅访问你通过系统面板授权的目录,以及应用自身的数据目录。</li>
+</ul>
+
+<h2>5. 儿童</h2>
+<p>应用不面向 14 岁以下儿童收集任何信息(事实上我们不收集任何人的信息)。</p>
+
+<h2>6. 政策变更</h2>
+<p>若未来引入任何数据收集,将在此页面显著更新并提高版本号。</p>
+
+<h2>7. 联系我们</h2>
+<p>邮箱:<a href="mailto:phinn@kinet.app">phinn@kinet.app</a> · GitHub Issues:<a href="https://github.com/phinn/KinetAios">github.com/phinn/KinetAios</a></p>
+
+<p class="up">© 2026 Kinet · <a href="/KinetAios/">返回官网</a></p>
+</body>
+</html>
