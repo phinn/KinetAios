@@ -197,14 +197,25 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
   // (SSE 有 keep-alive 注释或心跳 chunk)。
   const STALL_MS = 300_000; // 5 分钟无字节 = 判死
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  const stallReject = (reason: Error) => stallRejectRef(reason);
+  let stallRejectRef: (reason: Error) => void = () => {};
+  // 每收到一个 chunk 重新武装计时(先撤旧的再起新的)。
+  // / Re-arm the timer on EVERY chunk (clear old, start new).
+  // ⚠️ 不能只 clearTimeout 一次:那会让看门狗在首 chunk 后永久失效,
+  // 流中途断流时 reader.read() 永挂 → turn 永远 running(2026-09-09 事故)。
+  const armStall = (): void => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => stallRejectRef(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+  };
   const stall = new Promise<never>((_, reject) => {
-    stallTimer = setTimeout(() => reject(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+    stallRejectRef = reject;
+    armStall(); // 连接建立起即计时 / start timing immediately
   });
   try {
     for (;;) {
       const { value, done } = await Promise.race([reader.read(), stall]);
       if (done) break;
-      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; } // 收到数据 → 撤 watchdog(整流读完后无需再计时)
+      armStall(); // 收到数据 → 重置计时 / data received → reset timer
       buf += dec.decode(value, { stream: true });
       let idx: number;
       while ((idx = buf.indexOf('\n')) >= 0) {
@@ -544,17 +555,24 @@ async function ollamaStreamInner(
   const decoder = new TextDecoder();
   let buf = '';
   // 流静默看门狗(同 sseLines):连接半死时 reader.read() 永挂。
+  // ⚠️ 每 chunk 重置计时,不能首 chunk 后撤销 —— 否则中途断流时永挂(2026-09-09 事故)。
   const STALL_MS = 300_000;
   let stallTimer: ReturnType<typeof setTimeout> | null = null;
+  let stallRejectRef: (reason: Error) => void = () => {};
+  const armStall = (): void => {
+    if (stallTimer) clearTimeout(stallTimer);
+    stallTimer = setTimeout(() => stallRejectRef(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+  };
+  armStall();
 
   try {
     const stall = new Promise<never>((_, reject) => {
-      stallTimer = setTimeout(() => reject(new Error(`流静默 ${STALL_MS / 1000}s(连接半死,已中断)`)), STALL_MS);
+      stallRejectRef = reject;
     });
     for (;;) {
       const { done, value } = await Promise.race([reader.read(), stall]);
       if (done) break;
-      if (stallTimer) { clearTimeout(stallTimer); stallTimer = null; }
+      armStall(); // 收到数据 → 重置计时 / data received → reset timer
       buf += decoder.decode(value, { stream: true });
       const lines = buf.split('\n');
       buf = lines.pop() ?? '';
