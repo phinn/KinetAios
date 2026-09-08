@@ -1362,8 +1362,9 @@ async function doGitAction(action: import('../shared/types').GitActionKind, opts
   }
   gitState.busy = true;
   setGitActionsDisabled(true);
-  gitToast(tr('git.actRunning'), true);
+  const runningDismiss = uxToast.info(tr('git.actRunning'));
   const r = await api.gitAction(cwd, action, opts);
+  runningDismiss(); // 收起「执行中…」,不挡 composer 按钮 / dismiss the "Running…" toast promptly
   gitState.busy = false;
   setGitActionsDisabled(false);
   if (r.ok) {

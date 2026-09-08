@@ -8,6 +8,7 @@ type ToastKind = 'success' | 'error' | 'info' | 'warning';
 interface ToastEntry {
   el: HTMLDivElement;
   timer: ReturnType<typeof setTimeout> | null;
+  baseDur: number; // 原始时长(0=手动关闭),mouseleave 重挂据此判断 / original duration, 0 = manual close
 }
 
 const MAX_TOASTS = 5;           // 同时最多显示 5 条
@@ -56,8 +57,9 @@ function kindLabel(kind: ToastKind): string {
  * @param message 消息文本(纯文本,不含 HTML)
  * @param kind 语义级别
  * @param duration 自动关闭时长(ms),0 = 手动关闭。默认按 kind 决定。
+ * @returns dismiss 函数,调用立即关闭该条 / returns a dismiss handle
  */
-export function toast(message: string, kind: ToastKind = 'info', duration?: number): void {
+export function toast(message: string, kind: ToastKind = 'info', duration?: number): () => void {
   const cont = ensureContainer();
 
   // 超出上限:移除最早的 / Enforce max visible count
@@ -79,9 +81,7 @@ export function toast(message: string, kind: ToastKind = 'info', duration?: numb
     <button class="ux-toast-close" aria-label="Close" tabindex="0">${'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>'}</button>
   `;
 
-  const entry: ToastEntry = { el, timer: null };
-
-  // 关闭按钮 / Close button
+  const entry: ToastEntry = { el, timer: null, baseDur: dur };
   el.querySelector('.ux-toast-close')!.addEventListener('click', () => {
     dismissToast(entry);
   });
@@ -93,8 +93,9 @@ export function toast(message: string, kind: ToastKind = 'info', duration?: numb
   });
   el.addEventListener('mouseleave', () => {
     el.classList.remove('ux-toast-paused');
-    if (entry.timer === null && dur > 0) {
-      entry.timer = setTimeout(() => dismissToast(entry), dur);
+    // 用 baseDur(而非闭包比较)防 0/手动关闭被反复重挂 / use baseDur so manual-close (0) never re-arms
+    if (entry.timer === null && entry.baseDur > 0) {
+      entry.timer = setTimeout(() => dismissToast(entry), entry.baseDur);
     }
   });
 
@@ -109,13 +110,21 @@ export function toast(message: string, kind: ToastKind = 'info', duration?: numb
   if (dur > 0) {
     entry.timer = setTimeout(() => dismissToast(entry), dur);
   }
+  return () => dismissToast(entry);
 }
 
 function dismissToast(entry: ToastEntry): void {
+  // 幂等:已被逐出 activeToasts 的条目(如 MAX_TOASTS 驱逐)也要完成清理。
+  // 之前 early-return 会导致 timer 未清 + DOM 永不删除 → 孤儿 toast 永久挡住按钮且 × 失效。
+  // / Idempotent: entries evicted from activeToasts must still clean up (timer + DOM),
+  // otherwise the orphan toast blocks the UI forever and its × stops working.
   const idx = activeToasts.indexOf(entry);
-  if (idx === -1) return;  // already dismissed
+  if (idx !== -1) activeToasts.splice(idx, 1);
 
   if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+
+  // 已在退场中(挂了 removeTimer)则不重复安排 / Already leaving — don't schedule twice
+  if (entry.el.classList.contains('ux-toast-leaving')) return;
 
   entry.el.classList.remove('ux-toast-show');
   entry.el.classList.add('ux-toast-leaving');
@@ -123,11 +132,8 @@ function dismissToast(entry: ToastEntry): void {
   // 动画结束后移除 DOM / Remove from DOM after exit animation
   const removeTimer = setTimeout(() => {
     entry.el.remove();
-    const i = activeToasts.indexOf(entry);
-    if (i !== -1) activeToasts.splice(i, 1);
   }, 300);
-
-  // 标记 timer 防止重复 / Mark to prevent re-entry
+  // 标记 timer 防止重复安排 / Mark so re-entry is guarded
   entry.timer = removeTimer as any;
 }
 
@@ -138,7 +144,6 @@ export const uxToast = {
   info: (msg: string, dur?: number) => toast(msg, 'info', dur),
   warn: (msg: string, dur?: number) => toast(msg, 'warning', dur),
 };
-
 // HTML 转义(防注入) / HTML escape (prevent injection)
 function escHtml(s: string): string {
   return s
