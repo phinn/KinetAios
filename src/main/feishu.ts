@@ -41,6 +41,14 @@ class FeishuBridge {
   private apiClient: lark.Client | null = null;
   private taskManager: TaskManager | null = null;
   private _connected = false;
+  /** 最近一次收到任何事件/回调的时间戳(watchdog 判活依据)。 */
+  // / Timestamp of the last received event/callback (watchdog liveness signal).
+  private lastEventAt = 0;
+  /** watchdog 定时器句柄。 */
+  private watchdogTimer: ReturnType<typeof setInterval> | null = null;
+  /** 静默上限(毫秒):超过则强制重连。飞书心跳周期远小于此值,正常连接绝不会触发。 */
+  // / Silence ceiling (ms): force reconnect beyond it. Feishu's heartbeat is far shorter.
+  private static readonly WATCHDOG_SILENCE_MS = 10 * 60 * 1000;
   /** feishuKey → convId 映射(内存缓存,启动时从 SQLite 重建)。 */
   // / feishuKey → convId mapping (in-memory cache, rebuilt from SQLite on start).
   private feishuSessions = new Map<string, string>();
@@ -53,6 +61,15 @@ class FeishuBridge {
   /** 已处理的 message_id 集合,用于幂等去重(飞书 WS 会在超时后重投递同一条消息) */
   // / Processed message_id set for idempotency (Feishu WS redelivers on timeout)
   private processedMsgIds = new Set<string>();
+
+  // ── WS watchdog:TCP 半开连接自愈 ──
+  // 背景(2026-09-09 事故):autoReconnect 只对"可检测的断开"(close/error)生效。
+  // 链路闪断/NAT 回收后 TCP 进入半开状态,SDK 收不到任何断开事件,
+  // 连接表面 ESTABLISHED 但飞书服务端已停止投递 → 消息静默丢失,无报错无感知。
+  // 对策:跟踪最近事件时间,静默超阈值就强制 stop+start 重建连接。
+  // / WS watchdog: heal half-open TCP connections. autoReconnect only fires on
+  // detectable closes; a half-open socket looks ESTABLISHED but Feishu stopped
+  // delivering. Track last-event time; force a stop+start cycle on silence.
   private static readonly MAX_PROCESSED = 500;
   /** 每个用户最多保留的会话数(超出时关闭最旧的)。 */
   // / Max conversations per user key (oldest gets closed when exceeded).
@@ -178,6 +195,7 @@ class FeishuBridge {
       eventDispatcher.register({
         'im.message.receive_v1': (raw: unknown) => {
           try {
+            this.lastEventAt = Date.now(); // 刷新 watchdog 心跳 / refresh watchdog heartbeat
             this.handleIncoming(raw as FeishuMessageEvent);
           } catch (e: any) {
             console.error('[feishu] handleIncoming:', e.message);
@@ -194,6 +212,7 @@ class FeishuBridge {
         autoReconnect: true,
         onReady: () => {
           this._connected = true;
+          this.lastEventAt = Date.now();
           this.broadcast({ type: 'connected' });
           console.log('[feishu] WebSocket connected');
         },
@@ -209,6 +228,7 @@ class FeishuBridge {
         },
         onReconnected: () => {
           this._connected = true;
+          this.lastEventAt = Date.now();
           this.broadcast({ type: 'connected' });
           console.log('[feishu] reconnected');
         },
@@ -219,6 +239,10 @@ class FeishuBridge {
       this.wsClient.start({ eventDispatcher });
 
       this.broadcast({ type: 'connecting' });
+      // 启动 watchdog:每分钟检查静默时长,超限强制重建连接。
+      // / Start watchdog: check silence every minute, rebuild on threshold breach.
+      this.lastEventAt = Date.now();
+      this.startWatchdog();
       return { ok: true };
     } catch (e: any) {
       this.broadcast({ type: 'error', data: { message: e.message } });
@@ -226,8 +250,33 @@ class FeishuBridge {
     }
   }
 
+  /** 启动静默 watchdog(见类头注释)。 */
+  // / Start the silence watchdog (see class-level comment).
+  private startWatchdog(): void {
+    this.stopWatchdog();
+    this.watchdogTimer = setInterval(() => {
+      if (!this.wsClient) { this.stopWatchdog(); return; }
+      const silent = Date.now() - this.lastEventAt;
+      if (silent > FeishuBridge.WATCHDOG_SILENCE_MS) {
+        console.warn(`[feishu] watchdog: no event for ${Math.round(silent / 1000)}s — forcing reconnect (suspected half-open TCP)`);
+        this.broadcast({ type: 'reconnecting' });
+        // 异步重建:stop 清理旧连接,start 走完整初始化(内部会重置 lastEventAt + watchdog)。
+        // / Rebuild async: stop cleans up, start re-runs full init (resets lastEventAt + watchdog).
+        this.stop();
+        this.start().catch((e) => console.error('[feishu] watchdog reconnect failed:', e.message));
+      }
+    }, 60 * 1000);
+  }
+
+  /** 停止 watchdog。 */
+  // / Stop the watchdog.
+  private stopWatchdog(): void {
+    if (this.watchdogTimer) { clearInterval(this.watchdogTimer); this.watchdogTimer = null; }
+  }
+
   // ── 断开 / Disconnect ──
   stop(): { ok: boolean } {
+    this.stopWatchdog();
     if (this.wsClient) {
       try { this.wsClient.close(); } catch { /* ignore */ }
       this.wsClient = null;
