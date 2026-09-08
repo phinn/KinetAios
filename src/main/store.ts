@@ -589,6 +589,13 @@ export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: 
 
 // MARK: long-term memory (injected into the system prompt)
 // convId 过滤:有值只返回该频道产生的;undefined 返回全部。
+// 取会话 cwd(记忆注入打标用:解析记忆归属项目)。会话不存在返回 null。
+// Conversation cwd lookup — used by memory injection to tag which project a memory came from.
+export function getConversationCwd(convId: string): string | null {
+  const row = db.prepare('SELECT cwd FROM conversations WHERE id = ?;').get(convId) as { cwd: string } | undefined;
+  return row?.cwd ?? null;
+}
+
 export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   if (convId === undefined) {
     return db.prepare('SELECT id, content, conversation_id, importance FROM memories ORDER BY created_at DESC;').all() as Array<{
@@ -1064,6 +1071,8 @@ export interface MemoryEmbeddingRow {
   memoryId: string;
   content: string;
   vec: Float32Array;
+  // 记忆归属会话 id(null = 全局)。注入时用于解析"来自哪个项目",防跨项目语境串台。
+  conversationId: string | null;
 }
 export function setMemoryEmbedding(memoryId: string, vec: number[], model: string): void {
   const buf = Buffer.from(new Float32Array(vec).buffer);
@@ -1077,15 +1086,16 @@ export function listMemoryEmbeddings(restrictConvId?: string): MemoryEmbeddingRo
   // restrictConvId:只取本会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时)。
   const rows = restrictConvId
     ? db.prepare(
-        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.conversation_id IS NULL OR m.conversation_id = ?;',
-      ).all(restrictConvId) as Array<{ memoryId: string; vec: Uint8Array; content: string }>
+        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.conversation_id IS NULL OR m.conversation_id = ?;',
+      ).all(restrictConvId) as Array<{ memoryId: string; vec: Uint8Array; content: string; conversation_id: string | null }>
     : db.prepare(
-        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
-      ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string }>;
+        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
+      ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string; conversation_id: string | null }>;
   return rows.map((r) => ({
     memoryId: r.memoryId,
     content: r.content,
     vec: new Float32Array(r.vec.buffer, r.vec.byteOffset, r.vec.byteLength / 4),
+    conversationId: r.conversation_id,
   }));
 }
 // cosine similarity,两个向量必须同维度。ponytail: 暴力 O(n),记忆规模(~几百条)够用。

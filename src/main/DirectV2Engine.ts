@@ -32,6 +32,7 @@ import { pluginSystemPrompts } from './plugins';
 import * as store from './store';
 import {
   baseSystemPrompt,
+  cwdAnchorSection,
   personaSection,
   sourceHintSection,
   loadProjectRules,
@@ -240,6 +241,7 @@ export class DirectV2Engine implements Engine {
     const rulesSection = loadProjectRules(conv.cwd);
     const systemPrompt =
       baseSystemPrompt +
+      cwdAnchorSection(conv) +
       V2_SYSTEM_SUFFIX +
       personaSection(conv) +
       sourceHintSection(conv) +

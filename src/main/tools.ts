@@ -1,6 +1,6 @@
 // Tools: shell / read_file / write_file / web_fetch / recall_memory. Port of Swift Tool.swift.
 // shell runs cross-platform via child_process.exec (cmd.exe on Windows, /bin/sh elsewhere).
-import { exec } from 'node:child_process';
+import { exec, execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
@@ -219,6 +219,70 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000, sig
   });
 }
 
+// ── git 仓库越界守卫 ──
+// 2026-09-08 事故:会话 cwd 在 KinetTask,但 shell 工具每次调用重置 cwd 且 AI 全程用绝对路径
+// cd 到别的仓库提交。"cd /path/to/other/repo && git commit" 对 conv.cwd 没有任何从属校验。
+// 这里在执行前抽出命令里的 git 仓库路径,与会话 cwd 解析到同一仓库顶点比对,不一致就拒绝,
+// 把"跨仓库操作"变成显式确认而不是静默成功。
+// Git repo escape guard: extract the git repo referenced by the command (cd prefix or -C flag)
+// and compare its toplevel with the conversation cwd's toplevel; refuse on mismatch.
+function gitRepoRoot(startCwd: string): string | null {
+  try {
+    const r = execFileSync('git', ['rev-parse', '--show-toplevel'], { cwd: startCwd, timeout: 5000, encoding: 'utf8' });
+    return path.resolve(r.trim());
+  } catch {
+    return null; // 不是 git 仓库 → 不归这个守卫管
+  }
+}
+
+// 从一条 shell 命令里提取"git 最终落在哪个目录"。覆盖三种形态:
+// 1. cd <dir> && git ...        (链式,取最后一个 cd)
+// 2. git -C <dir> ...           (git 自带旗标)
+// 3. git ...                    (裸调用 → 用 shell 的起始 cwd)
+function commandGitDir(cmd: string, startCwd: string): string | null {
+  // cd 链:取最后一个 cd 的目标(&& 或 ; 分隔的片段里)
+  const segs = cmd.split(/&&|\|\||;/).map((s) => s.trim());
+  let dir = startCwd;
+  let sawGit = false;
+  for (const seg of segs) {
+    const cd = seg.match(/^cd\s+(.+?)(\s*#.*)?$/i);
+    if (cd) {
+      const target = cd[1].trim().replace(/^["']|["']$/g, '');
+      dir = path.isAbsolute(target) ? target : path.resolve(dir, target);
+      continue;
+    }
+    if (/(^|\s)git(\s|$)/.test(seg)) {
+      sawGit = true;
+      const cFlag = seg.match(/git\s+-C\s+(\S+)/);
+      if (cFlag) {
+        const target = cFlag[1].replace(/^["']|["']$/g, '');
+        dir = path.isAbsolute(target) ? target : path.resolve(dir, target);
+      }
+    }
+  }
+  return sawGit ? dir : null;
+}
+
+// 返回拒绝原因;null = 放行(非 git 写操作 / 仓库一致 / 无法判定)。
+export function gitCrossRepoViolation(cmd: string, convCwd: string): string | null {
+  // 只拦写操作:commit/push/tag/merge/rebase/reset/clean/checkout 等。
+  // 只读的 status/log/diff/branch 允许在任意仓库跑(探查别的仓库是合法需求)。
+  if (!/\bgit\b[^&|;]*\b(commit|push|tag|merge|rebase|reset|clean|cherry-pick|revert|am|apply)\b/.test(cmd)) return null;
+  const gitDir = commandGitDir(cmd, convCwd);
+  if (!gitDir) return null;
+  const convRoot = gitRepoRoot(convCwd);
+  const cmdRoot = gitRepoRoot(gitDir);
+  // 两边都能解析出仓库顶点且不同 → 明确越界
+  if (convRoot && cmdRoot && path.resolve(convRoot) !== path.resolve(cmdRoot)) {
+    return `命令要把 git 写操作落在 ${cmdRoot},但本会话的项目仓库是 ${convRoot} — 疑似跨项目误操作。如确需操作其它仓库,请在命令里明确说明目标项目并重新提交。`;
+  }
+  // 会话目录不是仓库但命令目标是仓库 → 同样值得拦(更可疑)
+  if (!convRoot && cmdRoot) {
+    return `本会话工作目录 ${convCwd} 不是 git 仓库,但命令要把 git 写操作落在仓库 ${cmdRoot} — 疑似跨项目误操作。如确需操作该仓库,请显式确认。`;
+  }
+  return null;
+}
+
 const shell: Tool = {
   name: 'shell',
   description: '在用户电脑上执行 shell 命令(文件操作、git、系统信息等)。执行前会请求用户确认。Windows 上走 cmd.exe,其它系统走 /bin/sh。',
@@ -229,6 +293,9 @@ const shell: Tool = {
   },
   async run(args, ctx) {
     const cmd = (args.command as string) ?? '';
+    // git 跨仓库写操作守卫:先于用户 confirm 弹出,消息里带两个仓库路径,用户自己判断放不放行。
+    const violation = gitCrossRepoViolation(cmd, ctx.cwd);
+    if (violation) return `🚫 已拦截 — ${violation}`;
     const ok = await ctx.confirm(cmd);
     if (!ok) return `❌ 用户拒绝执行: ${cmd}`;
     const out = await shellExec(cmd, ctx.cwd, 120_000, ctx.signal);

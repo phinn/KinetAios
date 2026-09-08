@@ -90,6 +90,26 @@ export function personaSection(conv?: Conversation): string {
   return `\n\n# 🧬 替身画像(用户做事风格)\n以下是用户本人的做事风格画像。请在回答风格、方案选择、代码风格上尽量贴合画像描述,就像用户本人在操作一样:\n\n${persona}`;
 }
 
+// cwd 锚定注入:把会话工作目录钉进 systemPrompt,防"框架污染"跑错项目。
+// 2026-09-08 事故:KinetTask 会话里 AI 因全局只有一把 ASC 签名钥匙,顺着钥匙滑进
+// KinetAiosMac 的语境,把别的项目当"本项目"改了 fastlane 并提交。根因是会话 cwd
+// 只影响 shell 初始目录,不参与任何语义约束。这里把 cwd 写进 systemPrompt 并给出硬规则。
+// cwd anchor injection: pin the conversation's working dir into the system prompt so the
+// model cannot drift into a sibling project's context (see 2026-09-08 KinetTask incident).
+export function cwdAnchorSection(conv?: Conversation): string {
+  const cwd = conv?.cwd?.trim();
+  if (!cwd) return '';
+  return `\n\n# 📌 当前项目(会话工作目录)
+\`\`\`
+${cwd}
+\`\`\`
+本会话属于上面这个项目。硬性规则:
+1. **"本项目" = ${cwd}**。修改文件、git 操作、谈论"这个项目"时,只指这个目录树内的内容。
+2. 默认用相对路径(相对当前工作目录)。必须引用其它项目/目录时,**先向用户显式说明**目标路径不属于本项目并征得同意,不得静默跨项目操作。
+3. git add/commit/push 前必须确认当前仓库就是本项目的仓库;发现自己在别的仓库里,立即停下来向用户确认。
+4. 找不到某个资源(密钥/配置/文件)时,先在本项目内穷尽搜索并报告"未找到",**禁止顺着其它项目的资源推断本项目也该用同一套**。`;
+}
+
 // 子 agent 超时(ms)。8 分钟:子任务是多轮 ReAct + web/grep 工具链,3 分钟会频繁误杀
 // 中途 abort → 整个结果丢弃返回 "operation aborted",看起来就是"超时不可用"。
 // / Sub-agent timeout. 8min: multi-turn ReAct with web/grep tools needs more than 3min.
@@ -465,7 +485,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

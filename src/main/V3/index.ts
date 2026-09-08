@@ -25,6 +25,7 @@ import { mcp } from '../mcp';
 import { pluginSystemPrompts } from '../plugins';
 import {
   baseSystemPrompt,
+  cwdAnchorSection,
   personaSection,
   sourceHintSection,
   loadProjectRules,
@@ -73,6 +74,7 @@ export class DirectV3Engine implements Engine {
 
     const systemPrompt =
       baseSystemPrompt +
+      cwdAnchorSection(conv) +
       V3_SYSTEM_SUFFIX +
       personaSection(conv) +
       sourceHintSection(conv) +

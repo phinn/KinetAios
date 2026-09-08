@@ -767,10 +767,31 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const query = recentUserMsgs.join(' ').slice(0, 500);
 
     // ── P1: 加权检索式记忆(importance * 0.5 + recency * 0.3 + relevance * 0.2)──
+    // 2026-09-08 事故补:检索结果按记忆归属会话解析出 cwd,非本项目记忆加 [来自项目 X] 标签。
+    // 之前只注入内容不带出处,KinetTask 会话里 KinetAiosMac 的发布链记忆静默混入,
+    // 模型把别的项目当"本项目"。打标后模型能区分语境,同名资源(密钥/目录)不再张冠李戴。
+    // / Tag memories from other projects with their origin so the model can tell contexts apart.
+    const convCwdByConv = new Map<string, string>(); // convId → cwd,懒解析缓存
+    const resolveCwd = (cid: string | null | undefined): string | null => {
+      if (!cid) return null;
+      if (!convCwdByConv.has(cid)) {
+        convCwdByConv.set(cid, store.getConversationCwd(cid) ?? '');
+      }
+      return convCwdByConv.get(cid) || null;
+    };
+    const tagForeign = (content: string, memConvId: string | null): string => {
+      const memCwd = resolveCwd(memConvId);
+      if (!memCwd || !conv.cwd) return content; // 无归属(全局记忆)或会话无 cwd → 不打标
+      const norm = (p: string): string => p.replace(/\/+$/, '');
+      if (norm(memCwd) === norm(conv.cwd)) return content; // 本项目记忆 → 原样
+      const projName = memCwd.split('/').filter(Boolean).pop() ?? memCwd;
+      return `${content} [来自项目 ${projName}]`;
+    };
+
     const recalled = restrict
       ? await this.recallForInjectionSession(query, restrict)
       : await this.recallForInjection(query);
-    const limited = recalled.map((m) => shellSafeMemory(m.content));
+    const limited = recalled.map((m) => shellSafeMemory(tagForeign(m.content, m.conversationId)));
 
     if (limited.length) {
       out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + limited.map((m) => `- ${m}`).join('\n');
@@ -805,7 +826,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 
   // 三级回退检索:embedding cosine → FTS5 → recent-N 兜底。
   // P1: 结果按 importance * 0.5 + recency * 0.3 + relevance * 0.2 加权排序。
-  private async recallForInjection(query: string): Promise<Array<{ content: string }>> {    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
+  // 返回携带 conversationId:注入层用它解析记忆归属项目并打标(防跨项目语境串台)。
+  private async recallForInjection(query: string): Promise<Array<{ content: string; conversationId: string | null }>> {    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
 
     // 1. embedding cosine 检索(有 embedding 且 query 非空时)→ P1 加权重排
     if (query) {
@@ -818,7 +840,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
             const qVec = new Float32Array(qVecArr[0]);
             // 先用 embedding cosine 召回 top-30(宽召回)
             const candidates = embedRows
-              .map((r) => ({ memoryId: r.memoryId, content: r.content, score: store.cosine(qVec, r.vec) }))
+              .map((r) => ({ memoryId: r.memoryId, content: r.content, conversationId: r.conversationId, score: store.cosine(qVec, r.vec) }))
               .filter((r) => r.score > 0.2)
               .sort((a, b) => b.score - a.score)
               .slice(0, 30);
@@ -831,13 +853,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
                 for (const s of scored) {
                   try { store.touchMemoryUsed(s.id); } catch { /* non-blocking */ }
                 }
-                return scored.map(({ content }) => ({ content }));
+                return scored.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
               }
               // scoredMemories 没有足够结果 → 用原始 embedding 排序
               for (const s of candidates.slice(0, INJECT_LIMIT)) {
                 try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
               }
-              return candidates.slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
+              return candidates.slice(0, INJECT_LIMIT).map(({ content, conversationId }) => ({ content, conversationId }));
             }
           }
         }
@@ -849,7 +871,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       try {
         const ftsHits = store.searchMemories(query, INJECT_LIMIT);
         if (ftsHits.length >= 2) {
-          return ftsHits.map(({ content }) => ({ content }));
+          return ftsHits.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
         }
       } catch {
         /* FTS5 失败 → recent-N 兜底 */
@@ -857,25 +879,30 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     }
 
     // 3. recent-N 兜底(无 query / 检索无结果时,取最新的 N 条)
-    return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content }) => ({ content }));
+    return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
   }
 
   // 跨项目记忆关闭时的会话内检索:逻辑同上,但所有来源限定本会话(+无归属全局记忆)。
   // Session-restricted variant of recallForInjection — same fallback chain, filtered sources.
-  private recallForInjectionSession(query: string, convId: string): Promise<Array<{ content: string }>> {
+  private recallForInjectionSession(query: string, convId: string): Promise<Array<{ content: string; conversationId: string | null }>> {
     const INJECT_LIMIT = 15;
     if (query) {
       try {
         const embedRows = store.listMemoryEmbeddings(convId);
-        if (embedRows.length) return Promise.resolve(embedRows.slice(0, INJECT_LIMIT).map(({ content }) => ({ content })));
+        if (embedRows.length) return Promise.resolve(embedRows.slice(0, INJECT_LIMIT).map(({ content, conversationId }) => ({ content, conversationId })));
       } catch { /* fallthrough */ }
       try {
         const ftsHits = store.searchMemories(query, INJECT_LIMIT, convId);
-        if (ftsHits.length >= 2) return Promise.resolve(ftsHits.map(({ content }) => ({ content })));
+        if (ftsHits.length >= 2) return Promise.resolve(ftsHits.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id })));
       } catch { /* fallthrough */ }
     }
     // recent-N 兜底:全局记忆(无归属)仍可注入 —— 会话内无历史时冷启动需要基本上下文。
-    return Promise.resolve(store.loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === convId).slice(0, INJECT_LIMIT).map(({ content }) => ({ content })));
+    return Promise.resolve(
+      store.loadMemories()
+        .filter((m) => m.conversation_id === null || m.conversation_id === convId)
+        .slice(0, INJECT_LIMIT)
+        .map(({ content, conversation_id }) => ({ content, conversationId: conversation_id })),
+    );
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
