@@ -9,6 +9,7 @@ import { t } from '../shared/i18n';
 import { currentProvider, embed, GLMError, supervisorComplete } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
+import { applyPin } from './pin-history';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -397,6 +398,11 @@ export class TaskManager {
       }
     }
 
+    // 记录本 turn 在 directHistory 中的起点,供 pinTurn 把锁定映射到消息级 _pinned 保护(见 pin-history.ts)。
+    // 在 engine.run 之前设置,这样 persist() 在 done 时 saveTurn 就能带上该字段。
+    const currentTurn = conv.turns[conv.turns.length - 1];
+    if (isDirectFamily(conv.engine) && currentTurn) currentTurn.histStart = conv.directHistory?.length ?? 0;
+
     await engine.run({
       conv,
       memoryBlock: await this.memoryBlock(conv),
@@ -612,6 +618,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       currentAc = ac;
       const engine = this.engines.get(conv.engine);
       if (!engine) break;
+
+      // goal 循环的自动轮同样记录 histStart(pin 保护需要)
+      const loopTurn = conv.turns[conv.turns.length - 1];
+      if (isDirectFamily(conv.engine) && loopTurn) loopTurn.histStart = conv.directHistory?.length ?? 0;
 
       await engine.run({
         conv,
@@ -829,82 +839,26 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   // 三级回退检索:embedding cosine → FTS5 → recent-N 兜底。
   // P1: 结果按 importance * 0.5 + recency * 0.3 + relevance * 0.2 加权排序。
   // 返回携带 conversationId:注入层用它解析记忆归属项目并打标(防跨项目语境串台)。
-  private async recallForInjection(query: string): Promise<Array<{ content: string; conversationId: string | null }>> {    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
-
-    // 1. embedding cosine 检索(有 embedding 且 query 非空时)→ P1 加权重排
-    if (query) {
-      try {
-        const embedRows = store.listMemoryEmbeddings();
-        if (embedRows.length) {
-          const snap = snapshot();
-          const qVecArr = await embed([query], snap);
-          if (qVecArr[0]?.length) {
-            const qVec = new Float32Array(qVecArr[0]);
-            // 先用 embedding cosine 召回 top-30(宽召回)
-            const candidates = embedRows
-              .map((r) => ({ memoryId: r.memoryId, content: r.content, conversationId: r.conversationId, score: store.cosine(qVec, r.vec) }))
-              .filter((r) => r.score > 0.2)
-              .sort((a, b) => b.score - a.score)
-              .slice(0, 30);
-            if (candidates.length >= 3) {
-              // P1: 再用 scoredMemories 做重要性+时效性+相关性加权重排
-              const relevanceMap = new Map<string, number>();
-              for (const c of candidates) relevanceMap.set(c.content, c.score);
-              const scored = store.scoredMemories(query, INJECT_LIMIT, (content) => relevanceMap.get(content) ?? 0);
-              if (scored.length >= 3) {
-                for (const s of scored) {
-                  try { store.touchMemoryUsed(s.id); } catch { /* non-blocking */ }
-                }
-                return scored.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
-              }
-              // scoredMemories 没有足够结果 → 用原始 embedding 排序
-              for (const s of candidates.slice(0, INJECT_LIMIT)) {
-                try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
-              }
-              return candidates.slice(0, INJECT_LIMIT).map(({ content, conversationId }) => ({ content, conversationId }));
-            }
-          }
-        }
-      } catch {
-        /* embedding 失败 → FTS5 兜底 */
-      }
-
-      // 2. FTS5 全文检索(从 memories 表搜)→ 按 importance 排序
-      try {
-        const ftsHits = store.searchMemories(query, INJECT_LIMIT);
-        if (ftsHits.length >= 2) {
-          return ftsHits.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
-        }
-      } catch {
-        /* FTS5 失败 → recent-N 兜底 */
-      }
-    }
-
-    // 3. recent-N 兜底(无 query / 检索无结果时,取最新的 N 条)
-    return store.loadMemories().slice(0, INJECT_LIMIT).map(({ content, conversation_id }) => ({ content, conversationId: conversation_id }));
+  // 2026-09:实现统一收敛到 memory-recall.recallMemories(见该文件头注释 —— 会话模式修前是查询盲的)。
+  private async recallForInjection(query: string): Promise<Array<{ content: string; conversationId: string | null }>> {
+    const INJECT_LIMIT = 15; // 检索注入条数:相关记忆只需 10-15 条,远少于全量 50 条。
+    const { recallMemories } = await import('./memory-recall');
+    const { embed } = await import('./glm');
+    const snap = snapshot();
+    const recalled = await recallMemories({ query, limit: INJECT_LIMIT, embed: (texts) => embed(texts, snap) });
+    return recalled.map(({ content, conversationId }) => ({ content, conversationId }));
   }
 
-  // 跨项目记忆关闭时的会话内检索:逻辑同上,但所有来源限定本会话(+无归属全局记忆)。
-  // Session-restricted variant of recallForInjection — same fallback chain, filtered sources.
-  private recallForInjectionSession(query: string, convId: string): Promise<Array<{ content: string; conversationId: string | null }>> {
+  // 跨项目记忆关闭时的会话内检索:与全局同一条链,只差 restrictConvId(本会话 + 无归属全局记忆)。
+  // 2026-09 修复:修前此路径有 embedding 时直接返回 listMemoryEmbeddings 前 N 条(不按 query 相似度、
+  // 无排序 → 最旧优先),注入内容与当前对话无关;现在与全局路径统一走 cosine 召回 + 加权重排。
+  private async recallForInjectionSession(query: string, convId: string): Promise<Array<{ content: string; conversationId: string | null }>> {
     const INJECT_LIMIT = 15;
-    if (query) {
-      try {
-        const embedRows = store.listMemoryEmbeddings(convId);
-        if (embedRows.length) return Promise.resolve(embedRows.slice(0, INJECT_LIMIT).map(({ content, conversationId }) => ({ content, conversationId })));
-      } catch { /* fallthrough */ }
-      try {
-        const ftsHits = store.searchMemories(query, INJECT_LIMIT, convId);
-        if (ftsHits.length >= 2) return Promise.resolve(ftsHits.map(({ content, conversation_id }) => ({ content, conversationId: conversation_id })));
-      } catch { /* fallthrough */ }
-    }
-    // recent-N 兜底:全局记忆(无归属)仍可注入 —— 会话内无历史时冷启动需要基本上下文。
-    return Promise.resolve(
-      store.loadMemories()
-        .filter((m) => m.conversation_id === null || m.conversation_id === convId)
-        .slice(0, INJECT_LIMIT)
-        .map(({ content, conversation_id }) => ({ content, conversationId: conversation_id })),
-    );
+    const { recallMemories } = await import('./memory-recall');
+    const { embed } = await import('./glm');
+    const snap = snapshot();
+    const recalled = await recallMemories({ query, limit: INJECT_LIMIT, restrictConvId: convId, embed: (texts) => embed(texts, snap) });
+    return recalled.map(({ content, conversationId }) => ({ content, conversationId }));
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
@@ -1208,12 +1162,24 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   }
 
   // ── Pin/Unpin Turn:锁定的 turn 在 compact 时永远保留 ──
+  // 2026-09 修复:trim/compact 保护的是 directHistory 消息上的 _pinned 标记,但此前从未有代码写入过它
+  // (UI 锁定只写了 turn.pinned 元数据),保护整体失效。现在按 histStart 区间把锁定映射到消息级标记
+  // 并持久化;映射失败(旧数据/历史重排)时 turn 元数据仍更新,但不假装压缩保护生效。
   pinTurn(convId: string, turnId: string, pinned: boolean): boolean {
     const conv = this.convs.get(convId);
     if (!conv) return false;
     const turn = conv.turns.find((t) => t.id === turnId);
     if (!turn) return false;
     turn.pinned = pinned;
+    if (isDirectFamily(conv.engine)) {
+      const hist = conv.directHistory ?? [];
+      const r = applyPin(hist, conv.turns, turnId, pinned);
+      if (r.ok) {
+        store.saveDirectHistory(conv);
+      } else {
+        console.warn(`[pinTurn] ${turnId.slice(0, 8)} 标记未生效: ${r.reason}`);
+      }
+    }
     store.saveTurn(convId, turn);
     this.emit.emitConversation(conv);
     return true;

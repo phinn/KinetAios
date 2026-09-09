@@ -1911,8 +1911,9 @@ function registerIpc(): void {
   });
   ipcMain.handle('memory-block-update', (_e, label: string, value: string) => {
     try {
-      const ok = updateMemoryBlock(label, value);
-      return { ok };
+      const r = updateMemoryBlock(label, value);
+      // r.droppedTail > 0 时 UI 可提示截断(当前 renderer 只消费 ok)。
+      return { ok: r.ok, droppedTail: r.droppedTail, stored: r.stored };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

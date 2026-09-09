@@ -785,25 +785,45 @@ export function loadMemoryBlock(label: string): MemoryBlock | null {
 }
 
 /** Agent 原地替换 block 内容(类似 Letta core_memory_replace)。 */
-export function updateMemoryBlock(label: string, value: string): boolean {
+// 2026-09 修复:超 char_limit 时此前静默截尾且返回 true(工具回"✅ 已更新")—— 模型以为存全了。
+// 现返回结构化结果,截断量如实上报,由工具层回执给模型。
+export interface MemoryBlockWriteResult {
+  ok: boolean;
+  /** 实际入库后的块总长度(字符)。 */
+  stored: number;
+  /** append 滚动淘汰的头部字符数(保留最新尾部)。 */
+  droppedHead?: number;
+  /** update 截掉的尾部字符数。 */
+  droppedTail?: number;
+}
+
+export function updateMemoryBlock(label: string, value: string): MemoryBlockWriteResult {
   const block = loadMemoryBlock(label);
-  if (!block) return false;
-  if (block.readOnly) return false;
+  if (!block) return { ok: false, stored: 0 };
+  if (block.readOnly) return { ok: false, stored: 0 };
+  const droppedTail = value.length > block.charLimit ? value.length - block.charLimit : undefined;
   const truncated = value.slice(0, block.charLimit);
   db.prepare('UPDATE memory_blocks SET value=?, updated_at=? WHERE label=?;')
     .run(truncated, Date.now() / 1000, label);
-  return true;
+  return { ok: true, stored: truncated.length, ...(droppedTail != null ? { droppedTail } : {}) };
 }
 
 /** Agent 追加内容到 block 末尾(类似 Letta core_memory_append)。 */
-export function appendMemoryBlock(label: string, content: string): boolean {
+// 2026-09 修复:旧实现 (old+'\n'+content).slice(0, charLimit) 满块时截掉的恰是新追加的内容,
+// 却返回 true(工具回"✅ 已追加")。现在滚动淘汰头部、保留最新尾部,淘汰量如实上报。
+export function appendMemoryBlock(label: string, content: string): MemoryBlockWriteResult {
   const block = loadMemoryBlock(label);
-  if (!block) return false;
-  if (block.readOnly) return false;
-  const newValue = (block.value + '\n' + content).slice(0, block.charLimit);
+  if (!block) return { ok: false, stored: 0 };
+  if (block.readOnly) return { ok: false, stored: 0 };
+  const combined = block.value + '\n' + content;
+  const droppedHead = combined.length > block.charLimit ? combined.length - block.charLimit : undefined;
+  // slice(-0) 语义陷阱:charLimit=0 时会返回全串,这里显式防一手。
+  const newValue = block.charLimit > 0
+    ? (combined.length > block.charLimit ? combined.slice(-block.charLimit) : combined)
+    : '';
   db.prepare('UPDATE memory_blocks SET value=?, updated_at=? WHERE label=?;')
     .run(newValue, Date.now() / 1000, label);
-  return true;
+  return { ok: true, stored: newValue.length, ...(droppedHead != null ? { droppedHead } : {}) };
 }
 
 // MARK: P2 — Episodic Memory (会话摘要,每次 done 后自动提取)
@@ -1212,14 +1232,20 @@ export function touchMemoryUsed(id: string): void {
 // relevance 来自调用方(embedding cosine 或 FTS5 BM25,归一化到 0-1)。
 // recency = exp(-Δt / half_life),half_life = 30天(ms)。
 // 返回按 final_score 降序排列的记忆列表。
+// 2026-09 修复:① 加 restrictConvId(会话限制模式与全局共用同一条链);
+// ② relevanceFn 增加 id 参数 —— 修前调用方按 content 关联召回分数,重复文本会互相污染。
 export function scoredMemories(
   query: string,
   limit: number,
-  relevanceFn?: (content: string) => number,
+  relevanceFn?: (content: string, id: string) => number,
+  restrictConvId?: string,
 ): Array<{ id: string; content: string; conversation_id: string | null; importance: number; score: number }> {
   const halfLife = 30 * 86400_000; // 30 天(ms)
   const now = Date.now();
-  const mems = loadMemories();
+  // restrictConvId:只参与本会话产生的记忆 + 无归属的全局记忆(与 recall 注入的会话限制同规则)。
+  const mems = restrictConvId
+    ? loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === restrictConvId)
+    : loadMemories();
   const metas = new Map<string, { weight: number; last_used: number; use_count: number }>();
   for (const m of (db.prepare('SELECT memory_id, weight, last_used, use_count FROM memory_meta;').all() as Array<{ memory_id: string; weight: number; last_used: number; use_count: number }>)) {
     metas.set(m.memory_id, { weight: m.weight, last_used: m.last_used, use_count: m.use_count });
@@ -1233,7 +1259,7 @@ export function scoredMemories(
     const refMs = refTs < 1e12 ? refTs * 1000 : refTs;
     const recency = Math.exp(-(now - refMs) / halfLife);
     // relevance: 外部传入(embedding cosine)或简单 LIKE 匹配
-    const relevance = relevanceFn ? relevanceFn(m.content) : (m.content.includes(query) ? 0.5 : 0);
+    const relevance = relevanceFn ? relevanceFn(m.content, m.id) : (m.content.includes(query) ? 0.5 : 0);
     const score = importanceNorm * 0.5 + recency * 0.3 + relevance * 0.2;
     return { ...m, score };
   });

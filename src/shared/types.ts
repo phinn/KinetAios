@@ -445,6 +445,10 @@ export type Turn = {
   tokensIn: number;
   tokensOut: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
+  // 本 turn 在 directHistory 中的消息区间起点(send 时记录)。
+  // pinTurn 由此把 turn 级锁定映射到消息级 _pinned 标记(trim/compact 保护读的是消息标记)。
+  // 旧数据/压缩重排后无此值或失配 → applyPin 拒绝标记并说明原因,不会假装生效。
+  histStart?: number;
   traj?: TrajRecord[]; // 轨迹:本 turn 最终发给模型的完整 messages 快照(system+memory+history+user)
 };
 

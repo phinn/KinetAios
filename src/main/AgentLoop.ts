@@ -21,7 +21,9 @@ export async function compactWithSpill(
   try {
     const kept = new Set(after);
     const dropped = before.filter((m) => !kept.has(m));
-    const summaryMsg = after.find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+    // 2026-09 修复:取**最后一条**摘要。compactHistory 把新摘要排在旧摘要之后,find() 拿到的是最旧的,
+    // 多次压缩后 spill 审计记录的 summary 是陈旧内容。
+    const summaryMsg = [...after].reverse().find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
     appendEvent(opts.convId, opts.turnId, {
       type: 'compaction/spill',
       dropped,
@@ -173,6 +175,17 @@ export interface RunOpts {
 
 // Runs one turn. Returns the accumulated messages (minus the system prompt and the transient
 // memory message) for next-turn history.
+// 受保护内容(_memory/_pinned/[早期对话摘要])不参与裁剪:它们本身超预算时,trim 已无法再缩小,
+// 继续重试只会空转 → 明确提示用户清理记忆/摘要或换更大窗口模型(配合第三级 nuclear 报错)。
+function warnIfProtectedOverBudget(messages: ChatMsg[], budget: number, proto: string | undefined, onEvent: (e: AgentEvent) => void): void {
+  const protectedMsgs = messages.filter((m) =>
+    m._memory || m._pinned ||
+    (typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]')));
+  if (protectedMsgs.length && estTokenCount(protectedMsgs, proto) > budget) {
+    onEvent({ type: 'status', text: '⚠️ 受保护上下文(长期记忆/锁定轮/对话摘要)已超出裁剪预算,trim 无法继续缩小,请清理记忆或更换更大窗口的模型' });
+  }
+}
+
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
   // reactive trim 预算:从策略包取(覆盖硬编码 15K)。hifi 模式策略 trimBudget 已翻倍,不用再读 hifiContextBudget。
@@ -242,6 +255,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          warnIfProtectedOverBudget(messages, trimBudget, snapshot.apiProtocol, onEvent);
           i--; // 抵消 for 的 i++,本轮重试
           continue;
         } else if (!retriedNuclear) {
@@ -251,6 +265,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          warnIfProtectedOverBudget(messages, trimBudget, snapshot.apiProtocol, onEvent);
           continue; // ⚠️ 必须重试 — 不 continue 就会 fall-through 到 return,任务直接中断
         } else {
           // 第三级(nuclear):1/4 trim 后仍超长 → systemPrompt + memory 本身就接近或超出窗口,
@@ -685,6 +700,58 @@ function sanitizeToolPairs(msgs: ChatMsg[]): ChatMsg[] {
 // ponytail: ① 每 turn 末尾按需摘一次,未做摘要缓存;② 摘要消息受 trimHistoryToTokenBudget 保护(不会被二次丢弃)。
 // 优化:结构化摘要 prompt — 不再让 LLM 自由发挥,而是要求固定字段(目标/决策/文件/结论),
 // 这样摘要消息对后续步骤的信息密度远高于旧版的自由文本摘要。
+// 2026-09 修复(无界膨胀):每轮压缩新增一条受保护摘要、旧摘要永不二次压缩、且不占预算 →
+// 长会话保护头部线性增长,最终撑爆窗口走 nuclear 报错。现超限时合并旧摘要(见 MAX_SUMMARY_MSGS)。
+// 摘要条数上限:超过则把「旧摘要们 + 新摘要」合并为一条。稳态在 1↔MAX 之间循环,有界。
+const MAX_SUMMARY_MSGS = 3;
+// LLM 合并失败时的拼接截断上限(字符):保条数收敛,牺牲密度。
+const CONSOLIDATE_FALLBACK_CAP = 6_000;
+
+// 把历次摘要 + 新摘要合并成一条(结构化 prompt)。LLM 失败 → 退化拼接截断,保证条数必然收敛。
+async function consolidateSummaries(
+  summaryMsgs: ChatMsg[],
+  newSummary: string,
+  provider: Provider,
+  snap: ConfigSnapshot,
+  signal: AbortSignal,
+  onEvent?: (e: AgentEvent) => void,
+): Promise<string> {
+  const oldTexts = summaryMsgs
+    .map((m) => (typeof m.content === 'string' ? m.content.replace(/^\[早期对话摘要\]\n/, '') : ''))
+    .filter(Boolean);
+  const MERGE_SYS = `你是对话摘要合并器。下面是同一段长期对话的历次结构化摘要和一段新摘要。
+把它们合并成一条结构化中文摘要,保持与输入相同的格式(【任务目标】【关键决策】【已改文件】【执行命令】【重要结论】【待办事项】)。
+规则:
+- 同一事实只保留一条;信息冲突时以新摘要为准
+- 删除已完成或被推翻的待办事项
+- 保留命令、错误信息、技术栈名称的原文
+- 总量不超过 60 行;直接输出,不要标题/前言`;
+  const user = [
+    ...oldTexts.map((t, i) => `【历次摘要 ${i + 1}】\n${t}`),
+    `【新摘要】\n${newSummary}`,
+  ].join('\n\n');
+  try {
+    const comp = await provider.streamComplete(
+      [{ role: 'system', content: MERGE_SYS }, { role: 'user', content: user }],
+      [],
+      snap,
+      signal,
+      () => {},
+    );
+    if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+    }
+    const merged = comp.content.trim();
+    if (merged) return merged;
+  } catch {
+    // LLM 合并失败 → 走下方退化拼接
+  }
+  const joined = [...oldTexts, newSummary].join('\n');
+  return joined.length > CONSOLIDATE_FALLBACK_CAP
+    ? joined.slice(0, CONSOLIDATE_FALLBACK_CAP) + '\n…[历次摘要合并,超出部分截断]'
+    : joined;
+}
+
 export async function compactHistory(
   msgs: ChatMsg[],
   budget: number,
@@ -764,8 +831,18 @@ export async function compactHistory(
     }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];
+    // 无界膨胀守卫:已有摘要 + 本条超过上限,或摘要总量已占预算一半 → 合并旧摘要为一条。
+    // (memory/pinned 不能被合并缩小,故触发条件只按摘要部分计。)
+    const shouldConsolidate = summaryMsgs.length + 1 > MAX_SUMMARY_MSGS ||
+      estTokenCount(summaryMsgs, snap.apiProtocol) > budget * 0.5;
+    let coreSummary = summary;
+    let keptSummaries = summaryMsgs;
+    if (shouldConsolidate) {
+      coreSummary = await consolidateSummaries(summaryMsgs, summary, provider, snap, signal, onEvent);
+      keptSummaries = [];
+    }
     // 文件列表 append 到摘要末尾(程序化提取,100% 准确,不依赖 LLM)。
-    const finalSummary = fileAppendix ? `${summary}${fileAppendix}` : summary;
+    const finalSummary = fileAppendix ? `${coreSummary}${fileAppendix}` : coreSummary;
     // 发压缩事件 → renderer 高亮提示「已自动压缩 headTokens → summaryTokens」。
     if (onEvent) {
       const headTokens = head.reduce((s, m) => s + Math.floor(estMsgChars(m) * coefFor(snap.apiProtocol)) + 20, 0);
@@ -773,7 +850,7 @@ export async function compactHistory(
       onEvent({ type: 'status', text: `已自动压缩 ${headTokens} → ${summaryTokens} tokens(早期对话结构化摘要)` });
       onEvent({ type: 'context', action: 'compacted', beforeTokens: headTokens, afterTokens: summaryTokens } as AgentEvent & { type: 'context' });
     }
-    return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, { role: 'user', content: `[早期对话摘要]\n${finalSummary}` }, ...tail];
+    return [...memoryMsgs, ...pinnedMsgs, ...keptSummaries, { role: 'user', content: `[早期对话摘要]\n${finalSummary}` }, ...tail];
   } catch {
     return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail]; // 摘要失败 → 纯尾部,不丢功能
   }
@@ -899,10 +976,18 @@ function truncateForModel(s: string, threshold = 8000): string {
 }
 
 // Detect "context too long" from a provider error (GLMError or raw). ponytail: OpenAI-compatible
-// error wording varies by endpoint — match loosely, best-effort.
-function isContextTooLong(e: unknown): boolean {
+// error wording varies by endpoint — match positively on context-window phrases.
+// 2026-09 修复:旧正则含裸 `exceed|too long|上下文`,"rate limit exceeded"/"quota exceeded"
+// 等 429/配额类错误会被误判为超长 → 触发三级 fallback 把历史砍到 1/4,一次限流摧毁会话上下文。
+// 现在正向匹配上下文措辞 + 负向排除限流/配额/计费措辞(负向优先)。
+const CTX_TOO_LONG_POS =
+  /(context length|maximum context|context_window|context window|prompt is too|too long|上下文长度|上下文过长|上下文超长|上下文超出|上下文窗口|超出上下文)/i;
+const CTX_TOO_LONG_NEG =
+  /(rate.?limit|too many requests|429|quota|billing|insufficient|balance|max retries)/i;
+export function isContextTooLong(e: unknown): boolean {
   const err = e as { kind?: string; code?: number; detail?: string; message?: string };
   if (err?.code === 413) return true;
-  const text = `${err?.detail ?? ''} ${err?.message ?? ''}`.toLowerCase();
-  return /context length|too long|maximum context|上下文|exceed|prompt is too/.test(text);
+  const text = `${err?.detail ?? ''} ${err?.message ?? ''}`;
+  if (CTX_TOO_LONG_NEG.test(text)) return false;
+  return CTX_TOO_LONG_POS.test(text);
 }

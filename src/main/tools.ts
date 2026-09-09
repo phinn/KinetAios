@@ -1372,9 +1372,13 @@ const memoryReplace: Tool = {
     const content = String(args.content ?? '');
     if (!block || !content) return '缺少 block 或 content';
     try {
-      const ok = store.updateMemoryBlock(block, content);
-      if (!ok) return `更新失败:block "${block}" 不存在或只读。`;
-      return `✅ 已更新 ${block}(${content.length} 字符)`;
+      const r = store.updateMemoryBlock(block, content);
+      if (!r.ok) return `更新失败:block "${block}" 不存在或只读。`;
+      // 截断如实上报(2026-09 修复:此前超限静默截尾,模型误以为完整存入)。
+      if (r.droppedTail && r.droppedTail > 0) {
+        return `⚠️ 已更新 ${block},但内容超过块上限:末尾 ${r.droppedTail} 字符被截断(存入 ${r.stored} 字符)。请缩短内容,或分块整理后用 memory_replace 重写。`;
+      }
+      return `✅ 已更新 ${block}(${r.stored} 字符)`;
     } catch (e) {
       return `memory_replace 失败: ${(e as Error)?.message ?? e}`;
     }
@@ -1387,7 +1391,7 @@ const memoryAppend: Tool = {
     '向你的核心记忆块(Memory Block)追加内容。不会覆盖已有内容,在末尾追加。\n' +
     '可用 block: user_profile / project_context / active_goals。\n' +
     '适用场景:逐步积累用户信息,不想覆盖已有内容。\n' +
-    '注意:追加后总长度超过 char_limit 会从头部截断。',
+    '注意:块满时最旧内容从头部滚动淘汰,保留最新追加的内容;发生淘汰时回执会注明淘汰字数。',
   parameters: {
     type: 'object',
     properties: {
@@ -1405,9 +1409,13 @@ const memoryAppend: Tool = {
     const content = String(args.content ?? '');
     if (!block || !content) return '缺少 block 或 content';
     try {
-      const ok = store.appendMemoryBlock(block, content);
-      if (!ok) return `追加失败:block "${block}" 不存在或只读。`;
-      return `✅ 已追加到 ${block}(${content.length} 字符)`;
+      const r = store.appendMemoryBlock(block, content);
+      if (!r.ok) return `追加失败:block "${block}" 不存在或只读。`;
+      // 满块滚动淘汰如实上报(2026-09 修复:此前截掉的是新追加内容却回 ✅)。
+      if (r.droppedHead && r.droppedHead > 0) {
+        return `⚠️ 已追加到 ${block},但块已满(${r.stored} 字符):头部最旧 ${r.droppedHead} 字符被滚动淘汰,新内容完整保留在末尾。建议用 memory_replace 重新整理该块,删除过时条目。`;
+      }
+      return `✅ 已追加到 ${block}(${r.stored} 字符)`;
     } catch (e) {
       return `memory_append 失败: ${(e as Error)?.message ?? e}`;
     }
