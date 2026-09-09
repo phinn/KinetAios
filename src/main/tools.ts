@@ -296,12 +296,44 @@ const shell: Tool = {
     // git 跨仓库写操作守卫:先于用户 confirm 弹出,消息里带两个仓库路径,用户自己判断放不放行。
     const violation = gitCrossRepoViolation(cmd, ctx.cwd);
     if (violation) return `🚫 已拦截 — ${violation}`;
-    const ok = await ctx.confirm(cmd);
-    if (!ok) return `❌ 用户拒绝执行: ${cmd}`;
-    const out = await shellExec(cmd, ctx.cwd, 120_000, ctx.signal);
+    const finalCmd = enforceBackgroundOpen(cmd);
+    const ok = await ctx.confirm(finalCmd);
+    if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
+    const out = await shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal);
     return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
   },
 };
+
+// ── 后台启动强制(macOS 零打扰)──
+// 模型经常写裸 `open foo.app`,macOS 的 open 默认激活 app 抢前台,直接把用户正在看的画面切走
+// (2026-09-10 用户第二次反馈)。screenshot_window 已经能拍后台窗口,所以启动侧在这里机械补
+// -g(不 bring to front)+ -j(隐藏启动),不依赖模型守纪律。规则:
+//   1) open ... [-a name | app路径/文件],且未带 -g/-j 时 → 自动补 -gj
+//   2) 显式 `osascript ... activate`(用户要求带前台)不拦 —— 那是唯一合法的置前通道
+//   3) open -W 等待退出、open . 打开 Finder 目录等一律照补(目录窗口同样不该抢焦点)
+// / Background-open enforcement: bare `open` on macOS activates the app and yanks focus.
+// screenshot_window already captures background windows, so rewrite bare opens to `-gj`
+// mechanically. Explicit osascript activate stays allowed (the sanctioned foreground path).
+export function enforceBackgroundOpen(cmd: string): string {
+  if (process.platform !== 'darwin') return cmd;
+  const lines = cmd.split('\n');
+  const rewritten = lines.map((line) => {
+    // 只碰行首(含 env=/cd x &&/sudo 前缀后的)真正的 open 命令;echo "open ..." 等不误伤。
+    const m = line.match(/^(\s*(?:\w+=[^\s]*\s+)*(?:cd\s+\S+\s+&&\s+|sudo\s+)?)(open\s+)(.+)$/);
+    if (!m) return line;
+    const flags = m[3];
+    // --args 之后是 app 自己的参数(如 -AppleLanguages),不是 open 的 flag —— 只扫 --args 前的段
+    const openFlagPart = flags.split(/\s+--args(\s|$)/, 1)[0];
+    const openFlags = openFlagPart.split(/\s+/).filter((t) => /^-[a-zA-Z]+$/.test(t));
+    const hasG = openFlags.some((t) => t.slice(1).includes('g'));
+    const hasJ = openFlags.some((t) => t.slice(1).includes('j'));
+    if (hasG && hasJ) return line;          // 已齐,不动
+    if (hasG) return `${m[1]}${m[2]}-j ${flags}`; // 缺 j → 前置补
+    if (hasJ) return `${m[1]}${m[2]}-g ${flags}`; // 缺 g → 前置补
+    return `${m[1]}${m[2]}-gj ${flags}`;    // 裸 open → 补 -gj
+  });
+  return rewritten.join('\n');
+}
 
 // ── 编码检测 ──
 // Windows 上大量文件是 GBK/GB18030/Big5/Shift_JIS 编码,直接 toString('utf8') 会产生乱码。
