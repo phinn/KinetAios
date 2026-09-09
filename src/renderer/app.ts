@@ -5253,7 +5253,7 @@ function closeMoreMenu() {
 
   // 📷 区域截图:点按钮 → 全屏截图 → overlay 框选区域 → canvas 裁剪 → 附件。
   // 流程:先调 captureScreen 拿全屏,再让用户在 overlay 上拖拽选区,裁剪后得到区域截图。
-  // hideSelf=true 走"隐藏截图":main 先最小化本 app 窗口再截,截完自动还原。
+  // hideSelf=true 走"隐藏截图":main 把本 app 窗口透明化(不最小化、不抢焦点)再截,截完自动恢复。
   const bindCapture = (btnId: string, hideSelf: boolean): void => {
     const captureBtn = document.getElementById(btnId) as HTMLButtonElement | null;
     if (!captureBtn) return;

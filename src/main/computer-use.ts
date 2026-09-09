@@ -27,24 +27,30 @@ export async function captureScreenshotWithHide(hideSelf: boolean): Promise<Scre
   return withSelfHidden(hideSelf, captureScreenInner);
 }
 
-// 通用包装:最小化自身窗口 → 执行 fn → 还原。供按钮截图等其他截图路径复用。
-// Generic wrapper: minimize own windows → run fn → restore. Reusable by other capture paths.
+// 通用包装:截屏前临时隐身 → 执行 fn → 恢复。供按钮截图等其他截图路径复用。
+// Generic wrapper: hide own windows during capture, restore after. Reusable by other capture paths.
+// 实现:setOpacity(0) 透明化,而非 minimize/restore —— 最小化会抢焦点两次(缩下去 + 弹回来),
+// 连续截屏时用户画面反复切换(2026-09-09 用户反馈);透明化不动任务栏、不碰焦点链,
+// 桌面合成器直接不画该窗口,截屏同样拍不到。恢复只碰自己透明化过的窗口(嵌套安全)。
+// / Opacity-0 fade instead of minimize: minimizing steals focus twice per shot and visibly
+// yanks the user's screen around. Transparent windows are skipped by the compositor, so
+// captures stay clean. Restore touches only windows this call faded (nest-safe).
 export async function withSelfHidden<T>(hideSelf: boolean, fn: () => Promise<T>): Promise<T> {
-  const hidden: BrowserWindow[] = [];
+  const faded: BrowserWindow[] = [];
   if (hideSelf) {
     for (const w of BrowserWindow.getAllWindows()) {
-      if (w.isVisible() && !w.isMinimized()) {
-        w.minimize();
-        hidden.push(w);
+      if (w.isVisible() && !w.isMinimized() && w.getOpacity() > 0) {
+        w.setOpacity(0);
+        faded.push(w);
       }
     }
-    if (hidden.length) await new Promise((r) => setTimeout(r, 350));
+    if (faded.length) await new Promise((r) => setTimeout(r, 150)); // 等合成器刷过一帧
   }
   try {
     return await fn();
   } finally {
-    for (const w of hidden) {
-      try { w.restore(); } catch { /* already gone */ }
+    for (const w of faded) {
+      try { w.setOpacity(1); } catch { /* already gone */ }
     }
   }
 }

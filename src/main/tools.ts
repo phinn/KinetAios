@@ -1806,11 +1806,11 @@ import { captureScreenshotWithHide, mouseClick as doMouseClick, mouseMove as doM
 
 const screenshot: Tool = {
   name: 'screenshot',
-  description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。传 hide_self=true 会先最小化 KinetAios 自身窗口再截图(截完自动还原),适合"看用户屏幕上别的内容"的场景,用户不用手动移开窗口。',
+  description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。传 hide_self=true 会在截图瞬间把 KinetAios 自身窗口透明化(不最小化、不抢焦点、画面无切换,截完立即恢复),适合"看用户屏幕上别的内容"的场景。',
   parameters: {
     type: 'object',
     properties: {
-      hide_self: { type: 'boolean', description: '截图前最小化 KinetAios 自身窗口,截完自动还原(默认 false)' },
+      hide_self: { type: 'boolean', description: '截图瞬间透明化 KinetAios 自身窗口(不抢焦点,默认 false)' },
     },
   },
   readOnly: true,
