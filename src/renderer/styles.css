@@ -2179,6 +2179,51 @@ a { color: var(--accent); }
 .img-lightbox { position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
 .img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
 @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
+/* ── 语法高亮 token 色(highlight.ts)— 全部走语义变量,明暗主题自适应 ── */
+.tok-com { color: var(--text-faint); font-style: italic; }
+.tok-str { color: var(--ok); }
+.tok-kw { color: var(--accent); font-weight: 500; }
+.tok-num { color: var(--warn); }
+.tok-fn { color: var(--text); }
+.tok-tag { color: var(--accent); }
+.tok-var { color: var(--err); }
+.tok-key { color: var(--accent); opacity: 0.85; }
+.tok-add { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); display: inline-block; width: 100%; }
+.tok-del { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); display: inline-block; width: 100%; }
+.tok-meta { color: var(--text-faint); font-weight: 600; }
+/* 本地文件路径可点引用 */
+.file-ref { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim); text-underline-offset: 2px; cursor: pointer; border-radius: 2px; }
+.file-ref:hover { text-decoration-color: var(--accent); background: var(--accent-glow); }
+/* 会话内搜索高亮 */
+mark.chat-hit { background: var(--accent-glow); color: inherit; border-radius: 2px; padding: 0 1px; box-shadow: 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent); }
+mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-shadow: 0 0 0 2px var(--accent); }
+/* 搜索条 */
+#chat-search { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin: 0 12px 4px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); color: var(--text-dim); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+#chat-search input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-size: 0.923rem; }
+#chat-search-count { font-size: 0.769rem; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-faint); min-width: 34px; text-align: center; }
+#chat-search .ghost { padding: 2px 6px; font-size: 0.846rem; color: var(--text-dim); }
+/* 消息排队 chip 行 */
+#queue-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 2px; }
+#queue-row[hidden] { display: none; }
+#queue-row .queue-label { font-size: 0.769rem; color: var(--text-faint); }
+#queue-row .queue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 6px 3px 10px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--bg-elev); font-size: 0.846rem; color: var(--text-dim); }
+#queue-row .q-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#queue-row .q-rm { padding: 0 4px; font-size: 0.769rem; color: var(--text-faint); }
+#queue-row .q-rm:hover { color: var(--err); }
+/* 确认弹窗上下文行(哪个会话/引擎在请求) */
+.modal-ctx { font-size: 0.769rem; color: var(--text-faint); margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dashed var(--border-soft); }
+/* 嵌套列表:子列表贴近父项 */
+.answer li > ul, .answer li > ol { margin: 2px 0 2px 0; }
+/* V3 submit_plan 结构化规划卡 */
+.plan-card details { cursor: default; }
+.plan-card summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.plan-goal { font-size: 0.846rem; color: var(--text-dim); margin: 6px 0 4px; padding-left: 10px; border-left: 2px solid var(--accent-dim); }
+.plan-level { display: flex; align-items: flex-start; gap: 8px; margin: 6px 0 2px; }
+.plan-lv { flex-shrink: 0; font-size: 0.7rem; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; padding-top: 3px; min-width: 38px; }
+.plan-nodes { display: flex; flex-wrap: wrap; gap: 6px; }
+.plan-node { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); font-size: 0.846rem; color: var(--text-dim); }
+.plan-node b { color: var(--accent); font-family: ui-monospace, "Cascadia Code", monospace; font-weight: 600; }
+.plan-deps { color: var(--text-faint); font-size: 0.769rem; }
 .step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.846rem; color: var(--text-dim); user-select: text; }
 /* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
 .step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }

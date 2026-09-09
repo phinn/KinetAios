@@ -536,7 +536,7 @@ const ZH_CN: Dict = {
   'mcp.empty': '未连接 MCP 服务。<br>在 ~/.claude.json / ~/.codex/config.toml 配置后,启动时自动接入。',
 
   'modal.title': '要执行 shell 命令?',
-  'modal.noask': '不再询问(之后自动放行所有 shell 命令)',
+  'modal.noask': '本会话不再询问(重启后失效,只影响本会话)',
   'modal.ok': '执行',
 
   'prompt.rename': '改名',
@@ -961,7 +961,14 @@ const ZH_CN: Dict = {
   'al.err': '出错: {msg}',
   'al.executing': '执行 {tools}',
   'step.running': '运行中…',
-  'step.interrupted': '已中断',
+    'step.interrupted': '已中断',
+  'queue.pending': '待发送(当前任务结束后自动发出)',
+  'queue.enqueued': '已排队,当前任务结束后自动发送',
+  'chat.search': '会话内搜索…',
+  'turn.editResend': '编辑重发(载入输入框)',
+  'plan.card': '执行计划',
+  'plan.stage': '阶段 {n}',
+  'confirm.sessionOk': '本会话内后续 shell 命令将自动放行(重启后失效)',
 
   // ── 多模态视觉输入 ──
   'vision.attach': '图片',
@@ -1676,7 +1683,7 @@ const EN: Dict = {
   'mcp.empty': 'No MCP services connected.<br>Configure in ~/.claude.json / ~/.codex/config.toml — auto-loaded at startup.',
 
   'modal.title': 'Run this shell command?',
-  'modal.noask': "Don't ask again (auto-approve all shell commands)",
+  'modal.noask': "Don't ask again in this conversation (until restart)",
   'modal.ok': 'Run',
 
   'prompt.rename': 'Rename',
@@ -2100,7 +2107,14 @@ const EN: Dict = {
   'al.err': 'Error: {msg}',
   'al.executing': 'Running: {tools}',
   'step.running': 'Running…',
-  'step.interrupted': 'Interrupted',
+    'step.interrupted': 'Interrupted',
+  'queue.pending': 'Queued (sends after the current task finishes)',
+  'queue.enqueued': 'Queued — will send after the current task finishes',
+  'chat.search': 'Search in conversation…',
+  'turn.editResend': 'Edit & resend (load into composer)',
+  'plan.card': 'Execution plan',
+  'plan.stage': 'Stage {n}',
+  'confirm.sessionOk': 'Shell commands in this conversation will be auto-approved (until restart)',
 
   // ── Vision / multimodal ──
   'vision.attach': 'Image',
@@ -2810,7 +2824,7 @@ const ZH_TW: Dict = {
   'mcp.empty': '未連接 MCP 服務。<br>在 ~/.claude.json / ~/.codex/config.toml 設定後,啟動時自動接入。',
 
   'modal.title': '要執行 shell 命令?',
-  'modal.noask': '不再詢問(之後自動放行所有 shell 命令)',
+  'modal.noask': '本會話不再詢問(重啟後失效,只影響本會話)',
   'modal.ok': '執行',
 
   'prompt.rename': '改名',
@@ -3233,7 +3247,14 @@ const ZH_TW: Dict = {
   'al.err': '出錯: {msg}',
   'al.executing': '執行 {tools}',
   'step.running': '執行中…',
-  'step.interrupted': '已中斷',
+    'step.interrupted': '已中斷',
+  'queue.pending': '待發送(當前任務結束後自動發出)',
+  'queue.enqueued': '已排隊,當前任務結束後自動發送',
+  'chat.search': '會話內搜尋…',
+  'turn.editResend': '編輯重發(載入輸入框)',
+  'plan.card': '執行計劃',
+  'plan.stage': '階段 {n}',
+  'confirm.sessionOk': '本會話內後續 shell 命令將自動放行(重啟後失效)',
 
   // ── 多模態視覺輸入 ──
   'vision.attach': '圖片',

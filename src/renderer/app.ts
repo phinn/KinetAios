@@ -143,6 +143,12 @@ function applyI18nDOM(): void {
   // 临时诊断:按 F8 打印 #input 布局链所有元素的实际渲染尺寸
   // Temp diagnostic: press F8 to dump #input layout chain dimensions
   document.addEventListener('keydown', (e) => {
+    // Ctrl/Cmd+F → 会话内搜索(聊天视图时)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f' && currentView === 'chat') {
+      e.preventDefault();
+      chatSearchOpen();
+      return;
+    }
     if (e.key === 'F8') {
       const ids = ['chat-view', 'chat-content', 'turns', 'input', 'attach-row', 'composer', 'composer-bar'];
       const rows: string[] = [];
@@ -267,6 +273,8 @@ function applyI18nDOM(): void {
       convs.set(conv.id, conv);
     }
     if (conv.status === 'running') ensureElapsedTicker();
+    // 取消路径不走 done/error 事件 → 只能靠这里的状态广播触发队列 flush
+    if (conv.status === 'ready' && conv.turns.at(-1)?.done) flushQueue(conv.id);
     if (isNew) { order.unshift(conv.id); renderSidebar(); }
     else refreshSidebarLi(conv.id);
     // onAgentEvent 的 done/error 已调 renderMain();这里再调会双重全量重建
@@ -290,6 +298,7 @@ function applyI18nDOM(): void {
   });
   api.onConversationRemoved((id) => {
     convs.delete(id);
+    queuedByConv.delete(id); // 会话删除即清队列
     order = order.filter((x) => x !== id);
     if (selectedId === id) selectedId = order[0] ?? null;
     renderSidebar();
@@ -334,6 +343,8 @@ function applyI18nDOM(): void {
         // (which changes content height via markdown re-parse) restores the same view.
         if (!userAtBottom) captureScrollAnchor();
         renderMain();
+        // 消息排队:回合结束自动发出队列里的下一条
+        flushQueue(convId);
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
       } else if (ev.type === 'status') {
@@ -1753,6 +1764,8 @@ function renderMain() {
     currentArtifactHtml = null;
     if (activeTab === 'preview') showPreviewEmpty();
   }
+  // 会话内搜索激活 → DOM 重建后重挂高亮(切会话/done 重渲染都会清掉 mark)
+  if (chatSearch.q && !chatSearchBar().hidden) chatSearchApply();
 }
 
 /** 历史补全链:头插早期 turn,double-rAF 分帧,prepend 后补偿 scrollTop。
@@ -1849,6 +1862,7 @@ function ensureElapsedTicker(): void {
 }
 
 function renderHead(conv: Conversation | undefined) {
+  renderQueue(); // 队列 chip 行跟随所选会话(签名缓存,高频调用零重建)
   const dot = document.getElementById('head-dot')!;
   const title = document.getElementById('head-title')!;
   const cwd = document.getElementById('cwd-input') as HTMLInputElement;
@@ -2019,13 +2033,25 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   // 用户气泡渲染 inline markdown(code/link/bold/del),保持 pre-wrap 换行
   const userText = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
   bubble.innerHTML = inlineMd(userText);
-  // 用户气泡悬浮复制按钮
+  // 用户气泡悬浮操作:复制 + 编辑重发(载入输入框,不重写历史 — branch 已支持分叉)
   const uCopy = document.createElement('button');
   uCopy.className = 'ghost bubble-copy';
   uCopy.title = tr('copy.text');
   uCopy.innerHTML = ICON.copy;
   uCopy.onclick = (e) => { e.stopPropagation(); copyText(t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd(), uCopy); };
   bubble.appendChild(uCopy);
+  const uEdit = document.createElement('button');
+  uEdit.className = 'ghost bubble-copy';
+  uEdit.title = tr('turn.editResend');
+  uEdit.innerHTML = ICON.edit;
+  uEdit.onclick = (e) => {
+    e.stopPropagation();
+    const c = document.getElementById('composer') as HTMLTextAreaElement;
+    c.value = userText;
+    autosize(c);
+    c.focus();
+  };
+  bubble.appendChild(uEdit);
   userMsg.appendChild(bubble);
   userMsg.appendChild(avatarEl('user'));
   wrap.appendChild(userMsg);
@@ -2052,18 +2078,10 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     } else if (t.answer) {
       // 非流式同样截断:UI 层防御超长 answer(见 clipForUi 注释)。
       ans.innerHTML = md(clipForUi(t.answer));
-      // 非流式:给每个代码块挂复制按钮 / Non-streaming: attach copy button to each code block.
-      ans.querySelectorAll('.code-block').forEach(cb => {
-        const btn = document.createElement('button');
-        btn.className = 'code-copy ghost';
-        btn.title = tr('copy.text');
-        btn.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
-        btn.onclick = () => {
-          const codeEl = cb.querySelector('code');
-          copyText(codeEl?.textContent ?? '', btn);
-        };
-        cb.appendChild(btn);
-      });
+      // 本地文件路径可点(src/app.ts:123 → 点击开右侧文件抽屉)。
+      // 复制按钮不再在此挂 — markdown.ts 随代码块发射 + #turns 事件委托,流式期间同样可用。
+      // done 后全量渲染执行一次;流式稳定前缀路径不走(每帧 TreeWalker 太贵)。
+      linkifyFileRefs(ans);
     }
     body.appendChild(ans);
     // 工具执行中:在 answer 下面单独显示「●●● 执行 X…」(statusNote)。作为兄弟元素,
@@ -2290,6 +2308,128 @@ function openImgLightbox(src: string): void {
   document.body.appendChild(ov);
 }
 
+// ── 本地文件路径可点(DSH 式):回答里的 src/app.ts:123 变成可点引用,点击开右侧文件抽屉 ──
+// DOM 层做(TreeWalker 跳过 CODE/PRE/A):避免在 markdown 字符串上正则替换时
+// 与已生成的 <a>/<code> 标签相互咬合;流式期间不跑(每帧 TreeWalker 太贵),done 后全量渲染时执行。
+const FILE_REF_RE = /(?:[.\w~][\w.~-]*[/\\])+[\w.~-]+\.[a-zA-Z]{1,5}(?::(\d{1,5}))?/g;
+
+function linkifyFileRefs(container: HTMLElement): void {
+  const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      const p = (n as Text).parentElement;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      const tag = p.tagName;
+      if (tag === 'CODE' || tag === 'PRE' || tag === 'A' || tag === 'BUTTON' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const targets: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) targets.push(n as Text);
+  for (const node of targets) {
+    const text = node.data;
+    if (!/[/\\]/.test(text)) continue; // 快速路径:无斜杠的文本节点不可能有路径
+    FILE_REF_RE.lastIndex = 0;
+    if (!FILE_REF_RE.test(text)) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    let m: RegExpExecArray | null;
+    FILE_REF_RE.lastIndex = 0;
+    while ((m = FILE_REF_RE.exec(text))) {
+      // 前一字符是路径/URL 组成 → 大概率是 URL 的一部分(https://a.com/x.js)→ 跳过
+      const before = m.index > 0 ? text[m.index - 1] : '';
+      if (before && /[\w:/.\\~@-]/.test(before)) continue;
+      if (m.index > last) frag.appendChild(document.createTextNode(text.slice(last, m.index)));
+      const a = document.createElement('a');
+      a.className = 'file-ref';
+      a.dataset.path = m[0].split(':')[0];
+      if (m[1]) a.dataset.line = m[1];
+      a.textContent = m[0];
+      frag.appendChild(a);
+      last = m.index + m[0].length;
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+}
+
+// ── V3 deep 规划卡:submit_plan 工具事件 → 结构化 DAG 卡(阶段分组 + 依赖标注)──
+// 纯前端 hack:args 本身就是结构化 JSON,不需要 main 侧新事件。
+function topoLevels(nodes: Array<{ id: string; deps: string[] }>): string[][] {
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const depth = new Map<string, number>();
+  const d = (id: string, seen: Set<string>): number => {
+    if (depth.has(id)) return depth.get(id)!;
+    if (seen.has(id)) return 0; // 环防御:LLM 输出的 deps 可能成环
+    seen.add(id);
+    const deps = byId.get(id)?.deps ?? [];
+    const v = deps.length ? Math.max(...deps.map((x) => d(x, seen) + 1)) : 0;
+    depth.set(id, v);
+    return v;
+  };
+  for (const n of nodes) d(n.id, new Set());
+  const levels: string[][] = [];
+  for (const n of nodes) {
+    const lv = depth.get(n.id) ?? 0;
+    while (levels.length <= lv) levels.push([]);
+    levels[lv].push(n.id);
+  }
+  return levels;
+}
+
+function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'step plan-card';
+  const nodes = (Array.isArray(plan.nodes) ? plan.nodes : [])
+    .map((n) => {
+      const o = (n ?? {}) as Record<string, unknown>;
+      return { id: String(o.id ?? ''), title: String(o.title ?? ''), deps: Array.isArray(o.deps) ? o.deps.map(String) : [] };
+    })
+    .filter((n) => n.id);
+  const byId = new Map(nodes.map((n) => [n.id, n]));
+  const det = document.createElement('details');
+  det.open = true;
+  const summary = document.createElement('summary');
+  summary.innerHTML = `<span class="name">📋 ${esc(tr('plan.card'))} · ${nodes.length} 步</span>`;
+  det.appendChild(summary);
+  if (plan.goal) {
+    const g = document.createElement('div');
+    g.className = 'plan-goal';
+    g.textContent = plan.goal;
+    det.appendChild(g);
+  }
+  topoLevels(nodes).forEach((ids, li) => {
+    const lv = document.createElement('div');
+    lv.className = 'plan-level';
+    const label = document.createElement('span');
+    label.className = 'plan-lv';
+    label.textContent = tr('plan.stage', { n: String(li + 1) });
+    lv.appendChild(label);
+    const box = document.createElement('div');
+    box.className = 'plan-nodes';
+    for (const id of ids) {
+      const n = byId.get(id)!;
+      const chip = document.createElement('span');
+      chip.className = 'plan-node';
+      const b = document.createElement('b');
+      b.textContent = id;
+      chip.appendChild(b);
+      chip.appendChild(document.createTextNode(' ' + n.title));
+      if (n.deps.length) {
+        const deps = document.createElement('span');
+        deps.className = 'plan-deps';
+        deps.textContent = ` ← ${n.deps.join(',')}`;
+        chip.appendChild(deps);
+      }
+      box.appendChild(chip);
+    }
+    lv.appendChild(box);
+    det.appendChild(lv);
+  });
+  el.appendChild(det);
+  return el;
+}
+
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -2303,6 +2443,13 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   if (status === 'err') el.classList.add('step-err');
   else if (status === 'warn') el.classList.add('step-warn');
   const det = document.createElement('details');
+  // V3 deep 规划:submit_plan 工具事件 → 结构化 DAG 卡(阶段分组 + 依赖),不再展示裸 JSON args
+  if (s.name === 'submit_plan' || s.name.endsWith('submit_plan')) {
+    try {
+      const plan = JSON.parse(s.args) as { goal?: string; nodes?: unknown };
+      if (Array.isArray(plan.nodes) && plan.nodes.length) return renderPlanCard(plan);
+    } catch { /* args 非 JSON → 走通用工具卡渲染 */ }
+  }
   // summary 行:spinner/状态徽章 + 工具名 + 一行摘要 + 耗时
   const sumBits: string[] = [];
   if (isPending) sumBits.push('<span class="typing step-spin"><i></i><i></i><i></i></span>');
@@ -2544,6 +2691,169 @@ let streamMdLen = 0;       // 已转成 HTML 的字符数(== 前缀 DOM 已覆�
 let streamScanPos = 0;     // 增量扫描位置
 let streamInFence = false; // 扫描点是否处于 ``` / ~~~ 围栏内
 let streamTailEl: HTMLElement | null = null; // 尾部纯文本节点(只改 textContent,不重建)
+
+// ── 消息排队(DSH 式)──
+// running 时输入 + Enter → 消息入队(发送键仍是停止);回合结束(done/error/取消)
+// 自动按序发出下一条。会话删除即清队。
+const queuedByConv = new Map<string, string[]>();
+let queueRenderCache = '';
+
+function enqueueMessage(convId: string, text: string): void {
+  const q = queuedByConv.get(convId) ?? [];
+  q.push(text);
+  queuedByConv.set(convId, q);
+  renderQueue();
+}
+
+function removeQueued(convId: string, idx: number): void {
+  const q = queuedByConv.get(convId);
+  if (!q) return;
+  q.splice(idx, 1);
+  if (!q.length) queuedByConv.delete(convId);
+  renderQueue();
+}
+
+/** 回合结束后调用:该会话仍 ready 且有队列 → 发出下一条(每次 ready 只发一条,发完等下一轮 done) */
+function flushQueue(convId: string): void {
+  const q = queuedByConv.get(convId);
+  if (!q?.length) return;
+  const conv = convs.get(convId);
+  if (!conv || conv.status !== 'ready' || conv.turns.at(-1)?.done !== true) return;
+  const next = q.shift()!;
+  if (!q.length) queuedByConv.delete(convId); else queuedByConv.set(convId, q);
+  renderQueue();
+  void api.send(convId, next);
+}
+
+/** 队列 chip 行:挂在 composer 上方;内容签名缓存,renderHead 高频调用时零重建 */
+function renderQueue(): void {
+  const row = document.getElementById('queue-row');
+  if (!row) return;
+  const q = selectedId ? queuedByConv.get(selectedId) : undefined;
+  const sig = q?.length ? q.map((m) => m.slice(0, 40)).join('\u0001') : '';
+  if (sig === queueRenderCache) return;
+  queueRenderCache = sig;
+  if (!q?.length) { row.hidden = true; row.innerHTML = ''; return; }
+  row.hidden = false;
+  row.innerHTML = '';
+  const label = document.createElement('span');
+  label.className = 'queue-label';
+  label.textContent = tr('queue.pending');
+  row.appendChild(label);
+  q.forEach((m, idx) => {
+    const chip = document.createElement('span');
+    chip.className = 'queue-chip';
+    const txt = document.createElement('span');
+    txt.className = 'q-text';
+    txt.textContent = m.slice(0, 60) + (m.length > 60 ? '…' : '');
+    chip.appendChild(txt);
+    const rm = document.createElement('button');
+    rm.className = 'q-rm ghost';
+    rm.textContent = '✕';
+    rm.onclick = () => selectedId && removeQueued(selectedId, idx);
+    chip.appendChild(rm);
+    row.appendChild(chip);
+  });
+}
+
+// ── 会话内搜索(Ctrl/Cmd+F)──
+// 在已渲染 DOM 上高亮命中 + 计数 + Enter/Shift+Enter 跳转。只搜当前渲染树(历史 turn
+// 未渲染的不搜),不做全文索引 — 这是"快速在当前会话里找一段话"的工具,不是全局检索。
+const chatSearch = { q: '', hits: [] as HTMLElement[], cur: -1, debounce: null as ReturnType<typeof setTimeout> | null };
+
+function chatSearchBar(): HTMLElement { return document.getElementById('chat-search')!; }
+
+function chatSearchOpen(): void {
+  const bar = chatSearchBar();
+  if (bar.hidden) bar.hidden = false;
+  (bar.querySelector('#chat-search-input') as HTMLInputElement).focus();
+}
+
+function chatSearchClear(): void {
+  document.querySelectorAll('#turns mark.chat-hit').forEach((m) => {
+    const p = m.parentNode;
+    if (!p) return;
+    while (m.firstChild) p.insertBefore(m.firstChild, m);
+    p.removeChild(m);
+    p.normalize(); // 合并相邻文本节点,恢复原 DOM 形态
+  });
+  chatSearch.hits = [];
+  chatSearch.cur = -1;
+}
+
+function chatSearchClose(): void {
+  chatSearchBar().hidden = true;
+  const input = document.getElementById('chat-search-input') as HTMLInputElement;
+  input.value = '';
+  chatSearch.q = '';
+  chatSearchClear();
+}
+
+function chatSearchApply(): void {
+  chatSearchClear();
+  const input = document.getElementById('chat-search-input') as HTMLInputElement;
+  const q = input.value.trim();
+  chatSearch.q = q;
+  const count = document.getElementById('chat-search-count')!;
+  if (q.length < 2) { count.textContent = ''; return; }
+  const lower = q.toLowerCase();
+  const turns = document.getElementById('turns');
+  if (!turns) return;
+  const walker = document.createTreeWalker(turns, NodeFilter.SHOW_TEXT, {
+    acceptNode(n) {
+      const p = (n as Text).parentElement;
+      if (!p) return NodeFilter.FILTER_REJECT;
+      const tag = p.tagName;
+      if (tag === 'BUTTON' || tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'MARK' || p.closest('.file-ref')) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+  const targets: Text[] = [];
+  let n: Node | null;
+  while ((n = walker.nextNode())) targets.push(n as Text);
+  for (const node of targets) {
+    const text = node.data;
+    if (!text.toLowerCase().includes(lower)) continue;
+    const frag = document.createDocumentFragment();
+    let last = 0;
+    let idx = text.toLowerCase().indexOf(lower);
+    while (idx >= 0) {
+      if (idx > last) frag.appendChild(document.createTextNode(text.slice(last, idx)));
+      const mark = document.createElement('mark');
+      mark.className = 'chat-hit';
+      mark.textContent = text.slice(idx, idx + q.length);
+      frag.appendChild(mark);
+      chatSearch.hits.push(mark);
+      last = idx + q.length;
+      idx = text.toLowerCase().indexOf(lower, last);
+    }
+    if (last < text.length) frag.appendChild(document.createTextNode(text.slice(last)));
+    node.parentNode?.replaceChild(frag, node);
+  }
+  chatSearchGoto(chatSearch.hits.length ? 0 : -1);
+}
+
+function chatSearchGoto(idx: number): void {
+  const count = document.getElementById('chat-search-count')!;
+  chatSearch.hits.forEach((h) => h.classList.remove('chat-cur'));
+  chatSearch.cur = idx;
+  if (idx < 0 || !chatSearch.hits.length) { count.textContent = chatSearch.hits.length ? '' : '0'; return; }
+  const cur = chatSearch.hits[idx]!;
+  cur.classList.add('chat-cur');
+  cur.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  count.textContent = `${idx + 1}/${chatSearch.hits.length}`;
+}
+
+function chatSearchNext(dir: 1 | -1): void {
+  if (!chatSearch.hits.length) return;
+  const next = (chatSearch.cur + dir + chatSearch.hits.length) % chatSearch.hits.length;
+  chatSearchGoto(next);
+}
+
+function chatSearchInput(): void {
+  if (chatSearch.debounce) clearTimeout(chatSearch.debounce);
+  chatSearch.debounce = setTimeout(() => chatSearchApply(), 250);
+}
 
 function resetStreamRender(): void {
   streamRawText = '';
@@ -4568,10 +4878,27 @@ function showMsg(text: string, ok: boolean) {
 // ---------- shell confirm modal ----------
 let currentConfirm: string | null = null;
 let confirmFocusRestore: (() => void) | null = null;
+// ── 会话级"不再询问"(DSH 式粒度)──
+// 之前勾选会全局把 approval 翻成 never —— 所有会话/所有引擎的 shell 确认全关,粒度过粗。
+// 现在只记住本会话(renderer 运行期 Set,重启清零):该会话后续 shell 命令自动放行,其他会话照常弹窗。
+const sessionApprovedConvs = new Set<string>();
+let confirmConvId: string | null = null;
+
 function showConfirm(id: string, cmd: string) {
   if (currentConfirm && currentConfirm !== id) api.confirmResponse(currentConfirm, false); // deny stacked
+  confirmConvId = selectedId;
+  // 本会话已选"不再询问" → 直接放行,不弹窗
+  if (confirmConvId && sessionApprovedConvs.has(confirmConvId)) { api.confirmResponse(id, true); return; }
   currentConfirm = id;
   document.getElementById('modal-cmd')!.textContent = cmd;
+  // 上下文行:哪个会话/哪个引擎在请求执行(之前只有裸命令文本)
+  const ctxEl = document.getElementById('modal-ctx');
+  if (ctxEl) {
+    const conv = confirmConvId ? convs.get(confirmConvId) : undefined;
+    const label = conv ? `${conv.customTitle || conv.turns[0]?.prompt.slice(0, 40) || ''} · ${ENGINE_LABELS[conv.engine as keyof typeof ENGINE_LABELS] ?? conv.engine}` : '';
+    ctxEl.textContent = label;
+    ctxEl.hidden = !label;
+  }
   const noAsk = document.getElementById('modal-noask') as HTMLInputElement | null;
   if (noAsk) noAsk.checked = false;
   const modalEl = document.getElementById('modal')!;
@@ -4584,12 +4911,12 @@ async function closeConfirm(approved: boolean) {
   currentConfirm = null;
   document.getElementById('modal')!.classList.remove('show');
   if (confirmFocusRestore) { confirmFocusRestore(); confirmFocusRestore = null; }
-  // "don't ask again" → flip the global approval policy to never (persists to settings.json).
-  if (approved && noAsk) {
-    const s = await api.getSettings();
-    s.approval = 'never';
-    await api.saveSettings(s);
+  // "不再询问" → 会话级放行(运行期有效,重启失效),不再动全局 settings.approval
+  if (approved && noAsk && confirmConvId) {
+    sessionApprovedConvs.add(confirmConvId);
+    uxToast.info(tr('confirm.sessionOk'));
   }
+  confirmConvId = null;
 }
 
 // ---------- 远程 Agent 状态条 ----------
@@ -5093,6 +5420,32 @@ function closeMoreMenu() {
   document.getElementById('ctx-insp-save')!.onclick = () => void saveCtxInspector();
   document.getElementById('ctx-insp-add')!.onclick = () => addCtxMsg();
   document.getElementById('btn-send')!.onclick = () => void send();
+  // ── 聊天内容事件委托(单监听器;流式稳定前缀持续重建 DOM,委托天然免疫)──
+  // .code-copy → 复制所在代码块;.file-ref → 右侧文件抽屉打开
+  document.getElementById('turns')!.addEventListener('click', (e) => {
+    const t = e.target as HTMLElement;
+    const copyBtn = t.closest('.code-copy') as HTMLElement | null;
+    if (copyBtn) {
+      const code = copyBtn.closest('.code-block')?.querySelector('code');
+      copyText(code?.textContent ?? '', copyBtn);
+      return;
+    }
+    const ref = t.closest('.file-ref') as HTMLElement | null;
+    if (ref?.dataset.path) {
+      e.preventDefault();
+      void fileDrawer?.open(ref.dataset.path);
+    }
+  });
+  // ── 会话内搜索条 ──
+  const chatSearchInputEl = document.getElementById('chat-search-input') as HTMLInputElement;
+  chatSearchInputEl.addEventListener('input', () => chatSearchInput());
+  chatSearchInputEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); chatSearchNext(e.shiftKey ? -1 : 1); }
+    if (e.key === 'Escape') { e.preventDefault(); chatSearchClose(); (document.getElementById('composer') as HTMLTextAreaElement).focus(); }
+  });
+  document.getElementById('chat-search-prev')!.onclick = () => chatSearchNext(-1);
+  document.getElementById('chat-search-next')!.onclick = () => chatSearchNext(1);
+  document.getElementById('chat-search-close')!.onclick = () => { chatSearchClose(); (document.getElementById('composer') as HTMLTextAreaElement).focus(); };
   document.getElementById('modal-ok')!.onclick = () => closeConfirm(true);
   document.getElementById('modal-cancel')!.onclick = () => closeConfirm(false);
   // 项目背景编辑器(workbench 卡片「背景」按钮触发)。
@@ -5299,6 +5652,15 @@ function closeMoreMenu() {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      // 消息排队(DSH 式):running 时 Enter → 入队(发送键仍保留停止语义),回合结束自动发出
+      const runConv = selectedId ? convs.get(selectedId) : undefined;
+      const draft = composer.value.trim();
+      if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
+        composer.value = '';
+        autosize(composer);
+        enqueueMessage(runConv.id, draft);
+        return;
+      }
       void send();
     }
     // Escape 清空输入框(slash menu 已关闭时) / Escape clears composer when slash menu is closed

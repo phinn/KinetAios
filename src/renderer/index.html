@@ -157,9 +157,20 @@
         <!-- 对话区 + 文件抽屉宿主:抽屉为 Codex 式浮层,从右滑入悬浮在对话之上 -->
         <div class="chat-split">
           <div id="chat-content" class="chat-content">
+          <!-- 会话内搜索条(Ctrl/Cmd+F)-->
+          <div id="chat-search" hidden>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <input id="chat-search-input" data-i18n-placeholder="chat.search" placeholder="会话内搜索…" spellcheck="false" />
+            <span id="chat-search-count"></span>
+            <button id="chat-search-prev" class="ghost" title="↑" aria-label="上一个">↑</button>
+            <button id="chat-search-next" class="ghost" title="↓" aria-label="下一个">↓</button>
+            <button id="chat-search-close" class="ghost" aria-label="关闭搜索">✕</button>
+          </div>
           <div id="turns"></div>
           <button id="scroll-bottom-btn" class="scroll-bottom-btn" data-i18n-title="scrollBottom.title" title="回到最新消息" aria-label="回到最新消息"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><polyline points="19 12 12 19 5 12"/></svg></button>
           <div id="input">
+            <!-- 消息排队 chip 行(running 时 Enter 入队的消息)-->
+            <div id="queue-row" hidden></div>
             <div id="attach-row" class="attach-row"></div>
             <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" data-i18n-aria="a11y.chatInput" aria-label="输入消息… (Enter 发送, Shift+Enter 换行)" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
@@ -347,8 +358,9 @@
   <div id="modal" role="dialog" aria-modal="true" aria-label="命令执行确认">
     <div class="modal-card">
       <h3 data-i18n="modal.title">要执行 shell 命令?</h3>
+      <div id="modal-ctx" class="modal-ctx" hidden></div>
       <pre id="modal-cmd"></pre>
-      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" /><span data-i18n="modal.noask">不再询问(之后自动放行所有 shell 命令)</span></label>
+      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" /><span data-i18n="modal.noask">本会话不再询问(重启后失效,只影响本会话)</span></label>
       <div class="actions">
         <button id="modal-cancel" data-i18n="common.cancel">取消</button>
         <button class="primary" id="modal-ok" data-i18n="modal.ok">执行</button>
