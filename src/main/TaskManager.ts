@@ -727,9 +727,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         });
         break;
       case 'done':
+        // ⚠️ 无条件 saveTurn:空回复(思考模型烧光预算零输出)也要落库,否则 turn 永远
+        // done=false,重启后还会被 resume 重发,UI 永远 running(2026-09-09 事故)。
+        store.saveTurn(conv.id, t);
         if (t.answer) {
           store.appendMessage('assistant', t.answer, conv.id);
-          store.saveTurn(conv.id, t);
         }
         if (t.costUSD > 0) {
           store.appendEvent(conv.id, t.id, { type: 'turn/meta', costUSD: t.costUSD, tokensIn: t.tokensIn ?? 0, tokensOut: t.tokensOut ?? 0 });

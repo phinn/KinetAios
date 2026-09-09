@@ -106,13 +106,28 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 async function fetchUntil200(url: string, init: RequestInit): Promise<Response> {
   // signal 从 init.signal 提取,用于重试逻辑判断(不重复传参)。
   const signal = init.signal as AbortSignal | undefined;
+  // 首字节看门狗:fetch() 阶段(建连/排队/请求体上传/等服务端回头)没有任何超时覆盖,
+  // 服务端收下请求但迟迟不发响应头时 fetch 永挂 → turn 永远 running 且无事件。
+  // 与 sseLines 的流静默看门狗互补:那个管「headers 之后断流」,这个管「headers 之前」。
+  // 到点 abort 专用 controller(fetch 按 signal.reason 抛非 AbortError → 走可重试网络错退避);
+  // headers 一到就撤表,不影响正常长流。用户 abort(signal)实时传导。
+  // / TTFB watchdog: fetch() itself has no timeout — a server that accepts the request but
+  // never responds would hang the turn forever. Fired per attempt, cleared once headers arrive.
+  const TTFB_TIMEOUT_MS = 120_000;
   for (let attempt = 0; ; attempt++) {
     let resp: Response;
+    const ttfbCtrl = new AbortController();
+    const ttfbTimer = setTimeout(() => ttfbCtrl.abort(new Error(`首字节超时 ${TTFB_TIMEOUT_MS / 1000}s(服务端已收请求但无响应,已中断重试)`)), TTFB_TIMEOUT_MS);
+    const onOuterAbort = (): void => ttfbCtrl.abort(signal?.reason);
+    signal?.addEventListener('abort', onOuterAbort, { once: true });
     try {
-      resp = await fetch(url, init);
+      resp = await fetch(url, { ...init, signal: ttfbCtrl.signal });
     } catch (e) {
       if (attempt < MAX_RETRY && !signal?.aborted) { await sleep(backoffMs(attempt), signal); continue; }
       throw e;
+    } finally {
+      clearTimeout(ttfbTimer); // headers 已到(或已抛错)→ 撤首字节看门狗,流阶段交给 sseLines
+      signal?.removeEventListener('abort', onOuterAbort);
     }
     if (resp.status === 200) return resp;
     const detail = await readErr(resp);

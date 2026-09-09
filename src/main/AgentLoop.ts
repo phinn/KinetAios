@@ -222,6 +222,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   // ponytail:错误格式不统一,best-effort。
   let retriedAfterShrink = false;
   let retriedNuclear = false;
+  let retriedEmptyCompletion = false; // 空 completion(纯 reasoning 零输出)重试标记
   for (let i = 0; i < maxTurns; i++) {
     let completion: Completion;
     try {
@@ -277,6 +278,23 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // 用这轮真实 prompt_tokens 校准 token 估算系数(给 trimHistoryToTokenBudget / compactHistory 用)。
     // 按协议分别校准:GLM(OpenAI 协议)与 Claude 的 token/char 比差异大,混用一个系数会导致并发会话互相干扰。
     calibrateTokens(completion.tokensIn, messages, snapshot.apiProtocol);
+
+    // 空 completion 兜底:思考模型(如 glm-5.3-flash)偶发把整个输出预算烧在 reasoning 上,
+    // content 空且无 toolCalls → 按旧逻辑会直接 done,turn 留下空 answer、用户看到"没反应"。
+    // 重试一次(最多),并提示模型直接输出;仍空才报错退出,绝不静默吞掉。
+    // / Empty-completion guard: reasoning models occasionally burn the whole output budget
+    // on thinking with zero content and zero tool calls. Retry once with a nudge, then fail loudly.
+    if (!completion.content.trim() && completion.toolCalls.length === 0 && completion.tokensOut > 0) {
+      if (!retriedEmptyCompletion) {
+        retriedEmptyCompletion = true;
+        onEvent({ type: 'status', text: '⚠️ 模型返回空回复(思考消耗了全部输出预算),正在重试…' });
+        messages.push({ role: 'user', content: '[系统] 上一轮你没有输出任何可见内容。请跳过长思考,直接给出回答或调用工具。' });
+        i--; // 抵消 for 的 i++,重试本轮
+        continue;
+      }
+      onEvent({ type: 'error', message: '模型连续返回空回复(reasoning 烧光输出预算)。请换模型或降低 reasoning 强度后重试。' });
+      return dropTransient(messages);
+    }
 
     messages.push(completion.rawAssistant);
     if (completion.toolCalls.length === 0) {
