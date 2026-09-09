@@ -1802,7 +1802,7 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshotWithHide, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { captureScreenshotWithHide, captureWindowByName, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
 
 const screenshot: Tool = {
   name: 'screenshot',
@@ -1819,6 +1819,25 @@ const screenshot: Tool = {
     if (!r.ok || !r.base64) return `❌ 截屏失败: ${r.error}`;
     // 返回特殊格式:AgentLoop 会识别 __IMAGE_BASE64__ 前缀,将其转为 image_url content part 注入对话。
     return `📷 截屏成功 (${r.width}×${r.height})${args?.hide_self ? ' [已隐藏自身窗口]' : ''}\n__IMAGE_BASE64__:${r.base64}`;
+  },
+};
+
+const screenshot_window: Tool = {
+  name: 'screenshot_window',
+  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸。',
+  parameters: {
+    type: 'object',
+    properties: {
+      title: { type: 'string', description: '窗口标题关键字(≥3 字符,唯一性越强越好,如 "App Store Connect")' },
+    },
+    required: ['title'],
+  },
+  readOnly: true,
+  async run(args: any) {
+    const title = String(args?.title ?? '');
+    const r = await captureWindowByName(title);
+    if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
+    return `🪟 窗口「${title}」内容截取成功 (${r.width}×${r.height})\n__IMAGE_BASE64__:${r.base64}`;
   },
 };
 
@@ -1922,7 +1941,7 @@ const keyboardKeyTool: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

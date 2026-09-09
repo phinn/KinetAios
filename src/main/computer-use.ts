@@ -55,6 +55,48 @@ export async function withSelfHidden<T>(hideSelf: boolean, fn: () => Promise<T>)
   }
 }
 
+// ── Window capture(窗口内容截取,零置前)──
+// desktopCapturer window 模式走系统窗口合成(Windows: PrintWindow/GDI;macOS: ScreenCaptureKit),
+// 拍的是窗口自己的合成内容 —— 不置前、被遮挡、在其他空间都能拍(已探针实测:21 个后台窗口全部非空)。
+// 用途:自己启动的窗口(如 shell 拉起的 app)不抢用户画面,直接按名字抓内容。
+// / Window-scoped capture: window mode composites the window's own backing store, so
+// background/occluded windows capture fine (probe-verified). Lets the agent launch a window
+// and screenshot its content without ever bringing it to front.
+export async function captureWindowByName(
+  nameSubstr: string,
+  opts?: { minHeight?: number },
+): Promise<ScreenshotResult> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1920, height: 1200 },
+    });
+    const q = nameSubstr.trim().toLowerCase();
+    // 精确匹配优先,再退前缀/子串;太短的查询(≤2 字符)容易误中,直接拒绝。
+    if (q.length <= 2) return { ok: false, error: `窗口名查询「${nameSubstr}」太短,容易误中,请用更长且唯一的关键字` };
+    const ranked = sources
+      .filter((s) => !s.thumbnail.isEmpty())
+      .filter((s) => s.name.toLowerCase().includes(q))
+      .sort((a, b) => {
+        const ae = a.name.toLowerCase() === q ? 0 : a.name.toLowerCase().startsWith(q) ? 1 : 2;
+        const be = b.name.toLowerCase() === q ? 0 : b.name.toLowerCase().startsWith(q) ? 1 : 2;
+        return ae - be;
+      });
+    if (!ranked.length) {
+      const names = sources.filter((s) => !s.thumbnail.isEmpty()).slice(0, 12).map((s) => s.name);
+      return { ok: false, error: `未找到标题含「${nameSubstr}」的窗口。当前可见窗口:${names.join(' | ')}` };
+    }
+    const src = ranked[0];
+    const size = src.thumbnail.getSize();
+    if (size.height < (opts?.minHeight ?? 0)) return { ok: false, error: `窗口「${src.name}」内容过小(${size.width}×${size.height}),可能未渲染完成` };
+    const dataUrl = src.thumbnail.toDataURL();
+    const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
+    return { ok: true, dataUrl, base64, width: size.width, height: size.height };
+  } catch (e) {
+    return { ok: false, error: (e as Error)?.message ?? String(e) };
+  }
+}
+
 async function captureScreenInner(): Promise<ScreenshotResult> {
   try {
     const primaryDisplay = electronScreen.getPrimaryDisplay();
