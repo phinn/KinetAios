@@ -15,6 +15,43 @@ export interface ScreenshotResult {
   width?: number;
   height?: number;
   error?: string;
+  note?: string;          // 坐标/定位相关的附加提示(如窗口原点解析失败)
+}
+
+// ── 坐标换算(截图空间 → 平台动作空间)──
+// 工具契约:模型给出的坐标基于"最后一次截图"的像素分辨率。但存在两层错位:
+//   ① 全屏截图在物理分辨率超过 2560×1440 时被等比缩小 → 截图坐标 ≠ 屏幕物理像素;
+//   ② 窗口截图的坐标是窗口局部坐标 → 需要加窗口原点才是屏幕坐标。
+// 此前鼠标工具把坐标原样传给系统 API,以上任一场景点击都会系统性偏移。
+// 现在记录最近一次截图的几何信息,鼠标类工具先换算再执行。
+// 平台动作空间:Windows = 物理像素(PowerShell System-DPI-aware);
+// macOS = 全局点(CGEvent/cliclick);Linux = 物理像素(xdotool)。
+interface CaptureGeometry {
+  imgW: number; imgH: number;      // 截图像素尺寸
+  spaceW: number; spaceH: number;  // 动作空间尺寸(屏幕或窗口)
+  originX: number; originY: number; // 原点偏移(窗口截图为其屏幕位置;全屏为 0,0)
+  kind: 'screen' | 'window';
+  at: number;                      // 记录时间戳(过期防护)
+}
+let lastCapture: CaptureGeometry | null = null;
+
+// 几何信息时效:截图→点击的 computer-use 流程在秒/分钟级完成;跨会话/长时间后的
+// 点击属于"模型凭空报坐标",用过期几何换算反而会把坐标弄错 → 视为无几何,原样透传。
+const CAPTURE_GEOMETRY_TTL_MS = 5 * 60 * 1000;
+
+function setCaptureGeometry(g: CaptureGeometry | null): void {
+  lastCapture = g;
+}
+
+/** 截图坐标 → 动作空间坐标。无有效几何信息时原样透传(兼容旧行为)。 */
+function mapScreenshotCoords(x: number, y: number): { x: number; y: number } {
+  const g = lastCapture;
+  if (!g || g.imgW <= 0 || g.imgH <= 0 || g.spaceW <= 0 || g.spaceH <= 0) return { x, y };
+  if (Date.now() - g.at > CAPTURE_GEOMETRY_TTL_MS) return { x, y }; // 过期 → 透传
+  return {
+    x: Math.round(g.originX + (x * g.spaceW) / g.imgW),
+    y: Math.round(g.originY + (y * g.spaceH) / g.imgH),
+  };
 }
 
 export async function captureScreenshot(): Promise<ScreenshotResult> {
@@ -89,22 +126,112 @@ export async function captureWindowByName(
     const src = ranked[0];
     const size = src.thumbnail.getSize();
     if (size.height < (opts?.minHeight ?? 0)) return { ok: false, error: `窗口「${src.name}」内容过小(${size.width}×${size.height}),可能未渲染完成` };
+    // 坐标换算:解析窗口在屏幕上的位置(动作空间)。失败 → 原点按 0,0 兜底并明确提示,
+    // 让模型改用全屏截图定位后再点击(此前没有任何换算,窗口截图+点击必然错位)。
+    const bounds = await resolveWindowBounds(nameSubstr);
+    setCaptureGeometry({
+      imgW: size.width,
+      imgH: size.height,
+      spaceW: bounds?.w ?? size.width,
+      spaceH: bounds?.h ?? size.height,
+      originX: bounds?.x ?? 0,
+      originY: bounds?.y ?? 0,
+      kind: 'window',
+      at: Date.now(),
+    });
     const dataUrl = src.thumbnail.toDataURL();
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-    return { ok: true, dataUrl, base64, width: size.width, height: size.height };
+    return {
+      ok: true,
+      dataUrl,
+      base64,
+      width: size.width,
+      height: size.height,
+      note: bounds
+        ? `坐标系:窗口「${src.name}」局部像素(已自动换算到屏幕坐标,原点 ${bounds.x},${bounds.y})`
+        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算。请改用全屏 screenshot 截图后再用其坐标点击。`,
+    };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
   }
 }
 
+// 解析窗口在屏幕上的位置与尺寸(动作空间:Win=物理像素;macOS=全局点)。
+// Windows: Get-Process MainWindowTitle 匹配 + GetWindowRect;macOS: JXA CGWindowList bounds。
+async function resolveWindowBounds(titleQuery: string): Promise<{ x: number; y: number; w: number; h: number } | null> {
+  try {
+    if (process.platform === 'win32') {
+      const b64 = Buffer.from(titleQuery.toLowerCase(), 'utf8').toString('base64');
+      const ps = `
+Add-Type @"
+using System;
+using System.Runtime.InteropServices;
+public class WRect {
+  [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out RECT r);
+  [StructLayout(LayoutKind.Sequential)] public struct RECT { public int Left; public int Top; public int Right; public int Bottom; }
+}
+"@
+$q = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}'))
+$hit = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -and $_.MainWindowTitle.ToLower().Contains($q) } | Select-Object -First 1
+if ($hit) {
+  $r = New-Object WRect+RECT
+  [WRect]::GetWindowRect($hit.MainWindowHandle, [ref]$r) | Out-Null
+  Write-Output ("OK {0} {1} {2} {3}" -f $r.Left, $r.Top, ($r.Right - $r.Left), ($r.Bottom - $r.Top))
+} else { Write-Output 'ERR notfound' }
+`.trim();
+      const out = await runShellCapture(ps, 4000);
+      const m = /OK (-?\d+) (-?\d+) (-?\d+) (-?\d+)/.exec(out);
+      if (!m) return null;
+      return { x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
+    }
+    if (process.platform === 'darwin') {
+      const script = `
+ObjC.import('CoreGraphics');
+ObjC.import('Foundation');
+var q = ${JSON.stringify(titleQuery.toLowerCase())};
+var out = 'ERR notfound';
+var list = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, $.kCGNullWindowID));
+for (var i = 0; i < list.count; i++) {
+  var wd = list.objectAtIndex(i);
+  if (Number(ObjC.unwrap(wd.objectForKey('kCGWindowLayer'))) !== 0) continue;
+  var nameRef = wd.objectForKey('kCGWindowName');
+  var nm = nameRef ? String(ObjC.unwrap(nameRef)) : '';
+  if (nm && nm.toLowerCase().indexOf(q) >= 0) {
+    var b = wd.objectForKey('kCGWindowBounds');
+    var x = Number(ObjC.unwrap(b.objectForKey('X')));
+    var y = Number(ObjC.unwrap(b.objectForKey('Y')));
+    var w = Number(ObjC.unwrap(b.objectForKey('Width')));
+    var h = Number(ObjC.unwrap(b.objectForKey('Height')));
+    out = 'OK ' + x + ' ' + y + ' ' + w + ' ' + h;
+    break;
+  }
+}
+out;
+`.trim();
+      const out = (await osascriptJxa(script, 4000)).trim();
+      const m = /OK (-?\d+) (-?\d+) (-?\d+) (-?\d+)/.exec(out);
+      if (!m) return null;
+      return { x: Number(m[1]), y: Number(m[2]), w: Number(m[3]), h: Number(m[4]) };
+    }
+  } catch {
+    return null;
+  }
+  return null; // Linux: 暂无可靠窗口枚举 → 坐标不换算(结果带提示)
+}
+
 async function captureScreenInner(): Promise<ScreenshotResult> {
   try {
     const primaryDisplay = electronScreen.getPrimaryDisplay();
-    const { width, height } = primaryDisplay.size;
+    const { width, height } = primaryDisplay.size; // DIP/点
     const dpr = primaryDisplay.scaleFactor || 1;
+    const physW = Math.round(width * dpr);
+    const physH = Math.round(height * dpr);
+    // 平台动作空间:Windows/Linux = 物理像素;macOS = 点(CGEvent/cliclick 的坐标语义)
+    const spaceW = process.platform === 'darwin' ? width : physW;
+    const spaceH = process.platform === 'darwin' ? height : physH;
     // 请求物理像素分辨率(×dpr),但缩放到合理尺寸防止太大
-    const targetW = Math.min(Math.round(width * dpr), 2560);
-    const targetH = Math.min(Math.round(height * dpr), 1440);
+    const targetW = Math.min(physW, 2560);
+    const targetH = Math.min(physH, 1440);
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: targetW, height: targetH },
@@ -113,10 +240,15 @@ async function captureScreenInner(): Promise<ScreenshotResult> {
     const source = sources.find((s) => s.display_id === String(primaryDisplay.id)) || sources[0];
     const thumb = source.thumbnail;
     if (thumb.isEmpty()) return { ok: false, error: 'Screenshot empty (screen permission?)' };
+    // P2-fix: 用缩略图真实尺寸(此前上报请求尺寸 —— Electron 按纵横比缩放后两者可不同,
+    // 而这个尺寸正是模型用来给 mouse_click 报坐标的基准,报错必偏)。
+    const size = thumb.getSize();
     const dataUrl = thumb.toDataURL();
     if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: 'Screenshot too small' };
+    // 记录几何:模型坐标(截图空间)→ 动作空间 的换算依据(见 mapScreenshotCoords)
+    setCaptureGeometry({ imgW: size.width, imgH: size.height, spaceW, spaceH, originX: 0, originY: 0, kind: 'screen', at: Date.now() });
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-    return { ok: true, dataUrl, base64, width: targetW, height: targetH };
+    return { ok: true, dataUrl, base64, width: size.width, height: size.height };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
   }
@@ -134,7 +266,11 @@ export interface MouseClickArgs {
 }
 
 export async function mouseClick(args: MouseClickArgs): Promise<{ ok: boolean; error?: string }> {
-  const { x, y, button = 'left', doubleClick = false } = args;
+  const raw = { x: args.x, y: args.y };
+  // 坐标换算:模型坐标(基于最近一次截图)→ 屏幕动作空间(见 mapScreenshotCoords)
+  const mapped = mapScreenshotCoords(raw.x, raw.y);
+  const { x, y } = mapped;
+  const { button = 'left', doubleClick = false } = args;
   const platform = process.platform;
 
   try {
@@ -214,6 +350,9 @@ ${flags.split(',').map((f: string) => `[Mouse]::mouse_event(${f}, 0, 0, 0, 0)`).
 // ── Mouse move (no click) ── 仅移动光标
 // 后台模式下 move 无意义(没有真实光标操作),直接成功返回。
 export async function mouseMove(x: number, y: number): Promise<{ ok: boolean; error?: string }> {
+  // 坐标换算(与 mouseClick 同基准)
+  const mapped = mapScreenshotCoords(x, y);
+  x = mapped.x; y = mapped.y;
   if (computerUseBackground()) return { ok: true }; // 后台模式:无光标可移,no-op
   try {
     if (process.platform === 'win32') {
@@ -232,6 +371,9 @@ export async function mouseMove(x: number, y: number): Promise<{ ok: boolean; er
 
 // ── Mouse scroll ── 滚轮滚动
 export async function mouseScroll(x: number, y: number, clicks: number): Promise<{ ok: boolean; error?: string }> {
+  // 坐标换算(与 mouseClick 同基准)
+  const mapped = mapScreenshotCoords(x, y);
+  x = mapped.x; y = mapped.y;
   // 后台模式:WM_MOUSEWHEEL / CGEvent 滚轮直接投给坐标命中窗口
   if (computerUseBackground()) {
     if (process.platform === 'win32') return bgMouseScrollWin(x, y, clicks);
@@ -241,7 +383,8 @@ export async function mouseScroll(x: number, y: number, clicks: number): Promise
   try {
     if (process.platform === 'win32') {
       // Move to position first, then scroll via mouse_event wheel flag (0x0800)
-      const dir = clicks >= 0 ? 1 : -1; // positive = scroll down on Windows wheel_delta
+      // 正 wheel_delta = 向上滚(与工具描述"正=向上"一致;此前注释写反了)
+      const dir = clicks >= 0 ? 1 : -1;
       const amount = Math.abs(clicks) * 120 * dir; // WHEEL_DELTA = 120
       const ps = `
 Add-Type -AssemblyName System.Windows.Forms
@@ -258,10 +401,31 @@ public class Wheel {
 `.trim();
       await runShell(ps, 3000);
     } else if (process.platform === 'darwin') {
-      // cliclick scroll: positive = up, negative = down
-      await runShell(`clicclick "m:${Math.round(x)},${Math.round(y)}" "wd:${Math.round(clicks * 2)}"`, 3000);
+      // P2-fix: 此前 `clicclick`(命令名拼错)且 `wd:` 根本不是 cliclick 的命令 →
+      // macOS 前台滚动 100% 失败。cliclick 没有滚动子命令,改走 JXA CGEvent:
+      // 先移动光标(滚动目标是光标下窗口),再按行投递滚轮事件(kCGHIDEventTap)。
+      const n = Math.max(1, Math.min(30, Math.abs(Math.round(clicks))));
+      const sign = clicks >= 0 ? 1 : -1; // 正=向上(与工具描述一致)
+      const script = `
+ObjC.import('CoreGraphics');
+var pt = { x: ${Math.round(x)}, y: ${Math.round(y)} };
+var mv = $.CGEventCreateMouseEvent($(), $.kCGEventMouseMoved, pt, $.kCGMouseButtonLeft);
+$.CGEventPost(0, mv); // 0 = kCGHIDEventTap(真实移动光标,滚动目标 = 光标下窗口)
+var sign = ${sign};
+for (var i = 0; i < ${n}; i++) {
+  var ev = $.CGEventCreateScrollWheelEvent($(), $.kCGScrollEventUnitLine, 1, sign * 3);
+  $.CGEventPost(0, ev);
+}
+'OK';
+`.trim();
+      const out = (await osascriptJxa(script, 3000)).trim();
+      if (!out.includes('OK')) return { ok: false, error: out || '滚动事件投递失败' };
     } else {
-      await runShell(`xdotool mousemove ${Math.round(x)} ${Math.round(y)} click ${clicks > 0 ? '4' : '5'}`, 3000);
+      // P2-fix: 此前忽略滚动量(只滚一格)。按 |clicks| 循环(上限 30)。
+      const n = Math.max(1, Math.min(30, Math.abs(Math.round(clicks))));
+      const btn = clicks > 0 ? '4' : '5';
+      const seq = Array.from({ length: n }, () => `click ${btn}`).join(' ');
+      await runShell(`xdotool mousemove ${Math.round(x)} ${Math.round(y)} ${seq}`, 3000);
     }
     return { ok: true };
   } catch (e) {
@@ -274,6 +438,10 @@ public class Wheel {
 // 降级为"down@起点 → up@终点"两次投递,只对支持 WM_LBUTTONDOWN 拖拽选择的
 // 目标有效(文本选区/滑块多数可用;拖拽式 DnD 不行)。这是模式边界,如实返回。
 export async function mouseDrag(fromX: number, fromY: number, toX: number, toY: number): Promise<{ ok: boolean; error?: string }> {
+  // 坐标换算:起点与终点都基于最近一次截图
+  const from = mapScreenshotCoords(fromX, fromY);
+  const to = mapScreenshotCoords(toX, toY);
+  fromX = from.x; fromY = from.y; toX = to.x; toY = to.y;
   if (computerUseBackground()) {
     if (process.platform === 'win32') {
       return bgDragWin(fromX, fromY, toX, toY);
@@ -341,6 +509,13 @@ export async function keyboardType(text: string): Promise<{ ok: boolean; error?:
 }
 
 // ── Keyboard: press key combo ── 按键(支持组合键如 Ctrl+C)
+// P0-fix(SendKeys 特殊字符转义):单键/组合键的主键一律先做 SendKeys 转义再做
+// PS 单引号转义。此前组合键分支的 finalKey 原样拼接 —— 含 ' 即可逃逸 PS 单引号
+// 字符串执行任意代码(内容受模型输出/prompt 注入影响)。
+function escapeSendKeysChars(s: string): string {
+  return s.replace(/[+^%~(){}[\]]/g, '{$&}');
+}
+
 export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: string }> {
   // 后台模式:VK/虚拟键码 KEYDOWN-KEYUP 投给锁定窗口
   if (computerUseBackground()) {
@@ -352,6 +527,11 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
     // Normalize key names
     // OpenAI computer use style: Enter, Tab, Escape, Backspace, Delete, ArrowUp/Down/Left/Right, etc.
     // Also support combos: Ctrl+C, Shift+Home, etc.
+    // P2-fix: Win 键前置校验 — SendKeys 没有 Win 键 token,此前映射成 '{WIN}' 是无效占位。
+    const lowerParts = key.toLowerCase().split('+').map((p) => p.trim()).filter(Boolean);
+    if (lowerParts.includes('win') || lowerParts.includes('windows')) {
+      return { ok: false, error: 'Win 键不受支持(SendKeys/后台 PostMessage 均无法合成 Win 键)。请改用其他快捷键。' };
+    }
     if (process.platform === 'win32') {
       // Map to SendKeys format
       const sendKeysMap: Record<string, string> = {
@@ -379,7 +559,7 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
         'meta': '^', // Windows: treat Meta as Ctrl for shortcuts
         'cmd': '^',
         'command': '^',
-        'win': '{WIN}',
+        // 'win' 已移除:SendKeys 无 Win 键 token,'{WIN}' 是无效占位(入口处已显式报错)
       };
       // Handle combos: "Ctrl+C" → "^{c}" in SendKeys
       const parts = key.split('+').map((p) => p.trim());
@@ -388,12 +568,14 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
         const modifiers = parts.slice(0, -1).map((m) => sendKeysMap[m.toLowerCase()] || '').join('');
         const finalKey = parts[parts.length - 1];
         const finalMapped = sendKeysMap[finalKey.toLowerCase()];
-        const finalStr = finalMapped || (finalKey.length === 1 ? finalKey : `{${finalKey}}`);
-        const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${modifiers}${finalStr}')`;
+        // P0-fix: 主键做 SendKeys 转义 + 整体做 PS 单引号转义(防注入,见函数头注释)
+        const finalStr = finalMapped || escapeSendKeysChars(finalKey);
+        const payload = (modifiers + finalStr).replace(/'/g, "''");
+        const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${payload}')`;
         await runShell(ps, 5000);
       } else {
         // Single key
-        const mapped = sendKeysMap[key.toLowerCase()] || key;
+        const mapped = sendKeysMap[key.toLowerCase()] || escapeSendKeysChars(key);
         const ps = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${mapped.replace(/'/g, "''")}')`;
         await runShell(ps, 5000);
       }
@@ -427,12 +609,14 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
       }
     } else {
       // Linux: xdotool key
+      // P2-fix: 此前先全局替换 'arrow' 导致后面的 arrowup/down/left/right 映射永远
+      // 匹配不上(靠 keysym 小写碰巧可用)。改为先具体后通配的显式映射。
       const xdotoolKey = key.toLowerCase()
-        .replace('arrow', '').replace('ctrl', 'ctrl').replace('cmd', 'super')
+        .replace('arrowup', 'up').replace('arrowdown', 'down')
+        .replace('arrowleft', 'left').replace('arrowright', 'right')
+        .replace('arrow', '')
         .replace('enter', 'Return').replace('escape', 'Escape').replace('tab', 'Tab')
-        .replace('backspace', 'BackSpace').replace('delete', 'Delete')
-        .replace('arrowup', 'Up').replace('arrowdown', 'Down')
-        .replace('arrowleft', 'Left').replace('arrowright', 'Right');
+        .replace('backspace', 'BackSpace').replace('delete', 'Delete');
       await runShell(`xdotool key ${xdotoolKey}`, 5000);
     }
     return { ok: true };

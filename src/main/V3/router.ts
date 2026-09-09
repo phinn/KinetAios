@@ -46,6 +46,32 @@ const WRITE_SIGNALS = [
   '编辑', '替换', '重构',
 ];
 
+// ── 分析任务识别(V3 分析专用定位)──
+// 数据文件扩展名:出现即视为分析任务(如 "对比 a.csv 和 b.csv")
+const ANALYSIS_FILE_RE = /\.(csv|xlsx?|xlsm|parquet|tsv|db|sqlite3?|json|log)\b/gi;
+// 数据/分析词汇:命中任意一个即视为分析意图
+const ANALYSIS_WORDS = [
+  '数据', '统计', '报表', '汇总', '数据集', '数据透视', '趋势', '占比',
+  '同比', '环比', '分析数据', '数据分析', '分析一下', '交叉分析', '关联分析', '对比分析',
+  'dataset', 'statistics', 'analyze', 'analyse',
+];
+
+/**
+ * 是否为分析类任务(数据分析/报表/探查)。
+ * 分析任务在 routeTask 中被钉死到 std:
+ *  - 不进 fast:分析需要反复读证据,轻上下文策略会丢前面的发现;
+ *  - 不进 deep:DAG 把证据按节点分片,节点间只传摘要 —— 分析是搜索过程,
+ *    第 3 步查什么取决于第 2 步的结果,不能预先分解成静态 DAG。
+ */
+export function isAnalysisTask(input: string): boolean {
+  const text = input.trim();
+  if (!text) return false;
+  ANALYSIS_FILE_RE.lastIndex = 0;
+  if (ANALYSIS_FILE_RE.test(text)) return true;
+  const lower = text.toLowerCase();
+  return ANALYSIS_WORDS.some((w) => lower.includes(w.toLowerCase()));
+}
+
 /**
  * 分类任务,返回执行路径。
  * 不调 LLM,纯规则匹配,耗时 <1ms。
@@ -61,6 +87,9 @@ export function routeTask(
   // ── 信号收集 ──
   const fileCount = opts?.fileCount ?? countFilePaths(text);
   const userTurnCount = history.filter((m) => m.role === 'user').length;
+
+  // ── 分析任务:钉死 std(优先级最高,覆盖 deep/fast 的全部条件)──
+  if (isAnalysisTask(text)) return 'std';
 
   const hasDeepSignal = DEEP_SIGNALS.some((s) => lower.includes(s.toLowerCase()));
   const hasFastSignal = FAST_SIGNALS.some((s) => text.includes(s));
@@ -93,8 +122,11 @@ export function routeTask(
 
 /** 从文本中检测文件路径数量(如 /path/to/file.ts 或 ./src/index.ts) */
 function countFilePaths(text: string): number {
+  // P2-fix: 先剥离 URL — 此前 "https://a.com/x.js" 会被当成文件路径,
+  // 带 3 个链接的网页任务被误路由进 deep(平白多一趟 planner + DAG 开销)。
+  const stripped = text.replace(/\b[a-z][\w+.-]*:\/\/\S+/gi, ' ');
   // 匹配 /path/to/file.ext 或 ./relative/path.ext 或 src/file.ext
-  const matches = text.match(/(?:\.?\/[\w./-]+\.[a-zA-Z]{1,5})|(?:src\/[\w./-]+)/g);
+  const matches = stripped.match(/(?:\.?\/[\w./-]+\.[a-zA-Z]{1,5})|(?:src\/[\w./-]+)/g);
   return matches ? new Set(matches).size : 0;
 }
 

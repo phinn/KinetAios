@@ -2213,14 +2213,15 @@ function avatarEl(kind: 'user' | 'ai'): HTMLElement {
  *  Build steps container: outer <details> collapsible.
  *  Streaming = expanded (live tool exec); finished = collapsed (noise reduction).
  */
-function buildStepsEl(steps: { name: string; args: string; result: string }[], expanded: boolean): HTMLElement {
+function buildStepsEl(steps: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }[], expanded: boolean): HTMLElement {
   const wrap = document.createElement('details');
   wrap.className = 'steps-wrap';
   if (expanded) wrap.open = true;
   wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${stepsSummaryLabel(steps)}</span></summary>`;
   const inner = document.createElement('div');
   inner.className = 'steps';
-  for (const s of steps) inner.appendChild(renderStep(s));
+  // expanded 即流式态:pending 卡显示转圈;非流式重渲染时 pending 按中断显示
+  for (const s of steps) inner.appendChild(renderStep(s, expanded));
   wrap.appendChild(inner);
   return wrap;
 }
@@ -2234,11 +2235,92 @@ function stepsSummaryLabel(steps: { name: string }[]): string {
     : `${steps.length} 步 (${esc(unique.slice(0, 3).join(' · '))}${unique.length > 3 ? '…' : ''})`;
 }
 
-function renderStep(s: { name: string; args: string; result: string }): HTMLElement {
+// ── 工具卡片(DSH 式):summary 一行摘要 + 耗时徽章 + 成败着色 + 运行中态 + 截图内联 ──
+// Tool card: one-line summary / duration badge / status coloring / pending spinner / inline screenshots.
+
+// summary 行的一行摘要:shell→命令首行、read_file→路径、web_search→query,扫一眼就知道这步在干嘛。
+function stepSummaryText(name: string, args: string): string {
+  let parsed: Record<string, unknown> | null = null;
+  try { parsed = JSON.parse(args) as Record<string, unknown>; } catch { /* 流式中间态/非 JSON */ }
+  let text: string | null = null;
+  if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+    // 优先语义化字段;取不到退回第一个"不太长"的字符串值(防抓到 write_file 的整篇 content)
+    const semKey = ['command', 'path', 'query', 'url', 'pattern', 'action', 'key', 'skill'].find(
+      (k) => typeof parsed![k] === 'string' && (parsed![k] as string).trim(),
+    );
+    if (semKey) text = parsed[semKey] as string;
+    else {
+      for (const v of Object.values(parsed)) {
+        if (typeof v === 'string' && v.trim() && v.length <= 120) { text = v; break; }
+      }
+    }
+  }
+  if (!text) text = args || '';
+  text = text.replace(/\x00IMAGES[\s\S]*?\x00/g, '').split('\n')[0].replace(/\s+/g, ' ').trim();
+  if (text.length > 72) text = text.slice(0, 72) + '…';
+  return text;
+}
+
+// 卡片成败态:只认硬信号(exit code / Traceback / ⚠️ 前缀)—— grep 输出里出现 "Error" 单词不算失败。
+function stepStatusOf(result: string): 'ok' | 'warn' | 'err' {
+  const head = result.slice(0, 400);
+  const trim = result.trimStart();
+  if (/\[exit code: [1-9]\d*\]/.test(head) || /\[exit [1-9]\d*\]/.test(head) || trim.startsWith('Traceback')) return 'err';
+  if (/^(Error|ERROR|Exception)([:\s])/.test(trim)) return 'err';
+  if (trim.startsWith('⚠️') || trim.startsWith('[已停止]')) return 'warn';
+  return 'ok';
+}
+
+function fmtStepDur(ms?: number): string {
+  if (ms == null) return '';
+  if (ms < 1000) return `${Math.round(ms)}ms`;
+  if (ms < 90_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${Math.floor(ms / 60000)}m ${String(Math.round((ms % 60000) / 1000)).padStart(2, '0')}s`;
+}
+
+// 截图灯箱:点击步骤卡里的内联截图 → 全屏浮层,点击关闭。
+function openImgLightbox(src: string): void {
+  document.querySelector('.img-lightbox')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'img-lightbox';
+  const img = document.createElement('img');
+  img.src = src;
+  ov.appendChild(img);
+  ov.onclick = () => ov.remove();
+  document.body.appendChild(ov);
+}
+
+function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
+  // pending:流式期间(live)→ spinner 转圈;非流式(取消/重渲染/历史)→ 按中断处理,
+  // 否则取消路径(不走 done/error 事件)的残留 pending 卡会永远转圈。
+  const isPending = !!s.pending && live;
+  const isInterrupted = (!!s.pending && !live) || !!s.interrupted;
+  if (isPending) el.classList.add('running');
+  if (s.startId) { el.dataset.sid = s.startId; el.dataset.pending = s.pending ? '1' : '0'; }
+  const status = isPending ? 'ok' : isInterrupted ? 'warn' : stepStatusOf(s.result);
+  if (status === 'err') el.classList.add('step-err');
+  else if (status === 'warn') el.classList.add('step-warn');
   const det = document.createElement('details');
-  det.innerHTML = `<summary><span class="name">${ICON.wrench} ${esc(s.name)}</span></summary>`;
+  // summary 行:spinner/状态徽章 + 工具名 + 一行摘要 + 耗时
+  const sumBits: string[] = [];
+  if (isPending) sumBits.push('<span class="typing step-spin"><i></i><i></i><i></i></span>');
+  else if (status === 'err') sumBits.push('<span class="step-flag">✕</span>');
+  else if (status === 'warn') sumBits.push('<span class="step-flag warn">!</span>');
+  sumBits.push(`<span class="name">${ICON.wrench} ${esc(s.name)}</span>`);
+  const summaryText = stepSummaryText(s.name, s.args);
+  const dur = fmtStepDur(s.durationMs);
+  sumBits.push(`<span class="sum">${esc(summaryText)}</span>`);
+  if (dur) sumBits.push(`<span class="dur">${esc(dur)}</span>`);
+  if (isPending) sumBits.push(`<span class="dur">${esc(tr('step.running'))}</span>`);
+  else if (isInterrupted) sumBits.push(`<span class="dur">${esc(tr('step.interrupted'))}</span>`);
+  const summary = document.createElement('summary');
+  summary.innerHTML = sumBits.join('');
+  // title 用属性赋值而非字符串拼接:摘要含引号时会破坏 HTML 属性
+  const sumEl = summary.querySelector('.sum') as HTMLElement | null;
+  if (sumEl && summaryText) sumEl.title = summaryText;
+  det.appendChild(summary);
   // 文件类工具(read_file/write_file/edit_file):args 里的 path 渲染成可点 chip,
   // 点击 → 右侧文件抽屉打开该文件(DeepSeek/Codex 式左右分屏)。
   // File tools: render path arg as clickable chip → open in right drawer.
@@ -2273,13 +2355,37 @@ function renderStep(s: { name: string; args: string; result: string }): HTMLElem
   const resultText = s.result.slice(0, 4000);
   if (resultText) {
     const rLabel = document.createElement('div');
-    rLabel.className = 'step-label';
-    rLabel.textContent = 'Result';
+    rLabel.className = 'step-label step-label-result';
+    const rTxt = document.createElement('span');
+    rTxt.textContent = 'Result';
+    rLabel.appendChild(rTxt);
+    // 逐卡复制:复制完整 result(非 4000 截断)
+    const rCopy = document.createElement('button');
+    rCopy.className = 'ghost step-copy';
+    rCopy.title = tr('copy.text');
+    rCopy.innerHTML = ICON.copy;
+    rCopy.onclick = (e) => { e.stopPropagation(); copyText(s.result, rCopy); };
+    rLabel.appendChild(rCopy);
     const rPre = document.createElement('pre');
     rPre.className = 'step-result';
     rPre.textContent = resultText;
     det.appendChild(rLabel);
     det.appendChild(rPre);
+  }
+  // 截图内联(DSH 式):computer-use / read_image 的图片直接显示,点击全屏
+  if (s.images?.length) {
+    const row = document.createElement('div');
+    row.className = 'step-imgs';
+    for (const b64 of s.images) {
+      const img = document.createElement('img');
+      img.className = 'step-img';
+      img.loading = 'lazy';
+      img.alt = `${s.name} screenshot`;
+      img.src = `data:image/png;base64,${b64}`;
+      img.onclick = () => openImgLightbox(img.src);
+      row.appendChild(img);
+    }
+    det.appendChild(row);
   }
   el.appendChild(det);
   return el;
@@ -2355,9 +2461,9 @@ function updateLastTurnIncremental(): void {
       const inner = oldSteps.querySelector('.steps') as HTMLElement | null;
       const have = inner ? inner.children.length : 0;
       if (inner && t.steps.length > have) {
-        // 只补挂新增 step(库里的 steps 只追加不修改,序号即稳定对齐)
+        // 只补挂新增 step(库里的 steps 只追加不修改,序号即稳定对齐);增量=流式态 → live=true
         const frag = document.createDocumentFragment();
-        for (let si = have; si < t.steps.length; si++) frag.appendChild(renderStep(t.steps[si]));
+        for (let si = have; si < t.steps.length; si++) frag.appendChild(renderStep(t.steps[si], true));
         inner.appendChild(frag);
         // 概要计数同步(steps.length 变化)
         const cnt = oldSteps.querySelector('.steps-count');
@@ -2365,6 +2471,18 @@ function updateLastTurnIncremental(): void {
       } else if (!inner) {
         const fresh = buildStepsEl(t.steps, true);
         oldSteps.replaceWith(fresh);
+      }
+      // pending → done 原位替换:tool_start 挂的 spinner 卡在结果到达后换成成品卡。
+      // 按 index 对齐遍历,只动 data-pending="1" 且数据已非 pending 的卡 — 常态 O(1)。
+      const stepsInner = oldSteps?.querySelector('.steps') ?? turnEl.querySelector('.steps');
+      if (stepsInner) {
+        const cards = stepsInner.children;
+        for (let si = 0; si < cards.length && si < t.steps.length; si++) {
+          const card = cards[si] as HTMLElement;
+          if (card.dataset.pending === '1' && !t.steps[si].pending) {
+            card.replaceWith(renderStep(t.steps[si], true));
+          }
+        }
       }
     } else {
       const fresh = buildStepsEl(t.steps, true); // 流式增量:始终展开

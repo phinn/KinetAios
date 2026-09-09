@@ -36,20 +36,24 @@ import {
 } from '../engines';
 import { runAgentLoop, compactHistory, compactWithSpill } from '../AgentLoop';
 
-import { routeTask } from './router';
+import { routeTask, isAnalysisTask } from './router';
 import { executeFastPath } from './fast-path';
 import { executeStdPath } from './std-path';
 import { executeDeepPath } from './deep-path';
 import { finalizeContext } from './streaming-executor';
 
-// 终态事件闸门:拦截 ReAct 内层的 done/error,只放行中间事件。
-// V3 的终态 done/error 由 index.run 统一发出 — 否则 runAgentLoop 正常完成
-// 时会先发一个 done,收尾再发一个(双发);maxTurns 耗尽时先 error 后 done,
-// error 语义被 done 覆盖(applyEvent 先设 t.error,后到的 done 又标记完成)。
-// 与 V2 forwardEvent / dag-executor 的拦截同一模式。
+// 终态事件闸门:拦截 ReAct 内层的 done,error 转 status 透出(不再静默吞)。
+// V3 的终态 done 由 index.run 统一发出 — 否则 runAgentLoop 正常完成时会先发一个
+// done,收尾再发一个(双发)。error 与 V2 forwardEvent 同语义:必须对用户可见,
+// 否则 API 失败的 turn 会表现为「正常完成 + 空输出」。与 V2 forwardEvent /
+// dag-executor 的拦截同一模式。
 function terminalGate(onEvent: (e: AgentEvent) => void): (e: AgentEvent) => void {
   return (e) => {
-    if (e.type === 'done' || e.type === 'error') return;
+    if (e.type === 'done') return;
+    if (e.type === 'error') {
+      onEvent({ type: 'status', text: `⚠️ ${e.message}` });
+      return;
+    }
     onEvent(e);
   };
 }
@@ -71,11 +75,14 @@ export class DirectV3Engine implements Engine {
       : '';
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
     const rulesSection = loadProjectRules(conv.cwd);
+    // V3 分析专用定位:分析任务追加方法论段(其余任务零注入,不给编码任务添噪声)
+    const analysisSection = isAnalysisTask(prompt) ? ANALYSIS_SYSTEM_SECTION : '';
 
     const systemPrompt =
       baseSystemPrompt +
       cwdAnchorSection(conv) +
       V3_SYSTEM_SUFFIX +
+      analysisSection +
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +
@@ -97,25 +104,26 @@ export class DirectV3Engine implements Engine {
       sandbox: getSettings().sandbox,
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
         // 跨引擎子任务(V3 也支持调用 claude/codex 一次性任务)
-        if (engine === 'claudeCode' || engine === 'codex') {
-          const { runCliOneShot } = await import('../engines'); return runCliOneShot(engine, sub, conv.cwd, signal);
-        }
-        // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型。LLM 传的 model 参数不再覆盖用户配置。
-        // / Sub-agent model: channel config > global setting > main agent. LLM model param is ignored to prevent hallucinated model names.
-        const effectiveModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
-        const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
-        const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
-        // Direct sub-agent:独立 ReAct loop(只读工具)
-        const scopeResolved = scope ?? { mode: 'none' as const };
+        // 统一超时保护:合并主 signal + timeout,与 V1/V2 spawn 对齐(CLI 与 Direct 子任务共用)。
         const subAc = new AbortController();
         const subTimer = setTimeout(() => subAc.abort(), 5 * 60 * 1000);
         const onParentAbort = (): void => subAc.abort();
-        if (signal.aborted) subAc.abort();
-        else signal.addEventListener('abort', onParentAbort, { once: true });
-
-        // M2-fix(v1/v2 同款):清理放 finally —— 抛错路径不再漏定时器和 parent listener。
-        let out;
+        if (childSignal.aborted) subAc.abort();
+        else childSignal.addEventListener('abort', onParentAbort, { once: true });
         try {
+          if (engine === 'claudeCode' || engine === 'codex') {
+            const { runCliOneShot } = await import('../engines');
+            return await runCliOneShot(engine, sub, conv.cwd, subAc.signal);
+          }
+          // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型。LLM 传的 model 参数不再覆盖用户配置。
+          // / Sub-agent model: channel config > global setting > main agent. LLM model param is ignored to prevent hallucinated model names.
+          const effectiveModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
+          const subSnap = effectiveModel ? { ...snap, model: effectiveModel } : snap;
+          const subProvider = effectiveModel ? currentProvider(subSnap) : provider;
+          // Direct sub-agent:独立 ReAct loop(只读工具)
+          const scopeResolved = scope ?? { mode: 'none' as const };
+
+          // M2-fix(v1/v2 同款):清理放 finally —— 抛错路径不再漏定时器和 parent listener。
           const { historyText } = await resolveSpawnHistory({
             scope: scopeResolved,
             parentHistory: conv.directHistory,
@@ -127,7 +135,7 @@ export class DirectV3Engine implements Engine {
           const finalPrompt = historyText
             ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${historyText}\n---`
             : sub;
-          out = await runAgentLoop({
+          const out = await runAgentLoop({
             provider: subProvider,
             tools: readOnlyTools(),
             systemPrompt: SUBAGENT_PROMPT,
@@ -136,29 +144,36 @@ export class DirectV3Engine implements Engine {
             history: [],
             ctx: { cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory === true, sandbox: 'readOnly' as const },
             signal: subAc.signal,
-            maxTurns: 8,
+            // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与 V1/V2 子任务行为一致
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
-              else if (e.type === 'tool') onEvent({ type: 'status', text: `[子任务] ${e.name}` });
+              // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。与 V1/V2 同款。
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
             },
           });
+          const text = out
+            .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
+            .map((m) => m.content)
+            .join('\n')
+            .trim();
+          return text || '(子任务无文本输出)';
         } finally {
           clearTimeout(subTimer);
-          signal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
+          childSignal.removeEventListener('abort', onParentAbort); // 清理 parent signal listener
         }
-        const text = out
-          .filter((m) => m.role === 'assistant' && typeof m.content === 'string')
-          .map((m) => m.content)
-          .join('\n')
-          .trim();
-        return text || '(子任务无文本输出)';
       },
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('../teams');
         const { emitTeamEvent } = await import('../main');
 
+        // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 V1/V2 teamRun 对齐)。
+        // / Align team members with spawn's sub-agent model resolution (same as V1/V2).
+        const teamModel = conv.subAgentModel || getSettings().subAgentModel || undefined;
+        const teamSnap = teamModel ? { ...snap, model: teamModel } : snap;
+        const teamProvider = teamModel ? currentProvider(teamSnap) : provider;
+
         const runOpts = {
-          provider, snap, signal,
+          provider: teamProvider, snap: teamSnap, signal,
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
@@ -177,7 +192,7 @@ export class DirectV3Engine implements Engine {
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
-            const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
+            const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
@@ -199,7 +214,7 @@ export class DirectV3Engine implements Engine {
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
-          totalUsd += memberCostUSD(snap, r.tokensIn, r.tokensOut);
+          totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
           totalTokens += r.tokensIn + r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
@@ -228,7 +243,8 @@ export class DirectV3Engine implements Engine {
     // ── 路由分类 ──
     const route = routeTask(prompt, conv.directHistory, { hasGoal: !!conv.goal });
     const skillTag = skillBlock ? `📦 ${prompt.match(/^\/([\w-]+)/)?.[1] ?? 'skill'} | ` : '';
-    onEvent({ type: 'status', text: `${skillTag}🧭 v3: 路由 → ${route.toUpperCase()}` });
+    const analysisMode = isAnalysisTask(prompt);
+    onEvent({ type: 'status', text: `${skillTag}🧭 v3: 路由 → ${route.toUpperCase()}${analysisMode ? ' · 📊 分析模式' : ''}` });
 
     // ── 执行 ──
     let updatedHistory: ChatMsg[] = conv.directHistory;
@@ -309,4 +325,19 @@ const V3_SYSTEM_SUFFIX = `
 2. 写完代码后主动用 shell 运行验证命令(tsc/lint/test)
 3. 遇到报错要追踪根因,不要只修表象
 4. 简洁高效,少说废话多写代码
+`;
+
+// 分析任务专用方法论段 —— 仅在 isAnalysisTask() 命中时注入。
+// 目标:补齐 Direct 引擎在分析场景与"薄脚手架"的差距 —— 证据保真靠模型自己
+// 落盘中间产物(对抗上下文截断),结论可溯源,计算交给工具不心算。
+const ANALYSIS_SYSTEM_SECTION = `
+
+# 📊 分析任务工作法(本任务已被识别为数据分析)
+
+1. **先看结构再下结论**:读任何数据前,先摸清 schema(列名/类型/行数/时间范围),再抽样看 5-10 行。
+2. **计算交给工具**:统计、聚合、交叉表用 python/pandas 或 sqlite 跑,不要在脑内心算;**关键数字必须来自命令/工具输出**。
+3. **中间结果落盘**:多步分析的中间产物写到当前工作目录 \`_analysis/\` 下(如 \`_analysis/step1_概览.json\`、\`_analysis/step2_明细.csv\`),后续步骤用 read_file 读回 —— **不要依赖对话记忆**,长对话的早期内容会被截断。
+4. **结论必须可溯源**:每个结论注明来源(哪个文件/哪次查询/哪个数字);证据不足就写"证据不足",不要推测填充。
+5. **交叉验证**:重要数字用第二种方法复核一遍(如 pandas 算一次、SQL 再核一次),不一致要查明原因。
+6. **最终输出**:结论先行(1-3 句),然后支撑数据(表格/要点),最后附方法说明与局限。中文,克制形容词。
 `;

@@ -1875,6 +1875,33 @@ const feishuSendFile: Tool = {
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
 import { captureScreenshotWithHide, captureWindowByName, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
 
+// P0-fix: 鼠标/键盘工具的审批门。此前这组工具完全绕过 confirm —— shell 执行要弹窗,
+// 往用户前台窗口注入键盘输入/任意坐标点击却不需要任何确认。现在:
+// ① sandbox=readOnly(含 plan 模式语义)直接阻断;
+// ② 首次使用走 ctx.confirm(与 shell 同一审批桥,approval=never/fullAccess 时同样自动放行);
+// ③ 会话内批准一次后同类操作放行(逐次确认会让 computer-use 流程不可用)。
+const cuApprovedByConv = new Map<string, boolean>();
+async function cuGate(ctx: ToolCtx, action: string): Promise<string | null> {
+  if (ctx.sandbox === 'readOnly') {
+    return '❌ 当前为只读/规划模式(sandbox=readOnly),鼠标/键盘控制不可用。';
+  }
+  const key = ctx.convId || 'default';
+  if (!cuApprovedByConv.get(key)) {
+    const ok = await ctx.confirm(`[Computer Use] ${action}\n(批准后本会话内的鼠标/键盘操作将自动放行)`);
+    cuApprovedByConnSet(key, ok);
+    if (!ok) return '❌ 用户拒绝使用鼠标/键盘控制电脑。';
+  }
+  return null;
+}
+function cuApprovedByConnSet(convId: string, ok: boolean): void {
+  cuApprovedByConv.set(convId, ok);
+  // 防御性上限:正常不会积累(每会话一条 boolean),异常场景下丢弃最旧的。
+  if (cuApprovedByConv.size > 512) {
+    const first = cuApprovedByConv.keys().next().value;
+    if (first !== undefined) cuApprovedByConv.delete(first);
+  }
+}
+
 const screenshot: Tool = {
   name: 'screenshot',
   description: '截取当前屏幕截图。返回 base64 PNG 图片 + 屏幕分辨率。Computer Use 核心工具:LLM 看到屏幕后决定下一步操作(点击坐标、输入文本等)。截图坐标基于屏幕物理像素。传 hide_self=true 会在截图瞬间把 KinetAios 自身窗口透明化(不最小化、不抢焦点、画面无切换,截完立即恢复),适合"看用户屏幕上别的内容"的场景。',
@@ -1908,7 +1935,7 @@ const screenshot_window: Tool = {
     const title = String(args?.title ?? '');
     const r = await captureWindowByName(title);
     if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
-    return `🪟 窗口「${title}」内容截取成功 (${r.width}×${r.height})\n__IMAGE_BASE64__:${r.base64}`;
+    return `🪟 窗口「${title}」内容截取成功 (${r.width}×${r.height})${r.note ? `\n${r.note}` : ''}\n__IMAGE_BASE64__:${r.base64}`;
   },
 };
 
@@ -1925,7 +1952,9 @@ const mouseAction: Tool = {
     },
     required: ['x', 'y'],
   },
-  async run(args) {
+  async run(args, ctx) {
+    const gate = await cuGate(ctx, '鼠标点击屏幕坐标');
+    if (gate) return gate;
     const x = Number(args.x);
     const y = Number(args.y);
     if (isNaN(x) || isNaN(y)) return '❌ 无效坐标';
@@ -1950,7 +1979,9 @@ const mouseScrollTool: Tool = {
     },
     required: ['x', 'y', 'clicks'],
   },
-  async run(args) {
+  async run(args, ctx) {
+    const gate = await cuGate(ctx, '滚轮滚动');
+    if (gate) return gate;
     const r = await doMouseScroll(Number(args.x), Number(args.y), Number(args.clicks));
     return r.ok ? `✅ 滚动 (${Math.round(Number(args.x))}, ${Math.round(Number(args.y))}) ${Number(args.clicks) > 0 ? '↑' : '↓'} ${Math.abs(Number(args.clicks))} clicks` : `❌ ${r.error}`;
   },
@@ -1969,7 +2000,9 @@ const mouseDragTool: Tool = {
     },
     required: ['from_x', 'from_y', 'to_x', 'to_y'],
   },
-  async run(args) {
+  async run(args, ctx) {
+    const gate = await cuGate(ctx, '鼠标拖拽');
+    if (gate) return gate;
     const r = await doMouseDrag(Number(args.from_x), Number(args.from_y), Number(args.to_x), Number(args.to_y));
     return r.ok ? `✅ 拖拽 (${Math.round(Number(args.from_x))},${Math.round(Number(args.from_y))}) → (${Math.round(Number(args.to_x))},${Math.round(Number(args.to_y))})` : `❌ ${r.error}`;
   },
@@ -1985,9 +2018,11 @@ const keyboardTypeTool: Tool = {
     },
     required: ['text'],
   },
-  async run(args) {
+  async run(args, ctx) {
     const text = String(args.text ?? '');
     if (!text) return '❌ 空文本';
+    const gate = await cuGate(ctx, `键盘输入文本(${text.length} 字符,进入当前前台/后台锁定窗口)`);
+    if (gate) return gate;
     const r = await doKeyboardType(text);
     return r.ok ? `✅ 输入文本: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''} (${text.length} 字符)` : `❌ ${r.error}`;
   },
@@ -2003,9 +2038,11 @@ const keyboardKeyTool: Tool = {
     },
     required: ['key'],
   },
-  async run(args) {
+  async run(args, ctx) {
     const key = String(args.key ?? '');
     if (!key) return '❌ 空按键';
+    const gate = await cuGate(ctx, `按键/组合键: ${key}`);
+    if (gate) return gate;
     const r = await doKeyboardKey(key);
     return r.ok ? `✅ 按键: ${key}` : `❌ ${r.error}`;
   },

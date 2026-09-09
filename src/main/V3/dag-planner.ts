@@ -150,6 +150,7 @@ export async function generateDAGPlan(
   onEvent: (e: { type: string; text?: string; token?: string; [k: string]: unknown }) => void,
   ctx?: ToolCtx,
   policy?: EngineContextPolicy,
+  memoryBlock?: string, // P2-fix: 与 V2 planner 对齐,deep 规划阶段也注入长期记忆(此前对用户偏好/项目背景"失明")
 ): Promise<DAGPlan | null> {
   onEvent({ type: 'status', text: '🧠 v3: 规划中...' });
 
@@ -168,6 +169,7 @@ export async function generateDAGPlan(
       provider,
       tools: plannerTools,
       systemPrompt: systemPrompt + PLAN_SYSTEM_SUFFIX,
+      memoryBlock,
       snapshot: snap,
       userInput,
       history: history.filter((m) => !m._memory),
@@ -176,7 +178,12 @@ export async function generateDAGPlan(
       maxTurns: 10, // 探查轮次上限:足够 grep/read 几轮再规划,不至于无限烧
       policy,
       onEvent: (ev) => {
-        if (ev.type === 'done' || ev.type === 'error') return; // 由 V3 统一发
+        if (ev.type === 'done') return; // 由 V3 统一发
+        if (ev.type === 'error') {
+          // error 转 status 透出(不再静默吞 — 规划阶段的 API 失败必须可见)
+          onEvent({ type: 'status', text: `v3: [plan] ⚠️ ${ev.message}` });
+          return;
+        }
         if (ev.type === 'token') {
           onEvent({ type: 'plan_token', token: ev.text }); // 规划思路流式输出(AgentEvent.token 的载荷字段是 text)
           return;
@@ -317,17 +324,30 @@ function parseDAGFromToolArgs(argsJson: string): DAGPlan | null {
     const cleanStrArr = (v: unknown): string[] =>
       Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
 
-    const nodes: DAGNode[] = raw.nodes.map((n, i) => ({
-      id: String(n.id ?? i + 1),
-      title: String(n.title ?? `步骤 ${i + 1}`),
-      action: String(n.action ?? ''),
-      tools: cleanStrArr(n.tools),
-      verify: typeof n.verify === 'string' && n.verify.trim() ? n.verify : undefined,
-      parallelizable: typeof n.parallelizable === 'boolean' ? n.parallelizable : true,
-      deps: cleanStrArr(n.deps),
-      status: 'pending' as const,
-      retryCount: 0,
-    }));
+    const nodes: DAGNode[] = raw.nodes.map((n, i) => {
+      // P2-fix: nodeId 去重 — LLM 偶发输出重复 id,会在 topologicalLevels / completed Set
+      // 里被合并,导致结果配对与统计失真。重复 id 追加序号后缀。
+      return {
+        id: String(n.id ?? i + 1),
+        title: String(n.title ?? `步骤 ${i + 1}`),
+        action: String(n.action ?? ''),
+        tools: cleanStrArr(n.tools),
+        verify: typeof n.verify === 'string' && n.verify.trim() ? n.verify : undefined,
+        parallelizable: typeof n.parallelizable === 'boolean' ? n.parallelizable : true,
+        deps: cleanStrArr(n.deps),
+        status: 'pending' as const,
+        retryCount: 0,
+      };
+    });
+    const seenIds = new Set<string>();
+    for (const n of nodes) {
+      if (seenIds.has(n.id)) {
+        const unique = `${n.id}_${nodes.indexOf(n)}`;
+        console.warn(`[V3] duplicate DAG node id "${n.id}" → renamed to "${unique}"`);
+        n.id = unique;
+      }
+      seenIds.add(n.id);
+    }
 
     // 验证 DAG 无环
     if (hasCycle(nodes)) {

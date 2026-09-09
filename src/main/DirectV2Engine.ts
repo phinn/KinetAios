@@ -70,33 +70,22 @@ const MAX_RETRIES = 3; // 每步最多重试 3 次
 const MAX_REPLANS = 2; // 最多重新规划 2 次
 
 // v2 引擎追加的 systemPrompt 片段 —— 告诉模型 v2 的工作模式。
+// P2-fix: <plan> 格式说明已移除 — 它只属于规划阶段(PLANNER_PROMPT 里有完整版),
+// 常驻 system 会让执行阶段的模型反复输出 plan JSON,浪费输出预算且挤占
+// write_file 等长参数的 max_tokens。
 const V2_SYSTEM_SUFFIX = `
 # 你是 Kaios v2 引擎 — 具备「先规划、再执行、执行完验证」能力
 
 与传统 ReAct agent 不同,你的工作模式:
-1. **先规划**:面对复杂任务,先用工具探查现状,在回答中给出 \`<plan>\` JSON 规划
-2. **再执行**:按照 plan 逐步执行,每步完成后报告进度
+1. **先规划**:复杂任务会先由系统进入规划阶段产出执行计划
+2. **再执行**:按照计划逐步执行,每步完成后报告进度
 3. **会验证**:写完代码/配置后,主动运行验证命令(类型检查 / 测试 / lint)
-
-## Plan 格式(当你判断任务需要分步时,在回答中输出):
-\`\`\`<plan>
-{"goal":"任务目标","steps":[{"id":"1","title":"步骤标题","description":"具体做什么","verifyCommand":"验证命令"}]}
-</plan>\`\`\`
-
-## 何时输出 plan:
-- 任务有 3 个以上子步骤时
-- 需要修改多个文件时
-- 用户给出了明确的复杂目标(/goal 模式)
-
-## 何时不需要 plan:
-- 简单问答、单文件修改、快速查询
-- 直接执行即可,不用过度规划
 
 ## 中间结果落地(P0-2 重要):
 当任务涉及多文件数据处理时(如 CSV/Excel 分析、跨文件统计),关键产出必须**显式持久化**:
 - **首选 \`remember_fact(key, value)\`**:把数据存到 SQLite,后续步骤 \`recall_fact(key)\` 读出。持久、抗 trim/compact。
 - **次选 临时文件**:把大数据写 \`_step1_summary.json\`、\`_step2_result.csv\`,后续步骤 \`read_file\` 读取。体积大但要全文搜时用。
-- **绝对不要**只把数据塞进 step.result 摘要(会被截断到 500 字,数据就丢了)
+- **绝对不要**只把数据塞进 step.result 摘要(会被截断,数据就丢了)
 - 跨步骤共享时,key 用语义化命名(\`step1_file_list\` / \`step2_decisions\` / \`target_csv_paths\`)
 `;
 
@@ -104,11 +93,11 @@ const V2_SYSTEM_SUFFIX = `
 const PLANNER_PROMPT = `你现在处于 v2 引擎的**规划阶段**。
 
 你的任务:
-1. 用只读工具(read_file / grep / glob / shell 只读命令)探查项目现状
+1. 用只读工具(read_file / grep / glob / web_search / git_diff / recall_fact)探查项目现状
 2. 理解代码结构、找到需要修改的文件、确认技术方案
 3. 在回答末尾输出 \`<plan>\` JSON
 
-**规划阶段禁止调用写工具(write_file / edit_file / shell 写命令)。** 你只探查,不修改。
+**规划阶段只有内置只读工具(无 shell、无 MCP)。** 你只探查,不修改 —— 修改发生在执行阶段。
 
 Plan 格式:
 \`\`\`<plan>
@@ -186,7 +175,11 @@ function extractBalancedJson(text: string): string | null {
 
 export class DirectV2Engine implements Engine {
   readonly name = 'directV2' as const;
-  private autoVerifyApproved = false; // 一次 run 中 autoVerify 首次 confirm 后记住,避免 replan 反复弹窗
+  // P0-fix: autoVerify 批准按会话隔离 — 引擎实例在应用生命周期内复用且被所有会话共享,
+  // 实例级 boolean 会让并发会话互相跳过/重置验证确认(A 批准 → B 静默放行;B 重置 → A 反复弹窗)。
+  // / Per-conversation autoVerify approval — the engine instance is shared across
+  // / conversations; an instance-level boolean leaked approvals across concurrent runs.
+  private autoVerifyApprovedByConv = new Map<string, boolean>();
   // P0-2: interStepCompact fingerprint 缓存 — history 没变就不重复调 LLM 摘要。
   // fingerprint = `${msgs.length}:${最后一条消息 content 的简单 hash}`
   // P0-fix: 改为 Map<convId, fingerprint>,避免并发会话共享实例时 fingerprint 串扰。
@@ -195,10 +188,11 @@ export class DirectV2Engine implements Engine {
 
   releaseConv(convId: string): void {
     this.lastCompactFingerprints.delete(convId); // P1: 会话删除即释放,不再等下次 run 重置
+    this.autoVerifyApprovedByConv.delete(convId);
   }
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
-    this.autoVerifyApproved = false; // 每次 run 重置:引擎实例在应用生命周期内复用,不能跨会话泄漏
+    this.autoVerifyApprovedByConv.set(conv.id, false); // 每次 run 重置:同一会话的新 turn 重新走确认
     this.lastCompactFingerprints.delete(conv.id); // P0-2: 重置当前会话的 compact 缓存
 
     // Skill 标记:在首个 status 中显示,让用户知道 skill 已加载(不被后续 status 闪掉)。
@@ -290,7 +284,10 @@ export class DirectV2Engine implements Engine {
     // ── 正常路径:Planner 探查 + 规划 ──
     onEvent({ type: 'status', text: `${skillTag}🧠 v2: 规划中...` });
 
-    const plannerTools = [...readOnlyTools(), ...(await mcp.directTools(2000))];
+    // P0-fix: planner 只给内置只读工具 — 此前把全量 MCP 工具混进规划阶段,
+    // "规划阶段禁止写操作"只剩 prompt 约束,装了带写能力的 MCP(filesystem 等)
+    // 时规划阶段可以真的改系统。执行阶段(下方)仍持有完整工具集。
+    const plannerTools = readOnlyTools();
     const plannerMessages = await runAgentLoop({
       provider,
       tools: plannerTools,
@@ -616,7 +613,7 @@ ${failedDetail || '  (无)'}
 
     const plannerMessages = await runAgentLoop({
       provider,
-      tools: [...readOnlyTools(), ...(await mcp.directTools(2000))],
+      tools: readOnlyTools(), // P0-fix: replan 规划同样只读,不带 MCP 工具(同 run() 的 planner)
       systemPrompt: systemPrompt + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
@@ -808,6 +805,16 @@ ${failedDetail || '  (无)'}
       const raw = JSON.parse(jsonStr) as { goal?: string; steps?: unknown[]; summary?: string };
       if (!Array.isArray(raw.steps) || raw.steps.length === 0) return null;
 
+      // P0-fix: 步骤形状校验 — 兜底策略会在全文抓第一个 JSON,普通回答里的示例配置
+      // (恰好含 steps 数组)会被误当 plan 进入分步执行。真正的 plan 步骤至少要有
+      // title 或 description 字符串;缺形状的一律拒绝。
+      const plausibleStep = (s: unknown): boolean => {
+        const o = s as Record<string, unknown>;
+        return typeof o?.title === 'string' && !!o.title.trim()
+          || typeof o?.description === 'string' && !!o.description.trim();
+      };
+      if (!raw.steps.every(plausibleStep)) return null;
+
       const steps: PlanStep[] = raw.steps.map((s, i) => {
         const obj = s as Record<string, unknown>;
         return {
@@ -844,42 +851,60 @@ ${failedDetail || '  (无)'}
   ): Promise<{ completed: boolean; reason: string }> {
     // 从 execHistory 尾部提取最近的 assistant 文本 + tool 结果,作为执行证据传给 Judge
     const execEvidence = execHistory ? this.extractExecEvidence(execHistory) : undefined;
-    try {
+    // P0-fix: Judge 解析失败重试一次 — 此前任何解析失败/调用异常都静默判"完成",
+    // Verify·Judge 架构在最需要它的场景(API 抖动/输出不带 JSON)直接失效。
+    // 现在重试一次;仍失败则放行但显性告警(失败会触发昂贵的 replan,且 replan 用同一
+    // 个已故障的 API,大概率也失败 — 放行 + 可见告警是更安全的降级)。
+    const ask = async (userContent: string): Promise<string> => {
       const comp = await provider.streamComplete(
         [
           { role: 'system', content: '你是验收裁判。严格判定,不要因为模型说"完成了"就轻信。只有验证通过且逻辑自洽才算完成。' },
-          { role: 'user', content: JUDGE_PROMPT(plan.goal, plan.steps, execEvidence) },
+          { role: 'user', content: userContent },
         ],
         [],
         snap,
         signal,
         () => {},
       );
-
       // 消费 Judge LLM 调用的 cost
       if (comp.tokensIn > 0 || comp.tokensOut > 0) {
         onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
       }
-
-      const text = comp.content ?? '';
-      // 用 brace-counting 提取 JSON(而非贪婪 \{[\s\S]*\}——会在多段 JSON 时取到最后一个 })
-      const jsonStr = extractBalancedJson(text);
-      if (jsonStr) {
-        try {
-          const obj = JSON.parse(jsonStr) as { completed?: boolean; reason?: string };
-          return {
-            completed: Boolean(obj.completed),
-            reason: String(obj.reason ?? '(无说明)'),
-          };
-        } catch {
-          // JSON.parse 失败 → 走默认
-        }
+      return comp.content ?? '';
+    };
+    const judgeInput = JUDGE_PROMPT(plan.goal, plan.steps, execEvidence);
+    try {
+      // 第一次:用 brace-counting 提取 JSON(而非贪婪 \{[\s\S]*\}——会在多段 JSON 时取到最后一个 })
+      let text = await ask(judgeInput);
+      let parsed = this.parseJudgeVerdict(text);
+      if (!parsed) {
+        // 重试:要求只输出 JSON
+        onEvent({ type: 'status', text: '⚠️ v2: Judge 输出无法解析,重试一次…' });
+        text = await ask(`${judgeInput}\n\n【重试要求】上一次输出无法解析。这次只输出一个 JSON 对象,不要任何其他文字:\n{"completed": true/false, "reason": "…", "nextAction": "…"}`);
+        parsed = this.parseJudgeVerdict(text);
       }
-      // JSON 解析失败 → 默认判定完成(不阻塞用户)
-      return { completed: true, reason: 'Judge 响应解析失败,默认判定完成' };
+      if (parsed) return parsed;
+      onEvent({ type: 'status', text: '⚠️ v2: Judge 输出无法解析(已重试),默认判定完成 — 请人工确认执行结果' });
+      return { completed: true, reason: 'Judge 响应解析失败(已重试),默认判定完成' };
     } catch {
-      // Judge 出错 → 默认判定完成(不因 Judge 故障阻塞流程)
+      onEvent({ type: 'status', text: '⚠️ v2: Judge 调用失败,默认判定完成 — 请人工确认执行结果' });
       return { completed: true, reason: 'Judge 调用失败,默认判定完成' };
+    }
+  }
+
+  /** 从 Judge 回复文本中提取判定 JSON;失败返回 null。 */
+  private parseJudgeVerdict(text: string): { completed: boolean; reason: string } | null {
+    const jsonStr = extractBalancedJson(text);
+    if (!jsonStr) return null;
+    try {
+      const obj = JSON.parse(jsonStr) as { completed?: boolean; reason?: string };
+      if (typeof obj.completed !== 'boolean') return null;
+      return {
+        completed: obj.completed,
+        reason: String(obj.reason ?? '(无说明)'),
+      };
+    } catch {
+      return null;
     }
   }
 
@@ -902,7 +927,10 @@ ${failedDetail || '  (无)'}
     if (!skipConfirm) {
       const approved = await ctx.confirm(`[v2 验证] ${command}`);
       if (!approved) {
-        return { ok: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过
+        // P0-fix: 拒绝 ≠ 验证通过 — 此前静默返回 ok:true,步骤照常标 done,
+        // 用户无从知道这步没验证过。现在如实告知(继续流程但标记可见)。
+        onEvent({ type: 'status', text: `⚠️ v2: 用户拒绝验证命令,步骤将在未验证状态下继续: ${command}` });
+        return { ok: true, output: '(用户拒绝执行验证 — 步骤未经验证)' };
       }
     }
 
@@ -939,9 +967,10 @@ ${failedDetail || '  (无)'}
     onEvent({ type: 'status', text: `🔬 v2: 自动验证 (${verifyCmd.name})...` });
 
     // autoVerify 在一次 run 中可能被调用多次(主流程 + replan),记住首次 confirm 即可
-    if (!this.autoVerifyApproved) {
+    // (按 conv.id 隔离 — 引擎实例被所有会话共享,实例级标记会跨会话泄漏批准)。
+    if (!this.autoVerifyApprovedByConv.get(conv.id)) {
       const approved = await ctx.confirm(`[v2 验证] ${verifyCmd.command}`);
-      this.autoVerifyApproved = true;
+      this.autoVerifyApprovedByConv.set(conv.id, approved);
       if (!approved) return; // 用户拒绝 → 跳过全局验证
     }
 
@@ -1144,13 +1173,13 @@ ${failedDetail || '  (无)'}
       // history 没变 → 跳过(上一步刚压缩过,这步没新消息)
       return messages;
     }
-    this.lastCompactFingerprints.set(conv.id, fingerprint);
-    // P0-fix: 去掉 || fallback,directV2 的 interStepCompactBudget 由 v2BudgetFromWindow 动态计算,永远 > 0。
-    // 如果用户故意设 ratio=0,trim 会算出 0 → compactHistory 会保留 0 条尾部 → 空历史,这是用户的选择。
-    // compaction seam:经唯一入口压缩,spill 存证在 AgentLoop.compactWithSpill 归一。
-    return compactWithSpill(messages, () =>
+    // P0-fix: fingerprint 改为压缩成功后写入 — 此前在压缩前写入,压缩 LLM 调用
+    // 失败后相同 fingerprint 会被跳过,压缩静默丢失且永不重试。
+    const compacted = await compactWithSpill(messages, () =>
       compactHistory(messages, policy.interStepCompactBudget, provider, snap, signal, onEvent, conv.id),
     { convId: conv.id, turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined });
+    this.lastCompactFingerprints.set(conv.id, fingerprint);
+    return compacted;
   }
 
   /**
@@ -1249,7 +1278,7 @@ ${failedDetail || '  (无)'}
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
-            const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
+            const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
@@ -1271,7 +1300,7 @@ ${failedDetail || '  (无)'}
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
-          totalUsd += memberCostUSD(snap, r.tokensIn, r.tokensOut);
+          totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
           totalTokens += r.tokensIn + r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
@@ -1331,7 +1360,7 @@ ${failedDetail || '  (无)'}
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
               // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。与 v1 同款。
-              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs });
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
             },
           });
         } finally {

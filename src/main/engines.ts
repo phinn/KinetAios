@@ -23,7 +23,10 @@ import { mcp } from './mcp';
 import { getBrand } from './brand';
 import { pluginSystemPrompts, pluginEngines, type PluginEngineSpec } from './plugins';
 
-export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用户 Windows 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、搜索网页、抓取网页、搜索历史记忆来帮用户完成任务。
+// P2-fix: 系统提示平台自适应 — 此前硬编码"Windows 电脑""shell 走 cmd.exe",
+// macOS 构建下系统提示词是错的。
+const IS_WIN_PLATFORM = process.platform === 'win32';
+export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用户 ${IS_WIN_PLATFORM ? 'Windows' : process.platform === 'darwin' ? 'macOS' : 'Linux'} 电脑上的 AI 助手。你能执行 shell 命令、读文件、写文件、搜索网页、抓取网页、搜索历史记忆来帮用户完成任务。
 该用工具就果断用,不要只给步骤。需要回忆过去做过/聊过的事,用 recall_memory 搜历史。
 
 【读大文件】read_file 支持按行范围读取:read_file(path, start_line=100, end_line=200)。
@@ -43,7 +46,7 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 一旦决定要写文件,直接 write_file 一次到位
 
 【输出路径】生成的文件(HTML / CSV / 报告等)默认写到当前工作目录(cwd)或其子目录。
-执行 shell 前会请求用户确认。Windows 上 shell 走 cmd.exe。回复用中文,简洁。
+执行 shell 前会请求用户确认。${IS_WIN_PLATFORM ? 'Windows 上 shell 走 cmd.exe。' : 'shell 走系统默认 shell。'}回复用中文,简洁。
 
 【记忆管理】你的记忆分三层:
 1. **Memory Blocks**(结构化常驻记忆):每轮注入到上下文,包含 user_profile / project_context / active_goals。你发现记忆过时或需要补充时,用 memory_replace 更新、memory_append 追加。
@@ -369,7 +372,7 @@ class DirectEngine implements Engine {
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
-            const usd = memberCostUSD(snap, r.tokensIn, r.tokensOut);
+            const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
@@ -391,7 +394,7 @@ class DirectEngine implements Engine {
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
-          totalUsd += memberCostUSD(snap, r.tokensIn, r.tokensOut);
+          totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
           totalTokens += r.tokensIn + r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
@@ -450,7 +453,7 @@ class DirectEngine implements Engine {
               if (e.type === 'cost') onEvent(e);
               // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。
               // Pass sub-agent tool events through as real tool steps so the chat stream can expand args/result.
-              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs });
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
             },
           });
         } finally {
@@ -622,10 +625,11 @@ function resolveBin(name: string): ResolvedBin {
 // Spawn a resolved bin, stream stdout+stderr line-by-line, kill on abort. Resolves to exit code.
 // stderr 默认与 stdout 合流(同一 onLine —— claude/codex 解析器靠它收集 stderr tail);
 // 传 onStderr 时 stderr 单独分流(plain 协议用:stdout 当答案,stderr 只做错误上下文)。
+// input:经 stdin 传入的内容(claude/codex 的 .cmd shell 模式下 prompt 走 stdin,规避 argv 注入)。
 function runBin(
   bin: ResolvedBin,
   args: string[],
-  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void },
+  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void; input?: string },
 ): Promise<number> {
   return new Promise((resolve) => {
     const spawnOpts: import('node:child_process').SpawnOptions = {
@@ -638,7 +642,11 @@ function runBin(
     // codex 0.135+ 在 stdin 保持打开时会等 "additional input from stdin"(EOF)。
     // 我们从不写 stdin → 立即关闭,防止 CLI 卡在读 stdin。/ Close stdin immediately:
     // codex waits for stdin EOF ("Reading additional input from stdin...") otherwise.
-    try { child.stdin?.end(); } catch { /* already closed */ }
+    // stdin 迁移模式:prompt 经 stdin 写入后再关闭(见 CliEngineConfig 注释)。
+    try {
+      if (opts.input && child.stdin) child.stdin.write(opts.input);
+      child.stdin?.end();
+    } catch { /* already closed */ }
     let buf = '';
     const onChunk = (d: Buffer | string): void => {
       buf += d.toString();
@@ -726,7 +734,10 @@ export interface CliEngineConfig {
   noResultKey: string;
   /** 显示名(notFound/noResult 文案里的 {label})。插件引擎用 spec.label。 */
   label?: string;
-  /** argv 组装(含 resume 与 memory 注入;prompt 由适配器拼好传入)。 */
+  /** argv 组装(含 resume 与 memory 注入;prompt 由适配器拼好传入)。
+   *  返回 {args, stdin?}:bin 是 shell shim(.cmd/.bat)时,适配器优先用 stdin 传递
+   *  prompt 内容(shell:true 下 argv 里的 prompt 有 cmd 元字符注入风险)。
+   *  claude/codex 内置 config 已迁移;插件引擎可自行选择(保持 argv 兼容)。 */
   buildArgs: (p: {
     prompt: string;
     /** 注入块的结构化 parts —— 各引擎自行决定怎么注入(claude 拼一起走
@@ -735,7 +746,9 @@ export interface CliEngineConfig {
     cwd: string;
     sessionId: string | null;
     s: AppSettings;
-  }) => string[];
+    /** 本次 spawn 是否走 shell shim(此时返回 stdin 更安全)。 */
+    shell: boolean;
+  }) => { args: string[]; stdin?: string };
   /** 单行 stdout/stderr → AgentEvent。 */
   parseLine: (line: string, ctx: CliLineParseCtx) => void;
   /** run 开始时重置跨行状态(去重表 / pending 表)—— 原版引擎每轮新建,
@@ -809,8 +822,10 @@ class CliEngineAdapter implements Engine {
         }
       : undefined;
 
-    const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s });
-    const exitCode = await runBin(bin, args, { cwd, signal, onLine, onStderr });
+    const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
+    // 安全迁移:shell shim(.cmd/.bat)下 stdin 有值 → prompt 内容经 stdin 传递,
+    // argv 只留 flag(与 runCliOneShot 的修复同款,防 cmd 元字符注入)。
+    const exitCode = await runBin(bin, args.args, { cwd, signal, onLine, onStderr, input: bin.shell ? args.stdin : undefined });
     if (signal.aborted) return; // user cancelled — not an error
     if (!sawTerminal) {
       // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
@@ -906,10 +921,9 @@ export function claudeCliConfig(): CliEngineConfig {
     noResultKey: 'eng.claudeNoResult',
     beginRun: (convId) => claudePending.delete(convId),
     releaseConv: (convId) => claudePending.delete(convId), // P1: 会话删除即清(同 codexStates)
-    buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
+    buildArgs: ({ prompt, inject, cwd, sessionId, s, shell }) => {
       const permissionMode = CLAUDE_PERM[effectiveSandbox(s)];
       const args = [
-        '-p', prompt,
         '--output-format', 'stream-json', '--verbose', '--include-partial-messages',
         '--permission-mode', permissionMode,
         '--allowedTools', 'Read,Edit,Write,Bash,Glob,Grep',
@@ -918,8 +932,18 @@ export function claudeCliConfig(): CliEngineConfig {
       if (sessionId) args.push('--resume', sessionId);
       // 同一个 flag 只能传一次,顺序拼接。/ One flag once, concatenated in order.
       const memoryInject = inject.persona + inject.sourceHint + inject.rules + inject.context + inject.memory;
+      // P1-fix: shell shim(.cmd/.bat)下 prompt/memory 不进 argv —— cmd 元字符注入。
+      // prompt 经 stdin(`claude -p` 从 stdin 读);memory 注入块改为前置拼进 stdin
+      // (--append-system-prompt 的值同样含用户数据,不能走 argv)。语义从"系统提示"
+      // 降为"前缀上下文",仅影响 .cmd Windows 环境且远优于命令注入。
+      if (shell) {
+        args.unshift('-p');
+        const stdin = memoryInject.trim() ? `${memoryInject}\n\n---\n\n${prompt}` : prompt;
+        return { args, stdin };
+      }
+      args.unshift('-p', prompt);
       if (memoryInject.trim()) args.push('--append-system-prompt', memoryInject);
-      return args;
+      return { args };
     },
     parseLine: claudeParseLine,
   };
@@ -1038,7 +1062,7 @@ export function codexCliConfig(): CliEngineConfig {
         : '';
       return t(s.lang, 'eng.codexNoResult', { code, tail: tail ? ' — ' + tail : '' }) + versionHint;
     },
-    buildArgs: ({ prompt, inject, cwd, sessionId, s }) => {
+    buildArgs: ({ prompt, inject, cwd, sessionId, s, shell }) => {
       const sandboxKind = effectiveSandbox(s);
       // codex has no --append-system-prompt flag → rules + context + memory 前置拼到 prompt。
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
@@ -1047,8 +1071,11 @@ export function codexCliConfig(): CliEngineConfig {
       // else clap parses them as resume args and exits status=2.
       const args = ['exec', '--json', '--skip-git-repo-check', '-C', cwd, '--add-dir', cwd, '-s', CODEX_SANDBOX[sandboxKind]];
       if (sessionId) args.push('resume', sessionId);
+      // P1-fix: shell shim(.cmd/.bat)下 fullPrompt 不进 argv,经 stdin 传入
+      // (codex exec 无位置参数时从 stdin 读 prompt;与 runCliOneShot 同款)。
+      if (shell) return { args, stdin: fullPrompt };
       args.push(fullPrompt);
-      return args;
+      return { args };
     },
     parseLine: codexParseLine,
   };
@@ -1108,7 +1135,7 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
     label,
     notFoundKey: 'eng.pluginNotFound',
     noResultKey: 'eng.pluginNoResult',
-    buildArgs: ({ prompt, inject, cwd, sessionId }) => {
+    buildArgs: ({ prompt, inject, cwd, sessionId, shell }) => {
       const args = [...(spec.args ?? [])].map(interp);
       for (const f of spec.cwdFlags ?? []) args.push(interp(f).replace('{cwd}', cwd));
       if (spec.resume && sessionId) {
@@ -1117,6 +1144,8 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
         else args.push(spec.resume.resumeFlag, sessionId);
       }
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
+      // ponytail: 插件引擎 prompt 仍走 argv(shell shim 下有理论上的 cmd 元字符注入面)。
+      // 插件 CLI 的 stdin 读取行为不可约定,保持 argv 兼容;内置 claude/codex 已迁移 stdin。
       if (spec.inject === 'system') {
         const flag = interp(spec.systemFlag ?? '--append-system-prompt');
         if (head) args.push(flag, head);
@@ -1126,7 +1155,8 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
         const full = head ? `${head}\n\n---\n\n${prompt}` : prompt;
         if (spec.appendPrompt !== false) args.push(full);
       }
-      return args;
+      void shell;
+      return { args };
     },
     parseLine: pluginProtocolParser(protocol, pluginName),
     // plain:CLI 正常退出即完成,答案由 token 流发完;非零退出仍走兜底报错。

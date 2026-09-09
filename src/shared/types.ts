@@ -14,7 +14,7 @@ export type ChatMsg = {
   content: string | ContentPart[] | null;
   tool_calls?: Array<{ id: string; type: 'function'; function: { name: string; arguments: string } }>;
   tool_call_id?: string;
-  [k: string]: unknown; // _memory, _pinned 等标记字段
+  [k: string]: unknown; // _memory, _pinned, _transient(仅本轮 in-flight 可见,不持久化)等标记字段
 };
 
 export type APIProtocol = 'openai' | 'anthropic';
@@ -376,7 +376,10 @@ export type EmbedSnapshot = {
 // The unified event model — every engine emits these; the dashboard renders them.
 export type AgentEvent =
   | { type: 'token'; text: string }
-  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number }
+  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[] }
+  // 工具开始执行(runToolBatch 执行前发)→ renderer 先挂"运行中"卡片,结果到达后原位替换。
+  // startId = 模型的 tool_call_id,与完成事件配对;CLI 引擎/子任务转发没有此事件(降级为旧行为)。
+  | { type: 'tool_start'; name: string; args: string; startId: string }
   | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
@@ -413,6 +416,11 @@ export type TaskStep = {
   result: string;
   ts: number;
   durationMs?: number; // 工具执行耗时(回放用)
+  // ── 工具卡片可视化(DSH 式运行中态)──
+  pending?: boolean; // tool_start 已到、tool 结果未到 → 卡片显示 spinner
+  interrupted?: boolean; // turn 结束时仍是 pending(出错/取消)→ 卡片标灰不再转圈
+  startId?: string; // 配对键:tool_start 与 tool 事件用模型的 tool_call_id 对上
+  images?: string[]; // 截图工具的 base64 图片(仅内存/广播;saveTurn 持久化时剥离,防 DB 膨胀)
 };
 
 // ── Trajectory(轨迹):把"模型真实看到的 messages"可见化 ──
@@ -1010,9 +1018,31 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       conv.statusNote = null;
       t.answer += ev.text;
       break;
-    case 'tool':
-      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs });
+    case 'tool_start': {
+      // 运行中卡片:先占位(spinner),结果到达时按 startId 原位替换。
+      // 并发只读批次会产生多个 pending 卡 — startId(tool_call_id)保证一一配对。
+      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: '', ts: Date.now(), pending: true, startId: ev.startId });
       break;
+    }
+    case 'tool': {
+      const imgs = ev.images;
+      // 有 startId → 找到对应 pending 卡原位补全(保持卡片位置 = 执行发起顺序)
+      if (ev.startId) {
+        const pending = [...t.steps].reverse().find((s) => s.pending && s.startId === ev.startId);
+        if (pending) {
+          pending.name = ev.name;
+          pending.args = ev.args;
+          pending.result = ev.result;
+          pending.durationMs = ev.durationMs;
+          pending.pending = false;
+          if (imgs?.length) pending.images = imgs;
+          break;
+        }
+      }
+      // 无 startId(CLI 引擎/子任务转发)或配对失败 → 追加(旧行为)
+      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs, images: imgs });
+      break;
+    }
     case 'cost':
       conv.cost += ev.usd;
       conv.tokens += ev.tokens;
@@ -1047,15 +1077,21 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       break;
     }
     case 'done':
+    case 'error': {
       conv.statusNote = null;
-      t.done = true;
-      conv.status = 'ready';
+      // 残留的 pending 卡(出错/取消导致工具没跑到完成)→ 标中断,不再转圈
+      for (const s of t.steps) {
+        if (s.pending) { s.pending = false; s.interrupted = true; }
+      }
+      if (ev.type === 'done') {
+        t.done = true;
+        conv.status = 'ready';
+      } else {
+        t.error = ev.message;
+        t.done = true;
+        conv.status = 'ready'; // one failed turn doesn't lock the whole conversation
+      }
       break;
-    case 'error':
-      conv.statusNote = null;
-      t.error = ev.message;
-      t.done = true;
-      conv.status = 'ready'; // one failed turn doesn't lock the whole conversation
-      break;
+    }
   }
 }

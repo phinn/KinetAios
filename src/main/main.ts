@@ -120,11 +120,30 @@ let confirmSeq = 0;
 // 导致 Direct 引擎的 AgentLoop 卡在 await ctx.confirm() 上 —— 既泄漏 Promise 又锁住会话。
 const CONFIRM_TIMEOUT_MS = 300_000;
 
+// ── 只读命令白名单:整条命令全部命中只读前缀才自动放行 ──
+// 分析/探索任务要跑大量只读命令(ls/grep/git status…),逐条弹窗会把人变成 agent
+// 循环的瓶颈。白名单只认"确定无副作用"的命令;写操作、重定向、命令替换、任何
+// 不在白名单的成员仍然照常弹窗 —— 不改变写安全边界。
+const READONLY_CMD_RE =
+  /^(ls|dir|type|more|cat|head|tail|wc|grep|rg|findstr|file|stat|du|df|which|where|echo|pwd|cd|jq|git (status|log|diff|show|branch|blame|shortlog|describe|ls-files)|pip (list|show)|node --version|python --version|python -V|--version)\b/i;
+
+function isReadOnlyCommand(cmd: string): boolean {
+  const s = cmd.trim();
+  if (!s) return false;
+  // 重定向(写文件)、命令替换(可藏任意命令)→ 一律不算只读
+  if (/[<>`]|\$\(/.test(s)) return false;
+  // 按 shell 逻辑分隔符拆开,要求每一段都命中白名单(防 "ls && del x" 绕过)
+  const parts = s.split(/&&|\|\||&|\||;|\n/).map((p) => p.trim()).filter(Boolean);
+  return parts.length > 0 && parts.every((p) => READONLY_CMD_RE.test(p));
+}
+
 function confirm(cmd: string): Promise<boolean> {
   const s = getSettings();
   // 自动放行:approval=never 或 sandbox=fullAccess(完全访问 = 信任一切操作,与 CLI 引擎 bypassPermissions 对齐)。
   // / Auto-approve: approval=never OR sandbox=fullAccess (matches CLI engines' bypassPermissions).
   if (s.approval === 'never' || s.sandbox === 'fullAccess') return Promise.resolve(true);
+  // 只读白名单:即使 approval=always 也放行(工具事件里仍会显示完整命令,只是不弹窗)。
+  if (isReadOnlyCommand(cmd)) return Promise.resolve(true);
   const id = `c${process.pid}_${confirmSeq++}`;
   const win = dashboardWin;
   if (!win || win.isDestroyed()) return Promise.resolve(false);

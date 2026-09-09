@@ -49,6 +49,7 @@ export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
     onEvent as (e: { type: string; [k: string]: unknown }) => void,
     ctx,      // M1-fix: 传 ctx 让 planner 走 runAgentLoop 多轮探查
     policy,
+    memoryBlock, // P2-fix: 规划阶段注入长期记忆(与 V2 planner 对齐)
   );
 
   if (!plan) {
@@ -78,7 +79,7 @@ export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
     onEvent,
   });
 
-  // ── Phase 3: 结果汇总 ──
+  // ── Phase 3: 结果汇总状态 ──
   const failedCount = result.failedNodeIds.size;
   const totalNodes = plan.nodes.length;
   const completedCount = result.completedNodeIds.size;
@@ -92,5 +93,62 @@ export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
     onEvent({ type: 'status', text: `✅ v3: 全部 ${totalNodes} 个节点完成` });
   }
 
+  // ── Phase 3.5: 结果综合 — DAG 收尾后没有面向用户的总结,最后一个节点的流式
+  // token 就是用户看到的全部答案。补一次轻量汇总(单次 streamComplete,无工具):
+  // 失败只降级(不影响主流程),abort 时跳过。
+  if (!signal.aborted && completedCount > 0) {
+    try {
+      onEvent({ type: 'status', text: '🧾 v3: 汇总各步骤结果…' });
+      const evidence = synthesizeEvidence(userInput, plan, result.history, failedCount);
+      const comp = await provider.streamComplete(
+        [
+          { role: 'system', content: DEEP_SYNTH_PROMPT },
+          { role: 'user', content: evidence },
+        ],
+        [],
+        snapshot,
+        signal,
+        (tok) => onEvent({ type: 'token', text: tok }),
+      );
+      if (comp.tokensIn > 0 || comp.tokensOut > 0) {
+        const { priceUSD } = await import('../glm');
+        onEvent({ type: 'cost', usd: priceUSD(snapshot.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+      }
+      const summaryText = (comp.content ?? '').trim();
+      if (summaryText) result.history.push({ role: 'assistant', content: summaryText });
+    } catch {
+      // 综合失败 → 降级为原样返回(各节点产出仍在 history 中)
+    }
+  }
+
   return result.history;
+}
+
+// 综合提示词:面向用户的最终总结,不重复过程。
+const DEEP_SYNTH_PROMPT = `你是执行结果汇总器。根据任务目标与各步骤的执行结果,输出面向用户的最终总结:
+- 完成了什么(一句话结论放最前)
+- 关键产出/修改的文件/数据
+- 失败或遗留的问题(如有)
+直接输出正文,不要标题、不要复述执行过程。`;
+
+// 从 execHistory 提取汇总材料:节点摘要 user 消息(✅/❌/⏭️ 开头的步骤条目)+
+// assistant 文本,截断到预算内。工具噪声不进入。
+function synthesizeEvidence(userInput: string, plan: DAGPlan, history: ChatMsg[], failedCount: number): string {
+  const BUDGET = 8000;
+  const lines: string[] = [`【任务目标】${plan.goal || userInput}`];
+  if (failedCount > 0) lines.push(`【注意】有 ${failedCount} 个节点失败或被跳过,总结时必须如实说明`);
+  let total = lines.join('\n').length;
+  for (const m of history) {
+    if (m.role !== 'user' && m.role !== 'assistant') continue;
+    const text = typeof m.content === 'string' ? m.content : '';
+    if (!text.trim()) continue;
+    const isStepNote = m.role === 'user' && (text.includes('✅ 步骤[') || text.includes('❌ 步骤[') || text.includes('⏭️ 步骤['));
+    if (m.role === 'user' && !isStepNote) continue; // 普通用户消息(原始请求)已由【任务目标】代表
+    if (m.role === 'assistant' && text.startsWith('[')) continue;
+    const clipped = text.slice(0, 600);
+    total += clipped.length;
+    if (total > BUDGET) break;
+    lines.push(`${m.role === 'user' ? '' : '[输出] '}${clipped}${text.length > 600 ? '…' : ''}`);
+  }
+  return lines.join('\n');
 }

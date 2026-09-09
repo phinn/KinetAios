@@ -2139,7 +2139,7 @@ a { color: var(--accent); }
 .steps-count { font-size: 0.923rem; color: var(--text-faint); font-weight: 500; transition: color var(--dur-fast) var(--ease-out); }
 .steps-wrap > summary:hover .steps-count { color: var(--text-dim); }
 .steps { margin: 6px 0 2px; }
-.step { border-left: 1px solid var(--border-soft, var(--border)); padding: 4px 12px; margin-bottom: 2px; background: transparent; border-radius: 0 6px 6px 0; font-size: 0.923rem; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.step { position: relative; border-left: 1px solid var(--border-soft, var(--border)); padding: 4px 12px; margin-bottom: 2px; background: transparent; border-radius: 0 6px 6px 0; font-size: 0.923rem; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .step:hover { background: var(--bg-elev); border-left-color: var(--accent-dim); }
 /* 工具步骤 running 状态:左侧脉冲色条 + 微弱背景 / Running state: pulsing left bar + subtle bg */
 .step.running { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-glow), transparent 70%); }
@@ -2148,10 +2148,37 @@ a { color: var(--accent); }
 @keyframes step-run-pulse { 0%, 100% { opacity: 0.3; } 50% { opacity: 1; } }
 .step .name { color: var(--text-dim); font-weight: 500; transition: color var(--dur-fast) var(--ease-out); }
 .step:hover .name { color: var(--text); }
-.step details summary { cursor: pointer; color: var(--text-dim); list-style: none; }
+.step details summary { cursor: pointer; color: var(--text-dim); list-style: none; display: flex; align-items: center; gap: 8px; min-width: 0; }
 .step details summary::-webkit-details-marker { display: none; }
-.step details summary::before { content: '▸'; display: inline-block; width: 10px; font-size: 0.769rem; color: var(--text-faint); transition: transform var(--dur-fast) var(--ease-out); }
+.step details summary::before { content: '▸'; display: inline-block; width: 10px; font-size: 0.769rem; color: var(--text-faint); transition: transform var(--dur-fast) var(--ease-out); flex-shrink: 0; }
 .step details[open] > summary::before { transform: rotate(90deg); }
+/* DSH 式 summary 行:工具名 + 一行摘要(ellipsis)+ 耗时徽章,不展开即可扫读全程 */
+.step details summary .name { flex-shrink: 0; display: inline-flex; align-items: center; gap: 5px; }
+.step details summary .sum { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 0.846rem; font-family: ui-monospace, "Cascadia Code", monospace; direction: ltr; text-align: left; }
+.step:hover details summary .sum { color: var(--text-dim); }
+.step details summary .dur { flex-shrink: 0; font-size: 0.7rem; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-faint); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 8px; padding: 1px 7px; }
+/* 成败着色:✕ 红 / ! 琥珀(硬信号才触发:exit code / Traceback / ⚠️ 前缀) */
+.step details summary .step-flag { flex-shrink: 0; width: 14px; height: 14px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; font-size: 0.62rem; font-weight: 700; color: #fff; background: var(--err); }
+.step details summary .step-flag.warn { background: var(--warn); }
+.step.step-err { border-left-color: var(--err); }
+.step.step-err .name { color: var(--err); }
+.step.step-warn { border-left-color: var(--warn); }
+.step.step-warn .name { color: var(--warn); }
+/* pending 卡的三点 spinner(复用 typing 动画,收紧内边距) */
+.step details summary .typing { padding: 0; gap: 3px; }
+.step details summary .typing i { width: 4px; height: 4px; }
+/* 逐卡复制按钮 */
+.step-label-result { display: flex; align-items: center; justify-content: space-between; }
+.step-label-result .step-copy { padding: 2px 4px; border-radius: 4px; opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); color: var(--text-faint); }
+.step:hover .step-label-result .step-copy { opacity: 0.65; }
+.step-label-result .step-copy:hover { opacity: 1; color: var(--text); }
+/* 截图内联 + 灯箱(computer-use / read_image 的图片直接显示) */
+.step-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.step-img { max-width: 240px; max-height: 150px; border-radius: 8px; border: 1px solid var(--border-soft); cursor: zoom-in; transition: transform var(--dur-fast) var(--ease-out); background: var(--bg-elev); }
+.step-img:hover { transform: scale(1.02); border-color: var(--accent-dim); }
+.img-lightbox { position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
+.img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
+@keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
 .step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.846rem; color: var(--text-dim); user-select: text; }
 /* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
 .step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }

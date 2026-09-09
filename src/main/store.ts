@@ -304,10 +304,16 @@ export function touchConversation(convId: string): void {
 }
 
 export function saveTurn(convId: string, t: Turn): void {
+  // 截图 base64(step.images,单张可达数百 KB)只活在内存/广播 — 不落库,
+  // 防止 SQLite turns.data 与事件重放被图片撑爆。renderer 会话内仍可渲染。
+  // Screenshot base64 stays in-memory/broadcast only — never persisted.
+  const slim: Turn = t.steps?.some((s) => s.images?.length)
+    ? { ...t, steps: t.steps.map((s) => (s.images?.length ? { ...s, images: undefined } : s)) }
+    : t;
   stmt(
     `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
-  ).run(t.id, convId, JSON.stringify(t), t.ts);
+  ).run(t.id, convId, JSON.stringify(slim), t.ts);
   // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
   touchConversation(convId);
 }

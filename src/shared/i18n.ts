@@ -960,6 +960,8 @@ const ZH_CN: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — 检查 API key / 模型 id / 网络。',
   'al.err': '出错: {msg}',
   'al.executing': '执行 {tools}',
+  'step.running': '运行中…',
+  'step.interrupted': '已中断',
 
   // ── 多模态视觉输入 ──
   'vision.attach': '图片',
@@ -2097,6 +2099,8 @@ const EN: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — check API key / model id / network.',
   'al.err': 'Error: {msg}',
   'al.executing': 'Running: {tools}',
+  'step.running': 'Running…',
+  'step.interrupted': 'Interrupted',
 
   // ── Vision / multimodal ──
   'vision.attach': 'Image',
@@ -3228,6 +3232,8 @@ const ZH_TW: Dict = {
   'al.httpErr': 'HTTP {code}{detail} — 檢查 API key / 模型 id / 網路。',
   'al.err': '出錯: {msg}',
   'al.executing': '執行 {tools}',
+  'step.running': '執行中…',
+  'step.interrupted': '已中斷',
 
   // ── 多模態視覺輸入 ──
   'vision.attach': '圖片',

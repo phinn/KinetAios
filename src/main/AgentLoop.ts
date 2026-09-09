@@ -288,7 +288,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       if (!retriedEmptyCompletion) {
         retriedEmptyCompletion = true;
         onEvent({ type: 'status', text: '⚠️ 模型返回空回复(思考消耗了全部输出预算),正在重试…' });
-        messages.push({ role: 'user', content: '[系统] 上一轮你没有输出任何可见内容。请跳过长思考,直接给出回答或调用工具。' });
+        // _transient: 仅在本轮 in-flight 上下文里可见,dropTransient 会剔除 —
+        // 此前这条系统提示会永久写回 directHistory,残留成历史里的"假用户消息"。
+        messages.push({ role: 'user', content: '[系统] 上一轮你没有输出任何可见内容。请跳过长思考,直接给出回答或调用工具。', _transient: true });
         i--; // 抵消 for 的 i++,重试本轮
         continue;
       }
@@ -532,7 +534,7 @@ function snapshotTraj(messages: ChatMsg[]): import('../shared/types').TrajRecord
 // back to directHistory (otherwise it'd stack up across turns and go stale).
 function dropTransient(messages: ChatMsg[]): ChatMsg[] {
   return messages
-    .filter((m) => m.role !== 'system' && !m._memory)
+    .filter((m) => m.role !== 'system' && !m._memory && !m._transient)
     .map((m) => {
       // 持久化前清理:image content parts 转回纯文本(base64 太大不存 directHistory)。
       if (typeof m.content === 'string' && m.content.includes('\x00IMAGES')) {
@@ -813,16 +815,20 @@ async function runToolBatch(
       const start = i;
       while (i < calls.length && tools.find((t) => t.name === calls[i].name)?.readOnly) i++;
       const batch = calls.slice(start, i);
+      // 运行中卡片:并发批次全部先挂 spinner 卡(tool_start),完成事件按 tool_call_id 原位替换。
+      for (const c of batch) onEvent({ type: 'tool_start', name: c.name, args: c.arguments, startId: c.id });
       const outs = await Promise.all(
         batch.map(async (c) => {
           if (signal.aborted) return { c, result: '[已停止]' as string, dur: 0 };
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
-          const uiResult = parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur }); // UI 不显示 base64
+          const shot = parseScreenshotResult(result);
+          const uiResult = shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
+          // images: 截图 base64 随事件下发(仅内存/广播;saveTurn 持久化时剥离)
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
-          const forModel = parseScreenshotResult(result) ? result : truncateForModel(result, truncateThreshold);
+          const forModel = shot ? result : truncateForModel(result, truncateThreshold);
           return { c, result: forModel, dur };
         }),
       );
@@ -845,11 +851,12 @@ async function runToolBatch(
     } else {
       // 写工具:串行单个执行。
       const t0 = Date.now();
+      onEvent({ type: 'tool_start', name: call.name, args: call.arguments, startId: call.id });
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: parseScreenshotResult(result) ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur });
-      // 截图工具(只读,但防御性处理)—— 不截断 base64
       const shot = parseScreenshotResult(result);
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, startId: call.id, images: shot ? [shot.b64] : undefined });
+      // 截图工具(只读,但防御性处理)—— 不截断 base64
       if (shot) {
         results.push({
           role: 'tool',

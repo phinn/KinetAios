@@ -48,13 +48,15 @@ export interface DAGExecResult {
  * 执行 DAG plan:拓扑排序 → 分层并行 → 每步 ReAct loop。
  */
 export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
-  // P1:verifyApproved 只在单次 DAG 执行内有效(V2 runVerify 的 run 级作用域同款)——
-  // 之前是模块级只增不清,批准过的命令全文永久驻留,且跨任务复用审批有安全隐患。
-  verifyApproved.clear();
   const { plan, provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent } = opts;
 
   const completed = new Set<string>();
   const failed = new Set<string>();
+  // P1-fix: 失败传播 — failed 或被跳过的节点会阻断下游依赖(此前下游照跑,拿不到
+  // 依赖产出,整层白烧 token)。blocked 在结果处理阶段填充,下一层执行前检查。
+  const blocked = new Set<string>();
+  // P1-fix: verify 审批改为每次 DAG 运行独立(此前模块级 Set 被并发会话共享/互清)。
+  const verifyApprovedRun = new Set<string>();
   let execHistory = [...history];
 
   // ── 拓扑排序:按依赖关系分层 ──
@@ -66,13 +68,28 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     const level = levels[levelIdx];
     onEvent({ type: 'status', text: `🔄 v3: 执行第 ${levelIdx + 1}/${levels.length} 层 (${level.length} 个节点)` });
 
+    // 失败传播:依赖了 failed/blocked 节点的本层节点直接跳过(传递标记,让隔层依赖也阻断)。
+    for (const node of level) {
+      const deadDep = node.deps.find((d) => blocked.has(d));
+      if (deadDep) {
+        blocked.add(node.id);
+        execHistory.push({
+          role: 'user',
+          content: `\n---\n⏭️ 步骤[${node.id}] 跳过: 依赖的 [${deadDep}] 失败或已被跳过\n---\n`,
+        });
+        onEvent({ type: 'status', text: `⏭️ v3: [${node.id}] ${node.title} 跳过(依赖 ${deadDep} 未完成)` });
+      }
+    }
+    const runnableLevel = level.filter((n) => !blocked.has(n.id));
+    if (!runnableLevel.length) continue;
+
     // M3-fix: 同层节点按"是否含写操作"分流。
     // 旧实现:同层全部 Promise.all 并行,各节点持完整工具集(含 shell/write_file),
     // 两个写节点同时写同一文件 = 竞态。
     // 新策略:节点按 planner 标注的 tools 字段判定——纯只读节点照常并行,
     // 任何含写工具(shell/write_file/edit_file/excel_write…)的节点强制串行。
-    const { parallelSafe, mustSerialize } = partitionByWrite(level, tools);
-    if (mustSerialize.length > 0 && mustSerialize.length < level.length) {
+    const { parallelSafe, mustSerialize } = partitionByWrite(runnableLevel, tools);
+    if (mustSerialize.length > 0 && parallelSafe.length > 0) {
       onEvent({ type: 'status', text: `🔀 v3: 同层 ${mustSerialize.length} 个写节点转串行(避免写竞态)` });
     }
 
@@ -85,6 +102,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
         snapshot, ctx, signal, policy,
         history: execHistory,  // 各节点共享当前 execHistory 快照
         onEvent,
+        approved: verifyApprovedRun,
       })),
     );
     for (const node of mustSerialize) {
@@ -95,6 +113,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
           snapshot, ctx, signal, policy,
           history: execHistory,
           onEvent,
+          approved: verifyApprovedRun,
         }) });
       } catch (err) {
         results.push({ status: 'rejected', reason: err });
@@ -133,6 +152,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
             snapshot, ctx, signal, policy,
             history: execHistory,
             onEvent,
+            approved: verifyApprovedRun,
             retryNote: `上一次尝试失败: ${errMsg}`,
           });
           if (retryResult.success) {
@@ -150,6 +170,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
 
         if (!retried) {
           failed.add(node.id);
+          blocked.add(node.id); // 阻断下游依赖
           execHistory.push({
             role: 'user',
             content: `\n---\n❌ 步骤[${node.id}] 最终失败: ${node.title}\n原因: ${errMsg}\n---\n`,
@@ -193,10 +214,11 @@ async function executeNode(
     policy: EngineContextPolicy;
     history: ChatMsg[];
     onEvent: (e: AgentEvent) => void;
+    approved: Set<string>;
     retryNote?: string;
   },
 ): Promise<NodeExecResult> {
-  const { provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent, retryNote } = opts;
+  const { provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent, approved, retryNote } = opts;
 
   // 构建节点 prompt:明确告诉模型当前步骤目标和上下文
   const stepPrompt = retryNote
@@ -219,8 +241,13 @@ async function executeNode(
       maxTurns: MAX_TURNS_PER_STEP,
       policy,
       onEvent: (ev) => {
-        // 转发事件,过滤 done/error(由 V3 统一发)
-        if (ev.type === 'done' || ev.type === 'error') return;
+        // 转发事件,过滤 done(由 V3 统一发);error 转 status 透出(与 V2 forwardEvent /
+        // index.terminalGate 同语义 — 中途 API 失败必须对用户可见,不能静默)。
+        if (ev.type === 'done') return;
+        if (ev.type === 'error') {
+          onEvent({ type: 'status', text: `v3: [${node.id}] ⚠️ ${ev.message}` });
+          return;
+        }
         if (ev.type === 'status') {
           onEvent({ type: 'status', text: `v3: [${node.id}] ${ev.text}` });
         } else {
@@ -229,15 +256,31 @@ async function executeNode(
       },
     });
 
+    // P0-fix: 收尾校验(移植 V2 wasTruncatedByMaxTurns)——此前任何返回都当成功:
+    // ① LLM 首轮就报错(API key 错/网络断)→ stepMessages 为空 → 空 summary 也标成功;
+    // ② 节点跑满 MAX_TURNS_PER_STEP 被截断 → 也是 success。两类都让 retry 逻辑接管。
+    // 正常完成:最后一条是无 tool_calls 的 assistant(模型给出最终文字回答)。
+    const last = stepMessages[stepMessages.length - 1];
+    const completedNormally = !!last && last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0);
+
     // 提取步骤摘要
     const assistantMsgs = stepMessages
       .slice(startLen)
       .filter((m) => m.role === 'assistant' && typeof m.content === 'string');
     const summary = assistantMsgs.map((m) => m.content as string).join('\n').slice(0, policy.stepResultMaxChars || 4000);
 
+    if (!completedNormally && !signal.aborted) {
+      return {
+        success: false,
+        stepMessages: stepMessages.slice(startLen),
+        summary,
+        error: '节点执行未正常收尾(达到轮次上限或中途出错),可能未完成',
+      };
+    }
+
     // 嵌入式验证:如果节点有 verify 命令,自动执行
     if (node.verify && !signal.aborted) {
-      const verifyResult = await runVerify(node.verify, ctx, signal);
+      const verifyResult = await runVerify(node.verify, ctx, signal, approved, onEvent);
       if (!verifyResult.passed) {
         return {
           success: false,
@@ -259,20 +302,24 @@ async function executeNode(
 // 嵌入式验证 — 首次走 confirm 审批,同节点重试免弹(与 V2 runVerify 对齐)
 // ────────────────────────────────────────────────────────────────────────
 
-/** 已 confirm 过的 verify 命令(同命令重试不再弹窗)。 */
-const verifyApproved = new Set<string>();
-
 async function runVerify(
   command: string,
   ctx: ToolCtx,
   signal: AbortSignal,
+  approved: Set<string>,
+  onEvent?: (e: AgentEvent) => void,
 ): Promise<{ passed: boolean; output: string }> {
   // H2-fix: verify 命令来自 planner LLM 输出,必须走 confirm 审批,不能绕过直接 exec。
   // 同一命令 confirm 过一次后跳过(同节点 retry / 多节点复用相同验证命令场景)。
-  if (!verifyApproved.has(command)) {
-    const approved = await ctx.confirm(`[v3 验证] ${command}`);
-    if (!approved) return { passed: true, output: '(用户跳过验证)' }; // 用户跳过 → 当作通过,不阻塞流程
-    verifyApproved.add(command);
+  // approved 集合由 executeDAG 每次 run 新建 — 不再模块级共享(并发会话互清/复用审批)。
+  if (!approved.has(command)) {
+    const ok = await ctx.confirm(`[v3 验证] ${command}`);
+    if (!ok) {
+      // 拒绝 ≠ 验证通过:如实告知"未验证",由上层决定(默认继续但标记可见)。
+      if (onEvent) onEvent({ type: 'status', text: `⚠️ v3: 用户拒绝验证命令,节点将在未验证状态下继续: ${command}` });
+      return { passed: true, output: '(用户拒绝执行验证 — 节点未经验证)' };
+    }
+    approved.add(command);
   }
 
   try {
