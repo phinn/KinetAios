@@ -299,10 +299,49 @@ const shell: Tool = {
     const finalCmd = enforceBackgroundOpen(cmd);
     const ok = await ctx.confirm(finalCmd);
     if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
-    const out = await shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal);
+    // 焦点守卫:命令若抢了前台(启动 app/panel/simctl 等),执行完自动把前台还给用户
+    const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal));
     return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
   },
 };
+
+// ── 前台焦点守卫(macOS):命令执行后把被抢走的前台还给用户 ──
+// -gj 只覆盖 LaunchServices 启动层;NSOpenPanel runModal、Simulator、app 内部 NSApp.activate
+// 照样抢前台(2026-09-10 KMD 会话测 open panel 时实锤)。守卫:对「可能改变前台」的命令,
+// 执行前快照 frontmost,执行后对比,被抢则用 System Events 把原 app 设回前台。
+// 跳过:命令本身要截屏(screencapture/screenshot —— 就是要目标 app 在前台)或显式 activate(合法置前通道)。
+const FRONTMOST_SCRIPT =
+  'tell application "System Events" to get name of first application process whose frontmost is true';
+const FOCUS_STEAL_RISK = /\bopen\s|osascript|NSOpenPanel|simctl\s[^;\n]*(\bboot\b|\blaunch\b)/i;
+const CAPTURE_INTENT = /screencapture|screenshot/i;
+
+function osascriptOut(script: string, timeoutMs = 2500): Promise<string | null> {
+  return new Promise((resolve) => {
+    exec(`osascript -e ${JSON.stringify(script)}`, { timeout: timeoutMs }, (err, stdout) =>
+      resolve(err ? null : String(stdout).trim()),
+    );
+  });
+}
+
+// 包一层执行:armed 时做 before/after 前台对比,被抢则 restore。静默 best-effort,不产生用户可见报错。
+export async function guardFocus(cmd: string, run: () => Promise<string>): Promise<string> {
+  const armed =
+    process.platform === 'darwin' &&
+    FOCUS_STEAL_RISK.test(cmd) &&
+    !CAPTURE_INTENT.test(cmd) &&
+    !/\bactivate\b/.test(cmd);
+  if (!armed) return run();
+  const before = await osascriptOut(FRONTMOST_SCRIPT);
+  const out = await run();
+  const after = await osascriptOut(FRONTMOST_SCRIPT);
+  if (before && after && before !== after) {
+    // set frontmost(按进程名)比 tell application activate 干净:不触发 launch 语义
+    await osascriptOut(
+      `tell application "System Events" to set frontmost of (first application process whose name is ${JSON.stringify(before)}) to true`,
+    );
+  }
+  return out;
+}
 
 // ── 后台启动强制(macOS 零打扰)──
 // 模型经常写裸 `open foo.app`,macOS 的 open 默认激活 app 抢前台,直接把用户正在看的画面切走

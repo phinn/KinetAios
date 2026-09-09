@@ -25,7 +25,7 @@ import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, compactWithSpill } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
-import { allTools, readOnlyTools, shellExec, type Tool, type ToolCtx } from './tools';
+import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
 import { mcp } from './mcp';
 import { pluginSystemPrompts } from './plugins';
@@ -907,7 +907,9 @@ ${failedDetail || '  (无)'}
     }
 
     try {
-      const output = await shellExec(command, cwd, 120_000, signal); // 与 shell 工具一致 120s;30s 会误杀 npx tsc 冷启动/大项目
+      // 焦点守卫 + open 重写:验证命令(可能起 dev server/open app)与 shell 工具同规
+      const finalCmd = enforceBackgroundOpen(command);
+      const output = await guardFocus(finalCmd, () => shellExec(finalCmd, cwd, 120_000, signal)); // 与 shell 工具一致 120s;30s 会误杀 npx tsc 冷启动/大项目
       // shellExec 非零退出码加 [exit N] 前缀;超时返回 [超时(Ns),已终止。] —— 两种都必须判为失败,否则超时会被静默当作验证通过
       const ok = !/\[exit \d+\]/.test(output) && !output.startsWith('[超时');
       return { ok, output: output.slice(0, 3000) };
