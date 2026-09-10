@@ -968,6 +968,7 @@ const ZH_CN: Dict = {
   'turn.editResend': '编辑重发(载入输入框)',
   'plan.card': '执行计划',
   'plan.stage': '阶段 {n}',
+  'todo.card': '任务清单',
   'confirm.sessionOk': '本会话内后续 shell 命令将自动放行(重启后失效)',
 
   // ── 多模态视觉输入 ──
@@ -2114,6 +2115,7 @@ const EN: Dict = {
   'turn.editResend': 'Edit & resend (load into composer)',
   'plan.card': 'Execution plan',
   'plan.stage': 'Stage {n}',
+  'todo.card': 'Task list',
   'confirm.sessionOk': 'Shell commands in this conversation will be auto-approved (until restart)',
 
   // ── Vision / multimodal ──
@@ -3254,6 +3256,7 @@ const ZH_TW: Dict = {
   'turn.editResend': '編輯重發(載入輸入框)',
   'plan.card': '執行計劃',
   'plan.stage': '階段 {n}',
+  'todo.card': '任務清單',
   'confirm.sessionOk': '本會話內後續 shell 命令將自動放行(重啟後失效)',
 
   // ── 多模態視覺輸入 ──

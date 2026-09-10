@@ -2224,6 +2224,21 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .plan-node { display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); font-size: 0.846rem; color: var(--text-dim); }
 .plan-node b { color: var(--accent); font-family: ui-monospace, "Cascadia Code", monospace; font-weight: 600; }
 .plan-deps { color: var(--text-faint); font-size: 0.769rem; }
+/* 任务清单卡(DSH 式 todo 卡) */
+.todo-card summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.todo-card .name { color: var(--text-dim); font-size: 0.846rem; }
+.todo-sum { margin-left: auto; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, "Cascadia Code", monospace; }
+.todo-list { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.todo-item { display: flex; align-items: flex-start; gap: 8px; font-size: 0.846rem; color: var(--text); line-height: 1.45; }
+.todo-ico { flex-shrink: 0; width: 15px; text-align: center; font-size: 0.846rem; }
+.todo-completed .todo-ico { color: var(--ok); }
+.todo-completed .todo-text { color: var(--text-faint); }
+.todo-in_progress .todo-ico { display: inline-flex; padding-top: 3px; }
+.todo-pending .todo-ico { color: var(--text-faint); }
+.todo-pending .todo-text { color: var(--text-dim); }
+/* 进行中旋转弧(细环缺口) */
+.todo-spin { width: 11px; height: 11px; border: 2px solid var(--border-soft); border-top-color: var(--accent); border-radius: 50%; animation: todospin 0.9s linear infinite; display: inline-block; }
+@keyframes todospin { to { transform: rotate(360deg); } }
 .step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.846rem; color: var(--text-dim); user-select: text; }
 /* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
 .step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }

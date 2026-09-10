@@ -1,6 +1,7 @@
 // Dashboard renderer. Vanilla TS — no framework. Holds a local copy of conversations,
 // applies streaming events, re-renders the changed bits. Settings + shell-confirm modal inline.
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
+import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
@@ -2062,6 +2063,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     aiMsg.className = 'msg ai';
     const body = document.createElement('div');
     body.className = 'ai-body';
+    // 任务清单卡(DSH 式):本 turn 有 todo_write 状态 → 置顶展示(最终态随 turn 持久化,历史回放可见)
+    if (t.todos?.length) body.appendChild(buildTodoCard(t.todos));
     if (t.steps.length) {
       body.appendChild(buildStepsEl(t.steps, streaming));
     }
@@ -2430,6 +2433,42 @@ function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
   return el;
 }
 
+// ── 任务清单卡(DSH 式):todo_write 事件 → 逐项状态卡,流式期间实时更新 ──
+// 状态图标:completed 绿勾 / in_progress 旋转弧 / pending 空心圈。头部带计数摘要。
+function buildTodoCard(todos: TodoItem[]): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'step todo-card';
+  // 内容签名:增量更新用(状态或内容变化才重建)
+  el.dataset.sig = todos.map((t) => t.status + t.content).join('\u0001');
+  const done = todos.filter((t) => t.status === 'completed').length;
+  const doing = todos.filter((t) => t.status === 'in_progress').length;
+  const det = document.createElement('details');
+  det.open = true;
+  const summary = document.createElement('summary');
+  summary.innerHTML = `<span class="name">🧾 ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ✓ · ${doing} ⟳ · ${todos.length - done - doing} ○</span>`;
+  det.appendChild(summary);
+  const list = document.createElement('div');
+  list.className = 'todo-list';
+  for (const t of todos) {
+    const row = document.createElement('div');
+    row.className = `todo-item todo-${t.status}`;
+    const icon = document.createElement('span');
+    icon.className = 'todo-ico';
+    if (t.status === 'completed') icon.textContent = '✓';
+    else if (t.status === 'in_progress') icon.innerHTML = '<span class="todo-spin"></span>';
+    else icon.textContent = '○';
+    row.appendChild(icon);
+    const txt = document.createElement('span');
+    txt.className = 'todo-text';
+    txt.textContent = t.content;
+    row.appendChild(txt);
+    list.appendChild(row);
+  }
+  det.appendChild(list);
+  el.appendChild(det);
+  return el;
+}
+
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -2637,6 +2676,17 @@ function updateLastTurnIncremental(): void {
     }
   } else if (oldSteps) {
     oldSteps.remove();
+  }
+  // 任务清单卡增量更新:todo_write 事件到达 → t.todos 变化 → 按签名替换(清单小,重建成本低)。
+  const oldTodoCard = turnEl.querySelector('.todo-card');
+  const todoSig = t.todos?.length ? t.todos.map((x) => x.status + x.content).join('\u0001') : '';
+  if (todoSig) {
+    if (!oldTodoCard || (oldTodoCard as HTMLElement).dataset.sig !== todoSig) {
+      const fresh = buildTodoCard(t.todos!);
+      oldTodoCard ? oldTodoCard.replaceWith(fresh) : turnEl.querySelector('.ai-body')?.prepend(fresh);
+    }
+  } else if (oldTodoCard) {
+    oldTodoCard.remove();
   }
   // 同步 streaming-status(toggle based on conv.statusNote)。
   const oldStatus = turnEl.querySelector('.streaming-status');

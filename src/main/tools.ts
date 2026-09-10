@@ -157,6 +157,9 @@ export interface ToolCtx {
   // cross-project memory switch threaded from conversation so recall can self-restrict.
   crossProjectMemory?: boolean;
   sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
+  // 任务清单卡(todo_write)等工具向 UI 发结构化事件的出口。引擎侧接到 onEvent;
+  // 子 agent(readOnlyTools)不传 emit —— 子任务不污染主会话的清单卡。
+  emit?: (e: import('../shared/types').AgentEvent) => void;
 }
 
 export interface Tool {
@@ -2056,8 +2059,56 @@ const keyboardKeyTool: Tool = {
   },
 };
 
+// ── 任务清单卡(DSH 式 todo_write)──
+// 3+ 步任务先建清单、完成一项更新一项;整表替换语义(每次传全量,不是增量)。
+// 只影响会话 UI 状态,不碰文件系统 → readOnly: true(可并发批执行;沙箱只读也放行)。
+// 刻意不进 readOnlyTools():子 agent/spawn 不带这个工具,避免子任务清单污染主会话卡片。
+const todoWrite: Tool = {
+  name: 'todo_write',
+  description:
+    '维护当前任务清单(每次整表替换)。多步任务(≥3 步)开始前先写入全部条目;每完成一项立即更新状态。' +
+    'status: pending(待做)/ in_progress(进行中,同一时刻最多一项)/ completed(已完成)。' +
+    '内容写清楚做什么,一句话一条;已完成的条目保留在表中,不要删除。',
+  parameters: {
+    type: 'object',
+    properties: {
+      todos: {
+        type: 'array',
+        description: '完整任务列表(全量替换当前清单)',
+        items: {
+          type: 'object',
+          properties: {
+            content: { type: 'string', description: '任务内容,一句话' },
+            status: { type: 'string', enum: ['pending', 'in_progress', 'completed'] },
+          },
+          required: ['content', 'status'],
+        },
+      },
+    },
+    required: ['todos'],
+  },
+  readOnly: true,
+  async run(args, ctx) {
+    const raw = Array.isArray(args.todos) ? args.todos : [];
+    if (!raw.length) return '❌ todos 不能为空(整表替换语义:请传完整列表;要清空请把全部条目标记 completed)。';
+    const todos: import('../shared/types').TodoItem[] = [];
+    for (const item of raw.slice(0, 50)) {
+      const o = (item ?? {}) as Record<string, unknown>;
+      const content = String(o.content ?? '').trim();
+      if (!content) continue;
+      const status = o.status === 'in_progress' || o.status === 'completed' ? o.status : 'pending';
+      todos.push({ content: content.slice(0, 300), status });
+    }
+    if (!todos.length) return '❌ 没有有效条目(content 为空)。';
+    const doing = todos.filter((t) => t.status === 'in_progress').length;
+    const done = todos.filter((t) => t.status === 'completed').length;
+    ctx.emit?.({ type: 'todo', todos });
+    return `✅ 任务清单已更新:${todos.length} 项(${done} 已完成 / ${doing} 进行中 / ${todos.length - done - doing} 待做)。继续推进,状态变化时再次调用。`;
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, todoWrite];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

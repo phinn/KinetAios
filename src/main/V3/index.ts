@@ -102,6 +102,7 @@ export class DirectV3Engine implements Engine {
       turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
+      emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
         // 跨引擎子任务(V3 也支持调用 claude/codex 一次性任务)
         // 统一超时保护:合并主 signal + timeout,与 V1/V2 spawn 对齐(CLI 与 Direct 子任务共用)。

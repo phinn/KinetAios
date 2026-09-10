@@ -385,8 +385,16 @@ export type AgentEvent =
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
   | { type: 'context'; action: 'compacted' | 'trimmed'; beforeTokens: number; afterTokens: number } // 上下文压缩事件 → renderer 可视化
   | { type: 'traj'; records: TrajRecord[] } // 轨迹:本轮模型真实看到的 messages 快照(含 system/记忆注入/压缩摘要)
+  // 任务清单卡(DSH 式):引擎调 todo_write 时整表替换,renderer 渲染逐项状态卡
+  | { type: 'todo'; todos: TodoItem[] }
   | { type: 'done' }
   | { type: 'error'; message: string };
+
+// 任务清单条目。status 语义:pending 待做 / in_progress 进行中(一次最好只有一个)/ completed 完成。
+export interface TodoItem {
+  content: string;
+  status: 'pending' | 'in_progress' | 'completed';
+}
 
 /** 远程 Agent 事件 —— 当本机 MCP Server 被远程调用 run_agent 时,转发到 dashboard UI。 */
 export type RemoteAgentEvent =
@@ -450,6 +458,7 @@ export type Turn = {
   // 旧数据/压缩重排后无此值或失配 → applyPin 拒绝标记并说明原因,不会假装生效。
   histStart?: number;
   traj?: TrajRecord[]; // 轨迹:本 turn 最终发给模型的完整 messages 快照(system+memory+history+user)
+  todos?: TodoItem[]; // 本 turn 的任务清单最终状态(todo_write 整表替换;随 turn 持久化,历史回放可见)
 };
 
 // ── conv_events:append-only 事件日志(参考 deepseek-harness Session)──
@@ -1080,6 +1089,10 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
         : [...merged.slice(0, 4), ...merged.slice(merged.length - TRAJ_MAX_RECORDS + 4)];
       break;
     }
+    case 'todo':
+      // 任务清单整表替换(DSH 语义):挂在当前 turn 上,随 turn 持久化 + 增量渲染
+      t.todos = ev.todos;
+      break;
     case 'done':
     case 'error': {
       conv.statusNote = null;

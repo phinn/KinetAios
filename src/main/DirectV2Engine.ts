@@ -1248,6 +1248,7 @@ ${failedDetail || '  (无)'}
       convId: conv.id,
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
+      emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
       // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');

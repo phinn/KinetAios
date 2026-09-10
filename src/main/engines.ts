@@ -34,6 +34,8 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 文件超过 2MB 用 shell(head/sed/grep)按需读
 - 先用 grep 定位关键行号,再用 read_file 精准读那一段,避免一次性读全文被截断
 
+【任务清单】≥3 步的任务,动手前先用 todo_write 建清单(每条一句话,写清做什么);之后每完成一项就更新一次状态(in_progress → completed),开始新的一项时把它标成 in_progress。清单对用户可见,是进度透明的主要方式;全部完成后不需要专门汇报清单,正常给结论即可。
+
 【网页搜索】有两步:
 1. web_search("关键词") → 搜索引擎返回标题/摘要/链接列表
 2. web_fetch(url) → 抓取具体网页的正文(自动走 Jina Reader 去噪,返回干净 Markdown)
@@ -341,6 +343,7 @@ class DirectEngine implements Engine {
       convId: conv.id,
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
+      emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
       // P2:AgentTeams 调度。broadcast 时并行,team_send 时单 member。结果拼成文本返回给主 LLM。
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
