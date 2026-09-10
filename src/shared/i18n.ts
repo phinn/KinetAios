@@ -969,6 +969,15 @@ const ZH_CN: Dict = {
   'plan.card': '执行计划',
   'plan.stage': '阶段 {n}',
   'todo.card': '任务清单',
+  'settings.about.title': '关于与更新',
+  'settings.about.current': '当前版本',
+  'settings.about.check': '检查更新',
+  'settings.about.checking': '检查中…',
+  'settings.about.uptodate': '已是最新版本',
+  'settings.about.new': '发现新版本 {v}',
+  'settings.about.download': '前往下载 ↗',
+  'settings.about.checkedAt': '上次检查:{time}',
+  'update.toast': '发现新版本 {v},可在「设置 → 高级」中查看',
   'confirm.sessionOk': '本会话内后续 shell 命令将自动放行(重启后失效)',
 
   // ── 多模态视觉输入 ──
@@ -2116,6 +2125,15 @@ const EN: Dict = {
   'plan.card': 'Execution plan',
   'plan.stage': 'Stage {n}',
   'todo.card': 'Task list',
+  'settings.about.title': 'About & updates',
+  'settings.about.current': 'Current version',
+  'settings.about.check': 'Check for updates',
+  'settings.about.checking': 'Checking…',
+  'settings.about.uptodate': 'Up to date',
+  'settings.about.new': 'New version {v} available',
+  'settings.about.download': 'Download ↗',
+  'settings.about.checkedAt': 'Last checked: {time}',
+  'update.toast': 'New version {v} available — see Settings → Advanced',
   'confirm.sessionOk': 'Shell commands in this conversation will be auto-approved (until restart)',
 
   // ── Vision / multimodal ──
@@ -3257,6 +3275,15 @@ const ZH_TW: Dict = {
   'plan.card': '執行計劃',
   'plan.stage': '階段 {n}',
   'todo.card': '任務清單',
+  'settings.about.title': '關於與更新',
+  'settings.about.current': '當前版本',
+  'settings.about.check': '檢查更新',
+  'settings.about.checking': '檢查中…',
+  'settings.about.uptodate': '已是最新版本',
+  'settings.about.new': '發現新版本 {v}',
+  'settings.about.download': '前往下載 ↗',
+  'settings.about.checkedAt': '上次檢查:{time}',
+  'update.toast': '發現新版本 {v},可在「設定 → 進階」中查看',
   'confirm.sessionOk': '本會話內後續 shell 命令將自動放行(重啟後失效)',
 
   // ── 多模態視覺輸入 ──

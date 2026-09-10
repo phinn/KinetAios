@@ -23,6 +23,7 @@ import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, 
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
 import { listSnapshots, restoreSnapshot } from './snapshots';
+import { registerUpdateIpc } from './updater';
 import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap, savePluginEngineSettings } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
@@ -2623,6 +2624,8 @@ if (!gotLock) {
   }
 
   app.whenReady().then(() => {
+    // ── 版本更新检查:IPC + 启动静默检查(发现新版本推 'update-available')──
+    registerUpdateIpc(() => dashboardWin);
     // ── 内存哨兵:周期采样所有进程内存,增量写 userData/mem-watch.log ──
     // v2: 改用 app.getAppMetrics() 拿全部子进程(GPU/Utility/renderer)真实 RSS,每分钟无条件写。
     // v1 的"行长度变化检测"吞掉了 main 行(数值变但长度几乎不变);且 renderer jsHeap 平稳

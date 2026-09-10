@@ -2,6 +2,10 @@
 // Type-only and pure-function — no Node- or DOM-only APIs in here.
 import type { Lang } from './i18n';
 
+// 版本更新检查结构(main/updater.ts 产出,KinetAPI 引用)
+import type { UpdateInfo } from './version';
+export type { UpdateInfo };
+
 // OpenAI chat-message shape (loose — tool_calls / tool_call_id optional). Both
 // providers normalize to this so AgentLoop history is protocol-agnostic.
 // content 支持 string(纯文本) 或 ContentPart[](多模态:文本+图片)。
@@ -789,6 +793,13 @@ export interface KinetAPI {
   openFiles(cwd?: string): Promise<void>;
   openArena(cwd?: string): Promise<void>;
   shellOpen(url: string): Promise<void>;
+  // ── 版本更新检查(GitHub Releases;见 main/updater.ts)──
+  /** 检查更新:force=true 强制走网络;false 时 24h 内吃本地缓存。错误放返回值的 error 字段,不抛异常 */
+  checkUpdate(force?: boolean): Promise<UpdateInfo>;
+  /** 本机应用版本(package.json version) */
+  getAppVersion(): Promise<string>;
+  /** 启动静默检查发现新版本时推送(每次启动最多推一次) */
+  onUpdateAvailable(cb: (info: UpdateInfo) => void): void;
   listDir(absPath: string): Promise<{ ok: boolean; entries?: DirEntry[]; error?: string }>;
   gitSnapshot(cwd: string): Promise<GitSnapshot>;
   gitDiff(cwd: string, opts: { file?: string; hash?: string; staged?: boolean }): Promise<GitDiffResult>;

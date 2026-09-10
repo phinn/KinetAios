@@ -45,6 +45,13 @@ const api: KinetAPI = {
   openFiles: (cwd) => ipcRenderer.invoke('open-files', cwd),
   openArena: (cwd) => ipcRenderer.invoke('open-arena', cwd),
   shellOpen: (url) => ipcRenderer.invoke('shell-open', url),
+  // ── 版本更新检查 ──
+  checkUpdate: (force?: boolean) => ipcRenderer.invoke('check-update', force),
+  getAppVersion: () => ipcRenderer.invoke('app-version'),
+  onUpdateAvailable: (cb: (info: import('../shared/types').UpdateInfo) => void) => {
+    ipcRenderer.removeAllListeners('update-available');
+    ipcRenderer.on('update-available', (_e, info: import('../shared/types').UpdateInfo) => cb(info));
+  },
   listDir: (absPath) => ipcRenderer.invoke('list-dir', absPath),
   gitSnapshot: (cwd) => ipcRenderer.invoke('git-snapshot', cwd),
   gitDiff: (cwd: string, opts: { file?: string; hash?: string; staged?: boolean }) => ipcRenderer.invoke('git-diff', cwd, opts),

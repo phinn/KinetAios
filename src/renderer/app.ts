@@ -392,6 +392,11 @@ function applyI18nDOM(): void {
     showRemoteAgentBanner(ev);
   });
 
+  // 版本更新:启动静默检查(main 侧 24h 节流)发现新版本 → 轻提示,不打断主流程
+  api.onUpdateAvailable((info) => {
+    if (info.hasUpdate && info.latest) uxToast.info(tr('update.toast', { v: info.latest }));
+  });
+
   // 加载已保存的模型配置档到缓存 + 填充下拉
   api.getSettings().then((s) => { profileCache = s.modelProfiles || []; });
   void fillModelHints();
@@ -3743,6 +3748,18 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="advanced" style="display:none">
       <div class="s-section">
+        <h3>${tr('settings.about.title')}</h3>
+        <div class="field" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px">
+          <span class="field-desc" style="margin:0">${tr('settings.about.current')}: <b id="s-upd-cur">v…</b><span id="s-upd-latest" style="margin-left:10px"></span></span>
+          <div style="display:flex;gap:8px;align-items:center">
+            <button id="s-upd-check">${tr('settings.about.check')}</button>
+            <a id="s-upd-link" href="#" style="display:none" class="file-ref"></a>
+            <span class="test-msg" id="s-upd-msg"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="s-section">
         <h3>${tr('settings.sec.memory')}</h3>
         <div class="field" style="display:flex;flex-direction:column;align-items:flex-start;gap:8px">
           <span class="field-desc" style="margin:0">${tr('settings.mem.desc')}</span>
@@ -4435,6 +4452,46 @@ async function showSettings() {
     if (r.ok) showMemMsg(tr('settings.mem.impOk', { imported: r.imported ?? 0, skipped: r.skipped ?? 0 }), true);
     else if (r.error === 'canceled') showMemMsg(tr('settings.mem.canceled'), false);
     else showMemMsg(r.error ?? 'error', false);
+  };
+  // ── 关于与更新:进设置页先显示本机版本(缓存命中顺带显示上次检查结果),点按钮强制走网络 ──
+  const updMsg = document.getElementById('s-upd-msg')!;
+  const updLink = document.getElementById('s-upd-link') as HTMLAnchorElement;
+  const updLatest = document.getElementById('s-upd-latest')!;
+  const renderUpdateInfo = (info: import('../shared/types').UpdateInfo) => {
+    updLink.style.display = 'none';
+    if (info.error) { updMsg.textContent = info.error; updMsg.style.color = 'var(--err)'; return; }
+    if (info.hasUpdate && info.latest) {
+      updLatest.textContent = `→ ${tr('settings.about.new', { v: info.latest })}`;
+      updLatest.style.color = 'var(--ok)';
+      if (info.url) {
+        updLink.textContent = tr('settings.about.download');
+        updLink.href = info.url;
+        updLink.style.display = '';
+        updLink.onclick = (e) => { e.preventDefault(); void api.shellOpen(info.url!); };
+      }
+      updMsg.textContent = '';
+    } else if (info.latest) {
+      updLatest.textContent = `· ${tr('settings.about.uptodate')}`;
+      updLatest.style.color = 'var(--text-faint)';
+      updMsg.textContent = '';
+    } else {
+      updLatest.textContent = '';
+    }
+    if (info.checkedAt) updMsg.textContent = tr('settings.about.checkedAt', { time: new Date(info.checkedAt).toLocaleString() });
+  };
+  void api.getAppVersion().then((v) => { const el = document.getElementById('s-upd-cur'); if (el) el.textContent = 'v' + v; });
+  void api.checkUpdate(false).then((info) => { if (document.getElementById('s-upd-msg')) renderUpdateInfo(info); }).catch(() => {});
+  document.getElementById('s-upd-check')!.onclick = async () => {
+    const btn = document.getElementById('s-upd-check') as HTMLButtonElement;
+    btn.disabled = true;
+    updMsg.textContent = tr('settings.about.checking');
+    updMsg.style.color = 'var(--text-faint)';
+    updLatest.textContent = '';
+    try {
+      renderUpdateInfo(await api.checkUpdate(true));
+    } finally {
+      btn.disabled = false;
+    }
   };
   // Plugin SDK v2: 分类卡片 + 拖放安装 + 卸载。
   const PLUGIN_CATS = ['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'] as const;
