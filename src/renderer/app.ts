@@ -150,6 +150,22 @@ function applyI18nDOM(): void {
       chatSearchOpen();
       return;
     }
+    // Ctrl/Cmd+K → 命令面板(任意视图)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
+      e.preventDefault();
+      if (paletteEl().hidden) openPalette(); else closePalette();
+      return;
+    }
+    // '?' → 快捷键速查(焦点不在输入框时;Shift+/ = '?')
+    if (e.key === '?' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const ae = document.activeElement as HTMLElement | null;
+      const tag = ae?.tagName;
+      if (tag !== 'INPUT' && tag !== 'TEXTAREA' && !(ae as HTMLElement | null)?.isContentEditable) {
+        e.preventDefault();
+        showShortcutsSheet();
+        return;
+      }
+    }
     if (e.key === 'F8') {
       const ids = ['chat-view', 'chat-content', 'turns', 'input', 'attach-row', 'composer', 'composer-bar'];
       const rows: string[] = [];
@@ -1710,7 +1726,24 @@ function renderMain() {
   // 空会话:占位符不满一屏,无需滚动,也不许碰模式状态。
   // Empty conv: placeholder fits the viewport — no scrolling, no mode changes.
   if (!conv.turns.length) {
-    turns.replaceChildren(empty(tr('empty.noTurns'), tr('empty.noTurnsSub')));
+    const emptyEl = empty(tr('empty.noTurns'), tr('empty.noTurnsSub'));
+    // 快捷开始:可点击的示例任务,点击填入 composer(新用户第一分钟知道能干嘛)
+    const chips = document.createElement('div');
+    chips.className = 'empty-chips';
+    for (const key of ['empty.ex1', 'empty.ex2', 'empty.ex3']) {
+      const chip = document.createElement('button');
+      chip.className = 'ghost empty-chip';
+      chip.textContent = tr(key);
+      chip.onclick = () => {
+        const c = document.getElementById('composer') as HTMLTextAreaElement;
+        c.value = tr(key);
+        autosize(c);
+        c.focus();
+      };
+      chips.appendChild(chip);
+    }
+    emptyEl.appendChild(chips);
+    turns.replaceChildren(emptyEl);
     return;
   }
   // 分批渲染:长对话一次全量渲染会卡死主线程(几百轮 Markdown + DOM 节点),
@@ -2058,6 +2091,17 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     c.focus();
   };
   bubble.appendChild(uEdit);
+  // 用户气泡右键:复制 / 编辑重发 / 从此处分叉
+  userMsg.addEventListener('contextmenu', (ev) => {
+    const sel = window.getSelection();
+    if (sel && sel.toString().length) return;
+    ev.preventDefault();
+    showMenuAt([
+      { label: tr('copy.text'), fn: () => void copyText(userText) },
+      { label: tr('turn.editResend'), fn: () => uEdit.click() },
+      { label: tr('turn.fork'), fn: () => void forkFromTurn(conv.id, t.id) },
+    ], ev.clientX, ev.clientY);
+  });
   userMsg.appendChild(bubble);
   userMsg.appendChild(avatarEl('user'));
   wrap.appendChild(userMsg);
@@ -2104,8 +2148,29 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       const e = document.createElement('div');
       e.className = 'err';
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
+      // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
+      const retry = document.createElement('button');
+      retry.className = 'ghost retry-btn';
+      retry.textContent = '↻ ' + tr('turn.retry');
+      retry.onclick = () => {
+        if (conv.status === 'running' || !t.prompt.trim()) return;
+        scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
+        void api.send(conv.id, t.prompt);
+      };
+      e.appendChild(retry);
       body.appendChild(e);
     }
+    // turn 级右键菜单:复制 / 重试(失败时) / 从此处分叉
+    body.addEventListener('contextmenu', (ev) => {
+      const sel = window.getSelection();
+      if (sel && sel.toString().length) return; // 选中文本时让浏览器原生菜单处理复制
+      ev.preventDefault();
+      const items: Array<{ label: string; danger?: boolean; fn: () => void }> = [];
+      if (t.answer) items.push({ label: tr('turn.copyAnswer'), fn: () => void copyText(t.answer ?? '') });
+      if (t.error) items.push({ label: '↻ ' + tr('turn.retry'), fn: () => { if (conv.status !== 'running' && t.prompt.trim()) { scrollFrozen = false; viewMode = 'follow'; userAtBottom = true; void api.send(conv.id, t.prompt); } } });
+      items.push({ label: tr('turn.fork'), fn: () => void forkFromTurn(conv.id, t.id) });
+      showMenuAt(items, ev.clientX, ev.clientY);
+    });
     aiMsg.appendChild(avatarEl('ai'));
     aiMsg.appendChild(body);
     // 合并 meta + actions 为单行:左侧耗时/token/cost,右侧操作图标。始终可见。
@@ -2746,6 +2811,211 @@ let streamMdLen = 0;       // 已转成 HTML 的字符数(== 前缀 DOM 已覆�
 let streamScanPos = 0;     // 增量扫描位置
 let streamInFence = false; // 扫描点是否处于 ``` / ~~~ 围栏内
 let streamTailEl: HTMLElement | null = null; // 尾部纯文本节点(只改 textContent,不重建)
+
+// ── 通用右键菜单(turn 级):复用 .ctx-menu 样式,动态构建,点击外部关闭 ──
+function showMenuAt(items: Array<{ label: string; danger?: boolean; fn: () => void }>, x: number, y: number): void {
+  document.querySelector('.ctx-menu.ctx-turn-menu')?.remove();
+  const menu = document.createElement('div');
+  menu.className = 'ctx-menu ctx-turn-menu';
+  for (const it of items) {
+    const b = document.createElement('button');
+    b.className = 'ctx-item' + (it.danger ? ' ctx-danger' : '');
+    b.textContent = it.label;
+    b.onclick = () => { menu.remove(); cleanup(); it.fn(); };
+    menu.appendChild(b);
+  }
+  document.body.appendChild(menu);
+  const cleanup = (): void => document.removeEventListener('mousedown', onDoc);
+  const onDoc = (ev: MouseEvent): void => {
+    if (!menu.contains(ev.target as Node)) { menu.remove(); cleanup(); }
+  };
+  document.addEventListener('mousedown', onDoc);
+  requestAnimationFrame(() => {
+    const r = menu.getBoundingClientRect();
+    menu.style.left = Math.min(x, window.innerWidth - r.width - 4) + 'px';
+    menu.style.top = Math.min(y, window.innerHeight - r.height - 4) + 'px';
+  });
+}
+
+// 从某条 turn 处分叉:main 复制该 turn 及之前的历史为新会话,切过去继续
+async function forkFromTurn(convId: string, turnId: string): Promise<void> {
+  const conv = await api.forkConversation(convId, turnId);
+  if (!conv) { uxToast.err(tr('toast.error')); return; }
+  convs.set(conv.id, conv);
+  if (!order.includes(conv.id)) order.unshift(conv.id);
+  selectedId = conv.id;
+  renderSidebar();
+  showChat();
+  uxToast.info(tr('turn.forked'));
+}
+
+// ── 快捷键速查表(? 呼出)──
+function showShortcutsSheet(): void {
+  document.querySelector('.sheet-overlay')?.remove();
+  const ov = document.createElement('div');
+  ov.className = 'sheet-overlay';
+  const rows: Array<[string, string]> = [
+    ['Ctrl/⌘ K', tr('keys.palette')],
+    ['Ctrl/⌘ F', tr('keys.search')],
+    ['Enter / Shift+Enter', tr('keys.enter')],
+    ['Esc', tr('keys.esc')],
+    ['?', tr('keys.help')],
+    ['F8 / F9', tr('keys.debug')],
+  ];
+  ov.innerHTML = `<div class="sheet-card"><h3>⌨️ ${esc(tr('keys.title'))}</h3>` +
+    rows.map(([k, v]) => `<div class="sheet-row"><span class="sheet-key">${esc(k)}</span><span>${esc(v)}</span></div>`).join('') +
+    `</div>`;
+  ov.onclick = (e) => { if (e.target === ov) ov.remove(); };
+  document.body.appendChild(ov);
+}
+
+// ── 命令面板(Ctrl/Cmd+K,DSH 式)──
+// 动作源:视图切换 / 设置各 tab / 新建会话 / 当前会话切引擎 / 只看运行中 / 斜杠技能。
+// 模糊过滤:子串命中即可,前缀命中排前。↑↓ 选择,Enter 执行,Esc 关闭。
+type PaletteAction = { label: string; hint?: string; run: () => void };
+let paletteSel = 0;
+let paletteFiltered: PaletteAction[] = [];
+
+function paletteEl(): HTMLElement { return document.getElementById('palette')!; }
+
+function buildPaletteActions(): PaletteAction[] {
+  const acts: PaletteAction[] = [];
+  const click = (id: string): void => document.getElementById(id)?.click();
+  // 视图
+  const views: Array<[string, string, string]> = [
+    ['palette.chat', 'chat', ''],
+    ['wb.title', 'wb', 'rail-wb'],
+    ['pipeline.title', 'pipeline', 'm-pipeline'],
+    ['templates.title', 'templates', 'm-templates'],
+    ['cost.title', 'cost', 'm-cost'],
+    ['sidebar.moreTimeline', 'timeline', 'm-timeline'],
+    ['town.title', 'town', 'm-town'],
+    ['sidebar.moreNexus', 'nexus', 'm-nexus'],
+    ['settings.title', 'settings', 'rail-settings'],
+  ];
+  for (const [key, _id, btn] of views) {
+    acts.push({
+      label: tr(key),
+      hint: tr('palette.views'),
+      run: () => { if (btn) click(btn); else showChat(); },
+    });
+  }
+  // 设置各 tab:先进设置页,再模拟点 tab
+  const tabs: Array<[string, string]> = [
+    ['model', 'settings.tab.model'], ['appearance', 'settings.tab.appearance'], ['engine', 'settings.tab.engine'],
+    ['advanced', 'settings.tab.advanced'], ['messaging', 'settings.tab.messaging'], ['plugins', 'settings.tab.plugins'],
+    ['goal', 'settings.tab.goal'], ['mesh', 'settings.tab.mesh'],
+  ];
+  for (const [tab, key] of tabs) {
+    acts.push({
+      label: `${tr('settings.title')} → ${tr(key)}`,
+      hint: tr('palette.views'),
+      run: () => {
+        void showSettings();
+        requestAnimationFrame(() => document.querySelector<HTMLElement>(`.s-tab[data-stab="${tab}"]`)?.click());
+      },
+    });
+  }
+  // 会话动作
+  acts.push({ label: '＋ ' + tr('sidebar.newSession'), run: () => click('btn-new') });
+  acts.push({ label: tr('sidebar.runningFilter'), run: () => click('sb-running-filter') });
+  // 当前会话切引擎(不弹确认 — 面板场景下默认用户知道自己在干什么;有上下文丢失风险时仍走 head 下拉)
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  if (conv) {
+    for (const [ek, label] of Object.entries(ENGINE_LABELS)) {
+      if (ek === conv.engine) continue;
+      acts.push({
+        label: `${tr('head.engine')}: ${label}`,
+        hint: conv.customTitle ?? undefined,
+        run: () => { api.setEngine(conv.id, ek as EngineKind); conv.engine = ek as EngineKind; renderHead(conv); },
+      });
+    }
+  }
+  // 斜杠技能(异步补充,到了就重渲染列表)
+  void api.listSkills().then((skills) => {
+    for (const s of skills.slice(0, 60)) {
+      acts.push({
+        label: `/ ${s.name}`,
+        hint: (s.description || '').slice(0, 70),
+        run: () => {
+          if (!selectedId) return;
+          const c = document.getElementById('composer') as HTMLTextAreaElement;
+          c.value = '/' + s.name + ' ';
+          autosize(c);
+          c.focus();
+          showChat();
+        },
+      });
+    }
+    if (paletteEl() && !paletteEl().hidden) renderPaletteList((document.getElementById('palette-input') as HTMLInputElement).value);
+  }).catch(() => {});
+  return acts;
+}
+
+function paletteScore(q: string, a: PaletteAction): number {
+  const label = a.label.toLowerCase();
+  const ql = q.toLowerCase();
+  if (label.startsWith(ql)) return 2;
+  const idx = label.indexOf(ql);
+  if (idx >= 0) return 1 + (a.hint?.toLowerCase().includes(ql) ? 0.5 : 0);
+  if (a.hint?.toLowerCase().includes(ql)) return 0.5;
+  return -1;
+}
+
+function renderPaletteList(q: string): void {
+  const list = document.getElementById('palette-list')!;
+  const acts = buildPaletteActions();
+  paletteFiltered = (q.trim() ? acts.map((a) => ({ a, s: paletteScore(q.trim(), a) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).map((x) => x.a) : acts).slice(0, 30);
+  paletteSel = Math.min(paletteSel, Math.max(0, paletteFiltered.length - 1));
+  list.innerHTML = '';
+  paletteFiltered.forEach((a, i) => {
+    const row = document.createElement('div');
+    row.className = 'palette-row' + (i === paletteSel ? ' sel' : '');
+    const label = document.createElement('span');
+    label.className = 'p-label';
+    label.textContent = a.label;
+    row.appendChild(label);
+    if (a.hint) {
+      const hint = document.createElement('span');
+      hint.className = 'p-hint';
+      hint.textContent = a.hint;
+      row.appendChild(hint);
+    }
+    row.onclick = () => { closePalette(); a.run(); };
+    row.onmousemove = () => { if (paletteSel !== i) { paletteSel = i; list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel')); row.classList.add('sel'); } };
+    list.appendChild(row);
+  });
+  if (!paletteFiltered.length) {
+    const none = document.createElement('div');
+    none.className = 'palette-empty';
+    none.textContent = tr('palette.noResults');
+    list.appendChild(none);
+  }
+}
+
+function openPalette(): void {
+  const p = paletteEl();
+  p.hidden = false;
+  paletteSel = 0;
+  const input = document.getElementById('palette-input') as HTMLInputElement;
+  input.value = '';
+  renderPaletteList('');
+  input.focus();
+}
+
+function closePalette(): void {
+  paletteEl().hidden = true;
+}
+
+function paletteMove(dir: 1 | -1): void {
+  if (!paletteFiltered.length) return;
+  paletteSel = (paletteSel + dir + paletteFiltered.length) % paletteFiltered.length;
+  const list = document.getElementById('palette-list')!;
+  list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
+  const rows = list.querySelectorAll('.palette-row');
+  rows[paletteSel]?.classList.add('sel');
+  rows[paletteSel]?.scrollIntoView({ block: 'nearest' });
+}
 
 // ── 消息排队(DSH 式)──
 // running 时输入 + Enter → 消息入队(发送键仍是停止);回合结束(done/error/取消)
@@ -5553,6 +5823,22 @@ function closeMoreMenu() {
   document.getElementById('chat-search-prev')!.onclick = () => chatSearchNext(-1);
   document.getElementById('chat-search-next')!.onclick = () => chatSearchNext(1);
   document.getElementById('chat-search-close')!.onclick = () => { chatSearchClose(); (document.getElementById('composer') as HTMLTextAreaElement).focus(); };
+  // ── 命令面板 ──
+  const paletteInput = document.getElementById('palette-input') as HTMLInputElement;
+  paletteInput.addEventListener('input', () => { paletteSel = 0; renderPaletteList(paletteInput.value); });
+  paletteInput.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); paletteMove(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); paletteMove(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const act = paletteFiltered[paletteSel];
+      if (act) { closePalette(); act.run(); }
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closePalette();
+    }
+  });
+  paletteEl().addEventListener('mousedown', (e) => { if (e.target === paletteEl()) closePalette(); });
   document.getElementById('modal-ok')!.onclick = () => closeConfirm(true);
   document.getElementById('modal-cancel')!.onclick = () => closeConfirm(false);
   // 项目背景编辑器(workbench 卡片「背景」按钮触发)。

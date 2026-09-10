@@ -737,6 +737,8 @@ export interface KinetAPI {
   // 懒加载:按需拉取单个频道的全部 turns(head 模式启动后,切频道时调用)
   getTurns(convId: string): Promise<Turn[]>;
   newConversation(cwd?: string, engine?: EngineKind): Promise<Conversation>;
+  /** 从某条 turn 处分叉出新会话(复制该 turn 及之前的历史,原会话不动) */
+  forkConversation(sourceId: string, uptoTurnId: string): Promise<Conversation | null>;
   send(id: string, text: string): Promise<boolean>;
   cancel(id: string): Promise<boolean>;
   deleteConversation(id: string): Promise<boolean>;

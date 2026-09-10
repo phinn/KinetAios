@@ -994,6 +994,12 @@ function registerIpc(): void {
     if (conv.cwd) ensureWatcher(conv.cwd);
     return conv;
   });
+  // 从某条 turn 处分叉出新会话(复制该 turn 及之前的历史)
+  ipcMain.handle('fork-conversation', (_e, sourceId: string, uptoTurnId: string) => {
+    const conv = taskManager.forkConversation(sourceId, uptoTurnId);
+    if (conv?.cwd) ensureWatcher(conv.cwd);
+    return conv;
+  });
   ipcMain.handle('send', (_e, id: string, text: string) => {
     taskManager.send(id, text);
     return true;

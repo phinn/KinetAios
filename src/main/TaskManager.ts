@@ -130,6 +130,45 @@ export class TaskManager {
     return conv;
   }
 
+  // 从某条 turn 处分叉:复制该 turn 及之前的全部历史到新会话(原会话不动)。
+  // 用途:走岔了想回退重试,又不想丢掉前面的上下文。
+  // 历史近似:directHistory 只重放 user prompt + assistant answer(工具调用轮次不重放 —
+  // 协议各异无法通用还原);对模型来说是"精读版前情提要",足够延续上下文。
+  // turn.id 全部重新生成 —— store 的 turns 表按 id upsert,复用旧 id 会把原会话的行偷走。
+  forkConversation(sourceId: string, uptoTurnId: string): Conversation | null {
+    const src = this.convs.get(sourceId);
+    if (!src) return null;
+    const idx = src.turns.findIndex((t) => t.id === uptoTurnId);
+    if (idx < 0) return null;
+    const keep = src.turns.slice(0, idx + 1);
+    const conv = this.newConversation(src.cwd, src.engine);
+    // 继承源会话的模型相关配置(新会话构造时取的是全局默认,这里覆盖)
+    conv.model = src.model;
+    conv.subAgentModel = src.subAgentModel;
+    if (src.profileId != null) conv.profileId = src.profileId;
+    if (src.contextMode) conv.contextMode = src.contextMode;
+    if (src.crossProjectMemory != null) conv.crossProjectMemory = src.crossProjectMemory;
+    if (src.goal) conv.goal = src.goal;
+    // 种子历史:prompt 清掉图片 base64 标记(体积大且重放图片意义不大),answer 保留
+    for (const t of keep) {
+      if (t.error && !t.answer.trim()) continue; // 失败且无输出的 turn 不进历史
+      const prompt = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
+      if (!prompt) continue;
+      conv.directHistory.push({ role: 'user', content: prompt });
+      if (t.answer.trim()) conv.directHistory.push({ role: 'assistant', content: t.answer });
+    }
+    // 持久化 + 展示:turn 深拷贝换新 id(保护源会话的行),steps 原样保留
+    for (const t of keep) {
+      const copy: Turn = { ...t, id: rid(), steps: t.steps.map((s) => ({ ...s })) };
+      store.saveTurn(conv.id, copy);
+      conv.turns.push(copy);
+    }
+    conv.customTitle = ((src.customTitle ?? keep[0]?.prompt.slice(0, 30) ?? '') + ' ↗').slice(0, 60);
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+    return conv;
+  }
+
   // Switch engine mid-conversation. Clears cross-protocol context (directHistory + CLI session),
   // same as Swift AgentTask.setEngine — a Claude session id is meaningless to Codex, etc.
   // Direct 家族(direct ↔ directV2)共享 directHistory,切换不清空。

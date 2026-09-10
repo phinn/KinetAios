@@ -355,6 +355,15 @@
   </div>
 
   <!-- shell confirm modal -->
+  <!-- 命令面板(Ctrl/Cmd+K)-->
+  <div id="palette" hidden>
+    <div class="palette-box">
+      <input id="palette-input" data-i18n-placeholder="palette.placeholder" placeholder="搜索命令、视图、技能…" spellcheck="false" autocomplete="off" />
+      <div id="palette-list"></div>
+      <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 执行</span><span>Esc 关闭</span></div>
+    </div>
+  </div>
+
   <div id="modal" role="dialog" aria-modal="true" aria-label="命令执行确认">
     <div class="modal-card">
       <h3 data-i18n="modal.title">要执行 shell 命令?</h3>
