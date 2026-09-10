@@ -185,13 +185,21 @@ memory+pinned+全部摘要不占任何预算 → 长会话保护头部线性增�
 
 ---
 
-## 批次 2(本轮不修,登记在案)
+## 批次 2(1/2/3 已于同日修复,其余登记在案)
 
-touch 反馈回路(注入即 touch → 固定 15 条轮播)、decay 按 importance 加权、
-episodic per-conv upsert(每轮 done 新增一条重复摘要)、dedup 保留旧值问题、
-审计 spill 的 dropped 全文落库、memoryBlock 注入位置与总量上限、
-`hifiContextBudget` 死设置清理、上下文进度条 modelMax 硬编码 128K、
-`factsAsBlock` 未接线、file_registry 只增不减。
+已修(60-memory-lifecycle.test.ts 回归锁):
+- ✅ **decay 按 importance 分档**:≤3 阈值 0.2(~32 天,噪声加速清除)/ 4-7 阈值 0.1(~45 天,与旧版一致)/
+  ≥8 永不自动删除;`decayMemories(nowMs?)` 可注入时间
+- ✅ **touch 反馈回路切断**:注入路径不再 touchMemoryUsed,last_used 只由 agent 主动
+  `recall_memory` 工具更新(修前每轮注入 touch 15 条 → 固定 15 条轮播 + decay 信号污染)
+- ✅ **episodic per-conv 滚动 upsert**:`store.upsertEpisodicMemory` 每会话仅一条;提取 prompt
+  喂回【已有摘要】要求 LLM 合并,长会话早期结论不再随窗口滑出
+
+未修:
+- 全局排序池(importance=10 但 relevance=0 可挤掉相关记忆,有测试圈定)、
+  dedup 保留旧值、审计 spill 的 dropped 全文落库、memoryBlock 注入位置与总量上限、
+  `hifiContextBudget` 死设置清理、上下文进度条 modelMax 硬编码 128K、
+  `factsAsBlock` 未接线、file_registry 只增不减、注入 query 多主题拼接。
 
 ## 实施顺序与回归策略
 

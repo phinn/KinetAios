@@ -846,6 +846,20 @@ export function addEpisodicMemory(e: { convId: string; summary: string; importan
   return id;
 }
 
+// 2026-09 修复:会话摘要此前每轮 done 都新增一条 —— 20 轮的会话产生 ~16 条近乎重复的摘要,
+// 注入的"最近会话摘要"全是同一会话复读,还污染 recall_memory 检索。改为每会话滚动 upsert:
+// 已有摘要被新摘要合并覆盖(合并逻辑在提取 prompt 侧,store 只负责"更新最新一条或插入")。
+export function upsertEpisodicMemory(e: { convId: string; summary: string; importance: number; tags?: string }): string {
+  const existing = db.prepare('SELECT id FROM episodic_memories WHERE conv_id=? ORDER BY created_at DESC LIMIT 1;')
+    .get(e.convId) as { id: string } | undefined;
+  if (existing) {
+    db.prepare('UPDATE episodic_memories SET summary=?, importance=?, tags=?, created_at=? WHERE id=?;')
+      .run(e.summary.slice(0, 500), Math.max(1, Math.min(10, e.importance)), e.tags ?? null, Date.now() / 1000, existing.id);
+    return existing.id;
+  }
+  return addEpisodicMemory(e);
+}
+
 export function loadEpisodicMemories(limit = 20): EpisodicMemory[] {
   return (db.prepare('SELECT id, conv_id AS convId, summary, importance, tags, created_at AS createdAt FROM episodic_memories ORDER BY created_at DESC LIMIT ?;').all(limit) as Array<{ id: string; convId: string; summary: string; importance: number; tags: string | null; createdAt: number }>)
     .map((r) => ({ ...r, createdAt: r.createdAt * 1000 }));
@@ -1267,10 +1281,21 @@ export function scoredMemories(
   return scored.slice(0, limit);
 }
 
-// 执行衰减:weight *= 0.95^(days_since_last_used),weight < 0.1 的连同 memory 一起删除。
+// 执行衰减:weight *= 0.95^(days_since_last_used),衰减到 importance 分档阈值以下连同 memory 一起删除。
 // 返回被清除的条数。
 // 未被 recall 命中过(无 memory_meta 行)的记忆按 weight=1.0 / last_used=created_at 参与。
-export function decayMemories(): number {  const now = Date.now();
+// 2026-09 修复:衰减/删除此前完全不看 importance —— importance=10 的核心事实与边缘噪声
+// 同样在 ~45 天后被删,而"被 recall"主要靠检索链路(存在漏召回)。现在按 importance 分档:
+//   ≤3(边缘噪声):阈值 0.2,~32 天清除(比旧版更快,noise 不该活一个半月)
+//   4-7(一般):阈值 0.1,~45 天(与旧版一致)
+//   ≥8(核心事实):永不自动删除 —— 只衰减权重,退出靠 dedup/手动清理
+const DECAY_BASE = 0.95;
+function decayThreshold(importance: number): number {
+  if (importance >= 8) return 0;      // 0 = 永不自动删除
+  if (importance <= 3) return 0.2;    // 噪声加速清除
+  return 0.1;                         // 默认档(与旧版一致)
+}
+export function decayMemories(nowMs = Date.now()): number {  const now = nowMs;
   const dayMs = 86400_000;
   const hasEmbed = hasTable('memory_embeddings');
   const hasMeta = hasTable('memory_meta');
@@ -1281,11 +1306,11 @@ export function decayMemories(): number {  const now = Date.now();
   const stmtUpdate = db.prepare('UPDATE memory_meta SET weight=? WHERE memory_id=?;');
   // 从 memories 表出发 LEFT JOIN meta,覆盖所有记忆(含从未被 recall 的长尾记忆)
   const all = (db.prepare(
-    `SELECT mem.id AS memory_id, mem.created_at AS created_at,
+    `SELECT mem.id AS memory_id, mem.created_at AS created_at, mem.importance AS importance,
        m.weight AS weight, m.last_used AS last_used
      FROM memories mem
      LEFT JOIN memory_meta m ON m.memory_id = mem.id;`,
-  ).all()) as Array<{ memory_id: string; weight: number | null; last_used: number | null; created_at: number | null }>;
+  ).all()) as Array<{ memory_id: string; weight: number | null; last_used: number | null; created_at: number | null; importance: number | null }>;
   let pruned = 0;
   const tx = db.transaction(() => {
     for (const m of all) {
@@ -1293,8 +1318,9 @@ export function decayMemories(): number {  const now = Date.now();
       // last_used 存毫秒;created_at 存秒。统一到毫秒。
       const refTs = m.last_used || (m.created_at ?? now / 1000) * 1000;
       const days = (now - refTs) / dayMs;
-      const decayed = weight * Math.pow(0.95, days);
-      if (decayed < 0.1) {
+      const decayed = weight * Math.pow(DECAY_BASE, days);
+      const threshold = decayThreshold(m.importance ?? 5);
+      if (threshold > 0 && decayed < threshold) {
         stmtDel.run(m.memory_id);
         if (stmtDelMeta) stmtDelMeta.run(m.memory_id);
         if (stmtDelEmbed) stmtDelEmbed.run(m.memory_id);

@@ -53,14 +53,10 @@ export async function recallMemories(opts: {
               restrictConvId,
             );
             if (scored.length >= 3) {
-              for (const s of scored) {
-                try { store.touchMemoryUsed(s.id); } catch { /* non-blocking */ }
-              }
+              // 2026-09 修复(反馈回路):注入路径不再 touchMemoryUsed。修前每轮注入 touch 15 条 →
+              // last_used=now → recency≈1 → 下轮继续霸榜,检索退化成"固定 15 条轮播",还污染 decay 的
+              // "被用过"信号。last_used 现在只由 agent 主动调用 recall_memory 工具时更新(tools.ts)。
               return scored.map(({ id, content, conversation_id, score }) => ({ id, content, conversationId: conversation_id, score }));
-            }
-            // 重排结果不足 → 直接用原始 embedding 排序
-            for (const s of candidates.slice(0, limit)) {
-              try { store.touchMemoryUsed(s.memoryId); } catch { /* non-blocking */ }
             }
             return candidates.slice(0, limit).map(({ memoryId: id, content, conversationId, score }) => ({ id, content, conversationId, score }));
           }

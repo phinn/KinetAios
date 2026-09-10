@@ -1020,12 +1020,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     if (totalChars < 200) return;
 
     const snap = snapshot(conv.profileId);
+    // 2026-09 修复(滚动摘要):该会话已有摘要时把它喂回 prompt,要求 LLM 合并而非只总结最近 5 轮
+    // —— 否则长会话的早期结论会随着滚动窗口滑出摘要,再配合 per-conv upsert 会逐步遗忘。
+    const prevEpisode = store.loadEpisodicMemories(20).find((e) => e.convId === conv.id);
     const sys = `你是会话摘要器。把下面的多轮对话压缩成 3-5 句话的叙事摘要。
 重点:
 1. 这次的任务目标是什么?
 2. 根因/解决方案是什么?
 3. 改了哪些文件/模块?
 4. 用户学到了什么 / 什么决策值得记住?
+如果提供了【已有摘要】:把它与新对话合并成一条 —— 仍重要的历史结论保留,已完成/被推翻的删除,不要丢弃早期关键信息。
 输出 JSON 对象:
 - "summary": 3-5 句话摘要(≤ 200 字)
 - "importance": 1-10(日常问答=1-3,修 bug=5-7,架构改动=8-10)
@@ -1034,7 +1038,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 
     // 压缩对话内容:取最近 5 轮,每轮截取前 500 字
     const recentTurns = meaningfulTurns.slice(-5);
-    const dialog = recentTurns.map((t, i) =>
+    const dialog = (prevEpisode?.summary ? `【已有摘要】\n${prevEpisode.summary}\n\n` : '') + recentTurns.map((t, i) =>
       `[Turn ${i + 1}] 用户: ${(t.prompt ?? '').slice(0, 300)}\n助手: ${(t.answer ?? '').slice(0, 500)}`
     ).join('\n\n');
 
@@ -1058,7 +1062,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       if (lo < 0 || hi <= lo) return;
       const obj = JSON.parse(comp.content.slice(lo, hi + 1)) as { summary?: string; importance?: number; tags?: string[] };
       if (!obj.summary || obj.summary.length < 10) return;
-      store.addEpisodicMemory({
+      // per-conv 滚动 upsert(2026-09 修复:修前每轮 done 新增一条,20 轮会话产生 ~16 条近重复摘要)
+      store.upsertEpisodicMemory({
         convId: conv.id,
         summary: obj.summary.slice(0, 500),
         importance: obj.importance ?? 5,
