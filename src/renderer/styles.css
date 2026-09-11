@@ -1215,6 +1215,14 @@ a { color: var(--accent); }
 #conv-list > li:hover .conv-actions { opacity: 1; pointer-events: auto; }
 .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 .dot.ready { background: color-mix(in srgb, var(--text-dim) 40%, transparent); }
+/* 多态(v3.6.3):waiting 等审批(琥珀实心)/ retrying 瞬时退避(琥珀空心脉冲)。
+ * 颜色全走 --warn,主题覆盖零成本;waiting 与 running 的区别是"没有脉冲"(静止 = 挡在等用户)。 */
+.dot.waiting { background: var(--warn); box-shadow: 0 0 6px var(--warn); }
+.dot.retrying { background: transparent; border: 2px solid var(--warn); box-sizing: border-box; animation: dot-retry-pulse 1.2s var(--ease-in-out) infinite; }
+@keyframes dot-retry-pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+/* 上下文 gauge 阈值:≥70% 琥珀 / ≥90% 红(head-stat 元素级,applyGaugeColor 切换) */
+#head-stat.stat-warn { color: var(--warn); }
+#head-stat.stat-danger { color: var(--err); }
 .dot.running {
   background: var(--run);
   /* 静态 box-shadow,光晕脉动走 ::after,opacity 只走合成层,box-shadow 不再每帧重绘 */
@@ -2260,6 +2268,12 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .todo-completed .todo-text { color: var(--text-faint); }
 .todo-in_progress .todo-ico { display: inline-flex; padding-top: 3px; }
 .todo-pending .todo-ico { color: var(--text-faint); }
+/* DAG 执行扩展态(V3 deep):失败红 / 依赖跳过灰 */
+.todo-failed .todo-ico { color: var(--err); font-weight: 600; }
+.todo-failed .todo-text { color: var(--err); }
+.todo-skipped { opacity: 0.5; }
+.todo-skipped .todo-ico { color: var(--text-faint); }
+.todo-skipped .todo-text { text-decoration: line-through; color: var(--text-faint); }
 .todo-pending .todo-text { color: var(--text-dim); }
 /* 进行中旋转弧(细环缺口) */
 .todo-spin { width: 11px; height: 11px; border: 2px solid var(--border-soft); border-top-color: var(--accent); border-radius: 50%; animation: todospin 0.9s linear infinite; display: inline-block; }

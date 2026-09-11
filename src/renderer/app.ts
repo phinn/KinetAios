@@ -44,8 +44,20 @@ let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread coun
 // (未读 badge 只管当前会话的滚离底部;这是给"同时跑多个会话"的场景。)
 const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
-// Per-conversation drafts: save on switch away, restore on switch back. Memory-only.
+// Per-conversation drafts: save on switch away, restore on switch back. v3.6.3 起持久化到 localStorage。
 const convDrafts = new Map<string, string>();
+// 会话级"瞬时重试中"标记(从 status 事件文本派生):侧栏 dot 显示 retrying 态,与 conv.status 互补。
+const convRetrying = new Set<string>();
+// 侧栏 dot 状态机(v3.6.3 多态):running 下再分 等审批 / 瞬时退避中;终态 error/ready。
+// confirmConvId 模块级 let,运行时已初始化;best-effort:无 id(如 head dot)只退回 running。
+function dotState(c: Conversation, id?: string): string {
+  if (c.status === 'running') {
+    if (id && confirmConvId === id) return 'waiting';
+    if (id && convRetrying.has(id)) return 'retrying';
+    return 'running';
+  }
+  return c.turns[c.turns.length - 1]?.error ? 'error' : 'ready';
+}
 let draftPrevId: string | null = null; // showChat 上次处理的频道,用于检测切换 / last conv id showChat saw
 const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
 const slashMenu = document.getElementById('slash-menu')!;
@@ -354,6 +366,7 @@ function applyI18nDOM(): void {
       if (ev.type === 'token') {
         streamAppend(ev.text);
       } else if (ev.type === 'done' || ev.type === 'error') {
+        convRetrying.delete(convId); // 终态:退出 retrying 态
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
         stopStreamRate(); // 速率 interval 先停,避免 append 到已被重建的 DOM
         if (renderMainPending) { renderMainPending = false; pendingFullRender = false; }
@@ -370,6 +383,12 @@ function applyI18nDOM(): void {
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
       } else if (ev.type === 'status') {
+        // 瞬时重试/空回复推促的 status 文本 → 标记 retrying(侧栏 dot 用),结束/下条非重试 status 清除。
+        // best-effort 文本派生(主进程无结构化 retrying 信号);不命中不改变行为。
+        const was = convRetrying.has(convId);
+        const isRetry = /重试\s*\d+\/\d+|推促重试/.test(ev.text ?? '');
+        if (isRetry) convRetrying.add(convId);
+        else if (was) convRetrying.delete(convId);
         // status 事件(工具执行中 / 上下文压缩等)必须立即更新 DOM:
         // 走 debounce 会在下一帧丢失(如果 token 先到并清了 statusNote)。
         // 频率低(每次工具调用前一条),同步渲染无性能问题。
@@ -485,7 +504,7 @@ function refreshSidebarLi(convId: string): void {
   const last = c.turns[c.turns.length - 1];
   const dot = li.querySelector('.dot');
   if (dot) {
-    const dotCls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+    const dotCls = dotState(c, convId);
     const engCls = c.engine ? ` eng-${c.engine}` : '';
     dot.className = `dot ${dotCls}${engCls}`;
   }
@@ -700,7 +719,7 @@ function taskLi(id: string): HTMLElement {
   const ts = c.updatedAt ?? c.createdAt;
   const timeStr = fmtRelative(ts);
   // 呼吸灯小圆点 — 运行中脉冲发光,空闲静态引擎色
-  const dotCls = c.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+  const dotCls = dotState(c, id);
   const engCls = c.engine ? ` eng-${c.engine}` : '';
   // meta 行:运行中显示 "运行中";否则显示 "N 轮 · 时间"
   const turnCount = c.turnCount ?? c.turns.length;
@@ -748,19 +767,27 @@ function projName(cwd: string): string {
 
 // 草稿保存/恢复:切频道时 composer 内容跟随频道走,不丢字也不串台。
 // Draft save/restore so composer content follows the conversation.
+// v3.6.3:localStorage 持久化 — 修前仅内存 Map,重启即丢。
 function saveDraft(id: string | null): void {
   if (!id) return;
   const composer = document.getElementById('composer') as HTMLTextAreaElement | null;
   if (!composer) return;
   const v = composer.value;
-  if (v) convDrafts.set(id, v);
-  else convDrafts.delete(id);
+  if (v) { convDrafts.set(id, v); try { localStorage.setItem('draft:' + id, v); } catch { /* quota */ } }
+  else { convDrafts.delete(id); try { localStorage.removeItem('draft:' + id); } catch { /* */ } }
 }
 function restoreDraft(id: string | null): void {
   const composer = document.getElementById('composer') as HTMLTextAreaElement | null;
   if (!composer) return;
-  composer.value = id ? (convDrafts.get(id) ?? '') : '';
+  // 内存缓存优先(切会话热路径),fallback 到 localStorage(冷启动/跨重启)
+  let v = '';
+  if (id) { v = convDrafts.get(id) ?? ''; if (!v) { try { v = localStorage.getItem('draft:' + id) ?? ''; } catch { /* */ } } }
+  composer.value = v;
   autosize(composer);
+}
+function discardDraft(id: string): void {
+  convDrafts.delete(id);
+  try { localStorage.removeItem('draft:' + id); } catch { /* */ }
 }
 
 // 相对时间格式化:刚刚 / N分钟前 / N小时前 / 昨天 / MM-DD / YYYY-MM-DD。
@@ -1984,18 +2011,42 @@ function ensureElapsedTicker(): void {
     const conv = convs.get(selectedId ?? '');
     if (conv && conv.status === 'running') {
       const last = conv.turns[conv.turns.length - 1];
+      // 上下文占用实时化:每秒拉一次估算(轻 IPC),运行中也能看到离窗口多远(修前只在 done 回填)。
+      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
+      if (isDirectFam && selectedId) {
+        void api.estContextTokens(selectedId).then((r) => {
+          conv.ctxTokens = r.tokens;
+          conv.ctxMax = r.modelMax;
+          conv.ctxPct = r.pct;
+        }).catch(() => { /* 轻量估算失败不阻塞 ticker */ });
+      }
       if (last?.ts) {
         const stat = document.getElementById('head-stat');
         if (stat) {
           const parts: string[] = [];
           if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
           if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
+          if (conv.ctxTokens) parts.push(ctxGaugeText(conv));
           parts.push(`⏱ ${fmtElapsed(Date.now() - last.ts)}`);
           stat.textContent = parts.join(' · ');
+          applyGaugeColor(stat, conv.ctxPct ?? 0);
         }
       }
     }
   }, 1000);
+}
+
+// 上下文 gauge 文案:✍ 3.2K / 1M · 0.3%(超 10% 才显示百分比,避免永远 0.x% 噪声)
+function ctxGaugeText(conv: Conversation): string {
+  const tok = `${(conv.ctxTokens! / 1000).toFixed(1)}K`;
+  const max = conv.ctxMax ? ` / ${(conv.ctxMax / 1_000_000).toFixed(conv.ctxMax >= 1_000_000 ? 0 : 1).replace(/\.0$/, '')}M` : '';
+  const pct = conv.ctxPct != null && conv.ctxPct >= 10 ? ` · ${conv.ctxPct}%` : '';
+  return `✍ ${tok}${max}${pct}`;
+}
+// gauge 阈值着色:≥70% 琥珀,≥90% 红(stat 元素级 class,低频切换不闪)
+function applyGaugeColor(el: HTMLElement, pct: number): void {
+  el.classList.toggle('stat-warn', pct >= 70 && pct < 90);
+  el.classList.toggle('stat-danger', pct >= 90);
 }
 
 function renderHead(conv: Conversation | undefined) {
@@ -2028,7 +2079,7 @@ function renderHead(conv: Conversation | undefined) {
     return;
   }
   const last = conv.turns[conv.turns.length - 1];
-  const cls = conv.status === 'running' ? 'running' : last?.error ? 'error' : 'ready';
+  const cls = dotState(conv, selectedId ?? undefined);
   dot.className = `dot ${cls}`;
   title.textContent = conv.customTitle || conv.firstPrompt?.slice(0, 60) || conv.turns[0]?.prompt?.slice(0, 60) || tr('head.newConv');
   if (document.activeElement !== cwd) cwd.value = conv.cwd;
@@ -2057,10 +2108,13 @@ function renderHead(conv: Conversation | undefined) {
   const parts: string[] = [];
   if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
-  // 上下文占用估算(direct 系 done 时回填;悬停看含义)
+  // 上下文占用估算(v3.6.3:带窗口与百分比,运行中由 ticker 实时刷新;悬停看含义)
   if (conv.ctxTokens) {
-    parts.push(`✍ ${(conv.ctxTokens / 1000).toFixed(1)}K`);
+    parts.push(ctxGaugeText(conv));
     stat.title = tr('head.ctxTokens');
+    applyGaugeColor(stat, conv.ctxPct ?? 0);
+  } else {
+    stat.classList.remove('stat-warn', 'stat-danger');
   }
   // 运行计时:running 且当前轮有起始 ts → 追加 ⏱ mm:ss/t(hh:mm:ss)。ticker 每秒只刷 stat。
   // Execution timer: while running, append elapsed time of the current turn to the head stat.
@@ -2281,14 +2335,30 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '');
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
       // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
+      // 瞬时错误(退避重试耗尽):按钮文案区分,提示"重试通常能过",降低"要改 prompt"的误判
       const retry = document.createElement('button');
       retry.className = 'ghost retry-btn';
-      retry.textContent = '↻ ' + tr('turn.retry');
+      retry.textContent = '↻ ' + (t.errorKind === 'transient' ? tr('turn.retryTransient') : tr('turn.retry'));
       retry.onclick = () => {
         if (conv.status === 'running' || !t.prompt.trim()) return;
         scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
         void api.send(conv.id, t.prompt);
       };
+      // ⏵ 继续(断点续打):Direct 家族中断/失败后,directHistory 保留了已完成的 Partial 产物,
+      // 发一条续做指令让模型从断点接上 — 区别于「重试」的原样重做。
+      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
+      if (isDirectFam && t.done) {
+        const cont = document.createElement('button');
+        cont.className = 'ghost retry-btn';
+        cont.textContent = '⏵ ' + tr('turn.continue');
+        cont.title = tr('turn.continueTip');
+        cont.onclick = () => {
+          if (conv.status === 'running') return;
+          scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
+          void api.send(conv.id, tr('turn.continuePrompt'));
+        };
+        e.appendChild(cont);
+      }
       // quota/auth 类错误 → 「切换配置档并重试」:按 goal failover 链轮转,一键完成切换+重发
       const errText = t.error.toLowerCase();
       if (/quota|429|余额|balance|欠费|unauthorized|401|403|invalid.{0,8}key|api.?key|认证/.test(errText)) {
@@ -2820,10 +2890,12 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   el.dataset.sig = todos.map((t) => t.status + t.content).join('\u0001');
   const done = todos.filter((t) => t.status === 'completed').length;
   const doing = todos.filter((t) => t.status === 'in_progress').length;
+  const failed = todos.filter((t) => t.status === 'failed').length;
+  const skipped = todos.filter((t) => t.status === 'skipped').length;
   const det = document.createElement('details');
   det.open = true;
   const summary = document.createElement('summary');
-  summary.innerHTML = `<span class="name">🧾 ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ✓ · ${doing} ⟳ · ${todos.length - done - doing} ○</span>`;
+  summary.innerHTML = `<span class="name">🧾 ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ✓ · ${doing} ⟳ · ${failed ? `${failed} ✗ · ` : ''}${skipped ? `${skipped} ⇥ · ` : ''}${todos.length - done - doing - failed - skipped} ○</span>`;
   det.appendChild(summary);
   const list = document.createElement('div');
   list.className = 'todo-list';
@@ -2834,6 +2906,8 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
     icon.className = 'todo-ico';
     if (t.status === 'completed') icon.textContent = '✓';
     else if (t.status === 'in_progress') icon.innerHTML = '<span class="todo-spin"></span>';
+    else if (t.status === 'failed') icon.textContent = '✗';
+    else if (t.status === 'skipped') icon.textContent = '⇥';
     else icon.textContent = '○';
     row.appendChild(icon);
     const txt = document.createElement('span');

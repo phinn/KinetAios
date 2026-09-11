@@ -12,7 +12,7 @@
 // │ Level 2: [E] [F]         ← 并行(都只依赖 D)│
 // └────────────────────────────────────────────┘
 
-import type { AgentEvent, ChatMsg, ConfigSnapshot, EngineContextPolicy } from '../../shared/types';
+import type { AgentEvent, ChatMsg, ConfigSnapshot, EngineContextPolicy, TodoItem } from '../../shared/types';
 import { runAgentLoop, compactHistory, compactWithSpill } from '../AgentLoop';
 import type { Provider } from '../glm';
 import { priceUSD } from '../glm';
@@ -68,6 +68,19 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
   // ── 拓扑排序:按依赖关系分层 ──
   const levels = topologicalLevels(plan.nodes);
 
+  // ── 步骤树(todo 事件)—— 2026-09:deep 执行期进度此前只有滚动 status 文字,
+  // 用户盯滚屏找进度。DAG 天然是步骤树,借 todo 卡结构化呈现(整表替换语义):
+  // 每个节点状态迁移时发一条 todo 事件(pending/in_progress/completed/failed/skipped)。
+  // 注:节点内模型若调 todo_write 会短暂覆盖,下个节点迁移即自愈(接受)。
+  const dagTodos: TodoItem[] = plan.nodes.map((n) => ({ content: `[${n.id}] ${n.title}`, status: 'pending' as const }));
+  const todoOf = (id: string): TodoItem | undefined => dagTodos.find((t) => t.content.startsWith(`[${id}]`));
+  const emitTodos = (): void => onEvent({ type: 'todo', todos: dagTodos.map((t) => ({ ...t })) });
+  const setNode = (id: string, status: TodoItem['status']): void => {
+    const t = todoOf(id);
+    if (t && t.status !== status) { t.status = status; emitTodos(); }
+  };
+  emitTodos(); // 初始:全 pending
+
   for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
     if (signal.aborted) break;
 
@@ -83,6 +96,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
           role: 'user',
           content: `\n---\n⏭️ 步骤[${node.id}] 跳过: 依赖的 [${deadDep}] 失败或已被跳过\n---\n`,
         });
+        setNode(node.id, 'skipped');
         onEvent({ type: 'status', text: `⏭️ v3: [${node.id}] ${node.title} 跳过(依赖 ${deadDep} 未完成)` });
       }
     }
@@ -102,6 +116,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     // 只读节点并行跑;写节点逐个串行(两者共享同一 execHistory 快照,层末统一合并)
     // 注意:结果按 [parallelSafe..., mustSerialize...] 顺序拼接,与 orderedNodes 对齐。
     const orderedNodes = [...parallelSafe, ...mustSerialize];
+    parallelSafe.forEach((n) => setNode(n.id, 'in_progress')); // 并行批次一起开跑
     const results: Array<PromiseSettledResult<NodeExecResult>> = await Promise.allSettled(
       parallelSafe.map((node) => executeNode(node, {
         provider, tools, systemPrompt, memoryBlock,
@@ -113,6 +128,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     );
     for (const node of mustSerialize) {
       if (signal.aborted) break;
+      setNode(node.id, 'in_progress'); // 写节点逐个串行:开跑前标进行中
       try {
         results.push({ status: 'fulfilled', value: await executeNode(node, {
           provider, tools, systemPrompt, memoryBlock,
@@ -133,6 +149,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
 
       if (result!.status === 'fulfilled' && result!.value.success) {
         completed.add(node.id);
+        setNode(node.id, 'completed');
         // 将节点的 step messages 追加到 execHistory
         execHistory = [...execHistory, ...result!.value.stepMessages];
         // 追加步骤摘要
@@ -153,6 +170,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
         let retried = false;
         for (let attempt = 1; attempt <= MAX_STEP_RETRIES && !signal.aborted; attempt++) {
           onEvent({ type: 'status', text: `🔄 v3: [${node.id}] 重试 ${attempt}/${MAX_STEP_RETRIES}` });
+          setNode(node.id, 'in_progress');
           const retryResult = await executeNode(node, {
             provider, tools, systemPrompt, memoryBlock,
             snapshot, ctx, signal, policy,
@@ -177,6 +195,7 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
         if (!retried) {
           failed.add(node.id);
           blocked.add(node.id); // 阻断下游依赖
+          setNode(node.id, 'failed');
           execHistory.push({
             role: 'user',
             content: `\n---\n❌ 步骤[${node.id}] 最终失败: ${node.title}\n原因: ${errMsg}\n---\n`,

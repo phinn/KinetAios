@@ -407,7 +407,8 @@ export type AgentEvent =
 // 任务清单条目。status 语义:pending 待做 / in_progress 进行中(一次最好只有一个)/ completed 完成。
 export interface TodoItem {
   content: string;
-  status: 'pending' | 'in_progress' | 'completed';
+  // failed/skipped 仅由 V3 DAG 执行器发出(节点失败/依赖跳过);todo_write 工具 schema 仍是 3 枚举
+  status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
 }
 
 /** 远程 Agent 事件 —— 当本机 MCP Server 被远程调用 run_agent 时,转发到 dashboard UI。 */
@@ -657,6 +658,8 @@ export type Conversation = {
   model: string; // Direct 引擎用的模型,每会话独立;claudeCode/codex 由各自 CLI 配置
   profileId?: string | null; // 绑定的模型配置档(切换 profile 时更新;null = 用全局 settings)
   ctxTokens?: number; // 上下文占用估算(direct 系 done 时按 directHistory 估算;CLI 引擎无法估,不设)
+  ctxMax?: number;    // 上下文窗口上限(与 ctxTokens 配对,给 gauge 算百分比;v3.6.3 实时化)
+  ctxPct?: number;    // 上下文占用百分比(0-100,运行中实时刷新)
   goal?: string | null; // 会话目标(通过 /goal 设置,持续注入 systemPrompt 直到清除)
   contextMode?: ContextMode; // 上下文模式:standard(默认省 token) / hifi(不截断+大预算) / 未来可扩展
   cwd: string;
