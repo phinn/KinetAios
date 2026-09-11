@@ -105,14 +105,19 @@ npm start
 
 ### Four engines (switchable per session; switching clears cross-engine context)
 - **Direct V1 (Kaios)**: built-in ReAct loop + GLM/OpenAI-compatible & Anthropic **dual-protocol SSE streaming** provider, with tool-level concurrency, sub-agent dispatch, context compaction, and retry.
-- **Direct V2**: next-gen ReAct with Plan-Execute-Verify-Judge architecture, streaming tool calls, and enhanced reasoning. Shared tool set with V1.
+- **Direct V2**: next-gen ReAct with Plan-Execute-Verify-Judge architecture, streaming tool calls, a per-step todo list (rendered live as a checklist card in chat), and enhanced reasoning. Shared tool set with V1.
 - **Direct V3**: latest, with **intent router** that picks `fast` / `standard` / `deep` paths per query, and the `deep` path executes tool calls as a **DAG with parallel branches** for real speedups on multi-step tasks.
 - **Claude Code**: spawns `claude -p --output-format stream-json`, parses NDJSON, resumes via `--resume`.
 - **Codex**: spawns `codex exec --json`, parses JSONL, `resume` continuation.
 - **DeepSeek Harness** *(3.0+)*: spawns the `dsh` CLI, OpenAI-compatible SSE, OpenAI / Pi-AI provider adapters with retry and token metering. Switchable per session like the others.
 
-### Direct tools (20+)
-`shell` (confirm before exec), `read_file`, `write_file`, `edit_file` (precise replacement), `grep` (recursive content search), `glob` (list files), `web_fetch` (SSRF-protected, Jina Reader fallback), `web_search` (Bing → DuckDuckGo), `recall_memory`, `git_diff` (read-only), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with independent context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `feishu_send_file` (send files to Feishu chat). Plugin-injected tools may add more.
+### Direct tools (30+)
+`shell` (confirm before exec; **focus guard** — auto-restores the frontmost app if a command steals focus), `read_file`, `write_file`, `edit_file` (precise replacement), `grep` (recursive content search), `glob` (list files), `web_fetch` (SSRF-protected, Jina Reader fallback), `web_search` (Bing → DuckDuckGo), `recall_memory`, `git_diff` (read-only), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with independent context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `feishu_send_file` / `wecom_send_file` (send files to Feishu / WeCom chats), `todo_write` (shared task list shown as a live checklist card in the chat stream).
+
+### Computer Use (OS-native, no external deps)
+- `screenshot` (with `hide_self` — makes KinetAios translucent for the instant of capture, zero focus stealing), `screenshot_window` (capture any window by title — background/occluded windows work, zero desktop switching).
+- `mouse_click` / `mouse_scroll` / `mouse_drag`, `keyboard_type` / `keyboard_key` — coordinates are auto-mapped from the last screenshot's pixel space to the platform action space (DPI / window-origin aware, with TTL expiry).
+- Backed by Electron desktopCapturer + PowerShell (Windows) / cliclick (macOS) / xdotool (Linux). Bare `open` commands are mechanically rewritten to `open -gj` on macOS — agents never steal your foreground.
 
 ### MCP integration (client + server)
 - **Client**: auto-discovers system-configured MCP services (`~/.claude.json`, `~/.codex/config.toml`, Claude Desktop config), stdio transport, auto-reconnect. 🔌 button shows connected services/tools.
@@ -125,7 +130,7 @@ npm start
 
 ### Skills / Commands / Agents / Plugins
 - Scans Claude Code's skills + commands + agents and Codex's skills. `/` menu or ⚡ button.
-- **Plugin SDK v3**: plugins can contribute tools, slash commands, hooks, and full-screen panels. Per-need injection (keyword matching saves ~60% tokens). Built-in plugins: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude, and more.
+- **Plugin SDK v3**: plugins can contribute tools, slash commands, hooks, and full-screen panels. Per-need injection (keyword matching saves ~60% tokens). **20 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drone), arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag (embedded & IoT suite), nestjs-dev, deepseek-harness, claude-code, codex, and more.
 
 ### Sidebar (left → right)
 - **＋** New session.
@@ -177,6 +182,7 @@ Overlay (`Ctrl/Cmd+K`) searches across all conversations — matches prompt text
 - **File attachments**: 📎 select/drag multiple text files (large files truncated), `@path` references.
 - **`KinetAios.md` / `AGENTS.md` / `CLAUDE.md`**: project rules auto-injected into system prompt.
 - **Tray + global hotkey** `Ctrl/Cmd+Alt+Space` → quick panel.
+- **Update check** (`b63738c`-era feature): compares against GitHub Releases, shown in Settings → About.
 - **Configurable brand** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI).
 
 ---
@@ -201,8 +207,11 @@ KinetAiosWin/
       TaskManager.ts        # session management + engine dispatch + memory extraction
       engines.ts            # Engine interface + Direct/ClaudeCode/Codex + cross-platform CLI spawn
       AgentLoop.ts          # ReAct loop (Direct) + history compaction + reactive trim
+      V3/                   # Direct V3: intent router + fast/deep paths (DAG-parallel deep)
       glm.ts                # Provider + OpenAI/Anthropic SSE streaming + retry
-      tools.ts              # 12 built-in tools + cross-platform shell + dispatch_agent
+      updater.ts            # GitHub Releases update check
+      tools.ts              # 30+ built-in tools + computer-use glue + focus guard
+      computer-use.ts       # screenshot / mouse / keyboard via OS-native APIs
       mcp.ts                # MCP client (scan + stdio + reconnect)
       mcp-server.ts         # MCP server (HTTP+SSE, run_agent, token auth)
       skills.ts             # skills/commands/agents/plugin scan
@@ -219,7 +228,13 @@ KinetAiosWin/
       memory-graph.ts       # memory graph SVG visualization
       town.ts               # Town view (remote node visualization)
       files-pane.ts         # file browser + webview preview + editor
+      code-editor.ts        # code editor with syntax highlight
+      file-drawer.ts        # file drawer UI
+      nexus.ts              # nexus view
+      focus-manager.ts      # focus/trap management
+      highlight.ts          # syntax highlighting for chat code blocks
       markdown.ts           # mini markdown renderer
+  plugins/                  # 20 built-in plugins (SDK v3)
 ```
 
 ## Build / dev

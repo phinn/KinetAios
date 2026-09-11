@@ -97,14 +97,19 @@ npm start
 
 ### 四个引擎(每会话可切,切换清跨引擎上下文)
 - **Direct V1(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
-- **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,共享 V1 工具集。
+- **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,分步任务清单(聊天流实时渲染为清单卡),共享 V1 工具集。
 - **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**,多步任务有真实加速。
 - **Claude Code**:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex**:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
 - **DeepSeek Harness** *(3.0+)*:spawn `dsh` CLI,OpenAI 兼容 SSE,内置 OpenAI / Pi-AI Provider 适配 + 重试 + token 计费。和其他引擎一样可按会话切换。
 
-### Direct 工具(20+)
-`shell`(执行前确认)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`(SSRF 防护 + Jina Reader 回退)、`web_search`(Bing → DuckDuckGo 回退)、`recall_memory`、`git_diff`(只读、免确认)、`dispatch_agent`(只读子 agent —— 独立上下文)、`flight_plan`(插件可注入更多工具)。
+### Direct 工具(30+)
+`shell`(执行前确认;**焦点守卫** —— 命令若抢走前台,执行完自动还给原 app)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`(SSRF 防护 + Jina Reader 回退)、`web_search`(Bing → DuckDuckGo 回退)、`recall_memory`、`git_diff`(只读、免确认)、`remember_fact` / `recall_fact`(会话锚点)、`memory_replace` / `memory_append`(核心记忆块)、`dispatch_agent`(只读子 agent —— 独立上下文)、`spawn_team` / `team_broadcast` / `team_send` / `team_close`(多 agent 团队)、`video_gen`(MiniMax H3 文生视频)、`feishu_send_file` / `wecom_send_file`(发文件到飞书/企微会话)、`todo_write`(共享任务清单,聊天流实时渲染为清单卡)。
+
+### Computer Use(系统原生,无外部依赖)
+- `screenshot`(支持 `hide_self` —— 截图瞬间自身窗口透明化,零抢焦点)、`screenshot_window`(按标题截任意窗口 —— 被遮挡/后台窗口也能拍,桌面零切换)。
+- `mouse_click` / `mouse_scroll` / `mouse_drag`、`keyboard_type` / `keyboard_key` —— 坐标自动从「最后一次截图」的像素空间换算到平台动作空间(DPI / 窗口原点感知,带时效过期)。
+- 底层:Electron desktopCapturer + PowerShell(Windows)/ cliclick(macOS)/ xdotool(Linux)。macOS 下裸 `open` 命令被机械重写为 `open -gj` —— agent 永不抢占你的前台。
 
 ### MCP 集成(客户端 + 服务端)
 - **客户端**:Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop),stdio 客户端,意外断开自动重连。🔌 按钮可查看已连服务/工具。
@@ -117,7 +122,7 @@ npm start
 
 ### Skills / Commands / Agents / 插件
 - 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。
-- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。内置插件:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude 等。
+- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。**20 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex 等。
 
 ### 侧边栏按钮(从左到右)
 - **＋** 新建会话。
@@ -169,6 +174,7 @@ npm start
 - **文件附件**:📎 选/拖多个文本文件(大文件只读开头),`@路径` 引用 cwd 内文件。
 - **`KinetAios.md` / `AGENTS.md` / `CLAUDE.md`**:cwd 下的规则文件自动注入 system prompt。
 - **托盘 + 全局热键** `Ctrl/Cmd+Alt+Space` → 快速面板。
+- **版本更新检查**:对比 GitHub Releases,设置页「关于」展示。
 - **可配置品牌**(`brand.json`)、**API key 加密存储**(safeStorage:mac Keychain / Win DPAPI)。
 
 ---
@@ -193,8 +199,11 @@ KinetAiosWin/
       TaskManager.ts        # 会话管理 + 引擎分派 + 记忆抽取
       engines.ts            # Engine 接口 + Direct/ClaudeCode/Codex + 跨平台 CLI spawn
       AgentLoop.ts          # ReAct 循环(Direct)+ 历史压缩 + 超长自缩
+      V3/                   # Direct V3: 意图路由 + fast/deep 路径(deep 为 DAG 并行)
       glm.ts                # Provider + OpenAI/Anthropic SSE 流式 + 重试
-      tools.ts              # 12 个工具 + 跨平台 shell + dispatch_agent + git_diff
+      updater.ts            # GitHub Releases 更新检查
+      tools.ts              # 30+ 内置工具 + computer-use 胶水 + 焦点守卫
+      computer-use.ts       # 截屏 / 鼠标 / 键盘(系统原生 API)
       mcp.ts                # MCP 客户端(扫描 + stdio + 重连)
       mcp-server.ts         # MCP 服务端(HTTP+SSE, run_agent, token 鉴权)
       skills.ts             # skills/commands/agents/plugin 扫描
@@ -211,7 +220,13 @@ KinetAiosWin/
       memory-graph.ts       # 记忆图谱 SVG 可视化
       town.ts               # Town 视图(远程节点可视化)
       files-pane.ts         # 文件浏览 + webview 预览 + 编辑器
+      code-editor.ts        # 代码编辑器(语法高亮)
+      file-drawer.ts        # 文件抽屉 UI
+      nexus.ts              # Nexus 视图
+      focus-manager.ts      # 焦点/陷阱管理
+      highlight.ts          # 聊天代码块语法高亮
       markdown.ts           # 迷你 markdown 渲染
+  plugins/                  # 20 个内置插件(SDK v3)
 ```
 
 ## 构建 / 开发
