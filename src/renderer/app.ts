@@ -548,10 +548,17 @@ function taskFingerprint(id: string): string {
 }
 
 // 从 pool 取任务 li:指纹一致 → 复用现有 DOM(保滚动位置/动画/监听器);变了 → taskLi 重建单条。
+// 池内旧 li 一律先 remove 再返回 —— appendChild 具备移动语义,复用路径 remove 后重挂无副作用;
+// 重建路径若不 remove,旧 li 会残留在旧组(cwd 换组场景:旧组 ids 不含该会话,后续清理
+// 因池引用已 delete 而跳过它 → 同一会话出现两个 DOM,侧栏重复)。
 function obtainTaskLi(id: string, pool: Map<string, HTMLElement>): HTMLElement {
   const old = pool.get(id);
   pool.delete(id);
-  if (old && old.dataset.fp === taskFingerprint(id)) return old;
+  if (old && old.dataset.fp === taskFingerprint(id)) {
+    old.remove(); // 先离场再重挂,保证同一会话全列表至多一个 DOM
+    return old;
+  }
+  old?.remove(); // 指纹变了/不存在 → 旧 DOM 也必须离场(否则成孤儿残留)
   const li = taskLi(id);
   li.dataset.fp = taskFingerprint(id);
   return li;
@@ -672,10 +679,17 @@ function renderSidebar() {
   }
   ul.querySelectorAll('li.sb-empty').forEach((n) => n.remove());
 
+  // 本帧真正渲染的会话 id —— 清理孤儿 li 的唯一依据。
+  // 不能依赖 taskPool 是否被 consume:同一会话 cwd 变更时,旧组的 li 不进本帧渲染
+  // (旧组 ids 不含它),而新组 obtainTaskLi 会 pool.delete 把池引用删掉,
+  // 清理阶段 pool 里已无此 li → 旧组里的旧 li 成孤儿 → 同一会话出现两个 DOM(侧栏重复)。
+  const renderedCids = new Set<string>();
+
   if (sidebarMode === 'flat') {
     for (const id of visibleOrder) {
       if (!convs.get(id)) continue;
       ul.appendChild(obtainTaskLi(id, taskPool));
+      renderedCids.add(id);
     }
   } else {
     // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
@@ -702,12 +716,13 @@ function renderSidebar() {
       for (const id of ids) {
         if (!convs.get(id)) continue;
         tasksUl.appendChild(obtainTaskLi(id, taskPool)); // 跨组移动 = appendChild,旧位置自动消失
+        renderedCids.add(id);
       }
       ul.appendChild(projLi);
     }
   }
-  // 清理:未被复用的任务 li(被删会话/换组遗留/模式切换残留)与消失的项目组
-  taskPool.forEach((li) => li.remove());
+  // 清理:本帧未渲染但仍挂在 DOM 上的任务 li(被删会话/cwd 换组后旧组残留)与消失的项目组。
+  taskPool.forEach((li, cid) => { if (!renderedCids.has(cid)) li.remove(); });
   projPool.forEach((li) => li.remove());
 }
 
