@@ -195,6 +195,20 @@ memory+pinned+全部摘要不占任何预算 → 长会话保护头部线性增�
 - ✅ **episodic per-conv 滚动 upsert**:`store.upsertEpisodicMemory` 每会话仅一条;提取 prompt
   喂回【已有摘要】要求 LLM 合并,长会话早期结论不再随窗口滑出
 
+## V3 引擎韧性(2026-09 追加:排查"任务到一半会停止")
+
+已修(70-v3-resilience.test.ts 回归锁):
+- ✅ **瞬时错误退避重试**:`runAgentLoop` 此前任何非 context-too-long 错误(429/网络/5xx)一律立即
+  error 退出 → 长任务撞一次限流就整轮报废。现 `isTransientError` 判定(限流/超时/网络/5xx,排除鉴权/参数/noKey),
+  退避重试 3 次(1s/2s/4s 上限 8s,abort-aware);耗尽标 `kind:'transient'` 报错退出
+- ✅ **空回复推促 2 次**:`MAX_EMPTY_RETRIES=2`(glm-5.3-flash 思考烧光输出预算偶发,修前只推 1 次就停)
+- ✅ **deep 节点轮次上限续跑**:节点单段达 `MAX_TURNS_PER_STEP=8` 不再盲目重试(仍撞顶),
+  改为续跑段(`MAX_STEP_SEGMENTS=3`,8×3=24 有效轮);**根因修复**:用户默认 `maxTurns=0`(无限)
+  此前让 deep 节点的 8 轮保险丝失效(`Infinity` 覆盖)→ 节点要么跑到模型自停、要么烧到上下文溢出
+  → "任务到一半停止"。现:用户无限 + 有内部上限 → 仍用内部上限(保险丝生效);标准路径(无内部上限)→ 仍真无限
+- ✅ **AgentEvent.error 加 `kind`**:`'maxTurns'|'transient'|'contextTooLong'`,供下游区分失败原因
+  (deep 节点据此区分"轮次上限可续跑"vs"出错交 DAG 重试")
+
 未修:
 - 全局排序池(importance=10 但 relevance=0 可挤掉相关记忆,有测试圈定)、
   dedup 保留旧值、审计 spill 的 dropped 全文落库、memoryBlock 注入位置与总量上限、

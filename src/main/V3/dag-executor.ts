@@ -22,7 +22,13 @@ import { getSettings } from '../settings';
 import type { DAGNode, DAGPlan } from './dag-planner';
 
 const MAX_STEP_RETRIES = 2;
-const MAX_TURNS_PER_STEP = 8;
+export const MAX_TURNS_PER_STEP = 8;
+// 2026-09: 节点单段达到轮次上限时**续跑**(而非盲目重试)。每段 8 轮 × MAX_STEP_SEGMENTS 段
+// = 24 有效轮;修前节点 >8 轮未收尾就被判失败 → 重试 2 次(仍 8 轮撞顶)→ 标记失败 → 下游 blocked,
+// 整个 deep 任务到一半停止。续跑把部分产出当起点继续推进,绝大多数复杂步骤能完成。
+export const MAX_STEP_SEGMENTS = 3;
+const CONTINUE_PROMPT =
+  '(上一段达到单段轮次上限被暂停,但你的工作可能还没完。请继续完成本步骤;如果事实上已经完成,直接输出该步骤的结论文字,不要再调用工具。)';
 
 export interface DAGExecOpts {
   plan: DAGPlan;
@@ -201,7 +207,7 @@ interface NodeExecResult {
   error?: string;
 }
 
-async function executeNode(
+export async function executeNode(
   node: DAGNode,
   opts: {
     provider: Provider;
@@ -225,56 +231,86 @@ async function executeNode(
     ? `${node.action}\n\n---\n⚠️ 重试提示: ${retryNote}\n请特别注意上次失败的原因。`
     : node.action;
 
-  const startLen = history.length;
+  let sawError = false;     // 非 maxTurns 错误(瞬时重试耗尽/API 鉴权失败/空回复)→ 不续跑,交 DAG 层重试
+  let sawTurnCap = false;   // 达到单段轮次上限 → 续跑
+  let historyNow = [...history];
+  const segments: ChatMsg[] = [];
+  let lastMessages: ChatMsg[] = [];
 
   try {
-    const stepMessages = await runAgentLoop({
-      provider,
-      tools,
-      systemPrompt: systemPrompt + `\n\n# 当前步骤\n你正在执行以下步骤(目标: ${node.title}):\n${node.action}`,
-      memoryBlock,
-      snapshot,
-      userInput: stepPrompt,
-      history: [...history],
-      ctx,
-      signal,
-      maxTurns: MAX_TURNS_PER_STEP,
-      policy,
-      onEvent: (ev) => {
-        // 转发事件,过滤 done(由 V3 统一发);error 转 status 透出(与 V2 forwardEvent /
-        // index.terminalGate 同语义 — 中途 API 失败必须对用户可见,不能静默)。
-        if (ev.type === 'done') return;
-        if (ev.type === 'error') {
-          onEvent({ type: 'status', text: `v3: [${node.id}] ⚠️ ${ev.message}` });
-          return;
-        }
-        if (ev.type === 'status') {
-          onEvent({ type: 'status', text: `v3: [${node.id}] ${ev.text}` });
-        } else {
-          onEvent(ev);
-        }
-      },
-    });
+    for (let seg = 0; seg < MAX_STEP_SEGMENTS; seg++) {
+      const before = historyNow.length;
+      // 续跑段:用 CONTINUE_PROMPT 取代原始 action(任务上下文已在 history 里,模型继续即可)
+      const segInput = seg === 0 ? stepPrompt : CONTINUE_PROMPT;
+      lastMessages = await runAgentLoop({
+        provider,
+        tools,
+        systemPrompt: systemPrompt + `\n\n# 当前步骤\n你正在执行以下步骤(目标: ${node.title}):\n${node.action}`,
+        memoryBlock,
+        snapshot,
+        userInput: segInput,
+        history: historyNow,
+        ctx,
+        signal,
+        maxTurns: MAX_TURNS_PER_STEP,
+        policy,
+        onEvent: (ev) => {
+          // 转发事件,过滤 done(由 V3 统一发);error 按 kind 区分:
+          //  - kind==='maxTurns':单段轮次上限,交续跑逻辑(不算致命错误)
+          //  - 其余 error(API 失败/空回复/超长 nuclear):转 status 透出 + 标 sawError
+          // (与 V2 forwardEvent / index.terminalGate 同语义 — 中途 API 失败必须对用户可见,不能静默)
+          if (ev.type === 'done') return;
+          if (ev.type === 'error') {
+            if (ev.kind === 'maxTurns') {
+              sawTurnCap = true;
+            } else {
+              sawError = true;
+              onEvent({ type: 'status', text: `v3: [${node.id}] ⚠️ ${ev.message}` });
+            }
+            return;
+          }
+          if (ev.type === 'status') {
+            onEvent({ type: 'status', text: `v3: [${node.id}] ${ev.text}` });
+          } else {
+            onEvent(ev);
+          }
+        },
+      });
 
-    // P0-fix: 收尾校验(移植 V2 wasTruncatedByMaxTurns)——此前任何返回都当成功:
-    // ① LLM 首轮就报错(API key 错/网络断)→ stepMessages 为空 → 空 summary 也标成功;
-    // ② 节点跑满 MAX_TURNS_PER_STEP 被截断 → 也是 success。两类都让 retry 逻辑接管。
-    // 正常完成:最后一条是无 tool_calls 的 assistant(模型给出最终文字回答)。
-    const last = stepMessages[stepMessages.length - 1];
+      // 本段新增消息(不含我们传入的 history)
+      const newMsgs = lastMessages.slice(before);
+      segments.push(...newMsgs);
+      historyNow = lastMessages; // 含完整历史 + 本段新增,作为续跑的 history 起点
+
+      const last = lastMessages[lastMessages.length - 1];
+      const completedNormally = !!last && last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0);
+      if (completedNormally || signal.aborted) break;
+
+      // 未正常收尾:出错(sawError)→ 不续跑(失败重试由 DAG 层接管);否则视为轮次上限 → 续跑
+      if (sawError) break;
+      if (sawTurnCap && seg < MAX_STEP_SEGMENTS - 1) {
+        onEvent({ type: 'status', text: `⏳ v3: [${node.id}] 达到单段轮次上限,续跑(${seg + 2}/${MAX_STEP_SEGMENTS})…` });
+        sawTurnCap = false; // 下段重新判定
+      }
+    }
+
+    // P0-fix: 收尾校验 —— 正常完成 = 最后一段最后一条是无 tool_calls 的 assistant。
+    const last = lastMessages[lastMessages.length - 1];
     const completedNormally = !!last && last.role === 'assistant' && (!last.tool_calls || last.tool_calls.length === 0);
 
-    // 提取步骤摘要
-    const assistantMsgs = stepMessages
-      .slice(startLen)
+    // 提取步骤摘要(各段的 assistant 文本拼接)
+    const assistantMsgs = segments
       .filter((m) => m.role === 'assistant' && typeof m.content === 'string');
     const summary = assistantMsgs.map((m) => m.content as string).join('\n').slice(0, policy.stepResultMaxChars || 4000);
 
     if (!completedNormally && !signal.aborted) {
       return {
         success: false,
-        stepMessages: stepMessages.slice(startLen),
+        stepMessages: segments,
         summary,
-        error: '节点执行未正常收尾(达到轮次上限或中途出错),可能未完成',
+        error: sawError
+          ? '节点执行中途出错(API 失败/空回复/超长),可能未完成'
+          : `节点未在 ${MAX_TURNS_PER_STEP}×${MAX_STEP_SEGMENTS} 轮内完成,可能过于复杂`,
       };
     }
 
@@ -284,14 +320,14 @@ async function executeNode(
       if (!verifyResult.passed) {
         return {
           success: false,
-          stepMessages: stepMessages.slice(startLen),
+          stepMessages: segments,
           summary,
           error: `验证失败: ${verifyResult.output.slice(0, 200)}`,
         };
       }
     }
 
-    return { success: true, stepMessages: stepMessages.slice(startLen), summary };
+    return { success: true, stepMessages: segments, summary };
   } catch (e) {
     const msg = (e as Error)?.message ?? String(e);
     return { success: false, stepMessages: [], error: msg.slice(0, 200) };

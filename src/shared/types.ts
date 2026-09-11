@@ -392,7 +392,11 @@ export type AgentEvent =
   // 任务清单卡(DSH 式):引擎调 todo_write 时整表替换,renderer 渲染逐项状态卡
   | { type: 'todo'; todos: TodoItem[] }
   | { type: 'done' }
-  | { type: 'error'; message: string };
+  // kind 用于下游区分失败原因(可选,缺省时按旧逻辑只看 message):
+  //   'maxTurns'      — 达到轮次上限(可续跑,非致命)
+  //   'transient'     — 瞬时 API 错误(限流/网络/5xx),已退避重试耗尽
+  //   'contextTooLong'— 上下文超窗口(即便 nuclear 裁剪后仍超)
+  | { type: 'error'; message: string; kind?: 'maxTurns' | 'transient' | 'contextTooLong' };
 
 // 任务清单条目。status 语义:pending 待做 / in_progress 进行中(一次最好只有一个)/ completed 完成。
 export interface TodoItem {

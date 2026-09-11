@@ -170,8 +170,39 @@ export interface RunOpts {
   // 引擎上下文策略包:覆盖默认 ENGINE_POLICIES[engine]。调用方按 engine 传不同策略。
   // 不传 → 用 resolveEnginePolicy(EngineKind, contextMode) 的解析结果。
   policy?: EngineContextPolicy;
+  // 瞬时错误(限流/网络/5xx)退避重试的延迟(ms),按尝试次数(1-based)取值。
+  // 缺省指数退避 1s/2s/4s(上限 8s)。测试可传 () => 0 跳过真实等待。
+  retryBackoffMs?: (attempt: number) => number;
   onEvent: (e: AgentEvent) => void;
 }
+
+// 瞬时错误判定:限流/超时/网络/5xx 可重试;4xx 参数/鉴权类与 noKey 不重试。
+// (2026-09:此前任何非 context-too-long 错误一律立即 error 退出,长任务一次 429 就中断。)
+const TRANSIENT_HTTP_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529, 524]);
+const TRANSIENT_RE =
+  /(rate.?limit|too many requests|timeout|timed.?out|econn(reset|refused|aborted)|socket hang up|network|fetch failed|bad gateway|service unavailable|service unavailable|internal server error|overloaded|temporarily unavailable)/i;
+export function isTransientError(e: unknown): boolean {
+  const err = e as { kind?: string; code?: number; detail?: string; message?: string };
+  if (err?.kind === 'noKey') return false;
+  if (typeof err?.code === 'number') {
+    if (TRANSIENT_HTTP_CODES.has(err.code)) return true;
+    if (err.code >= 400 && err.code < 500) return false; // 4xx 参数/鉴权类不重试(429 已在上组)
+  }
+  const text = `${err?.detail ?? ''} ${err?.message ?? ''}`;
+  return TRANSIENT_RE.test(text);
+}
+
+// 可中止的退避:sleep 期间 abort 触发立即 resolve(下一轮 streamComplete 会抛 AbortError 走 abort 路径)。
+function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    if (signal.aborted || ms <= 0) { resolve(); return; }
+    const t = setTimeout(resolve, ms);
+    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+  });
+}
+
+const MAX_API_RETRIES = 3;
+const MAX_EMPTY_RETRIES = 2;
 
 // Runs one turn. Returns the accumulated messages (minus the system prompt and the transient
 // memory message) for next-turn history.
@@ -192,12 +223,15 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const trimBudget = opts.policy?.trimBudget ?? 15_000;
   // maxTurns 解析(修复:用户设置曾被 V3 硬编码完全无视):
   // - settings.maxTurns 是全局天花板;opts.maxTurns(内部路径上限,如 fast=5/std=20)只在比它更紧时生效。
-  // - 用户设 0 = 无限 → 全链路不限轮,内部硬编码上限全部失效。
-  // User setting is the global ceiling; internal path caps only apply when tighter.
+  // - 用户设 0 = 无限 → 标准路径不限轮;但 deep 节点的内部保险丝(8 轮/段)仍须生效,
+  //   否则续跑机制永不触发(2026-09:用户默认 maxTurns=0 让 deep 节点保险丝失效 → 节点要么
+  //   跑到模型自己停、要么烧到上下文溢出 → "任务到一半停止")。故:用户无限 + 有内部上限 → 用内部上限。
+  // User setting is the global ceiling; internal path caps apply when tighter.
   const userMax = getSettings().maxTurns ?? 50;
   let maxTurns: number;
   if (userMax <= 0) {
-    maxTurns = Infinity; // 用户显式要求无限
+    // 用户显式要求无限:无内部上限 → 真无限;有内部上限(deep 节点/fast)→ 仍用内部上限(保险丝)
+    maxTurns = (opts.maxTurns != null && opts.maxTurns > 0) ? opts.maxTurns : Infinity;
   } else if (opts.maxTurns != null && opts.maxTurns > 0) {
     maxTurns = Math.min(opts.maxTurns, userMax); // 内部上限与用户天花板取紧
   } else {
@@ -235,7 +269,8 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   // ponytail:错误格式不统一,best-effort。
   let retriedAfterShrink = false;
   let retriedNuclear = false;
-  let retriedEmptyCompletion = false; // 空 completion(纯 reasoning 零输出)重试标记
+  let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
+  let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
   for (let i = 0; i < maxTurns; i++) {
     let completion: Completion;
     try {
@@ -270,11 +305,27 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         } else {
           // 第三级(nuclear):1/4 trim 后仍超长 → systemPrompt + memory 本身就接近或超出窗口,
           // 再重试只会反复空转烧 API 调用直到 maxTurns 耗尽。直接报错退出。
-          onEvent({ type: 'error', message: '上下文长度超出模型窗口:即使裁剪到最小集仍然超长。请减少记忆块大小或更换更大窗口的模型。' });
+          onEvent({ type: 'error', kind: 'contextTooLong', message: '上下文长度超出模型窗口:即使裁剪到最小集仍然超长。请减少记忆块大小或更换更大窗口的模型。' });
           return dropTransient(messages);
         }
       }
-      // 非 context-too-long 的错误(网络/API 错误等)才走这里
+      // 瞬时错误(限流/网络/5xx):退避后重试,而非一次 429 就把整个长任务中断。
+      // (2026-09:修前任何非 context-too-long 错误一律立即 error 退出 → std/fast/deep 节点
+      //  跑到一半撞一次 429 就整轮报废。)
+      if (isTransientError(e)) {
+        if (transientRetries < MAX_API_RETRIES) {
+          transientRetries++;
+          const delay = opts.retryBackoffMs?.(transientRetries) ?? Math.min(8_000, 1_000 * 2 ** (transientRetries - 1));
+          onEvent({ type: 'status', text: `⚠️ API 瞬时错误(${errMsg(e).slice(0, 80)}),${Math.round(delay)}ms 后重试 ${transientRetries}/${MAX_API_RETRIES}…` });
+          await sleepAbortable(delay, signal);
+          i--; // 抵消 for 的 i++,本轮重试
+          continue;
+        }
+        // 退避重试耗尽 → 报 transient error(下游可据此区分"瞬时失败"与"致命错误")
+        onEvent({ type: 'error', kind: 'transient', message: `瞬时错误重试 ${MAX_API_RETRIES} 次仍失败:${errMsg(e)}` });
+        return dropTransient(messages);
+      }
+      // 非瞬时、非超长的错误(鉴权失败/参数错误/未知)才走这里 → 直接报错退出
       onEvent({ type: 'error', message: errMsg(e) });
       return dropTransient(messages);
     }
@@ -296,20 +347,21 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
 
     // 空 completion 兜底:思考模型(如 glm-5.3-flash)偶发把整个输出预算烧在 reasoning 上,
     // content 空且无 toolCalls → 按旧逻辑会直接 done,turn 留下空 answer、用户看到"没反应"。
-    // 重试一次(最多),并提示模型直接输出;仍空才报错退出,绝不静默吞掉。
+    // 推促最多 MAX_EMPTY_RETRIES 次(递进语气);仍空才报错退出,绝不静默吞掉。
     // / Empty-completion guard: reasoning models occasionally burn the whole output budget
-    // on thinking with zero content and zero tool calls. Retry once with a nudge, then fail loudly.
+    // on thinking with zero content and zero tool calls. Nudge up to MAX_EMPTY_RETRIES, then fail loudly.
     if (!completion.content.trim() && completion.toolCalls.length === 0 && completion.tokensOut > 0) {
-      if (!retriedEmptyCompletion) {
-        retriedEmptyCompletion = true;
-        onEvent({ type: 'status', text: '⚠️ 模型返回空回复(思考消耗了全部输出预算),正在重试…' });
+      if (emptyRetries < MAX_EMPTY_RETRIES) {
+        emptyRetries++;
+        const escalate = emptyRetries >= 2 ? '这是第 2 次空回复。' : '';
+        onEvent({ type: 'status', text: `⚠️ 模型返回空回复(思考消耗了全部输出预算),${escalate}正在推促重试 ${emptyRetries}/${MAX_EMPTY_RETRIES}…` });
         // _transient: 仅在本轮 in-flight 上下文里可见,dropTransient 会剔除 —
         // 此前这条系统提示会永久写回 directHistory,残留成历史里的"假用户消息"。
-        messages.push({ role: 'user', content: '[系统] 上一轮你没有输出任何可见内容。请跳过长思考,直接给出回答或调用工具。', _transient: true });
+        messages.push({ role: 'user', content: `[系统] ${escalate}上一轮你没有输出任何可见内容。请跳过长思考,直接给出文字回答或调用工具。`, _transient: true });
         i--; // 抵消 for 的 i++,重试本轮
         continue;
       }
-      onEvent({ type: 'error', message: '模型连续返回空回复(reasoning 烧光输出预算)。请换模型或降低 reasoning 强度后重试。' });
+      onEvent({ type: 'error', kind: 'transient', message: '模型连续返回空回复(reasoning 烧光输出预算)。请换模型或降低 reasoning 强度后重试。' });
       return dropTransient(messages);
     }
 
@@ -326,7 +378,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);
   }
-  onEvent({ type: 'error', message: t(getSettings().lang, 'al.maxTurns', { max: maxTurns }) });
+  onEvent({ type: 'error', kind: 'maxTurns', message: t(getSettings().lang, 'al.maxTurns', { max: maxTurns }) });
   return dropTransient(messages);
 }
 
