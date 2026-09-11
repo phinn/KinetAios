@@ -2852,8 +2852,8 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 
 /* confirm modal — Apple-style: 背景淡入 + 卡片从中心轻微放大入场。
    display:none→flex 无法 transition,所以动画绑在 .show 和 .modal-card 上。 */
-#modal, #prompt-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
-#modal.show, #prompt-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
+#modal, #prompt-modal, #confirm-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
+#modal.show, #prompt-modal.show, #confirm-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
 @keyframes modal-overlay-in { from { opacity: 0; } to { opacity: 1; } }
 #prompt-input { margin: 10px 0; }
 .modal-card { background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 12px; padding: 20px; width: 560px; max-width: 90vw; box-shadow: var(--shadow-xl); animation: modal-card-in var(--dur-slow) var(--ease-out); }
