@@ -1,5 +1,35 @@
 # Release Notes
 
+## v3.6.1 — 上下文管理/记忆系统 P0 修复 + V3 任务韧性
+
+**发布日期：** 2026-09(自 v3.6.0 起 4 commits)
+
+### 🧠 上下文管理与记忆系统(P0 × 5 + 生命周期 × 3)
+
+**高严重度修复:**
+- **会话记忆注入"查询盲"** —— 跨项目记忆关闭(默认)时,有 embedding 直接返回最旧 15 条(不算相似度、无排序)。新增 `memory-recall.ts` 统一全局/会话检索链(cosine 召回 → 加权重排 → FTS → recent-N)
+- **memory_append 满块静默丢数据** —— 截掉的恰是新追加内容却回 ✅。现滚动淘汰头部保留新尾部,`store` 返回 `{ok,stored,droppedHead}`,工具回执如实上报
+- **isContextTooLong 误判** —— 裸 `exceed|too long` 把 "rate limit exceeded" 误判超长 → 三级 fallback 砍历史到 1/4。改正向措辞 + 负向排除(限流/配额优先)
+- **pinTurn 压缩保护整体失效** —— trim/compact 读消息级 `_pinned` 但从无代码写入。新增 `pin-history.applyPin`,send 记录 `Turn.histStart`,锁定按区间映射到消息并持久化
+- **压缩摘要无界膨胀** —— 每轮新增受保护摘要、永不二次压缩、不占预算。加 `MAX_SUMMARY_MSGS=3`,超限合并为一条;spill 审计改取最新摘要
+
+**记忆生命周期:**
+- **decay 按 importance 分档** —— ≤3 加速清除(~32 天)/ 4-7 默认(~45 天)/ **≥8 永不自动删除**
+- **切断注入 touch 反馈回路** —— 注入不再 touchMemoryUsed(修前固定 15 条轮播 + decay 信号污染),last_used 只由主动 recall_memory 更新
+- **episodic per-conv 滚动 upsert** —— 每会话仅一条摘要(修前每轮 done 堆一条重复),prompt 喂回已有摘要要求 LLM 合并
+
+### ⚡ V3 引擎"任务到一半停止"根治
+
+- **根因:maxTurns 保险丝失效** —— 用户默认 `maxTurns=0`(无限)覆盖了 deep 节点 `MAX_TURNS_PER_STEP=8`,节点要么跑到模型自停、要么烧到上下文溢出。修复:用户无限 + 有内部上限 → 仍用内部上限
+- **瞬时错误退避重试** —— 429/网络/5xx 重试 3 次(1s/2s/4s,abort-aware);鉴权/参数类不重试。此前一次限流就整轮报废
+- **deep 节点轮次上限续跑** —— 8 轮撞顶不再盲目重试(仍撞顶),改为续跑段(3×8=24 有效轮)
+- **空回复推促 2 次** —— glm-5.3-flash 思考烧光输出预算偶发(修前只推 1 次)
+- **AgentEvent.error 加 `kind`**(maxTurns/transient/contextTooLong)供下游区分续跑 vs 出错
+
+### 🧪 测试基建
+
+- **零依赖测试 harness** —— esbuild bundle + node:sqlite 适配层(绕开 better-sqlite3 的 Electron ABI 锁死)+ electron shim。`npm run test` = typecheck + 全量 harness,8 文件 67 项断言
+
 ## v3.5.7 — Goal Failover 死代码根治(429 真切链)
 
 **发布日期：** 2026-09-06(自 v3.5.6 起 3 commits)
