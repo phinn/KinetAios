@@ -2239,6 +2239,10 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 进行中旋转弧(细环缺口) */
 .todo-spin { width: 11px; height: 11px; border: 2px solid var(--border-soft); border-top-color: var(--accent); border-radius: 50%; animation: todospin 0.9s linear infinite; display: inline-block; }
 @keyframes todospin { to { transform: rotate(360deg); } }
+/* 回合结束后清单卡必须停转:取消/完成/出错后 .turn 失去 .streaming,
+   旋转弧冻结成灰色静态环(数据层清单状态不变,只是不再暗示"仍在执行") */
+.turn:not(.streaming) .todo-spin { animation: none; border-top-color: var(--text-faint); opacity: 0.65; }
+.turn:not(.streaming) .todo-in_progress .todo-text { color: var(--text-dim); }
 /* ── 命令面板(Ctrl/Cmd+K)── */
 #palette { position: fixed; inset: 0; z-index: 10003; background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #palette[hidden] { display: none; }
