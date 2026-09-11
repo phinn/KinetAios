@@ -724,7 +724,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   }
 
   // Apply event to the live conv, stream to renderer, persist durable state, kick off memory extraction.
+  // 2026-09 修复(删除复活竞态):deleteConversation 里 cancel(id) 只发 abort 信号,被中止引擎的
+  // done/收尾事件随后异步到达 — 修前不检查会话已删,把已删除的会话重新广播给 renderer
+  // (isNew=true → 加回 order)并写孤儿 turn → 已删会话"复活",反复增删侧栏越来越乱。
   private applyAndPersist(conv: Conversation, id: string, ev: AgentEvent, prompt: string, signal: AbortSignal): void {
+    if (!this.convs.has(id)) { /* 已删除的会话:吞掉所有迟到事件,不广播不落库 */ return; }
     applyEvent(conv, ev);
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);

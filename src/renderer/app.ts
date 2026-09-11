@@ -46,6 +46,8 @@ const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
 // Per-conversation drafts: save on switch away, restore on switch back. v3.6.3 起持久化到 localStorage。
 const convDrafts = new Map<string, string>();
+// 已删除会话 id(有界缓存):挡住删除后迟到的 onConversation 广播复活幽灵
+const removedConvs = new Set<string>();
 // 会话级"瞬时重试中"标记(从 status 事件文本派生):侧栏 dot 显示 retrying 态,与 conv.status 互补。
 const convRetrying = new Set<string>();
 // 侧栏 dot 状态机(v3.6.3 多态):running 下再分 等审批 / 瞬时退避中;终态 error/ready。
@@ -275,6 +277,7 @@ function applyI18nDOM(): void {
   }
 
   api.onConversation((conv) => {
+    if (removedConvs.has(conv.id)) return; // 删除后迟到的广播:拒绝复活幽灵
     const prev = convs.get(conv.id);
     const isNew = !prev;
     if (prev && prev.turnsLoaded === true && conv.turnsLoaded !== true) {
@@ -329,6 +332,8 @@ function applyI18nDOM(): void {
     }
   });
   api.onConversationRemoved((id) => {
+    removedConvs.add(id);
+    if (removedConvs.size > 500) removedConvs.delete(removedConvs.values().next().value!); // 有界
     convs.delete(id);
     queuedByConv.delete(id); // 会话删除即清队列
     order = order.filter((x) => x !== id);
