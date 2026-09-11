@@ -508,9 +508,73 @@ function refreshSidebarLi(convId: string): void {
   if (footInfo) footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
 }
 
+// 任务条目内容指纹:这些字段变了才值得重建 li(其余情况原样复用 DOM)。
+function taskFingerprint(id: string): string {
+  const c = convs.get(id)!;
+  const last = c.turns[c.turns.length - 1];
+  return [
+    id === selectedId ? 1 : 0,
+    c.customTitle ?? '', c.firstPrompt ?? '', c.turns[0]?.prompt ?? '',
+    c.status, c.turnCount ?? c.turns.length, c.updatedAt ?? c.createdAt,
+    last?.error ? 1 : 0, bgDoneConvs.has(id) ? 1 : 0,
+  ].join('|');
+}
+
+// 从 pool 取任务 li:指纹一致 → 复用现有 DOM(保滚动位置/动画/监听器);变了 → taskLi 重建单条。
+function obtainTaskLi(id: string, pool: Map<string, HTMLElement>): HTMLElement {
+  const old = pool.get(id);
+  pool.delete(id);
+  if (old && old.dataset.fp === taskFingerprint(id)) return old;
+  const li = taskLi(id);
+  li.dataset.fp = taskFingerprint(id);
+  return li;
+}
+
+// 构建项目组外壳(head + 空 tasks 容器)。cwd 写进 dataset 供 keyed 复用。
+function buildProjLi(cwd: string): HTMLElement {
+  const projLi = document.createElement('li');
+  projLi.className = 'sb-proj';
+  projLi.dataset.cwd = cwd;
+  const head = document.createElement('div');
+  head.className = 'sb-proj-head';
+  const collapsed = collapsedProjects.has(cwd);
+  const name = projName(cwd);
+  head.innerHTML =
+    `<span class="sb-chevron${collapsed ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>` +
+    `<span class="sb-pico">${ICON.folder}</span>` +
+    `<span class="sb-pname">${esc(name)}</span>` +
+    `<span class="sb-pcount">0</span>` +
+    `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
+  head.onclick = (e) => {
+    if ((e.target as HTMLElement)?.closest('[data-act]')) return;
+    const wasCollapsed = collapsedProjects.has(cwd);
+    if (wasCollapsed) collapsedProjects.delete(cwd);
+    else collapsedProjects.add(cwd);
+    // 就地切换 collapsed class + chevron,避免全量重渲保证动画连续。
+    const tasksUl = projLi.querySelector('.sb-proj-tasks');
+    const chevron = head.querySelector('.sb-chevron');
+    if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
+    if (chevron) chevron.classList.toggle('collapsed', !wasCollapsed);
+  };
+  head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
+    e.stopPropagation();
+    void newTaskInProject(cwd);
+  };
+  head.title = cwd || tr('wb.ungrouped');
+  // 右键项目头:折叠/展开全部 / 复制 cwd 等
+  head.addEventListener('contextmenu', (e) => {
+    e.preventDefault();
+    showProjMenu(cwd, e.clientX, e.clientY);
+  });
+  projLi.appendChild(head);
+  const tasksUl = document.createElement('ul');
+  tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
+  projLi.appendChild(tasksUl);
+  return projLi;
+}
+
 function renderSidebar() {
   const ul = document.getElementById('conv-list')!;
-  ul.innerHTML = '';
 
   // 更新 sb-foot-info:显示会话总数 / 运行中数量,替代静态文本。
   const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
@@ -558,64 +622,68 @@ function renderSidebar() {
     ul.innerHTML = '<li class="sb-empty"><span class="sb-empty-icon">' + emptyIcon + '</span><span class="sb-empty-text">' + esc(emptyText) + '</span></li>';
     return;
   }
-  // flat 模式 = 原始平铺;grouped = 按 cwd 分项目(默认)。
+
+  // ── keyed 增量渲染(2026-09)──
+  // 修前这里 ul.innerHTML='' 全量重建:会话多时侧栏抖动、滚动位置丢、全部按钮监听器重挂。
+  // 现在:任务 li 按 data-cid、项目组按 data-cwd 复用;内容指纹(见 taskFingerprint)没变的
+  // 条目原样保留,只重建变化条目;顺序用 appendChild 重排(appendChild 兼具移动语义)。
+  const projPool = new Map<string, HTMLElement>();
+  if (sidebarMode !== 'flat') {
+    ul.querySelectorAll<HTMLElement>('li.sb-proj[data-cwd]').forEach((li) => {
+      if (li.dataset.cwd) projPool.set(li.dataset.cwd, li);
+    });
+    // flat→grouped 切换残留:顶层平铺 li 不属于任何项目组 → 清掉
+    ul.querySelectorAll<HTMLElement>(':scope > li[data-cid]').forEach((li) => li.remove());
+  }
+  // flat 模式的任务池(含 grouped 模式残留的嵌套 li,模式切换后照样被复用/清理)
+  const taskPool = new Map<string, HTMLElement>();
   if (sidebarMode === 'flat') {
+    ul.querySelectorAll<HTMLElement>('li[data-cid]').forEach((li) => {
+      if (li.dataset.cid) taskPool.set(li.dataset.cid, li);
+    });
+  }
+  ul.querySelectorAll('li.sb-empty').forEach((n) => n.remove());
+
+  if (sidebarMode === 'flat') {
+    for (const id of visibleOrder) {
+      if (!convs.get(id)) continue;
+      ul.appendChild(obtainTaskLi(id, taskPool));
+    }
+    taskPool.forEach((li) => li.remove());
+  } else {
+    // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
+    const groups = new Map<string, string[]>();
     for (const id of visibleOrder) {
       const c = convs.get(id);
       if (!c) continue;
-      ul.appendChild(taskLi(id));
+      const key = c.cwd || '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(id);
     }
-    return;
-  }
-  // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
-  const groups = new Map<string, string[]>();
-  for (const id of visibleOrder) {
-    const c = convs.get(id);
-    if (!c) continue;
-    const key = c.cwd || '';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(id);
-  }
-  for (const [cwd, ids] of groups) {
-    const projLi = document.createElement('li');
-    projLi.className = 'sb-proj';
-    const head = document.createElement('div');
-    head.className = 'sb-proj-head';
-    const collapsed = collapsedProjects.has(cwd);
-    const name = projName(cwd);
-    head.innerHTML =
-      `<span class="sb-chevron${collapsed ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>` +
-      `<span class="sb-pico">${ICON.folder}</span>` +
-      `<span class="sb-pname">${esc(name)}</span>` +
-      `<span class="sb-pcount">${ids.length}</span>` +
-      `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
-    head.onclick = (e) => {
-      if ((e.target as HTMLElement)?.closest('[data-act]')) return;
-      const wasCollapsed = collapsedProjects.has(cwd);
-      if (wasCollapsed) collapsedProjects.delete(cwd);
-      else collapsedProjects.add(cwd);
-      // 就地切换 collapsed class + chevron,避免全量重渲保证动画连续。
-      const tasksUl = projLi.querySelector('.sb-proj-tasks');
-      const chevron = head.querySelector('.sb-chevron');
-      if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
-      if (chevron) chevron.classList.toggle('collapsed', !wasCollapsed);
-    };
-    head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
-      e.stopPropagation();
-      void newTaskInProject(cwd);
-    };
-    head.title = cwd || tr('wb.ungrouped');
-    // 右键项目头:折叠/展开全部 / 复制 cwd 等
-    head.addEventListener('contextmenu', (e) => {
-      e.preventDefault();
-      showProjMenu(cwd, e.clientX, e.clientY);
-    });
-    projLi.appendChild(head);
-    const tasksUl = document.createElement('ul');
-    tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
-    for (const id of ids) tasksUl.appendChild(taskLi(id));
-    projLi.appendChild(tasksUl);
-    ul.appendChild(projLi);
+    for (const [cwd, ids] of groups) {
+      let projLi = projPool.get(cwd);
+      projPool.delete(cwd);
+      if (!projLi) projLi = buildProjLi(cwd);
+      // 计数与折叠态可能变化 → 就地同步
+      const count = projLi.querySelector('.sb-pcount');
+      if (count) count.textContent = String(ids.length);
+      const collapsed = collapsedProjects.has(cwd);
+      const tasksUl = projLi.querySelector('.sb-proj-tasks') as HTMLElement;
+      tasksUl.classList.toggle('collapsed', collapsed);
+      projLi.querySelector('.sb-chevron')?.classList.toggle('collapsed', collapsed);
+      // 项目内任务条 keyed 复用
+      const innerPool = new Map<string, HTMLElement>();
+      tasksUl.querySelectorAll<HTMLElement>('li[data-cid]').forEach((li) => {
+        if (li.dataset.cid) innerPool.set(li.dataset.cid, li);
+      });
+      for (const id of ids) {
+        if (!convs.get(id)) continue;
+        tasksUl.appendChild(obtainTaskLi(id, innerPool));
+      }
+      innerPool.forEach((li) => li.remove());
+      ul.appendChild(projLi);
+    }
+    projPool.forEach((li) => li.remove());
   }
 }
 
