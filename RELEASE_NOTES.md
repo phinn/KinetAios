@@ -1,5 +1,32 @@
 # Release Notes
 
+## v3.6.3 — 侧栏重复副本修复 + 检索质量收尾 + 确认弹窗
+
+**发布日期：** 2026-09(自 v3.6.2 起 7 commits)
+
+### 🐛 修复
+
+- **侧栏新会话重复副本** —— keyed 增量渲染的跨组残留:新会话先落「未分类」组,主进程回填 cwd 后增量更新不跨组移动 li,下次全量渲染新组新建、旧组残留 → 一个会话出现多份。修复:任务池全局唯一(结构上保证每会话至多一个 li)+ refreshSidebarLi 换组检测 + order 去重守卫
+- **会话内搜索叉不掉** —— `#chat-search { display:flex }` 作者样式压过 UA 的 `[hidden]{display:none}`,搜索条常驻。同步修复同病的 `#queue-row`;`#palette` 已有先例
+- **确认弹窗随滚动露出** —— `#confirm-modal` 漏加遮罩定位样式,裸 div 排在 body 末尾。现并入 modal 定位规则组
+- **清空/删除必须确认** —— 聊天头「清空/删除」修前一键直发零确认;新增通用确认弹窗(styled + trapFocus + Esc/backdrop),侧栏删除同步替换原生 window.confirm
+
+### 🧠 检索质量收尾
+
+- **排序池错位** —— `scoredMemories` 加 onlyIds,重排只在召回候选集内,importance 高但无关的记忆不再挤榜
+- **dedup 保留新值** —— 相似记忆删旧留新(修前用户改偏好后旧记忆永远存活)
+- **factsAsBlock 接线** —— remember_fact 锚点自动注入上下文(1500 字符封顶),不再依赖模型自觉 recall
+
+### 🧹 数据治理
+
+- **spill 存证瘦身** —— dropped 全文落库(单次数十 KB,conv_events 膨胀主因)→ 前 20 条×500 字符 + droppedTotal
+- **conv_events 保留策略** —— `pruneOldConvEvents(90)` 接入 idle reflection;goal/* 永不清理
+- **file_registry 封顶** —— 每类 200 条裁旧留新,压缩摘要展示各 50
+
+### 🧪 测试
+
+- 新增 90-data-gov.test.ts 等,全套 10 文件 93 项断言
+
 ## v3.6.2 — UI 对接修复 + 侧栏增量渲染 + 引导性空态
 
 **发布日期：** 2026-09(自 v3.6.1 起 4 commits)
