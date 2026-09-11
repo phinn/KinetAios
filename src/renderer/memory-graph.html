@@ -35,6 +35,12 @@
       <div class="mgraph-canvas-section">
         <div class="mgraph-canvas-wrap">
           <svg id="mgraph-svg" width="100%" height="100%"></svg>
+          <!-- 引导性空态:无三元组时显示(由 memory-graph.ts 控制显隐) -->
+          <div class="mgraph-empty-overlay" id="mgraph-empty">
+            <span class="mgraph-empty-icon"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11L6.5 17M12 11l5.5 6"/></svg></span>
+            <span class="mgraph-empty-title">暂无记忆三元组</span>
+            <span class="mgraph-empty-sub"></span>
+          </div>
           <div class="mgraph-zoom-bar">
             <button class="mgraph-zoom-btn" id="mgraph-zoom-out" title="缩小">−</button>
             <span class="mgraph-zoom-val" id="mgraph-zoom-val">100%</span>

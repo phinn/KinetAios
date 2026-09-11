@@ -2006,6 +2006,31 @@ a { color: var(--accent); }
 .empty::before { content: ''; display: block; width: 64px; height: 64px; margin: 0 auto 16px; background: var(--bg-elev); border-radius: 50%; opacity: 0.7; -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z'/%3E%3C/svg%3E") center / 30px no-repeat; animation: empty-breathe 3s ease-in-out infinite; }
 @keyframes empty-breathe { 0%, 100% { opacity: 0.5; transform: scale(1); } 50% { opacity: 0.8; transform: scale(1.06); } }
 .empty .empty-sub { display: block; margin-top: 6px; font-size: 0.923rem; color: var(--text-faint); opacity: 0.7; }
+/* has-icon:自定义图标替换默认气泡(呼吸动画沿用),视觉锚点与语义匹配 */
+.empty.has-icon::before { display: none; }
+.empty .empty-icon { display: inline-flex; color: var(--text-dim); opacity: 0.55; margin-bottom: 10px; animation: empty-breathe 3s ease-in-out infinite; }
+.empty .empty-icon svg { width: 36px; height: 36px; }
+/* 空态行动入口:主行动(新建)用实底强调,次行动 ghost,排列留呼吸 */
+.empty-actions { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap; justify-content: center; }
+.empty-actions .empty-cta { padding: 5px 16px; font-size: 0.923rem; border-radius: 8px; cursor: pointer; transition: transform var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.empty-actions .empty-cta:first-child { background: var(--accent); color: var(--accent-fg); border: none; font-weight: 600; }
+.empty-actions .empty-cta:first-child:hover { background: color-mix(in srgb, var(--accent) 85%, #fff); transform: translateY(-1px); }
+.empty-actions .empty-cta:active { transform: scale(0.98); }
+.empty-actions .empty-cta.ghost { background: transparent; color: var(--text-dim); border: 1px solid var(--border); }
+.empty-actions .empty-cta.ghost:hover { color: var(--text); border-color: var(--text-faint); }
+
+/* 记忆时间线空态(组合式:图标 + 标题 + 语义检索提示) */
+.mm-empty .mm-empty-icon { display: inline-flex; color: var(--text-faint); opacity: 0.55; margin-bottom: 10px; }
+.mm-empty .mm-empty-icon svg { width: 34px; height: 34px; }
+.mm-empty .mm-empty-title { display: block; }
+.mm-empty .mm-empty-sub { display: block; margin-top: 6px; font-size: 0.846rem; color: var(--text-faint); opacity: 0.75; }
+
+/* 记忆图谱空态 overlay(画布居中,不挡交互) */
+.mgraph-empty-overlay { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 6px; color: var(--text-faint); pointer-events: none; text-align: center; padding: 20px; }
+.mgraph-empty-overlay.show { display: flex; }
+.mgraph-empty-overlay .mgraph-empty-icon { display: inline-flex; color: var(--text-faint); opacity: 0.5; margin-bottom: 6px; animation: empty-breathe 3s ease-in-out infinite; }
+.mgraph-empty-overlay .mgraph-empty-title { font-size: 1rem; color: var(--text-dim); }
+.mgraph-empty-overlay .mgraph-empty-sub { font-size: 0.846rem; opacity: 0.75; }
 
 .turn { padding: 4px 0 12px; display: flex; flex-direction: column; gap: 10px; }
 /* 屏幕外 turn 跳过布局/渲染(巨型会话防卡死)。屏幕外的 answer 不再参与字体

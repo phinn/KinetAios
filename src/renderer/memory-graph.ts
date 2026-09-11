@@ -169,9 +169,17 @@ async function loadData(): Promise<void> {
   renderConflictPanel();
 
   if (allNodes.length === 0) {
-    svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--text-dim)" font-size="14">${t(lang, 'mgraph.empty')}</text>`;
+    // 引导性空态:HTML overlay(图标 + 标题 + 提示)替代单行 svg text — 与全应用空态语言一致
+    const overlay = document.getElementById('mgraph-empty');
+    if (overlay) {
+      overlay.querySelector('.mgraph-empty-title')!.textContent = t(lang, 'mgraph.empty');
+      overlay.querySelector('.mgraph-empty-sub')!.textContent = t(lang, 'mgraph.emptySub');
+      overlay.classList.add('show');
+    }
+    svg.innerHTML = '';
     return;
   }
+  document.getElementById('mgraph-empty')?.classList.remove('show');
 
   if (nodes.length === 0) {
     svg.innerHTML = `<text x="50%" y="50%" text-anchor="middle" fill="var(--text-dim)" font-size="14">⚠ No nodes match filter</text>`;

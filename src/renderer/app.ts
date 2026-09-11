@@ -1790,7 +1790,25 @@ function renderMain() {
   // 离屏构建再一次性挂载,避免 innerHTML='' 后到新 DOM 创建之间的空白帧(闪屏)。
   // Build off-screen then attach in one pass — avoids a blank frame between clearing and repopulating.
   if (!conv) {
-    turns.replaceChildren(empty(tr('empty.noConv'), tr('empty.noConvSub')));
+    // 引导性空态(首启第一屏):图标 + 标题 + 副题 + 行动入口。
+    // 未配置模型时突出「配置模型」——这是新用户唯一挡路的步骤,其余引导都是空谈。
+    // 注意:lastSettingsSnapshot 异步拉取,首帧可能未就绪 → 仅在确知无 key 时显示配置入口,宁缺勿错。
+    const s = lastSettingsSnapshot;
+    const noKey = !!s && !s.apiKey && !(s.modelProfiles && s.modelProfiles.length > 0);
+    const d = empty(tr('empty.noConv'), noKey ? tr('empty.noKeySub') : tr('empty.noConvSub'), ICON.bolt);
+    const acts = document.createElement('div');
+    acts.className = 'empty-actions';
+    const mk = (label: string, fn: () => void): HTMLElement => {
+      const b = document.createElement('button');
+      b.className = 'ghost empty-cta';
+      b.textContent = label;
+      b.onclick = fn;
+      return b;
+    };
+    acts.appendChild(mk('＋ ' + tr('sidebar.newSession'), () => document.getElementById('btn-new')?.click()));
+    if (noKey) acts.appendChild(mk(tr('empty.cfgModel'), () => showSettings()));
+    d.appendChild(acts);
+    turns.replaceChildren(d);
     return;
   }
   // 懒加载:head 模式(未拉 turns)先挂载加载态,异步拉到后再渲染。
@@ -1806,7 +1824,7 @@ function renderMain() {
   // 空会话:占位符不满一屏,无需滚动,也不许碰模式状态。
   // Empty conv: placeholder fits the viewport — no scrolling, no mode changes.
   if (!conv.turns.length) {
-    const emptyEl = empty(tr('empty.noTurns'), tr('empty.noTurnsSub'));
+    const emptyEl = empty(tr('empty.noTurns'), tr('empty.noTurnsSub'), ICON.bolt);
     // 快捷开始:可点击的示例任务,点击填入 composer(新用户第一分钟知道能干嘛)
     const chips = document.createElement('div');
     chips.className = 'empty-chips';
@@ -3882,9 +3900,17 @@ function openPreviewPane(): void {
   }
 }
 
-function empty(text: string, sub?: string): HTMLElement {
+function empty(text: string, sub?: string, icon?: string): HTMLElement {
   const d = document.createElement('div');
   d.className = 'empty';
+  // 引导性空态:传入图标时用它替换默认气泡(::before),视觉锚点先于文字
+  if (icon) {
+    d.classList.add('has-icon');
+    const i = document.createElement('span');
+    i.className = 'empty-icon';
+    i.innerHTML = icon;
+    d.appendChild(i);
+  }
   d.textContent = text;
   if (sub) {
     const s = document.createElement('span');
@@ -8683,7 +8709,11 @@ async function renderMemoryList(): Promise<void> {
     return;
   }
   if (!r.items.length) {
-    listEl.innerHTML = `<div class="mm-empty">${tr('mem.empty')}</div>`;
+    // 引导性空态:图标 + 说明 + 语义检索提示(embedding 配了才有的能力,值得点出)
+    listEl.innerHTML =
+      `<div class="mm-empty"><span class="mm-empty-icon">${ICON.doc}</span>` +
+      `<span class="mm-empty-title">${esc(tr('mem.empty'))}</span>` +
+      `<span class="mm-empty-sub">${esc(tr('mem.emptySub'))}</span></div>`;
     return;
   }
   // 分页
