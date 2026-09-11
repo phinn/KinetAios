@@ -209,10 +209,17 @@ memory+pinned+全部摘要不占任何预算 → 长会话保护头部线性增�
 - ✅ **AgentEvent.error 加 `kind`**:`'maxTurns'|'transient'|'contextTooLong'`,供下游区分失败原因
   (deep 节点据此区分"轮次上限可续跑"vs"出错交 DAG 重试")
 
+已修(90-data-gov.test.ts + 检索测试圈定):
+- ✅ **全局排序池**:`scoredMemories` 加 onlyIds,重排只在召回候选集内(池外高 importance 不再挤榜)
+- ✅ **dedup 保留新值**:排序翻转 DESC,相似对删旧留新
+- ✅ **spill dropped 全文落库**:存证截断为前 20 条×500 字符 + droppedTotal(UI 只展示条数,零损失)
+- ✅ **conv_events 保留策略**:`pruneOldConvEvents(90)` 接入 runIdleReflection;goal/* 永不清理(投影依赖)
+- ✅ **file_registry 封顶**:每类 200 条(裁旧留新),摘要展示各 50
+- ✅ **factsAsBlock 接线**:remember_fact 锚点自动注入 memoryBlock(1500 字符封顶)
+
 未修:
-- 全局排序池(importance=10 但 relevance=0 可挤掉相关记忆,有测试圈定)、
-  dedup 保留旧值、审计 spill 的 dropped 全文落库、memoryBlock 注入位置与总量上限、
-  `factsAsBlock` 未接线、file_registry 只增不减、注入 query 多主题拼接。
+- memoryBlock 注入位置与总量上限、注入 query 多主题拼接、
+  memory blocks 编辑面板(前端缺失)、中断断点续跑完整版(V2 式步骤级 checkpoint)。
 - ~~hifiContextBudget 死设置~~ / ~~进度条 modelMax 硬编码 128K~~ —— 已修(e72dfec:接 resolveEnginePolicy
   hifiBudget 下限 + settings.v2ModelWindow;同批修复 trim 事件 beforeTokens、Turn.errorKind 区分展示)。
 - **memory blocks 编辑 UI 前端整体缺失**:memoryBlocksList/memoryBlockUpdate IPC 无任何 renderer

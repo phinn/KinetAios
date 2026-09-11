@@ -818,6 +818,14 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。';
     }
 
+    // ── 会话级事实锚点(remember_fact):自动注入,模型不必自觉 recall(2026-09 接线)──
+    // conv 独立、不跨会话;封顶防长会话锚点堆积反噬预算(需要全文仍有 recall_fact)。
+    const facts = store.factsAsBlock(conv.id);
+    if (facts) {
+      const capped = facts.length > 1500 ? facts.slice(0, 1500) + '\n…(已截断 — 用 recall_fact(key) 取全文)' : facts;
+      out += `\n\n## 会话事实锚点(remember_fact 存,recall_fact 取)\n${capped}`;
+    }
+
     // 构造检索 query:取最近 1-3 轮的用户消息拼接。
     const recentUserMsgs = conv.turns.filter((t) => t.prompt).slice(-3).map((t) => t.prompt!);
     const query = recentUserMsgs.join(' ').slice(0, 500);
@@ -1124,12 +1132,14 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   // P3: Idle Reflection — 记忆 GC(合并重复 / 删除低价值 / 更新过时)。
   // 在会话 done 事件后异步触发,也可以通过设置面板手动触发。
   // 不用 LLM(成本高 + 慢),用规则:dedupMemories(已有) + decayMemories(已有) + 新增 importance-based prune。
-  async runIdleReflection(): Promise<{ deduped: number; decayed: number; lowImportancePruned: number }> {
+  async runIdleReflection(): Promise<{ deduped: number; decayed: number; lowImportancePruned: number; eventsPruned: number }> {
     const deduped = await store.dedupMemories(0.65); // async 让出事件循环,不再卡死主进程
     const decayed = store.decayMemories();
     // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
     const lowImportancePruned = store.pruneLowImportanceMemories(2);
-    return { deduped, decayed, lowImportancePruned };
+    // 数据治理:conv_events 保留 90 天(goal/* 永不清理,见 store.pruneOldConvEvents)
+    const eventsPruned = store.pruneOldConvEvents(90);
+    return { deduped, decayed, lowImportancePruned, eventsPruned };
   }
 
   // ── Pipeline 跨引擎编排 ──

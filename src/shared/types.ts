@@ -489,7 +489,8 @@ export type ConvEvent =
   | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number }
   | { type: 'turn/error'; message: string }
   | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number }
-  | { type: 'compaction/spill'; dropped: ChatMsg[]; summary?: string } // compactHistory 丢掉的 head 原文存证
+  // spill 存证(v3.6.3 瘦身):dropped 截断为前 20 条×500 字符,droppedTotal 记录真实条数
+  | { type: 'compaction/spill'; dropped: ChatMsg[]; droppedTotal?: number; summary?: string }
   | { type: 'context/edit'; before: number; after: number } // 手动编辑上下文:记条数变化(前后文不入事件流,见 turns.traj)
   | { type: 'goal/set'; goal: string }
   | { type: 'goal/clear' }

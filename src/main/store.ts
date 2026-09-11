@@ -674,7 +674,9 @@ export function searchMemoryTriples(q: string, limit = 10, restrictConvId?: stri
 // / Was O(n²) pairs × per-pair re-tokenize → minutes-long main-thread stall. Precompute
 // tokens once, size-ratio prefilter (Jaccard ≤ min/max), yield to the event loop.
 export async function dedupMemories(threshold = 0.65): Promise<number> {
-  const all = db.prepare('SELECT id, content, created_at FROM memories ORDER BY created_at ASC;').all() as Array<{
+  // 2026-09 修复(保留新值):修前 ASC 排序 → 相似对删后者留最旧,用户改偏好后旧记忆永远存活。
+  // 改 DESC(最新在前):i 是更新者,相似对删 b(更旧)→ 记忆系统偏向最新信息。
+  const all = db.prepare('SELECT id, content, created_at FROM memories ORDER BY created_at DESC;').all() as Array<{
     id: string; content: string; created_at: number;
   }>;
 
@@ -712,7 +714,7 @@ export async function dedupMemories(threshold = 0.65): Promise<number> {
       let inter = 0;
       for (const t of lo.tokens) if (hi.tokens.has(t)) inter++;
       if (inter / (a.size + b.size - inter) >= threshold) {
-        toDelete.add(b.id); // 删后来的,保留 i(更早创建)
+        toDelete.add(b.id); // b 更旧(DESC 序),删旧留新
       }
     }
   }
@@ -908,6 +910,15 @@ export function factsAsBlock(convId: string): string {
   const facts = listFacts(convId);
   if (facts.length === 0) return '';
   return facts.map((f) => `- ${f.key}: ${f.value}`).join('\n');
+}
+
+// conv_events 保留策略(2026-09):事件日志此前只增不减(spill dropped 全文/工具结果),
+// history.db 曾到 433MB。默认保留 90 天;goal/* 事件永不清理 —— goal 投影是全量从头 fold,
+// 删早期 goal/set 会破坏状态重建。nowMs 可注入(测试)。
+export function pruneOldConvEvents(keepDays = 90, nowMs = Date.now()): number {
+  const cutoff = nowMs - keepDays * 86400_000;
+  const info = stmt("DELETE FROM conv_events WHERE ts < ? AND type NOT LIKE 'goal/%';").run(cutoff);
+  return Number(info.changes);
 }
 
 // MARK: AgentTeams 持久化(P2)
@@ -1253,13 +1264,17 @@ export function scoredMemories(
   limit: number,
   relevanceFn?: (content: string, id: string) => number,
   restrictConvId?: string,
+  onlyIds?: Set<string>,
 ): Array<{ id: string; content: string; conversation_id: string | null; importance: number; score: number }> {
   const halfLife = 30 * 86400_000; // 30 天(ms)
   const now = Date.now();
   // restrictConvId:只参与本会话产生的记忆 + 无归属的全局记忆(与 recall 注入的会话限制同规则)。
-  const mems = restrictConvId
+  let mems = restrictConvId
     ? loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === restrictConvId)
     : loadMemories();
+  // onlyIds(2026-09):只在召回候选集内重排 —— 修前从全池选 top-N,importance 高但与当前
+  // 无关的记忆(relevance=0)能挤掉真正相关的候选,检索式记忆名存实亡。
+  if (onlyIds) mems = mems.filter((m) => onlyIds.has(m.id));
   const metas = new Map<string, { weight: number; last_used: number; use_count: number }>();
   for (const m of (db.prepare('SELECT memory_id, weight, last_used, use_count FROM memory_meta;').all() as Array<{ memory_id: string; weight: number; last_used: number; use_count: number }>)) {
     metas.set(m.memory_id, { weight: m.weight, last_used: m.last_used, use_count: m.use_count });

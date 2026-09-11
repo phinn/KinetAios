@@ -44,13 +44,16 @@ export async function recallMemories(opts: {
             .sort((a, b) => b.score - a.score)
             .slice(0, 30);
           if (candidates.length >= 3) {
-            // 加权重排:relevance 按 memoryId 精确关联(修前按 content 关联,重复文本互相污染)
+            // 加权重排:① 只在召回候选集内重排(2026-09 修复排序池错位 —— 修前从全池选,
+            // importance 高但与当前无关的记忆能挤掉相关候选);② relevance 按 memoryId 精确关联
+            const candidateIds = new Set(candidates.map((c) => c.memoryId));
             const relevanceById = new Map(candidates.map((c) => [c.memoryId, c.score]));
             const scored = store.scoredMemories(
               query,
               limit,
               (_content, id) => relevanceById.get(id) ?? 0,
               restrictConvId,
+              candidateIds,
             );
             if (scored.length >= 3) {
               // 2026-09 修复(反馈回路):注入路径不再 touchMemoryUsed。修前每轮注入 touch 15 条 →

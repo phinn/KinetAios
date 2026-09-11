@@ -76,8 +76,8 @@ test('全局模式(restrict 未传)与修前行为一致:高相关排前', async
   const idxG = out.findIndex((r) => r.id === idG);
   assert.ok(idxA >= 0, '全局模式应召回 A');
   assert.ok(idxD >= 0, '全局模式包含其它会话记忆(D)');
-  // A 与 D/G cosine 同为 1.0,但 A importance 更高 → A 必须排在其前
-  // (注:若库里有 importance=10 但 relevance=0 的记忆,它可能排 A 前 —— 那是已登记的批次2排序问题,不是本次回归)
+  // A1 修复后:重排只在召回候选集内 —— importance=10 但 relevance=0 的池外记忆不再可能挤榜
+  assert.equal(out[0].id, idA, 'A(cosine 1.0 + importance 6)必须排第一');
   assert.ok(idxA < idxD, 'A 应排在同 relevance 的 D 之前(importance 加权)');
   assert.ok(idxA < idxG, 'A 应排在同 relevance 的 G 之前(importance 加权)');
   const idxJunk = out.findIndex((r) => junkIds.includes(r.id));

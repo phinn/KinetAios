@@ -6,6 +6,10 @@ import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
 import { saveFact, loadFact, appendEvent } from './store';
+import type { ConvEvent } from '../shared/types';
+// spill 存证瘦身上限(2026-09)
+const SPILL_SLIM_COUNT = 20;
+const SPILL_SLIM_CONTENT = 500;
 
 // ── compaction seam:压缩的唯一入口。所有引擎经此调 compactHistory,spill 存证在此归一,
 // 引擎侧不再各自复制「引用集合差 + appendEvent」逻辑(此前 v1/v2/V3 共 4 份拷贝)。
@@ -24,11 +28,18 @@ export async function compactWithSpill(
     // 2026-09 修复:取**最后一条**摘要。compactHistory 把新摘要排在旧摘要之后,find() 拿到的是最旧的,
     // 多次压缩后 spill 审计记录的 summary 是陈旧内容。
     const summaryMsg = [...after].reverse().find((m) => typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+    // 2026-09 瘦身:dropped 全文曾整包落库(单次可达数十 KB,是 conv_events 膨胀主因),
+    // 而 UI 只展示条数与摘要、从不回放原文 → 存证截断为「前 20 条 × 各 500 字符 + 总数」。
+    const slim = dropped.slice(0, SPILL_SLIM_COUNT).map((m) => ({
+      role: m.role,
+      content: typeof m.content === 'string' ? m.content.slice(0, SPILL_SLIM_CONTENT) : '[multimodal]',
+    }));
     appendEvent(opts.convId, opts.turnId, {
       type: 'compaction/spill',
-      dropped,
+      dropped: slim,
+      droppedTotal: dropped.length,
       summary: typeof summaryMsg?.content === 'string' ? summaryMsg.content.replace(/^\[早期对话摘要\]\n/, '') : undefined,
-    });
+    } as ConvEvent);
   } catch {
     // 存证失败不拖垮压缩本身(事件流是审计增强,不是功能依赖)
   }
@@ -40,6 +51,8 @@ export async function compactWithSpill(
 // 跨多轮 compaction 累积。compaction summary 末尾自动附加 <read-files> / <modified-files>。
 
 interface FileOps { read: Set<string>; written: Set<string>; edited: Set<string>; }
+// file_registry 每类封顶条数(防长会话无界膨胀)
+const FILE_REGISTRY_MAX = 200;
 
 function createFileOps(): FileOps {
   return { read: new Set(), written: new Set(), edited: new Set() };
@@ -88,11 +101,13 @@ function mergeFileOpsWithPersisted(convId: string, newOps: FileOps): { readFiles
   const written = new Set([...existing.written, ...newOps.written]);
   const edited = new Set([...existing.edited, ...newOps.edited]);
 
-  // 持久化(累积)
+  // 持久化(累积 + 封顶,2026-09):Set 保留插入序(新条目在后),超上限裁掉最旧的头部 —
+  // 修前无界累积,长会话的 <read-files> 附录随每次压缩越滚越大,反噬上下文预算。
+  const cap = (set: Set<string>, max: number): string[] => set.size > max ? [...set].slice(-max) : [...set];
   saveFact(convId, 'file_registry', JSON.stringify({
-    read: [...read].sort(),
-    written: [...written].sort(),
-    edited: [...edited].sort(),
+    read: cap(read, FILE_REGISTRY_MAX),
+    written: cap(written, FILE_REGISTRY_MAX),
+    edited: cap(edited, FILE_REGISTRY_MAX),
   }));
 
   // 计算:modified = written ∪ edited;readOnly = read - modified
@@ -101,11 +116,16 @@ function mergeFileOpsWithPersisted(convId: string, newOps: FileOps): { readFiles
   return { readFiles: readOnly, modifiedFiles: [...modified].sort() };
 }
 
-/** 格式化文件列表为 XML 标签,append 到 compaction summary 末尾。 */
+/** 格式化文件列表为 XML 标签,append 到 compaction summary 末尾。展示各封顶 50 条(存证仍全量 capped 200)。 */
+const FILE_OPS_DISPLAY_MAX = 50;
+function fmtList(list: string[]): string {
+  if (list.length <= FILE_OPS_DISPLAY_MAX) return list.join('\n');
+  return list.slice(-FILE_OPS_DISPLAY_MAX).join('\n') + `\n…(共 ${list.length} 个,仅显示最近 ${FILE_OPS_DISPLAY_MAX})`;
+}
 function formatFileOps(readFiles: string[], modifiedFiles: string[]): string {
   const sections: string[] = [];
-  if (readFiles.length > 0) sections.push(`<read-files>\n${readFiles.join('\n')}\n</read-files>`);
-  if (modifiedFiles.length > 0) sections.push(`<modified-files>\n${modifiedFiles.join('\n')}\n</modified-files>`);
+  if (readFiles.length > 0) sections.push(`<read-files>\n${fmtList(readFiles)}\n</read-files>`);
+  if (modifiedFiles.length > 0) sections.push(`<modified-files>\n${fmtList(modifiedFiles)}\n</modified-files>`);
   if (sections.length === 0) return '';
   return `\n\n${sections.join('\n\n')}`;
 }
