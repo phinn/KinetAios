@@ -1,5 +1,26 @@
 # Release Notes
 
+## v3.6.2 — UI 对接修复 + 侧栏增量渲染 + 引导性空态
+
+**发布日期：** 2026-09(自 v3.6.1 起 4 commits)
+
+### 🔧 UI 对接修复
+
+- **上下文进度条失真** —— modelMax 硬编码 128K,配 1M 窗口的用户实际 6% 显示成 45%。接 `settings.v2ModelWindow`(estContextTokens / getDirectHistory 两处)
+- **hifiContextBudget 死设置接线** —— 此前设置页有 UI 但代码不读。现 `resolveEnginePolicy` 加 `hifiBudget` 参数作为 hifi 模式 trim/compact 预算下限,12 处调用点全部传参;删除 RunOpts 死参数
+- **裁剪提示 beforeTokens 恒 0** —— trim 事件现带真实前后 token 数,进度卡能看到裁剪量
+- **maxTurns 失败不再长成红色报错** —— `Turn.errorKind` 全链路透传,可续跑的轮次上限渲染为 amber 警示
+
+### ⚡ 侧栏性能
+
+- **keyed 增量渲染** —— 修前每次全量重建(innerHTML=''),会话多时侧栏抖动、滚动位置丢、监听器全量重挂。现按 data-cid/data-cwd 复用,内容指纹没变的条目原样保留,只重建变化条目
+
+### 🧭 引导性空态
+
+- **首启第一屏** —— 空会话状态新增行动按钮:「＋ 新建会话」;确知未配置模型时突出「⚙ 配置模型」
+- **记忆视图** —— 时间线/图谱空态从单行文字升级为组合式(图标 + 说明 + 提示),图谱空态引导 remember_fact / memory_replace 主动沉淀
+- i18n 12 个新键 × 4 语言
+
 ## v3.6.1 — 上下文管理/记忆系统 P0 修复 + V3 任务韧性
 
 **发布日期：** 2026-09(自 v3.6.0 起 4 commits)
