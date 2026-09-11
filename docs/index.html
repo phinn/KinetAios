@@ -252,6 +252,9 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 
 /* ===== PRODUCT SUITE ===== */
 .products{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:8px}
+.pcard.soon{opacity:.72}
+.pcard.soon:hover{transform:none;box-shadow:none}
+.pcard .soon-badge{position:absolute;top:14px;right:14px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.08em;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);z-index:2}
 .pcard{position:relative;border:1px solid var(--line);border-radius:14px;padding:28px 24px;background:var(--surface);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s;text-decoration:none;display:flex;flex-direction:column}
 .pcard:hover{transform:translateY(-3px);border-color:transparent;box-shadow:0 12px 40px rgba(0,0,0,.4)}
 .pcard::before{content:"";position:absolute;inset:0;padding:1px;border-radius:14px;background:var(--cardGrad);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .2s}
@@ -431,6 +434,40 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <div class="tag" data-i18n="ps_brf_tag"></div>
         <p data-i18n="ps_brf_desc"></p>
         <span class="plink" style="color:var(--orange)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
+      <a class="pcard" href="https://github.com/phinn/KinetMagicDisk" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#FFD75F,#FF9A5C)">
+        <div class="glow" style="background:var(--gold)"></div>
+        <div class="pico" style="background:rgba(255,215,95,.12);color:var(--gold)">🌞</div>
+        <h4>KinetMagicDisk</h4>
+        <div class="tag" data-i18n="ps_dsk_tag"></div>
+        <p data-i18n="ps_dsk_desc"></p>
+        <span class="plink" style="color:var(--gold)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
+      <a class="pcard" href="https://github.com/phinn/KinetAgent" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#00E5B5,#9B7EFF)">
+        <div class="glow" style="background:var(--mint)"></div>
+        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)">📱</div>
+        <h4>KinetAgent</h4>
+        <div class="tag" data-i18n="ps_agt2_tag"></div>
+        <p data-i18n="ps_agt2_desc"></p>
+        <span class="plink" style="color:var(--mint)"><span data-i18n="ps_learn"></span> →</span>
+      </a>
+      <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#00B5E5,#9B7EFF)">
+        <span class="soon-badge" data-i18n="ps_soon"></span>
+        <div class="glow" style="background:var(--cyan)"></div>
+        <div class="pico" style="background:rgba(0,181,229,.12);color:var(--cyan)">🪟</div>
+        <h4>KinetMagicWindow</h4>
+        <div class="tag" data-i18n="ps_win_tag"></div>
+        <p data-i18n="ps_win_desc"></p>
+        <span class="plink" style="color:var(--cyan)"><span data-i18n="ps_soon"></span></span>
+      </a>
+      <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#FF9A5C)">
+        <span class="soon-badge" data-i18n="ps_soon"></span>
+        <div class="glow" style="background:var(--purple)"></div>
+        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)">⌘</div>
+        <h4>KinetDock</h4>
+        <div class="tag" data-i18n="ps_dck_tag"></div>
+        <p data-i18n="ps_dck_desc"></p>
+        <span class="plink" style="color:var(--purple)"><span data-i18n="ps_soon"></span></span>
       </a>
     </div>
   </div>
@@ -706,13 +743,22 @@ const I18N = {
     m_tool:"用户偏好:深色商务风、四语言",
     st_eng:"AI 引擎", st_tools:"内置工具", st_lang:"UI 语言", st_upload:"后端上传",
     ps_title:"KinetAios 产品系列",
-    ps_sub:"三款产品,覆盖健康管理、AI 自动化和信息简报,各有专长。",
+    ps_sub:"七款产品,覆盖健康管理、AI 工作台、磁盘窗口工具与手机远程操控,各有专长。",
     ps_fit_tag:"健康 · 健身 · 运动追踪",
     ps_fit_desc:"智能健康管理中心。追踪健身数据、制定训练计划、记录运动进度,帮你保持最佳状态。",
     ps_agt_tag:"iOS · 心灵 · 冥想",
     ps_agt_desc:"KinetSoul 是一款 iOS App,为内心提供宁静空间。冥想引导、情绪记录、心灵成长,陪你找到内在平衡。",
     ps_brf_tag:"简报 · 摘要 · 信息聚合",
     ps_brf_desc:"智能信息简报工具。自动聚合新闻、生成摘要、推送关键资讯,让你不漏重要信息。",
+    ps_dsk_tag:"磁盘 · 可视化 · 本地分析",
+    ps_dsk_desc:"把任意文件夹画成可下钻的旭日图,大文件一眼浮出,直接移入废纸篓。完全本地运行,不上传任何文件信息。",
+    ps_agt2_tag:"iOS · 远程 · AI 智能体",
+    ps_agt2_desc:"从手机驱动电脑上的 AI 编程智能体:输出流、工具调用、代码 diff 实时同步。relay 自部署,数据不过第三方。",
+    ps_win_tag:"窗口 · 平铺 · 全局热键",
+    ps_win_desc:"macOS 窗口管理器。全局热键平铺半屏/四象限/多列,布局引擎 2 秒自动纠偏,告别手动拖拽。",
+    ps_dck_tag:"菜单栏 · 收纳 · 零遥测",
+    ps_dck_desc:"菜单栏图标收纳管理器。仅辅助功能一项权限,零网络零遥测,退出即还原、卸载无痕迹。",
+    ps_soon:"即将上线",
     ps_learn:"了解产品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每个引擎一个独立 agent,各自循环、各自状态、各自产出。互不阻塞,你只管下达任务。",
@@ -765,13 +811,22 @@ const I18N = {
     m_tool:"使用者偏好:深色商務風、四語言",
     st_eng:"AI 引擎", st_tools:"內建工具", st_lang:"UI 語言", st_upload:"後端上傳",
     ps_title:"KinetAios 產品系列",
-    ps_sub:"三款產品,覆蓋健康管理、AI 自動化和資訊簡報,各有專長。",
+    ps_sub:"七款產品,覆蓋健康管理、AI 工作台、磁碟視窗工具與手機遠端操控,各有專長。",
     ps_fit_tag:"健康 · 健身 · 運動追蹤",
     ps_fit_desc:"智能健康管理中心。追蹤健身數據、制定訓練計畫、記錄運動進度,幫你保持最佳狀態。",
     ps_agt_tag:"iOS · 心靈 · 冥想",
     ps_agt_desc:"KinetSoul 是一款 iOS App,為內心提供寧靜空間。冥想引導、情緒記錄、心靈成長,陪你找到內在平衡。",
     ps_brf_tag:"簡報 · 摘要 · 資訊聚合",
     ps_brf_desc:"智能資訊簡報工具。自動聚合新聞、生成摘要、推送關鍵資訊,讓你不漏重要消息。",
+    ps_dsk_tag:"磁碟 · 視覺化 · 本機分析",
+    ps_dsk_desc:"把任意資料夾畫成可下鑽的旭日圖,大檔案一眼浮出,直接移入廢紙簍。完全本機執行,不上傳任何檔案資訊。",
+    ps_agt2_tag:"iOS · 遠端 · AI 智慧代理",
+    ps_agt2_desc:"從手機驅動電腦上的 AI 編程智慧代理:輸出串流、工具呼叫、程式碼 diff 即時同步。relay 自行部署,資料不經第三方。",
+    ps_win_tag:"視窗 · 平鋪 · 全域熱鍵",
+    ps_win_desc:"macOS 視窗管理器。全域熱鍵平鋪半屏/四象限/多欄,佈局引擎 2 秒自動矯正,告別手動拖曳。",
+    ps_dck_tag:"選單列 · 收納 · 零遙測",
+    ps_dck_desc:"選單列圖示收納管理器。僅輔助功能一項權限,零網路零遙測,結束即還原、解除安裝無痕跡。",
+    ps_soon:"即將上線",
     ps_learn:"了解產品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每個引擎一個獨立 agent,各自循環、各自狀態、各自產出。互不阻塞,你只管下達任務。",
@@ -824,13 +879,22 @@ const I18N = {
     m_tool:"User preferences: dark business style, 4 languages",
     st_eng:"AI Engines", st_tools:"Built-in Tools", st_lang:"UI Languages", st_upload:"Backend Upload",
     ps_title:"KinetAios Product Suite",
-    ps_sub:"Three products covering health management, AI automation, and information briefings.",
+    ps_sub:"Seven products covering health management, AI workbench, disk & window utilities, and phone-based remote control.",
     ps_fit_tag:"Health · Fitness · Activity Tracking",
     ps_fit_desc:"Smart health management hub. Track fitness data, build training plans, and log workout progress to stay at your peak.",
     ps_agt_tag:"iOS · Mind · Meditation",
     ps_agt_desc:"KinetSoul is an iOS app that creates a tranquil space for your inner world. Guided meditation, mood journaling, and soul growth — find your inner balance.",
     ps_brf_tag:"Briefing · Summary · News Aggregation",
     ps_brf_desc:"Intelligent information briefing tool. Auto-aggregates news, generates summaries, and surfaces what matters most.",
+    ps_dsk_tag:"Disk · Visualization · On-device",
+    ps_dsk_desc:"Renders any folder as a drill-down sunburst chart — spot the space hogs at a glance, trash the bloat. Fully on-device, nothing ever uploaded.",
+    ps_agt2_tag:"iOS · Remote · AI Agents",
+    ps_agt2_desc:"Drive AI coding agents on your computer from your phone: live output, tool calls, code diffs in real time. Self-hosted relay, no third party in between.",
+    ps_win_tag:"Windows · Tiling · Hotkeys",
+    ps_win_desc:"macOS window manager. Tile halves/quadrants/columns with global hotkeys; the layout engine self-corrects within 2 seconds. Stop dragging by hand.",
+    ps_dck_tag:"Menu Bar · Declutter · Zero Telemetry",
+    ps_dck_desc:"Menu bar icon manager. One Accessibility permission, zero network, zero telemetry. Quit restores everything; uninstall leaves no trace.",
+    ps_soon:"Coming soon",
     ps_learn:"Learn more",
     eng_title:"Multiple AI engines, each on its own",
     eng_sub:"Each engine runs as an independent agent — own loop, own status, own output. No blocking. You just hand out tasks.",
@@ -883,13 +947,22 @@ const I18N = {
     m_tool:"ユーザー設定:ダークビジネス風、4言語",
     st_eng:"AI エンジン", st_tools:"内蔵ツール", st_lang:"UI 言語", st_upload:"バックエンド送信",
     ps_title:"KinetAios 製品ラインナップ",
-    ps_sub:"3つの製品、健康管理、AI自動化、情報ブリーフィングをカバー。",
+    ps_sub:"7つの製品、健康管理、AIワークベンチ、ディスク&ウィンドウユーティリティ、スマホからのリモート操作をカバー。",
     ps_fit_tag:"健康 · フィットネス · 活動追跡",
     ps_fit_desc:"スマート健康管理ハブ。フィットネスデータの追跡、トレーニング計画の作成、運動進度の記録でベストコンディションを維持。",
     ps_agt_tag:"iOS · 心 · 瞑想",
     ps_agt_desc:"KinetSoul は iOS アプリで、心に静寂の空間を提供します。瞑想ガイド、感情記録、魂の成長、内なるバランスを見つけよう。",
     ps_brf_tag:"ブリーフィング · 要約 · 情報集約",
     ps_brf_desc:"インテリジェント情報ブリーフィングツール。ニュース自動集約、要約生成、重要情報の通知。",
+    ps_dsk_tag:"ディスク · 可視化 · ローカル分析",
+    ps_dsk_desc:"任意のフォルダをドリルダウンできるサンバースト図として描画。容量の犯人がひと目でわかり、そのままゴミ箱へ。完全ローカル処理、アップロード一切なし。",
+    ps_agt2_tag:"iOS · リモート · AI エージェント",
+    ps_agt2_desc:"スマホから PC 上の AI コーディングエージェントを操作:出力ストリーム、ツール呼び出し、コード diff をリアルタイム同期。relay はセルフホスト、第三者を経由しません。",
+    ps_win_tag:"ウィンドウ · タイリング · ホットキー",
+    ps_win_desc:"macOS ウィンドウマネージャ。グローバルホットキーで半分/四分割/複数列にタイリング、レイアウトエンジンが 2 秒で自動補正。手動ドラッグはもう卒業。",
+    ps_dck_tag:"メニューバー · 整理 · テレメトリゼロ",
+    ps_dck_desc:"メニューバーアイコン整理マネージャ。アクセシビリティ権限 1 つだけ、ネットワーク・テレメトリゼロ。終了すれば元通り、アンインストールも痕跡なし。",
+    ps_soon:"近日公開",
     ps_learn:"製品詳細",
     eng_title:"マルチ AI エンジン、それぞれ独立",
     eng_sub:"各エンジンが独立 agent として稼動。独自ループ、独自ステータス、独自アウトプット。互いにブロックしない。タスクを渡すだけ。",
