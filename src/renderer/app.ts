@@ -261,7 +261,7 @@ function applyI18nDOM(): void {
     const list = await api.getConversations();
     for (const c of list) {
       convs.set(c.id, c);
-      order.push(c.id);
+      if (!order.includes(c.id)) order.push(c.id);
     }
     if (order.length) selectedId = order[0];
   } catch (e) {
@@ -501,6 +501,9 @@ function refreshSidebarLi(convId: string): void {
   if (!c) return;
   const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
   if (!li) { renderSidebar(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 兜底全量
+  // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,直接走全量重渲
+  const projLi = li.closest('li.sb-proj') as HTMLElement | null;
+  if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { renderSidebar(); return; }
   const last = c.turns[c.turns.length - 1];
   const dot = li.querySelector('.dot');
   if (dot) {
@@ -625,6 +628,8 @@ function renderSidebar() {
     });
   }
 
+  // 上游去重保险:order 若因竞态出现重复 id,渲染层不再放大成重复 DOM
+  visibleOrder = [...new Set(visibleOrder)];
   // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。
   if (sortByRecent) {
     visibleOrder.sort((a, b) => {
@@ -646,19 +651,18 @@ function renderSidebar() {
   // 修前这里 ul.innerHTML='' 全量重建:会话多时侧栏抖动、滚动位置丢、全部按钮监听器重挂。
   // 现在:任务 li 按 data-cid、项目组按 data-cwd 复用;内容指纹(见 taskFingerprint)没变的
   // 条目原样保留,只重建变化条目;顺序用 appendChild 重排(appendChild 兼具移动语义)。
+  // 任务池全局唯一(含项目组内嵌套的 li):保证全列表每个会话至多一个 li。
+  // 2026-09 修复 bug:修前 grouped 模式按项目各建 innerPool,会话换组(cwd 回填/变更)时
+  // 旧组里的 li 无人回收 → 同一会话在新旧两个组各出现一次(新会话必现:先落未分类再回填 cwd)。
+  // 全局池 + obtainTaskLi 复用即删 + 末尾清理残留,两组间也用 appendChild 移动,不再有跨组副本。
+  const taskPool = new Map<string, HTMLElement>();
+  ul.querySelectorAll<HTMLElement>('li[data-cid]').forEach((li) => {
+    if (li.dataset.cid) taskPool.set(li.dataset.cid, li);
+  });
   const projPool = new Map<string, HTMLElement>();
   if (sidebarMode !== 'flat') {
     ul.querySelectorAll<HTMLElement>('li.sb-proj[data-cwd]').forEach((li) => {
       if (li.dataset.cwd) projPool.set(li.dataset.cwd, li);
-    });
-    // flat→grouped 切换残留:顶层平铺 li 不属于任何项目组 → 清掉
-    ul.querySelectorAll<HTMLElement>(':scope > li[data-cid]').forEach((li) => li.remove());
-  }
-  // flat 模式的任务池(含 grouped 模式残留的嵌套 li,模式切换后照样被复用/清理)
-  const taskPool = new Map<string, HTMLElement>();
-  if (sidebarMode === 'flat') {
-    ul.querySelectorAll<HTMLElement>('li[data-cid]').forEach((li) => {
-      if (li.dataset.cid) taskPool.set(li.dataset.cid, li);
     });
   }
   ul.querySelectorAll('li.sb-empty').forEach((n) => n.remove());
@@ -668,7 +672,6 @@ function renderSidebar() {
       if (!convs.get(id)) continue;
       ul.appendChild(obtainTaskLi(id, taskPool));
     }
-    taskPool.forEach((li) => li.remove());
   } else {
     // 按 cwd 聚合,保留首次出现顺序(order 已经最新在前,所以分组顺序也是最新项目在前)。
     const groups = new Map<string, string[]>();
@@ -691,19 +694,16 @@ function renderSidebar() {
       tasksUl.classList.toggle('collapsed', collapsed);
       projLi.querySelector('.sb-chevron')?.classList.toggle('collapsed', collapsed);
       // 项目内任务条 keyed 复用
-      const innerPool = new Map<string, HTMLElement>();
-      tasksUl.querySelectorAll<HTMLElement>('li[data-cid]').forEach((li) => {
-        if (li.dataset.cid) innerPool.set(li.dataset.cid, li);
-      });
       for (const id of ids) {
         if (!convs.get(id)) continue;
-        tasksUl.appendChild(obtainTaskLi(id, innerPool));
+        tasksUl.appendChild(obtainTaskLi(id, taskPool)); // 跨组移动 = appendChild,旧位置自动消失
       }
-      innerPool.forEach((li) => li.remove());
       ul.appendChild(projLi);
     }
-    projPool.forEach((li) => li.remove());
   }
+  // 清理:未被复用的任务 li(被删会话/换组遗留/模式切换残留)与消失的项目组
+  taskPool.forEach((li) => li.remove());
+  projPool.forEach((li) => li.remove());
 }
 
 // 单条任务条目(grouped 模式作 .sb-proj-tasks 子项;flat 模式作 #conv-list 顶层 li)。
