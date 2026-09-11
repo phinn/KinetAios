@@ -2340,6 +2340,10 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .step-label { font-size: 0.769rem; font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
 .step-label:first-of-type { margin-top: 6px; }
 .turn .err { color: var(--err); background: color-mix(in srgb, var(--err) 8%, transparent); border-left: 3px solid var(--err); border-radius: 0 6px 6px 0; padding: 8px 12px; margin: 4px 0; font-size: 0.923rem; }
+/* maxTurns 类失败:可续跑(发「继续」接上),amber 警示而非红色报错 — 与 errorKind 联动 */
+.turn .err.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border-left-color: var(--warn); }
+.turn .err.warn .retry-btn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
+.turn .err.warn .retry-btn:hover { background: color-mix(in srgb, var(--warn) 12%, transparent); }
 
 /* input — chat composer,产品最核心的交互入口。
    液态玻璃:半透明 + blur,透出底层背景渐变。*/

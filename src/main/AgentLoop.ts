@@ -165,10 +165,9 @@ export interface RunOpts {
   // 上下文模式:hifi 时不截断 tool result + 更大上下文预算(适合多数据源交叉分析,代价是更多 token)。
   // ponytail: 历史 ContextMode 字段保留以兼容 settings.json 旧数据,真正策略统一从 ENGINE_POLICIES 取。
   contextMode?: 'standard' | 'hifi';
-  // 高保真模式的上下文预算(token)——从设置页读取,控制 reactive trim 上限。
-  hifiContextBudget?: number;
   // 引擎上下文策略包:覆盖默认 ENGINE_POLICIES[engine]。调用方按 engine 传不同策略。
   // 不传 → 用 resolveEnginePolicy(EngineKind, contextMode) 的解析结果。
+  // hifi 预算:hifiContextBudget 设置经 resolveEnginePolicy 的 hifiBudget 参数进入策略包(2026-09 接线)。
   policy?: EngineContextPolicy;
   // 瞬时错误(限流/网络/5xx)退避重试的延迟(ms),按尝试次数(1-based)取值。
   // 缺省指数退避 1s/2s/4s(上限 8s)。测试可传 () => 0 跳过真实等待。
@@ -287,9 +286,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         if (!retriedAfterShrink) {
           // 第一级:用 trimBudget 全预算重试(与 fa7740a 前的原版一致,不再过度激进)
           retriedAfterShrink = true;
+          const beforeTokens = estTokenCount(messages, snapshot.apiProtocol); // 修前恒发 0,进度卡看不到裁剪量
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
-          onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens: estTokenCount(messages, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
           warnIfProtectedOverBudget(messages, trimBudget, snapshot.apiProtocol, onEvent);
           i--; // 抵消 for 的 i++,本轮重试
           continue;
@@ -297,9 +297,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           // 第二级:1/4 预算激进 trim,然后重试(不再直接 return)
           retriedNuclear = true;
           const miniBudget = Math.floor(trimBudget / 4);
+          const beforeTokens = estTokenCount(messages, snapshot.apiProtocol);
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
-          onEvent({ type: 'context', action: 'trimmed', beforeTokens: 0, afterTokens: estTokenCount(messages) } as AgentEvent & { type: 'context' });
+          onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens: estTokenCount(messages, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
           warnIfProtectedOverBudget(messages, trimBudget, snapshot.apiProtocol, onEvent);
           continue; // ⚠️ 必须重试 — 不 continue 就会 fall-through 到 return,任务直接中断
         } else {

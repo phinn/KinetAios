@@ -225,7 +225,7 @@ export class DirectV3Engine implements Engine {
     };
 
     // ── 上下文策略 ──
-    const policy = resolveEnginePolicy('directV3', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+    const policy = resolveEnginePolicy('directV3', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
 
     // ── 工具集 ──
     const tools = [...allTools(), ...(await mcp.directTools(2000))];

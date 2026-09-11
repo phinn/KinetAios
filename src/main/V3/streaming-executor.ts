@@ -54,7 +54,6 @@ export async function executeReActLoop(opts: StreamingExecOpts): Promise<ChatMsg
     signal,
     maxTurns: maxTurns, // undefined → AgentLoop 读 settings.maxTurns;不再 ?? 0(那会让 undefined 变 Infinity 绕过用户设置)
     contextMode,
-    hifiContextBudget: getSettings().hifiContextBudget,
     policy,
     onEvent,
   });

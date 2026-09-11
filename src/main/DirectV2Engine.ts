@@ -251,7 +251,7 @@ export class DirectV2Engine implements Engine {
 
     // P0-1:从策略包取 stepSummaryMaxChars(给 execHistory 的精简版) + stepResultMaxChars(给 PlanStep.result 的完整版)。
     // PlanStep.result 存完整版(最多 stepResultMaxChars),Judge/replan 引用;execHistory 追加的摘要用 stepSummaryMaxChars 截断。
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
     const stepMaxChars = policy.stepSummaryMaxChars || 500;
     const stepFullChars = policy.stepResultMaxChars || 4000;
 
@@ -275,7 +275,7 @@ export class DirectV2Engine implements Engine {
       plan = resumedPlan;
       // P0-14: 恢复的 execHistory 可能很长(crash 发生在步骤 8 → 累积了 8 步完整历史)。
       // 直接传入 Executor 会导致第一轮 LLM 调用就超长。先 trim 到策略预算内。
-      const recoveryPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+      const recoveryPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
       execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 40_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
       const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
@@ -300,8 +300,7 @@ export class DirectV2Engine implements Engine {
       signal,
       // maxTurns 不设限 — Planner 需要充分探查复杂项目,使用全局设置值
       contextMode: conv.contextMode,
-      hifiContextBudget: getSettings().hifiContextBudget,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio),
+      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -340,7 +339,7 @@ export class DirectV2Engine implements Engine {
       onEvent({ type: 'status', text: `${skillTag}⚡ v2: 任务简单,直接执行(完整工具集)` });
       // P2-1-fix: 退化路径也要 trim plannerMessages,防止探查阶段的大段工具输出撑爆 executor。
       // 不像正常路径那样只取 planConclusion —— 退化场景没有 plan,executor 需要探查发现的文件路径。
-      const fallbackPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+      const fallbackPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
       const trimmedPlannerMsgs = trimHistoryToTokenBudget(plannerMessages, fallbackPolicy.trimBudget, snap.apiProtocol);
       const execMessages = await runAgentLoop({
         provider,
@@ -354,7 +353,6 @@ export class DirectV2Engine implements Engine {
         signal,
         maxTurns: 30,
         contextMode: conv.contextMode,
-        hifiContextBudget: getSettings().hifiContextBudget,
         policy: fallbackPolicy,
         onEvent: (ev) => this.forwardEvent(ev, onEvent),
       });
@@ -429,8 +427,7 @@ export class DirectV2Engine implements Engine {
           signal,
           maxTurns: 30, // 单步上限 30 轮:防止模型陷入循环反复 read_file 同一文件烧 token
           contextMode: conv.contextMode,
-          hifiContextBudget: getSettings().hifiContextBudget,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio),
+      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
@@ -589,7 +586,7 @@ export class DirectV2Engine implements Engine {
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
     // P0-1: replan 中也取完整版上限(与主 run 一致)
-    const replanPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+    const replanPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
     const stepFullChars = replanPolicy.stepResultMaxChars || 4000;
 
     // P1-1: 只传失败/跳过的步骤 + Judge 的 reason,不传全部步骤(避免长 plan 撑爆 prompt)。
@@ -623,8 +620,7 @@ ${failedDetail || '  (无)'}
       signal,
       // maxTurns 不设限 — Replan 同样需要充分探查
       contextMode: conv.contextMode, // 与 run() 的 planner 保持一致
-      hifiContextBudget: getSettings().hifiContextBudget,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio),
+      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -683,8 +679,7 @@ ${failedDetail || '  (无)'}
           snapshot: snap,
           maxTurns: 30, // 单步上限 30 轮(与主流程一致)
           contextMode: conv.contextMode,
-          hifiContextBudget: getSettings().hifiContextBudget,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio),
+      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
           onEvent: (ev) => this.forwardEvent(ev, onEvent),
         });
 
@@ -1158,7 +1153,7 @@ ${failedDetail || '  (无)'}
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
     // P0-2: fingerprint = 消息条数 + 首尾消息 content 前 100 字符。
     // P1-fix: 旧版只看最后一条 → 步骤摘要都以 "📋 步骤[X]" 开头,前 200 字符可能碰撞 → 跳过压缩。
     // 改为首条 + 末条 content 各取前 100 字符:两个不同步骤几乎不可能首尾都一样。
@@ -1220,7 +1215,7 @@ ${failedDetail || '  (无)'}
     }
     // 长 session → compactHistory 结构化压缩。
     // compaction seam:经唯一入口压缩,spill 存证在 AgentLoop.compactWithSpill 归一。
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio);
+    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
     const compacted = await compactWithSpill(messages, () =>
       compactHistory(
         messages,

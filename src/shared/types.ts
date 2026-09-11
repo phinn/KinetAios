@@ -149,16 +149,22 @@ export function v2BudgetFromWindow(modelWindow: number, ratio: number): { trim: 
  *
  * directV2 特殊处理:trim/compact/truncate 由 v2ModelWindow * v2BudgetRatio 动态计算,
  * 覆盖 ENGINE_POLICIES 里的 fallback 值。其他 engine 仍走静态策略。
+ *
+ * hifiBudget(2026-09 接线,修前是死设置):hifi 模式下作为 trim/compact 预算的**下限**
+ * (用户在设置页承诺的预算必须给足):实际预算 = max(翻倍/动态值, hifiBudget)。
+ * ≤0 或未传 → 忽略。truncateThreshold 不跟(单条工具结果上限是另一码事)。
  */
 export function resolveEnginePolicy(
   engine: EngineKind,
   mode: ContextMode | undefined,
   v2ModelWindow?: number,
   v2BudgetRatio?: number,
+  hifiBudget?: number,
 ): EngineContextPolicy {
   // 插件引擎:没有静态策略条目 → 回落 direct 兜底(与 store 读档降级一致)。
   // Plugin engines have no static entry → Direct fallback (same as store load degradation).
   const base = ENGINE_POLICIES[engine as BuiltinEngineKind] || ENGINE_POLICIES.direct;
+  const hifiFloor = hifiBudget && hifiBudget > 0 ? hifiBudget : 0;
 
   // directV2/directV3:动态预算
   if ((engine === 'directV2' || engine === 'directV3') && v2ModelWindow) {
@@ -167,8 +173,8 @@ export function resolveEnginePolicy(
     const hifiMul = mode === 'hifi' ? 2 : 1;
     return {
       ...base,
-      trimBudget: trim * hifiMul,
-      interStepCompactBudget: compact * hifiMul,
+      trimBudget: Math.max(trim * hifiMul, hifiFloor),
+      interStepCompactBudget: Math.max(compact * hifiMul, hifiFloor),
       truncateThreshold: truncate * hifiMul,
     };
   }
@@ -177,8 +183,8 @@ export function resolveEnginePolicy(
   if (mode === 'hifi') {
     return {
       ...base,
-      trimBudget: base.trimBudget * 2,
-      interStepCompactBudget: base.interStepCompactBudget * 2,
+      trimBudget: Math.max(base.trimBudget * 2, hifiFloor),
+      interStepCompactBudget: Math.max(base.interStepCompactBudget * 2, hifiFloor),
       truncateThreshold: base.truncateThreshold * 2,
     };
   }
@@ -461,6 +467,8 @@ export type Turn = {
   tokensIn: number;
   tokensOut: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
+  /** 失败原因分类(来自 AgentEvent.error.kind):renderer 据此区分展示 — maxTurns 可续跑(amber 警示而非红色报错)。 */
+  errorKind?: 'maxTurns' | 'transient' | 'contextTooLong';
   // 本 turn 在 directHistory 中的消息区间起点(send 时记录)。
   // pinTurn 由此把 turn 级锁定映射到消息级 _pinned 标记(trim/compact 保护读的是消息标记)。
   // 旧数据/压缩重排后无此值或失配 → applyPin 拒绝标记并说明原因,不会假装生效。
@@ -1123,6 +1131,7 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
         conv.status = 'ready';
       } else {
         t.error = ev.message;
+        t.errorKind = ev.kind; // 2026-09:失败分类透传(renderer 区分 maxTurns 可续跑等)
         t.done = true;
         conv.status = 'ready'; // one failed turn doesn't lock the whole conversation
       }

@@ -1198,15 +1198,15 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 
   // ── 上下文压缩可视化:估算会话 token 使用量 ──
   // 用 AgentLoop 的校准系数(和 trim/compact 同源),给 UI 进度条用。
+  // 2026-09 修复:modelMax 此前硬编码 128K,用户配置 v2ModelWindow(默认 1M)时
+  // 进度条比例完全失真(实际 6% 显示成 45%)。现与 resolveEnginePolicy 同源取设置。
   estContextTokens(convId: string): { tokens: number; modelMax: number; pct: number } {
+    const modelMax = getSettings().v2ModelWindow || 1_000_000;
     const conv = this.convs.get(convId);
-    if (!conv) return { tokens: 0, modelMax: 128_000, pct: 0 };
+    if (!conv) return { tokens: 0, modelMax, pct: 0 };
     // 只对 Direct 引擎有意义(CLI 引擎的上下文由各自的 CLI 管理)
     const { estTokenCount } = require('./AgentLoop') as typeof import('./AgentLoop');
     const tokens = estTokenCount(conv.directHistory);
-    // 常见模型上下文上限(GLM-4: 128K, Claude: 200K, GPT-4o: 128K)。
-    // ponytail: 硬编码 128K 默认值;后续可按 model 名查表。
-    const modelMax = 128_000;
     return { tokens, modelMax, pct: Math.min(100, Math.round((tokens / modelMax) * 100)) };
   }
 
@@ -1244,7 +1244,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const history = JSON.parse(JSON.stringify(conv.directHistory ?? [])) as ChatMsg[];
     const { estTokenCount } = require('./AgentLoop') as typeof import('./AgentLoop');
     const tokens = estTokenCount(history);
-    return { ok: true, history, engine: conv.engine, tokens, modelMax: 128_000 };
+    return { ok: true, history, engine: conv.engine, tokens, modelMax: getSettings().v2ModelWindow || 1_000_000 };
   }
 
   // ── 上下文检查器:保存编辑后的 directHistory ──

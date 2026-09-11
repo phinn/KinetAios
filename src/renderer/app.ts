@@ -2191,7 +2191,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     }
     if (t.error) {
       const e = document.createElement('div');
-      e.className = 'err';
+      // maxTurns 可续跑(发"继续"即可接上)→ amber 警示而非红色报错;其余保持红色
+      e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '');
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
       // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
       const retry = document.createElement('button');

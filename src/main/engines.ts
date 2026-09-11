@@ -493,7 +493,7 @@ class DirectEngine implements Engine {
     const userInput = [prompt, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
     // 从策略包取 trim/interStepCompact/truncate 阈值,统一收口到 ENGINE_POLICIES。
     // v1 direct 默认轻量;hifi 模式 resolveEnginePolicy 已自动翻倍。
-    const policy = resolveEnginePolicy('direct', conv.contextMode);
+    const policy = resolveEnginePolicy('direct', conv.contextMode, undefined, undefined, getSettings().hifiContextBudget);
     const updated = await runAgentLoop({
       provider,
       tools,
@@ -505,7 +505,6 @@ class DirectEngine implements Engine {
       ctx,
       signal,
       contextMode: conv.contextMode,
-      hifiContextBudget: getSettings().hifiContextBudget,
       policy, // P0-1:把策略传给 runAgentLoop,内部不再 if/else
       onEvent,
     });
