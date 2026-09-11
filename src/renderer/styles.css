@@ -2232,11 +2232,15 @@ mark.chat-hit { background: var(--accent-glow); color: inherit; border-radius: 2
 mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-shadow: 0 0 0 2px var(--accent); }
 /* 搜索条 */
 #chat-search { display: flex; align-items: center; gap: 8px; padding: 6px 10px; margin: 0 12px 4px; border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); color: var(--text-dim); box-shadow: 0 4px 16px rgba(0,0,0,0.12); }
+/* 修复:作者 display:flex 会压过 UA 的 [hidden]{display:none} — 显式声明,否则搜索条关不掉 */
+#chat-search[hidden] { display: none; }
 #chat-search input { flex: 1; background: transparent; border: none; outline: none; color: var(--text); font-size: 0.923rem; }
 #chat-search-count { font-size: 0.769rem; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-faint); min-width: 34px; text-align: center; }
 #chat-search .ghost { padding: 2px 6px; font-size: 0.846rem; color: var(--text-dim); }
 /* 消息排队 chip 行 */
 #queue-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 2px; }
+/* 同 #chat-search:display:flex 压过 [hidden],必须显式补(排队行为空时隐藏) */
+#queue-row[hidden] { display: none; }
 #queue-row[hidden] { display: none; }
 #queue-row .queue-label { font-size: 0.769rem; color: var(--text-faint); }
 #queue-row .queue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 6px 3px 10px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--bg-elev); font-size: 0.846rem; color: var(--text-dim); }
