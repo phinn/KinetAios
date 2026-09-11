@@ -40,6 +40,9 @@ let runningOnly = false;
 let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
 let searchQuery = ''; // 侧栏搜索关键词(过滤会话标题) / Sidebar search filter
 let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
+// 后台会话完成标记:A 会话干活时 B 完成 → 侧栏 B 行加小圆点,切换/查看后清除。
+// (未读 badge 只管当前会话的滚离底部;这是给"同时跑多个会话"的场景。)
+const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
 // Per-conversation drafts: save on switch away, restore on switch back. Memory-only.
 const convDrafts = new Map<string, string>();
@@ -360,6 +363,8 @@ function applyI18nDOM(): void {
         // (which changes content height via markdown re-parse) restores the same view.
         if (!userAtBottom) captureScrollAnchor();
         renderMain();
+        // 后台会话完成标记:不是当前正在看的会话 → 侧栏加小圆点提示
+        if (convId !== selectedId) { bgDoneConvs.add(convId); renderSidebar(); }
         // 消息排队:回合结束自动发出队列里的下一条
         flushQueue(convId);
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
@@ -640,7 +645,14 @@ function taskLi(id: string): HTMLElement {
     showConvMenu(id, e.clientX, e.clientY);
   });
   li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  if (bgDoneConvs.has(id)) {
+    const dot = document.createElement('span');
+    dot.className = 'bg-done-dot';
+    dot.title = tr('bg.doneTip');
+    li.appendChild(dot);
+  }
   li.onclick = () => {
+    if (bgDoneConvs.delete(id)) renderSidebar();
     if (selectedId === id) return; // 已经在当前频道,不重复渲染
     // 就地切换 active class,避免全量销毁+重建 sidebar DOM(减少内存抖动)
     document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
@@ -1959,6 +1971,11 @@ function renderHead(conv: Conversation | undefined) {
   const parts: string[] = [];
   if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
+  // 上下文占用估算(direct 系 done 时回填;悬停看含义)
+  if (conv.ctxTokens) {
+    parts.push(`✍ ${(conv.ctxTokens / 1000).toFixed(1)}K`);
+    stat.title = tr('head.ctxTokens');
+  }
   // 运行计时:running 且当前轮有起始 ts → 追加 ⏱ mm:ss/t(hh:mm:ss)。ticker 每秒只刷 stat。
   // Execution timer: while running, append elapsed time of the current turn to the head stat.
   if (conv.status === 'running' && last && last.ts) {
@@ -2317,6 +2334,91 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
   return wrap;
 }
 
+// ── 行级 diff(编辑工具卡):LCS 对齐,超长行/超大文件护栏后退化为截断展示 ──
+const DIFF_MAX_LINES = 600; // 每侧超 600 行不做 LCS(O(n·m) 防护),整块标记省略
+const DIFF_MAX_ROWS = 900; // 渲染行数上限(diff 区滚动)
+
+function buildLineDiff(oldText: string, newText: string): Array<{ t: '-' | '+' | ' '; s: string }> | null {
+  const a = oldText ? oldText.split('\n') : [];
+  const b = newText ? newText.split('\n') : [];
+  if (a.length > DIFF_MAX_LINES || b.length > DIFF_MAX_LINES) return null;
+  const n = a.length, m = b.length;
+  // LCS 长度表(滚动数组省内存;回溯需要全表 → 直接全表,600x600 无压力)
+  const dp: Uint32Array[] = Array.from({ length: n + 1 }, () => new Uint32Array(m + 1));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = a[i] === b[j] ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  const ops: Array<{ t: '-' | '+' | ' '; s: string }> = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { ops.push({ t: ' ', s: a[i] }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: '-', s: a[i] }); i++; }
+    else { ops.push({ t: '+', s: b[j] }); j++; }
+  }
+  while (i < n) { ops.push({ t: '-', s: a[i] }); i++; }
+  while (j < m) { ops.push({ t: '+', s: b[j] }); j++; }
+  return ops;
+}
+
+function buildDiffView(oldText: string, newText: string): HTMLElement {
+  const box = document.createElement('div');
+  box.className = 'diff-box';
+  const label = document.createElement('div');
+  label.className = 'step-label';
+  label.textContent = 'Diff';
+  box.appendChild(label);
+  const pre = document.createElement('pre');
+  pre.className = 'diff-pre';
+  const ops = buildLineDiff(oldText, newText);
+  if (!ops) {
+    pre.textContent = tr('diff.tooLarge');
+    box.appendChild(pre);
+    return box;
+  }
+  // 变更行周围保留 2 行上下文;纯增(新文件)不裁
+  const rows = oldText ? trimContext(ops, 2) : ops;
+  let shown = 0;
+  for (const op of rows) {
+    if (shown >= DIFF_MAX_ROWS) {
+      const more = document.createElement('span');
+      more.className = 'diff-line diff-more';
+      more.textContent = `… +${rows.length - shown} ${tr('diff.moreLines')}`;
+      pre.appendChild(more);
+      break;
+    }
+    const line = document.createElement('span');
+    line.className = 'diff-line diff-' + (op.t === ' ' ? 'ctx' : op.t === '-' ? 'del' : 'add');
+    line.textContent = (op.t === ' ' ? '  ' : op.t + ' ') + op.s;
+    pre.appendChild(line);
+    shown++;
+  }
+  if (!rows.length) {
+    const none = document.createElement('span');
+    none.className = 'diff-line diff-ctx';
+    none.textContent = tr('diff.noChange');
+    pre.appendChild(none);
+  }
+  box.appendChild(pre);
+  return box;
+}
+
+// 裁掉远离变更的上下文行(变更点 ±ctx 行保留)
+function trimContext(ops: Array<{ t: '-' | '+' | ' '; s: string }>, ctx: number): Array<{ t: '-' | '+' | ' '; s: string }> {
+  const keep = new Array(ops.length).fill(false);
+  ops.forEach((op, i) => {
+    if (op.t !== ' ') for (let k = Math.max(0, i - ctx); k <= Math.min(ops.length - 1, i + ctx); k++) keep[k] = true;
+  });
+  const out: Array<{ t: '-' | '+' | ' '; s: string }> = [];
+  let skipping = false;
+  ops.forEach((op, i) => {
+    if (keep[i]) { out.push(op); skipping = false; }
+    else if (!skipping) { out.push({ t: ' ', s: '…' }); skipping = true; }
+  });
+  return out;
+}
+
 // steps summary 概要文案:buildStepsEl 全量构建与流式增量补挂共用。
 // Summary label for steps; shared by full build and streaming incremental append.
 function stepsSummaryLabel(steps: { name: string }[]): string {
@@ -2597,8 +2699,24 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
       }
     } catch { /* args 非 JSON(流式中间态)→ 无 chip,不影响原有渲染 */ }
   }
+  // edit_file/write_file → 真 diff 视图(删行红/增行绿),替代裸 args 墙。
+  // args 是结构化 JSON(old_string/new_string / content),数据现成;解析失败退回原有 args 展示。
+  let diffRendered = false;
+  if (s.name === 'edit_file' || s.name === 'write_file') {
+    try {
+      const a = JSON.parse(s.args) as { old_string?: string; new_string?: string; content?: string };
+      if (s.name === 'edit_file' && typeof a.old_string === 'string' && typeof a.new_string === 'string') {
+        det.appendChild(buildDiffView(a.old_string, a.new_string));
+        diffRendered = true;
+      } else if (s.name === 'write_file' && typeof a.content === 'string' && s.result && !s.result.includes('错误') && !s.result.includes('❌')) {
+        // 新建/整体覆盖:全绿展示(失败时不渲染,避免误导)
+        det.appendChild(buildDiffView('', a.content));
+        diffRendered = true;
+      }
+    } catch { /* 流式中间态 args 不完整 → 走原样展示 */ }
+  }
   // 有内容才添加区块,避免空 pre 占位 / Skip empty sections to avoid blank gray blocks
-  if (s.args) {
+  if (s.args && !diffRendered) {
     const aLabel = document.createElement('div');
     aLabel.className = 'step-label';
     aLabel.textContent = 'Args';
@@ -2849,6 +2967,76 @@ async function forkFromTurn(convId: string, turnId: string): Promise<void> {
   uxToast.info(tr('turn.forked'));
 }
 
+// ── @ 文件引用自动补全:输入 @ 触发,cwd 相对路径逐级补全(mousedown 防抖与 slash 菜单同款)──
+const atMenu = { open: false, items: [] as Array<{ name: string; isDir: boolean; rel: string }>, sel: 0, tokenStart: -1, dirPart: '' };
+let atHolding = false; // mousedown 选标签时抑制 blur 关闭
+let atDebounce: ReturnType<typeof setTimeout> | null = null;
+
+function atMenuEl(): HTMLElement { return document.getElementById('at-menu')!; }
+
+function closeAtMenu(): void {
+  atMenu.open = false;
+  atMenuEl().hidden = true;
+}
+
+function atInsert(entry: { name: string; isDir: boolean }): void {
+  const composer = document.getElementById('composer') as HTMLTextAreaElement;
+  const rel = atMenu.dirPart + entry.name + (entry.isDir ? '/' : '');
+  const pos = composer.selectionStart ?? composer.value.length;
+  composer.value = composer.value.slice(0, atMenu.tokenStart + 1) + rel + composer.value.slice(pos);
+  const np = atMenu.tokenStart + 1 + rel.length;
+  composer.setSelectionRange(np, np);
+  autosize(composer);
+  closeAtMenu();
+  composer.focus();
+  if (entry.isDir) void handleAtMenu(); // 选了目录 → 立刻续补下一级
+}
+
+async function handleAtMenu(): Promise<void> {
+  const composer = document.getElementById('composer') as HTMLTextAreaElement;
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  const pos = composer.selectionStart ?? 0;
+  const before = composer.value.slice(0, pos);
+  const m = before.match(/(^|\s)@([^\s@]*)$/);
+  if (!m || !conv?.cwd) { closeAtMenu(); return; }
+  const typed = m[2];
+  atMenu.tokenStart = pos - typed.length - 1;
+  const slash = typed.lastIndexOf('/');
+  const dirPart = slash >= 0 ? typed.slice(0, slash + 1) : '';
+  const namePart = (slash >= 0 ? typed.slice(slash + 1) : typed).toLowerCase();
+  const abs = dirPart ? conv.cwd.replace(/[\\/]+$/, '') + '/' + dirPart : conv.cwd;
+  const r = await api.listDir(abs);
+  if (!r.ok || !r.entries?.length) { closeAtMenu(); return; }
+  atMenu.dirPart = dirPart;
+  atMenu.items = r.entries
+    .filter((e) => !e.name.startsWith('.') && e.name.toLowerCase().includes(namePart))
+    .sort((x, y) => (x.isDir === y.isDir ? x.name.localeCompare(y.name) : x.isDir ? -1 : 1))
+    .slice(0, 20)
+    .map((e) => ({ name: e.name, isDir: e.isDir, rel: dirPart + e.name }));
+  if (!atMenu.items.length) { closeAtMenu(); return; }
+  atMenu.open = true;
+  atMenu.sel = 0;
+  const el = atMenuEl();
+  el.innerHTML = '';
+  atMenu.items.forEach((it, i) => {
+    const row = document.createElement('button');
+    row.className = 'slash-item' + (i === 0 ? ' sel' : '');
+    row.innerHTML = `<span class="ctx-ico">${it.isDir ? '📁' : '📄'}</span><span>${esc(atMenu.dirPart + it.name)}</span>`;
+    row.onmousedown = () => { atHolding = true; atInsert(it); setTimeout(() => { atHolding = false; }, 20); };
+    el.appendChild(row);
+  });
+  el.hidden = false;
+}
+
+function atMove(dir: 1 | -1): void {
+  if (!atMenu.open || !atMenu.items.length) return;
+  atMenu.sel = (atMenu.sel + dir + atMenu.items.length) % atMenu.items.length;
+  const rows = atMenuEl().querySelectorAll('.slash-item');
+  rows.forEach((r) => r.classList.remove('sel'));
+  rows[atMenu.sel]?.classList.add('sel');
+  rows[atMenu.sel]?.scrollIntoView({ block: 'nearest' });
+}
+
 // ── 快捷键速查表(? 呼出)──
 function showShortcutsSheet(): void {
   document.querySelector('.sheet-overlay')?.remove();
@@ -2952,10 +3140,23 @@ function buildPaletteActions(): PaletteAction[] {
   return acts;
 }
 
+function paletteRecent(): string[] {
+  try { return JSON.parse(localStorage.getItem('palette-recent') ?? '[]') as string[]; } catch { return []; }
+}
+
+function paletteRecord(label: string): void {
+  try {
+    const list = paletteRecent().filter((x) => x !== label);
+    list.unshift(label);
+    localStorage.setItem('palette-recent', JSON.stringify(list.slice(0, 10)));
+  } catch { /* localStorage 满/禁用 → 忽略 */ }
+}
+
 function paletteScore(q: string, a: PaletteAction): number {
   const label = a.label.toLowerCase();
   const ql = q.toLowerCase();
-  if (label.startsWith(ql)) return 2;
+  const recentBonus = paletteRecent().includes(a.label) ? 3 : 0; // 最近使用加权(空查询时也排前)
+  if (label.startsWith(ql)) return 2 + recentBonus;
   const idx = label.indexOf(ql);
   if (idx >= 0) return 1 + (a.hint?.toLowerCase().includes(ql) ? 0.5 : 0);
   if (a.hint?.toLowerCase().includes(ql)) return 0.5;
@@ -2965,7 +3166,11 @@ function paletteScore(q: string, a: PaletteAction): number {
 function renderPaletteList(q: string): void {
   const list = document.getElementById('palette-list')!;
   const acts = buildPaletteActions();
-  paletteFiltered = (q.trim() ? acts.map((a) => ({ a, s: paletteScore(q.trim(), a) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).map((x) => x.a) : acts).slice(0, 30);
+  const recent = paletteRecent();
+  paletteFiltered = (q.trim()
+    ? acts.map((a) => ({ a, s: paletteScore(q.trim(), a) })).filter((x) => x.s > 0).sort((x, y) => y.s - x.s).map((x) => x.a)
+    : [...acts].sort((x, y) => (recent.includes(y.label) ? 1 : 0) - (recent.includes(x.label) ? 1 : 0))
+  ).slice(0, 30);
   paletteSel = Math.min(paletteSel, Math.max(0, paletteFiltered.length - 1));
   list.innerHTML = '';
   paletteFiltered.forEach((a, i) => {
@@ -2981,7 +3186,7 @@ function renderPaletteList(q: string): void {
       hint.textContent = a.hint;
       row.appendChild(hint);
     }
-    row.onclick = () => { closePalette(); a.run(); };
+    row.onclick = () => { paletteRecord(a.label); closePalette(); a.run(); };
     row.onmousemove = () => { if (paletteSel !== i) { paletteSel = i; list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel')); row.classList.add('sel'); } };
     list.appendChild(row);
   });
@@ -3825,6 +4030,7 @@ async function showSettings() {
       <button id="s-back" class="ghost" style="margin-bottom:14px">${tr('settings.back')}</button>
       <h2>${tr('settings.title')}</h2>
       <div class="sub">${tr('settings.sub')}</div>
+      <input id="s-search" class="settings-search" data-i18n-placeholder="settings.search" placeholder="${esc(tr('settings.search'))}" spellcheck="false" />
 
       <div class="s-tabs">
         <button class="s-tab active" data-stab="model">${tr('settings.tab.model')}</button>
@@ -4711,6 +4917,22 @@ async function showSettings() {
     el.textContent = text;
     el.style.color = ok ? 'var(--ok)' : 'var(--danger)';
   };
+  // ── 设置页搜索:跨 tab 过滤 .s-section,清空恢复当前 tab ──
+  const sSearch = document.getElementById('s-search') as HTMLInputElement;
+  sSearch.addEventListener('input', () => {
+    const q = sSearch.value.trim().toLowerCase();
+    const panels = root.querySelectorAll<HTMLElement>('.s-tab-panel');
+    if (q) {
+      panels.forEach((p) => { p.style.display = ''; });
+      root.querySelectorAll<HTMLElement>('.s-section').forEach((sec) => {
+        sec.style.display = sec.textContent?.toLowerCase().includes(q) ? '' : 'none';
+      });
+    } else {
+      root.querySelectorAll<HTMLElement>('.s-section').forEach((sec) => { sec.style.display = ''; });
+      const active = root.querySelector<HTMLElement>('.s-tab.active')?.dataset.stab;
+      panels.forEach((p) => { p.style.display = p.dataset.panel === active ? '' : 'none'; });
+    }
+  });
   document.getElementById('s-mem-exp')!.onclick = async () => {
     const r = await api.memoryExport();
     if (r.ok && r.path) showMemMsg(tr('settings.mem.expOk', { count: r.count ?? 0, path: r.path }), true);
@@ -5832,7 +6054,7 @@ function closeMoreMenu() {
     else if (e.key === 'Enter') {
       e.preventDefault();
       const act = paletteFiltered[paletteSel];
-      if (act) { closePalette(); act.run(); }
+      if (act) { paletteRecord(act.label); closePalette(); act.run(); }
     } else if (e.key === 'Escape') {
       e.preventDefault();
       closePalette();
@@ -6043,6 +6265,18 @@ function closeMoreMenu() {
       if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); pickSlash(); return; }
       if (e.key === 'Escape') { e.preventDefault(); closeSlash(); return; }
     }
+    // @ 文件补全菜单打开时:Enter/Tab 选中,↑↓ 移动,Esc 关闭(优先级高于发送)
+    if (atMenu.open) {
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        const it = atMenu.items[atMenu.sel];
+        if (it) atInsert(it);
+        return;
+      }
+      if (e.key === 'ArrowDown') { e.preventDefault(); atMove(1); return; }
+      if (e.key === 'ArrowUp') { e.preventDefault(); atMove(-1); return; }
+      if (e.key === 'Escape') { e.preventDefault(); closeAtMenu(); return; }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       // 消息排队(DSH 式):running 时 Enter → 入队(发送键仍保留停止语义),回合结束自动发出
@@ -6066,6 +6300,8 @@ function closeMoreMenu() {
   composer.addEventListener('input', () => {
     autosize(composer);
     handleSlash(composer);
+    if (atDebounce) clearTimeout(atDebounce);
+    atDebounce = setTimeout(() => void handleAtMenu(), 150);
   });
   // 初始挂载时强制 autosize — 避免 placeholder 自动换行撑高空 textarea
   // Force autosize on mount — long placeholder text would otherwise inflate scrollHeight
@@ -6073,7 +6309,7 @@ function closeMoreMenu() {
   autosize(composer);
   // 延迟关闭,给 mousedown 标签拦截留时间;用 slashHolding flag 可靠取消。
   composer.addEventListener('blur', () => {
-    setTimeout(() => { if (!slashHolding) closeSlash(); }, 150);
+    setTimeout(() => { if (!slashHolding) closeSlash(); if (!atHolding) closeAtMenu(); }, 150);
   });
 
   // 文件附件:📎 选 / 拖入多个

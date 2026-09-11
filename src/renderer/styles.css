@@ -2268,6 +2268,19 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .empty-chips { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; align-items: center; }
 .empty-chip { max-width: 420px; padding: 7px 16px; font-size: 0.846rem; color: var(--text-dim); border: 1px dashed var(--border-soft); border-radius: 10px; background: var(--bg-elev); }
 .empty-chip:hover { color: var(--accent); border-color: var(--accent-dim); border-style: solid; }
+/* ── edit_file/write_file diff 视图 ── */
+.diff-box { margin: 6px 0 2px; }
+.diff-pre { margin: 4px 0 0; padding: 8px 10px; background: color-mix(in srgb, var(--bg) 55%, transparent); border: 1px solid var(--border-soft); border-radius: 8px; max-height: 320px; overflow: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.769rem; line-height: 1.5; display: block; white-space: pre; }
+.diff-line { display: block; }
+.diff-del { color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
+.diff-add { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
+.diff-ctx { color: var(--text-faint); }
+.diff-more { color: var(--text-faint); font-style: italic; }
+/* ── 后台会话完成小圆点(侧栏)── */
+.bg-done-dot { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 6px color-mix(in srgb, var(--ok) 60%, transparent); flex-shrink: 0; }
+/* ── 设置页搜索 ── */
+.settings-search { width: 100%; margin: 10px 0 14px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border-soft); border-radius: 8px; color: var(--text); font-size: 0.923rem; outline: none; }
+.settings-search:focus { border-color: var(--accent-dim); }
 /* ── 窄窗口响应式(<900px)── */
 @media (max-width: 900px) {
   .s-tabs { flex-wrap: wrap; }

@@ -3,6 +3,7 @@
 import fs from 'node:fs';
 import type { AgentEvent, ChatMsg, Conversation, ContextMode, EngineKind, Turn } from '../shared/types';
 import { applyEvent, newTurn, rid } from '../shared/types';
+import { estTokenCount } from './AgentLoop';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -730,6 +731,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
     // 但 abort 可能引发 engine 内部 error 事件 → 用 signal.aborted 区分)。
     if (ev.type === 'done' || ev.type === 'error') {
+      // 上下文占用估算(Direct 系才有 directHistory;CLI 引擎的上下文在其进程内,估不了)
+      if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3') {
+        conv.ctxTokens = estTokenCount(conv.directHistory);
+      }
       this.emit.notifyDone(conv, ev.type === 'done' ? 'done' : 'error', signal.aborted);
     }
     const t = conv.turns[conv.turns.length - 1];

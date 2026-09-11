@@ -644,6 +644,7 @@ export type Conversation = {
   engine: EngineKind;
   model: string; // Direct 引擎用的模型,每会话独立;claudeCode/codex 由各自 CLI 配置
   profileId?: string | null; // 绑定的模型配置档(切换 profile 时更新;null = 用全局 settings)
+  ctxTokens?: number; // 上下文占用估算(direct 系 done 时按 directHistory 估算;CLI 引擎无法估,不设)
   goal?: string | null; // 会话目标(通过 /goal 设置,持续注入 systemPrompt 直到清除)
   contextMode?: ContextMode; // 上下文模式:standard(默认省 token) / hifi(不截断+大预算) / 未来可扩展
   cwd: string;
