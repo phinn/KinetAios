@@ -390,6 +390,18 @@
     </div>
   </div>
 
+  <!-- 通用确认弹窗(危险操作:清空/删除等)。showConfirmDialog() 控制显隐与 Promise -->
+  <div id="confirm-modal" role="dialog" aria-modal="true">
+    <div class="modal-card">
+      <h3 id="confirm-title"></h3>
+      <p id="confirm-body" class="confirm-body"></p>
+      <div class="actions">
+        <button id="confirm-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary btn-danger" id="confirm-ok"></button>
+      </div>
+    </div>
+  </div>
+
   <!-- 项目背景编辑器(workbench 卡片「背景」按钮弹出;写 cwd/KINET-CONTEXT.md)-->
   <div id="context-modal" role="dialog" aria-modal="true">
     <div class="modal-card cm-card">

@@ -862,6 +862,46 @@ function dismissPrompt(): void {
   activePromptDone?.(null);
 }
 
+// ── 通用确认弹窗(危险操作):清空历史 / 删除会话等。styled + trapFocus + Esc/backdrop 取消。
+// v3.6.3 前清空/删除要么零确认要么用原生 window.confirm(与全应用视觉脱节)。
+let activeConfirmDone: ((ok: boolean) => void) | null = null;
+let confirmDialogFocusRestore: (() => void) | null = null;
+function showConfirmDialog(title: string, body: string, opts?: { okLabel?: string }): Promise<boolean> {
+  const modal = document.getElementById('confirm-modal')!;
+  document.getElementById('confirm-title')!.textContent = title;
+  document.getElementById('confirm-body')!.textContent = body;
+  const ok = document.getElementById('confirm-ok')!;
+  ok.textContent = opts?.okLabel ?? tr('common.ok');
+  modal.classList.add('show');
+  ok.focus();
+  confirmDialogFocusRestore = trapFocus(modal);
+  return new Promise((resolve) => {
+    const cancel = document.getElementById('confirm-cancel')!;
+    if (activeConfirmDone) activeConfirmDone(false); // 上一个未完成的确认先取消(避免 Promise 永挂)
+    const done = (v: boolean) => {
+      ok.onclick = null;
+      cancel.onclick = null;
+      document.onkeydown = null;
+      activeConfirmDone = null;
+      modal.classList.remove('show');
+      if (confirmDialogFocusRestore) { confirmDialogFocusRestore(); confirmDialogFocusRestore = null; }
+      resolve(v);
+    };
+    activeConfirmDone = done;
+    ok.onclick = () => done(true);
+    cancel.onclick = () => done(false);
+    document.onkeydown = (e) => {
+      if (e.key === 'Enter') done(true);
+      else if (e.key === 'Escape') done(false);
+    };
+  });
+}
+/** Esc / backdrop 兜底取消(与全局 modal 处理器联动) */
+function dismissConfirmDialog(): void {
+  if (confirmDialogFocusRestore) { confirmDialogFocusRestore(); confirmDialogFocusRestore = null; }
+  activeConfirmDone?.(false);
+}
+
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
 async function renameConv(id: string) {
   const c = convs.get(id);
@@ -874,7 +914,9 @@ async function deleteConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
   const name = c.customTitle || c.firstPrompt?.slice(0, 40) || c.turns[0]?.prompt?.slice(0, 40) || tr('prompt.deleteFallback');
-  if (confirm(tr('prompt.deleteConfirm', { name }))) await api.deleteConversation(id);
+  // v3.6.3:原生 window.confirm → 应用内确认弹窗(风格统一,Esc/backdrop 可取消)
+  const ok = await showConfirmDialog(tr('prompt.delTitle'), tr('prompt.deleteConfirm', { name }), { okLabel: tr('prompt.delOk') });
+  if (ok) await api.deleteConversation(id);
 }
 
 // ---------- main pane ----------
@@ -6265,7 +6307,14 @@ function closeMoreMenu() {
     if (rulesCwd) void loadRules(rulesCwd);
   };
   document.getElementById('btn-rules-gen')!.onclick = () => openRuleGenerator();
-  document.getElementById('btn-clear')!.onclick = () => selectedId && api.clearConversation(selectedId);
+  document.getElementById('btn-clear')!.onclick = async () => {
+    // v3.6.3:清空历史不可恢复 → 必须确认(修前一键直清)
+    const conv = convs.get(selectedId ?? '');
+    if (!conv) return;
+    const name = conv.customTitle || conv.firstPrompt?.slice(0, 40) || conv.turns[0]?.prompt?.slice(0, 40) || '';
+    const ok = await showConfirmDialog(tr('prompt.clearTitle'), tr('prompt.clearBody', { name }), { okLabel: tr('prompt.clearOk') });
+    if (ok) api.clearConversation(conv.id);
+  };
   // 上下文模式切换:standard(默认省 token) / hifi(不截断+大预算)。以后可扩展更多模式。
   const ctxSel = document.getElementById('ctx-mode-select') as HTMLSelectElement;
   ctxSel.innerHTML = CONTEXT_MODES.map((m) => `<option value="${m}">${esc(tr('ctxMode.' + m))}</option>`).join('');
@@ -6300,7 +6349,7 @@ function closeMoreMenu() {
   }
   // 清除目标:发送 /goal(无参数)清除
   document.getElementById('btn-goal-clear')!.onclick = () => selectedId && void api.send(selectedId, '/goal');
-  document.getElementById('btn-del')!.onclick = () => selectedId && api.deleteConversation(selectedId);
+  document.getElementById('btn-del')!.onclick = () => selectedId && void deleteConv(selectedId);
   document.getElementById('btn-ctx-inspector')!.onclick = () => selectedId && void openCtxInspector(selectedId);
   document.getElementById('ctx-insp-close')!.onclick = closeCtxInspector;
   document.getElementById('ctx-insp-cancel')!.onclick = closeCtxInspector;
@@ -6400,14 +6449,16 @@ function closeMoreMenu() {
     if (e.key !== 'Escape') return;
     if (document.getElementById('search-overlay')!.style.display !== 'none') { closeSearch(); return; }
     if (document.getElementById('modal')!.classList.contains('show')) closeConfirm(false);
+    else if (document.getElementById('confirm-modal')!.classList.contains('show')) dismissConfirmDialog();
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
     else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
     else if (document.getElementById('ctx-inspector-modal')!.classList.contains('show')) closeCtxInspector();
   });
-  for (const id of ['modal', 'prompt-modal', 'context-modal', 'ctx-inspector-modal']) {
+  for (const id of ['modal', 'confirm-modal', 'prompt-modal', 'context-modal', 'ctx-inspector-modal']) {
     document.getElementById(id)!.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) {
         if (id === 'modal') closeConfirm(false);
+        else if (id === 'confirm-modal') dismissConfirmDialog();
         else if (id === 'prompt-modal') dismissPrompt();
         else if (id === 'context-modal') closeContextModal();
         else if (id === 'ctx-inspector-modal') closeCtxInspector();

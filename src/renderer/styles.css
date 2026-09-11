@@ -2861,6 +2861,10 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .modal-card h3 { margin: 0 0 6px; }
 .modal-card pre { background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.923rem; user-select: text; }
 .modal-card .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+/* 通用确认弹窗(v3.6.3):危险操作主按钮红底,正文次级色 */
+#confirm-modal .btn-danger { background: var(--err); color: #fff; border: none; }
+#confirm-modal .btn-danger:hover { background: color-mix(in srgb, var(--err) 85%, #000); }
+#confirm-modal .confirm-body { color: var(--text-dim); font-size: 0.923rem; line-height: 1.6; margin: 8px 0 0; }
 
 /* quick window */
 body.quick { display: flex; flex-direction: column; height: 100vh; padding: 10px; gap: 8px; }
