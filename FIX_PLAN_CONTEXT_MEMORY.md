@@ -212,8 +212,11 @@ memory+pinned+全部摘要不占任何预算 → 长会话保护头部线性增�
 未修:
 - 全局排序池(importance=10 但 relevance=0 可挤掉相关记忆,有测试圈定)、
   dedup 保留旧值、审计 spill 的 dropped 全文落库、memoryBlock 注入位置与总量上限、
-  `hifiContextBudget` 死设置清理、上下文进度条 modelMax 硬编码 128K、
   `factsAsBlock` 未接线、file_registry 只增不减、注入 query 多主题拼接。
+- ~~hifiContextBudget 死设置~~ / ~~进度条 modelMax 硬编码 128K~~ —— 已修(e72dfec:接 resolveEnginePolicy
+  hifiBudget 下限 + settings.v2ModelWindow;同批修复 trim 事件 beforeTokens、Turn.errorKind 区分展示)。
+- **memory blocks 编辑 UI 前端整体缺失**:memoryBlocksList/memoryBlockUpdate IPC 无任何 renderer
+  消费者(droppedTail 也就无处消费)— 需单独建面板(设置页或记忆视图内)。
 
 ## 实施顺序与回归策略
 
