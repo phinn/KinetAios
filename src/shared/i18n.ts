@@ -1002,6 +1002,11 @@ const ZH_CN: Dict = {
   'head.ctxTokens': '上下文占用估算(对话历史 token 数,超阈值后自动压缩)',
   'bg.doneTip': '已完成',
   'settings.search': '搜索设置项…',
+  'steps.aggExpand': '展开',
+  'err.switchProfile': '切换配置档并重试 ▸',
+  'err.noChain': '未配置 failover 链,请在设置中选择配置档',
+  'err.profileSwitched': '已切换到配置档 {p},正在重试',
+  'wb.running': '运行中',
   'confirm.sessionOk': '本会话内后续 shell 命令将自动放行(重启后失效)',
 
   // ── 多模态视觉输入 ──
@@ -2182,6 +2187,11 @@ const EN: Dict = {
   'head.ctxTokens': 'Estimated context usage (conversation history tokens; auto-compaction kicks in past the threshold)',
   'bg.doneTip': 'Finished',
   'settings.search': 'Search settings…',
+  'steps.aggExpand': 'expand',
+  'err.switchProfile': 'Switch profile & retry ▸',
+  'err.noChain': 'No failover chain configured — pick a profile in Settings',
+  'err.profileSwitched': 'Switched to profile {p}, retrying',
+  'wb.running': 'Running',
   'confirm.sessionOk': 'Shell commands in this conversation will be auto-approved (until restart)',
 
   // ── Vision / multimodal ──
@@ -3326,6 +3336,11 @@ const ZH_TW: Dict = {
   'head.ctxTokens': '上下文佔用估算(對話歷史 token 數,超閾值後自動壓縮)',
   'bg.doneTip': '已完成',
   'settings.search': '搜尋設定項…',
+  'steps.aggExpand': '展開',
+  'err.switchProfile': '切換配置檔並重試 ▸',
+  'err.noChain': '未配置 failover 鏈,請在設定中選擇配置檔',
+  'err.profileSwitched': '已切換到配置檔 {p},正在重試',
+  'wb.running': '執行中',
   'plan.card': '執行計劃',
   'plan.stage': '階段 {n}',
   'todo.card': '任務清單',

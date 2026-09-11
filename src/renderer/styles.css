@@ -2281,6 +2281,49 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* ── 设置页搜索 ── */
 .settings-search { width: 100%; margin: 10px 0 14px; padding: 8px 12px; background: var(--bg); border: 1px solid var(--border-soft); border-radius: 8px; color: var(--text); font-size: 0.923rem; outline: none; }
 .settings-search:focus { border-color: var(--accent-dim); }
+/* ── 工具调用聚合卡 ── */
+.step-agg > summary { cursor: pointer; display: flex; align-items: center; gap: 8px; list-style: none; }
+.step-agg > summary::-webkit-details-marker { display: none; }
+.agg-ico { flex-shrink: 0; }
+.agg-label { color: var(--text-dim); font-size: 0.846rem; }
+.agg-label b { color: var(--accent); }
+.agg-hint { margin-left: auto; font-size: 0.7rem; color: var(--text-faint); }
+.step-agg[open] .agg-hint { display: none; }
+.agg-inner { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+/* ── 时间线刻度条(minimap)── */
+.tick-strip { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 10px 8px; border-top: 1px dashed var(--border-soft); }
+.tick { width: 8px; height: 8px; border-radius: 2px; cursor: pointer; background: var(--border-soft); transition: transform var(--dur-fast) var(--ease-out); }
+.tick:hover { transform: scale(1.4); }
+.tick-ok { background: color-mix(in srgb, var(--ok) 55%, var(--border-soft)); }
+.tick-err { background: var(--err); }
+.tick-warn { background: var(--warn); }
+.tick-gray { background: var(--text-faint); opacity: 0.5; }
+.tick-flash { outline: 2px solid var(--accent); border-radius: 8px; }
+/* ── quota 恢复按钮 ── */
+.quota-btn { color: var(--warn) !important; border-color: color-mix(in srgb, var(--warn) 40%, transparent) !important; }
+/* ── 旧回合折叠行 ── */
+.turn-fold { display: flex; align-items: center; gap: 10px; width: 100%; padding: 5px 12px; background: color-mix(in srgb, var(--bg-elev) 60%, transparent); border: 1px solid transparent; border-radius: 8px; color: var(--text-faint); font-size: 0.846rem; cursor: pointer; text-align: left; }
+.turn-fold:hover { border-color: var(--border-soft); color: var(--text-dim); }
+.turn-fold:hover .fold-arrow { transform: rotate(90deg); }
+.fold-time { font-family: ui-monospace, monospace; font-size: 0.769rem; flex-shrink: 0; }
+.fold-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fold-cost { font-size: 0.769rem; flex-shrink: 0; }
+.fold-status { flex-shrink: 0; color: var(--ok); }
+.fold-arrow { flex-shrink: 0; transition: transform var(--dur-fast) var(--ease-out); }
+/* ── 任务进度墙(mission control)── */
+.mission-sec { margin-bottom: 18px; }
+.mission-head { font-size: 0.923rem; font-weight: 600; color: var(--text); margin-bottom: 10px; }
+.mission-wall { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.mission-card { padding: 12px 14px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 12px; cursor: pointer; transition: border-color var(--dur-fast) var(--ease-out), transform var(--dur-fast) var(--ease-out); }
+.mission-card:hover { border-color: var(--accent-dim); transform: translateY(-1px); }
+.mc-top { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.mc-title { flex: 1; font-size: 0.846rem; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mc-eng { font-size: 0.7rem; color: var(--text-faint); flex-shrink: 0; }
+.mc-bar { height: 4px; background: var(--border-soft); border-radius: 2px; overflow: hidden; margin-bottom: 6px; }
+.mc-bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 2px; transition: width 0.6s var(--ease-out); }
+.mc-todo { font-size: 0.769rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
+.mc-meta { display: flex; gap: 12px; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
+.mc-go { margin-left: auto; color: var(--accent); }
 /* ── 窄窗口响应式(<900px)── */
 @media (max-width: 900px) {
   .s-tabs { flex-wrap: wrap; }

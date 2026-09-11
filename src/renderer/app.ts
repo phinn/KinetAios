@@ -419,7 +419,7 @@ function applyI18nDOM(): void {
   });
 
   // 加载已保存的模型配置档到缓存 + 填充下拉
-  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; });
+  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; lastSettingsSnapshot = s; });
   void fillModelHints();
   wireUi();
   initScrollBottomBtn();
@@ -2061,6 +2061,8 @@ function syncEngineSelect(conv: Conversation | undefined) {
   if (document.activeElement !== sel) sel.value = current;
 }
 
+const expandedTurns = new Set<string>(); // 折叠的旧 turn 被点开后记住(会话期内有效)
+
 function renderTurn(conv: Conversation, i: number): HTMLElement {
   const t = conv.turns[i];
   const isLast = i === conv.turns.length - 1;
@@ -2068,6 +2070,32 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'turn' + (streaming ? ' streaming' : '');
   wrap.dataset.idx = String(i); // 滚动锚点:done/error 重渲染后按 turn 定位恢复视口 / scroll anchor for re-renders
+  // ── 旧回合智能折叠:非最近 3 轮、无错误、未被点开 → 单行摘要(点击展开)──
+  // 长会话往上滚全是完整渲染的旧消息,视觉噪音太大;错误 turn 永远展开(需要被看见)。
+  if (!isLast && !streaming && !t.error && !expandedTurns.has(t.id) && i < conv.turns.length - 3) {
+    wrap.classList.add('turn-folded');
+    const row = document.createElement('button');
+    row.className = 'turn-fold';
+    const promptClean = t.prompt.replace(/\x00IMAGES[\s\S]*?\x00/g, '').trimEnd();
+    const snippet = promptClean.replace(/\s+/g, ' ').slice(0, 60);
+    row.innerHTML = `<span class="fold-time">${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span><span class="fold-text">${esc(snippet)}${promptClean.length > 60 ? '…' : ''}</span>` +
+      (t.costUSD > 0 ? `<span class="fold-cost">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '') +
+      `<span class="fold-status">${t.error ? '✗' : '✓'}</span><span class="fold-arrow">▸</span>`;
+    row.onclick = () => {
+      expandedTurns.add(t.id);
+      const fresh = renderTurn(conv, i);
+      wrap.replaceWith(fresh);
+    };
+    row.addEventListener('contextmenu', (ev) => {
+      ev.preventDefault();
+      showMenuAt([
+        { label: tr('copy.text'), fn: () => void copyText(promptClean) },
+        { label: tr('turn.fork'), fn: () => void forkFromTurn(conv.id, t.id) },
+      ], ev.clientX, ev.clientY);
+    });
+    wrap.appendChild(row);
+    return wrap;
+  }
   // 日期分割线:与前一个 turn 不同天时,插入分割标记 / Date divider between turns on different days
   const prev = conv.turns[i - 1];
   if (prev) {
@@ -2174,6 +2202,30 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
         void api.send(conv.id, t.prompt);
       };
+      // quota/auth 类错误 → 「切换配置档并重试」:按 goal failover 链轮转,一键完成切换+重发
+      const errText = t.error.toLowerCase();
+      if (/quota|429|余额|balance|欠费|unauthorized|401|403|invalid.{0,8}key|api.?key|认证/.test(errText)) {
+        const chain = lastSettingsSnapshot?.goalProfileChain ?? [];
+        const sw = document.createElement('button');
+        sw.className = 'ghost retry-btn quota-btn';
+        sw.textContent = tr('err.switchProfile');
+        sw.onclick = async () => {
+          if (!chain.length) {
+            uxToast.info(tr('err.noChain'));
+            void showSettings();
+            requestAnimationFrame(() => document.querySelector<HTMLElement>('.s-tab[data-stab="model"]')?.click());
+            return;
+          }
+          const cur = conv.profileId ?? '';
+          const idx = chain.indexOf(cur);
+          const next = idx >= 0 ? chain[(idx + 1) % chain.length] : chain[0];
+          conv.profileId = next;
+          await api.setConvProfile(conv.id, next);
+          uxToast.info(tr('err.profileSwitched', { p: next }));
+          retry.click(); // 切完自动重发
+        };
+        e.appendChild(sw);
+      }
       e.appendChild(retry);
       body.appendChild(e);
     }
@@ -2328,10 +2380,77 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
   wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${stepsSummaryLabel(steps)}</span></summary>`;
   const inner = document.createElement('div');
   inner.className = 'steps';
-  // expanded 即流式态:pending 卡显示转圈;非流式重渲染时 pending 按中断显示
-  for (const s of steps) inner.appendChild(renderStep(s, expanded));
+  // idx → DOM 映射(时间线刻条点击跳转用):聚合卡映射其覆盖的整段 idx
+  const tickMap: Array<{ start: number; end: number; el: Element }> = [];
+  if (!expanded && steps.length >= 4) {
+    // 非流式(done/历史):连续同名 ≥3 聚合成一张摘要卡,降噪;点击展开全部。
+    // 流式时不聚合(用户正在逐个看),done 后全量重渲染自然收起。
+    let i = 0;
+    while (i < steps.length) {
+      let j = i;
+      while (j < steps.length && steps[j].name === steps[i].name) j++;
+      const runLen = j - i;
+      if (runLen >= 3) {
+        const totalMs = steps.slice(i, j).reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
+        const agg = buildAggCard(steps[i].name, runLen, totalMs, steps.slice(i, j));
+        inner.appendChild(agg);
+        tickMap.push({ start: i, end: j - 1, el: agg });
+        i = j;
+      } else {
+        const card = renderStep(steps[i], false);
+        inner.appendChild(card);
+        tickMap.push({ start: i, end: i, el: card });
+        i++;
+      }
+    }
+  } else {
+    // expanded 即流式态:pending 卡显示转圈;非流式重渲染时 pending 按中断显示
+    for (let k = 0; k < steps.length; k++) {
+      const card = renderStep(steps[k], expanded);
+      inner.appendChild(card);
+      tickMap.push({ start: k, end: k, el: card });
+    }
+  }
   wrap.appendChild(inner);
+  // 时间线刻度条(minimap):≥6 步时在步骤区底部给出全貌,点击跳转
+  if (!expanded && steps.length >= 6) wrap.appendChild(buildTickStrip(steps, tickMap, wrap));
   return wrap;
+}
+
+// 聚合卡:连续同名工具 ×N 摘要,details 展开看每一张
+function buildAggCard(name: string, count: number, totalMs: number, steps: { args: string; result: string; durationMs?: number; interrupted?: boolean }[]): HTMLElement {
+  const det = document.createElement('details');
+  det.className = 'step step-agg';
+  const sum = document.createElement('summary');
+  sum.innerHTML = `<span class="agg-ico">🔧</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
+  det.appendChild(sum);
+  const inner = document.createElement('div');
+  inner.className = 'steps agg-inner';
+  for (const st of steps) inner.appendChild(renderStep({ ...st, name, pending: false } as Parameters<typeof renderStep>[0], false));
+  det.appendChild(inner);
+  return det;
+}
+
+// 刻度条:每步一个点(绿成功/红失败/黄警告/灰中断),点击展开步骤区并跳到对应卡
+function buildTickStrip(steps: { name: string; result: string; interrupted?: boolean }[], tickMap: Array<{ start: number; end: number; el: Element }>, wrap: HTMLDetailsElement): HTMLElement {
+  const strip = document.createElement('div');
+  strip.className = 'tick-strip';
+  steps.forEach((st, k) => {
+    const tick = document.createElement('span');
+    const status = st.interrupted ? 'gray' : stepStatusOf(st.result);
+    tick.className = 'tick tick-' + status;
+    tick.title = `#${k + 1} ${st.name}`;
+    tick.onclick = () => {
+      wrap.open = true; // 收起状态下点击 → 先展开步骤区
+      const entry = tickMap.find((e) => k >= e.start && k <= e.end);
+      if (!entry) return;
+      entry.el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      entry.el.classList.add('tick-flash');
+      setTimeout(() => entry.el.classList.remove('tick-flash'), 1500);
+    };
+    strip.appendChild(tick);
+  });
+  return strip;
 }
 
 // ── 行级 diff(编辑工具卡):LCS 对齐,超长行/超大文件护栏后退化为截断展示 ──
@@ -7769,6 +7888,25 @@ function syncSidebarModeBtn(): void {
 // 小镇图标(Workbench 切换按钮用) / Town icon for Workbench switch button
 const ICON_TOWN_BTN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
 
+let missionTimer: ReturnType<typeof setInterval> | null = null;
+
+// 单个 running 会话的进度卡:todo 进度条 + 当前步骤 + 耗时/花费
+function missionCard(c: Conversation): string {
+  const last = c.turns[c.turns.length - 1];
+  const todos = last?.todos ?? [];
+  const done = todos.filter((x) => x.status === 'completed').length;
+  const doing = todos.filter((x) => x.status === 'in_progress');
+  const pct = todos.length ? Math.round((done / todos.length) * 100) : 0;
+  const elapsed = last?.ts ? fmtElapsed(Date.now() - last.ts) : '';
+  const now = doing[0]?.content ?? c.statusNote ?? '…';
+  const title = c.customTitle || (c.turns[0]?.prompt.replace(/\s+/g, ' ').slice(0, 40) ?? '');
+  return `<div class="mission-card" data-conv-id="${c.id}">
+    <div class="mc-top"><span class="mc-title">${esc(title || '…')}</span><span class="mc-eng">${esc(engineLabel(lang, c.engine))}</span></div>
+    ${todos.length ? `<div class="mc-bar"><span class="mc-bar-fill" style="width:${pct}%"></span></div><div class="mc-todo">${esc(tr('todo.card'))} ${done}/${todos.length} · ${esc(now.slice(0, 40))}</div>` : `<div class="mc-todo">${esc(now.slice(0, 60))}</div>`}
+    <div class="mc-meta"><span>⏱ ${esc(elapsed)}</span>${c.cost ? `<span>$${c.cost.toFixed(4)}</span>` : ''}<span class="mc-go">${esc(tr('wb.open'))} →</span></div>
+  </div>`;
+}
+
 function renderWorkbench() {
   const root = document.getElementById('workbench')!;
   const groups = new Map<string, string[]>();
@@ -7786,6 +7924,11 @@ function renderWorkbench() {
     const lb = b[1][0] ? convs.get(b[1][0])?.createdAt ?? 0 : 0;
     return lb - la;
   });
+  // ── 任务进度墙(mission control):所有 running 会话的实时卡 ──
+  const running = order.map((id) => convs.get(id)).filter((c): c is Conversation => !!c && c.status === 'running');
+  const wall = running.length
+    ? `<div class="mission-sec"><div class="mission-head">🎯 ${esc(tr('wb.running'))} · ${running.length}</div><div class="mission-wall">${running.map(missionCard).join('')}</div></div>`
+    : '';
   root.innerHTML =
     `<div class="wb-head">
       <div class="wb-title">${esc(tr('wb.title'))}</div>
@@ -7793,11 +7936,25 @@ function renderWorkbench() {
       <span class="wb-spacer"></span>
       <button class="ghost" id="wb-goto-town" title="${esc(tr('town.title'))}">${ICON_TOWN_BTN}</button>
       <button class="primary" id="wb-new-proj">${esc(tr('wb.newProject'))}</button>
-    </div>` +
+    </div>` + wall +
     (items.length === 0
       ? `<div class="empty">${esc(tr('wb.empty'))}</div>`
       : `<div class="wb-grid">${items.map(([cwd, ids]) => projCard(cwd, ids)).join('')}</div>`);
   document.getElementById('wb-new-proj')!.onclick = () => void newProject();
+  // 进度墙点击直达会话
+  root.querySelectorAll<HTMLElement>('.mission-card').forEach((card) => {
+    card.onclick = () => {
+      const id = card.dataset.convId!;
+      bgDoneConvs.delete(id);
+      if (!order.includes(id)) order.unshift(id);
+      selectedId = id;
+      renderSidebar();
+      showChat();
+    };
+  });
+  // running 存在时每秒刷新墙上的耗时/进度(仅 workbench 视图激活期间)
+  if (missionTimer) { clearInterval(missionTimer); missionTimer = null; }
+  if (running.length) missionTimer = setInterval(() => { if (currentView === 'workbench') renderWorkbench(); else if (missionTimer) { clearInterval(missionTimer); missionTimer = null; } }, 1000);
   const townBtn = document.getElementById('wb-goto-town');
   if (townBtn) townBtn.onclick = () => showTown();
   root.querySelectorAll<HTMLElement>('.wb-card').forEach((card) => {
