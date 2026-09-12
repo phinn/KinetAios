@@ -9,6 +9,22 @@
 //   3. FTS/LIKE 关键词兜底 → 4. recent-N 兜底
 import * as store from './store';
 
+/**
+ * 构造记忆检索 query(2026-09 修复主题稀释):修前把最近 3 条用户消息拼接 500 字符送去
+ * embedding — 多主题互相稀释,召回的信噪比很差。现以最新一条为主(截 300);
+ * 最新消息过短(<20 字符,如「继续」「好的」)时并入上一条补充语境(截 400)。
+ */
+export function buildRecallQuery(prompts: string[]): string {
+  const list = prompts.filter((p) => p && p.trim());
+  if (!list.length) return '';
+  const last = list[list.length - 1];
+  let q = last.slice(0, 300);
+  if (list.length >= 2 && last.trim().length < 20) {
+    q = (list[list.length - 2].slice(0, 200) + ' ' + q).slice(0, 400);
+  }
+  return q;
+}
+
 export type RecalledMemory = {
   id: string;
   content: string;

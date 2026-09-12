@@ -830,9 +830,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       out += `\n\n## 会话事实锚点(remember_fact 存,recall_fact 取)\n${capped}`;
     }
 
-    // 构造检索 query:取最近 1-3 轮的用户消息拼接。
-    const recentUserMsgs = conv.turns.filter((t) => t.prompt).slice(-3).map((t) => t.prompt!);
-    const query = recentUserMsgs.join(' ').slice(0, 500);
+    // 构造检索 query:2026-09 修复主题稀释 — 修前 3 条拼接 500 字符多主题互混;
+    // 现以最新消息为主,过短时并入上一条(见 memory-recall.buildRecallQuery)。
+    const { buildRecallQuery } = await import('./memory-recall');
+    const query = buildRecallQuery(conv.turns.filter((t) => t.prompt).map((t) => t.prompt!));
 
     // ── P1: 加权检索式记忆(importance * 0.5 + recency * 0.3 + relevance * 0.2)──
     // 2026-09-08 事故补:检索结果按记忆归属会话解析出 cwd,非本项目记忆加 [来自项目 X] 标签。

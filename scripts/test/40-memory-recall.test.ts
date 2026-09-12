@@ -1,6 +1,6 @@
 // Fix 1 回归:会话限制模式(默认)的记忆注入走完整检索链,不再是"查询盲的最旧 15 条"。
 import { assert, test, run } from './harness';
-import { recallMemories, type EmbedFn } from '../../src/main/memory-recall';
+import { recallMemories, buildRecallQuery, type EmbedFn } from '../../src/main/memory-recall';
 import * as store from '../../src/main/store';
 
 store.initStore();
@@ -94,3 +94,21 @@ test('junk 在场时按 relevance 排序,而非插入顺序', async () => {
 });
 
 run();
+
+// ── A3: buildRecallQuery(修前 3 条拼接 500 字符,多主题互相稀释)──
+
+test('buildRecallQuery:以最新消息为主,不拼接历史', () => {
+  const q = buildRecallQuery(['帮我分析一下这个项目的架构设计', '顺便看看依赖版本', '看看 context gauge 的实现有没有问题']);
+  assert.equal(q, '看看 context gauge 的实现有没有问题');
+});
+
+test('buildRecallQuery:最新消息过短 → 并入上一条补语境', () => {
+  const q = buildRecallQuery(['帮我分析一下这个项目的架构设计,给出三个改进方向', '继续']);
+  assert.ok(q.includes('架构设计'), '应包含上一条语境');
+  assert.ok(q.includes('继续'), '应包含最新消息');
+});
+
+test('buildRecallQuery:空输入 → 空串(recent-N 兜底接管)', () => {
+  assert.equal(buildRecallQuery([]), '');
+  assert.equal(buildRecallQuery(['', '   ']), '');
+});

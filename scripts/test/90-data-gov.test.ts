@@ -2,7 +2,7 @@
 // A1 排序池只在召回候选集内 / A2 dedup 保留新值 / B1 conv_events 保留策略 + spill 瘦身 / C2 factsAsBlock 数据源
 import { assert, test, run } from './harness';
 import * as store from '../../src/main/store';
-import { compactWithSpill } from '../../src/main/AgentLoop';
+import { compactWithSpill, calibrateTokens, getTokenCoef } from '../../src/main/AgentLoop';
 import type { ChatMsg } from '../../src/shared/types';
 
 store.initStore();
@@ -91,3 +91,18 @@ test('pruneOldConvEvents:90 天内的事件存活(prune 返回 0)', async () => 
 });
 
 run();
+
+// ── token 系数持久化(修前仅内存,重启回退 0.75 对英文高估 3 倍)──
+
+test('calibrateTokens:校准后系数更新并落盘 userData', async () => {
+  const fsmod = await import('node:fs');
+  const dir = fsmod.mkdtempSync('/tmp/kinet-coef-');
+  process.env.KINET_TEST_USERDATA = dir;
+  const proto = 'openai-coeftest';
+  const msgs = [{ role: 'user' as const, content: 'z'.repeat(1000) }];
+  calibrateTokens(1000, msgs as never, proto); // real 1000 tok / chars 1000 → 滑动均值 0.875
+  const coef = getTokenCoef(proto);
+  assert.ok(Math.abs(coef - 0.875) < 0.001, '系数应为滑动均值 0.875,实际 ' + coef);
+  const raw = fsmod.readFileSync(dir + '/token-coef.json', 'utf8');
+  assert.ok(raw.includes('openai-coeftest'), '系数应持久化到 userData/token-coef.json');
+});

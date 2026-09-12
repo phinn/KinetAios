@@ -5,6 +5,9 @@ import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
+import fs from 'node:fs';
+import path from 'node:path';
+import { app } from 'electron';
 import { saveFact, loadFact, appendEvent } from './store';
 import type { ConvEvent } from '../shared/types';
 // spill 存证瘦身上限(2026-09)
@@ -347,6 +350,8 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         return dropTransient(messages);
       }
       // 非瞬时、非超长的错误(鉴权失败/参数错误/未知)才走这里 → 直接报错退出
+      // 采样日志:未命中两个分类器的真实措辞,攒起来后续补正则用
+      console.warn('[AgentLoop] 未分类 API 错误采样:', errMsg(e).slice(0, 200));
       onEvent({ type: 'error', message: errMsg(e) });
       return dropTransient(messages);
     }
@@ -676,7 +681,19 @@ function errMsg(e: unknown): string {
 // 按协议(openai/anthropic)分别保存系数,避免并发会话互相干扰(GLM 中英文比 ≠ Claude)。
 // 默认值 0.75:中文 1 字 ≈ 1-2 token(偏保守),英文 ~4 字符 ≈ 1 token → 混合场景 0.75 比旧 0.6 更安全。
 // 首轮 API 返回后 calibrateTokens 会立即校准到真实值,默认值只在首次调用时使用一次。
-const tokenCoefByProto: Record<string, number> = {};
+// 2026-09 持久化:系数修前仅内存,重启即回退 0.75(对英文高估 ~3 倍 → 提前裁剪)。
+// 存 userData/token-coef.json,按协议分键;校准时同步落盘(50 字节小文件,LLM 调用间隔秒级,可接受)。
+const tokenCoefByProto: Record<string, number> = loadTokenCoefs();
+function tokenCoefFile(): string {
+  return path.join(app.getPath('userData'), 'token-coef.json');
+}
+function loadTokenCoefs(): Record<string, number> {
+  try { return JSON.parse(fs.readFileSync(tokenCoefFile(), 'utf8')) as Record<string, number>; }
+  catch { return {}; }
+}
+function saveTokenCoefs(): void {
+  try { fs.writeFileSync(tokenCoefFile(), JSON.stringify(tokenCoefByProto)); } catch { /* 只读盘等场景忽略 */ }
+}
 function coefFor(proto?: string): number {
   const k = proto ?? 'default';
   if (tokenCoefByProto[k] === undefined) tokenCoefByProto[k] = 0.75;
@@ -704,11 +721,12 @@ export function getTokenCoef(proto?: string): number {
   return coefFor(proto);
 }
 // 用这批 messages 的真实 prompt_tokens 校准 tokenCoef(滑动平均 0.5/0.5,抗单轮抖动)。
-function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[], proto?: string): void {
+export function calibrateTokens(realPromptTokens: number, msgs: ChatMsg[], proto?: string): void {
   const chars = msgs.reduce((s, m) => s + estMsgChars(m), 0);
   const k = proto ?? 'default';
   if (realPromptTokens > 0 && chars > 0) {
     tokenCoefByProto[k] = coefFor(k) * 0.5 + (realPromptTokens / chars) * 0.5;
+    saveTokenCoefs();
   }
 }
 
