@@ -251,7 +251,7 @@ export type AppSettings = {
   priceOutPerMTok: number;
   presetId: string;
   lang: Lang; // UI 语言(en / zh-CN / zh-TW / ja),默认 zh-CN;给模型看的字符串不译
-  theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'; // 暗 / 淡色 / 极光 / 高雅淡色 / Tahoe 液态玻璃 / Sierra 暖色液态玻璃 / 我的世界像素风 / 高达SEED军事风
+  theme: 'auto' | 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'; // auto = 跟随系统深浅色 // 暗 / 淡色 / 极光 / 高雅淡色 / Tahoe 液态玻璃 / Sierra 暖色液态玻璃 / 我的世界像素风 / 高达SEED军事风
   townStyle: 'classic' | 'minecraft'; // 小镇视图风格:经典等距小房子 / 我的世界方块风
   fontScale: number; // 全局字号缩放(%):100 = 默认 13px,112/125/150 放大字号
   appIcon: string;   // 应用图标选择: 'default' | 'bluepurple' | 'k' | 'd1' ...对应 build/icon-*.png
@@ -892,7 +892,7 @@ export interface KinetAPI {
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   // ── P0: Memory Blocks(结构化核心记忆)──
   memoryBlocksList(): Promise<{ ok: boolean; blocks?: MemoryBlockData[]; error?: string }>;
-  memoryBlockUpdate(label: string, value: string): Promise<{ ok: boolean; error?: string }>;
+  memoryBlockUpdate(label: string, value: string): Promise<{ ok: boolean; error?: string; droppedTail?: number; stored?: number }>;
   // ── P2: Episodic Memory(会话摘要)──
   episodicMemories(limit?: number): Promise<{ ok: boolean; items?: EpisodicMemoryData[]; error?: string }>;
   // ── P3: Idle Reflection(记忆 GC)──

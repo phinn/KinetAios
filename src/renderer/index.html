@@ -28,7 +28,8 @@
       <ul id="conv-list" role="listbox" aria-label="会话列表"></ul>
       <!-- 底栏 — 左:计数;右:工具按钮组 -->
       <div class="sb-foot" id="sb-foot">
-        <span class="sb-foot-info" id="sb-foot-info">0 会话</span>
+        <span class="sb-foot-info" id="sb-foot-info" role="button" tabindex="0">0 会话</span>
+        <div id="running-pop" hidden></div>
         <span class="sb-foot-spacer"></span>
         <button class="sb-mode ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
         <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
@@ -36,6 +37,7 @@
         <span class="sb-foot-sep"></span>
         <button class="sb-mode ghost" id="sb-theme-toggle" data-i18n-title="sidebar.themeMenu" title="切换主题"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20"/><path d="M12 2a14.5 14.5 0 010 20"/></svg></button>
         <div id="theme-popup" class="theme-popup" hidden>
+          <button class="tp-item" data-theme="auto"><span class="tp-swatch tp-sw-auto"></span><span data-i18n="settings.theme.auto">自动</span></button>
           <button class="tp-item" data-theme="dark"><span class="tp-swatch tp-sw-dark"></span><span data-i18n="settings.theme.dark">暗色</span></button>
           <button class="tp-item" data-theme="light"><span class="tp-swatch tp-sw-light"></span><span data-i18n="settings.theme.light">淡色</span></button>
           <button class="tp-item" data-theme="aurora"><span class="tp-swatch tp-sw-aurora"></span><span data-i18n="settings.theme.aurora">极光</span></button>
@@ -429,7 +431,9 @@
         <div class="mm-view">
           <button class="ghost active" id="mm-view-facts" data-i18n="mem.view.facts">事实</button>
           <button class="ghost" id="mm-view-graph" data-i18n="mem.view.graph">图谱</button>
+          <button class="ghost" id="mm-view-blocks" data-i18n="mem.view.blocks">核心记忆</button>
         </div>
+        <input type="text" id="mm-filter" class="mm-filter" data-i18n-placeholder="mem.filter" placeholder="过滤记忆…" spellcheck="false" />
         <button class="ghost" id="mm-graph-viz" title="切换图谱/列表" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11L6.5 17M12 11l5.5 6"/></svg></button>
         <button class="ghost" id="mm-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>

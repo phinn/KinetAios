@@ -2861,6 +2861,37 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .modal-card h3 { margin: 0 0 6px; }
 .modal-card pre { background: var(--code-bg); padding: 10px; border-radius: 6px; max-height: 240px; overflow: auto; white-space: pre-wrap; word-break: break-word; font-size: 0.923rem; user-select: text; }
 .modal-card .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
+
+/* ═══ v3.6.3 UX 批次 ═══ */
+/* 主题:跟随系统 swatch(左暗右亮对分) */
+.tp-swatch.tp-sw-auto { background: linear-gradient(90deg, #1c1c22 50%, #f5f5f8 50%); }
+/* 上下文 gauge 阈值 */
+#head-stat.stat-warn { color: var(--warn); }
+#head-stat.stat-danger { color: var(--err); }
+/* 审批弹窗危险分级 */
+#modal.danger #modal-cmd { color: var(--err); font-weight: 600; }
+#modal.danger .modal-card { border-color: color-mix(in srgb, var(--err) 40%, transparent); }
+/* 记忆过滤框 */
+.mm-filter { margin: 0 10px 6px; padding: 4px 10px; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 8px; color: var(--text); font-size: 0.923rem; outline: none; }
+.mm-filter:focus { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+/* Memory Blocks 编辑卡 */
+.mb-card { background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 10px; padding: 10px 12px; margin: 0 10px 10px; }
+.mb-card .mb-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.mb-card .mb-label { font-weight: 600; font-size: 0.846rem; color: var(--text); }
+.mb-card .mb-count { margin-left: auto; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
+.mb-card .mb-ro { font-size: 0.769rem; color: var(--text-faint); }
+.mb-card .mb-value { width: 100%; box-sizing: border-box; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: 6px; color: var(--text); font-size: 0.846rem; line-height: 1.5; padding: 6px 8px; resize: vertical; white-space: pre-wrap; }
+.mb-card .mb-save { padding: 1px 10px; font-size: 0.769rem; }
+/* 运行中任务中心(侧栏底栏弹出) */
+.sb-foot { position: relative; }
+#running-pop { position: absolute; bottom: calc(100% + 8px); left: 8px; right: 8px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 10px; box-shadow: var(--shadow-lg); padding: 6px; z-index: 60; max-height: 50vh; overflow: auto; }
+#running-pop .rp-title, #running-pop .rp-empty { padding: 6px 8px; font-size: 0.846rem; color: var(--text-faint); }
+#running-pop .rp-row { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+#running-pop .rp-row:hover { background: var(--bg-elev-2); }
+#running-pop .rp-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.846rem; color: var(--text); }
+#running-pop .rp-meta { font-size: 0.769rem; color: var(--text-faint); white-space: nowrap; }
+.sb-foot-info.clickable { cursor: pointer; }
+.sb-foot-info.clickable:hover { color: var(--text); }
 /* 通用确认弹窗(v3.6.3):危险操作主按钮红底,正文次级色 */
 #confirm-modal .btn-danger { background: var(--err); color: #fff; border: none; }
 #confirm-modal .btn-danger:hover { background: color-mix(in srgb, var(--err) 85%, #000); }

@@ -531,9 +531,52 @@ function refreshSidebarLi(convId: string): void {
   }
   // 底部统计(总数·运行数)也是纯文本,就地刷新。
   const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
-  const footInfo = document.getElementById('sb-foot-info');
-  if (footInfo) footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
+  const footInfo = document.getElementById('sb-foot-info') as HTMLElement | null;
+  if (footInfo) {
+    footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
+    // 运行中任务中心入口(2026-09):有并发任务时计数可点,弹出 状态/耗时/成本 总览
+    footInfo.classList.toggle('clickable', runningN > 0);
+    footInfo.title = runningN > 0 ? tr('sb.runningPop') : '';
+    footInfo.onclick = () => {
+      if (runningN === 0) return;
+      const pop = document.getElementById('running-pop')!;
+      pop.hidden = !pop.hidden;
+      if (!pop.hidden) renderRunningPop();
+    };
+  }
 }
+
+// ── 运行中任务中心(v3.6.3):侧栏底栏计数点击弹出,列出并发任务的 状态/耗时/成本 ──
+function renderRunningPop(): void {
+  const pop = document.getElementById('running-pop')!;
+  const running = order.map((id) => convs.get(id)).filter((c): c is Conversation => !!c && c.status === 'running');
+  pop.innerHTML = (running.length
+    ? running.map((c) => {
+        const last = c.turns[c.turns.length - 1];
+        const el = last?.ts ? `⏱ ${fmtElapsed(Date.now() - last.ts)}` : '';
+        const cost = c.cost ? `$${c.cost.toFixed(3)}` : '';
+        return `<div class="rp-row" data-cid="${c.id}">
+          <span class="dot ${dotState(c, c.id)}"></span>
+          <span class="rp-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>
+          <span class="rp-meta">${[cost, el].filter(Boolean).join(' ')}</span>
+        </div>`;
+      }).join('')
+    : `<div class="rp-empty">${esc(tr('sidebar.runningEmpty'))}</div>`);
+  pop.querySelectorAll<HTMLElement>('.rp-row').forEach((row) => {
+    row.onclick = () => {
+      selectedId = row.dataset.cid!;
+      pop.hidden = true;
+      showChat();
+      renderSidebar();
+      renderMain();
+    };
+  });
+}
+document.addEventListener('click', (e) => {
+  const pop = document.getElementById('running-pop');
+  if (!pop || pop.hidden) return;
+  if (!(e.target as HTMLElement)?.closest('#running-pop, #sb-foot-info')) pop.hidden = true;
+});
 
 // 任务条目内容指纹:这些字段变了才值得重建 li(其余情况原样复用 DOM)。
 function taskFingerprint(id: string): string {
@@ -2073,6 +2116,9 @@ function ensureElapsedTicker(): void {
     const conv = convs.get(selectedId ?? '');
     if (conv && conv.status === 'running') {
       const last = conv.turns[conv.turns.length - 1];
+      // 任务中心浮层开着 → 每秒刷新(耗时/成本/状态)
+      const rpop = document.getElementById('running-pop');
+      if (rpop && !rpop.hidden) renderRunningPop();
       // 上下文占用实时化:每秒拉一次估算(轻 IPC),运行中也能看到离窗口多远(修前只在 done 回填)。
       const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
       if (isDirectFam && selectedId) {
@@ -4350,12 +4396,26 @@ function updateBadge(): void {
 
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
-function applyTheme(theme: 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'): void {
-  document.documentElement.dataset.theme = theme;
+function applyTheme(theme: 'auto' | 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'): void {
+  // auto(v3.6.3):跟随系统深浅色 — data-theme 写解析后的实际主题,data-theme-setting 保留用户选择
+  if (theme === 'auto') {
+    if (!autoThemeMql) {
+      autoThemeMql = window.matchMedia('(prefers-color-scheme: dark)');
+      autoThemeMql.addEventListener('change', () => {
+        if ((document.documentElement.dataset.themeSetting || '') === 'auto')
+          document.documentElement.dataset.theme = autoThemeMql!.matches ? 'dark' : 'light';
+      });
+    }
+    document.documentElement.dataset.theme = autoThemeMql.matches ? 'dark' : 'light';
+  } else {
+    document.documentElement.dataset.theme = theme;
+  }
+  document.documentElement.dataset.themeSetting = theme;
   // SEED 主题切换时重渲小镇(SVG 风格跟随主题) / Re-render town on theme switch (SVG style follows theme)
   if (currentView === 'town') renderTown();
   if (currentView === 'nexus') renderNexus();
 }
+let autoThemeMql: MediaQueryList | null = null;
 
 /** 全局字号缩放:在 <html> 上设 fontSize,所有继承字号(含 .answer / .bubble)自动跟随 */
 /** Global font scaling: set fontSize on <html>, all inheriting elements follow. */
@@ -4467,6 +4527,7 @@ async function showSettings() {
           ${LANGS.map((l) => `<option value="${l.id}" ${l.id === s.lang ? 'selected' : ''}>${l.label}</option>`).join('')}
         </select></div>
         <div class="field"><label>${tr('settings.theme')}</label><select id="s-theme">
+          <option value="auto" ${s.theme === 'auto' ? 'selected' : ''}>${tr('settings.theme.auto')}</option>
           <option value="dark" ${s.theme === 'dark' ? 'selected' : ''}>${tr('settings.theme.dark')}</option>
           <option value="light" ${s.theme === 'light' ? 'selected' : ''}>${tr('settings.theme.light')}</option>
           <option value="aurora" ${s.theme === 'aurora' ? 'selected' : ''}>${tr('settings.theme.aurora')}</option>
@@ -5653,7 +5714,7 @@ function readSettingsForm(): AppSettings {
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
-    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft',
+    theme: (document.getElementById('s-theme') as HTMLSelectElement).value as 'auto' | 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed',
     townStyle: ((document.getElementById('s-town-style') as HTMLSelectElement)?.value as 'classic' | 'minecraft') || 'classic',
     fontScale: Number((document.getElementById('s-font-scale') as HTMLSelectElement)?.value) || 100,
     appIcon: (document.querySelector('input[name="app-icon"]:checked') as HTMLInputElement)?.value || 'k',
@@ -5840,6 +5901,9 @@ function showConfirm(id: string, cmd: string) {
   if (confirmConvId && sessionApprovedConvs.has(confirmConvId)) { api.confirmResponse(id, true); return; }
   currentConfirm = id;
   document.getElementById('modal-cmd')!.textContent = cmd;
+  // 危险分级(2026-09):高危命令模式红显,保守正则宁漏勿误(误报会训练用户忽略红色)
+  const dangerCmd = /\brm\s+(-[a-z]+\s+)*-\w*[rf]|git\s+push\b[^|]*(-f\b|--force)|drop\s+(table|database)|mkfs|\bdel\s+\/[a-z]*\s|rd\s+\/s|Remove-Item\b[^|]*-Recurse/i.test(cmd);
+  document.getElementById('modal')!.classList.toggle('danger', dangerCmd);
   // 上下文行:哪个会话/哪个引擎在请求执行(之前只有裸命令文本)
   const ctxEl = document.getElementById('modal-ctx');
   if (ctxEl) {
@@ -6074,7 +6138,7 @@ function closeMoreMenu() {
   if (tpBtn && tpPopup) {
     // 标记当前激活的主题项。
     const syncActiveTheme = () => {
-      const cur = document.documentElement.dataset.theme || 'tahoe';
+      const cur = document.documentElement.dataset.themeSetting || document.documentElement.dataset.theme || 'tahoe';
       tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
         el.classList.toggle('active', el.dataset.theme === cur);
       });
@@ -6442,6 +6506,15 @@ function closeMoreMenu() {
     mmView = 'graph';
     await renderMemoryList();
   };
+  document.getElementById('mm-view-blocks')!.onclick = async () => {
+    mmView = 'blocks';
+    await renderMemoryList();
+  };
+  document.getElementById('mm-filter')!.addEventListener('input', (e) => {
+    memFilter = (e.target as HTMLInputElement).value.trim();
+    mmPage = 0;
+    if (mmView === 'facts') void renderMemoryList();
+  });
 
   // 快照面板(⏪)。
   document.getElementById('snap-close')!.onclick = () => closeSnapshotPanel();
@@ -8821,7 +8894,8 @@ function inlineMd(s: string): string {
 // scope:this = 当前选中频道产生的记忆;all = 全部(包括 conversation_id 为 NULL 的历史/导入行)。
 // 每行:文本 + 编辑(行内 textarea)+ 删除。来源频道显示 conv 的 customTitle 或 cwd 末段。
 let mmScope: 'this' | 'all' = 'this';
-let mmView: 'facts' | 'graph' = 'facts';
+let mmView: 'facts' | 'graph' | 'blocks' = 'facts';
+let memFilter = ''; // 记忆时间线过滤词(客户端 contains)
 let mmPage = 0;
 const MM_PAGE_SIZE = 50;
 async function openMemoryPanel(): Promise<void> {
@@ -8837,6 +8911,41 @@ function closeMemoryPanel(): void {
   if (mmGraphPendingRaf) { cancelAnimationFrame(mmGraphPendingRaf); mmGraphPendingRaf = 0; }
   if (mmGraphCleanup) { mmGraphCleanup(); mmGraphCleanup = null; }
 }
+// ── Memory Blocks 面板(2026-09 接线):4 个结构化记忆块的可视化编辑。
+// 修前 memoryBlocksList/memoryBlockUpdate IPC 无任何前端消费者。
+async function renderMemoryBlocks(): Promise<void> {
+  const listEl = document.getElementById('mm-list')!;
+  const r = await api.memoryBlocksList();
+  if (!r.ok || !r.blocks) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(r.error ?? 'error')}</div>`;
+    return;
+  }
+  listEl.innerHTML = r.blocks.map((b) => `
+    <div class="mb-card${b.readOnly ? ' readonly' : ''}" data-label="${esc(b.label)}">
+      <div class="mb-head">
+        <span class="mb-label">${esc(b.label)}</span>
+        <span class="mb-count">${b.value.length}/${b.charLimit}</span>
+        ${b.readOnly
+          ? `<span class="mb-ro">${esc(tr('mem.blocks.readonly'))}</span>`
+          : `<button class="ghost mb-save">${esc(tr('mem.blocks.save'))}</button>`}
+      </div>
+      ${b.readOnly
+        ? `<div class="mb-value">${esc(b.value || tr('mem.blocks.empty'))}</div>`
+        : `<textarea class="mb-value mb-edit" rows="5" spellcheck="false">${esc(b.value)}</textarea>`}
+    </div>`).join('');
+  listEl.querySelectorAll<HTMLElement>('.mb-card:not(.readonly)').forEach((card) => {
+    const label = card.dataset.label!;
+    const ta = card.querySelector<HTMLTextAreaElement>('.mb-edit')!;
+    card.querySelector<HTMLElement>('.mb-save')!.onclick = async () => {
+      const r2 = await api.memoryBlockUpdate(label, ta.value);
+      if (!r2?.ok) { uxToast.err(r2?.error ?? tr('toast.error')); return; }
+      if (r2.droppedTail) uxToast.warn(tr('mem.blocks.truncated', { n: r2.droppedTail }));
+      else uxToast.info(tr('mem.blocks.saved'));
+      void renderMemoryBlocks();
+    };
+  });
+}
+
 async function renderMemoryList(): Promise<void> {
   const listEl = document.getElementById('mm-list')!;
   // scope / view 按钮态(两条渲染路径都要刷,提到分流前)
@@ -8844,7 +8953,9 @@ async function renderMemoryList(): Promise<void> {
   document.getElementById('mm-scope-all')!.classList.toggle('active', mmScope === 'all');
   document.getElementById('mm-view-facts')!.classList.toggle('active', mmView === 'facts');
   document.getElementById('mm-view-graph')!.classList.toggle('active', mmView === 'graph');
-  // view 分流:graph → 三元组列表;facts → 原有文本列表
+  document.getElementById('mm-view-blocks')!.classList.toggle('active', mmView === 'blocks');
+  // view 分流:blocks → 核心记忆卡;graph → 三元组列表;facts → 原有文本列表
+  if (mmView === 'blocks') return renderMemoryBlocks();
   if (mmView === 'graph') return renderMemoryGraph();
   // this 模式必须有选中会话;否则强制 all
   const convId = mmScope === 'this' && selectedId ? selectedId : undefined;
@@ -8861,11 +8972,19 @@ async function renderMemoryList(): Promise<void> {
       `<span class="mm-empty-sub">${esc(tr('mem.emptySub'))}</span></div>`;
     return;
   }
+  // 客户端过滤(2026-09):记忆多时逐条翻页找不到目标,加即时 contains 过滤
+  const items = memFilter
+    ? r.items.filter((m) => m.content.toLowerCase().includes(memFilter.toLowerCase()))
+    : r.items;
+  if (memFilter && !items.length) {
+    listEl.innerHTML = `<div class="mm-empty">${esc(tr('mem.filterEmpty'))}</div>`;
+    return;
+  }
   // 分页
-  const totalPages = Math.max(1, Math.ceil(r.items.length / MM_PAGE_SIZE));
+  const totalPages = Math.max(1, Math.ceil(items.length / MM_PAGE_SIZE));
   if (mmPage >= totalPages) mmPage = totalPages - 1;
   if (mmPage < 0) mmPage = 0;
-  const pageItems = r.items.slice(mmPage * MM_PAGE_SIZE, (mmPage + 1) * MM_PAGE_SIZE);
+  const pageItems = items.slice(mmPage * MM_PAGE_SIZE, (mmPage + 1) * MM_PAGE_SIZE);
 
   listEl.innerHTML = pageItems
     .map((m) => {
@@ -8887,7 +9006,7 @@ async function renderMemoryList(): Promise<void> {
     pager.className = 'mm-pager';
     pager.innerHTML = `
       <button class="ghost mm-prev" ${mmPage === 0 ? 'disabled' : ''}>‹</button>
-      <span class="mm-page-info">${mmPage + 1} / ${totalPages}（共 ${r.items.length} 条）</span>
+      <span class="mm-page-info">${mmPage + 1} / ${totalPages}（共 ${items.length} 条）</span>
       <button class="ghost mm-next" ${mmPage >= totalPages - 1 ? 'disabled' : ''}>›</button>
     `;
     listEl.appendChild(pager);
