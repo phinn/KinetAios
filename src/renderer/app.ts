@@ -486,8 +486,8 @@ function showConvMenu(convId: string, x: number, y: number): void {
   ctxTargetConvId = convId;
   ctxTargetProjCwd = null;
   ctxProjMenu.hidden = true;
-  focusMenuKeyboard(ctxConvMenu);
   ctxConvMenu.hidden = false;
+  focusMenuKeyboard(ctxConvMenu);
   requestAnimationFrame(() => {
     const r = ctxConvMenu.getBoundingClientRect();
     const maxX = window.innerWidth - r.width - 4;
@@ -499,8 +499,8 @@ function showConvMenu(convId: string, x: number, y: number): void {
 function showProjMenu(cwd: string, x: number, y: number): void {
   ctxTargetProjCwd = cwd;
   ctxTargetConvId = null;
-  focusMenuKeyboard(ctxProjMenu);
   ctxProjMenu.hidden = false;
+  focusMenuKeyboard(ctxProjMenu);
   requestAnimationFrame(() => {
     const r = ctxProjMenu.getBoundingClientRect();
     const maxX = window.innerWidth - r.width - 4;
