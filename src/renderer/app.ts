@@ -462,10 +462,31 @@ let ctxConvMenu: HTMLElement; // 会话右键菜单 DOM(在 wireUI 时迁移到 
 let ctxProjMenu: HTMLElement; // 项目右键菜单 DOM
 
 // 显示会话菜单 — 锚到点击位置,视口边缘钳位
+// 右键菜单键盘可达(2026-09):focus 菜单容器,方向键在 .ctx-item 间移动,Enter 激活,Esc 关闭。
+function focusMenuKeyboard(menu: HTMLElement): void {
+  menu.setAttribute('role', 'menu');
+  menu.tabIndex = -1;
+  const items = [...menu.querySelectorAll<HTMLElement>('.ctx-item')];
+  items.forEach((el, i) => {
+    el.setAttribute('role', 'menuitem');
+    el.tabIndex = i === 0 ? 0 : -1;
+  });
+  menu.onkeydown = (e) => {
+    const idx = items.indexOf(document.activeElement as HTMLElement);
+    if (e.key === 'ArrowDown') { e.preventDefault(); items[(idx + 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); items[(idx - 1 + items.length) % items.length]?.focus(); }
+    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); (document.activeElement as HTMLElement)?.click(); }
+    else if (e.key === 'Escape') { e.preventDefault(); closeAllCtxMenus(); }
+  };
+  menu.focus();
+  (items[0] ?? menu).focus();
+}
+
 function showConvMenu(convId: string, x: number, y: number): void {
   ctxTargetConvId = convId;
   ctxTargetProjCwd = null;
   ctxProjMenu.hidden = true;
+  focusMenuKeyboard(ctxConvMenu);
   ctxConvMenu.hidden = false;
   requestAnimationFrame(() => {
     const r = ctxConvMenu.getBoundingClientRect();
@@ -478,7 +499,7 @@ function showConvMenu(convId: string, x: number, y: number): void {
 function showProjMenu(cwd: string, x: number, y: number): void {
   ctxTargetProjCwd = cwd;
   ctxTargetConvId = null;
-  ctxConvMenu.hidden = true;
+  focusMenuKeyboard(ctxProjMenu);
   ctxProjMenu.hidden = false;
   requestAnimationFrame(() => {
     const r = ctxProjMenu.getBoundingClientRect();
@@ -789,6 +810,13 @@ function taskLi(id: string): HTMLElement {
   const metaText = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
   // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
   li.title = `${title}\n${c.cwd || ''}`;
+  // 键盘可达(2026-09):li 可聚焦,Enter/Space 打开;aria 标签给读屏器
+  li.tabIndex = 0;
+  li.setAttribute('role', 'button');
+  li.setAttribute('aria-label', `${title}${c.status === 'running' ? '(' + tr('sidebar.running') + ')' : ''}`);
+  li.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); }
+  });
   // 右键唤起上下文菜单(默认浏览器菜单会被阻止)
   li.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -8790,6 +8818,12 @@ function renderAttach(): void {
     .join('');
   row.innerHTML = fileChips + imgChips;
   row.querySelectorAll<HTMLElement>('.chip-x').forEach((x) => {
+    x.setAttribute('role', 'button');
+    x.setAttribute('tabindex', '0');
+    x.setAttribute('aria-label', tr('a11y.removeAttachment'));
+    x.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); x.click(); }
+    });
     x.onclick = () => {
       const idx = Number(x.dataset.i);
       if (x.dataset.kind === 'img') imageAttachments.splice(idx, 1);
