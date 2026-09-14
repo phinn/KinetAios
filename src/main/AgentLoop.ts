@@ -830,7 +830,7 @@ async function consolidateSummaries(
       () => {},
     );
     if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
-      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
     }
     const merged = comp.content.trim();
     if (merged) return merged;
@@ -918,7 +918,7 @@ export async function compactHistory(
     );
     // 摘要 LLM 调用的 cost 也要上报(否则长对话压缩成本漏报)
     if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
-      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
     }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];

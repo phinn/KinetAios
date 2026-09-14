@@ -547,7 +547,7 @@ export class LocalMcpServer {
               this.emitRemoteEvent({ type: 'status', text: e.text });
               break;
             case 'cost':
-              this.emitRemoteEvent({ type: 'cost', usd: e.usd, tokens: e.tokens });
+              this.emitRemoteEvent({ type: 'cost', usd: e.usd, tokens: e.tokens, tokensIn: e.tokensIn, tokensOut: e.tokensOut });
               break;
             case 'error':
               this.emitRemoteEvent({ type: 'error', message: e.message });

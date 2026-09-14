@@ -419,7 +419,7 @@ export type RemoteAgentEvent =
   | { type: 'status'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'token'; text: string }
-  | { type: 'cost'; usd: number; tokens: number }
+  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'done'; summary: string }
   | { type: 'error'; message: string };
 
@@ -538,7 +538,7 @@ export type TeamEvent =
   | { type: 'memberStatus'; memberName: string; status: MemberStatus }
   | { type: 'memberToken'; memberName: string; text: string }
   | { type: 'memberTool'; memberName: string; toolName: string; toolResult: string; toolArgs?: string; durationMs?: number }
-  | { type: 'memberCost'; memberName: string; usd: number; tokens: number }
+  | { type: 'memberCost'; memberName: string; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
   | { type: 'memberDone'; memberName: string; answer: string };
 
 // ── Pipeline 跨引擎编排 ──
@@ -1094,10 +1094,10 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       t.costUSD += ev.usd;
       // Prefer the real in/out split carried on the event (Direct + Codex usage path). Engines
       // that only know the sum (Claude, which reports cost but no per-turn tokens) leave both 0.
-      if (ev.tokens > 0) {
-        t.tokensIn += ev.tokensIn ?? 0;
-        t.tokensOut += ev.tokensOut ?? 0;
-      }
+      // 拆分字段存在就累加(多模型调用逐次上报);只有总数的引擎(旧 MCP/子进程)拆分为 0,
+      // 不再把总数硬塞进 tokensIn —— 那会让"输入"虚高、"输出"恒为 0。
+      t.tokensIn += ev.tokensIn ?? 0;
+      t.tokensOut += ev.tokensOut ?? 0;
       break;
     case 'status':
       conv.statusNote = ev.text;

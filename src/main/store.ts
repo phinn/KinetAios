@@ -57,7 +57,8 @@ export function initStore(): void {
     CREATE TABLE IF NOT EXISTS prompt_templates(
       id TEXT PRIMARY KEY, name TEXT, data TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS cost_log(
-      id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL);
+      id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
+      tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS custom_tools(
       id TEXT PRIMARY KEY, name TEXT, description TEXT, parameters TEXT, command_tpl TEXT, timeout_ms INTEGER, created_at REAL);
     CREATE TABLE IF NOT EXISTS memory_meta(
@@ -123,6 +124,10 @@ export function initStore(): void {
     ['feishu_key', 'TEXT'],       // 飞书会话来源 key(open_id),用于按用户复用会话
   ] as const) {
     if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
+  }
+  // cost_log 加输入/输出拆分列(v3.6.4):旧行默认 0。
+  for (const col of ['tokens_in', 'tokens_out'] as const) {
+    if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
   if (!hasColumn('memories', 'conversation_id'))
@@ -1188,9 +1193,9 @@ export function deleteTemplate(id: string): void {
 }
 
 // MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
-export function logCost(convId: string, engine: string, amount: number, tokens: number): void {
-  stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts) VALUES(?,?,?,?,?,?);')
-    .run(rid(), convId, engine, amount, tokens, Date.now());
+export function logCost(convId: string, engine: string, amount: number, tokens: number, tokensIn = 0, tokensOut = 0): void {
+  stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts, tokens_in, tokens_out) VALUES(?,?,?,?,?,?,?,?);')
+    .run(rid(), convId, engine, amount, tokens, Date.now(), tokensIn, tokensOut);
 }
 export function costStats(): { today: number; week: number; month: number; byEngine: Record<string, number>; byDay: Array<{ date: string; cost: number }> } {
   const now = Date.now();

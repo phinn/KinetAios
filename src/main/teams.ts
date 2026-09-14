@@ -97,7 +97,7 @@ export async function runMember(opts: {
         // Also persisted into the conv event stream for forensics; best-effort, never breaks the run.
         try { store.appendEvent(convId, 'team', { type: 'team/tool', member: member.name, name: e.name, args: e.args.slice(0, 4000), result: e.result.slice(0, 4000), durationMs: e.durationMs }); } catch { /* 存证失败不拖垮 */ }
       }
-      else if (e.type === 'cost') onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens });
+      else if (e.type === 'cost') onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens, tokensIn: e.tokensIn, tokensOut: e.tokensOut });
     },
   });
 

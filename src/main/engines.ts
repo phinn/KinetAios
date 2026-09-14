@@ -220,7 +220,7 @@ export async function resolveSpawnHistory(opts: {
       const summary = comp.content?.trim();
       if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
         const { priceUSD } = await import('./glm');
-        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut });
+        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
       }
       return { historyText: summary ? `【父会话摘要】\n${summary}` : '' };
     } catch {
@@ -383,7 +383,7 @@ class DirectEngine implements Engine {
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
             const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
-            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
+            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
             return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
@@ -400,15 +400,19 @@ class DirectEngine implements Engine {
         const parts: string[] = [];
         let totalUsd = 0;
         let totalTokens = 0;
+        let totalIn = 0;
+        let totalOut = 0;
         for (const m of members) {
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
           totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
           totalTokens += r.tokensIn + r.tokensOut;
+          totalIn += r.tokensIn;
+          totalOut += r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
-        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens });
+        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut });
         return parts.join('\n');
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {

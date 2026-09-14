@@ -477,7 +477,7 @@ export class TaskManager {
     // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
     const lastTurn = conv.turns[conv.turns.length - 1];
     if (lastTurn && lastTurn.costUSD > 0) {
-      store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0));
+      store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0), lastTurn.tokensIn ?? 0, lastTurn.tokensOut ?? 0);
     }
     this.emit.emitConversation(conv); // final flush
 
@@ -709,7 +709,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // 记本轮 cost → 成本看板
       const goalTurn = conv.turns[conv.turns.length - 1];
       if (goalTurn && goalTurn.costUSD > 0) {
-        store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0));
+        store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0), goalTurn.tokensIn ?? 0, goalTurn.tokensOut ?? 0);
       }
       // 出错不在循环尾 break —— 回到循环头由 failover 逻辑判定是否换模型续跑
     }
@@ -802,7 +802,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         store.appendEvent(conv.id, t.id, {
           type: 'turn/meta',
           costUSD: ev.usd,
-          tokensIn: ev.tokensIn ?? ev.tokens,
+          // 只落真实拆分:sum-only 事件(旧 MCP/子进程)不再把总数冒充成输入,
+          // 否则重建 turns 时"输入"虚高、"输出"恒为 0,与内存态 applyEvent 口径冲突。
+          tokensIn: ev.tokensIn ?? 0,
           tokensOut: ev.tokensOut ?? 0,
         });
         break;

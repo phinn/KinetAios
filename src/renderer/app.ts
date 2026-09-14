@@ -2552,7 +2552,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
           ? `${Math.floor(elapsedMs / 60000)}m ${Math.round((elapsedMs % 60000) / 1000)}s`
           : `${(elapsedMs / 1000).toFixed(1)}s`;
         metaLeft.innerHTML = `<span class="meta-item">⏱ ${elapsedStr}</span>`
-          + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item">${totalTok > 1000 ? (totalTok / 1000).toFixed(1) + 'k' : totalTok} tok</span>` : '')
+          + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item" title="${totalTok} tok">${tokSplitLabel(t.tokensIn ?? 0, t.tokensOut ?? 0, totalTok)}</span>` : '')
           + (t.costUSD > 0 ? `<span class="meta-sep"></span><span class="meta-item">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '');
       }
       row.appendChild(metaLeft);
@@ -4171,6 +4171,13 @@ function buildTurnsSkeleton(): HTMLElement {
     wrap.appendChild(row);
   }
   return wrap;
+}
+
+// turn 页脚 token 展示:输入/输出分开(↑in ↓out);旧数据无拆分(两者皆 0)时回退总数。
+function tokSplitLabel(tokensIn: number, tokensOut: number, total: number): string {
+  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  if (tokensIn > 0 || tokensOut > 0) return `↑${fmt(tokensIn)} ↓${fmt(tokensOut)}`;
+  return `${fmt(total)} tok`;
 }
 
 function empty(text: string, sub?: string, icon?: string): HTMLElement {
