@@ -8614,8 +8614,19 @@ function autosize(el: HTMLTextAreaElement) {
 // Typing /<name> in the composer opens a filterable list of skills from ~/.claude/skills +
 // ~/.codex/skills. Pick (Enter/click) inserts "/name " — sending it makes the Direct engine
 // inject that skill's body. Non-Direct conversations never show the menu.
+// 技能列表带 TTL 缓存:main 端 listSkills 已按目录 mtime 哨兵自动重扫(建完技能立即可见),
+// renderer 这层的缓存只为避免每次敲 / 都走一次 IPC;30s TTL 内复用,过期重拉。
+// 之前是"拉一次永不更新"——新建技能要重启 app 才出现在 slash 菜单(2026-09-14 反馈)。
+// Skills list with TTL cache: main-side rescans on mtime change automatically;
+// this layer only spares an IPC per keystroke. Previously fetched once and never
+// refreshed — new skills required an app restart to show up in the slash menu.
+const SKILLS_TTL_MS = 30_000;
+let skillsFetchedAt = 0;
 async function ensureSkills(): Promise<SkillInfo[]> {
-  if (!skills.length) skills = await api.listSkills();
+  if (!skills.length || Date.now() - skillsFetchedAt > SKILLS_TTL_MS) {
+    skills = await api.listSkills();
+    skillsFetchedAt = Date.now();
+  }
   return skills;
 }
 

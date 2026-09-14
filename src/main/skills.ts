@@ -101,6 +101,34 @@ function parseSkill(content: string, fallbackName: string): { name: string; desc
 }
 
 let cache: Map<string, Skill> | null = null;
+// 失效哨兵:记录上次扫描时各根目录的 mtime。技能是 agent 用 write_file/shell 动态创建的
+// (用户也可能在 Claude Code 里建),进程级"扫一次永不重扫"会导致新建技能要重启 app 才可见
+// (2026-09-14 反馈)。fs.watch 在 macOS 对新建目录的事件不可靠且要管理 8+ 个 watcher 生命周期;
+// 这里用 mtime 轮询式哨兵:listSkills/loadSkillBody 每次调用时 stat 一次根目录(µs 级),
+// mtime 变了才全量重扫。技能目录总量小(几十个),重扫 <10ms,无性能顾虑。
+// Invalidation sentinel: stat each root's mtime on access; rescan only when changed.
+let sentinels: { dir: string; mtime: number }[] = [];
+
+function rootMtimes(): { dir: string; mtime: number }[] {
+  return [...roots(), ...pluginRoots()].map(({ dir }) => {
+    try {
+      return { dir, mtime: fs.statSync(dir).mtimeMs };
+    } catch {
+      return { dir, mtime: -1 }; // 目录不存在也算一种状态:新建时会变化
+    }
+  });
+}
+
+function ensure(): Map<string, Skill> {
+  const now = rootMtimes();
+  const changed = !cache || sentinels.length !== now.length ||
+    now.some((s, i) => s.dir !== sentinels[i]?.dir || s.mtime !== sentinels[i]?.mtime);
+  if (changed || !cache) {
+    cache = scan();
+    sentinels = now;
+  }
+  return cache;
+}
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
@@ -140,11 +168,6 @@ function scan(): Map<string, Skill> {
     }
   }
   return map;
-}
-
-function ensure(): Map<string, Skill> {
-  if (!cache) cache = scan();
-  return cache;
 }
 
 export function listSkills(): SkillInfo[] {
