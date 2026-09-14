@@ -788,10 +788,17 @@ class AnthropicProvider implements Provider {
       if (type === 'message_start') {
         // input_tokens 不含缓存;cache_read(读,~10% 价)/ cache_creation(写,~125% 价)单列。
         // 全计入 tokensIn(按 input 价统计 → cache_read 高估,但不漏算,比漏掉缓存消耗更接近真实)。
-        const u = obj.message?.usage ?? {};
-        tokensIn = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
+        const u = obj.message?.usage ?? obj.usage ?? {};
+        const n = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
+        if (n > 0) tokensIn = n; // 智谱兼容端点在这里发占位 0 → 别覆盖掉后续 delta 里的真实值
       } else if (type === 'message_delta') {
-        tokensOut = intFrom(obj.usage?.output_tokens) || tokensOut;
+        // 原生 Anthropic:input 只在 message_start,delta 只有 output_tokens;
+        // 智谱 /api/anthropic 等兼容端点:message_start 的 input_tokens 是占位 0,
+        // 真实 input + cache_read 全在 delta.usage 里 → 这里兜底读 input,取更大值。
+        const u = obj.usage ?? {};
+        tokensOut = Math.max(tokensOut, intFrom(u.output_tokens));
+        const inDelta = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
+        if (inDelta > tokensIn) tokensIn = inDelta;
       } else if (type === 'content_block_start') {
         const idx = obj.index ?? 0;
         blocks.set(idx, {
