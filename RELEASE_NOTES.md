@@ -1,5 +1,27 @@
 # Release Notes
 
+## v3.6.4 — 黑屏双根因修复 + 任务自杀防护 + 技能热刷新 + goal 过夜链路加固
+
+**发布日期：** 2026-09-14(自 v3.6.3 起 7 commits)
+
+### 🐛 修复
+
+- **黑屏(renderer V8 OOM)** —— 巨型 turn 渲染爆内存:turn 完成时全量重渲,单 turn 516 steps 时聚合卡在未展开状态就把几百张子卡全部构建,renderer RSS 一分钟 272M→2590M 后崩溃(实测 9/10、9/11、9/13 三次黑屏)。修复:聚合卡懒构建(展开才建子卡)+ 单 turn steps 总量护栏 200(更早步骤归入"更早的 N 步"占位卡,同样懒展开)
+- **crash.log 无限风暴(24.8GB)** —— 从终端启动后终端关闭,stderr 管道破裂,logFatal 的 console.error 同步抛 EPIPE → uncaughtException → 再进 logFatal → 无限递归写盘(单日 44.7 万条)。修复:EPIPE 静默跳过 + 同类消息 60s 限流 + console.error 包 try
+- **任务无声中断("又被取消了")** —— shell 里 `pkill -f KinetAios` 宽泛匹配把宿主 app 自身进程链(--user-data-dir 含 KinetAios)一起杀掉,turn 冻结无 error。修复:系统提示新增进程安全铁律(只许精确二进制路径或 osascript quit)
+- **新建技能要重启应用** —— main 端 skills 扫描 + renderer 端列表双层永不过期缓存。修复:main 端目录 mtime 哨兵(mtime 变才重扫,比 fs.watch 可靠)+ renderer 端 30s TTL
+
+### ⚡ goal 过夜链路加固
+
+- **主动 failover** —— 新增 Coding Plan 5h 用量窗口查询(60s 缓存),达阈值(默认 100%,可提前)报错前主动切链下一个 profile,不再浪费一轮失败重试
+- **被动 failover 扩 network 类** —— 首字节超时/挂起是端点打满的典型表现,停机干等不如切链;错误分类补中文"超时/中断"(漏判 other 会直接停机)
+- 设置新增 `goalFailover5hEnabled`(默认开)/ `goalFailover5hPct`
+
+### 🧹 其他
+
+- 超大代码块(>20K 字符)跳过语法高亮只转义 —— highlight 逐 token 扫描是 renderer 内存暴涨的放大器之一
+- answer 折叠/展开按钮样式补齐
+
 ## v3.6.3 — 侧栏重复副本修复 + 检索质量收尾 + 确认弹窗
 
 **发布日期：** 2026-09(自 v3.6.2 起 7 commits)
