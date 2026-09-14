@@ -220,7 +220,7 @@ export async function resolveSpawnHistory(opts: {
       const summary = comp.content?.trim();
       if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
         const { priceUSD } = await import('./glm');
-        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
+        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'compact' });
       }
       return { historyText: summary ? `【父会话摘要】\n${summary}` : '' };
     } catch {
@@ -383,7 +383,7 @@ class DirectEngine implements Engine {
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
             const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
-            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut });
+            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, source: `team:${name}` });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
             return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
@@ -412,7 +412,7 @@ class DirectEngine implements Engine {
           totalOut += r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
-        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut });
+        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
         return parts.join('\n');
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
@@ -929,7 +929,7 @@ function claudeParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
       const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
       const inT = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
       const outT = num(u.output_tokens);
-      emit({ type: 'cost', usd: c, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
+      emit({ type: 'cost', usd: c, tokens: inT + outT, tokensIn: inT, tokensOut: outT, source: 'claude' });
     }
     const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
     if (isErr) emit({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
@@ -1050,12 +1050,12 @@ function codexParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
       const inT = num(obj.usage?.input_tokens);
       const outT = num(obj.usage?.output_tokens);
       if (typeof cost === 'number') {
-        emit({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT });
+        emit({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT, source: 'codex' });
       } else if (obj.usage && inT + outT > 0) {
         // No cost field → estimate from token counts. Codex's own model isn't known here, so
         // this falls back to the Direct model's rate (rough — prefer when Codex reports cost).
         const usd = priceUSD(getSettings().model, inT, outT);
-        emit({ type: 'cost', usd, tokens: inT + outT, tokensIn: inT, tokensOut: outT });
+        emit({ type: 'cost', usd, tokens: inT + outT, tokensIn: inT, tokensOut: outT, source: 'codex' });
       }
       emit({ type: 'done' });
       break;
@@ -1276,7 +1276,7 @@ function pluginProtocolParser(protocol: string, pluginName: string): (line: stri
             }
             if (obj && obj.type === 'cost') {
               const usd = Number(obj.usd);
-              emit({ type: 'cost', usd: Number.isNaN(usd) ? 0 : usd, tokens: Number(obj.tokens) || 0, tokensIn: Number(obj.tokensIn) || 0, tokensOut: Number(obj.tokensOut) || 0 });
+              emit({ type: 'cost', usd: Number.isNaN(usd) ? 0 : usd, tokens: Number(obj.tokens) || 0, tokensIn: Number(obj.tokensIn) || 0, tokensOut: Number(obj.tokensOut) || 0, source: String(obj.source ?? 'subagent') });
               return;
             }
           } catch {

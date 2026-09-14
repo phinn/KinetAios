@@ -2552,10 +2552,13 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
           ? `${Math.floor(elapsedMs / 60000)}m ${Math.round((elapsedMs % 60000) / 1000)}s`
           : `${(elapsedMs / 1000).toFixed(1)}s`;
         metaLeft.innerHTML = `<span class="meta-item">⏱ ${elapsedStr}</span>`
-          + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item" title="${totalTok} tok">${tokSplitLabel(t.tokensIn ?? 0, t.tokensOut ?? 0, totalTok)}</span>` : '')
+          + (totalTok > 0 ? `<span class="meta-sep"></span><span class="meta-item meta-tok" title="${totalTok} tok · 点击查看逐次调用明细">${tokSplitLabel(t.tokensIn ?? 0, t.tokensOut ?? 0, totalTok)}</span>` : '')
           + (t.costUSD > 0 ? `<span class="meta-sep"></span><span class="meta-item">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '');
       }
       row.appendChild(metaLeft);
+      // token 明细:点页脚 ↑in ↓out → 浮层列出本 turn 每次 LLM 调用的 in/out/cost(conv_events turn/meta)。
+      const tokEl = metaLeft.querySelector('.meta-tok') as HTMLElement | null;
+      if (tokEl) tokEl.onclick = () => void toggleTokenBreakdown(conv.id, t.id, tokEl);
       // 右侧操作图标 / Right: action icons
       const actions = document.createElement('div');
       actions.className = 'ai-meta-actions';
@@ -4180,6 +4183,77 @@ function tokSplitLabel(tokensIn: number, tokensOut: number, total: number): stri
   return `${fmt(total)} tok`;
 }
 
+// ── Token 明细浮层:本 turn 每次 LLM 调用的 in/out/cost 逐条列出(conv_events 的 turn/meta 事件)──
+// 数据即每条 cost 事件的落库副本;source 标注调用来源(对话/摘要/评审/团队…)。
+const TOKEN_SOURCE_LABELS: Record<string, string> = {
+  llm: '对话', merge: '对话合并', compact: '摘要压缩', judge: 'V2 评审',
+  claude: 'Claude CLI', codex: 'Codex CLI', subagent: '子任务', 'team:broadcast': '团队广播',
+};
+function tokenSourceLabel(src: string | undefined): string {
+  if (!src) return '调用';
+  return TOKEN_SOURCE_LABELS[src] ?? (src.startsWith('team:') ? `成员 ${src.slice(5)}` : src);
+}
+let tokPopEl: HTMLElement | null = null;
+let tokPopClose: (() => void) | null = null;
+function closeTokenBreakdown(): void {
+  tokPopEl?.remove();
+  tokPopEl = null;
+  tokPopClose?.call(null);
+  tokPopClose = null;
+}
+async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTMLElement): Promise<void> {
+  if (tokPopEl) { closeTokenBreakdown(); return; } // 已开着 → 点同处关闭
+  closeTokenBreakdown();
+  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const pop = document.createElement('div');
+  pop.className = 'tok-pop';
+  pop.innerHTML = `<div class="tok-pop-head">Token 明细 <span class="bp-dim">${escHtml(turnId.slice(0, 8))}</span></div><div class="tok-pop-body"><div class="mm-empty">加载中…</div></div>`;
+  document.body.appendChild(pop);
+  tokPopEl = pop;
+  // 定位:锚点下方,右缘对齐锚点右缘,防溢出视口
+  const r = anchor.getBoundingClientRect();
+  pop.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 200)}px`;
+  pop.style.left = `${Math.max(8, Math.min(r.right - 280, window.innerWidth - 300))}px`;
+  // 点外部关闭
+  const onDoc = (e: MouseEvent): void => {
+    if (!pop.contains(e.target as Node) && e.target !== anchor && !anchor.contains(e.target as Node)) closeTokenBreakdown();
+  };
+  document.addEventListener('mousedown', onDoc, true);
+  tokPopClose = (): void => document.removeEventListener('mousedown', onDoc, true);
+
+  const body = pop.querySelector('.tok-pop-body') as HTMLElement;
+  let rows: ConvEventRow[];
+  try {
+    rows = (await api.convEvents(convId)) as ConvEventRow[];
+  } catch (e) {
+    body.innerHTML = `<div class="mm-empty">${escHtml(String((e as Error)?.message ?? e))}</div>`;
+    return;
+  }
+  const metas = rows.filter((rw) => rw.type === 'turn/meta' && rw.turnId === turnId);
+  if (metas.length === 0) {
+    // 旧数据:turn/meta 没落过 → 只给聚合数
+    body.innerHTML = `<div class="mm-empty">该会话无逐次调用记录(旧版本数据)</div>`;
+    return;
+  }
+  const fmtCost = (n: number): string => `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
+  const items = metas.map((rw, i) => {
+    const d = rw.data as { tokensIn?: number; tokensOut?: number; costUSD?: number; source?: string };
+    const when = new Date(rw.ts).toLocaleTimeString();
+    return `<div class="tok-row">
+      <span class="tok-idx">${i + 1}</span>
+      <span class="tok-src">${escHtml(tokenSourceLabel(d.source))}</span>
+      <span class="tok-nums">↑${fmt(d.tokensIn ?? 0)} ↓${fmt(d.tokensOut ?? 0)}</span>
+      <span class="tok-cost">${fmtCost(Number(d.costUSD ?? 0))}</span>
+      <span class="tok-time">${when}</span>
+    </div>`;
+  }).join('');
+  const totIn = metas.reduce((a, rw) => a + Number((rw.data as { tokensIn?: number }).tokensIn ?? 0), 0);
+  const totOut = metas.reduce((a, rw) => a + Number((rw.data as { tokensOut?: number }).tokensOut ?? 0), 0);
+  const totUsd = metas.reduce((a, rw) => a + Number((rw.data as { costUSD?: number }).costUSD ?? 0), 0);
+  body.innerHTML = items
+    + `<div class="tok-row tok-total"><span class="tok-idx">Σ</span><span class="tok-src">${metas.length} 次调用</span><span class="tok-nums">↑${fmt(totIn)} ↓${fmt(totOut)}</span><span class="tok-cost">${fmtCost(totUsd)}</span><span class="tok-time"></span></div>`;
+}
+
 function empty(text: string, sub?: string, icon?: string): HTMLElement {
   const d = document.createElement('div');
   d.className = 'empty';
@@ -4687,6 +4761,8 @@ async function showSettings() {
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cu-background" ${s.computerUseBackground ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cu-background">${tr('settings.computerUseBackground')}</label></div>
         <div class="field-desc">${tr('settings.computerUseBackground.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-auto-skills" ${s.autoLoadSkills ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-auto-skills">${tr('settings.autoLoadSkills')}</label></div>
+        <div class="field-desc">${tr('settings.autoLoadSkills.desc')}</div>
         <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
           <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
           <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
@@ -9724,7 +9800,8 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
     case 'turn/error':
       return { icon: '❌', title: tr('ev.error'), body: String(d.message ?? '') };
     case 'turn/meta':
-      return { icon: '📊', title: tr('ev.meta'), body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
+      const srcTag = d.source ? ` [${tokenSourceLabel(String(d.source))}]` : '';
+      return { icon: '📊', title: tr('ev.meta') + srcTag, body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
     case 'compaction/spill': {
       const dropped = Array.isArray(d.dropped) ? d.dropped.length : 0;
       const summary = d.summary ? String(d.summary) : '';

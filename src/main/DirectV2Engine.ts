@@ -874,7 +874,7 @@ ${failedDetail || '  (无)'}
       );
       // 消费 Judge LLM 调用的 cost
       if (comp.tokensIn > 0 || comp.tokensOut > 0) {
-        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
+        onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'judge' });
       }
       return comp.content ?? '';
     };
@@ -1286,7 +1286,7 @@ ${failedDetail || '  (无)'}
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
             const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
-            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut });
+            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, source: `team:${m.name}` });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
             return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
@@ -1315,7 +1315,7 @@ ${failedDetail || '  (无)'}
           totalOut += r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
-        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut });
+        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
         return parts.join('\n');
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {

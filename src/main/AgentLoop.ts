@@ -365,6 +365,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         tokens: completion.tokensIn + completion.tokensOut,
         tokensIn: completion.tokensIn,
         tokensOut: completion.tokensOut,
+        source: 'llm',
       });
     }
     // 用这轮真实 prompt_tokens 校准 token 估算系数(给 trimHistoryToTokenBudget / compactHistory 用)。
@@ -830,7 +831,7 @@ async function consolidateSummaries(
       () => {},
     );
     if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
-      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'merge' });
     }
     const merged = comp.content.trim();
     if (merged) return merged;
@@ -918,7 +919,7 @@ export async function compactHistory(
     );
     // 摘要 LLM 调用的 cost 也要上报(否则长对话压缩成本漏报)
     if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
-      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut });
+      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'compact' });
     }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];

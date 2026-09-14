@@ -806,6 +806,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           // 否则重建 turns 时"输入"虚高、"输出"恒为 0,与内存态 applyEvent 口径冲突。
           tokensIn: ev.tokensIn ?? 0,
           tokensOut: ev.tokensOut ?? 0,
+          source: ev.source,
         });
         break;
       case 'done':

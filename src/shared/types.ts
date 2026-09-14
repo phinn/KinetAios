@@ -394,7 +394,7 @@ export type AgentEvent =
   // 工具开始执行(runToolBatch 执行前发)→ renderer 先挂"运行中"卡片,结果到达后原位替换。
   // startId = 模型的 tool_call_id,与完成事件配对;CLI 引擎/子任务转发没有此事件(降级为旧行为)。
   | { type: 'tool_start'; name: string; args: string; startId: string }
-  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
+  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number; source?: string }
   | { type: 'status'; text: string }
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
   | { type: 'context'; action: 'compacted' | 'trimmed'; beforeTokens: number; afterTokens: number } // 上下文压缩事件 → renderer 可视化
@@ -421,7 +421,7 @@ export type RemoteAgentEvent =
   | { type: 'status'; text: string }
   | { type: 'tool'; name: string }
   | { type: 'token'; text: string }
-  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number }
+  | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number; source?: string }
   | { type: 'done'; summary: string }
   | { type: 'error'; message: string };
 
@@ -492,7 +492,7 @@ export type ConvEvent =
   | { type: 'assistant/message'; text: string }
   | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number }
   | { type: 'turn/error'; message: string }
-  | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number }
+  | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number; source?: string }
   // spill 存证(v3.6.3 瘦身):dropped 截断为前 20 条×500 字符,droppedTotal 记录真实条数
   | { type: 'compaction/spill'; dropped: ChatMsg[]; droppedTotal?: number; summary?: string }
   | { type: 'context/edit'; before: number; after: number } // 手动编辑上下文:记条数变化(前后文不入事件流,见 turns.traj)
