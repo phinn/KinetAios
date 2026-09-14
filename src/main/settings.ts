@@ -56,6 +56,8 @@ const DEFAULTS: AppSettings = {
   goalMaxIterations: 20,
   goalMaxHours: 0,
   goalMaxCostUSD: 0,
+  goalFailover5hEnabled: true,  // 5h 窗口用满提前接力:默认开
+  goalFailover5hPct: 100,       // 阈值:窗口用量百分比达到即切(100 = 用满才切)
   // 实时语音助手配置:默认关闭,AppID/Token 留空(wsUrl 预填火山引擎官方地址)。
   voiceChat: {
     appId: '',

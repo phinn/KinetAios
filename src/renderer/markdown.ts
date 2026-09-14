@@ -8,6 +8,13 @@ import { highlightCode } from './highlight';
 
 const COPY_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
 
+// 超大代码块跳过语法高亮(只做转义):highlight 逐 token 正则扫描 + 上万 span,
+// 是 2026-09-13 renderer 内存暴涨 2.3GB → cppgc Fatal 崩溃的放大器之一。
+// 显示上等价(只是无颜色),数据/复制按钮不受影响。
+// Oversized code blocks skip tokenizing (escape only) — highlight is the main
+// memory amplifier for huge blocks; display stays correct, just colorless.
+const HIGHLIGHT_MAX_CHARS = 20_000;
+
 export function renderMarkdown(src: string): string {
   if (!src) return '';
 
@@ -20,7 +27,7 @@ export function renderMarkdown(src: string): string {
     // 语法高亮(highlight.ts):token 按行切分发射,行号模式不会撕断跨行 span。
     const raw = code.replace(/\n$/, '');
     const lineCount = raw.split('\n').length;
-    const hi = highlightCode(raw, typeof lang === 'string' ? lang : '');
+    const hi = raw.length > HIGHLIGHT_MAX_CHARS ? esc(raw) : highlightCode(raw, typeof lang === 'string' ? lang : '');
     const numbered = lineCount > 12
       ? hi.split('\n').map((l: string) => `<span class="cl">${l}</span>`).join('\n')
       : hi;

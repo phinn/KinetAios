@@ -11,6 +11,7 @@ import { currentProvider, embed, GLMError, supervisorComplete } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 import { applyPin } from './pin-history';
+import { codingPlan5hPct } from './quota';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -582,6 +583,24 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       const lastTurn = conv.turns[conv.turns.length - 1];
       if (!lastTurn) break;
 
+      // ── 主动 failover:Coding Plan 5h 窗口用满 → 报错前先切链上下一个 profile。
+      // 设置页 Goal 面板可开关(goalFailover5hEnabled,默认开)+ 阈值(goalFailover5hPct,
+      // 默认 100 = 用满才切)。被动路径(下面的 quota 错切换)保留 —— 非订阅制限流仍靠它。
+      // 查询结果在 quota.ts 内缓存 60s,goal 循环每轮一次也不会打爆端点。链尽或非 Coding Plan 不动。
+      if (!lastTurn.error && chainIdx < failoverChain.length - 1 && S.goalFailover5hEnabled !== false) {
+        const curProfileId = chainIdx >= 0 ? failoverChain[chainIdx] : conv.profileId ?? null;
+        const pct = await codingPlan5hPct(curProfileId);
+        const threshold = Number(S.goalFailover5hPct) > 0 ? Number(S.goalFailover5hPct) : 100;
+        if (pct != null && pct >= threshold) {
+          const nx = nextFailover();
+          if (nx) {
+            store.appendEvent(conv.id, lastTurn.id, { type: 'goal/failover', from: `5h window ${pct}%`, to: nx.name, reason: 'quota-proactive' });
+            conv.statusNote = `⚡ 当前 API 5h 用量窗口已满(${pct}%)→ 主动切换到 ${nx.name} 继续`;
+            this.emit.emitConversation(conv);
+          }
+        }
+      }
+
       // ── failover:上一轮报 quota/auth 错 → 换链上下一个模型接着跑。
       // v3.5.6 修复:必须排在 answer 检查之前 —— 出错轮 answer 恒空,原写法 failover
       // 是死代码,429 直接 break 停机。出错轮无产出,跳过完成判定/监工验收,
@@ -589,16 +608,19 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       let failoverRetry = '';
       if (lastTurn.error) {
         const cls = GLMError.classify(lastTurn.error);
-        if ((cls === 'quota' || cls === 'auth') && chainIdx < failoverChain.length - 1) {
+        // network 也切:首字节超时/挂起是端点打满/无量的典型表现(5h 窗口打满常以超时
+        // 而非 429 呈现),停机干等重置不如切链。链尽仍真停。
+        if ((cls === 'quota' || cls === 'auth' || cls === 'network') && chainIdx < failoverChain.length - 1) {
           const nx = nextFailover();
           if (nx) {
+            const why = cls === 'quota' ? '额度耗尽' : cls === 'auth' ? '鉴权失败' : '网络/超时';
             store.appendEvent(conv.id, lastTurn.id, { type: 'goal/failover', from: (lastTurn.error || '').slice(0, 120), to: nx.name, reason: cls });
-            conv.statusNote = `⚡ 模型 ${cls === 'quota' ? '额度耗尽' : '鉴权失败'} → 切换到 ${nx.name} 继续`;
+            conv.statusNote = `⚡ 模型 ${why} → 切换到 ${nx.name} 继续`;
             this.emit.emitConversation(conv);
-            failoverRetry = `⚠️ 上一模型不可用(${cls === 'quota' ? '额度耗尽' : '鉴权失败'}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
+            failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
           }
         }
-        if (!failoverRetry) break; // network/other 换模型无意义;或链已用尽 → 真停
+        if (!failoverRetry) break; // other 换模型无意义;或链已用尽 → 真停
       }
 
       // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环(failover 重试轮无产出,跳过)

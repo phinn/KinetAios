@@ -52,7 +52,12 @@ export class GLMError extends Error {
     if (/(^|[^\d.])4\d{2}([^\d]|$)/.test(msg) && /余额|quota|limit|insufficient|usage|额度|上限|5\s*hour|5\s*小时|5h/i.test(msg)) return 'quota';
     if (/余额不足|使用上限|配额|额度|usage limit|quota|insufficient|5\s*hour|5\s*小时|rate.?limit/i.test(msg)) return 'quota';
     if (/401|403|unauthorized|invalid.?api.?key/i.test(msg)) return 'auth';
-    if (/(^|[^\d.])5\d{2}([^\d]|$)/.test(msg) || /timeout|ECONNRESET|ENOTFOUND|fetch failed|network|aborted/i.test(msg)) return 'network';
+    // 超时/中断要中英都认:「首字节超时 120s」是中文文案,漏了会被判成 other —— other 在
+    // goal loop 里既不重试也不 failover,直接停机(2026-09-12 过夜任务实际踩坑:5h 窗口打满
+    // 后服务端收请求不回响应头 → 首字节超时 → other → 停,没切链)。
+    // Timeout/hang must match Chinese wording too — a TTFB hang is exactly what an
+    // exhausted 5h-window endpoint looks like; 'other' would stop the loop, not fail over.
+    if (/(^|[^\d.])5\d{2}([^\d]|$)/.test(msg) || /timeout|超时|ECONNRESET|ENOTFOUND|ECONNREFUSED|fetch failed|network|aborted|中断/i.test(msg)) return 'network';
     return 'other';
   }
 

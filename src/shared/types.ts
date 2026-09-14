@@ -307,6 +307,8 @@ export type AppSettings = {
   goalMaxIterations: number;        // goal loop 轮数上限(默认 20;过夜建议 100+)
   goalMaxHours: number;             // 最长运行小时数(0 = 不限时)。超时自动停,防过夜烧穿
   goalMaxCostUSD: number;           // 成本硬顶 USD(0 = 不限)。目标累计 cost 超过即停
+  goalFailover5hEnabled: boolean;   // true = Coding Plan 5h 窗口用满 → 报错前主动切链上下一个(主动 failover)
+  goalFailover5hPct: number;        // 主动切换阈值(默认 100 = 窗口用满;设 90 = 用到九成就提前切)
   // ── 实时语音助手(豆包实时语音大模型)── WebSocket 双向音频流,实时说话→实时回复。
   // 配置火山引擎实时语音 API 凭据和音色。
   voiceChat: VoiceChatConfig;
