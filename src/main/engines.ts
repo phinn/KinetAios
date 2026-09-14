@@ -485,6 +485,17 @@ class DirectEngine implements Engine {
     };
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    // 自动加载 Skills:目录注入 system prompt,模型按任务匹配调 load_skill 拉正文(开关控制)。
+function skillCatalogSection(): string {
+      // autoLoadSkills 关 → 不注入目录,模型无感(仅手动 /name)。
+      const { getSettings } = require('./settings') as typeof import('./settings');
+      if (!getSettings().autoLoadSkills) return '';
+      const { skillCatalogText } = require('./skills') as typeof import('./skills');
+      const catalog = skillCatalogText();
+      return catalog
+        ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
+        : '';
+    }
     // 会话目标(通过 /goal 设置):注入 systemPrompt 顶部,跨轮持续生效,引导整个会话方向。
     // goal 模式:agent 自动循环执行直到完成 goal。模型判断完成后在回答末尾输出 [GOAL_COMPLETE]。
     const goalSection = conv.goal ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。如果用户的新请求偏离目标,可以提醒并征求确认。\n**当你确认目标已经完成时,在回答的最末尾输出 \`[GOAL_COMPLETE]\` 标记。**` : '';
@@ -508,7 +519,7 @@ class DirectEngine implements Engine {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

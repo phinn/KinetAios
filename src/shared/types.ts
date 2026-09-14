@@ -285,6 +285,8 @@ export type AppSettings = {
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
   voiceAutoSend: boolean;
+  /** 根据任务自动加载 Skills:开 → system 注入目录 + 模型可用 load_skill 工具按需拉正文;关 → 仅手动 /name 生效 */
+  autoLoadSkills: boolean;
   // ── 任务完成通知 ── 最小化/失焦时任务完成发系统通知 + 任务栏闪烁。
   // 默认关闭(不影响现有用户),稳定后再改默认开。
   notifyOnDone: boolean;

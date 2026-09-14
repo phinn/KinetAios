@@ -232,6 +232,17 @@ export class DirectV2Engine implements Engine {
       ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。\n**当你确认目标已经完成时,在回答的最末尾输出 \`[GOAL_COMPLETE]\` 标记。**`
       : '';
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    // 自动加载 Skills:目录进 system(执行阶段可见;executor 走 runAgentLoop 全工具集,可直接调 load_skill)。
+function skillCatalogSection(): string {
+      // autoLoadSkills 关 → 不注入目录,模型无感(仅手动 /name)。
+      const { getSettings } = require('./settings') as typeof import('./settings');
+      if (!getSettings().autoLoadSkills) return '';
+      const { skillCatalogText } = require('./skills') as typeof import('./skills');
+      const catalog = skillCatalogText();
+      return catalog
+        ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
+        : '';
+    }
     const rulesSection = loadProjectRules(conv.cwd);
     const systemPrompt =
       baseSystemPrompt +
@@ -240,7 +251,7 @@ export class DirectV2Engine implements Engine {
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +
-      skillSection +
+      skillSection + skillCatalogSection() +
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +

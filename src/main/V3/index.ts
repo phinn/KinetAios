@@ -23,6 +23,7 @@ import { getSettings, snapshot } from '../settings';
 import * as store from '../store';
 import { mcp } from '../mcp';
 import { pluginSystemPrompts } from '../plugins';
+import { skillCatalogText } from '../skills';
 import {
   baseSystemPrompt,
   cwdAnchorSection,
@@ -74,6 +75,11 @@ export class DirectV3Engine implements Engine {
       ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。**当你确认目标已经完成时,在回答的最末尾输出 \`[GOAL_COMPLETE]\` 标记。**`
       : '';
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
+    // 自动加载 Skills:目录进 system;V3 各路径(fast/std/deep)都经 runAgentLoop 全工具集,可直接调 load_skill。
+    const skillCatalog = getSettings().autoLoadSkills ? skillCatalogText() : null;
+    const skillCatalogSection = skillCatalog
+      ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${skillCatalog}\n`
+      : '';
     const rulesSection = loadProjectRules(conv.cwd);
     // V3 分析专用定位:分析任务追加方法论段(其余任务零注入,不给编码任务添噪声)
     const analysisSection = isAnalysisTask(prompt) ? ANALYSIS_SYSTEM_SECTION : '';
@@ -86,7 +92,7 @@ export class DirectV3Engine implements Engine {
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +
-      skillSection +
+      skillSection + skillCatalogSection +
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +

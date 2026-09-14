@@ -5818,6 +5818,7 @@ function readSettingsForm(): AppSettings {
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
+    autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,

@@ -2107,6 +2107,37 @@ const todoWrite: Tool = {
   },
 };
 
+// ── load_skill:按需加载 Skill 正文(自动加载模式)──
+// system prompt 里只放 name+description 轻量目录(见 skills.ts skillCatalogText),
+// 模型判断任务与某个 skill 描述匹配时调用本工具拉全文 —— 与 DSH harness 的行为对齐:
+// 正文只在真用到时进上下文,system prompt 保持稳定(前缀缓存友好)。
+// 显式 /name(TaskManager 直接注入 skillBlock)优先级更高,两者不冲突。
+const loadSkillTool: Tool = {
+  name: 'load_skill',
+  description:
+    '加载一个 Skill 的完整指令。当前任务与系统提示中「可用 Skills」目录里的某项描述匹配时,' +
+    '必须先调用本工具加载再开始行动(skill 含专门的流程/规范/脚本用法,遵循它效果远好于自由发挥)。' +
+    '用户显式输入 /name 时无需调用(指令已在上下文中)。name 必须与目录中的名称完全一致。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: 'Skill 名称(与「可用 Skills」目录中列出的 name 完全一致)' },
+    },
+    required: ['name'],
+  },
+  async run(args) {
+    const name = String(args.name ?? '').trim().replace(/^\//, '');
+    if (!name) return '缺少 name 参数';
+    // 延迟 require:skills.ts 依赖 plugins.ts(electron app),保持 tools.ts 的懒加载风格。
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { loadSkillBody, listSkills } = require('./skills') as typeof import('./skills');
+    const body = loadSkillBody(name);
+    if (body != null) return body;
+    const names = listSkills().map((s) => s.name);
+    return `没有名为 "${name}" 的 skill。可用: ${names.slice(0, 40).join(', ')}${names.length > 40 ? ' …' : ''}`;
+  },
+};
+
 export function builtinTools(): Tool[] {
   return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, todoWrite];
 }
@@ -2118,7 +2149,11 @@ export function allTools(): Tool[] {
   // 延迟 require:plugins.ts 引用了 app.getPath,只在 main 进程跑;renderer 不会走到这。
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { pluginTools } = require('./plugins') as typeof import('./plugins');
-  return [...builtinTools(), ...pluginTools(), ...customTools()];
+  // load_skill 受 autoLoadSkills 开关控制:关 → 模型看不到该工具,仅手动 /name 生效。
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { getSettings } = require('./settings') as typeof import('./settings');
+  const skillTools: Tool[] = getSettings().autoLoadSkills ? [loadSkillTool] : [];
+  return [...builtinTools(), ...pluginTools(), ...customTools(), ...skillTools];
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。

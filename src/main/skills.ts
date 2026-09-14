@@ -170,6 +170,31 @@ function scan(): Map<string, Skill> {
   return map;
 }
 
+// ── Skill 目录文本(自动加载模式用)──
+// 把 name+description 压成轻量索引注入 system prompt;正文仍靠 load_skill 工具按需拉取。
+// 预算:~2400 字符上限(粗合 600-800 token),超限截断并注明,目录永远不喧宾夺主。
+// 人物/项目级 skill 多的用户(装满 ~/.claude)也不会撑爆上下文。
+export function skillCatalogText(): string | null {
+  const skills = listSkills();
+  if (skills.length === 0) return null;
+  const MAX_CHARS = 2400;
+  const lines: string[] = [];
+  let used = 0;
+  let truncated = false;
+  for (const s of skills) {
+    const desc = (s.description || '').replace(/\s+/g, ' ').trim().slice(0, 80);
+    const line = `- ${s.name}${desc ? ` — ${desc}` : ''}`;
+    if (used + line.length + 1 > MAX_CHARS) { truncated = true; break; }
+    lines.push(line);
+    used += line.length + 1;
+  }
+  if (lines.length === 0) return null;
+  const more = truncated
+    ? `\n(目录过长已截断,完整列表见 slash 菜单;若目标 skill 不在目录中,可直接输入 /name 或调用 load_skill)` 
+    : '';
+  return lines.join('\n') + more;
+}
+
 export function listSkills(): SkillInfo[] {
   // v2: 合并插件贡献的 slash 命令(pluginSlashCommands 每次调 loadPlugins, 有缓存)。
   const pluginCmds = safePluginSlashCommands().map((s) => ({
