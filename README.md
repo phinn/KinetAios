@@ -16,6 +16,8 @@ AI 工作台 | 本地 AI Agent | 多引擎 AI | 开源 AI 编程助手
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
+> 🖥️ **KinetAios for Mac is coming** — the native Swift edition (agent teams · Cron · GoalLoop · memory graph · voice · cost tracking). Launch notice → **https://phinn.github.io/KinetAios/mac** — the Windows engine runtime stays GPL & free forever.
+
 ![KinetAios hero screenshot](documents/hero.png)
 
 ![Four engines running side-by-side](documents/demo-arena.gif)
