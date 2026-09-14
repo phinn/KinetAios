@@ -684,7 +684,7 @@ function renderSidebar() {
   const runningCount = order.filter((id) => convs.get(id)?.status === 'running').length;
   if (runningOnly && runningCount === 0) runningOnly = false;
   const filterBtn = document.getElementById('sb-running-filter')!;
-  filterBtn.style.display = runningCount > 0 ? '' : 'none';
+  filterBtn.classList.toggle('js-hidden', runningCount === 0);
   filterBtn.classList.toggle('active', runningOnly);
   const badge = filterBtn.querySelector('.sb-run-badge') as HTMLElement | null;
   if (badge) badge.textContent = String(runningCount);
@@ -1977,7 +1977,7 @@ function renderMain() {
   // Lazy: head-mode convs show a loading state until turns arrive.
   // NO scrollDownForce here — it would clobber a pending pin restore.
   if (conv.turnsLoaded === false) {
-    turns.replaceChildren(empty('…', tr('empty.noTurns')));
+    turns.replaceChildren(buildTurnsSkeleton());
     void ensureTurnsLoaded(conv, token).then((ok) => { if (ok && token === renderToken) renderMain(); });
     return;
   }
@@ -2204,7 +2204,7 @@ function renderHead(conv: Conversation | undefined) {
     const sm0 = document.getElementById('submodel-input') as HTMLInputElement | null;
     if (sm0) sm0.value = '';
     const cs0 = document.getElementById('ctx-mode-select');
-    if (cs0) cs0.style.display = 'none';
+    if (cs0) cs0.classList.add('js-hidden');
     const pb0 = document.getElementById('btn-persona');
     if (pb0) pb0.style.display = 'none';
     eng.value = 'direct';
@@ -2225,7 +2225,7 @@ function renderHead(conv: Conversation | undefined) {
   const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
   if (profileSel) {
     profileSel.value = conv.profileId || '';
-    profileSel.style.display = (isDirectFam && hasProfiles) ? '' : 'none';
+    profileSel.classList.toggle('js-hidden', !(isDirectFam && hasProfiles));
   }
   // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义);气泡随会话切换关闭
   const balBtn = document.getElementById('btn-balance') as HTMLButtonElement | null;
@@ -2278,10 +2278,10 @@ function renderHead(conv: Conversation | undefined) {
   if (goalBar && goalText) {
     if (conv.goal) {
       goalText.textContent = conv.goal;
-      goalBar.style.display = '';
+      goalBar.classList.remove('js-hidden');
       goalBar.classList.toggle('goal-active', conv.status === 'running');
     } else {
-      goalBar.style.display = 'none';
+      goalBar.classList.add('js-hidden');
       goalBar.classList.remove('goal-active');
     }
   }
@@ -4147,6 +4147,30 @@ function openPreviewPane(): void {
     }
     showPreviewEmpty();
   }
+}
+
+// 会话历史懒加载骨架屏:模仿对话气泡形状的 shimmer 占位,比 '…' 空态更能传达"正在载入"。
+// Skeleton placeholders shaped like chat bubbles — communicates loading better than a bare '…'.
+function buildTurnsSkeleton(): HTMLElement {
+  const wrap = document.createElement('div');
+  wrap.className = 'turns-skeleton';
+  wrap.setAttribute('aria-busy', 'true');
+  const rows: Array<[string, string[]]> = [
+    ['sk-user', ['sk-bubble sk-user-b']],
+    ['sk-ai', ['sk-bubble sk-ai-d', 'sk-bubble sk-ai-b', 'sk-bubble sk-ai-c']],
+    ['sk-ai', ['sk-bubble sk-ai-b', 'sk-bubble sk-ai-c']],
+  ];
+  for (const [rowCls, bubbles] of rows) {
+    const row = document.createElement('div');
+    row.className = 'sk-row ' + rowCls;
+    for (const cls of bubbles) {
+      const b = document.createElement('div');
+      b.className = cls;
+      row.appendChild(b);
+    }
+    wrap.appendChild(row);
+  }
+  return wrap;
 }
 
 function empty(text: string, sub?: string, icon?: string): HTMLElement {
@@ -6618,7 +6642,7 @@ function closeMoreMenu() {
       return;
     }
     if (e.key !== 'Escape') return;
-    if (document.getElementById('search-overlay')!.style.display !== 'none') { closeSearch(); return; }
+    if (!document.getElementById('search-overlay')!.classList.contains('js-hidden')) { closeSearch(); return; }
     if (document.getElementById('modal')!.classList.contains('show')) closeConfirm(false);
     else if (document.getElementById('confirm-modal')!.classList.contains('show')) dismissConfirmDialog();
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
@@ -9166,7 +9190,7 @@ async function renderMemoryGraph(): Promise<void> {
   document.getElementById('mm-view-graph')!.classList.toggle('active', mmView === 'graph');
   // 图谱视图下显示「图/列表」切换按钮
   const vizBtn = document.getElementById('mm-graph-viz')!;
-  vizBtn.style.display = mmView === 'graph' ? '' : 'none';
+  vizBtn.classList.toggle('js-hidden', mmView !== 'graph');
   vizBtn.innerHTML = mmGraphMode === 'viz' ? ICON.list : ICON.graph;
   vizBtn.title = mmGraphMode === 'viz' ? '切换列表' : '切换力导向图';
   vizBtn.onclick = async () => {
@@ -10597,14 +10621,14 @@ let searchDebounce: ReturnType<typeof setTimeout> | null = null;
 
 let searchFocusRestore: (() => void) | null = null;
 function openSearch(): void {
-  searchOverlay.style.display = 'flex';
+  searchOverlay.classList.remove('js-hidden');
   searchInput.value = '';
   searchResults.innerHTML = '';
   searchInput.focus();
   searchFocusRestore = trapFocus(searchOverlay);
 }
 function closeSearch(): void {
-  searchOverlay.style.display = 'none';
+  searchOverlay.classList.add('js-hidden');
   if (searchFocusRestore) { searchFocusRestore(); searchFocusRestore = null; }
 }
 
@@ -10680,7 +10704,7 @@ function fmtLiveTs(): string {
 }
 
 function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?: number; tokens?: number; message?: string; prompt?: string; summary?: string }): void {
-  livePanel.style.display = 'block';
+  livePanel.classList.remove('js-hidden');
   switch (ev.type) {
     case 'start':
       liveTokenBuf = '';
@@ -10725,5 +10749,5 @@ function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?:
 }
 
 document.getElementById('live-close')!.onclick = () => {
-  livePanel.style.display = 'none';
+  livePanel.classList.add('js-hidden');
 };

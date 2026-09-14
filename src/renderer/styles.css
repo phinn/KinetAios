@@ -71,6 +71,15 @@
   --dur-normal: 200ms;    /* 标准交互:按钮/tap */
   --dur-slow: 320ms;      /* 入场/弹出:modal/dropdown */
   --dur-slower: 420ms;    /* 大型场景:页面切换/sheet */
+
+  /* ═══ Z-Index Scale ═══
+     统一浮层层级:内容 < 菜单 < 对话框 < 模态 < 顶层(命令面板/sheet)。
+     主题装饰(如 SEED 扫描线)压在内容上但低于一切浮层。 */
+  --z-menu: 999;          /* 右键/文件浮出菜单 */
+  --z-scanline: 9998;     /* 主题装饰 overlay(SEED 扫描线) */
+  --z-dialog: 9999;       /* 非模态对话框(git dialog / modal-overlay) */
+  --z-modal: 10000;       /* 模态:lightbox / 全局 modal */
+  --z-topmost: 10003;     /* 命令面板 / sheet — 永远最顶层 */
 }
 /* 淡色主题:在 <html data-theme="light"> 生效。颜色对齐 macOS System Light。 */
 [data-theme="light"] {
@@ -845,8 +854,8 @@ html, body { height: 100%; margin: 0; }
    webview 内的网页自带滚动条不动(那是页面作者决定的)。 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: var(--text-faint); opacity: 0.35; border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: var(--text-dim); background-clip: content-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-faint) 35%, transparent); border-radius: 4px; border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-dim) 60%, transparent); background-clip: content-box; border: 2px solid transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 /* 选中文字 accent 色 / Text selection in accent color */
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); }
@@ -1148,7 +1157,7 @@ a { color: var(--accent); }
 /* 弹层面板 ⋯ — 点击展开浮层网格,点外部收起 (Launchpad 风格) */
 .sb-more-wrap { position: relative; }
 .sb-more-overlay {
-  display: none; position: fixed; inset: 0; z-index: 10000;
+  display: none; position: fixed; inset: 0; z-index: var(--z-modal);
   background: transparent;
 }
 .sb-more-overlay.open { display: block; animation: overlay-fade var(--dur-fast) var(--ease-out); }
@@ -1286,7 +1295,7 @@ a { color: var(--accent); }
 }
 .ctx-item:hover { background: color-mix(in srgb, var(--accent) 12%, transparent); }
 .ctx-item:active { transform: scale(0.98); }
-.ctx-ico { width: 18px; font-size: 0.923rem; text-align: center; color: var(--text-dim); flex-shrink: 0; }
+.ctx-ico { width: 18px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-dim); }
 .ctx-key { margin-left: auto; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
 .ctx-sep { height: 1px; background: var(--border-soft); margin: 4px 6px; }
 .ctx-item.ctx-danger { color: var(--err); }
@@ -1678,7 +1687,7 @@ a { color: var(--accent); }
 .gh-sep { width: 1px; height: 16px; background: var(--border); margin: 0 4px; flex-shrink: 0; }
 
 /* git commit 对话框 / git commit dialog */
-.git-dialog-overlay { position: fixed; inset: 0; z-index: 9999; display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.2s; pointer-events: none; }
+.git-dialog-overlay { position: fixed; inset: 0; z-index: var(--z-dialog); display: flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.4); backdrop-filter: blur(4px); opacity: 0; transition: opacity 0.2s; pointer-events: none; }
 .git-dialog-overlay.show { opacity: 1; pointer-events: auto; }
 .git-dialog { width: 440px; max-width: 90vw; padding: 20px; border-radius: 12px; background: var(--bg-card, #1e1e2e); border: 1px solid var(--border); box-shadow: 0 12px 40px rgba(0,0,0,0.5); transform: scale(0.95); transition: transform 0.2s; }
 .git-dialog-overlay.show .git-dialog { transform: scale(1); }
@@ -1695,7 +1704,7 @@ a { color: var(--accent); }
 .git-dialog-actions .gd-ok[disabled] { opacity: 0.4; cursor: not-allowed; }
 
 /* git 操作状态 toast / git action status toast */
-.git-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px); z-index: 10000; padding: 10px 20px; border-radius: 10px; font-size: 0.9615rem; box-shadow: 0 8px 24px rgba(0,0,0,0.3); opacity: 0; transition: all 0.3s; pointer-events: none; max-width: 480px; }
+.git-toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%) translateY(20px); z-index: var(--z-modal); padding: 10px 20px; border-radius: 10px; font-size: 0.9615rem; box-shadow: 0 8px 24px rgba(0,0,0,0.3); opacity: 0; transition: all 0.3s; pointer-events: none; max-width: 480px; }
 .git-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 .git-toast.ok { background: rgba(80,200,120,0.95); color: #fff; }
 .git-toast.err { background: rgba(220,80,80,0.95); color: #fff; }
@@ -2110,8 +2119,10 @@ a { color: var(--accent); }
 .typing i:nth-child(2) { animation-delay: .2s; }
 .typing i:nth-child(3) { animation-delay: .4s; }
 @keyframes typing-blink { 0%, 60%, 100% { opacity: .25; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-3px); } }
-.answer p { margin: 0 0 8px; }
+.answer p { margin: 0 0 8px; text-wrap: pretty; }
 .answer p:last-child { margin-bottom: 0; }
+/* 标题避免孤字换行 / Balance headings to avoid orphan words */
+h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-title { text-wrap: balance; }
 .answer a { color: var(--accent); text-decoration: underline; text-decoration-color: var(--accent-dim); text-underline-offset: 2px; transition: text-decoration-color var(--dur-fast) var(--ease-out); }
 .answer a:hover { text-decoration-color: var(--accent); }
 .answer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 2px; }
@@ -2213,7 +2224,7 @@ a { color: var(--accent); }
 .step-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .step-img { max-width: 240px; max-height: 150px; border-radius: 8px; border: 1px solid var(--border-soft); cursor: zoom-in; transition: transform var(--dur-fast) var(--ease-out); background: var(--bg-elev); }
 .step-img:hover { transform: scale(1.02); border-color: var(--accent-dim); }
-.img-lightbox { position: fixed; inset: 0; z-index: 10000; background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
+.img-lightbox { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
 .img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
 @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
 /* ── 语法高亮 token 色(highlight.ts)— 全部走语义变量,明暗主题自适应 ── */
@@ -2291,7 +2302,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .turn:not(.streaming) .todo-spin { animation: none; border-top-color: var(--text-faint); opacity: 0.65; }
 .turn:not(.streaming) .todo-in_progress .todo-text { color: var(--text-dim); }
 /* ── 命令面板(Ctrl/Cmd+K)── */
-#palette { position: fixed; inset: 0; z-index: 10003; background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+#palette { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #palette[hidden] { display: none; }
 .palette-box { width: min(560px, 92vw); max-height: 62vh; display: flex; flex-direction: column; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); overflow: hidden; animation: ctx-pop var(--dur-fast) var(--ease-out); }
 #palette-input { border: none; outline: none; background: transparent; padding: 14px 16px; font-size: 1rem; color: var(--text); border-bottom: 1px solid var(--border-soft); }
@@ -2303,7 +2314,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .palette-empty { padding: 18px; text-align: center; color: var(--text-faint); font-size: 0.846rem; }
 .palette-foot { display: flex; gap: 14px; padding: 6px 14px; border-top: 1px solid var(--border-soft); font-size: 0.7rem; color: var(--text-faint); }
 /* ── 快捷键速查表 ── */
-.sheet-overlay { position: fixed; inset: 0; z-index: 10003; background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s ease-out; }
+.sheet-overlay { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s ease-out; }
 .sheet-card { width: min(420px, 90vw); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 18px 20px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); }
 .sheet-card h3 { margin: 0 0 12px; font-size: 1rem; color: var(--text); }
 .sheet-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 0.846rem; color: var(--text-dim); }
@@ -2996,7 +3007,7 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .fe-children .fe-children .fe-children .fe-row { padding-left: 52px; }
 .fe-children .fe-children .fe-children .fe-children .fe-row { padding-left: 66px; }
 
-.files-menu { position: fixed; z-index: 999; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 8px; padding: 4px 0; min-width: 160px; box-shadow: var(--shadow-lg); }
+.files-menu { position: fixed; z-index: var(--z-menu); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 8px; padding: 4px 0; min-width: 160px; box-shadow: var(--shadow-lg); }
 .fm-item { padding: 7px 14px; font-size: 0.9615rem; color: var(--text); cursor: default; border-radius: 5px; margin: 0 4px; transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); }
 .fm-item:hover { background: var(--accent-dim); color: var(--accent); }
 
@@ -3156,7 +3167,7 @@ body.arena { display: flex; flex-direction: column; height: 100vh; margin: 0; ba
 .cost-loading { color: var(--text-dim); padding: 20px; }
 
 /* ── 规则生成器 modal ── */
-.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 9999; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
+.modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: var(--z-dialog); animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
 .modal-box { background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 20px; width: 560px; max-width: 90vw; max-height: 80vh; overflow-y: auto; box-shadow: var(--shadow-xl); animation: modal-card-in var(--dur-slow) var(--ease-out); }
 .modal-box h3 { margin: 0 0 12px; }
 .modal-box .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
@@ -4372,7 +4383,7 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
   content: '';
   position: fixed;
   inset: 0;
-  z-index: 9998;
+  z-index: var(--z-scanline);
   pointer-events: none;
   background: repeating-linear-gradient(
     0deg,
@@ -4770,7 +4781,7 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
 
 /* 模态遮罩 / Modal overlay — 居中弹窗,暗色半透明背景 */
 .inspect-modal-overlay {
-  position: fixed; inset: 0; z-index: 10000;
+  position: fixed; inset: 0; z-index: var(--z-modal);
   background: rgba(0,0,0,.55);
   backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
   display: flex; align-items: center; justify-content: center;
@@ -6470,3 +6481,28 @@ select:focus-visible {
 .traj-row.t-message .traj-badge { color: var(--text-dim); }
 .traj-row.t-tool .traj-badge { color: #d97b6c; border-color: #d97b6c55; }
 .traj-row.t-tool { border-left: 2px solid #d97b6c; }
+
+/* ═══ JS 显隐工具类:替代内联 style="display:none",配合 classList.toggle('js-hidden') ═══ */
+.js-hidden { display: none !important; }
+#profile-select { max-width: 140px; }
+#ctx-mode-select { max-width: 100px; }
+.modal-noask { display: block; font-size: 12px; color: var(--text-dim); margin: 8px 0; }
+.modal-noask input { width: auto; margin-right: 6px; }
+
+/* ═══ 骨架屏:会话历史懒加载占位(替代 '…' 文本空态)/ Turns skeleton for lazy load ═══ */
+.turns-skeleton { max-width: 760px; margin: 0 auto; padding: 20px 16px; display: flex; flex-direction: column; gap: 22px; }
+.sk-row { display: flex; flex-direction: column; gap: 8px; }
+.sk-row.sk-user { align-items: flex-end; }
+.sk-bubble {
+  height: 13px; border-radius: 8px;
+  background: linear-gradient(100deg, var(--bg-elev) 40%, var(--bg-elev-2) 50%, var(--bg-elev) 60%) var(--bg-elev);
+  background-size: 200% 100%;
+  animation: sk-shimmer 1.4s var(--ease-in-out) infinite;
+}
+.sk-bubble.sk-user-b { width: 42%; border-radius: 14px 14px 4px 14px; height: 15px; }
+.sk-bubble.sk-ai-b { width: 72%; border-radius: 4px 14px 14px 14px; }
+.sk-bubble.sk-ai-c { width: 58%; }
+.sk-bubble.sk-ai-d { width: 84%; }
+.sk-row:nth-child(2) .sk-bubble { animation-delay: 0.15s; }
+.sk-row:nth-child(3) .sk-bubble { animation-delay: 0.3s; }
+@keyframes sk-shimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }

@@ -31,7 +31,7 @@
         <span class="sb-foot-info" id="sb-foot-info" role="button" tabindex="0">0 会话</span>
         <div id="running-pop" hidden></div>
         <span class="sb-foot-spacer"></span>
-        <button class="sb-mode ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" style="display:none"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
+        <button class="sb-mode ghost" id="sb-running-filter" data-i18n-title="sidebar.runningFilter" title="只看运行中" class="sb-mode ghost js-hidden"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L3 14h9l-1 8 10-12h-9z"/></svg><span class="sb-run-badge"></span></button>
         <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
         <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg class="sb-mode-icon sb-mode-grouped" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg><svg class="sb-mode-icon sb-mode-flat" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h12M3 12h9M3 18h6"/></svg></button>
         <span class="sb-foot-sep"></span>
@@ -93,24 +93,24 @@
 
       <!-- 会话右键菜单 / Session context menu -->
       <div class="ctx-menu" id="ctx-conv-menu" hidden>
-        <button class="ctx-item" data-act="select"><span class="ctx-ico">↪</span><span data-i18n="ctx.select">切换到此会话</span><span class="ctx-key">↵</span></button>
-        <button class="ctx-item" data-act="rename"><span class="ctx-ico">✎</span><span data-i18n="ctx.rename">重命名…</span><span class="ctx-key">F2</span></button>
-        <button class="ctx-item" data-act="ctx"><span class="ctx-ico">🔍</span><span data-i18n="conv.ctx">查看上下文</span></button>
+        <button class="ctx-item" data-act="select"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 01-4 4H4"/></svg></span><span data-i18n="ctx.select">切换到此会话</span><span class="ctx-key">↵</span></button>
+        <button class="ctx-item" data-act="rename"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></span><span data-i18n="ctx.rename">重命名…</span><span class="ctx-key">F2</span></button>
+        <button class="ctx-item" data-act="ctx"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span><span data-i18n="conv.ctx">查看上下文</span></button>
         <div class="ctx-sep"></div>
-        <button class="ctx-item" data-act="copy-id"><span class="ctx-ico">#</span><span data-i18n="ctx.copyId">复制会话 ID</span></button>
-        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico">📁</span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
-        <button class="ctx-item" data-act="copy-title"><span class="ctx-ico">T</span><span data-i18n="ctx.copyTitle">复制标题</span></button>
+        <button class="ctx-item" data-act="copy-id"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg></span><span data-i18n="ctx.copyId">复制会话 ID</span></button>
+        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
+        <button class="ctx-item" data-act="copy-title"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></span><span data-i18n="ctx.copyTitle">复制标题</span></button>
         <div class="ctx-sep"></div>
-        <button class="ctx-item ctx-danger" data-act="delete"><span class="ctx-ico">🗑</span><span data-i18n="ctx.delete">删除会话</span><span class="ctx-key">Del</span></button>
+        <button class="ctx-item ctx-danger" data-act="delete"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></span><span data-i18n="ctx.delete">删除会话</span><span class="ctx-key">Del</span></button>
       </div>
 
       <!-- 项目头右键菜单 / Project header context menu -->
       <div class="ctx-menu" id="ctx-proj-menu" hidden>
-        <button class="ctx-item" data-act="new"><span class="ctx-ico">＋</span><span data-i18n="ctx.newTask">新建会话在此项目</span><span class="ctx-key">N</span></button>
-        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico">📁</span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
+        <button class="ctx-item" data-act="new"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></span><span data-i18n="ctx.newTask">新建会话在此项目</span><span class="ctx-key">N</span></button>
+        <button class="ctx-item" data-act="copy-cwd"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></span><span data-i18n="ctx.copyCwd">复制工作目录</span></button>
         <div class="ctx-sep"></div>
-        <button class="ctx-item" data-act="collapse-all"><span class="ctx-ico">⌄</span><span data-i18n="ctx.collapseAll">折叠所有项目</span></button>
-        <button class="ctx-item" data-act="expand-all"><span class="ctx-ico">⌃</span><span data-i18n="ctx.expandAll">展开所有项目</span></button>
+        <button class="ctx-item" data-act="collapse-all"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 9l5-5 5 5M7 15l5 5 5-5"/></svg></span><span data-i18n="ctx.collapseAll">折叠所有项目</span></button>
+        <button class="ctx-item" data-act="expand-all"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 15l5 5 5-5M7 9l5-5 5 5"/></svg></span><span data-i18n="ctx.expandAll">展开所有项目</span></button>
       </div>
     </aside>
 
@@ -150,7 +150,7 @@
               <button class="cht" id="tab-team" data-i18n="tabs.team">Team</button>
             </span>
           </div>
-          <div id="goal-bar" class="ch-row ch-goal" style="display:none">
+          <div id="goal-bar" class="ch-row ch-goal js-hidden">
             <span class="goal-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg></span>
             <span id="goal-text" class="goal-text"></span>
             <button class="ghost" id="btn-goal-clear" title="清除目标" data-i18n-title="head.clearGoal">✕</button>
@@ -180,17 +180,17 @@
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
               <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
               <button class="tool" id="btn-capture-hide" data-i18n-title="vision.captureHideTip" title="隐藏截图(最小化本窗口后截屏,截完自动还原)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/><line x1="3" y1="3" x2="21" y2="21"/></svg></button>
-              <button class="tool" id="btn-voice" data-i18n-title="voice.mic" title="语音输入(说,自动转文字)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
+              <button class="tool" id="btn-voice" data-i18n-title="voice.mic" title="语音输入(说,自动转文字)" class="tool js-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="2" width="6" height="11" rx="3"/><path d="M5 10a7 7 0 0014 0"/><path d="M12 19v3"/></svg></button>
               <span class="bar-divider"></span>
               <span class="bar-spacer"></span>
               <input class="model-pill" id="model-input" list="model-list" data-i18n-title="model.title" title="模型(Direct 引擎,每会话独立;回车应用)" data-i18n-placeholder="model.ph" placeholder="模型" />
               <input class="model-pill" id="submodel-input" list="model-list" data-i18n-title="model.subTitle" title="子Agent模型(空=跟随主模型)" data-i18n-placeholder="model.subPh" placeholder="子模型" />
               <datalist id="model-list"></datalist>
-              <select id="profile-select" class="model-pill" style="max-width:140px;display:none" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
+              <select id="profile-select" class="model-pill js-hidden" title="切换模型配置档(含 API Key / Base URL / 协议等)"></select>
               <button id="btn-balance" class="tool btn-balance" data-i18n-title="balance.title" title="查询当前配置的余额/用量" hidden><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></button>
               <div id="balance-pop" class="balance-pop" hidden></div>
-              <select id="ctx-mode-select" class="model-pill" style="max-width:100px" data-i18n-title="ctxMode.title" title="上下文模式"></select>
-              <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" hidden style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
+              <select id="ctx-mode-select" class="model-pill" data-i18n-title="ctxMode.title" title="上下文模式"></select>
+              <button class="tool" id="btn-persona" data-i18n-title="persona.toggle" title="替身画像(开/关)" class="tool js-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg></button>
               <button class="primary send" id="btn-send" data-i18n-title="composer.send" data-i18n-aria="a11y.sendMessage" aria-label="发送" title="发送"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg></button>
               <div id="composer-more-menu" class="composer-more-menu" hidden>
                 <button class="cm-item" id="cm-skill" data-i18n-title="skill.title"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M13 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/></svg><span data-i18n="composer.skill">Skill</span></button>
@@ -372,7 +372,7 @@
       <h3 data-i18n="modal.title">要执行 shell 命令?</h3>
       <div id="modal-ctx" class="modal-ctx" hidden></div>
       <pre id="modal-cmd"></pre>
-      <label style="display:block;font-size:12px;color:var(--text-dim);margin:8px 0"><input type="checkbox" id="modal-noask" style="width:auto;margin-right:6px" /><span data-i18n="modal.noask">本会话不再询问(重启后失效,只影响本会话)</span></label>
+      <label class="modal-noask"><input type="checkbox" id="modal-noask" /><span data-i18n="modal.noask">本会话不再询问(重启后失效,只影响本会话)</span></label>
       <div class="actions">
         <button id="modal-cancel" data-i18n="common.cancel">取消</button>
         <button class="primary" id="modal-ok" data-i18n="modal.ok">执行</button>
@@ -434,7 +434,7 @@
           <button class="ghost" id="mm-view-blocks" data-i18n="mem.view.blocks">核心记忆</button>
         </div>
         <input type="text" id="mm-filter" class="mm-filter" data-i18n-placeholder="mem.filter" placeholder="过滤记忆…" spellcheck="false" />
-        <button class="ghost" id="mm-graph-viz" title="切换图谱/列表" style="display:none"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11L6.5 17M12 11l5.5 6"/></svg></button>
+        <button class="ghost" id="mm-graph-viz" title="切换图谱/列表" class="ghost js-hidden"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="2"/><circle cx="5" cy="19" r="2"/><circle cx="19" cy="19" r="2"/><path d="M12 7v4M12 11L6.5 17M12 11l5.5 6"/></svg></button>
         <button class="ghost" id="mm-close"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
       </div>
       <div class="mm-list" id="mm-list"></div>
@@ -504,7 +504,7 @@
   </div>
 
   <!-- 全局搜索浮层(Ctrl+Shift+F):跨所有会话 FTS5 搜索历史对话 -->
-  <div id="search-overlay" class="search-overlay" style="display:none;" role="dialog" aria-modal="true" aria-label="搜索所有对话">
+  <div id="search-overlay" class="search-overlay js-hidden" role="dialog" aria-modal="true" aria-label="搜索所有对话">
     <div class="search-overlay-card">
       <div class="search-overlay-head">
         <input type="text" id="search-input" class="search-overlay-input" data-i18n-placeholder="search.placeholder" placeholder="搜索所有对话…" autocomplete="off" />
@@ -515,7 +515,7 @@
   </div>
 
   <!-- 远程 Agent 直播面板:实时显示远程节点的 Agent 执行过程 -->
-  <div id="live-panel" class="live-panel" style="display:none;" role="region" aria-label="远程协作直播">
+  <div id="live-panel" class="live-panel js-hidden" role="region" aria-label="远程协作直播">
     <div class="live-panel-head">
       <span class="live-dot" id="live-dot"></span>
       <span id="live-title" data-i18n="live.title">远程协作直播</span>
