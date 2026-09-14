@@ -683,6 +683,9 @@ export type Conversation = {
   statusNote: string | null;
   cost: number;
   tokens: number;
+  /** 聚合输入/输出 token(启动时 SQL 从 turns 汇总;运行时随 cost 事件累加;旧数据无值) */
+  tokensIn?: number;
+  tokensOut?: number;
   branchInfo?: BranchInfo | null; // 分支来源(null/undefined = 原创会话)
   pipelineId?: string | null; // 如果由 pipeline 创建,记录 pipeline id
   personaEnabled?: boolean; // 替身画像开关(默认 true;false = 本会话不注入 persona)
@@ -1093,6 +1096,8 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
     case 'cost':
       conv.cost += ev.usd;
       conv.tokens += ev.tokens;
+      conv.tokensIn = (conv.tokensIn ?? 0) + (ev.tokensIn ?? 0);
+      conv.tokensOut = (conv.tokensOut ?? 0) + (ev.tokensOut ?? 0);
       t.costUSD += ev.usd;
       // Prefer the real in/out split carried on the event (Direct + Codex usage path). Engines
       // that only know the sum (Claude, which reports cost but no per-turn tokens) leave both 0.

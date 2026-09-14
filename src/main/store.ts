@@ -516,10 +516,12 @@ export function loadConversations(): Conversation[] {
       `SELECT conv_id,
               COUNT(*) AS n,
               SUM(COALESCE(json_extract(data,'$.costUSD'),0)) AS cost,
-              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)+COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens
+              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)+COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens,
+              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)) AS tokens_in,
+              SUM(COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens_out
        FROM turns GROUP BY conv_id;`,
     )
-    .all() as Array<{ conv_id: string; n: number; cost: number | null; tokens: number | null }>;
+    .all() as Array<{ conv_id: string; n: number; cost: number | null; tokens: number | null; tokens_in: number | null; tokens_out: number | null }>;
   const meta = new Map(metaRows.map((m) => [m.conv_id, m]));
   const firstPromptStmt = db.prepare(
     `SELECT json_extract(data,'$.prompt') AS p FROM turns WHERE conv_id=? ORDER BY created_at LIMIT 1;`,
@@ -562,6 +564,8 @@ export function loadConversations(): Conversation[] {
       // Backfill aggregate cost/tokens on load — SQL 聚合 turns 的真实数字。
       cost: m?.cost ?? 0,
       tokens: m?.tokens ?? 0,
+      tokensIn: m?.tokens_in ?? 0,
+      tokensOut: m?.tokens_out ?? 0,
       // 恢复分支信息(branchFrom 创建的关系)和 pipeline 标记 —— 重启后任务图边不丢。
       branchInfo: r.branch_info ? (() => { try { return JSON.parse(r.branch_info); } catch { return null; } })() : null,
       pipelineId: r.pipeline_id ?? null,

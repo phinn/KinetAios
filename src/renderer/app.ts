@@ -2160,7 +2160,7 @@ function ensureElapsedTicker(): void {
         const stat = document.getElementById('head-stat');
         if (stat) {
           const parts: string[] = [];
-          if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
+          if (conv.tokens) parts.push(tokSplitLabel(conv.tokensIn ?? 0, conv.tokensOut ?? 0, conv.tokens));
           if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
           if (conv.ctxTokens) parts.push(ctxGaugeText(conv));
           parts.push(`⏱ ${fmtElapsed(Date.now() - last.ts)}`);
@@ -2242,7 +2242,7 @@ function renderHead(conv: Conversation | undefined) {
   }
   syncEngineSelect(conv);
   const parts: string[] = [];
-  if (conv.tokens) parts.push(`${(conv.tokens / 1000).toFixed(1)}k tok`);
+  if (conv.tokens) parts.push(tokSplitLabel(conv.tokensIn ?? 0, conv.tokensOut ?? 0, conv.tokens));
   if (conv.cost) parts.push(`$${conv.cost.toFixed(4)}`);
   // 上下文占用估算(v3.6.3:带窗口与百分比,运行中由 ticker 实时刷新;悬停看含义)
   if (conv.ctxTokens) {
@@ -4190,7 +4190,7 @@ const TOKEN_SOURCE_LABELS: Record<string, string> = {
   claude: 'Claude CLI', codex: 'Codex CLI', subagent: '子任务', 'team:broadcast': '团队广播',
 };
 function tokenSourceLabel(src: string | undefined): string {
-  if (!src) return '调用';
+  if (!src) return 'LLM 调用';
   return TOKEN_SOURCE_LABELS[src] ?? (src.startsWith('team:') ? `成员 ${src.slice(5)}` : src);
 }
 let tokPopEl: HTMLElement | null = null;
@@ -4210,10 +4210,16 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
   pop.innerHTML = `<div class="tok-pop-head">Token 明细 <span class="bp-dim">${escHtml(turnId.slice(0, 8))}</span></div><div class="tok-pop-body"><div class="mm-empty">加载中…</div></div>`;
   document.body.appendChild(pop);
   tokPopEl = pop;
-  // 定位:锚点下方,右缘对齐锚点右缘,防溢出视口
-  const r = anchor.getBoundingClientRect();
-  pop.style.top = `${Math.min(r.bottom + 6, window.innerHeight - 200)}px`;
-  pop.style.left = `${Math.max(8, Math.min(r.right - 280, window.innerWidth - 300))}px`;
+  // 定位:默认锚点下方;下方空间不够(或太靠屏底)时翻转到上方。内容渲染后再量实际高度。
+  const place = (): void => {
+    const r = anchor.getBoundingClientRect();
+    const h = pop.offsetHeight || 360;
+    const spaceBelow = window.innerHeight - r.bottom;
+    const top = spaceBelow >= h + 12 ? r.bottom + 6 : Math.max(8, r.top - h - 6);
+    pop.style.top = `${Math.min(top, window.innerHeight - h - 8)}px`;
+    pop.style.left = `${Math.max(8, Math.min(r.right - pop.offsetWidth, window.innerWidth - pop.offsetWidth - 8))}px`;
+  };
+  place();
   // 点外部关闭
   const onDoc = (e: MouseEvent): void => {
     if (!pop.contains(e.target as Node) && e.target !== anchor && !anchor.contains(e.target as Node)) closeTokenBreakdown();
@@ -4235,23 +4241,68 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
     body.innerHTML = `<div class="mm-empty">该会话无逐次调用记录(旧版本数据)</div>`;
     return;
   }
+  // 重建每次调用的"做了什么":本 turn 的 tool/call 事件按 seq 夹在相邻两次 cost 事件之间。
+  // 调用 i 之后执行的工具 = seq ∈ (metas[i], metas[i+1]);最后一次调用 → 输出最终回答。
+  const stepTools = rows.filter((rw) => rw.type === 'tool/call' && rw.turnId === turnId);
+  const toolsAfter = (i: number): ConvEventRow[] => {
+    const lo = metas[i].seq;
+    const hi = i + 1 < metas.length ? metas[i + 1].seq : Infinity;
+    return stepTools.filter((t) => t.seq > lo && t.seq < hi);
+  };
+  const toolBrief = (t: ConvEventRow): string => {
+    const d = t.data as { name?: string; args?: string };
+    const args = (d.args ?? '').replace(/\s+/g, ' ').slice(0, 60);
+    return `${d.name ?? '?'}${args ? `(${args}…)` : '()'}`;
+  };
   const fmtCost = (n: number): string => `$${n < 0.01 ? n.toFixed(4) : n.toFixed(2)}`;
-  const items = metas.map((rw, i) => {
-    const d = rw.data as { tokensIn?: number; tokensOut?: number; costUSD?: number; source?: string };
-    const when = new Date(rw.ts).toLocaleTimeString();
-    return `<div class="tok-row">
-      <span class="tok-idx">${i + 1}</span>
-      <span class="tok-src">${escHtml(tokenSourceLabel(d.source))}</span>
-      <span class="tok-nums">↑${fmt(d.tokensIn ?? 0)} ↓${fmt(d.tokensOut ?? 0)}</span>
-      <span class="tok-cost">${fmtCost(Number(d.costUSD ?? 0))}</span>
-      <span class="tok-time">${when}</span>
-    </div>`;
-  }).join('');
   const totIn = metas.reduce((a, rw) => a + Number((rw.data as { tokensIn?: number }).tokensIn ?? 0), 0);
   const totOut = metas.reduce((a, rw) => a + Number((rw.data as { tokensOut?: number }).tokensOut ?? 0), 0);
   const totUsd = metas.reduce((a, rw) => a + Number((rw.data as { costUSD?: number }).costUSD ?? 0), 0);
-  body.innerHTML = items
-    + `<div class="tok-row tok-total"><span class="tok-idx">Σ</span><span class="tok-src">${metas.length} 次调用</span><span class="tok-nums">↑${fmt(totIn)} ↓${fmt(totOut)}</span><span class="tok-cost">${fmtCost(totUsd)}</span><span class="tok-time"></span></div>`;
+  body.innerHTML = '';
+  metas.forEach((rw, i) => {
+    const d = rw.data as { tokensIn?: number; tokensOut?: number; costUSD?: number; source?: string };
+    const when = new Date(rw.ts).toLocaleTimeString();
+    const after = toolsAfter(i);
+    // 行摘要:这次调用之后做了什么(工具名列表 / 最终回答)
+    const action = after.length === 0
+      ? (i + 1 === metas.length ? '✓ 输出最终回答' : '(无工具动作)')
+      : '🔧 ' + after.map((t) => (t.data as { name?: string }).name ?? '?').join(' · ');
+    const row = document.createElement('div');
+    row.className = 'tok-row tok-row-click';
+    row.innerHTML = `<div class="tok-row-main"><span class="tok-idx">${i + 1}</span>
+      <span class="tok-src">${escHtml(tokenSourceLabel(d.source))}</span>
+      <span class="tok-nums">↑${fmt(d.tokensIn ?? 0)} ↓${fmt(d.tokensOut ?? 0)}</span>
+      <span class="tok-cost">${fmtCost(Number(d.costUSD ?? 0))}</span>
+      <span class="tok-time">${when}</span></div>
+      <div class="tok-row-sub" title="${escHtml(action)}">${escHtml(action)}</div>`;
+    // 展开:本次调用后的每个工具动作(名称 + 参数摘要)+ 完整事件 JSON + 复制
+    const detail = document.createElement('div');
+    detail.className = 'tok-detail';
+    detail.hidden = true;
+    const toolLines = after.map((t) => `<div class="tok-tool-line">🔧 ${escHtml(toolBrief(t))}</div>`).join('');
+    detail.innerHTML = `<div class="tok-detail-meta">seq ${rw.seq} · ${new Date(rw.ts).toLocaleString()} · ${escHtml(tokenSourceLabel(d.source))}</div>
+      ${toolLines}
+      <pre class="tok-detail-json">${escHtml(JSON.stringify(rw.data, null, 2))}</pre>
+      <button class="tok-copy" type="button">复制 JSON</button>`;
+    row.addEventListener('click', (ev) => {
+      if ((ev.target as HTMLElement).closest('.tok-copy')) return;
+      detail.hidden = !detail.hidden;
+      place(); // 展开收起后高度变化 → 重新定位防溢出
+    });
+    (detail.querySelector('.tok-copy') as HTMLButtonElement).onclick = (ev) => {
+      ev.stopPropagation();
+      void navigator.clipboard.writeText(JSON.stringify(rw.data, null, 2));
+      (ev.target as HTMLElement).textContent = '已复制';
+      setTimeout(() => { (ev.target as HTMLElement).textContent = '复制 JSON'; }, 1200);
+    };
+    body.appendChild(row);
+    body.appendChild(detail);
+  });
+  const total = document.createElement('div');
+  total.className = 'tok-row tok-total';
+  total.innerHTML = `<span class="tok-idx">Σ</span><span class="tok-src">${metas.length} 次调用</span><span class="tok-nums">↑${fmt(totIn)} ↓${fmt(totOut)}</span><span class="tok-cost">${fmtCost(totUsd)}</span><span class="tok-time"></span>`;
+  body.appendChild(total);
+  place();
 }
 
 function empty(text: string, sub?: string, icon?: string): HTMLElement {

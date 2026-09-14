@@ -124,6 +124,8 @@ export class TaskManager {
       statusNote: null,
       cost: 0,
       tokens: 0,
+      tokensIn: 0,
+      tokensOut: 0,
     };
     store.saveConversation(conv);
     this.convs.set(conv.id, conv);
@@ -282,6 +284,8 @@ export class TaskManager {
     conv.engineSessionId = null;
     conv.cost = 0;
     conv.tokens = 0;
+    conv.tokensIn = 0;
+    conv.tokensOut = 0;
     conv.statusNote = null;
     store.deleteTurns(id);
     store.saveDirectHistory(conv);

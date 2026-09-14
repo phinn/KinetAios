@@ -6528,3 +6528,17 @@ select:focus-visible {
 .tok-cost { color: var(--text-dim); white-space: nowrap; min-width: 52px; text-align: right; }
 .tok-time { color: var(--text-faint); white-space: nowrap; font-size: 0.692rem; }
 .tok-row.tok-total { border-top: 1px solid var(--border-soft); margin-top: 2px; padding-top: 6px; font-weight: 600; color: var(--text); }
+
+/* 明细行可点 + 展开区 */
+.tok-row.tok-row-click { cursor: pointer; }
+.tok-row.tok-row-click:hover { background: var(--surface-chip-focus, var(--surface-chip)); }
+.tok-detail { padding: 6px 12px 8px 34px; border-bottom: 1px solid var(--border-soft); background: var(--bg); }
+.tok-detail-meta { font-size: 0.692rem; color: var(--text-faint); margin-bottom: 4px; }
+.tok-detail-json { margin: 0; font-family: ui-monospace, monospace; font-size: 0.692rem; color: var(--text-dim); white-space: pre-wrap; word-break: break-all; max-height: 160px; overflow-y: auto; }
+.tok-copy { margin-top: 6px; padding: 2px 8px; font-size: 0.692rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elev); color: var(--text-dim); cursor: pointer; }
+.tok-copy:hover { color: var(--accent); border-color: var(--accent); }
+
+/* 行内动作摘要 + 展开区工具行 */
+.tok-row-main { display: flex; align-items: baseline; gap: 6px; width: 100%; }
+.tok-row-sub { width: 100%; margin-top: 1px; padding-left: 22px; font-size: 0.692rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tok-tool-line { font-size: 0.692rem; color: var(--text-dim); padding: 1px 0; word-break: break-all; }
