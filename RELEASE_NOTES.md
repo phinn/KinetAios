@@ -1,5 +1,27 @@
 # Release Notes
 
+## v3.6.5 — Token 输入/输出拆分全链路 + 明细浮层 + Skills 自动加载
+
+**发布日期：** 2026-09-14(自 v3.6.4 起 6 commits)
+
+### 📊 Token 记账
+
+- **输入/输出拆分全链路打通** —— 7 处次级 LLM 调用(摘要/合并/Judge/Team/MCP 转发)的 cost 事件此前只报总数,applyEvent 的 tokens>0 gate 让拆分被丢弃;turn/meta 落库曾把总数冒充 tokensIn(输出恒 0),与内存态口径矛盾。现全部 emit 补齐 tokensIn/tokensOut,落库口径统一;cost_log 表加 tokens_in/tokens_out 列(旧库自动迁移)
+- **Anthropic 协议输入恒 0 修复** —— 智谱 /api/anthropic 等兼容端点 message_start 的 input_tokens 是占位 0,真实值在 message_delta.usage;原生 Anthropic 则相反。现两处都读、取更大值,两种端点行为均兼容
+- **turn 页脚 token 可点开明细** —— ↑in ↓out 点击弹出浮层,逐条列出本 turn 每次 LLM 调用的 in/out/cost/时间 + Σ 合计;每条可展开看触发的工具动作与原始事件 JSON(可复制);下方放不下自动翻转到上方
+- **cost 事件带 source 来源标注** —— llm/merge/compact/judge/claude/codex/subagent/team:<成员>,明细浮层与考古面板显示中文标签
+- **频道头部状态栏显示 ↑in ↓out** —— 启动时 SQL 从 turns 分别汇总 in/out,运行时随 cost 事件实时累加;旧数据回退总数
+
+### 🧩 Skills 自动加载
+
+- **根据任务自动加载 Skills(开关控制,默认关)** —— 开启后把已装 Skill 的 name+description 轻量目录(~2400 字符上限)注入 V1/V2/V3 system prompt,模型判断任务匹配时调用新增的 load_skill 工具按需拉正文;关闭则仅手动 /name 生效。显式 /name 优先级不变;claude/codex CLI 引擎不涉及
+
+### 🧹 其他
+
+- 右键菜单 emoji 图标统一为线框 SVG;全局滚动条 thumb 透明度修复(无效 opacity 改 color-mix)
+- 会话历史懒加载改气泡形骨架屏;标题 text-wrap 防孤字;z-index 收敛为 5 级令牌;内联 display:none 统一 .js-hidden 工具类
+- 补 settings.voiceAutoSend 四语言缺失翻译
+
 ## v3.6.4 — 黑屏双根因修复 + 任务自杀防护 + 技能热刷新 + goal 过夜链路加固
 
 **发布日期：** 2026-09-14(自 v3.6.3 起 7 commits)
