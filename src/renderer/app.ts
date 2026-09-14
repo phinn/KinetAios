@@ -2445,12 +2445,12 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       ans.classList.add('streaming');
       // 同步 streamRawText buffer:renderMain 重建 DOM 时需重置 buffer 到当前 answer。
       streamRawText = t.answer ?? '';
-      // 超长 answer 只渲染头部(完整文本仍在 t.answer,done 后 copy/speak 取全文)。
-      if (t.answer) ans.innerHTML = md(clipForUi(t.answer));
+      // 超长 answer 流式期只渲染头部(完整文本仍在 t.answer);done 后 mountAnswer 可展开全文。
+      if (t.answer) ans.innerHTML = md(t.answer.slice(0, ANSWER_HEAD_LIMIT));
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
-      // 非流式同样截断:UI 层防御超长 answer(见 clipForUi 注释)。
-      ans.innerHTML = md(clipForUi(t.answer));
+      // 非流式:头部 + 展开全文按钮(见 mountAnswer 注释)。
+      mountAnswer(ans, t.answer);
       // 本地文件路径可点(src/app.ts:123 → 点击开右侧文件抽屉)。
       // 复制按钮不再在此挂 — markdown.ts 随代码块发射 + #turns 事件委托,流式期间同样可用。
       // done 后全量渲染执行一次;流式稳定前缀路径不走(每帧 TreeWalker 太贵)。
@@ -2667,6 +2667,12 @@ function avatarEl(kind: 'user' | 'ai'): HTMLElement {
  *  Streaming = expanded (live tool exec); finished = collapsed (noise reduction).
  */
 function buildStepsEl(steps: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }[], expanded: boolean): HTMLElement {
+  // 单 turn steps 总量护栏(2026-09-14):超长 turn(实测 516 steps)全量建卡会把
+  // renderer 内存推到 OOM(黑屏元凶)。只对「最近 MAX_RENDER_STEPS 条 + 落在尾段
+  // 的聚合段」建卡,更早的归并进一张"更早的 N 步"占位卡(点击懒展开)。
+  const MAX_RENDER_STEPS = 200;
+  const overflow = steps.length > MAX_RENDER_STEPS;
+  const renderFrom = overflow ? steps.length - MAX_RENDER_STEPS : 0;
   const wrap = document.createElement('details');
   wrap.className = 'steps-wrap';
   if (expanded) wrap.open = true;
@@ -2675,10 +2681,32 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
   inner.className = 'steps';
   // idx → DOM 映射(时间线刻条点击跳转用):聚合卡映射其覆盖的整段 idx
   const tickMap: Array<{ start: number; end: number; el: Element }> = [];
+  // 溢出占位卡:头部被折叠的 renderFrom 条,默认只有摘要行,展开时才全量建卡
+  // (二次保险:即便 renderFrom 后的尾段也很大,用户主动展开才付 DOM 成本)。
+  if (overflow) {
+    const more = document.createElement('details');
+    more.className = 'step step-agg';
+    const msum = document.createElement('summary');
+    msum.innerHTML = `<span class="agg-ico">🗂</span><span class="agg-label">${tr('steps.earlier', { n: String(renderFrom) })}</span>`;
+    more.appendChild(msum);
+    const minner = document.createElement('div');
+    minner.className = 'steps agg-inner';
+    let mbuilt = false;
+    more.addEventListener('toggle', () => {
+      if (more.open && !mbuilt) {
+        mbuilt = true;
+        for (let k = 0; k < renderFrom; k++) minner.appendChild(renderStep(steps[k], false));
+      }
+    });
+    more.appendChild(minner);
+    inner.appendChild(more);
+    tickMap.push({ start: 0, end: renderFrom - 1, el: more });
+  }
   if (!expanded && steps.length >= 4) {
     // 非流式(done/历史):连续同名 ≥3 聚合成一张摘要卡,降噪;点击展开全部。
     // 流式时不聚合(用户正在逐个看),done 后全量重渲染自然收起。
-    let i = 0;
+    // 溢出时 i 从 renderFrom 起步:头部已进占位卡,聚合/单卡只建尾段。
+    let i = renderFrom;
     while (i < steps.length) {
       let j = i;
       while (j < steps.length && steps[j].name === steps[i].name) j++;
@@ -2698,7 +2726,8 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
     }
   } else {
     // expanded 即流式态:pending 卡显示转圈;非流式重渲染时 pending 按中断显示
-    for (let k = 0; k < steps.length; k++) {
+    // 溢出时同样只建尾段(流式会话跑到 500+ 步时也不再全量建卡)
+    for (let k = renderFrom; k < steps.length; k++) {
       const card = renderStep(steps[k], expanded);
       inner.appendChild(card);
       tickMap.push({ start: k, end: k, el: card });
@@ -2710,7 +2739,11 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
   return wrap;
 }
 
-// 聚合卡:连续同名工具 ×N 摘要,details 展开看每一张
+// 聚合卡:连续同名工具 ×N 摘要,details 展开看每一张。
+// ⚠️ 懒构建(2026-09-14):修前展开前就把 N 张子卡全部 renderStep 造出来 ——
+// 超长 turn(实测单 turn 516 steps)会一次建几百个 <details> + pre,DOM 内存暴涨
+// (renderer RSS 一分钟 272M→2590M 后 V8 OOM 崩溃,黑屏元凶)。现在 summary 常驻,
+// 子卡在首次 toggle 展开时才构建;再收起时保留(二次展开零开销)。
 function buildAggCard(name: string, count: number, totalMs: number, steps: { args: string; result: string; durationMs?: number; interrupted?: boolean }[]): HTMLElement {
   const det = document.createElement('details');
   det.className = 'step step-agg';
@@ -2719,7 +2752,13 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   det.appendChild(sum);
   const inner = document.createElement('div');
   inner.className = 'steps agg-inner';
-  for (const st of steps) inner.appendChild(renderStep({ ...st, name, pending: false } as Parameters<typeof renderStep>[0], false));
+  let built = false;
+  const buildChildren = (): void => {
+    if (built) return;
+    built = true;
+    for (const st of steps) inner.appendChild(renderStep({ ...st, name, pending: false } as Parameters<typeof renderStep>[0], false));
+  };
+  det.addEventListener('toggle', () => { if (det.open) buildChildren(); });
   det.appendChild(inner);
   return det;
 }
@@ -4867,6 +4906,15 @@ async function showSettings() {
             </select>
             <button id="s-goal-chain-addbtn" class="btn-sm">${tr('settings.goal.chainAdd')}</button>
           </div>
+          <label class="switch-label" style="margin-top:10px">
+            <span class="switch"><input type="checkbox" id="s-goal-5h-enable" ${(s.goalFailover5hEnabled !== false) ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
+            <span class="s-sub-panel-title">${tr('settings.goal.failover5hTitle')}</span>
+          </label>
+          <div class="s-sub-panel-desc-indent">${tr('settings.goal.failover5hDesc')}</div>
+          <div style="display:grid;grid-template-columns:130px 100px;gap:8px 10px;align-items:center;margin:8px 0 0 46px">
+            <label class="field-desc" style="margin:0">${tr('settings.goal.failover5hPct')}</label>
+            <input id="s-goal-5h-pct" type="number" min="50" max="100" value="${s.goalFailover5hPct ?? 100}" />
+          </div>
         </div>
 
         <!-- 过夜保险丝 -->
@@ -5776,6 +5824,8 @@ function readSettingsForm(): AppSettings {
     goalMaxIterations: Number((document.getElementById('s-goal-maxiter') as HTMLInputElement)?.value) || 20,
     goalMaxHours: Number((document.getElementById('s-goal-maxhours') as HTMLInputElement)?.value) || 0,
     goalMaxCostUSD: Number((document.getElementById('s-goal-maxcost') as HTMLInputElement)?.value) || 0,
+    goalFailover5hEnabled: Boolean((document.getElementById('s-goal-5h-enable') as HTMLInputElement)?.checked),
+    goalFailover5hPct: Number((document.getElementById('s-goal-5h-pct') as HTMLInputElement)?.value) || 100,
     persona: (document.getElementById('s-persona-editor') as HTMLTextAreaElement)?.value ?? '', // 替身画像(从编辑器读)
     voiceChat: {
       appId: (document.getElementById('s-vc-appid') as HTMLInputElement).value.trim(),
@@ -8912,6 +8962,36 @@ function clipForUi(s: string): string {
   if (s.length <= UI_TEXT_LIMIT) return s;
   const omitted = s.length - UI_TEXT_LIMIT;
   return s.slice(0, UI_TEXT_LIMIT) + `\n\n… [${tr('ui.omitted', { n: String(omitted) })}]`;
+}
+
+// ── assistant answer 渲染:折叠 + 展开全文 ──
+// prompt 用 5000 硬截断(clipForUi);answer 是任务产出主体,给更宽的头部(30K)+
+// 「展开全文」按钮:默认只渲染头部,点击才做全量 md()(超大块配合 markdown.ts 的
+// 高亮跳过护栏)。收起可折回,释放 DOM/内存。
+// Answers render a 30K head by default with an "expand" button — full md() runs
+// only on demand; collapse folds back to the head to release DOM/memory.
+const ANSWER_HEAD_LIMIT = 30_000;
+function mountAnswer(ans: HTMLElement, full: string): void {
+  const renderHead = (): void => {
+    ans.innerHTML = '';
+    if (full.length <= ANSWER_HEAD_LIMIT) { ans.innerHTML = md(full); return; }
+    ans.innerHTML = md(full.slice(0, ANSWER_HEAD_LIMIT));
+    const btn = document.createElement('button');
+    btn.className = 'ghost answer-expand';
+    btn.textContent = `⤵ ${tr('ui.expandAll', { n: String(full.length - ANSWER_HEAD_LIMIT) })}`;
+    btn.onclick = () => renderFull();
+    ans.appendChild(btn);
+  };
+  const renderFull = (): void => {
+    ans.innerHTML = '';
+    ans.innerHTML = md(full);
+    const btn = document.createElement('button');
+    btn.className = 'ghost answer-expand';
+    btn.textContent = `⤴ ${tr('ui.collapse')}`;
+    btn.onclick = () => renderHead();
+    ans.appendChild(btn);
+  };
+  renderHead();
 }
 function inlineMd(s: string): string {
   const clipped = clipForUi(s);

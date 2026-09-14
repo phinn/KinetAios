@@ -47,9 +47,23 @@ import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation
 const execFileAsync = promisify(execFile);
 
 // 兜底:未捕获异常/拒绝都记到 crash.log + stderr,避免 app 静默退出无从排查。
+// ⚠️ EPIPE 风暴修复(2026-09-14,crash.log 曾涨到 24.8GB):
+// stderr 管道破裂(从终端启动后终端关闭)时 console.error 同步抛 EPIPE → 触发
+// uncaughtException → 又进 logFatal → 再 console.error → 无限递归,每秒数千次写盘。
+// 防线:①EPIPE 直接吞掉不记(它本身就是 logFatal 造成的二次异常,记它无意义);
+// ②限流:同类消息 60s 内只落盘一次;③console.error 包 try(stdin 坏了就别硬写)。
+let lastFatalLog = { key: '', at: 0 };
 function logFatal(kind: string, e: unknown): void {
-  const msg = `[${new Date().toISOString()}] ${kind}: ${(e as Error)?.stack ?? e}\n`;
-  console.error(msg);
+  const msg = e instanceof Error && e.message === 'write EPIPE'
+    ? '' // EPIPE = stderr 已断,再写必然再抛 → 静默,只落盘
+    : `[${new Date().toISOString()}] ${kind}: ${(e as Error)?.stack ?? e}\n`;
+  const now = Date.now();
+  const key = kind + ':' + ((e as Error)?.message ?? String(e)).slice(0, 80);
+  if (msg && !(key === lastFatalLog.key && now - lastFatalLog.at < 60_000)) {
+    lastFatalLog = { key, at: now };
+    try { console.error(msg); } catch { /* stderr 坏了,忽略 */ }
+  }
+  if (!msg) return; // EPIPE:连落盘都跳过 —— 否则风暴只是从 stderr 挪到文件
   try {
     fs.appendFileSync(path.join(app.getPath('userData'), 'crash.log'), msg);
   } catch {
@@ -1059,6 +1073,8 @@ function registerIpc(): void {
     s.goalMaxIterations = Math.max(1, Math.floor(norm(s.goalMaxIterations, 20)));
     s.goalMaxHours = norm(s.goalMaxHours, 0);
     s.goalMaxCostUSD = norm(s.goalMaxCostUSD, 0);
+    s.goalFailover5hEnabled = Boolean(s.goalFailover5hEnabled);
+    s.goalFailover5hPct = Math.min(100, Math.max(50, Math.floor(norm(s.goalFailover5hPct, 100))));
     saveSettings(s);
     rebuildTrayMenu(); // 语言切换后托盘菜单跟随
     // 多机协作:remote server 配置变化 → 刷新 MCP 远程连接。
@@ -2637,6 +2653,12 @@ if (!gotLock) {
     // v1 的"行长度变化检测"吞掉了 main 行(数值变但长度几乎不变);且 renderer jsHeap 平稳
     // 不代表没泄漏 —— 原生内存(DOM/纹理/blob)泄漏在 jsHeap 之外,必须看进程级 RSS。
     // v2: use getAppMetrics for real per-process RSS; write unconditionally every tick.
+    // v3 内存熔断:renderer rss 连续两跳 > 1.5GB → 主动 reload,宁可白屏重启也别让
+    // Blink cppgc 走 Fatal(2026-09-13 09:35 renderer 2.5GB → SIGTRAP 崩溃的教训)。
+    // v3 Memory circuit breaker: same renderer pid above 1.5GB for two consecutive
+    // ticks → proactive reload before Chromium's cppgc OOM abort kills the frame.
+    let hotRendererPid = 0;
+    let hotRendererStreak = 0;
     setInterval(() => {
       try {
         const mu = process.memoryUsage();
@@ -2645,6 +2667,26 @@ if (!gotLock) {
           if (m.type === 'Browser' || m.memory.workingSetSize === 0) continue;
           const role = m.type === 'Tab' ? 'renderer' : m.type.toLowerCase();
           parts.push(`${role}(${m.pid}) rss=${(m.memory.workingSetSize / 1024).toFixed(0)}M`);
+          if (role === 'renderer') {
+            const rssMB = m.memory.workingSetSize / 1024;
+            if (rssMB > 1536) {
+              if (m.pid === hotRendererPid) hotRendererStreak++;
+              else { hotRendererPid = m.pid; hotRendererStreak = 1; }
+              if (hotRendererStreak >= 2) {
+                hotRendererStreak = 0;
+                hotRendererPid = 0;
+                logFatal('renderer-mem-guard', `pid=${m.pid} rss=${rssMB.toFixed(0)}M ≥2 ticks — proactive reload`);
+                const w = dashboardWin;
+                // 只熔断主窗口自己的 renderer;其他窗口(仪表盘等)不在守卫范围。
+                if (w && !w.isDestroyed() && w.webContents.getOSProcessId() === m.pid) {
+                  try { w.webContents.reload(); } catch { /* torn down mid-reload */ }
+                }
+              }
+            } else if (m.pid === hotRendererPid) {
+              hotRendererPid = 0;
+              hotRendererStreak = 0;
+            }
+          }
         }
         // ponytail: 60s 采样,足够捕捉渐进泄漏;精确归因再用 DevTools heap snapshot
         appendCapped(require('path').join(app.getPath('userData'), 'mem-watch.log'),
