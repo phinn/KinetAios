@@ -4917,6 +4917,7 @@ async function showSettings() {
         </div>
         <div style="display:flex;gap:8px;margin-bottom:14px;align-items:center">
           <button id="s-persona-gen" class="btn-sm">${tr('settings.persona.gen')}</button>
+          <button id="s-persona-manual" class="btn-sm" style="display:none">${tr('settings.persona.manual')}</button>
           <button id="s-persona-save" class="btn-sm" style="display:none">${tr('settings.persona.save')}</button>
           <button id="s-persona-clear" class="btn-sm" style="display:none">${tr('settings.persona.clear')}</button>
           <span class="test-msg" id="s-persona-msg"></span>
@@ -6052,10 +6053,27 @@ async function initPersonaTab(existing: string): Promise<void> {
   const saveBtn = document.getElementById('s-persona-save')!;
   const clearBtn = document.getElementById('s-persona-clear')!;
   const genBtn = document.getElementById('s-persona-gen')!;
+  const manualBtn = document.getElementById('s-persona-manual') as HTMLButtonElement;
   const msgEl = document.getElementById('s-persona-msg')!;
   const statsEl = document.getElementById('s-persona-stats')!;
 
-  // 如果已有画像,显示编辑器 + 清空按钮
+  // 打开编辑器的统一入口(有画像 = 查看/修改;空态手写 = 从零添加)。
+  // Unified editor-opener: view/edit existing, or start from scratch in empty state.
+  const openEditor = (initial?: string): void => {
+    if (initial != null) editor!.value = initial;
+    editor!.style.display = '';
+    empty.style.display = 'none';
+    manualBtn.style.display = 'none';
+    saveBtn.style.display = '';
+    clearBtn.style.display = '';
+    if (!statsEl.textContent?.includes(tr('settings.persona.active'))) {
+      statsEl.textContent = initial ? tr('settings.persona.active') : statsEl.textContent;
+      statsEl.style.color = 'var(--ok)';
+    }
+    editor!.focus();
+  };
+
+  // 如果已有画像,直接显示编辑器 + 清空按钮;空态则给「手动编写」入口
   if (existing && existing.trim()) {
     editor!.value = existing;
     editor!.style.display = '';
@@ -6064,7 +6082,12 @@ async function initPersonaTab(existing: string): Promise<void> {
     clearBtn.style.display = '';
     statsEl.textContent = tr('settings.persona.active');
     statsEl.style.color = 'var(--ok)';
+  } else {
+    manualBtn.style.display = '';
   }
+
+  // 空态手写:不开新窗口,就地展开编辑器(与生成共用同一 editor + savePersona 链)
+  manualBtn.onclick = () => openEditor('');
 
   genBtn.onclick = async () => {
     genBtn.textContent = tr('settings.persona.generating');
@@ -6074,11 +6097,7 @@ async function initPersonaTab(existing: string): Promise<void> {
     try {
       const res = await api.generatePersona();
       if (res.ok && res.persona) {
-        editor!.value = res.persona;
-        editor!.style.display = '';
-        empty.style.display = 'none';
-        saveBtn.style.display = '';
-        clearBtn.style.display = '';
+        openEditor(res.persona);
         msgEl.textContent = tr('settings.persona.generated');
         msgEl.className = 'test-msg ok';
         if (res.stats) {
@@ -6120,6 +6139,7 @@ async function initPersonaTab(existing: string): Promise<void> {
     empty.style.display = '';
     saveBtn.style.display = 'none';
     clearBtn.style.display = 'none';
+    manualBtn.style.display = ''; // 清空后回到空态,手写入口重新出现 / back to empty state
     statsEl.textContent = tr('settings.persona.disabledHint');
     statsEl.style.color = 'var(--muted)';
     msgEl.textContent = '';
