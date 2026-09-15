@@ -2134,7 +2134,9 @@ const loadSkillTool: Tool = {
     const body = loadSkillBody(name);
     if (body != null) return body;
     const names = listSkills().map((s) => s.name);
-    return `没有名为 "${name}" 的 skill。可用: ${names.slice(0, 40).join(', ')}${names.length > 40 ? ' …' : ''}`;
+    // 全量列出:名字本身短,98 个也就 ~1300 字符,截 40 个反而让模型二次猜错。
+    // List all names: they're short (~1300 chars for 98); truncating to 40 invites guess-again loops.
+    return `没有名为 "${name}" 的 skill。可用: ${names.join(', ')}`;
   },
 };
 

@@ -172,27 +172,35 @@ function scan(): Map<string, Skill> {
 
 // ── Skill 目录文本(自动加载模式用)──
 // 把 name+description 压成轻量索引注入 system prompt;正文仍靠 load_skill 工具按需拉取。
-// 预算:~2400 字符上限(粗合 600-800 token),超限截断并注明,目录永远不喧宾夺主。
-// 人物/项目级 skill 多的用户(装满 ~/.claude)也不会撑爆上下文。
+// ⚠️ v3.6.5 重写(2026-09-14):旧格式 `- name — desc80` 下 2400 预算只装得下 28/98 个技能,
+// 字母序填充 → 尾部技能(如 skill-creator 排 88)永远不可见,模型"不知道它存在"自然不调。
+// 新格式降级式:①紧凑 name 全量列表(90 个纯名 ~1400 字符,保证 100% 可见)
+// ②剩余预算内按字母序补 description(前 N 个有 desc,尾部只有名)。
+// 目录的意义是"让模型知道有什么",名字本身高度语义化(skill-creator/create-skill),
+// desc 是锦上添花 —— 可见性优先于描述完整度。
 export function skillCatalogText(): string | null {
   const skills = listSkills();
   if (skills.length === 0) return null;
   const MAX_CHARS = 2400;
+  const HEADER = '\n(按需调用 load_skill 加载正文;此列表含全部技能名,部分附简述)\n';
+  // Pass 1:全部 name 的紧凑逗号列(可见性保证)
+  const nameList = skills.map((s) => s.name).join(', ');
+  // Pass 2:剩余预算内给尽可能多的技能带 desc(逐条 `- name — desc40`)
+  const budget = MAX_CHARS - nameList.length - HEADER.length;
   const lines: string[] = [];
   let used = 0;
-  let truncated = false;
-  for (const s of skills) {
-    const desc = (s.description || '').replace(/\s+/g, ' ').trim().slice(0, 80);
-    const line = `- ${s.name}${desc ? ` — ${desc}` : ''}`;
-    if (used + line.length + 1 > MAX_CHARS) { truncated = true; break; }
-    lines.push(line);
-    used += line.length + 1;
+  if (budget > 200) {
+    for (const s of skills) {
+      const desc = (s.description || '').replace(/\s+/g, ' ').trim().slice(0, 40);
+      if (!desc) continue;
+      const line = `- ${s.name} — ${desc}`;
+      if (used + line.length + 1 > budget) break;
+      lines.push(line);
+      used += line.length + 1;
+    }
   }
-  if (lines.length === 0) return null;
-  const more = truncated
-    ? `\n(目录过长已截断,完整列表见 slash 菜单;若目标 skill 不在目录中,可直接输入 /name 或调用 load_skill)` 
-    : '';
-  return lines.join('\n') + more;
+  const detail = lines.length > 0 ? `\n\n前几项简介:\n${lines.join('\n')}` : '';
+  return HEADER.trimStart() + nameList + detail + '\n';
 }
 
 export function listSkills(): SkillInfo[] {
