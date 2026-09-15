@@ -244,6 +244,13 @@ function skillCatalogSection(): string {
         : '';
     }
     const rulesSection = loadProjectRules(conv.cwd);
+    // 技能目录只拼进 executor 用的 systemPrompt。planner(run() 开头的规划轮,replan 同理)
+    // 用的是 systemPrompt + PLANNER_PROMPT,但其工具集是 readOnlyTools()(不含 load_skill)
+    // —— 目录里"必须先调用 load_skill"会让 planner 去调一个不存在的工具,得到
+    // "未知工具"报错浪费一轮(2026-09-14 排查)。规划阶段本来也不该加载技能正文,
+    // 技能匹配发生在执行阶段(executor 的 tools=allTools 含 load_skill)。
+    // Skill catalog goes into the executor prompt only: the planner's readOnlyTools()
+    // has no load_skill, so the catalog would instruct it to call a nonexistent tool.
     const systemPrompt =
       baseSystemPrompt +
       cwdAnchorSection(conv) +
@@ -302,7 +309,9 @@ function skillCatalogSection(): string {
     const plannerMessages = await runAgentLoop({
       provider,
       tools: plannerTools,
-      systemPrompt: systemPrompt + '\n\n' + PLANNER_PROMPT,
+      // plannerSystem = 去掉技能目录的 systemPrompt:目录教模型调 load_skill,
+      // 但 planner 工具集只有只读集 —— 承诺不存在的工具会吃"未知工具"报错。
+      systemPrompt: systemPrompt.replace(skillCatalogSection(), '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
       userInput,
@@ -622,7 +631,8 @@ ${failedDetail || '  (无)'}
     const plannerMessages = await runAgentLoop({
       provider,
       tools: readOnlyTools(), // P0-fix: replan 规划同样只读,不带 MCP 工具(同 run() 的 planner)
-      systemPrompt: systemPrompt + '\n\n' + PLANNER_PROMPT,
+      // 同 run() 的 planner:去掉技能目录(工具集无 load_skill,目录会教它调不存在的工具)
+      systemPrompt: systemPrompt.replace(skillCatalogSection(), '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
       userInput: replanInput,
