@@ -1249,8 +1249,138 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 const execFileAsync = promisify(execFile);
 
-const gitDiff: Tool = {
-  name: 'git_diff',
+// ── 企业微信 OA 审批工具(服务端 API,与智能机器人 WS 通道独立)──
+// wecom-oa.ts:corpid+corpsecret → access_token → getapprovalinfo/getapprovaldetail。
+// 配置未填时返回配置指引(不抛崩);详情的 apply_data 控件数组压成「标题: 值」行。
+// WeCom OA approval tools (server API, independent of the bot WS channel in wecom.ts).
+const wecomApprovalList: Tool = {
+  name: 'wecom_approval_list',
+  readOnly: true,
+  description:
+    '查询企业微信「审批应用」的审批单号列表。按提交时间范围(必填,跨度≤31天)筛选,可选模板/申请人/部门/审批状态过滤。返回审批单号列表(可翻页),配合 wecom_approval_detail 查单据详情。需要已在设置中配置企业微信 OA 凭证(corpid + 自建应用 corpsecret),且应用已在企业微信后台「审批-API-审批数据权限」授权。',
+  parameters: {
+    type: 'object',
+    properties: {
+      days: { type: 'number', description: '查最近 N 天(默认 7,最大 31)。与 starttime/endtime 二选一,days 优先' },
+      starttime: { type: 'number', description: '开始时间(Unix 秒)。days 未传时必填' },
+      endtime: { type: 'number', description: '结束时间(Unix 秒,默认现在)。days 未传时与 starttime 成对使用' },
+      template_id: { type: 'string', description: '可选:按审批模板 id 筛选' },
+      creator: { type: 'string', description: '可选:按申请人 userid 筛选' },
+      department: { type: 'string', description: '可选:按提单者所在部门 id 筛选' },
+      sp_status: { type: 'number', description: '可选:审批状态。1 审批中 / 2 已通过 / 3 已驳回 / 4 已撤销 / 6 通过后撤销 / 7 已删除 / 10 已支付' },
+      record_type: { type: 'number', description: '可选:审批单类型。1 请假 2 补卡 3 出差 4 外出 5 加班 6 调班 7 会议室 8 退款 9 红包报销(仅 2021/05/31 后新单)' },
+      size: { type: 'number', description: '可选:单次拉取条数(默认 100,上限 100)' },
+      cursor: { type: 'string', description: '可选:翻页游标(上次返回的 new_next_cursor)' },
+    },
+  },
+  async run(args) {
+    const oa = require('./wecom-oa') as typeof import('./wecom-oa');
+    const now = Math.floor(Date.now() / 1000);
+    let starttime: number;
+    let endtime = Math.floor(Number(args.endtime ?? 0)) || now;
+    if (args.days != null) {
+      const d = Math.min(Math.max(Number(args.days), 0.04), 31); // 最小 ~1h,最大 31 天
+      starttime = endtime - Math.floor(d * 86400);
+    } else if (args.starttime != null) {
+      starttime = Math.floor(Number(args.starttime));
+    } else {
+      starttime = endtime - 7 * 86400; // 默认最近 7 天
+    }
+    const filters: InstanceType<typeof oa.WeComOAError> extends never ? never[] : { key: string; value: string }[] = [];
+    const push = (key: string, v: unknown): void => { if (v != null && v !== '') filters.push({ key, value: String(v) }); };
+    push('template_id', args.template_id);
+    push('creator', args.creator);
+    push('department', args.department);
+    push('sp_status', args.sp_status);
+    push('record_type', args.record_type);
+    try {
+      const r = await oa.getApprovalInfo({
+        starttime, endtime,
+        size: args.size != null ? Number(args.size) : undefined,
+        cursor: args.cursor ? String(args.cursor) : undefined,
+        filters: filters.length ? filters.map((f) => ({ [f.key]: f.value })) as never : undefined,
+      });
+      if (r.sp_no_list.length === 0) {
+        return `时间范围内(${new Date(starttime * 1000).toLocaleString()} ~ ${new Date(endtime * 1000).toLocaleString()})没有符合条件的审批单。可扩大 days 或放宽筛选。`;
+      }
+      const lines = r.sp_no_list.map((no) => `- ${no}`);
+      const more = r.new_next_cursor
+        ? `\n\n(未拉完,用 cursor="${r.new_next_cursor}" 继续翻页)`
+        : '\n\n(已拉完)';
+      return `共 ${r.sp_no_list.length} 条审批单:\n${lines.join('\n')}${more}`;
+    } catch (e) {
+      if (e instanceof oa.WeComOAError) return `❌ 企业微信 OA 错误(${e.errcode}): ${e.message}`;
+      return `❌ 查询失败: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  },
+};
+
+const wecomApprovalDetail: Tool = {
+  name: 'wecom_approval_detail',
+  readOnly: true,
+  description:
+    '查询企业微信审批单的完整详情(申请表单字段、审批流程节点、审批意见)。需要审批单号(从 wecom_approval_list 获得,或用户直接给单号如 202409120001)。',
+  parameters: {
+    type: 'object',
+    properties: {
+      sp_no: { type: 'string', description: '审批单编号,如 "202409120001"' },
+    },
+    required: ['sp_no'],
+  },
+  async run(args) {
+    const oa = require('./wecom-oa') as typeof import('./wecom-oa');
+    const spNo = String(args.sp_no ?? '').trim();
+    if (!spNo) return '缺少 sp_no(审批单编号)';
+    try {
+      const info = await oa.getApprovalDetail(spNo);
+      const status = Number(info.sp_status ?? 0);
+      const statusLabel = oa.SP_STATUS_LABEL[status] ?? String(status || '未知');
+      const applyer = (info.applyer as { userid?: string } | undefined)?.userid ?? '?';
+      const applyTime = typeof info.apply_time === 'number' ? new Date(info.apply_time * 1000).toLocaleString() : '?';
+      const parts: string[] = [
+        `单号: ${info.sp_no ?? spNo}`,
+        `类型: ${info.sp_name ?? '?'}`,
+        `状态: ${statusLabel}`,
+        `申请人: ${applyer}`,
+        `提交时间: ${applyTime}`,
+      ];
+      // 审批流节点(sp_record):每个节点列审批人 + 状态 + 意见
+      const records = Array.isArray(info.sp_record) ? info.sp_record as Array<Record<string, unknown>> : [];
+      if (records.length) {
+        const nodeLines: string[] = [];
+        for (const rec of records) {
+          const details = Array.isArray(rec.details) ? rec.details as Array<Record<string, unknown>> : [];
+          for (const d of details) {
+            const uid = (d.approver as { userid?: string } | undefined)?.userid ?? '?';
+            const st = oa.SP_STATUS_LABEL[Number(d.sp_status)] ?? String(d.sp_status);
+            const speech = typeof d.speech === 'string' && d.speech ? ` 意见:"${d.speech}"` : '';
+            const t = typeof d.sptime === 'number' && d.sptime > 0 ? ` @${new Date(d.sptime * 1000).toLocaleString()}` : '';
+            nodeLines.push(`  - ${uid}: ${st}${speech}${t}`);
+          }
+        }
+        if (nodeLines.length) parts.push(`审批流程:\n${nodeLines.join('\n')}`);
+      }
+      // 表单字段(apply_data 压平)
+      const fields = oa.flattenApplyData(info);
+      if (fields.length) parts.push(`表单内容:\n${fields.map((f) => `  ${f}`).join('\n')}`);
+      // 备注
+      const comments = Array.isArray(info.comments) ? info.comments as Array<Record<string, unknown>> : [];
+      if (comments.length) {
+        const cLines = comments.map((c) => {
+          const uid = (c.commentUserInfo as { userid?: string } | undefined)?.userid ?? '?';
+          return `  - ${uid}: ${String(c.commentcontent ?? '')}`;
+        });
+        parts.push(`备注:\n${cLines.join('\n')}`);
+      }
+      return parts.join('\n');
+    } catch (e) {
+      if (e instanceof oa.WeComOAError) return `❌ 企业微信 OA 错误(${e.errcode}): ${e.message}`;
+      return `❌ 查询失败: ${e instanceof Error ? e.message : String(e)}`;
+    }
+  },
+};
+
+const gitDiff: Tool = {  name: 'git_diff',
   readOnly: true,
   description:
     '看 git 仓库里的文件 diff。三种模式:(1) 不传参 = 工作区相对 HEAD 的所有改动;(2) 传 file = 单个文件;(3) 传 ref = 与某个提交/分支比较(如 ref=HEAD~1 看上次提交后的变化,cached=true 看已 staged 的)。需要先看改动再决定怎么改代码时用,比 shell git diff 干净(自动跳过确认)。',
@@ -2141,7 +2271,7 @@ const loadSkillTool: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, todoWrite];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, todoWrite, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

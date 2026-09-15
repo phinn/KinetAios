@@ -80,6 +80,11 @@ const DEFAULTS: AppSettings = {
     subAgentModel: '',
     streamReply: true,
   },
+  // 企业微信 OA 服务端 API(审批数据):corpid/secret 留空 = 未配置,工具报配置指引。
+  wecomOA: {
+    corpid: '',
+    corpsecret: '',
+  },
   // 飞书机器人:默认关闭,appId/appSecret 留空。
   feishuBot: {
     enabled: false,

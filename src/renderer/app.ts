@@ -4947,6 +4947,12 @@ async function showSettings() {
           <div class="field"><label>${tr('settings.wecom.streamReply')}</label><input type="checkbox" id="s-wecom-stream" ${s.wecomBot?.streamReply !== false ? 'checked' : ''} /></div>
           <div class="field" style="display:flex;flex-direction:column;gap:4px"><label>${tr('settings.wecom.cwd')}</label><input id="s-wecom-cwd" type="text" value="${esc(s.wecomBot?.defaultCwd ?? '')}" placeholder="${tr('settings.wecom.cwdPh')}" style="width:100%" /></div>
         </div>
+        <div class="s-section">
+          <h3>${tr('settings.wecomOA.title')}</h3>
+          <div class="s-hint">${tr('settings.wecomOA.desc')}</div>
+          <div class="field"><label>Corp ID</label><input id="s-wecomoa-corpid" type="text" value="${esc(s.wecomOA?.corpid ?? '')}" placeholder="${tr('settings.wecomOA.corpidPh')}" /></div>
+          <div class="field"><label>${tr('settings.wecomOA.secretLabel')}</label><div class="key-eye-wrap"><input id="s-wecomoa-secret" type="password" value="${esc(s.wecomOA?.corpsecret ?? '')}" placeholder="${tr('settings.wecomOA.secretPh')}" /><span class="key-eye" data-target="s-wecomoa-secret">👁</span></div></div>
+        </div>
 
         <div class="s-section">
           <h3>${tr('settings.feishu.title')}</h3>
@@ -6006,6 +6012,10 @@ function readSettingsForm(): AppSettings {
       subAgentModel: (document.getElementById('s-wecom-submodel') as HTMLInputElement).value.trim(),
       streamReply: (document.getElementById('s-wecom-stream') as HTMLInputElement).checked,
   },
+    wecomOA: {
+      corpid: (document.getElementById('s-wecomoa-corpid') as HTMLInputElement).value.trim(),
+      corpsecret: (document.getElementById('s-wecomoa-secret') as HTMLInputElement).value.trim(),
+    },
   feishuBot: {
     enabled: (document.getElementById('s-feishu-enable') as HTMLInputElement).checked,
     appId: (document.getElementById('s-feishu-appid') as HTMLInputElement).value.trim(),

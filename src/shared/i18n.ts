@@ -763,6 +763,11 @@ const ZH_CN: Dict = {
   'settings.wecom.streamReply': '流式回复',
   'settings.wecom.cwd': '默认工作目录',
   'settings.wecom.cwdPh': '空 = 用户主目录',
+  'settings.wecomOA.title': '企业微信 OA(审批数据)',
+  'settings.wecomOA.desc': '独立于上方机器人通道:访问审批应用数据走服务端 API,需企业 ID(corpid)+ 自建应用 corpsecret,并在管理后台「审批-API-审批数据权限」授权该应用。配置后 agent 可用 wecom_approval_list / wecom_approval_detail 工具查询审批单。',
+  'settings.wecomOA.corpidPh': '企业 ID,如 ww1234567890abcdef(我的企业 → 企业信息)',
+  'settings.wecomOA.secretLabel': 'Corp Secret(自建应用)',
+  'settings.wecomOA.secretPh': '自建应用的 Secret(应用管理 → 该应用 → Secret)',
 
   // ── 飞书机器人 ──
   'settings.feishu.title': '飞书机器人',
@@ -1980,6 +1985,11 @@ const EN: Dict = {
   'settings.wecom.streamReply': 'Stream reply',
   'settings.wecom.cwd': 'Default working directory',
   'settings.wecom.cwdPh': 'Empty = user home',
+  'settings.wecomOA.title': 'WeCom OA (Approval data)',
+  'settings.wecomOA.desc': 'Independent of the bot channel above: approval data uses the server API with Corp ID (corpid) + self-built app corpsecret, granted under Admin Console → Approval → API data permissions. Once configured, the agent can query approvals via wecom_approval_list / wecom_approval_detail tools.',
+  'settings.wecomOA.corpidPh': 'Corp ID, e.g. ww1234567890abcdef (My Company → Company Info)',
+  'settings.wecomOA.secretLabel': 'Corp Secret (self-built app)',
+  'settings.wecomOA.secretPh': 'Secret of the self-built app (App Management → the app → Secret)',
 
   // ── Feishu Bot ──
   'settings.feishu.title': 'Feishu Bot',
@@ -3191,6 +3201,11 @@ const ZH_TW: Dict = {
   'settings.wecom.streamReply': '串流回覆',
   'settings.wecom.cwd': '預設工作目錄',
   'settings.wecom.cwdPh': '空 = 使用者主目錄',
+  'settings.wecomOA.title': '企業微信 OA(審批資料)',
+  'settings.wecomOA.desc': '獨立於上方機器人通道:存取審批應用資料走伺服器 API,需企業 ID(corpid)+ 自建應用 corpsecret,並在管理後台「審批-API-審批資料權限」授權該應用。設定後 agent 可用 wecom_approval_list / wecom_approval_detail 工具查詢審批單。',
+  'settings.wecomOA.corpidPh': '企業 ID,如 ww1234567890abcdef(我的企業 → 企業資訊)',
+  'settings.wecomOA.secretLabel': 'Corp Secret(自建應用)',
+  'settings.wecomOA.secretPh': '自建應用的 Secret(應用管理 → 該應用 → Secret)',
 
   // ── 飛書機器人 ──
   'settings.feishu.title': '飛書機器人',
@@ -4420,6 +4435,11 @@ const JA: Dict = {
   'settings.wecom.streamReply': 'ストリーミング返信',
   'settings.wecom.cwd': 'デフォルト作業ディレクトリ',
   'settings.wecom.cwdPh': '空 = ユーザーのホームディレクトリ',
+  'settings.wecomOA.title': 'WeCom OA(承認データ)',
+  'settings.wecomOA.desc': '上のボットチャネルとは独立:承認データはサーバー API で取得します。企業 ID(corpid)+ セルフビルドアプリの corpsecret が必要で、管理画面「承認 - API データ権限」でアプリを許可してください。設定後、agent は wecom_approval_list / wecom_approval_detail ツールで承認を照会できます。',
+  'settings.wecomOA.corpidPh': '企業 ID、例: ww1234567890abcdef(マイ企業 → 企業情報)',
+  'settings.wecomOA.secretLabel': 'Corp Secret(セルフビルドアプリ)',
+  'settings.wecomOA.secretPh': 'セルフビルドアプリの Secret(アプリ管理 → 該当アプリ → Secret)',
 
   // ── 飛書ボット ──
   'settings.feishu.title': '飛書ボット',

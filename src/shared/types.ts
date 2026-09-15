@@ -321,6 +321,7 @@ export type AppSettings = {
   searchEngine: SearchEngine;
   // ── 企业微信智能机器人 ── WebSocket 长连接模式,接收企信消息并路由到 Agent 引擎处理。
   wecomBot: WeComBotConfig;
+  wecomOA: WeComOAConfig;
   // ── 飞书机器人 ── WebSocket 长连接模式,接收飞书消息并路由到 Agent 引擎处理。
   feishuBot: FeishuBotConfig;
 };
@@ -337,8 +338,15 @@ export type WeComBotConfig = {
   streamReply: boolean;   // 是否流式回复(默认 true;false = 等待完整结果再回复)
 };
 
-/** 飞书机器人配置 / Feishu Bot config (WebSocket long-connection mode) */
-export type FeishuBotConfig = {
+/** 企业微信 OA 服务端 API 配置(审批数据) / WeCom OA server API config (approval data).
+ *  与 wecomBot(智能机器人 WS 通道)独立:审批数据走 corpid+corpsecret → access_token 的服务端 API。
+ *  需在管理后台「审批-API-审批数据权限」给自建应用授权。 */
+export type WeComOAConfig = {
+  corpid: string;     // 企业 ID(我的企业 → 企业信息页)
+  corpsecret: string; // 自建应用 Secret(应用需加入「审批-可调用接口的应用」)
+};
+
+/** 飞书机器人配置 / Feishu Bot config (WebSocket long-connection mode) */export type FeishuBotConfig = {
   enabled: boolean;       // 是否启用(默认 false)
   appId: string;          // 飞书应用 App ID(开发者后台获取)
   appSecret: string;      // 飞书应用 App Secret(开发者后台获取)
