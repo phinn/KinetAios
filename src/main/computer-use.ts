@@ -32,6 +32,9 @@ interface CaptureGeometry {
   originX: number; originY: number; // 原点偏移(窗口截图为其屏幕位置;全屏为 0,0)
   kind: 'screen' | 'window';
   at: number;                      // 记录时间戳(过期防护)
+  hwnd?: number;                   // 方案B:窗口截图时命中的 Win32 窗口句柄(后台直投用)
+  pid?: number;                    // 方案B:macOS 侧命中的进程 pid(CGEventPostToPid 用)
+  name?: string;                   // 命中的窗口标题子串(日志/工具返回引用)
 }
 let lastCapture: CaptureGeometry | null = null;
 
@@ -129,6 +132,12 @@ export async function captureWindowByName(
     // 坐标换算:解析窗口在屏幕上的位置(动作空间)。失败 → 原点按 0,0 兜底并明确提示,
     // 让模型改用全屏截图定位后再点击(此前没有任何换算,窗口截图+点击必然错位)。
     const bounds = await resolveWindowBounds(nameSubstr);
+    // 方案B:同时解析窗口宿主(hwnd/pid),后续后台动作直投该窗口 —— 不再整屏
+    // hit-test,agent 操作后台窗口时与用户前台操作物理互不干扰。
+    // Plan B: also resolve the owning hwnd/pid so background actions go straight to
+    // this window instead of a whole-screen hit-test — agent works a background
+    // window while the user keeps the foreground.
+    const host = bounds ? await resolveWindowHost(nameSubstr) : null;
     setCaptureGeometry({
       imgW: size.width,
       imgH: size.height,
@@ -138,6 +147,9 @@ export async function captureWindowByName(
       originY: bounds?.y ?? 0,
       kind: 'window',
       at: Date.now(),
+      hwnd: host?.hwnd,
+      pid: host?.pid,
+      name: src.name,
     });
     const dataUrl = src.thumbnail.toDataURL();
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
@@ -219,6 +231,59 @@ out;
   return null; // Linux: 暂无可靠窗口枚举 → 坐标不换算(结果带提示)
 }
 
+// ── 方案B:窗口宿主解析 + 绑定投递 ──
+// 与 resolveWindowBounds 同样的匹配规则,但返回窗口句柄/进程 ID,供后台动作绕过
+// 整屏 hit-test 直投。Windows: Get-Process MainWindowHandle;macOS: JXA CGWindowList pid。
+// Same matching rules as resolveWindowBounds but returns the owning handle/pid so
+// background delivery can target this window directly, skipping the screen hit-test.
+async function resolveWindowHost(titleQuery: string): Promise<{ hwnd?: number; pid?: number } | null> {
+  try {
+    if (process.platform === 'win32') {
+      const b64 = Buffer.from(titleQuery.toLowerCase(), 'utf8').toString('base64');
+      const ps = `
+$q = [Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${b64}'))
+$hit = Get-Process | Where-Object { $_.MainWindowHandle -ne 0 -and $_.MainWindowTitle -and $_.MainWindowTitle.ToLower().Contains($q) } | Select-Object -First 1
+if ($hit) { Write-Output "OK $($hit.MainWindowHandle)" } else { Write-Output 'ERR notfound' }
+`.trim();
+      const out = await runShellCapture(ps, 4000);
+      const m = /OK (\d+)/.exec(out);
+      if (!m) return null;
+      return { hwnd: Number(m[1]) };
+    }
+    if (process.platform === 'darwin') {
+      const script = `
+ObjC.import('CoreGraphics');
+ObjC.import('Foundation');
+var q = ${JSON.stringify(titleQuery.toLowerCase())};
+var out = 'ERR notfound';
+var list = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, $.kCGNullWindowID));
+for (var i = 0; i < list.count; i++) {
+  var wd = list.objectAtIndex(i);
+  if (Number(ObjC.unwrap(wd.objectForKey('kCGWindowLayer'))) !== 0) continue;
+  var nameRef = wd.objectForKey('kCGWindowName');
+  var nm = nameRef ? String(ObjC.unwrap(nameRef)) : '';
+  if (nm && nm.toLowerCase().indexOf(q) >= 0) { out = 'OK ' + Number(ObjC.unwrap(wd.objectForKey('kCGWindowOwnerPID'))); break; }
+}
+out;
+`.trim();
+      const out = (await osascriptJxa(script, 4000)).trim();
+      const m = /OK (\d+)/.exec(out);
+      if (!m) return null;
+      return { pid: Number(m[1]) };
+    }
+  } catch { return null; }
+  return null;
+}
+
+// 当前绑定的窗口宿主(最近一次窗口截图解析出来的,TTL 内有效)。
+// The bound window host from the most recent window-scoped capture (TTL-guarded).
+function boundWindowHost(): { hwnd?: number; pid?: number } | null {
+  if (!lastCapture || lastCapture.kind !== 'window') return null;
+  if (Date.now() - lastCapture.at > CAPTURE_GEOMETRY_TTL_MS) return null;
+  if (!lastCapture.hwnd && !lastCapture.pid) return null;
+  return { hwnd: lastCapture.hwnd, pid: lastCapture.pid };
+}
+
 async function captureScreenInner(): Promise<ScreenshotResult> {
   try {
     const primaryDisplay = electronScreen.getPrimaryDisplay();
@@ -274,13 +339,16 @@ export async function mouseClick(args: MouseClickArgs): Promise<{ ok: boolean; e
   const platform = process.platform;
 
   try {
-    // 后台模式:PostMessage/CGEventPostToPid 投递,真实光标/焦点不动
+    // 后台模式:PostMessage/CGEventPostToPid 投递,真实光标/焦点不动。
+    // 方案B:最近截图是窗口截图时,动作绑定该窗口(hwnd/pid 直投,绕过整屏命中),
+    // agent 操作后台窗口,用户前台操作互不影响。
+    const bound = computerUseBackground() ? boundWindowHost() : null;
     if (computerUseBackground()) {
       if (platform === 'win32') {
-        const r = await bgMouseClickWin(x, y, button, doubleClick);
+        const r = await bgMouseClickWin(x, y, button, doubleClick, bound?.hwnd);
         return r.ok ? { ok: true } : { ok: false, error: r.error ?? '后台点击失败' };
       }
-      if (platform === 'darwin') return bgClickMac(x, y, button, doubleClick);
+      if (platform === 'darwin') return bgClickMac(x, y, button, doubleClick, bound?.pid);
       // Linux 无可靠等价 API → 回落前台
     }
     return clickForeground(x, y, button, doubleClick, platform);
@@ -374,10 +442,12 @@ export async function mouseScroll(x: number, y: number, clicks: number): Promise
   // 坐标换算(与 mouseClick 同基准)
   const mapped = mapScreenshotCoords(x, y);
   x = mapped.x; y = mapped.y;
-  // 后台模式:WM_MOUSEWHEEL / CGEvent 滚轮直接投给坐标命中窗口
+  // 后台模式:WM_MOUSEWHEEL / CGEvent 滚轮直接投给坐标命中窗口。
+  // 方案B:窗口截图绑定 → 直投该窗口/进程。
   if (computerUseBackground()) {
-    if (process.platform === 'win32') return bgMouseScrollWin(x, y, clicks);
-    if (process.platform === 'darwin') return bgScrollMac(x, y, clicks);
+    const bound = boundWindowHost();
+    if (process.platform === 'win32') return bgMouseScrollWin(x, y, clicks, bound?.hwnd);
+    if (process.platform === 'darwin') return bgScrollMac(x, y, clicks, bound?.pid);
     // Linux 回落前台滚动
   }
   try {
@@ -443,10 +513,11 @@ export async function mouseDrag(fromX: number, fromY: number, toX: number, toY: 
   const to = mapScreenshotCoords(toX, toY);
   fromX = from.x; fromY = from.y; toX = to.x; toY = to.y;
   if (computerUseBackground()) {
+    const bound = boundWindowHost();
     if (process.platform === 'win32') {
-      return bgDragWin(fromX, fromY, toX, toY);
+      return bgDragWin(fromX, fromY, toX, toY, bound?.hwnd);
     }
-    if (process.platform === 'darwin') return bgDragMac(fromX, fromY, toX, toY);
+    if (process.platform === 'darwin') return bgDragMac(fromX, fromY, toX, toY, bound?.pid);
     // Linux 回落前台
   }
   try {
@@ -699,17 +770,20 @@ var pid = 0;
 }`;
 }
 
-async function bgClickMac(x: number, y: number, button: 'left' | 'right' | 'middle', doubleClick: boolean): Promise<{ ok: boolean; error?: string }> {
+async function bgClickMac(x: number, y: number, button: 'left' | 'right' | 'middle', doubleClick: boolean, boundPid?: number): Promise<{ ok: boolean; error?: string }> {
   const down = button === 'right' ? '$.kCGEventRightMouseDown' : button === 'middle' ? '$.kCGEventOtherMouseDown' : '$.kCGEventLeftMouseDown';
   const up = button === 'right' ? '$.kCGEventRightMouseUp' : button === 'middle' ? '$.kCGEventOtherMouseUp' : '$.kCGEventLeftMouseUp';
   const mb = button === 'right' ? '$.kCGMouseButtonRight' : button === 'middle' ? '$.kCGMouseButtonCenter' : '$.kCGMouseButtonLeft';
   const clicks = doubleClick ? 2 : 1;
-  // 命中测试 + 投递一段式脚本:z 序遍历 on-screen 窗口(layer 0、bounds 含点)→ CGEventPostToPid
+  // 方案B:有绑定 pid 时直接投给该进程(窗口截图几何已把坐标换算到屏幕空间,但事件
+  // 只进目标进程,用户前台进程收不到 —— 物理隔离)。无绑定维持 z 序 hit-test 原语义。
+  // Plan B: with a bound pid, events go only to that process; without one, keep the
+  // z-order hit-test semantics.
   const full = `
 ObjC.import('CoreGraphics');
 ObjC.import('Foundation');
 var hx = ${Math.round(x)}, hy = ${Math.round(y)};
-${jxaHitTest()}
+${boundPid ? `var pid = ${boundPid};` : jxaHitTest()}
 if (!pid) { 'ERR nopoint' } else {
   var pt = { x: hx, y: hy };
   var n = ${clicks};
@@ -733,12 +807,12 @@ if (!pid) { 'ERR nopoint' } else {
   }
 }
 
-async function bgScrollMac(x: number, y: number, clicks: number): Promise<{ ok: boolean; error?: string }> {
+async function bgScrollMac(x: number, y: number, clicks: number, boundPid?: number): Promise<{ ok: boolean; error?: string }> {
   const script = `
 ObjC.import('CoreGraphics');
 ObjC.import('Foundation');
 var hx = ${Math.round(x)}, hy = ${Math.round(y)};
-${jxaHitTest()}
+${boundPid ? `var pid = ${boundPid};` : jxaHitTest()}
 if (!pid) { 'ERR nopoint' } else {
   var n = ${Math.max(1, Math.min(30, Math.abs(Math.round(clicks))))};
   var sign = ${Math.sign(Math.round(clicks)) || 1};
@@ -764,7 +838,9 @@ if (!pid) { 'ERR nopoint' } else {
 // ponytail: 仅文本可恢复(非文本剪贴板如图片/文件引用会被目标文本覆盖,丢失);
 // 天花板 = NSPasteboard 多类型快照回写,升级路径明确。
 async function bgTypeMac(text: string): Promise<{ ok: boolean; error?: string }> {
-  if (!bgLastClickPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 mouse_click 一次(后台模式点击不占焦点)' };
+  // 方案B:窗口截图绑定的 pid 优先(没点过也能直接对绑定进程粘贴),其次点击锁定
+  const targetPid = boundWindowHost()?.pid ?? bgLastClickPid;
+  if (!targetPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 screenshot_window 截取目标窗口,或 mouse_click 一次' };
   try {
     // 1) 保存原剪贴板(仅文本可恢复;图片等非文本读出为空 → 不恢复,见上方 ponytail)
     let prev: string | null = null;
@@ -775,7 +851,7 @@ async function bgTypeMac(text: string): Promise<{ ok: boolean; error?: string }>
     // 3) Cmd+V(v=9)后台投递给锁定 pid
     const script = `
 ObjC.import('CoreGraphics');
-var pid = ${bgLastClickPid};
+var pid = ${targetPid};
 var flag = $.kCGEventFlagMaskCommand;
 var d = $.CGEventCreateKeyboardEvent($(), 9, true);
 var u = $.CGEventCreateKeyboardEvent($(), 9, false);
@@ -823,7 +899,8 @@ Object.assign(BG_MAC_VK, {
 });
 
 async function bgKeyMac(key: string): Promise<{ ok: boolean; error?: string }> {
-  if (!bgLastClickPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 mouse_click 一次(后台模式点击不占焦点)' };
+  const targetPid = boundWindowHost()?.pid ?? bgLastClickPid; // 方案B:绑定 pid 优先
+  if (!targetPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 screenshot_window 截取目标窗口,或 mouse_click 一次' };
   const parts = key.split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
   const mods = parts.filter((p) => ['ctrl', 'control', 'shift', 'alt', 'cmd', 'command', 'meta'].includes(p));
   const finalPart = parts.filter((p) => !mods.includes(p)).pop() ?? '';
@@ -835,7 +912,7 @@ async function bgKeyMac(key: string): Promise<{ ok: boolean; error?: string }> {
   const setFlags = mods.length ? '$.CGEventSetFlags(ev, ' + (flagBits || '0') + ');' : '';
   const script = `
 ObjC.import('CoreGraphics');
-var pid = ${bgLastClickPid};
+var pid = ${targetPid};
 function tap(vk) {
   var d = $.CGEventCreateKeyboardEvent($(), vk, true);
   var u = $.CGEventCreateKeyboardEvent($(), vk, false);
@@ -858,7 +935,7 @@ tap(${finalDef.vk});
 }
 
 // 后台拖拽:down → 一串 dragged → up,全部投给命中 pid。
-async function bgDragMac(fromX: number, fromY: number, toX: number, toY: number): Promise<{ ok: boolean; error?: string }> {
+async function bgDragMac(fromX: number, fromY: number, toX: number, toY: number, boundPid?: number): Promise<{ ok: boolean; error?: string }> {
   const steps = 8;
   const pts = Array.from({ length: steps + 1 }, (_, i) => {
     const t = i / steps;
@@ -868,7 +945,7 @@ async function bgDragMac(fromX: number, fromY: number, toX: number, toY: number)
 ObjC.import('CoreGraphics');
 ObjC.import('Foundation');
 var hx = ${Math.round(fromX)}, hy = ${Math.round(fromY)};
-${jxaHitTest()}
+${boundPid ? `var pid = ${boundPid};` : jxaHitTest()}
 if (!pid) { 'ERR nopoint' } else {
   var path = ${JSON.stringify(pts)};
   $.CGEventPostToPid(pid, $.CGEventCreateMouseEvent($(), $.kCGEventLeftMouseDown, path[0], $.kCGMouseButtonLeft));
@@ -892,12 +969,16 @@ if (!pid) { 'ERR nopoint' } else {
 // 后台点击:WindowFromPoint → 客户区坐标 → WM_* 消息对。返回目标窗口句柄。
 // 消息序:单击 down→up;双击 DBLCLK×2(WM_LBUTTONDBLCLK 自带按下语义,CS_DBLCLKS
 // 窗口由它合成单击+双击序列)。wParam=MK 标志(down 时含按键按下态)。
-async function bgMouseClickWin(x: number, y: number, button: 'left' | 'right' | 'middle', doubleClick: boolean): Promise<{ ok: boolean; error?: string; hwnd?: number }> {
+async function bgMouseClickWin(x: number, y: number, button: 'left' | 'right' | 'middle', doubleClick: boolean, boundHwnd?: number): Promise<{ ok: boolean; error?: string; hwnd?: number }> {
   // WM_LBUTTONDOWN=0x201 UP=0x202 DBLCLK=0x203 | R: 0x204/0x205/0x206 | M: 0x207/0x208/0x209
   const down = button === 'right' ? 0x204 : button === 'middle' ? 0x207 : 0x201;
   const dbl = button === 'left' ? 0x203 : button === 'right' ? 0x206 : 0x209;
   const msgSeq = doubleClick ? [dbl, dbl] : [down, down + 1]; // down→up / DBLCLK×2
   const mk = doubleClick ? 0 : button === 'right' ? 0x2 : button === 'middle' ? 0x10 : 0x1; // MK_RBUTTON/MK_MBUTTON/MK_LBUTTON(down 时);DBLCLK 由目标合成,给 0 即可
+  // 方案B:绑定窗口存在时跳过 WindowFromPoint(整屏命中会撞用户前台窗口),
+  // 坐标也按"窗口截图局部坐标"直接当客户区坐标用(截图基准就是该窗口)。
+  // With a bound window: skip WindowFromPoint entirely and treat the screenshot-space
+  // coords as client coords — the capture basis IS that window.
   const ps = `
 Add-Type @"
 using System;
@@ -906,14 +987,19 @@ public class BgMouse {
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
 "@
+${boundHwnd ? `$h = [IntPtr]::${boundHwnd}
+if (-not [BgMouse]::IsWindow($h)) { Write-Output 'ERR dead'; exit 0 }
 $p = New-Object BgMouse+POINT
+$p.X = ${Math.round(x)}; $p.Y = ${Math.round(y)}
+[BgMouse]::ScreenToClient($h, [ref]$p)` : `$p = New-Object BgMouse+POINT
 $p.X = ${Math.round(x)}; $p.Y = ${Math.round(y)}
 $h = [BgMouse]::WindowFromPoint($p)
 if ($h -eq [IntPtr]::Zero) { Write-Output 'ERR nopoint'; exit 0 }
-[BgMouse]::ScreenToClient($h, [ref]$p)
+[BgMouse]::ScreenToClient($h, [ref]$p)`}
 $lp = (($p.Y -shl 16) -bor ($p.X -band 0xFFFF))
 ${msgSeq.map((f) => `[BgMouse]::PostMessage($h, ${f}, ${mk}, $lp) | Out-Null\nStart-Sleep -Milliseconds 12`).join('\n')}
 Write-Output "OK $([long]$h)"
@@ -922,6 +1008,7 @@ Write-Output "OK $([long]$h)"
     const out = await runShellCapture(ps, 5000);
     const m = /OK (\d+)/.exec(out);
     if (out.includes('ERR nopoint') || !m) return { ok: false, error: '坐标处未命中窗口(可能在屏幕外)' };
+    if (out.includes('ERR dead')) return { ok: false, error: '绑定的窗口已关闭,请重新 screenshot_window 截取' };
     const hwnd = Number(m[1]);
     bgLastClickHwnd = hwnd;
     return { ok: true, hwnd };
@@ -932,7 +1019,7 @@ Write-Output "OK $([long]$h)"
 
 // 后台滚轮:WM_MOUSEWHEEL(0x20A)。注意 wParam 高16位 delta、低16位修饰键,而
 // lParam 是"屏幕坐标"(与 WM_LBUTTON* 的客户区坐标不同 —— Win32 老坑)。
-async function bgMouseScrollWin(x: number, y: number, clicks: number): Promise<{ ok: boolean; error?: string }> {
+async function bgMouseScrollWin(x: number, y: number, clicks: number, boundHwnd?: number): Promise<{ ok: boolean; error?: string }> {
   const lp = (Math.round(y) << 16) | (Math.round(x) & 0xFFFF); // WM_MOUSEWHEEL lParam = 屏幕坐标(与点击消息的客户区坐标不同,Win32 老坑)
   const ps = `
 Add-Type @"
@@ -941,13 +1028,15 @@ using System.Runtime.InteropServices;
 public class BgWheel {
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
 "@
-$p = New-Object BgWheel+POINT
+${boundHwnd ? `$h = [IntPtr]::${boundHwnd}
+if (-not [BgWheel]::IsWindow($h)) { Write-Output 'ERR dead'; exit 0 }` : `$p = New-Object BgWheel+POINT
 $p.X = ${Math.round(x)}; $p.Y = ${Math.round(y)}
 $h = [BgWheel]::WindowFromPoint($p)
-if ($h -eq [IntPtr]::Zero) { Write-Output 'ERR nopoint'; exit 0 }
+if ($h -eq [IntPtr]::Zero) { Write-Output 'ERR nopoint'; exit 0 }`}
 $notch = [Math]::Sign(${Math.round(clicks)}) * 120
 $loops = [Math]::Max(1, [Math]::Min(30, [Math]::Abs(${Math.round(clicks)})))
 for ($i = 0; $i -lt $loops; $i++) {
@@ -959,6 +1048,7 @@ Write-Output "OK $([long]$h)"
   try {
     const out = await runShellCapture(ps, 8000);
     if (out.includes('ERR nopoint')) return { ok: false, error: '坐标处未命中窗口' };
+    if (out.includes('ERR dead')) return { ok: false, error: '绑定的窗口已关闭,请重新 screenshot_window 截取' };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -968,11 +1058,14 @@ Write-Output "OK $([long]$h)"
 // 后台键盘宿主解析:键盘消息投给 lastClickHwnd;IsWindow 过滤已销毁句柄。
 // 失败(从未点过/窗口已关)返回 null → 调用方回落前台方式并提示。
 function bgKeyboardHwnd(): number | null {
+  // 方案B:窗口截图绑定优先(没点过也能直接对绑定窗口打字),其次最后一次点击命中的窗口
+  const bound = boundWindowHost();
+  if (bound?.hwnd) return bound.hwnd;
   return bgLastClickHwnd;
 }
 
 // 后台拖拽:down@起点 → 中途插值移动若干 WM_MOUSEMOVE → up@终点(客户区坐标)。
-async function bgDragWin(fromX: number, fromY: number, toX: number, toY: number): Promise<{ ok: boolean; error?: string }> {
+async function bgDragWin(fromX: number, fromY: number, toX: number, toY: number, boundHwnd?: number): Promise<{ ok: boolean; error?: string }> {
   const steps = 8; // 插值步数:给目标窗口的拖拽检测(命中测试/选择更新)留出处理节拍
   const toClient = (hx: number, hy: number) => `((${Math.round(hy)} -shl 16) -bor (${Math.round(hx)} -band 0xFFFF))`;
   const ps = `
@@ -983,14 +1076,19 @@ public class BgDrag {
   [DllImport("user32.dll")] public static extern IntPtr WindowFromPoint(POINT p);
   [DllImport("user32.dll")] public static extern bool ScreenToClient(IntPtr hWnd, ref POINT p);
   [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] public static extern bool IsWindow(IntPtr hWnd);
   [StructLayout(LayoutKind.Sequential)] public struct POINT { public int X; public int Y; }
 }
 "@
+${boundHwnd ? `$h = [IntPtr]::${boundHwnd}
+if (-not [BgDrag]::IsWindow($h)) { Write-Output 'ERR dead'; exit 0 }
 $p = New-Object BgDrag+POINT
+$p.X = ${Math.round(fromX)}; $p.Y = ${Math.round(fromY)}
+[BgDrag]::ScreenToClient($h, [ref]$p)` : `$p = New-Object BgDrag+POINT
 $p.X = ${Math.round(fromX)}; $p.Y = ${Math.round(fromY)}
 $h = [BgDrag]::WindowFromPoint($p)
 if ($h -eq [IntPtr]::Zero) { Write-Output 'ERR nopoint'; exit 0 }
-[BgDrag]::ScreenToClient($h, [ref]$p)
+[BgDrag]::ScreenToClient($h, [ref]$p)`}
 $lp0 = (($p.Y -shl 16) -bor ($p.X -band 0xFFFF))
 [BgDrag]::PostMessage($h, 0x201, 1, $lp0) | Out-Null
 Start-Sleep -Milliseconds 60
@@ -1018,6 +1116,7 @@ Write-Output "OK $([long]$h)"
   try {
     const out = await runShellCapture(ps, 8000);
     if (out.includes('ERR nopoint')) return { ok: false, error: '起点坐标处未命中窗口' };
+    if (out.includes('ERR dead')) return { ok: false, error: '绑定的窗口已关闭,请重新 screenshot_window 截取' };
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };

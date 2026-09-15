@@ -36,6 +36,7 @@ import { listSkills } from './skills';
 import { mcp } from './mcp';
 import { localMcpServer } from './mcp-server';
 import { allTools } from './tools';
+import { killAgentChrome } from './cdp';
 import { binEnv } from './engines';
 import { TaskManager, type TaskManagerEmitter } from './TaskManager';
 import { withSelfHidden } from './computer-use';
@@ -2882,6 +2883,7 @@ if (!gotLock) {
     try { getWeComBridge().stop(); } catch { /* ignore */ } // 断开企信 WS 长连接
     mcp.dispose(); // 关掉所有 MCP 子进程
     void localMcpServer.stop(); // 关掉本机 MCP HTTP server(多机协作)
+    killAgentChrome(); // 关掉 agent 专属 Chrome(browser_* 工具的子进程,防孤儿 Chrome)
     stopCronScheduler(); // 停掉 cron 定时器,否则进程延迟退出
     for (const cwd of listWatchers()) stopWatcher(cwd); // 关闭所有文件监听器
     checkpointWal(); // 截断 WAL(cancelAll 已把收尾写入冲刷完)

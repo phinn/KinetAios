@@ -2015,6 +2015,7 @@ const feishuSendFile: Tool = {
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
 import { captureScreenshotWithHide, captureWindowByName, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, killAgentChrome } from './cdp';
 
 // P0-fix: 鼠标/键盘工具的审批门。此前这组工具完全绕过 confirm —— shell 执行要弹窗,
 // 往用户前台窗口注入键盘输入/任意坐标点击却不需要任何确认。现在:
@@ -2189,6 +2190,248 @@ const keyboardKeyTool: Tool = {
   },
 };
 
+// ── browser_* 工具组(方案 A:agent 专属 Chrome + CDP DOM 级操作)──
+// 与用户物理隔离:操作的是 agent 自己的 Chrome 实例(独立 profile),零鼠标零键盘零前台。
+// 网页自动化首选这一组;mouse_click/keyboard_type 只留给 native app。
+// Browser toolset (plan A): agent-owned Chrome instance + DOM-level CDP ops.
+// Physically isolated from the user — no mouse/keyboard/focus at all. Prefer these
+// for anything web; screen-coordinate tools are for native apps only.
+// 审批门:与鼠标/键盘同一 cuGate(都是"控制电脑"级操作,同会话批准一次放行)。
+async function browserGate(ctx: ToolCtx, action: string): Promise<string | null> {
+  return cuGate(ctx, `浏览器操作(${action})`);
+}
+
+const browserNavigateTool: Tool = {
+  name: 'browser_navigate',
+  description: '在 agent 专属 Chrome(独立于你的浏览器,不占屏幕不抢焦点)中打开一个 URL。网页自动化第一步。url 可不带 https:// 前缀。new_tab=true 时新开 tab,否则复用当前 tab。',
+  parameters: {
+    type: 'object',
+    properties: {
+      url: { type: 'string', description: '要打开的 URL' },
+      new_tab: { type: 'boolean', description: '是否新开 tab(默认 false 复用当前 tab)' },
+    },
+    required: ['url'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `打开 ${args.url}`);
+    if (gate) return gate;
+    try {
+      return await browserNavigate(String(args.url), Boolean(args.new_tab));
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserSnapshotTool: Tool = {
+  name: 'browser_snapshot',
+  description: '获取 agent Chrome 当前页面的结构化快照:URL、标题、全部可交互元素(a/button/input/select/textarea 等)及其稳定 selector。点击/输入前先 snapshot 看有什么元素、拿 selector。零屏幕截图,纯 DOM,快且省 token。只读工具。',
+  parameters: {
+    type: 'object',
+    properties: {
+      tab_id: { type: 'string', description: '可选,指定 tab(默认当前页)' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+  },
+  readOnly: true,
+  async run(args) {
+    try {
+      return await browserSnapshot(args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserClickTool: Tool = {
+  name: 'browser_click',
+  description: '点击 agent Chrome 页面里的元素。selector 来自 browser_snapshot 的输出(如 #submit-btn、a:nth-of-type(2))。点击走真实 mousedown/mouseup 序列,React/Vue 等框架正常响应。不碰你的鼠标。',
+  parameters: {
+    type: 'object',
+    properties: {
+      selector: { type: 'string', description: 'CSS selector(从 browser_snapshot 输出复制)' },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['selector'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `点击 ${args.selector}`);
+    if (gate) return gate;
+    try {
+      return await browserClick(String(args.selector), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserTypeTool: Tool = {
+  name: 'browser_type',
+  description: '向 agent Chrome 页面的输入框输入文本。用 native setter + input 事件(React/Vue 受控组件正常更新)。clear=true 先清空原内容(默认),submit=true 输入后点提交按钮。',
+  parameters: {
+    type: 'object',
+    properties: {
+      selector: { type: 'string', description: '输入框 CSS selector' },
+      text: { type: 'string', description: '要输入的文本' },
+      clear: { type: 'boolean', description: '是否先清空(默认 true)' },
+      submit: { type: 'boolean', description: '输入后是否点击提交(默认 false)' },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['selector', 'text'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `输入文本到 ${args.selector}`);
+    if (gate) return gate;
+    try {
+      const clearFirst = args.clear === undefined ? true : Boolean(args.clear);
+      return await browserType(String(args.selector), String(args.text), clearFirst, Boolean(args.submit), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserSelectTool: Tool = {
+  name: 'browser_select',
+  description: '选择 agent Chrome 页面里 <select> 下拉框的选项。value 可以是 option 的 value 或可见文本。选择后派发 change 事件,框架正常响应。',
+  parameters: {
+    type: 'object',
+    properties: {
+      selector: { type: 'string', description: '<select> 的 CSS selector' },
+      value: { type: 'string', description: 'option 的 value 或可见文本' },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['selector', 'value'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `选择 ${args.value}`);
+    if (gate) return gate;
+    try {
+      return await browserSelect(String(args.selector), String(args.value), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserEvalTool: Tool = {
+  name: 'browser_eval',
+  description: '在 agent Chrome 页面里执行任意 JavaScript 并返回结果(awaitPromise 支持 async 表达式)。用于读取页面数据(document.title、表格内容)、触发复杂交互、绕过没有 selector 的场景。只读工具(不落盘不联网的纯页面内执行)。',
+  parameters: {
+    type: 'object',
+    properties: {
+      expression: { type: 'string', description: '要执行的 JS 表达式' },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['expression'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, '执行页面 JS');
+    if (gate) return gate;
+    try {
+      return await browserEval(String(args.expression), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserScreenshotTool: Tool = {
+  name: 'browser_screenshot',
+  description: '截取 agent Chrome 当前页面视口为图片(内容级截图,不碰屏幕)。视觉确认页面状态、看图片/图表内容时用。返回 base64 PNG。',
+  parameters: {
+    type: 'object',
+    properties: {
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+  },
+  readOnly: true,
+  async run(args) {
+    try {
+      const r = await browserScreenshot(args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+      if (!r.ok || !r.base64) return `❌ ${r.error}`;
+      return `🌐 页面截图成功${r.note ? ` (${r.note})` : ''}\n__IMAGE_BASE64__:${r.base64}`;
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserTabsTool: Tool = {
+  name: 'browser_tabs',
+  description: '管理 agent Chrome 的 tab:list 列出全部 tab(带 tab_id/标题/URL),close 关闭指定 tab,activate 切换。多 tab 工作流(如对比两个页面)用 list 拿 tab_id 后传给其它 browser_* 工具。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'close', 'activate'], description: '操作类型' },
+      tab_id: { type: 'string', description: 'close/activate 时的目标 tab(从 list 输出复制)' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `tab ${args.action}`);
+    if (gate) return gate;
+    try {
+      return await browserTabs(args.action as 'list' | 'close' | 'activate', args.tab_id ? String(args.tab_id) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+// ── ax_script 工具(方案 C:macOS 辅助功能/AppleScript 元素级操作)──
+// 走 osascript 直接操作应用的 AX 元素(按按钮/选菜单/读窗口树),零坐标零前台 ——
+// System Events 的事件投给指定进程,用户焦点不动。app 场景在 browser_*(网页)之后、
+// 窗口坐标点击之前用:元素级比像素级稳得多。
+// macOS-only;Windows/Linux 返回明确不支持(Windows 的 UIA 是后续大件,不做半吊子)。
+const axScriptTool: Tool = {
+  name: 'ax_script',
+  description: '【仅 macOS】执行 AppleScript 操作指定应用的 UI 元素(零坐标、不抢焦点)。典型用法:点按钮 System Events → tell process "Safari" → click button "登录" of window 1;选菜单项 click menu item "导出…" of menu 1 of menu bar item "文件" of menu bar 1;读内容 get value of text field 1 of window 1。应用名用 process 名(如 "Safari"、"Finder"、"Notes")。元素路径不确定时先 tell process X → entire contents of window 1 探查(输出可能很大,慎用)。后台语义:直接投给目标进程,你的前台窗口焦点不动。',
+  parameters: {
+    type: 'object',
+    properties: {
+      script: { type: 'string', description: 'AppleScript 脚本(完整的 tell 块,如 `tell application "System Events" to tell process "Notes" to click button 1 of window 1`)' },
+      timeout: { type: 'number', description: '超时秒数(默认 15,最大 60)' },
+    },
+    required: ['script'],
+  },
+  async run(args, ctx) {
+    if (process.platform !== 'darwin') return '❌ ax_script 仅支持 macOS(Windows 版 UIA 元素级控制在规划中,当前请用 mouse_click/keyboard_type)';
+    const gate = await cuGate(ctx, 'AppleScript UI 元素操作');
+    if (gate) return gate;
+    const script = String(args.script ?? '').trim();
+    if (!script) return '❌ 空 script';
+    const timeoutSec = Math.min(60, Math.max(3, Number(args.timeout) || 15));
+    try {
+      const { stdout, stderr } = await new Promise<{ stdout: string; stderr: string }>((resolve, reject) => {
+        // execFile 不走 shell,脚本经 stdin 传(osascript -),规避引号转义地狱
+        const { execFile } = require('node:child_process') as typeof import('node:child_process');
+        const p = execFile('osascript', ['-'], { timeout: timeoutSec * 1000, maxBuffer: 4 * 1024 * 1024 }, (err, so, se) => {
+          if (err && !so) reject(err); else resolve({ stdout: String(so ?? ''), stderr: String(se ?? '') });
+        });
+        p.stdin!.end(script);
+      });
+      const out = stdout.trim();
+      const errOut = stderr.trim();
+      if (errOut && /execution error/i.test(errOut)) return `❌ AppleScript 错误: ${errOut}`;
+      // 常见权限问题给行动指引(辅助功能未授权时 System Events 全部 -25211/-1719)
+      if (errOut && /not allowed assistive|assistive access|-25211|-1719/i.test(errOut)) {
+        return `❌ 辅助功能权限不足: ${errOut}\n→ 系统设置 → 隐私与安全性 → 辅助功能 → 勾选 KinetAios(或其终端宿主)`;
+      }
+      return out ? `✅ ${out}` : '✅ 执行成功(无返回值)';
+    } catch (e) {
+      const err = e as { message?: string; killed?: boolean };
+      if (err.killed) return `❌ 超时(${timeoutSec}s),已终止`;
+      return `❌ ${err.message ?? String(e)}`;
+    }
+  },
+};
+
 // ── 任务清单卡(DSH 式 todo_write)──
 // 3+ 步任务先建清单、完成一项更新一项;整表替换语义(每次传全量,不是增量)。
 // 只影响会话 UI 状态,不碰文件系统 → readOnly: true(可并发批执行;沙箱只读也放行)。
@@ -2271,7 +2514,7 @@ const loadSkillTool: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, todoWrite, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserTabsTool, axScriptTool, todoWrite, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
