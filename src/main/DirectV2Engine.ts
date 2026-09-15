@@ -107,6 +107,19 @@ Plan 格式:
 如果任务太简单不需要分步(比如单文件修改、快速查询),直接输出答案,不要输出 \`<plan>\`。
 引擎会检测到没有 plan 并自动退化为普通模式。`;
 
+// 自动加载 Skills:目录文本(autoLoadSkills 开关控制;executor 可见,planner 剥除)。
+// Skill catalog for auto-load mode (executor sees it; planner strips it — readOnlyTools
+// has no load_skill, so the catalog would instruct it to call a nonexistent tool).
+function skillCatalogSection(): string {
+  const { getSettings } = require('./settings') as typeof import('./settings');
+  if (!getSettings().autoLoadSkills) return '';
+  const { skillCatalogText } = require('./skills') as typeof import('./skills');
+  const catalog = skillCatalogText();
+  return catalog
+    ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
+    : '';
+}
+
 // Per-step executor prompt —— 告诉模型当前执行 plan 的哪个步骤。
 const STEP_EXECUTOR_PROMPT = (step: PlanStep, allSteps: PlanStep[], planGoal: string) => `你现在处于 v2 引擎的**执行阶段**,正在执行以下 plan 步骤。
 
@@ -233,18 +246,8 @@ export class DirectV2Engine implements Engine {
       : '';
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
     // 自动加载 Skills:目录进 system(执行阶段可见;executor 走 runAgentLoop 全工具集,可直接调 load_skill)。
-function skillCatalogSection(): string {
-      // autoLoadSkills 关 → 不注入目录,模型无感(仅手动 /name)。
-      const { getSettings } = require('./settings') as typeof import('./settings');
-      if (!getSettings().autoLoadSkills) return '';
-      const { skillCatalogText } = require('./skills') as typeof import('./skills');
-      const catalog = skillCatalogText();
-      return catalog
-        ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
-        : '';
-    }
-    const rulesSection = loadProjectRules(conv.cwd);
-    // 技能目录只拼进 executor 用的 systemPrompt。planner(run() 开头的规划轮,replan 同理)
+    const skillCatalog = skillCatalogSection();
+    const rulesSection = loadProjectRules(conv.cwd);    // 技能目录只拼进 executor 用的 systemPrompt。planner(run() 开头的规划轮,replan 同理)
     // 用的是 systemPrompt + PLANNER_PROMPT,但其工具集是 readOnlyTools()(不含 load_skill)
     // —— 目录里"必须先调用 load_skill"会让 planner 去调一个不存在的工具,得到
     // "未知工具"报错浪费一轮(2026-09-14 排查)。规划阶段本来也不该加载技能正文,
@@ -258,7 +261,7 @@ function skillCatalogSection(): string {
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +
-      skillSection + skillCatalogSection() +
+      skillSection + skillCatalog +
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +
@@ -311,7 +314,7 @@ function skillCatalogSection(): string {
       tools: plannerTools,
       // plannerSystem = 去掉技能目录的 systemPrompt:目录教模型调 load_skill,
       // 但 planner 工具集只有只读集 —— 承诺不存在的工具会吃"未知工具"报错。
-      systemPrompt: systemPrompt.replace(skillCatalogSection(), '') + '\n\n' + PLANNER_PROMPT,
+      systemPrompt: systemPrompt.replace(skillCatalog, '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
       userInput,
@@ -631,8 +634,10 @@ ${failedDetail || '  (无)'}
     const plannerMessages = await runAgentLoop({
       provider,
       tools: readOnlyTools(), // P0-fix: replan 规划同样只读,不带 MCP 工具(同 run() 的 planner)
-      // 同 run() 的 planner:去掉技能目录(工具集无 load_skill,目录会教它调不存在的工具)
-      systemPrompt: systemPrompt.replace(skillCatalogSection(), '') + '\n\n' + PLANNER_PROMPT,
+      // 同 run() 的 planner:去掉技能目录(工具集无 load_skill,目录会教它调不存在的工具)。
+      // replan 收到的 systemPrompt 是 run() 传的完整版(含目录),按前缀剥:目录段落固定
+      // 以 "\n\n# 可用 Skills(按需加载)" 起、下一个 "\n\n#" 段落止,正则剥除。
+      systemPrompt: systemPrompt.replace(/\n\n# 可用 Skills\(按需加载\)[\s\S]*?(?=\n\n# |$)/, '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
       snapshot: snap,
       userInput: replanInput,
