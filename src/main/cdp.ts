@@ -189,10 +189,16 @@ class CdpSession {
     // 没有监听器就是 uncaught exception,直接崩掉 Electron main 进程。
     // Must attach an 'error' listener: an unexpectedly closed tab/navigation makes the
     // socket emit 'error'; without a handler that's an uncaught exception in main.
-    ws.on('error', () => {
-      for (const [, p] of this.pending) p.reject(new Error('CDP 连接已断开(tab 已关闭或导航中)'));
+    // ⚠️ 实测(ws 回归脚本):tab 被关闭时 ws 库只 emit 'close'(code=1006),不 emit 'error'
+    // —— 只挂 error 的话 pending 全部永久悬挂,工具调用永不返回。close 必须同样清 pending。
+    // Real-world probe: closing the tab emits only 'close' (1006), never 'error' —
+    // without the close handler every pending call hangs forever.
+    const flushPending = (why: string) => {
+      for (const [, p] of this.pending) p.reject(new Error(`CDP 连接已断开(${why})`));
       this.pending.clear();
-    });
+    };
+    ws.on('error', () => flushPending('socket error'));
+    ws.on('close', (code) => flushPending(`tab 已关闭或导航中, code=${code}`));
     ws.on('message', (raw: WebSocket.RawData) => {
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return; }
