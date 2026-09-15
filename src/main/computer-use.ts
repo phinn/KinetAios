@@ -131,6 +131,9 @@ export async function captureWindowByName(
     if (size.height < (opts?.minHeight ?? 0)) return { ok: false, error: `窗口「${src.name}」内容过小(${size.width}×${size.height}),可能未渲染完成` };
     // 坐标换算:解析窗口在屏幕上的位置(动作空间)。失败 → 原点按 0,0 兜底并明确提示,
     // 让模型改用全屏截图定位后再点击(此前没有任何换算,窗口截图+点击必然错位)。
+    // ⚠️ mac 上 resolveWindowBounds 走 CGWindowList:无「屏幕录制」权限时窗口名/位置
+    // 全拿不到(桌面Capturer 拍得到缩略图但拿不到标题,同样会被 title 过滤卡住)。
+    // 失败时给出权限指引,别让模型在"截图成功但定位失败"里打转。
     const bounds = await resolveWindowBounds(nameSubstr);
     // 方案B:同时解析窗口宿主(hwnd/pid),后续后台动作直投该窗口 —— 不再整屏
     // hit-test,agent 操作后台窗口时与用户前台操作物理互不干扰。
@@ -161,7 +164,7 @@ export async function captureWindowByName(
       height: size.height,
       note: bounds
         ? `坐标系:窗口「${src.name}」局部像素(已自动换算到屏幕坐标,原点 ${bounds.x},${bounds.y})`
-        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算。请改用全屏 screenshot 截图后再用其坐标点击。`,
+        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算,也不会绑定后台投递。若反复出现,检查系统设置 → 隐私与安全性 → 屏幕录制 是否已授权 KinetAios。可改用全屏 screenshot 截图后再用其坐标点击。`,
     };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -277,12 +280,21 @@ out;
 
 // 当前绑定的窗口宿主(最近一次窗口截图解析出来的,TTL 内有效)。
 // The bound window host from the most recent window-scoped capture (TTL-guarded).
-function boundWindowHost(): { hwnd?: number; pid?: number } | null {
+function boundWindowHost(opts?: { ignoreIfOlderThan?: number }): { hwnd?: number; pid?: number } | null {
   if (!lastCapture || lastCapture.kind !== 'window') return null;
   if (Date.now() - lastCapture.at > CAPTURE_GEOMETRY_TTL_MS) return null;
   if (!lastCapture.hwnd && !lastCapture.pid) return null;
+  // 键盘场景:锁定宿主(最后一次点击)比截图绑定更新 → 说明模型已经点过目标、
+  // 正对"点击锁定"的窗口打字,旧的截图绑定不该劫持键入目标。
+  // Keyboard case: if the click-locked host is NEWER than the capture binding, the
+  // model has already clicked a target and is typing into it — don't hijack with the
+  // stale capture binding.
+  if (opts?.ignoreIfOlderThan && lastCapture.at < opts.ignoreIfOlderThan) return null;
   return { hwnd: lastCapture.hwnd, pid: lastCapture.pid };
 }
+
+// mac 键盘锁定时间(bgTypeMac/bgKeyMac 判定绑定 vs 点击谁更新用)
+// (实际声明在 bgLastClickHwnd 旁,统一放模块级变量区)
 
 async function captureScreenInner(): Promise<ScreenshotResult> {
   try {
@@ -717,6 +729,7 @@ export async function keyboardKey(key: string): Promise<{ ok: boolean; error?: s
 // 有效,如 Chrome Cmd+T/L/V);正文逐字符合成事件会被丢弃 → 走剪贴板粘贴(bgTypeMac)。
 
 let bgLastClickHwnd: number | null = null; // 后台键盘宿主:最后一次后台点击命中的窗口 / keyboard target from last bg click
+let bgLockAt: number = 0; // 锁定时间戳(点击 vs 截图绑定谁更新) / when the click-lock happened
 let bgLastClickPid: number | null = null;  // macOS 侧同语义:最后一次后台点击命中的进程 / same on macOS (pid)
 
 // 开关读取:settings.computerUseBackground(动态 require 避免循环依赖)。
@@ -801,6 +814,7 @@ if (!pid) { 'ERR nopoint' } else {
     const m = /OK (\d+)/.exec(out);
     if (out.includes('ERR nopoint') || !m) return { ok: false, error: '坐标处未命中窗口' };
     bgLastClickPid = Number(m[1]);
+    bgLockAt = Date.now();
     return { ok: true };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -839,7 +853,7 @@ if (!pid) { 'ERR nopoint' } else {
 // 天花板 = NSPasteboard 多类型快照回写,升级路径明确。
 async function bgTypeMac(text: string): Promise<{ ok: boolean; error?: string }> {
   // 方案B:窗口截图绑定的 pid 优先(没点过也能直接对绑定进程粘贴),其次点击锁定
-  const targetPid = boundWindowHost()?.pid ?? bgLastClickPid;
+  const targetPid = boundWindowHost({ ignoreIfOlderThan: bgLockAt })?.pid ?? bgLastClickPid;
   if (!targetPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 screenshot_window 截取目标窗口,或 mouse_click 一次' };
   try {
     // 1) 保存原剪贴板(仅文本可恢复;图片等非文本读出为空 → 不恢复,见上方 ponytail)
@@ -899,7 +913,7 @@ Object.assign(BG_MAC_VK, {
 });
 
 async function bgKeyMac(key: string): Promise<{ ok: boolean; error?: string }> {
-  const targetPid = boundWindowHost()?.pid ?? bgLastClickPid; // 方案B:绑定 pid 优先
+  const targetPid = boundWindowHost({ ignoreIfOlderThan: bgLockAt })?.pid ?? bgLastClickPid; // 方案B:绑定 pid 优先(点击锁定更新时不劫持)
   if (!targetPid) return { ok: false, error: '后台键盘尚未锁定目标窗口:先 screenshot_window 截取目标窗口,或 mouse_click 一次' };
   const parts = key.split('+').map((p) => p.trim().toLowerCase()).filter(Boolean);
   const mods = parts.filter((p) => ['ctrl', 'control', 'shift', 'alt', 'cmd', 'command', 'meta'].includes(p));
@@ -1011,6 +1025,7 @@ Write-Output "OK $([long]$h)"
     if (out.includes('ERR dead')) return { ok: false, error: '绑定的窗口已关闭,请重新 screenshot_window 截取' };
     const hwnd = Number(m[1]);
     bgLastClickHwnd = hwnd;
+    bgLockAt = Date.now();
     return { ok: true, hwnd };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -1058,8 +1073,9 @@ Write-Output "OK $([long]$h)"
 // 后台键盘宿主解析:键盘消息投给 lastClickHwnd;IsWindow 过滤已销毁句柄。
 // 失败(从未点过/窗口已关)返回 null → 调用方回落前台方式并提示。
 function bgKeyboardHwnd(): number | null {
-  // 方案B:窗口截图绑定优先(没点过也能直接对绑定窗口打字),其次最后一次点击命中的窗口
-  const bound = boundWindowHost();
+  // 方案B:窗口截图绑定优先(没点过也能直接对绑定窗口打字),其次最后一次点击命中的窗口。
+  // 点击锁定比截图绑定更新时 → 模型已点过目标,别用旧截图劫持键入目标。
+  const bound = boundWindowHost({ ignoreIfOlderThan: bgLockAt });
   if (bound?.hwnd) return bound.hwnd;
   return bgLastClickHwnd;
 }

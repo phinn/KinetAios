@@ -185,6 +185,14 @@ class CdpSession {
 
   private constructor(ws: WebSocket) {
     this.ws = ws;
+    // P0-fix: 必须挂 error handler —— 目标 tab 意外关闭/导航跳转时 socket 会 emit error,
+    // 没有监听器就是 uncaught exception,直接崩掉 Electron main 进程。
+    // Must attach an 'error' listener: an unexpectedly closed tab/navigation makes the
+    // socket emit 'error'; without a handler that's an uncaught exception in main.
+    ws.on('error', () => {
+      for (const [, p] of this.pending) p.reject(new Error('CDP 连接已断开(tab 已关闭或导航中)'));
+      this.pending.clear();
+    });
     ws.on('message', (raw: WebSocket.RawData) => {
       let msg: any;
       try { msg = JSON.parse(String(raw)); } catch { return; }
@@ -280,8 +288,13 @@ function scrollIntoViewExpr(selector: string): string {
   return `(function(){ const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.scrollIntoView({ block: 'center', behavior: 'instant' }); })()`;
 }
 
-// 合成点击:真实 mousedown/mouseup 事件序列(比 el.click() 兼容性好 —— React/Vue 的
+// 合成点击:mouseMoved 预移动 + 真实 mousedown/mouseup(比 el.click() 兼容性好 —— React/Vue 的
 // 合成事件系统、关闭的 shadow DOM 宿主都能收到)。坐标取元素中心。
+// mouseMoved 必须发:部分框架组件(自定义 dropdown/hover 菜单)只在收到过 pointer 移动后
+// 才响应 press —— 知乎发布实录同款坑(CDP 多步 mouseMoved 轨迹才点中)。
+// Synthetic click: mouseMoved warm-up + real mousedown/mouseup (better compat than
+// el.click() for React/Vue synthetic events and closed shadow roots). The move is
+// required: hover-aware components ignore presses without a preceding pointer move.
 async function realClick(s: CdpSession, selector: string): Promise<void> {
   await waitForSelector(s, selector, 10000, true);
   await s.send('Runtime.evaluate', { expression: scrollIntoViewExpr(selector) });
@@ -290,6 +303,8 @@ async function realClick(s: CdpSession, selector: string): Promise<void> {
     (function(){ const el = document.querySelector(${JSON.stringify(selector)}); if (!el) throw new Error('gone');
       const r = el.getBoundingClientRect(); return { x: r.x + r.width / 2, y: r.y + r.height / 2 }; })()`);
   const common = { x, y, pointerType: 'mouse' as const };
+  // 预移动:hover 状态就位(两步,模拟真实轨迹起点→目标)
+  await s.send('Input.dispatchMouseEvent', { type: 'mouseMoved', ...common, button: 'none', clickCount: 0 });
   await s.send('Input.dispatchMouseEvent', { type: 'mousePressed', ...common, button: 'left', clickCount: 1 });
   await s.send('Input.dispatchMouseEvent', { type: 'mouseReleased', ...common, button: 'left', clickCount: 1 });
 }
@@ -403,14 +418,18 @@ export async function browserType(selector: string, text: string, clearFirst: bo
     await waitForSelector(s, selector, 10000, true);
     // native setter + input 事件:React/Vue 受控组件只认 native setter 赋值
     // (知乎发布实录踩坑:直接 el.value = x 不触发框架状态更新)。
+    // clear=false = 追加语义:先读原值拼接,再整体 setter 赋值 —— 直接对 el.value
+    // += 不会走 setter,同样不触发框架更新。
+    // clear=false = append semantics: read existing value, concat, then set via the
+    // native setter once — `el.value += x` bypasses the setter and React misses it.
     await evalInPage(s, `
-      (function() {
+      (async function() {
         const el = document.querySelector(${JSON.stringify(selector)});
         if (!el) throw new Error('元素不存在: ${selector.replace(/'/g, "\\'")}');
-        ${clearFirst ? 'el.select && el.select();' : ''}
         const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
         const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-        setter.call(el, ${JSON.stringify(text)});
+        ${clearFirst ? 'el.select && el.select();' : 'var _prev = el.value;'}
+        setter.call(el, ${clearFirst ? '' : '(_prev ?? "") + '} ${JSON.stringify(text)});
         el.dispatchEvent(new Event('input', { bubbles: true }));
         el.dispatchEvent(new Event('change', { bubbles: true }));
       })()`);

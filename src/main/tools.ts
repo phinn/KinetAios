@@ -2418,11 +2418,14 @@ const axScriptTool: Tool = {
       });
       const out = stdout.trim();
       const errOut = stderr.trim();
-      if (errOut && /execution error/i.test(errOut)) return `❌ AppleScript 错误: ${errOut}`;
-      // 常见权限问题给行动指引(辅助功能未授权时 System Events 全部 -25211/-1719)
+      // 权限问题优先判定:osascript 把 -25211/-1719 包在 execution error 文本里,
+      // 若先走通用错误分支权限指引永远到不了用户面前(顺序即正确性)。
+      // Permission hints must be checked FIRST — osascript wraps -25211/-1719 inside
+      // "execution error" text, so the generic branch would swallow the guidance.
       if (errOut && /not allowed assistive|assistive access|-25211|-1719/i.test(errOut)) {
         return `❌ 辅助功能权限不足: ${errOut}\n→ 系统设置 → 隐私与安全性 → 辅助功能 → 勾选 KinetAios(或其终端宿主)`;
       }
+      if (errOut && /execution error/i.test(errOut)) return `❌ AppleScript 错误: ${errOut}`;
       return out ? `✅ ${out}` : '✅ 执行成功(无返回值)';
     } catch (e) {
       const err = e as { message?: string; killed?: boolean };
