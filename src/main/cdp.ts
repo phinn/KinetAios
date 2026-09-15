@@ -226,6 +226,14 @@ class CdpSession {
   }
 
   send(method: string, params: Record<string, unknown> = {}): Promise<any> {
+    // 守卫:socket 已死(CLOSED=3/CLOSING=2)时 send() 被 ws 库静默丢弃 —— 不抛错、
+    // 不触发 error/close,请求会白等 15s 超时再报误导性的"CDP 超时"。
+    // (前提已实测:close 后 readyState=3,send 无 callback 静默丢弃。)
+    // Guard: send() on a dead socket is silently discarded by the ws lib — the call
+    // would hang until the 15s timeout with a misleading "timed out" error.
+    if (this.ws.readyState !== WebSocket.OPEN) {
+      return Promise.reject(new Error('CDP 连接已断开(tab 已关闭或导航中)'));
+    }
     const id = this.nextId++;
     return new Promise((resolve, reject) => {
       const t = setTimeout(() => {
