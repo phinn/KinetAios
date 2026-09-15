@@ -1,8 +1,8 @@
 # Release Notes
 
-## v3.6.5 — Token 输入/输出拆分全链路 + 明细浮层 + Skills 自动加载
+## v3.6.5 — Token 输入/输出拆分全链路 + 明细浮层 + Skills 自动加载 + 技能可见性修复
 
-**发布日期：** 2026-09-14(自 v3.6.4 起 6 commits)
+**发布日期：** 2026-09-14(自 v3.6.4 起 12 commits)
 
 ### 📊 Token 记账
 
@@ -15,6 +15,10 @@
 ### 🧩 Skills 自动加载
 
 - **根据任务自动加载 Skills(开关控制,默认关)** —— 开启后把已装 Skill 的 name+description 轻量目录(~2400 字符上限)注入 V1/V2/V3 system prompt,模型判断任务匹配时调用新增的 load_skill 工具按需拉正文;关闭则仅手动 /name 生效。显式 /name 优先级不变;claude/codex CLI 引擎不涉及
+- **新建技能免重启** —— 双层永不过期缓存改失效机制:main 端根目录 mtime 哨兵(mtime 变才重扫,比 fs.watch 可靠),renderer 端 30s TTL。agent 或用户创建技能后,下一次 slash 菜单/自动加载立即可见
+- **技能可见性修复(模型"不知道技能存在")** —— 旧目录格式 `- name — desc80` 在 2400 字符预算下只装 28/98 个技能,字母序填充使尾部技能(skill-creator 排 88)永不可见,模型自然不去加载。新格式:纯 name 全量列表 100% 可见(90 个 ~1400 字符)+ 剩余预算补前 N 个 desc40
+- **v2 planner 矛盾修复** —— planner 的 systemPrompt 含技能目录(「必须调用 load_skill」)但工具集是只读集(无 load_skill),照做即得「未知工具」报错。现 planner/replan 两处均剥除目录段落;技能加载归位到执行阶段(executor 有全工具集)
+- **load_skill 未命中报错改全量列出** —— 原"前 40 个"截断诱发二次猜错循环;名字短,全量 ~1300 字符
 
 ### 🧹 其他
 
