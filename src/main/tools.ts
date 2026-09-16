@@ -1179,7 +1179,10 @@ const grep: Tool = {
       if (hits.length >= 200) break;
     }
     if (!hits.length) return `无匹配「${pattern}」`;
-    return `命中 ${hits.length} 条:\n${hits.join('\n')}`;
+    const out = `命中 ${hits.length} 条:\n${hits.join('\n')}`;
+    // 隐私闸:grep 结果含匹配行原文,可能带出 .env/密钥文件内容,出网前过闸。
+    const blocked = await privacyGate(out);
+    return blocked ?? out;
   },
 };
 
@@ -1426,7 +1429,10 @@ const gitDiff: Tool = {  name: 'git_diff',
       });
       const out = (stdout || '') + (stderr || '');
       if (!out.trim()) return '(无改动)';
-      return out.length > 20000 ? out.slice(0, 20000) + '\n…[diff 过长,已截断;缩小范围(传 file)看完整]' : out;
+      const text = out.length > 20000 ? out.slice(0, 20000) + '\n…[diff 过长,已截断;缩小范围(传 file)看完整]' : out;
+      // 隐私闸:diff 里常见贴进来的密钥/凭据改动(如误提交的 .env),出网前过闸。
+      const blocked = await privacyGate(text);
+      return blocked ?? text;
     } catch (e) {
       const err = e as NodeJS.ErrnoException & { code?: number | string; stdout?: string; stderr?: string };
       const out = (err.stdout || '') + (err.stderr || '');
