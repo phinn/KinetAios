@@ -30,6 +30,7 @@ import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLa
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
 import { getSettings, saveSettings, snapshot, balanceSnapshot } from './settings';
+import { setPrivacyConfirm } from './privacy-gate';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
 import { listSkills } from './skills';
@@ -130,6 +131,9 @@ let quitting = false;
 
 // MARK: shell-confirm bridge (main asks the dashboard window; user answers in a modal)
 const pendingConfirms = new Map<string, (approved: boolean) => void>();
+// 隐私闸独立 pending 表:值带 timer(超时 auto-deny 用)+ resolver。
+const pendingPrivacyConfirms = new Map<string, { fn: (approved: boolean) => void; timer: NodeJS.Timeout }>();
+let privacySeq = 0;
 let confirmSeq = 0;
 
 // confirm 超时(5 分钟):防止 dashboard 窗口关闭/刷新后 confirm Promise 永久挂起,
@@ -151,6 +155,28 @@ function isReadOnlyCommand(cmd: string): boolean {
   // 按 shell 逻辑分隔符拆开,要求每一段都命中白名单(防 "ls && del x" 绕过)
   const parts = s.split(/&&|\|\||&|\||;|\n/).map((p) => p.trim()).filter(Boolean);
   return parts.length > 0 && parts.every((p) => READONLY_CMD_RE.test(p));
+}
+
+// ── 隐私闸 confirm 实现(main.ts 注入 privacy-gate,避免循环 import)──
+// 独立弹窗通道:privacy-request 事件 + privacy-confirm-response 回执,不走 shell confirm 的
+// 「不再询问」/approval 短路。5 分钟无响应 auto-deny。窗不在 → 直接 deny(内容不出网,安全侧)。
+function privacyConfirm(msg: string): Promise<boolean> {
+  const win = dashboardWin;
+  if (!win || win.isDestroyed()) return Promise.resolve(false);
+  const id = `pg${process.pid}_${privacySeq++}`;
+  win.webContents.send('privacy-request', { id, msg });
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => {
+      if (pendingPrivacyConfirms.has(id)) {
+        pendingPrivacyConfirms.delete(id);
+        resolve(false);
+      }
+    }, CONFIRM_TIMEOUT_MS);
+    pendingPrivacyConfirms.set(id, {
+      fn: (approved) => resolve(approved),
+      timer,
+    });
+  });
 }
 
 function confirm(cmd: string): Promise<boolean> {
@@ -1439,6 +1465,19 @@ function registerIpc(): void {
     }
   });
 
+  // ── 隐私闸独立确认桥(不复用 shell confirm 通道)──
+  // 独立事件名(pgp-request/privacy-confirm-response)+ 独立 pending 表:
+  // 不受「本会话不再询问」和 approval=never/fullAccess 短路影响 —— 用户显式开闸,
+  // 每次外发命中都必须人点头。5 分钟无响应 auto-deny(goal 无人值守不挂死)。
+  ipcMain.on('privacy-confirm-response', (_e, { id, approved }: { id: string; approved: boolean }) => {
+    const resolve = pendingPrivacyConfirms.get(id);
+    if (resolve) {
+      clearTimeout(resolve.timer);
+      resolve.fn(approved);
+      pendingPrivacyConfirms.delete(id);
+    }
+  });
+
   ipcMain.handle('quick-submit', async (_e, text: string) => {
     const conv = taskManager.newConversation(os.homedir());
     taskManager.send(conv.id, text);
@@ -2654,6 +2693,8 @@ if (!gotLock) {
   }
 
   app.whenReady().then(() => {
+    // ── 隐私闸 confirm 桥注入(dashboardWin 就绪后;函数内每请求重取窗,重建窗不失效)──
+    setPrivacyConfirm(privacyConfirm);
     // ── 版本更新检查:IPC + 启动静默检查(发现新版本推 'update-available')──
     registerUpdateIpc(() => dashboardWin);
     // ── 内存哨兵:周期采样所有进程内存,增量写 userData/mem-watch.log ──

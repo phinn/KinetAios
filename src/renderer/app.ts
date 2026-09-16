@@ -426,6 +426,11 @@ function applyI18nDOM(): void {
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd, (req as { rulesNote?: string }).rulesNote));
+  // 隐私闸弹窗:独立通道,用 showConfirmDialog(无「不再询问」checkbox),拒绝/超时都回 deny
+  api.onPrivacyRequest(async (req) => {
+    const approved = await showConfirmDialog(tr('settings.privacy.title'), req.msg, { okLabel: tr('privacy.allow') });
+    api.confirmResponse2(req.id, approved);
+  });
 
   // Agent Team 实时事件:member 状态/token/工具/完成
   api.onTeamEvent((teamId, ev) => {

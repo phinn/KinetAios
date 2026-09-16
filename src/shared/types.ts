@@ -986,8 +986,12 @@ export interface KinetAPI {
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string; rulesNote?: string }) => void): void;
+  // 隐私闸独立弹窗:与 shell confirm 分离,不受「不再询问」/approval 短路影响。
+  onPrivacyRequest(cb: (req: { id: string; msg: string }) => void): void;
   onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;
   confirmResponse(id: string, approved: boolean): void;
+  // 隐私闸独立回执通道(privacy-confirm-response)
+  confirmResponse2(id: string, approved: boolean): void;
 
   // ── 实时语音助手(豆包实时语音大模型)──
   /** 启动语音会话(连接 WebSocket) */

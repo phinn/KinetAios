@@ -195,6 +195,10 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('confirm-request');
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));
   },
+  onPrivacyRequest: (cb) => {
+    ipcRenderer.removeAllListeners('privacy-request');
+    ipcRenderer.on('privacy-request', (_e: IpcRendererEvent, req) => cb(req));
+  },
   onRemoteAgentEvent: (cb) => {
     ipcRenderer.removeAllListeners('remote-agent-event');
     ipcRenderer.on('remote-agent-event', (_e: IpcRendererEvent, ev) => cb(ev));
@@ -204,6 +208,8 @@ const api: KinetAPI = {
     ipcRenderer.on('voice-chat-event', (_e: IpcRendererEvent, ev) => cb(ev));
   },
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),
+  // 隐私闸回执走独立通道(独立 pending 表,不受 confirm 链的 sessionApproved 旁路影响)
+  confirmResponse2: (id, approved) => ipcRenderer.send('privacy-confirm-response', { id, approved }),
 
   // ── AgentTeams ──
   listTeams: (convId: string) => ipcRenderer.invoke('team-list', convId),

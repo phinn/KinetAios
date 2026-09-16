@@ -307,7 +307,7 @@ const shell: Tool = {
     const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal));
     const trimmed = out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
     // 隐私闸:shell 输出同样会进对话 → 出网。开启时检测命中走 confirm(拒绝则不出网)。
-    const blocked = await privacyGate(trimmed, undefined, ctx.confirm);
+    const blocked = await privacyGate(trimmed);
     if (blocked) return blocked;
     return trimmed;
   },
@@ -540,13 +540,17 @@ const readFile: Tool = {
         const suffix = rangeEnd < totalLines
           ? `\n\n[行 ${startLine}-${rangeEnd}/${totalLines},还有 ${totalLines - rangeEnd} 行未读。用 start_line=${rangeEnd + 1} 继续读]`
           : `\n\n[行 ${startLine}-${rangeEnd}/${totalLines},文件读完]`;
-        return numbered + suffix;
+        const out = numbered + suffix;
+        // 隐私闸:行范围读取同样出网,必须过闸(否则 start_line=1 读 .env 直接绕过)。
+        const blocked = await privacyGate(out, p);
+        if (blocked) return blocked;
+        return out;
       }
 
       // 无行范围 → 全文(上限 50000 字符,之前 20000 太小,常导致文件读不全)。
       if (body.length <= 50000) {
         // 隐私闸:开启时检测文件内容是否含敏感信息,命中走 confirm 弹窗(拒绝则不出网)。
-        const blocked = await privacyGate(body, p, ctx.confirm);
+        const blocked = await privacyGate(body, p);
         if (blocked) return blocked;
         return body;
       }
@@ -555,7 +559,7 @@ const readFile: Tool = {
       const truncated = body.slice(0, 50000);
       const linesInTruncated = truncated.split('\n').length;
       const t = truncated + `\n\n…[文件共 ${totalLines} 行,已显示前 ${linesInTruncated} 行(50000 字符上限)。用 start_line=${linesInTruncated + 1} 继续读后续内容]`;
-      const blockedT = await privacyGate(t, p, ctx.confirm);
+      const blockedT = await privacyGate(t, p);
       if (blockedT) return blockedT;
       return t;
     } catch {
