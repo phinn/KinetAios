@@ -1,5 +1,36 @@
 # Release Notes
 
+## v3.7.0 — 人机共用电脑(Computer Use) + 记忆纠错闭环 + 隐私闸
+
+**发布日期：** 2026-09-16(自 v3.6.6 起 11 commits)
+
+### 🖥 人机共用电脑(Computer Use 完整链路)
+
+- **browser_\* 全家桶(CDP)** —— agent 专属 Chrome 实例,DOM 级操作:navigate/snapshot/click/type/select/eval/screenshot/tabs;不碰用户屏幕不抢焦点(0e15641 前身 a3182ac)
+- **ax_script** —— macOS 原生 app 的 AppleScript 元素级操作,零坐标不抢焦点
+- **窗口绑定投递** —— 后台模式下点击/键盘自动绑定到目标窗口(hwnd/pid 直投),坐标基于窗口截图,不会命中用户正在用的前台窗口
+- **自查修复 6 处**(2 P0 + 3 P1 + 1 P2)—— 截图坐标必须过 CGWindowList bounds 换算(截图像素≠窗口 pt);禁止向用户窗口发模拟点击
+
+### 🧠 记忆纠错闭环
+
+- **记忆分型** —— 长期记忆/会话锚点/铁律分层,违反过的规则常驻注入
+- **动作闸 + strike 热区** —— 执行相关动作前核对铁律;反复违规自动收窄权限(eccacf0)
+
+### 🔒 隐私闸
+
+- **数据出网敏感检测**(开关默认关)—— 内容出网前检测敏感信息;自查修复独立弹窗通道 + 行范围读取补闸 + 补盖 grep/git_diff 两个内容出口(0e15641/a1910c9/134b07f)
+
+### 🔧 CDP 稳定性
+
+- **CdpSession 补 close handler** —— tab 关闭只 emit close 不 emit error(544bb22)
+- **死 socket 守卫** —— 关闭后新请求静默丢弃,不再白等 15s 超时(168c666)
+
+### 📦 其他
+
+- README 加英文 Features 章节(8 块 SEO:Multi-engine/MCP/Skills/Token accounting/Overnight goal/Computer Use)(df54922)
+- repo topics 扩至 20 个(mcp/model-context-protocol/agent-dashboard/ollama 等),description 塞 MCP/skills/memory 关键词
+- mac.html CTA 加 UTM attribution;Gumroad 死链改 mac.html#buy
+
 ## v3.6.6 — 企业微信审批数据接入 + 替身画像手动编写
 
 **发布日期：** 2026-09-15(自 v3.6.5 起 2 个功能 commit)
