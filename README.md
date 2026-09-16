@@ -9,6 +9,24 @@
 
 <img src="https://phinn.github.io/KinetAppPortal/assets/demo-arena.gif" alt="KinetAios demo: install → Ollama free tier → first answer → switch engine, all in 30 seconds" width="800">
 
+## Features
+
+**Multi-engine agent runtime** — run multiple AI agent sessions concurrently in one dashboard: built-in **Direct** (ReAct loop with native tools), **Claude Code** (`claude -p` stream-json), **Codex** (`codex exec`), and PEVJ (Plan-Execute-Verify-Judge). Switch engines per conversation; same SQLite history across all.
+
+**MCP support** — connect MCP servers (stdio + remote SSE) and their tools are exposed to the agent automatically, alongside 30+ built-in tools: shell (with per-session approval), file read/write/edit, web search/fetch, long-term memory, git diff, computer use (screenshot / click / keyboard on macOS), and more.
+
+**Skills auto-loading** — scans `~/.claude/skills`, `~/.codex/skills`, `~/.kinetaios/skills` and injects a lightweight catalog into the system prompt; the agent pulls full skill bodies on demand via `load_skill` when a task matches. Create a skill mid-session and it's visible immediately.
+
+**Token accounting & cost archaeology** — input/output tokens split across every LLM call (including sub-agents, compaction, judge, teams); per-call drill-down overlay, per-channel totals, cost persisted in SQLite for archaeology.
+
+**Long-term memory** — automatic fact extraction per turn, importance-tiered decay (critical memories never auto-delete), cosine + FTS5 dual-channel recall, cross-project memory opt-in.
+
+**Overnight goal mode** — set a goal and the agent loops until done: supervisor persona validates each round, quota-aware failover switches models on 5h-window exhaustion, with iteration/time/cost fuses.
+
+**Computer Use (macOS)** — background input injection via CGEventPostToPid: clicks, typing, scrolling without stealing focus; hide-self screenshots.
+
+**Local-first** — everything in local SQLite; BYO API key; no account, no relay server, no telemetry. Ollama works out of the box.
+
 ## 四引擎真实业务跑分
 
 同一个 **40 万行医疗器械 CRM** 交叉分析任务(多 Sheet×医院等级×时间窗,产出交互式 ECharts 报告),四引擎同一提示词、零人工干预:
