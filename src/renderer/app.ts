@@ -5042,6 +5042,15 @@ async function showSettings() {
         <h3>🎯 ${tr('settings.goal.title')}</h3>
         <div class="field-desc">${tr('settings.goal.desc')}</div>
 
+        <!-- 隐私闸:数据出网敏感检测(默认关) -->
+        <div class="s-sub-panel">
+          <label class="switch-label" style="margin-bottom:8px">
+            <span class="switch"><input type="checkbox" id="s-privacy-gate" ${s.privacyGateEnabled ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span>
+            <span class="s-sub-panel-title">${tr('settings.privacy.title')}</span>
+          </label>
+          <div class="s-sub-panel-desc-indent">${tr('settings.privacy.desc')}</div>
+        </div>
+
         <!-- 替身监工 -->
         <div class="s-sub-panel">
           <label class="switch-label" style="margin-bottom:8px">
@@ -5985,6 +5994,7 @@ function readSettingsForm(): AppSettings {
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
     // Goal 监工参数(goal tab):链缓存由 renderGoalChain 的增删维护,保存时写回。
     goalSupervisorEnabled: Boolean((document.getElementById('s-goal-supervisor') as HTMLInputElement)?.checked),
+    privacyGateEnabled: Boolean((document.getElementById('s-privacy-gate') as HTMLInputElement)?.checked),
     goalSupervisorModel: ((document.getElementById('s-goal-sup-model') as HTMLSelectElement)?.value ?? ''),
     goalProfileChain: goalChainCache,
     goalMaxIterations: Number((document.getElementById('s-goal-maxiter') as HTMLInputElement)?.value) || 20,

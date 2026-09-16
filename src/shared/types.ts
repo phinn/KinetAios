@@ -301,6 +301,9 @@ export type AppSettings = {
   // 替身模式开启后注入 Direct 引擎 systemPrompt,让 AI 模仿用户风格自主执行任务。
   // 空字符串 = 未生成,替身功能不可用。
   persona: string;
+  // ── 隐私闸(数据出网敏感检测)── 开启后 read_file/shell 结果在进入对话(→随 API 出网)
+  // 前过敏感检测(密钥正则+高熵+敏感文件名),命中走 confirm 弹窗,用户放行才发。默认关。
+  privacyGateEnabled: boolean;
   // ── Goal 监工模式(Supervisor ↔ Worker)── 替身画像当监工,逐轮验收 Worker 产物并
   // 提出新要求;配 failover 模型链支持过夜长跑(额度尽/5h 上限自动切下一个模型)。
   goalSupervisorEnabled: boolean;   // true = Supervisor 验收制(需 persona 非空);false = 旧自检模式

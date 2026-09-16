@@ -50,6 +50,7 @@ const DEFAULTS: AppSettings = {
   v2ModelWindow: 1_000_000,  // V2 引擎:模型上下文窗口大小(默认 1M = GLM-5.2;GLM-4.6 = 128000)
   v2BudgetRatio: 0.08,       // V2 引擎:预算占窗口比例(8% → 1M 窗口 = 80K trim/compact 预算)
   persona: '', // 替身画像:分析历史对话生成的用户风格描述(空 = 未生成)
+  privacyGateEnabled: false, // 隐私闸:默认关。开启后 read_file/shell 出网前过敏感检测+confirm
   // Goal 监工模式默认值:Supervisor 默认关(旧自检模式),failover 链空 = 不接力。
   goalSupervisorEnabled: false,
   goalSupervisorModel: '', // 空 = 跟随会话当前模型

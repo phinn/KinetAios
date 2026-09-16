@@ -8,6 +8,7 @@ import dns from 'node:dns/promises';
 import crypto from 'node:crypto';
 import type { Provider, ToolDef } from './glm';
 import * as store from './store';
+import { privacyGate } from './privacy-gate';
 import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
 import { compactHistory } from './AgentLoop';
@@ -304,7 +305,11 @@ const shell: Tool = {
     if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
     // 焦点守卫:命令若抢了前台(启动 app/panel/simctl 等),执行完自动把前台还给用户
     const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal));
-    return out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
+    const trimmed = out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
+    // 隐私闸:shell 输出同样会进对话 → 出网。开启时检测命中走 confirm(拒绝则不出网)。
+    const blocked = await privacyGate(trimmed, undefined, ctx.confirm);
+    if (blocked) return blocked;
+    return trimmed;
   },
 };
 
@@ -539,12 +544,20 @@ const readFile: Tool = {
       }
 
       // 无行范围 → 全文(上限 50000 字符,之前 20000 太小,常导致文件读不全)。
-      if (body.length <= 50000) return body;
+      if (body.length <= 50000) {
+        // 隐私闸:开启时检测文件内容是否含敏感信息,命中走 confirm 弹窗(拒绝则不出网)。
+        const blocked = await privacyGate(body, p, ctx.confirm);
+        if (blocked) return blocked;
+        return body;
+      }
 
       // 超长文件:提示模型用行范围分页读。
       const truncated = body.slice(0, 50000);
       const linesInTruncated = truncated.split('\n').length;
-      return truncated + `\n\n…[文件共 ${totalLines} 行,已显示前 ${linesInTruncated} 行(50000 字符上限)。用 start_line=${linesInTruncated + 1} 继续读后续内容]`;
+      const t = truncated + `\n\n…[文件共 ${totalLines} 行,已显示前 ${linesInTruncated} 行(50000 字符上限)。用 start_line=${linesInTruncated + 1} 继续读后续内容]`;
+      const blockedT = await privacyGate(t, p, ctx.confirm);
+      if (blockedT) return blockedT;
+      return t;
     } catch {
       return `读不到: ${p}`;
     }
