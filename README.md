@@ -1,9 +1,9 @@
 # KinetAios
 
-[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](https://phinn.github.io/KinetAppPortal/mac.html)
+[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)
 [![Engines](https://img.shields.io/badge/engines-4-blue)](#四引擎真实业务跑分)
-[![license](https://img.shields.io/badge/price-$39%20once-green)](https://phinn.gumroad.com/l/kinetaios-mac-pro)
-[![Ollama](https://img.shields.io/badge/Ollama-free%20forever-8A2BE2)](https://phinn.github.io/KinetAppPortal/mac.html)
+[![license](https://img.shields.io/badge/price-$39%20once-green)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=pricing-cta&utm_campaign=launch-m1#buy)
+[![Ollama](https://img.shields.io/badge/Ollama-free%20forever-8A2BE2)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)
 
 **macOS 上的多引擎 Agent 工作台**:Direct / Claude Code / Codex / PEVJ 四引擎并发跑同一任务,实时对比状态、步骤、token 消耗。BYO API Key,数据全落本地 SQLite,无中继服务器。
 
@@ -30,7 +30,7 @@
 | **Free** | $0 永久 | 单引擎 + Ollama 本地模型(不是试用,永久免费) |
 | **Pro 早鸟** | **$39 买断**(前 500 名,之后 $69) | 四引擎并发 + 全部工具链 + 免费小版本更新 |
 
-**[下载 Mac 版 →](https://phinn.github.io/KinetAppPortal/mac.html)** · **[Buy once, $39 →](https://phinn.gumroad.com/l/kinetaios-mac-pro)** · 无订阅。
+**[下载 Mac 版 →](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)** · **[Buy once, $39 →](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=pricing-cta&utm_campaign=launch-m1#buy)** · 无订阅。
 
 ---
 
