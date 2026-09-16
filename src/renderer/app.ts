@@ -9111,7 +9111,11 @@ function renderAttach(): void {
 
 // @文件引用:解析正文里的 @path,经 main 读 cwd 内文件(@ 前需非单词字符以避开 email)。返回读到的 + 失败的。
 async function resolveAtFiles(text: string, cwd: string): Promise<{ files: { name: string; content: string }[]; missing: string[] }> {
-  const rels = [...new Set([...text.matchAll(/(?<![\w@])@([\w./\\-]+)/g)].map((m) => m[1]))];
+  // @ 引用必须含 / 或 . 才当文件路径解析(如 src/main/engines.ts、README.md)。
+  // 否则粘贴的 Swift/ObjC 崩溃日志里的 @callee_guaranteed/@objc/@Sendable 等符号会被误判成缺失文件弹 toast。
+  // Only treat @token as a path if it contains / or . — bare symbols in pasted
+  // crash logs (@callee_guaranteed, @objc…) must not trigger missing-file toasts.
+  const rels = [...new Set([...text.matchAll(/(?<![\w@])@([\w./\\-]*[./][\w./\\-]*)/g)].map((m) => m[1]))];
   const files: { name: string; content: string }[] = [];
   const missing: string[] = [];
   for (const rel of rels) {
