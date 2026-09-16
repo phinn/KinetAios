@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding, loadEvents } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -163,7 +163,14 @@ function confirm(cmd: string): Promise<boolean> {
   const id = `c${process.pid}_${confirmSeq++}`;
   const win = dashboardWin;
   if (!win || win.isDestroyed()) return Promise.resolve(false);
-  win.webContents.send('confirm-request', { id, cmd });
+  // ── 动作时刻规则闸(2026-09 纠错闭环 ③)──
+  // 命令文本匹配规则触发词 → 把铁律塞进弹窗正文。注入≠遵守的最后一道机械防线:
+  // 模型在生成命令时可能没核对铁律,人肉确认时必须看到。
+  const hitRules = rulesMatching(cmd);
+  const rulesNote = hitRules.length
+    ? hitRules.map((r) => `⚠️ 铁律: ${r.content}${r.strikes > 0 ? `(犯过 ${r.strikes} 次)` : ''}`).join('\n')
+    : null;
+  win.webContents.send('confirm-request', { id, cmd, rulesNote });
   return new Promise((resolve) => {
     // 超时自动 deny + 清理 / Auto-deny + cleanup on timeout
     const timer = setTimeout(() => {

@@ -425,7 +425,7 @@ function applyI18nDOM(): void {
       refreshNexusNode(conv);
     }
   });
-  api.onConfirmRequest((req) => showConfirm(req.id, req.cmd));
+  api.onConfirmRequest((req) => showConfirm(req.id, req.cmd, (req as { rulesNote?: string }).rulesNote));
 
   // Agent Team 实时事件:member 状态/token/工具/完成
   api.onTeamEvent((teamId, ev) => {
@@ -6161,7 +6161,7 @@ let confirmFocusRestore: (() => void) | null = null;
 const sessionApprovedConvs = new Set<string>();
 let confirmConvId: string | null = null;
 
-function showConfirm(id: string, cmd: string) {
+function showConfirm(id: string, cmd: string, rulesNote?: string) {
   if (currentConfirm && currentConfirm !== id) api.confirmResponse(currentConfirm, false); // deny stacked
   confirmConvId = selectedId;
   // 本会话已选"不再询问" → 直接放行,不弹窗
@@ -6169,15 +6169,21 @@ function showConfirm(id: string, cmd: string) {
   currentConfirm = id;
   document.getElementById('modal-cmd')!.textContent = cmd;
   // 危险分级(2026-09):高危命令模式红显,保守正则宁漏勿误(误报会训练用户忽略红色)
-  const dangerCmd = /\brm\s+(-[a-z]+\s+)*-\w*[rf]|git\s+push\b[^|]*(-f\b|--force)|drop\s+(table|database)|mkfs|\bdel\s+\/[a-z]*\s|rd\s+\/s|Remove-Item\b[^|]*-Recurse/i.test(cmd);
+  const dangerCmd = /\brm\s+(-[a-z]+\s+)*-\w*[rf]|git\s+push\b[^|]*(-f\b|--force)|drop\s+(table|database)|mkfs|\bdel\s+\/[a-z]*\s|rd\s+\/s|Remove-Item\b[^|]*-Recurse/i.test(cmd) || !!rulesNote;
   document.getElementById('modal')!.classList.toggle('danger', dangerCmd);
   // 上下文行:哪个会话/哪个引擎在请求执行(之前只有裸命令文本)
   const ctxEl = document.getElementById('modal-ctx');
   if (ctxEl) {
-    const conv = confirmConvId ? convs.get(confirmConvId) : undefined;
-    const label = conv ? `${conv.customTitle || conv.turns[0]?.prompt.slice(0, 40) || ''} · ${ENGINE_LABELS[conv.engine as keyof typeof ENGINE_LABELS] ?? conv.engine}` : '';
-    ctxEl.textContent = label;
-    ctxEl.hidden = !label;
+    // 命中铁律(③动作闸)优先展示 —— 模型生成命令时可能没核对,人肉确认前必须看到
+    if (rulesNote) {
+      ctxEl.textContent = rulesNote;
+      ctxEl.hidden = false;
+    } else {
+      const conv = confirmConvId ? convs.get(confirmConvId) : undefined;
+      const label = conv ? `${conv.customTitle || conv.turns[0]?.prompt.slice(0, 40) || ''} · ${ENGINE_LABELS[conv.engine as keyof typeof ENGINE_LABELS] ?? conv.engine}` : '';
+      ctxEl.textContent = label;
+      ctxEl.hidden = !label;
+    }
   }
   const noAsk = document.getElementById('modal-noask') as HTMLInputElement | null;
   if (noAsk) noAsk.checked = false;

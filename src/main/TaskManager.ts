@@ -338,6 +338,13 @@ export class TaskManager {
     const prompt = text.trim();
     if (!prompt || conv.status === 'running') return;
 
+    // ── 纠错信号检测(2026-09 纠错闭环 ④ strike 端)──
+    // 用户带着不满回来(「你又…」「我说过…」「还是…」「不是让你…」)→ 大概率上一轮违反了
+    // 某条规则。用上一轮的 answer 混合匹配:哪个规则的触发词在「纠正话术」和「上次干了什么」
+    // 里同时出现,就给哪个规则 strikes+1 进热区。best-effort,不阻塞主链路。
+    // 用户是"补充新约束"而非纠正时,提取层会把新约束落成新规则,双通道互补。
+    try { this.detectCorrectionAndStrike(prompt, conv); } catch { /* 记忆闭环不阻塞发消息 */ }
+
     // Validate cwd up front — a bad path makes the spawn ENOENT and the CLI engines only surface
     // an opaque "未返回结果". Fail fast with a clear message instead.
     if (!isUsableCwd(conv.cwd)) {
@@ -891,6 +898,26 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       : await this.recallForInjection(query);
     const limited = recalled.map((m) => shellSafeMemory(tagForeign(m.content, m.conversationId)));
 
+    // ── 铁律区(2026-09 纠错闭环 ②):规则常驻,不参与检索竞争 ──
+    // 规则靠相关性抢 top-15 必然输给高频事实(「推官网」query 召不回 push 铁律)。
+    // 独立分节 + 强制措辞模板(禁止X,因为Y,犯过N次)+ strikes 降序 cap 10。
+    const rules = store.listRules();
+    const ironIds = new Set<string>();
+    if (rules.length) {
+      const iron = rules.slice(0, 10);
+      iron.forEach((r) => ironIds.add(r.id));
+      out += '\n\n## ⚠️ 铁律(违反过、付出过代价,执行相关动作前必须核对)\n';
+      out += iron.map((r) => `- ${r.content}${r.strikes > 0 ? `(犯过 ${r.strikes} 次)` : ''}`).join('\n');
+      if (rules.length > iron.length) out += `\n…(另有 ${rules.length - iron.length} 条铁律未展示,recall_memory 可查)`;
+    }
+    // ── 热区(④):近期被纠正的规则,超出铁律区容量的也在这里强制在场 ──
+    // 显著期 = max(3天, strikes×2天),模拟「刚被骂过的错记得最牢」。
+    const hot = store.hotRules(ironIds);
+    if (hot.length) {
+      out += '\n\n## 🔥 近期被纠正(重点盯防)\n';
+      out += hot.map((r) => `- ${r.content}(犯过 ${r.strikes} 次,最近一次:${new Date(r.struckAt!).toISOString().slice(0, 10)})`).join('\n');
+    }
+
     if (limited.length) {
       out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + limited.map((m) => `- ${m}`).join('\n');
       const allCount = store.memoryCount();
@@ -947,6 +974,22 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     return recalled.map(({ content, conversationId }) => ({ content, conversationId }));
   }
 
+  // ── 纠错检测 + strike(④闭环的记分端)────────────────────────────
+  // 信号 = 纠正话术特征(你还/你又/我说过/说了多少遍/还是错/不是让你/别再/怎么又/为啥又/又犯)。
+  // 归因 = 规则触发词与「本次纠正 + 上一轮助手回答」同时命中(避免任何含 push 的消息都误伤 push 规则)。
+  private detectCorrectionAndStrike(prompt: string, conv: Conversation): void {
+    if (!/你还|你又|我说过|说了多少遍|还是错|还是报|不是让你|别再|怎么又|为啥又|又犯|又忘|不遵守|没遵守/.test(prompt)) return;
+    const lastAnswer = conv.turns[conv.turns.length - 1]?.answer?.slice(0, 1500) ?? '';
+    const haystack = (prompt + ' ' + lastAnswer).toLowerCase();
+    for (const r of store.listRules()) {
+      if (!r.triggerKw) continue;
+      const kws = r.triggerKw.split(/[;；]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
+      if (kws.some((kw) => haystack.includes(kw))) {
+        store.strikeRule(r.id);
+      }
+    }
+  }
+
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).
   // Bound by the turn's abort signal (cancel stops it) + a 30s timeout so it can't hang or run away。
   // 输出两部分:facts(原有,自由文本记忆)+ triples(Phase 4 新增,主谓宾三元组,Memory Graph 用)。
@@ -965,9 +1008,14 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 输出 JSON 对象,四个字段:
 - "facts": [{ "text": "≤ 18字陈述句", "importance": 1-10 }] 数组,主语「用户」(可省略)。importance: 核心偏好/技术栈=8-10,一般习惯=5-7,边缘信号=2-4。
 - "project_facts": [{ "text": "≤ 18字陈述句", "importance": 1-10 }] 数组,关于项目/代码/架构的持久知识。例:"KinetAios 用 better-sqlite3 + FTS5" / "打包命令是 npm run dist" / "的记忆系统用 cosine 评分"。importance: 核心架构/构建命令=8-10,一般约定=5-7,边缘细节=2-4。
+- "rules": [{ "text": "≤ 30字祈使句", "because": "≤ 20字原因", "triggers": "分号分隔的触发场景关键词,如 git push;推官网" }] 数组 —— 这是本次改动新增的字段。
+  什么时候提取 rule:用户在纠正助手(「你又…」「我说过…」「别再…」「禁止…」「以后必须…」),或对话里出现了带代价的踩坑教训(犯过错、造成过事故、浪费过时间)。
+  判别标准:fact 描述"世界是怎样的",rule 约束"助手应该怎么做"。同一次纠正,两边都提:fact 记录现象,rule 记录约束。
+  例:用户说「别再用 HTTPS push,会卡超时,走 SSH」→ rule: { "text": "禁止 HTTPS push,必须走 SSH", "because": "HTTPS 无凭据卡 120s 超时", "triggers": "git push;push origin;推送" }。
+  没有 rule 就输出空数组,不要硬凑。
 - "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"KinetAios","p":"用","o":"better-sqlite3"} / {"s":"项目","p":"构建","o":"npm run dist"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节(如临时变量名)、纯时间敏感(今天/这次)、单次 bug 的具体修复步骤(除非是通用 pattern)。
-无持久事实就输出 {"facts":[],"project_facts":[],"triples":[]}。只输出 JSON,不要解释。`;
+无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
@@ -985,7 +1033,12 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         ac.signal,
         () => {},
       );
-      const { facts, projectFacts, triples } = parseExtraction(comp.content);
+      const { facts, projectFacts, rules, triples } = parseExtraction(comp.content);
+      // rules 优先落库:不走去重管线(fact 的模糊去重会误杀措辞相近但约束不同的规则),
+      // upsertRule 内部按内容精确去重。
+      for (const r of rules.slice(0, 3)) {
+        store.upsertRule(r.text, r.triggers || null, convId, 9);
+      }
       const existingFacts = store.allMemoryContents();
 
       // ── 去重策略:精确匹配 → 模糊去重(Jaccard) → 语义去重(embedding cosine)
@@ -1470,8 +1523,13 @@ function shellSafeMemory(s: string): string {
 // Pull a JSON object {facts:string[], triples:[{s,p,o}]} out of an LLM response that may have surrounding prose.
 // 兼容老格式(纯 string[]):没匹配到 {} 时尝试匹配 []。
 // P1: 解析增强 — 支持 facts 为 [{text, importance}] 或纯 string[]（向后兼容）
-function parseExtraction(s: string): { facts: Array<{ text: string; importance: number }>; projectFacts: Array<{ text: string; importance: number }>; triples: Array<{ s: string; p: string; o: string }> } {
-  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
+function parseExtraction(s: string): {
+  facts: Array<{ text: string; importance: number }>;
+  projectFacts: Array<{ text: string; importance: number }>;
+  rules: Array<{ text: string; because: string; triggers: string }>;
+  triples: Array<{ s: string; p: string; o: string }>;
+} {
+  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, rules: [] as Array<{ text: string; because: string; triggers: string }>, triples: [] as Array<{ s: string; p: string; o: string }> };
   const lo = s.indexOf('{');
   const hi = s.lastIndexOf('}');
   if (lo >= 0 && hi > lo) {
@@ -1496,6 +1554,19 @@ function parseExtraction(s: string): { facts: Array<{ text: string; importance: 
       const facts = parseFactArray(obj.facts);
       // project_facts 是新增字段,旧格式不会返回 → 空数组兜底
       const projectFacts = parseFactArray(obj.project_facts);
+      // rules(2026-09 纠错闭环):text 必须是非空祈使句;because/triggers 可缺
+      const rules = Array.isArray(obj.rules)
+        ? (obj.rules as Array<Record<string, unknown>>)
+            .map((r) => {
+              if (!r || typeof r !== 'object') return null;
+              const text = typeof r.text === 'string' ? r.text.trim() : '';
+              const because = typeof r.because === 'string' ? r.because.trim() : '';
+              const triggers = typeof r.triggers === 'string' ? r.triggers.trim() : '';
+              // 措辞模板:because 有值时拼进正文,注入端不用再拼
+              return text ? { text: because ? `禁止/必须: ${text}(${because})` : text, because, triggers } : null;
+            })
+            .filter((r): r is { text: string; because: string; triggers: string } => r !== null)
+        : [];
       const triples = Array.isArray(obj.triples)
         ? obj.triples
             .map((t) => {
@@ -1508,13 +1579,13 @@ function parseExtraction(s: string): { facts: Array<{ text: string; importance: 
             })
             .filter((t): t is { s: string; p: string; o: string } => t !== null)
         : [];
-      return { facts, projectFacts, triples };
+      return { facts, projectFacts, rules, triples };
     } catch {
       return empty;
     }
   }
   // 兼容老格式(纯 facts [])
-  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], triples: [] };
+  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], rules: [], triples: [] };
 }
 
 function parseFactsLegacy(s: string): string[] {

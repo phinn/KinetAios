@@ -982,7 +982,7 @@ export interface KinetAPI {
   onArenaCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
-  onConfirmRequest(cb: (req: { id: string; cmd: string }) => void): void;
+  onConfirmRequest(cb: (req: { id: string; cmd: string; rulesNote?: string }) => void): void;
   onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;
   confirmResponse(id: string, approved: boolean): void;
 

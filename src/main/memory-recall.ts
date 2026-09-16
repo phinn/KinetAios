@@ -54,6 +54,8 @@ export async function recallMemories(opts: {
         if (qVecArr[0]?.length) {
           const qVec = new Float32Array(qVecArr[0]);
           // 宽召回 top-30(score>0.2),修前会话模式完全没有这一步
+          // (listMemoryEmbeddings 不带 kind,rule 若有 embedding 也会出现在这 ——
+          //  稍后 candidateIds 处统一过滤,不在排序池内即不会入选)
           const candidates = embedRows
             .map((r) => ({ memoryId: r.memoryId, content: r.content, conversationId: r.conversationId, score: store.cosine(qVec, r.vec) }))
             .filter((r) => r.score > 0.2)
@@ -62,7 +64,8 @@ export async function recallMemories(opts: {
           if (candidates.length >= 3) {
             // 加权重排:① 只在召回候选集内重排(2026-09 修复排序池错位 —— 修前从全池选,
             // importance 高但与当前无关的记忆能挤掉相关候选);② relevance 按 memoryId 精确关联
-            const candidateIds = new Set(candidates.map((c) => c.memoryId));
+            // ③ rule 不参与检索竞争(铁律区常驻,见 TaskManager 注入端)
+            const candidateIds = new Set(candidates.filter((c) => (c as { kind?: string }).kind !== 'rule').map((c) => c.memoryId));
             const relevanceById = new Map(candidates.map((c) => [c.memoryId, c.score]));
             const scored = store.scoredMemories(
               query,
@@ -97,10 +100,12 @@ export async function recallMemories(opts: {
   }
 
   // 3. recent-N 兜底:restrict 时仍含无归属全局记忆(会话内无历史时冷启动需要基本上下文)。
+  // rule 不进检索池:规则走铁律区常驻注入(TaskManager),混进 top-15 只会挤掉相关事实。
   const rows = restrictConvId
     ? store.loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === restrictConvId)
     : store.loadMemories();
   return rows
+    .filter((m) => (m as { kind?: string }).kind !== 'rule')
     .slice(0, limit)
     .map(({ id, content, conversation_id }) => ({ id, content, conversationId: conversation_id, score: 0 }));
 }

@@ -136,6 +136,18 @@ export function initStore(): void {
   // 检索排序:importance * 0.5 + recency * 0.3 + relevance * 0.2。
   if (!hasColumn('memories', 'importance'))
     db.exec(`ALTER TABLE memories ADD COLUMN importance INTEGER DEFAULT 5;`);
+  // 记忆分型(2026-09 纠错闭环):kind = fact(默认)/ rule(约束/铁律)/ preference(偏好,暂与 fact 同权)。
+  // rule 带 trigger(分号分隔的场景关键词,如 "git push;push origin")与 strikes(违反计数),
+  // struck_at = 最近一次被纠正时间戳(热区依据),cooled_at = 降温完成时间戳。
+  // 老数据不动(隐式 fact),rule 不参与检索式召回 —— 规则靠常驻注入,不靠相关性抢 top-15。
+  if (!hasColumn('memories', 'kind'))
+    db.exec(`ALTER TABLE memories ADD COLUMN kind TEXT DEFAULT 'fact';`);
+  if (!hasColumn('memories', 'trigger_kw'))
+    db.exec(`ALTER TABLE memories ADD COLUMN trigger_kw TEXT;`);
+  if (!hasColumn('memories', 'strikes'))
+    db.exec(`ALTER TABLE memories ADD COLUMN strikes INTEGER DEFAULT 0;`);
+  if (!hasColumn('memories', 'struck_at'))
+    db.exec(`ALTER TABLE memories ADD COLUMN struck_at REAL;`);
   // P0: 初始化 Memory Blocks 默认值
   initMemoryBlocks();
 }
@@ -642,15 +654,16 @@ export function memoryCount(): number {
 // restrictConvId:传入时只返回该会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时用)。
 export function searchMemories(q: string, limit = 20, restrictConvId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
+  // rule 不进检索结果(铁律区常驻注入,检索命中只会重复占位)
   if (restrictConvId) {
     return db.prepare(
       `SELECT id, content, conversation_id, importance FROM memories
-       WHERE content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
+       WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
        ORDER BY importance DESC, created_at DESC LIMIT ?;`,
     ).all(like, restrictConvId, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
   }
   return db.prepare(
-    `SELECT id, content, conversation_id, importance FROM memories WHERE content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
+    `SELECT id, content, conversation_id, importance FROM memories WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
   ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
 }
 
@@ -755,6 +768,74 @@ export function addMemory(content: string, convId?: string, importance = 5): str
     Math.max(1, Math.min(10, importance)),
   );
   return id;
+}
+
+// ── 规则型记忆(铁律)— 2026-09 纠错闭环 ─────────────────────────────
+// 设计动机:事实(fact)靠相关性召回即可,规则(rule)必须无条件在场。
+// rule 不进检索池(scoredMemories/embedding 召回侧需过滤 kind='rule'),
+// 走独立的常驻注入(铁律区)+ 动作时刻闸(confirm 弹窗)两条通道。
+export interface RuleMemory {
+  id: string;
+  content: string;
+  triggerKw: string | null;   // 分号分隔的场景关键词,如 "git push;push origin;推官网"
+  strikes: number;            // 被纠正次数(注入时展示「犯过 N 次」提高显著性)
+  struckAt: number | null;    // 最近一次被纠正的 ms 时间戳(热区判定)
+  createdAt: number;          // 秒
+}
+
+/** 新增/覆盖一条规则(按内容精确去重:同一规则不重复累积)。 */
+export function upsertRule(content: string, triggerKw: string | null, convId?: string, importance = 9): string {
+  const existing = db.prepare(`SELECT id FROM memories WHERE kind='rule' AND content = ?;`).get(content) as { id: string } | undefined;
+  if (existing) return existing.id;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare(`INSERT INTO memories(id, content, created_at, conversation_id, importance, kind, trigger_kw, strikes)
+              VALUES(?,?,?,?,?, 'rule', ?, 0);`).run(
+    id, content, Date.now() / 1000, convId ?? null, Math.max(1, Math.min(10, importance)), triggerKw,
+  );
+  return id;
+}
+
+/** 全部规则(铁律区注入用,按 strikes 降序 + 新近度)。 */
+export function listRules(): RuleMemory[] {
+  const rows = db.prepare(
+    `SELECT id, content, trigger_kw, strikes, struck_at, created_at FROM memories
+     WHERE kind='rule' ORDER BY strikes DESC, created_at DESC;`).all() as Array<{
+    id: string; content: string; trigger_kw: string | null; strikes: number; struck_at: number | null; created_at: number;
+  }>;
+  return rows.map((r) => ({ id: r.id, content: r.content, triggerKw: r.trigger_kw, strikes: r.strikes ?? 0, struckAt: r.struck_at, createdAt: r.created_at }));
+}
+
+/** 违规计数 +1,进入热区。被用户纠正(「你又…」「我说过…」)时调用。 */
+export function strikeRule(id: string): void {
+  db.prepare(`UPDATE memories SET strikes = COALESCE(strikes,0) + 1, struck_at = ? WHERE id = ?;`).run(Date.now(), id);
+}
+
+/**
+ * 热区规则:最近被纠正、仍在高显著期的规则(每轮必注入,不看相关性)。
+ * 显著期 = max(3天, strikes×2天) —— 犯的次数越多,盯得越久。
+ * @param excludeIds 已在铁律区常驻展示的 id,避免重复注入。
+ */
+export function hotRules(excludeIds: Set<string>, limit = 3): RuleMemory[] {
+  const now = Date.now();
+  return listRules()
+    .filter((r) => !excludeIds.has(r.id) && r.struckAt !== null && now - r.struckAt < Math.max(3, r.strikes * 2) * 86400_000)
+    .slice(0, limit);
+}
+
+/** 动作闸:按命令文本匹配触发词命中的规则(confirm 弹窗用,跨会话全局)。 */
+export function rulesMatching(text: string, limit = 3): RuleMemory[] {
+  const lower = text.toLowerCase();
+  const hits: Array<RuleMemory & { pos: number }> = [];
+  for (const r of listRules()) {
+    if (!r.triggerKw) continue;
+    for (const kw of r.triggerKw.split(/[;；]/).map((s) => s.trim().toLowerCase()).filter(Boolean)) {
+      const pos = lower.indexOf(kw);
+      if (pos >= 0) { hits.push({ ...r, pos }); break; } // 一条规则命中一次即可
+    }
+  }
+  // 先命中的触发词位置更靠前 = 与动作更直接相关,排前
+  hits.sort((a, b) => a.pos - b.pos);
+  return hits.slice(0, limit).map(({ pos: _pos, ...r }) => r);
 }
 
 // MARK: P0 — Memory Blocks (结构化核心记忆,借鉴 Letta)
