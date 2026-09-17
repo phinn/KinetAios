@@ -812,6 +812,9 @@ export interface KinetAPI {
     webUrl?: string;                       // provider=minimax 时,token_type_mismatch 引导用户去网页控制台看余额
   }>;
   listSkills(): Promise<SkillInfo[]>;
+  // 技能面板:读源文件全文 / 保存(插件与 builtin 只读)。— Skills panel: read full source / save.
+  readSkillSource(name: string): Promise<{ source: SkillInfo['source']; type: SkillType; dir: string; file: string; content: string } | null>;
+  saveSkillSource(name: string, content: string): Promise<{ ok: true; file: string } | { ok: false; error: string }>;
   listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──
   startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;

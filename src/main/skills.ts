@@ -7,7 +7,7 @@ import path from 'node:path';
 import type { SkillInfo, SkillType } from '../shared/types';
 import { pluginSlashCommands, loadPluginCommandBody } from './plugins';
 
-type Skill = SkillInfo & { body: string; dir: string };
+type Skill = SkillInfo & { body: string; dir: string; file: string };
 
 // ── Skill 分类推断 ──
 // 根据 name + description 关键词匹配,自动给 skill 打分类标签。
@@ -132,10 +132,10 @@ function ensure(): Map<string, Skill> {
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios', type: SkillType, body: string, dir: string): void => {
+  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios', type: SkillType, body: string, dir: string, file: string): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
-    map.set(key, { name, description, source, type, body, dir, category: inferCategory(name, description) });
+    map.set(key, { name, description, source, type, body, dir, file, category: inferCategory(name, description) });
   };
   for (const { dir, source, type, mode } of [...roots(), ...pluginRoots()]) {
     let ents: fs.Dirent[];
@@ -149,7 +149,7 @@ function scan(): Map<string, Skill> {
         if (!ent.isFile() || !ent.name.endsWith('.md')) continue;
         try {
           const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name), 'utf8'), ent.name.replace(/\.md$/, ''));
-          add(parsed.name, parsed.description, source, type, parsed.body, dir);
+          add(parsed.name, parsed.description, source, type, parsed.body, dir, path.join(dir, ent.name));
         } catch {
           /* 跳过读不了的 */
         }
@@ -160,7 +160,7 @@ function scan(): Map<string, Skill> {
         const skillDir = path.join(dir, ent.name);
         try {
           const parsed = parseSkill(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), ent.name);
-          add(parsed.name, parsed.description, source, type, parsed.body, skillDir);
+          add(parsed.name, parsed.description, source, type, parsed.body, skillDir, path.join(skillDir, 'SKILL.md'));
         } catch {
           /* 非 skill 目录(无 SKILL.md)→ 跳过 */
         }
@@ -246,5 +246,60 @@ function safeLoadPluginCommandBody(name: string): { body: string; dir: string } 
     return loadPluginCommandBody(name);
   } catch {
     return null;
+  }
+}
+
+// ── Skill 源文件读写(设置页「技能」面板用)──
+// Skill source read/write for the settings Skills panel.
+
+// 按 name 定位扫描缓存里的条目,读出磁盘上的 .md 全文(frontmatter + body)。
+// 插件贡献的 command 也能读;读不到返回 null。
+// Locate the scanned entry by name and read the full .md (frontmatter + body) from disk.
+export function readSkillSource(name: string): { source: SkillInfo['source']; type: SkillType; dir: string; file: string; content: string } | null {
+  const s = ensure().get(name.toLowerCase());
+  if (s) {
+    try {
+      return { source: s.source, type: s.type, dir: s.dir, file: s.file, content: fs.readFileSync(s.file, 'utf8') };
+    } catch {
+      return null;
+    }
+  }
+  // 插件贡献的 slash 命令:plugins.ts 只给 body,拼上 frontmatter 还原成可编辑全文。
+  // Plugin-contributed slash command: only body is cached — rebuild full text with frontmatter.
+  const cmd = safeLoadPluginCommandBody(name);
+  if (!cmd) return null;
+  try {
+    const info = safePluginSlashCommands().find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const fm = info?.description ? `---\nname: ${info.name}\ndescription: ${info.description}\n---\n\n` : '';
+    return { source: 'plugin', type: 'command', dir: cmd.dir, file: path.join(cmd.dir, `${name}.md`), content: fm + cmd.body };
+  } catch {
+    return null;
+  }
+}
+
+// 保存 skill 源文件。只允许写进用户级根(~/.kinetaios / ~/.claude / ~/.codex 的 skills),
+// 插件目录只读(升级会被冲掉,且属第三方资产)。
+// 写成功后强制全量重扫(文件内容变更不改变根目录 mtime,mtime 哨兵探不到)。
+// Only user-level roots are writable (plugin dirs are read-only third-party assets);
+// force a full rescan after save since root mtimes don't change on file edits.
+export function saveSkillSource(name: string, content: string): { ok: true; file: string } | { ok: false; error: string } {
+  const s = ensure().get(name.toLowerCase());
+  if (!s) return { ok: false, error: `skill not found: ${name}` };
+  if (s.source === 'plugin' || s.source === 'builtin') {
+    return { ok: false, error: 'plugin/builtin skills are read-only' };
+  }
+  // 安全校验:frontmatter 的 name 若被改,按新名落盘会分裂出重复条目 —— 这里直接校验
+  // 内容里的 name 字段(有则必须一致),避免「改了名 → 列表出现两个同名 skill」的脏状态。
+  // Guard: an edited frontmatter name would fork a duplicate entry — keep it consistent.
+  const fmName = content.match(/^---\n[\s\S]*?^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '');
+  if (fmName && fmName.toLowerCase() !== name.toLowerCase()) {
+    return { ok: false, error: `frontmatter name "${fmName}" ≠ skill name "${name}" — 不允许改名` };
+  }
+  try {
+    fs.writeFileSync(s.file, content, 'utf8');
+    cache = null; // 强制下次全量重扫
+    return { ok: true, file: s.file };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }

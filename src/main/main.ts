@@ -33,7 +33,7 @@ import { getSettings, saveSettings, snapshot, balanceSnapshot } from './settings
 import { setPrivacyConfirm } from './privacy-gate';
 import { t, type Lang } from '../shared/i18n';
 import { currentProvider } from './glm';
-import { listSkills } from './skills';
+import { listSkills, readSkillSource, saveSkillSource } from './skills';
 import { mcp } from './mcp';
 import { localMcpServer } from './mcp-server';
 import { allTools } from './tools';
@@ -1239,6 +1239,10 @@ function registerIpc(): void {
   // renderer invoke reject → slash 菜单/skill 按钮无响应。
   // / Skill listing — losing this handler broke the slash menu & skill button.
   ipcMain.handle('list-skills', () => listSkills());
+  // 技能面板:读全文/保存。save 走 writeFileSync(技能文件小,无需 tmp+rename;
+  // 保存后 cache=null 强制重扫,slash 菜单与注入内容立即生效)。
+  ipcMain.handle('read-skill-source', (_e, name: string) => readSkillSource(String(name ?? '')));
+  ipcMain.handle('save-skill-source', (_e, name: string, content: string) => saveSkillSource(String(name ?? ''), String(content ?? '')));
   ipcMain.handle('get-brand', () => getBrand());
 
   // ── 多机协作:远程节点信息 + 远程任务调用 ──

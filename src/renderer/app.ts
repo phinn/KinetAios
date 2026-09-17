@@ -3556,6 +3556,7 @@ function buildPaletteActions(): PaletteAction[] {
   const tabs: Array<[string, string]> = [
     ['model', 'settings.tab.model'], ['appearance', 'settings.tab.appearance'], ['engine', 'settings.tab.engine'],
     ['advanced', 'settings.tab.advanced'], ['security', 'settings.tab.security'], ['messaging', 'settings.tab.messaging'], ['plugins', 'settings.tab.plugins'],
+    ['skills', 'settings.tab.skills'],
     ['goal', 'settings.tab.goal'], ['mesh', 'settings.tab.mesh'],
   ];
   for (const [tab, key] of tabs) {
@@ -4679,6 +4680,7 @@ async function showSettings() {
         <button class="s-tab" data-stab="security">${tr('settings.tab.security')}</button>
         <button class="s-tab" data-stab="messaging">${tr('settings.tab.messaging')}</button>
         <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
+        <button class="s-tab" data-stab="skills">${tr('settings.tab.skills')}</button>
         <button class="s-tab" data-stab="goal">${tr('settings.tab.goal')}</button>
         <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
       </div>
@@ -4999,6 +5001,30 @@ async function showSettings() {
           </div>
         </div>
       </div><!-- /plugins panel -->
+
+      <div class="s-tab-panel" data-panel="skills" style="display:none">
+        <div class="s-section">
+          <h3>${tr('settings.skills.title')}</h3>
+          <div class="field-desc">${tr('settings.skills.desc')}</div>
+          <div class="field" style="display:flex;flex-direction:column;align-items:stretch;gap:10px">
+            <div class="s-plugin-toolbar">
+              <input type="text" id="s-skill-search" class="s-plugin-search" placeholder="${tr('settings.skills.searchPh')}" />
+            </div>
+            <span class="test-msg" id="s-skills-msg"></span>
+            <div id="s-skills" class="s-plugin-list"></div>
+            <div id="s-skill-editor-wrap" style="display:none;flex-direction:column;gap:8px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span id="s-skill-editor-title" class="s-plugin-name"></span>
+                <code id="s-skill-editor-path" class="s-plugin-detail-path" style="flex:1"></code>
+                <button id="s-skill-save" class="s-plugin-reload-btn">${tr('settings.skills.save')}</button>
+                <button id="s-skill-close" class="s-plugin-reload-btn">${tr('settings.skills.close')}</button>
+              </div>
+              <textarea id="s-skill-editor" class="s-persona-editor" style="min-height:420px" spellcheck="false"></textarea>
+              <span class="test-msg" id="s-skill-editor-msg"></span>
+            </div>
+          </div>
+        </div>
+      </div><!-- /skills panel -->
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
@@ -5955,6 +5981,111 @@ async function showSettings() {
     renderPlugins();
   });
   renderPlugins();
+  initSkillsTab();
+}
+
+// ── 技能(Skills)tab:列表 + 查看源文件 + 编辑保存 ──
+// Skills tab: list all skills (slash menu / injection), view the full .md source,
+// and edit + save user-level skills. Plugin/builtin sources are read-only.
+function initSkillsTab(): void {
+  const listEl = document.getElementById('s-skills')!;
+  const msgEl = document.getElementById('s-skills-msg')!;
+  const editorWrap = document.getElementById('s-skill-editor-wrap')!;
+  const editor = document.getElementById('s-skill-editor') as HTMLTextAreaElement;
+  const editorTitle = document.getElementById('s-skill-editor-title')!;
+  const editorPath = document.getElementById('s-skill-editor-path')!;
+  const editorMsg = document.getElementById('s-skill-editor-msg')!;
+  let cache: SkillInfo[] = [];
+  let editing: { name: string; readOnly: boolean } | null = null;
+
+  const renderList = (filter: string): void => {
+    const q = filter.trim().toLowerCase();
+    const items = q
+      ? cache.filter((s) => s.name.toLowerCase().includes(q) || (s.description ?? '').toLowerCase().includes(q))
+      : cache;
+    if (!items.length) {
+      listEl.innerHTML = `<div class="s-plugin-empty">${q ? tr('settings.skills.noMatch') : tr('settings.skills.empty')}</div>`;
+      return;
+    }
+    // 按来源分组:kinetaios(可编辑)排最前,claude/codex 次之,plugin/builtin 只读殿后。
+    const groups = new Map<string, SkillInfo[]>();
+    for (const s of items) {
+      const key = s.source === 'plugin' ? 'plugin' : s.source;
+      (groups.get(key) ?? groups.set(key, []).get(key)!).push(s);
+    }
+    const order = ['kinetaios', 'claude', 'codex', 'plugin'] as const;
+    listEl.innerHTML = order.filter((src) => groups.get(src)?.length).map((src) => {
+      const arr = groups.get(src)!;
+      const srcLabel = tr(`settings.skills.src.${src}` as 'settings.skills.src.claude');
+      return `<div class="s-plugin-cat-group">
+        <div class="s-plugin-cat-header">${esc(srcLabel)} (${arr.length})</div>
+        ${arr.map((s) => {
+          const ro = s.source === 'plugin';
+          const catKey = `settings.skills.cat.${s.category ?? 'other'}`;
+          return `<div class="s-plugin-row" data-skill-name="${esc(s.name)}">
+            <div class="s-plugin-info" style="flex:1">
+              <div class="s-plugin-name">${esc(s.name)} <span class="s-plugin-ver">${esc(tr(s.type === 'command' ? 'settings.skills.type.command' : s.type === 'agent' ? 'settings.skills.type.agent' : 'settings.skills.type.skill'))}</span></div>
+              <div class="s-plugin-meta">${esc((s.description ?? '').slice(0, 110))}</div>
+              <div class="s-plugin-tags">${s.category ? `<span class="s-plugin-engine">${esc(tr(catKey as 'settings.skills.cat.other'))}</span>` : ''}</div>
+            </div>
+            <div class="s-plugin-actions">
+              <button class="s-plugin-reload-btn s-skill-view" data-view="${esc(s.name)}">${ro ? tr('settings.skills.view') : tr('settings.skills.edit')}</button>
+            </div>
+          </div>`;
+        }).join('')}
+      </div>`;
+    }).join('');
+
+    listEl.querySelectorAll<HTMLButtonElement>('.s-skill-view').forEach((btn) => {
+      btn.onclick = async () => {
+        const name = btn.dataset.view!;
+        const r = await api.readSkillSource(name);
+        if (!r) {
+          msgEl.style.color = 'var(--danger)';
+          msgEl.textContent = tr('settings.skills.readFailed', { name });
+          return;
+        }
+        editing = { name, readOnly: r.source === 'plugin' };
+        editorTitle.textContent = name;
+        editorPath.textContent = r.file;
+        editor.value = r.content;
+        editor.readOnly = editing.readOnly;
+        editorWrap.style.display = 'flex';
+        editorMsg.textContent = editing.readOnly ? tr('settings.skills.readOnly') : '';
+        editorMsg.style.color = 'var(--muted)';
+        editorWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      };
+    });
+  };
+
+  // 保存(仅用户级技能) — Save (user-level skills only).
+  document.getElementById('s-skill-save')!.onclick = async () => {
+    if (!editing || editing.readOnly) return;
+    const r = await api.saveSkillSource(editing.name, editor.value);
+    editorMsg.style.color = r.ok ? 'var(--ok)' : 'var(--danger)';
+    editorMsg.textContent = r.ok ? tr('settings.skills.saved', { file: r.file }) : (r.error ?? 'error');
+    if (r.ok) {
+      // main 端保存后已强制重扫 → 这边 30s TTL 缓存也作废,slash 菜单立即生效。
+      skillsFetchedAt = 0;
+      cache = await api.listSkills();
+      renderList((document.getElementById('s-skill-search') as HTMLInputElement)?.value ?? '');
+    }
+  };
+
+  // 关闭编辑器 — Close editor.
+  document.getElementById('s-skill-close')!.onclick = () => {
+    editorWrap.style.display = 'none';
+    editing = null;
+  };
+
+  document.getElementById('s-skill-search')!.oninput = (e) => {
+    renderList((e.target as HTMLInputElement).value);
+  };
+
+  void api.listSkills().then((all) => {
+    cache = all;
+    renderList('');
+  });
 }
 
 // Read the settings form into AppSettings. Shared by Save and Test so Test validates the in-form
