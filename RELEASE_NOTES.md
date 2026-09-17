@@ -1,5 +1,35 @@
 # Release Notes
 
+## v3.7.1 — 设置「安全」tab + 全面稳定性修复(Review 44 项)
+
+**发布日期：** 2026-09-17(自 v3.7.0 起 13 commits)
+
+### 🔒 设置「安全」tab
+
+- **新增独立安全 tab**(model/appearance/engine/advanced 之后,盾牌图标)—— 隐私闸开关从 Goal 监工迁入为独立 sub-panel,附检测范围说明(a9e9568)
+- 命令面板「设置 → 各 tab」跳转列表补上 security(c711318)
+- 四语 i18n key 齐平(简/英/繁/日)
+
+### 🛡 安全修复
+
+- **插件路径逃逸三连** —— manifest 相对路径统一 resolvePluginFile 前缀校验 / uninstall 拒绝越出 plugins 根 / install 先验 plugin.json 再落盘(434ec87)
+- **插件 .cmd shim prompt 改走 stdin** —— 堵 argv 注入面(452d649)
+
+### 🐛 稳定性修复(全面 Review)
+
+- **AgentLoop 熔断** —— maxTurns 硬顶 200(无限档不再 Infinity)+ 耗尽后无工具收尾总结 + transientRetries 成功后重置(4747d8a)
+- **FTS 级联清理** —— 删会话/删 turns 同步清 FTS 索引,已删会话不再可被 recall 搜出 + appendMessage/saveTurn 事务包裹(48b7680)
+- **原子写** —— write_file/edit_file 改 tmp+rename,写一半崩溃不再留截断损坏的源文件(7fecfd2)
+- **CLI 挂死自愈** —— CliEngineAdapter 5 分钟无输出看门狗 + dispatch_agent 错误转发不再吞 + abort SIGKILL 升级(9b341ab)
+- **pipeline 完成判据** —— stage 以新 turn 终结为完成,send 未启动立即报错,不再空转 120s 误 cancel(0a4c544)
+- **SSE 多行帧聚合**(RFC 8142)—— 网关拆帧不再丢内容 + 注释行/NDJSON 兼容(6dc71c6)
+- **runtime 八连** —— dashboardWin 关窗置空 / drainConfirms 同步 drain 隐私闸 / get-conversations 瘦身防 25MB IPC / goal 停止标记防复活 / fact embedding 向量复用省一半 API 等(51428a6)
+- **5 个 IPC handler 补 try-catch** + notifyLastAt 过期清理 + DDL 列名断言(406537f)
+
+### 🧹 其他
+
+- @-ref resolver 只把含 `/` 或 `.` 的 token 当路径 —— 粘贴的 crash-log 符号不再误触发 missing-file toast(8b3cc31)
+
 ## v3.7.0 — 人机共用电脑(Computer Use) + 记忆纠错闭环 + 隐私闸
 
 **发布日期：** 2026-09-16(自 v3.6.6 起 11 commits)
