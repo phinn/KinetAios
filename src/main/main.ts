@@ -316,6 +316,13 @@ const emitter: TaskManagerEmitter = {
     const last = notifyLastAt.get(conv.id) ?? 0;
     if (now - last < 30_000) return;
     notifyLastAt.set(conv.id, now);
+    // 容量治理:顺带清理过期项(>10 分钟未活动)防长期运行 Map 只增不减。
+    // O(n) 但 n=活跃会话数,量级极小;只在写入路径触发,无额外 timer。
+    if (notifyLastAt.size > 64) {
+      for (const [k, v] of notifyLastAt) {
+        if (now - v > 600_000) notifyLastAt.delete(k);
+      }
+    }
     const lang = getSettings().lang;
     const title = kind === 'error'
       ? `${getBrand().productName} · ${t(lang, 'notify.errorTitle')}`
@@ -1921,8 +1928,13 @@ function registerIpc(): void {
     return { ok: true };
   });
   ipcMain.handle('cost-stats', () => {
-    const { costStats } = require('./store');
-    return costStats();
+    try {
+      const { costStats } = require('./store');
+      return costStats();
+    } catch (e) {
+      console.error('[cost-stats] failed:', e);
+      return { total: 0, rows: [], error: (e as Error)?.message ?? String(e) };
+    }
   });
 
   // ── Prompt 模板 ──
@@ -2129,7 +2141,12 @@ function registerIpc(): void {
 
   // ── 跨会话引用 + Agent 任务图 ──
   ipcMain.handle('task-graph', () => {
-    return loadTaskGraph();
+    try {
+      return loadTaskGraph();
+    } catch (e) {
+      console.error('[task-graph] failed:', e);
+      return { nodes: [], edges: [], error: (e as Error)?.message ?? String(e) };
+    }
   });
 
   ipcMain.handle('search-conversations', (_e, query: string) => {
@@ -2148,13 +2165,22 @@ function registerIpc(): void {
 
   // ── 全局对话搜索:FTS5 全文搜索 + 关联会话标题 ──
   ipcMain.handle('search-history', (_e, query: string) => {
-    const results = searchEnriched(query, 50);
-    return results;
+    try {
+      return searchEnriched(query, 50);
+    } catch (e) {
+      console.error('[search-history] failed:', e);
+      return [];
+    }
   });
 
   // ── 上下文考古:读取会话的事件流(conv_events,append-only 事实源)──
   ipcMain.handle('conv-events', (_e, convId: string, afterSeq = 0) => {
-    return loadEvents(convId, afterSeq);
+    try {
+      return loadEvents(convId, afterSeq);
+    } catch (e) {
+      console.error('[conv-events] failed:', e);
+      return [];
+    }
   });
 
   // ── 记忆图谱数据:返回三元组 + 节点列表(给 renderer 力导向图用) + 溯源 + 冲突 ──
@@ -2580,8 +2606,13 @@ function registerIpc(): void {
   });
 
   ipcMain.handle('team-delete', (_e, teamId: string) => {
-    deleteTeam(teamId);
-    return true;
+    try {
+      deleteTeam(teamId);
+      return true;
+    } catch (e) {
+      console.error('[team-delete] failed:', e);
+      return false;
+    }
   });
 
   ipcMain.handle('team-list-members', (_e, teamId: string) => {
