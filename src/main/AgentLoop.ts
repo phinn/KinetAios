@@ -250,10 +250,14 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   //   跑到模型自己停、要么烧到上下文溢出 → "任务到一半停止")。故:用户无限 + 有内部上限 → 用内部上限。
   // User setting is the global ceiling; internal path caps apply when tighter.
   const userMax = getSettings().maxTurns ?? 50;
+  // 硬顶熔断:即使用户显式选无限(maxTurns=0),也不能让"每轮重复调同一工具"的模型死循环
+  // 无限烧 API(2026-09 review 实锤:Infinity 无任何熔断)。HARD_TURN_CAP 足够跑完长任务,
+  // 真正无限的诉求由 /goal 循环(每轮独立计费可控)承担。
+  const HARD_TURN_CAP = 200;
   let maxTurns: number;
   if (userMax <= 0) {
-    // 用户显式要求无限:无内部上限 → 真无限;有内部上限(deep 节点/fast)→ 仍用内部上限(保险丝)
-    maxTurns = (opts.maxTurns != null && opts.maxTurns > 0) ? opts.maxTurns : Infinity;
+    // 用户显式要求无限:无内部上限 → 硬顶兜底;有内部上限(deep 节点/fast)→ 仍用内部上限(保险丝)
+    maxTurns = (opts.maxTurns != null && opts.maxTurns > 0) ? opts.maxTurns : HARD_TURN_CAP;
   } else if (opts.maxTurns != null && opts.maxTurns > 0) {
     maxTurns = Math.min(opts.maxTurns, userMax); // 内部上限与用户天花板取紧
   } else {
@@ -372,6 +376,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // 按协议分别校准:GLM(OpenAI 协议)与 Claude 的 token/char 比差异大,混用一个系数会导致并发会话互相干扰。
     calibrateTokens(completion.tokensIn, messages, snapshot.apiProtocol);
 
+    // 修复:成功调用后重置瞬时错误计数 — 此前计数在整个 run 生命周期共享,
+    // 长任务(几十轮工具调用)累计撞满 4 次 429 就整体报废,即使每次都成功恢复。
+    transientRetries = 0;
+
     // 空 completion 兜底:思考模型(如 glm-5.3-flash)偶发把整个输出预算烧在 reasoning 上,
     // content 空且无 toolCalls → 按旧逻辑会直接 done,turn 留下空 answer、用户看到"没反应"。
     // 推促最多 MAX_EMPTY_RETRIES 次(递进语气);仍空才报错退出,绝不静默吞掉。
@@ -404,6 +412,31 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);
+  }
+  // maxTurns 耗尽:先给模型一次"无工具收尾"机会强制总结 — 此前直接报错返回,
+  // 历史以 tool 消息结尾、无 assistant 答复,用户只看到"达到最大轮数"却拿不到已完成部分的成果。
+  // 收尾调用也失败/被 abort → 原样报 maxTurns 错误退出。
+  if (!signal.aborted) {
+    try {
+      onEvent({ type: 'status', text: '⏳ 已达轮数上限,正在收尾总结…' });
+      const wrapUp = await provider.streamComplete(
+        [...messages, { role: 'user', content: '[系统] 已达最大工具调用轮数。不要再调用任何工具,立即基于已完成的进展给出最终总结回答。', _transient: true } as typeof messages[number]],
+        [], // 无工具 → 模型只能输出文本
+        snapshot, signal,
+        (tok) => onEvent({ type: 'token', text: tok }),
+      );
+      messages.push(wrapUp.rawAssistant);
+      if (wrapUp.tokensIn + wrapUp.tokensOut > 0) {
+        const usd = priceUSD(snapshot.model, wrapUp.tokensIn, wrapUp.tokensOut);
+        onEvent({ type: 'cost', usd, tokens: wrapUp.tokensIn + wrapUp.tokensOut, tokensIn: wrapUp.tokensIn, tokensOut: wrapUp.tokensOut, source: 'llm' });
+      }
+      onEvent({ type: 'status', text: `⚠️ ${t(getSettings().lang, 'al.maxTurns', { max: maxTurns })}` });
+      onEvent({ type: 'traj', records: snapshotTraj(messages) });
+      onEvent({ type: 'done' });
+      return dropTransient(messages);
+    } catch {
+      /* 收尾失败 → fall through 到常规 maxTurns 报错 */
+    }
   }
   onEvent({ type: 'error', kind: 'maxTurns', message: t(getSettings().lang, 'al.maxTurns', { max: maxTurns }) });
   return dropTransient(messages);
@@ -1002,9 +1035,10 @@ async function runToolBatch(
         }),
       );
       for (const { c, result } of outs) {
-        // screenshot 工具返回 __IMAGE_BASE64__: 标记 → 转为多模态 tool 消息(文本+图片)
+        // screenshot 工具返回 __IMAGE_BASE64__: 标记 → 转为多模态 tool 消息(文本+图片)。
+        // 超限降级(b64 为空)→ 当普通文本走截断路径。
         const shot = parseScreenshotResult(result);
-        if (shot) {
+        if (shot && shot.b64) {
           results.push({
             role: 'tool',
             tool_call_id: c.id,
@@ -1013,6 +1047,8 @@ async function runToolBatch(
               { type: 'image_url', image_url: { url: `data:image/png;base64,${shot.b64}`, detail: 'auto' } },
             ],
           });
+        } else if (shot) {
+          results.push({ role: 'tool', tool_call_id: c.id, content: truncateForModel(shot.textPart || 'Screenshot captured.', truncateThreshold) });
         } else {
           results.push({ role: 'tool', tool_call_id: c.id, content: result });
         }
@@ -1025,8 +1061,8 @@ async function runToolBatch(
       const dur = Date.now() - t0;
       const shot = parseScreenshotResult(result);
       onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, startId: call.id, images: shot ? [shot.b64] : undefined });
-      // 截图工具(只读,但防御性处理)—— 不截断 base64
-      if (shot) {
+      // 截图工具(只读,但防御性处理)—— 超限降级(b64 空)当文本
+      if (shot && shot.b64) {
         results.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -1035,6 +1071,8 @@ async function runToolBatch(
             { type: 'image_url', image_url: { url: `data:image/png;base64,${shot.b64}`, detail: 'auto' } },
           ],
         });
+      } else if (shot) {
+        results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(shot.textPart || 'Screenshot captured.', truncateThreshold) });
       } else {
         results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result, truncateThreshold) });
       }
@@ -1047,12 +1085,16 @@ async function runToolBatch(
 // ponytail: __IMAGE_BASE64__ 标记可能被"读源码 / grep 命中字面量"伪造(2026-08-31 的 GLM 1214 事故:
 // agent read_file 读到本标记所在源码段,剩余 JS 源码被拼进 data: URL 发给 GLM → 400 [1214])。
 // payload 必须是纯 base64 且够长才认定为真截图,否则当普通文本。
+// 上限(MAX_SHOT_B64 ≈ 4MB base64 ≈ 3MB PNG):超限截断为文本提示而非整图进上下文 —
+// 此前 forModel=原始 result 完全绕过 truncateForModel,超大 base64 直接撑爆下一轮 input。
 const IMG_MARKER = '__IMAGE_BASE64__:';
+const MAX_SHOT_B64 = 4 * 1024 * 1024;
 function parseScreenshotResult(result: string): { textPart: string; b64: string } | null {
   const idx = result.indexOf(IMG_MARKER);
   if (idx < 0) return null;
   const b64 = result.slice(idx + IMG_MARKER.length).trim();
   if (b64.length < 100 || !/^[A-Za-z0-9+/=\r\n]+$/.test(b64)) return null;
+  if (b64.length > MAX_SHOT_B64) return { textPart: `Screenshot captured (${Math.round(b64.length * 3 / 4 / 1024)}KB, too large to inline — exceeded ${(MAX_SHOT_B64 * 3 / 4 / 1024 / 1024).toFixed(1)}MB limit). ${result.slice(0, idx).trim()}`, b64: '' };
   return { textPart: result.slice(0, idx).trim(), b64 };
 }
 
