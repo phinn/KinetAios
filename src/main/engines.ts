@@ -460,6 +460,7 @@ class DirectEngine implements Engine {
           ? `${sub}\n\n---\n# 父会话上下文(只读参考,不要修改或依赖)\n${resolved.historyText}\n---`
           : sub;
         let out: Awaited<ReturnType<typeof runAgentLoop>>;
+        const subErrors: string[] = [];
         try {
           out = await runAgentLoop({
             provider: subProvider,
@@ -476,6 +477,9 @@ class DirectEngine implements Engine {
               // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。
               // Pass sub-agent tool events through as real tool steps so the chat stream can expand args/result.
               else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
+              // 错误转发:此前 error/status/done 全被吞,子任务失败时父 agent 只看到
+              // "(子任务无文本输出)",根因被掩埋。error 记下来拼进返回值。
+              else if (e.type === 'error') subErrors.push(e.message);
             },
           });
         } finally {
@@ -488,7 +492,11 @@ class DirectEngine implements Engine {
           .map((m) => m.content)
           .join('\n')
           .trim();
-        return text || '(子任务无文本输出)';
+        if (!text) {
+          // 空输出时附上子任务的错误(若有),不再让失败静默。
+          return subErrors.length ? `(子任务失败: ${subErrors.join(' ; ')})` : '(子任务无文本输出)';
+        }
+        return subErrors.length ? `${text}\n\n(子任务过程中出现错误: ${subErrors.join(' ; ')})` : text;
       },
     };
     // A skill invoked via /<name> rides ahead of memory so the active instruction is prominent.
@@ -680,7 +688,7 @@ function resolveBinUncached(name: string): ResolvedBin {
 function runBin(
   bin: ResolvedBin,
   args: string[],
-  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void; input?: string },
+  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void; input?: string; onSpawn?: (child: import('node:child_process').ChildProcess) => void },
 ): Promise<number> {
   return new Promise((resolve) => {
     const spawnOpts: import('node:child_process').SpawnOptions = {
@@ -690,6 +698,7 @@ function runBin(
       ...(bin.shell ? { shell: true } : {}),
     };
     const child = spawn(bin.cmd, args, spawnOpts);
+    opts.onSpawn?.(child);
     // codex 0.135+ 在 stdin 保持打开时会等 "additional input from stdin"(EOF)。
     // 我们从不写 stdin → 立即关闭,防止 CLI 卡在读 stdin。/ Close stdin immediately:
     // codex waits for stdin EOF ("Reading additional input from stdin...") otherwise.
@@ -883,7 +892,41 @@ class CliEngineAdapter implements Engine {
     const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
     // 安全迁移:shell shim(.cmd/.bat)下 stdin 有值 → prompt 内容经 stdin 传递,
     // argv 只留 flag(与 runCliOneShot 的修复同款,防 cmd 元字符注入)。
-    const exitCode = await runBin(bin, args.args, { cwd, signal, onLine, onStderr, input: bin.shell ? args.stdin : undefined });
+    // 无输出看门狗:CLI 停止产出(无 stdout/stderr 行)超过 5 分钟 → 视为挂死,
+    // 主动 kill 并发 error 终态。此前唯一终止手段是用户手动 abort,turn 永远 running。
+    const IDLE_TIMEOUT_MS = 5 * 60 * 1000;
+    let idleTimer: NodeJS.Timeout | null = null;
+    let idleFired = false;
+    let childRef: import('node:child_process').ChildProcess | null = null;
+    const killIdle = (why: string): void => {
+      try {
+        const pid = childRef?.pid;
+        if (pid != null) {
+          if (process.platform === 'win32') execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+          else process.kill(pid, 'SIGKILL');
+        }
+      } catch { /* already gone */ }
+      onEvent({ type: 'error', message: why });
+    };
+    const armIdle = (): void => {
+      if (idleFired) return;
+      if (idleTimer) clearTimeout(idleTimer);
+      idleTimer = setTimeout(() => {
+        idleFired = true;
+        idleTimer = null;
+        killIdle(`${this.cfg.label ?? String(this.cfg.name)} 5 分钟无任何输出,已终止(可能挂死)。请重试或检查 CLI 状态。`);
+      }, IDLE_TIMEOUT_MS);
+      idleTimer.unref?.();
+    };
+    const bumpIdle = (): void => { if (!idleFired) armIdle(); }; // 每行输出重置看门狗
+    armIdle(); // 启动即布防(应对 spawn 后完全不产出的场景)
+    const wrappedOnLine = (line: string): void => { bumpIdle(); onLine(line); };
+    const wrappedOnStderr = onStderr ? (line: string): void => { bumpIdle(); onStderr(line); } : undefined;
+    const exitCode = await runBin(bin, args.args, {
+      cwd, signal, onLine: wrappedOnLine, onStderr: wrappedOnStderr, input: bin.shell ? args.stdin : undefined,
+      onSpawn: (c) => { childRef = c; },
+    });
+    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
     if (signal.aborted) return; // user cancelled — not an error
     if (!sawTerminal) {
       // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
@@ -1306,30 +1349,29 @@ function pluginProtocolParser(protocol: string, pluginName: string): (line: stri
       // 整行当 token。done 由适配器退出兜底补(退出码 0 且无终态 → 不可行,适配器只兜 error;
       // 所以 plain 协议约定:CLI 正常退出前最后一行输出 JSON {"type":"done"} 也会被解析。
       // 更简单的兜底:退出码 0 且从未发过 done → 这里跟踪不了,靠 onExitFallback 判 code===0 补 done)。
+      //
+      // 修复:JSON 终态探测收紧 —— 此前任何 {...} 形态的行都被尝试按协议事件解析,
+      // CLI 答案里恰好是单行 JSON(如让 agent 输出一段 JSON 代码)会被误吞成 token 丢失。
+      // 现在只认「带 recognizably 协议字段」的对象:type 字段必须是协议枚举值之一,
+      // 否则原样当文本 token 下发。
       return (line, { emit }) => {
         const tr = line.trim();
         if (!tr) return;
-        // 行内嵌单个 JSON 终态对象也认(宽松):{"type":"done"} / {"type":"error","message":..}
         if (tr.startsWith('{') && tr.endsWith('}')) {
           try {
-            const obj = JSON.parse(tr);
-            if (obj && obj.type === 'done') {
-              emit({ type: 'done' });
-              return;
+            const obj = JSON.parse(tr) as Record<string, unknown>;
+            const ty = typeof obj?.type === 'string' ? obj.type : '';
+            if (ty === 'done' || ty === 'error' || ty === 'sessionStarted' || ty === 'cost') {
+              if (ty === 'done') { emit({ type: 'done' }); return; }
+              if (ty === 'error') { emit({ type: 'error', message: String(obj.message ?? 'error') }); return; }
+              if (ty === 'sessionStarted' && typeof obj.id === 'string') { emit({ type: 'sessionStarted', id: obj.id }); return; }
+              if (ty === 'cost') {
+                const usd = Number(obj.usd);
+                emit({ type: 'cost', usd: Number.isNaN(usd) ? 0 : usd, tokens: Number(obj.tokens) || 0, tokensIn: Number(obj.tokensIn) || 0, tokensOut: Number(obj.tokensOut) || 0, source: String(obj.source ?? 'subagent') });
+                return;
+              }
             }
-            if (obj && obj.type === 'error') {
-              emit({ type: 'error', message: String(obj.message ?? 'error') });
-              return;
-            }
-            if (obj && obj.type === 'sessionStarted' && typeof obj.id === 'string') {
-              emit({ type: 'sessionStarted', id: obj.id });
-              return;
-            }
-            if (obj && obj.type === 'cost') {
-              const usd = Number(obj.usd);
-              emit({ type: 'cost', usd: Number.isNaN(usd) ? 0 : usd, tokens: Number(obj.tokens) || 0, tokensIn: Number(obj.tokensIn) || 0, tokensOut: Number(obj.tokensOut) || 0, source: String(obj.source ?? 'subagent') });
-              return;
-            }
+            // type 不是协议枚举(或无 type)→ CLI 的普通 JSON 输出,原样当文本
           } catch {
             /* 不是 JSON → 当普通文本 */
           }
