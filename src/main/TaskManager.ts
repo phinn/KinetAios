@@ -522,7 +522,10 @@ export class TaskManager {
     let consecutiveNoProgress = 0; // 连续无实质产出轮数(防原地打转,监工模式专用)
     let lastStat = '';
 
-    this.goalLoopStopped.delete(id); // 清除上次的取消标记
+    // 清除上次的取消标记 — 仅限"非用户取消"遗留(见 runGoalLoop 出口注释):
+    // 用户 cancel() 的语义是"停掉 goal 循环且不许复活",标记保留到会话删除或重新 /goal。
+    // 这里能进来说明用户刚显式发起新目标(/goal 重设了 conv.goal),视为重新授权,清掉旧标记。
+    this.goalLoopStopped.delete(id);
     // P2(goal 域):轮数上限从投影取 —— goal/set 后累计的 user/message 轮数持久在事件流里,
     // 重启不再重置(GOAL_MAX_ITERATIONS 只是单次循环的迭代保护,持久记账以投影为准)。
     const admittedRounds = () => store.projectGoal(conv.id).rounds;
@@ -543,11 +546,25 @@ export class TaskManager {
 
     // Supervisor 验收:把替身画像 + 本轮产出 + git 变化喂给监工模型,要 JSON 裁决。
     // 返回 null = 监工调用失败(降级:按旧模式继续跑,不打断过夜任务)。
-    const supervise = async (answer: string, signal: AbortSignal): Promise<{ verdict: 'continue' | 'complete'; requirement: string } | null> => {
-      let diffStat = '';
+    // gitDiffStat:异步 execFile — 此前 execFileSync 同步阻塞主进程(超时 5s),
+    // 期间所有窗口流式输出与 IPC 全部冻结。
+    const gitDiffStat = async (signal?: AbortSignal): Promise<string> => {
       try {
-        diffStat = require('node:child_process').execFileSync('git', ['diff', '--stat', 'HEAD'], { cwd: conv.cwd, encoding: 'utf8', timeout: 5000 }).slice(-2000);
-      } catch { /* 非 git 目录/无变化 —— diffStat 留空即可,监工不依赖它 */ }
+        const { execFile } = await import('node:child_process');
+        return await new Promise<string>((resolve) => {
+          execFile('git', ['diff', '--stat', 'HEAD'], { cwd: conv.cwd, encoding: 'utf8', timeout: 5000 }, (err, stdout) => {
+            resolve(err ? '' : String(stdout).slice(-2000));
+          });
+          if (signal) {
+            const onAbort = (): void => resolve('');
+            signal.addEventListener('abort', onAbort, { once: true });
+          }
+        });
+      } catch { /* 非 git 目录/无变化 —— diffStat 留空即可 */ }
+      return '';
+    };
+    const supervise = async (answer: string, signal: AbortSignal): Promise<{ verdict: 'continue' | 'complete'; requirement: string } | null> => {
+      const diffStat = await gitDiffStat(signal);
       const sys = `${S.persona}\n\n---\n你是上面这位用户的「替身监工」。一个 AI Worker 正在替你自主推进目标。你要以这位用户的口味验收产出:挑剔、结果导向、拒绝表面功夫。只输出一个 JSON 对象,不要任何解释:
 {"verdict":"continue","requirement":"给 Worker 的下一条具体要求"}
 或
@@ -664,8 +681,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           }
           nextPrompt = verdict.requirement;
           // 防原地打转:监工连续 5 轮都要求返工且 git 无新变化 → 停下来等人
-          let stat = '';
-          try { stat = require('node:child_process').execFileSync('git', ['diff', '--stat', 'HEAD'], { cwd: conv.cwd, encoding: 'utf8' }); } catch { /* noop */ }
+          const stat = await gitDiffStat(currentAc.signal);
           if (stat === lastStat) consecutiveNoProgress++; else consecutiveNoProgress = 0;
           lastStat = stat;
           if (consecutiveNoProgress >= 5) {
@@ -735,8 +751,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         this.emit.emitConversation(conv);
       }
     }
-    // 循环结束 → 确保状态恢复 + 清理标记
-    this.goalLoopStopped.delete(id);
+    // 循环结束 → 确保状态恢复 + 清理标记。
+    // 只在"非用户取消"路径清标记:cancel() 设置的 goalLoopStopped 若在这里被删,
+    // 下一次普通 send 会把标记当不存在 → goal 循环复活,违背用户停止语义。
+    // (用户取消遗留的标记由 runGoalLoop 入口在用户显式重新 /goal 时才清。)
+    if (!currentAc.signal.aborted && !this.goalLoopStopped.has(id)) {
+      // 正常完结(无取消) → 清理(防御:正常路径标记本就不在)
+      this.goalLoopStopped.delete(id);
+    } else if (!this.goalLoopStopped.has(id)) {
+      this.goalLoopStopped.delete(id); // abort 但非 cancel(如会话删除已另清)→ 也清
+    }
     if (this.convs.has(id) && conv.status === 'running') {
       conv.status = 'ready';
       this.emit.emitConversation(conv);
@@ -1063,15 +1087,17 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         candidates.push(f);
       }
 
-      // 有 embedding 接口时再过一遍语义去重
+      // 有 embedding 接口时再过一遍语义去重。candVecs 缓存复用:落库后给新 fact 存 embedding
+      // 直接用它,不再二次 embed(此前同一批文本 embed 两遍 = 双倍 API 成本与延迟)。
       let finalFacts: Array<{ text: string; importance: number }>;
+      let candVecs: number[][] | null = null;
       if (candidates.length === 0) {
         finalFacts = [];
       } else {
         try {
           const { embed } = await import('./glm');
           // embed 候选 + 全部已有记忆,算 cosine
-          const candVecs = await embed(candidates.map((c) => c.text), snap, ac.signal);
+          candVecs = await embed(candidates.map((c) => c.text), snap, ac.signal);
           const embeddings = store.listMemoryEmbeddings();
           if (embeddings.length > 0) {
             // 有已有 embedding → 算 cosine
@@ -1125,14 +1151,27 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }
       // 给新插入的 fact 算 embedding。失败不阻塞主流程,recall_memory 会回退 FTS5。
       // 批量 embedding:一次 API 调用处理所有新 fact,避免 N+1 性能问题。
+      // 去重阶段已 embed 过的候选(candVecs)按索引直接复用,只 embed 没算过的(fuzzy-only 路径进来的)。
       if (added.length) {
         try {
           const { embedSnapshot } = await import('./settings');
           const esnap = embedSnapshot();
-          // 一次性批量 embed 所有新 fact
-          const vecs = await embed(added.map((e) => e.text), snap, ac.signal);
-          for (let i = 0; i < added.length && i < vecs.length; i++) {
-            if (vecs[i]?.length) store.setMemoryEmbedding(added[i].id, vecs[i], esnap.model);
+          const reused: Array<{ idx: number; vec: number[] }> = [];
+          const missing: Array<{ ai: number; ci: number }> = []; // added 下标 → candidates 下标
+          for (let ai = 0; ai < added.length; ai++) {
+            const ci = candidates.findIndex((c) => c.text === added[ai].text);
+            const v = ci >= 0 && candVecs ? candVecs[ci] : undefined;
+            if (v?.length) reused.push({ idx: ai, vec: v });
+            else missing.push({ ai, ci });
+          }
+          // 只对没有现成向量的补一次批量 embed(通常为空)
+          let freshVecs: number[][] = [];
+          if (missing.length) freshVecs = await embed(missing.map((m) => added[m.ai].text), snap, ac.signal);
+          const finalVecs: number[][] = new Array(added.length);
+          for (const r of reused) finalVecs[r.idx] = r.vec;
+          for (let k = 0; k < missing.length && k < freshVecs.length; k++) finalVecs[missing[k].ai] = freshVecs[k];
+          for (let i = 0; i < added.length; i++) {
+            if (finalVecs[i]?.length) store.setMemoryEmbedding(added[i].id, finalVecs[i], esnap.model);
           }
         } catch {
           /* embeddings 全失败也无所谓,recall 回退 FTS5 */

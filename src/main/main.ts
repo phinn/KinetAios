@@ -217,6 +217,13 @@ function confirm(cmd: string): Promise<boolean> {
 function drainConfirms(): void {
   for (const resolve of pendingConfirms.values()) resolve(false);
   pendingConfirms.clear();
+  // 隐私闸 pending 表同池 drain:dashboard 刷新/导航后 privacy-confirm-response 永远不会回来,
+  // 只 drain confirm 链会让等隐私闸的 agent 挂满 5 分钟 auto-deny 才解脱。
+  for (const resolve of pendingPrivacyConfirms.values()) {
+    clearTimeout(resolve.timer);
+    resolve.fn(false);
+  }
+  pendingPrivacyConfirms.clear();
 }
 
 // Send to a window that may be mid-destroy: ?. only guards a null win, not a destroyed webContents.
@@ -356,6 +363,9 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // 关窗置空:closeBehavior=minimize/tray 时 dashboard 关了但 app 不退,
+  // 悬挂的 destroyed 引用会被 second-instance 等路径直接调 isMinimized() 抛 "Object has been destroyed"。
+  win.on('closed', () => { dashboardWin = null; });
 
   // 渲染崩溃 / 无响应 — 停止所有运行中的 agent loop,避免向死掉的 renderer 狂发事件。
   // Renderer crash: stop all running agent loops to avoid spamming events into the void.
@@ -396,8 +406,11 @@ function createDashboard(): BrowserWindow {
       if (process.platform === 'darwin') {
         // sample <pid> <dur> -file <path>;webContents 没 pid → 用 win.webContents
         // 的 getOSProcessId()(Electron 22+)。失败静默。
+        // 异步执行:此前 execFileSync 在主进程跑 15s,把 renderer 的卡死放大成 main 也冻住。
         const pid = win.webContents.getOSProcessId();
-        if (pid) execFileSync('/usr/bin/sample', [String(pid), '3', '-mayDie', '-file', outFile], { timeout: 15000 });
+        if (pid) {
+          execFile('/usr/bin/sample', [String(pid), '3', '-mayDie', '-file', outFile], { timeout: 15000 }, () => { /* best-effort */ });
+        }
       } else {
         fs.appendFileSync(outFile, `\n[${new Date().toISOString()}] win unresponsive (pid=${win.webContents.getOSProcessId()})\n`);
       }
@@ -1028,7 +1041,23 @@ function buildCollectScript(x1: number, y1: number, x2: number, y2: number): str
 
 function registerIpc(): void {
   // directHistory MB 级,不随列表下发;上下文检查器按需走 get-conversation-context。
-  ipcMain.handle('get-conversations', () => taskManager.list().map((c) => ({ ...c, directHistory: [] })));
+  ipcMain.handle('get-conversations', () => taskManager.list().map((c) => {
+    // 与 emitConversation 同族瘦身:hydrate 过的会话 turns 可达 MB 级,
+    // 每次拉列表全量 structured clone 过 IPC 是 2026-08 卡死事故的漏网同类。
+    if (c.turnsLoaded === false) return { ...c, directHistory: [] };
+    let weight = 0;
+    for (const t of c.turns) {
+      weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
+      if (t.steps) for (const s of t.steps) {
+        weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
+      }
+    }
+    if (weight > IPC_TURNS_CHAR_LIMIT) {
+      const last = c.turns[c.turns.length - 1];
+      return { ...c, directHistory: [], turns: last ? [last] : [], turnsLoaded: false as const };
+    }
+    return { ...c, directHistory: [] };
+  }));
 
   // 懒加载:renderer 切频道时按需拉 turns(head 模式启动不载全文)
   // Lazy: renderer fetches turns on conversation switch.
@@ -1043,14 +1072,18 @@ function registerIpc(): void {
     return conv;
   });
   // 从某条 turn 处分叉出新会话(复制该 turn 及之前的历史)
-  ipcMain.handle('fork-conversation', (_e, sourceId: string, uptoTurnId: string) => {
-    const conv = taskManager.forkConversation(sourceId, uptoTurnId);
+  ipcMain.handle('fork-conversation', (_e, sourceId: string, uptoTurnId: string) => {    const conv = taskManager.forkConversation(sourceId, uptoTurnId);
     if (conv?.cwd) ensureWatcher(conv.cwd);
     return conv;
   });
-  ipcMain.handle('send', (_e, id: string, text: string) => {
-    taskManager.send(id, text);
-    return true;
+  ipcMain.handle('send', async (_e, id: string, text: string) => {
+    // await + 异常包装:send 同步段(如 SQLite 写失败)抛出时 renderer 此前毫无感知,只进 unhandledRejection。
+    try {
+      await taskManager.send(id, text);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
   });
   ipcMain.handle('cancel', (_e, id: string) => {
     drainConfirms();
@@ -1480,7 +1513,11 @@ function registerIpc(): void {
 
   ipcMain.handle('quick-submit', async (_e, text: string) => {
     const conv = taskManager.newConversation(os.homedir());
-    taskManager.send(conv.id, text);
+    try {
+      await taskManager.send(conv.id, text);
+    } catch (e) {
+      console.error('[quick-submit] send failed:', e);
+    }
     return conv.id;
   });
   ipcMain.handle('open-dashboard', () => {
@@ -2572,27 +2609,31 @@ function registerIpc(): void {
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 3 * 60 * 1000);
       emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'running' });
-      const r = await runMember({
-        member,
-        userMessage: message,
-        runOpts: {
-          provider, snap, signal: ac.signal,
-          cwd: conv.cwd,
-          confirm,
-          convId: conv.id,
-          onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
-        },
-      });
-      clearTimeout(timer);
-      upsertTeamMember({
-        ...member,
-        history: JSON.stringify(r.newHistory),
-        last_message: message, last_result: r.answer,
-        status: 'done', updated_at: Date.now() / 1000,
-      });
-      emitTeamEvent(teamId, { type: 'memberDone', memberName, answer: r.answer });
-      emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'done' });
-      return { ok: true, answer: r.answer };
+      try {
+        const r = await runMember({
+          member,
+          userMessage: message,
+          runOpts: {
+            provider, snap, signal: ac.signal,
+            cwd: conv.cwd,
+            confirm,
+            convId: conv.id,
+            onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
+          },
+        });
+        upsertTeamMember({
+          ...member,
+          history: JSON.stringify(r.newHistory),
+          last_message: message, last_result: r.answer,
+          status: 'done', updated_at: Date.now() / 1000,
+        });
+        emitTeamEvent(teamId, { type: 'memberDone', memberName, answer: r.answer });
+        emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'done' });
+        return { ok: true, answer: r.answer };
+      } finally {
+        // finally 清 timer:失败路径此前不清理,timer 句柄多驻留 3 分钟。
+        clearTimeout(timer);
+      }
     } catch (e) {
       emitTeamEvent(teamId, { type: 'memberStatus', memberName, status: 'failed' });
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -2615,31 +2656,34 @@ function registerIpc(): void {
       const provider = currentProvider(snap);
       const ac = new AbortController();
       const timer = setTimeout(() => ac.abort(), 3 * 60 * 1000);
-      const results = await runMembersParallel({
-        members, message,
-        runOpts: {
-          provider, snap, signal: ac.signal,
-          cwd: conv.cwd,
-          confirm,
-          convId: conv.id,
-          onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
-        },
-      });
-      clearTimeout(timer);
-      // 持久化
-      const answers: Record<string, string> = {};
-      for (const m of members) {
-        const r = results.get(m.name);
-        if (!r) continue;
-        upsertTeamMember({
-          ...m,
-          history: JSON.stringify(r.newHistory),
-          last_message: message, last_result: r.answer,
-          status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000,
+      try {
+        const results = await runMembersParallel({
+          members, message,
+          runOpts: {
+            provider, snap, signal: ac.signal,
+            cwd: conv.cwd,
+            confirm,
+            convId: conv.id,
+            onTeamEvent: (mn, ev) => emitTeamEvent(teamId, ev),
+          },
         });
-        answers[m.name] = r.answer;
+        // 持久化
+        const answers: Record<string, string> = {};
+        for (const m of members) {
+          const r = results.get(m.name);
+          if (!r) continue;
+          upsertTeamMember({
+            ...m,
+            history: JSON.stringify(r.newHistory),
+            last_message: message, last_result: r.answer,
+            status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000,
+          });
+          answers[m.name] = r.answer;
+        }
+        return { ok: true, results: answers };
+      } finally {
+        clearTimeout(timer); // 失败路径同样清理(同 team-send-member)
       }
-      return { ok: true, results: answers };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
