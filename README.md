@@ -15,7 +15,7 @@
 
 **MCP support** — connect MCP servers (stdio + remote SSE) and their tools are exposed to the agent automatically, alongside 30+ built-in tools: shell (with per-session approval), file read/write/edit, web search/fetch, long-term memory, git diff, computer use (screenshot / click / keyboard on macOS), and more.
 
-**Skills auto-loading** — scans `~/.claude/skills`, `~/.codex/skills`, `~/.kinetaios/skills` and injects a lightweight catalog into the system prompt; the agent pulls full skill bodies on demand via `load_skill` when a task matches. Create a skill mid-session and it's visible immediately.
+**Skills auto-loading** — scans `~/.claude/skills`, `~/.codex/skills`, `~/.kinetaios/skills` and injects a lightweight catalog into the system prompt; the agent pulls full skill bodies on demand via `load_skill` when a task matches. Create a skill mid-session and it's visible immediately. A dedicated Settings → Skills panel aggregates every skill/command/agent from all sources with search, viewing and in-app editing (plugin-contributed skills read-only).
 
 **Token accounting & cost archaeology** — input/output tokens split across every LLM call (including sub-agents, compaction, judge, teams); per-call drill-down overlay, per-channel totals, cost persisted in SQLite for archaeology.
 

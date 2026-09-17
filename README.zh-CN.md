@@ -122,6 +122,7 @@ npm start
 
 ### Skills / Commands / Agents / 插件
 - 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。
+- **技能面板**(设置 → 技能):聚合三方来源 + 插件贡献的全部技能,搜索、查看、直接编辑源文件(插件技能只读),保存即时生效。
 - **插件 SDK v3**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。**20 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex 等。
 
 ### 侧边栏按钮(从左到右)
@@ -163,7 +164,9 @@ npm start
 `Ctrl/Cmd+K` 浮层搜索所有会话 —— 匹配 prompt 文本、回答文本和工具输出。
 
 ### 设置(⚙️)
+- **左右两栏布局**:左侧竖向 tab 导航(模型 / 外观 / 引擎 / 高级 / 安全 / 消息 / 插件 / 技能 / Goal / 多机协作),右侧内容独立滚动;窄窗口自动回退横向 tab;搜索框跨面板全景过滤。
 - **接口**:provider(OpenAI / Anthropic)、base URL、模型、key。GLM / DeepSeek / OrcaRouter / OpenAI / Anthropic 预设。智谱余额查询按钮。safeStorage 加密存储。
+- **安全**:隐私闸(数据出网敏感检测)开关。
 - **行为**:shell 审批模式、sandbox 级别、计划模式、CLI 引擎开关、关窗行为(退出 / 最小化 / 托盘)。
 - **价格**:每个模型的输入/输出价格,用于成本计算。
 - **界面**:语言(English / 简体中文 / 繁體中文 / 日本語)、主题(dark / light,实时预览)。
