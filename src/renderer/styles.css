@@ -3059,7 +3059,6 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 .pe-body { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding-right: 4px; }
 .pe-card .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
 .pe-status { font-size: 0.846rem; color: var(--text-dim); }
-.pe-card .modal-card,
 .pe-card h3 { margin: 0 0 10px; }
 /* 添加模型入口按钮:列表右上角 */
 .profile-add-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
