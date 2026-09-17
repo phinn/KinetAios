@@ -6,6 +6,19 @@ import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
 import crypto from 'node:crypto';
+
+// 原子写:同目录 tmp 文件 + rename 替换。直接 writeFileSync 覆盖在写一半崩溃/断电时会留下
+// 截断损坏的源文件(用户源码!);rename 在同一文件系统上是原子的。tmp 名带随机后缀防并发互踩。
+function atomicWrite(p: string, content: string): void {
+  const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
+  try {
+    fs.writeFileSync(tmp, content, 'utf8');
+    fs.renameSync(tmp, p);
+  } catch (e) {
+    try { fs.rmSync(tmp, { force: true }); } catch { /* 清理失败无所谓 */ }
+    throw e;
+  }
+}
 import type { Provider, ToolDef } from './glm';
 import * as store from './store';
 import { privacyGate } from './privacy-gate';
@@ -597,7 +610,7 @@ const writeFile: Tool = {
         } catch { /* snapshot 失败不影响主流程 */ }
       }
       fs.mkdirSync(path.dirname(p), { recursive: true });
-      fs.writeFileSync(p, content, 'utf8');
+      atomicWrite(p, content);
       return `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
@@ -1248,7 +1261,7 @@ const editFile: Tool = {
       count = 1;
     }
     try {
-      fs.writeFileSync(p, out, 'utf8');
+      atomicWrite(p, out);
       return `已替换 ${count} 处 → ${p}`;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
