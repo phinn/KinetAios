@@ -139,13 +139,43 @@ const dummyNode: DAGNode = {
   status: 'pending', retryCount: 0,
 };
 
-test('executeNode:前 MAX_TURNS_PER_STEP 轮全是 tool_call(轮次上限),续跑段输出文字 → 成功', async () => {
+// 收尾调用判别:AgentLoop 在 maxTurns 耗尽后会发一次"无工具收尾"调用(defs=[]),
+// 模拟真实模型时用这个区分「正常轮次」与「收尾总结」。
+function isWrapUpCall(defs: ToolDef[]): boolean {
+  return !defs || defs.length === 0;
+}
+
+// 场景 A:8 轮全 tool_call 撞顶 → 收尾调用输出文字总结 → 步骤直接完成,不再烧续跑段。
+test('executeNode:轮次撞顶后收尾调用成功 → 直接完成(8+1 次调用,无续跑)', async () => {
   let calls = 0;
   const provider: Provider = {
-    async streamComplete(): Promise<Completion> {
+    async streamComplete(_m, defs): Promise<Completion> {
       calls++;
-      // 第 1 段:8 轮全 tool_call(撞轮次上限)→ 续跑段第 9 轮给文字结论
-      if (calls <= MAX_TURNS_PER_STEP) return toolComp('dummy_read');
+      if (isWrapUpCall(defs)) return textComp('收尾总结:探查到 3 个模块');
+      return toolComp('dummy_read');
+    },
+  };
+  const events: AgentEvent[] = [];
+  const r = await executeNode(dummyNode, {
+    provider, tools: [dummyTool], systemPrompt: 'sys', snapshot: snap,
+    ctx: noopCtx, signal: new AbortController().signal, policy: POLICY,
+    history: [], onEvent: (e) => events.push(e), approved: new Set(),
+  });
+  assert.equal(r.success, true, '收尾总结成功 → 步骤完成');
+  assert.equal(calls, MAX_TURNS_PER_STEP + 1, '8 轮 + 1 次收尾调用');
+  assert.ok(r.summary!.includes('探查到 3 个模块'), '摘要应含收尾总结');
+  assert.ok(!events.some((e) => e.type === 'status' && /续跑/.test(e.text)), '收尾成功无需续跑');
+});
+
+// 场景 B:8 轮撞顶且收尾调用失败(模型对收尾请求报错)→ 报 maxTurns → 续跑段第 1 次调用给文字 → 成功。
+test('executeNode:撞顶且收尾失败 → 续跑段输出文字 → 成功', async () => {
+  let calls = 0;
+  const provider: Provider = {
+    async streamComplete(_m, defs): Promise<Completion> {
+      calls++;
+      if (isWrapUpCall(defs)) throw new Error('wrap-up unsupported'); // 收尾失败 → fall through 到 maxTurns
+      // 第 1 段 8 轮全 tool_call;续跑段第 1 次调用就给文字结论
+      if (calls <= MAX_TURNS_PER_STEP + 1) return toolComp('dummy_read');
       return textComp('步骤完成:探查到 3 个模块');
     },
   };
@@ -156,15 +186,16 @@ test('executeNode:前 MAX_TURNS_PER_STEP 轮全是 tool_call(轮次上限),续�
     history: [], onEvent: (e) => events.push(e), approved: new Set(),
   });
   assert.equal(r.success, true, '续跑后应成功(修前:8 轮撞顶 → 失败 → 下游 blocked → 任务到一半停)');
-  assert.equal(calls, MAX_TURNS_PER_STEP + 1, '应该有续跑段的第 9 次调用');
+  assert.equal(calls, MAX_TURNS_PER_STEP + 2, '第 1 段 8 轮 + 1 次失败的收尾 + 续跑段 1 次');
   assert.ok(r.summary!.includes('探查到 3 个模块'), '摘要应含续跑段的结论');
   assert.ok(events.some((e) => e.type === 'status' && /续跑/.test(e.text)), '应有续跑提示');
 });
 
-test('executeNode:续跑 MAX_STEP_SEGMENTS 段仍全是 tool_call → 失败(有界,不无限烧)', async () => {
+test('executeNode:续跑 MAX_STEP_SEGMENTS 段仍全是 tool_call(含收尾也顽固调工具)→ 失败(有界,不无限烧)', async () => {
   let calls = 0;
   const provider: Provider = {
-    async streamComplete(): Promise<Completion> { calls++; return toolComp('dummy_read'); },
+    // 顽固模型:收尾请求也照回 tool_call → 每段 8 轮 + 1 次收尾 = 9 次调用
+    async streamComplete(_m, defs): Promise<Completion> { calls++; return toolComp(isWrapUpCall(defs) ? 'dummy_read' : 'dummy_read'); },
   };
   const r = await executeNode(dummyNode, {
     provider, tools: [dummyTool], systemPrompt: 'sys', snapshot: snap,
@@ -172,7 +203,7 @@ test('executeNode:续跑 MAX_STEP_SEGMENTS 段仍全是 tool_call → 失败(有
     history: [], onEvent: () => {}, approved: new Set(),
   });
   assert.equal(r.success, false, '所有段都撞轮次上限 → 失败(有界)');
-  assert.equal(calls, MAX_TURNS_PER_STEP * MAX_STEP_SEGMENTS, '恰好烧满 3 段 × 8 轮');
+  assert.equal(calls, (MAX_TURNS_PER_STEP + 1) * MAX_STEP_SEGMENTS, '恰好烧满 3 段 × (8 轮 + 1 收尾)');
   assert.match(r.error!, /轮内完成/, '失败原因应说明轮次耗尽而非"出错"');
 });
 
