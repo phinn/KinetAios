@@ -2740,6 +2740,14 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 设置底部操作栏 / Settings footer */
 .s-footer { display: flex; gap: 8px; align-items: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
 .s-version { margin-left: auto; color: var(--text-faint); font-size: 0.846rem; user-select: text; cursor: default; }
+/* 底部操作条:固定在 s-layout 之外,任何 tab 都常驻可见,不用滚到面板底找保存。
+   Action bar lives outside s-layout so Save/Test stay visible on every tab. */
+.s-layout .s-footer { display: none; }
+#settings > .card > .s-footer { display: flex; margin-top: 14px; }
+.s-footer-spacer { flex: 1; }
+/* 脏状态提示点:表单有未保存改动时,保存按钮右上角亮蓝点 */
+#s-save { position: relative; }
+#s-save.dirty::after { content: ''; position: absolute; top: -3px; right: -3px; width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 6px var(--accent); }
 
 /* 替身画像编辑器 / Persona editor */
 .s-persona-editor { width: 100%; min-height: 400px; font-family: var(--mono); font-size: 0.923rem; resize: vertical; background: var(--bg-2); color: var(--text); border: 1px solid var(--border); border-radius: 8px; padding: 12px; line-height: 1.6; }

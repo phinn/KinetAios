@@ -5142,14 +5142,16 @@ async function showSettings() {
       </div>
       </div><!-- /goal panel -->
 
+        </div><!-- /s-body -->
+      </div><!-- /s-layout -->
+
       <div class="s-footer">
         <button class="primary" id="s-save">${tr('settings.save')}</button>
         <button id="s-test">${tr('settings.test')}</button>
         <span class="test-msg" id="s-msg"></span>
+        <span class="s-footer-spacer"></span>
         <span id="s-version" class="s-version"></span>
       </div>
-        </div><!-- /s-body -->
-      </div><!-- /s-layout -->
     </div>`;
   // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
   document.getElementById('s-theme')!.onchange = () => applyTheme(readSettingsForm().theme);
@@ -5358,6 +5360,21 @@ async function showSettings() {
     showSettings(); // 重开设置面板,让所有 label/option 跟随新语言
     showMsg(tr('settings.saved'), true);
   };
+
+  // 脏检测:表单有改动 → footer 常驻条上的保存按钮亮起提示点;保存/重开后恢复基线。
+  // Dirty tracking: dot on the always-visible Save button once the form differs from baseline.
+  const markClean = () => { lastSettingsSnapshot = readSettingsForm(); updateSaveDot(); };
+  function updateSaveDot(): void {
+    const btn = document.getElementById('s-save');
+    if (!btn) return;
+    let dirty = false;
+    try { dirty = JSON.stringify(readSettingsForm()) !== JSON.stringify(lastSettingsSnapshot); } catch { /* 比较失败不亮点 */ }
+    btn.classList.toggle('dirty', dirty);
+    btn.title = dirty ? tr('settings.unsavedHint') : '';
+  }
+  root.addEventListener('input', updateSaveDot);
+  root.addEventListener('change', updateSaveDot);
+  markClean();
 
   // 新插入的 s-tab 节点带 data-i18n,刷一遍以即时翻译
   applyI18nDOM();

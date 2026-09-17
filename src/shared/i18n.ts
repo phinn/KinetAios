@@ -701,6 +701,7 @@ const ZH_CN: Dict = {
   'settings.save': '保存',
   'settings.test': '测试连接',
   'settings.saved': '已保存',
+  'settings.unsavedHint': '改动未保存',
   'settings.testing': '测试中…',
 
   // ── 模型配置档 ──
@@ -1960,6 +1961,7 @@ const EN: Dict = {
   'settings.save': 'Save',
   'settings.test': 'Test connection',
   'settings.saved': 'Saved',
+  'settings.unsavedHint': 'Unsaved changes',
   'settings.testing': 'Testing…',
 
   // ── Model Profiles ──
@@ -3213,6 +3215,7 @@ const ZH_TW: Dict = {
   'settings.save': '儲存',
   'settings.test': '測試連線',
   'settings.saved': '已儲存',
+  'settings.unsavedHint': '變更尚未儲存',
   'settings.testing': '測試中…',
 
   // ── 模型設定檔 ──
@@ -4484,6 +4487,7 @@ const JA: Dict = {
   'settings.save': '保存',
   'settings.test': '接続テスト',
   'settings.saved': '保存しました',
+  'settings.unsavedHint': '未保存の変更があります',
   'settings.testing': 'テスト中…',
 
   // ── モデルプロファイル ──
