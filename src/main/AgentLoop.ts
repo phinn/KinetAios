@@ -250,14 +250,19 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   //   跑到模型自己停、要么烧到上下文溢出 → "任务到一半停止")。故:用户无限 + 有内部上限 → 用内部上限。
   // User setting is the global ceiling; internal path caps apply when tighter.
   const userMax = getSettings().maxTurns ?? 50;
-  // 硬顶熔断:即使用户显式选无限(maxTurns=0),也不能让"每轮重复调同一工具"的模型死循环
-  // 无限烧 API(2026-09 review 实锤:Infinity 无任何熔断)。HARD_TURN_CAP 足够跑完长任务,
-  // 真正无限的诉求由 /goal 循环(每轮独立计费可控)承担。
-  const HARD_TURN_CAP = 200;
+  // 死循环熔断(内容级,与轮数解耦):连续 STALL_LIMIT 轮发出逐字节相同的工具调用
+  // (同名+同参数)= 模型原地打转,才是真正的死循环信号;正常长任务哪怕几百步,
+  // 每步参数都会随进度变化,不会触发。轮数语义完全尊重设置(0=无限就是无限)。
+  // Stall fuse is content-level and decoupled from the turn cap: N consecutive
+  // byte-identical tool calls means the model is spinning in place. Long tasks
+  // legitimately vary args each step, so they never trip it.
+  const STALL_LIMIT = 8;
+  let stallCount = 0;
+  let lastCallSig = '';
   let maxTurns: number;
   if (userMax <= 0) {
-    // 用户显式要求无限:无内部上限 → 硬顶兜底;有内部上限(deep 节点/fast)→ 仍用内部上限(保险丝)
-    maxTurns = (opts.maxTurns != null && opts.maxTurns > 0) ? opts.maxTurns : HARD_TURN_CAP;
+    // 用户显式选无限 → 尊重设置,不加轮数顶(死循环防护由 stall 熔断承担)
+    maxTurns = (opts.maxTurns != null && opts.maxTurns > 0) ? opts.maxTurns : Infinity;
   } else if (opts.maxTurns != null && opts.maxTurns > 0) {
     maxTurns = Math.min(opts.maxTurns, userMax); // 内部上限与用户天花板取紧
   } else {
@@ -412,6 +417,22 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);
+
+    // 死循环熔断(内容级):本轮工具调用签名(名+参数)与上一轮完全一致 → 原地打转计数+1;
+    // 签名变化 → 归零。连续 STALL_LIMIT 轮相同才熔断(正常任务每轮参数都随进度变)。
+    // Content-level stall fuse: identical call signature two rounds in a row bumps the
+    // counter; any change resets it. Only STALL_LIMIT consecutive identical rounds abort.
+    const callSig = completion.toolCalls.map((tc) => `${tc.name}:${tc.arguments}`).join('|');
+    if (callSig === lastCallSig) {
+      stallCount++;
+      if (stallCount >= STALL_LIMIT) {
+        onEvent({ type: 'error', kind: 'transient', message: `检测到死循环:连续 ${STALL_LIMIT} 轮发出完全相同的工具调用(${completion.toolCalls.map((tc) => tc.name).join(', ')}),已停止。请检查任务描述或换模型重试。` });
+        return dropTransient(messages);
+      }
+    } else {
+      stallCount = 0;
+    }
+    lastCallSig = callSig;
   }
   // maxTurns 耗尽:先给模型一次"无工具收尾"机会强制总结 — 此前直接报错返回,
   // 历史以 tool 消息结尾、无 assistant 答复,用户只看到"达到最大轮数"却拿不到已完成部分的成果。
