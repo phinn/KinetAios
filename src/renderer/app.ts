@@ -4667,12 +4667,15 @@ async function showSettings() {
   const root = document.getElementById('settings')!;
   root.innerHTML = `
     <div class="card">
-      <button id="s-back" class="ghost" style="margin-bottom:14px">${tr('settings.back')}</button>
-      <h2>${tr('settings.title')}</h2>
-      <div class="sub">${tr('settings.sub')}</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <button id="s-back" class="ghost">${tr('settings.back')}</button>
+        <h2 style="margin:0">${tr('settings.title')}</h2>
+      </div>
+      <div class="sub" style="margin-bottom:12px">${tr('settings.sub')}</div>
       <input id="s-search" class="settings-search" data-i18n-placeholder="settings.search" placeholder="${esc(tr('settings.search'))}" spellcheck="false" />
 
-      <div class="s-tabs">
+      <div class="s-layout">
+        <nav class="s-nav">
         <button class="s-tab active" data-stab="model">${tr('settings.tab.model')}</button>
         <button class="s-tab" data-stab="appearance">${tr('settings.tab.appearance')}</button>
         <button class="s-tab" data-stab="engine">${tr('settings.tab.engine')}</button>
@@ -4683,7 +4686,8 @@ async function showSettings() {
         <button class="s-tab" data-stab="skills">${tr('settings.tab.skills')}</button>
         <button class="s-tab" data-stab="goal">${tr('settings.tab.goal')}</button>
         <button class="s-tab" data-stab="mesh">${tr('settings.tab.mesh')}</button>
-      </div>
+        </nav>
+        <div class="s-body">
 
       <div class="s-tab-panel" data-panel="model">
       <div class="s-section">
@@ -5144,6 +5148,8 @@ async function showSettings() {
         <span class="test-msg" id="s-msg"></span>
         <span id="s-version" class="s-version"></span>
       </div>
+        </div><!-- /s-body -->
+      </div><!-- /s-layout -->
     </div>`;
   // 主题切换实时预览(不必等保存):select 改了立即改 html data-theme,保存时再固化。
   document.getElementById('s-theme')!.onchange = () => applyTheme(readSettingsForm().theme);
