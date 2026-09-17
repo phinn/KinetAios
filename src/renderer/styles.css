@@ -3052,7 +3052,18 @@ body.files { display: flex; flex-direction: column; height: 100vh; margin: 0; us
 /* 项目背景编辑器 modal:textarea 占满,头/尾各一行。复用 .modal-card 的基础样式。 */
 #context-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
 #context-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
-/* 技能源文件弹层:与 context-modal 同款遮罩+居中。缺这条会掉到文档流底部,随聊天滚动露出来。 */
+/* 模型配置档编辑弹层:与 context-modal 同款遮罩+居中 */
+#profile-editor-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
+#profile-editor-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
+.pe-card { width: 560px; max-width: 92vw; max-height: 85vh; display: flex; flex-direction: column; }
+.pe-body { flex: 1; overflow-y: auto; min-height: 0; display: flex; flex-direction: column; gap: 2px; padding-right: 4px; }
+.pe-card .actions { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.pe-status { font-size: 0.846rem; color: var(--text-dim); }
+.pe-card .modal-card,
+.pe-card h3 { margin: 0 0 10px; }
+/* 添加模型入口按钮:列表右上角 */
+.profile-add-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.profile-add-row .field-desc { margin: 0; }
 #skill-editor-modal { position: fixed; inset: 0; background: rgba(0,0,0,.55); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 50; }
 #skill-editor-modal.show { display: flex; animation: modal-overlay-in var(--dur-normal) var(--ease-out); }
 .cm-card { width: 720px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; }

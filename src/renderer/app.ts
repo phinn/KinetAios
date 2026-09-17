@@ -86,6 +86,12 @@ let profileCache: any[] = [];
 let goalChainCache: string[] = []; // goal 监工:模型接力链缓存(设置面板打开时从 settings 同步,增删后随保存写回)
 // 正在编辑的配置档 ID(null = 新建模式,有值 = 编辑模式)
 let editingProfileId: string | null = null;
+// 模型配置档弹层关闭(模块级,供全局 Esc/backdrop 关闭链复用)
+// Close the profile modal (module-level for the global Esc/backdrop close chain).
+function closeProfileModal(): void {
+  document.getElementById('profile-editor-modal')?.classList.remove('show');
+  editingProfileId = null;
+}
 // 远程节点缓存(从 main 进程拉取,含在线状态和工具数) / Remote node cache from main process
 let remoteNodesCache: Array<{ name: string; url?: string; online: boolean; toolCount: number }> = [];
 let filesController: FilesPaneController | null = null; // 「文件」tab 懒挂载
@@ -4724,35 +4730,11 @@ async function showSettings() {
 
       <div class="s-section">
         <h3>${tr('settings.profile.title')} <span class="field-desc" style="display:inline;font-weight:400;text-transform:none;letter-spacing:0">${tr('settings.profile.hint')}</span></h3>
-        <div id="s-profile-list" style="margin-top:8px"></div>
-        <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
-          <label>${tr('settings.profile.saveAs')}</label>
-          <div style="display:flex;gap:6px;flex:1">
-            <input id="s-profile-name" placeholder="${tr('settings.profile.namePh')}" style="flex:1" />
-            <button id="s-profile-cancel" class="btn-sm" style="white-space:nowrap;display:none">${tr('settings.profile.cancel')}</button>
-            <button id="s-profile-save" class="btn-sm" style="white-space:nowrap">${tr('settings.profile.add')}</button>
-          </div>
+        <div class="profile-add-row">
+          <span class="field-desc">${tr('settings.profile.listHint')}</span>
+          <button id="s-profile-add" class="primary btn-sm" style="white-space:nowrap">＋ ${tr('settings.profile.addModel')}</button>
         </div>
-        <details style="margin-top:10px">
-          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.846rem">${tr('settings.profile.balanceHeader')}</summary>
-          <div class="field-desc" style="margin-top:6px">${tr('settings.profile.balanceHint')}</div>
-          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
-            <label>${tr('settings.profile.balanceUrl')}</label>
-            <input id="s-profile-balance-url" placeholder="${tr('settings.profile.balanceUrlPh')}" />
-          </div>
-          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
-            <label>${tr('settings.profile.balanceKey')}</label>
-            <div class="key-eye-wrap"><input id="s-profile-balance-key" type="password" placeholder="${tr('settings.profile.balanceKeyPh')}" /><span class="key-eye" data-target="s-profile-balance-key">👁</span></div>
-          </div>
-          <div class="field" style="grid-template-columns:130px 1fr;align-items:center;margin-top:4px">
-            <label>${tr('settings.profile.balanceAuth')}</label>
-            <select id="s-profile-balance-auth">
-              <option value="bearer">${tr('settings.profile.balanceAuthBearer')}</option>
-              <option value="raw">${tr('settings.profile.balanceAuthRaw')}</option>
-              <option value="x-api-key">${tr('settings.profile.balanceAuthXApiKey')}</option>
-            </select>
-          </div>
-        </details>
+        <div id="s-profile-list" style="margin-top:8px"></div>
       </div>
       </div><!-- /model panel -->
 
@@ -5379,70 +5361,94 @@ async function showSettings() {
   // 新插入的 s-tab 节点带 data-i18n,刷一遍以即时翻译
   applyI18nDOM();
 
-  // ── 模型配置档:保存当前表单内容为新 profile 或覆盖编辑中的 profile ──
-  document.getElementById('s-profile-save')!.onclick = async () => {
-    const name = (document.getElementById('s-profile-name') as HTMLInputElement).value.trim();
-    if (!name) { showMsg(tr('settings.profile.nameRequired'), false); return; }
-    const form = readSettingsForm();
-    // 余额独立配置(独立于主表单 key/baseURL)
-    const balanceUrl = (document.getElementById('s-profile-balance-url') as HTMLInputElement).value.trim();
-    const balanceApiKey = (document.getElementById('s-profile-balance-key') as HTMLInputElement).value.trim();
-    const balanceAuthScheme = ((document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value || 'bearer') as 'bearer' | 'raw' | 'x-api-key';
+  // ── 模型配置档:弹层编辑(添加/修改都在 #profile-editor-modal 里完成,保存即写 modelProfiles)──
+  // ── Model profiles: edit in the modal; saving writes modelProfiles directly. ──
+  const REASONS_MODAL = ['low', 'medium', 'high'] as const;
+  function openProfileModal(pf: any | null): void {
+    editingProfileId = pf?.id ?? null;
+    const modal = document.getElementById('profile-editor-modal')!;
+    (document.getElementById('pe-title') as HTMLElement).textContent = pf ? tr('settings.profile.editTitle', { name: pf.name }) : tr('settings.profile.addTitle');
+    (document.getElementById('pe-name') as HTMLInputElement).value = pf?.name ?? '';
+    (document.getElementById('pe-key') as HTMLInputElement).value = pf?.apiKey ?? '';
+    (document.getElementById('pe-base') as HTMLInputElement).value = pf?.baseURL ?? '';
+    (document.getElementById('pe-model') as HTMLInputElement).value = pf?.model ?? '';
+    (document.getElementById('pe-proto') as HTMLSelectElement).value = pf?.apiProtocol ?? 'openai';
+    const reasonSel = document.getElementById('pe-reason') as HTMLSelectElement;
+    reasonSel.innerHTML = REASONS_MODAL.map((r) => `<option value="${r}" ${r === (pf?.reasoning ?? 'medium') ? 'selected' : ''}>${r}</option>`).join('');
+    (document.getElementById('pe-pin') as HTMLInputElement).value = pf?.priceInPerMTok ?? '';
+    (document.getElementById('pe-pout') as HTMLInputElement).value = pf?.priceOutPerMTok ?? '';
+    (document.getElementById('pe-balance-url') as HTMLInputElement).value = pf?.balanceUrl ?? '';
+    (document.getElementById('pe-balance-key') as HTMLInputElement).value = pf?.balanceApiKey ?? '';
+    (document.getElementById('pe-balance-auth') as HTMLSelectElement).value = pf?.balanceAuthScheme ?? 'bearer';
+    (document.getElementById('pe-status') as HTMLElement).textContent = '';
+    modal.classList.add('show');
+    (document.getElementById('pe-name') as HTMLInputElement).focus();
+  }
+  function readProfileModal(): { name: string; apiKey: string; baseURL: string; model: string; apiProtocol: 'openai' | 'anthropic'; reasoning: AppSettings['reasoning']; priceInPerMTok: number; priceOutPerMTok: number; balanceUrl: string; balanceApiKey: string; balanceAuthScheme: 'bearer' | 'raw' | 'x-api-key' } {
+    return {
+      name: (document.getElementById('pe-name') as HTMLInputElement).value.trim(),
+      apiKey: (document.getElementById('pe-key') as HTMLInputElement).value.trim(),
+      baseURL: (document.getElementById('pe-base') as HTMLInputElement).value.trim(),
+      model: (document.getElementById('pe-model') as HTMLInputElement).value.trim(),
+      apiProtocol: (document.getElementById('pe-proto') as HTMLSelectElement).value as 'openai' | 'anthropic',
+      reasoning: (document.getElementById('pe-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
+      priceInPerMTok: Number((document.getElementById('pe-pin') as HTMLInputElement).value) || 0,
+      priceOutPerMTok: Number((document.getElementById('pe-pout') as HTMLInputElement).value) || 0,
+      balanceUrl: (document.getElementById('pe-balance-url') as HTMLInputElement).value.trim(),
+      balanceApiKey: (document.getElementById('pe-balance-key') as HTMLInputElement).value.trim(),
+      balanceAuthScheme: (document.getElementById('pe-balance-auth') as HTMLSelectElement).value as 'bearer' | 'raw' | 'x-api-key',
+    };
+  }
+
+  document.getElementById('s-profile-add')!.onclick = () => openProfileModal(null);
+
+  // 弹层内测试连接:测当前弹层值,不走主表单
+  document.getElementById('pe-test')!.onclick = async () => {
+    const status = document.getElementById('pe-status') as HTMLElement;
+    const p = readProfileModal();
+    if (!p.baseURL || !p.model) { status.textContent = tr('settings.profile.needUrlModel'); return; }
+    status.textContent = tr('settings.testing');
+    const r = await api.testConnection({
+      ...(lastSettingsSnapshot ?? ({} as AppSettings)),
+      apiKey: p.apiKey, baseURL: p.baseURL, model: p.model, apiProtocol: p.apiProtocol,
+    } as AppSettings);
+    status.textContent = r.message;
+  };
+
+  // 保存:写入/更新 modelProfiles,关弹层,刷列表
+  document.getElementById('pe-save')!.onclick = async () => {
+    const status = document.getElementById('pe-status') as HTMLElement;
+    const p = readProfileModal();
+    if (!p.name) { status.textContent = tr('settings.profile.nameRequired'); return; }
+    if (!p.baseURL || !p.model) { status.textContent = tr('settings.profile.needUrlModel'); return; }
     const cur = await api.getSettings();
     let profiles = cur.modelProfiles || [];
     if (editingProfileId) {
-      // 编辑模式:覆盖已有 profile(保留 id 和 createdAt)
-      profiles = profiles.map((p: any) => p.id === editingProfileId ? {
-        ...p,
-        name,
-        apiKey: form.apiKey,
-        baseURL: form.baseURL,
-        model: form.model,
-        apiProtocol: form.apiProtocol,
-        reasoning: form.reasoning,
-        priceInPerMTok: form.priceInPerMTok,
-        priceOutPerMTok: form.priceOutPerMTok,
-        balanceUrl,
-        balanceApiKey,
-        balanceAuthScheme,
-      } : p);
-      showMsg(tr('settings.profile.updated', { name }), true);
+      profiles = profiles.map((x: any) => x.id === editingProfileId ? { ...x, ...p } : x);
+      showMsg(tr('settings.profile.updated', { name: p.name }), true);
     } else {
-      // 新建模式
-      const profile = {
-        id: `pf_${Date.now().toString(36)}`,
-        name,
-        apiKey: form.apiKey,
-        baseURL: form.baseURL,
-        model: form.model,
-        apiProtocol: form.apiProtocol,
-        reasoning: form.reasoning,
-        priceInPerMTok: form.priceInPerMTok,
-        priceOutPerMTok: form.priceOutPerMTok,
-        balanceUrl,
-        balanceApiKey,
-        balanceAuthScheme,
-        createdAt: Date.now(),
-      };
-      profiles = [...profiles, profile];
-      showMsg(tr('settings.profile.saved', { name }), true);
+      profiles = [...profiles, { id: `pf_${Date.now().toString(36)}`, ...p, createdAt: Date.now() }];
+      showMsg(tr('settings.profile.saved', { name: p.name }), true);
     }
     await api.saveSettings({ ...cur, modelProfiles: profiles });
-    profileCache = profiles; // 同步缓存
-    void fillProfileSelect(); // 刷新聊天界面的下拉
-    // 重置为新建模式
-    editingProfileId = null;
-    (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = 'bearer';
-    const saveBtn = document.getElementById('s-profile-save')!;
-    saveBtn.textContent = tr('settings.profile.add');
-    (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
+    profileCache = profiles;
+    void fillProfileSelect();
     renderProfileList(profiles);
+    closeProfileModal();
   };
+  document.getElementById('pe-cancel')!.onclick = closeProfileModal;
+  // 弹层内的 key-eye 眼睛切换(静态 HTML 里没有 data-target 对应的主表单 input,单独绑)
+  document.querySelectorAll<HTMLSpanElement>('#profile-editor-modal .key-eye').forEach((eye) => {
+    eye.onclick = () => {
+      const input = document.getElementById(eye.dataset.target!) as HTMLInputElement;
+      if (!input) return;
+      const isPw = input.type === 'password';
+      input.type = isPw ? 'text' : 'password';
+      eye.textContent = isPw ? '🙈' : '👁';
+    };
+  });
 
-  // 把 profile 字段填到设置表单(载入和编辑共用) / Fill profile fields into settings form
+  // 把 profile 字段填到设置表单(载入激活配置) / Load profile into the main form
   function applyProfileToForm(pf: any): void {
     (document.getElementById('s-key') as HTMLInputElement).value = pf.apiKey;
     (document.getElementById('s-base') as HTMLInputElement).value = pf.baseURL;
@@ -5451,23 +5457,11 @@ async function showSettings() {
     (document.getElementById('s-reason') as HTMLSelectElement).value = pf.reasoning;
     (document.getElementById('s-pin') as HTMLInputElement).value = pf.priceInPerMTok;
     (document.getElementById('s-pout') as HTMLInputElement).value = pf.priceOutPerMTok;
-    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = pf.balanceUrl || '';
-    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = pf.balanceApiKey || '';
-    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = pf.balanceAuthScheme || 'bearer';
+    updateSaveDot();
   }
 
-  // 取消编辑:回到新建模式 / Cancel edit: back to create mode
-  document.getElementById('s-profile-cancel')!.onclick = () => {
-    editingProfileId = null;
-    (document.getElementById('s-profile-name') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-url') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-key') as HTMLInputElement).value = '';
-    (document.getElementById('s-profile-balance-auth') as HTMLSelectElement).value = 'bearer';
-    document.getElementById('s-profile-save')!.textContent = tr('settings.profile.add');
-    (document.getElementById('s-profile-cancel') as HTMLElement).style.display = 'none';
-  };
-
-  // 渲染配置档列表
+  // ── Goal 监工:模型接力链列表(goalProfileChain 有序数组,UI 上可增删)──
+  goalChainCache = lastSettingsSnapshot?.goalProfileChain ?? [];
   async function renderProfileList(profiles?: any[]) {
     if (!profiles) {
       const cur = await api.getSettings();
@@ -5502,15 +5496,7 @@ async function showSettings() {
         const pid = (btn as HTMLElement).dataset.pfEdit!;
         const pf = profiles.find((p: any) => p.id === pid);
         if (!pf) return;
-        applyProfileToForm(pf);
-        // 进入编辑模式:记住正在编辑的 profile id,底部按钮变为"保存修改"
-        editingProfileId = pid;
-        (document.getElementById('s-profile-name') as HTMLInputElement).value = pf.name;
-        const saveBtn = document.getElementById('s-profile-save')!;
-        saveBtn.textContent = tr('settings.profile.saveBtn');
-        const cancelBtn = document.getElementById('s-profile-cancel')!;
-        cancelBtn.style.display = '';
-        showMsg(tr('settings.profile.editing', { name: pf.name }), true);
+        openProfileModal(pf); // 弹层内编辑,保存直接写 modelProfiles
       };
     });
     container.querySelectorAll('[data-pf-del]').forEach((btn) => {
@@ -6991,9 +6977,10 @@ function closeMoreMenu() {
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
     else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
     else if (document.getElementById('skill-editor-modal')!.classList.contains('show')) closeSkillEditor();
+    else if (document.getElementById('profile-editor-modal')!.classList.contains('show')) closeProfileModal();
     else if (document.getElementById('ctx-inspector-modal')!.classList.contains('show')) closeCtxInspector();
   });
-  for (const id of ['modal', 'confirm-modal', 'prompt-modal', 'context-modal', 'skill-editor-modal', 'ctx-inspector-modal']) {
+  for (const id of ['modal', 'confirm-modal', 'prompt-modal', 'context-modal', 'skill-editor-modal', 'profile-editor-modal', 'ctx-inspector-modal']) {
     document.getElementById(id)!.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) {
         if (id === 'modal') closeConfirm(false);
@@ -7001,6 +6988,7 @@ function closeMoreMenu() {
         else if (id === 'prompt-modal') dismissPrompt();
         else if (id === 'context-modal') closeContextModal();
         else if (id === 'skill-editor-modal') closeSkillEditor();
+        else if (id === 'profile-editor-modal') closeProfileModal();
         else if (id === 'ctx-inspector-modal') closeCtxInspector();
       }
     });

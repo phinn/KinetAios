@@ -419,6 +419,44 @@
     </div>
   </div>
 
+  <!-- 模型配置档编辑弹层(设置页「模型」面板「添加模型」弹出;含测试连接)-->
+  <div id="profile-editor-modal" role="dialog" aria-modal="true" aria-label="模型配置">
+    <div class="modal-card pe-card">
+      <h3 id="pe-title"></h3>
+      <div class="pe-body">
+        <div class="field"><label data-i18n="settings.profile.name">配置名</label><input id="pe-name" placeholder="" /></div>
+        <div class="field"><label>API Key</label><div class="key-eye-wrap"><input id="pe-key" type="password" /><span class="key-eye" data-target="pe-key">👁</span></div></div>
+        <div class="field"><label>Base URL</label><input id="pe-base" /></div>
+        <div class="field"><label data-i18n="settings.modelId">模型 ID</label><input id="pe-model" /></div>
+        <div class="field"><label data-i18n="settings.protocol">协议</label><select id="pe-proto">
+          <option value="openai">OpenAI 兼容</option>
+          <option value="anthropic">Anthropic</option>
+        </select></div>
+        <div class="field"><label>Reasoning effort</label><select id="pe-reason"></select></div>
+        <div class="field"><label data-i18n="settings.price">价格(USD / 1M tokens)</label>
+          <div class="row"><input id="pe-pin" type="number" step="0.01" placeholder="in" /><input id="pe-pout" type="number" step="0.01" placeholder="out" /></div>
+        </div>
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer;color:var(--text-dim);font-size:0.846rem" data-i18n="settings.profile.balanceHeader">余额查询配置(可选)</summary>
+          <div class="field" style="margin-top:8px"><label data-i18n="settings.profile.balanceUrl">余额 URL</label><input id="pe-balance-url" /></div>
+          <div class="field"><label data-i18n="settings.profile.balanceKey">余额 Key</label><div class="key-eye-wrap"><input id="pe-balance-key" type="password" /><span class="key-eye" data-target="pe-balance-key">👁</span></div></div>
+          <div class="field"><label data-i18n="settings.profile.balanceAuth">Auth 方式</label><select id="pe-balance-auth">
+            <option value="bearer" data-i18n="settings.profile.balanceAuthBearer">Bearer</option>
+            <option value="raw" data-i18n="settings.profile.balanceAuthRaw">裸 token</option>
+            <option value="x-api-key" data-i18n="settings.profile.balanceAuthXApiKey">x-api-key header</option>
+          </select></div>
+        </details>
+      </div>
+      <div class="actions">
+        <span class="pe-status" id="pe-status"></span>
+        <span class="cm-spacer"></span>
+        <button id="pe-test"></button>
+        <button id="pe-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary" id="pe-save" data-i18n="rules.save">保存</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 项目背景编辑器(workbench 卡片「背景」按钮弹出;写 cwd/KINET-CONTEXT.md)-->
   <div id="context-modal" role="dialog" aria-modal="true">
     <div class="modal-card cm-card">
