@@ -1291,16 +1291,27 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       if (i > 0) this.setEngine(conv.id, stage.engine);
 
       // 等待执行完成
+      // 修复:send 被拒(status 残留 running 时静默 return)→ 轮询会空转 120s 后误 cancel。
+      // 用 turn 计数判定:记录 send 前的 turn 数,send 后若没有新 turn 入列 = stage 根本没启动,
+      // 立即报错退出而非空转误 cancel。
+      const turnCountBefore = conv.turns.length;
       await this.send(conv.id, stepPrompt);
-      // 等 done
+      if (conv.turns.length === turnCountBefore) {
+        throw new Error(`Pipeline 在 ${label} 无法启动(stage 未执行,会话状态残留 ${conv.status})`);
+      }
+      // 等 done:以「出现新 turn 且其终结(done/error)」为准,而非轮询 conv.status ——
+      // status 在 done 事件里才翻 ready,二者同帧,但 turn.done 更精确不依赖广播时序。
       const maxWait = 120_000; // 单 stage 超时 2 分钟
       const start = Date.now();
-      while (conv.status === 'running') {
-        if (Date.now() - start > maxWait) {
-          this.cancel(conv.id);
-          break;
-        }
-        await new Promise((r) => setTimeout(r, 500));
+      while (Date.now() - start < maxWait) {
+        const lt = conv.turns[conv.turns.length - 1];
+        if (lt && conv.turns.length > turnCountBefore && lt.done) break;
+        await new Promise((r) => setTimeout(r, 300));
+      }
+      const lastTurnCheck = conv.turns[conv.turns.length - 1];
+      if (!(lastTurnCheck && lastTurnCheck.done)) {
+        this.cancel(conv.id);
+        throw new Error(`Pipeline 在 ${label} 超时(120s 无终结)`);
       }
 
       // 提取最后一个 turn 的 answer 作为下一步输入
