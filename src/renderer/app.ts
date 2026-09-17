@@ -3555,7 +3555,7 @@ function buildPaletteActions(): PaletteAction[] {
   // 设置各 tab:先进设置页,再模拟点 tab
   const tabs: Array<[string, string]> = [
     ['model', 'settings.tab.model'], ['appearance', 'settings.tab.appearance'], ['engine', 'settings.tab.engine'],
-    ['advanced', 'settings.tab.advanced'], ['messaging', 'settings.tab.messaging'], ['plugins', 'settings.tab.plugins'],
+    ['advanced', 'settings.tab.advanced'], ['security', 'settings.tab.security'], ['messaging', 'settings.tab.messaging'], ['plugins', 'settings.tab.plugins'],
     ['goal', 'settings.tab.goal'], ['mesh', 'settings.tab.mesh'],
   ];
   for (const [tab, key] of tabs) {
