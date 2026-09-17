@@ -22,6 +22,8 @@
 - **原子写** —— write_file/edit_file 改 tmp+rename,写一半崩溃不再留截断损坏的源文件(7fecfd2)
 - **CLI 挂死自愈** —— CliEngineAdapter 5 分钟无输出看门狗 + dispatch_agent 错误转发不再吞 + abort SIGKILL 升级(9b341ab)
 - **pipeline 完成判据** —— stage 以新 turn 终结为完成,send 未启动立即报错,不再空转 120s 误 cancel(0a4c544)
+- **发消息后输入框挂字** —— renderer IPC 改走 sendDetached(turn 入列即返回,毫秒级清空 composer);阻塞版 send 保留给飞书/VoiceChat(f9d3c18)
+- **maxTurns=0 恢复真无限** —— 硬顶 200 违背设置语义,熔断下移为内容级 stall 检测(连续 8 轮逐字节相同工具调用才断)(8bda575)
 - **SSE 多行帧聚合**(RFC 8142)—— 网关拆帧不再丢内容 + 注释行/NDJSON 兼容(6dc71c6)
 - **runtime 八连** —— dashboardWin 关窗置空 / drainConfirms 同步 drain 隐私闸 / get-conversations 瘦身防 25MB IPC / goal 停止标记防复活 / fact embedding 向量复用省一半 API 等(51428a6)
 - **5 个 IPC handler 补 try-catch** + notifyLastAt 过期清理 + DDL 列名断言(406537f)
