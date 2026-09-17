@@ -332,6 +332,20 @@ export class TaskManager {
   }
 
   async send(id: string, text: string): Promise<void> {
+    return this.sendCore(id, text, false);
+  }
+
+  // 入列即返回版 send:turn push 完就 resolve,不等 engine.run 整轮。
+  // 专供 renderer 的 IPC 'send' —— 若等整轮,composer 里的消息要等 AI 答完才被清空
+  // (几小时级挂着的假 bug)。飞书/VoiceChat 等「依赖 send 返回时答案已就绪」的
+  // 消费方继续用阻塞版 send()。
+  // Fire-and-forget variant for the renderer IPC: resolves once the turn is
+  // queued. Feishu / VoiceChat rely on the blocking send() semantics instead.
+  async sendDetached(id: string, text: string): Promise<void> {
+    return this.sendCore(id, text, true);
+  }
+
+  private async sendCore(id: string, text: string, detach: boolean): Promise<void> {
     const conv = this.convs.get(id);
     if (!conv) return;
     this.ensureTurns(id); // 懒加载:engine 读 lastTurn.prompt,turns 必须先就位
@@ -455,7 +469,9 @@ export class TaskManager {
     const currentTurn = conv.turns[conv.turns.length - 1];
     if (isDirectFamily(conv.engine) && currentTurn) currentTurn.histStart = conv.directHistory?.length ?? 0;
 
-    await engine.run({
+    // 保存 run promise:detach 模式立即返回,阻塞模式在函数尾部 await 它。
+    // Keep the run promise: detach resolves early; blocking mode awaits it below.
+    const runPromise = engine.run({
       conv,
       memoryBlock: await this.memoryBlock(conv),
       rulesBlock: loadRulesBlock(conv.cwd),
@@ -475,30 +491,36 @@ export class TaskManager {
       // P0-fix: 引擎异常退出 → 清除 V2 crash recovery checkpoint,防止下次 send 误 resume 旧 plan。
       // crash recovery 只为进程崩溃设计(重启后恢复),同进程内异常不应触发。
       if (conv.engine === 'directV2') store.clearV2State(conv.id);
-    }).finally(() => {
+    }).finally(async () => {
       this.aborts.delete(id);
+      // 整轮结束后的持久化/goal 接力:detach 模式下 renderer 的 invoke 早已返回,
+      // 这里是唯一收尾点;阻塞模式下调用方 await 到这里全部做完,语义与旧版一致。
+      // Post-turn persistence + goal hand-off: in detach mode this is the only
+      // epilogue; in blocking mode the caller's await still covers all of it.
+      if (!this.convs.has(id)) return;
+      // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
+      if (isDirectFamily(conv.engine)) store.saveDirectHistory(conv);
+      // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
+      // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
+      const lastTurn = conv.turns[conv.turns.length - 1];
+      if (lastTurn && lastTurn.costUSD > 0) {
+        store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0), lastTurn.tokensIn ?? 0, lastTurn.tokensOut ?? 0);
+      }
+      this.emit.emitConversation(conv); // final flush
+
+      // ── Goal Auto-Loop:有 goal 且本轮未出错且未标记完成 → 自动发下一轮 ──
+      if (conv.goal && isDirectFamily(conv.engine) && lastTurn && !lastTurn.error && lastTurn.answer) {
+        // 立即恢复 running 状态(applyEvent 的 done 会把它设成 ready,这里夺回)
+        conv.status = 'running';
+        this.emit.emitConversation(conv);
+        await this.runGoalLoop(conv, id, ac);
+      }
     });
 
-    // 如果会话在引擎运行期间被删除(cancel→deleteConversation),跳过所有持久化。
-    if (!this.convs.has(id)) return;
-
-    // Direct keeps cross-turn context in directHistory (updated by the engine); persist it.
-    if (isDirectFamily(conv.engine)) store.saveDirectHistory(conv);
-    // 普通会话也记一笔 cost_log → 成本看板才有数据(pipeline 已自行记录)。
-    // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
-    const lastTurn = conv.turns[conv.turns.length - 1];
-    if (lastTurn && lastTurn.costUSD > 0) {
-      store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0), lastTurn.tokensIn ?? 0, lastTurn.tokensOut ?? 0);
-    }
-    this.emit.emitConversation(conv); // final flush
-
-    // ── Goal Auto-Loop:有 goal 且本轮未出错且未标记完成 → 自动发下一轮 ──
-    if (conv.goal && isDirectFamily(conv.engine) && lastTurn && !lastTurn.error && lastTurn.answer) {
-      // 立即恢复 running 状态(applyEvent 的 done 会把它设成 ready,这里夺回)
-      conv.status = 'running';
-      this.emit.emitConversation(conv);
-      await this.runGoalLoop(conv, id, ac);
-    }
+    // detach=true:turn 已入列、状态已 running → 立即返回,不等 engine.run。
+    // 阻塞模式:await 整轮(飞书/VoiceChat 依赖"返回时答案已就绪")。
+    if (detach) return;
+    await runPromise;
   }
 
   // Goal 自动循环:每轮结束后检查是否完成,未完成则自动 dispatch 下一轮。

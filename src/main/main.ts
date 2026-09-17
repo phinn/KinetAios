@@ -1085,8 +1085,12 @@ function registerIpc(): void {
   });
   ipcMain.handle('send', async (_e, id: string, text: string) => {
     // await + 异常包装:send 同步段(如 SQLite 写失败)抛出时 renderer 此前毫无感知,只进 unhandledRejection。
+    // sendDetached:turn 入列即返回 —— 阻塞版要等 engine.run 整轮结束,renderer 的
+    // composer 清空排在 await 之后,消息会一直挂在输入框里直到 AI 答完。
+    // Fire-and-forget: the composer clear in the renderer sits behind this await;
+    // blocking until the whole turn finishes would leave text stuck in the box.
     try {
-      await taskManager.send(id, text);
+      await taskManager.sendDetached(id, text);
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
