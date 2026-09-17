@@ -424,7 +424,7 @@
     <div class="modal-card pe-card">
       <h3 id="pe-title"></h3>
       <div class="pe-body">
-        <div class="field"><label data-i18n="settings.profile.name">配置名</label><input id="pe-name" placeholder="" /></div>
+        <div class="field"><label data-i18n="settings.profile.name">配置名</label><input id="pe-name" placeholder="" data-i18n-placeholder="settings.profile.namePh" /></div>
         <div class="field"><label>API Key</label><div class="key-eye-wrap"><input id="pe-key" type="password" /><span class="key-eye" data-target="pe-key">👁</span></div></div>
         <div class="field"><label>Base URL</label><input id="pe-base" /></div>
         <div class="field"><label data-i18n="settings.modelId">模型 ID</label><input id="pe-model" /></div>
@@ -450,7 +450,7 @@
       <div class="actions">
         <span class="pe-status" id="pe-status"></span>
         <span class="cm-spacer"></span>
-        <button id="pe-test"></button>
+        <button id="pe-test" data-i18n="settings.profile.test">测试连接</button>
         <button id="pe-cancel" data-i18n="common.cancel">取消</button>
         <button class="primary" id="pe-save" data-i18n="rules.save">保存</button>
       </div>

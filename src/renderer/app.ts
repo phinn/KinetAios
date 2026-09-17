@@ -5381,6 +5381,7 @@ async function showSettings() {
     (document.getElementById('pe-balance-key') as HTMLInputElement).value = pf?.balanceApiKey ?? '';
     (document.getElementById('pe-balance-auth') as HTMLSelectElement).value = pf?.balanceAuthScheme ?? 'bearer';
     (document.getElementById('pe-status') as HTMLElement).textContent = '';
+    applyI18nDOM(); // 弹层是静态 HTML,每次打开按当前语言重刷一遍 data-i18n 文本(修复切换语言后残留旧语)
     modal.classList.add('show');
     (document.getElementById('pe-name') as HTMLInputElement).focus();
   }
