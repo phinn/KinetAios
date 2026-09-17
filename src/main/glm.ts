@@ -204,11 +204,15 @@ function maxTokensFor(model: string): number {
   return model.toLowerCase().startsWith('glm') ? 16384 : 8192;
 }
 
-// Split a streamed response body into SSE data lines.
+// Split a streamed response body into SSE data events.
+// SSE 规范:事件以空行分帧;同一事件可含多行 "data:" → 按 RFC 用 "\n" 拼接后再交付。
+// 此前只按 \n 切行,代理/网关把一个大 JSON 事件拆成多行 data: 时 JSON.parse 必失败静默丢帧。
+// 兼容旧行为:非 SSE 的 NDJSON 行(无 "data:" 前缀、非注释)原样透传(Ollama 等)。
 async function* sseLines(resp: Response): AsyncGenerator<string> {
   const reader = resp.body!.getReader();
   const dec = new TextDecoder();
   let buf = '';
+  // 流静默看门狗:连接建立后对端长时间既不发数据也不断开(网络半死/网关吞流)时,
   // 流静默看门狗:连接建立后对端长时间既不发数据也不断开(网络半死/网关吞流)时,
   // reader.read() 会永远挂起 → AgentLoop 永挂 → 三进程全闲、UI 永远 running。
   // 每收到一个 chunk 重置计时;超过 STALL_MS 无任何字节则抛错,交给上层重试/终止。
@@ -231,6 +235,17 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
     stallRejectRef = reject;
     armStall(); // 连接建立起即计时 / start timing immediately
   });
+  // SSE 帧聚合状态:data 行累积器(同帧多行 data: 用 \n 拼接)+ 是否出现过 "data:" 前缀
+  // (出现过 = 真 SSE 流;整流无前缀 = NDJSON,按行透传)。
+  let dataAcc: string[] = [];
+  let sawDataPrefix = false;
+  // 冲洗当前帧:有累积的 data 行 → 拼接 yield 并清空。
+  const flushFrame = function* (): Generator<string> {
+    if (dataAcc.length) {
+      yield dataAcc.join('\n');
+      dataAcc = [];
+    }
+  };
   try {
     for (;;) {
       const { value, done } = await Promise.race([reader.read(), stall]);
@@ -241,10 +256,40 @@ async function* sseLines(resp: Response): AsyncGenerator<string> {
       while ((idx = buf.indexOf('\n')) >= 0) {
         const line = buf.slice(0, idx).replace(/\r$/, '');
         buf = buf.slice(idx + 1);
-        if (line) yield line;
+        if (line.startsWith('data:')) {
+          sawDataPrefix = true;
+          const payload = line.slice(5).trim();
+          if (payload === '[DONE]') {
+            yield* flushFrame();
+            yield '[DONE]';
+          } else if (payload) {
+            dataAcc.push(payload); // 同帧多行累积,空行时统一交付
+          }
+        } else if (line === '') {
+          // 空行 = SSE 事件边界 → 冲洗累积帧
+          if (sawDataPrefix) yield* flushFrame();
+          else if (line !== undefined) { /* NDJSON 空行:跳过 */ }
+        } else if (line.startsWith(':')) {
+          /* SSE 注释行(: keep-alive)→ 忽略 */
+        } else {
+          // 无 data: 前缀的非空行 — NDJSON 流(Ollama)原样透传
+          yield line;
+        }
       }
     }
-    if (buf.trim()) yield buf;
+    if (buf.trim()) {
+      // 残尾:按行语义处理一次(可能是不带换行的最后一行)
+      const tail = buf.replace(/\r$/, '');
+      if (tail.startsWith('data:')) {
+        const payload = tail.slice(5).trim();
+        if (payload && payload !== '[DONE]') dataAcc.push(payload);
+        yield* flushFrame();
+      } else {
+        yield tail;
+      }
+    } else {
+      yield* flushFrame(); // 流正常结束但最后帧无空行结尾 → 补冲
+    }
   } finally {
     if (stallTimer) clearTimeout(stallTimer);
     // 确保释放 reader(abort/异常/break 时也清理,避免 TCP 连接泄漏)。
@@ -327,8 +372,8 @@ class OpenAICompatibleProvider implements Provider {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    for await (const line of sseLines(resp)) {
-      const payload = line.startsWith('data:') ? line.slice(5).trim() : '';
+    for await (const payload of sseLines(resp)) {
+      // sseLines 已剥 "data:" 前缀并聚合多行帧;'[DONE]' 哨兵直接透出
       if (!payload || payload === '[DONE]') {
         if (payload === '[DONE]') break;
         continue;
@@ -775,11 +820,12 @@ class AnthropicProvider implements Provider {
     let tokensIn = 0;
     let tokensOut = 0;
 
-    for await (const line of sseLines(resp)) {
-      if (!line.startsWith('data:')) continue;
+    for await (const payload of sseLines(resp)) {
+      // sseLines 已剥前缀+聚合;NDJSON 透传行(无 data: 前缀)不是 Anthropic 事件 → 跳过。
+      if (!payload.startsWith('{')) continue;
       let obj: Record<string, any>;
       try {
-        obj = JSON.parse(line.slice(5).trim());
+        obj = JSON.parse(payload);
       } catch {
         continue;
       }
