@@ -1,4 +1,5 @@
 :root {
+  color-scheme: dark; /* 原生控件(下拉菜单/spinner/滚动条/自动填充)跟随深色;各主题块按明暗覆盖 */
   --bg: #18181c;
   --bg-side: #131316;
   --bg-elev: #212126;
@@ -83,6 +84,7 @@
 }
 /* 淡色主题:在 <html data-theme="light"> 生效。颜色对齐 macOS System Light。 */
 [data-theme="light"] {
+  color-scheme: light; /* 浅色主题下原生控件转浅色 */
   --bg: #f5f5f8;
   --bg-side: #eeeef2;
   --bg-elev: #ffffff;
@@ -329,6 +331,7 @@
    在 <html data-theme="serene"> 生效。
    ═══════════════════════════════════════════════════════════════════════ */
 [data-theme="serene"] {
+  color-scheme: light; /* 米白和风底 → 浅色原生控件 */
   --bg:          #f5f1ec;
   --bg-side:     #efe9e2;
   --bg-elev:     #ffffff;
@@ -628,6 +631,8 @@
 [data-theme="tahoe"] #context-modal,
 [data-theme="tahoe"] #cron-modal,
 [data-theme="tahoe"] #ctx-inspector-modal,
+[data-theme="tahoe"] #skill-editor-modal,
+[data-theme="tahoe"] #profile-editor-modal,
 [data-theme="tahoe"] .modal-overlay {
   background: rgba(200,220,240,0.45);
   backdrop-filter: blur(8px);
@@ -3489,6 +3494,7 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
    Accent = systemOrange (#FF9F0A),对标 Apple HIG 暖色体系。
    ═══════════════════════════════════════════════════════════════════════ */
 [data-theme="sierra"] {
+  color-scheme: light; /* 暖白象牙底 → 浅色原生控件 */
   --bg:          #faf3ea;              /* 暖白象牙色(温暖底色,不是冷白) */
   --bg-side:     #f4eadc;              /* 侧栏:稍深的暖灰白 */
   --bg-elev:     #fff8f0;             /* 卡片层:暖白 */
@@ -3617,6 +3623,8 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
 [data-theme="sierra"] #context-modal,
 [data-theme="sierra"] #cron-modal,
 [data-theme="sierra"] #ctx-inspector-modal,
+[data-theme="sierra"] #skill-editor-modal,
+[data-theme="sierra"] #profile-editor-modal,
 [data-theme="sierra"] .modal-overlay {
   background: rgba(240,220,200,0.40);
   backdrop-filter: blur(8px);
