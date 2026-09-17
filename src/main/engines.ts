@@ -419,7 +419,8 @@ class DirectEngine implements Engine {
           totalOut += r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
-        if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
+        // 零成本本地模型(Ollama)也要上报 tokens — 此前 totalUsd>0 才发,本地 member 的 token 统计整组丢失。
+        if (totalUsd > 0 || totalTokens > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
         return parts.join('\n');
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
@@ -622,8 +623,26 @@ export async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: stri
 
 type ResolvedBin = { cmd: string; shell: boolean; found: boolean };
 
+// resolveBin 结果缓存:每次引擎启动都同步 execSync('where …') 会阻塞主进程 event loop(PATH 异常
+// /网络盘时可达数秒),且结果在会话生命周期内基本不变。found:false 也缓存(负缓存,5 分钟过期,
+// 给"装完 CLI 不重启就用上"留窗口)。
+const binCache = new Map<string, { bin: ResolvedBin; at: number }>();
+const BIN_CACHE_TTL = 5 * 60 * 1000;
+const BIN_CACHE_NEG_TTL = 60 * 1000;
+
 // Find a CLI: known absolute locations first, then `where`/`command -v` on PATH.
 function resolveBin(name: string): ResolvedBin {
+  const hit = binCache.get(name);
+  if (hit) {
+    const ttl = hit.bin.found ? BIN_CACHE_TTL : BIN_CACHE_NEG_TTL;
+    if (Date.now() - hit.at < ttl) return hit.bin;
+  }
+  const resolved = resolveBinUncached(name);
+  binCache.set(name, { bin: resolved, at: Date.now() });
+  return resolved;
+}
+
+function resolveBinUncached(name: string): ResolvedBin {
   const home = os.homedir();
   const isWin = process.platform === 'win32';
   const candidates = isWin
@@ -644,6 +663,7 @@ function resolveBin(name: string): ResolvedBin {
       env: binEnv(),
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5_000, // where/command -v 挂死(PATH 里有网络盘)时不许拖住主进程
     }).trim();
     const first = out.split(/\r?\n/)[0];
     if (first) return { cmd: first, shell: isWin && /\.(cmd|bat)$/i.test(first), found: true };
@@ -712,6 +732,13 @@ function runBin(
           execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore', windowsHide: true });
         } else {
           child.kill();
+          // SIGTERM 后 2s 仍活着(卡死的 CLI 可能忽略 SIGTERM)→ 升级 SIGKILL,防进程残留继续烧钱。
+          const pid = child.pid;
+          const timer = setTimeout(() => {
+            try { if (pid != null) process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+          }, 2_000);
+          timer.unref?.();
+          child.once('close', () => clearTimeout(timer));
         }
       } catch {
         /* already gone */
@@ -931,12 +958,16 @@ function claudeParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
     // --resume), so += accumulates correctly across turns. Claude ≥2.1 result also carries
     // full usage (input / cache_read / output) — pass them through for the per-turn split.
     const c = typeof obj.total_cost_usd === 'number' ? obj.total_cost_usd : Number(obj.total_cost_usd);
-    if (!Number.isNaN(c)) {
-      const u = obj.usage ?? {};
-      const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
-      const inT = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
-      const outT = num(u.output_tokens);
+    const u = obj.usage ?? {};
+    const num = (v: unknown): number => (typeof v === 'number' ? v : 0);
+    const inT = num(u.input_tokens) + num(u.cache_creation_input_tokens) + num(u.cache_read_input_tokens);
+    const outT = num(u.output_tokens);
+    if (!Number.isNaN(c) && c > 0) {
       emit({ type: 'cost', usd: c, tokens: inT + outT, tokensIn: inT, tokensOut: outT, source: 'claude' });
+    } else if (!Number.isNaN(c) && c === 0 && inT + outT > 0) {
+      // cost 字段异常(字符串/非法值 → NaN,或 0)但有 usage → 按 token 估算兜底,
+      // 此前整条 cost 事件被静默丢弃,该轮花费漏记。
+      emit({ type: 'cost', usd: priceUSD(getSettings().model, inT, outT), tokens: inT + outT, tokensIn: inT, tokensOut: outT, source: 'claude' });
     }
     const isErr = obj.is_error === true || (typeof obj.subtype === 'string' && obj.subtype.startsWith('error'));
     if (isErr) emit({ type: 'error', message: obj.result ?? obj.subtype ?? t(s.lang, 'eng.claudeError') });
@@ -1056,8 +1087,11 @@ function codexParseLine(line: string, { conv, emit }: CliLineParseCtx): void {
       const cost = obj.total_cost_usd ?? obj.cost_usd;
       const inT = num(obj.usage?.input_tokens);
       const outT = num(obj.usage?.output_tokens);
-      if (typeof cost === 'number') {
-        emit({ type: 'cost', usd: cost, tokens: obj.tokens_used ?? inT + outT, tokensIn: inT, tokensOut: outT, source: 'codex' });
+      // tokens_used 数值化:服务端返回字符串/异常类型时直接进 cost 事件会让下游累加变 NaN/拼接。
+      const tokens = num(obj.tokens_used) || inT + outT;
+      const costN = typeof cost === 'number' ? cost : num(cost);
+      if (costN > 0) {
+        emit({ type: 'cost', usd: costN, tokens, tokensIn: inT, tokensOut: outT, source: 'codex' });
       } else if (obj.usage && inT + outT > 0) {
         // No cost field → estimate from token counts. Codex's own model isn't known here, so
         // this falls back to the Direct model's rate (rough — prefer when Codex reports cost).
@@ -1175,18 +1209,28 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
         else args.push(spec.resume.resumeFlag, sessionId);
       }
       const head = [inject.persona.trim(), inject.sourceHint.trim(), inject.rules.trim(), inject.context.trim(), inject.memory.trim()].filter(Boolean).join('\n\n---\n\n');
-      // ponytail: 插件引擎 prompt 仍走 argv(shell shim 下有理论上的 cmd 元字符注入面)。
-      // 插件 CLI 的 stdin 读取行为不可约定,保持 argv 兼容;内置 claude/codex 已迁移 stdin。
+      // .cmd/.bat shim(shell:true)下 prompt/persona(用户+模型可控)进 argv = cmd 元字符注入面
+      // (CVE-2024-27980 同族)。统一改走 stdin —— 与内置 claude/codex 的迁移策略一致;
+      // 内置 CLI 能读 stdin,插件 CLI 只要能从 stdin 接 prompt 就兼容(多数 agent CLI 均支持)。
+      const full = spec.inject === 'system'
+        ? (head ? `${head}\n\n---\n\n${prompt}` : prompt)
+        : (head ? `${head}\n\n---\n\n${prompt}` : prompt);
       if (spec.inject === 'system') {
         const flag = interp(spec.systemFlag ?? '--append-system-prompt');
-        if (head) args.push(flag, head);
-        if (spec.appendPrompt !== false) args.push(prompt);
-      } else {
-        // 默认 prompt 注入(与 codex 同构):注入块 --- 分隔后置 prompt。
-        const full = head ? `${head}\n\n---\n\n${prompt}` : prompt;
-        if (spec.appendPrompt !== false) args.push(full);
+        if (head) args.push(flag);
       }
-      void shell;
+      if (shell) {
+        // shell shim → prompt 走 stdin(input 由 runBin 写入),argv 不携带任何可控文本。
+        if (spec.appendPrompt !== false) return { args, input: full };
+        return { args, input: head };
+      }
+      // 真实二进制(干净 argv)→ 保持 argv 直传(兼容不读 stdin 的 CLI)。
+      if (spec.inject === 'system') {
+        // head 已按 flag 注入,这里只补 prompt
+        if (spec.appendPrompt !== false) args.push(prompt);
+        return { args };
+      }
+      if (spec.appendPrompt !== false) args.push(full);
       return { args };
     },
     parseLine: pluginProtocolParser(protocol, pluginName),
