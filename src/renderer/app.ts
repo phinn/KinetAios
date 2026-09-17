@@ -6003,14 +6003,14 @@ function initSkillsTab(): void {
       const key = s.source === 'plugin' ? 'plugin' : s.source;
       (groups.get(key) ?? groups.set(key, []).get(key)!).push(s);
     }
-    const order = ['kinetaios', 'claude', 'codex', 'plugin'] as const;
+    const order = ['kinetaios', 'claude', 'codex', 'plugin', 'builtin'] as const;
     listEl.innerHTML = order.filter((src) => groups.get(src)?.length).map((src) => {
       const arr = groups.get(src)!;
       const srcLabel = tr(`settings.skills.src.${src}` as 'settings.skills.src.claude');
       return `<div class="s-plugin-cat-group">
         <div class="s-plugin-cat-header">${esc(srcLabel)} (${arr.length})</div>
         ${arr.map((s) => {
-          const ro = s.source === 'plugin';
+          const ro = s.source === 'plugin' || s.source === 'builtin';
           const catKey = `settings.skills.cat.${s.category ?? 'other'}`;
           return `<div class="s-plugin-row" data-skill-name="${esc(s.name)}">
             <div class="s-plugin-info" style="flex:1">
@@ -6042,7 +6042,7 @@ function initSkillsTab(): void {
 
   // ── 弹层:查看/编辑技能源文件(参照 context-modal 模式)──
   function openSkillEditor(name: string, r: NonNullable<Awaited<ReturnType<typeof api.readSkillSource>>>): void {
-    skillEditing = { name, readOnly: r.source === 'plugin' };
+    skillEditing = { name, readOnly: r.source === 'plugin' || r.source === 'builtin' };
     const modal = document.getElementById('skill-editor-modal')!;
     const title = document.getElementById('skm-title')!;
     const pathEl = document.getElementById('skm-path')!;

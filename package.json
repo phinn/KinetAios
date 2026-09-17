@@ -55,6 +55,13 @@
         ]
       },
       {
+        "from": "skills/",
+        "to": "skills/",
+        "filter": [
+          "**/*"
+        ]
+      },
+      {
         "from": "build/",
         "to": "build/",
         "filter": [

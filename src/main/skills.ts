@@ -4,6 +4,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { app } from 'electron';
 import type { SkillInfo, SkillType } from '../shared/types';
 import { pluginSlashCommands, loadPluginCommandBody } from './plugins';
 
@@ -45,10 +46,21 @@ export const CATEGORY_LABELS: Record<string, string> = {
 
 type ScanRoot = {
   dir: string;
-  source: 'claude' | 'codex' | 'kinetaios';
+  source: 'claude' | 'codex' | 'kinetaios' | 'builtin';
   type: SkillType;
   mode: 'file' | 'skill-dir'; // file=目录下 *.md(name=文件名);skill-dir=<name>/SKILL.md
 };
+
+// 内置 skill 根:随 app 分发,打包后 electron-builder 经 extraResources 复制到 resources/skills/
+// (package.json),dev 模式直接扫源码 skills/ 目录。参照 plugins/ 的分发模式。
+// source='builtin' → 技能面板只读(saveSkillSource 已拦截),用户级同名 skill 优先(先到先得)。
+// Bundled skills ship with the app: resources/skills/ when packaged, repo skills/ in dev.
+function builtinRoot(): ScanRoot | null {
+  const dir = app.isPackaged
+    ? path.join(process.resourcesPath, 'skills')
+    : path.resolve(__dirname, '..', '..', 'skills');
+  return { dir, source: 'builtin', type: 'skill', mode: 'skill-dir' };
+}
 
 // 用户级根:Claude Code 的 skills/commands/agents + Codex 的 skills。
 function roots(): ScanRoot[] {
@@ -65,6 +77,9 @@ function roots(): ScanRoot[] {
     { dir: path.join(home, '.codex', 'skills'), source: 'codex', type: 'skill', mode: 'skill-dir' },
     // Codex 的内置 skills 在 .system 子目录。
     { dir: path.join(home, '.codex', 'skills', '.system'), source: 'codex', type: 'skill', mode: 'skill-dir' },
+    // 内置 skill 殿后:同名先到先得 → 用户级/已装配置优先于随 app 分发的只读副本。
+    // / Bundled skills last: earlier roots win name conflicts over the read-only shipped copy.
+    ...(() => { const b = builtinRoot(); return b ? [b] : []; })(),
   ];
 }
 
@@ -132,7 +147,7 @@ function ensure(): Map<string, Skill> {
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios', type: SkillType, body: string, dir: string, file: string): void => {
+  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios' | 'builtin', type: SkillType, body: string, dir: string, file: string): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
     map.set(key, { name, description, source, type, body, dir, file, category: inferCategory(name, description) });
