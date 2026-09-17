@@ -1,5 +1,23 @@
 # Release Notes
 
+## v3.7.3 — 模型配置弹层化 + 内置 skill 分发 + 主题原生控件修复
+
+**发布日期：** 2026-09-17(自 v3.7.2 起 7 commits)
+
+### ✨ 功能
+
+- **模型配置档编辑弹层化**(2906fc3)—— 模型 tab 加「添加模型」按钮,新增/编辑统一居中弹窗(配置名/key/URL/模型/协议/reasoning/价格/余额查询),内置测试连接;保存即入列表,Esc/遮罩可关;四语
+- **内置 skill 随 app 分发**(4a2efc7)—— 新增 builtin 来源,resources/skills 打包;首个内置 skill: data-analysis(移植 V3 分析工作法+V2 落盘约定)
+- **设置页保存/测试按钮常驻底部**(af7e91b)—— 提到 s-layout 外固定卡片底部,任意 tab 不用滚到底找保存;表单脏检测,有未保存改动时保存按钮亮提示点;四语
+
+### 🐛 修复
+
+- **原生控件不跟主题**(548ac0d)—— 全项目补 `color-scheme`(root=dark,light/serene/sierra=light);修复下拉菜单/number spinner/滚动条在暗色主题下永远按系统浅色渲染
+- **skill 编辑弹层遮罩缺失**(f2c1462)—— 上轮漏写 CSS 导致弹层掉到文档流底部,聊天流滚动露出白框;补 fixed 遮罩+居中
+- **弹层 i18n 补齐**(736cac5)—— pe-test 空按钮根因=静态弹层没绑 data-i18n;openProfileModal 打开时 applyI18nDOM 重刷,新增 settings.profile.name/test 四语 key
+
+---
+
 ## v3.7.2 — 设置页重构:技能面板 + 编辑弹层 + 左右两栏布局
 
 **发布日期：** 2026-09-17(自 v3.7.1 起 3 commits)
