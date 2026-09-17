@@ -5012,16 +5012,6 @@ async function showSettings() {
             </div>
             <span class="test-msg" id="s-skills-msg"></span>
             <div id="s-skills" class="s-plugin-list"></div>
-            <div id="s-skill-editor-wrap" style="display:none;flex-direction:column;gap:8px">
-              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-                <span id="s-skill-editor-title" class="s-plugin-name"></span>
-                <code id="s-skill-editor-path" class="s-plugin-detail-path" style="flex:1"></code>
-                <button id="s-skill-save" class="s-plugin-reload-btn">${tr('settings.skills.save')}</button>
-                <button id="s-skill-close" class="s-plugin-reload-btn">${tr('settings.skills.close')}</button>
-              </div>
-              <textarea id="s-skill-editor" class="s-persona-editor" style="min-height:420px" spellcheck="false"></textarea>
-              <span class="test-msg" id="s-skill-editor-msg"></span>
-            </div>
           </div>
         </div>
       </div><!-- /skills panel -->
@@ -5984,19 +5974,13 @@ async function showSettings() {
   initSkillsTab();
 }
 
-// ── 技能(Skills)tab:列表 + 查看源文件 + 编辑保存 ──
-// Skills tab: list all skills (slash menu / injection), view the full .md source,
-// and edit + save user-level skills. Plugin/builtin sources are read-only.
+// ── 技能(Skills)tab:列表 + 弹层查看/编辑源文件 ──
+// Skills tab: list all skills (slash menu / injection), open a modal to view the
+// full .md source, and edit + save user-level skills. Plugin sources are read-only.
 function initSkillsTab(): void {
   const listEl = document.getElementById('s-skills')!;
   const msgEl = document.getElementById('s-skills-msg')!;
-  const editorWrap = document.getElementById('s-skill-editor-wrap')!;
-  const editor = document.getElementById('s-skill-editor') as HTMLTextAreaElement;
-  const editorTitle = document.getElementById('s-skill-editor-title')!;
-  const editorPath = document.getElementById('s-skill-editor-path')!;
-  const editorMsg = document.getElementById('s-skill-editor-msg')!;
   let cache: SkillInfo[] = [];
-  let editing: { name: string; readOnly: boolean } | null = null;
 
   const renderList = (filter: string): void => {
     const q = filter.trim().toLowerCase();
@@ -6045,39 +6029,49 @@ function initSkillsTab(): void {
           msgEl.textContent = tr('settings.skills.readFailed', { name });
           return;
         }
-        editing = { name, readOnly: r.source === 'plugin' };
-        editorTitle.textContent = name;
-        editorPath.textContent = r.file;
-        editor.value = r.content;
-        editor.readOnly = editing.readOnly;
-        editorWrap.style.display = 'flex';
-        editorMsg.textContent = editing.readOnly ? tr('settings.skills.readOnly') : '';
-        editorMsg.style.color = 'var(--muted)';
-        editorWrap.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        openSkillEditor(name, r);
       };
     });
   };
 
+  // ── 弹层:查看/编辑技能源文件(参照 context-modal 模式)──
+  function openSkillEditor(name: string, r: NonNullable<Awaited<ReturnType<typeof api.readSkillSource>>>): void {
+    skillEditing = { name, readOnly: r.source === 'plugin' };
+    const modal = document.getElementById('skill-editor-modal')!;
+    const title = document.getElementById('skm-title')!;
+    const pathEl = document.getElementById('skm-path')!;
+    const status = document.getElementById('skm-status')!;
+    const saveBtn = document.getElementById('skm-save') as HTMLButtonElement;
+    title.innerHTML = `${esc(name)} <span class="s-plugin-ver">${esc(tr(skillEditing.readOnly ? 'settings.skills.readOnlyBadge' : 'settings.skills.editableBadge'))}</span>`;
+    pathEl.textContent = r.file;
+    status.textContent = skillEditing.readOnly ? tr('settings.skills.readOnly') : '';
+    saveBtn.style.display = skillEditing.readOnly ? 'none' : '';
+    // 每次打开重建编辑器,确保干净状态。— Rebuild each open for a clean state.
+    if (skillEditorInstance) { skillEditorInstance.destroy(); skillEditorInstance = null; }
+    const host = document.getElementById('skm-editor-host')!;
+    skillEditorInstance = new CodeEditor(host, { lang: 'markdown', autoHeight: false, readOnly: skillEditing.readOnly });
+    skillEditorInstance.value = r.content;
+    modal.classList.add('show');
+    skillEditorInstance.focus();
+  }
+
   // 保存(仅用户级技能) — Save (user-level skills only).
-  document.getElementById('s-skill-save')!.onclick = async () => {
-    if (!editing || editing.readOnly) return;
-    const r = await api.saveSkillSource(editing.name, editor.value);
-    editorMsg.style.color = r.ok ? 'var(--ok)' : 'var(--danger)';
-    editorMsg.textContent = r.ok ? tr('settings.skills.saved', { file: r.file }) : (r.error ?? 'error');
+  document.getElementById('skm-save')!.onclick = async () => {
+    if (!skillEditing || skillEditing.readOnly || !skillEditorInstance) return;
+    const status = document.getElementById('skm-status')!;
+    status.textContent = '…';
+    const r = await api.saveSkillSource(skillEditing.name, skillEditorInstance.value);
     if (r.ok) {
-      // main 端保存后已强制重扫 → 这边 30s TTL 缓存也作废,slash 菜单立即生效。
+      status.textContent = tr('settings.skills.saved', { file: r.file });
+      // main 端保存后已强制重扫 → 这边 slash 菜单缓存也作废,注入内容立即生效。
       skillsFetchedAt = 0;
       cache = await api.listSkills();
       renderList((document.getElementById('s-skill-search') as HTMLInputElement)?.value ?? '');
+    } else {
+      status.textContent = r.error ?? 'error';
     }
   };
-
-  // 关闭编辑器 — Close editor.
-  document.getElementById('s-skill-close')!.onclick = () => {
-    editorWrap.style.display = 'none';
-    editing = null;
-  };
-
+  document.getElementById('skm-cancel')!.onclick = closeSkillEditor;
   document.getElementById('s-skill-search')!.oninput = (e) => {
     renderList((e.target as HTMLInputElement).value);
   };
@@ -6973,15 +6967,17 @@ function closeMoreMenu() {
     else if (document.getElementById('confirm-modal')!.classList.contains('show')) dismissConfirmDialog();
     else if (document.getElementById('prompt-modal')!.classList.contains('show')) dismissPrompt();
     else if (document.getElementById('context-modal')!.classList.contains('show')) closeContextModal();
+    else if (document.getElementById('skill-editor-modal')!.classList.contains('show')) closeSkillEditor();
     else if (document.getElementById('ctx-inspector-modal')!.classList.contains('show')) closeCtxInspector();
   });
-  for (const id of ['modal', 'confirm-modal', 'prompt-modal', 'context-modal', 'ctx-inspector-modal']) {
+  for (const id of ['modal', 'confirm-modal', 'prompt-modal', 'context-modal', 'skill-editor-modal', 'ctx-inspector-modal']) {
     document.getElementById(id)!.addEventListener('click', (e) => {
       if (e.target === e.currentTarget) {
         if (id === 'modal') closeConfirm(false);
         else if (id === 'confirm-modal') dismissConfirmDialog();
         else if (id === 'prompt-modal') dismissPrompt();
         else if (id === 'context-modal') closeContextModal();
+        else if (id === 'skill-editor-modal') closeSkillEditor();
         else if (id === 'ctx-inspector-modal') closeCtxInspector();
       }
     });
@@ -8814,6 +8810,17 @@ function timeAgo(ts: number): string {
 // 用 modal + CodeEditor 全屏 + 保存/取消。空 cwd 不允许(workbench 卡片总是带 cwd)。
 let contextCwd = '';
 let contextEditor: CodeEditor | null = null;
+
+// 技能源文件弹层的编辑器实例(模块级,供全局 Esc/backdrop 关闭链复用)。
+// Editor instance for the skill source modal (module-level for the global close chain).
+let skillEditorInstance: CodeEditor | null = null;
+let skillEditing: { name: string; readOnly: boolean } | null = null;
+
+function closeSkillEditor(): void {
+  document.getElementById('skill-editor-modal')!.classList.remove('show');
+  skillEditing = null;
+  if (skillEditorInstance) { skillEditorInstance.destroy(); skillEditorInstance = null; }
+}
 
 async function openContextModal(cwd: string): Promise<void> {
   if (!cwd) return;
