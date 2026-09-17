@@ -14,7 +14,9 @@ function dbFile(): string {
 }
 
 // Mirror Swift hasColumn(): check before ALTER so re-runs don't spam errors.
+// 白名单校验表名:此函数只服务内部固定表名,但拼进 PRAGMA 的字符串必须不可能是注入载体。
 function hasColumn(table: string, column: string): boolean {
+  if (!/^[A-Za-z0-9_]+$/.test(table)) throw new Error(`hasColumn: illegal table name ${table}`);
   const rows = db.prepare(`PRAGMA table_info(${table});`).all() as Array<{ name: string }>;
   return rows.some((r) => r.name === column);
 }
@@ -174,9 +176,12 @@ const FTS_CONTENT_CAP = 4_000;
 
 export function appendMessage(role: string, content: string, convId?: string): void {
   const capped = content.length > FTS_CONTENT_CAP ? content.slice(0, FTS_CONTENT_CAP) + '\n…[FTS 截断,全文见会话]' : content;
-  const r = stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, capped);
-  // convId 映射入旁表 —— searchEnriched 用它 O(1) 反查,替代 turns LIKE 全表扫(380ms/次)。
-  if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
+  // 事务包裹:FTS 行 + conv 映射行必须同生共死,否则崩溃后留无映射的孤儿 FTS 行。
+  db.transaction(() => {
+    const r = stmt('INSERT INTO history(role, content) VALUES (?, ?);').run(role, capped);
+    // convId 映射入旁表 —— searchEnriched 用它 O(1) 反查,替代 turns LIKE 全表扫(380ms/次)。
+    if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
+  })();
 }
 
 export function search(q: string, limit = 20, restrictConvId?: string): Array<{ role: string; content: string }> {
@@ -327,12 +332,15 @@ export function saveTurn(convId: string, t: Turn): void {
   const slim: Turn = t.steps?.some((s) => s.images?.length)
     ? { ...t, steps: t.steps.map((s) => (s.images?.length ? { ...s, images: undefined } : s)) }
     : t;
-  stmt(
-    `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
-     ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
-  ).run(t.id, convId, JSON.stringify(slim), t.ts);
-  // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
-  touchConversation(convId);
+  // 事务包裹:turn UPSERT + 活动时间戳同生共死。
+  db.transaction(() => {
+    stmt(
+      `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
+    ).run(t.id, convId, JSON.stringify(slim), t.ts);
+    // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
+    touchConversation(convId);
+  })();
 }
 
 // ── conv_events:append-only 事件日志 ──
@@ -351,7 +359,16 @@ export function appendEvent(convId: string, turnId: string, ev: ConvEvent): void
 export function loadEvents(convId: string, afterSeq = 0): Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> {
   const rows = stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND seq>? ORDER BY seq;')
     .all(convId, afterSeq) as Array<{ seq: number; turn_id: string; type: string; data: string; ts: number }>;
-  return rows.map((r) => ({ seq: r.seq, turnId: r.turn_id, type: r.type, data: JSON.parse(r.data) as ConvEvent, ts: r.ts }));
+  // 容错:一条脏数据(JSON 损坏)不能炸穿 projectGoal/rebuildTurnsFromEvents/loadTurns 整条链。
+  const out: Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> = [];
+  for (const r of rows) {
+    try {
+      out.push({ seq: r.seq, turnId: r.turn_id, type: r.type, data: JSON.parse(r.data) as ConvEvent, ts: r.ts });
+    } catch {
+      /* 跳过坏行 */
+    }
+  }
+  return out;
 }
 
 // ── Goal 投影(参考 deepseek-harness goal 域):goal 状态 = 事件日志的严格 fold,不单独建表。
@@ -398,6 +415,10 @@ export function deleteConversation(id: string): void {
     stmt('DELETE FROM conv_events WHERE conv_id=?;').run(id);
     stmt('DELETE FROM cost_log WHERE conv_id=?;').run(id);
     stmt('DELETE FROM memory_triples WHERE conversation_id=?;').run(id);
+    // FTS 级联清理:此前从不清 history/history_conv,已删会话的消息永远留在全文索引里,
+    // recall_memory 仍可搜出(隐私残留 + 索引膨胀)。FTS5 无外键,需经旁表反查 rowid 手动删。
+    stmt('DELETE FROM history WHERE rowid IN (SELECT id FROM history_conv WHERE conv_id=?);').run(id);
+    stmt('DELETE FROM history_conv WHERE conv_id=?;').run(id);
     // 级联清理该会话产生的记忆 + 向量 + meta(避免孤儿数据)
     if (hasTable('memory_embeddings')) stmt('DELETE FROM memory_embeddings WHERE memory_id IN (SELECT id FROM memories WHERE conversation_id=?);').run(id);
     if (hasTable('memory_meta')) stmt('DELETE FROM memory_meta WHERE memory_id IN (SELECT id FROM memories WHERE conversation_id=?);').run(id);
@@ -409,8 +430,13 @@ export function deleteConversation(id: string): void {
 }
 
 export function deleteTurns(convId: string): void {
-  stmt('DELETE FROM turns WHERE conv_id=?;').run(convId);
-  stmt('DELETE FROM conv_events WHERE conv_id=?;').run(convId);
+  // 同 deleteConversation:turns 重建前先把对应 FTS 行一并清掉,不留可搜残留。
+  db.transaction(() => {
+    stmt('DELETE FROM history WHERE rowid IN (SELECT id FROM history_conv WHERE conv_id=?);').run(convId);
+    stmt('DELETE FROM history_conv WHERE conv_id=?;').run(convId);
+    stmt('DELETE FROM turns WHERE conv_id=?;').run(convId);
+    stmt('DELETE FROM conv_events WHERE conv_id=?;').run(convId);
+  })();
 }
 
 function loadTurns(convId: string): Turn[] {
