@@ -124,6 +124,7 @@ const ICON = {
   branch2: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="3" r="2"/><circle cx="6" cy="21" r="2"/><circle cx="18" cy="6" r="2"/><path d="M6 5v14M18 8v2a4 4 0 01-4 4H6"/></svg>',
   edit: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg>',
   del: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg>',
+  shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
 } as const;
 
 // Git 同步状态徽章图标(local-first,inline SVG 防渲染问题)
@@ -4675,6 +4676,7 @@ async function showSettings() {
         <button class="s-tab" data-stab="appearance">${tr('settings.tab.appearance')}</button>
         <button class="s-tab" data-stab="engine">${tr('settings.tab.engine')}</button>
         <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
+        <button class="s-tab" data-stab="security">${tr('settings.tab.security')}</button>
         <button class="s-tab" data-stab="messaging">${tr('settings.tab.messaging')}</button>
         <button class="s-tab" data-stab="plugins">${tr('settings.tab.plugins')}</button>
         <button class="s-tab" data-stab="goal">${tr('settings.tab.goal')}</button>
@@ -5042,10 +5044,10 @@ async function showSettings() {
       </div>
       </div><!-- /mesh panel -->
 
-      <div class="s-tab-panel" data-panel="goal" style="display:none">
+      <div class="s-tab-panel" data-panel="security" style="display:none">
       <div class="s-section">
-        <h3>🎯 ${tr('settings.goal.title')}</h3>
-        <div class="field-desc">${tr('settings.goal.desc')}</div>
+        <h3>${ICON.shield} ${tr('settings.tab.security')}</h3>
+        <div class="field-desc">${tr('settings.security.desc')}</div>
 
         <!-- 隐私闸:数据出网敏感检测(默认关) -->
         <div class="s-sub-panel">
@@ -5055,6 +5057,13 @@ async function showSettings() {
           </label>
           <div class="s-sub-panel-desc-indent">${tr('settings.privacy.desc')}</div>
         </div>
+      </div>
+      </div><!-- /security panel -->
+
+      <div class="s-tab-panel" data-panel="goal" style="display:none">
+      <div class="s-section">
+        <h3>🎯 ${tr('settings.goal.title')}</h3>
+        <div class="field-desc">${tr('settings.goal.desc')}</div>
 
         <!-- 替身监工 -->
         <div class="s-sub-panel">
