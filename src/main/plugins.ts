@@ -119,11 +119,23 @@ let cache: LoadedPlugin[] | null = null;
 
 // ── 工具函数 ──────────────────────────────────────────────
 
+// 安全: manifest 里的相对路径(systemPrompt/panel/icon/tools/hooks/slashCommands)统一走这里。
+// resolve 后必须仍落在插件目录内, 逃逸(`../` 出目录/绝对路径)返回 null —— 拒绝读取而非抛异常,
+// 调用方按"文件不存在"降级(防插件目录外的任意文件被读进 systemPrompt/渲染层)。
+function resolvePluginFile(dir: string, rel: string): string | null {
+  if (typeof rel !== 'string' || !rel.trim()) return null;
+  const root = path.resolve(dir);
+  const full = path.resolve(root, rel);
+  if (full !== root && !full.startsWith(root + path.sep)) return null;
+  return full;
+}
+
 // 解析 "file.js#exportName" 语法: 分割文件名和导出名, require 后取对应属性。
 // 无 # → 返回整个 module(v1 行为)。
 function resolveExport(entrySpec: string, dir: string): unknown {
   const [file, exportName] = entrySpec.split('#');
-  const fullPath = path.join(dir, file);
+  const fullPath = resolvePluginFile(dir, file);
+  if (!fullPath) return undefined; // 路径逃逸 → 视为无此贡献点
   // 清 require.cache 让用户改完重启后拿到新代码(开发回路)。
   delete require.cache[require.resolve(fullPath)];
   // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -179,8 +191,9 @@ export function loadPluginCommandBody(name: string): { body: string; dir: string
     const found = p.slashCommands.find((c) => c.name.toLowerCase() === name.toLowerCase());
     if (found) {
       // 从磁盘重新读 body(缓存只存了 SkillInfo, 不含 body)
-      const cmdDir = p.manifest.slashCommands ? path.join(p.dir, p.manifest.slashCommands) : p.dir;
-      const filePath = path.join(cmdDir, `${found.name}.md`);
+      const cmdDir = p.manifest.slashCommands ? resolvePluginFile(p.dir, p.manifest.slashCommands) : p.dir;
+      const filePath = cmdDir ? path.join(cmdDir, `${found.name}.md`) : null;
+      if (!filePath || !cmdDir) continue;
       try {
         const content = fs.readFileSync(filePath, 'utf8');
         const parsed = parseFrontmatter(content, found.name);
@@ -303,14 +316,15 @@ export function loadPlugins(): LoadedPlugin[] {
 
       // 2. Slash 命令(v2 新增)
       const slashCommands: SkillInfo[] = manifest.slashCommands
-        ? scanSlashCommands(path.join(dir, manifest.slashCommands), manifest.name)
+        ? scanSlashCommands(resolvePluginFile(dir, manifest.slashCommands) ?? path.join(dir, '__escaped__'), manifest.name)
         : [];
 
       // 3. System prompt(v2 新增)
       let systemPromptText: string | undefined;
       if (manifest.systemPrompt) {
         try {
-          systemPromptText = fs.readFileSync(path.join(dir, manifest.systemPrompt), 'utf8');
+          const sp = resolvePluginFile(dir, manifest.systemPrompt);
+          systemPromptText = sp ? fs.readFileSync(sp, 'utf8') : undefined;
         } catch {
           /* 读不了 → 跳过 */
         }
@@ -320,7 +334,8 @@ export function loadPlugins(): LoadedPlugin[] {
       let panelHtml: string | undefined;
       if (manifest.panel) {
         try {
-          panelHtml = fs.readFileSync(path.join(dir, manifest.panel), 'utf8');
+          const pp = resolvePluginFile(dir, manifest.panel);
+          panelHtml = pp ? fs.readFileSync(pp, 'utf8') : undefined;
         } catch {
           /* 读不了 → 跳过 */
         }
@@ -467,13 +482,15 @@ export function pluginListSnap(): Array<{
     let iconSvg: string | undefined;
     if (p.manifest.icon) {
       try {
-        iconSvg = fs.readFileSync(path.join(p.dir, p.manifest.icon), 'utf8');
+        const ip = resolvePluginFile(p.dir, p.manifest.icon);
+        iconSvg = ip ? fs.readFileSync(ip, 'utf8') : undefined;
       } catch {
-        iconSvg = defaultIconSvg(cat);
+        iconSvg = undefined;
       }
     } else {
-      iconSvg = defaultIconSvg(cat);
+      iconSvg = undefined;
     }
+    if (!iconSvg) iconSvg = defaultIconSvg(cat);
     return {
       name: p.manifest.name,
       version: p.manifest.version,
@@ -490,7 +507,7 @@ export function pluginListSnap(): Array<{
       systemPrompt: p.systemPromptText,
       hasPanel: !!p.panelHtml,
       panelTitle: p.manifest.panelTitle ?? p.manifest.name,
-      panelIcon: p.manifest.panelIcon ? (() => { try { return fs.readFileSync(path.join(p.dir, p.manifest.panelIcon!), 'utf8'); } catch { return undefined; } })() : undefined,
+      panelIcon: p.manifest.panelIcon ? (() => { try { const ip = resolvePluginFile(p.dir, p.manifest.panelIcon!); return ip ? fs.readFileSync(ip, 'utf8') : undefined; } catch { return undefined; } })() : undefined,
       enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,
@@ -562,6 +579,17 @@ export function pluginEngines(): Array<{ pluginName: string; spec: PluginEngineS
 export function installPlugin(sourcePath: string): { ok: boolean; name?: string; error?: string } {
   try {
     const basename = path.basename(sourcePath);
+    // 安装前先验证 source 的 plugin.json 可读可解析 —— 坏插件不落盘(此前是先复制后验证,
+    // JSON.parse 失败也返回 ok:true, 坏目录会残留在插件目录里每次启动加载失败)。
+    const srcManifestPath = path.join(sourcePath, 'plugin.json');
+    let manifestName: string;
+    try {
+      const manifest = JSON.parse(fs.readFileSync(srcManifestPath, 'utf8')) as { name?: string };
+      if (!manifest.name || typeof manifest.name !== 'string') throw new Error('manifest.name missing');
+      manifestName = manifest.name;
+    } catch (e) {
+      return { ok: false, error: `plugin.json 无效: ${(e as Error)?.message ?? String(e)}` };
+    }
     const dest = path.join(app.getPath('userData'), 'plugins', basename);
     // 如果已存在同名, 先删除(覆盖安装)
     try {
@@ -572,14 +600,7 @@ export function installPlugin(sourcePath: string): { ok: boolean; name?: string;
     // 递归复制目录
     copyDirSync(sourcePath, dest);
     invalidatePluginCache();
-    // 验证: 尝试加载看有没有 plugin.json
-    const manifestPath = path.join(dest, 'plugin.json');
-    try {
-      const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
-      return { ok: true, name: manifest.name ?? basename };
-    } catch {
-      return { ok: true, name: basename };
-    }
+    return { ok: true, name: manifestName };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
   }
@@ -596,9 +617,15 @@ function copyDirSync(src: string, dest: string): void {
 }
 
 // 卸载插件: 删除 <userData>/plugins/<name>/ 目录, 然后 invalidate cache。
+// 安全: name 经过用户/渲染层传入, `../..` 之类会逃逸出插件根目录删任意目录 ——
+// resolve 后必须仍落在 <userData>/plugins 前缀内, 否则拒绝。
 export function uninstallPlugin(name: string): { ok: boolean; error?: string } {
   try {
-    const dest = path.join(app.getPath('userData'), 'plugins', name);
+    const root = path.resolve(app.getPath('userData'), 'plugins');
+    const dest = path.resolve(root, name);
+    if (!dest.startsWith(root + path.sep)) {
+      return { ok: false, error: `非法插件名: ${name}` };
+    }
     fs.rmSync(dest, { recursive: true, force: true });
     hooksMap.delete(name);
     invalidatePluginCache();
@@ -667,7 +694,7 @@ export function pluginPanelsSnap(): Array<{ name: string; title: string; icon?: 
     .map((p) => ({
       name: p.manifest.name,
       title: p.manifest.panelTitle ?? p.manifest.name,
-      icon: p.manifest.panelIcon ? (() => { try { return fs.readFileSync(path.join(p.dir, p.manifest.panelIcon!), 'utf8'); } catch { return undefined; } })() : undefined,
+      icon: p.manifest.panelIcon ? (() => { try { const ip = resolvePluginFile(p.dir, p.manifest.panelIcon!); return ip ? fs.readFileSync(ip, 'utf8') : undefined; } catch { return undefined; } })() : undefined,
       html: p.panelHtml!,
     }));
 }
