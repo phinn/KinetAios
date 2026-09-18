@@ -353,6 +353,39 @@ const notifyLastAt = new Map<string, number>();
 import { emitTeamEvent } from './team-events';
 export { emitTeamEvent };
 
+// ── P1 加固: 窗口导航防护(window-open / 跳转拦截面)──
+// 此前主窗口无 setWindowOpenHandler / will-navigate 防护:webview 内 target=_blank 或
+// 页面自动跳转会开新 Electron 窗口 / 整窗导航到任意 URL(钓鱼面)。
+// 策略:window.open 一律拦截,http(s) 转交系统默认浏览器,其余静默丢弃;
+// will-navigate 只允许本应用 file:// 页面(自身 loadFile 的导航),http(s) 同样转交系统浏览器。
+// P1 hardening: window.open is denied (http(s) handed to the OS browser), top-level
+// navigation is restricted to the app's own file:// pages.
+function hardenWindowNav(win: BrowserWindow): void {
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        void shell.openExternal(u.href); // 外链走系统浏览器,不在应用内开 Electron 窗口
+      }
+    } catch { /* 非法 URL → 静默拒绝 */ }
+    return { action: 'deny' };
+  });
+  win.webContents.on('will-navigate', (e, url) => {
+    try {
+      const u = new URL(url);
+      if (u.protocol === 'file:') return; // 本应用页面(index/quick/dashboard/memory-graph)放行
+      if (u.protocol === 'http:' || u.protocol === 'https:') {
+        e.preventDefault();
+        void shell.openExternal(u.href); // 整窗跳转外链 → 转系统浏览器
+        return;
+      }
+      e.preventDefault();
+    } catch {
+      e.preventDefault();
+    }
+  });
+}
+
 function createDashboard(): BrowserWindow {
   const win = new BrowserWindow({
     width: 1100,
@@ -371,6 +404,7 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   // 关窗置空:closeBehavior=minimize/tray 时 dashboard 关了但 app 不退,
   // 悬挂的 destroyed 引用会被 second-instance 等路径直接调 isMinimized() 抛 "Object has been destroyed"。
   win.on('closed', () => { dashboardWin = null; });
@@ -532,6 +566,7 @@ function createQuick(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'quick.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   return win;
 }
 
@@ -562,6 +597,7 @@ function createMetricsWindow(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'dashboard.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   return win;
 }
 function toggleMetricsWindow(): void {
@@ -593,6 +629,7 @@ function createFilesWindow(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'files.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   return win;
 }
 function toggleFilesWindow(cwd?: string): void {
@@ -624,6 +661,7 @@ function createArenaWindow(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'arena.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   return win;
 }
 function toggleArenaWindow(cwd?: string): void {
@@ -950,6 +988,7 @@ function showMemoryGraph(): void {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'memory-graph.html'));
+  hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   memoryGraphWin = win;
   win.on('closed', () => { memoryGraphWin = null; });
 }
@@ -1523,6 +1562,12 @@ function registerIpc(): void {
       resolve(approved);
       pendingConfirms.delete(id);
     }
+  });
+
+  // P2: 撤销 Computer Use 会话级授权(设置页/状态条入口;传 convId 撤单会话,不传撤全部)。
+  ipcMain.handle('revoke-cu-approval', (_e, convId?: string) => {
+    const { revokeComputerUseApproval } = require('./tools') as typeof import('./tools');
+    return revokeComputerUseApproval(convId);
   });
 
   // ── 隐私闸独立确认桥(不复用 shell confirm 通道)──

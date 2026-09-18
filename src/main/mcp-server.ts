@@ -126,6 +126,15 @@ export class LocalMcpServer {
   private server: http.Server | null = null;
   private tools: Tool[] = [];
   private token: string = '';
+  // ── P1 加固: token 爆破限速 ──
+  // timing-safe 比较防时序攻击,但之前 401 无限速 —— 局域网内可安静高频爆破 token。
+  // 策略:滑动窗口计数,90 秒内失败 ≥5 次 → 接下来 30 秒直接拒所有请求(不比较 token)。
+  // Rate limit: ≥5 auth failures within 90s → reject all requests for the next 30s.
+  private authFailures: number[] = []; // 失败时间戳(ms)
+  private penaltyUntil = 0; // 惩罚截止时间(ms);此前的请求直接 429
+  private static readonly AUTH_FAIL_WINDOW_MS = 90_000;
+  private static readonly AUTH_FAIL_THRESHOLD = 5;
+  private static readonly AUTH_PENALTY_MS = 30_000;
   // 远程 Agent 事件回调:main.ts 注册后,转发到 dashboard 窗口显示远程任务进度。
   private onRemoteEvent: ((ev: RemoteAgentEvent) => void) | null = null;
   // ── 实时直播:缓存最近的远程 Agent 事件,供 SSE 端点推送 ──
@@ -239,13 +248,29 @@ export class LocalMcpServer {
     }
 
     // Token 鉴权:Authorization: Bearer <token>(恒定时间比较,防时序攻击)
+    // 爆破限速:近 90s 失败 ≥5 次后,惩罚期内所有请求(含正确 token)直接 429 拒绝。
+    const now = Date.now();
+    if (now < this.penaltyUntil) {
+      this.jsonRpc(res, 429, { jsonrpc: '2.0', error: { code: -32002, message: '请求过于频繁,请稍后重试(鉴权失败过多)' } });
+      return;
+    }
     if (this.token) {
       const auth = req.headers.authorization ?? '';
       const got = auth.startsWith('Bearer ') ? auth.slice(7) : '';
       if (!timingSafeStr(got, this.token)) {
+        // 记一次失败,清出窗口外的旧记录;达到阈值 → 进入惩罚期
+        this.authFailures = this.authFailures.filter((t) => now - t < LocalMcpServer.AUTH_FAIL_WINDOW_MS);
+        this.authFailures.push(now);
+        if (this.authFailures.length >= LocalMcpServer.AUTH_FAIL_THRESHOLD) {
+          this.penaltyUntil = now + LocalMcpServer.AUTH_PENALTY_MS;
+          this.authFailures = [];
+          console.warn(`[mcp-server] token 鉴权连续失败,限速 ${LocalMcpServer.AUTH_PENALTY_MS / 1000}s`);
+        }
         this.jsonRpc(res, 401, { jsonrpc: '2.0', error: { code: -32001, message: '未授权:token 不匹配' } });
         return;
       }
+      // 认证成功 → 清空失败计数
+      this.authFailures = [];
     }
 
     const url = req.url ?? '/mcp';
@@ -267,7 +292,17 @@ export class LocalMcpServer {
     if (req.method === 'GET' && url.startsWith('/mcp/live')) {
       // 只从 Authorization header 验 token(不从 URL query 接收 —— 避免 token 泄露到日志/代理)
       const authHeader = (req.headers.authorization ?? '').replace('Bearer ', '');
-      if (!authHeader || !timingSafeStr(authHeader, this.token)) {
+      const nowLive = Date.now();
+      if (nowLive < this.penaltyUntil || !authHeader || !timingSafeStr(authHeader, this.token)) {
+        // 失败也计入限速窗口(惩罚期内同样直接拒)
+        if (authHeader && !timingSafeStr(authHeader, this.token)) {
+          this.authFailures = this.authFailures.filter((t) => nowLive - t < LocalMcpServer.AUTH_FAIL_WINDOW_MS);
+          this.authFailures.push(nowLive);
+          if (this.authFailures.length >= LocalMcpServer.AUTH_FAIL_THRESHOLD) {
+            this.penaltyUntil = nowLive + LocalMcpServer.AUTH_PENALTY_MS;
+            this.authFailures = [];
+          }
+        }
         res.writeHead(401, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ error: '未授权:token 不匹配' }));
         return;
