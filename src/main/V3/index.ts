@@ -173,7 +173,7 @@ export class DirectV3Engine implements Engine {
       },
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('../teams');
-        const { emitTeamEvent } = await import('../main');
+        const { emitTeamEvent } = await import('../team-events');
 
         // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 V1/V2 teamRun 对齐)。
         // / Align team members with spawn's sub-agent model resolution (same as V1/V2).
@@ -394,14 +394,17 @@ function submitDeepJob(args: {
     turnId,
     kind: 'v3-deep',
     title,
-    payload: { model: snap.model, cwd: conv.cwd }, // 摘要即可,真输入在闭包里(payload 只服务 M3 重启恢复,当前版本不需要)
-    worker: async ({ signal, onEvent }) => {
+    payload: { model: snap.model, cwd: conv.cwd }, // 摘要信息(面板展示);断点恢复靠 checkpoint 列,真输入在闭包内
+    worker: async ({ signal, onEvent, checkpointSink, initialCheckpoint }) => {
       const jobCtx: ToolCtx = { ...ctx, signal };
       try {
         const updatedHistory = await executeDeepPath({
           provider, tools, systemPrompt, memoryBlock, snapshot: snap,
           userInput, history: historySnapshot, ctx: jobCtx, signal, policy,
           onEvent,
+          // M3: 断点续跑 —— kill/失败后 resume 时跳过已完成节点
+          initialCheckpoint: initialCheckpoint as import('./dag-executor').DAGCheckpoint | undefined,
+          onCheckpoint: checkpointSink as (cp: import('./dag-executor').DAGCheckpoint) => void,
         });
         // 用户可见答案 = updatedHistory 里最后一条有正文的 assistant 消息(deep 收尾汇总)
         let answer = '';

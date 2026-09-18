@@ -11184,10 +11184,15 @@ document.getElementById('live-close')!.onclick = () => {
           <div class="jm-title">${STATUS_ICON[j.status] ?? ''} ${escapeHtml(j.title)}</div>
           <div class="jm-meta">${j.status} · $${j.costUSD.toFixed(4)} · ${new Date(j.createdAt).toLocaleTimeString()}${j.error ? ' · ' + escapeHtml(j.error.slice(0, 80)) : ''}</div>
           ${(j.status === 'running' || j.status === 'queued') ? `<button class="jm-kill" data-job="${j.id}">终止</button>` : ''}
+          ${(j.status === 'paused' || ((j.status === 'killed' || j.status === 'failed') && j.kind === 'v3-deep')) ? `<button class="jm-resume" data-job="${j.id}">继续</button>` : ''}
         </div>`).join('')
       : '<div class="jm-empty">暂无后台任务</div>';
     menu.querySelectorAll<HTMLButtonElement>('.jm-kill').forEach((btn) => {
       btn.onclick = (e) => { e.stopPropagation(); void api.killJob(btn.dataset.job!); };
+    });
+    menu.querySelectorAll<HTMLButtonElement>('.jm-resume').forEach((btn) => {
+      btn.style.cssText = 'float:right;border:none;background:none;color:var(--accent,#58a6ff);cursor:pointer;font-size:12px;padding:2px 6px;';
+      btn.onclick = (e) => { e.stopPropagation(); void api.resumeJob(btn.dataset.job!); };
     });
   }
 

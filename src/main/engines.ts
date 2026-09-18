@@ -361,7 +361,7 @@ class DirectEngine implements Engine {
       // P2:AgentTeams 调度。broadcast 时并行,team_send 时单 member。结果拼成文本返回给主 LLM。
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
-        const { emitTeamEvent } = await import('./main');
+        const { emitTeamEvent } = await import('./team-events');
 
         // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 spawn 对齐,team member 不该固定用主模型)。
         // / Align team members with spawn's sub-agent model resolution.
@@ -598,7 +598,13 @@ const execFileAsync = promisify(execFile);
 // 跨引擎子任务(dispatch_agent engine=claudeCode/codex)的 one-shot CLI 调用:
 // 不走 stream-json 解析,直接 execFile + 全量 stdout。CLI 失败/超时返回错误文本而非抛错(子任务不应阻塞主流程)。
 // ponytail: maxBuffer 10MB;再大就走流式(目前没遇到)。codex exec 默认输出 JSON,模型自己解析。
-export async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: string, cwd: string, signal: AbortSignal): Promise<string> {
+export async function runCliOneShot(
+  engine: 'claudeCode' | 'codex',
+  prompt: string,
+  cwd: string,
+  signal: AbortSignal,
+  opts?: { timeoutMs?: number }, // M4b: dispatch 后台 job 可放宽(缺省仍 5 分钟,同步语义不变)
+): Promise<string> {
   const bin = resolveBin(engine === 'claudeCode' ? 'claude' : 'codex');
   if (!bin.found) return `(${engine} CLI 不在 PATH,跳过子任务)`;
   // 安全:Windows 上 .cmd 走 shell:true,prompt 如果含 &|> 等 cmd 元字符会导致命令注入。
@@ -616,7 +622,7 @@ export async function runCliOneShot(engine: 'claudeCode' | 'codex', prompt: stri
       cwd,
       env: binEnv(),
       signal,
-      timeout: 5 * 60 * 1000,
+      timeout: opts?.timeoutMs ?? 5 * 60 * 1000,
       maxBuffer: 10 * 1024 * 1024,
       ...(bin.shell ? { shell: true } : {}),
       ...(useStdin ? { input: prompt } : {}),

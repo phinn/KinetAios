@@ -14,6 +14,8 @@ const api: KinetAPI = {
   listJobs: (convId) => ipcRenderer.invoke('job-list', convId),
   getJob: (id) => ipcRenderer.invoke('job-get', id),
   killJob: (id, reason) => ipcRenderer.invoke('job-kill', id, reason),
+  resumeJob: (id) => ipcRenderer.invoke('job-resume', id),
+  dispatchJob: (opts) => ipcRenderer.invoke('job-dispatch', opts),
   onJobUpdate: (cb) => {
     ipcRenderer.removeAllListeners('job-update');
     ipcRenderer.on('job-update', (_e: IpcRendererEvent, info) => cb(info));

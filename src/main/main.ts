@@ -30,6 +30,7 @@ import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLa
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
 import { initJobManager, jobManager } from './JobManager';
+import { setTeamEventEmitter } from './team-events';
 import { getSettings, saveSettings, snapshot, balanceSnapshot } from './settings';
 import { setPrivacyConfirm } from './privacy-gate';
 import { t, type Lang } from '../shared/i18n';
@@ -349,9 +350,8 @@ const emitter: TaskManagerEmitter = {
 const notifyLastAt = new Map<string, number>();
 
 // MARK: Team 事件广播(独立通道,不走 AgentEvent)
-export function emitTeamEvent(teamId: string, ev: import('../shared/types').TeamEvent): void {
-  safeSend(dashboardWin, 'team-event', { teamId, ev });
-}
+import { emitTeamEvent } from './team-events';
+export { emitTeamEvent };
 
 function createDashboard(): BrowserWindow {
   const win = new BrowserWindow({
@@ -1113,6 +1113,9 @@ function registerIpc(): void {
     jobManager().kill(String(id), reason ? String(reason) : undefined);
     return true;
   });
+  ipcMain.handle('job-resume', (_e, id: string) => jobManager().resume(String(id)));
+  ipcMain.handle('job-dispatch', (_e, opts: { convId: string; engine: 'claudeCode' | 'codex'; prompt: string; cwd: string; timeoutMs?: number }) =>
+    jobManager().submitDispatch(opts));
   ipcMain.handle('clear-conversation', (_e, id: string) => taskManager.clearConversation(id));
   ipcMain.handle('rename', (_e, id: string, title: string) => taskManager.rename(id, title));
   ipcMain.handle('set-cwd', (_e, id: string, cwd: string) => taskManager.setCwd(id, cwd));
@@ -2935,6 +2938,9 @@ if (!gotLock) {
     taskManager.load();
     // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。
     // Job 事件桥接进会话事件流(agent-event 频道),renderer 无需新订阅路径。
+    setTeamEventEmitter((teamId, ev) => {
+      safeSend(dashboardWin, 'team-event', { teamId, ev });
+    });
     initJobManager({
       emitJob: (info) => {
         safeSend(dashboardWin, 'job-update', info);

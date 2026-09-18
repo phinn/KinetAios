@@ -30,6 +30,12 @@ export const MAX_STEP_SEGMENTS = 3;
 const CONTINUE_PROMPT =
   '(上一段达到单段轮次上限被暂停,但你的工作可能还没完。请继续完成本步骤;如果事实上已经完成,直接输出该步骤的结论文字,不要再调用工具。)';
 
+// M3: 节点级断点 —— 已完成节点集 + 执行历史。恢复时预填 completed、跳过这些节点。
+export interface DAGCheckpoint {
+  completedNodeIds: string[];
+  history: ChatMsg[];
+}
+
 export interface DAGExecOpts {
   plan: DAGPlan;
   provider: Provider;
@@ -42,6 +48,8 @@ export interface DAGExecOpts {
   policy: EngineContextPolicy;
   history: ChatMsg[];          // execHistory,累积各步产出
   onEvent: (e: AgentEvent) => void;
+  initialCheckpoint?: DAGCheckpoint;  // M3: 断点恢复起点
+  onCheckpoint?: (cp: DAGCheckpoint) => void; // M3: 每节点完成回调(整体覆写式存档)
 }
 
 export interface DAGExecResult {
@@ -54,13 +62,19 @@ export interface DAGExecResult {
  * 执行 DAG plan:拓扑排序 → 分层并行 → 每步 ReAct loop。
  */
 export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
-  const { plan, provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent } = opts;
+  const { plan, provider, tools, systemPrompt, memoryBlock, snapshot, ctx, signal, policy, history, onEvent, initialCheckpoint, onCheckpoint } = opts;
 
   const completed = new Set<string>();
   const failed = new Set<string>();
   // P1-fix: 失败传播 — failed 或被跳过的节点会阻断下游依赖(此前下游照跑,拿不到
   // 依赖产出,整层白烧 token)。blocked 在结果处理阶段填充,下一层执行前检查。
   const blocked = new Set<string>();
+  // M3: 断点恢复 —— 已完成节点直接视为 completed(其 stepMessages 已在 checkpoint.history 里)
+  if (initialCheckpoint?.completedNodeIds.length) {
+    for (const id of initialCheckpoint.completedNodeIds) completed.add(id);
+    if (initialCheckpoint.history.length) history.push(...initialCheckpoint.history);
+    onEvent({ type: 'status', text: `♻️ v3: 从断点恢复,跳过 ${initialCheckpoint.completedNodeIds.length} 个已完成节点` });
+  }
   // P1-fix: verify 审批改为每次 DAG 运行独立(此前模块级 Set 被并发会话共享/互清)。
   const verifyApprovedRun = new Set<string>();
   let execHistory = [...history];
@@ -79,6 +93,8 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     const t = todoOf(id);
     if (t && t.status !== status) { t.status = status; emitTodos(); }
   };
+  // M3: 断点恢复的节点在步骤树里直接标 completed(UI 与执行状态一致)
+  for (const id of completed) setNode(id, 'completed');
   emitTodos(); // 初始:全 pending
 
   for (let levelIdx = 0; levelIdx < levels.length; levelIdx++) {
@@ -117,15 +133,23 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
     // 注意:结果按 [parallelSafe..., mustSerialize...] 顺序拼接,与 orderedNodes 对齐。
     const orderedNodes = [...parallelSafe, ...mustSerialize];
     parallelSafe.forEach((n) => setNode(n.id, 'in_progress')); // 并行批次一起开跑
-    const results: Array<PromiseSettledResult<NodeExecResult>> = await Promise.allSettled(
-      parallelSafe.map((node) => executeNode(node, {
-        provider, tools, systemPrompt, memoryBlock,
-        snapshot, ctx, signal, policy,
-        history: execHistory,  // 各节点共享当前 execHistory 快照
-        onEvent,
-        approved: verifyApprovedRun,
-      })),
-    );
+    // M4: 受限并发 —— 大层全量 Promise.all 会打爆 provider 限流,按 dagConcurrency 分批。
+    const concurrency = Math.max(1, policy.dagConcurrency ?? 3);
+    const results: Array<PromiseSettledResult<NodeExecResult>> = [];
+    for (let i = 0; i < parallelSafe.length; i += concurrency) {
+      if (signal.aborted) break;
+      const batch = parallelSafe.slice(i, i + concurrency);
+      const settled = await Promise.allSettled(
+        batch.map((node) => executeNode(node, {
+          provider, tools, systemPrompt, memoryBlock,
+          snapshot, ctx, signal, policy,
+          history: execHistory,  // 各节点共享当前 execHistory 快照
+          onEvent,
+          approved: verifyApprovedRun,
+        })),
+      );
+      results.push(...settled);
+    }
     for (const node of mustSerialize) {
       if (signal.aborted) break;
       setNode(node.id, 'in_progress'); // 写节点逐个串行:开跑前标进行中
@@ -158,6 +182,10 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
           content: `\n---\n✅ 步骤[${node.id}] 完成: ${node.title}\n结果: ${(result!.value.summary ?? '(无)').slice(0, policy.stepSummaryMaxChars || 600)}\n---\n`,
         });
         onEvent({ type: 'status', text: `✅ v3: [${node.id}] ${node.title} 完成` });
+        // M3: 节点完成 → 整体覆写 checkpoint(M3 断点续跑/崩溃恢复的事实源)
+        try {
+          onCheckpoint?.({ completedNodeIds: [...completed], history: execHistory });
+        } catch { /* checkpoint 存档失败不影响执行 */ }
       } else {
         // 失败 → 局部 retry
         const errMsg = result!.status === 'rejected'
@@ -188,6 +216,10 @@ export async function executeDAG(opts: DAGExecOpts): Promise<DAGExecResult> {
             });
             retried = true;
             onEvent({ type: 'status', text: `✅ v3: [${node.id}] ${node.title} 重试成功` });
+            // M3: 重试成功同样落 checkpoint
+            try {
+              onCheckpoint?.({ completedNodeIds: [...completed], history: execHistory });
+            } catch { /* ignore */ }
             break;
           }
         }

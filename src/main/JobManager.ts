@@ -47,7 +47,15 @@ export class JobManager {
 
   /** 启动 hydrate:崩溃遗留的 running/queued 标 failed(M3 后改 paused 可恢复)。 */
   hydrate(): void {
-    store.failOrphanJobs('app 重启,后台任务中断(M3 断点续跑落地后此处将可恢复)');
+    // M3: 有 checkpoint 的 v3-deep job → paused(可从断点恢复);其余遗留 → failed。
+    // 无 checkpoint 列的行视为无断点。注意必须在 failOrphanJobs 之前抢救,否则全被标 failed。
+    for (const row of store.listJobRows(undefined, ['running', 'queued'])) {
+      if (row.kind === 'v3-deep' && row.checkpoint) {
+        store.updateJobFields(row.id, { status: 'paused', error: 'app 重启,可从断点继续' });
+      } else {
+        store.updateJobFields(row.id, { status: 'failed', error: 'app 重启,后台任务中断(无断点)' });
+      }
+    }
     for (const row of store.listJobRows()) {
       if (row.status === 'done' || row.status === 'failed' || row.status === 'killed') {
         this.jobs.set(row.id, { row, costUSD: row.costUSD });
@@ -122,6 +130,49 @@ export class JobManager {
     return e ? this.toInfo(e) : undefined;
   }
 
+  /** M3: 断点续跑 —— killed/failed 且有 checkpoint 的 job 重新入队,executeDAG 跳过已完成节点。 */
+  resume(id: string): boolean {
+    const entry = this.jobs.get(id);
+    if (!entry?.worker) return false;
+    if (!['killed', 'failed', 'paused'].includes(entry.row.status)) return false;
+    if (!entry.row.checkpoint) return false;
+    entry.row.status = 'queued';
+    entry.row.error = null;
+    store.updateJobFields(id, { status: 'queued', error: null });
+    this.queue.push(id);
+    this.emitJobInfo(entry.row);
+    this.pump();
+    return true;
+  }
+
+  // ── M4b: dispatch fan-out —— 长时 CLI 子任务作为后台 job 运行 ──
+  // 与同步 dispatch_agent(5 分钟 timeout / 10MB buffer,agent loop 内联等结果)互补:
+  // 适合"编译/全量测试/批量迁移"这类分钟级以上的任务,提交即返回,结果落 jobs.result。
+  async submitDispatch(opts: {
+    convId: string;
+    engine: 'claudeCode' | 'codex';
+    prompt: string;
+    cwd: string;
+    timeoutMs?: number;   // 缺省 30 分钟(同步路径是 5 分钟硬顶)
+  }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+    const { runCliOneShot } = await import('./engines');
+    const timeoutMs = opts.timeoutMs ?? 30 * 60 * 1000;
+    const submit = this.submit({
+      convId: opts.convId,
+      turnId: null,
+      kind: 'dispatch',
+      title: `[${opts.engine}] ${opts.prompt.slice(0, 40)}`,
+      payload: { engine: opts.engine, prompt: opts.prompt.slice(0, 2000), cwd: opts.cwd },
+      worker: async (env) => {
+        // runCliOneShot 自带 5 分钟 timeout —— 长任务绕开它:直接后台 job 内不受该限制,
+        // 这里用 job signal + 外层软超时兜底。为复用 CLI 解析,超时取 min(timeoutMs, ...) 由 signal 控制。
+        const text = await runCliOneShot(opts.engine, opts.prompt, opts.cwd, env.signal, { timeoutMs });
+        return { result: { text } };
+      },
+    });
+    return submit;
+  }
+
   /** 会话删除时级联清理:kill 未完成 job + 删行。 */
   purgeConv(convId: string): void {
     for (const e of this.jobs.values()) {
@@ -154,7 +205,9 @@ export class JobManager {
 
     const checkpointSink = (snapshot: unknown): void => {
       try {
-        store.updateJobFields(row.id, { checkpoint: JSON.stringify(snapshot) });
+        const cp = JSON.stringify(snapshot);
+        entry.row.checkpoint = cp; // 内存行同步:resume 校验读的是内存行
+        store.updateJobFields(row.id, { checkpoint: cp });
       } catch { /* checkpoint 写失败不炸执行 */ }
     };
     let initialCheckpoint: unknown;

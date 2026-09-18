@@ -84,6 +84,8 @@ export type EngineContextPolicy = {
   stepSummaryMaxChars: number;
   /** 步骤完整结果的最大保留字数(存 PlanStep.result,不进 prompt 但 Judge/replan 可引用)。0 = 不截断。 */
   stepResultMaxChars: number;
+  /** V3 deep 同层只读节点的并行上限(M4)。缺省 3,防 provider 限流;写节点始终串行。 */
+  dagConcurrency?: number;
   /** sub-agent 接收 history 的默认范围(给 dispatch_agent 的默认 scope.mode)。 */
   subAgentScope: 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
 };
@@ -1009,6 +1011,8 @@ export interface KinetAPI {
   listJobs(convId?: string): Promise<JobInfo[]>;
   getJob(id: string): Promise<JobInfo | null>;
   killJob(id: string, reason?: string): Promise<boolean>;
+  resumeJob(id: string): Promise<boolean>;
+  dispatchJob(opts: { convId: string; engine: 'claudeCode' | 'codex'; prompt: string; cwd: string; timeoutMs?: number }): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   onJobUpdate(cb: (info: JobInfo) => void): void;
   onJobEvent(cb: (convId: string, jobId: string, ev: { type: string; [k: string]: unknown }) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;

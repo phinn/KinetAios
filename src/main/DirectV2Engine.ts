@@ -1273,7 +1273,7 @@ ${failedDetail || '  (无)'}
       // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
       teamRun: async ({ teamId, memberNames, message }) => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
-        const { emitTeamEvent } = await import('./main');
+        const { emitTeamEvent } = await import('./team-events');
 
         // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 spawn 对齐)。
         // / Align team members with spawn's sub-agent model resolution.

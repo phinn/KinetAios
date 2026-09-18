@@ -25,6 +25,8 @@ export interface DeepPathOpts {
   signal: AbortSignal;
   policy: EngineContextPolicy;
   onEvent: (e: AgentEvent) => void;
+  initialCheckpoint?: import('./dag-executor').DAGCheckpoint;  // M3: 断点恢复起点
+  onCheckpoint?: (cp: import('./dag-executor').DAGCheckpoint) => void; // M3: 节点完成存档
 }
 
 export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
@@ -77,6 +79,8 @@ export async function executeDeepPath(opts: DeepPathOpts): Promise<ChatMsg[]> {
     policy,
     history,
     onEvent,
+    initialCheckpoint: opts.initialCheckpoint,
+    onCheckpoint: opts.onCheckpoint,
   });
 
   // ── Phase 3: 结果汇总状态 ──
