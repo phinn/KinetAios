@@ -15,7 +15,8 @@ KinetAios 是本地优先的 AI agent 仪表盘,跨平台(Windows 11 + macOS)。
 ## 30 秒快速开始
 
 ```sh
-cd KinetAiosWin
+git clone https://github.com/phinn/KinetAios.git
+cd KinetAios
 npm install      # postinstall 为 Electron 重编 better-sqlite3
 npm run build
 npm start

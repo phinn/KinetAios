@@ -22,14 +22,14 @@ CLAUDE.md 明确:
 
 > 验证 = `npm run typecheck` + 启动 app(`npm start`)跑受影响流程。不要发明测试脚本。
 
-## 平台限制(重要)
+## 平台说明(重要)
 
-真实构建目标是 **Windows 11**(cmd.exe shell,`.cmd` shims,Windows 路径)。
+**Windows 11 和 macOS 都是一等公民**,平台差异行为(cmd.exe + `.cmd` shims + Windows 路径 vs `/bin/sh` + unix 路径)运行时路由。
 
 - macOS 上能:`npm install` / `npm run typecheck` / `npm start`(Electron 跨平台,核心逻辑能 smoke)
-- macOS 上**不能**:构建/验证 Windows 二进制或 NSIS installer(electron-builder + 原生模块重建要 Windows 工具链)
+- 不支持交叉构建:Windows 二进制/NSIS installer 必须在 Windows 上构建,dmg 必须在 macOS 上构建(electron-builder + 原生模块重建要目标平台工具链)
 
-Windows-only 行为(shell / PATH / 热键)必须在 Windows 上验。
+平台相关代码路径(shell / PATH / 热键 / 托盘)必须在对应平台上验。
 
 ## typecheck 详解
 

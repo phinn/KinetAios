@@ -15,7 +15,8 @@ Stack: **Electron + TypeScript**, **better-sqlite3 + FTS5**, **no frontend frame
 ## 30-second quickstart
 
 ```sh
-cd KinetAiosWin
+git clone https://github.com/phinn/KinetAios.git
+cd KinetAios
 npm install      # postinstall rebuilds better-sqlite3 for Electron
 npm run build
 npm start

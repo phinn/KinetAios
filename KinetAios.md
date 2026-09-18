@@ -4,7 +4,7 @@
 
 ## What this is
 
-KinetAios — Windows 11 port of a local AI-agent dashboard (the macOS original is the native-SwiftUI app in `../KinetAios`). **Behavior-aligned TypeScript rewrite, not shared code with the original** — the Swift sources were ported line-by-line into Electron + TypeScript. Run multiple sessions concurrently, stream answers, three switchable agent engines, shell/file/web/memory tools, SQLite history, global hotkey.
+KinetAios — a local-first AI agent dashboard for **Windows 11 and macOS** (cross-platform Electron + TypeScript). It began as a line-by-line port of the native-SwiftUI original (`../KinetAios`) and has since grown past it: multi-engine sessions with streaming answers, shell/file/web/memory tools, SQLite history with long-term memory, global hotkey.
 
 Stack: **Electron + TypeScript**, **better-sqlite3** (with FTS5), **no frontend framework** (vanilla TS + HTML/CSS, bundled with esbuild).
 
@@ -24,7 +24,7 @@ npm run dist         # build + electron-builder --win        → release/KinetAi
 
 ### Platform caveat (important)
 
-The real build target is **Windows 11** (cmd.exe shell, `.cmd` shims, Windows paths). On this mac you can `npm install`, `npm run typecheck`, and `npm start` (Electron is cross-platform; core logic smokes fine), but you **cannot build/verify a Windows binary or NSIS installer from macOS** — electron-builder + the native module rebuild need a Windows toolchain. Windows-only behavior (shell, PATH, hotkey) must be verified on Windows.
+Both platforms are first-class. Platform-specific behavior is routed at runtime: cmd.exe + `.cmd` shims + Windows paths on Windows, `/bin/sh` + unix paths on macOS. A Windows binary/NSIS installer **must be built on Windows** (electron-builder + native-module rebuild need the Windows toolchain); macOS dmg likewise needs a Mac. Platform-specific code paths (shell, PATH, hotkey, tray) should be verified on their target OS.
 
 ## Architecture
 
@@ -69,7 +69,7 @@ FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (
 - Deliberate MVP simplifications are marked `// ponytail:` with the ceiling named and the upgrade path noted. Respect these — don't silently "complete" them unless the task asks.
 - UI strings and the Direct system prompt are **Chinese**; engine error messages guide users in Chinese.
 - `dist/`, `release/`, `node_modules/` are gitignored. `main` entry points at `dist/main/main.js` (set in `package.json`), so **`npm start` won't work without a build**.
-- API key is stored **plaintext** in `userData/settings.json` (known MVP constraint — swap for Windows Credential Manager before real distribution).
+- API key is stored **plaintext** in `userData/settings.json` (known MVP constraint — swap for OS keychain: Windows Credential Manager / macOS Keychain before real distribution).
 
 ## 关联规范
 

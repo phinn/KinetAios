@@ -64,7 +64,8 @@ model: orcarouter/auto        # adaptive routing, or pin a vendor/model e.g. ant
 Requires **Node.js 18+** and a network connection (the `better-sqlite3` native module needs compiling).
 
 ```sh
-cd KinetAiosWin
+git clone https://github.com/phinn/KinetAios.git
+cd KinetAios
 npm install      # includes postinstall: rebuild better-sqlite3 for Electron
 npm run build
 npm start
@@ -187,7 +188,7 @@ The same **400k-row medical-device CRM cross-analysis** (multi-sheet × hospital
 ## Project layout
 
 ```
-KinetAiosWin/
+KinetAios/               # repo root (the "Win" dir name is historical — it's the cross-platform repo now)
   brand.json               # branding config (product name etc., read at startup)
   package.json
   src/

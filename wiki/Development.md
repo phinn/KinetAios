@@ -24,12 +24,12 @@ CLAUDE.md is explicit:
 
 ## Platform caveat (important)
 
-The real build target is **Windows 11** (cmd.exe shell, `.cmd` shims, Windows paths).
+Both Windows 11 and macOS are first-class targets; platform-specific behavior (cmd.exe + `.cmd` shims + Windows paths vs. `/bin/sh` + unix paths) is routed at runtime.
 
 - On macOS you can: `npm install` / `npm run typecheck` / `npm start` (Electron is cross-platform; core logic smokes fine)
-- On macOS you **cannot**: build/verify a Windows binary or NSIS installer (electron-builder + the native module rebuild need a Windows toolchain)
+- Cross-building is not supported: a Windows binary/NSIS installer must be built on Windows, a dmg on macOS (electron-builder + native-module rebuild need the target toolchain)
 
-Windows-only behavior (shell / PATH / hotkey) must be verified on Windows.
+Platform-specific code paths (shell / PATH / hotkey / tray) must be verified on their target OS.
 
 ## typecheck details
 

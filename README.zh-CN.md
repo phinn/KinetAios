@@ -83,7 +83,8 @@ KinetAios 是 [Kinet 产品家族](https://phinn.github.io/kinetapp/index.html)�
 需要 **Node.js 18+** 和联网(native 模块 `better-sqlite3` 要编译)。
 
 ```sh
-cd KinetAiosWin
+git clone https://github.com/phinn/KinetAios.git
+cd KinetAios
 npm install      # 含 postinstall:为 Electron 重编 better-sqlite3
 npm run build
 npm start
@@ -192,7 +193,7 @@ npm start
 ## 目录结构
 
 ```
-KinetAiosWin/
+KinetAios/               # 仓库根目录("Win"目录名是历史遗留 —— 现在是跨平台仓)
   brand.json               # 产品名等品牌配置(启动读)
   package.json
   src/
