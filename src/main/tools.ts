@@ -21,6 +21,7 @@ function atomicWrite(p: string, content: string): void {
 }
 import type { Provider, ToolDef } from './glm';
 import * as store from './store';
+import { getSettings } from './settings';
 import { privacyGate } from './privacy-gate';
 import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
@@ -701,31 +702,67 @@ const webFetch: Tool = {
     const timeout = ctx?.signal ?? AbortSignal.timeout(25_000);
 
     // ── 路径 1: Jina Reader(如果可达,返回干净 Markdown)──
-    const jinaResult = await tryJinaReader(s);
-    if (jinaResult) return jinaResult;
+    // P2 隐私:受设置开关控制(第三方 r.jina.ai 会看到目标 URL);关 = 全部走本机直连。
+    if (getSettings().jinaReaderFallback !== false) {
+      const jinaResult = await tryJinaReader(s);
+      if (jinaResult) return jinaResult;
+    }
 
     // ── 路径 2: 原生 fetch + 正则去噪 ──
+    // P0 SSRF 修复:redirect:'manual' 逐跳跟进,每一跳都重新 assertSafeHost。
+    // 之前 redirect:'follow' 只验初始 host —— 公网 302 跳内网(169.254.169.254 / 127.0.0.1)直接穿透。
     try {
-      const resp = await fetch(s, { headers: BROWSER_HEADERS, signal: timeout, redirect: 'follow' });
-      const raw = await resp.text();
-      const ct = resp.headers.get('content-type') ?? '';
+      let currentUrl = s;
+      const resp = await fetchWithSafeRedirects(currentUrl, BROWSER_HEADERS, timeout, 5);
+      currentUrl = resp.finalUrl;
+      const raw = await resp.resp.text();
+      const ct = resp.resp.headers.get('content-type') ?? '';
 
       // JSON / 纯文本 → 直接用
       if (ct.includes('application/json') || ct.includes('text/plain')) {
         const body = raw.length > 500_000 ? raw.slice(0, 500_000) + '\n…[截断]' : raw;
         const trimmed = body.length > 12_000 ? body.slice(0, 12_000) + '\n…[截断]' : body;
-        return `[HTTP ${resp.status}]\n${trimmed}`;
+        return `[HTTP ${resp.resp.status}]\n${trimmed}`;
       }
 
       // HTML → 提取正文
       const extracted = extractTextFromHTML(raw);
       const trimmed = extracted.length > 12_000 ? extracted.slice(0, 12_000) + '\n…[截断]' : extracted;
-      return `[HTTP ${resp.status}]\n${trimmed}`;
+      return `[HTTP ${resp.resp.status}]\n${trimmed}`;
     } catch (e) {
       return `抓取失败: ${sanitizeError(e)}`;
     }
   },
 };
+
+// web_fetch 的安全重定向跟进:manual 模式逐跳跳转,每跳对最终 host 重做 SSRF 校验。
+// 超过 maxRedirects 或任一跳命中内网地址 → 抛错(拒绝抓取)。
+// P0 SSRF fix: follow redirects hop-by-hop, re-running the SSRF check on every hop.
+async function fetchWithSafeRedirects(
+  url: string,
+  headers: Record<string, string>,
+  signal: AbortSignal,
+  maxRedirects = 5,
+): Promise<{ resp: Response; finalUrl: string }> {
+  let current = url;
+  for (let hop = 0; hop <= maxRedirects; hop++) {
+    const u = new URL(current);
+    if (u.protocol !== 'http:' && u.protocol !== 'https:') throw new Error(`非法协议: ${u.protocol}`);
+    const safe = await assertSafeHost(u.hostname.toLowerCase());
+    if (!safe.ok) throw new Error(`重定向目标被安全策略拦截(${u.hostname}):${safe.reason ?? '内网地址'}`);
+    const resp = await fetch(current, { headers, signal, redirect: 'manual' });
+    // 非 3xx → 这是最终响应
+    if (resp.status < 300 || resp.status >= 400) return { resp, finalUrl: current };
+    const loc = resp.headers.get('location');
+    if (!loc) return { resp, finalUrl: current }; // 3xx 但无 location,按最终响应处理
+    // 相对路径 Location 解析为绝对 URL;禁掉非 http(s) scheme(如 file:/ftp:)
+    const next = new URL(loc, current);
+    if (next.protocol !== 'http:' && next.protocol !== 'https:') throw new Error(`重定向到非法协议: ${next.protocol}`);
+    resp.body?.cancel().catch(() => {}); // 释放 3xx 响应体
+    current = next.toString();
+  }
+  throw new Error(`重定向次数超过上限(${maxRedirects}),已中止`);
+}
 
 // web_search: 搜索引擎可配置 + 自动回退,适配大陆网络。
 // 设置页可选引擎(bing/sogou/google/duckduckgo);所选引擎优先,
@@ -2078,6 +2115,16 @@ function cuApprovedByConnSet(convId: string, ok: boolean): void {
     const first = cuApprovedByConv.keys().next().value;
     if (first !== undefined) cuApprovedByConv.delete(first);
   }
+}
+
+// P2: 撤销 Computer Use 会话级授权入口(main.ts IPC 调 → 设置页/状态条可挂按钮)。
+// 批准后本会话鼠标/键盘自动放行,此前只能重启 app 才能反悔。
+// P2: revoke Computer Use per-conversation approval without restarting the app.
+export function revokeComputerUseApproval(convId?: string): number {
+  if (convId) return cuApprovedByConv.delete(convId) ? 1 : 0;
+  const n = cuApprovedByConv.size;
+  cuApprovedByConv.clear();
+  return n;
 }
 
 const screenshot: Tool = {

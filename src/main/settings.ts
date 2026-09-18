@@ -71,6 +71,7 @@ const DEFAULTS: AppSettings = {
   },
   minimaxApiKey: '', // MiniMax 文生视频 API Key(留空 = 未配置)
   searchEngine: 'bing', // web_search 默认引擎(可切 sogou/google/duckduckgo,失败自动回退)
+  jinaReaderFallback: true, // web_fetch 的 Jina Reader 第三方抓取回退,默认开;隐私敏感可关(见 types.ts 注释)
   // 企业微信智能机器人:默认关闭,botId/secret 留空。
   wecomBot: {
     enabled: false,
@@ -106,24 +107,41 @@ function file(): string {
   return path.join(app.getPath('userData'), 'settings.json');
 }
 
+// ── @enc: 加密封装(P0 安全统一)──
+// 此前只有主 apiKey/embedApiKey/minimax/voiceChat 加密,modelProfiles[].apiKey、
+// wecomBot.secret、wecomOA.corpsecret、feishuBot.appSecret、localMcpServer.token 全明文。
+// 现在所有凭据走同一对 enc/dec。safeStorage 不可用(极少数环境)时回退明文(向后兼容)。
+const ENC_PREFIX = '@enc:';
+function encStr(v: string): string {
+  if (!v || v.startsWith(ENC_PREFIX) || !safeStorage.isEncryptionAvailable()) return v;
+  return ENC_PREFIX + safeStorage.encryptString(v).toString('base64');
+}
+function decStr(v: string): string {
+  if (typeof v !== 'string' || !v.startsWith(ENC_PREFIX) || !safeStorage.isEncryptionAvailable()) return v;
+  try { return safeStorage.decryptString(Buffer.from(v.slice(ENC_PREFIX.length), 'base64')); } catch { return v; }
+}
+// 旧明文凭据按原样用(向后兼容),不入库再加密。
+
 export function getSettings(): AppSettings {
   if (cache) return cache;
   try {
     const s = { ...DEFAULTS, ...JSON.parse(fs.readFileSync(file(), 'utf8')) } as AppSettings;
-    // 旧明文 key 不以 @enc: 开头 → 按原样用(向后兼容);加密的解回明文进内存。
-    const decryptIfEnc = (v: string): string => {
-      if (typeof v === 'string' && v.startsWith('@enc:') && safeStorage.isEncryptionAvailable()) {
-        try { return safeStorage.decryptString(Buffer.from(v.slice(5), 'base64')); } catch { return v; }
-      }
-      return v;
-    };
-    s.apiKey = decryptIfEnc(s.apiKey);
-    s.embedApiKey = decryptIfEnc(s.embedApiKey);
-    s.minimaxApiKey = decryptIfEnc(s.minimaxApiKey);
-    // voiceChat.accessToken 也加密存储 / also encrypted at rest
+    // 全部凭据字段统一解密进内存(旧明文自动兼容)
+    s.apiKey = decStr(s.apiKey);
+    s.embedApiKey = decStr(s.embedApiKey);
+    s.minimaxApiKey = decStr(s.minimaxApiKey);
     if (s.voiceChat) {
-      s.voiceChat.accessToken = decryptIfEnc(s.voiceChat.accessToken);
+      s.voiceChat = { ...s.voiceChat, accessToken: decStr(s.voiceChat.accessToken) };
     }
+    // 模型配置档:apiKey / balanceApiKey 逐档解密(P0:此前明文落盘)
+    if (Array.isArray(s.modelProfiles)) {
+      s.modelProfiles = s.modelProfiles.map((p) => ({ ...p, apiKey: decStr(p.apiKey), balanceApiKey: decStr(p.balanceApiKey ?? '') }));
+    }
+    // 机器人凭据 + MCP token
+    if (s.wecomBot) s.wecomBot = { ...s.wecomBot, secret: decStr(s.wecomBot.secret) };
+    if (s.wecomOA) s.wecomOA = { ...s.wecomOA, corpsecret: decStr(s.wecomOA.corpsecret) };
+    if (s.feishuBot) s.feishuBot = { ...s.feishuBot, appSecret: decStr(s.feishuBot.appSecret) };
+    if (s.localMcpServer) s.localMcpServer = { ...s.localMcpServer, token: decStr(s.localMcpServer.token) };
     cache = s;
   } catch {
     cache = { ...DEFAULTS };
@@ -133,25 +151,24 @@ export function getSettings(): AppSettings {
 
 export function saveSettings(s: AppSettings): void {
   cache = { ...s };
-  // apiKey / embedApiKey 用系统密钥加密(mac Keychain / Win DPAPI / Linux libsecret)再落盘,不再明文。
+  // 全部凭据用系统密钥加密(mac Keychain / Win DPAPI / Linux libsecret)再落盘,不再明文。
   // safeStorage 不可用(极少数环境)时回退明文。
   const toWrite: AppSettings = { ...s };
-  if (s.apiKey && safeStorage.isEncryptionAvailable()) {
-    toWrite.apiKey = '@enc:' + safeStorage.encryptString(s.apiKey).toString('base64');
+  toWrite.apiKey = encStr(s.apiKey);
+  toWrite.embedApiKey = encStr(s.embedApiKey);
+  toWrite.minimaxApiKey = encStr(s.minimaxApiKey);
+  if (s.voiceChat) {
+    toWrite.voiceChat = { ...s.voiceChat, accessToken: encStr(s.voiceChat.accessToken) };
   }
-  if (s.embedApiKey && safeStorage.isEncryptionAvailable()) {
-    toWrite.embedApiKey = '@enc:' + safeStorage.encryptString(s.embedApiKey).toString('base64');
+  // 模型配置档:apiKey / balanceApiKey 逐档加密(P0:此前明文落盘)
+  if (Array.isArray(s.modelProfiles)) {
+    toWrite.modelProfiles = s.modelProfiles.map((p) => ({ ...p, apiKey: encStr(p.apiKey), balanceApiKey: encStr(p.balanceApiKey ?? '') }));
   }
-  if (s.minimaxApiKey && safeStorage.isEncryptionAvailable()) {
-    toWrite.minimaxApiKey = '@enc:' + safeStorage.encryptString(s.minimaxApiKey).toString('base64');
-  }
-  // voiceChat.accessToken 加密 / encrypt voiceChat access token
-  if (s.voiceChat?.accessToken && safeStorage.isEncryptionAvailable()) {
-    toWrite.voiceChat = {
-      ...s.voiceChat,
-      accessToken: '@enc:' + safeStorage.encryptString(s.voiceChat.accessToken).toString('base64'),
-    };
-  }
+  // 机器人凭据 + MCP token
+  if (s.wecomBot) toWrite.wecomBot = { ...s.wecomBot, secret: encStr(s.wecomBot.secret) };
+  if (s.wecomOA) toWrite.wecomOA = { ...s.wecomOA, corpsecret: encStr(s.wecomOA.corpsecret) };
+  if (s.feishuBot) toWrite.feishuBot = { ...s.feishuBot, appSecret: encStr(s.feishuBot.appSecret) };
+  if (s.localMcpServer) toWrite.localMcpServer = { ...s.localMcpServer, token: encStr(s.localMcpServer.token) };
   fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2));
 }
 
