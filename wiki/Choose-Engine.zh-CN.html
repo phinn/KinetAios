@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios 引擎选择指南 — V1 / V2 / V3</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --panel: #161b22;
+    --panel2: #1c2129;
+    --border: #30363d;
+    --text: #e6edf3;
+    --muted: #8b949e;
+    --v1: #58a6ff;
+    --v2: #d2a8ff;
+    --v3: #3fb950;
+    --warn: #f0883e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 48px 20px 80px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; }
+  header { text-align: center; margin-bottom: 48px; }
+  header h1 { font-size: 32px; letter-spacing: 1px; }
+  header h1 .v1c { color: var(--v1); } header h1 .v2c { color: var(--v2); } header h1 .v3c { color: var(--v3); }
+  header p { color: var(--muted); margin-top: 10px; font-size: 15px; }
+
+  /* ── 速查表 ── */
+  h2.sec {
+    font-size: 20px; margin: 44px 0 18px; padding-left: 12px;
+    border-left: 4px solid var(--v3);
+  }
+  table { width: 100%; border-collapse: collapse; background: var(--panel); border-radius: 10px; overflow: hidden; font-size: 15px; }
+  th, td { padding: 12px 16px; text-align: left; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { background: var(--panel2); color: var(--muted); font-weight: 600; font-size: 13px; letter-spacing: 1px; }
+  tr:last-child td { border-bottom: none; }
+  td .tag {
+    display: inline-block; padding: 2px 10px; border-radius: 20px;
+    font-weight: 700; font-size: 13px; white-space: nowrap;
+  }
+  .tag.v1 { background: rgba(88,166,255,.15); color: var(--v1); }
+  .tag.v2 { background: rgba(210,168,255,.15); color: var(--v2); }
+  .tag.v3 { background: rgba(63,185,80,.15); color: var(--v3); }
+  .tag.mix { background: rgba(139,148,158,.15); color: var(--muted); }
+
+  /* ── 引擎卡片 ── */
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    padding: 24px 22px; display: flex; flex-direction: column;
+  }
+  .card .head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 4px; }
+  .card .head .name { font-size: 22px; font-weight: 800; }
+  .card.c1 { border-top: 3px solid var(--v1); } .card.c1 .name, .card.c1 .head .sub { color: var(--v1); }
+  .card.c2 { border-top: 3px solid var(--v2); } .card.c2 .name, .card.c2 .head .sub { color: var(--v2); }
+  .card.c3 { border-top: 3px solid var(--v3); } .card.c3 .name, .card.c3 .head .sub { color: var(--v3); }
+  .card .head .sub { font-size: 14px; font-weight: 600; }
+  .card .how {
+    margin: 12px 0 16px; padding: 12px 14px; background: var(--panel2);
+    border-radius: 8px; font-size: 13.5px; color: var(--muted);
+  }
+  .card .how b { color: var(--text); }
+  .card h4 { font-size: 13px; letter-spacing: 1px; margin: 14px 0 8px; }
+  .card h4.ok { color: var(--v3); }
+  .card h4.no { color: var(--warn); }
+  .card ul { list-style: none; font-size: 14.5px; }
+  .card ul li { padding: 3px 0 3px 20px; position: relative; }
+  .card ul.ok li::before { content: "✓"; position: absolute; left: 0; color: var(--v3); font-weight: 700; }
+  .card ul.no li::before { content: "✕"; position: absolute; left: 0; color: var(--warn); font-weight: 700; }
+  .card .tip {
+    margin-top: auto; padding-top: 16px; font-size: 13px; color: var(--muted);
+  }
+  .card .tip code {
+    background: rgba(110,118,129,.25); padding: 1px 7px; border-radius: 5px;
+    color: var(--text); font-size: 12.5px;
+  }
+  .badge-rec {
+    display: inline-block; margin-left: auto; font-size: 11px; font-weight: 700;
+    background: var(--v3); color: #0d1117; padding: 2px 9px; border-radius: 20px;
+    letter-spacing: 1px; align-self: center;
+  }
+
+  /* ── 注意事项 ── */
+  .notes {
+    background: rgba(240,136,62,.08); border: 1px solid rgba(240,136,62,.35);
+    border-radius: 12px; padding: 20px 24px; font-size: 14.5px;
+  }
+  .notes li { margin: 8px 0 8px 20px; }
+  .notes b { color: var(--warn); }
+  code { font-family: "SF Mono", Consolas, monospace; }
+  footer { text-align: center; color: var(--muted); font-size: 13px; margin-top: 56px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <h1>KinetAios 引擎选择指南 <span class="v1c">V1</span> / <span class="v2c">V2</span> / <span class="v3c">V3</span></h1>
+  <p>三个引擎用同一个模型、同一套工具 —— 区别在<b>工作方式</b>。选对引擎，同样的任务耗时和效果能差一倍以上。</p>
+</header>
+
+<h2 class="sec">⏱ 30 秒速查</h2>
+<table>
+  <tr><th style="width:62%">你的任务</th><th>选</th></tr>
+  <tr><td>问答、翻译、写作、读文件、改一个文件的小问题</td><td><span class="tag v1">V1</span></td></tr>
+  <tr><td>需要控制成本、想看清每一步在干什么</td><td><span class="tag v1">V1</span></td></tr>
+  <tr><td>多文件联动改代码、带验证的重构、多步数据处理</td><td><span class="tag v2">V2</span></td></tr>
+  <tr><td>数据分析、报表统计、跨表交叉对比</td><td><span class="tag v3">V3</span></td></tr>
+  <tr><td>不确定用哪个</td><td><span class="tag v3">V3</span> <span style="color:var(--muted);font-size:13px">自动判断任务难度</span></td></tr>
+</table>
+
+<h2 class="sec">🧩 三个引擎详解</h2>
+<div class="cards">
+
+  <div class="card c1">
+    <div class="head"><span class="name">V1</span><span class="sub">Direct · 轻快直连</span></div>
+    <div class="how"><b>工作方式：</b>单线 ReAct 循环，模型直接调工具，每一步实时可见。上下文策略轻量，响应最快、token 消耗最低。</div>
+    <h4 class="ok">适合</h4>
+    <ul class="ok">
+      <li>问答、解释、翻译、写文案写邮件</li>
+      <li>读某个文件、查一段代码、做小修改</li>
+      <li>一问一答式的连续对话</li>
+      <li>想精确控制成本和流程</li>
+    </ul>
+    <h4 class="no">不适合</h4>
+    <ul class="no">
+      <li>跨很多文件的重构（长对话容易丢前面的发现）</li>
+      <li>多步骤数据处理（中间结果靠对话记忆，长了会被截断）</li>
+    </ul>
+    <div class="tip">💡 数据分析任务可用 <code>/data-analysis</code> 手动加载数据分析工作法，明显减少"心算报数"类错误。</div>
+  </div>
+
+  <div class="card c2">
+    <div class="head"><span class="name">V2</span><span class="sub">先规划 · 再执行</span></div>
+    <div class="how"><b>工作方式：</b>复杂任务先进入规划阶段（只读探查、产出分步计划），再按计划逐步执行，每步可带验证命令（类型检查 / 测试），失败自动重试（每步 ≤3 次，最多重新规划 2 次）。</div>
+    <h4 class="ok">适合</h4>
+    <ul class="ok">
+      <li>多文件联动的代码修改和重构</li>
+      <li>改完需要跑测试 / lint 验证的开发任务</li>
+      <li>多步数据处理、跨文件统计（中间结果强制落盘，抗截断）</li>
+      <li>想先看到计划、再放行执行</li>
+    </ul>
+    <h4 class="no">不适合</h4>
+    <ul class="no">
+      <li>简单问答、单文件小改动（白走规划流程，慢且贵）</li>
+      <li>大规模多文件并行任务（V2 是串行逐步执行）</li>
+    </ul>
+    <div class="tip">💡 任务太简单时 V2 会自动退化为普通模式——但已知很简单就直接用 V1，更快。</div>
+  </div>
+
+  <div class="card c3">
+    <div class="head"><span class="name">V3</span><span class="sub">自适应流水线</span><span class="badge-rec">推荐默认</span></div>
+    <div class="how"><b>工作方式：</b>系统先零成本给任务分级，自动三选一：<b>fast</b>（读文件/问答 → 单轮直出）、<b>std</b>（修 bug/写功能/数据分析 → 多轮执行）、<b>deep</b>（跨文件重构 → DAG 任务图并行执行 + 验证门）。</div>
+    <h4 class="ok">适合</h4>
+    <ul class="ok">
+      <li>数据分析 / 报表 / 统计 —— 内置分析工作法：先摸数据结构、计算交给工具不心算、中间结果落盘、结论可溯源、关键数字交叉验证</li>
+      <li>不确定复杂度的任务（自动路由）</li>
+      <li>复杂重构（deep 路径的并行 + 验证是三个引擎唯一有的）</li>
+    </ul>
+    <h4 class="no">不适合</h4>
+    <ul class="no">
+      <li>需要精确控制每一步的高级玩法（V1 更透明）</li>
+      <li>极度追求最低成本的一问一答（fast 很省，但 V1 更省一点）</li>
+    </ul>
+    <div class="tip">💡 数据文件（csv/xlsx/db）出现在任务里会自动进入分析模式，状态栏显示「📊 分析模式」即生效。</div>
+  </div>
+
+</div>
+
+<h2 class="sec">📋 常见场景对照</h2>
+<table>
+  <tr><th>场景</th><th style="width:130px">推荐引擎</th><th>原因</th></tr>
+  <tr><td>"帮我看看这个报错"</td><td><span class="tag mix">V1 / V3</span></td><td>单点问题，快就完了</td></tr>
+  <tr><td>"把这个功能从 A 文件挪到 B 文件，改完跑下测试"</td><td><span class="tag mix">V2 / V3</span></td><td>有验证需求的代码改动</td></tr>
+  <tr><td>"分析这两个 CSV 的差异，出个对比报告"</td><td><span class="tag v3">V3</span></td><td>分析工作法 + 中间产物落盘</td></tr>
+  <tr><td>"整个项目从 JS 迁移到 TS"</td><td><span class="tag v3">V3</span></td><td>deep 路径：DAG 并行 + 验证门</td></tr>
+  <tr><td>"翻译这段话"</td><td><span class="tag v1">V1</span></td><td>不需要任何工具编排</td></tr>
+  <tr><td>"先给我个方案，我确认了再动手"</td><td><span class="tag v2">V2</span></td><td>规划阶段天然就是"先出计划"</td></tr>
+</table>
+
+<h2 class="sec">⚠️ 注意事项</h2>
+<div class="notes">
+  <li><b>切换引擎 = 清空跨引擎上下文</b>：三个引擎的历史格式不互通，任务做到一半别换引擎。</li>
+  <li>三个引擎<b>共享</b>同一套模型配置、MCP 工具和记忆系统，切换不需要重新配置。</li>
+  <li>V3 检测到数据文件自动进分析模式；V1 建议配合 <code>/data-analysis</code> 使用。</li>
+</div>
+
+<footer>KinetAios · Local-first multi-engine AI agent dashboard</footer>
+</div>
+</body>
+</html>
