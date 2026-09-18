@@ -24,6 +24,18 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 本地 AI agent 仪表盘,**跨平台 —— Windows 11 和 macOS 都是一等公民**("Win"目录名是历史遗留,仓库即 phinn/KinetAios)。平台差异行为(shell 用 cmd.exe 还是 /bin/sh、热键、托盘)运行时按平台路由,功能两侧对齐。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。**无需账号,无需中继服务器 —— 你的 LLM API key 就是唯一凭证。**
 
+**30 秒版本:**
+
+- 🔀 **一个窗口四个引擎** —— Direct(自研 ReAct)+ Claude Code + Codex + DeepSeek Harness,每会话可切,Pipeline 跨引擎交接上下文
+- 🧠 **本地 SQLite 长期记忆** —— 自动提取用户事实,所有引擎共享,重启不丢
+- 🔒 **本地优先,无需账号** —— API key 是唯一凭证,不经过任何中继
+- 🛠 **30+ 内置工具 + MCP 客户端/服务端 + 插件** —— shell、文件、网页、截图、Computer Use 开箱即用
+- ⌨️ **全局热键快速面板** —— AI agent 版 Spotlight,任何界面一键呼出
+- 📊 **真实业务基准测试** —— 40 万行 CRM 交叉分析,自研引擎 **9.2 分** vs Claude Code **7.0 分**([完整报告](documents/excel-cross-analysis-engines.html))
+- 🖥 **Windows 11 & macOS 双平台一等公民**
+
+> ⭐ 如果 KinetAios 帮你省了时间,**给个 Star** 就是对独立开源项目最响亮的感谢。
+
 ---
 
 ## 为什么选 KinetAios?

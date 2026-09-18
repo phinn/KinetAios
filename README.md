@@ -15,6 +15,18 @@
 
 A **local-first AI agent dashboard** for **Windows 11 and macOS — both first-class platforms** (the "Win" folder name is historical; the repo is phinn/KinetAios). Platform differences (cmd.exe vs /bin/sh, hotkey, tray) are routed at runtime; features are aligned on both sides. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
 
+**The 30-second version:**
+
+- 🔀 **Four engines, one window** — Direct (in-house ReAct) + Claude Code + Codex + DeepSeek Harness; switch per session, hand off context via Pipeline
+- 🧠 **Long-term memory on local SQLite** — auto-extracted facts shared across all engines, survives restarts
+- 🔒 **Local-first, no account** — your API key is the only credential; nothing goes through a relay
+- 🛠 **30+ built-in tools + MCP client/server + plugins** — shell, files, web, screenshots, computer use out of the box
+- ⌨️ **Global-hotkey quick panel** — Spotlight for AI agents, summon from anywhere
+- 📊 **Benchmarked on a real 400k-row business task** — in-house engine **9.2** vs Claude Code **7.0** ([full report](documents/excel-cross-analysis-engines.html))
+- 🖥 **Windows 11 & macOS — both first-class**
+
+> ⭐ If KinetAios saves you time, **a Star is the loudest thank-you** for a solo open-source project.
+
 ---
 
 ## Why KinetAios?
