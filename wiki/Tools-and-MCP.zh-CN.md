@@ -2,22 +2,43 @@
 
 # 工具系统 + MCP
 
-Direct 引擎内置 10 个工具 + 自动接入系统配置的 MCP 服务。Claude Code / Codex 用各自 CLI 的工具,不走这套。
+Direct 引擎(V1/V2/V3)共享 **40+ 内置工具**,并自动接入系统配置的 MCP 服务。Claude Code / Codex 用各自 CLI 的工具,不走这套。KinetAios 还能作为 **MCP 服务端**把完整 agent 暴露给远程机器 —— 见 [[MCP-Server]]。
 
-## 10 个内置工具
+## 内置工具(40+,`src/main/tools.ts`)
 
+### 核心
 | 工具 | 类型 | 用途 |
 |---|---|---|
-| `shell` | 写 | 跑 shell 命令(Windows 走 cmd.exe,Unix 走 sh)。**会先弹确认 modal**(除非 setting `approval: 'never'`) |
-| `read_file` | 只读 | 读文件内容。返回 UTF-8 文本 |
-| `write_file` | 写 | 写文件(path + content 直传,**唯一正确方式**;几 KB ~ 几百 KB 一次到位) |
+| `shell` | 写 | 跑 shell 命令。**会先弹确认**(除非 setting `approval: 'never'`);焦点守卫:执行完自动还前台 |
+| `read_file` | 只读 | 读文件内容(UTF-8,可按行范围,512KB) |
+| `write_file` | 写 | 写文件(path + content 直传) |
 | `edit_file` | 写 | 精准替换(`old_string` → `new_string`,`replace_all` 可选) |
-| `grep` | 只读 | 递归内容搜索。返回匹配行 + 行号 |
+| `grep` | 只读 | 递归内容搜索(正则,返回 文件:行号: 内容) |
 | `glob` | 只读 | 按模式列文件(`**/*.ts`) |
-| `web_fetch` | 只读 | 抓 URL,返回 markdown 化的正文 |
-| `recall_memory` | 只读 | FTS5 全文搜历史(`history` 表) |
-| `git_diff` | 只读 | 读 git diff(file / ref / cached 参数)。**不弹确认**(只读) |
-| `dispatch_agent` | 写 | 派发只读子 agent(独立 history,见 [[Direct-Engine]]) |
+| `web_search` | 只读 | 网页搜索(Bing → DuckDuckGo 回退),返回标题/摘要/链接 |
+| `web_fetch` | 只读 | 抓 URL,返回 markdown 化正文(Jina Reader 去噪) |
+| `recall_memory` | 只读 | 语义搜历史(embedding cosine,FTS5 回退)+ 知识图谱三元组 |
+| `git_diff` | 只读 | 读 git diff(file / ref / cached 参数)。**不弹确认** |
+| `dispatch_agent` | 写 | 派发只读子 agent(独立上下文,可选引擎) |
+| `todo_write` | 写 | 共享任务清单,聊天流实时渲染为清单卡 |
+
+### 记忆块
+| 工具 | 用途 |
+|---|---|
+| `remember_fact` / `recall_fact` | 会话级键值锚点(步骤产出/关键决策) |
+| `memory_replace` / `memory_append` | 结构化长期记忆块(user_profile / project_context / active_goals) |
+
+### 多 agent 团队
+`spawn_team`(持久成员团队)· `team_broadcast`(同一指令发全员)· `team_send`(单发某成员)· `team_close`(解散)。
+
+### Computer Use(另见 `computer-use.ts`)
+`screenshot`(支持 `hide_self`,截图瞬间自身窗口透明)· `screenshot_window`(按标题截任意窗口,被遮挡/后台也能拍)· `mouse_click` / `mouse_scroll` / `mouse_drag` · `keyboard_type` / `keyboard_key` · `ax_script`(macOS 辅助功能)。
+
+### 浏览器自动化(agent 专属 Chrome)
+`browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_select` / `browser_eval` / `browser_screenshot` / `browser_tabs` —— 独立 Chrome 实例里 DOM 级自动化,不碰用户屏幕。
+
+### 其它
+`load_skill`(按需加载 skill 正文)· `video_gen`(MiniMax H3 文生视频)· `feishu_send_file` / `wecom_send_file`(发文件到飞书/企微会话)· `wecom_approval_list` / `wecom_approval_detail`(企微审批查询)。
 
 ## `shell` 工具
 

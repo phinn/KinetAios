@@ -2,22 +2,43 @@
 
 # Tools + MCP
 
-The Direct engine has 10 built-in tools + auto-connects to MCP services configured on the system. Claude Code / Codex use their own CLI tooling, not this layer.
+The Direct engines (V1/V2/V3) share **40+ built-in tools** and auto-connect to MCP services configured on the system. Claude Code / Codex use their own CLI tooling, not this layer. KinetAios can also act as an **MCP server** exposing the full agent to remote machines — see [[MCP-Server]].
 
-## 10 built-in tools
+## Built-in tools (40+, `src/main/tools.ts`)
 
+### Core
 | Tool | Type | Purpose |
 |---|---|---|
-| `shell` | write | Run a shell command (cmd.exe on Windows, sh on Unix). **Asks for confirmation first** (unless setting `approval: 'never'`) |
-| `read_file` | read-only | Read file contents. Returns UTF-8 text |
-| `write_file` | write | Write a file (path + content direct, **the only correct way**; from a few KB to a few hundred KB in one shot) |
+| `shell` | write | Run a shell command. **Asks for confirmation first** (unless setting `approval: 'never'`); focus guard hands the foreground back after the run |
+| `read_file` | read-only | Read file contents (UTF-8, optional line range, 512KB) |
+| `write_file` | write | Write a file (path + content direct) |
 | `edit_file` | write | Precise replace (`old_string` → `new_string`, optional `replace_all`) |
-| `grep` | read-only | Recursive content search. Returns matching lines + line numbers |
+| `grep` | read-only | Recursive content search (regex, returns file:line: content) |
 | `glob` | read-only | List files by pattern (`**/*.ts`) |
-| `web_fetch` | read-only | Fetch a URL, return markdown-ized body |
-| `recall_memory` | read-only | FTS5 full-text search of history (`history` table) |
-| `git_diff` | read-only | Read git diff (args: `file`, `ref`, `cached`). **No confirmation** (read-only) |
-| `dispatch_agent` | write | Dispatch a read-only sub-agent (own history, see [[Direct-Engine]]) |
+| `web_search` | read-only | Search the web (Bing → DuckDuckGo fallback), returns titles/snippets/links |
+| `web_fetch` | read-only | Fetch a URL, markdown-ized body (Jina Reader de-noising) |
+| `recall_memory` | read-only | Semantic search of history (embedding cosine, FTS5 fallback) + knowledge-graph triples |
+| `git_diff` | read-only | Read git diff (args: `file`, `ref`, `cached`). **No confirmation** |
+| `dispatch_agent` | write | Dispatch a read-only sub-agent (own context, optional engine) |
+| `todo_write` | write | Shared task checklist, rendered live as checklist cards in the chat |
+
+### Memory blocks
+| Tool | Purpose |
+|---|---|
+| `remember_fact` / `recall_fact` | Session-level key-value anchors (step outputs, key decisions) |
+| `memory_replace` / `memory_append` | Structured long-term memory blocks (user_profile / project_context / active_goals) |
+
+### Multi-agent teams
+`spawn_team` (persistent-member team) · `team_broadcast` (same instruction to all members) · `team_send` (message one member) · `team_close` (tear down).
+
+### Computer Use (see also `computer-use.ts`)
+`screenshot` (with `hide_self` — own window turns transparent for the shot) · `screenshot_window` (capture any window by title, even occluded/background) · `mouse_click` / `mouse_scroll` / `mouse_drag` · `keyboard_type` / `keyboard_key` · `ax_script` (macOS accessibility).
+
+### Browser automation (agent-owned Chrome)
+`browser_navigate` / `browser_snapshot` / `browser_click` / `browser_type` / `browser_select` / `browser_eval` / `browser_screenshot` / `browser_tabs` — DOM-level automation in an isolated Chrome instance, never touches the user's screen.
+
+### Misc
+`load_skill` (pull a skill body on demand) · `video_gen` (MiniMax H3 text-to-video) · `feishu_send_file` / `wecom_send_file` (send files to Feishu/WeCom sessions) · `wecom_approval_list` / `wecom_approval_detail` (WeCom approval queries).
 
 ## `shell` tool
 
