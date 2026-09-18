@@ -1,153 +1,269 @@
 # KinetAios
 
-[![macOS 14+](https://img.shields.io/badge/macOS-14%2B-black)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)
-[![Engines](https://img.shields.io/badge/engines-4-blue)](#四引擎真实业务跑分)
-[![license](https://img.shields.io/badge/price-$39%20once-green)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=pricing-cta&utm_campaign=launch-m1#buy)
-[![Ollama](https://img.shields.io/badge/Ollama-free%20forever-8A2BE2)](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)
+[English](README.md) | [简体中文](README.zh-CN.md)
 
-**macOS 上的多引擎 Agent 工作台**:Direct / Claude Code / Codex / PEVJ 四引擎并发跑同一任务,实时对比状态、步骤、token 消耗。BYO API Key,数据全落本地 SQLite,无中继服务器。
+[![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
+[![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
+[![Platforms](https://img.shields.io/badge/platform-Windows%2011%20%7C%20macOS-black)](https://github.com/phinn/KinetAios/releases/latest)
 
-<img src="https://phinn.github.io/KinetAppPortal/assets/demo-arena.gif" alt="KinetAios demo: install → Ollama free tier → first answer → switch engine, all in 30 seconds" width="800">
+> 🌐 **[Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-## Features
+![KinetAios hero screenshot](documents/hero.png)
 
-**Multi-engine agent runtime** — run multiple AI agent sessions concurrently in one dashboard: built-in **Direct** (ReAct loop with native tools), **Claude Code** (`claude -p` stream-json), **Codex** (`codex exec`), and PEVJ (Plan-Execute-Verify-Judge). Switch engines per conversation; same SQLite history across all.
+![Four engines running side-by-side](documents/demo-arena.gif)
 
-**MCP support** — connect MCP servers (stdio + remote SSE) and their tools are exposed to the agent automatically, alongside 30+ built-in tools: shell (with per-session approval), file read/write/edit, web search/fetch, long-term memory, git diff, computer use (screenshot / click / keyboard on macOS), and more.
-
-**Skills auto-loading** — scans `~/.claude/skills`, `~/.codex/skills`, `~/.kinetaios/skills` and injects a lightweight catalog into the system prompt; the agent pulls full skill bodies on demand via `load_skill` when a task matches. Create a skill mid-session and it's visible immediately. A dedicated Settings → Skills panel aggregates every skill/command/agent from all sources with search, viewing and in-app editing (plugin-contributed skills read-only).
-
-**Token accounting & cost archaeology** — input/output tokens split across every LLM call (including sub-agents, compaction, judge, teams); per-call drill-down overlay, per-channel totals, cost persisted in SQLite for archaeology.
-
-**Long-term memory** — automatic fact extraction per turn, importance-tiered decay (critical memories never auto-delete), cosine + FTS5 dual-channel recall, cross-project memory opt-in.
-
-**Overnight goal mode** — set a goal and the agent loops until done: supervisor persona validates each round, quota-aware failover switches models on 5h-window exhaustion, with iteration/time/cost fuses.
-
-**Computer Use (macOS)** — background input injection via CGEventPostToPid: clicks, typing, scrolling without stealing focus; hide-self screenshots.
-
-**Local-first** — everything in local SQLite; BYO API key; no account, no relay server, no telemetry. Ollama works out of the box.
-
-## 四引擎真实业务跑分
-
-同一个 **40 万行医疗器械 CRM** 交叉分析任务(多 Sheet×医院等级×时间窗,产出交互式 ECharts 报告),四引擎同一提示词、零人工干预:
-
-| 引擎 | 得分 /10 | token 消耗 | 关键差异 |
-|---|---|---|---|
-| **Direct (自研)** | **9.2** | **1.31M** | 原生 SAX 流式 xlsx,文件永不进 context |
-| Claude Code | 7.0 | ~2M | context 管理一流,但无插件工具,每步绕道 Bash+python |
-| Codex | 5.5 | ~2.4M | sandbox-first 设计,不适合交互式数据任务 |
-| PEVJ V2 (自研) | 3.5 | 3.8M+ | 四层架构 verify 环节无护栏 = token 放大器 |
-
-> **最值钱的发现:7.5% 的 API 调用烧掉 63% 的预算。** 根因不是模型,是工具设计——agent 把大文件顺序读了 16 遍,每遍全量重发历史。换成流式读取器后该项成本归零。
-> [完整报告:方法论+逐维度打分+逐步 trace](https://github.com/phinn/KinetAios/blob/main/documents/excel-cross-analysis-engines.html) — 包含自家引擎 3.5 分的全部翻车细节。
-
-### 获取
-
-| 档位 | 价格 | 内容 |
-|---|---|---|
-| **Free** | $0 永久 | 单引擎 + Ollama 本地模型(不是试用,永久免费) |
-| **Pro 早鸟** | **$39 买断**(前 500 名,之后 $69) | 四引擎并发 + 全部工具链 + 免费小版本更新 |
-
-**[下载 Mac 版 →](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=badge&utm_campaign=launch-m1)** · **[Buy once, $39 →](https://phinn.github.io/KinetAppPortal/mac.html?utm_source=github-readme&utm_medium=pricing-cta&utm_campaign=launch-m1#buy)** · 无订阅。
+A **local-first AI agent dashboard** for **Windows 11 and macOS**. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
 
 ---
 
-<!-- 原开发者文档(用法/架构/设计取舍)见下 -->
+## Why KinetAios?
 
-一个 **agent dashboard**:并发跑多个 agent 任务,实时看每个的状态、步骤、工具调用和产出。全局热键 ⌘⌥Space 快速下达任务。本质是 Raycast/Alfred 的 AI 版,底层是真·agent 运行时。
+Most AI clients lock you into one provider, drop context when you switch engines, and route your conversations through a relay. KinetAios runs **four engines in one window**, keeps long-term memory across all of them, and **never asks for an account**.
 
-**形态**:Agent 运行时层 · **平台**:macOS · **北极星**:统一入口 + 多 agent 可观测。
+| | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
+|---|---|---|---|---|---|
+| Four engines (Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness) | ✅ | — | — | — | — |
+| Local SQLite + automatic long-term memory | ✅ | — | — | — | — |
+| Cross-engine memory (one user profile shared by all engines) | ✅ | — | — | — | — |
+| Multiple parallel sessions | ✅ | — | ✅ | — | ✅ |
+| Global hotkey + quick panel | ✅ | — | — | — | — |
+| Auto-scan MCP / Skills / Agents | ✅ | ✅ | — | — | — |
+| Project rules (AGENTS / CLAUDE / KINET) | ✅ | — | — | ✅ | ✅ |
+| Built-in MCP Server (remote agent control) | ✅ | — | — | — | — |
+| Plugin system (tools / panels / slash commands) | ✅ | — | — | — | — |
+| Multimodal (image input + voice + screenshots) | ✅ | ✅ | — | — | — |
+| Session branching + cross-engine Pipeline orchestration | ✅ | — | — | — | — |
+| Local-first, no account | ✅ | ✅ | ✅ | — | — |
 
-## 现状
+## Install
 
-> 当前状态、续接信息、踩过的坑见 **`WORKLOG.md`**;架构演进见 **`docs/DESIGN-agents.md`**。
+Grab the latest release:
 
-- [x] **P0–P3**:菜单栏/热键、shell 工具(带确认)、AgentLoop(ReAct)、SQLite/FTS5 召回
-- [x] **dashboard**:会话列表 + 多轮 transcript + 实时状态
-- [x] **设置 UI + 应用图标**:⌘,(API key / Base URL / 模型 / 协议 / 测试连接)+ ✨ 图标
-- [x] **双协议 Provider**:OpenAI 兼容 + Anthropic(双向转换)
-- [x] **Claude Code 引擎**:spawn claude stream-json,api_retry 透传,`--resume` 连续问答
-- [x] **连续会话模型**:同一会话连续问答,新建才开新 session
-- [x] **markdown 渲染**(迷你 block 解析 + 内联)
-- [ ] OpenClaw 引擎、`Engine` 协议抽象、持久化会话、交互式 diff 审批、Keychain 存 key
+- **Windows** — [`KinetAios-Setup-<version>.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer)
+- **macOS** — see [releases](https://github.com/phinn/KinetAios/releases/latest)
 
-## 用法
+> Unsigned builds → Windows SmartScreen / macOS Gatekeeper will warn; allow it manually.
 
-- **下达任务**:dashboard 底部输入条(或 ⌘⌥Space 快速面板)输入,回车提交。
-- **并发**:连提多个任务,它们**同时跑**,左侧列表各显示状态(●排队 ●运行中 ●完成 ●失败)。
-- **看详情**:点列表里的任务,右侧显示它的工具调用步骤 + 流式最终答案。
-- agent 需要回忆过去的事,会自己调 `recall_memory` 搜 SQLite 历史。
-- 执行 shell 前弹确认(显示是哪个任务在请求)。
+**First launch**: click the ⚙ in the top right → paste your **API Key** (+ base URL / model, defaults to GLM/Zhipu) → hit **Test Connection**, then send your first task.
 
-## 跑起来
+> 🐋 **One key for every model?** Pick the **OrcaRouter** preset — an OpenAI-compatible gateway with 200+ models, adaptive routing, zero markup. [Sign up with this link](https://www.orcarouter.ai/ref/ref_1ed8570b7192ed54082b) to support the project (5% referral credit).
 
-1. **填 API key**:启动 app → 设置(`⌘,` 或 Dashboard 右上角齿轮或 ✨ 菜单 → 设置…)→ 填 API Key + Base URL + 模型 ID → 点「测试连接」验证通了再跑任务。
-2. **生成并编译**(首次、改了 `project.yml`、**或加了/删了 .swift 文件**后都要重跑 `xcodegen generate`):
-   ```bash
-   cd /Users/phinn/Documents/kinet/KinetAios
-   xcodegen generate
-   xcodebuild -project KinetAios.xcodeproj -scheme KinetAios build
-   ```
-   或 `open KinetAios.xcodeproj` 在 Xcode 里 ⌘R。
-3. **运行**:启动直接出 dashboard 主窗口;菜单栏有 ✨;⌘⌥Space 唤出快速面板。
+Built-in OrcaRouter preset:
 
-## 架构
-
-```
-[底部输入条 / ⌘⌥Space 快速面板]
-            │ submit(prompt)
-            ▼
-      ┌─────────────┐
-      │ TaskManager │  @Published tasks:[AgentTask]   并发跑多个
-      └─────┬───────┘
-            │ 每个 task 一个独立 AgentLoop(ReAct)
-            ▼
-   AgentTask(ObservableObject):status / answer(流式) / steps / error
-            │
-            ▼
-   DashboardView:左侧任务列表(实时状态) + 右侧详情(步骤+答案)
+```yaml
+provider: orcarouter          # Settings → Presets → OrcaRouter (multi-model routing)
+protocol: openai              # OpenAI-compatible
+base_url: https://api.orcarouter.ai/v1
+api_key: sk-orca-...          # create in the OrcaRouter console
+model: orcarouter/auto        # adaptive routing, or pin a vendor/model e.g. anthropic/claude-opus-4.8
 ```
 
-| 文件 | 职责 |
-|---|---|
-| `KinetAiosApp.swift` | @main,WindowGroup 挂 DashboardView |
-| `AppDelegate.swift` | 持有 TaskManager + 菜单栏 ✨ + 快速面板 + 热键 |
-| `DashboardView.swift` | 主窗口:任务列表 / 详情 / 统计 / 输入条 |
-| `QuickView.swift` | ⌘⌥Space 快速面板,提交任务 + 内联看答案 |
-| `TaskManager.swift` | 任务注册表 + 并发执行 + 事件回灌 + 确认 |
-| `AgentTask.swift` | 单任务状态模型(ObservableObject) |
-| `AgentLoop.swift` | ReAct 循环(模型 ↔ 工具) |
-| `Tool.swift` | 工具协议 + shell/read_file/web_fetch/recall_memory |
-| `GLMProvider.swift` | GLM 流式 + 工具调用解析(OpenAI 兼容) |
-| `Store.swift` | SQLite + FTS5 历史(单例) |
-| `HotkeyManager.swift` | Carbon 全局热键 |
-| `SettingsView.swift` | `⌘,` 设置窗口(API key / URL / 模型 / 测试连接) |
-| `AppSettings.swift` | 运行时配置(UserDefaults 持久化,可编辑) |
-| `Config.swift` | 读接口,从 AppSettings 取值(GLMProvider 每次请求读) |
-| `Secrets.swift` | API key 兜底(gitignored) |
-| `Assets.xcassets` | 应用图标(✨ sparkles) |
-| `scripts/gen_icon.swift` | 图标生成脚本(CoreGraphics,可改后重跑) |
+### From source
 
-## 关键配置
+Requires **Node.js 18+** and a network connection (the `better-sqlite3` native module needs compiling).
 
-- **模型 id**:`Config.swift` 的 `model`,默认 `glm-5.2`(以智谱控制台为准)。
-- **端点**:`Config.swift` 的 `baseURL`,国内 `open.bigmodel.cn`;海外换 `api.z.ai`。
+```sh
+cd KinetAiosWin
+npm install      # includes postinstall: rebuild better-sqlite3 for Electron
+npm run build
+npm start
+```
 
-## 已知风险 / 注意
+---
 
-- **GLM 流式 tool_call 假设**:若实测"模型永远不调工具、只回答",把 `GLMProvider.streamComplete` 的 `"stream": true` 改 `false`。
-- **任务不共享上下文**:每个任务独立,跨任务记忆靠 `recall_memory` 搜历史。
-- **任务在内存**:重启后任务列表清空(历史消息仍在 SQLite,可被 recall 搜到)。持久化任务元数据是后续项。
-- **并发确认**:多个 agent 同时请求 shell 确认时,模态框在主线程串行排队。
+## Highlights
 
-## 编辑器红波浪线?不用管
+### Four engines, switchable per session
+- **Direct V1 (Kaios)** — built-in ReAct loop with a dual-protocol provider (OpenAI-compatible & Anthropic, both directions of SSE streaming), tool-level concurrency, sub-agents, context compaction and retries.
+- **Direct V2** — next-gen ReAct on a Plan-Execute-Verify-Judge architecture, streaming tool calls, step-by-step task lists rendered live in the chat as checklist cards.
+- **Direct V3** — latest: an **intent router** picks `fast` / `standard` / `deep` per query; the `deep` path builds tool calls into a **dependency DAG and executes it in parallel** — real speedups on multi-step tasks.
+- **Claude Code** — spawns `claude -p --output-format stream-json`, parses NDJSON, resumes with `--resume`.
+- **Codex** — spawns `codex exec --json`, parses JSONL, resumes.
+- **DeepSeek Harness** *(3.0+)* — spawns the `dsh` CLI over OpenAI-compatible SSE with built-in OpenAI / Pi-AI providers, retries and token billing. Switchable per session like every other engine.
 
-`swift` 在 PATH 上是 5.3.3 的独立 toolchain,不认识 SwiftUI / async / 协议默认参数,会刷假报错。**以 `xcodebuild` / Xcode 26.6 为准**。
+### 30+ built-in tools
+`shell` (confirm before running; **focus guard** — if a command steals the foreground it's handed back automatically), `read_file`, `write_file`, `edit_file` (exact replace), `grep`, `glob`, `web_fetch` (SSRF guard + Jina Reader fallback), `web_search` (Bing → DuckDuckGo fallback), `recall_memory`, `git_diff` (read-only, no confirm), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with its own context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `todo_write` (shared task list, rendered live as checklist cards), and more.
 
-## 设计取舍
+### Computer Use (native, zero external dependencies)
+- `screenshot` (with `hide_self` — the agent's own window turns transparent during the shot, zero focus stealing), `screenshot_window` (capture any window by title — even occluded/background ones, no desktop switching).
+- `mouse_click` / `mouse_scroll` / `mouse_drag`, `keyboard_type` / `keyboard_key` — coordinates are converted from the last screenshot's pixel space to the platform's action space (DPI / window-origin aware, with staleness expiry).
+- Backed by Electron desktopCapturer + PowerShell (Windows) / cliclick (macOS) / xdotool (Linux). On macOS, bare `open` is mechanically rewritten to `open -gj` — the agent never steals your foreground.
 
-- dashboard 用**原生 SwiftUI**(不是 web)。设计-taste skill 是 web 落地页用的,介质不对。
-- 不做独立分类 Router:工具挂上,模型自己决定调不调。
-- 不做 `write_file` 工具:shell 已能写。
-- 不预抽共享客户端:先单个 `GLMProvider`,加第二个 provider 时再提 `OpenAICompatibleClient`。
-- 状态指示用语义色点(运行/完成/失败):真实状态,非装饰。
+### MCP integration (client + server)
+- **Client**: the Direct engine auto-connects to MCP servers configured on your system (scans `~/.claude.json`, `~/.codex/config.toml`, Claude Desktop). stdio transport, auto-reconnect after unexpected drops. The 🔌 button shows connected servers/tools.
+- **Server**: a built-in MCP Server (HTTP+SSE) exposes a `run_agent` tool — remote machines can invoke your local full agent. Token auth (constant-time compare), 5-minute timeout, zombie-connection detection.
+
+### Long-term memory + memory graph
+- Each turn, durable "facts about the user" are extracted in the background → SQLite → injected into the next turn. Shared **across engines and sessions**.
+- **Memory graph** visualization: force-directed graph of memory provenance, conflict detection, timeline. Standalone fullscreen window.
+- Import/export memories as JSON (backup or migration).
+
+### Skills / Commands / Agents / Plugins
+- Scans Claude Code's skills + commands + agents and Codex's skills. Invoke via the `/` menu or the ⚡ button.
+- **Skills panel** (Settings → Skills): aggregates skills from all third-party sources plus plugin contributions, with search, viewing, and direct source editing (plugin skills read-only). Edits take effect immediately.
+- **Plugin SDK v3**: plugins contribute tools, slash commands, hooks, and fullscreen panels. Injected on demand (keyword matching saves ~60% tokens). **20 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drones), an embedded & IoT suite (arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag), nestjs-dev, deepseek-harness, claude-code, codex, and more.
+
+### Sidebar (left to right)
+- **＋** new session.
+- **📂 Workbench** — project cards grouped by cwd, each showing recent activity + cost. A "Context" button edits `KINET-CONTEXT.md`.
+- **📊 Dashboard** — standalone window with live token usage, cost stats, engine distribution.
+- **🌐 Files** — file browsing + `<webview>` preview (HTML/SVG/PNG/JPG/PDF) + editor. Multi-tab. The address bar accepts `file://` / `http(s)://` / `localhost:<port>`.
+- **🏘️ Town** — game-style isometric visualization of remote nodes (other KinetAios instances) on your network.
+- **🧠 Memory** — memory panel: current channel / all, inline edit/delete, provenance.
+- **🔌 Plugins** — plugin management: enable/disable, search & filter, category cards.
+- **⚙️ Settings** — see below.
+
+### Main-window tabs (Chat / Files / Git / Rules)
+- **Chat** — streaming output, collapsible tool steps, live token counts, context inspector, screenshots, voice input.
+- **Files** — same as 🌐, following the current session's cwd.
+- **Git** — `git status` (left) + `git log` (right). Click a changed file → side-by-side diff; click a commit → unified `git show`.
+- **Rules** — edit `KinetAios.md` in the cwd (project-level rules, injected into the system prompt).
+
+### Pipeline (cross-engine orchestration)
+Chain multiple stages, each with its own engine + prompt. The previous stage's output is prepended to the next stage's prompt. 2-minute per-stage timeout polling, abort on failure.
+
+### Session branching & handoff
+- **Branch** from any turn — deep-copies turns/steps into a new session.
+- **Export/import sessions** — serializes full session state (turns + history + engine + model + cwd) for cross-machine handoff. Export auto-redacts secrets (API keys, passwords → `[REDACTED]`).
+- **Cross-session references** — link related sessions, visualized as a DAG.
+
+### Context management (Direct engine)
+- **Context inspector** — view/edit each session's `directHistory` array (JSON editor).
+- **Auto-compaction** — when history exceeds the token budget, early turns are summarized by the LLM. Compaction events are visualized (tokens before vs after).
+- **Per-protocol calibration** — token/char ratios are tracked separately per API protocol (OpenAI vs Anthropic) so concurrent sessions don't interfere.
+
+### Multimodal (Direct engine)
+- **Image input**: 📎 pick/paste images → vision content parts → OpenAI `image_url` or Anthropic base64 format.
+- **Voice transcription**: 🎤 record → Whisper → fills the input box.
+- **Realtime voice chat**: 🎤 → Volcengine Doubao WebSocket two-way voice — natural TTS, live transcription, parallel agent tool execution. See the [voice chat wiki](https://github.com/phinn/KinetAios/wiki/Voice-Chat).
+- **Screenshots**: 📸 overlay → drag a region → cropped image injected into the prompt.
+
+### Global search
+`Ctrl/Cmd+K` overlays a search across all sessions — matching prompt text, answer text, and tool output.
+
+### Settings (⚙️)
+- **Two-column layout**: vertical tab nav on the left (Models / Appearance / Engines / Advanced / Security / Messages / Plugins / Skills / Goal / Multi-machine), independent scrolling on the right; narrow windows fall back to horizontal tabs; a search box filters across all panels.
+- **Providers**: OpenAI / Anthropic protocols, base URL, model, key. GLM / DeepSeek / OrcaRouter / OpenAI / Anthropic presets. Zhipu balance check button. Encrypted storage via safeStorage.
+- **Security**: privacy gate (detects sensitive data leaving the machine).
+- **Behavior**: shell approval mode, sandbox level, plan mode, CLI engine toggles, window-close behavior (quit / minimize / tray).
+- **Pricing**: per-model input/output prices for cost calculation.
+- **Interface**: language (English / 简体中文 / 繁體中文 / 日本語), theme (dark / light, live preview).
+- **Long-term memory**: export/import JSON.
+
+### Misc
+- **Per-session model** (editable dropdown, OpenAI-compatible + Anthropic dual protocol).
+- **File attachments**: 📎 pick/drop multiple text files (large files read header-only), `@path` references to cwd files.
+- **`KinetAios.md` / `AGENTS.md` / `CLAUDE.md`** — rule files in the cwd are auto-injected into the system prompt.
+- **Tray + global hotkey** `Ctrl/Cmd+Alt+Space` → quick panel.
+- **Update check** against GitHub Releases, shown on the About page.
+- **Configurable branding** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI).
+
+---
+
+## Benchmarks: four engines, one real business task
+
+The same **400k-row medical-device CRM cross-analysis** (multi-sheet × hospital tier × time window, producing an interactive ECharts report) — four engines, identical prompt, zero human intervention:
+
+| Engine | Score /10 | Tokens | Key difference |
+|---|---|---|---|
+| **Direct (in-house)** | **9.2** | **1.31M** | Native SAX-streaming xlsx — the file never enters the context |
+| Claude Code | 7.0 | ~2M | Great context management, but no plugin tools — every step detours through Bash+python |
+| Codex | 5.5 | ~2.4M | Sandbox-first design, wrong fit for interactive data tasks |
+| PEVJ V2 (in-house) | 3.5 | 3.8M+ | Four-layer architecture with no guardrails on verify = token amplifier |
+
+> **The most valuable finding: 7.5% of API calls burned 63% of the budget.** The root cause wasn't the model — it was tool design. The agent read the same large file 16 times sequentially, resending full history each pass. Switching to a streaming reader zeroed that cost.
+
+> [Full report: methodology + per-dimension scores + step-by-step traces](https://github.com/phinn/KinetAios/blob/main/documents/excel-cross-analysis-engines.html) — includes all the gory details of our own engine's 3.5.
+
+---
+
+## Tech stack
+
+- **Electron + TypeScript** — the main process runs the agent runtime; the renderer is a native web UI.
+- **better-sqlite3** — SQLite + FTS5 (history / `recall_memory` full-text search + embedding semantic recall).
+- **No frontend framework** — the renderer is vanilla TS + HTML/CSS, bundled with esbuild.
+
+## Project layout
+
+```
+KinetAiosWin/
+  brand.json               # branding config (product name etc., read at startup)
+  package.json
+  src/
+    shared/types.ts         # types + applyEvent (shared by main/renderer, single source of truth)
+    shared/i18n.ts          # four-language string table + t()
+    main/
+      main.ts               # windows / tray / hotkey / IPC / shell-confirm bridge
+      TaskManager.ts        # session management + engine dispatch + memory extraction
+      engines.ts            # Engine interface + Direct/ClaudeCode/Codex + cross-platform CLI spawn
+      AgentLoop.ts          # ReAct loop (Direct) + history compaction + auto-shrink
+      V3/                   # Direct V3: intent router + fast/deep paths (deep = DAG parallel)
+      glm.ts                # providers + OpenAI/Anthropic SSE streaming + retries
+      updater.ts            # GitHub Releases update check
+      tools.ts              # 30+ built-in tools + computer-use glue + focus guard
+      computer-use.ts       # screenshot / mouse / keyboard (native APIs)
+      mcp.ts                # MCP client (scan + stdio + reconnect)
+      mcp-server.ts         # MCP server (HTTP+SSE, run_agent, token auth)
+      skills.ts             # skills/commands/agents/plugin scanning
+      plugins.ts            # plugin loader (SDK v3: tools/slash commands/hooks/panels)
+      store.ts              # better-sqlite3 + FTS5
+      settings.ts           # config (encrypted API key, lang, embedding)
+    preload/preload.ts      # narrow contextBridge API
+    renderer/
+      index.html quick.html styles.css
+      app.ts                # dashboard logic (chat, sidebar, tabs, context inspector)
+      quick.ts              # quick panel logic
+      dashboard.ts          # cost/token dashboard window
+      arena.ts              # deep-analysis dashboard
+      memory-graph.ts       # memory graph SVG visualization
+      town.ts               # Town view (remote-node visualization)
+      files-pane.ts         # file browsing + webview preview + editor
+      code-editor.ts        # code editor (syntax highlighting)
+      file-drawer.ts        # file drawer UI
+      nexus.ts              # Nexus view
+      focus-manager.ts      # focus / focus-trap management
+      highlight.ts          # chat code-block syntax highlighting
+      markdown.ts           # mini markdown renderer
+  plugins/                  # 20 built-in plugins (SDK v3)
+```
+
+## Build / develop
+
+```sh
+npm run build       # tsc (main/preload/shared) + esbuild (renderer) + copy brand.json
+npm run typecheck   # typecheck both halves, no emit
+npm start           # launch (requires a prior build)
+npm run dev         # build + start
+```
+
+## Packaging
+
+```sh
+npm run dist         # default target for the current platform
+```
+
+- **Windows**: `release\KinetAios Setup <ver>.exe` (NSIS). **Must be built on Windows** (cross-building Windows + native modules from macOS is unreliable).
+- **macOS**: build a dmg with `npx electron-builder --mac` (requires a Mac toolchain).
+- electron-builder rebuilds `better-sqlite3` against Electron's ABI automatically; `asar: false` avoids native-module-in-asar loading errors.
+- **Unsigned builds** → Windows SmartScreen / macOS Gatekeeper will warn; allow manually. Removing the warning needs a signing cert (+ Apple notarization).
+- The icon defaults to Electron's; replace with your own: `build/icon.ico` (256×256) on Windows, `build/icon.icns` on macOS.
+
+## Known constraints
+
+- **Window-close behavior is configurable** (quit / minimize / tray), default minimize. The global hotkey only works while the app is running.
+- Cross-compiling native modules from macOS to Windows is unreliable — build Windows installers on a Windows machine or a GitHub Actions `windows-latest` runner.
+
+---
+
+## The Kinet family
+
+KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.html):
+
+- **KinetFit** — smart health companion
+- **KinetAgent** — AI automation assistant
+- **KinetBrief** — AI briefing / notes app
+
+## License
+
+[GPL-3.0](LICENSE)
