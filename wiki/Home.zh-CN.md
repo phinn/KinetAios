@@ -29,14 +29,15 @@ npm start
 
 | 功能 | 入口 | Wiki 页面 |
 |---|---|---|
-| 三引擎切换(Direct / Claude Code / Codex) | 会话头部引擎选择器 | [[Engines]] |
+| 三代 Direct 引擎(V1 ReAct / V2 PEVJ / V3 意图路由 + DAG) | 会话头部引擎选择器 | [[Engines]] · [[Choose-Engine]] |
+| V3 deep 后台 Job + 节点断点续跑(3.8.0) | ⚙ →「复杂任务后台执行」 | [[Engines]] |
 | 插件引擎 v3(任意 CLI agent 注册为 `plugin:<name>`,纯 manifest) | 装好插件后的引擎下拉 | [[Plugins]] |
 | Direct 引擎内幕(ReAct, 压缩, 校准) | — | [[Direct-Engine]] |
-| 12 个内置工具 + web_search/web_fetch | 自动注入 | [[Tools-and-MCP]] |
+| 30+ 内置工具 + web_search/web_fetch | 自动注入 | [[Tools-and-MCP]] |
 | MCP 客户端 + MCP 服务端(远程 agent) | 🔌 按钮 / 配置 | [[Tools-and-MCP]] |
 | 长期记忆 + 记忆图谱 | 🧠 按钮 | [[Long-Term-Memory]] |
 | 插件系统 v2.2(工具/面板/hooks) | 🔌 插件按钮 | [[Plugins]] |
-| Skills / Commands / Agents | `/` 或 ⚡ | [[Skills]] |
+| Skills / Commands / Agents + 内置 skill | `/` 或 ⚡ · 设置 → 技能 | [[Skills]] |
 | Pipeline(跨引擎编排) | 编程式调用 | [[Pipeline]] |
 | 会话分支 + 导出/导入 | 右键菜单 / MCP | [[Session-Management]] |
 | 上下文检查器 + 压缩可视化 | 聊天头部检查器按钮 | [[Direct-Engine]] |
@@ -49,7 +50,7 @@ npm start
 | 实时语音对话(豆包 WS) | 聊天区 🎤 | [[Voice-Chat]] |
 | 多模态(图片 + 语音 + 截图) | 聊天区 📎 / 🎤 / 📸 | [[Multimodal]] |
 | 全局搜索(所有会话) | `Ctrl/Cmd+K` | [[Global-Search]] |
-| 设置(API / 行为 / 价格 / 界面 / 记忆) | ⚙ 按钮 | [[Settings]] |
+| 设置(10 tab:模型 / 外观 / 引擎 / 高级 / 安全 / 消息 / 插件 / 技能 / Goal / 多机协作) | ⚙ 按钮 | [[Settings]] |
 | 全局热键快速面板 | `Ctrl/Cmd+Alt+Space` | [[Global-Hotkey]] |
 | 飞书 & 企微机器人集成 | 设置 → 消息 | [[Messaging-Bots]] |
 | 四语言切换 | ⚙ → 界面 → 语言 | [[i18n]] |

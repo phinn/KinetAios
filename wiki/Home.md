@@ -29,14 +29,15 @@ See [[Getting-Started]] for details.
 
 | Feature | Entry | Wiki page |
 |---|---|---|
-| Three switchable engines (Direct / Claude Code / Codex) | Session header engine selector | [[Engines]] |
+| Three Direct generations (V1 ReAct / V2 PEVJ / V3 intent router + DAG) | Session header engine selector | [[Engines]] · [[Choose-Engine]] |
+| V3 deep background jobs + node checkpoints (v3.8.0) | ⚙ → "Run complex tasks in background" | [[Engines]] |
 | Plugin engines v3 (any CLI agent as `plugin:<name>`, manifest-only) | Engine dropdown, after installing the plugin | [[Plugins]] |
 | Direct engine internals (ReAct, compaction, calibration) | — | [[Direct-Engine]] |
-| 12 built-in tools + web_search/web_fetch | Auto-injected | [[Tools-and-MCP]] |
+| 30+ built-in tools + web_search/web_fetch | Auto-injected | [[Tools-and-MCP]] |
 | MCP client + MCP server (remote agent) | 🔌 button / config | [[Tools-and-MCP]] |
 | Long-term memory + memory graph | 🧠 button | [[Long-Term-Memory]] |
 | Plugin system v2.2 (tools/panels/hooks) | 🔌 Plugins button | [[Plugins]] |
-| Skills / Commands / Agents | `/` or ⚡ | [[Skills]] |
+| Skills / Commands / Agents + built-in skills | `/` or ⚡ · Settings → Skills | [[Skills]] |
 | Pipeline (cross-engine orchestration) | Programmatic | [[Pipeline]] |
 | Session branching + export/import | Context menu / MCP | [[Session-Management]] |
 | Context inspector + compaction viz | Chat header inspector button | [[Direct-Engine]] |
@@ -49,7 +50,7 @@ See [[Getting-Started]] for details.
 | Realtime voice chat (Doubao WS) | 🎤 in chat | [[Voice-Chat]] |
 | Multimodal (image + voice + screenshot) | 📎 / 🎤 / 📸 in chat | [[Multimodal]] |
 | Global search (all conversations) | `Ctrl/Cmd+K` | [[Global-Search]] |
-| Settings (API / Behavior / Pricing / Interface / Memory) | ⚙ button | [[Settings]] |
+| Settings (10 tabs: Model / Appearance / Engine / Advanced / Security / Messaging / Plugins / Skills / Goal / Mesh) | ⚙ button | [[Settings]] |
 | Global hotkey quick panel | `Ctrl/Cmd+Alt+Space` | [[Global-Hotkey]] |
 | Feishu & WeCom bot integration | Settings → Messaging | [[Messaging-Bots]] |
 | Four-language switch | ⚙ → Interface → Language | [[i18n]] |

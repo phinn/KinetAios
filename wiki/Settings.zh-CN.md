@@ -2,28 +2,33 @@
 
 # Settings
 
-主窗口右上角 **⚙** 进。五大区。
+主窗口右上角 **⚙** 进。左右两栏布局:左侧竖向 tab 导航(模型 / 外观 / 引擎 / 高级 / 安全 / 消息 / 插件 / 技能 / Goal 监工 / 多机协作),右侧内容独立滚动;窄窗口自动回退横向 tab。搜索框跨面板全景过滤。**保存/测试按钮常驻内容区底部** —— 任意 tab 都能直接按;表单有未保存改动时保存按钮亮提示点。
 
-## API
+## 模型
 
 | 字段 | 说明 |
 |---|---|
 | Provider 协议 | `OpenAI 兼容` / `Anthropic` 二选一。决定请求走 `/chat/completions` 还是 `/v1/messages` |
-| Base URL | 端点根。预设按钮:GLM 智谱 / DeepSeek / OpenAI / Anthropic 一键填 |
+| Base URL | 端点根。预设按钮:GLM 智谱 / DeepSeek / OrcaRouter / OpenAI / Anthropic 一键填 |
 | Model | 默认模型。例 `glm-4.6` / `claude-sonnet-4-6` / `gpt-4o`。每会话可独立改 |
 | API Key | safeStorage 加密存(macOS Keychain / Windows DPAPI)。明文不进 settings.json |
 | **测试连接** | 发一个最小请求验证。**保存前必测** |
+| **添加模型(3.7.3+)** | 模型配置档改弹窗编辑:配置名 / key / URL / 模型 / 协议 / reasoning / 价格 / 余额查询,内置测试连接。保存即入列表 |
+| 智谱余额 | 一键查询 GLM key 的剩余额度 |
 
 `AppSettings.apiKey` 通过 `safeStorage.encryptString` 加密后存 `userData/settings.json` 的 `apiKeyEnc` 字段。
 
-## 行为
+## 引擎 / 行为(高级)
 
 | 字段 | 说明 |
 |---|---|
 | Shell 审批 | `always`(默认,每次弹确认)/ `never`(自动放行,慎用) |
 | 沙箱(Claude Code / Codex) | `readOnly` / `workspaceWrite` / `fullAccess`。映射到 `--permission-mode`(CC)/ `-s`(Codex) |
 | 计划模式 | 开了 → 引擎只读不写(CC 走 `plan` mode,Codex 走 `read-only`) |
-| 启用 CLI 引擎 | 默认关。开了才会扫 PATH 找 `claude` / `codex`,把对应引擎选项加到下拉 |
+| CLI 引擎插件 | Claude Code / Codex **由插件开关控制** —— 在 ⚙ → 插件 里启用对应插件,引擎才进下拉 |
+| **复杂任务后台执行(V3)**(3.8.0+) | 开(默认)→ V3 判定为 `deep` 的任务提交 JobManager,会话立即解锁,完成自动回贴;关 → 同步等待 |
+| Computer Use 后台模式 | 鼠标/键盘事件后台投递到目标窗口,真实光标和焦点不动(Windows 完整支持) |
+| 关窗行为 | 退出 / 最小化 / 托盘 |
 
 ## 价格
 
@@ -51,6 +56,10 @@ i18n 实现详见 [[i18n]]。
 | 导入 JSON | 接受上面结构 **或** 纯 `string[]`。按 content 去重。返回 `{ imported: N, skipped: N }` |
 
 适合换机器迁移、备份、不同 provider 共享。详见 [[Long-Term-Memory]]。
+
+## 技能(3.7.2+)
+
+技能 tab 聚合所有来源的 skill / command / agent —— Claude Code、Codex、插件贡献,以及 app 自带**内置 skill**(只读,随 app 分发;首发 `data-analysis` 移植了 V3 分析工作法)。搜索、查看、直接编辑用户级源文件;插件/内置技能只读。保存即时生效。详见 [[Skills]]。
 
 ## 消息
 

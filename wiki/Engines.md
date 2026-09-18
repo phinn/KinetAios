@@ -2,22 +2,25 @@
 
 # Engines
 
-KinetAios supports three **built-in** agent engines, each session picks one independently. **Switching engines clears cross-engine context** (the engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`). On top of these, **plugin engines** (SDK v3) can register any external CLI agent as `plugin:<name>` — see [[Plugins]].
+KinetAios ships **three generations of the built-in Direct engine** (V1/V2/V3) plus CLI engines wired through the plugin system. Each session picks one independently. **Switching engines clears cross-engine context** (the engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`). On top of these, **plugin engines** (SDK v3) can register any external CLI agent as `plugin:<name>` — see [[Plugins]].
 
 ## One-liner
 
 | Engine | Implementation | Tool system | Use when |
 |---|---|---|---|
-| **Direct (Kaios)** | Built-in ReAct loop, talks directly to LLM provider | The 10 tools in `tools.ts` + MCP | You want tool/cost/step control |
-| **Claude Code** | Spawns `claude -p --output-format stream-json` | Claude Code's own (Read/Write/Edit/Bash/Glob/Grep) | You're a Claude Code CLI user |
-| **Codex** | Spawns `codex exec --json` | Codex's own | You're a Codex CLI user |
-| **plugin:<name>** | Spawns whatever CLI the plugin declares | The CLI's own | You want to wire up another CLI agent (zero code, manifest-only) |
+| **Direct V1 (Kaios)** | Built-in ReAct loop, talks directly to LLM provider | `tools.ts` built-ins + MCP | Q&A, small edits, tight cost/step control |
+| **Direct V2** | Plan-Execute-Verify-Judge on top of V1's tools | Same + task-list cards | Multi-file changes with verification |
+| **Direct V3** | Intent router → fast/std/deep paths; deep = DAG | Same + analysis mode | Data analysis, cross-file refactors, "not sure" |
+| **Claude Code** *(plugin toggle)* | Spawns `claude -p --output-format stream-json` | Claude Code's own (Read/Write/Edit/Bash/Glob/Grep) | You're a Claude Code CLI user |
+| **Codex** *(plugin toggle)* | Spawns `codex exec --json` | Codex's own | You're a Codex CLI user |
+| **DeepSeek Harness** *(plugin engine)* | Spawns the `dsh` CLI headless profile | The CLI's own | One-shot DeepSeek runs |
+| **plugin:<name>** | Spawns whatever CLI the plugin declares | The CLI's own | Wire up another CLI agent (zero code, manifest-only) |
 
-CLI engines need their CLIs installed locally; they're off by default. ⚙ → Behavior → "Enable CLI engines" turns on PATH scanning.
+CLI engines need their CLIs installed locally. They're **plugin-gated**: enable the `claude-code` / `codex` plugin in ⚙ → Plugins to add them to the engine dropdown. A guide for choosing between V1/V2/V3 lives at [[Choose-Engine]].
 
-## Direct (Kaios)
+## Direct V1 (Kaios)
 
-The built-in engine. See [[Direct-Engine]].
+The built-in ReAct engine. See [[Direct-Engine]].
 
 - **Protocol**: `OpenAI-compatible` or `Anthropic` (your choice). Provider in `src/main/glm.ts`.
 - **Streaming**: SSE, bidirectional OpenAI ↔ Anthropic conversion.
@@ -27,6 +30,29 @@ The built-in engine. See [[Direct-Engine]].
 - **Compaction**: when over 30K, the head is summarized by an LLM into a single message, keeping the tail's recent turns intact (`compactHistory`).
 
 See [[Direct-Engine]], [[Tools-and-MCP]].
+
+## Direct V2 — Plan-Execute-Verify-Judge
+
+`src/main/DirectV2Engine.ts`. Complex tasks enter a **planning phase** first (read-only exploration producing a step plan), then execute step by step; each step can carry a verification command (typecheck / tests) with automatic retry (≤3 per step, ≤2 replans). Task lists stream into the chat as live checklist cards (`todo_write`). Trivial tasks auto-degrade to plain mode.
+
+## Direct V3 — intent router (default)
+
+`src/main/V3/`. A zero-cost rules-based router picks one of three paths per query:
+
+| Path | Trigger | Behavior |
+|---|---|---|
+| `fast` | lookups, docs, simple Q&A | single-round direct answer, zero overhead |
+| `std` | bugfix, feature, data analysis | multi-round tool execution |
+| `deep` | cross-file refactors, architecture changes | planned as a **DAG**; independent nodes run in parallel |
+
+Deep path extras (v3.8.0):
+
+- **Background execution** — deep tasks submit to `JobManager` (`src/main/JobManager.ts`); the session unlocks immediately and can keep chatting. Live running-node count + cost while it works; the result backfills when done. Toggle: ⚙ → "Run complex tasks in background (V3)" (default on).
+- **Node-level checkpoints** — each completed DAG node persists a checkpoint; killed/failed/restarted jobs resume from the last checkpoint instead of restarting the whole graph. Jobs with checkpoints come back as `paused` — one click to resume.
+- **Bounded same-layer parallelism** — read-only nodes in the same DAG layer run in batches of `dagConcurrency` (default 3); write nodes stay serial to prevent races.
+- **Analysis mode** — when data files (csv/xlsx/db) appear in the task, V3 loads the `data-analysis` discipline: schema before conclusions, compute via tools (python/sqlite) not mental math, intermediate results on disk, sourced numbers, cross-checked key figures. Shows as 「📊 分析模式」 in the status bar.
+
+See [[Choose-Engine]] for a task-by-task comparison.
 
 ## Claude Code
 
@@ -93,6 +119,6 @@ Direct additionally auto-reads `AGENTS.md`/`CLAUDE.md` (convention over config).
 
 ## How to pick
 
-- **Want to use GLM / DeepSeek / OpenAI / Anthropic directly + custom tools** → Direct
+- **Want GLM / DeepSeek / OpenAI / Anthropic direct + custom tools** → Direct (V1 for quick tasks, V3 for anything multi-step)
 - **Already paying for Claude / OpenAI subscriptions, want the local CLI experience** → Claude Code / Codex
-- **Not sure** → default to Direct, try it for a while, then decide
+- **Not sure** → V3 default; it routes fast/std/deep by itself. Full comparison: [[Choose-Engine]]

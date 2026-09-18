@@ -98,10 +98,10 @@ npm start
 ### 四个引擎(每会话可切,切换清跨引擎上下文)
 - **Direct V1(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
 - **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,分步任务清单(聊天流实时渲染为清单卡),共享 V1 工具集。
-- **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**,多步任务有真实加速。
-- **Claude Code**:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
-- **Codex**:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
-- **DeepSeek Harness** *(3.0+)*:spawn `dsh` CLI,OpenAI 兼容 SSE,内置 OpenAI / Pi-AI Provider 适配 + 重试 + token 计费。和其他引擎一样可按会话切换。
+- **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**(同层只读节点受限并发,写节点串行防竞态),多步任务有真实加速。**deep 任务可后台执行**(3.8+):提交 JobManager 后会话立即解锁,期间实时显示运行数与成本,完成自动回贴;DAG 每节点完成即落 checkpoint,**断点续跑**——任务终止/失败/重启后从断点继续,不再整图作废。引擎选择指南见 [wiki](https://github.com/phinn/KinetAios/wiki/Choose-Engine)。
+- **Claude Code** *(插件开关)*:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
+- **Codex** *(插件开关)*:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
+- **DeepSeek Harness** *(3.0+,插件引擎)*:spawn `dsh` CLI,一次性执行任务并返回最终回答。和其他引擎一样可按会话切换。
 
 ### Direct 工具(30+)
 `shell`(执行前确认;**焦点守卫** —— 命令若抢走前台,执行完自动还给原 app)、`read_file`、`write_file`、`edit_file`(精确替换)、`grep`(递归搜内容)、`glob`(列文件)、`web_fetch`(SSRF 防护 + Jina Reader 回退)、`web_search`(Bing → DuckDuckGo 回退)、`recall_memory`、`git_diff`(只读、免确认)、`remember_fact` / `recall_fact`(会话锚点)、`memory_replace` / `memory_append`(核心记忆块)、`dispatch_agent`(只读子 agent —— 独立上下文)、`spawn_team` / `team_broadcast` / `team_send` / `team_close`(多 agent 团队)、`video_gen`(MiniMax H3 文生视频)、`feishu_send_file` / `wecom_send_file`(发文件到飞书/企微会话)、`todo_write`(共享任务清单,聊天流实时渲染为清单卡)。
@@ -121,9 +121,10 @@ npm start
 - 记忆导入/导出 JSON(备份或迁移)。
 
 ### Skills / Commands / Agents / 插件
-- 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。
-- **技能面板**(设置 → 技能):聚合三方来源 + 插件贡献的全部技能,搜索、查看、直接编辑源文件(插件技能只读),保存即时生效。
-- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks 和全屏面板。按需注入(keywords 关键词匹配省 ~60% token)。**20 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex 等。
+- 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。**内置 skill 随 app 分发**(3.7.3+,首发的 `data-analysis` 移植了 V3 分析工作法:先摸 schema 再下结论、计算交给工具不心算、中间产物落盘、结论可溯源)。
+- **技能面板**(设置 → 技能):聚合三方来源 + 内置(只读)+ 插件贡献的全部技能,搜索、查看、直接编辑源文件(插件/内置技能只读),保存即时生效。
+- **模型配置档弹窗编辑**(3.7.3+):模型 tab「添加模型」,新增/编辑统一居中弹窗(配置名/key/URL/模型/协议/reasoning/价格/余额查询),内置测试连接。
+- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks、全屏面板和**引擎**。按需注入(keywords 关键词匹配省 ~60% token)。**20 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex 等。
 
 ### 侧边栏按钮(从左到右)
 - **＋** 新建会话。
@@ -164,10 +165,10 @@ npm start
 `Ctrl/Cmd+K` 浮层搜索所有会话 —— 匹配 prompt 文本、回答文本和工具输出。
 
 ### 设置(⚙️)
-- **左右两栏布局**:左侧竖向 tab 导航(模型 / 外观 / 引擎 / 高级 / 安全 / 消息 / 插件 / 技能 / Goal / 多机协作),右侧内容独立滚动;窄窗口自动回退横向 tab;搜索框跨面板全景过滤。
+- **左右两栏布局**:左侧竖向 tab 导航(模型 / 外观 / 引擎 / 高级 / 安全 / 消息 / 插件 / 技能 / Goal 监工 / 多机协作),右侧内容独立滚动;窄窗口自动回退横向 tab;搜索框跨面板全景过滤;保存/测试按钮常驻底部,表单有未保存改动时亮提示点。
 - **接口**:provider(OpenAI / Anthropic)、base URL、模型、key。GLM / DeepSeek / OrcaRouter / OpenAI / Anthropic 预设。智谱余额查询按钮。safeStorage 加密存储。
 - **安全**:隐私闸(数据出网敏感检测)开关。
-- **行为**:shell 审批模式、sandbox 级别、计划模式、CLI 引擎开关、关窗行为(退出 / 最小化 / 托盘)。
+- **行为**:shell 审批模式、sandbox 级别、计划模式、CLI 引擎插件开关、关窗行为(退出 / 最小化 / 托盘)、**复杂任务后台执行(V3)**、Computer Use 后台模式(不动鼠标)。
 - **价格**:每个模型的输入/输出价格,用于成本计算。
 - **界面**:语言(English / 简体中文 / 繁體中文 / 日本語)、主题(dark / light,实时预览)。
 - **长期记忆**:导出/导入 JSON。
@@ -202,14 +203,15 @@ KinetAiosWin/
       TaskManager.ts        # 会话管理 + 引擎分派 + 记忆抽取
       engines.ts            # Engine 接口 + Direct/ClaudeCode/Codex + 跨平台 CLI spawn
       AgentLoop.ts          # ReAct 循环(Direct)+ 历史压缩 + 超长自缩
-      V3/                   # Direct V3: 意图路由 + fast/deep 路径(deep 为 DAG 并行)
+      V3/                   # Direct V3: 意图路由 + fast/deep 路径(deep 为 DAG 并行 + checkpoint)
+      JobManager.ts         # 后台 Job(deep 任务后台执行/断点续跑/成本落库)
       glm.ts                # Provider + OpenAI/Anthropic SSE 流式 + 重试
       updater.ts            # GitHub Releases 更新检查
       tools.ts              # 30+ 内置工具 + computer-use 胶水 + 焦点守卫
       computer-use.ts       # 截屏 / 鼠标 / 键盘(系统原生 API)
       mcp.ts                # MCP 客户端(扫描 + stdio + 重连)
       mcp-server.ts         # MCP 服务端(HTTP+SSE, run_agent, token 鉴权)
-      skills.ts             # skills/commands/agents/plugin 扫描
+      skills.ts             # skills/commands/agents/plugin/内置 skill 扫描
       plugins.ts            # 插件加载器(SDK v3: 工具/slash命令/hooks/面板)
       store.ts              # better-sqlite3 + FTS5
       settings.ts           # 配置(API key 加密落盘, lang, embedding)

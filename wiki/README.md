@@ -18,16 +18,17 @@ Both files carry a language switcher at the top. See [[Wiki-Sync]] for the ratio
 | `Home` | Wiki landing / feature matrix / entry points |
 | `Getting-Started` | First launch → first task |
 | `Architecture` | Three-layer structure / shared/types.ts / KinetAPI contract |
-| `Engines` | Three-engine comparison + when to use which |
+| `Engines` | Engine comparison (V1/V2/V3 + CLI + plugin engines) + when to use which |
+| `Choose-Engine` | V1/V2/V3 selection guide: cheat sheet + scenario table |
 | `Direct-Engine` | ReAct loop / memory injection / context management |
 | `Tools-and-MCP` | Built-in tools + MCP integration |
 | `Long-Term-Memory` | Extraction / injection / 🧠 panel / import-export |
-| `Skills` | skill / command / agent scanning + `/` invocation |
+| `Skills` | skill / command / agent scanning + `/` invocation + skills panel |
 | `Files-and-Preview` | Files window + webview + editor |
 | `Git-Integration` | changes / history / per-file diff / commit show |
 | `Rules-and-Context` | AGENTS / CLAUDE / KINET / KINET-CONTEXT |
 | `Workbench` | Project card overview |
-| `Settings` | Six setting sections (API / Appearance / Engine / Messaging / Advanced / Plugins) |
+| `Settings` | Ten setting tabs (Model / Appearance / Engine / Advanced / Security / Messaging / Plugins / Skills / Goal / Mesh) |
 | `Messaging-Bots` | Feishu & WeCom bot integration (WS connection, slash commands, session reuse) |
 | `Global-Hotkey` | Global hotkey + quick panel + tray |
 | `i18n` | Four-language switching |

@@ -2,28 +2,33 @@
 
 # Settings
 
-Top-right **⚙** in the main window. Five sections.
+Top-right **⚙** in the main window. Two-column layout: vertical tab nav on the left (Model / Appearance / Engine / Advanced / Security / Messaging / Plugins / Skills / Goal Supervisor / Mesh), independently scrolling content on the right; narrow windows fall back to horizontal tabs. A search box filters across all panels. **Save / Test buttons are pinned to the bottom** of the content pane — visible from any tab; the save button lights a dot when there are unsaved changes.
 
-## API
+## Model
 
 | Field | Description |
 |---|---|
 | Provider protocol | `OpenAI-compatible` / `Anthropic`. Determines whether requests go to `/chat/completions` or `/v1/messages` |
-| Base URL | Endpoint root. Preset buttons: GLM Zhipu / DeepSeek / OpenAI / Anthropic |
+| Base URL | Endpoint root. Preset buttons: GLM Zhipu / DeepSeek / OrcaRouter / OpenAI / Anthropic |
 | Model | Default model. e.g. `glm-4.6` / `claude-sonnet-4-6` / `gpt-4o`. Can be overridden per session |
 | API Key | Encrypted via safeStorage (macOS Keychain / Windows DPAPI). Plaintext never goes into settings.json |
 | **Test connection** | Sends a minimal request to verify. **Always test before saving** |
+| **Add model (v3.7.3+)** | Model profile editing moved into a centered modal: profile name / key / URL / models / protocol / reasoning / pricing / balance check, with built-in test connection. Saved profiles appear in the list immediately |
+| Zhipu balance | One-click query of the remaining balance for GLM keys |
 
 `AppSettings.apiKey` is encrypted via `safeStorage.encryptString`, stored as `apiKeyEnc` in `userData/settings.json`.
 
-## Behavior
+## Engine / Behavior (Advanced)
 
 | Field | Description |
 |---|---|
 | Shell approval | `always` (default, modal every time) / `never` (auto-allow, use with caution) |
 | Sandbox (Claude Code / Codex) | `readOnly` / `workspaceWrite` / `fullAccess`. Maps to `--permission-mode` (CC) / `-s` (Codex) |
 | Plan mode | On → engine is read-only (CC goes `plan` mode, Codex goes `read-only`) |
-| Enable CLI engines | Off by default. When on, scans PATH for `claude` / `codex` and adds them to the engine dropdown |
+| CLI engine plugins | Claude Code / Codex are **plugin-gated** — enable them in ⚙ → Plugins to add them to the engine dropdown |
+| **Run complex tasks in background (V3)** (v3.8.0+) | On (default) → tasks V3 grades as `deep` submit to the JobManager; the session unlocks immediately and the result backfills when done. Off → synchronous wait |
+| Computer Use background mode | Mouse/keyboard events are delivered to the target window in the background — your real cursor and focus never move (full support on Windows) |
+| Window close behavior | Quit / minimize / tray |
 
 ## Pricing
 
@@ -51,6 +56,10 @@ i18n internals: [[i18n]].
 | Import JSON | Accepts the above structure **or** a plain `string[]`. Dedupes by content. Returns `{ imported: N, skipped: N }` |
 
 Good for machine migration, backup, sharing across providers. See [[Long-Term-Memory]].
+
+## Skills (v3.7.2+)
+
+The Skills tab aggregates every skill / command / agent from all sources — Claude Code, Codex, plugin-contributed, and the app's own **built-in skills** (read-only, shipped with the app; the first one, `data-analysis`, ports the V3 analysis discipline). Search, view, and edit user-level source files directly; plugin/built-in skills are read-only. Changes take effect immediately. See [[Skills]].
 
 ## Messaging
 

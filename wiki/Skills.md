@@ -10,13 +10,17 @@ The Direct engine supports invocable skills / commands / agents. Scanned from lo
 
 | Path | Source | Type |
 |---|---|---|
+| `<resources>/skills/*` (packaged) or `skills/*` (dev) | **Built-in** (read-only) | skill |
 | `~/.claude/skills/*` | Claude Code user skills | skill |
 | `~/.claude/commands/*` | Claude Code user commands | command |
 | `~/.claude/agents/*` | Claude Code user agents | agent |
 | Claude Code plugins | Installed plugin content (`~/.claude/plugins/*`) | various |
 | `~/.codex/skills/*` | Codex skills | skill |
+| Installed KinetAios plugins | Plugin-contributed (read-only) | various |
 
 Each skill is a directory with a `SKILL.md` (frontmatter: `name` / `description`).
+
+**Built-in skills** ship with the app (v3.7.3+). The first one, `data-analysis`, ports the V3 analysis discipline: schema before conclusions, compute via tools not mental math, intermediate results on disk, sourced conclusions, cross-checked key figures. Invoke it via `/data-analysis`, or let V3 auto-load it when data files appear in the task.
 
 ## Invocation
 
@@ -50,20 +54,9 @@ Concatenated into `systemPrompt` (after baseSystemPrompt, before rules).
 
 A skill's body is only injected on the turn the user invokes `/skill-name`. Not persisted to subsequent turns (unless invoked again).
 
-## Listing
+## Skills panel (Settings → Skills, v3.7.2+)
 
-`api.listSkills()` → `SkillInfo[]`:
-
-```ts
-{
-  name: string;        // invocation name (for /name)
-  description: string; // from SKILL.md frontmatter
-  source: 'claude' | 'codex';
-  type: 'skill' | 'command' | 'agent';
-}
-```
-
-The main window's ⚡ button opens this list (read-only display; can't edit skills in-app).
+Aggregates every skill/command/agent from all sources (Claude Code / Codex / built-in / plugins) into one searchable panel. User-level skills are **editable in-app** (opens the source file in an editor modal); plugin and built-in skills are read-only. Changes take effect immediately — no restart.
 
 ## Adding a new skill
 

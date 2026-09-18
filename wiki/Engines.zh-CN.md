@@ -2,22 +2,25 @@
 
 # 引擎
 
-KinetAios 支持三个**内置** agent 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(几套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。在此之上,**插件引擎**(SDK v3)能把任意外部 CLI agent 注册为 `plugin:<name>` —— 见 [[Plugins]]。
+KinetAios 内置**三代 Direct 引擎**(V1/V2/V3),加上走插件系统的 CLI 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(几套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。在此之上,**插件引擎**(SDK v3)能把任意外部 CLI agent 注册为 `plugin:<name>` —— 见 [[Plugins]]。
 
 ## 一句话区分
 
 | 引擎 | 实现 | 工具系统 | 适用 |
 |---|---|---|---|
-| **Direct (Kaios)** | 内置 ReAct loop,直连 LLM provider | 本仓库 `tools.ts` 的 10 个工具 + MCP | 想自己控工具、控成本、看每步 |
-| **Claude Code** | spawn `claude -p --output-format stream-json` | Claude Code 自带(Read/Write/Edit/Bash/Glob/Grep) | 已习惯 Claude Code CLI 的流 |
-| **Codex** | spawn `codex exec --json` | Codex 自带 | 已习惯 Codex CLI 的流 |
+| **Direct V1 (Kaios)** | 内置 ReAct loop,直连 LLM provider | `tools.ts` 内置工具 + MCP | 问答、小修改,精确控成本控步骤 |
+| **Direct V2** | 在 V1 工具上做 Plan-Execute-Verify-Judge | 同 V1 + 任务清单卡 | 带验证的多文件改动 |
+| **Direct V3** | 意图路由 → fast/std/deep;deep = DAG | 同 V1 + 分析模式 | 数据分析、跨文件重构、不确定用哪个时 |
+| **Claude Code** *(插件开关)* | spawn `claude -p --output-format stream-json` | Claude Code 自带(Read/Write/Edit/Bash/Glob/Grep) | 已习惯 Claude Code CLI 的流 |
+| **Codex** *(插件开关)* | spawn `codex exec --json` | Codex 自带 | 已习惯 Codex CLI 的流 |
+| **DeepSeek Harness** *(插件引擎)* | spawn `dsh` CLI headless profile | 该 CLI 自带 | DeepSeek 一次性任务 |
 | **plugin:<name>** | spawn 插件声明的任意 CLI | 该 CLI 自带 | 想接入其它 CLI agent(零代码,纯 manifest) |
 
-CLI 引擎需要先在本机装好 CLI;默认关。⚙ → 行为 → 「启用 CLI 引擎」打开,才会扫 PATH。
+CLI 引擎需要先在本机装好 CLI。它们**由插件开关控制**:在 ⚙ → 插件 里启用 `claude-code` / `codex` 插件,引擎才进下拉。V1/V2/V3 怎么选见 [[Choose-Engine]]。
 
-## Direct (Kaios)
+## Direct V1 (Kaios)
 
-本仓库的内置引擎。详见 [[Direct-Engine]]。
+本仓库的内置 ReAct 引擎。详见 [[Direct-Engine]]。
 
 - **协议**:`OpenAI 兼容` 或 `Anthropic`,二选一。Provider 在 `src/main/glm.ts`。
 - **流式**:SSE,双向 OpenAI ↔ Anthropic 转换。
@@ -27,6 +30,29 @@ CLI 引擎需要先在本机装好 CLI;默认关。⚙ → 行为 → 「启用 
 - **摘要压缩**:超 30K 时把头部调一次 LLM 压成摘要,保留尾部完整轮次(`compactHistory`)。
 
 详见 [[Direct-Engine]]、[[Tools-and-MCP]]。
+
+## Direct V2 — Plan-Execute-Verify-Judge
+
+`src/main/DirectV2Engine.ts`。复杂任务先进**规划阶段**(只读探查,产出分步计划),再按计划逐步执行,每步可带验证命令(类型检查/测试),失败自动重试(每步 ≤3 次,最多重新规划 2 次)。任务清单实时渲染为聊天流里的清单卡(`todo_write`)。太简单的任务自动退化为普通模式。
+
+## Direct V3 — 意图路由器(默认)
+
+`src/main/V3/`。零成本规则路由,按查询自动选三条路径之一:
+
+| 路径 | 触发 | 行为 |
+|---|---|---|
+| `fast` | 查文档、简单问答 | 单轮直出,零额外开销 |
+| `std` | 修 bug、写功能、数据分析 | 多轮工具执行 |
+| `deep` | 跨文件重构、架构级变更 | 规划为 **DAG**,无依赖节点并行 |
+
+deep 路径增强(v3.8.0):
+
+- **后台执行** —— deep 任务提交 `JobManager`(`src/main/JobManager.ts`),会话立即解锁可继续对话;期间实时显示运行节点数与成本,完成自动回贴。开关:⚙ →「复杂任务后台执行(V3)」(默认开)。
+- **节点级 checkpoint** —— 每个 DAG 节点完成即落 checkpoint;任务被杀/失败/重启后从最后断点继续,不再整图作废。带断点的 job 重启后标 `paused`,一键恢复。
+- **同层受限并行** —— 同层只读节点按 `dagConcurrency`(缺省 3)分批并行;写节点保持串行防竞态。
+- **分析模式** —— 任务描述里出现数据文件(csv/xlsx/db)时,V3 自动加载 `data-analysis` 工作法:先摸 schema 再下结论、计算交给工具(python/sqlite)不心算、中间产物落盘、结论可溯源、关键数字交叉验证。状态栏出现「📊 分析模式」即已生效。
+
+逐任务对比见 [[Choose-Engine]]。
 
 ## Claude Code
 
@@ -93,6 +119,6 @@ Direct 还额外注入 `AGENTS.md` / `CLAUDE.md`(约定大于配置)。详见 [[
 
 ## 怎么选
 
-- **想用 GLM / DeepSeek / OpenAI / Anthropic 直连 + 自定义工具** → Direct
+- **想用 GLM / DeepSeek / OpenAI / Anthropic 直连 + 自定义工具** → Direct(快任务 V1,多步任务 V3)
 - **已经付了 Claude / OpenAI 的订阅,想用本地 CLI 的体验** → Claude Code / Codex
-- **不确定** → 默认 Direct,跑一阵再决定
+- **不确定** → 默认 V3,它自己路由 fast/std/deep。逐任务对比见 [[Choose-Engine]]
