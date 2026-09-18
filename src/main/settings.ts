@@ -169,7 +169,11 @@ export function saveSettings(s: AppSettings): void {
   if (s.wecomOA) toWrite.wecomOA = { ...s.wecomOA, corpsecret: encStr(s.wecomOA.corpsecret) };
   if (s.feishuBot) toWrite.feishuBot = { ...s.feishuBot, appSecret: encStr(s.feishuBot.appSecret) };
   if (s.localMcpServer) toWrite.localMcpServer = { ...s.localMcpServer, token: encStr(s.localMcpServer.token) };
-  fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2));
+  // 0600:文件里是加密凭据,但仍不该让同机其它用户可读(实测默认 0644)。
+  // Windows 忽略 mode 参数(ACL 体系),POSIX 生效。
+  try { fs.chmodSync(file(), 0o600); } catch { /* 首次写前文件可能不存在,写完再试一次 */ }
+  fs.writeFileSync(file(), JSON.stringify(toWrite, null, 2), { mode: 0o600 });
+  try { fs.chmodSync(file(), 0o600); } catch { /* 已存在文件 writeFileSync 不会改 mode,这里兜底 */ }
 }
 
 // Snapshot for one request — reads live settings so a settings change takes effect next task.

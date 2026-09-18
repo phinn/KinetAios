@@ -715,7 +715,24 @@ const webFetch: Tool = {
       let currentUrl = s;
       const resp = await fetchWithSafeRedirects(currentUrl, BROWSER_HEADERS, timeout, 5);
       currentUrl = resp.finalUrl;
-      const raw = await resp.resp.text();
+      // 流式读取 + 超限中止:Content-Length 可伪造/缺失(chunked),读侧必须兜底。
+      // Stream-read with cap: Content-Length can lie, enforce at read side too.
+      let raw = '';
+      const reader = resp.resp.body?.getReader();
+      if (reader) {
+        const dec = new TextDecoder();
+        let total = 0;
+        for (;;) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          total += value.byteLength;
+          raw += dec.decode(value, { stream: true });
+          if (total > 16 * 1024 * 1024) { reader.cancel().catch(() => {}); throw new Error('响应超过 16MB 上限,已中止'); }
+        }
+        raw += dec.decode();
+      } else {
+        raw = await resp.resp.text();
+      }
       const ct = resp.resp.headers.get('content-type') ?? '';
 
       // JSON / 纯文本 → 直接用
@@ -744,6 +761,9 @@ async function fetchWithSafeRedirects(
   signal: AbortSignal,
   maxRedirects = 5,
 ): Promise<{ resp: Response; finalUrl: string }> {
+  // 响应体读取上限:web_fetch 只做正文提取,超过即无意义,纯属 DoS 面。
+  // Body read cap: web_fetch only needs page text; anything larger is a DoS vector.
+  const MAX_FETCH_BODY = 16 * 1024 * 1024;
   let current = url;
   for (let hop = 0; hop <= maxRedirects; hop++) {
     const u = new URL(current);
@@ -751,6 +771,12 @@ async function fetchWithSafeRedirects(
     const safe = await assertSafeHost(u.hostname.toLowerCase());
     if (!safe.ok) throw new Error(`重定向目标被安全策略拦截(${u.hostname}):${safe.reason ?? '内网地址'}`);
     const resp = await fetch(current, { headers, signal, redirect: 'manual' });
+    // Content-Length 预检:声明超大的响应直接拒,不读体(防恶意 URL 撑爆内存)。
+    const cl = Number(resp.headers.get('content-length') ?? 0);
+    if (cl > MAX_FETCH_BODY) {
+      resp.body?.cancel().catch(() => {});
+      throw new Error(`响应过大(${(cl / 1024 / 1024).toFixed(0)}MB > 上限 ${MAX_FETCH_BODY / 1024 / 1024}MB),已中止`);
+    }
     // 非 3xx → 这是最终响应
     if (resp.status < 300 || resp.status >= 400) return { resp, finalUrl: current };
     const loc = resp.headers.get('location');

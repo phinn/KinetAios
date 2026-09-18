@@ -234,7 +234,10 @@ export class LocalMcpServer {
     // MCP 客户端(桌面应用、CLI)不走浏览器 CORS,不受此限制。
     // / CORS: only allow localhost origins (prevents malicious web pages from calling local MCP → RCE).
     const origin = req.headers.origin ?? '';
-    const allowedOrigins = ['http://localhost', 'http://127.0.0.1', 'http://localhost:3000', 'http://localhost:8080', 'null', 'file://'];
+    // 注意:不含 'null' —— sandboxed iframe / data: 页面发请求时 Origin 就是字符串 "null",
+    // 放行它等于放行任意恶意网页嵌 iframe 打本机端口(MCP token 会随请求带上吗?不会,
+    // 但 CORS 放行 + token 泄露场景叠加时多开一道门)。本地 file:// 客户端本就不发 Origin。
+    const allowedOrigins = ['http://localhost', 'http://127.0.0.1', 'http://localhost:3000', 'http://localhost:8080'];
     const corsOrigin = allowedOrigins.some(a => origin.startsWith(a)) ? origin : '';
     if (corsOrigin) {
       res.setHeader('Access-Control-Allow-Origin', corsOrigin);
@@ -307,9 +310,9 @@ export class LocalMcpServer {
         res.end(JSON.stringify({ error: '未授权:token 不匹配' }));
         return;
       }
-      // CORS:同上,仅允许 localhost / CORS: same as above, localhost only
+      // CORS:同上,仅允许 localhost(不含 'null'/file:// —— 防 sandboxed iframe 伪造)
       const liveOrigin = (req.headers.origin ?? '');
-      const liveAllowed = ['http://localhost', 'http://127.0.0.1', 'null', 'file://'];
+      const liveAllowed = ['http://localhost', 'http://127.0.0.1'];
       const liveCors = liveAllowed.some(a => liveOrigin.startsWith(a)) ? liveOrigin : '';
       const headers: Record<string, string> = {
         'Content-Type': 'text/event-stream',
