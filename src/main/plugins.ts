@@ -6,7 +6,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
-import type { Tool } from './tools';
+import type { Tool, ToolCtx } from './tools';
 import type { SkillInfo, EngineKind } from '../shared/types';
 import { getSettings, saveSettings } from './settings';
 
@@ -29,6 +29,13 @@ export interface PluginManifest {
   engines?: EngineKind[];
   // v2 新增: 权限声明(告知性质, 不做运行时拦截)
   permissions?: string[];
+  // P0 安全: 审批门。'always'(默认) = 该插件所有工具执行前统一走 ctx.confirm(shell 审批桥);
+  // 'never' = 直接放行(信任插件, 与内置只读工具同权)。声明制在 SDK 层兜底 ——
+  // 插件代码自己不写 confirm 也有闸(office-suite/hw-diag 曾整插件绕过审批链)。
+  // 已自带 ctx.confirm 的插件(arduino-dev/modbus-dev 等)保持默认即可,不会双弹窗:
+  // SDK 包装时注入的 confirm 前置检查,插件内部的二次 confirm 调用照常走同一审批桥,只是多弹一次,
+  // 故这类插件显式声明 approval:'never' 以保持原 UX(其内部 confirm 已覆盖全部执行点)。
+  approval?: 'always' | 'never';
   // v2.2 新增: 按需注入关键词 —— 有此字段时, 仅当用户输入命中任一关键词才注入 systemPrompt。
   // 无此字段 = 始终注入(向后兼容)。省 token: 编程任务不白送 C++ 启蒙 / 数学练习等无关 prompt。
   keywords?: string[];
@@ -392,7 +399,30 @@ function isPluginEnabled(name: string): boolean {
 
 // 给 allTools() 用: 把所有【已启用】插件的工具摊平返回。无插件 = 空数组。
 export function pluginTools(): Tool[] {
-  return loadPlugins().filter((p) => isPluginEnabled(p.manifest.name)).flatMap((p) => p.tools);
+  return loadPlugins()
+    .filter((p) => isPluginEnabled(p.manifest.name))
+    .flatMap((p) => wrapPluginTools(p));
+}
+
+// ── P0 安全: 插件工具统一审批包装 ──────────────────────────────
+// 此前 office-suite(18 工具全 exec 无 confirm)、hw-diag(i2cdetect 命令拼接注入)
+// 整个插件绕过 shell 审批桥 —— sandbox=readOnly 形同虚设。
+// 修复: manifest.approval 默认 'always',SDK 包装层在每个工具 run 前注入 ctx.confirm。
+// 插件内部已有的 confirm 调用(arduino-dev 等)不受影响;声明 'never' 的插件信任放行。
+function wrapPluginTools(p: LoadedPlugin): Tool[] {
+  if (p.manifest.approval === 'never') return p.tools;
+  const label = p.manifest.name;
+  return p.tools.map((t) => ({
+    ...t,
+    // 包装后不可再视为只读并发 —— 是否只读由底层决定,保守串行
+    readOnly: false,
+    async run(args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
+      const summary = JSON.stringify(args).slice(0, 300);
+      const ok = await ctx.confirm(`插件 [${label}] 调用 ${t.name}\n  参数: ${summary}`);
+      if (!ok) return `❌ 用户拒绝执行插件工具 ${label}.${t.name}`;
+      return t.run(args, ctx);
+    },
+  }));
 }
 
 // ── 导出: System Prompt(v2 新增) ──────────────────────────────

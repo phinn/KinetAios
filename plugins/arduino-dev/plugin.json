@@ -1,5 +1,6 @@
 {
   "name": "arduino-dev",
+  "approval": "never",
   "version": "1.0.0",
   "description": "Arduino / ESP32 / STM32duino 硬件开发插件 —— 编译、烧录、串口监控、库管理。包装 arduino-cli 为 AI 工具，支持编译验证闭环。",
   "author": "KinetAios",

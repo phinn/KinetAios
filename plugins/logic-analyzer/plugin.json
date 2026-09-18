@@ -1,5 +1,6 @@
 {
   "name": "logic-analyzer",
+  "approval": "never",
   "version": "1.0.0",
   "description": "逻辑分析仪插件 —— 对接 sigrok-cli 进行协议捕获与解码(UART/I²C/SPI/1-Wire/WS2812 等),支持采样配置、协议解析、信号导出。",
   "author": "KinetAios",

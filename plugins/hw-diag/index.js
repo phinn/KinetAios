@@ -96,7 +96,12 @@ const i2cScan = {
 
     if (method === 'system') {
       // Linux: 使用 i2cdetect
-      const bus = args.port || '1'; // 默认 i2c-1
+      // P0 注入修复:bus 只允许 0-255 的整数(i2c 总线编号),拒绝任何 shell 元字符。
+      // 之前 `i2cdetect -y ${bus}` 直接拼接 —— bus="1; rm -rf ~" 即注入。
+      const bus = String(args.port || '1').trim();
+      if (!/^\d{1,3}$/.test(bus) || Number(bus) > 255) {
+        return `❌ 非法总线编号: ${bus}(只接受 0-255 的整数,如 "1" 表示 i2c-1)`;
+      }
       const cmd = `i2cdetect -y ${bus} 2>&1`;
       const r = await shellExec(cmd, ctx.cwd, 10000);
       if (!r.ok) {

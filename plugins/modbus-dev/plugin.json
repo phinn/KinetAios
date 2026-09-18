@@ -1,5 +1,6 @@
 {
   "name": "modbus-dev",
+  "approval": "never",
   "version": "1.0.0",
   "description": "Modbus 通信调试插件 —— Modbus RTU/TCP 从站扫描、读保持寄存器/线圈/输入寄存器、写寄存器、CRC 校验。覆盖工业设备通信场景。",
   "author": "KinetAios",

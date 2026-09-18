@@ -1,5 +1,6 @@
 {
   "name": "mqtt-dev",
+  "approval": "never",
   "version": "1.0.0",
   "description": "MQTT 通信调试插件 —— 连接 broker、订阅/发布消息、QoS 设置、 retained 消息、遗嘱消息。支持 Mosquitto/EMQX 等标准 broker,覆盖 IoT 通信全场景。",
   "author": "KinetAios",

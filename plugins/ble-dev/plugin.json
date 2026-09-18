@@ -1,5 +1,6 @@
 {
   "name": "ble-dev",
+  "approval": "never",
   "version": "1.0.0",
   "description": "蓝牙 BLE 调试插件 —— BLE 设备扫描、GATT 服务/特征读写、通知监听。基于 Python bleak 库,覆盖 ESP32/STM32/nRF52 BLE 开发调试。",
   "author": "KinetAios",
