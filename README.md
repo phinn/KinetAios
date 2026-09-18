@@ -13,7 +13,7 @@
 
 ![Four engines running side-by-side](documents/demo-arena.gif)
 
-A **local-first AI agent dashboard** for **Windows 11 and macOS**. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
+A **local-first AI agent dashboard** for **Windows 11 and macOS — both first-class platforms** (the "Win" folder name is historical; the repo is phinn/KinetAios). Platform differences (cmd.exe vs /bin/sh, hotkey, tray) are routed at runtime; features are aligned on both sides. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
 
 ---
 
@@ -253,7 +253,8 @@ npm run dist         # default target for the current platform
 ## Known constraints
 
 - **Window-close behavior is configurable** (quit / minimize / tray), default minimize. The global hotkey only works while the app is running.
-- Cross-compiling native modules from macOS to Windows is unreliable — build Windows installers on a Windows machine or a GitHub Actions `windows-latest` runner.
+- **No cross-building** — build Windows installers on a Windows machine or a GitHub Actions `windows-latest` runner, and dmgs on a Mac (native-module rebuild needs the target toolchain).
+- Platform-specific code paths (shell / PATH / hotkey / tray) should be verified on their target OS.
 
 ---
 

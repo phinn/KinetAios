@@ -8,7 +8,7 @@ Welcome to the KinetAios wiki. This is the **feature manual** — for users who 
 
 ## What this is
 
-KinetAios is a local-first AI agent dashboard, cross-platform (Windows 11 + macOS). Run multiple sessions concurrently, stream answers, use shell/file/search/MCP tools, SQLite history + long-term memory, global hotkey, per-session model.
+KinetAios is a local-first AI agent dashboard, cross-platform — **Windows 11 and macOS are both first-class** (the "Win" folder name is historical). Platform differences (cmd.exe vs /bin/sh, hotkey, tray) are routed at runtime. Run multiple sessions concurrently, stream answers, use shell/file/search/MCP tools, SQLite history + long-term memory, global hotkey, per-session model.
 
 Stack: **Electron + TypeScript**, **better-sqlite3 + FTS5**, **no frontend framework** (vanilla TS + HTML/CSS, bundled with esbuild).
 

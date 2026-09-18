@@ -8,7 +8,7 @@
 
 ## 这是什么
 
-KinetAios 是本地优先的 AI agent 仪表盘,跨平台(Windows 11 + macOS)。并发跑多个会话、流式答案、用 shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。
+KinetAios 是本地优先的 AI agent 仪表盘,跨平台 —— **Windows 11 和 macOS 都是一等公民**("Win"目录名是历史遗留)。平台差异行为(cmd.exe 还是 /bin/sh、热键、托盘)运行时按平台路由。并发跑多个会话、流式答案、用 shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。
 
 技术栈:**Electron + TypeScript**、**better-sqlite3 + FTS5**、**无前端框架**(vanilla TS + HTML/CSS,esbuild 打包)。
 
