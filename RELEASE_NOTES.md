@@ -1,5 +1,28 @@
 # Release Notes
 
+## v3.8.0 — V3 deep 任务后台 Job 化 + 引擎选择指南
+
+**发布日期：** 2026-09-18(自 v3.7.3 起)
+
+### ✨ 功能
+
+- **V3 deep 任务后台执行**(a4a2ab8)—— deep 任务提交 JobManager 后会话立即解锁,可继续对话;完成结果自动回贴,期间实时显示运行数与成本;设置页新增「复杂任务后台执行(V3)」开关(默认开,四语)
+- **节点级断点续跑**(847b409)—— DAG 每个节点完成即落 checkpoint;任务终止/失败/重启后可从断点继续,不再整图作废;带断点的 job 重启后标 paused 可一键恢复
+- **同层受限并行**(847b409)—— 同层只读节点按 `dagConcurrency`(缺省 3)分批并行,写节点保持串行防竞态
+- **长时 CLI 子任务后台化**(847b409)—— `dispatch` job 超时上限 30 分钟(同步路径仍 5 分钟),可取消、结果落库
+- **引擎选择指南**(`wiki/Choose-Engine.zh-CN.html`)—— V1/V2/V3 各自适合的任务、速查表与场景对照(MD + 暗色 HTML 双版本)
+
+### 🐛 修复
+
+- **打破 emitTeamEvent 循环依赖**(847b409)—— 抽到 `team-events.ts`,engines/V3/DirectV2 不再反向依赖 main.ts,测试可独立 bundle
+- **checkpoint 内存行不同步**(847b409)—— resume 校验读内存行导致误拒,已在 sink 中同步
+
+### 🧪 测试
+
+- 新增 `scripts/test/95-jobs.test.ts` 11 用例:生命周期/并发池/kill/resume/cost/断点恢复/并发峰值/hydrate(全套 11/11 文件通过)
+
+---
+
 ## v3.7.3 — 模型配置弹层化 + 内置 skill 分发 + 主题原生控件修复
 
 **发布日期：** 2026-09-17(自 v3.7.2 起 7 commits)
