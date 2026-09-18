@@ -19,7 +19,7 @@ function tr(key: string, params?: Record<string, string | number>): string {
   return t(lang, key, params);
 }
 function esc(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function applyI18nDOM(): void {
   document.documentElement.lang = lang;

@@ -713,7 +713,7 @@ function bindMenuHandlers(menu: HTMLElement, getTarget: () => DirEntry | null): 
   };
 }
 
-// ── HTML 转义(展示用户内容时防 XSS) / Escape HTML for safe display ──
+// ── HTML 转义(展示用户内容时防 XSS;含单引号,onclick='...' 属性安全) / Escape HTML for safe display ──
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }

@@ -1433,7 +1433,9 @@ function showInputOverlay(title: string, placeholder: string): Promise<string | 
 (window as unknown as Record<string, unknown>).__teamDelete = teamDelete;
 
 function escapeHtml(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  // 单引号必须转义:onclick='...${name}...' 这类单引号属性里,不转义 ' 即可逃逸注入 JS。
+  // Single quotes MUST be escaped: unescaped ' breaks out of onclick='...' attribute JS.
+  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // 加载当前 cwd 的 KINET.md 到 CodeEditor。空文件 → 空白编辑器(保存就创建文件)。
