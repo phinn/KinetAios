@@ -225,6 +225,8 @@ const api: KinetAPI = {
   confirmResponse: (id, approved) => ipcRenderer.send('confirm-response', { id, approved }),
   // 隐私闸回执走独立通道(独立 pending 表,不受 confirm 链的 sessionApproved 旁路影响)
   confirmResponse2: (id, approved) => ipcRenderer.send('privacy-confirm-response', { id, approved }),
+  // P2: 撤销 Computer Use 会话级授权
+  revokeComputerUseApproval: (convId?: string) => ipcRenderer.invoke('revoke-cu-approval', convId),
 
   // ── AgentTeams ──
   listTeams: (convId: string) => ipcRenderer.invoke('team-list', convId),

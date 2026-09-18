@@ -4806,6 +4806,8 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.notifyOnDone.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-cu-background" ${s.computerUseBackground ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-cu-background">${tr('settings.computerUseBackground')}</label></div>
         <div class="field-desc">${tr('settings.computerUseBackground.desc')}</div>
+        <div class="field-btn-row"><button id="s-revoke-cu" class="ghost">${tr('settings.revokeCU')}</button></div>
+        <div class="field-desc">${tr('settings.revokeCU.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-auto-skills" ${s.autoLoadSkills ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-auto-skills">${tr('settings.autoLoadSkills')}</label></div>
         <div class="field-desc">${tr('settings.autoLoadSkills.desc')}</div>
@@ -5210,6 +5212,12 @@ async function showSettings() {
   // preset 切换后也检测
   document.getElementById('s-preset')!.addEventListener('change', () => setTimeout(syncScanBtn, 0));
   syncScanBtn();
+
+  // P2: 撤销 Computer Use 会话级授权(引擎 tab 的「撤销鼠标/键盘授权」按钮)
+  document.getElementById('s-revoke-cu')?.addEventListener('click', async () => {
+    const n = await api.revokeComputerUseApproval();
+    uxToast.info(tr('settings.revokeCU') + `: ${n}`);
+  });
 
   // 读取本地 Ollama 模型列表 → 弹出选择菜单
   scanBtn.onclick = async () => {
@@ -6097,6 +6105,7 @@ function initSkillsTab(): void {
 // Read the settings form into AppSettings. Shared by Save and Test so Test validates the in-form
 // config rather than whatever was last persisted.
 function readSettingsForm(): AppSettings {
+  const current = lastSettingsSnapshot;
   return {
     presetId: (document.getElementById('s-preset') as HTMLSelectElement).value,
     apiKey: (document.getElementById('s-key') as HTMLInputElement).value,
@@ -6127,6 +6136,8 @@ function readSettingsForm(): AppSettings {
     ollamaParallel: Math.max(1, Number((document.getElementById('s-ollama-parallel') as HTMLInputElement).value) || 1),
     ollamaNumCtx: Math.max(2048, Number((document.getElementById('s-ollama-numctx') as HTMLInputElement).value) || 32768),
     searchEngine: ((document.getElementById('s-search-engine') as HTMLSelectElement)?.value || 'bing') as AppSettings['searchEngine'],
+    // Jina Reader 回退开关(checkbox 不在设置表单时保持既有值 —— 表单只提交,不重置未展示项)
+    jinaReaderFallback: (document.getElementById('s-jina-fallback') as HTMLInputElement)?.checked ?? current?.jinaReaderFallback ?? true,
     hifiContextBudget: Number((document.getElementById('s-hifi-budget') as HTMLInputElement).value) || 200000,
     v2ModelWindow: Number((document.getElementById('s-v2-window') as HTMLInputElement).value) || 1000000,
     v2BudgetRatio: (Number((document.getElementById('s-v2-ratio') as HTMLInputElement).value) || 8) / 100,

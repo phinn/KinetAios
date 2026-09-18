@@ -30,6 +30,27 @@ function genId(): string {
 // 数量上限:超过 MAX_SNAPSHOTS 删最旧的,防止目录无限增长。
 const MAX_SNAPSHOTS = 200;
 
+// P2: 把 .kinet-snapshots/ 写进项目 .git/info/exclude(本地忽略,不污染 .gitignore)。
+// 快照目录在 cwd 内,首次建快照时会被 git status 看到;exclude 不进版本库,零侵入。
+// Local-ignore the snapshot dir via .git/info/exclude — keeps `git status` clean
+// without touching the project's .gitignore.
+function ensureGitExcluded(cwd: string): void {
+  try {
+    const gitDir = path.join(cwd, '.git');
+    if (!fs.existsSync(gitDir)) return; // 非git目录跳过
+    const excludePath = path.join(gitDir, 'info', 'exclude');
+    fs.mkdirSync(path.join(gitDir, 'info'), { recursive: true });
+    let content = '';
+    try { content = fs.readFileSync(excludePath, 'utf8'); } catch { /* 不存在则新建 */ }
+    const entry = '.kinet-snapshots/';
+    if (!content.split('\n').some((l) => l.trim() === entry)) {
+      const sep = content && !content.endsWith('\n') ? '\n' : '';
+      const note = content.includes('KinetAios') ? '' : '# KinetAios 快照回滚点(自动添加)/ KinetAios snapshots (auto-added)\n';
+      fs.writeFileSync(excludePath, content + sep + note + entry + '\n', 'utf8');
+    }
+  } catch { /* best-effort,失败不影响快照功能 */ }
+}
+
 export function takeSnapshot(opts: {
   convId: string;
   cwd: string;
@@ -40,6 +61,7 @@ export function takeSnapshot(opts: {
   try {
     const snap: Snapshot = { id: genId(), ...opts, ts: Date.now() };
     fs.mkdirSync(dir(opts.cwd), { recursive: true });
+    ensureGitExcluded(opts.cwd); // 首次快照时把目录写进 .git/info/exclude(幂等)
     fs.writeFileSync(file(opts.cwd, snap.id), JSON.stringify(snap), 'utf8');
     // 写完后清理超额快照(保留最新的 MAX_SNAPSHOTS 条)。
     pruneSnapshots(opts.cwd);

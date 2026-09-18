@@ -345,6 +345,10 @@ export type AppSettings = {
   // ── web_search 搜索引擎选择 ── 'bing'(默认,大陆直连质量稳) | 'sogou' | 'google'(需科学上网) | 'duckduckgo'。
   // 所选引擎优先,失败自动回退到其余引擎,不影响可用性。
   searchEngine: SearchEngine;
+  // ── Jina Reader 回退(P2 隐私)── web_fetch 优先把 URL 交给第三方 r.jina.ai 抓取(返回干净 Markdown)。
+  // 默认开(大陆网络下原生 fetch 常被反爬挡,Jina 是可用性兜底);关 = 内容只经本机直连。
+  // 注意:开启时目标 URL(可能含敏感 query)会出网到 Jina,隐私敏感用户可关。
+  jinaReaderFallback: boolean;
   // ── 企业微信智能机器人 ── WebSocket 长连接模式,接收企信消息并路由到 Agent 引擎处理。
   wecomBot: WeComBotConfig;
   wecomOA: WeComOAConfig;
@@ -1026,6 +1030,8 @@ export interface KinetAPI {
   confirmResponse(id: string, approved: boolean): void;
   // 隐私闸独立回执通道(privacy-confirm-response)
   confirmResponse2(id: string, approved: boolean): void;
+  // P2: 撤销 Computer Use 会话级授权(返回撤销的会话数;不传 convId = 撤全部)
+  revokeComputerUseApproval(convId?: string): Promise<number>;
 
   // ── 实时语音助手(豆包实时语音大模型)──
   /** 启动语音会话(连接 WebSocket) */

@@ -2709,6 +2709,9 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 
 /* 字段描述文字 / Field description text */
 .field-desc { color: var(--text-dim); font-size: 0.846rem; line-height: 1.5; margin: -4px 0 10px 138px; }
+/* 按钮行(撤销授权等内联操作按钮)/ inline action button row in settings */
+.field-btn-row { margin: 2px 0 4px 138px; }
+.field-btn-row .ghost { font-size: 0.846rem; padding: 4px 12px; }
 /* 设置页 hint 提示框 / Settings hint box */
 .s-hint { color: var(--text-dim); font-size: 0.923rem; line-height: 1.6; margin-bottom: 12px; padding: 10px 12px; background: var(--bg-elev, rgba(255,255,255,0.02)); border: 1px solid var(--border-soft); border-radius: 8px; }
 .s-hint code { font-family: var(--mono); font-size: 0.846rem; background: var(--bg-2); padding: 1px 5px; border-radius: 3px; }
