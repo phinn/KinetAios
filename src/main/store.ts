@@ -95,6 +95,15 @@ export function initStore(): void {
       conv_id TEXT, step_id TEXT, row_type TEXT,
       plan_json TEXT, history_json TEXT, created_at REAL,
       PRIMARY KEY(conv_id, step_id));
+    -- 后台 Job(V3 deep Job 化):payload/checkpoint/result 均 JSON 整体存取,
+    -- checkpoint 由 executeDAG 节点迁移时整体覆写(节点级写放大可接受,DAG <30 节点)。
+    CREATE TABLE IF NOT EXISTS jobs(
+      id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, turn_id TEXT,
+      kind TEXT NOT NULL, status TEXT NOT NULL,
+      title TEXT DEFAULT '', payload TEXT DEFAULT '', checkpoint TEXT,
+      result TEXT, error TEXT, cost_usd REAL DEFAULT 0,
+      created_at INTEGER, updated_at INTEGER);
+    CREATE INDEX IF NOT EXISTS idx_jobs_conv ON jobs(conv_id);
     -- P0: Memory Blocks — 结构化核心记忆(借鉴 Letta Memory Blocks)。
     -- label 是 block 类型(persona/user_profile/project_context/active_goals),
     -- value 是内容,char_limit 防膨胀,read_only 标记不可被 agent 编辑。
@@ -1669,4 +1678,80 @@ export function arenaAggregate(): Array<{
     });
   }
   return result;
+}
+
+// ── Jobs(后台 Job 持久化)──
+// JobManager 拥有全部写入;store 只做行存取。payload/checkpoint/result 为 JSON 整体列。
+// JobManager owns all writes; this section is row storage only.
+
+export interface JobRow {
+  id: string;
+  convId: string;
+  turnId: string | null;
+  kind: string;
+  status: string;
+  title: string;
+  payload: string;
+  checkpoint: string | null;
+  result: string | null;
+  error: string | null;
+  costUSD: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function rowToJob(r: {
+  id: string; conv_id: string; turn_id: string | null; kind: string; status: string;
+  title: string; payload: string; checkpoint: string | null; result: string | null;
+  error: string | null; cost_usd: number | null; created_at: number | null; updated_at: number | null;
+}): JobRow {
+  return {
+    id: r.id, convId: r.conv_id, turnId: r.turn_id, kind: r.kind, status: r.status,
+    title: r.title, payload: r.payload, checkpoint: r.checkpoint, result: r.result,
+    error: r.error, costUSD: r.cost_usd ?? 0, createdAt: r.created_at ?? 0, updatedAt: r.updated_at ?? 0,
+  };
+}
+
+export function insertJob(j: JobRow): void {
+  stmt(`INSERT INTO jobs(id, conv_id, turn_id, kind, status, title, payload, checkpoint, result, error, cost_usd, created_at, updated_at)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?);`).run(
+    j.id, j.convId, j.turnId, j.kind, j.status, j.title, j.payload,
+    j.checkpoint, j.result, j.error, j.costUSD, j.createdAt, j.updatedAt);
+}
+
+export function updateJobFields(id: string, fields: Partial<Pick<JobRow, 'status' | 'checkpoint' | 'result' | 'error' | 'costUSD'>>): void {
+  const sets: string[] = ['updated_at = ?'];
+  const vals: unknown[] = [Date.now()];
+  if (fields.status !== undefined) { sets.push('status = ?'); vals.push(fields.status); }
+  if (fields.checkpoint !== undefined) { sets.push('checkpoint = ?'); vals.push(fields.checkpoint); }
+  if (fields.result !== undefined) { sets.push('result = ?'); vals.push(fields.result); }
+  if (fields.error !== undefined) { sets.push('error = ?'); vals.push(fields.error); }
+  if (fields.costUSD !== undefined) { sets.push('cost_usd = ?'); vals.push(fields.costUSD); }
+  vals.push(id);
+  stmt(`UPDATE jobs SET ${sets.join(', ')} WHERE id = ?;`).run(...(vals as never[]));
+}
+
+export function getJob(id: string): JobRow | null {
+  const r = stmt('SELECT * FROM jobs WHERE id = ?;').get(id) as Parameters<typeof rowToJob>[0] | undefined;
+  return r ? rowToJob(r) : null;
+}
+
+export function listJobRows(convId?: string, statuses?: string[]): JobRow[] {
+  const where: string[] = [];
+  const vals: unknown[] = [];
+  if (convId) { where.push('conv_id = ?'); vals.push(convId); }
+  if (statuses?.length) { where.push(`status IN (${statuses.map(() => '?').join(',')})`); vals.push(...statuses); }
+  const sql = `SELECT * FROM jobs ${where.length ? 'WHERE ' + where.join(' AND ') : ''} ORDER BY created_at DESC LIMIT 200;`;
+  const rows = stmt(sql).all(...(vals as never[])) as Array<Parameters<typeof rowToJob>[0]>;
+  return rows.map(rowToJob);
+}
+
+// 启动 hydrate:崩溃/重启后 running/queued 已无进程持有 → 标 failed(M3 落地后改 paused 可恢复)。
+export function failOrphanJobs(reason: string): void {
+  stmt("UPDATE jobs SET status='failed', error=?, updated_at=? WHERE status IN ('running','queued');")
+    .run(reason, Date.now());
+}
+
+export function deleteJobsByConv(convId: string): void {
+  stmt('DELETE FROM jobs WHERE conv_id = ?;').run(convId);
 }

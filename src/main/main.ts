@@ -29,6 +29,7 @@ import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, val
 import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
+import { initJobManager, jobManager } from './JobManager';
 import { getSettings, saveSettings, snapshot, balanceSnapshot } from './settings';
 import { setPrivacyConfirm } from './privacy-gate';
 import { t, type Lang } from '../shared/i18n';
@@ -1102,7 +1103,15 @@ function registerIpc(): void {
   });
   ipcMain.handle('delete-conversation', (_e, id: string) => {
     drainConfirms();
+    jobManager().purgeConv(id); // 级联:kill 未完成 job + 删 job 行
     return taskManager.deleteConversation(id);
+  });
+  // ── 后台 Job IPC ──
+  ipcMain.handle('job-list', (_e, convId?: string) => jobManager().list(convId));
+  ipcMain.handle('job-get', (_e, id: string) => jobManager().get(String(id)));
+  ipcMain.handle('job-kill', (_e, id: string, reason?: string) => {
+    jobManager().kill(String(id), reason ? String(reason) : undefined);
+    return true;
   });
   ipcMain.handle('clear-conversation', (_e, id: string) => taskManager.clearConversation(id));
   ipcMain.handle('rename', (_e, id: string, title: string) => taskManager.rename(id, title));
@@ -2924,6 +2933,17 @@ if (!gotLock) {
     initStore();
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。
+    // Job 事件桥接进会话事件流(agent-event 频道),renderer 无需新订阅路径。
+    initJobManager({
+      emitJob: (info) => {
+        safeSend(dashboardWin, 'job-update', info);
+      },
+      emitJobEvent: (convId, turnId, jobId, ev) => {
+        // 独立 job-event 频道:job 事件不进 agent-event(turn 状态机),renderer 只用于 Job 面板展示。
+        safeSend(dashboardWin, 'job-event', { convId, jobId, ev });
+      },
+    });
     // 把 taskManager 暴露给延迟加载模块(mcp-server 的 export/import session 等)。
     setTaskManager(taskManager);
     // Watch 模式:把 taskManager 注入 watcher(触发时起会话)+ 给所有现存会话的 cwd 起 watcher(若 .kinet-watch.json 存在)。

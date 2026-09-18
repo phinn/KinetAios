@@ -263,6 +263,37 @@ export class TaskManager {
     }
   }
 
+  // ── 后台 Job 结果回贴(JobManager 在 deep job 完成时调用)──
+  // 新建一个已完成 turn 承载结果;directHistory 仅在会话空闲时整体采纳
+  // (用户在 job 期间发过新消息 → 历史分叉,只贴结果不动历史,避免吞掉后续轮次上下文)。
+  appendJobResult(convId: string, opts: { title: string; answer: string; updatedHistory: ChatMsg[] | null; ok: boolean }): void {
+    const conv = this.convs.get(convId);
+    if (!conv) return; // 会话已删:吞掉(与 applyAndPersist 的迟到事件策略一致)
+    this.hydrate(convId);
+    const turn = newTurn(`[后台 Job] ${opts.title}`);
+    turn.answer = opts.answer;
+    turn.done = true;
+    conv.turns.push(turn);
+    store.saveTurn(convId, turn);
+    store.appendEvent(convId, turn.id, { type: 'user/message', text: `[后台 Job] ${opts.title}` });
+    store.appendEvent(convId, turn.id, opts.ok
+      ? { type: 'assistant/message', text: opts.answer.slice(0, 500) }
+      : { type: 'turn/error', message: opts.answer.slice(0, 500) });
+    if (opts.updatedHistory && conv.status !== 'running') {
+      conv.directHistory = opts.updatedHistory;
+    } else if (opts.updatedHistory) {
+      conv.statusNote = '⚠️ 后台 Job 结果已回贴;会话忙,上下文未合并(下轮对话不含 job 历史)';
+    }
+    const last = conv.turns[conv.turns.length - 1];
+    if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3') {
+      conv.ctxTokens = estTokenCount(conv.directHistory);
+    }
+    void last;
+    store.touchConversation(convId);
+    this.emit.emitConversation(conv);
+    this.emit.notifyDone(conv, opts.ok ? 'done' : 'error', false);
+  }
+
   deleteConversation(id: string): void {
     this.cancel(id);
     store.deleteConversation(id);

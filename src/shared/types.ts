@@ -33,6 +33,25 @@ export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'claudeCode
 export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'claudeCode', 'codex'];
 export type EngineKind = BuiltinEngineKind | `plugin:${string}`;
 
+// ── 后台 Job(V3 deep 路径 Job 化)──
+// Job 是引擎无关的后台执行单元:提交后立即可继续对话,完成/失败/取消状态经 IPC 通知。
+// Job is an engine-agnostic background execution unit; the session stays usable after submit.
+export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'killed';
+export type JobKind = 'v3-deep' | 'dispatch';
+// renderer 可见的 Job 摘要(payload/checkpoint 不出主进程,体积大且无展示价值)
+export interface JobInfo {
+  id: string;
+  convId: string;
+  turnId: string | null;
+  kind: JobKind;
+  status: JobStatus;
+  title: string;          // 展示名(V3 deep = 用户 prompt 前 60 字)
+  error: string | null;
+  costUSD: number;        // job 执行期累计 cost 事件求和
+  createdAt: number;
+  updatedAt: number;
+}
+
 // 插件引擎 id ↔ 插件名。plugin:foo ↔ foo。 / Plugin engine id ↔ plugin name.
 export function pluginEngineName(engine: string): string {
   return engine.startsWith('plugin:') ? engine.slice('plugin:'.length) : engine;
@@ -287,6 +306,8 @@ export type AppSettings = {
   voiceAutoSend: boolean;
   /** 根据任务自动加载 Skills:开 → system 注入目录 + 模型可用 load_skill 工具按需拉正文;关 → 仅手动 /name 生效 */
   autoLoadSkills: boolean;
+  /** V3 deep 任务转后台执行:开 → deep 路径提交 JobManager,会话立即解锁;关 → 同步阻塞执行(旧行为) */
+  v3DeepBackground: boolean;
   // ── 任务完成通知 ── 最小化/失焦时任务完成发系统通知 + 任务栏闪烁。
   // 默认关闭(不影响现有用户),稳定后再改默认开。
   notifyOnDone: boolean;
@@ -984,6 +1005,12 @@ export interface KinetAPI {
   /** 设置会话级替身画像开关 */
   setPersonaEnabled(convId: string, enabled: boolean): Promise<boolean>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
+  // ── 后台 Job ──
+  listJobs(convId?: string): Promise<JobInfo[]>;
+  getJob(id: string): Promise<JobInfo | null>;
+  killJob(id: string, reason?: string): Promise<boolean>;
+  onJobUpdate(cb: (info: JobInfo) => void): void;
+  onJobEvent(cb: (convId: string, jobId: string, ev: { type: string; [k: string]: unknown }) => void): void;
   onFilesCwd(cb: (cwd: string) => void): void;
   onArenaCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;

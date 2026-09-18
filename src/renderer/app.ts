@@ -4809,6 +4809,8 @@ async function showSettings() {
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-auto-skills" ${s.autoLoadSkills ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-auto-skills">${tr('settings.autoLoadSkills')}</label></div>
         <div class="field-desc">${tr('settings.autoLoadSkills.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-deep-bg" ${s.v3DeepBackground !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-deep-bg">${tr('settings.v3DeepBackground')}</label></div>
+        <div class="field-desc">${tr('settings.v3DeepBackground.desc')}</div>
         <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
           <option value="always" ${s.approval === 'always' ? 'selected' : ''}>${tr('settings.approval.always')}</option>
           <option value="never" ${s.approval === 'never' ? 'selected' : ''}>${tr('settings.approval.never')}</option>
@@ -6110,7 +6112,10 @@ function readSettingsForm(): AppSettings {
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
-    autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,
+    autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,    v3DeepBackground: (() => {
+      const el = document.getElementById('s-deep-bg') as HTMLInputElement | null;
+      return el ? el.checked : true; // 无 UI 元素时保持默认开(主进程默认 true)
+    })(),
     priceInPerMTok: Number((document.getElementById('s-pin') as HTMLInputElement).value) || 0,
     priceOutPerMTok: Number((document.getElementById('s-pout') as HTMLInputElement).value) || 0,
     lang: (document.getElementById('s-lang') as HTMLSelectElement).value as Lang,
@@ -11101,3 +11106,105 @@ function appendLiveEvent(ev: { type: string; text?: string; name?: string; usd?:
 document.getElementById('live-close')!.onclick = () => {
   livePanel.classList.add('js-hidden');
 };
+
+
+// ── 后台 Job 指示条(M2 UI)──
+// 会话视口右上角浮动 pill:显示运行中 job 数/成本,点开菜单可查看/终止。
+// 独立 IIFE,不侵入既有会话渲染管线(job 事件走独立 job-event 频道)。
+(() => {
+  const jobs = new Map<string, import('../shared/types').JobInfo>();
+  let pill: HTMLDivElement | null = null;
+  let menu: HTMLDivElement | null = null;
+  let refreshTimer: ReturnType<typeof setInterval> | null = null;
+
+  const STATUS_ICON: Record<string, string> = {
+    queued: '⏳', running: '🏃', paused: '⏸', done: '✅', failed: '❌', killed: '🚫',
+  };
+
+  function ensureDom(): void {
+    if (pill) return;
+    const style = document.createElement('style');
+    style.textContent = `
+      #job-pill { position: fixed; top: 14px; right: 18px; z-index: 9998; display: none;
+        align-items: center; gap: 8px; padding: 6px 14px; border-radius: 20px;
+        background: var(--panel, #1c2129); border: 1px solid var(--border, #30363d);
+        color: var(--text, #e6edf3); font-size: 13px; cursor: pointer; user-select: none;
+        box-shadow: 0 4px 16px rgba(0,0,0,.35); }
+      #job-pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent, #58a6ff);
+        animation: jobPulse 1.2s ease-in-out infinite; }
+      @keyframes jobPulse { 0%,100% { opacity: .3; } 50% { opacity: 1; } }
+      #job-menu { position: fixed; top: 52px; right: 18px; z-index: 9999; display: none;
+        width: 380px; max-height: 60vh; overflow: auto; border-radius: 12px;
+        background: var(--panel, #1c2129); border: 1px solid var(--border, #30363d);
+        box-shadow: 0 8px 32px rgba(0,0,0,.5); }
+      #job-menu .jm-item { padding: 10px 14px; border-bottom: 1px solid var(--border, #30363d); font-size: 13px; }
+      #job-menu .jm-item:last-child { border-bottom: none; }
+      #job-menu .jm-title { color: var(--text, #e6edf3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      #job-menu .jm-meta { color: var(--text-faint, #8b949e); font-size: 12px; margin-top: 2px; }
+      #job-menu .jm-kill { float: right; border: none; background: none; color: var(--danger, #f85149);
+        cursor: pointer; font-size: 12px; padding: 2px 6px; }
+      #job-menu .jm-empty { padding: 16px; color: var(--text-faint, #8b949e); font-size: 13px; text-align: center; }
+    `;
+    document.head.appendChild(style);
+    pill = document.createElement('div');
+    pill.id = 'job-pill';
+    pill.addEventListener('click', toggleMenu);
+    document.body.appendChild(pill);
+    menu = document.createElement('div');
+    menu.id = 'job-menu';
+    document.body.appendChild(menu);
+    document.addEventListener('click', (e) => {
+      if (menu && !menu.contains(e.target as Node) && e.target !== pill) menu.style.display = 'none';
+    });
+  }
+
+  function activeCount(): number {
+    let n = 0;
+    for (const j of jobs.values()) if (j.status === 'running' || j.status === 'queued') n++;
+    return n;
+  }
+
+  function renderPill(): void {
+    ensureDom();
+    const active = activeCount();
+    if (!pill) return;
+    if (!active) { pill.style.display = 'none'; return; }
+    let cost = 0;
+    for (const j of jobs.values()) if (j.status === 'running' || j.status === 'queued') cost += j.costUSD;
+    pill.innerHTML = `<span class="dot"></span> ${active} 个后台任务 · $${cost.toFixed(3)}`;
+    pill.style.display = 'flex';
+  }
+
+  function renderMenu(): void {
+    if (!menu) return;
+    const list = [...jobs.values()].filter((j) => ['running', 'queued', 'done', 'failed', 'killed'].includes(j.status)).slice(0, 20);
+    menu.innerHTML = list.length
+      ? list.map((j) => `
+        <div class="jm-item">
+          <div class="jm-title">${STATUS_ICON[j.status] ?? ''} ${escapeHtml(j.title)}</div>
+          <div class="jm-meta">${j.status} · $${j.costUSD.toFixed(4)} · ${new Date(j.createdAt).toLocaleTimeString()}${j.error ? ' · ' + escapeHtml(j.error.slice(0, 80)) : ''}</div>
+          ${(j.status === 'running' || j.status === 'queued') ? `<button class="jm-kill" data-job="${j.id}">终止</button>` : ''}
+        </div>`).join('')
+      : '<div class="jm-empty">暂无后台任务</div>';
+    menu.querySelectorAll<HTMLButtonElement>('.jm-kill').forEach((btn) => {
+      btn.onclick = (e) => { e.stopPropagation(); void api.killJob(btn.dataset.job!); };
+    });
+  }
+
+  function toggleMenu(): void {
+    if (!menu) return;
+    const show = menu.style.display !== 'block';
+    if (show) { renderMenu(); menu.style.display = 'block'; } else { menu.style.display = 'none'; }
+  }
+
+  api.onJobUpdate((info) => {
+    jobs.set(info.id, info);
+    renderPill();
+    if (menu && menu.style.display === 'block') renderMenu();
+  });
+  api.onJobEvent(() => { /* 预留:M3 断点进度细化;当前 job 事件只用于面板刷新 */ });
+  // 冷启动拉一次 + 定时对账(防广播丢失)
+  void api.listJobs().then((list) => { for (const j of list) jobs.set(j.id, j); renderPill(); });
+  refreshTimer = setInterval(renderPill, 5000);
+  void refreshTimer;
+})();

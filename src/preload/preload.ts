@@ -11,6 +11,17 @@ const api: KinetAPI = {
   forkConversation: (sourceId, uptoTurnId) => ipcRenderer.invoke('fork-conversation', sourceId, uptoTurnId),
   send: (id, text) => ipcRenderer.invoke('send', id, text),
   cancel: (id) => ipcRenderer.invoke('cancel', id),
+  listJobs: (convId) => ipcRenderer.invoke('job-list', convId),
+  getJob: (id) => ipcRenderer.invoke('job-get', id),
+  killJob: (id, reason) => ipcRenderer.invoke('job-kill', id, reason),
+  onJobUpdate: (cb) => {
+    ipcRenderer.removeAllListeners('job-update');
+    ipcRenderer.on('job-update', (_e: IpcRendererEvent, info) => cb(info));
+  },
+  onJobEvent: (cb) => {
+    ipcRenderer.removeAllListeners('job-event');
+    ipcRenderer.on('job-event', (_e: IpcRendererEvent, { convId, jobId, ev }) => cb(convId, jobId, ev));
+  },
   deleteConversation: (id) => ipcRenderer.invoke('delete-conversation', id),
   clearConversation: (id) => ipcRenderer.invoke('clear-conversation', id),
   rename: (id, title) => ipcRenderer.invoke('rename', id, title),

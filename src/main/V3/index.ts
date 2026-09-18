@@ -41,6 +41,8 @@ import { routeTask, isAnalysisTask } from './router';
 import { executeFastPath } from './fast-path';
 import { executeStdPath } from './std-path';
 import { executeDeepPath } from './deep-path';
+import { jobManager } from '../JobManager';
+import { taskManager } from '../main-instance';
 import { finalizeContext } from './streaming-executor';
 
 // 终态事件闸门:拦截 ReAct 内层的 done,error 转 status 透出(不再静默吞)。
@@ -272,6 +274,24 @@ export class DirectV3Engine implements Engine {
           userInput, history: conv.directHistory, ctx, signal, policy,
           onEvent: terminalGate(onEvent),
         });
+      } else if (getSettings().v3DeepBackground) {
+        // ── deep 后台 Job 化(M2):提交 JobManager 后立即结束本轮 turn,会话解锁。
+        // 执行语义不变:worker 里跑同一个 executeDeepPath(含规划失败退化 std)。
+        // / M2: offload deep path to a background job — the session unlocks immediately.
+        const jobId = submitDeepJob({
+          conv, provider, tools, systemPrompt, memoryBlock, snap, userInput, ctx, policy,
+        });
+        if (jobId) {
+          onEvent({ type: 'status', text: `🚀 v3: 任务复杂度判定为 DEEP,已转入后台执行(Job ${jobId.slice(0, 8)})。完成后结果自动回贴本会话,期间可继续对话。` });
+          onEvent({ type: 'done' });
+          return;
+        }
+        // 提交失败(payload 超限等)→ 回退同步执行
+        updatedHistory = await executeDeepPath({
+          provider, tools, systemPrompt, memoryBlock, snapshot: snap,
+          userInput, history: conv.directHistory, ctx, signal, policy,
+          onEvent: terminalGate(onEvent),
+        });
       } else {
         updatedHistory = await executeDeepPath({
           provider, tools, systemPrompt, memoryBlock, snapshot: snap,
@@ -348,3 +368,56 @@ const ANALYSIS_SYSTEM_SECTION = `
 5. **交叉验证**:重要数字用第二种方法复核一遍(如 pandas 算一次、SQL 再核一次),不一致要查明原因。
 6. **最终输出**:结论先行(1-3 句),然后支撑数据(表格/要点),最后附方法说明与局限。中文,克制形容词。
 `;
+
+
+// ── deep 后台 Job 提交(M2)──
+// 把 executeDeepPath 的全部输入打包进 worker 闭包。ctx 浅拷贝换 signal:
+// 引擎层的 conv signal 在本轮 done 后失效,job 必须用自己的 AbortController。
+// ctx.emit / confirm 等其余依赖与同步路径完全一致(job 事件经 JobManager 桥接回会话流)。
+function submitDeepJob(args: {
+  conv: Conversation;
+  provider: Provider;
+  tools: ReturnType<typeof allTools>;
+  systemPrompt: string;
+  memoryBlock?: string;
+  snap: ReturnType<typeof snapshot>;
+  userInput: string;
+  ctx: ToolCtx;
+  policy: ReturnType<typeof resolveEnginePolicy>;
+}): string | null {
+  const { conv, provider, tools, systemPrompt, memoryBlock, snap, userInput, ctx, policy } = args;
+  const title = (conv.turns[conv.turns.length - 1]?.prompt ?? 'deep 任务').slice(0, 60);
+  const historySnapshot = [...conv.directHistory];
+  const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : null;
+  const submit = jobManager().submit({
+    convId: conv.id,
+    turnId,
+    kind: 'v3-deep',
+    title,
+    payload: { model: snap.model, cwd: conv.cwd }, // 摘要即可,真输入在闭包里(payload 只服务 M3 重启恢复,当前版本不需要)
+    worker: async ({ signal, onEvent }) => {
+      const jobCtx: ToolCtx = { ...ctx, signal };
+      try {
+        const updatedHistory = await executeDeepPath({
+          provider, tools, systemPrompt, memoryBlock, snapshot: snap,
+          userInput, history: historySnapshot, ctx: jobCtx, signal, policy,
+          onEvent,
+        });
+        // 用户可见答案 = updatedHistory 里最后一条有正文的 assistant 消息(deep 收尾汇总)
+        let answer = '';
+        for (let i = updatedHistory.length - 1; i >= 0; i--) {
+          const m = updatedHistory[i];
+          if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim()) { answer = m.content; break; }
+        }
+        if (!answer) answer = '(deep 任务完成,但未产出文本汇总 — 详细产出见各节点状态)';
+        taskManager.appendJobResult(conv.id, { title, answer, updatedHistory, ok: !signal.aborted });
+        return { result: { answer } };
+      } catch (e) {
+        const msg = (e as Error)?.message ?? String(e);
+        taskManager.appendJobResult(conv.id, { title, answer: `后台 deep 任务失败: ${msg}`, updatedHistory: null, ok: false });
+        throw e; // JobManager 记 failed
+      }
+    },
+  });
+  return submit.ok ? submit.id : null;
+}
