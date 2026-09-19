@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { width: 1600px; height: 900px; overflow: hidden;
+    font-family: -apple-system, "SF Pro Display", "Helvetica Neue", Arial, sans-serif;
+    background: radial-gradient(1200px 800px at 78% 20%, #1d1436 0%, #0c0918 55%, #070510 100%);
+    color: #eae7f5; position: relative; }
+  /* subtle grid texture */
+  .grid { position: absolute; inset: 0;
+    background-image: linear-gradient(rgba(139,108,255,0.05) 1px, transparent 1px),
+                      linear-gradient(90deg, rgba(139,108,255,0.05) 1px, transparent 1px);
+    background-size: 48px 48px; }
+  .wrap { position: absolute; inset: 0; padding: 72px 80px; display: flex; gap: 56px; }
+
+  /* ── left: copy ── */
+  .left { flex: 1.05; display: flex; flex-direction: column; }
+  .brand { display: flex; align-items: center; gap: 18px; }
+  .logo { width: 64px; height: 64px; border-radius: 16px;
+    background: linear-gradient(135deg, #7c5cff 0%, #a855f7 100%);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 34px; font-weight: 800; color: #fff;
+    box-shadow: 0 8px 32px rgba(124,92,255,0.45); }
+  .brand-name { font-size: 28px; font-weight: 700; letter-spacing: 0.2px; }
+  .brand-name span { color: #8b6cff; font-size: 17px; font-weight: 600; margin-left: 10px; }
+  h1 { font-size: 76px; line-height: 1.08; font-weight: 800; letter-spacing: -1.5px; margin-top: 64px; }
+  h1 .accent { background: linear-gradient(90deg, #8b6cff, #c084fc);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+  .sub { font-size: 25px; color: #a49fc0; margin-top: 22px; font-weight: 500; }
+  .feats { margin-top: 46px; display: flex; flex-direction: column; gap: 20px; }
+  .feat { display: flex; align-items: center; gap: 16px; font-size: 23px; font-weight: 500; color: #d9d5ec; }
+  .feat b { color: #fff; font-weight: 650; }
+  .tick { width: 30px; height: 30px; border-radius: 50%; flex: none;
+    background: rgba(124,92,255,0.18); border: 1.5px solid rgba(139,108,255,0.6);
+    display: flex; align-items: center; justify-content: center;
+    color: #a78bfa; font-size: 16px; font-weight: 800; }
+  .foot { margin-top: auto; display: flex; align-items: center; gap: 16px; }
+  .pill { padding: 13px 26px; border-radius: 999px; font-size: 20px; font-weight: 600;
+    background: linear-gradient(90deg, #7c5cff, #9333ea); color: #fff;
+    box-shadow: 0 6px 24px rgba(124,92,255,0.4); }
+  .pill.ghost { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.16);
+    box-shadow: none; color: #cfcbe4; font-weight: 500; }
+
+  /* ── right: fake terminal ── */
+  .term { width: 620px; align-self: center; border-radius: 18px; overflow: hidden;
+    background: rgba(13,11,26,0.92); border: 1px solid rgba(139,108,255,0.28);
+    box-shadow: 0 30px 80px rgba(0,0,0,0.55), 0 0 0 1px rgba(255,255,255,0.03) inset; }
+  .term-bar { height: 44px; background: rgba(255,255,255,0.045); display: flex;
+    align-items: center; gap: 8px; padding: 0 18px; }
+  .dot { width: 12px; height: 12px; border-radius: 50%; }
+  .term-title { margin-left: 12px; font-size: 14px; color: #7d7896; }
+  .term-body { padding: 24px 26px 28px; font-family: "SF Mono", ui-monospace, Menlo, monospace;
+    font-size: 15.5px; line-height: 1.85; color: #b9b4d6; }
+  .ln .p { color: #8b6cff; font-weight: 700; }
+  .ln .ok { color: #4ade80; }
+  .ln .dim { color: #67627f; }
+  .ln .w { color: #e9e6f8; }
+  .ln .y { color: #fbbf24; }
+</style>
+</head>
+<body>
+  <div class="grid"></div>
+  <div class="wrap">
+    <div class="left">
+      <div class="brand">
+        <div class="logo">K</div>
+        <div class="brand-name">KinetAios <span>v3.6.5</span></div>
+      </div>
+      <h1>AI Agent,<br><span class="accent">runs local.</span></h1>
+      <div class="sub">A local-first, multi-engine agent dashboard.</div>
+      <div class="feats">
+        <div class="feat"><div class="tick">✓</div><div><b>3 engines</b> — Direct / Claude Code / Codex</div></div>
+        <div class="feat"><div class="tick">✓</div><div><b>Skills</b> auto-load with your task</div></div>
+        <div class="feat"><div class="tick">✓</div><div><b>Per-call token &amp; cost</b> ledger</div></div>
+        <div class="feat"><div class="tick">✓</div><div><b>Overnight goal mode</b> — supervisor validated</div></div>
+      </div>
+      <div class="foot">
+        <div class="pill">Your code never leaves your machine</div>
+        <div class="pill ghost">github.com/phinn/KinetAios</div>
+      </div>
+    </div>
+    <div class="term">
+      <div class="term-bar">
+        <div class="dot" style="background:#ff5f57"></div>
+        <div class="dot" style="background:#febc2e"></div>
+        <div class="dot" style="background:#28c840"></div>
+        <div class="term-title">KinetAios — overnight goal mode</div>
+      </div>
+      <div class="term-body">
+        <div class="ln"><span class="p">›</span> <span class="w">/goal ship the release notes page</span></div>
+        <div class="ln"><span class="dim">iter 3 · worker draft done → supervisor check…</span></div>
+        <div class="ln"><span class="ok">✓ verdict: continue</span> <span class="dim">— tighten the intro, add perf table</span></div>
+        <div class="ln"><span class="p">›</span> <span class="w">writing site-release/notes.html</span></div>
+        <div class="ln"><span class="ok">✓ verdict: complete</span> <span class="dim">· 5 iterations · $0.42</span></div>
+        <div class="ln"><span class="p">›</span> <span class="w">git commit -m "docs: release notes"</span></div>
+        <div class="ln"><span class="dim">[main 4f2a9c1] 2 files changed, 118 insertions(+)</span></div>
+        <div class="ln"><span class="y">● quota 86% used — failover armed</span> <span class="dim">(5h window)</span></div>
+        <div class="ln">&nbsp;</div>
+        <div class="ln"><span class="dim"># audit trail: local SQLite · every tool call, every token</span></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

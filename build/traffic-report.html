@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>KinetAios · GitHub 流量分析</title>
+<script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+<style>
+  :root {
+    --bg: #0d1117; --bg-card: #161b22; --border: #30363d;
+    --text: #e6edf3; --text-dim: #8b949e; --text-faint: #6e7681;
+    --accent: #58a6ff; --green: #3fb950; --orange: #d29922;
+    --red: #f85149; --purple: #bc8cff;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif; font-size: 14px; line-height: 1.6; padding: 32px 24px 64px; }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; margin-bottom: 4px; }
+  h1 .badge { display: inline-block; vertical-align: 4px; margin-left: 10px; font-size: 11px; font-weight: 600; color: var(--accent); background: rgba(88,166,255,.12); border: 1px solid rgba(88,166,255,.3); padding: 2px 8px; border-radius: 20px; }
+  .sub { color: var(--text-dim); font-size: 13px; margin-bottom: 28px; }
+  .sub code { color: var(--accent); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; }
+  h2 { font-size: 17px; font-weight: 650; margin: 36px 0 14px; padding-left: 10px; border-left: 3px solid var(--accent); }
+  .kpi-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
+  .kpi { flex: 1; min-width: 170px; background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; }
+  .kpi .label { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .kpi .value { font-size: 30px; font-weight: 750; font-family: ui-monospace, Menlo, monospace; letter-spacing: -1px; }
+  .kpi .delta { font-size: 12px; margin-top: 4px; font-family: ui-monospace, Menlo, monospace; }
+  .up { color: var(--green); } .down { color: var(--red); } .neutral { color: var(--text-faint); }
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 10px; padding: 18px 20px 10px; }
+  .card h3 { font-size: 14px; font-weight: 600; color: var(--text-dim); margin-bottom: 8px; }
+  .chart { width: 100%; height: 300px; }
+  .chart-tall { width: 100%; height: 380px; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--text-faint); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); font-size: 12px; }
+  td { padding: 9px 10px; border-bottom: 1px solid rgba(48,54,61,.5); color: var(--text-dim); }
+  tr:last-child td { border-bottom: none; }
+  td.num, th.num { text-align: right; font-family: ui-monospace, Menlo, monospace; color: var(--text); }
+  .path-code { font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: var(--accent); }
+  .callout { background: linear-gradient(135deg, rgba(88,166,255,.08), rgba(88,166,255,.02)); border: 1px solid rgba(88,166,255,.25); border-radius: 10px; padding: 16px 20px; margin: 16px 0; }
+  .callout.green { background: linear-gradient(135deg, rgba(63,185,80,.08), rgba(63,185,80,.02)); border-color: rgba(63,185,80,.25); }
+  .callout.orange { background: linear-gradient(135deg, rgba(210,153,34,.08), rgba(210,153,34,.02)); border-color: rgba(210,153,34,.25); }
+  .callout h3 { color: var(--accent); font-size: 14px; font-weight: 650; margin-bottom: 6px; }
+  .callout.green h3 { color: var(--green); }
+  .callout.orange h3 { color: var(--orange); }
+  .callout p { color: var(--text-dim); font-size: 13.5px; margin: 6px 0; }
+  .callout code { color: var(--accent); font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; background: rgba(110,118,129,.15); padding: 1px 5px; border-radius: 4px; }
+  .insight-list { list-style: none; }
+  .insight-list li { padding: 9px 0 9px 26px; position: relative; color: var(--text-dim); font-size: 13.5px; border-bottom: 1px dashed rgba(48,54,61,.6); }
+  .insight-list li:last-child { border-bottom: none; }
+  .insight-list li::before { content: '▸'; position: absolute; left: 8px; color: var(--accent); }
+  .insight-list li strong { color: var(--text); font-weight: 600; }
+  footer { margin-top: 48px; color: var(--text-faint); font-size: 12px; text-align: center; }
+  @media (max-width: 900px) { .grid-2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>KinetAios · GitHub 流量分析 <span class="badge">phinn/KinetAios</span></h1>
+  <div class="sub">数据窗口 2026-09-04 → 09-17（14 天，Traffic API 仅保留 14 天）· 生成于 2026-09-18 · 数据源 <code>gh api repos/phinn/KinetAios/traffic/*</code></div>
+
+  <div class="kpi-row">
+    <div class="kpi"><div class="label">总浏览 Views</div><div class="value">182</div><div class="delta neutral">42 uniques · 日均 13</div></div>
+    <div class="kpi"><div class="label">总克隆 Clones</div><div class="value">1,449</div><div class="delta up">268 uniques · 日均 103</div></div>
+    <div class="kpi"><div class="label">克隆 / 浏览比</div><div class="value">8.0×</div><div class="delta up">工具型 repo 指纹（业界典型 &lt; 1×）</div></div>
+    <div class="kpi"><div class="label">Stars / Forks</div><div class="value" style="font-size:24px">8 <span style="color:var(--text-faint);font-size:16px">/</span> 2</div><div class="delta neutral">克隆者→Star 转化 3.0%</div></div>
+    <div class="kpi"><div class="label">峰值日</div><div class="value" style="color:var(--orange)">9/17</div><div class="delta up">210 clones · 70 uniques · 历史单日最高</div></div>
+  </div>
+
+  <h2>日趋势 · Views vs Clones</h2>
+  <div class="card">
+    <div id="chart-trend" class="chart-tall"></div>
+  </div>
+
+  <div class="grid-2" style="margin-top:16px">
+    <div class="card"><h3>克隆数与独立克隆者（对数轴看清 9/10 峰值）</h3><div id="chart-clones" class="chart"></div></div>
+    <div class="card"><h3>人均克隆强度（count ÷ uniques，&gt;5 判定为机器行为）</h3><div id="chart-ratio" class="chart"></div></div>
+  </div>
+
+  <h2>热门路径 Top 10</h2>
+  <div class="card">
+    <table>
+      <thead><tr><th>路径</th><th class="num">Views</th><th class="num">Uniques</th><th>备注</th></tr></thead>
+      <tbody>
+        <tr><td class="path-code">/phinn/KinetAios</td><td class="num">55</td><td class="num">34</td><td>Overview 主页，34 人看首页 = 真实兴趣</td></tr>
+        <tr><td class="path-code">/graphs/traffic</td><td class="num">43</td><td class="num">1</td><td>43 次全部来自你本人（自查流量面板）</td></tr>
+        <tr><td class="path-code">/releases</td><td class="num">18</td><td class="num">3</td><td>Release 页有真实访客，v3.6.x 更新有人跟</td></tr>
+        <tr><td class="path-code">/discussions</td><td class="num">7</td><td class="num">5</td><td>5 个独立访客逛了讨论区</td></tr>
+        <tr><td class="path-code">/pulse</td><td class="num">5</td><td class="num">1</td><td>自查</td></tr>
+        <tr><td class="path-code">/actions/metrics/usage</td><td class="num">4</td><td class="num">1</td><td>自查</td></tr>
+        <tr><td class="path-code">/find/main</td><td class="num">3</td><td class="num">3</td><td>3 个人用了站内代码搜索</td></tr>
+        <tr><td class="path-code">/graphs/code-frequency</td><td class="num">3</td><td class="num">1</td><td>自查</td></tr>
+        <tr><td class="path-code">/releases/tag/v3.6.3</td><td class="num">3</td><td class="num">1</td><td>具体版本页有直达访客</td></tr>
+        <tr><td class="path-code">/blob/main/documents/excel-cross-analysis-engines.html</td><td class="num">2</td><td class="num">2</td><td>有人在线读文档 artifact</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>流量来源 Referrers</h2>
+  <div class="grid-2">
+    <div class="card"><h3>来源分布</h3><div id="chart-ref" class="chart"></div></div>
+    <div class="card">
+      <h3>来源解读</h3>
+      <table>
+        <thead><tr><th>来源</th><th class="num">Views</th><th class="num">Uniq</th><th>解读</th></tr></thead>
+        <tbody>
+          <tr><td>github.com</td><td class="num">17</td><td class="num">5</td><td>站内导流（Profile / Trending 等）</td></tr>
+          <tr><td>phinn.github.io</td><td class="num">8</td><td class="num">2</td><td>KinetTask 官网 → repo，<strong style="color:var(--green)">导流有效</strong></td></tr>
+          <tr><td>alternativeto.net</td><td class="num">4</td><td class="num">1</td><td>外部榜单收录，<strong style="color:var(--green)">首次出现</strong></td></tr>
+          <tr><td>Google</td><td class="num">3</td><td class="num">2</td><td>自然搜索已覆盖</td></tr>
+          <tr><td>link.juejin.cn</td><td class="num">1</td><td class="num">1</td><td>掘金专栏 01-07 系列有转化</td></tr>
+          <tr><td>perplexity.ai</td><td class="num">1</td><td class="num">1</td><td>AI 搜索引擎已收录</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="callout orange">
+    <h3>🔥 焦点一：9/10 的 559-clone 异常峰值是机器行为</h3>
+    <p>当日 <strong>559 clones / 仅 20 uniques</strong> —— 人均 28 次，典型机器指纹（CI runner、镜像同步爬虫、依赖解析器批量拉取）。对照组：9/11 的 116 clones / 39 uniques 人均 3 次，才是真人节奏。</p>
+  </div>
+  <div class="callout green">
+    <h3>📈 焦点二：9/17 是发布以来最强真实爆发</h3>
+    <p><strong>210 clones / 70 uniques</strong>，人均 3 次 —— 70 个独立的人/机在同一天克隆，单日 uniques 历史最高。前一晚正是 <code>548ac0d</code>/<code>736cac5</code> 模型配置弹层 + 暗色控件修复的提交窗口，<strong>交付节奏与流量正相关</strong>。</p>
+  </div>
+  <div class="callout">
+    <h3>📊 焦点三：9/14→9/16 三天高原（101/90/73 clones）</h3>
+    <p>uniques 稳定在 26–35，人均 ~3 次，是持续的真人兴趣流，通常出现在<strong>被聚合站/榜单收录</strong>之后 —— 与 alternativeto.net 首次出现在 referrers 相互印证。</p>
+  </div>
+
+  <h2>核心洞察</h2>
+  <div class="card">
+    <ul class="insight-list">
+      <li><strong>克隆意愿是浏览意愿的 8 倍</strong> —— 1,449 clones vs 182 views。KinetAios 是典型「站外分发」工具 repo：用户从掘金 / 官网 / 口碑直接 <code>git clone</code>，根本不逛主页。<strong>真实获客漏斗不在 GitHub 页面上</strong>，运营精力应投向站外内容。</li>
+      <li><strong>浏览数据被自查污染，克隆数据更可信</strong> —— traffic 面板 43 views/1 unique + pulse + actions + code-frequency 都是你在看自己的 repo，真实外部浏览远低于 182。克隆数不受自查影响，268 uniques 是干净的。</li>
+      <li><strong>Star 转化率 3% 偏低</strong> —— 268 个独立克隆者只产出 8 stars。克隆者已经付出「装环境 + 编译 native 模块」的成本，却不点 star，怀疑 README 首屏缺少「为什么是它」的钩子。建议首屏加：与 Claude Code 的对比表 + 一张产品截图。</li>
+      <li><strong>掘金专栏是可验证的获客渠道</strong> —— link.juejin.cn 出现在 referrers，而克隆峰值日（9/7、9/14、9/17）与发文节奏吻合。08/09/10 三篇存稿该发了。</li>
+      <li><strong>Release 页是被低估的入口</strong> —— /releases 18 views/3 uniques，有人专门翻版本。以后 release notes 认真写，这是留存用户的「订阅点」。</li>
+    </ul>
+  </div>
+
+  <footer>Generated by KinetAios · 2026-09-18 · GitHub Traffic API（14 天滚动窗口，granularity=day）</footer>
+</div>
+
+<script>
+const DATES = ['09-04','09-05','09-06','09-07','09-08','09-09','09-10','09-11','09-12','09-13','09-14','09-15','09-16','09-17'];
+const VIEWS  = [16,5,6,20,15,26,4,29,20,1,15,7,7,11];
+const VUNIQ  = [6,1,2,7,8,6,4,12,4,1,4,5,5,4];
+const CLONES = [80,30,26,40,29,26,559,116,46,23,101,90,73,210];
+const CUNIQ  = [27,14,12,17,7,12,20,39,24,12,34,35,26,70];
+const RATIO  = CLONES.map((c,i)=>+(c/CUNIQ[i]).toFixed(1));
+
+const axisCommon = {
+  axisLine:{lineStyle:{color:'#30363d'}},
+  axisLabel:{color:'#8b949e',fontSize:11},
+  splitLine:{lineStyle:{color:'rgba(48,54,61,.4)',type:'dashed'}}
+};
+const tooltipCommon = {
+  backgroundColor:'#1c2129', borderColor:'#30363d',
+  textStyle:{color:'#e6edf3',fontSize:12}
+};
+
+// ── 主趋势 ──
+echarts.init(document.getElementById('chart-trend')).setOption({
+  backgroundColor:'transparent',
+  tooltip:{...tooltipCommon,trigger:'axis'},
+  legend:{textStyle:{color:'#8b949e'},top:0,icon:'roundRect',itemWidth:14,itemHeight:8},
+  grid:{left:50,right:56,top:36,bottom:28},
+  xAxis:{type:'category',data:DATES,...axisCommon},
+  yAxis:[
+    {type:'value',name:'views',nameTextStyle:{color:'#6e7681'},...axisCommon},
+    {type:'value',name:'clones',nameTextStyle:{color:'#6e7681'},...axisCommon,splitLine:{show:false}}
+  ],
+  series:[
+    {name:'Views',type:'bar',data:VIEWS,itemStyle:{color:'rgba(88,166,255,.55)',borderRadius:[3,3,0,0]},barWidth:'38%'},
+    {name:'Clones',type:'line',yAxisIndex:1,data:CLONES,smooth:true,symbolSize:6,
+     lineStyle:{color:'#d29922',width:2.5},itemStyle:{color:'#d29922'},
+     areaStyle:{color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'rgba(210,153,34,.25)'},{offset:1,color:'rgba(210,153,34,0)'}])},
+     markPoint:{data:[{type:'max',name:'峰值'}],symbolSize:44,itemStyle:{color:'#d29922'},label:{fontSize:10,color:'#0d1117',fontWeight:700}}},
+    {name:'Clone Uniques',type:'line',yAxisIndex:1,data:CUNIQ,smooth:true,symbolSize:4,
+     lineStyle:{color:'#3fb950',width:1.5,type:'dashed'},itemStyle:{color:'#3fb950'}}
+  ]
+});
+
+// ── 克隆(对数轴) ──
+echarts.init(document.getElementById('chart-clones')).setOption({
+  backgroundColor:'transparent',
+  tooltip:{...tooltipCommon,trigger:'axis'},
+  legend:{textStyle:{color:'#8b949e'},top:0,icon:'roundRect',itemWidth:14,itemHeight:8},
+  grid:{left:44,right:16,top:34,bottom:28},
+  xAxis:{type:'category',data:DATES,...axisCommon},
+  yAxis:{type:'log',...axisCommon},
+  series:[
+    {name:'Clones',type:'bar',data:CLONES,barWidth:'45%',
+     itemStyle:{color:p=>p.dataIndex===6?'#f85149':(p.dataIndex===13?'#3fb950':'rgba(88,166,255,.7)'),borderRadius:[3,3,0,0]}},
+    {name:'Uniques',type:'line',data:CUNIQ,smooth:true,symbolSize:5,lineStyle:{color:'#bc8cff',width:2},itemStyle:{color:'#bc8cff'}}
+  ]
+});
+
+// ── 人均克隆强度 ──
+echarts.init(document.getElementById('chart-ratio')).setOption({
+  backgroundColor:'transparent',
+  tooltip:{...tooltipCommon,trigger:'axis',formatter:p=>{
+    const d=p[0];return `${d.name}<br/>人均克隆 <b style="color:${d.value>5?'#f85149':'#3fb950'}">${d.value}</b> 次/人`;
+  }},
+  grid:{left:44,right:16,top:20,bottom:28},
+  xAxis:{type:'category',data:DATES,...axisCommon},
+  yAxis:{type:'value',...axisCommon},
+  series:[{
+    type:'bar',data:RATIO.map(v=>({value:v,itemStyle:{color:v>5?'rgba(248,81,73,.75)':'rgba(63,185,80,.65)'}})),
+    barWidth:'50%',borderRadius:[3,3,0,0],
+    markLine:{silent:true,symbol:'none',data:[{yAxis:5}],
+      lineStyle:{color:'#f85149',type:'dashed'},label:{color:'#f85149',formatter:'机器阈值 5.0',fontSize:10}}
+  }]
+});
+
+// ── 来源饼图 ──
+echarts.init(document.getElementById('chart-ref')).setOption({
+  backgroundColor:'transparent',
+  tooltip:{...tooltipCommon,trigger:'item',formatter:'{b}<br/>{c} views ({d}%)'},
+  legend:{orient:'vertical',right:0,top:'middle',textStyle:{color:'#8b949e',fontSize:11},itemWidth:12,itemHeight:12},
+  series:[{
+    type:'pie',radius:['42%','68%'],center:['35%','50%'],
+    label:{show:false},
+    data:[
+      {value:17,name:'github.com',itemStyle:{color:'#58a6ff'}},
+      {value:8,name:'phinn.github.io',itemStyle:{color:'#3fb950'}},
+      {value:4,name:'alternativeto.net',itemStyle:{color:'#d29922'}},
+      {value:3,name:'Google',itemStyle:{color:'#bc8cff'}},
+      {value:1,name:'link.juejin.cn',itemStyle:{color:'#f85149'}},
+      {value:1,name:'perplexity.ai',itemStyle:{color:'#6e7681'}}
+    ]
+  }]
+});
+</script>
+</body>
+</html>
