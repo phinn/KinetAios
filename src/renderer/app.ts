@@ -762,8 +762,20 @@ function renderSidebar() {
   const renderedCids = new Set<string>();
 
   if (sidebarMode === 'flat') {
+    // 时间锚点:按最近活动分桶(今天/昨天/本周/本月/更早),跨桶插入分组头。
+    // 分组头每帧重建(数量少,量级=桶数);先清旧防 keyed 复用残留。
+    ul.querySelectorAll('li.sb-time-sep').forEach((n) => n.remove());
+    let lastBucket = '';
     for (const id of visibleOrder) {
       if (!convs.get(id)) continue;
+      const b = timeBucket(convs.get(id)!.updatedAt ?? convs.get(id)!.createdAt);
+      if (b !== lastBucket) {
+        lastBucket = b;
+        const sep = document.createElement('li');
+        sep.className = 'sb-time-sep';
+        sep.textContent = b;
+        ul.appendChild(sep);
+      }
       ul.appendChild(obtainTaskLi(id, taskPool));
       renderedCids.add(id);
     }
@@ -2157,6 +2169,9 @@ function ensureElapsedTicker(): void {
     }
     const conv = convs.get(selectedId ?? '');
     if (conv && conv.status === 'running') {
+      // 流式状态条的 token/耗时随秒刷(只改 .ss-meta 文本,不重建 DOM)
+      const meta = document.querySelector('.streaming-status .ss-meta');
+      if (meta) meta.textContent = streamMetaText(conv);
       const last = conv.turns[conv.turns.length - 1];
       // 任务中心浮层开着 → 每秒刷新(耗时/成本/状态)
       const rpop = document.getElementById('running-pop');
@@ -2360,6 +2375,16 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
   const wrap = document.createElement('div');
   wrap.className = 'turn' + (streaming ? ' streaming' : '');
   wrap.dataset.idx = String(i); // 滚动锚点:done/error 重渲染后按 turn 定位恢复视口 / scroll anchor for re-renders
+  // ── 日期分隔:首轮或与上一轮不同天 → turn 顶部插入日期锚点。
+  // 放在 turn 元素内部而非 #turns 顶层:冻结分支按 lastElementChild.dataset.idx 找最后一个
+  // turn,顶层混入分隔节点会破坏该逻辑。──
+  const prevT = i > 0 ? conv.turns[i - 1] : undefined;
+  if (i === 0 || (prevT && !sameDay(prevT.ts, t.ts))) {
+    const dsep = document.createElement('div');
+    dsep.className = 'turn-day-sep';
+    dsep.textContent = dayLabel(t.ts);
+    wrap.appendChild(dsep);
+  }
   // ── 旧回合智能折叠:非最近 3 轮、无错误、未被点开 → 单行摘要(点击展开)──
   // 长会话往上滚全是完整渲染的旧消息,视觉噪音太大;错误 turn 永远展开(需要被看见)。
   if (!isLast && !streaming && !t.error && !expandedTurns.has(t.id) && i < conv.turns.length - 3) {
@@ -2476,7 +2501,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (streaming && conv.statusNote) {
       const ns = document.createElement('div');
       ns.className = 'streaming-status';
-      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
+      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span><span class="ss-meta">' + esc(streamMetaText(conv)) + '</span>';
       body.appendChild(ns);
     }
     if (t.error) {
@@ -2484,6 +2509,23 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       // maxTurns 可续跑(发"继续"即可接上)→ amber 警示而非红色报错;其余保持红色
       e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '');
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
+      // contextTooLong:重试无用(裁剪到最小集仍超窗)→ 给真正的解法入口,不给误导性的重试
+      if (t.errorKind === 'contextTooLong') {
+        const hint = document.createElement('div');
+        hint.className = 'err-hint';
+        hint.textContent = tr('turn.ctxTooLongHint');
+        e.appendChild(hint);
+        const openSettingsBtn = document.createElement('button');
+        openSettingsBtn.className = 'ghost retry-btn';
+        openSettingsBtn.textContent = '⚙ ' + tr('turn.ctxTooLongSettings');
+        openSettingsBtn.onclick = () => { void showSettings(); };
+        e.appendChild(openSettingsBtn);
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'ghost retry-btn';
+        clearBtn.textContent = '🧹 ' + tr('turn.ctxTooLongClear');
+        clearBtn.onclick = () => { document.getElementById('btn-clear')?.click(); };
+        e.appendChild(clearBtn);
+      }
       // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
       // 瞬时错误(退避重试耗尽):按钮文案区分,提示"重试通常能过",降低"要改 prompt"的误判
       const retry = document.createElement('button');
@@ -3254,6 +3296,8 @@ function updateStreamingStatus(conv: Conversation): void {
     if (oldStatus) {
       const txt = oldStatus.querySelector('.typing-text');
       if (txt) txt.textContent = conv.statusNote;
+      const meta = oldStatus.querySelector('.ss-meta');
+      if (meta) meta.textContent = streamMetaText(conv);
     } else {
       // 创建 streaming-status 前,如果 #streaming-answer 里只有三点占位(无实际文本),
       // 清掉它避免双重三点。
@@ -3261,7 +3305,7 @@ function updateStreamingStatus(conv: Conversation): void {
       if (ans && !ans.textContent && ans.querySelector('.typing')) ans.innerHTML = '';
       const ns = document.createElement('div');
       ns.className = 'streaming-status';
-      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span>';
+      ns.innerHTML = '<span class="typing"><i></i><i></i><i></i></span><span class="typing-text">' + esc(conv.statusNote) + '</span><span class="ss-meta">' + esc(streamMetaText(conv)) + '</span>';
       body.appendChild(ns);
       heightChanged = true;
     }
@@ -3580,6 +3624,55 @@ function buildPaletteActions(): PaletteAction[] {
   // 会话动作
   acts.push({ label: '＋ ' + tr('sidebar.newSession'), run: () => click('btn-new') });
   acts.push({ label: tr('sidebar.runningFilter'), run: () => click('sb-running-filter') });
+  // 高频工具
+  acts.push({ label: tr('head.clear'), hint: tr('palette.views'), run: () => click('btn-clear') });
+  acts.push({ label: tr('head.ctxInspectorTitle'), hint: tr('palette.views'), run: () => click('btn-ctx-inspector') });
+  // 聊天内 Tab(文件/Git/规则/预览/Team)
+  const chatTabs: Array<[string, string]> = [
+    ['tabs.files', 'tab-files'], ['tabs.git', 'tab-git'], ['tabs.rules', 'tab-rules'],
+    ['tabs.preview', 'tab-preview'], ['tabs.team', 'tab-team'],
+  ];
+  for (const [key, btn] of chatTabs) {
+    acts.push({ label: tr(key), hint: tr('tabs.chat'), run: () => { showChat(); click(btn); } });
+  }
+  // Git 动作(按钮在 Git 面板里;先展开面板再点)
+  const gitActs: Array<[string, string]> = [
+    ['git.actStageAll', 'gh-stage-all'], ['git.actCommit', 'gh-commit'],
+    ['git.actPull', 'gh-pull'], ['git.actPush', 'gh-push'],
+  ];
+  for (const [key, btn] of gitActs) {
+    acts.push({ label: `Git: ${tr(key)}`, hint: tr('tabs.git'), run: () => { showChat(); click('tab-git'); requestAnimationFrame(() => click(btn)); } });
+  }
+  // 上下文模式切换(独立取 conv:此段在 engine 段的 const conv 声明之前)
+  const convNow = selectedId ? convs.get(selectedId) : undefined;
+  if (convNow) {
+    for (const m of CONTEXT_MODES) {
+      if (m === convNow.contextMode) continue;
+      acts.push({
+        label: `${tr('ctxMode.title')}: ${tr('ctxMode.' + m)}`,
+        hint: convNow.customTitle ?? undefined,
+        run: () => { void api.setContextMode(convNow.id, m); convNow.contextMode = m; renderHead(convNow); },
+      });
+    }
+  }
+  // 最近会话(当前会话除外,取最近 5 个)
+  {
+    const recent = order.filter((id) => id !== selectedId && convs.get(id)).slice(0, 5);
+    for (const id of recent) {
+      const c = convs.get(id)!;
+      const title = c.customTitle || c.firstPrompt?.slice(0, 40) || tr('head.newConv');
+      acts.push({
+        label: tr('conv.select') + ': ' + title,
+        hint: projName(c.cwd),
+        run: () => {
+          selectedId = id;
+          showChat();
+          document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+          document.querySelector(`#conv-list li[data-cid="${CSS.escape(id)}"]`)?.classList.add('active');
+        },
+      });
+    }
+  }
   // 当前会话切引擎(不弹确认 — 面板场景下默认用户知道自己在干什么;有上下文丢失风险时仍走 head 下拉)
   const conv = selectedId ? convs.get(selectedId) : undefined;
   if (conv) {
@@ -4189,6 +4282,41 @@ function buildTurnsSkeleton(): HTMLElement {
     wrap.appendChild(row);
   }
   return wrap;
+}
+
+// ── 时间展示辅助:日期分隔 / 侧栏时间桶 ──
+function sameDay(a: number, b: number): boolean {
+  const d1 = new Date(a); const d2 = new Date(b);
+  return d1.getFullYear() === d2.getFullYear() && d1.getMonth() === d2.getMonth() && d1.getDate() === d2.getDate();
+}
+function dayLabel(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const yest = new Date(now); yest.setDate(now.getDate() - 1);
+  const hm = `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
+  if (sameDay(ts, now.getTime())) return `${tr('day.today')} ${hm}`;
+  if (sameDay(ts, yest.getTime())) return `${tr('day.yesterday')} ${hm}`;
+  const md = `${d.getMonth() + 1}${tr('day.month-char')}${d.getDate()}${tr('day.day-char')}`;
+  return d.getFullYear() === now.getFullYear() ? md : `${d.getFullYear()}${tr('day.year')}${md}`;
+}
+// 侧栏时间桶:今天 / 昨天 / 本周(7 天内) / 本月(30 天内) / 更早
+function timeBucket(ts: number): string {
+  const now = Date.now();
+  const age = now - ts;
+  if (sameDay(ts, now)) return tr('day.today');
+  const yest = new Date(now); yest.setDate(new Date(now).getDate() - 1);
+  if (sameDay(ts, yest.getTime())) return tr('day.yesterday');
+  if (age < 7 * 86400_000) return tr('day.week');
+  if (age < 30 * 86400_000) return tr('day.month');
+  return tr('day.earlier');
+}
+// 流式状态条 meta:实时 token(↑in ↓out)+ 本轮耗时(随 ticker 每秒刷)
+function streamMetaText(conv: Conversation): string {
+  const parts: string[] = [];
+  if (conv.tokens) parts.push(tokSplitLabel(conv.tokensIn ?? 0, conv.tokensOut ?? 0, conv.tokens));
+  const last = conv.turns[conv.turns.length - 1];
+  if (last?.ts) parts.push('⏱ ' + fmtElapsed(Date.now() - last.ts));
+  return parts.join(' · ');
 }
 
 // turn 页脚 token 展示:输入/输出分开(↑in ↓out);旧数据无拆分(两者皆 0)时回退总数。

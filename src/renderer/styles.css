@@ -6585,3 +6585,21 @@ select:focus-visible {
 .tok-row-main { display: flex; align-items: baseline; gap: 6px; width: 100%; }
 .tok-row-sub { width: 100%; margin-top: 1px; padding-left: 22px; font-size: 0.692rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tok-tool-line { font-size: 0.692rem; color: var(--text-dim); padding: 1px 0; word-break: break-all; }
+
+/* ═══ 日期分隔(聊天流)/ 侧栏时间桶 / 流式状态条 meta / contextTooLong 引导 ═══ */
+.turn-day-sep {
+  display: flex; align-items: center; gap: 10px;
+  margin: 18px 0 10px; font-size: 0.7rem; color: var(--text-faint);
+  user-select: none;
+}
+.turn-day-sep::before, .turn-day-sep::after {
+  content: ''; flex: 1; height: 1px; background: var(--border-soft);
+}
+.sb-time-sep {
+  padding: 10px 12px 4px; font-size: 0.65rem; font-weight: 600;
+  letter-spacing: 0.05em; color: var(--text-faint); list-style: none;
+  user-select: none; cursor: default;
+}
+.sb-time-sep:first-child { padding-top: 6px; }
+.streaming-status .ss-meta { margin-left: 10px; color: var(--text-faint); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
+.err-hint { margin: 6px 0; font-size: 0.8rem; color: var(--text-dim); }
