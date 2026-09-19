@@ -2411,6 +2411,9 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     wrap.appendChild(row);
     return wrap;
   }
+  // 展开后的旧回合可收起:折叠条件仍满足(非最近3轮/无错误)时,在 meta 行挂「收起」按钮
+  // (单向门修复:此前 expandedTurns 只有 add 没有 delete,点开后永远展开)。
+  const canFoldBack = !isLast && !streaming && !t.error && i < conv.turns.length - 3;
   // 日期分割线:与前一个 turn 不同天时,插入分割标记 / Date divider between turns on different days
   const prev = conv.turns[i - 1];
   if (prev) {
@@ -2618,6 +2621,19 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       // 右侧操作图标 / Right: action icons
       const actions = document.createElement('div');
       actions.className = 'ai-meta-actions';
+      // 收起:展开后的旧回合折回单行摘要(与 turn-fold 对称;仅折叠条件仍满足时出现)
+      if (canFoldBack && expandedTurns.has(t.id)) {
+        const fold = document.createElement('button');
+        fold.className = 'ghost ai-fold';
+        fold.title = tr('turn.foldUp');
+        fold.innerHTML = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V7"/><path d="M6 12l6-6 6 6"/><path d="M5 3h14"/></svg>';
+        fold.onclick = () => {
+          expandedTurns.delete(t.id);
+          const fresh = renderTurn(conv, i);
+          wrap.replaceWith(fresh);
+        };
+        actions.appendChild(fold);
+      }
       const speak = document.createElement('button');
       speak.className = 'ghost ai-speak';
       speak.title = tr('voice.speak');
