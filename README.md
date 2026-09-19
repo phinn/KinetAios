@@ -9,9 +9,9 @@
 
 > 🌐 **[Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-![KinetAios hero screenshot](documents/hero.png)
+![KinetAios hero screenshot](documents/hero-v3.8.jpg)
 
-![Four engines running side-by-side](documents/demo-arena.gif)
+*Real session: parallel conversations across projects, engine badge per session (Direct / Claude Code / Codex), file & Git & rules tabs, token-cost accounting per turn.*
 
 A **local-first AI agent dashboard** for **Windows 11 and macOS — both first-class platforms** (the "Win" folder name is historical; the repo is phinn/KinetAios). Platform differences (cmd.exe vs /bin/sh, hotkey, tray) are routed at runtime; features are aligned on both sides. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
 

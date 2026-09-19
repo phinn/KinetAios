@@ -18,9 +18,9 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-![KinetAios hero screenshot](documents/hero.png)
+![KinetAios 主界面](documents/hero-v3.8.jpg)
 
-![四引擎并跑演示](documents/demo-arena.gif)
+*真实会话截图:多项目并行会话、每会话独立引擎徽章(Direct / Claude Code / Codex)、文件 / Git / 规则多 tab、逐轮 token 成本统计。*
 
 本地 AI agent 仪表盘,**跨平台 —— Windows 11 和 macOS 都是一等公民**("Win"目录名是历史遗留,仓库即 phinn/KinetAios)。平台差异行为(shell 用 cmd.exe 还是 /bin/sh、热键、托盘)运行时按平台路由,功能两侧对齐。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。**无需账号,无需中继服务器 —— 你的 LLM API key 就是唯一凭证。**
 
