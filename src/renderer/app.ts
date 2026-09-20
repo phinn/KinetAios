@@ -3020,7 +3020,16 @@ function linkifyFileRefs(container: HTMLElement): void {
       const p = (n as Text).parentElement;
       if (!p) return NodeFilter.FILTER_REJECT;
       const tag = p.tagName;
-      if (tag === 'CODE' || tag === 'PRE' || tag === 'A' || tag === 'BUTTON' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+      // PRE(整段代码)继续跳过 —— 代码里的伪路径误判率太高;
+      // 行内 <code> 放行:内容像路径(有路径分隔符 + 扩展名)时,这是 AI 输出里
+      // 引用文件最常见的形式(`src/app.ts`),此前不可点只能手动复制。
+      if (tag === 'PRE' || tag === 'A' || tag === 'BUTTON' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+      if (tag === 'CODE') {
+        const code = (n as Text).data;
+        if (!/[/\\]/.test(code)) return NodeFilter.FILTER_REJECT;
+        FILE_REF_RE.lastIndex = 0;
+        return FILE_REF_RE.test(code) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
       return NodeFilter.FILTER_ACCEPT;
     },
   });
@@ -4957,6 +4966,8 @@ async function showSettings() {
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-voice-auto" ${s.voiceAutoSend ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-voice-auto">${tr('settings.voiceAutoSend')}</label></div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-auto-skills" ${s.autoLoadSkills ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-auto-skills">${tr('settings.autoLoadSkills')}</label></div>
         <div class="field-desc">${tr('settings.autoLoadSkills.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-compact-meta" ${s.compactMeta ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-compact-meta">${tr('settings.compactMeta')}</label></div>
+        <div class="field-desc">${tr('settings.compactMeta.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-deep-bg" ${s.v3DeepBackground !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-deep-bg">${tr('settings.v3DeepBackground')}</label></div>
         <div class="field-desc">${tr('settings.v3DeepBackground.desc')}</div>
         <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
@@ -6267,7 +6278,9 @@ function readSettingsForm(): AppSettings {
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
-    autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,    v3DeepBackground: (() => {
+    autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,
+    compactMeta: (document.getElementById('s-compact-meta') as HTMLInputElement)?.checked ?? current?.compactMeta === true,
+    v3DeepBackground: (() => {
       const el = document.getElementById('s-deep-bg') as HTMLInputElement | null;
       return el ? el.checked : true; // 无 UI 元素时保持默认开(主进程默认 true)
     })(),
@@ -7047,10 +7060,24 @@ function closeMoreMenu() {
     const ref = t.closest('.file-ref') as HTMLElement | null;
     if (ref?.dataset.path) {
       e.preventDefault();
+      // Shift+单击 → 跳过抽屉,直接用系统默认程序/编辑器打开
+      if (e.shiftKey) {
+        void openPathExternal(ref.dataset.path);
+        return;
+      }
       void fileDrawer?.open(ref.dataset.path);
     }
   });
-  // ── 会话内搜索条 ──
+  // file-ref Shift+单击:相对路径按当前会话 cwd 补全,逐段编码转 file:// 交给系统默认程序。
+function openPathExternal(path: string): void {
+  const abs = /^[A-Za-z]:[\\/]|^\//.test(path)
+    ? path
+    : (selectedId ? convs.get(selectedId)?.cwd ?? '' : '') +(/[\\/]$/.test(selectedId ? convs.get(selectedId)?.cwd ?? '' : '') ? '' : '/') + path;
+  const url = 'file:///' + abs.split(/[\\/]/).map(encodeURIComponent).join('/');
+  void api.shellOpen(url);
+}
+
+// ── 会话内搜索条 ──
   const chatSearchInputEl = document.getElementById('chat-search-input') as HTMLInputElement;
   chatSearchInputEl.addEventListener('input', () => chatSearchInput());
   chatSearchInputEl.addEventListener('keydown', (e) => {

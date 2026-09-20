@@ -6587,14 +6587,6 @@ select:focus-visible {
 .tok-tool-line { font-size: 0.692rem; color: var(--text-dim); padding: 1px 0; word-break: break-all; }
 
 /* ═══ 日期分隔(聊天流)/ 侧栏时间桶 / 流式状态条 meta / contextTooLong 引导 ═══ */
-.turn-day-sep {
-  display: flex; align-items: center; gap: 10px;
-  margin: 18px 0 10px; font-size: 0.7rem; color: var(--text-faint);
-  user-select: none;
-}
-.turn-day-sep::before, .turn-day-sep::after {
-  content: ''; flex: 1; height: 1px; background: var(--border-soft);
-}
 .sb-time-sep {
   padding: 10px 12px 4px; font-size: 0.65rem; font-weight: 600;
   letter-spacing: 0.05em; color: var(--text-faint); list-style: none;
@@ -6603,3 +6595,30 @@ select:focus-visible {
 .sb-time-sep:first-child { padding-top: 6px; }
 .streaming-status .ss-meta { margin-left: 10px; color: var(--text-faint); font-size: 0.7rem; font-variant-numeric: tabular-nums; }
 .err-hint { margin: 6px 0; font-size: 0.8rem; color: var(--text-dim); }
+
+/* ═══ 聊天区拖放提示 / 回到顶部按钮 / 紧凑模式 ═══ */
+#chat-content { position: relative; }
+#chat-content.drop-hint::after {
+  content: '松开以附加文件';
+  position: absolute; inset: 12px; z-index: var(--z-dialog);
+  display: flex; align-items: center; justify-content: center;
+  border: 2px dashed var(--accent); border-radius: 14px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent); font-size: 1.1rem; font-weight: 600;
+  pointer-events: none;
+  animation: tok-pop-in var(--dur-fast) var(--ease-out);
+}
+.scroll-top-btn { bottom: calc(var(--input-h, 74px) + 64px); }
+/* 紧凑模式:meta 行默认隐藏,悬停该轮时浮现(保留占位防跳动) */
+body.meta-compact .ai-meta-row { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+body.meta-compact .turn:hover .ai-meta-row,
+body.meta-compact .ai-meta-row:focus-within { opacity: 1; }
+
+/* ═══ Composer token 估算 ═══ */
+.composer-bar .composer-tok {
+  font-size: 0.7rem; color: var(--text-faint); white-space: nowrap;
+  font-variant-numeric: tabular-nums; align-self: center; padding: 0 4px;
+  user-select: none;
+}
+/* Lightbox 变换基线(缩放/平移) */
+.img-lightbox img { will-change: transform; }
