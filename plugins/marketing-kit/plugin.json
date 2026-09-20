@@ -1,0 +1,17 @@
+{
+  "name": "marketing-kit",
+  "approval": "never",
+  "version": "1.0.0",
+  "description": "营销推广插件 —— 竞品调研、社区热度探测、落地页 SEO 体检、漏斗计算、关键词拓展。提供增长工具集 + 发布工作流命令 + 营销方法论提示词。",
+  "author": "KinetAios",
+  "category": "creative",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/marketing-kit",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["web_fetch", "network"],
+  "keywords": ["营销", "推广", "增长", "竞品", "seo", "landing", "落地页", "发布", "product hunt", "launch", "文案", "内容营销", "漏斗", "转化率", "关键词", "社区", "marketing", "growth", "hacker news", "reddit"],
+  "tools": "index.js#tools",
+  "slashCommands": "commands",
+  "systemPrompt": "prompt.md"
+}

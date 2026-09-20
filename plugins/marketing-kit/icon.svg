@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 40">
+  <!-- 营销推广插件图标:上升箭头+声波,增长信号 -->
+  <defs>
+    <linearGradient id="mk" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#FF6B4A"/>
+      <stop offset="1" stop-color="#F7971E"/>
+    </linearGradient>
+  </defs>
+  <rect x="1" y="1" width="38" height="38" rx="9" fill="url(#mk)"/>
+  <!-- 柱状图:增长 -->
+  <rect x="9" y="24" width="4" height="8" rx="1.2" fill="#fff" opacity="0.75"/>
+  <rect x="15" y="19" width="4" height="13" rx="1.2" fill="#fff" opacity="0.85"/>
+  <rect x="21" y="14" width="4" height="18" rx="1.2" fill="#fff" opacity="0.95"/>
+  <!-- 上升箭头 -->
+  <path d="M12 16 L20 8 L28 14" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M20 8 L20 13" fill="none" stroke="#fff" stroke-width="3" stroke-linecap="round"/>
+</svg>
