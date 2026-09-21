@@ -8,7 +8,8 @@
 //   3. reddit_hot        — subreddit 热帖抓取(public JSON, 无需 key)
 //   4. seo_audit         — 落地页 SEO 体检(meta/OG/结构化数据/标题层级/词频)
 //   5. funnel_calc       — 漏斗/获客成本计算(CAC/LTV/转化率/回收期)
-//   6. keyword_expand    — 关键词拓展(核心词 × 修饰词矩阵 + 长尾模式)
+//   6. keyword_expand    — 关键词拓展(DDG 真实联想词 + 静态矩阵兜底)
+//   7. appstore_lookup   — App Store 竞品查询(iTunes Search + 评论 RSS, 免 key)
 //
 // 设计原则:
 //   - 全部 readOnly=true,只查不改;写落地页/写报告交给 Agent 用 write_file 完成。
@@ -18,16 +19,20 @@
 const https = require('https');
 
 // ── 辅助:HTTP GET (Promise 封装, 带超时 + UA) ──────────────────
-function httpGet(url, timeoutMs = 20000, headers = {}) {
+// 双协议: http:// 用 http 模块, https:// 用 https 模块(有些老站只有 http)。
+// getOnce 单次请求;httpGet 包一层 429/503 退避重试(DDG/Reddit 限流是常态)。
+function getOnce(url, timeoutMs, headers) {
   return new Promise((resolve, reject) => {
-    const req = https.get(url, {
+    const mod = url.startsWith('http://') ? require('http') : https;
+    const req = mod.get(url, {
       timeout: timeoutMs,
       headers: { 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) KinetAios-MarketingKit/1.0', ...headers },
     }, (res) => {
       // 跟随一次重定向(reddit/hn 偶发 301)
       if (res.statusCode >= 301 && res.statusCode <= 308 && res.headers.location) {
         res.resume();
-        httpGet(res.headers.location, timeoutMs, headers).then(resolve, reject);
+        const loc = new URL(res.headers.location, url).toString();
+        getOnce(loc, timeoutMs, headers).then(resolve, reject);
         return;
       }
       let data = '';
@@ -37,6 +42,17 @@ function httpGet(url, timeoutMs = 20000, headers = {}) {
     req.on('timeout', () => { req.destroy(); reject(new Error('请求超时')); });
     req.on('error', reject);
   });
+}
+
+function httpGet(url, timeoutMs = 20000, headers = {}, retries = 1) {
+  const attempt = (left) => getOnce(url, timeoutMs, headers).then((res) => {
+    // 429/503 限流: 等待后重试一次, 仍失败返回最后一次响应(调用方自己降级)
+    if ((res.status === 429 || res.status === 503) && left > 0) {
+      return new Promise((r) => setTimeout(r, 1500)).then(() => attempt(left - 1));
+    }
+    return res;
+  });
+  return attempt(retries);
 }
 
 // 安全的 JSON 解析(失败返回 null, 调用方降级)
@@ -72,10 +88,28 @@ const marketSearch = {
     try { res = await httpGet(url); } catch (e) {
       return `❌ 搜索请求失败: ${e.message}。可改用 web_search 工具重试。`;
     }
-    if (res.status !== 200) return `❌ 搜索返回 HTTP ${res.status}。可改用 web_search 工具重试。`;
-
     // 解析 DDG html 结果页: result__a 为标题链接, result__snippet 为摘要
     const out = [];
+    if (res.status !== 200) {
+      try {
+        const lite = await httpGet(`https://lite.duckduckgo.com/lite/?q=${encodeURIComponent(args.query)}`);
+        if (lite.status === 200) {
+          const lre = /<a[^>]*class="result-link"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/g;
+          let lm;
+          while ((lm = lre.exec(lite.body)) && out.length < limit) {
+            let href = lm[1];
+            const uddg = href.match(/[?&]uddg=([^&]+)/);
+            if (uddg) href = decodeURIComponent(uddg[1]);
+            const title = decodeEntities(lm[2].replace(/<[^>]+>/g, '')).trim();
+            if (title) out.push(`${out.length + 1}. ${title}\n   ${href}`);
+          }
+          if (out.length) return out.join('\n\n') + '\n\n(lite 端点, 无摘要)';
+        }
+      } catch { /* 兜底也挂就走下面统一报错 */ }
+      return `❌ 搜索返回 HTTP ${res.status}(重试后仍限流)。可改用内置 web_search 工具。`;
+    }
+
+    // 解析 DDG html 结果页: result__a 为标题链接, result__snippet 为摘要
     const re = /<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>[\s\S]*?class="result__snippet"[^>]*>([\s\S]*?)<\/a>/g;
     let m;
     while ((m = re.exec(res.body)) && out.length < limit) {
@@ -138,12 +172,14 @@ const hnSearch = {
 // Tool 3: reddit_hot — public subreddit JSON (no auth).
 const redditHot = {
   name: 'reddit_hot',
-  description: '抓取指定 subreddit 的热帖(标题/分数/评论数/链接/自我文本摘要)。用于:监听目标社区在讨论什么、发现痛点原声(voice of customer)、验证内容选题。subreddit 名不带 r/ 前缀。',
+  description: '抓取指定 subreddit 的帖子:不传 query 抓当前热帖;传 query 则全量搜索该社区历史帖(配合 t=year 可挖老帖)。用于:监听社区在讨论什么、发现痛点原声(voice of customer)、按关键词挖竞品怨念帖(如搜 "frustrating / switched away / wish")。',
   parameters: {
     type: 'object',
     properties: {
       subreddit: { type: 'string', description: 'subreddit 名,不带 r/ 前缀(如 SaaS, selfhosted, productivity)' },
-      sort: { type: 'string', description: '排序: hot(默认)/new/top/rising' },
+      query: { type: 'string', description: '可选:搜索词(在此社区内全量搜索,不限热帖)。挖痛点示例: "frustrating"、"annoying"、"wish there was"、"alternative to X"' },
+      t: { type: 'string', description: '搜索时间范围: hour/day/week/month/year/all(默认 year;仅 query 模式生效)' },
+      sort: { type: 'string', description: '排序: hot(默认)/new/top/rising;top 在 query 模式下=按相关性+热度权重' },
       limit: { type: 'number', description: '返回条数(默认 10, 上限 20)' },
     },
     required: ['subreddit'],
@@ -153,19 +189,30 @@ const redditHot = {
     const limit = Math.min(Math.max(args.limit ?? 10, 1), 20);
     const sort = ['hot', 'new', 'top', 'rising'].includes(args.sort) ? args.sort : 'hot';
     const sub = String(args.subreddit).replace(/^r\//, '').trim();
-    const res = await httpGet(`https://www.reddit.com/r/${encodeURIComponent(sub)}/${sort}.json?limit=${limit}`);
+    const tRange = ['hour', 'day', 'week', 'month', 'year', 'all'].includes(args.t) ? args.t : 'year';
+    // 两种模式: 热帖列表(/hot.json) 与 社区内搜索(/search.json?restrict_sr=1)
+    const url = args.query
+      ? `https://www.reddit.com/r/${encodeURIComponent(sub)}/search.json?q=${encodeURIComponent(args.query)}&restrict_sr=1&sort=${sort}&t=${tRange}&limit=${limit}`
+      : `https://www.reddit.com/r/${encodeURIComponent(sub)}/${sort}.json?limit=${limit}`;
+    const res = await httpGet(url);
     if (res.status === 403 || res.status === 429) return `❌ Reddit 拒绝了请求 (HTTP ${res.status}, 可能被限流)。稍后重试或换社区。`;
     if (res.status === 404) return `❌ 找不到 subreddit「${sub}」,检查拼写。`;
     if (res.status !== 200) return `❌ Reddit 返回 HTTP ${res.status}`;
     const data = tryJson(res.body);
     const posts = data?.data?.children?.map((c) => c.data) ?? [];
-    if (!posts.length) return `「r/${sub}」没有取到帖子(社区可能不存在或为空)。`;
+    if (!posts.length) return args.query
+      ? `「r/${sub}」内没搜到含「${args.query}」的帖子。换个关键词(更短/更通用)或扩大 t 范围到 all。`
+      : `「r/${sub}」没有取到帖子(社区可能不存在或为空)。`;
 
     const lines = posts.map((p, i) => {
       const self = p.selftext ? '\n   摘要: ' + p.selftext.replace(/\s+/g, ' ').slice(0, 180) : '';
-      return `${i + 1}. 【${p.score ?? 0}分/${p.num_comments ?? 0}评】${p.title}\n   https://www.reddit.com${p.permalink}${self}`;
+      const age = p.created_utc ? `\n   发帖: ${new Date(p.created_utc * 1000).toISOString().slice(0, 10)}` : '';
+      return `${i + 1}. 【${p.score ?? 0}分/${p.num_comments ?? 0}评】${p.title}\n   https://www.reddit.com${p.permalink}${self}${age}`;
     });
-    return `🔥 r/${sub} (${sort}) 热帖 前 ${lines.length} 条:\n\n${lines.join('\n\n')}`;
+    const head = args.query
+      ? `🔎 r/${sub} 内搜「${args.query}」(范围 ${tRange}, 排序 ${sort}) — ${posts.length} 条:`
+      : `🔥 r/${sub} (${sort}) 热帖 前 ${lines.length} 条:`;
+    return `${head}\n\n${lines.join('\n\n')}`;
   },
 };
 
@@ -253,10 +300,36 @@ const seoAudit = {
     const noAlt = imgs.filter((t) => !/alt\s*=/i.test(t)).length;
     findings.push(`🖼️ 图片 ${imgs.length} 张, 缺 alt ${noAlt} 张${noAlt > 0 ? ' ⚠️' : ' ✅'}`);
 
-    // 词频(去 tag/script/style, 粗略分词)
+    // ── 深化项: 正文词数 / 链接 / 页面体积 / robots / sitemap ──
     const text = html
       .replace(/<script[\s\S]*?<\/script>/gi, ' ').replace(/<style[\s\S]*?<\/style>/gi, ' ')
       .replace(/<[^>]+>/g, ' ');
+    const bodyWords = (text.match(/[a-zA-Z\u4e00-\u9fff]+/g) || []).length;
+    findings.push(`📏 正文词数: ${bodyWords}${bodyWords < 300 ? ' ⚠️ 薄内容(<300), 排名难撑' : bodyWords > 2500 ? '(长文, ✅ 深度信号)' : ' ✅'}`);
+
+    const links = html.match(/<a[^>]+href=/gi) || [];
+    const origin = new URL(url).origin;
+    const internal = links.filter((_, i) => {
+      const m = html.match(/<a[^>]+href=["']([^"']*)["']/gi)?.[i];
+      if (!m) return false;
+      const href = m.match(/href=["']([^"']*)["']/i)?.[1] || '';
+      return href.startsWith('/') || href.startsWith(origin) || (!/^https?:\/\//.test(href) && !href.startsWith('//') && !href.startsWith('#') && !href.startsWith('mailto:'));
+    }).length;
+    findings.push(`🔗 链接: 内链 ~${internal} / 总 ${links.length}${internal === 0 ? ' ⚠️ 零内链(爬虫无法继续抓)' : ''}`);
+
+    const scripts = (html.match(/<script/gi) || []).length;
+    const kb = Math.round(Buffer.byteLength(html) / 1024);
+    findings.push(`📦 HTML ${kb}KB / ${scripts} 个 script 标签${scripts > 30 ? ' ⚠️ 偏多(渲染依赖重, 爬虫预算信号)' : ''}`);
+
+    // robots.txt / sitemap.xml 可达性(同域, 只报告不打分)
+    const robotsRes = await httpGet(origin + '/robots.txt', 8000).catch(() => null);
+    const robotsOk = robotsRes && robotsRes.status === 200 && !/^\s*<!doctype/i.test(robotsRes.body);
+    const sitemapHit = robotsOk ? /sitemap:/i.test(robotsRes.body) : false;
+    const sitemapRes = sitemapHit ? null : await httpGet(origin + '/sitemap.xml', 8000).catch(() => null);
+    const sitemapOk = sitemapHit || (sitemapRes && sitemapRes.status === 200 && /<(urlset|sitemapindex)/i.test(sitemapRes.body));
+    findings.push(`🤖 robots.txt: ${robotsOk ? '✅ 存在' : '⚠️ 缺失/不可达'} | sitemap.xml: ${sitemapOk ? '✅ 存在' : '⚠️ 缺失(收录速度受影响)'}`);
+
+    // 词频(复用上面的正文 text, 粗略分词)
     const words = text.toLowerCase().match(/[a-z][a-z0-9'-]{2,}/g) || [];
     const stop = new Set('the a an and or but for with without to from of in on at by is are was were be been being this that these those it its as your you our we they their can will not have has had do does did if then so no yes all any more most other some such only own same than too very just also get got make made new now one two per via use used using'.split(' '));
     const freq = {};
@@ -361,13 +434,14 @@ const funnelCalc = {
 // Tool 6: keyword_expand — keyword matrix generator.
 const keywordExpand = {
   name: 'keyword_expand',
-  description: '关键词拓展:输入核心词(可多个)+ 自带修饰词库,生成交替组合矩阵、长尾问句模式、地域/场景变体。用于 SEO 选题、内容日历、投放词包。',
+  description: '关键词拓展:输入核心词(可多个)。默认先拉 DuckDuckGo 真实搜索联想词(免 key autocomplete,反映真实用户输入),再叠加本地修饰词矩阵/长尾模式/问句。联想词拉取失败自动降级为纯静态矩阵。用于 SEO 选题、内容日历、投放词包。',
   parameters: {
     type: 'object',
     properties: {
       seeds: { type: 'string', description: '核心词,逗号分隔(如 "ai note app, voice memo transcript")' },
       lang: { type: 'string', description: '输出语言: en(默认)/zh' },
       includeQuestions: { type: 'boolean', description: '是否生成问句长尾(默认 true)' },
+      live: { type: 'boolean', description: '是否拉真实联想词(默认 true;false=纯静态矩阵)' },
     },
     required: ['seeds'],
   },
@@ -392,15 +466,123 @@ const keywordExpand = {
     const pats = seeds.flatMap((s) => patterns.map((p) => p.replace('{s}', s)));
     const qs = args.includeQuestions === false ? [] : seeds.flatMap((s) => questions.map((q) => q.replace('{s}', s)));
 
+    // 真实联想词: DDG autocomplete 免 key 接口, 每个核心词拉一次(失败静默降级)
+    let liveLines = '';
+    if (args.live !== false) {
+      const live = {};
+      for (const s of seeds) {
+        try {
+          const r = await httpGet(`https://duckduckgo.com/ac/?q=${encodeURIComponent(s)}&type=list`, 8000);
+          const arr = tryJson(r.body);
+          // type=list 返回 [query, [suggestions...]]; 另一格式 [{phrase}] 也兼容
+          let sugg = [];
+          if (Array.isArray(arr) && Array.isArray(arr[1])) sugg = arr[1];
+          else if (Array.isArray(arr)) sugg = arr.map((x) => (typeof x === 'object' ? x.phrase : x)).filter(Boolean);
+          live[s] = sugg.filter((x) => x.toLowerCase() !== s.toLowerCase()).slice(0, 8);
+        } catch { live[s] = []; }
+      }
+      const got = Object.values(live).filter((a) => a.length).length;
+      if (got > 0) {
+        liveLines = `【🎯 DDG 真实联想词 (${got}/${seeds.length} 个核心词拿到, 反映真实用户输入)】\n` +
+          seeds.map((s) => `  ${s} → ${live[s].length ? live[s].join(' | ') : '(无联想)'}`).join('\n') +
+          '\n\n💡 联想词=用户实际在搜的词, 优先做选题和 title; 下面静态矩阵用于补充投放词包。\n\n';
+      } else {
+        liveLines = `【⚠️ 联想词拉取失败(网络/限流), 已降级为纯静态矩阵】\n\n`;
+      }
+    }
+
     return `🔑 关键词拓展 (核心词 ${seeds.length} 个):\n\n` +
+      liveLines +
       `【组合矩阵 ${matrix.length} 个】\n${matrix.join(', ')}\n\n` +
       `【长尾模式 ${pats.length} 个】\n${pats.join('\n')}\n\n` +
       (qs.length ? `【问句长尾 ${qs.length} 个(FAQ/Reddit 选题)】\n${qs.join('\n')}\n\n` : '') +
-      `💡 建议: 组合矩阵用于投放词包分档出价;长尾模式用于博客选题;问句用于 FAQ schema 和社区回答。`;
+      `💡 建议: 真实联想词用于内容选题与 title; 组合矩阵用于投放词包分档出价;长尾模式用于博客选题;问句用于 FAQ schema 和社区回答。`;
+  },
+};
+
+// ── 工具 7: App Store 竞品查询 ──────────────────────────────
+// Tool 7: appstore_lookup — iTunes Search API + customer reviews RSS (public, no key).
+const appstoreLookup = {
+  name: 'appstore_lookup',
+  description: '查询 App Store 竞品信息(免 key):按名称/关键词搜 App(拿评分/评分人数/版本/定价/开发者),或按 app id 拉最近用户评论(真实原声,含标题/评分/版本)。ASO 竞争分析、竞品评论挖掘入口。支持所有国家的 iTunes 商店。',
+  parameters: {
+    type: 'object',
+    properties: {
+      term: { type: 'string', description: '搜索词(App 名称或关键词,如 "AI note"、"obsidian")。与 appId 二选一' },
+      appId: { type: 'string', description: 'App 数字 id(如 6814033986)。传了则直接查这个 App 的详情' },
+      country: { type: 'string', description: '商店国家代码(默认 us;cn=中国)。注意评分/排名因区而异' },
+      reviews: { type: 'boolean', description: '是否同时拉最近用户评论(默认 true;仅 appId 模式,iTunes Search 搜出来的首个结果也会自动带一次)' },
+      entity: { type: 'string', description: '搜索实体: software(默认)/macSoftware/iPhone 等不填则不限' },
+    },
+  },
+  readOnly: true,
+  async run(args) {
+    const country = (args.country || 'us').toLowerCase();
+    if (!args.term && !args.appId) return '❌ 传 term(搜索词)或 appId(App 数字 id)之一。';
+
+    let app = null;
+    let viaSearch = false;
+    if (args.appId) {
+      const res = await httpGet(`https://itunes.apple.com/lookup?id=${encodeURIComponent(args.appId)}&country=${country}`);
+      if (res.status !== 200) return `❌ iTunes lookup HTTP ${res.status}`;
+      const data = tryJson(res.body);
+      app = data?.results?.[0] ?? null;
+      if (!app) return `❌ id ${args.appId} 在 ${country} 区没查到(下架/区域锁定/id 错误都可能)。`;
+    } else {
+      const entity = args.entity ? `&entity=${encodeURIComponent(args.entity)}` : '&entity=software';
+      const res = await httpGet(`https://itunes.apple.com/search?term=${encodeURIComponent(args.term)}&country=${country}&limit=8${entity}`);
+      if (res.status !== 200) return `❌ iTunes search HTTP ${res.status}`;
+      const data = tryJson(res.body);
+      const results = data?.results ?? [];
+      if (!results.length) return `「${args.term}」在 ${country} 区没搜到 App。换英文关键词试试。`;
+      // 汇总列表 + 取首个做深查
+      const list = results.map((r, i) => `${i + 1}. ${r.trackName} — ⭐${(r.averageUserRating ?? 0).toFixed(1)}(${r.userRatingCount ?? 0}评) id=${r.trackId}${r.formattedPrice ? ' ' + r.formattedPrice : ''}`).join('\n');
+      app = results[0];
+      viaSearch = true;
+      var searchList = `\n📋 「${args.term}」${country} 区搜索结果 ${results.length} 个(取第 1 个做深查, 需要别的传 appId):\n${list}\n\n`;
+    }
+
+    const appLine = [
+      `📱 ${app.trackName} (${country} 区)`,
+      `开发者: ${app.artistName} | 分类: ${app.primaryGenreName ?? '—'}`,
+      `评分: ⭐ ${(app.averageUserRating ?? 0).toFixed(2)} / 5(共 ${app.userRatingCount ?? 0} 人评)`,
+      `定价: ${app.formattedPrice ?? '—'} | 内购: ${app.hasIAP ?? false}`,
+      `当前版本: ${app.version ?? '—'}(${(app.currentVersionReleaseDate || '').slice(0, 10)}) | 最近更新: ${(app.releaseNotes || '').replace(/\s+/g, ' ').slice(0, 100) || '—'}`,
+      `链接: ${app.trackViewUrl ?? '—'}`,
+      `简介: ${(app.description || '').replace(/\s+/g, ' ').slice(0, 200)}…`,
+    ].join('\n');
+
+    // 评论 RSS: 每区每 App 最多 500 条, 按 page 取最新 50
+    let reviewsOut = '';
+    if (args.reviews !== false && app.trackId) {
+      try {
+        const rr = await httpGet(`https://itunes.apple.com/${country}/rss/customerreviews/page=1/id=${app.trackId}/sortby=mostrecent/json`, 12000);
+        if (rr.status === 200) {
+          const rd = tryJson(rr.body);
+          const entries = rd?.feed?.entry ?? [];
+          const revs = (Array.isArray(entries) ? entries : [entries]).slice(0, 10);
+          if (revs.length && revs[0]['im:rating']) {
+            reviewsOut = '\n\n💬 最新用户评论 top ' + revs.length + ' (原声, 挖痛点用):\n' + revs.map((e, i) => {
+              const rating = e['im:rating']?.label ?? '?';
+              const title = e.title?.label ?? '';
+              const body = (e.content?.label ?? '').replace(/\s+/g, ' ').slice(0, 150);
+              const ver = e['im:version']?.label ?? '?';
+              return `${i + 1}. [${rating}★ v${ver}] ${title} — ${body}`;
+            }).join('\n');
+          } else {
+            reviewsOut = '\n\n💬 该 App 在此区暂无评论。';
+          }
+        } else if (rr.status === 403 || rr.status === 429) {
+          reviewsOut = `\n\n💬 评论 RSS 被限流(HTTP ${rr.status}), 稍后再试。`;
+        }
+      } catch { /* 评论拉不到不影响主结果 */ }
+    }
+
+    return (viaSearch ? searchList : '') + appLine + reviewsOut;
   },
 };
 
 // ── 导出 ──────────────────────────────────────────────────
 module.exports = {
-  tools: [marketSearch, hnSearch, redditHot, seoAudit, funnelCalc, keywordExpand],
+  tools: [marketSearch, hnSearch, redditHot, seoAudit, funnelCalc, keywordExpand, appstoreLookup],
 };

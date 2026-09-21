@@ -193,6 +193,7 @@
         <div class="mk-hint">渠道无关的最小发布检查项。进度实时保存在本面板(localStorage),发完一个渠道勾一轮。</div>
         <div class="mk-progress"><div id="mk-checklist-bar"></div></div>
         <div id="mk-checklist-pct"></div>
+        <button class="mk-btn" id="mk-checklist-reset" style="margin-top:6px">↺ 重置本轮</button>
         <div id="mk-checklist" style="margin-top:8px"></div>
       </div>
     </div>
@@ -360,7 +361,7 @@
       var convId = await hostCall('getActiveConvId', []);
       if (!convId) { status('❌ 没有可用会话 —— 先在侧栏建一个会话', 'err'); return; }
       await hostCall('send', [convId, promptText]);
-      status('✅ 已发到会话,AI 开始调研(切回对话视图看进度)', 'ok');
+      status('✅ 已发到会话,AI 开始调研 —— 报告将落到 cwd(切回对话视图看进度)', 'ok');
     } catch (e) {
       status('❌ ' + String(e), 'err');
     }
@@ -403,6 +404,12 @@
     $('mk-checklist-pct').textContent = done + ' / ' + checks.length;
   }
   updateProgress();
+  $('mk-checklist-reset').onclick = function() {
+    checked = {};
+    localStorage.removeItem(ckKey);
+    box.querySelectorAll('input').forEach(function(cb) { cb.checked = false; });
+    updateProgress();
+  };
 
   // 拉主题变量(宿主注入)
   hostCall('getTheme', []).then(function(vars) {
