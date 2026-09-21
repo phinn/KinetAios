@@ -91,7 +91,7 @@ npm start
 
 ### Four engines, switchable per session
 - **Direct V1 (Kaios)** — built-in ReAct loop with a dual-protocol provider (OpenAI-compatible & Anthropic, both directions of SSE streaming), tool-level concurrency, sub-agents, context compaction and retries.
-- **Direct V2** — next-gen ReAct on a Plan-Execute-Verify-Judge architecture, streaming tool calls, step-by-step task lists rendered live in the chat as checklist cards.
+- **Direct V2** — next-gen ReAct on a Plan-Execute-Verify-Judge architecture, streaming tool calls, step-by-step task lists rendered live in the chat as checklist cards, plus a unified execution loop shared by plan and replan (retry / verification / checkpointing / compaction behave identically on both paths).
 - **Direct V3** — latest: an **intent router** picks `fast` / `standard` / `deep` per query; the `deep` path builds tool calls into a **dependency DAG and executes it in parallel** — real speedups on multi-step tasks.
 - **Claude Code** — spawns `claude -p --output-format stream-json`, parses NDJSON, resumes with `--resume`.
 - **Codex** — spawns `codex exec --json`, parses JSONL, resumes.
@@ -117,11 +117,12 @@ npm start
 ### Skills / Commands / Agents / Plugins
 - Scans Claude Code's skills + commands + agents and Codex's skills. Invoke via the `/` menu or the ⚡ button.
 - **Skills panel** (Settings → Skills): aggregates skills from all third-party sources plus plugin contributions, with search, viewing, and direct source editing (plugin skills read-only). Edits take effect immediately.
-- **Plugin SDK v3**: plugins contribute tools, slash commands, hooks, and fullscreen panels. Injected on demand (keyword matching saves ~60% tokens). **20 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drones), an embedded & IoT suite (arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag), nestjs-dev, deepseek-harness, claude-code, codex, and more.
+- **Plugin SDK v3**: plugins contribute tools, slash commands, hooks, and fullscreen panels. Injected on demand (keyword matching saves ~60% tokens). **21 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drones), an embedded & IoT suite (arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag), nestjs-dev, deepseek-harness, claude-code, codex, marketing-kit (marketing research: competitors / SEO / funnel / app-review mining + a marketing console panel), and more.
 
 ### Sidebar (left to right)
 - **＋** new session.
 - **📂 Workbench** — project cards grouped by cwd, each showing recent activity + cost. A "Context" button edits `KINET-CONTEXT.md`.
+- **Live session status** — running sessions show the engine's current step (tool executing / retrying / compacting) right under the title in the sidebar, no need to open the channel.
 - **📊 Dashboard** — standalone window with live token usage, cost stats, engine distribution.
 - **🌐 Files** — file browsing + `<webview>` preview (HTML/SVG/PNG/JPG/PDF) + editor. Multi-tab. The address bar accepts `file://` / `http(s)://` / `localhost:<port>`.
 - **🏘️ Town** — game-style isometric visualization of remote nodes (other KinetAios instances) on your network.
@@ -171,6 +172,7 @@ Chain multiple stages, each with its own engine + prompt. The previous stage's o
 - **File attachments**: 📎 pick/drop multiple text files (large files read header-only), `@path` references to cwd files.
 - **`KinetAios.md` / `AGENTS.md` / `CLAUDE.md`** — rule files in the cwd are auto-injected into the system prompt.
 - **Tray + global hotkey** `Ctrl/Cmd+Alt+Space` → quick panel.
+- **Compact mode**: per-turn meta (duration / tokens / cost) hidden by default, shown on message hover; real file paths in tool output are clickable to open.
 - **Update check** against GitHub Releases, shown on the About page.
 - **Configurable branding** (`brand.json`), **encrypted API key storage** (safeStorage: macOS Keychain / Windows DPAPI).
 

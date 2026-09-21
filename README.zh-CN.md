@@ -63,7 +63,7 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 下载最新发布:
 
-- **Windows** — 最新版 [`KinetAios-Setup-<版本号>.exe`](https://github.com/phinn/KinetAios/releases/latest)(NSIS 安装包,当前 3.8.0)
+- **Windows** — 最新版 [`KinetAios-Setup-<版本号>.exe`](https://github.com/phinn/KinetAios/releases/latest)(NSIS 安装包,当前 3.8.1)
 - **macOS** — 见 [releases](https://github.com/phinn/KinetAios/releases/latest)
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。
@@ -112,7 +112,7 @@ npm start
 
 ### 四个引擎(每会话可切,切换清跨引擎上下文)
 - **Direct V1(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
-- **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,分步任务清单(聊天流实时渲染为清单卡),共享 V1 工具集。
+ - **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,分步任务清单(聊天流实时渲染为清单卡);计划执行与重规划共用统一执行循环(重试/验证/checkpoint/压缩两条路径行为一致)。
 - **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**(同层只读节点受限并发,写节点串行防竞态),多步任务有真实加速。**deep 任务可后台执行**(3.8+):提交 JobManager 后会话立即解锁,期间实时显示运行数与成本,完成自动回贴;DAG 每节点完成即落 checkpoint,**断点续跑**——任务终止/失败/重启后从断点继续,不再整图作废。引擎选择指南见 [wiki](https://github.com/phinn/KinetAios/wiki/Choose-Engine)。
 - **Claude Code** *(插件开关)*:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex** *(插件开关)*:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
@@ -139,11 +139,12 @@ npm start
 - 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。**内置 skill 随 app 分发**(3.7.3+,首发的 `data-analysis` 移植了 V3 分析工作法:先摸 schema 再下结论、计算交给工具不心算、中间产物落盘、结论可溯源)。
 - **技能面板**(设置 → 技能):聚合三方来源 + 内置(只读)+ 插件贡献的全部技能,搜索、查看、直接编辑源文件(插件/内置技能只读),保存即时生效。
 - **模型配置档弹窗编辑**(3.7.3+):模型 tab「添加模型」,新增/编辑统一居中弹窗(配置名/key/URL/模型/协议/reasoning/价格/余额查询),内置测试连接。
-- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks、全屏面板和**引擎**。按需注入(keywords 关键词匹配省 ~60% token)。**20 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex 等。
+- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks、全屏面板和**引擎**。按需注入(keywords 关键词匹配省 ~60% token)。**21 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex、marketing-kit(营销调研:竞品/SEO/漏斗/App 差评挖掘 + 营销控制台面板)等。
 
 ### 侧边栏按钮(从左到右)
 - **＋** 新建会话。
 - **📂 工作台(Workbench)** —— 按 cwd 分组的项目卡片,每张显示近期活动 + 成本。「背景」按钮编辑 `KINET-CONTEXT.md`。
+- **会话实时状态** —— 运行中的会话在侧栏标题下方实时显示引擎当前步骤(工具执行 / 重试 / 压缩),不点进去也能掌握进度。
 - **📊 仪表盘(Dashboard)** —— 独立窗口,实时 token 用量、成本统计、引擎分布。
 - **🌐 文件(Files)** —— 文件浏览 + `<webview>` 预览(HTML/SVG/PNG/JPG/PDF)+ 编辑器。多标签页。地址栏支持 `file://` / `http(s)://` / `localhost:<port>`。
 - **🏘️ Town** —— 游戏风格等距可视化,展示网络中的远程节点(其他 KinetAios 实例)。
@@ -193,6 +194,7 @@ npm start
 - **文件附件**:📎 选/拖多个文本文件(大文件只读开头),`@路径` 引用 cwd 内文件。
 - **`KinetAios.md` / `AGENTS.md` / `CLAUDE.md`**:cwd 下的规则文件自动注入 system prompt。
 - **托盘 + 全局热键** `Ctrl/Cmd+Alt+Space` → 快速面板。
+- **紧凑模式**:开启后耗时 / token / 费用等 turn 元信息默认隐藏,悬停消息才显示;工具输出里的真实文件路径可点击跳转。
 - **版本更新检查**:对比 GitHub Releases,设置页「关于」展示。
 - **可配置品牌**(`brand.json`)、**API key 加密存储**(safeStorage:mac Keychain / Win DPAPI)。
 
