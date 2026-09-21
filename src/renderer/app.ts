@@ -827,6 +827,102 @@ function renderSidebar() {
   projPool.forEach((li) => li.remove());
 }
 
+// ── 频道速览 tooltip(harness 风格):hover 任务条目 → 全景速览 ──
+// 参考 deepseek-harness Trajectory 速览 + nexus 液态玻璃 tooltip:
+// 引擎/状态徽章、轮数、↑↓ token、成本、上下文 gauge、最近运行耗时、运行中实时 statusNote。
+// 全局单例(一个 div 复用),hover 350ms 才出(防扫过闪现),可见时 1s 自刷新跟手。
+
+let convTipTimer: ReturnType<typeof setTimeout> | null = null;   // hover 延迟计时器
+let convTipRefresh: ReturnType<typeof setInterval> | null = null; // 可见时逐秒刷新
+let convTipCid: string | null = null;                             // 当前展示的频道
+let convTipAnchor: HTMLElement | null = null;                     // 锚点 li(定位 + leave 判定)
+
+// 运行态细分文案:waiting(等确认)/ retrying(重试中)/ running;空闲态 error/done/idle。
+function convTipState(c: Conversation): { cls: string; label: string } {
+  const last = c.turns[c.turns.length - 1];
+  const id = convTipCid;
+  if (c.status === 'running') {
+    if (id && confirmConvId === id) return { cls: 'ct-waiting', label: tr('tip.stateWaiting') };
+    if (id && convRetrying.has(id)) return { cls: 'ct-retrying', label: tr('tip.stateRetrying') };
+    return { cls: 'ct-running', label: tr('nexus.stateRunning') };
+  }
+  if (last?.error) return { cls: 'ct-error', label: tr('nexus.stateError') };
+  if (last) return { cls: '', label: tr('nexus.stateDone') };
+  return { cls: '', label: tr('nexus.stateIdle') };
+}
+
+function convTipRender(): void {
+  const tip = document.getElementById('sb-conv-tip');
+  if (!tip || !convTipCid || tip.hidden) return;
+  const c = convs.get(convTipCid);
+  if (!c) { hideConvTip(); return; }
+  const id = convTipCid;
+  const st = convTipState(c);
+  const title = c.customTitle || (c.firstPrompt?.slice(0, 40)) || (c.turns[0]?.prompt?.slice(0, 40)) || tr('head.newConv');
+  const turns = c.turnCount ?? c.turns.length;
+  const tokStr = c.tokens ? tokSplitLabel(c.tokensIn ?? 0, c.tokensOut ?? 0, c.tokens) : '';
+  const costStr = c.cost ? (c.cost < 0.01 ? `$${c.cost.toFixed(4)}` : `$${c.cost.toFixed(2)}`) : '';
+  const ctxStr = c.ctxTokens ? ctxGaugeText(c) : '';
+  const last = c.turns[c.turns.length - 1];
+  const runStr = last?.ts && turns > 0 ? `${tr('tip.lastRun')} ${fmtElapsed(Date.now() - last.ts)}` : '';
+  const dotCls = dotState(c, id);
+  tip.innerHTML = `
+    <div class="ct-head">
+      <span class="ct-dot dot ${dotCls}${c.engine ? ' eng-' + esc(c.engine) : ''}"></span>
+      <span class="ct-title">${esc(title)}</span>
+    </div>
+    <div class="ct-row">
+      <span class="ct-eng">${esc(engineLabel(lang, c.engine))}</span>
+      <span class="ct-sep">·</span>
+      <span class="${st.cls}">${esc(st.label)}</span>
+      <span class="ct-sep">·</span>
+      <span>${turns} ${esc(tr('sidebar.turns'))}</span>
+      ${tokStr ? `<span class="ct-sep">·</span><span>${esc(tokStr)}</span>` : ''}
+      ${costStr ? `<span class="ct-sep">·</span><span>${esc(costStr)}</span>` : ''}
+    </div>
+    ${ctxStr ? `<div class="ct-row"><span>${esc(ctxStr)}</span></div>` : ''}
+    ${c.status === 'running' && c.statusNote ? `<div class="ct-row"><span class="ct-note">${esc(c.statusNote)}</span></div>` : ''}
+    ${runStr ? `<div class="ct-row"><span>${esc(runStr)}</span></div>` : ''}
+    ${c.cwd ? `<div class="ct-path" title="${esc(c.cwd)}">${esc(c.cwd)}</div>` : ''}
+  `;
+}
+
+function showConvTip(id: string, li: HTMLElement): void {
+  if (convTipTimer) { clearTimeout(convTipTimer); convTipTimer = null; }
+  // 同一 li 重复 hover(刷新循环内)直接重定位返回;换 li 才走延迟。
+  if (convTipCid === id && convTipAnchor === li) return;
+  convTipTimer = setTimeout(() => {
+    const tip = document.getElementById('sb-conv-tip');
+    if (!tip) return;
+    convTipCid = id;
+    convTipAnchor = li;
+    convTipRender();
+    // 定位:sidebar 为定位上下文,贴 li 右缘,超下边界往上收。
+    const sb = document.getElementById('sidebar');
+    if (sb && li.isConnected) {
+      const sr = sb.getBoundingClientRect();
+      const lr = li.getBoundingClientRect();
+      tip.style.left = '';
+      tip.style.top = `${lr.top - sr.top - 2}px`;
+      // 右侧空间不足(主区太窄)→ 贴 sidebar 右缘内侧。
+      tip.style.right = '8px';
+    }
+    tip.hidden = false;
+    // 可见期间 1s 自刷新:运行中的 statusNote/耗时实时跟手;空闲内容静态,刷新无害。
+    if (convTipRefresh) clearInterval(convTipRefresh);
+    convTipRefresh = setInterval(convTipRender, 1000);
+  }, 350);
+}
+
+function hideConvTip(): void {
+  if (convTipTimer) { clearTimeout(convTipTimer); convTipTimer = null; }
+  if (convTipRefresh) { clearInterval(convTipRefresh); convTipRefresh = null; }
+  const tip = document.getElementById('sb-conv-tip');
+  if (tip) tip.hidden = true;
+  convTipCid = null;
+  convTipAnchor = null;
+}
+
 // 单条任务条目(grouped 模式作 .sb-proj-tasks 子项;flat 模式作 #conv-list 顶层 li)。
 // 对齐 SwiftUI ChatRow: 20×20 圆角引擎图标 + 标题 + meta(轮数·时间)
 // flat 模式下额外渲染一行 cwd basename(因为没了项目头),CSS 控制只在 flat 显示。
@@ -849,8 +945,8 @@ function taskLi(id: string): HTMLElement {
   // meta 行:运行中显示实时状态;否则显示 "N 轮 · 时间"
   const turnCount = c.turnCount ?? c.turns.length;
   const metaText = c.status === 'running' ? '' : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
-  // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
-  li.title = `${title}\n${c.cwd || ''}`;
+  // tooltip:速览由 hover 事件的自定义 tooltip 承担(harness 风格全景);
+  // 原生 title 保留在时间戳上(完整日期)。
   // 键盘可达(2026-09):li 可聚焦,Enter/Space 打开;aria 标签给读屏器
   li.tabIndex = 0;
   li.setAttribute('role', 'button');
@@ -858,6 +954,9 @@ function taskLi(id: string): HTMLElement {
   li.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); }
   });
+  // 频道速览 tooltip:hover 350ms 后弹出,移出/点击即收;点击后不再显示(会话已打开)。
+  li.addEventListener('mouseenter', () => { if (selectedId !== id) showConvTip(id, li); });
+  li.addEventListener('mouseleave', () => { if (convTipAnchor === li) hideConvTip(); });
   // 右键唤起上下文菜单(默认浏览器菜单会被阻止)
   li.addEventListener('contextmenu', (e) => {
     e.preventDefault();
@@ -871,6 +970,7 @@ function taskLi(id: string): HTMLElement {
     li.appendChild(dot);
   }
   li.onclick = () => {
+    hideConvTip();
     if (bgDoneConvs.delete(id)) renderSidebar();
     if (selectedId === id) return; // 已经在当前频道,不重复渲染
     // 就地切换 active class,避免全量销毁+重建 sidebar DOM(减少内存抖动)
@@ -882,6 +982,7 @@ function taskLi(id: string): HTMLElement {
   li.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
     btn.onclick = (e) => {
       e.stopPropagation();
+      hideConvTip();
       if (btn.dataset.act === 'ctx') void openCtxInspector(id);
       else if (btn.dataset.act === 'rename') void renameConv(id);
       else if (btn.dataset.act === 'delete') void deleteConv(id);
@@ -6948,8 +7049,9 @@ function closeMoreMenu() {
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllCtxMenus();
   });
-  // 滚轮/滚动时关闭菜单(避免菜单飘在错位位置)
+  // 滚轮/滚动时关闭菜单(避免菜单飘在错位位置);频道速览 tooltip 同理,滚走即收。
   document.addEventListener('scroll', closeAllCtxMenus, true);
+  document.addEventListener('scroll', () => { if (convTipAnchor) hideConvTip(); }, true);
 
   // 聊天 tab:对话 / 文件 / Git。「文件」首次点才懒挂载;切换会话时若已在文件 tab,同步 cwd。
   document.getElementById('tab-chat')!.onclick = () => showTab('chat');

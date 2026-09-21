@@ -957,6 +957,51 @@ a { color: var(--accent); }
   animation: nxTooltipIn 140ms var(--ease-out);
 }
 
+/* 频道速览 tooltip(harness 风格):hover 侧栏任务条目 → 全景速览。
+   多行数据布局:头部(引擎+状态)/ 成本 token 行 / 上下文 gauge / 最近运行行。
+   放在 #sidebar 内,absolute 定位相对 sidebar;pointer-events none 不挡点击。 */
+.sb-conv-tip {
+  position: absolute;
+  z-index: var(--z-dialog);
+  min-width: 200px;
+  max-width: 300px;
+  padding: 9px 12px;
+  background: var(--glass-bg);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5), inset 0 1px 0 var(--glass-hi);
+  pointer-events: none;
+  animation: nxTooltipIn 140ms var(--ease-out);
+}
+.sb-conv-tip .ct-head { display: flex; align-items: center; gap: 6px; margin-bottom: 5px; min-width: 0; }
+.sb-conv-tip .ct-title {
+  font-size: 0.846rem; font-weight: 600; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+}
+.sb-conv-tip .ct-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+/* tooltip 内复用全局 .dot 类(ready/waiting/retrying/running/error 态 + eng-* 引擎色),缩小到 7px */
+.sb-conv-tip .ct-row {
+  display: flex; align-items: center; gap: 5px; flex-wrap: wrap;
+  font-size: 0.73rem; color: var(--text-dim); line-height: 1.55;
+}
+.sb-conv-tip .ct-sep { color: var(--text-faint); }
+.sb-conv-tip .ct-eng { font-weight: 600; }
+.sb-conv-tip .ct-waiting { color: var(--warn); }
+.sb-conv-tip .ct-retrying { color: var(--warn); }
+.sb-conv-tip .ct-error { color: var(--err); }
+.sb-conv-tip .ct-running { color: var(--accent); }
+.sb-conv-tip .ct-note {
+  font-size: 0.72rem; color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.sb-conv-tip .ct-path {
+  font-size: 0.69rem; color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 2px;
+}
+
 @keyframes nxTooltipIn {
   from { opacity: 0; transform: translateY(-4px); }
   to   { opacity: 1; transform: translateY(0); }
