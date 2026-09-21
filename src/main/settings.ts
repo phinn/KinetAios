@@ -46,6 +46,7 @@ const DEFAULTS: AppSettings = {
   voiceAutoSend: false,
   autoLoadSkills: false, // 自动加载 Skills 默认关(用户显式打开才注入目录 + 注册 load_skill 工具)
   compactMeta: false, // 紧凑模式默认关:hover 才显示 turn 元信息行(耗时/token/费用),默认常驻
+  convPeekTip: true,  // 频道速览 tooltip 默认开:hover 任务条目弹出全景浮层;可关
   v3DeepBackground: true, // V3 deep 任务默认转后台 Job(会话立即解锁;关 → 同步阻塞旧行为)
   notifyOnDone: false, // 任务完成通知默认关闭(开启后最小化/失焦时发系统通知+任务栏闪烁)
   hifiContextBudget: 200000, // 高保真模式上下文预算(默认 200K token,适配 GLM-5.2 的 1M 窗口)

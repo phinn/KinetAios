@@ -972,7 +972,11 @@ function taskLi(id: string): HTMLElement {
     if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); li.click(); }
   });
   // 频道速览 tooltip:hover 350ms 后弹出,移出/点击即收;点击后不再显示(会话已打开)。
-  li.addEventListener('mouseenter', () => { if (selectedId !== id) showConvTip(id, li); });
+  // settings.convPeekTip = false 时完全不弹(用户可在设置里关)。
+  li.addEventListener('mouseenter', () => {
+    if (lastSettingsSnapshot?.convPeekTip === false || selectedId === id) return;
+    showConvTip(id, li);
+  });
   li.addEventListener('mouseleave', () => { if (convTipAnchor === li) hideConvTip(); });
   // 右键唤起上下文菜单(默认浏览器菜单会被阻止)
   li.addEventListener('contextmenu', (e) => {
@@ -5113,6 +5117,8 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.autoLoadSkills.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-compact-meta" ${s.compactMeta ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-compact-meta">${tr('settings.compactMeta')}</label></div>
         <div class="field-desc">${tr('settings.compactMeta.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-conv-peek" ${s.convPeekTip !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-conv-peek">${tr('settings.convPeekTip')}</label></div>
+        <div class="field-desc">${tr('settings.convPeekTip.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-deep-bg" ${s.v3DeepBackground !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-deep-bg">${tr('settings.v3DeepBackground')}</label></div>
         <div class="field-desc">${tr('settings.v3DeepBackground.desc')}</div>
         <div class="field"><label>${tr('settings.approval')}</label><select id="s-approval">
@@ -6425,6 +6431,7 @@ function readSettingsForm(): AppSettings {
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
     autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,
     compactMeta: (document.getElementById('s-compact-meta') as HTMLInputElement)?.checked ?? current?.compactMeta === true,
+    convPeekTip: (document.getElementById('s-conv-peek') as HTMLInputElement)?.checked ?? current?.convPeekTip !== false,
     v3DeepBackground: (() => {
       const el = document.getElementById('s-deep-bg') as HTMLInputElement | null;
       return el ? el.checked : true; // 无 UI 元素时保持默认开(主进程默认 true)

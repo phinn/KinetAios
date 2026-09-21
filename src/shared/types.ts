@@ -310,6 +310,8 @@ export type AppSettings = {
   autoLoadSkills: boolean;
   /** 紧凑模式:hover 才显示 turn 元信息行(耗时/token/费用),默认常驻 */
   compactMeta: boolean;
+  /** 侧栏频道速览 tooltip:hover 任务条目弹出全景浮层;关闭则不弹(默认开) */
+  convPeekTip: boolean;
   /** V3 deep 任务转后台执行:开 → deep 路径提交 JobManager,会话立即解锁;关 → 同步阻塞执行(旧行为) */
   v3DeepBackground: boolean;
   // ── 任务完成通知 ── 最小化/失焦时任务完成发系统通知 + 任务栏闪烁。
