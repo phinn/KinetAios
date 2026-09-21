@@ -1331,6 +1331,21 @@ a { color: var(--accent); }
 .sb-proj-tasks li .sb-task-meta { display: contents; }
 .sb-proj-tasks li .sb-task-time { font-size: 0.73rem; color: var(--text-faint); white-space: nowrap; flex-shrink: 0; margin-left: auto; }
 
+/* 运行中实时状态行(对齐 Mac 版 statusNote):
+ * 标题下一行,accent 色小字 + 呼吸动画,工具执行/重试/压缩等细粒度进度。
+ * 空闲时 .hidden 隐藏(不占空间);运行中隐藏 meta 行的时间文字(状态行替代它)。 */
+.sb-live {
+  display: block; width: 100%;
+  font-size: 0.72rem; color: var(--accent); line-height: 1.3;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+  animation: sb-live-pulse 1.6s ease-in-out infinite;
+}
+.sb-live.hidden { display: none; }
+@keyframes sb-live-pulse { 0%, 100% { opacity: 0.95; } 50% { opacity: 0.55; } }
+/* 运行中:flat 模式隐藏 cwd,把空间让给状态行;grouped 模式时间列让位 */
+#conv-list > li.running .sb-task-cwd { opacity: 0; }
+#conv-list > li.running .sb-task-time, .sb-proj-tasks li.running .sb-task-time { visibility: hidden; }
+
 /* main */
 #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .view { flex: 1; display: none; flex-direction: column; min-height: 0; }

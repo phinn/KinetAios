@@ -549,6 +549,8 @@ function refreshSidebarLi(convId: string): void {
     const engCls = c.engine ? ` eng-${c.engine}` : '';
     dot.className = `dot ${dotCls}${engCls}`;
   }
+  // running class 同步(dot 态与 CSS 选择器共用)
+  li.classList.toggle('running', c.status === 'running');
   // 标题也要就地刷新:rename 后 onConversation → refreshSidebarLi,若只更新 dot/时间,
   // 侧栏会一直显示旧名字(此前靠全量 renderSidebar 兜底,增量优化后丢了)。
   const titleEl = li.querySelector('.title');
@@ -560,7 +562,15 @@ function refreshSidebarLi(convId: string): void {
   if (timeEl) {
     const turnCount = c.turnCount ?? c.turns.length;
     const ts = c.updatedAt ?? c.createdAt;
-    timeEl.textContent = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${fmtRelative(ts)}` : fmtRelative(ts));
+    timeEl.textContent = c.status === 'running' ? '' : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${fmtRelative(ts)}` : fmtRelative(ts));
+  }
+  // 运行中实时状态行(对齐 Mac 版 statusNote):status 事件走这里就地改文本,
+  // 不重建 li(status 事件频率 = 每次工具调用一条,重建太重)。
+  const liveEl = li.querySelector('.sb-live');
+  if (liveEl) {
+    const liveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
+    liveEl.textContent = liveText;
+    liveEl.classList.toggle('hidden', !liveText);
   }
   // 底部统计(总数·运行数)也是纯文本,就地刷新。
   const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
@@ -619,6 +629,9 @@ function taskFingerprint(id: string): string {
     id === selectedId ? 1 : 0,
     c.customTitle ?? '', c.firstPrompt ?? '', c.turns[0]?.prompt ?? '',
     c.status, c.turnCount ?? c.turns.length, c.updatedAt ?? c.createdAt,
+    // statusNote 纳入指纹:运行中状态行文本变化 → li 重建(拿最新的 sb-live 行)。
+    // 有 refreshSidebarLi 增量路径兜底,这里只是全量渲染时保证不是陈旧文本。
+    c.statusNote ?? '',
     last?.error ? 1 : 0, bgDoneConvs.has(id) ? 1 : 0,
   ].join('|');
 }
@@ -822,6 +835,7 @@ function taskLi(id: string): HTMLElement {
   const li = document.createElement('li');
   li.dataset.cid = id;
   if (id === selectedId) li.classList.add('active');
+  if (c.status === 'running') li.classList.add('running');
   const last = c.turns[c.turns.length - 1];
   const title = c.customTitle || (c.firstPrompt?.slice(0, 40)) || (c.turns[0]?.prompt?.slice(0, 40)) || tr('head.newConv');
   const ts = c.updatedAt ?? c.createdAt;
@@ -829,9 +843,12 @@ function taskLi(id: string): HTMLElement {
   // 呼吸灯小圆点 — 运行中脉冲发光,空闲静态引擎色
   const dotCls = dotState(c, id);
   const engCls = c.engine ? ` eng-${c.engine}` : '';
-  // meta 行:运行中显示 "运行中";否则显示 "N 轮 · 时间"
+  // 运行中实时状态行(对齐 Mac 版 statusNote):工具执行/重试/压缩等细粒度状态;
+  // 无 statusNote 回退「运行中」。空闲时整行不渲染(不占空间)。
+  const liveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
+  // meta 行:运行中显示实时状态;否则显示 "N 轮 · 时间"
   const turnCount = c.turnCount ?? c.turns.length;
-  const metaText = c.status === 'running' ? tr('sidebar.running') : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
+  const metaText = c.status === 'running' ? '' : (turnCount > 0 ? `${turnCount} ${tr('sidebar.turns')} · ${timeStr}` : timeStr);
   // tooltip:完整标题 + cwd 路径(标题在列表里会被截断)
   li.title = `${title}\n${c.cwd || ''}`;
   // 键盘可达(2026-09):li 可聚焦,Enter/Space 打开;aria 标签给读屏器
@@ -846,7 +863,7 @@ function taskLi(id: string): HTMLElement {
     e.preventDefault();
     showConvMenu(id, e.clientX, e.clientY);
   });
-  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   if (bgDoneConvs.has(id)) {
     const dot = document.createElement('span');
     dot.className = 'bg-done-dot';
