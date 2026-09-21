@@ -204,6 +204,178 @@ export class DirectV2Engine implements Engine {
     this.autoVerifyApprovedByConv.delete(convId);
   }
 
+  /**
+   * 策略收口:引擎内所有 resolveEnginePolicy('directV2', …) 调用的唯一入口。
+   * / Single entry for engine policy resolution (was repeated inline 10+ times).
+   */
+  private policy(conv: Conversation): ReturnType<typeof resolveEnginePolicy> {
+    return resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+  }
+
+  // ════════════════════════════════════════════════════════════════════
+  // 统一步骤执行循环(TurnMachine 思想的最小落地)
+  // ════════════════════════════════════════════════════════════════════
+
+  /**
+   * executePlanSteps — run() 主流程与 replan() 共用的唯一步骤执行循环。
+   * / Single owner of the per-step execution loop (retry + verify + checkpoint),
+   * / shared by run() Phase 2 and replan(); the two previously drifted as copies.
+   *
+   * 差异点参数化:
+   * - ckptPrefix: checkpoint step_id 前缀("" / "replanN_")
+   *
+   * 返回最终 execHistory(compact/追加会换数组,调用方必须接收返回值)。
+   * [GOAL_COMPLETE] 只影响循环内部(跳过剩余 pending 步骤),两个调用方
+   * 此后都照常走全局验证 + Judge(与改造前行为一致)。
+   */
+  private async executePlanSteps(opts: {
+    plan: Plan;
+    execHistory: ChatMsg[];
+    conv: Conversation;
+    snap: ReturnType<typeof snapshot>;
+    provider: ReturnType<typeof currentProvider>;
+    tools: Tool[];
+    systemPrompt: string;
+    memoryBlock: string;
+    ctx: ToolCtx;
+    signal: AbortSignal;
+    onEvent: (e: AgentEvent) => void;
+    label: string;
+    ckptPrefix: string;
+    stepMaxChars: number;
+    stepFullChars: number;
+  }): Promise<ChatMsg[]> {
+    const { plan, conv, snap, provider, tools, systemPrompt, memoryBlock, ctx, signal, onEvent, label, ckptPrefix, stepMaxChars, stepFullChars } = opts;
+    let execHistory = opts.execHistory;
+
+    for (const step of plan.steps) {
+      if (signal.aborted) break;
+      // Crash recovery: 已完成的步骤直接跳过(不重新执行)。
+      if (step.status === 'done' || step.status === 'skipped') continue;
+      step.status = 'running';
+      onEvent({ type: 'status', text: `🔨 v2: ${label} [${step.id}] ${step.title}` });
+
+      let stepDone = false;
+      let verifyApproved = false; // 同一步骤首次 confirm 后记住,重试不再弹窗
+      let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
+      // P0-B: 记录步骤开始时的 execHistory 长度,用于成功后精确截取增量。
+      // 重试失败的中间过程(大量工具调用+错误结果)不应永久追加到 execHistory ——
+      // 否则后续重试的上下文会被上一次失败的完整 ReAct 历史撑爆。
+      const stepStartLen = execHistory.length;
+      for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
+        const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
+
+        const stepMessages = await runAgentLoop({
+          provider,
+          tools, // 执行阶段:完整工具集(含写工具)
+          systemPrompt,
+          memoryBlock, // 每步都注入长期记忆:dropTransient 会从返回值里剔除,模型必须在调用时看到
+          snapshot: snap,
+          userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote,
+          history: execHistory,
+          ctx,
+          signal,
+          maxTurns: 30, // 单步上限 30 轮:防止模型陷入循环反复 read_file 同一文件烧 token
+          contextMode: conv.contextMode,
+          policy: this.policy(conv),
+          onEvent: (ev) => this.forwardEvent(ev, onEvent),
+        });
+
+        // 检测 maxTurns 截断:runAgentLoop 到达上限时 forwardEvent 吞了 error 事件,
+        // 返回值尾部是 tool 消息(非正常完成)。此时模型可能没做完 → 标记失败让重试。
+        const truncated = this.wasTruncatedByMaxTurns(stepMessages);
+        const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
+        // 在截断前检测 [GOAL_COMPLETE]:prompt 要求模型放在回答最末尾,
+        // step.result 被 slice(0,2000) 截断后会漏掉(长回答场景)
+        goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
+
+        if (truncated) {
+          // maxTurns 截断 → 视为失败,让重试逻辑接管
+          step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+          step.result = `步骤执行达到轮次上限(30 轮),可能未完成`;
+          step.retryCount = attempt + 1;
+          if (attempt + 1 < MAX_RETRIES) {
+            onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 达到轮次上限,重试 ${attempt + 1}/${MAX_RETRIES}` });
+          }
+        } else if (step.verifyCommand) {
+          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
+          verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
+          if (verifyResult.ok) {
+            step.status = 'done';
+            // P0-1: 存完整版(stepFullChars)
+            step.result = stepAnswer.slice(0, stepFullChars);
+            stepDone = true;
+            onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
+          } else {
+            step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
+            step.result = `验证失败: ${verifyResult.output.slice(0, stepFullChars)}`;
+            step.retryCount = attempt + 1;
+            if (attempt + 1 < MAX_RETRIES) {
+              onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
+            }
+          }
+        } else {
+          // 无验证命令 → 信任模型输出
+          step.status = 'done';
+          step.result = stepAnswer.slice(0, stepFullChars);
+          stepDone = true;
+          onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
+        }
+
+        // P0-B: 只有步骤成功才把增量追加到 execHistory。
+        // 失败/截断的重试中间过程(大量工具调用 + 错误结果)不追加 —— 否则后续重试的上下文
+        // 会被上一次失败的完整 ReAct 历史撑爆(3 次重试 = 3 倍失败历史累积)。
+        // 失败时重试仍能看到 step.result(验证失败原因/截断说明)通过 retryNote 传入。
+        if (stepDone) {
+          const newMessages = stepMessages.slice(stepStartLen);
+          execHistory = [...execHistory, ...newMessages];
+        }
+      }
+
+      // 步骤最终失败(MAX_RETRIES 耗尽)→ 告知用户,继续下一步
+      if (!stepDone && step.status === 'failed') {
+        onEvent({ type: 'status', text: `❌ v2: 步骤 [${step.id}] ${step.title} 最终失败,继续下一步` });
+      }
+
+      // 检测模型是否声明目标已完成(goal 模式)→ 跳过剩余步骤,直接进 Judge
+      if (stepDone && goalComplete) {
+        // 标记后续步骤为 skipped
+        for (const s of plan.steps) {
+          if (s.status === 'pending') s.status = 'skipped';
+        }
+        onEvent({ type: 'status', text: '🎯 v2: 模型声明目标已完成 [GOAL_COMPLETE],跳过剩余步骤' });
+        break;
+      }
+
+      // 步骤间上下文压缩:防止多步 plan 的 history 累积爆炸。
+      // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
+      if (!signal.aborted) {
+        execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
+        // P0-C: 摘要消息必须区分成功/失败 — 旧版无脑写"完成",
+        // 失败步骤也显示"📋 步骤[X] 完成"→ 后续步骤误以为前步成功,依赖失败的产出。
+        const summaryTag = stepDone ? '✅ 完成' : '❌ 失败';
+        const summaryResult = stepDone
+          ? (step.result ?? '(无)').slice(0, stepMaxChars)
+          : `失败: ${(step.result ?? '(无)').slice(0, stepMaxChars)}`;
+        execHistory.push({
+          role: 'user',
+          content: `\n---\n📋 步骤[${step.id}] ${summaryTag}: ${step.title}\n结果: ${summaryResult}\n---\n`,
+        });
+        // P2-1: 逐步持久化 checkpoint — crash 后可 resume。
+        // ckptPrefix: replan 轮次的 checkpoint 带 "replanN_" 前缀,与主流程区分。
+        store.saveV2Checkpoint(conv.id, ckptPrefix ? `${ckptPrefix}${step.id}` : step.id, JSON.stringify(plan), JSON.stringify(execHistory));
+      }
+    }
+
+    // 原地回写:调用方持有同一数组引用(slice/push 不换引用)。
+    // 这里 execHistory 是局部 let,若中途被 compactWithSpill 换成新数组,需同步回参数数组。
+    if (execHistory !== opts.execHistory) {
+      opts.execHistory.length = 0;
+      opts.execHistory.push(...execHistory);
+    }
+    return execHistory;
+  }
+
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     this.autoVerifyApprovedByConv.set(conv.id, false); // 每次 run 重置:同一会话的新 turn 重新走确认
     this.lastCompactFingerprints.delete(conv.id); // P0-2: 重置当前会话的 compact 缓存
@@ -272,7 +444,7 @@ export class DirectV2Engine implements Engine {
 
     // P0-1:从策略包取 stepSummaryMaxChars(给 execHistory 的精简版) + stepResultMaxChars(给 PlanStep.result 的完整版)。
     // PlanStep.result 存完整版(最多 stepResultMaxChars),Judge/replan 引用;execHistory 追加的摘要用 stepSummaryMaxChars 截断。
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+    const policy = this.policy(conv);
     const stepMaxChars = policy.stepSummaryMaxChars || 500;
     const stepFullChars = policy.stepResultMaxChars || 4000;
 
@@ -296,7 +468,7 @@ export class DirectV2Engine implements Engine {
       plan = resumedPlan;
       // P0-14: 恢复的 execHistory 可能很长(crash 发生在步骤 8 → 累积了 8 步完整历史)。
       // 直接传入 Executor 会导致第一轮 LLM 调用就超长。先 trim 到策略预算内。
-      const recoveryPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+      const recoveryPolicy = this.policy(conv);
       execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 40_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
       const remaining = plan.steps.filter((s) => s.status !== 'done' && s.status !== 'skipped');
@@ -323,7 +495,7 @@ export class DirectV2Engine implements Engine {
       signal,
       // maxTurns 不设限 — Planner 需要充分探查复杂项目,使用全局设置值
       contextMode: conv.contextMode,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
+      policy: this.policy(conv),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -362,7 +534,7 @@ export class DirectV2Engine implements Engine {
       onEvent({ type: 'status', text: `${skillTag}⚡ v2: 任务简单,直接执行(完整工具集)` });
       // P2-1-fix: 退化路径也要 trim plannerMessages,防止探查阶段的大段工具输出撑爆 executor。
       // 不像正常路径那样只取 planConclusion —— 退化场景没有 plan,executor 需要探查发现的文件路径。
-      const fallbackPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+      const fallbackPolicy = this.policy(conv);
       const trimmedPlannerMsgs = trimHistoryToTokenBudget(plannerMessages, fallbackPolicy.trimBudget, snap.apiProtocol);
       const execMessages = await runAgentLoop({
         provider,
@@ -421,123 +593,24 @@ export class DirectV2Engine implements Engine {
 
     // ── Phase 2: Executor — 按 plan 步骤串行执行 ──
     // Crash recovery: 跳过已完成(done/skipped)的步骤,从第一个 pending/running/failed 开始。
-    for (const step of plan.steps) {
-      if (signal.aborted) break;
-      // Crash recovery: 已完成的步骤直接跳过(不重新执行)。
-      if (step.status === 'done' || step.status === 'skipped') continue;
-      step.status = 'running';
-      onEvent({ type: 'status', text: `🔨 v2: 执行步骤 [${step.id}] ${step.title}` });
-
-      let stepDone = false;
-      let verifyApproved = false; // 同一步骤首次 confirm 后记住,重试不再弹窗
-      let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
-      // P0-B: 记录步骤开始时的 execHistory 长度,用于成功后精确截取增量。
-      // 重试失败的中间过程(大量工具调用+错误结果)不应永久追加到 execHistory ——
-      // 否则后续重试的上下文会被上一次失败的完整 ReAct 历史撑爆。
-      const stepStartLen = execHistory.length;
-      for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
-        const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
-
-        const stepMessages = await runAgentLoop({
-          provider,
-          tools, // 执行阶段:完整工具集(含写工具)
-          systemPrompt,
-          memoryBlock, // 每步都注入长期记忆:dropTransient 会从返回值里剔除,模型必须在调用时看到
-          snapshot: snap,
-          userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote,
-          history: execHistory,
-          ctx,
-          signal,
-          maxTurns: 30, // 单步上限 30 轮:防止模型陷入循环反复 read_file 同一文件烧 token
-          contextMode: conv.contextMode,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
-          onEvent: (ev) => this.forwardEvent(ev, onEvent),
-        });
-
-        // 检测 maxTurns 截断:runAgentLoop 到达上限时 forwardEvent 吞了 error 事件,
-        // 返回值尾部是 tool 消息(非正常完成)。此时模型可能没做完 → 标记失败让重试。
-        const truncated = this.wasTruncatedByMaxTurns(stepMessages);
-        const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
-        // 在截断前检测 [GOAL_COMPLETE]:prompt 要求模型放在回答最末尾,
-        // step.result 被 slice(0,2000) 截断后会漏掉(长回答场景)
-        goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
-
-        if (truncated) {
-          // maxTurns 截断 → 视为失败,让重试逻辑接管
-          step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-          step.result = `步骤执行达到轮次上限(30 轮),可能未完成`;
-          step.retryCount = attempt + 1;
-          if (attempt + 1 < MAX_RETRIES) {
-            onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 达到轮次上限,重试 ${attempt + 1}/${MAX_RETRIES}` });
-          }
-        } else if (step.verifyCommand) {
-          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
-          verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
-          if (verifyResult.ok) {
-            step.status = 'done';
-            // P0-1: PlanStep.result 存完整版(最多 stepFullChars),Judge/replan 可引用完整产出。
-            step.result = stepAnswer.slice(0, stepFullChars);
-            stepDone = true;
-            onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
-          } else {
-            step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, stepFullChars)}`;
-            step.retryCount = attempt + 1;
-            if (attempt + 1 < MAX_RETRIES) {
-              onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
-            }
-          }
-        } else {
-          // 无验证命令 → 信任模型输出
-          step.status = 'done';
-          step.result = stepAnswer.slice(0, stepFullChars);
-          stepDone = true;
-          onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
-        }
-
-        // P0-B: 只有步骤成功才把增量追加到 execHistory。
-        // 失败/截断的重试中间过程(大量工具调用 + 错误结果)不追加 —— 否则后续重试的上下文
-        // 会被上一次失败的完整 ReAct 历史撑爆(3 次重试 = 3 倍失败历史累积)。
-        // 失败时重试仍能看到 step.result(验证失败原因/截断说明)通过 retryNote 传入。
-        if (stepDone) {
-          const newMessages = stepMessages.slice(stepStartLen);
-          execHistory = [...execHistory, ...newMessages];
-        }
-      }
-
-      // 步骤最终失败(MAX_RETRIES 耗尽)→ 告知用户,继续下一步
-      if (!stepDone && step.status === 'failed') {
-        onEvent({ type: 'status', text: `❌ v2: 步骤 [${step.id}] ${step.title} 最终失败,继续下一步` });
-      }
-
-      // 检测模型是否声明目标已完成(goal 模式)→ 跳过剩余步骤,直接进 Judge
-      if (stepDone && goalComplete) {
-        // 标记后续步骤为 skipped
-        for (const s of plan.steps) {
-          if (s.status === 'pending') s.status = 'skipped';
-        }
-        onEvent({ type: 'status', text: '🎯 v2: 模型声明目标已完成 [GOAL_COMPLETE],跳过剩余步骤' });
-        break;
-      }
-
-      // 步骤间上下文压缩:防止多步 plan 的 history 累积爆炸。
-      // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
-      if (!signal.aborted) {
-        execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // P0-C: 摘要消息必须区分成功/失败 — 旧版无脑写"完成",
-        // 失败步骤也显示"📋 步骤[X] 完成"→ 后续步骤误以为前步成功,依赖失败的产出。
-        const summaryTag = stepDone ? '✅ 完成' : '❌ 失败';
-        const summaryResult = stepDone
-          ? (step.result ?? '(无)').slice(0, stepMaxChars)
-          : `失败: ${(step.result ?? '(无)').slice(0, stepMaxChars)}`;
-        execHistory.push({
-          role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] ${summaryTag}: ${step.title}\n结果: ${summaryResult}\n---\n`,
-        });
-        // P2-1: 逐步持久化 checkpoint — crash 后可 resume。
-        store.saveV2Checkpoint(conv.id, step.id, JSON.stringify(plan), JSON.stringify(execHistory));
-      }
-    }
+    // 统一循环收口在 executePlanSteps(与 replan 共用,防两份 copy 漂移)。
+    execHistory = await this.executePlanSteps({
+      plan,
+      execHistory,
+      conv,
+      snap,
+      provider,
+      tools,
+      systemPrompt,
+      memoryBlock,
+      ctx,
+      signal,
+      onEvent,
+      label: '执行步骤',
+      ckptPrefix: '',
+      stepMaxChars,
+      stepFullChars,
+    });
 
     if (signal.aborted) {
       // H3-fix: abort 也存 final checkpoint(同 planner abort 路径)。
@@ -609,7 +682,7 @@ export class DirectV2Engine implements Engine {
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
     // P0-1: replan 中也取完整版上限(与主 run 一致)
-    const replanPolicy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+    const replanPolicy = this.policy(conv);
     const stepFullChars = replanPolicy.stepResultMaxChars || 4000;
 
     // P1-1: 只传失败/跳过的步骤 + Judge 的 reason,不传全部步骤(避免长 plan 撑爆 prompt)。
@@ -646,7 +719,7 @@ ${failedDetail || '  (无)'}
       signal,
       // maxTurns 不设限 — Replan 同样需要充分探查
       contextMode: conv.contextMode, // 与 run() 的 planner 保持一致
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
+      policy: this.policy(conv),
       onEvent: (ev) => this.forwardEvent(ev, onEvent),
     });
 
@@ -680,107 +753,28 @@ ${failedDetail || '  (无)'}
       return execHistory;
     }
 
-    // ── 执行新 plan 的步骤(与 Phase 2 一致:重试 + 验证)──
-    for (const step of newPlan.steps) {
-      if (signal.aborted) break;
-      step.status = 'running';
-      onEvent({ type: 'status', text: `🔨 v2: 重执行步骤 [${step.id}] ${step.title}` });
-
-      let stepDone = false;
-      let verifyApproved = false;
-      let goalComplete = false; // [GOAL_COMPLETE] 检测(在 stepAnswer 截断前)
-      // P0-B: 同主流程,记录步骤开始时的 execHistory 长度,成功后才追加增量。
-      const stepStartLen = execHistory.length;
-      for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
-        const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
-        const stepMessages = await runAgentLoop({
-          provider,
-          tools,
-          systemPrompt,
-          memoryBlock, // 每步注入长期记忆(dropTransient 会从返回值剔除,不持久化)
-          userInput: STEP_EXECUTOR_PROMPT(step, newPlan.steps, newPlan.goal) + retryNote,
-          history: execHistory,
-          ctx,
-          signal,
-          snapshot: snap,
-          maxTurns: 30, // 单步上限 30 轮(与主流程一致)
-          contextMode: conv.contextMode,
-      policy: resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget),
-          onEvent: (ev) => this.forwardEvent(ev, onEvent),
-        });
-
-        const truncated = this.wasTruncatedByMaxTurns(stepMessages);
-        const stepAnswer = truncated ? '' : this.extractLastAssistantText(stepMessages);
-        goalComplete = !truncated && stepAnswer.includes('[GOAL_COMPLETE]');
-
-        if (truncated) {
-          step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-          step.result = `步骤执行达到轮次上限(30 轮),可能未完成`;
-          step.retryCount = attempt + 1;
-          if (attempt + 1 < MAX_RETRIES) {
-            onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 达到轮次上限,重试 ${attempt + 1}/${MAX_RETRIES}` });
-          }
-        } else if (step.verifyCommand) {
-          const verifyResult = await this.runVerify(step.verifyCommand, conv.cwd, ctx, signal, onEvent, verifyApproved);
-          verifyApproved = true; // 首次 confirm 后,后续重试不再弹窗
-          if (verifyResult.ok) {
-            step.status = 'done';
-            // P0-1: 存完整版(stepFullChars)
-            step.result = stepAnswer.slice(0, stepFullChars);
-            stepDone = true;
-            onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 验证通过` });
-          } else {
-            step.status = attempt + 1 < MAX_RETRIES ? 'pending' : 'failed';
-            step.result = `验证失败: ${verifyResult.output.slice(0, stepFullChars)}`;
-            step.retryCount = attempt + 1;
-            if (attempt + 1 < MAX_RETRIES) {
-              onEvent({ type: 'status', text: `⚠️ v2: 步骤 [${step.id}] 验证失败,重试 ${attempt + 1}/${MAX_RETRIES}` });
-            }
-          }
-        } else {
-          step.status = 'done';
-          step.result = stepAnswer.slice(0, stepFullChars);
-          stepDone = true;
-          onEvent({ type: 'status', text: `✅ v2: 步骤 [${step.id}] 完成` });
-        }
-
-        // P0-B: 只有步骤成功才把增量追加到 execHistory(同主流程)。
-        if (stepDone) {
-          const newMessagesReplan = stepMessages.slice(stepStartLen);
-          execHistory = [...execHistory, ...newMessagesReplan];
-        }
-      }
-
-      // 步骤最终失败(MAX_RETRIES 耗尽)→ 告知用户,继续下一步
-      if (!stepDone && step.status === 'failed') {
-        onEvent({ type: 'status', text: `❌ v2: 步骤 [${step.id}] ${step.title} 最终失败,继续下一步` });
-      }
-
-      // 检测模型是否声明目标已完成 → 跳过剩余步骤
-      if (stepDone && goalComplete) {
-        for (const s of newPlan.steps) {
-          if (s.status === 'pending') s.status = 'skipped';
-        }
-        onEvent({ type: 'status', text: '🎯 v2: 模型声明目标已完成 [GOAL_COMPLETE],跳过剩余步骤' });
-        break;
-      }
-
-      // 步骤间压缩 execHistory,防止后续步骤因上下文膨胀丢失前步产出。
-      if (!signal.aborted) {
-        execHistory = await this.interStepCompact(execHistory, conv, provider, snap, signal, onEvent);
-        // P0-C: 同主流程,摘要区分成功/失败。
-        const summaryTag = stepDone ? '✅ 完成' : '❌ 失败';
-        const summaryResult = stepDone
-          ? (step.result ?? '(无)').slice(0, stepMaxChars)
-          : `失败: ${(step.result ?? '(无)').slice(0, stepMaxChars)}`;
-        execHistory.push({
-          role: 'user',
-          content: `\n---\n📋 步骤[${step.id}] ${summaryTag}: ${step.title}\n结果: ${summaryResult}\n---\n`,
-        });
-        // P2-1: 逐步持久化 checkpoint。
-        store.saveV2Checkpoint(conv.id, `replan${replanCount}_${step.id}`, JSON.stringify(newPlan), JSON.stringify(execHistory));
-      }
-    }
+    // ── 执行新 plan 的步骤 ──
+    // 与 Phase 2 共用 executePlanSteps(重试 + 验证 + 压缩 + checkpoint 全一致;
+    // 此前这里是 Phase 2 的复制版,P0-B/P0-C 修复要打两遍,漏一遍就行为分叉)。
+    // 差异:label="重执行步骤";checkpoint 带 replanN_ 前缀;新 plan 步骤无
+    // done/skipped 状态(全新生成),executePlanSteps 的 crash-recovery 跳过逻辑天然不触发。
+    execHistory = await this.executePlanSteps({
+      plan: newPlan,
+      execHistory,
+      conv,
+      snap,
+      provider,
+      tools,
+      systemPrompt,
+      memoryBlock,
+      ctx,
+      signal,
+      onEvent,
+      label: '重执行步骤',
+      ckptPrefix: `replan${replanCount}_`,
+      stepMaxChars,
+      stepFullChars,
+    });
 
     if (signal.aborted) return execHistory;
 
@@ -1179,7 +1173,7 @@ ${failedDetail || '  (无)'}
     signal: AbortSignal,
     onEvent: (e: AgentEvent) => void,
   ): Promise<ChatMsg[]> {
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+    const policy = this.policy(conv);
     // P0-2: fingerprint = 消息条数 + 首尾消息 content 前 100 字符。
     // P1-fix: 旧版只看最后一条 → 步骤摘要都以 "📋 步骤[X]" 开头,前 200 字符可能碰撞 → 跳过压缩。
     // 改为首条 + 末条 content 各取前 100 字符:两个不同步骤几乎不可能首尾都一样。
@@ -1241,7 +1235,7 @@ ${failedDetail || '  (无)'}
     }
     // 长 session → compactHistory 结构化压缩。
     // compaction seam:经唯一入口压缩,spill 存证在 AgentLoop.compactWithSpill 归一。
-    const policy = resolveEnginePolicy('directV2', conv.contextMode, getSettings().v2ModelWindow, getSettings().v2BudgetRatio, getSettings().hifiContextBudget);
+    const policy = this.policy(conv);
     const compacted = await compactWithSpill(messages, () =>
       compactHistory(
         messages,
