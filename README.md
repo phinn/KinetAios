@@ -279,6 +279,7 @@ KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.h
 - **KinetFit** — smart health companion
 - **KinetAgent** — AI automation assistant
 - **KinetBrief** — AI briefing / notes app
+- **KinetTask** — [local-first task manager with on-device AI](https://apps.apple.com/us/app/kinettask/id6780944289) (Mac App Store)
 
 ## License
 
