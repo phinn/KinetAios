@@ -958,10 +958,11 @@ a { color: var(--accent); }
 }
 
 /* 频道速览 tooltip(harness 风格):hover 侧栏任务条目 → 全景速览。
-   多行数据布局:头部(引擎+状态)/ 成本 token 行 / 上下文 gauge / 最近运行行。
-   放在 #sidebar 内,absolute 定位相对 sidebar;pointer-events none 不挡点击。 */
+   fixed 定位挂 body(不在 #sidebar 内,免被 overflow:hidden 裁剪);
+   锚定 li 右缘、贴主区一侧,不遮列表本身;窄视口向左收,底部翻转。
+   pointer-events none 不挡任何点击。 */
 .sb-conv-tip {
-  position: absolute;
+  position: fixed;
   z-index: var(--z-dialog);
   min-width: 200px;
   max-width: 300px;

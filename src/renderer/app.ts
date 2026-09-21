@@ -889,28 +889,45 @@ function convTipRender(): void {
 
 function showConvTip(id: string, li: HTMLElement): void {
   if (convTipTimer) { clearTimeout(convTipTimer); convTipTimer = null; }
-  // 同一 li 重复 hover(刷新循环内)直接重定位返回;换 li 才走延迟。
+  // 同一 li 重复 hover(刷新循环内)直接返回;换 li 才走延迟。
   if (convTipCid === id && convTipAnchor === li) return;
+  // 换锚点立即收旧浮层:避免 350ms 延迟里挂着上一个频道的内容晃。
+  const tip0 = document.getElementById('sb-conv-tip');
+  if (tip0 && !tip0.hidden) tip0.hidden = true;
   convTipTimer = setTimeout(() => {
     const tip = document.getElementById('sb-conv-tip');
     if (!tip) return;
     convTipCid = id;
     convTipAnchor = li;
     convTipRender();
-    // 定位:sidebar 为定位上下文,贴 li 右缘,超下边界往上收。
-    const sb = document.getElementById('sidebar');
-    if (sb && li.isConnected) {
-      const sr = sb.getBoundingClientRect();
-      const lr = li.getBoundingClientRect();
-      tip.style.left = '';
-      tip.style.top = `${lr.top - sr.top - 2}px`;
-      // 右侧空间不足(主区太窄)→ 贴 sidebar 右缘内侧。
-      tip.style.right = '8px';
-    }
+    // 定位(fixed,视口坐标):贴 li 右缘往主区偏 10px,不遮列表文字;
+    // 超下边界往上收;超右边界(主区过窄)整体左移。显示后再量尺寸,精准夹取。
+    tip.style.left = '0px';
+    tip.style.top = '0px';
+    tip.style.visibility = 'hidden';
     tip.hidden = false;
+    const lr = li.getBoundingClientRect();
+    const tw = tip.offsetWidth;
+    const th = tip.offsetHeight;
+    let x = lr.right + 10;
+    if (x + tw > window.innerWidth - 12) x = Math.max(12, window.innerWidth - tw - 12);
+    let y = lr.top - 2;
+    if (y + th > window.innerHeight - 12) y = Math.max(12, window.innerHeight - th - 12);
+    tip.style.left = `${x}px`;
+    tip.style.top = `${y}px`;
+    tip.style.visibility = '';
     // 可见期间 1s 自刷新:运行中的 statusNote/耗时实时跟手;空闲内容静态,刷新无害。
     if (convTipRefresh) clearInterval(convTipRefresh);
-    convTipRefresh = setInterval(convTipRender, 1000);
+    convTipRefresh = setInterval(() => {
+      convTipRender();
+      // 内容增高(状态行出现)后可能戳出屏,轻夹一次。
+      if (convTipAnchor && convTipAnchor.isConnected) {
+        const ay = convTipAnchor.getBoundingClientRect().top - 2;
+        const maxY = window.innerHeight - tip.offsetHeight - 12;
+        if (parseFloat(tip.style.top) > maxY) tip.style.top = `${Math.max(12, maxY)}px`;
+        else tip.style.top = `${Math.max(12, ay)}px`;
+      }
+    }, 1000);
   }, 350);
 }
 

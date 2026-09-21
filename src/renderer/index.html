@@ -26,9 +26,6 @@
         <button class="ghost sb-icon-btn sb-new-btn" id="btn-new" data-i18n-title="sidebar.newSession" data-i18n-aria="a11y.newSession" aria-label="新建会话" title="新建会话"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg></button>
       </div>
       <ul id="conv-list" role="listbox" aria-label="会话列表"></ul>
-      <!-- 频道速览 tooltip — hover 任务条目时的 harness 风格全景(引擎/状态/成本/上下文/最近运行)。
-           Conv hover peek tooltip — harness-style at-a-glance summary (engine/state/cost/ctx/last run). -->
-      <div id="sb-conv-tip" class="sb-conv-tip" hidden></div>
       <!-- 底栏 — 左:计数;右:工具按钮组 -->
       <div class="sb-foot" id="sb-foot">
         <span class="sb-foot-info" id="sb-foot-info" role="button" tabindex="0">0 会话</span>
@@ -581,6 +578,9 @@
   </div>
 
     </div>
+
+  <!-- 频道速览 tooltip 挂 body:fixed 定位跨 sidebar 边界,不裁剪不遮列表 -->
+  <div id="sb-conv-tip" class="sb-conv-tip" hidden></div>
 
   <script src="app.js?v=20250813b"></script>
 </body>
