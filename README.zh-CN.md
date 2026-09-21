@@ -275,3 +275,12 @@ npm run dist         # 当前平台默认目标
 - **关窗行为可配置**(退出 / 最小化 / 托盘),默认最小化。全局热键只在 app 运行时生效。
 - **不支持交叉构建** —— Windows 安装包请在 Windows 机器或 GitHub Actions `windows-latest` runner 上打,dmg 请在 mac 上打(native 模块重编依赖目标平台工具链)。
 - 平台相关代码路径(shell / PATH / 热键 / 托盘)请在对应平台上验证。
+
+## Kinet 家族
+
+KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一员:
+
+- **KinetFit** — 智能健康伴侣
+- **KinetAgent** — AI 自动化助手
+- **KinetBrief** — AI 简报 / 笔记
+- **KinetTask** — [端侧 AI 任务管理器](https://apps.apple.com/cn/app/kinettask/id6780944289),数据全程本地 SQLite,不上云不建账号(Mac App Store)
