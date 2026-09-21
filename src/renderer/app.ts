@@ -3014,16 +3014,24 @@ function openImgLightbox(src: string): void {
 // 与已生成的 <a>/<code> 标签相互咬合;流式期间不跑(每帧 TreeWalker 太贵),done 后全量渲染时执行。
 const FILE_REF_RE = /(?:[.\w~][\w.~-]*[/\\])+[\w.~-]+\.[a-zA-Z]{1,5}(?::(\d{1,5}))?/g;
 
-function linkifyFileRefs(container: HTMLElement): void {
+function linkifyFileRefs(container: HTMLElement, opts?: { includePre?: boolean }): void {
   const walker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
     acceptNode(n) {
       const p = (n as Text).parentElement;
       if (!p) return NodeFilter.FILTER_REJECT;
       const tag = p.tagName;
-      // PRE(整段代码)继续跳过 —— 代码里的伪路径误判率太高;
+      // PRE:默认跳过(整段代码里的伪路径误判率高);includePre 模式用于工具
+      // Args/Result 输出 —— 那里的分隔符路径几乎都是真实文件,值得可点。
       // 行内 <code> 放行:内容像路径(有路径分隔符 + 扩展名)时,这是 AI 输出里
       // 引用文件最常见的形式(`src/app.ts`),此前不可点只能手动复制。
-      if (tag === 'PRE' || tag === 'A' || tag === 'BUTTON' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
+      if (tag === 'PRE') {
+        if (!opts?.includePre) return NodeFilter.FILTER_REJECT;
+        const pre = (n as Text).data;
+        if (!/[/\\]/.test(pre)) return NodeFilter.FILTER_REJECT;
+        FILE_REF_RE.lastIndex = 0;
+        return FILE_REF_RE.test(pre) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+      if (tag === 'A' || tag === 'BUTTON' || tag === 'MARK') return NodeFilter.FILTER_REJECT;
       if (tag === 'CODE') {
         const code = (n as Text).data;
         if (!/[/\\]/.test(code)) return NodeFilter.FILTER_REJECT;
@@ -3264,6 +3272,7 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
     aPre.textContent = s.args.slice(0, 4000); // args 同步截断:write_file 等工具会把整个文件内容塞进 args(库内实测单条 50KB+)
     det.appendChild(aLabel);
     det.appendChild(aPre);
+    linkifyFileRefs(aPre, { includePre: true });
   }
   const resultText = s.result.slice(0, 4000);
   if (resultText) {
@@ -3284,6 +3293,7 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
     rPre.textContent = resultText;
     det.appendChild(rLabel);
     det.appendChild(rPre);
+    linkifyFileRefs(rPre, { includePre: true });
   }
   // 截图内联(DSH 式):computer-use / read_image 的图片直接显示,点击全屏
   if (s.images?.length) {
