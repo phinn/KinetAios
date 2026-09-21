@@ -307,15 +307,16 @@ const seoAudit = {
     const bodyWords = (text.match(/[a-zA-Z\u4e00-\u9fff]+/g) || []).length;
     findings.push(`📏 正文词数: ${bodyWords}${bodyWords < 300 ? ' ⚠️ 薄内容(<300), 排名难撑' : bodyWords > 2500 ? '(长文, ✅ 深度信号)' : ' ✅'}`);
 
-    const links = html.match(/<a[^>]+href=/gi) || [];
+    const linkTags = html.match(/<a[^>]+href=/gi) || [];
     const origin = new URL(url).origin;
-    const internal = links.filter((_, i) => {
-      const m = html.match(/<a[^>]+href=["']([^"']*)["']/gi)?.[i];
-      if (!m) return false;
-      const href = m.match(/href=["']([^"']*)["']/i)?.[1] || '';
-      return href.startsWith('/') || href.startsWith(origin) || (!/^https?:\/\//.test(href) && !href.startsWith('//') && !href.startsWith('#') && !href.startsWith('mailto:'));
-    }).length;
-    findings.push(`🔗 链接: 内链 ~${internal} / 总 ${links.length}${internal === 0 ? ' ⚠️ 零内链(爬虫无法继续抓)' : ''}`);
+    let internal = 0;
+    for (const tag of linkTags) {
+      // tag 形如 <a class=x href="/path"; href 可能是最后一个属性, 从 tag 串里取值
+      const href = tag.match(/href\s*=\s*["']?([^"'\s>]+)["']?/i)?.[1] || '';
+      if (href.startsWith('/') || href.startsWith(origin)
+        || (!/^https?:\/\//.test(href) && !href.startsWith('//') && !href.startsWith('#') && !href.startsWith('mailto:'))) internal++;
+    }
+    findings.push(`🔗 链接: 内链 ~${internal} / 总 ${linkTags.length}${internal === 0 ? ' ⚠️ 零内链(爬虫无法继续抓)' : ''}`);
 
     const scripts = (html.match(/<script/gi) || []).length;
     const kb = Math.round(Buffer.byteLength(html) / 1024);
@@ -511,7 +512,8 @@ const appstoreLookup = {
       term: { type: 'string', description: '搜索词(App 名称或关键词,如 "AI note"、"obsidian")。与 appId 二选一' },
       appId: { type: 'string', description: 'App 数字 id(如 6814033986)。传了则直接查这个 App 的详情' },
       country: { type: 'string', description: '商店国家代码(默认 us;cn=中国)。注意评分/排名因区而异' },
-      reviews: { type: 'boolean', description: '是否同时拉最近用户评论(默认 true;仅 appId 模式,iTunes Search 搜出来的首个结果也会自动带一次)' },
+      reviews: { type: 'boolean', description: '是否同时拉最近用户评论(默认 true;appId 模式和搜索深查都生效)' },
+      reviewPages: { type: 'number', description: '评论页数(每页约10条,默认1,最大5;挖痛点建议 2-3 页)' },
       entity: { type: 'string', description: '搜索实体: software(默认)/macSoftware/iPhone 等不填则不限' },
     },
   },
@@ -552,30 +554,40 @@ const appstoreLookup = {
       `简介: ${(app.description || '').replace(/\s+/g, ' ').slice(0, 200)}…`,
     ].join('\n');
 
-    // 评论 RSS: 每区每 App 最多 500 条, 按 page 取最新 50
+    // 评论 RSS: 每区每 App 最多 500 条(10页), 按 page 取最新若干
     let reviewsOut = '';
     if (args.reviews !== false && app.trackId) {
-      try {
-        const rr = await httpGet(`https://itunes.apple.com/${country}/rss/customerreviews/page=1/id=${app.trackId}/sortby=mostrecent/json`, 12000);
-        if (rr.status === 200) {
+      const pages = Math.min(Math.max(args.reviewPages ?? 1, 1), 5);
+      const revs = [];
+      for (let p = 1; p <= pages; p++) {
+        try {
+          const rr = await httpGet(`https://itunes.apple.com/${country}/rss/customerreviews/page=${p}/id=${app.trackId}/sortby=mostrecent/json`, 12000);
+          if (rr.status !== 200) break; // 403/429/超页 → 停止翻页
           const rd = tryJson(rr.body);
           const entries = rd?.feed?.entry ?? [];
-          const revs = (Array.isArray(entries) ? entries : [entries]).slice(0, 10);
-          if (revs.length && revs[0]['im:rating']) {
-            reviewsOut = '\n\n💬 最新用户评论 top ' + revs.length + ' (原声, 挖痛点用):\n' + revs.map((e, i) => {
-              const rating = e['im:rating']?.label ?? '?';
-              const title = e.title?.label ?? '';
-              const body = (e.content?.label ?? '').replace(/\s+/g, ' ').slice(0, 150);
-              const ver = e['im:version']?.label ?? '?';
-              return `${i + 1}. [${rating}★ v${ver}] ${title} — ${body}`;
-            }).join('\n');
-          } else {
-            reviewsOut = '\n\n💬 该 App 在此区暂无评论。';
+          const flat = Array.isArray(entries) ? entries : (entries ? [entries] : []);
+          if (!flat.length || !flat[0]['im:rating']) break; // 无更多评论
+          for (const e of flat) {
+            if (!e['im:rating']) continue;
+            revs.push({
+              rating: e['im:rating'].label ?? '?',
+              title: e.title?.label ?? '',
+              body: (e.content?.label ?? '').replace(/\s+/g, ' '),
+              ver: e['im:version']?.label ?? '?',
+            });
           }
-        } else if (rr.status === 403 || rr.status === 429) {
-          reviewsOut = `\n\n💬 评论 RSS 被限流(HTTP ${rr.status}), 稍后再试。`;
-        }
-      } catch { /* 评论拉不到不影响主结果 */ }
+        } catch { break; }
+      }
+      if (revs.length) {
+        // 低分(≤3★)排前 —— 挖痛点场景低分原声比五星灌水值钱
+        revs.sort((a, b) => (parseInt(a.rating) || 5) - (parseInt(b.rating) || 5));
+        const show = revs.slice(0, 15);
+        reviewsOut = `\n\n💬 用户评论 ${revs.length} 条(低分优先, 挖痛点用):\n` + show.map((e, i) => {
+          return `${i + 1}. [${e.rating}★ v${e.ver}] ${e.title} — ${e.body.slice(0, 150)}`;
+        }).join('\n');
+      } else {
+        reviewsOut = '\n\n💬 该 App 在此区暂无评论(或评论 RSS 被限流)。';
+      }
     }
 
     return (viaSearch ? searchList : '') + appLine + reviewsOut;

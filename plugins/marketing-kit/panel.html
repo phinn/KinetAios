@@ -175,7 +175,7 @@
     <div class="mk-page" id="mk-page-research">
       <div class="mk-card">
         <h3>🛰️ 一键调研</h3>
-        <div class="mk-hint">点击下方任务卡 → 指令发到当前会话,AI 会自动调用 marketing-kit 的只读工具(market_search / hn_search / reddit_hot / seo_audit / keyword_expand)拿真实数据并写报告。需要先选中一个会话。</div>
+        <div class="mk-hint">点击下方任务卡 → 指令发到当前会话,AI 会自动调用 marketing-kit 的 7 个只读工具(market_search / hn_search / reddit_hot / seo_audit / keyword_expand / funnel_calc / appstore_lookup)拿真实数据并写报告。需要先选中一个会话。</div>
         <div id="mk-quick-list"></div>
       </div>
       <div class="mk-card">
@@ -317,10 +317,10 @@
 
   // ═══ Tab 2: 调研工作台 ═══
   var quickTasks = [
-    { ico: '🔭', name: '竞品全景扫描', desc: 'SERP + HN 热度 + Reddit 声量 + 落地页对照', prompt: '对「__PRODUCT__」做一次竞品全景扫描:竞品从搜索结果里取 2-4 个,逐个跑 market_search + hn_search + reddit_hot + seo_audit,本品落地页也体检一次,产出 competitor-scan.md(先 TL;DR,再定位矩阵/声量对比/落地页差距/行动建议)。' },
+    { ico: '🔭', name: '竞品全景扫描', desc: 'SERP + HN/Reddit 声量 + App 差评 + 落地页对照', prompt: '对「__PRODUCT__」做一次竞品全景扫描:竞品从搜索结果里取 2-4 个,逐个跑 market_search + hn_search + reddit_hot(带 query 搜怨念帖,t=all)+ seo_audit;移动端竞品加 appstore_lookup 拉评分和低分评论,本品落地页也体检一次,产出 competitor-scan.md(先 TL;DR,再定位矩阵/声量对比/落地页差距/行动建议)。' },
     { ico: '📣', name: '发布计划', desc: '渠道排期 + A/B 标题 + 评论区 Q&A 预案', prompt: '为「__PRODUCT__」制定发布计划:先 hn_search 验证同类话题正常热度区间,reddit_hot 看目标社区语境,再产出 launch-plan.md(倒排时间表 / 每渠道 3 组 A/B 标题 / 首评草稿 / 高频质疑 Q&A / 量化成功标准)。注意:awesome 类列表只安排我本人手工提交。' },
     { ico: '🗓️', name: '4 周内容日历', desc: '关键词拓展 + 热度验证 → 选题排期', prompt: '围绕「__PRODUCT__」生成未来 4 周内容日历:keyword_expand 出词包,对 top 选题逐个用 market_search / hn_search 验证竞争强度,产出 content-calendar.md(周度排期表 + 每篇 title/description 草稿 + 内链建议)。' },
-    { ico: '👂', name: '用户原声挖掘', desc: '社区痛点 / 竞品怨念 / 用户黑话', prompt: '对「__PRODUCT__」的目标社区做用户原声挖掘:reddit_hot + hn_search 抓真实讨论,提炼痛点 top10 / 竞品怨念 top10 / 用户黑话清单(保留原话和链接),产出 voice-of-customer.md + 文案弹药映射表。' },
+    { ico: '👂', name: '用户原声挖掘', desc: '社区痛点 / 竞品怨念 / App 低分评论 / 用户黑话', prompt: '对「__PRODUCT__」的目标社区做用户原声挖掘:reddit_hot(热帖 + 带 query 搜 frustrating/wish there was/switched away 等怨念词,t=all)+ hn_search 抓真实讨论;移动端竞品跑 appstore_lookup(reviewPages=3)拉低分评论;提炼痛点 top10 / 竞品怨念 top10 / App 差评 / 用户黑话清单(保留原话和链接),产出 voice-of-customer.md + 文案弹药映射表。' },
     { ico: '🔍', name: '落地页体检', desc: 'SEO/转化双维度 + 修改版 HTML', prompt: '对「__PRODUCT__」的落地页做体检:seo_audit 拿数据,人工评估首屏 5 秒法则 / CTA / 信任要素,问题按 🔴🟡 分级列出;源码可获取时直接产出修改版 landing-fixed.html。竞品页一并体检对照。' },
     { ico: '🔑', name: '关键词词包', desc: '组合矩阵 + 长尾 + FAQ 问句', prompt: '用 keyword_expand 围绕「__PRODUCT__」的核心词出词包(组合矩阵 + 长尾模式 + FAQ 问句),并用 market_search 抽查 5 个长尾词的 SERP 格局,标注哪些词有机会、哪些词已被霸屏。' }
   ];
@@ -369,7 +369,7 @@
 
   // ═══ Tab 3: 发布清单 ═══
   var checks = [
-    ['选题已验证', 'hn_search / reddit_hot 确认过同类话题热度,不是拍脑袋定的选题'],
+    ['选题已验证', 'hn_search / reddit_hot(含 query 怨念搜索)确认过同类话题热度,不是拍脑袋定的选题'],
     ['落地页 SEO 自查过', 'title 15-65 字符 / description 70-165 / OG 三件套 / 唯一 H1 / JSON-LD'],
     ['首屏 5 秒法则', '陌生人 5 秒内能说出:这是什么、给谁用、跟竞品差在哪'],
     ['CTA 唯一且是动词', '首屏一个动作入口,按钮文案是「立即 X」不是「Learn more」'],

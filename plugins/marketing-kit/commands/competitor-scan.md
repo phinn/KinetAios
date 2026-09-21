@@ -14,17 +14,18 @@ description: 竞品全景扫描 —— 搜索引擎定位 + HN/Reddit 声量 + �
 对每个竞品执行:
 - `market_search` — 搜「<竞品名>」和「<品类> best <竞品名> alternative」,看 SERP 格局和第三方评价
 - `hn_search` — 搜竞品名,看历史发布热度和讨论焦点
-- `reddit_hot` — 在相关社区(subreddit 从结果中推断)搜竞品被提及的语境
-- `seo_audit` — 抓竞品落地页,记录 title/description/OG/H1/结构化数据/高频词
+- `reddit_hot` — 在相关社区(subreddit 从结果中推断)传 query 搜竞品名(配 `t=all`),看被提及的语境和怨念
+- `seo_audit` — 抓竞品落地页,记录 title/description/OG/H1/结构化数据/高频词,加正文词数/内外链等深化项
+- 移动端竞品加 `appstore_lookup`(term=竞品名,搜到后 `reviewPages=2`):评分/评分人数/版本节奏 + 低分评论原声
 
-对本品也跑一次 `seo_audit`(差距对照)。
+对本品也跑一次 `seo_audit`(差距对照);本品若有 App,同样 `appstore_lookup` 拿自己的评分基数。
 
 ## 3. 交叉分析
 
 - **定位矩阵**: 各家主打卖点、定价、目标人群,一张表
 - **声量对比**: HN 历史分数/评论数、Reddit 提及量,谁被讨论得多、在什么语境下被讨论
 - **落地页差距**: 对照 seo_audit 结果,列本品缺什么(OG 卡?结构化数据?H1 打的词不对?)
-- **可乘之虚**: 竞品差评集中点(从 Reddit/搜索摘要里找原声),这是本品文案应该打的点
+- **可乘之虚**: 竞品差评集中点(从 Reddit 怨念帖 + App Store 低分评论里找原声,两者交叉印证的点最锋利),这是本品文案应该打的点
 
 ## 4. 交付
 

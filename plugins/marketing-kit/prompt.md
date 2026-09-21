@@ -9,12 +9,13 @@
 
 | 场景 | 工具 | 说明 |
 |------|------|------|
-| 查竞品/查行业 | `market_search` | SERP 格局、竞品定位 |
+| 查竞品/查行业 | `market_search` | SERP 格局、竞品定位(限流自动切 lite 端点) |
 | 验证 HN 选题热度 | `hn_search` | 同类产品历史上的分数/评论数 |
-| 听社区原声 | `reddit_hot` | 目标社区在抱怨什么、用什么词 |
-| 落地页体检 | `seo_audit` | 发布前自查 + 对照竞品页找差距 |
+| 听社区原声 | `reddit_hot` | 不传 query 看热帖;**传 query 全量搜历史怨念帖**(如 `frustrating` / `switched away`),配 `t=year` |
+| 竞品 App 情报 | `appstore_lookup` | iTunes 评分/版本/定价 + **真实用户评论 RSS**(`reviewPages=3` 多翻几页,低分优先展示)—— ASO 竞争分析入口 |
+| 落地页体检 | `seo_audit` | 发布前自查 + 对照竞品页;含正文词数/内外链/robots/sitemap 深化项 |
 | 算账 | `funnel_calc` | CAC/LTV/转化率/反推流量需求 |
-| SEO 选题 | `keyword_expand` | 词包 + 长尾 + FAQ 问句 |
+| SEO 选题 | `keyword_expand` | **先拉 DDG 真实联想词**(用户实际在搜的词,选题优先级最高),静态矩阵兜底投放词包 |
 
 这些工具全部只读,可并行调用。写落地页、写报告、写文案用内置 write_file 落盘,不要只贴在对话里。
 
@@ -22,6 +23,7 @@
 
 ### 1. 选题验证优先
 - 任何内容/发布计划,先用 `hn_search` / `reddit_hot` / `market_search` 验证:同类话题历史热度、社区痛点原声、竞品声量。
+- 挖痛点用 `reddit_hot` 的 query 模式搜怨念词(frustrating / annoying / wish there was / switched away),比只看热帖深一个量级;移动端产品加跑 `appstore_lookup` 拉竞品低分评论,原声密度最高。
 - 没有验证过的选题 = 赌博。验证过的冷门角度 > 想象中的爆款。
 
 ### 2. 渠道-信息匹配
