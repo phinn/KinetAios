@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<!-- Marketing Console — marketing-kit 面板 (v2.1 plugin panel) -->
+<!-- Runs inside an iframe (srcdoc). Communicates with host via postMessage. -->
+<!-- 营销控制台: 漏斗计算器(本地实时) + 调研工作台(发指令给 AI 会话) + 发布清单 -->
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<style>
+  /* ── CSS 变量回退值 (iframe 内无法继承宿主 :root, 宿主会 postMessage 覆盖) ── */
+  :root {
+    --bg-side: #161619;
+    --bg-elev: #242429;
+    --bg-input: #2a2a31;
+    --border: #34343c;
+    --text: #e7e7ec;
+    --text-dim: #9a9aa4;
+    --text-faint: #6c6c76;
+    --accent: #f7971e;
+    --accent-dim: #b45309;
+    --danger: #e05050;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    height: 100vh; overflow: hidden;
+    background: var(--bg-side);
+    font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+    color: var(--text); font-size: 13px;
+  }
+
+  /* ── 顶栏 ── */
+  #mk-toolbar {
+    display: flex; align-items: center; gap: 6px;
+    padding: 8px 14px; flex-shrink: 0;
+    background: var(--bg-elev); border-bottom: 1px solid var(--border);
+  }
+  #mk-toolbar .mk-title {
+    font-size: 13px; font-weight: 600; letter-spacing: .02em;
+    color: var(--text); margin-right: auto; display: flex; align-items: center; gap: 8px;
+  }
+  #mk-toolbar .mk-title svg { width: 16px; height: 16px; color: var(--accent); flex-shrink: 0; }
+  .mk-tab {
+    padding: 5px 14px; border-radius: 7px; border: 1px solid transparent;
+    background: transparent; color: var(--text-dim);
+    font-size: 12px; font-weight: 500; cursor: pointer;
+  }
+  .mk-tab:hover { color: var(--text); background: var(--bg-input); }
+  .mk-tab.active { color: var(--text); background: var(--bg-input); border-color: var(--border); }
+
+  /* ── 主区 ── */
+  #mk-root { height: calc(100vh - 45px); overflow-y: auto; padding: 18px 22px 40px; }
+  .mk-page { display: none; max-width: 980px; margin: 0 auto; }
+  .mk-page.active { display: block; }
+  .mk-card {
+    background: var(--bg-elev); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 18px; margin-bottom: 14px;
+  }
+  .mk-card h3 {
+    font-size: 13px; font-weight: 600; margin-bottom: 4px;
+    display: flex; align-items: center; gap: 7px;
+  }
+  .mk-card .mk-hint { font-size: 11.5px; color: var(--text-faint); margin-bottom: 12px; line-height: 1.5; }
+
+  /* ── 表单 ── */
+  .mk-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; }
+  .mk-field label { display: block; font-size: 11px; color: var(--text-dim); margin-bottom: 4px; }
+  .mk-field input {
+    width: 100%; padding: 7px 9px; border-radius: 7px;
+    border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+    font-size: 12.5px; outline: none;
+  }
+  .mk-field input:focus { border-color: var(--accent); }
+  .mk-btn {
+    display: inline-flex; align-items: center; gap: 5px;
+    padding: 7px 16px; border-radius: 7px; border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text);
+    font-size: 12px; font-weight: 500; cursor: pointer; margin-top: 12px;
+  }
+  .mk-btn:hover { background: var(--accent-dim); border-color: var(--accent); }
+  .mk-btn.primary { background: var(--accent-dim); border-color: var(--accent); }
+  .mk-btn.primary:hover { filter: brightness(1.15); }
+
+  /* ── 漏斗可视化 ── */
+  #mk-funnel-viz { margin-top: 14px; display: none; }
+  .mk-stage { margin-bottom: 8px; }
+  .mk-stage .mk-stage-label { display: flex; justify-content: space-between; font-size: 11.5px; color: var(--text-dim); margin-bottom: 3px; }
+  .mk-stage .mk-stage-bar {
+    height: 22px; border-radius: 5px; min-width: 2px;
+    background: linear-gradient(90deg, var(--accent-dim), var(--accent));
+    display: flex; align-items: center; padding: 0 8px;
+    font-size: 11px; font-weight: 600; color: #1a1a1a; white-space: nowrap;
+    transition: width .3s ease;
+  }
+  .mk-verdict { margin-top: 12px; padding: 10px 12px; border-radius: 8px; font-size: 12px; line-height: 1.6; }
+  .mk-verdict.good { background: rgba(74, 222, 128, .09); border: 1px solid rgba(74, 222, 128, .35); color: #86efac; }
+  .mk-verdict.bad { background: rgba(224, 80, 80, .09); border: 1px solid rgba(224, 80, 80, .35); color: #fca5a5; }
+
+  /* ── 调研工作台 ── */
+  .mk-quick {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 12px; margin: 0 8px 8px 0;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: var(--bg-input); color: var(--text-dim);
+    font-size: 12px; cursor: pointer; text-align: left;
+  }
+  .mk-quick:hover { border-color: var(--accent); color: var(--text); }
+  .mk-quick .q-ico { font-size: 15px; }
+  .mk-quick .q-name { color: var(--text); font-weight: 500; }
+  .mk-quick .q-desc { display: block; font-size: 10.5px; color: var(--text-faint); margin-top: 2px; }
+  #mk-custom-prompt {
+    width: 100%; min-height: 84px; resize: vertical;
+    padding: 9px 11px; border-radius: 8px;
+    border: 1px solid var(--border); background: var(--bg-input); color: var(--text);
+    font-size: 12.5px; font-family: inherit; line-height: 1.5; outline: none;
+  }
+  #mk-custom-prompt:focus { border-color: var(--accent); }
+  #mk-send-status { margin-left: 10px; font-size: 11.5px; color: var(--text-faint); }
+  #mk-send-status.ok { color: #86efac; }
+  #mk-send-status.err { color: #fca5a5; }
+
+  /* ── 清单 ── */
+  .mk-check { display: flex; align-items: flex-start; gap: 9px; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; }
+  .mk-check:last-child { border-bottom: none; }
+  .mk-check input { margin-top: 2px; accent-color: var(--accent); cursor: pointer; }
+  .mk-check span { font-size: 12.5px; line-height: 1.5; color: var(--text-dim); }
+  .mk-check input:checked + span { color: var(--text-faint); text-decoration: line-through; }
+  .mk-check .why { display: block; font-size: 11px; color: var(--text-faint); margin-top: 2px; }
+  .mk-progress { height: 5px; border-radius: 3px; background: var(--bg-input); overflow: hidden; margin: 10px 0 4px; }
+  .mk-progress > div { height: 100%; width: 0; background: var(--accent); transition: width .3s; }
+  #mk-checklist-pct { font-size: 11px; color: var(--text-faint); text-align: right; }
+
+  @media (max-width: 720px) { .mk-grid { grid-template-columns: 1fr 1fr; } }
+</style>
+</head>
+<body>
+  <div id="mk-toolbar">
+    <div class="mk-title">
+      <svg viewBox="0 0 40 40" fill="none"><rect x="1" y="1" width="38" height="38" rx="9" fill="#F7971E"/><rect x="9" y="24" width="4" height="8" rx="1.2" fill="#fff" opacity=".75"/><rect x="15" y="19" width="4" height="13" rx="1.2" fill="#fff" opacity=".85"/><rect x="21" y="14" width="4" height="18" rx="1.2" fill="#fff" opacity=".95"/><path d="M12 16 L20 8 L28 14" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      营销控制台
+    </div>
+    <button class="mk-tab active" data-tab="funnel">漏斗计算</button>
+    <button class="mk-tab" data-tab="research">调研工作台</button>
+    <button class="mk-tab" data-tab="checklist">发布清单</button>
+  </div>
+
+  <div id="mk-root">
+    <!-- ═══ Tab 1: 漏斗计算 (纯本地, 复用 index.js 同一套假设) ═══ -->
+    <div class="mk-page active" id="mk-page-funnel">
+      <div class="mk-card">
+        <h3>📊 漏斗测算</h3>
+        <div class="mk-hint">填任意相邻两层,中间层自动按转化率推算。留空的转化率用行业经验值兜底(CTR 2% / 注册 8% / 付费 3%)。所有计算纯本地,不联网。</div>
+        <div class="mk-grid">
+          <div class="mk-field"><label>曝光 Impressions</label><input id="mk-f-imp" type="number" min="0" placeholder="如 50000"></div>
+          <div class="mk-field"><label>点击率 CTR %</label><input id="mk-f-ctr" type="number" step="0.1" min="0" placeholder="2.0"></div>
+          <div class="mk-field"><label>注册率 %</label><input id="mk-f-sr" type="number" step="0.1" min="0" placeholder="8.0"></div>
+          <div class="mk-field"><label>付费率 %</label><input id="mk-f-pr" type="number" step="0.1" min="0" placeholder="3.0"></div>
+        </div>
+        <div class="mk-grid" style="margin-top:10px">
+          <div class="mk-field"><label>点击 Clicks (可选)</label><input id="mk-f-clicks" type="number" min="0" placeholder="自动推算"></div>
+          <div class="mk-field"><label>注册 Signups (可选)</label><input id="mk-f-signups" type="number" min="0" placeholder="自动推算"></div>
+          <div class="mk-field"><label>付费 Paid (可选)</label><input id="mk-f-paid" type="number" min="0" placeholder="自动推算"></div>
+          <div class="mk-field"><label>总花费 Spend ¥</label><input id="mk-f-spend" type="number" min="0" placeholder="如 5000"></div>
+        </div>
+        <div class="mk-grid" style="margin-top:10px">
+          <div class="mk-field"><label>ARPU ¥/月</label><input id="mk-f-arpu" type="number" step="0.1" min="0" placeholder="如 30"></div>
+          <div class="mk-field"><label>月流失率 %</label><input id="mk-f-churn" type="number" step="0.1" min="0" placeholder="如 5"></div>
+          <div class="mk-field"><label>目标付费数 (反推模式)</label><input id="mk-f-target" type="number" min="0" placeholder="倒推所需流量"></div>
+        </div>
+        <button class="mk-btn primary" id="mk-f-run">计算</button>
+        <div id="mk-funnel-viz"></div>
+      </div>
+    </div>
+
+    <!-- ═══ Tab 2: 调研工作台 (把指令发给当前会话, AI 用插件工具执行) ═══ -->
+    <div class="mk-page" id="mk-page-research">
+      <div class="mk-card">
+        <h3>🛰️ 一键调研</h3>
+        <div class="mk-hint">点击下方任务卡 → 指令发到当前会话,AI 会自动调用 marketing-kit 的只读工具(market_search / hn_search / reddit_hot / seo_audit / keyword_expand)拿真实数据并写报告。需要先选中一个会话。</div>
+        <div id="mk-quick-list"></div>
+      </div>
+      <div class="mk-card">
+        <h3>✍️ 自定义指令</h3>
+        <div class="mk-hint">写你自己的调研指令,同样发到当前会话。工具清单:市场搜索、HN 热度、Reddit 原声、落地页体检、漏斗计算、关键词拓展。</div>
+        <textarea id="mk-custom-prompt" placeholder="例:帮我调研「本地优先 AI 笔记」这个品类:HN 上同类产品最高热度多少、Reddit r/PKMS 最近在抱怨什么、竞品落地页 OG 卡片谁做得最好"></textarea>
+        <button class="mk-btn primary" id="mk-custom-send">发送到会话</button><span id="mk-send-status"></span>
+      </div>
+    </div>
+
+    <!-- ═══ Tab 3: 发布清单 ═══ -->
+    <div class="mk-page" id="mk-page-checklist">
+      <div class="mk-card">
+        <h3>🚀 发布前清单</h3>
+        <div class="mk-hint">渠道无关的最小发布检查项。进度实时保存在本面板(localStorage),发完一个渠道勾一轮。</div>
+        <div class="mk-progress"><div id="mk-checklist-bar"></div></div>
+        <div id="mk-checklist-pct"></div>
+        <div id="mk-checklist" style="margin-top:8px"></div>
+      </div>
+    </div>
+  </div>
+
+<script>
+(function() {
+  'use strict';
+
+  // ═══ 宿主通信层 — postMessage bridge (同 brainstorm 模式) ═══
+  var reqId = 0;
+  var pending = {};
+  function hostCall(method, args) {
+    var id = ++reqId;
+    return new Promise(function(resolve, reject) {
+      var timer = setTimeout(function() {
+        if (pending[id]) { delete pending[id]; reject('hostCall timeout: ' + method); }
+      }, 30000);
+      pending[id] = {
+        resolve: function(v) { clearTimeout(timer); resolve(v); },
+        reject: function(e) { clearTimeout(timer); reject(e); }
+      };
+      window.parent.postMessage({ source: 'plugin:marketing-kit', id: id, method: method, args: args || [] }, '*');
+    });
+  }
+  window.addEventListener('message', function(ev) {
+    var data = ev.data;
+    if (!data || data.target !== 'plugin:marketing-kit') return;
+    var p = pending[data.id];
+    if (!p) return;
+    delete pending[data.id];
+    if (data.error) p.reject(data.error); else p.resolve(data.result);
+  });
+
+  // 主题变量注入 (宿主 postMessage 过来)
+  window.addEventListener('message', function(ev) {
+    var data = ev.data;
+    if (!data || data.type !== 'theme' || !data.vars) return;
+    for (var k in data.vars) document.documentElement.style.setProperty(k, data.vars[k]);
+  });
+
+  // ═══ Tab 切换 ═══
+  document.querySelectorAll('.mk-tab').forEach(function(tab) {
+    tab.onclick = function() {
+      document.querySelectorAll('.mk-tab').forEach(function(t) { t.classList.remove('active'); });
+      document.querySelectorAll('.mk-page').forEach(function(p) { p.classList.remove('active'); });
+      tab.classList.add('active');
+      document.getElementById('mk-page-' + tab.dataset.tab).classList.add('active');
+    };
+  });
+
+  var $ = function(id) { return document.getElementById(id); };
+  var num = function(id) { var v = $(id).value.trim(); return v === '' ? null : Number(v); };
+
+  // ═══ Tab 1: 漏斗计算 ═══
+  $('mk-f-run').onclick = function() {
+    var imp = num('mk-f-imp'), ctr = num('mk-f-ctr'), sr = num('mk-f-sr'), pr = num('mk-f-pr');
+    var clicks = num('mk-f-clicks'), signups = num('mk-f-signups'), paid = num('mk-f-paid');
+    var spend = num('mk-f-spend'), arpu = num('mk-f-arpu'), churn = num('mk-f-churn');
+    var target = num('mk-f-target');
+    var cCtr = ctr != null ? ctr / 100 : 0.02;
+    var cSr = sr != null ? sr / 100 : 0.08;
+    var cPr = pr != null ? pr / 100 : 0.03;
+    var fmt = function(v, d) { return v == null ? '—' : v.toLocaleString('en-US', { maximumFractionDigits: d || 0 }); };
+    var viz = $('mk-funnel-viz');
+    viz.style.display = 'block';
+
+    // 反推模式
+    if (target != null) {
+      var s2 = target / cPr, c2 = s2 / cSr, i2 = c2 / cCtr;
+      viz.innerHTML =
+        stage('曝光', i2, i2) + stage('点击', c2, i2) + stage('注册', s2, i2) + stage('付费', target, i2) +
+        '<div class="mk-verdict good">🎯 要拿下 <b>' + fmt(target) + '</b> 个付费用户:需要曝光 <b>' + fmt(i2) + '</b>、点击 <b>' + fmt(c2) + '</b>、注册 <b>' + fmt(s2) + '</b>。' +
+        (spend != null ? '<br>按 spend=' + fmt(spend) + ' 算,CPM≈' + fmt(spend / i2 * 1000, 2) + ',单个付费获客成本≈<b>' + fmt(spend / target, 2) + '</b>' : '') + '</div>';
+      return;
+    }
+
+    // 正推
+    if (imp != null && clicks == null) clicks = imp * cCtr;
+    if (clicks != null && imp == null && ctr != null) imp = clicks / cCtr;
+    if (clicks != null && signups == null) signups = clicks * cSr;
+    if (signups != null && paid == null) paid = signups * cPr;
+    if (clicks == null && signups == null && paid == null) {
+      viz.innerHTML = '<div class="mk-verdict bad">至少填一层具体数量或转化率(曝光+CTR / 注册数 / 付费数)。</div>';
+      return;
+    }
+    var base = imp || clicks || paid || 1;
+    var html = '';
+    if (imp != null) html += stage('曝光', imp, base);
+    if (clicks != null) html += stage('点击', clicks, base, imp != null ? (clicks / imp * 100).toFixed(2) + '%' : '');
+    if (signups != null) html += stage('注册', signups, base, clicks != null ? (signups / clicks * 100).toFixed(2) + '%' : '');
+    if (paid != null) html += stage('付费', paid, base, signups != null ? (paid / signups * 100).toFixed(2) + '%' : '');
+
+    var verdict = '';
+    if (spend != null && paid != null && paid > 0) {
+      var cac = spend / paid;
+      verdict += '💰 CAC = <b>' + fmt(cac, 2) + '</b>';
+      if (arpu != null) {
+        var ltv = churn != null && churn > 0 ? arpu / (churn / 100) : arpu * 12;
+        var ratio = ltv / cac;
+        verdict += ' · LTV = <b>' + fmt(ltv, 2) + '</b>' + (churn == null ? '(未填流失率,按12个月粗算)' : '') +
+          '<br>⚖️ LTV/CAC = <b>' + fmt(ratio, 2) + '</b> ' + (ratio >= 3 ? '✅ 健康(≥3)' : '⚠️ 低于 3 —— 增长越快亏越快,先修转化或定价');
+        if (churn != null && churn > 0) {
+          var months = cac / arpu;
+          verdict += '<br>⏳ 回收期 ' + fmt(months, 1) + ' 个月' + (months > 100 / churn ? ' ⚠️ 超过平均用户生命周期!' : '');
+        }
+      }
+    } else {
+      verdict = '💡 补充「总花费 + ARPU」可算 CAC/LTV 和回收期。';
+    }
+    if (verdict) html += '<div class="mk-verdict ' + (ratio_ok(verdict) ? 'good' : 'bad') + '">' + verdict + '</div>';
+    viz.innerHTML = html;
+
+    function ratio_ok(v) { return v.indexOf('健康') >= 0 || v.indexOf('💡') >= 0; }
+    function stage(name, v, base, extra) {
+      var pct = Math.max(v / base * 100, 0.6);
+      return '<div class="mk-stage"><div class="mk-stage-label"><span>' + name + (extra ? ' <span style="color:var(--text-faint)">(转化 ' + extra + ')</span>' : '') + '</span><span>' + fmt(v) + '</span></div>' +
+        '<div class="mk-stage-bar" style="width:' + pct.toFixed(2) + '%"></div></div>';
+    }
+  };
+
+  // ═══ Tab 2: 调研工作台 ═══
+  var quickTasks = [
+    { ico: '🔭', name: '竞品全景扫描', desc: 'SERP + HN 热度 + Reddit 声量 + 落地页对照', prompt: '对「__PRODUCT__」做一次竞品全景扫描:竞品从搜索结果里取 2-4 个,逐个跑 market_search + hn_search + reddit_hot + seo_audit,本品落地页也体检一次,产出 competitor-scan.md(先 TL;DR,再定位矩阵/声量对比/落地页差距/行动建议)。' },
+    { ico: '📣', name: '发布计划', desc: '渠道排期 + A/B 标题 + 评论区 Q&A 预案', prompt: '为「__PRODUCT__」制定发布计划:先 hn_search 验证同类话题正常热度区间,reddit_hot 看目标社区语境,再产出 launch-plan.md(倒排时间表 / 每渠道 3 组 A/B 标题 / 首评草稿 / 高频质疑 Q&A / 量化成功标准)。注意:awesome 类列表只安排我本人手工提交。' },
+    { ico: '🗓️', name: '4 周内容日历', desc: '关键词拓展 + 热度验证 → 选题排期', prompt: '围绕「__PRODUCT__」生成未来 4 周内容日历:keyword_expand 出词包,对 top 选题逐个用 market_search / hn_search 验证竞争强度,产出 content-calendar.md(周度排期表 + 每篇 title/description 草稿 + 内链建议)。' },
+    { ico: '👂', name: '用户原声挖掘', desc: '社区痛点 / 竞品怨念 / 用户黑话', prompt: '对「__PRODUCT__」的目标社区做用户原声挖掘:reddit_hot + hn_search 抓真实讨论,提炼痛点 top10 / 竞品怨念 top10 / 用户黑话清单(保留原话和链接),产出 voice-of-customer.md + 文案弹药映射表。' },
+    { ico: '🔍', name: '落地页体检', desc: 'SEO/转化双维度 + 修改版 HTML', prompt: '对「__PRODUCT__」的落地页做体检:seo_audit 拿数据,人工评估首屏 5 秒法则 / CTA / 信任要素,问题按 🔴🟡 分级列出;源码可获取时直接产出修改版 landing-fixed.html。竞品页一并体检对照。' },
+    { ico: '🔑', name: '关键词词包', desc: '组合矩阵 + 长尾 + FAQ 问句', prompt: '用 keyword_expand 围绕「__PRODUCT__」的核心词出词包(组合矩阵 + 长尾模式 + FAQ 问句),并用 market_search 抽查 5 个长尾词的 SERP 格局,标注哪些词有机会、哪些词已被霸屏。' }
+  ];
+  // 产品名:面板不知道当前项目,留输入位 —— 第一次用时填一次,localStorage 记住
+  var prodKey = 'mk-product-name';
+  var productName = localStorage.getItem(prodKey) || '';
+  var list = $('mk-quick-list');
+  quickTasks.forEach(function(t) {
+    var btn = document.createElement('button');
+    btn.className = 'mk-quick';
+    btn.innerHTML = '<span class="q-ico">' + t.ico + '</span><span><span class="q-name">' + t.name + '</span><span class="q-desc">' + t.desc + '</span></span>';
+    btn.onclick = function() {
+      var name = prompt('目标产品名 / 一句话定位(用于填入指令):', productName);
+      if (name == null) return;
+      productName = name.trim();
+      if (productName) localStorage.setItem(prodKey, productName);
+      sendPrompt(t.prompt.replace(/__PRODUCT__/g, productName || '我们的产品'));
+    };
+    list.appendChild(btn);
+  });
+
+  $('mk-custom-send').onclick = function() {
+    var p = $('mk-custom-prompt').value.trim();
+    if (!p) { status('先写指令', 'err'); return; }
+    sendPrompt(p);
+  };
+
+  function status(msg, cls) {
+    var el = $('mk-send-status');
+    el.textContent = msg;
+    el.className = cls || '';
+    if (msg && cls !== 'err') setTimeout(function() { if (el.textContent === msg) { el.textContent = ''; el.className = ''; } }, 4000);
+  }
+
+  async function sendPrompt(promptText) {
+    status('发送中…');
+    try {
+      var convId = await hostCall('getActiveConvId', []);
+      if (!convId) { status('❌ 没有可用会话 —— 先在侧栏建一个会话', 'err'); return; }
+      await hostCall('send', [convId, promptText]);
+      status('✅ 已发到会话,AI 开始调研(切回对话视图看进度)', 'ok');
+    } catch (e) {
+      status('❌ ' + String(e), 'err');
+    }
+  }
+
+  // ═══ Tab 3: 发布清单 ═══
+  var checks = [
+    ['选题已验证', 'hn_search / reddit_hot 确认过同类话题热度,不是拍脑袋定的选题'],
+    ['落地页 SEO 自查过', 'title 15-65 字符 / description 70-165 / OG 三件套 / 唯一 H1 / JSON-LD'],
+    ['首屏 5 秒法则', '陌生人 5 秒内能说出:这是什么、给谁用、跟竞品差在哪'],
+    ['CTA 唯一且是动词', '首屏一个动作入口,按钮文案是「立即 X」不是「Learn more」'],
+    ['数据口径能撑住', '对外数字区分「次数 vs 去重人数」「单窗口 vs 累计」,拿得出依据'],
+    ['3 组 A/B 标题备好', '每个渠道 3 组变体,发完前 2 小时看数据留强汰弱'],
+    ['首评 / maker comment 写好', 'HN 讲技术实现不带营销腔;PH 讲为什么做这个'],
+    ['评论区 Q&A 预案', '定价 / 隐私 / 「为什么不用 X」三个必问,答案提前写好'],
+    ['截图 / 30 秒 demo 就绪', '图片无文字溢出,demo 从痛点进不从 logo 进'],
+    ['渠道时间定了', 'HN 美东工作日上午;PH 周二-四 00:01 PT;社区先看当日热帖再发'],
+    ['awesome 类列表 = 本人手工提交', '禁止 AI 代投 —— 要投的话你自己去开 issue/PR'],
+    ['72h 复盘指标定好', '量化:star / clone / 注册 / 评论数,到期对账']
+  ];
+  var ckKey = 'mk-checklist-v1';
+  var checked = {};
+  try { checked = JSON.parse(localStorage.getItem(ckKey) || '{}'); } catch (e) { checked = {}; }
+  var box = $('mk-checklist');
+  checks.forEach(function(c, i) {
+    var row = document.createElement('label');
+    row.className = 'mk-check';
+    row.innerHTML = '<input type="checkbox"' + (checked[i] ? ' checked' : '') + '><span>' + c[0] + '<span class="why">' + c[1] + '</span></span>';
+    var cb = row.querySelector('input');
+    cb.onchange = function() {
+      checked[i] = cb.checked;
+      localStorage.setItem(ckKey, JSON.stringify(checked));
+      updateProgress();
+    };
+    box.appendChild(row);
+  });
+  function updateProgress() {
+    var done = checks.filter(function(c, i) { return checked[i]; }).length;
+    $('mk-checklist-bar').style.width = (done / checks.length * 100) + '%';
+    $('mk-checklist-pct').textContent = done + ' / ' + checks.length;
+  }
+  updateProgress();
+
+  // 拉主题变量(宿主注入)
+  hostCall('getTheme', []).then(function(vars) {
+    if (vars) for (var k in vars) document.documentElement.style.setProperty(k, vars[k]);
+  }).catch(function() {});
+})();
+</script>
+</body>
+</html>

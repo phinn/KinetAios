@@ -13,5 +13,8 @@
   "keywords": ["营销", "推广", "增长", "竞品", "seo", "landing", "落地页", "发布", "product hunt", "launch", "文案", "内容营销", "漏斗", "转化率", "关键词", "社区", "marketing", "growth", "hacker news", "reddit"],
   "tools": "index.js#tools",
   "slashCommands": "commands",
-  "systemPrompt": "prompt.md"
+  "systemPrompt": "prompt.md",
+  "panel": "panel.html",
+  "panelTitle": "营销控制台",
+  "panelIcon": "icon.svg"
 }
