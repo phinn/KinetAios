@@ -1056,12 +1056,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   // 归因 = 规则触发词与「本次纠正 + 上一轮助手回答」同时命中(避免任何含 push 的消息都误伤 push 规则)。
   private detectCorrectionAndStrike(prompt: string, conv: Conversation): void {
     if (!/你还|你又|我说过|说了多少遍|还是错|还是报|不是让你|别再|怎么又|为啥又|又犯|又忘|不遵守|没遵守/.test(prompt)) return;
-    const lastAnswer = conv.turns[conv.turns.length - 1]?.answer?.slice(0, 1500) ?? '';
-    const haystack = (prompt + ' ' + lastAnswer).toLowerCase();
+    // 归因规则(2026-09-22 收紧):触发词必须出现在【用户本次纠正话术】里。
+    // 修前 haystack = prompt + lastAnswer,跨轮错位场景必误伤:第 N 轮用户"问"怎么 push
+    // (回答含 push 字样),第 N+1 轮用户为无关的 CSS bug 发火「怎么又错」→ push 规则被
+    // 误 strike → 错误强化进热区,方向完全反了。宁可漏杀不可误杀:
+    // 漏 strike 只是少一次强化(下轮同样错误还会再触发),误 strike 污染热区展示。
+    const promptLower = prompt.toLowerCase();
     for (const r of store.listRules()) {
       if (!r.triggerKw) continue;
       const kws = r.triggerKw.split(/[;；]/).map((s) => s.trim().toLowerCase()).filter(Boolean);
-      if (kws.some((kw) => haystack.includes(kw))) {
+      if (kws.some((kw) => promptLower.includes(kw))) {
         store.strikeRule(r.id);
       }
     }

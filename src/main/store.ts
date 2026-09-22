@@ -442,6 +442,8 @@ export function deleteConversation(id: string): void {
     stmt('DELETE FROM memories WHERE conversation_id=?;').run(id);
     // P2: 级联清理 episodic memories
     if (hasTable('episodic_memories')) stmt('DELETE FROM episodic_memories WHERE conv_id=?;').run(id);
+    // P1: 级联清理会话事实锚点(2026-09-22 补:漏了 → 已删会话的 remember_fact 永久残留)
+    stmt('DELETE FROM conv_facts WHERE conv_id=?;').run(id);
     stmt('DELETE FROM conversations WHERE id=?;').run(id);
   })();
 }
@@ -666,20 +668,22 @@ export function getConversationCwd(convId: string): string | null {
   return row?.cwd ?? null;
 }
 
-export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
+export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number; kind: string | null }> {
   if (convId === undefined) {
-    return db.prepare('SELECT id, content, conversation_id, importance FROM memories ORDER BY created_at DESC;').all() as Array<{
+    return db.prepare('SELECT id, content, conversation_id, importance, kind FROM memories ORDER BY created_at DESC;').all() as Array<{
       id: string;
       content: string;
       conversation_id: string | null;
       importance: number;
+      kind: string | null;
     }>;
   }
-  return db.prepare('SELECT id, content, conversation_id, importance FROM memories WHERE conversation_id=? ORDER BY created_at DESC;').all(convId) as Array<{
+  return db.prepare('SELECT id, content, conversation_id, importance, kind FROM memories WHERE conversation_id=? ORDER BY created_at DESC;').all(convId) as Array<{
     id: string;
     content: string;
     conversation_id: string | null;
     importance: number;
+    kind: string | null;
   }>;
 }
 
@@ -695,6 +699,7 @@ export function memoryCount(): number {
 // 关键词搜索 memories 表(LIKE 模糊匹配,不依赖 FTS5 也不依赖 embedding)。
 // 无 embedding 接口时 recall_memory 用此作为记忆搜索的 fallback。
 // restrictConvId:传入时只返回该会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时用)。
+  // restrictConvId:传入时只返回该会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时用)。
 export function searchMemories(q: string, limit = 20, restrictConvId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number }> {
   const like = `%${q.replace(/[%_]/g, (m) => '\\' + m)}%`;
   // rule 不进检索结果(铁律区常驻注入,检索命中只会重复占位)
@@ -741,7 +746,7 @@ export function searchMemoryTriples(q: string, limit = 10, restrictConvId?: stri
 export async function dedupMemories(threshold = 0.65): Promise<number> {
   // 2026-09 修复(保留新值):修前 ASC 排序 → 相似对删后者留最旧,用户改偏好后旧记忆永远存活。
   // 改 DESC(最新在前):i 是更新者,相似对删 b(更旧)→ 记忆系统偏向最新信息。
-  const all = db.prepare('SELECT id, content, created_at FROM memories ORDER BY created_at DESC;').all() as Array<{
+  const all = db.prepare('SELECT id, content, created_at FROM memories WHERE kind IS NULL OR kind != \'rule\' ORDER BY created_at DESC;').all() as Array<{
     id: string; content: string; created_at: number;
   }>;
 
@@ -1268,12 +1273,13 @@ export function deleteMemoryEmbedding(memoryId: string): void {
 }
 export function listMemoryEmbeddings(restrictConvId?: string): MemoryEmbeddingRow[] {
   // restrictConvId:只取本会话产生的记忆或无归属的全局记忆(跨项目记忆关闭时)。
+  // rule 除外:规则走铁律区常驻注入,混进检索结果只会重复占位(与 scoredMemories/searchMemories 同规则)。
   const rows = restrictConvId
     ? db.prepare(
-        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.conversation_id IS NULL OR m.conversation_id = ?;',
+        `SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE (m.conversation_id IS NULL OR m.conversation_id = ?) AND (m.kind IS NULL OR m.kind != 'rule');`,
       ).all(restrictConvId) as Array<{ memoryId: string; vec: Uint8Array; content: string; conversation_id: string | null }>
     : db.prepare(
-        'SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id;',
+        `SELECT e.memory_id AS memoryId, e.vec AS vec, m.content AS content, m.conversation_id AS conversation_id FROM memory_embeddings e JOIN memories m ON m.id = e.memory_id WHERE m.kind IS NULL OR m.kind != 'rule';`,
       ).all() as Array<{ memoryId: string; vec: Uint8Array; content: string; conversation_id: string | null }>;
   return rows.map((r) => ({
     memoryId: r.memoryId,
@@ -1452,12 +1458,14 @@ export function decayMemories(nowMs = Date.now()): number {  const now = nowMs;
   const stmtDelMeta = hasMeta ? db.prepare('DELETE FROM memory_meta WHERE memory_id=?;') : null;
   const stmtDelEmbed = hasEmbed ? db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;') : null;
   const stmtUpdate = db.prepare('UPDATE memory_meta SET weight=? WHERE memory_id=?;');
-  // 从 memories 表出发 LEFT JOIN meta,覆盖所有记忆(含从未被 recall 的长尾记忆)
+  // 从 memories 表出发 LEFT JOIN meta,覆盖所有记忆(含从未被 recall 的长尾记忆)。
+  // rule 除外:规则走 strike/热区治理,decay 删掉等于永久遗忘铁律。
   const all = (db.prepare(
     `SELECT mem.id AS memory_id, mem.created_at AS created_at, mem.importance AS importance,
        m.weight AS weight, m.last_used AS last_used
      FROM memories mem
-     LEFT JOIN memory_meta m ON m.memory_id = mem.id;`,
+     LEFT JOIN memory_meta m ON m.memory_id = mem.id
+     WHERE mem.kind IS NULL OR mem.kind != 'rule';`,
   ).all()) as Array<{ memory_id: string; weight: number | null; last_used: number | null; created_at: number | null; importance: number | null }>;
   let pruned = 0;
   const tx = db.transaction(() => {

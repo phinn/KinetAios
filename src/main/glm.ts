@@ -165,11 +165,22 @@ export async function embed(texts: string[], snap: ConfigSnapshot, signal?: Abor
   // 读独立 embedding 配置
   const { embedSnapshot } = await import('./settings');
   const esnap: EmbedSnapshot = embedSnapshot();
-  // Anthropic 主协议:如果 embedding 也指向 anthropic 端点则不支持
-  if (snap.apiProtocol === 'anthropic' && !esnap.baseURL.includes('/v1') && !esnap.baseURL.includes(':11434')) {
-    throw new Error('Anthropic 协议不支持 embeddings,请在设置中配置独立的 Embedding 接口');
+  // Anthropic 协议不支持 embeddings。但两个已知例外不抛:
+  // ① 端点本身是 OpenAI 兼容(含 /v1 或 :11434 Ollama);
+  // ② 智谱 anthropic 网关(/api/anthropic)→ 同厂商的 /api/paas/v4 有 embeddings 端点,
+  //    自动改写(baseURL 留空跟随主接口的场景)。2026-09-22 修复:修前 /api/anthropic
+  //    不含 '/v1' 子串 → 守卫必抛 → 所有记忆从入库起就没有向量(0/18577),
+  //    embedding 召回/语义去重/加权重排整条链静默退化为 LIKE 子串匹配。
+  let { baseURL } = esnap;
+  const isOpenAICompat = /\/v\d/.test(baseURL) || baseURL.includes(':11434');
+  if (snap.apiProtocol === 'anthropic' && !isOpenAICompat) {
+    if (/\/api\/anthropic\/?$/.test(baseURL)) {
+      baseURL = baseURL.replace(/\/api\/anthropic\/?$/, '/api/paas/v4');
+    } else {
+      throw new Error('Anthropic 协议不支持 embeddings,请在设置中配置独立的 Embedding 接口');
+    }
   }
-  const resp = await fetch(`${esnap.baseURL}/embeddings`, {
+  const resp = await fetch(`${baseURL}/embeddings`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${esnap.apiKey || 'ollama'}`,
