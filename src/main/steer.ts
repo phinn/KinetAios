@@ -39,6 +39,38 @@ export function clearSteer(convId: string): void {
   buffers.delete(convId);
 }
 
+// ── CLI 软打断的 kill 通道 ──
+// Direct 系只需 pull 注入;CLI 引擎(claudeCode/codex)没有注入通道,必须真的杀掉
+// 子进程,run() 的外层循环才能在边界 pull 到 steer 并 --resume 续段。
+// run() 注册 kill hook(TaskManager.interrupt 触发),收尾时清理。
+const killHooks = new Map<string, () => void>();
+
+/** 引擎 run 期间注册当前子进程的终止器(closure 读 childRef,触发时取最新)。 */
+export function setKillHook(convId: string, fn: () => void): void {
+  killHooks.set(convId, fn);
+}
+
+/** interrupt 调用:杀掉当前 CLI 子进程。返回 false = 无注册(引擎已收尾)。 */
+export function triggerKill(convId: string): boolean {
+  const fn = killHooks.get(convId);
+  killHooks.delete(convId);
+  fn?.();
+  return !!fn;
+}
+
+/** run 收尾清理(正常结束/abort/异常路径统一走这里)。 */
+export function clearKillHook(convId: string): void {
+  killHooks.delete(convId);
+}
+
+/**
+ * 打断文本的标准包裹格式。让模型明确知道:这是用户在任务执行中插话,
+ * 已完成的不要重做,按新指令调整后续动作。
+ */
+export function steerText(text: string): string {
+  return `[⚡ 用户打断] 用户在任务执行过程中插入了新指令:\n${text}\n\n不要重做已完成的工作。评估这条指令对当前任务的影响:若需要改变方向,立即调整后续动作;若是补充信息,把它纳入后续步骤。`;
+}
+
 /**
  * 构造注入消息。包裹格式让模型明确知道:这是用户在任务执行中插话,
  * 已完成的不要重做,按新指令调整后续动作。
@@ -46,6 +78,6 @@ export function clearSteer(convId: string): void {
 export function steerMessage(text: string): ChatMsg {
   return {
     role: 'user',
-    content: `[⚡ 用户打断] 用户在任务执行过程中插入了新指令:\n${text}\n\n不要重做已完成的工作。评估这条指令对当前任务的影响:若需要改变方向,立即调整后续动作;若是补充信息,把它纳入后续步骤。`,
+    content: steerText(text),
   };
 }

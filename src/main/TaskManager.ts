@@ -12,7 +12,7 @@ import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './e
 import { loadSkillBody } from './skills';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
-import { pushSteer, clearSteer } from './steer';
+import { pushSteer, clearSteer, clearKillHook, triggerKill } from './steer';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -304,6 +304,7 @@ export class TaskManager {
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
     this.extractionLocks.delete(id); // P1: 清理 extraction lock,防止残留 resolved Promise 堆积
     clearSteer(id); // P1: 清理打断缓冲,防 Map 无限累积
+    clearKillHook(id); // P1: kill hook 同步撤(防泄漏到同 id 的新会话)
     this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
     for (const e of this.engines.values()) e.releaseConv?.(id); // P1: 引擎侧 per-conv 状态(codexStates / V2 fingerprints…)
     this.emit.emitRemoved(id);
@@ -345,6 +346,7 @@ export class TaskManager {
 
   cancel(id: string): void {
     clearSteer(id); // 已 abort,待注入的打断一并清掉
+    clearKillHook(id); // kill hook 同步撤:取消后 triggerKill 不应再杀任何进程
     const ac = this.aborts.get(id);
     if (ac) {
       ac.abort();
@@ -374,11 +376,13 @@ export class TaskManager {
   interrupt(id: string, text: string): boolean {
     const conv = this.convs.get(id);
     if (!conv || conv.status !== 'running') return false;
-    // CLI 引擎(claudeCode/codex)也支持:软打断 = kill + --resume 重发(适配器循环边界消费)。
-    // 仅要求 engineSessionId 已建立(首轮 init 前无法 resume,退回 false → UI 降级排队)。
+    // CLI 引擎(claudeCode/codex)也支持:软打断 = 写缓冲 + triggerKill 杀子进程,
+    // 适配器循环边界 pull steer → --resume 续段。仅要求 engineSessionId 已建立
+    // (首轮 init 前无法 resume,退回 false → UI 降级排队)。
     if (!isDirectFamily(conv.engine)) {
       if (!conv.engineSessionId) return false;
       if (!pushSteer(id, text)) return false;
+      triggerKill(id); // 真正杀掉子进程,run() 循环才会到达 pull 边界
       conv.statusNote = t(getSettings().lang, 'tmgr.steeredCli');
       this.emit.emitConversation(conv);
       return true;
@@ -552,6 +556,7 @@ export class TaskManager {
     }).finally(async () => {
       this.aborts.delete(id);
       clearSteer(id); // turn 收尾:没被消费的打断清掉,防泄漏到下一个 turn 的上下文
+      clearKillHook(id); // kill hook 同步撤(turn 已结束, hook 生命周期 = run 生命周期)
       // 整轮结束后的持久化/goal 接力:detach 模式下 renderer 的 invoke 早已返回,
       // 这里是唯一收尾点;阻塞模式下调用方 await 到这里全部做完,语义与旧版一致。
       // Post-turn persistence + goal hand-off: in detach mode this is the only
@@ -811,6 +816,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }).finally(() => {
         this.aborts.delete(id);
         clearSteer(id); // goal loop 每轮收尾:同上,清残留打断
+        clearKillHook(id); // goal loop 同步撤 hook
       });
 
       if (!this.convs.has(id)) break;

@@ -22,6 +22,7 @@ import { t } from '../shared/i18n';
 import { mcp } from './mcp';
 import { getBrand } from './brand';
 import { pluginSystemPrompts, pluginEngines, type PluginEngineSpec } from './plugins';
+import { pullSteer, setKillHook, triggerKill, clearKillHook, steerText } from './steer';
 
 // P2-fix: 系统提示平台自适应 — 此前硬编码"Windows 电脑""shell 走 cmd.exe",
 // macOS 构建下系统提示词是错的。
@@ -855,6 +856,7 @@ class CliEngineAdapter implements Engine {
 
   releaseConv(convId: string): void {
     this.cfg.releaseConv?.(convId);
+    clearKillHook(convId); // 会话删除:kill hook 一并撤(与 codexStates/claudePending 同生命周期)
   }
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
@@ -937,16 +939,31 @@ class CliEngineAdapter implements Engine {
     // ── CLI 软打断(Steer)主循环 ──
     // CLI 子进程没有注入通道,采用 kill + resume 重发:
     // 1. spawn 当前段(首轮带原 prompt;被打断后的续段带 --resume + [⚡ 用户打断] 指令);
-    // 2. SIGTERM 优雅终止(killIdle 兜底场景仍 SIGKILL);3. 循环边界 pull steer,
-    // 有 → status 反馈 + 续段重跑;无 → 本次 kill 即终态(用户点了停止)。
-    // SIGTERM 语义靠 steerSeen 区分:被打断的退出不算错误,静默进入续段。
-    let steerSeen = false;
+    // 2. interrupt() → pushSteer + triggerKill,SIGTERM 杀子进程(2.5s 兜底 SIGKILL);
+    // 3. runBin 退出后循环边界 pull steer:有 → status 反馈 + 续段重跑;
+    //    无 → 没有待注入文本(纯 kill = idle 看门狗误杀/异常退出),走下方退出兜底。
     let lastExitCode = 0;
     let args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
+    // 软打断的 kill 通道:interrupt() 写完 steer 缓冲后调 triggerKill 真正杀子进程,
+    // runBin 才会退出、外层循环才能到达 pull 边界。closure 读 childRef(每次 spawn 刷新)。
+    setKillHook(conv.id, () => {
+      const pid = childRef?.pid;
+      if (pid == null) return;
+      try {
+        if (process.platform === 'win32') {
+          execSync(`taskkill /PID ${pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+        } else {
+          process.kill(pid, 'SIGTERM');
+          const timer = setTimeout(() => {
+            try { process.kill(pid, 'SIGKILL'); } catch { /* already gone */ }
+          }, 2_500);
+          timer.unref?.();
+        }
+      } catch { /* already gone */ }
+    });
     // eslint-disable-next-line no-constant-condition
     while (true) {
       if (signal.aborted) return; // user cancelled before spawn — not an error
-      steerSeen = false;
       const exitCode = await runBin(bin, args.args, {
         cwd, signal, onLine: wrappedOnLine, onStderr: wrappedOnStderr, input: bin.shell ? args.stdin : undefined,
         onSpawn: (c) => { childRef = c; },
@@ -969,24 +986,22 @@ class CliEngineAdapter implements Engine {
       });
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (signal.aborted) return; // user cancelled — not an error
-      // 软打断路径:CLI 正常退出(exit 0,无 error 终态)且缓冲里有待注入的打断 → resume 续跑。
-      // 首轮刚 spawn 的时间窗内不会有 steer(打断必须先于 kill 发生),steerSeen 防误判重复循环。
+      // 软打断路径:triggerKill 杀掉子进程后缓冲里有待注入的打断 → resume 续跑。
+      // kill 时会话还挂着 aborts,signal 不会 aborted,这里能安全区分「打断」与「取消」。
       const pendingSteer = pullSteer(conv.id);
       if (pendingSteer && !sawTerminal) {
-        steerSeen = true;
-        onEvent({ type: 'status', text: t(s.lang, 'tmgr.steered') });
+        onEvent({ type: 'status', text: t(s.lang, 'tmgr.steeredCli') });
         // 续段 prompt:--resume 接上原 session,打断文本作为新的 user 消息重发。
-        const seg = [
-          `[⚡ 用户打断] 用户在任务执行过程中插入了新指令:\n${pendingSteer}\n\n不要重做已完成的工作。评估这条指令对当前任务的影响:若需要改变方向,立即调整后续动作;若是补充信息,把它纳入后续步骤。`,
-        ].join('\n');
+        const seg = steerText(pendingSteer);
         args = this.cfg.buildArgs({ prompt: seg, inject: { persona: '', sourceHint: '', rules: '', context: '', memory: '' }, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
+        idleFired = false; // 复位看门狗:否则续段 armIdle() 被 idleFired 挡住,续段挂死无人管
         armIdle(); // 续段重新布防
         continue;
       }
-      if (steerSeen) continue; // 理论不可达(steerSeen 只在 continue 前置位),防御性保留
       lastExitCode = exitCode;
       break;
     }
+    clearKillHook(conv.id); // run 收尾(正常终态/错误兜底):kill hook 必须撤,防泄漏到下一轮
     if (!sawTerminal) {
       // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
       if (this.cfg.exitZeroAsDone && lastExitCode === 0) {
@@ -1250,7 +1265,6 @@ export function codexCliConfig(): CliEngineConfig {
 
 import { DirectV2Engine } from './DirectV2Engine';
 import { DirectV3Engine } from './V3';
-import { pullSteer } from './steer';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   const engines = new Map<EngineKind, Engine>([
