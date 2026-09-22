@@ -12,6 +12,7 @@ import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './e
 import { loadSkillBody } from './skills';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
+import { pushSteer, clearSteer } from './steer';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -302,6 +303,7 @@ export class TaskManager {
     delete this.lastEngine[id]; // P1: 清理引擎记录,防止 key 无限累积
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
     this.extractionLocks.delete(id); // P1: 清理 extraction lock,防止残留 resolved Promise 堆积
+    clearSteer(id); // P1: 清理打断缓冲,防 Map 无限累积
     this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
     for (const e of this.engines.values()) e.releaseConv?.(id); // P1: 引擎侧 per-conv 状态(codexStates / V2 fingerprints…)
     this.emit.emitRemoved(id);
@@ -310,6 +312,7 @@ export class TaskManager {
   clearConversation(id: string): void {
     const conv = this.convs.get(id);
     if (!conv) return;
+    clearSteer(id); // 清空上下文时打断缓冲一并作废
     conv.turns = [];
     conv.directHistory = [];
     conv.engineSessionId = null;
@@ -341,6 +344,7 @@ export class TaskManager {
   }
 
   cancel(id: string): void {
+    clearSteer(id); // 已 abort,待注入的打断一并清掉
     const ac = this.aborts.get(id);
     if (ac) {
       ac.abort();
@@ -360,6 +364,24 @@ export class TaskManager {
       conv.status = 'ready';
       this.emit.emitConversation(conv);
     }
+  }
+
+  /**
+   * 用户打断(Steer):运行中的会话原地转向。不 abort、不换 turn —— 把文本写进
+   * steer 缓冲,Direct 系引擎在下一个循环边界(模型思考轮/计划步骤)注入为 user 消息,
+   * 进度零丢失。仅 Direct 系引擎有注入通道;CLI 引擎回退为提示用户先停再发。
+   */
+  interrupt(id: string, text: string): boolean {
+    const conv = this.convs.get(id);
+    if (!conv || conv.status !== 'running') return false;
+    if (!isDirectFamily(conv.engine)) {
+      // claudeCode/codex 是子进程,没有注入通道。ponytail: 可做成"软打断 = kill + --resume 重发",先不做。
+      return false;
+    }
+    if (!pushSteer(id, text)) return false;
+    conv.statusNote = t(getSettings().lang, 'tmgr.steered');
+    this.emit.emitConversation(conv);
+    return true;
   }
 
   async send(id: string, text: string): Promise<void> {
@@ -524,6 +546,7 @@ export class TaskManager {
       if (conv.engine === 'directV2') store.clearV2State(conv.id);
     }).finally(async () => {
       this.aborts.delete(id);
+      clearSteer(id); // turn 收尾:没被消费的打断清掉,防泄漏到下一个 turn 的上下文
       // 整轮结束后的持久化/goal 接力:detach 模式下 renderer 的 invoke 早已返回,
       // 这里是唯一收尾点;阻塞模式下调用方 await 到这里全部做完,语义与旧版一致。
       // Post-turn persistence + goal hand-off: in detach mode this is the only
@@ -782,6 +805,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         if (conv.engine === 'directV2') store.clearV2State(conv.id);
       }).finally(() => {
         this.aborts.delete(id);
+        clearSteer(id); // goal loop 每轮收尾:同上,清残留打断
       });
 
       if (!this.convs.has(id)) break;

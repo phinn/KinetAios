@@ -2440,6 +2440,16 @@ function renderHead(conv: Conversation | undefined) {
       ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>'
       : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
   }
+  // 运行中 placeholder:Direct 系提示"⌘Enter 打断"(Steer 通道);CLI 引擎/空闲回到普通文案。
+  // 跟 sendBtn 同一状态变量,避免高频重写;非 Direct 系显示通用排队提示(打断不可用)。
+  const composerEl = document.getElementById('composer') as HTMLTextAreaElement | null;
+  if (composerEl) {
+    const phKey = wantStop
+      ? (isDirectFam ? 'queue.steerHint' : 'queue.steerHintCli')
+      : 'composer.placeholder';
+    const ph = tr(phKey, { product: PRODUCT });
+    if (composerEl.placeholder !== ph && document.activeElement !== composerEl) composerEl.placeholder = ph;
+  }
   // 会话目标条:有 goal 时显示;goal loop 运行中加 pulse 动画
   const goalBar = document.getElementById('goal-bar');
   const goalText = document.getElementById('goal-text');
@@ -3995,6 +4005,25 @@ function flushQueue(convId: string): void {
   void api.send(convId, next);
 }
 
+/**
+ * 立即打断(Steer):运行中的会话原地转向。队列首条转打断时用;⌘Enter 直接走这里。
+ * 失败(非 Direct 引擎 / 没在跑)→ 文本退回 composer,让用户改用排队或停止。
+ */
+async function steerNow(convId: string, text: string): Promise<void> {
+  const ok = await api.interrupt(convId, text);
+  if (ok) return;
+  const conv = convs.get(convId);
+  // 退回输入框(排队语义兜底):running 且非 Direct → 自动降级为排队,不让用户文字丢失
+  if (conv?.status === 'running') {
+    enqueueMessage(convId, text);
+    uxToast.info(tr('queue.steerFail'));
+  } else {
+    const c = document.getElementById('composer') as HTMLTextAreaElement;
+    c.value = text;
+    autosize(c);
+  }
+}
+
 /** 队列 chip 行:挂在 composer 上方;内容签名缓存,renderHead 高频调用时零重建 */
 function renderQueue(): void {
   const row = document.getElementById('queue-row');
@@ -4017,6 +4046,19 @@ function renderQueue(): void {
     txt.className = 'q-text';
     txt.textContent = m.slice(0, 60) + (m.length > 60 ? '…' : '');
     chip.appendChild(txt);
+    // ⚡ 立即打断:队首消息可转为 Steer 注入运行中的任务(仅 Direct 系引擎)。
+    const sid = selectedId;
+    if (idx === 0 && sid && convs.get(sid)?.status === 'running') {
+      const st = document.createElement('button');
+      st.className = 'q-steer ghost';
+      st.textContent = '⚡';
+      st.title = tr('queue.steerBtn');
+      st.onclick = () => {
+        removeQueued(sid, idx);
+        void steerNow(sid, m);
+      };
+      chip.appendChild(st);
+    }
     const rm = document.createElement('button');
     rm.className = 'q-rm ghost';
     rm.textContent = '✕';
@@ -7489,13 +7531,18 @@ function openPathExternal(path: string): void {
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      // 消息排队(DSH 式):running 时 Enter → 入队(发送键仍保留停止语义),回合结束自动发出
+      // 消息排队(DSH 式):running 时 Enter → 入队(发送键仍保留停止语义),回合结束自动发出。
+      // ⌘/Ctrl+Enter → 立即打断(Steer):不排队,注入运行中的任务,原地转向。
       const runConv = selectedId ? convs.get(selectedId) : undefined;
       const draft = composer.value.trim();
       if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
         composer.value = '';
         autosize(composer);
-        enqueueMessage(runConv.id, draft);
+        if (e.metaKey || e.ctrlKey) {
+          void steerNow(runConv.id, draft);
+        } else {
+          enqueueMessage(runConv.id, draft);
+        }
         return;
       }
       void send();

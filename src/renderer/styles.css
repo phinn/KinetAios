@@ -2328,6 +2328,9 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 #queue-row .q-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #queue-row .q-rm { padding: 0 4px; font-size: 0.769rem; color: var(--text-faint); }
 #queue-row .q-rm:hover { color: var(--err); }
+/* ⚡ 立即打断按钮(队首 chip):与 ✕ 同款幽灵按钮,hover 用琥珀色示意"插队" */
+#queue-row .q-steer { padding: 0 4px; font-size: 0.769rem; color: var(--text-faint); }
+#queue-row .q-steer:hover { color: var(--warn); }
 /* 确认弹窗上下文行(哪个会话/引擎在请求) */
 .modal-ctx { font-size: 0.769rem; color: var(--text-faint); margin-bottom: 6px; padding-bottom: 6px; border-bottom: 1px dashed var(--border-soft); }
 /* 嵌套列表:子列表贴近父项 */

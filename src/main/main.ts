@@ -1140,6 +1140,9 @@ function registerIpc(): void {
     drainConfirms();
     return taskManager.cancel(id);
   });
+  // 用户打断(Steer):不取消运行中的 turn,把文本注入引擎下一轮上下文。
+  // 返回 false = 会话没在跑 / 非 Direct 系引擎(无注入通道)。
+  ipcMain.handle('interrupt', (_e, id: string, text: string) => taskManager.interrupt(id, String(text ?? '')));
   ipcMain.handle('delete-conversation', (_e, id: string) => {
     drainConfirms();
     jobManager().purgeConv(id); // 级联:kill 未完成 job + 删 job 行

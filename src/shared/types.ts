@@ -807,6 +807,8 @@ export interface KinetAPI {
   forkConversation(sourceId: string, uptoTurnId: string): Promise<Conversation | null>;
   send(id: string, text: string): Promise<boolean>;
   cancel(id: string): Promise<boolean>;
+  /** 用户打断(Steer):运行中会话原地转向,文本注入引擎下一轮上下文。仅 Direct 系引擎支持。 */
+  interrupt(id: string, text: string): Promise<boolean>;
   deleteConversation(id: string): Promise<boolean>;
   clearConversation(id: string): Promise<boolean>;
   rename(id: string, title: string): Promise<boolean>;

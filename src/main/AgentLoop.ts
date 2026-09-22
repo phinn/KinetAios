@@ -5,6 +5,7 @@ import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
+import { pullSteer, steerMessage } from './steer';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
@@ -303,6 +304,16 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
   for (let i = 0; i < maxTurns; i++) {
+    // ── 用户打断(Steer)注入点:每轮 LLM 调用前检查缓冲 ──
+    // UI ⌘Enter → TaskManager.interrupt() 写缓冲 → 这里取走,作为 user 消息注入当前上下文。
+    // 不带 _transient:打断是真实用户输入,随返回值写回 directHistory,后续轮次持续可见。
+    // 注入发生在轮边界(上轮 tool results 之后),assistant(tool_calls)→tool→user 对
+    // OpenAI/Anthropic 协议均合法;若上次以 user 结尾(如连续注入),追加第二条 user 也合法。
+    const steer = ctx.convId ? pullSteer(ctx.convId) : null;
+    if (steer) {
+      messages.push(steerMessage(steer));
+      onEvent({ type: 'status', text: '⚡ 已插入用户打断,模型将在下一轮看到' });
+    }
     let completion: Completion;
     try {
       completion = await provider.streamComplete(messages, defs, snapshot, signal, (tok) =>

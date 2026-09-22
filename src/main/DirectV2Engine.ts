@@ -27,6 +27,7 @@ import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, 
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
 import { getSettings, snapshot } from './settings';
+import { pullSteer, steerMessage } from './steer';
 import { mcp } from './mcp';
 import { pluginSystemPrompts } from './plugins';
 import * as store from './store';
@@ -252,6 +253,9 @@ export class DirectV2Engine implements Engine {
       if (signal.aborted) break;
       // Crash recovery: 已完成的步骤直接跳过(不重新执行)。
       if (step.status === 'done' || step.status === 'skipped') continue;
+      // 用户打断(Steer)补漏:步骤间的间隙里若积压了打断(轮边界已被消费则此为空),
+      // 先记下来,随下一个 stepExecutorPrompt 一起进模型上下文 —— 打断不该停在步骤间隙。
+      const stepSteer = pullSteer(conv.id);
       step.status = 'running';
       onEvent({ type: 'status', text: `🔨 v2: ${label} [${step.id}] ${step.title}` });
 
@@ -264,6 +268,11 @@ export class DirectV2Engine implements Engine {
       const stepStartLen = execHistory.length;
       for (let attempt = 0; attempt < MAX_RETRIES && !stepDone && !signal.aborted; attempt++) {
         const retryNote = attempt > 0 ? `\n\n**⚠️ 这是第 ${attempt + 1} 次尝试。上一次失败,请修正问题后重试。**\n上一次结果: ${step.result ?? '(无)'}` : '';
+        // 用户打断(Steer):追加在步骤执行指令后。轮边界(AgentLoop)是主注入点;
+        // 这里兜底"打断落在步骤间隙"的场景 —— 取到了就并入 retryNote 位置,模型第一步就看到。
+        const steerNote = stepSteer && attempt === 0
+          ? `\n\n${steerMessage(stepSteer).content as string}`
+          : '';
 
         const stepMessages = await runAgentLoop({
           provider,
@@ -271,7 +280,7 @@ export class DirectV2Engine implements Engine {
           systemPrompt,
           memoryBlock, // 每步都注入长期记忆:dropTransient 会从返回值里剔除,模型必须在调用时看到
           snapshot: snap,
-          userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote,
+          userInput: STEP_EXECUTOR_PROMPT(step, plan.steps, plan.goal) + retryNote + steerNote,
           history: execHistory,
           ctx,
           signal,
