@@ -172,6 +172,9 @@ export interface ToolCtx {
   // cross-project memory switch threaded from conversation so recall can self-restrict.
   crossProjectMemory?: boolean;
   sandbox?: SandboxMode; // 沙箱级别:readOnly 拦截写工具,workspaceWrite 限制 cwd 内写
+  // 会话来源通道:feishu/wecom(机器人桥创建的会话)。本地频道会话不传。
+  // feishu/wecom_send_file 据此门控:非对应通道的工具直接从工具列表隐藏(防 LLM 在普通会话误调)。
+  channel?: 'feishu' | 'wecom';
   // 任务清单卡(todo_write)等工具向 UI 发结构化事件的出口。引擎侧接到 onEvent;
   // 子 agent(readOnlyTools)不传 emit —— 子任务不污染主会话的清单卡。
   emit?: (e: import('../shared/types').AgentEvent) => void;
@@ -2049,6 +2052,12 @@ const wecomSendFile: Tool = {
   async run(args, ctx) {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     if (!p) return '缺少 path 参数';
+    // 通道门控兜底:非企微通道会话(本地频道/飞书频道)禁止调用,提示直接回复文字。
+    if (ctx.channel !== 'wecom') {
+      return ctx.channel === 'feishu'
+        ? '❌ 当前是飞书频道会话,不能发送到企业微信。请用 feishu_send_file,或直接把内容作为回复文字输出。'
+        : '❌ 当前是本地频道会话(非企业微信)。"发给我" = 直接把内容作为回复文字输出即可,不要调用发送工具。';
+    }
 
     if (!fs.existsSync(p)) return `文件不存在: ${p}`;
     const stat = fs.statSync(p);
@@ -2086,6 +2095,12 @@ const feishuSendFile: Tool = {
   async run(args, ctx) {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     if (!p) return '缺少 path 参数';
+    // 通道门控兜底:非飞书通道会话(本地频道/企微频道)禁止调用,提示直接回复文字。
+    if (ctx.channel !== 'feishu') {
+      return ctx.channel === 'wecom'
+        ? '❌ 当前是企业微信会话,不能发送到飞书。请用 wecom_send_file,或直接把内容作为回复文字输出。'
+        : '❌ 当前是本地频道会话(非飞书)。"发给我" = 直接把内容作为回复文字输出即可,不要调用发送工具。';
+    }
 
     if (!fs.existsSync(p)) return `文件不存在: ${p}`;
     const stat = fs.statSync(p);
@@ -2632,7 +2647,9 @@ export function builtinTools(): Tool[] {
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
 // ponytail: pluginTools() 内部有缓存,每次 Direct run 调用是 O(plugins) 浅遍历,不疼。
 // 子 agent 的 readOnlyTools() 不含插件 —— 子 agent 只信内置只读集,沙箱边界明确。
-export function allTools(): Tool[] {
+// channelFilter:按会话来源通道过滤 —— feishu/wecom_send_file 只在对应通道会话可见
+// (2026-09-22 教训:本地频道会话里 LLM 看到这俩工具,把"直接发给我"误执行成调发送工具)。
+export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
   // 延迟 require:plugins.ts 引用了 app.getPath,只在 main 进程跑;renderer 不会走到这。
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { pluginTools } = require('./plugins') as typeof import('./plugins');
@@ -2640,12 +2657,15 @@ export function allTools(): Tool[] {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { getSettings } = require('./settings') as typeof import('./settings');
   const skillTools: Tool[] = getSettings().autoLoadSkills ? [loadSkillTool] : [];
-  return [...builtinTools(), ...pluginTools(), ...customTools(), ...skillTools];
+  const all = [...builtinTools(), ...pluginTools(), ...customTools(), ...skillTools];
+  if (!channel) return all.filter((t) => t.name !== 'feishu_send_file' && t.name !== 'wecom_send_file');
+  return all.filter((t) => channel === 'feishu' ? t.name !== 'wecom_send_file' : t.name !== 'feishu_send_file');
 }
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(): Tool[] {
+  // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
   return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, recallFact];
 }
 

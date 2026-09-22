@@ -448,8 +448,9 @@ export class DirectV2Engine implements Engine {
     const stepMaxChars = policy.stepSummaryMaxChars || 500;
     const stepFullChars = policy.stepResultMaxChars || 4000;
 
-    // ── 工具集 ──
-    const tools = [...allTools(), ...(await mcp.directTools(2000))];
+    // ── 工具集(按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具)──
+    const channel = conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined;
+    const tools = [...allTools(channel), ...(await mcp.directTools(2000))];
 
     // ── 构建 user input ──
     const refSection = refBlock ?? '';
@@ -1261,6 +1262,7 @@ ${failedDetail || '  (无)'}
       confirm: this.confirm,
       signal,
       convId: conv.id,
+      channel: conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined, // 来源通道:send_file 工具门控用
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
       emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)

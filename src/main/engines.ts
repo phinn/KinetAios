@@ -355,6 +355,7 @@ class DirectEngine implements Engine {
       confirm: this.confirm,
       signal,
       convId: conv.id,
+      channel: conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined, // 来源通道:send_file 工具门控用
       crossProjectMemory: conv.crossProjectMemory === true, // 默认关;true = 全局检索
       sandbox: getSettings().sandbox,
       emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
@@ -519,7 +520,8 @@ function skillCatalogSection(): string {
     const rulesSection = loadProjectRules(conv.cwd);
     // KINET.md(app UI 维护的项目规则)紧跟 loadProjectRules 之后,与 AGENTS.md/CLAUDE.md 并列。
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
-    const tools = [...allTools(), ...(await mcp.directTools(2000))];
+    // 按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具(2026-09-22 误调教训)。
+    const tools = [...allTools(conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined), ...(await mcp.directTools(2000))];
     // memoryBlock 走 history[0] 注入(见 runAgentLoop 的 memMsg),不拼进 systemPrompt ——
     // 这样 base+rules+context 跨轮稳定 → Anthropic cache_control 不被记忆变化打穿。
     // refBlock 拼到 userInput 后面(每轮动态,不进 systemPrompt → 不破坏缓存)。
