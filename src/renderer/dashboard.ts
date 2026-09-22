@@ -43,11 +43,8 @@ function relTime(ts: number): string {
 }
 
 const ENGINES: EngineKind[] = ['direct', 'claudeCode', 'codex'];
-const ENGINE_COLORS: Record<string, string> = {
-  direct: '#e8b339',
-  claudeCode: '#d97757',
-  codex: '#10a37f',
-};
+// 引擎色统一走 engine-colors.ts(单一来源,此前 dashboard 用的旧色与 nexus/styles.css 不一致)。
+import { ENGINE_COLORS } from './engine-colors';
 
 // ── 雷达图:五维引擎对比 ──
 type ArenaStat = {
@@ -125,9 +122,9 @@ function renderRadar(stats: ArenaStat[]): void {
     }
     const poly = document.createElementNS(ns, 'polygon');
     poly.setAttribute('points', pts.join(' '));
-    poly.setAttribute('fill', ENGINE_COLORS[stat.engine] ?? '#888');
+    poly.setAttribute('fill', ENGINE_COLORS[stat.engine as EngineKind] ?? '#a8b0c2');
     poly.setAttribute('fill-opacity', '0.12');
-    poly.setAttribute('stroke', ENGINE_COLORS[stat.engine] ?? '#888');
+    poly.setAttribute('stroke', ENGINE_COLORS[stat.engine as EngineKind] ?? '#a8b0c2');
     poly.setAttribute('stroke-width', '1.5');
     svg.appendChild(poly);
   }
@@ -135,7 +132,7 @@ function renderRadar(stats: ArenaStat[]): void {
   // 图例
   const legend = document.getElementById('dash-radar-legend')!;
   legend.innerHTML = stats.filter((s) => s.sessions > 0 || s.totalCost > 0).map((s) => {
-    const color = ENGINE_COLORS[s.engine] ?? '#888';
+    const color = ENGINE_COLORS[s.engine as EngineKind] ?? '#a8b0c2';
     const label = engineLabel(lang, s.engine as EngineKind);
     return `<div class="dash-legend-item"><span class="dash-legend-dot" style="background:${color}"></span>${esc(label)}</div>`;
   }).join('');
@@ -200,7 +197,7 @@ function renderTrend(stats: ArenaStat[]): void {
   // 每个引擎一条折线
   for (const stat of stats) {
     if (stat.costByDay.every((d) => d.cost === 0)) continue;
-    const color = ENGINE_COLORS[stat.engine] ?? '#888';
+    const color = ENGINE_COLORS[stat.engine as EngineKind] ?? '#a8b0c2';
     let pathD = '';
     stat.costByDay.forEach((d, i) => {
       const x = padding.left + (chartW * i) / Math.max(1, days.length - 1);

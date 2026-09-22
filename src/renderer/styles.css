@@ -1439,11 +1439,12 @@ a { color: var(--accent); }
 .sb-proj-tasks li.active { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 .sb-proj-tasks li.active .title { color: var(--accent); font-weight: 600; }
 /* 引擎色小圆点 */
-.dot.eng-direct,
-.dot.eng-directV2 { background: var(--accent); }
+/* 引擎点配色 — 值必须与 src/renderer/engine-colors.ts 的 ENGINE_COLORS 表一致(CSS 无法 import TS,人工镜像) */
+.dot.eng-direct { background: #c4a7ff; }
+.dot.eng-directV2 { background: #8ab4ff; }
 .dot.eng-directV3 { background: #7eeab5; }
 .dot.eng-claudeCode { background: #d97757; }
-.dot.eng-codex { background: #4ec27a; }
+.dot.eng-codex { background: #10a37f; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: 0.885rem; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 48px; }
 .sb-proj-tasks li:hover .sb-task-time { opacity: 0; }

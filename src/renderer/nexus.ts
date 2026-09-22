@@ -14,6 +14,7 @@
 import type { Conversation, EngineKind } from '../shared/types';
 import { t } from '../shared/i18n';
 import type { Lang } from '../shared/i18n';
+import { ENGINE_COLORS } from './engine-colors';
 
 // ── 外部依赖(由 app.ts 注入) / External deps (injected by app.ts) ──
 let nexusLang: Lang = 'zh-CN';
@@ -83,13 +84,9 @@ function simpleMarkdown(text: string): string {
 
 // 引擎颜色 / Engine colors (matching existing palette)
 // Phase 8: 液态玻璃白雾调 — 全部冷系,告别金色。
-const ENGINE_COLORS: Partial<Record<EngineKind, string>> = {
-  direct: '#c4a7ff',    // Kaios — 主紫光(Aurora 强调色)
-  directV2: '#8ab4ff',  // Kaios v2 — 冷蓝
-  directV3: '#7eeab5',  // Kaios v3 — 薄荷绿
-  claudeCode: '#f0a8b8', // Claude — 雾粉(柔和,不像 #d97757 那么冲)
-  codex: '#8fd4d0',     // Codex — 青雾
-};
+// 引擎色统一走 engine-colors.ts(单一来源);此处不再重复定义。
+// 星系图历史上用 Partial + 各自兜底,保留 #a8b0c2 兜底与 engineColor() 一致。
+const ENGINE_COLOR_FALLBACK = '#a8b0c2';
 
 const ENGINE_LABELS: Partial<Record<EngineKind, string>> = {
   direct: 'Kaios',
@@ -963,7 +960,7 @@ function renderSVG(): void {
       if (node.state !== 'running') continue;
       const nx = cx + node.radius * Math.cos(node.angle);
       const ny = cy + node.radius * Math.sin(node.angle);
-      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
       svg += `<line data-flow="${node.id}" x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="${color}" stroke-width="0.8" opacity="0.45" stroke-dasharray="3 5">
         <animate attributeName="stroke-dashoffset" from="0" to="-16" dur="1.2s" repeatCount="indefinite"/>
       </line>`;
@@ -985,7 +982,7 @@ function renderSVG(): void {
       const x = cx + node.radius * Math.cos(node.angle);
       const y = cy + node.radius * Math.sin(node.angle);
       const isSelected = node.id === selectedNodeId;
-      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
       // Phase 9: 节点大小 = 基础 7 + turn 数权重(上限 +4),选中 +2
       // Node radius = base 7 + turn-count weight (max +4), selected +2
       const turnBoost = Math.min(Math.floor((node.conv.turnCount ?? node.conv.turns.length) / 5), 4);
@@ -1147,7 +1144,7 @@ function updateSVGDynamic(): void {
       if (node.state === 'running' && flowLines) {
         let line = flowLines.querySelector(`[data-flow="${CSS.escape(node.id)}"]`);
         if (!line) {
-          const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+          const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
           line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
           line.setAttribute('data-flow', node.id);
           line.setAttribute('stroke', color);
@@ -1190,7 +1187,7 @@ function updateSVGDynamic(): void {
         if (node) {
           const nx = cx + node.radius * Math.cos(node.angle);
           const ny = cy + node.radius * Math.sin(node.angle);
-          const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+          const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
           const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
           line.setAttribute('x1', String(cx));
           line.setAttribute('y1', String(cy));
@@ -1211,7 +1208,7 @@ function showNodeTooltip(nid: string, ev: MouseEvent): void {
   const conv = cb.convs().get(nid);
   if (!conv) return;
 
-  const color = ENGINE_COLORS[conv.engine] || '#a8b0c2';
+  const color = ENGINE_COLORS[conv.engine] || ENGINE_COLOR_FALLBACK;
   const state = agentState(conv);
   const stateLabel = tr(`nexus.state${state.charAt(0).toUpperCase() + state.slice(1)}`);
   const title = conv.customTitle || conv.firstPrompt?.slice(0, 40) || conv.turns[0]?.prompt?.slice(0, 40) || conv.id.slice(0, 8);
@@ -1409,7 +1406,7 @@ function emitParticlesToRunning(): void {
       // canvas 坐标系:中心 = canvas 中心,偏移 = radius * cos/sin * scale
       const canvasNodeX = cx + node.radius * Math.cos(node.angle) * scale;
       const canvasNodeY = cy + node.radius * Math.sin(node.angle) * scale;
-      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
       // 正向:核心 → 节点(意图流) / Forward: core → node (intent flow)
       spawnParticle(cx, cy, canvasNodeX, canvasNodeY, color);
       // 逆向:节点 → 核心(结果回流),较低概率 / Reverse: node → core (result feedback), lower chance
@@ -1451,7 +1448,7 @@ function updateMinimap(): void {
     for (const node of ring.nodes) {
       const nx = miniCx + r * Math.cos(node.angle);
       const ny = miniCy + r * Math.sin(node.angle);
-      const color = ENGINE_COLORS[node.engine] || '#a8b0c2';
+      const color = ENGINE_COLORS[node.engine] || ENGINE_COLOR_FALLBACK;
       const isSel = node.id === selectedNodeId || selectedNodeIds.has(node.id);
       const dotR = isSel ? 3 : 2;
       svg += `<circle cx="${nx}" cy="${ny}" r="${dotR}" fill="${color}" opacity="${isSel ? 1 : 0.6}"/>`;
@@ -1555,7 +1552,7 @@ function updateDashboardOverlay(): void {
   const engines = Object.entries(engineCounts).sort((a, b) => b[1] - a[1]);
   for (const [engine, count] of engines) {
     const pct = (count / total * 100).toFixed(0);
-    const color = ENGINE_COLORS[engine as EngineKind] || '#a8b0c2';
+    const color = ENGINE_COLORS[engine as EngineKind] || ENGINE_COLOR_FALLBACK;
     const label = ENGINE_LABELS[engine as EngineKind] || engine;
     distHTML += `<div class="nx-dash-eng-row">
       <span class="nx-dash-eng-dot" style="background:${color}"></span>
@@ -1574,7 +1571,7 @@ function updateDashboardOverlay(): void {
     recentHTML = `<div class="nx-dash-empty">${esc(tr('nexus.dashNoRecent'))}</div>`;
   } else {
     for (const conv of recent) {
-      const color = ENGINE_COLORS[conv.engine] || '#a8b0c2';
+      const color = ENGINE_COLORS[conv.engine] || ENGINE_COLOR_FALLBACK;
       const st = agentState(conv);
       const title = conv.customTitle || conv.turns[0]?.prompt?.slice(0, 30) || conv.id.slice(0, 8);
       const turns = conv.turns.length;
@@ -1684,7 +1681,7 @@ function updateOverlay(): void {
     }
   }
 
-  const stateColor = ENGINE_COLORS[conv.engine] || '#a8b0c2';
+  const stateColor = ENGINE_COLORS[conv.engine] || ENGINE_COLOR_FALLBACK;
   const stateText = conv.status === 'running' ? tr('nexus.stateRunning') : (conv.turns.length > 0 ? tr('nexus.stateIdle') : tr('nexus.stateEmpty'));
   const engineLabel = ENGINE_LABELS[conv.engine] || conv.engine;
 
