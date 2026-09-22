@@ -2640,8 +2640,102 @@ const loadSkillTool: Tool = {
   },
 };
 
+// ── cron 工具:agent 可直接管理定时任务 ──
+// 之前 agent 建定时任务走 shell/旁路(写入位置与 cron_tasks 表对不上),UI 面板看不到。
+// 现在给 LLM 一等工具:直连 cron_tasks 表 + 刷新调度器内存副本(setCronTasks),UI 天然可见。
+// 拆两个:管理类(cron_manage,需确认)与只读列表(cron_list)。子 agent readOnlyTools 不含二者。
+// Cron tools: let the agent manage scheduled tasks directly in cron_tasks (UI panel reads the same table).
+function refreshCronInMemory(): void {
+  // 延迟 require:避免 tools.ts 顶层引入 cron.ts(store 转换逻辑与 main.ts 重复,这里只搬运同一份映射)。
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const { setCronTasks } = require('./cron') as typeof import('./cron');
+  const rows = store.listCronTasks();
+  setCronTasks(rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+}
+
+const cronList: Tool = {
+  name: 'cron_list',
+  description:
+    '列出当前所有定时任务(cron 计划任务)。返回 id、cron 表达式(5 字段:分 时 日 月 周)、prompt、cwd、enabled、上次运行时间。\n' +
+    '用于:用户问"现在有哪些定时任务"、创建/修改前先看现状避免重复。',
+  parameters: { type: 'object', properties: {} },
+  readOnly: true,
+  async run() {
+    const rows = store.listCronTasks();
+    if (!rows.length) return '当前没有定时任务。可用 cron_manage(action=add) 创建。';
+    const lines = rows.map((r) =>
+      `• [${r.enabled ? '启用' : '停用'}] ${r.id}\n  cron: ${r.cron}\n  prompt: ${r.prompt.length > 100 ? r.prompt.slice(0, 100) + '…' : r.prompt}${r.cwd ? `\n  cwd: ${r.cwd}` : ''}`
+    );
+    return `共 ${rows.length} 个定时任务:\n${lines.join('\n')}`;
+  },
+};
+
+const cronManage: Tool = {
+  name: 'cron_manage',
+  description:
+    '管理定时任务(cron 计划任务):创建 / 启停 / 删除。任务按 cron 表达式(5 字段:分 时 日 月 周)周期性触发,' +
+    '触发时会以对应 prompt 自动开一个新会话执行。\n' +
+    'action=add:需要 cron + prompt(cwd 可选,默认当前会话工作目录);\n' +
+    'action=toggle:需要 id,切换启用/停用;\n' +
+    'action=remove:需要 id。先 cron_list 拿到 id。\n' +
+    'cron 示例:"0 9 * * *" = 每天 9:00;"30 2 * * 1" = 每周一 2:30;"*/15 * * * *" = 每 15 分钟。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['add', 'toggle', 'remove'], description: '操作类型' },
+      id: { type: 'string', description: '任务 id(toggle/remove 必填;建议 add 时也指定,如 "cron_daily_report")' },
+      cron: { type: 'string', description: '5 字段 cron 表达式(add 必填),如 "0 9 * * *"' },
+      prompt: { type: 'string', description: '触发时执行的指令(add 必填),写清楚要做什么、产出放哪' },
+      cwd: { type: 'string', description: '工作目录(add 可选,默认当前会话 cwd)' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    const action = String(args.action ?? '');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { validateCron } = require('./cron') as typeof import('./cron');
+    try {
+      if (action === 'add') {
+        const cron = String(args.cron ?? '').trim();
+        const prompt = String(args.prompt ?? '').trim();
+        if (!cron || !prompt) return '❌ add 需要 cron 和 prompt 两个参数。';
+        const v = validateCron(cron);
+        if (!v.ok) return `❌ cron 表达式不合法: ${v.error}`;
+        const id = String(args.id ?? '').trim() || `cron_${Date.now().toString(36)}`;
+        // 同名幂等:已存在同名 id → 视为更新 prompt/cron,避免 agent 重试时堆重复任务。
+        const existing = store.listCronTasks().find((r) => r.id === id);
+        if (existing) {
+          store.updateCronTask(id, { cron, prompt, cwd: args.cwd ? String(args.cwd) : undefined });
+          refreshCronInMemory();
+          return `✅ 定时任务 ${id} 已存在,已更新其 cron/prompt。`;
+        }
+        store.addCronTask({ id, cron, prompt, cwd: args.cwd ? String(args.cwd) : ctx.cwd });
+        refreshCronInMemory();
+        return `✅ 定时任务已创建: ${id}\n  cron: ${cron}\n  prompt: ${prompt}\n  cwd: ${args.cwd ? String(args.cwd) : ctx.cwd}\n到点后会自动开新会话执行;可在设置 → 定时任务面板查看。`;
+      }
+      const id = String(args.id ?? '').trim();
+      if (!id) return `❌ ${action} 需要 id 参数(先 cron_list 查看现有任务)。`;
+      const row = store.listCronTasks().find((r) => r.id === id);
+      if (!row) return `❌ 没有名为 "${id}" 的定时任务。先调用 cron_list 查看现有任务。`;
+      if (action === 'toggle') {
+        store.updateCronTask(id, { enabled: !row.enabled });
+        refreshCronInMemory();
+        return `✅ 定时任务 ${id} 已${row.enabled ? '停用' : '启用'}。`;
+      }
+      if (action === 'remove') {
+        store.deleteCronTask(id);
+        refreshCronInMemory();
+        return `✅ 定时任务 ${id} 已删除。`;
+      }
+      return `❌ 未知 action: ${action}(支持 add / toggle / remove)`;
+    } catch (e) {
+      return `cron_manage 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserTabsTool, axScriptTool, todoWrite, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
