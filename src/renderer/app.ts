@@ -2440,12 +2440,12 @@ function renderHead(conv: Conversation | undefined) {
       ? '<svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="6" width="12" height="12" rx="1.5"/></svg>'
       : '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>';
   }
-  // 运行中 placeholder:Direct 系提示"⌘Enter 打断"(Steer 通道);CLI 引擎/空闲回到普通文案。
+  // 运行中 placeholder:提示"⌘Enter 打断"(Direct 原地注入;CLI 引擎 kill+resume 软打断);空闲回到普通文案。
   // 跟 sendBtn 同一状态变量,避免高频重写;非 Direct 系显示通用排队提示(打断不可用)。
   const composerEl = document.getElementById('composer') as HTMLTextAreaElement | null;
   if (composerEl) {
     const phKey = wantStop
-      ? (isDirectFam ? 'queue.steerHint' : 'queue.steerHintCli')
+      ? (isDirectFam ? 'queue.steerHint' : (conv.engineSessionId ? 'queue.steerHint' : 'queue.steerHintCli'))
       : 'composer.placeholder';
     const ph = tr(phKey, { product: PRODUCT });
     if (composerEl.placeholder !== ph && document.activeElement !== composerEl) composerEl.placeholder = ph;

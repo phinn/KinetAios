@@ -696,7 +696,7 @@ function resolveBinUncached(name: string): ResolvedBin {
 function runBin(
   bin: ResolvedBin,
   args: string[],
-  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void; input?: string; onSpawn?: (child: import('node:child_process').ChildProcess) => void },
+  opts: { cwd: string; signal: AbortSignal; onLine: (line: string) => void; onStderr?: (line: string) => void; input?: string; onSpawn?: (child: import('node:child_process').ChildProcess) => void; onAbort?: (child: import('node:child_process').ChildProcess) => void },
 ): Promise<number> {
   return new Promise((resolve) => {
     const spawnOpts: import('node:child_process').SpawnOptions = {
@@ -742,6 +742,11 @@ function runBin(
       child.stderr?.on('data', onChunk);
     }
     const onAbort = (): void => {
+      // 调用方可覆写终止策略(CLI 软打断用 SIGTERM 优雅退出;缺省走原 kill 逻辑)。
+      if (opts.onAbort) {
+        opts.onAbort(child);
+        return;
+      }
       try {
         if (process.platform === 'win32' && child.pid != null) {
           // .cmd shims spawn cmd.exe as the direct child; child.kill() only kills cmd.exe and
@@ -897,7 +902,6 @@ class CliEngineAdapter implements Engine {
         }
       : undefined;
 
-    const args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
     // 安全迁移:shell shim(.cmd/.bat)下 stdin 有值 → prompt 内容经 stdin 传递,
     // argv 只留 flag(与 runCliOneShot 的修复同款,防 cmd 元字符注入)。
     // 无输出看门狗:CLI 停止产出(无 stdout/stderr 行)超过 5 分钟 → 视为挂死,
@@ -930,22 +934,69 @@ class CliEngineAdapter implements Engine {
     armIdle(); // 启动即布防(应对 spawn 后完全不产出的场景)
     const wrappedOnLine = (line: string): void => { bumpIdle(); onLine(line); };
     const wrappedOnStderr = onStderr ? (line: string): void => { bumpIdle(); onStderr(line); } : undefined;
-    const exitCode = await runBin(bin, args.args, {
-      cwd, signal, onLine: wrappedOnLine, onStderr: wrappedOnStderr, input: bin.shell ? args.stdin : undefined,
-      onSpawn: (c) => { childRef = c; },
-    });
-    if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
-    if (signal.aborted) return; // user cancelled — not an error
+    // ── CLI 软打断(Steer)主循环 ──
+    // CLI 子进程没有注入通道,采用 kill + resume 重发:
+    // 1. spawn 当前段(首轮带原 prompt;被打断后的续段带 --resume + [⚡ 用户打断] 指令);
+    // 2. SIGTERM 优雅终止(killIdle 兜底场景仍 SIGKILL);3. 循环边界 pull steer,
+    // 有 → status 反馈 + 续段重跑;无 → 本次 kill 即终态(用户点了停止)。
+    // SIGTERM 语义靠 steerSeen 区分:被打断的退出不算错误,静默进入续段。
+    let steerSeen = false;
+    let lastExitCode = 0;
+    let args = this.cfg.buildArgs({ prompt, inject, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      if (signal.aborted) return; // user cancelled before spawn — not an error
+      steerSeen = false;
+      const exitCode = await runBin(bin, args.args, {
+        cwd, signal, onLine: wrappedOnLine, onStderr: wrappedOnStderr, input: bin.shell ? args.stdin : undefined,
+        onSpawn: (c) => { childRef = c; },
+        onAbort: (child) => {
+          // 分级终止:先 SIGTERM 给 CLI 存盘落盘的机会(部分 CLI 会写 session 文件),
+          // 2.5s 后仍活着 → SIGKILL 强杀,防进程残留继续烧钱。Windows 无 SIGTERM 语义,直接 taskkill /T。
+          try {
+            if (process.platform === 'win32' && child.pid != null) {
+              execSync(`taskkill /PID ${child.pid} /T /F`, { stdio: 'ignore', windowsHide: true });
+            } else if (child.pid != null) {
+              child.kill('SIGTERM');
+              const timer = setTimeout(() => {
+                try { if (child.pid != null) process.kill(child.pid!, 'SIGKILL'); } catch { /* already gone */ }
+              }, 2_500);
+              timer.unref?.();
+              child.once('close', () => clearTimeout(timer));
+            }
+          } catch { /* already gone */ }
+        },
+      });
+      if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+      if (signal.aborted) return; // user cancelled — not an error
+      // 软打断路径:CLI 正常退出(exit 0,无 error 终态)且缓冲里有待注入的打断 → resume 续跑。
+      // 首轮刚 spawn 的时间窗内不会有 steer(打断必须先于 kill 发生),steerSeen 防误判重复循环。
+      const pendingSteer = pullSteer(conv.id);
+      if (pendingSteer && !sawTerminal) {
+        steerSeen = true;
+        onEvent({ type: 'status', text: t(s.lang, 'tmgr.steered') });
+        // 续段 prompt:--resume 接上原 session,打断文本作为新的 user 消息重发。
+        const seg = [
+          `[⚡ 用户打断] 用户在任务执行过程中插入了新指令:\n${pendingSteer}\n\n不要重做已完成的工作。评估这条指令对当前任务的影响:若需要改变方向,立即调整后续动作;若是补充信息,把它纳入后续步骤。`,
+        ].join('\n');
+        args = this.cfg.buildArgs({ prompt: seg, inject: { persona: '', sourceHint: '', rules: '', context: '', memory: '' }, cwd, sessionId: conv.engineSessionId, s, shell: bin.shell });
+        armIdle(); // 续段重新布防
+        continue;
+      }
+      if (steerSeen) continue; // 理论不可达(steerSeen 只在 continue 前置位),防御性保留
+      lastExitCode = exitCode;
+      break;
+    }
     if (!sawTerminal) {
       // plain 协议:退出码 0 = 正常完成,补 done(答案已由 token 流发完)。
-      if (this.cfg.exitZeroAsDone && exitCode === 0) {
+      if (this.cfg.exitZeroAsDone && lastExitCode === 0) {
         onEvent({ type: 'done' });
         return;
       }
       // 退出兜底:config 可覆写(拼 exit code / stderr tail / 版本提示)。
       const label = this.cfg.label ?? String(this.cfg.name);
       const tail = stderrTail.join(' | ');
-      const fallback = this.cfg.onExitFallback?.({ code: exitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { label, code: exitCode, tail: tail ? ' — ' + tail : '' });
+      const fallback = this.cfg.onExitFallback?.({ code: lastExitCode, conv }) ?? t(s.lang, this.cfg.noResultKey, { label, code: lastExitCode, tail: tail ? ' — ' + tail : '' });
       onEvent({ type: 'error', message: fallback });
     }
   }
@@ -1199,6 +1250,7 @@ export function codexCliConfig(): CliEngineConfig {
 
 import { DirectV2Engine } from './DirectV2Engine';
 import { DirectV3Engine } from './V3';
+import { pullSteer } from './steer';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   const engines = new Map<EngineKind, Engine>([

@@ -374,9 +374,14 @@ export class TaskManager {
   interrupt(id: string, text: string): boolean {
     const conv = this.convs.get(id);
     if (!conv || conv.status !== 'running') return false;
+    // CLI 引擎(claudeCode/codex)也支持:软打断 = kill + --resume 重发(适配器循环边界消费)。
+    // 仅要求 engineSessionId 已建立(首轮 init 前无法 resume,退回 false → UI 降级排队)。
     if (!isDirectFamily(conv.engine)) {
-      // claudeCode/codex 是子进程,没有注入通道。ponytail: 可做成"软打断 = kill + --resume 重发",先不做。
-      return false;
+      if (!conv.engineSessionId) return false;
+      if (!pushSteer(id, text)) return false;
+      conv.statusNote = t(getSettings().lang, 'tmgr.steeredCli');
+      this.emit.emitConversation(conv);
+      return true;
     }
     if (!pushSteer(id, text)) return false;
     conv.statusNote = t(getSettings().lang, 'tmgr.steered');
