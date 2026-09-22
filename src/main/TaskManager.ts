@@ -314,6 +314,7 @@ export class TaskManager {
     const conv = this.convs.get(id);
     if (!conv) return;
     clearSteer(id); // 清空上下文时打断缓冲一并作废
+    clearKillHook(id); // sessionId 已清,resume 不可能;kill hook 同步作废
     conv.turns = [];
     conv.directHistory = [];
     conv.engineSessionId = null;

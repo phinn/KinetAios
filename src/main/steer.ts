@@ -3,14 +3,17 @@
 // without cancelling it.
 //
 // 链路:UI ⌘/Ctrl+Enter → IPC 'interrupt' → TaskManager.interrupt() 写这里
-// → 引擎循环(AgentLoop 轮边界 / DirectV2 步骤边界)pull 时注入为 user 消息。
-// 只对 Direct 系引擎生效(claudeCode/codex 是子进程,无注入通道,不接)。
+// → Direct 系引擎(AgentLoop 轮边界 / DirectV2 步骤边界)pull 时注入为 user 消息;
+//   CLI 引擎(claudeCode/codex)无注入通道,走 kill+resume:interrupt 同时调
+//   triggerKill 杀子进程,run() 外层循环在退出边界 pull → --resume 续段重发。
 //
 // 语义约定:
 // - 不 abort、不换 turn:同一个 turn 继续流式输出,进度零丢失。
 // - 注入的消息**不带 _transient**:打断是真实用户输入,应写回 directHistory,
 //   后续轮次(甚至后续 turn 的 planner/Judge)都要看得到。
 // - 只存最新一条:打断期间用户再次 ⌘Enter,覆盖旧文本(UI 会立即反馈)。
+// - pull 是"取走即清除":引擎仅在确定要消费时才 pull;终态(done/error 已发)
+//   后禁止 pull,残留文本由 TaskManager 收尾 clearSteer 统一清理。
 //
 // Steer buffer: latest-wins. inject() while a pending steer exists overwrites it;
 // pull() atomically takes it at the next engine-loop boundary.

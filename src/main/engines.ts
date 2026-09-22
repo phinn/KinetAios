@@ -987,9 +987,11 @@ class CliEngineAdapter implements Engine {
       if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
       if (signal.aborted) return; // user cancelled — not an error
       // 软打断路径:triggerKill 杀掉子进程后缓冲里有待注入的打断 → resume 续跑。
-      // kill 时会话还挂着 aborts,signal 不会 aborted,这里能安全区分「打断」与「取消」。
+      // pull 必须在 sawTerminal 判定之后:sawTerminal(本轮已有 done/error)时不取,
+      // 文本留在缓冲里由 TaskManager 收尾 clearSteer 清理 —— 否则取走即丢,UI 却报了成功。
+      if (sawTerminal) break;
       const pendingSteer = pullSteer(conv.id);
-      if (pendingSteer && !sawTerminal) {
+      if (pendingSteer) {
         onEvent({ type: 'status', text: t(s.lang, 'tmgr.steeredCli') });
         // 续段 prompt:--resume 接上原 session,打断文本作为新的 user 消息重发。
         const seg = steerText(pendingSteer);
