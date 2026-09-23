@@ -602,7 +602,17 @@ export class TaskManager {
     const startedAt = Date.now();
     const maxMs = (S.goalMaxHours || 0) * 3600_000;
     const maxCost = S.goalMaxCostUSD || 0;
-    const failoverChain = (S.goalProfileChain || []).filter(Boolean);
+    // P1(2026-09-23):链不再快照进闭包 —— 改为 getFailoverChain() 每轮现读 settings。
+    // 修前 const failoverChain = S.goalProfileChain 快照:过夜任务跑到一半用户补配/改链
+    // 完全不生效(闭包里还是旧数组),必须重设 goal 才能拿到新链。quota 停机提示也要读它。
+    const getFailoverChain = (): string[] => (getSettings().goalProfileChain || []).filter(Boolean);
+    if (getFailoverChain().length === 0) {
+      // 链为空 = failover 整体失效(两条切换路径守卫恒 false),quota 一到就停机。
+      // 静默失效最坑:2026-09-23 实际踩坑 —— 链被清空后 5h 窗口打满,429 三连重试后直接 break,
+      // 过夜任务无声死掉。启动即提示,让用户当场发现去补链。
+      conv.statusNote = '⚠️ 模型接力链为空:当前模型额度用尽时会直接停机,不会自动切换。建议到 设置 → Goal 监工 配置接力链';
+      this.emit.emitConversation(conv);
+    }
     const supervisorOn = Boolean(S.goalSupervisorEnabled) && !!S.persona?.trim();
     // 当前生效的 failover 档(相对 chain 的指针;-1 = 会话自己绑的 profile / 主配置)
     let chainIdx = -1;
@@ -621,11 +631,12 @@ export class TaskManager {
 
     // 切换 failover 链上的下一个模型。返回 null = 链尽(真停);否则返回新 profile 显示名。
     const nextFailover = (): { name: string } | null => {
+      const failoverChain = getFailoverChain();
       const cand = failoverChain.findIndex((_, i) => i > chainIdx);
       if (cand < 0) return null;
       chainIdx = cand;
       const pid = failoverChain[chainIdx];
-      const pf = S.modelProfiles.find((p) => p.id === pid);
+      const pf = getSettings().modelProfiles.find((p) => p.id === pid);
       if (!pf) return null;
       this.setConvProfile(id, pf.id); // 复用现有绑定逻辑:profileId + model 显示名 + 持久化 + 广播
       return { name: pf.name };
@@ -702,8 +713,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // 设置页 Goal 面板可开关(goalFailover5hEnabled,默认开)+ 阈值(goalFailover5hPct,
       // 默认 100 = 用满才切)。被动路径(下面的 quota 错切换)保留 —— 非订阅制限流仍靠它。
       // 查询结果在 quota.ts 内缓存 60s,goal 循环每轮一次也不会打爆端点。链尽或非 Coding Plan 不动。
-      if (!lastTurn.error && chainIdx < failoverChain.length - 1 && S.goalFailover5hEnabled !== false) {
-        const curProfileId = chainIdx >= 0 ? failoverChain[chainIdx] : conv.profileId ?? null;
+      if (!lastTurn.error && S.goalFailover5hEnabled !== false && chainIdx < getFailoverChain().length - 1) {
+        const curProfileId = chainIdx >= 0 ? getFailoverChain()[chainIdx] : conv.profileId ?? null;
         const pct = await codingPlan5hPct(curProfileId);
         const threshold = Number(S.goalFailover5hPct) > 0 ? Number(S.goalFailover5hPct) : 100;
         if (pct != null && pct >= threshold) {
@@ -725,7 +736,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         const cls = GLMError.classify(lastTurn.error);
         // network 也切:首字节超时/挂起是端点打满/无量的典型表现(5h 窗口打满常以超时
         // 而非 429 呈现),停机干等重置不如切链。链尽仍真停。
-        if ((cls === 'quota' || cls === 'auth' || cls === 'network') && chainIdx < failoverChain.length - 1) {
+        if ((cls === 'quota' || cls === 'auth' || cls === 'network') && chainIdx < getFailoverChain().length - 1) {
           const nx = nextFailover();
           if (nx) {
             const why = cls === 'quota' ? '额度耗尽' : cls === 'auth' ? '鉴权失败' : '网络/超时';
@@ -735,7 +746,17 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
             failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
           }
         }
-        if (!failoverRetry) break; // other 换模型无意义;或链已用尽 → 真停
+        if (!failoverRetry) {
+          // 链尽/链空/不可切换类的真停,把「为什么没切」说透(静默 break 最坑:过夜任务无声死掉,
+          // 用户只看到不动了 —— 2026-09-23 实际踩坑:链被清空后 5h 窗口打满直接 break,无任何提示)。
+          const why = cls === 'quota' ? '额度耗尽' : cls === 'auth' ? '鉴权失败' : cls === 'network' ? '网络/超时' : '不可恢复错误';
+          const chainEmpty = getFailoverChain().length === 0;
+          conv.statusNote = chainEmpty
+            ? `⛔ ${why},模型接力链未配置 → goal 循环停机。到 设置 → Goal 监工 配置接力链后可继续`
+            : `⛔ ${why},且接力链已用尽 → goal 循环停机`;
+          this.emit.emitConversation(conv);
+          break;
+        }
       }
 
       // 模型输出 [GOAL_COMPLETE] → 目标完成,停止循环(failover 重试轮无产出,跳过)
