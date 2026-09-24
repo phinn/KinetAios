@@ -16,6 +16,9 @@ import { t } from '../shared/i18n';
 import type { Lang } from '../shared/i18n';
 import { ENGINE_COLORS } from './engine-colors';
 
+// 🔧→SVG:nexus 星系节点 tooltip 与主界面图标统一(不走 app.ts 的 SVGI,避免循环依赖,本地内联同款路径)。
+const TOOL_SVG = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/></svg>';
+
 // ── 外部依赖(由 app.ts 注入) / External deps (injected by app.ts) ──
 let nexusLang: Lang = 'zh-CN';
 
@@ -1674,7 +1677,7 @@ function updateOverlay(): void {
     // 工具调用摘要 / Tool call summary
     if (turn.steps && turn.steps.length > 0) {
       const toolNames = turn.steps.map((s: { name: string }) => s.name).join(', ');
-      turnsHTML += `<div class="nx-msg nx-msg-tool">🔧 ${esc(toolNames)}</div>`;
+      turnsHTML += `<div class="nx-msg nx-msg-tool">${TOOL_SVG} ${esc(toolNames)}</div>`;
     }
     if (turn.error) {
       turnsHTML += `<div class="nx-msg nx-msg-error">⚠ ${esc(turn.error)}</div>`;

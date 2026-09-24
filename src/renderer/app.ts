@@ -134,14 +134,61 @@ const ICON = {
   shield: '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>',
 } as const;
 
-// Git 同步状态徽章图标(local-first,inline SVG 防渲染问题)
+// ── SVGI:语义化状态图标库(与 ICON 同风格,14px 描边圆角)──
+// 全部 UI 层 emoji/伪字符图标(看板/任务清单/事件流/远程 banner/job pill/git sync)统一从这里取。
+// 规则:stroke=currentColor 继承文字色,颜色语义交给 CSS(color: var(--ok)/var(--err)/var(--accent))。
+// SVGI: semantic status icons — same style as ICON (14px, stroked, round caps).
+// All UI-level emoji/pseudo-glyph icons (workbench/todo cards/event stream/remote banner/job pill/git sync) come from here.
+const SVGI = (w = 14, h = w): string => `<svg width="${w}" height="${h}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">`;
+const svg = (body: string, w = 14, h = w): string => `${SVGI(w, h)}${body}</svg>`;
+const SVGI_SET = {
+  // 状态类
+  clock: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>', w),           // 最近活动/等待
+  target: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.5" fill="currentColor"/>', w), // goal/进度墙
+  checkCircle: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><path d="M8.5 12.2l2.4 2.4 4.6-5"/>', w), // done/完成
+  xCircle: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><path d="M9 9l6 6M15 9l-6 6"/>', w),  // failed/错误
+  pauseCircle: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><path d="M10.2 9.5v5M13.8 9.5v5"/>', w), // paused
+  slashCircle: (w = 14) => svg('<circle cx="12" cy="12" r="9"/><path d="M6 6l12 12"/>', w),      // killed/仅本地
+  hourglass: (w = 14) => svg('<path d="M7 3h10M7 21h10M8 3v3.5c0 1.5 4 3.5 4 5.5s-4 4-4 5.5V21M16 3v3.5c0 1.5-4 3.5-4 5.5s4 4 4 5.5V21"/>', w), // queued
+  run: (w = 14) => svg('<circle cx="15" cy="5" r="1.6"/><path d="M12.5 21l1.8-6.5-3-3.2 1-4.3 3.2 3.4 3.5.6"/><path d="M11 8.5L7.5 10 6 13.5"/><path d="M8 14.5L5 17l1.5 3"/>', w), // running(跑步小人)
+  // 对象类
+  listCheck: (w = 14) => svg('<path d="M4 6.5l1.5 1.5L8 5.5M4 12.5l1.5 1.5L8 11.5M4 18.5l1.5 1.5L8 17.5M11.5 6.5H20M11.5 12.5H20M11.5 18.5H20"/>', w), // 任务清单
+  clipboard: (w = 14) => svg('<rect x="5" y="4" width="14" height="17" rx="2"/><path d="M9 4.5V3h6v1.5"/><path d="M9 10h6M9 14h6M9 18h3.5"/>', w), // 计划/status
+  user: (w = 14) => svg('<circle cx="12" cy="8" r="3.5"/><path d="M5 20c.8-3.4 3.6-5 7-5s6.2 1.6 7 5"/>', w), // 用户消息
+  bot: (w = 14) => svg('<rect x="4" y="8" width="16" height="11" rx="2.5"/><path d="M12 8V4.5M9 4.5h6"/><path d="M9 13v1.5M15 13v1.5"/>', w), // 助手消息
+  wrench: (w = 14) => svg('<path d="M14.7 6.3a4 4 0 00-5.4 5.4L3 18v3h3l6.3-6.3a4 4 0 005.4-5.4l-2.1 2.1-2.4-.6-.6-2.4z"/>', w), // 工具调用
+  chart: (w = 14) => svg('<path d="M4 4v16h16"/><path d="M8 16v-5M12.5 16V8M17 16v-3"/>', w),     // 费用/统计
+  compress: (w = 14) => svg('<path d="M8 3v5H3M16 3v5h5M8 21v-5H3M16 21v-5h5"/>', w),             // 上下文压缩
+  pencil: (w = 14) => svg('<path d="M17 3.5a2.1 2.1 0 013 3L8 18.5 4 20l1.5-4z"/>', w),           // 上下文编辑
+  users: (w = 14) => svg('<circle cx="9" cy="8.5" r="3"/><path d="M3.5 19.5c.6-2.8 2.8-4.3 5.5-4.3s4.9 1.5 5.5 4.3"/><path d="M15.5 5.8a3 3 0 010 5.4M17.5 15.4c1.7.6 2.8 1.9 3.2 3.9"/>', w), // team
+  link: (w = 14) => svg('<path d="M10 13a5 5 0 007 0l3-3a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-3 3a5 5 0 007 7l1-1"/>', w), // session
+  boltOutline: (w = 14) => svg('<path d="M13 2L4.5 12.5a1 1 0 00.8 1.5H10l-1 8 8.5-10.5a1 1 0 00-.8-1.5H12z"/>', w), // 遥控 banner 默认
+  plug: (w = 14) => svg('<path d="M9 7V3M15 7V3"/><path d="M6.5 7h11v4a5.5 5.5 0 01-11 0z"/><path d="M12 16.5V21"/>', w), // 远程启动
+  shield2: (w = 14) => svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>', w), // 安全
+  sync: (w = 14) => svg('<path d="M7 4v10M7 14l-3-3M7 14l3-3M17 20V10M17 10l-3 3M17 10l3 3"/>', w), // git 已同步(上下对齐箭头)
+  skip: (w = 14) => svg('<path d="M5 5l7 7-7 7M13 5l7 7-7 7"/>', w),                               // skipped(双箭头跳过)
+} as const;
+// 语义别名:evLabel/STATUS_ICON 等调用点只写名字不写尺寸,统一 14px(头部等大号场景手动传 w)。
+const sv = {
+  clock: SVGI_SET.clock(), target: SVGI_SET.target(), checkCircle: SVGI_SET.checkCircle(),
+  xCircle: SVGI_SET.xCircle(), pauseCircle: SVGI_SET.pauseCircle(), slashCircle: SVGI_SET.slashCircle(),
+  hourglass: SVGI_SET.hourglass(), run: SVGI_SET.run(), listCheck: SVGI_SET.listCheck(),
+  clipboard: SVGI_SET.clipboard(), user: SVGI_SET.user(), bot: SVGI_SET.bot(), wrench: SVGI_SET.wrench(),
+  chart: SVGI_SET.chart(), compress: SVGI_SET.compress(), pencil: SVGI_SET.pencil(), users: SVGI_SET.users(),
+  link: SVGI_SET.link(), boltOutline: SVGI_SET.boltOutline(), plug: SVGI_SET.plug(), shield2: SVGI_SET.shield2(),
+  sync: SVGI_SET.sync(), skip: SVGI_SET.skip(),
+  gear: svg('<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09a1.65 1.65 0 00-1-1.51 1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09a1.65 1.65 0 001.51-1 1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06a1.65 1.65 0 001.82.33h0a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51h0a1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06a1.65 1.65 0 00-.33 1.82v0a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/>'), // 设置
+  broom: svg('<path d="M19 4l-5.5 5.5M12.5 8.5L19 15l-1.5 4.5a17 17 0 01-6-2 17 17 0 01-4-4 17 17 0 01-2-6L10 6z"/><path d="M8.5 15.5L5 19"/>'), // 清理
+} as const;
+
+// Git 同步状态徽章图标(local-first,inline SVG;文字色继承,语义色走 .git-sync-* 类)
 const SYNC_ICON = {
   // 已同步:上下双箭头(对齐)
-  ok: '⇅',
+  ok: SVGI_SET.sync(),
   // 仅本地(无远程)
-  local: '⊘',
+  local: SVGI_SET.slashCircle(),
   // 有 remote 但无上游跟踪
-  noup: '+',
+  noup: svg('<path d="M12 5v14M12 5l-4 4M12 5l4 4"/>'),
 } as const;
 // 刷 index.html 里的静态文本([data-i18n] 元素)+ <html lang>。init 和切语言后调。
 // 运行时注入的字符串(app.ts 各 render 函数)直接调 tr(),它们每次重建 innerHTML 自动跟随。
@@ -588,7 +635,7 @@ function refreshSidebarLi(convId: string): void {
   const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
   const footInfo = document.getElementById('sb-foot-info') as HTMLElement | null;
   if (footInfo) {
-    footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
+    footInfo.innerHTML = runningN > 0 ? `${order.length} · ${runningN} ${ICON.bolt}` : `${order.length} ${esc(tr('sidebar.sessions'))}`;
     // 运行中任务中心入口(2026-09):有并发任务时计数可点,弹出 状态/耗时/成本 总览
     footInfo.classList.toggle('clickable', runningN > 0);
     footInfo.title = runningN > 0 ? tr('sb.runningPop') : '';
@@ -714,7 +761,7 @@ function renderSidebar() {
   // 更新 sb-foot-info:显示会话总数 / 运行中数量,替代静态文本。
   const runningN = order.filter((id) => convs.get(id)?.status === 'running').length;
   const footInfo = document.getElementById('sb-foot-info');
-  if (footInfo) footInfo.textContent = runningN > 0 ? `${order.length} · ${runningN} ⚡` : `${order.length} ${tr('sidebar.sessions')}`;
+  if (footInfo) footInfo.innerHTML = runningN > 0 ? `${order.length} · ${runningN} ${ICON.bolt}` : `${order.length} ${esc(tr('sidebar.sessions'))}`;
 
   // 同步运行中筛选按钮:有 running 会话才显示按钮,且显示数量。
   // 如果筛选开着但已经没有 running 会话了,自动关闭筛选(避免空列表困惑)。
@@ -1818,10 +1865,10 @@ async function doGitAction(action: import('../shared/types').GitActionKind, opts
   gitState.busy = false;
   setGitActionsDisabled(false);
   if (r.ok) {
-    gitToast(r.message ?? '✓', true);
+    gitToast(r.message ?? tr('git.synced'), true);
     void refreshGit(cwd);
   } else {
-    gitToast(r.error ?? '✗', false);
+    gitToast(r.error ?? String(SVGI_SET.xCircle()), false);
   }
 }
 
@@ -2556,7 +2603,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     const snippet = promptClean.replace(/\s+/g, ' ').slice(0, 60);
     row.innerHTML = `<span class="fold-time">${new Date(t.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span><span class="fold-text">${esc(snippet)}${promptClean.length > 60 ? '…' : ''}</span>` +
       (t.costUSD > 0 ? `<span class="fold-cost">$${t.costUSD < 0.01 ? t.costUSD.toFixed(4) : t.costUSD.toFixed(2)}</span>` : '') +
-      `<span class="fold-status">${t.error ? '✗' : '✓'}</span><span class="fold-arrow">▸</span>`;
+      `<span class="fold-status">${t.error ? SVGI_SET.xCircle() : SVGI_SET.checkCircle()}</span><span class="fold-arrow">▸</span>`;
     row.onclick = () => {
       expandedTurns.add(t.id);
       const fresh = renderTurn(conv, i);
@@ -2681,12 +2728,12 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         e.appendChild(hint);
         const openSettingsBtn = document.createElement('button');
         openSettingsBtn.className = 'ghost retry-btn';
-        openSettingsBtn.textContent = '⚙ ' + tr('turn.ctxTooLongSettings');
+        openSettingsBtn.innerHTML = `${sv.gear} ` + esc(tr('turn.ctxTooLongSettings'));
         openSettingsBtn.onclick = () => { void showSettings(); };
         e.appendChild(openSettingsBtn);
         const clearBtn = document.createElement('button');
         clearBtn.className = 'ghost retry-btn';
-        clearBtn.textContent = '🧹 ' + tr('turn.ctxTooLongClear');
+        clearBtn.innerHTML = `${sv.broom} ` + esc(tr('turn.ctxTooLongClear'));
         clearBtn.onclick = () => { document.getElementById('btn-clear')?.click(); };
         e.appendChild(clearBtn);
       }
@@ -2912,7 +2959,7 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
   const wrap = document.createElement('details');
   wrap.className = 'steps-wrap';
   if (expanded) wrap.open = true;
-  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count">🔧 ${stepsSummaryLabel(steps)}</span></summary>`;
+  wrap.innerHTML = `<summary class="steps-toggle"><span class="steps-count steps-ico">${sv.wrench} ${stepsSummaryLabel(steps)}</span></summary>`;
   const inner = document.createElement('div');
   inner.className = 'steps';
   // idx → DOM 映射(时间线刻条点击跳转用):聚合卡映射其覆盖的整段 idx
@@ -2984,7 +3031,7 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   const det = document.createElement('details');
   det.className = 'step step-agg';
   const sum = document.createElement('summary');
-  sum.innerHTML = `<span class="agg-ico">🔧</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
+  sum.innerHTML = `<span class="agg-ico">${sv.wrench}</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
   det.appendChild(sum);
   const inner = document.createElement('div');
   inner.className = 'steps agg-inner';
@@ -3269,7 +3316,7 @@ function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
   const det = document.createElement('details');
   det.open = true;
   const summary = document.createElement('summary');
-  summary.innerHTML = `<span class="name">📋 ${esc(tr('plan.card'))} · ${nodes.length} 步</span>`;
+  summary.innerHTML = `<span class="name">${sv.clipboard} ${esc(tr('plan.card'))} · ${nodes.length} 步</span>`;
   det.appendChild(summary);
   if (plan.goal) {
     const g = document.createElement('div');
@@ -3323,7 +3370,8 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   const det = document.createElement('details');
   det.open = true;
   const summary = document.createElement('summary');
-  summary.innerHTML = `<span class="name">🧾 ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ✓ · ${doing} ⟳ · ${failed ? `${failed} ✗ · ` : ''}${skipped ? `${skipped} ⇥ · ` : ''}${todos.length - done - doing - failed - skipped} ○</span>`;
+  // 摘要计数:文本符号 ✓⟳✗⇥○ 换成内联 SVG;颜色语义走 .todo-sum SVG stroke=currentColor。
+  summary.innerHTML = `<span class="name">${sv.listCheck} ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ${sv.checkCircle} · ${doing} ${sv.clock} · ${failed ? `${failed} ${sv.xCircle} · ` : ''}${skipped ? `${skipped} ${sv.skip} · ` : ''}${todos.length - done - doing - failed - skipped} ${svg('<circle cx="12" cy="12" r="8"/>')}</span>`;
   det.appendChild(summary);
   const list = document.createElement('div');
   list.className = 'todo-list';
@@ -3332,11 +3380,11 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
     row.className = `todo-item todo-${t.status}`;
     const icon = document.createElement('span');
     icon.className = 'todo-ico';
-    if (t.status === 'completed') icon.textContent = '✓';
+    if (t.status === 'completed') icon.innerHTML = svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>');
     else if (t.status === 'in_progress') icon.innerHTML = '<span class="todo-spin"></span>';
-    else if (t.status === 'failed') icon.textContent = '✗';
-    else if (t.status === 'skipped') icon.textContent = '⇥';
-    else icon.textContent = '○';
+    else if (t.status === 'failed') icon.innerHTML = svg('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>');
+    else if (t.status === 'skipped') icon.innerHTML = SVGI_SET.skip();
+    else icon.innerHTML = svg('<circle cx="12" cy="12" r="8"/>');
     row.appendChild(icon);
     const txt = document.createElement('span');
     txt.className = 'todo-text';
@@ -3553,7 +3601,7 @@ function updateLastTurnIncremental(): void {
         inner.appendChild(frag);
         // 概要计数同步(steps.length 变化)
         const cnt = oldSteps.querySelector('.steps-count');
-        if (cnt) cnt.textContent = `🔧 ${stepsSummaryLabel(t.steps)}`;
+        if (cnt) cnt.innerHTML = `${sv.wrench} ${stepsSummaryLabel(t.steps)}`;
       } else if (!inner) {
         const fresh = buildStepsEl(t.steps, true);
         oldSteps.replaceWith(fresh);
@@ -3733,7 +3781,7 @@ async function handleAtMenu(): Promise<void> {
   atMenu.items.forEach((it, i) => {
     const row = document.createElement('button');
     row.className = 'slash-item' + (i === 0 ? ' sel' : '');
-    row.innerHTML = `<span class="ctx-ico">${it.isDir ? '📁' : '📄'}</span><span>${esc(atMenu.dirPart + it.name)}</span>`;
+    row.innerHTML = `<span class="ctx-ico">${it.isDir ? ICON.folder : ICON.doc}</span><span>${esc(atMenu.dirPart + it.name)}</span>`;
     row.onmousedown = () => { atHolding = true; atInsert(it); setTimeout(() => { atHolding = false; }, 20); };
     el.appendChild(row);
   });
@@ -4063,7 +4111,7 @@ function renderQueue(): void {
     if (idx === 0 && sid && convs.get(sid)?.status === 'running') {
       const st = document.createElement('button');
       st.className = 'q-steer ghost';
-      st.textContent = '⚡';
+      st.innerHTML = ICON.bolt;
       st.title = tr('queue.steerBtn');
       st.onclick = () => {
         removeQueued(sid, idx);
@@ -4230,7 +4278,7 @@ function updateStreamRate(): void {
   const span = streamTokenTimes.length ? (now - streamTokenTimes[0]) / 1000 : 0;
   const rate = span > 0.2 ? streamTokenTimes.length / span : 0;
   const totalStr = streamTokenTotal > 1000 ? (streamTokenTotal / 1000).toFixed(1) + 'k' : String(streamTokenTotal);
-  el.textContent = rate > 0 ? `⚡ ${rate.toFixed(1)} tok/s · ${totalStr} tok` : `⏸ ${totalStr} tok`;
+  el.innerHTML = rate > 0 ? `${ICON.bolt} ${rate.toFixed(1)} tok/s · ${totalStr} tok` : `${SVGI_SET.pauseCircle(11)} ${totalStr} tok`;
 }
 
 /** 增量推进稳定边界到最后一个「围栏外空行」。空行是块级边界,前缀独立
@@ -4636,8 +4684,8 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
     const after = toolsAfter(i);
     // 行摘要:这次调用之后做了什么(工具名列表 / 最终回答)
     const action = after.length === 0
-      ? (i + 1 === metas.length ? '✓ 输出最终回答' : '(无工具动作)')
-      : '🔧 ' + after.map((t) => (t.data as { name?: string }).name ?? '?').join(' · ');
+      ? (i + 1 === metas.length ? `${sv.checkCircle} 输出最终回答` : '(无工具动作)')
+      : sv.wrench + ' ' + after.map((t) => (t.data as { name?: string }).name ?? '?').join(' · ');
     const row = document.createElement('div');
     row.className = 'tok-row tok-row-click';
     row.innerHTML = `<div class="tok-row-main"><span class="tok-idx">${i + 1}</span>
@@ -4650,7 +4698,7 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
     const detail = document.createElement('div');
     detail.className = 'tok-detail';
     detail.hidden = true;
-    const toolLines = after.map((t) => `<div class="tok-tool-line">🔧 ${escHtml(toolBrief(t))}</div>`).join('');
+    const toolLines = after.map((t) => `<div class="tok-tool-line">${sv.wrench} ${escHtml(toolBrief(t))}</div>`).join('');
     detail.innerHTML = `<div class="tok-detail-meta">seq ${rw.seq} · ${new Date(rw.ts).toLocaleString()} · ${escHtml(tokenSourceLabel(d.source))}</div>
       ${toolLines}
       <pre class="tok-detail-json">${escHtml(JSON.stringify(rw.data, null, 2))}</pre>
@@ -5061,7 +5109,7 @@ async function showSettings() {
         </select></div>
         <div class="field"><label>API Key</label><div class="row"><div class="key-eye-wrap"><input id="s-key" type="password" value="${esc(s.apiKey)}" /><span class="key-eye" data-target="s-key">👁</span></div><button id="s-balance" class="btn-xs">${tr('balance.query')}</button></div></div>
         <div class="field"><label>Base URL</label><input id="s-base" value="${esc(s.baseURL)}" /></div>
-        <div class="field"><label>${tr('settings.modelId')}</label><div class="row"><input id="s-model" value="${esc(s.model)}" /><button id="s-scan-models" class="btn-xs" style="display:none">🔄 读取本地模型</button></div></div>
+        <div class="field"><label>${tr('settings.modelId')}</label><div class="row"><input id="s-model" value="${esc(s.model)}" /><button id="s-scan-models" class="btn-xs" style="display:none">${SVGI_SET.clock(11)} ${esc(tr('settings.ollama.scanBtn'))}</button></div></div>
         <div class="field"><label>${tr('settings.protocol')}</label><select id="s-proto">
           <option value="openai" ${s.apiProtocol === 'openai' ? 'selected' : ''}>${tr('settings.proto.openai')}</option>
           <option value="anthropic" ${s.apiProtocol === 'anthropic' ? 'selected' : ''}>Anthropic</option>
@@ -5430,7 +5478,7 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="goal" style="display:none">
       <div class="s-section">
-        <h3>🎯 ${tr('settings.goal.title')}</h3>
+        <h3>${sv.target} ${tr('settings.goal.title')}</h3>
         <div class="field-desc">${tr('settings.goal.desc')}</div>
 
         <!-- 替身监工 -->
@@ -5688,7 +5736,7 @@ async function showSettings() {
     const token = (document.getElementById('s-mcp-token') as HTMLInputElement).value;
     const r = await api.startMcpServer(port, token);
     const msg = document.getElementById('s-mcp-msg')!;
-    msg.textContent = r.ok ? tr('settings.mesh.started', { port }) : `✗ ${r.error}`;
+    msg.innerHTML = r.ok ? esc(tr('settings.mesh.started', { port })) : `${sv.xCircle} ${esc(r.error ?? '')}`;
     msg.style.color = r.ok ? 'var(--ok)' : 'var(--danger)';
   };
   document.getElementById('s-mcp-stop')!.onclick = async () => {
@@ -6158,7 +6206,7 @@ async function showSettings() {
   // 渲染插件详情面板(初始隐藏,点击卡片信息区展开) — Render plugin detail panel.
   const renderPluginDetail = (p: typeof pluginCache[number]): string => {
     const tools = (p.tools ?? []).map(
-      (t) => `<div class="s-plugin-detail-tool"><span class="s-plugin-detail-tool-name">🔧 ${esc(t.name)}</span><span class="s-plugin-detail-tool-desc">${esc(t.description)}</span></div>`,
+      (t) => `<div class="s-plugin-detail-tool"><span class="s-plugin-detail-tool-name">${sv.wrench} ${esc(t.name)}</span><span class="s-plugin-detail-tool-desc">${esc(t.description)}</span></div>`,
     ).join('');
     const cmds = (p.slashCommands ?? []).map(
       (c) => `<div class="s-plugin-detail-cmd"><span class="s-plugin-detail-cmd-name">/${esc(c.name)}</span><span class="s-plugin-detail-cmd-desc">${esc(c.description)}</span></div>`,
@@ -6756,7 +6804,7 @@ function ensureRemoteBanner(): void {
   remoteBannerEl = document.createElement('div');
   remoteBannerEl.id = 'remote-agent-banner';
   remoteBannerEl.innerHTML = `
-    <span class="ra-icon" style="font-size:18px;flex-shrink:0"></span>
+    <span class="ra-icon" style="display:inline-flex;flex-shrink:0"></span>
     <span class="ra-text" style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
     <span class="ra-detail" style="font-size:11px;opacity:0.6;margin-left:8px;flex-shrink:0;max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></span>
   `;
@@ -6792,7 +6840,7 @@ function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): 
   const iconEl = remoteBannerEl.querySelector('.ra-icon') as HTMLSpanElement;
   const textEl = remoteBannerEl.querySelector('.ra-text') as HTMLSpanElement;
   const detailEl = remoteBannerEl.querySelector('.ra-detail') as HTMLSpanElement;
-  let icon = '⚡';
+  let icon = sv.boltOutline;
   let text = '';
   let detail = '';
   let autoHide = false;
@@ -6800,13 +6848,13 @@ function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): 
 
   switch (ev.type) {
     case 'start':
-      icon = '🔌';
+      icon = sv.plug;
       text = `远程 Agent 已启动`;
       detail = ev.prompt.slice(0, 100) + (ev.prompt.length > 100 ? '…' : '');
       pulse = true;
       break;
     case 'tool':
-      icon = '🔧';
+      icon = sv.wrench;
       text = `远程 Agent 正在工作`;
       detail = `工具: ${ev.name}`;
       pulse = true;
@@ -6814,31 +6862,31 @@ function showRemoteAgentBanner(ev: import('../shared/types').RemoteAgentEvent): 
     case 'token':
       return; // 太频繁,不更新 banner
     case 'status':
-      icon = '📋';
+      icon = sv.clipboard;
       text = ev.text;
       pulse = true;
       break;
     case 'cost':
-      icon = '💰';
+      icon = sv.chart;
       text = `远程 Agent 产生费用`;
       detail = `$${ev.usd.toFixed(4)} / ${ev.tokens} tokens`;
       pulse = true;
       break;
     case 'done':
-      icon = '✅';
+      icon = sv.checkCircle;
       text = `远程 Agent 已完成`;
       detail = ev.summary.slice(0, 120) + (ev.summary.length > 120 ? '…' : '');
       autoHide = true;
       break;
     case 'error':
-      icon = '❌';
+      icon = sv.xCircle;
       text = `远程 Agent 出错`;
       detail = ev.message;
       autoHide = true;
       break;
   }
 
-  iconEl.textContent = icon;
+  iconEl.innerHTML = icon;
   textEl.textContent = text;
   detailEl.textContent = detail;
   remoteBannerEl.style.display = 'flex';
@@ -8362,7 +8410,7 @@ async function startVoiceChat(): Promise<void> {
   }
   const result = await api.voiceChatStart(activeId);
   if (!result.ok) {
-    document.getElementById('vc-status')!.textContent = '❌ ' + (result.error || tr('voice.chatConnFail'));
+    document.getElementById('vc-status')!.innerHTML = `${sv.xCircle} ` + esc(result.error || tr('voice.chatConnFail'));
     document.getElementById('vc-orb')!.className = 'vc-orb error';
     return;
   }
@@ -8406,7 +8454,7 @@ async function startVoiceChat(): Promise<void> {
       wireScriptProcessor();
     }
   } catch (e) {
-    document.getElementById('vc-status')!.textContent = '❌ ' + tr('voice.chatMicDenied');
+    document.getElementById('vc-status')!.innerHTML = `${sv.xCircle} ` + esc(tr('voice.chatMicDenied'));
     document.getElementById('vc-orb')!.className = 'vc-orb error';
   }
 }
@@ -8587,7 +8635,7 @@ async function copyText(text: string, btn?: HTMLElement): Promise<void> {
   }
   if (ok && btn) {
     const orig = btn.innerHTML;
-    btn.textContent = '✓';
+    btn.innerHTML = SVGI_SET.checkCircle();
     setTimeout(() => { btn.innerHTML = orig; }, 1200);
   }
 }
@@ -9076,7 +9124,7 @@ function renderWorkbench() {
   // ── 任务进度墙(mission control):所有 running 会话的实时卡 ──
   const running = order.map((id) => convs.get(id)).filter((c): c is Conversation => !!c && c.status === 'running');
   const wall = running.length
-    ? `<div class="mission-sec"><div class="mission-head">🎯 ${esc(tr('wb.running'))} · ${running.length}</div><div class="mission-wall">${running.map(missionCard).join('')}</div></div>`
+    ? `<div class="mission-sec"><div class="mission-head">${SVGI_SET.target(15)} ${esc(tr('wb.running'))} · ${running.length}</div><div class="mission-wall">${running.map(missionCard).join('')}</div></div>`
     : '';
   // ── 最近活动(wb.recent):全库频道按 updatedAt 倒序前 12 条;running 置顶 ──
   const RECENT_N = 12;
@@ -9091,8 +9139,8 @@ function renderWorkbench() {
     })
     .slice(0, RECENT_N);
   const recentSec = recents.length
-    ? `<div class="mission-sec"><div class="mission-head">🕘 ${esc(tr('wb.recent'))}</div><div class="wb-recent">${recents.map(recentRow).join('')}</div></div>`
-    : `<div class="mission-sec"><div class="mission-head">🕘 ${esc(tr('wb.recent'))}</div><div class="empty">${esc(tr('wb.recentEmpty'))}</div></div>`;
+    ? `<div class="mission-sec"><div class="mission-head">${sv.clock} ${esc(tr('wb.recent'))}</div><div class="wb-recent">${recents.map(recentRow).join('')}</div></div>`
+    : `<div class="mission-sec"><div class="mission-head">${sv.clock} ${esc(tr('wb.recent'))}</div><div class="empty">${esc(tr('wb.recentEmpty'))}</div></div>`;
   root.innerHTML =
     `<div class="wb-head">
       <div class="wb-title">${esc(tr('wb.title'))}</div>
@@ -10502,45 +10550,45 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
   const d = ev as never as Record<string, unknown>;
   switch (ev.type) {
     case 'user/message':
-      return { icon: '👤', title: tr('ev.user'), body: String(d.text ?? '') };
+      return { icon: sv.user, title: tr('ev.user'), body: String(d.text ?? '') };
     case 'assistant/message':
-      return { icon: '🤖', title: tr('ev.assistant'), body: String(d.text ?? '') };
+      return { icon: sv.bot, title: tr('ev.assistant'), body: String(d.text ?? '') };
     case 'tool/call': {
       const result = String(d.result ?? '');
       const dur = d.durationMs ? ` · ${Math.round(Number(d.durationMs))}ms` : '';
-      return { icon: '🔧', title: `${tr('ev.tool')}: ${String(d.name ?? '')}${dur}`, body: result };
+      return { icon: sv.wrench, title: `${tr('ev.tool')}: ${String(d.name ?? '')}${dur}`, body: result };
     }
     case 'turn/error':
-      return { icon: '❌', title: tr('ev.error'), body: String(d.message ?? '') };
+      return { icon: sv.xCircle, title: tr('ev.error'), body: String(d.message ?? '') };
     case 'turn/meta':
       const srcTag = d.source ? ` [${tokenSourceLabel(String(d.source))}]` : '';
-      return { icon: '📊', title: tr('ev.meta') + srcTag, body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
+      return { icon: sv.chart, title: tr('ev.meta') + srcTag, body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
     case 'compaction/spill': {
       const dropped = Array.isArray(d.dropped) ? d.dropped.length : 0;
       const summary = d.summary ? String(d.summary) : '';
-      return { icon: '🗜️', title: `${tr('ev.spill')} (${dropped} ${tr('ev.spillMsgs')})`, body: summary || `—` };
+      return { icon: sv.compress, title: `${tr('ev.spill')} (${dropped} ${tr('ev.spillMsgs')})`, body: summary || `—` };
     }
     case 'context/edit':
-      return { icon: '✏️', title: tr('ev.ctxEdit'), body: `${d.before} → ${d.after}` };
+      return { icon: sv.pencil, title: tr('ev.ctxEdit'), body: `${d.before} → ${d.after}` };
     case 'team/status':
-      return { icon: '👥', title: `${d.member} · ${String(d.status ?? '').slice(0, 120)}`, body: '' };
+      return { icon: sv.users, title: `${d.member} · ${String(d.status ?? '').slice(0, 120)}`, body: '' };
     case 'team/tool': {
       const result = String(d.result ?? '');
       const dur = d.durationMs ? ` · ${Math.round(Number(d.durationMs))}ms` : '';
-      return { icon: '🔧', title: `[${d.member}] ${String(d.name ?? '')}${dur}`, body: result };
+      return { icon: sv.wrench, title: `[${d.member}] ${String(d.name ?? '')}${dur}`, body: result };
     }
     case 'team/done':
-      return { icon: '✅', title: `${d.member} · done`, body: String(d.answer ?? '') };
+      return { icon: sv.checkCircle, title: `${d.member} · done`, body: String(d.answer ?? '') };
     case 'goal/set':
-      return { icon: '🎯', title: tr('ev.goalSet'), body: String(d.goal ?? '') };
+      return { icon: sv.target, title: tr('ev.goalSet'), body: String(d.goal ?? '') };
     case 'goal/clear':
-      return { icon: '🎯', title: tr('ev.goalClear'), body: '—' };
+      return { icon: sv.target, title: tr('ev.goalClear'), body: '—' };
     case 'goal/complete':
-      return { icon: '✅', title: tr('ev.goalComplete'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
+      return { icon: sv.checkCircle, title: tr('ev.goalComplete'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
     case 'goal/limit':
-      return { icon: '⚠️', title: tr('ev.goalLimit'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
+      return { icon: SVGI_SET.target(), title: tr('ev.goalLimit'), body: `${tr('ev.rounds')}: ${d.rounds ?? 0}` };
     case 'session/started':
-      return { icon: '🔗', title: tr('ev.session'), body: `${d.engine} · ${String(d.sessionId ?? '').slice(0, 12)}…` };
+      return { icon: sv.link, title: tr('ev.session'), body: `${d.engine} · ${String(d.sessionId ?? '').slice(0, 12)}…` };
     default:
       return { icon: '·', title: ev.type, body: JSON.stringify(ev).slice(0, 400) };
   }
@@ -10614,7 +10662,7 @@ async function renderCronList(): Promise<void> {
       return `<div class="mm-row cron-row" data-id="${esc(t.id)}">
         <div class="cron-row-head">
           <span class="cron-expr ${t.enabled ? '' : 'disabled'}">${esc(t.cron)}</span>
-          <span class="cron-toggle">${t.enabled ? '✓' : '✗'}</span>
+          <span class="cron-toggle">${t.enabled ? SVGI_SET.checkCircle() : SVGI_SET.xCircle()}</span>
         </div>
         <div class="cron-prompt">${esc(t.prompt.slice(0, 200))}${t.prompt.length > 200 ? '…' : ''}</div>
         <div class="cron-meta">${esc(t.cwd ?? tr('cron.noCwd'))} · ${esc(tr('cron.lastRun'))}: ${esc(last)}</div>
@@ -10868,6 +10916,25 @@ async function renderPipelineSaved(): Promise<void> {
 // MARK: 模板库 UI
 // ──────────────────────────────────────────────────────────────────────
 
+// 模板卡图标:内置模板的 icon 字段是 emoji(main.ts 数据源,含历史自定义模板),
+// 渲染层按 emoji→SVG 映射统一成系统图标;未映射的一律 fallback 剪贴板图标,emoji 不再直达 UI。
+// Template card icon: builtin rows store emoji in `icon`; map them to SVGI at render time, fallback to clipboard.
+const TPL_ICON_MAP: Record<string, string> = {
+  '🔍': svg('<circle cx="11" cy="11" r="6.5"/><path d="M16 16l4.5 4.5"/>'),                       // 代码审查→放大镜
+  '🐛': svg('<rect x="8" y="9" width="8" height="10" rx="4"/><path d="M10 9a2 2 0 014 0"/><path d="M4 13h4M16 13h4M5 8.5L8.5 11M19 8.5L15.5 11M5 18l3.5-2.5M19 18l-3.5-2.5"/>'), // bug
+  '📝': svg('<path d="M17 3.5a2.1 2.1 0 013 3L8 18.5 4 20l1.5-4z"/><path d="M14 6l3.5 3.5"/>'),   // 文档→钢笔
+  '🧪': svg('<path d="M10 3v6L4.7 18a2 2 0 001.8 3h11a2 2 0 001.8-3L14 9V3"/><path d="M8.5 3h7M7.5 15h9"/>'), // 测试→试管
+  '🔨': svg('<path d="M14 4l6 6-2.5 2.5-6-6z"/><path d="M12.5 8.5L4 17v3h3l8.5-8.5"/>'),          // 重构→锤子
+  '📖': svg('<path d="M4 5.5A2.5 2.5 0 016.5 3H20v15H6.5A2.5 2.5 0 004 20.5z"/><path d="M4 18a2.5 2.5 0 012.5-2.5H20"/>'), // 解释→书
+  '⚡': ICON.bolt,                                                                                // 性能→闪电(fill 已在 ICON 内)
+  '🛡️': SVGI_SET.shield2(), '🛡': SVGI_SET.shield2(),                                            // 安全→盾
+  '🔄': svg('<path d="M3.5 12a8.5 8.5 0 0114.8-5.7L21 9M21 3v6h-6"/><path d="M20.5 12a8.5 8.5 0 01-14.8 5.7L3 15M3 21v-6h6"/>'), // 迁移→双循环
+  '🏗️': svg('<path d="M3 21h18M5 21V8l7-5 7 5v13"/><path d="M9 21v-5h6v5M9 10h.01M12 10h.01M15 10h.01"/>'), // 架构→楼
+};
+function tplIconSvg(icon: string | undefined): string {
+  return (icon && TPL_ICON_MAP[icon]) || sv.clipboard;
+}
+
 function renderTemplates(): void {
   const root = document.getElementById('templates-root')!;
   root.innerHTML = `<div class="tpl-loading">${esc(tr('common.loading'))}</div>`;
@@ -10891,7 +10958,7 @@ function renderTemplates(): void {
             <div class="tpl-grid">
               ${items.map((tpl) => `
                 <div class="tpl-card" data-id="${esc(tpl.id)}">
-                  <div class="tpl-card-icon">${esc(tpl.icon || '📋')}</div>
+                  <div class="tpl-card-icon">${tplIconSvg(tpl.icon)}</div>
                   <div class="tpl-card-name">${esc(tpl.name)}</div>
                   <div class="tpl-card-desc">${esc(tpl.description)}</div>
                   <div class="tpl-card-engine">${esc(engineLabel(lang, tpl.engine))}</div>
@@ -11561,7 +11628,7 @@ document.getElementById('live-close')!.onclick = () => {
   let refreshTimer: ReturnType<typeof setInterval> | null = null;
 
   const STATUS_ICON: Record<string, string> = {
-    queued: '⏳', running: '🏃', paused: '⏸', done: '✅', failed: '❌', killed: '🚫',
+    queued: sv.hourglass, running: SVGI_SET.run(), paused: sv.pauseCircle, done: sv.checkCircle, failed: sv.xCircle, killed: sv.slashCircle,
   };
 
   function ensureDom(): void {
