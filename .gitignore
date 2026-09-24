@@ -16,3 +16,5 @@ KinetAios-完全操作手册-客户版.pdf
 
 # 本地推广素材:fork 克隆仓(嵌入 .git / 数百 MB,永不入库)
 build/promo/*-fork/
+.pr-codeburn
+scripts/promo/
