@@ -1152,10 +1152,10 @@ const recallMemory: Tool = {
       }
     }
     // 会话摘要(episodic_memories)— 之前完全漏搜,是召回率低的主因之一
-    const episodeHits = q ? store.searchEpisodicMemories(q, 10, restrict) : [];
+    let episodeHits = q ? store.searchEpisodicMemories(q, 10, restrict) : [];
 
     // 合并结果:episodic(会话摘要) + memories(长期记忆) + triples(知识图谱) + history(对话历史)
-    const allResults: Array<{ source: string; content: string }> = [
+    let allResults: Array<{ source: string; content: string }> = [
       ...episodeHits.map((e) => {
         const cut = e.summary.length > 300 ? e.summary.slice(0, 300) + '…' : e.summary;
         return { source: '摘要', content: cut };
@@ -1174,11 +1174,58 @@ const recallMemory: Tool = {
         return { source: m.role, content: cut };
       }),
     ];
-    if (!allResults.length) return `没有匹配「${q}」的历史。注意:这只说明记忆库里没存过,不代表当前对话没有上下文 —— 用户本轮消息里给的信息(手贴摘要/报错/关键决策)仍然是有效上下文,按它继续干,不要反问"上下文是什么"。`;
+
+    // 2026-09-24 修复(同会话"刚说的话搜不到"):跨项目记忆关闭时 restrict=本会话,
+    // 但 history_conv 旁表是后加的 —— 旧行无映射,restricted JOIN 直接落空,模型刚说过的话
+    // 在它自己眼里"不存在"。会话限制模式下全空 → 自动放开重搜一次,结果标注「跨会话」,
+    // 提示按内容相关性自行判断可用性,而不是回"没找到"。
+    let globalFallback = false;
+    if (!allResults.length && restrict) {
+      globalFallback = true;
+      const gMem = store.searchMemories(q, 10);
+      const gTriple = q ? store.searchMemoryTriples(q, 5) : [];
+      let gHits: Array<{ role: string; content: string }> = [];
+      try {
+        gHits = store.search(q, 15);
+      } catch {
+        try { gHits = store.search(q.replace(/["*]/g, ' '), 15); } catch { /* 全空就全空 */ }
+      }
+      const gEpisode = q ? store.searchEpisodicMemories(q, 5) : [];
+      episodeHits = gEpisode;
+      allResults = [
+        ...gEpisode.map((e) => {
+          const cut = e.summary.length > 300 ? e.summary.slice(0, 300) + '…' : e.summary;
+          return { source: '摘要(跨会话)', content: cut };
+        }),
+        ...gMem.map((m) => {
+          const cut = m.content.length > 200 ? m.content.slice(0, 200) + '…' : m.content;
+          return { source: '记忆(跨会话)', content: cut };
+        }),
+        ...gTriple.map((t) => ({
+          source: '图谱(跨会话)',
+          content: `${t.subject} → ${t.predicate} → ${t.object}`,
+        })),
+        ...gHits.map((m) => {
+          const preview = m.content.replace(/\n/g, ' ');
+          const cut = preview.length > 200 ? preview.slice(0, 200) + '…' : preview;
+          return { source: `${m.role}(跨会话)`, content: cut };
+        }),
+      ];
+    }
+    if (!allResults.length) {
+      // 全空(含全局兜底):明确告诉模型下一步该怎么走,堵死「搜不到 → 反问」路径。
+      const scopeNote = globalFallback
+        ? '(已含全局检索)'
+        : '(仅本会话;如需更早背景,换个关键词再试,或调大/开启跨项目记忆)';
+      return `没有匹配「${q}」的历史${scopeNote}。注意:这只说明记忆库里没存过,不代表当前对话没有上下文 —— 用户本轮消息里给的信息(手贴摘要/报错/关键决策)仍然是有效上下文,按它继续干,不要反问"上下文是什么"。`;
+    }
     const body = allResults
       .map((m, i) => `[${i + 1}] (${m.source}) ${m.content}`)
       .join('\n');
-    return `命中 ${allResults.length} 条:\n${body}`;
+    const head = globalFallback
+      ? `命中 ${allResults.length} 条(本会话无命中,以下为跨会话结果,相关性与时效请自行判断;若与当前任务无关,优先以当前对话为准):\n`
+      : `命中 ${allResults.length} 条:\n`;
+    return head + body;
   },
 };
 
