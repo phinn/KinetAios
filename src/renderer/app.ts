@@ -3,6 +3,7 @@
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
+import { engineColor } from './engine-colors';
 import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
@@ -420,9 +421,20 @@ function applyI18nDOM(): void {
     }
     if (ev.type !== 'token') {
       refreshSidebarLi(convId); // 增量:只改 dot/meta,不重建整列表(全量重建在多步任务下烧 GPU)
-      if (currentView === 'workbench' && (ev.type === 'cost' || ev.type === 'done' || ev.type === 'error')) {
-        // ponytail: 增量刷新单卡;新任务/删除走 onConversation → 全量 renderWorkbench,这里只更新统计/时间/图标。
-        refreshWbCard(conv.cwd || '');
+      if (currentView === 'workbench') {
+        if (ev.type === 'cost' || ev.type === 'done' || ev.type === 'error') {
+          // ponytail: 增量刷新单卡;新任务/删除走 onConversation → 全量 renderWorkbench,这里只更新统计/时间/图标。
+          refreshWbCard(conv.cwd || '');
+        }
+        // status 变化(running↔ready)直接影响「最近活动」行的置顶/呼吸点 → 轻量整区重建。
+        // 节流:同一 conv 300ms 内多次 status 事件只刷一次。
+        if (ev.type === 'status') {
+          const now = Date.now();
+          if (now - (wbRecentRefreshAt[convId] ?? 0) > 300) {
+            wbRecentRefreshAt[convId] = now;
+            renderWorkbench();
+          }
+        }
       }
       if (currentView === 'town') refreshTownVillager(conv);
       if (currentView === 'nexus') refreshNexusNode(conv);
@@ -9027,10 +9039,10 @@ function syncSidebarModeBtn(): void {
 const ICON_TOWN_BTN = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V8l5-4v17M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg>';
 
 let missionTimer: ReturnType<typeof setInterval> | null = null;
+const wbRecentRefreshAt: Record<string, number> = {}; // status 事件→「最近活动」区重建的节流表(300ms)
 
 // 单个 running 会话的进度卡:todo 进度条 + 当前步骤 + 耗时/花费
-function missionCard(c: Conversation): string {
-  const last = c.turns[c.turns.length - 1];
+function missionCard(c: Conversation): string {  const last = c.turns[c.turns.length - 1];
   const todos = last?.todos ?? [];
   const done = todos.filter((x) => x.status === 'completed').length;
   const doing = todos.filter((x) => x.status === 'in_progress');
@@ -9056,17 +9068,31 @@ function renderWorkbench() {
     groups.get(key)!.push(id);
   }
   const items = [...groups.entries()];
-  // 项目排序:最近有活动的在前(用项目内最新 conv 的 createdAt)。
+  // 项目排序:最近有活动的在前。updatedAt 优先(懒加载时 turns[last].ts 拿不到,createdAt 失真)。
   items.sort((a, b) => {
-    const la = a[1][0] ? convs.get(a[1][0])?.createdAt ?? 0 : 0;
-    const lb = b[1][0] ? convs.get(b[1][0])?.createdAt ?? 0 : 0;
-    return lb - la;
+    const last = (ids: string[]): number => Math.max(0, ...ids.map((id) => convs.get(id)?.updatedAt ?? convs.get(id)?.turns.at(-1)?.ts ?? convs.get(id)?.createdAt ?? 0));
+    return last(b[1]) - last(a[1]);
   });
   // ── 任务进度墙(mission control):所有 running 会话的实时卡 ──
   const running = order.map((id) => convs.get(id)).filter((c): c is Conversation => !!c && c.status === 'running');
   const wall = running.length
     ? `<div class="mission-sec"><div class="mission-head">🎯 ${esc(tr('wb.running'))} · ${running.length}</div><div class="mission-wall">${running.map(missionCard).join('')}</div></div>`
     : '';
+  // ── 最近活动(wb.recent):全库频道按 updatedAt 倒序前 12 条;running 置顶 ──
+  const RECENT_N = 12;
+  const recents = order
+    .map((id) => convs.get(id))
+    .filter((c): c is Conversation => !!c)
+    .sort((a, b) => {
+      const ra = a.status === 'running' ? 1 : 0;
+      const rb = b.status === 'running' ? 1 : 0;
+      if (ra !== rb) return rb - ra;
+      return (b.updatedAt ?? b.createdAt) - (a.updatedAt ?? a.createdAt);
+    })
+    .slice(0, RECENT_N);
+  const recentSec = recents.length
+    ? `<div class="mission-sec"><div class="mission-head">🕘 ${esc(tr('wb.recent'))}</div><div class="wb-recent">${recents.map(recentRow).join('')}</div></div>`
+    : `<div class="mission-sec"><div class="mission-head">🕘 ${esc(tr('wb.recent'))}</div><div class="empty">${esc(tr('wb.recentEmpty'))}</div></div>`;
   root.innerHTML =
     `<div class="wb-head">
       <div class="wb-title">${esc(tr('wb.title'))}</div>
@@ -9074,11 +9100,22 @@ function renderWorkbench() {
       <span class="wb-spacer"></span>
       <button class="ghost" id="wb-goto-town" title="${esc(tr('town.title'))}">${ICON_TOWN_BTN}</button>
       <button class="primary" id="wb-new-proj">${esc(tr('wb.newProject'))}</button>
-    </div>` + wall +
+    </div>` + wall + recentSec +
     (items.length === 0
       ? `<div class="empty">${esc(tr('wb.empty'))}</div>`
       : `<div class="wb-grid">${items.map(([cwd, ids]) => projCard(cwd, ids)).join('')}</div>`);
   document.getElementById('wb-new-proj')!.onclick = () => void newProject();
+  // 最近活动行点击直达频道(同进度墙跳转逻辑:置顶 order + 选中 + 切 chat)
+  root.querySelectorAll<HTMLElement>('.wb-recent-row').forEach((row) => {
+    row.onclick = () => {
+      const id = row.dataset.convId!;
+      bgDoneConvs.delete(id);
+      if (!order.includes(id)) order.unshift(id);
+      selectedId = id;
+      renderSidebar();
+      showChat();
+    };
+  });
   // 进度墙点击直达会话
   root.querySelectorAll<HTMLElement>('.mission-card').forEach((card) => {
     card.onclick = () => {
@@ -9113,7 +9150,9 @@ function projCard(cwd: string, ids: string[]): string {
     if (!c) continue;
     tokens += c.tokens;
     cost += c.cost;
-    const t = c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
+    // 最后活动时间:updatedAt(saveTurn 时主进程维护)优先;懒加载下 turns 为空,
+    // turns[last].ts 不可靠 —— 旧逻辑在此场景全走 createdAt,排序失真。
+    const t = c.updatedAt ?? c.turns[c.turns.length - 1]?.ts ?? c.createdAt;
     if (t > lastTs) lastTs = t;
     if (c.status === 'running') running = true;
   }
@@ -9121,10 +9160,11 @@ function projCard(cwd: string, ids: string[]): string {
   if (tokens) stats.push(`${(tokens / 1000).toFixed(1)}k tok`);
   if (cost) stats.push(`$${cost.toFixed(4)}`);
   const when = lastTs ? timeAgo(lastTs) : tr('wb.noActivity');
-  return `<div class="wb-card" data-cwd="${esc(cwd)}">
+  return `<div class="wb-card${running ? ' wb-live' : ''}" data-cwd="${esc(cwd)}">
     <div class="wb-card-head">
       <span class="wb-picon">${running ? ICON.bolt : ICON.folder}</span>
       <span class="wb-pname">${esc(projName(cwd))}</span>
+      ${running ? '<span class="wb-live-dot"></span>' : ''}
       <span class="wb-spacer"></span>
       <button class="ghost wb-newtask" title="${esc(tr('wb.newTask'))}">＋</button>
     </div>
@@ -9135,6 +9175,25 @@ function projCard(cwd: string, ids: string[]): string {
       <span class="wb-spacer"></span>
       <button class="ghost wb-ctx">${esc(tr('wb.context'))}</button>
     </div>
+  </div>`;
+}
+
+// 最近活动条目:全库按 updatedAt 倒序取前 N 条频道(标题+项目+引擎+来源+时间),点击直达。
+// 数据全在 renderer 内存(convs Map,head 模式含 turnCount/firstPrompt),零 IPC。
+function recentRow(c: Conversation): string {
+  const title = c.customTitle || c.firstPrompt?.replace(/\s+/g, ' ').slice(0, 40) || c.turns[0]?.prompt?.replace(/\s+/g, ' ').slice(0, 40) || tr('head.newConv');
+  const running = c.status === 'running';
+  const dot = running ? 'live' : '';
+  const src = c.feishuKey ? `<span class="wr-src">${esc(tr('wb.srcFeishu'))}</span>`
+    : c.wecomKey ? `<span class="wr-src">${esc(tr('wb.srcWecom'))}</span>` : '';
+  const ts = c.updatedAt ?? c.createdAt;
+  return `<div class="wb-recent-row${running ? ' wr-live' : ''}" data-conv-id="${c.id}">
+    <span class="wr-dot ${dot}" style="${dot === 'live' ? '' : `--eng:${engineColor(c.engine)}`}"></span>
+    <span class="wr-title">${esc(title)}</span>
+    ${src}
+    <span class="wr-proj">${esc(projName(c.cwd))}</span>
+    <span class="wr-eng" style="--eng:${engineColor(c.engine)}">${esc(engineLabel(lang, c.engine))}</span>
+    <span class="wr-time">${esc(timeAgo(ts))}</span>
   </div>`;
 }
 

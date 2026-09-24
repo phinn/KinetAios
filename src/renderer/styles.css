@@ -2452,6 +2452,24 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .mc-todo { font-size: 0.769rem; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-bottom: 6px; }
 .mc-meta { display: flex; gap: 12px; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
 .mc-go { margin-left: auto; color: var(--accent); }
+/* ── 最近活动(wb.recent)+ 项目卡 live 态 ── */
+.wb-recent { display: flex; flex-direction: column; gap: 2px; }
+.wb-recent-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border-radius: 8px; cursor: pointer; transition: background var(--dur-fast) var(--ease-out); }
+.wb-recent-row:hover { background: var(--bg-elev); }
+.wb-recent-row.wr-live { background: color-mix(in srgb, var(--accent) 6%, transparent); }
+.wb-recent-row.wr-live:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.wr-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--eng, var(--text-faint)); }
+.wr-dot.live { background: var(--ok, #4ade80); animation: wr-pulse 1.6s ease-in-out infinite; }
+.wr-dot.err { background: var(--err); }
+@keyframes wr-pulse { 0%, 100% { opacity: 1; box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok, #4ade80) 45%, transparent); } 50% { opacity: 0.75; box-shadow: 0 0 0 4px transparent; } }
+.wr-title { flex: 1; min-width: 0; font-size: 0.846rem; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-src { flex-shrink: 0; font-size: 0.69rem; padding: 1px 6px; border-radius: 6px; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); }
+.wr-proj { flex-shrink: 0; max-width: 140px; font-size: 0.73rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wr-eng { flex-shrink: 0; font-size: 0.7rem; color: var(--eng, var(--text-faint)); }
+.wr-time { flex-shrink: 0; width: 64px; text-align: right; font-size: 0.73rem; color: var(--text-faint); font-family: ui-monospace, monospace; }
+/* 项目卡 running 呼吸点 */
+.wb-card.wb-live { border-color: color-mix(in srgb, var(--accent) 35%, var(--border-soft)); }
+.wb-live-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok, #4ade80); flex-shrink: 0; animation: wr-pulse 1.6s ease-in-out infinite; }
 /* ── 窄窗口响应式(<900px):左右两栏退化为顶部横向换行 tab ── */
 @media (max-width: 900px) {
   .s-layout { flex-direction: column; }
