@@ -1174,7 +1174,7 @@ const recallMemory: Tool = {
         return { source: m.role, content: cut };
       }),
     ];
-    if (!allResults.length) return `没有匹配「${q}」的历史。`;
+    if (!allResults.length) return `没有匹配「${q}」的历史。注意:这只说明记忆库里没存过,不代表当前对话没有上下文 —— 用户本轮消息里给的信息(手贴摘要/报错/关键决策)仍然是有效上下文,按它继续干,不要反问"上下文是什么"。`;
     const body = allResults
       .map((m, i) => `[${i + 1}] (${m.source}) ${m.content}`)
       .join('\n');
