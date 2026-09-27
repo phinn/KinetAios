@@ -345,6 +345,11 @@ function renderRankings(u: UsageStat): void {
   document.getElementById('u-convs')!.innerHTML = rankRows(
     u.byConv.slice(0, 8).map((m) => ({ name: m.title, sub: m.model, tokens: m.tokens, cost: m.cost })),
     () => '#e8b339', maxConv);
+  // 项目排行:模型 hash 分色,sub 显请求数
+  const maxProj = Math.max(1, ...u.byProject.map((m) => m.tokens));
+  document.getElementById('u-projects')!.innerHTML = rankRows(
+    u.byProject.slice(0, 8).map((m) => ({ name: m.project, sub: `${fmtNum(m.requests)} req`, tokens: m.tokens, cost: m.cost })),
+    modelColor, maxProj);
 }
 
 // ── 加载用量看板 ──

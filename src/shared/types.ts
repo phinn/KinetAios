@@ -990,6 +990,7 @@ export interface KinetAPI {
     daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
     byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
     byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
+    byProject: Array<{ project: string; tokens: number; cost: number; requests: number }>;
     byConv: Array<{ convId: string; title: string; model: string; tokens: number; cost: number; requests: number }>;
   }>;
   // ── 记忆图谱窗口 ──

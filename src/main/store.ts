@@ -1337,7 +1337,15 @@ export interface UsageAggregate {
   daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
   byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
   byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
+  byProject: Array<{ project: string; tokens: number; cost: number; requests: number }>;
   byConv: Array<{ convId: string; title: string; model: string; tokens: number; cost: number; requests: number }>;
+}
+// cwd → 项目名:取末段目录名(兼容 / 与 \ 分隔符,尾斜杠归一),无 cwd 归入 '—'。
+// cwd → project display name: basename of the path (both separators), missing cwd → '—'.
+function projName(cwd: string | null | undefined): string {
+  if (!cwd) return '—';
+  const parts = cwd.replace(/[\\/]+$/, '').split(/[\\/]/);
+  return parts[parts.length - 1] || '—';
 }
 export function usageAggregate(rangeDays: number): UsageAggregate {
   const dayMs = 86400_000;
@@ -1356,6 +1364,11 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
   const modelMap = new Map<string, { tokens: number; cost: number; requests: number }>();
   const engineMap = new Map<string, { tokens: number; cost: number; requests: number }>();
   const convMap = new Map<string, { tokens: number; cost: number; requests: number }>();
+  const projMap = new Map<string, { tokens: number; cost: number; requests: number }>();
+  // 会话元数据一次查全 —— 标题/模型/cwd(项目维度)。必须在聚合循环前声明(byProject 依赖)。
+  // Session metadata (title/model/cwd) fetched once; declared before the loop since byProject needs cwd.
+  const convMeta = db.prepare(`SELECT id, model, custom_title, cwd FROM conversations;`).all() as Array<{ id: string; model: string | null; custom_title: string | null; cwd: string | null }>;
+  const metaMap = new Map(convMeta.map((c) => [c.id, c]));
   const loc = (ts: number) => {
     const d = new Date(ts);
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
@@ -1376,6 +1389,9 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
       e.tokens += t; e.cost += c; e.requests += 1; engineMap.set(r.engine, e);
       const cv = convMap.get(r.conv_id) ?? { tokens: 0, cost: 0, requests: 0 };
       cv.tokens += t; cv.cost += c; cv.requests += 1; convMap.set(r.conv_id, cv);
+      // 项目维度:cost_log 无 cwd,借 convMeta 映射(conv_id → cwd → 项目名)
+      const pj = projMap.get(projName(metaMap.get(r.conv_id)?.cwd)) ?? { tokens: 0, cost: 0, requests: 0 };
+      pj.tokens += t; pj.cost += c; pj.requests += 1; projMap.set(projName(metaMap.get(r.conv_id)?.cwd), pj);
     }
   }
   // 补齐热力图日期轴:起点 = min(最早数据日, 窗口首日),缺日补 0。
@@ -1397,9 +1413,7 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
       cursor = new Date(cursor.getTime() + dayMs);
     }
   }
-  // 会话标题/模型一次查全,避免循环查库
-  const convMeta = db.prepare(`SELECT id, model, custom_title FROM conversations;`).all() as Array<{ id: string; model: string | null; custom_title: string | null }>;
-  const metaMap = new Map(convMeta.map((c) => [c.id, c]));
+  // byConv 标题复用循环前的 convMeta/metaMap(不再重复查库)
   const byConv = [...convMap.entries()]
     .map(([convId, v]) => {
       const meta = metaMap.get(convId);
@@ -1414,6 +1428,7 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
     daily,
     byModel: [...modelMap.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.tokens - a.tokens),
     byEngine: [...engineMap.entries()].map(([engine, v]) => ({ engine, ...v })).sort((a, b) => b.tokens - a.tokens),
+    byProject: [...projMap.entries()].map(([project, v]) => ({ project, ...v })).sort((a, b) => b.tokens - a.tokens),
     byConv,
   };
 }
