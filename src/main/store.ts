@@ -1326,6 +1326,107 @@ export function deleteTemplate(id: string): void {
   db.prepare('DELETE FROM prompt_templates WHERE id=?;').run(id);
 }
 
+// MARK: usageAggregate — 用量看板聚合(对齐 Juejin Usage 的口径)
+// Usage dashboard aggregation (aligned with Juejin Usage):
+// - KPI 4 卡:总费用/总 Token/输入/输出,带环比(对比前一个等长窗口)
+// - 热力图:按日 token 总量,5 档 = 分位数 50/75/90(与 Juejin Usage levelFor 一致)
+// - 模型/引擎/会话排行:cost_log JOIN conversations 取 model
+export interface UsageAggregate {
+  range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+  prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+  daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
+  byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
+  byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
+  byConv: Array<{ convId: string; title: string; model: string; tokens: number; cost: number; requests: number }>;
+}
+export function usageAggregate(rangeDays: number): UsageAggregate {
+  const dayMs = 86400_000;
+  const rangeStart = Date.now() - rangeDays * dayMs;
+  const prevStart = rangeStart - rangeDays * dayMs;
+  type Row = { engine: string; amount: number; tokens: number; ts: number; tokens_in: number; tokens_out: number; conv_id: string };
+  // 全量 cost_log 拉 JS 聚合(1.4 万行,内存可忽略;SQL date() 无法对齐本地时区且做不了双窗口)
+  const rows = db.prepare(
+    `SELECT engine, amount, tokens, ts, tokens_in, tokens_out, conv_id FROM cost_log WHERE ts >= ? ORDER BY ts ASC;`,
+  ).all(prevStart) as Array<Row>;
+  const empty = { cost: 0, totalTokens: 0, inputTokens: 0, outputTokens: 0, requests: 0 };
+  const cur = { ...empty }, prev = { ...empty };
+  // 按日聚合用本地时区(热力图以「日」为单位,UTC 切日会错位 8 小时)
+  // Daily buckets use local time — the heatmap is day-granular and UTC would shift days.
+  const dayMap = new Map<string, { tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>();
+  const modelMap = new Map<string, { tokens: number; cost: number; requests: number }>();
+  const engineMap = new Map<string, { tokens: number; cost: number; requests: number }>();
+  const convMap = new Map<string, { tokens: number; cost: number; requests: number }>();
+  const loc = (ts: number) => {
+    const d = new Date(ts);
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  };
+  for (const r of rows) {
+    const t = r.tokens || 0, c = r.amount || 0, i = r.tokens_in || 0, o = r.tokens_out || 0;
+    const bucket = r.ts >= rangeStart ? cur : prev;
+    bucket.cost += c; bucket.totalTokens += t; bucket.inputTokens += i; bucket.outputTokens += o; bucket.requests += 1;
+    if (r.ts >= rangeStart) {
+      const dk = loc(r.ts);
+      const d = dayMap.get(dk) ?? { tokens: 0, cost: 0, requests: 0, inputTokens: 0, outputTokens: 0 };
+      d.tokens += t; d.cost += c; d.requests += 1; d.inputTokens += i; d.outputTokens += o;
+      dayMap.set(dk, d);
+      const model = dbModelOf(r.conv_id);
+      const m = modelMap.get(model) ?? { tokens: 0, cost: 0, requests: 0 };
+      m.tokens += t; m.cost += c; m.requests += 1; modelMap.set(model, m);
+      const e = engineMap.get(r.engine) ?? { tokens: 0, cost: 0, requests: 0 };
+      e.tokens += t; e.cost += c; e.requests += 1; engineMap.set(r.engine, e);
+      const cv = convMap.get(r.conv_id) ?? { tokens: 0, cost: 0, requests: 0 };
+      cv.tokens += t; cv.cost += c; cv.requests += 1; convMap.set(r.conv_id, cv);
+    }
+  }
+  // 补齐热力图日期轴:从最早有数据的日到今天,缺日补 0(热力图连续网格需要)
+  const daily: UsageAggregate['daily'] = [];
+  if (dayMap.size) {
+    const today = loc(Date.now());
+    const keys = [...dayMap.keys()].sort();
+    let cursor = new Date(keys[0] + 'T00:00:00');
+    const end = new Date(today + 'T00:00:00');
+    while (cursor <= end) {
+      const k = loc(cursor.getTime());
+      const v = dayMap.get(k);
+      daily.push({ date: k, tokens: v?.tokens ?? 0, cost: v?.cost ?? 0, requests: v?.requests ?? 0, inputTokens: v?.inputTokens ?? 0, outputTokens: v?.outputTokens ?? 0 });
+      cursor = new Date(cursor.getTime() + dayMs);
+    }
+  }
+  // 会话标题/模型一次查全,避免循环查库
+  const convMeta = db.prepare(`SELECT id, model, custom_title FROM conversations;`).all() as Array<{ id: string; model: string | null; custom_title: string | null }>;
+  const metaMap = new Map(convMeta.map((c) => [c.id, c]));
+  const byConv = [...convMap.entries()]
+    .map(([convId, v]) => {
+      const meta = metaMap.get(convId);
+      const title = meta?.custom_title || convTitleFromTurns(convId);
+      return { convId, title, model: meta?.model || '—', ...v };
+    })
+    .sort((a, b) => b.tokens - a.tokens)
+    .slice(0, 10);
+  return {
+    range: cur,
+    prev,
+    daily,
+    byModel: [...modelMap.entries()].map(([model, v]) => ({ model, ...v })).sort((a, b) => b.tokens - a.tokens),
+    byEngine: [...engineMap.entries()].map(([engine, v]) => ({ engine, ...v })).sort((a, b) => b.tokens - a.tokens),
+    byConv,
+  };
+}
+// 会话模型回退:conversations.model 为空时从首条 turn 取(老会话常见)。
+function dbModelOf(convId: string): string {
+  const r = db.prepare(`SELECT model FROM conversations WHERE id=?;`).get(convId) as { model: string | null } | undefined;
+  if (r?.model) return r.model;
+  const t = db.prepare(`SELECT data FROM turns WHERE conv_id=? ORDER BY created_at ASC LIMIT 1;`).get(convId) as { data: string } | undefined;
+  if (t) { try { const m = JSON.parse(t.data)?.model; if (m) return m; } catch { /* ignore */ } }
+  return '—';
+}
+// 会话标题回退:首条 turn 的 prompt 截断(与 nexus 列表口径一致)。
+function convTitleFromTurns(convId: string): string {
+  const t = db.prepare(`SELECT data FROM turns WHERE conv_id=? ORDER BY created_at ASC LIMIT 1;`).get(convId) as { data: string } | undefined;
+  if (!t) return '—';
+  try { return (JSON.parse(t.data)?.prompt || '').slice(0, 40) || '—'; } catch { return '—'; }
+}
+
 // MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
 export function logCost(convId: string, engine: string, amount: number, tokens: number, tokensIn = 0, tokensOut = 0): void {
   stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts, tokens_in, tokens_out) VALUES(?,?,?,?,?,?,?,?);')

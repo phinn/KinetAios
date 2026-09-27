@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from './store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -2331,6 +2331,11 @@ function registerIpc(): void {
     return arenaAggregate();
   });
 
+  // ── 用量看板:KPI/环比/热力图/模型/引擎/会话 聚合(对齐 Juejin Usage)──
+  ipcMain.handle('usage-stats', (_e, rangeDays: number) => {
+    return usageAggregate(Number(rangeDays) || 7);
+  });
+
   // ── 删除记忆三元组 ──
   ipcMain.handle('delete-memory-triple', (_e, tripleId: string) => {
     deleteMemoryTriple(tripleId);
@@ -3064,6 +3069,8 @@ if (!gotLock) {
     }
     dashboardWin = createDashboard();
     tray = createTray();
+    // KINET_METRICS=1 启动即开用量看板(e2e/截图验证用,平时无感)。
+    if (process.env.KINET_METRICS === '1') toggleMetricsWindow();
 
     // Ctrl+Alt+Space on Windows (Cmd/Ctrl+Alt+Space cross-platform).
     globalShortcut.register('CommandOrControl+Alt+Space', toggleQuick);

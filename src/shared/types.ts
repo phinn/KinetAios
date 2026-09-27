@@ -983,6 +983,15 @@ export interface KinetAPI {
   deleteMemoryTriple(tripleId: string): Promise<{ ok: boolean }>;
   // ── Arena 深度统计 ──
   arenaStats(): Promise<Array<{ engine: string; sessions: number; totalCost: number; totalTokens: number; totalTools: number; avgCost: number; avgTokens: number; avgTools: number; avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }> }>>;
+  // ── 用量看板聚合(KPI/环比/热力图/模型/引擎/会话)──
+  usageStats(rangeDays: number): Promise<{
+    range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+    prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+    daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
+    byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
+    byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
+    byConv: Array<{ convId: string; title: string; model: string; tokens: number; cost: number; requests: number }>;
+  }>;
   // ── 记忆图谱窗口 ──
   openMemoryGraph(): Promise<boolean>;
   // ── 上下文考古:读取会话事件流(conv_events,append-only 事实源)──

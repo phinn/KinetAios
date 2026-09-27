@@ -159,6 +159,8 @@ const api: KinetAPI = {
   deleteMemoryTriple: (tripleId: string) => ipcRenderer.invoke('delete-memory-triple', tripleId),
   // Arena 深度统计
   arenaStats: () => ipcRenderer.invoke('arena-stats'),
+  // 用量看板聚合(KPI/热力图/模型/会话)
+  usageStats: (rangeDays: number) => ipcRenderer.invoke('usage-stats', rangeDays),
   // 记忆图谱窗口
   openMemoryGraph: () => ipcRenderer.invoke('open-memory-graph'),
   // 远程 Agent 直播状态
