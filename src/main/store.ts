@@ -1378,12 +1378,17 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
       cv.tokens += t; cv.cost += c; cv.requests += 1; convMap.set(r.conv_id, cv);
     }
   }
-  // 补齐热力图日期轴:从最早有数据的日到今天,缺日补 0(热力图连续网格需要)
+  // 补齐热力图日期轴:起点 = min(最早数据日, 窗口首日),缺日补 0。
+  // 长档位(180D/1Y)即使数据不足也向左补 0 铺满整窗 —— 热力图才能铺开 12 个月份格,
+  // 趋势图各档位时间轴宽度才有区分(否则 90/180/1Y 渲染完全相同)。
   const daily: UsageAggregate['daily'] = [];
-  if (dayMap.size) {
+  if (dayMap.size || rangeDays > 0) {
     const today = loc(Date.now());
     const keys = [...dayMap.keys()].sort();
-    let cursor = new Date(keys[0] + 'T00:00:00');
+    const windowStart = loc(Date.now() - (rangeDays - 1) * dayMs);
+    // 最早数据日 vs 窗口首日取更早者;无数据时直接用窗口首日(全 0 网格)
+    const startKey = keys.length ? (keys[0] < windowStart ? keys[0] : windowStart) : windowStart;
+    let cursor = new Date(startKey + 'T00:00:00');
     const end = new Date(today + 'T00:00:00');
     while (cursor <= end) {
       const k = loc(cursor.getTime());
