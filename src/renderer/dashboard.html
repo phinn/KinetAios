@@ -11,8 +11,48 @@
     <div class="dash-head">
       <h2 data-i18n="dash.title">仪表盘</h2>
       <span class="dash-brand" id="dash-brand"></span>
+      <span class="u-range-tabs" id="u-range-tabs"></span>
       <button class="ghost" id="dash-refresh" title="刷新">↻</button>
     </div>
+
+    <!-- 用量看板:对齐 Juejin Usage(KPI 4 卡 + 26 周热力图 + 趋势 + 排行) -->
+    <div class="dash-section">
+      <div class="u-kpis" id="u-kpis"></div>
+    </div>
+
+    <div class="dash-section">
+      <h3 data-i18n="u.heat.title">用量强度(26 周)</h3>
+      <div class="u-card u-heat-wrap" id="u-heatmap"></div>
+    </div>
+
+    <div class="dash-section">
+      <h3 data-i18n="u.trend.title">Token 趋势</h3>
+      <div class="u-card u-trend-wrap">
+        <div class="u-trend-head">
+          <div class="u-legend" id="u-trend-legend"></div>
+          <span class="u-range-tabs" id="u-metric-tabs"></span>
+        </div>
+        <svg id="u-trend" width="100%" height="200" viewBox="0 0 700 200" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+
+    <div class="dash-section u-rank-grid">
+      <div class="u-card">
+        <h3 class="u-card-title" data-i18n="u.rank.models">模型排行</h3>
+        <div id="u-models"></div>
+      </div>
+      <div class="u-card">
+        <h3 class="u-card-title" data-i18n="u.rank.engines">引擎排行</h3>
+        <div id="u-engines"></div>
+      </div>
+    </div>
+    <div class="dash-section">
+      <div class="u-card">
+        <h3 class="u-card-title" data-i18n="u.rank.convs">会话排行(Top 10)</h3>
+        <div id="u-convs"></div>
+      </div>
+    </div>
+
     <div class="dash-overview" id="dash-overview"></div>
 
     <!-- 引擎雷达图:token/成本/工具调用/会话数/平均耗时 五维对比 -->

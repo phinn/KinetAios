@@ -6718,3 +6718,67 @@ body.meta-compact .ai-meta-row:focus-within { opacity: 1; }
 }
 /* Lightbox 变换基线(缩放/平移) */
 .img-lightbox img { will-change: transform; }
+
+/* ═══ 用量看板(对齐 Juejin Usage):KPI 卡/热力图/趋势/排行 ═══ */
+.u-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+.u-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 12px; padding: 12px 14px; min-width: 0; }
+.u-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.u-card-label { font-size: 0.8rem; color: var(--text-dim); }
+.u-card-title { font-size: 0.92rem; margin: 0 0 10px; color: var(--text-dim); font-weight: 500; }
+.u-card-main { display: flex; align-items: flex-end; justify-content: space-between; gap: 10px; margin-top: 6px; }
+.u-card-value { font-size: 1.45rem; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.u-chip { font-size: 0.7rem; padding: 2px 7px; border-radius: 999px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.u-chip.up { color: var(--ok); background: color-mix(in srgb, var(--ok) 12%, transparent); }
+.u-chip.down { color: var(--err); background: color-mix(in srgb, var(--err) 12%, transparent); }
+.u-spark { display: flex; align-items: flex-end; gap: 2px; height: 30px; flex-shrink: 0; }
+.u-spark-bar { width: 4px; border-radius: 2px 2px 0 0; min-height: 2px; }
+
+/* 26 周热力图(GitHub 风格,5 档,Juejin Usage 分位定档口径) */
+.u-heat-wrap { overflow: hidden; }
+.u-heat-scroll { overflow-x: auto; padding-bottom: 4px; }
+.u-heat-months { position: relative; height: 16px; min-width: 520px; }
+.u-heat-month { position: absolute; top: 0; font-size: 0.68rem; color: var(--text-faint); white-space: nowrap; }
+.u-heat-grid { display: flex; gap: 3px; min-width: 520px; }
+.u-heat-col { display: flex; flex-direction: column; gap: 3px; }
+.u-heat-cell { width: 14px; height: 14px; border-radius: 3px; background: var(--bg-input); flex-shrink: 0; }
+/* 5 档:0=空 → 4=最热,主色 var(--accent) 按 oklab 与表面色混合(对齐 Juejin heatmap stops) */
+.u-heat-cell.lv0 { background: var(--bg-input); }
+.u-heat-cell.lv1 { background: color-mix(in oklab, var(--accent) 18%, var(--bg-elev)); }
+.u-heat-cell.lv2 { background: color-mix(in oklab, var(--accent) 38%, var(--bg-elev)); }
+.u-heat-cell.lv3 { background: color-mix(in oklab, var(--accent) 62%, var(--bg-elev)); }
+.u-heat-cell.lv4 { background: var(--accent); }
+.u-heat-legend { display: flex; align-items: center; gap: 4px; justify-content: flex-end; margin-top: 8px; font-size: 0.7rem; color: var(--text-faint); }
+
+/* 趋势图 */
+.u-trend-wrap { padding: 10px 12px; }
+.u-trend-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 6px; flex-wrap: wrap; }
+/* 指标切换 tab 复用 u-range-tabs,内嵌卡片里尺寸略收 */
+.u-trend-wrap .u-range-tabs { margin-left: 0; padding: 1px; }
+.u-trend-wrap .u-range-btn { padding: 2px 9px; font-size: 0.72rem; }
+.u-legend { display: flex; gap: 14px; margin-bottom: 6px; }
+.u-trend-head .u-legend { margin-bottom: 0; }
+.u-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 0.72rem; color: var(--text-dim); }
+.u-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+/* 排行条 */
+.u-rank-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.u-rank-row { margin-bottom: 10px; min-width: 0; }
+.u-rank-row:last-child { margin-bottom: 0; }
+.u-rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+.u-rank-name { font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.u-rank-sub { font-size: 0.7rem; color: var(--text-faint); margin-left: 6px; }
+.u-rank-val { font-size: 0.72rem; color: var(--text-dim); font-variant-numeric: tabular-nums; white-space: nowrap; flex-shrink: 0; }
+.u-rank-bar-bg { height: 6px; border-radius: 3px; background: var(--bg-input); overflow: hidden; }
+.u-rank-bar { height: 100%; border-radius: 3px; }
+.u-empty { color: var(--text-faint); text-align: center; padding: 24px 0; font-size: 0.85rem; }
+
+/* 范围切换 tabs(今天/7D/30D/90D) */
+.u-range-tabs { display: inline-flex; gap: 2px; margin-left: auto; background: var(--bg-elev); border: 1px solid var(--border); border-radius: 8px; padding: 2px; }
+.u-range-btn { border: none; background: transparent; color: var(--text-dim); font-size: 0.75rem; padding: 4px 10px; border-radius: 6px; cursor: pointer; }
+.u-range-btn:hover { color: var(--text); }
+.u-range-btn.active { background: var(--accent-glow); color: var(--accent); }
+
+@media (max-width: 900px) {
+  .u-kpis { grid-template-columns: repeat(2, 1fr); }
+  .u-rank-grid { grid-template-columns: 1fr; }
+}
