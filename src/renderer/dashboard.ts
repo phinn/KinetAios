@@ -62,13 +62,15 @@ function pctChange(cur: number, prev: number): number | null {
 // ── 用量聚合数据(usage-stats IPC)──
 type UsageStat = Awaited<ReturnType<KinetAPI['usageStats']>>;
 
-// 范围选择状态(今天/7D/30D/90D,localStorage 记忆 —— 对齐 Juejin tud.dashboardRange)
+// 范围选择状态(localStorage 记忆,档位对齐 Cherry/Juejin:3D/7D/1M/6M/1Y)。
+// cost_log 全表载入后按日聚合,DB 侧无时间过滤 → 扩档零查询成本。
 const RANGE_KEY = 'dash.usageRange';
-type Range = 1 | 7 | 30 | 90;
-let usageRange: Range = 7;
+type Range = 3 | 7 | 30 | 90 | 180 | 365;
+const RANGES: Range[] = [3, 7, 30, 90, 180, 365];
+let usageRange: Range = 30;
 try {
   const saved = Number(localStorage.getItem(RANGE_KEY));
-  if ([1, 7, 30, 90].includes(saved)) usageRange = saved as Range;
+  if (RANGES.includes(saved as Range)) usageRange = saved as Range;
 } catch { /* localStorage 不可用无所谓 */ }
 
 // ── KPI 卡:预估费用/总 Token/输入/输出,右侧环比 chip(↑绿↓红)+ 迷你趋势 ──
@@ -145,7 +147,10 @@ function buildHeatmap(daily: UsageStat['daily'], weeks = 26): { cells: HeatCell[
 
 function renderHeatmap(u: UsageStat): void {
   const wrap = document.getElementById('u-heatmap')!;
-  const { cells } = buildHeatmap(u.daily);
+  // 热力图周数随所选范围缩放:1 年 ≈ 53 周;短范围(3/7D)仍保底 8 周网格不至于太空。
+  // Heatmap weeks scale with the selected range (1y ≈ 53 weeks); short ranges keep an 8-week floor.
+  const heatWeeks = Math.min(54, Math.max(8, Math.ceil((usageRange || 30) / 7) + 1));
+  const { cells } = buildHeatmap(u.daily, heatWeeks);
   // 月份标记:每月第一格上方标月份
   let monthMarks = '';
   const seen = new Set<string>();
@@ -207,7 +212,7 @@ function renderTrendChart(u: UsageStat): void {
   const W = 700, H = 200;
   const pad = { l: 46, r: 10, t: 12, b: 22 };
   const cw = W - pad.l - pad.r, ch = H - pad.t - pad.b;
-  const daily = u.daily.slice(-Math.max(14, Math.min(90, usageRange)));
+  const daily = u.daily.slice(-Math.max(7, usageRange)); // 全量数据已在内存,前端切片;3D 至少显 1 周柱基线
   const isTok = trendMetric === 'tokens';
   legend.innerHTML = isTok
     ? `<span class="u-legend-item"><span class="u-legend-dot" style="background:#4ec27a"></span>${esc(tr('u.kpi.input'))}</span>
@@ -291,15 +296,18 @@ function renderTrendChart(u: UsageStat): void {
       svg.appendChild(rc);
     });
   }
-  // X 轴标签(首/中/尾)
-  [0, Math.floor(daily.length / 2), daily.length - 1].forEach((i) => {
-    const label = document.createElementNS(ns, 'text');
-    label.setAttribute('x', String(x(i))); label.setAttribute('y', String(H - 6));
-    label.setAttribute('text-anchor', i === 0 ? 'start' : i === daily.length - 1 ? 'end' : 'middle');
-    label.setAttribute('fill', 'var(--text-faint)'); label.setAttribute('font-size', '9');
-    label.textContent = daily[i].date.slice(5);
-    svg.appendChild(label);
-  });
+// X 轴标签: ≤31天首/中/尾; >31天均匀5刻度+年(防长范围糊成一坨)
+     const isLong = daily.length > 31;
+     const tickIdx = isLong ? Array.from({ length: 5 }, (_, k) => Math.round((daily.length - 1) * (k / 4))) : [0, Math.floor(daily.length / 2), daily.length - 1];
+     tickIdx.forEach((i) => {
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', String(x(i))); label.setAttribute('y', String(H - 6));
+      label.setAttribute('text-anchor', i === 0 ? 'start' : daily[i].date === daily[daily.length - 1]?.date ? 'end' : 'middle');
+      label.setAttribute('fill', 'var(--text-faint)'); label.setAttribute('font-size', '9');
+      const dd = new Date(daily[i].date + 'T00:00:00');
+      label.textContent = isLong ? `${dd.getFullYear() % 100}/${String(dd.getMonth() + 1).padStart(2, '0')}` : daily[i].date.slice(5);
+      svg.appendChild(label);
+    });
 }
 
 // ── 排行条(模型/引擎/会话共用):名称 + 横条 + token + 占比 ──
@@ -357,8 +365,11 @@ async function loadUsageStats(): Promise<void> {
 
 // ── 范围切换按钮组 ──
 function renderRangeTabs(): void {
+  // 粒度对齐 Cherry/Juejin:3D/7D/1M(30)/6M(90)/半年(180)/一年(365),覆盖全跨度。
+  // 90D 档在 Cherry 里叫 6M,这里保持天数口径一致,标签用通用的 M/Y 缩写(四语言同形)。
   const tabs: Array<{ d: Range; key: string }> = [
-    { d: 1, key: 'u.range.today' }, { d: 7, key: 'u.range.7d' }, { d: 30, key: 'u.range.30d' }, { d: 90, key: 'u.range.90d' },
+    { d: 3, key: 'u.range.3d' }, { d: 7, key: 'u.range.7d' }, { d: 30, key: 'u.range.30d' },
+    { d: 90, key: 'u.range.6m' }, { d: 180, key: 'u.range.180d' }, { d: 365, key: 'u.range.1y' },
   ];
   document.getElementById('u-range-tabs')!.innerHTML = tabs.map((tb) =>
     `<button class="u-range-btn${tb.d === usageRange ? ' active' : ''}" data-range="${tb.d}">${esc(tr(tb.key))}</button>`).join('');
