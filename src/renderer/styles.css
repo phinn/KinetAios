@@ -3044,7 +3044,7 @@ body.dash { overflow-y: auto; user-select: none; }
 .dash-head h2 { margin: 0; font-size: 1.385rem; }
 .dash-brand { font-size: 0.923rem; color: var(--text-faint); }
 #dash h3 { font-size: 0.923rem; color: var(--text-dim); margin: 0 0 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .03em; }
-.dash-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 26px; }
+.dash-overview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-top: 20px; margin-bottom: 26px; }
 .dash-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
 .dc-num { font-size: 1.692rem; font-weight: 700; }
 .dc-num.run { color: var(--run); }
@@ -6761,7 +6761,7 @@ body.meta-compact .ai-meta-row:focus-within { opacity: 1; }
 .u-legend-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
 
 /* 排行条 */
-.u-rank-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.u-rank-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 22px; }
 .u-rank-row { margin-bottom: 10px; min-width: 0; }
 .u-rank-row:last-child { margin-bottom: 0; }
 .u-rank-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
