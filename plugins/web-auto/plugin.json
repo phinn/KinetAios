@@ -1,0 +1,15 @@
+{
+  "name": "web-auto",
+  "approval": "never",
+  "version": "1.0.0",
+  "description": "网页自动化实战插件 —— cookie 注入/文件上传/富文本注入独木桥、风控验证协议、写操作回读纪律。沉淀自 Reddit/X/Discourse/小红书/掘金等真实发布实战的 35 条坑。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": [],
+  "keywords": ["网页自动化", "browser", "cookie", "登录态", "发帖", "上传", "paste", "contenteditable", "风控", "shadowban", "验证", "回读", "prosemirror", "发布", "reddit", "hn", "discourse"],
+  "icon": "icon.svg",
+  "systemPrompt": "prompt.md"
+}
