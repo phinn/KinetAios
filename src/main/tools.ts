@@ -2176,7 +2176,7 @@ const feishuSendFile: Tool = {
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
 import { captureScreenshotWithHide, captureWindowByName, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
-import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, killAgentChrome } from './cdp';
+import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, browserUpload, browserCookie, killAgentChrome } from './cdp';
 
 // P0-fix: 鼠标/键盘工具的审批门。此前这组工具完全绕过 confirm —— shell 执行要弹窗,
 // 往用户前台窗口注入键盘输入/任意坐标点击却不需要任何确认。现在:
@@ -2416,11 +2416,12 @@ const browserSnapshotTool: Tool = {
 
 const browserClickTool: Tool = {
   name: 'browser_click',
-  description: '点击 agent Chrome 页面里的元素。selector 来自 browser_snapshot 的输出(如 #submit-btn、a:nth-of-type(2))。点击走真实 mousedown/mouseup 序列,React/Vue 等框架正常响应。不碰你的鼠标。',
+  description: '点击 agent Chrome 页面里的元素。selector 来自 browser_snapshot 的输出(如 #submit-btn、a:nth-of-type(2))。默认走真实坐标 mousedown/mouseup(带点击前命中校验,遮罩拦截会自动剥透明遮罩一次);tippy/popover 类浮层若报"被拦截"改 mode=dom(DOM 合成事件)。不碰你的鼠标。',
   parameters: {
     type: 'object',
     properties: {
       selector: { type: 'string', description: 'CSS selector(从 browser_snapshot 输出复制)' },
+      mode: { type: 'string', enum: ['auto', 'dom'], description: 'auto=真实坐标 CDP 点击(默认);dom=页面内合成 mousedown/mouseup/click(tippy 类浮层只认这个)' },
       tab_id: { type: 'string', description: '可选,指定 tab' },
       url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
     },
@@ -2430,7 +2431,8 @@ const browserClickTool: Tool = {
     const gate = await browserGate(ctx, `点击 ${args.selector}`);
     if (gate) return gate;
     try {
-      return await browserClick(String(args.selector), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+      const mode = args.mode === 'dom' ? 'dom' as const : 'auto' as const;
+      return await browserClick(String(args.selector), mode, args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
     } catch (e) {
       return `❌ ${(e as Error).message}`;
     }
@@ -2439,12 +2441,13 @@ const browserClickTool: Tool = {
 
 const browserTypeTool: Tool = {
   name: 'browser_type',
-  description: '向 agent Chrome 页面的输入框输入文本。用 native setter + input 事件(React/Vue 受控组件正常更新)。clear=true 先清空原内容(默认),submit=true 输入后点提交按钮。',
+  description: '向 agent Chrome 页面的输入框输入文本并回读验证(回读长度不符会警告,勿直接提交)。mode=value(默认)=input/textarea+React/Vue 受控组件(native setter);mode=paste=ProseMirror/Discourse 类富文本(只有 paste 可靠,直接 input 会静默丢字);mode=insertText=contenteditable+React state(X 类编辑器)。clear=true 先清空(默认),submit=true 输入后点提交。',
   parameters: {
     type: 'object',
     properties: {
       selector: { type: 'string', description: '输入框 CSS selector' },
       text: { type: 'string', description: '要输入的文本' },
+      mode: { type: 'string', enum: ['value', 'paste', 'insertText'], description: '注入方式:value=表单输入框(默认);paste=ProseMirror 类富文本编辑器;insertText=contenteditable(X 编辑器)' },
       clear: { type: 'boolean', description: '是否先清空(默认 true)' },
       submit: { type: 'boolean', description: '输入后是否点击提交(默认 false)' },
       tab_id: { type: 'string', description: '可选,指定 tab' },
@@ -2457,7 +2460,8 @@ const browserTypeTool: Tool = {
     if (gate) return gate;
     try {
       const clearFirst = args.clear === undefined ? true : Boolean(args.clear);
-      return await browserType(String(args.selector), String(args.text), clearFirst, Boolean(args.submit), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+      const mode = (args.mode === 'paste' || args.mode === 'insertText') ? args.mode : 'value';
+      return await browserType(String(args.selector), String(args.text), clearFirst, Boolean(args.submit), mode, args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
     } catch (e) {
       return `❌ ${(e as Error).message}`;
     }
@@ -2527,6 +2531,71 @@ const browserScreenshotTool: Tool = {
       const r = await browserScreenshot(args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
       if (!r.ok || !r.base64) return `❌ ${r.error}`;
       return `🌐 页面截图成功${r.note ? ` (${r.note})` : ''}\n__IMAGE_BASE64__:${r.base64}`;
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserUploadTool: Tool = {
+  name: 'browser_upload',
+  description: '向 agent Chrome 页面的文件上传控件(input[type=file])上传本地文件。走 CDP DOM.setFileInputFiles(浏览器安全模型下唯一可靠通路)。selector 若指向的是"上传按钮"而非 input 本身,会自动点击触发后再找动态生成的 file input。上传后回读 input.files 验证文件名。',
+  parameters: {
+    type: 'object',
+    properties: {
+      selector: { type: 'string', description: 'file input 或上传触发按钮的 CSS selector' },
+      file_path: { type: 'string', description: '本地文件的绝对路径' },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['selector', 'file_path'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `上传文件 ${args.file_path}`);
+    if (gate) return gate;
+    try {
+      return await browserUpload(String(args.selector), String(args.file_path), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
+    } catch (e) {
+      return `❌ ${(e as Error).message}`;
+    }
+  },
+};
+
+const browserCookieTool: Tool = {
+  name: 'browser_cookie',
+  description: '读写 agent Chrome 当前页的 cookies。action=get 走 CDP(可读 HttpOnly);action=set 走页面内 cookieStore.set(实测唯一能真正落盘的通路:document.cookie 会被 CSP 拒,CDP Network.setCookie 静默假成功)。set 要求当前页是目标域的 HTTPS 页面;domain 不要带前导点;长 JWT 等要写到完整 host(如 www.reddit.com 而非 reddit.com)。写完自动回读校验,注入后建议导航刷新确认登录态生效。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['get', 'set'], description: 'get=读取当前页 cookies; set=注入 cookies' },
+      cookies: {
+        type: 'array',
+        description: 'set 时必填:cookie 数组',
+        items: {
+          type: 'object',
+          properties: {
+            name: { type: 'string', description: 'cookie 名' },
+            value: { type: 'string', description: 'cookie 值(JWT/长 token 全量)' },
+            domain: { type: 'string', description: '可选,默认当前页 host。不要带前导点' },
+            path: { type: 'string', description: '可选,默认 /' },
+          },
+          required: ['name', 'value'],
+        },
+      },
+      tab_id: { type: 'string', description: '可选,指定 tab' },
+      url: { type: 'string', description: '可选,按 URL 子串匹配 tab' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    const gate = await browserGate(ctx, `cookie ${args.action}`);
+    if (gate) return gate;
+    try {
+      const cookies = Array.isArray(args.cookies)
+        ? (args.cookies as Array<Record<string, unknown>>).map((c) => ({ name: String(c.name), value: String(c.value), domain: c.domain ? String(c.domain) : undefined, path: c.path ? String(c.path) : undefined }))
+        : [];
+      if (args.action === 'set' && !cookies.length) return '❌ action=set 需要 cookies 数组';
+      return await browserCookie(args.action === 'set' ? 'set' : 'get', cookies, args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
     } catch (e) {
       return `❌ ${(e as Error).message}`;
     }
@@ -2782,7 +2851,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

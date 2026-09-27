@@ -416,39 +416,147 @@ export async function browserSnapshot(tabId?: string, urlSubstr?: string): Promi
   } finally { await s.close(); }
 }
 
-export async function browserClick(selector: string, tabId?: string, urlSubstr?: string): Promise<string> {
+export async function browserClick(selector: string, mode: 'auto' | 'dom' = 'auto', tabId?: string, urlSubstr?: string): Promise<string> {
   const t = await findTarget(tabId, urlSubstr);
   const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
   try {
+    if (mode === 'dom') {
+      await domClick(s, selector);
+      return `✅ 已点击(DOM 合成) ${selector}`;
+    }
+    // auto 模式:CDP 真实坐标点击。前置命中校验 —— 遮罩在场时点击会被吃掉,
+    // 先剥透明遮罩再点;两轮都命中不了就明说,让上层换 dom 模式或换 selector。
+    // Auto mode: CDP real-coordinate click with a pre-click hit-test — if a mask
+    // intercepts, strip transparent masks once; if still blocked, say so explicitly.
+    if (!(await hitTestOk(s, selector))) {
+      const removed = await stripTransparentMasks(s);
+      if (removed > 0) {
+        await new Promise((r) => setTimeout(r, 120));
+        if (!(await hitTestOk(s, selector))) {
+          return `⚠️ 点击被拦截:中心点命中非目标元素(已移除 ${removed} 个透明遮罩仍被挡)。用 browser_screenshot 看遮挡物,或 mode=dom 改走 DOM 合成点击。`;
+        }
+        await realClick(s, selector);
+        return `✅ 已点击(移除 ${removed} 个遮罩后) ${selector}`;
+      }
+      return `⚠️ 点击被拦截:中心点 elementFromPoint 未命中目标(可能被遮罩/closed shadow DOM 挡住)。可试 mode=dom(DOM 合成事件)或换 selector。`;
+    }
     await realClick(s, selector);
     return `✅ 已点击 ${selector}`;
   } finally { await s.close(); }
 }
 
-export async function browserType(selector: string, text: string, clearFirst: boolean, submit: boolean, tabId?: string, urlSubstr?: string): Promise<string> {
+// DOM 合成点击(tippy 类浮层的独木桥):CDP Input 事件对 tippy 弹层无效(实测),
+// 必须在页面内合成 mousedown+mouseup+click(bubbles)才被收 —— 与 realClick 相反,逐站二选一。
+// DOM synthetic click for tooltip/popover layers: CDP Input is ignored there, page-level
+// mousedown/mouseup/click bubbles are required — the exact opposite of realClick.
+async function domClick(s: CdpSession, selector: string): Promise<void> {
+  await waitForSelector(s, selector, 10000, true);
+  const r = await evalInPage<string>(s, `
+    (function() {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return 'ERR gone';
+      el.scrollIntoView({ block: 'center', behavior: 'instant' });
+      const r = el.getBoundingClientRect();
+      const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
+      const opts = { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, button: 0 };
+      el.dispatchEvent(new MouseEvent('mousedown', opts));
+      el.dispatchEvent(new MouseEvent('mouseup', opts));
+      el.dispatchEvent(new MouseEvent('click', opts));
+      return 'OK';
+    })()`);
+  if (r === 'ERR gone') throw new Error(`元素不存在: ${selector}`);
+}
+
+// 命中校验:遮罩吃点击的防线。发真实坐标前先 elementFromPoint 试点 ——
+// 命中的不是目标及其后代 = 有遮罩拦截,移除透明遮罩后重试一次(小红书实录)。
+// Hit-test guard against overlay masks eating clicks: if elementFromPoint at the target
+// center is not the element (or a descendant), drop transparent masks and retry once.
+async function hitTestOk(s: CdpSession, selector: string): Promise<boolean> {
+  return evalInPage<boolean>(s, `
+    (function() {
+      const el = document.querySelector(${JSON.stringify(selector)});
+      if (!el) return false;
+      const r = el.getBoundingClientRect();
+      const hit = document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2);
+      return !!hit && (hit === el || el.contains(hit) || hit.contains(el));
+    })()`);
+}
+
+async function stripTransparentMasks(s: CdpSession): Promise<number> {
+  return evalInPage<number>(s, `
+    (function() {
+      let n = 0;
+      for (const el of document.querySelectorAll('[class*="mask" i], [class*="overlay" i], [class*="modal-backdrop" i]')) {
+        const st = getComputedStyle(el);
+        // 只动全屏透明/近透明遮罩;有实际内容的弹层不碰
+        // Only full-viewport (near-)transparent masks; leave real dialogs alone.
+        const cov = el.getBoundingClientRect();
+        if (st.opacity !== '' && parseFloat(st.opacity) <= 0.05 && cov.width >= innerWidth * 0.9 && cov.height >= innerHeight * 0.9) {
+          el.remove(); n++;
+        }
+      }
+      return n;
+    })()`);
+}
+
+export type TypeMode = 'value' | 'paste' | 'insertText';
+
+// 统一注入 + 回读验证。三种 mode 对应三类编辑器(逐站实测,别混用):
+// - value(默认):native setter + input/change —— input/textarea + React/Vue 受控组件
+// - paste:ClipboardEvent 携带 text/plain —— ProseMirror(Discourse)只有 paste 可靠,
+//   keyboard_type/execCommand 长文会静默丢字
+// - insertText:document.execCommand —— contenteditable + React state 直插(X 实录:
+//   paste 后 DOM 有字但 state 没收,按钮永久 disabled)
+// 注入后一律回读 textContent/value 验证长度 —— 「DOM 有字 ≠ 框架收了字」是两类坑的公共根因。
+// Unified injection + read-back verification. Value length is verified after every mode —
+// "text visible in DOM but framework state missed it" is the shared root cause of the
+// silent-drop class of bugs.
+export async function browserType(selector: string, text: string, clearFirst: boolean, submit: boolean, mode: TypeMode = 'value', tabId?: string, urlSubstr?: string): Promise<string> {
   const t = await findTarget(tabId, urlSubstr);
   const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
   try {
     await waitForSelector(s, selector, 10000, true);
-    // native setter + input 事件:React/Vue 受控组件只认 native setter 赋值
-    // (知乎发布实录踩坑:直接 el.value = x 不触发框架状态更新)。
-    // clear=false = 追加语义:先读原值拼接,再整体 setter 赋值 —— 直接对 el.value
-    // += 不会走 setter,同样不触发框架更新。
-    // clear=false = append semantics: read existing value, concat, then set via the
-    // native setter once — `el.value += x` bypasses the setter and React misses it.
-    await evalInPage(s, `
+    const r = await evalInPage<{ ok: string; len: number; expect: number }>(s, `
       (async function() {
         const el = document.querySelector(${JSON.stringify(selector)});
-        if (!el) throw new Error('元素不存在: ${selector.replace(/'/g, "\\'")}');
-        const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-        const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-        ${clearFirst ? 'el.select && el.select();' : 'var _prev = el.value;'}
-        setter.call(el, ${clearFirst ? '' : '(_prev ?? "") + '} ${JSON.stringify(text)});
-        el.dispatchEvent(new Event('input', { bubbles: true }));
-        el.dispatchEvent(new Event('change', { bubbles: true }));
+        if (!el) return { ok: 'ERR gone', len: 0, expect: 0 };
+        el.focus();
+        const cur = el.isContentEditable ? (el.textContent || '') : (el.value || '');
+        const expect = ${JSON.stringify(text)}.length + cur.length;
+        const mode = ${JSON.stringify(mode)};
+        try {
+          if (mode === 'paste') {
+            const dt = new DataTransfer();
+            dt.setData('text/plain', ${JSON.stringify(text)});
+            el.dispatchEvent(new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }));
+          } else if (mode === 'insertText') {
+            const sel = window.getSelection();
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            if (clearFirst) range.deleteContents(); else range.collapse(false);
+            sel.removeAllRanges(); sel.addRange(range);
+            document.execCommand('insertText', false, ${JSON.stringify(text)});
+          } else {
+            const proto = el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+            ${clearFirst ? 'el.select && el.select();' : 'var _prev = el.value;'}
+            setter.call(el, ${clearFirst ? '' : '(_prev ?? "") + '} ${JSON.stringify(text)});
+            el.dispatchEvent(new Event('input', { bubbles: true }));
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+          }
+          const now = el.isContentEditable ? (el.textContent || '') : (el.value || '');
+          return { ok: 'OK', len: now.length, expect };
+        } catch (e) { return { ok: 'ERR ' + (e && e.message || e), len: 0, expect }; }
       })()`);
+    if (r.ok === 'ERR gone') throw new Error(`元素不存在: ${selector}`);
+    if (r.ok.startsWith('ERR')) throw new Error(`注入失败: ${r.ok.slice(4)}`);
+    // 回读验证:注入后实际字符数必须 ≥ 期望的 90%(粘贴类编辑器可能规范化空白,留余量)
+    // Read-back: actual length must be ≥90% of expected (editors may normalize whitespace).
+    if (r.len < Math.floor(r.expect * 0.9)) {
+      return `⚠️ 已注入但回读不符:期望 ${r.expect} 字符,页面实读 ${r.len}。编辑器可能静默丢字 —— 不要直接提交,先 browser_snapshot/browser_eval 核实内容。`;
+    }
     if (submit) await realClick(s, 'button[type="submit"], form button:not([type])');
-    return `✅ 已输入 ${text.length} 字符到 ${selector}${submit ? ' 并提交' : ''}`;
+    return `✅ 已输入 ${text.length} 字符到 ${selector}(回读 ${r.len}/${r.expect} ✓)${submit ? ' 并提交' : ''}`;
   } finally { await s.close(); }
 }
 
@@ -524,4 +632,99 @@ export async function browserTabs(action: 'list' | 'close' | 'activate', tabId?:
     req.end();
   });
   return `✅ 已激活 tab ${tabId}`;
+}
+
+// ── 文件上传(CDP DOM.setFileInputFiles 独木桥)──
+// 浏览器安全模型下其余三条路全废(实测):页面内 fetch 本地文件被拦(私网请求);
+// DataTransfer + drop 事件大多数上传组件不认;给 input.value 赋值被浏览器忽略。
+// 只有 DOM.setFileInputFiles 这一条真路 —— 需要 WebSocket 连到 page target,
+// 先 DOM.getDocument 拿 root nodeId,再 DOM.querySelector 定位。
+// File upload: DOM.setFileInputFiles is the only working path — page-side fetch of
+// local files is blocked, DataTransfer/drop is ignored by upload widgets, and
+// setting input.value directly is a no-op by spec.
+export async function browserUpload(selector: string, filePath: string, tabId?: string, urlSubstr?: string): Promise<string> {
+  if (!path.isAbsolute(filePath)) throw new Error(`file_path 必须是绝对路径(收到 ${filePath})`);
+  const stat = await fs.promises.stat(filePath).catch(() => null);
+  if (!stat) throw new Error(`文件不存在: ${filePath}`);
+  const t = await findTarget(tabId, urlSubstr);
+  const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
+  try {
+    // 非 file input 的场景:很多站点上传按钮是 button,点击后动态生成 input[type=file]。
+    // 先尝试直接匹配;selector 不是 file input 时把它当"可点击触发器"点一下,再找任意 file input。
+    // If the selector is a trigger button rather than the input itself, click it first
+    // then look for any file input that materialized.
+    let fileInputSel = selector;
+    const direct = await evalInPage<boolean>(s, `(function(){ const el = document.querySelector(${JSON.stringify(selector)}); return !!el && el.tagName === 'INPUT' && el.type === 'file'; })()`);
+    if (!direct) {
+      await evalInPage(s, `(function(){ const el = document.querySelector(${JSON.stringify(selector)}); if (el) el.click(); })()`).catch(() => {});
+      await new Promise((r) => setTimeout(r, 500));
+      const anyInput = await evalInPage<boolean>(s, `!!document.querySelector('input[type="file"]')`);
+      if (anyInput) fileInputSel = 'input[type="file"]';
+    }
+    await waitForSelector(s, fileInputSel, 10000, false);
+    const { root } = await s.send('DOM.getDocument', { depth: -1 });
+    const { nodeId } = await s.send('DOM.querySelector', { nodeId: root.nodeId, selector: fileInputSel });
+    if (!nodeId) throw new Error(`未找到 file input: ${fileInputSel}`);
+    await s.send('DOM.setFileInputFiles', { files: [filePath], nodeId });
+    // 回读验证:input.files[0] 名字和大小对得上才算成功
+    // Read-back: verify the file actually landed in the input.
+    const v = await evalInPage<{ name: string; size: number } | null>(s, `
+      (function(){ const el = document.querySelector(${JSON.stringify(fileInputSel)});
+        if (!el || !el.files || !el.files.length) return null;
+        return { name: el.files[0].name, size: el.files[0].size }; })()`);
+    if (!v) return `⚠️ setFileInputFiles 已执行但 input.files 为空(组件可能在 change 前就校验)。确认 selector 指向 input[type=file] 或改用真实触发按钮再试。`;
+    if (v.name !== path.basename(filePath)) return `⚠️ 回读文件名不符:期望 ${path.basename(filePath)},实读 ${v.name}`;
+    return `✅ 已上传 ${v.name}(${(v.size / 1024).toFixed(1)} KB)→ ${fileInputSel}`;
+  } finally { await s.close(); }
+}
+
+// ── Cookie 注入/读取 ──
+// set 走 cookieStore 独木桥(实测):document.cookie 被大站 CSP/安全策略拒(SecurityError);
+// CDP Network.setCookie 写成功但 jar 是空的(静默假成功)。cookieStore.set 是唯一真通路:
+// 必须 secure context(HTTPS 页上执行)、domain 不能带前导点、长 JWT 要写完整 host
+// (reddit_session 写 reddit.com malformed,必须写 www.reddit.com)。
+// get 走 CDP Network.getCookies —— 能读到 HttpOnly(document.cookie 读不到)。
+// Cookie set goes through cookieStore.set (the only path that actually sticks);
+// cookie get goes through CDP Network.getCookies (reads HttpOnly too).
+export async function browserCookie(
+  action: 'set' | 'get',
+  cookies: Array<{ name: string; value: string; domain?: string; path?: string }>,
+  tabId?: string,
+  urlSubstr?: string,
+): Promise<string> {
+  const t = await findTarget(tabId, urlSubstr);
+  if (action === 'get') {
+    const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
+    try {
+      await s.send('Network.enable');
+      const r = await s.send('Network.getCookies', {});
+      const lines = (r.cookies as Array<{ name: string; value: string; domain: string; httpOnly: boolean }>)
+        .map((c) => `${c.name}=${c.value.length > 40 ? c.value.slice(0, 24) + `…(${c.value.length}B)` : c.value}  [${c.domain}${c.httpOnly ? ' httpOnly' : ''}]`);
+      return `🍪 ${t.url} 的 cookies(${r.cookies.length} 个):\n${lines.join('\n') || '(空)'}`;
+    } finally { await s.close(); }
+  }
+  if (!/^https:/i.test(t.url)) {
+    return `❌ cookie 注入必须在目标域的 HTTPS 页面上执行(当前 ${t.url})。先 browser_navigate 到目标域任意页(哪怕 404),再注入。`;
+  }
+  const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
+  try {
+    const results: string[] = [];
+    for (const c of cookies) {
+      // domain 不带前导点(cookieStore 会 malformed);缺省从当前页 host 推导
+      // No leading dot in domain (cookieStore rejects it); default to current page host.
+      const domain = (c.domain || new URL(t.url).host).replace(/^\./, '');
+      const r = await evalInPage<{ ok: boolean; msg: string }>(s, `
+        (async function() {
+          try {
+            await cookieStore.set({ name: ${JSON.stringify(c.name)}, value: ${JSON.stringify(c.value)}, domain: ${JSON.stringify(domain)}, path: ${JSON.stringify(c.path || '/')}, secure: true, sameSite: 'lax' });
+            return { ok: true, msg: 'set ok' };
+          } catch (e) { return { ok: false, msg: String(e && e.message || e) }; }
+        })()`);
+      // 写完立即回读确认 —— CDP 假成功教训的镜像:写成功 ≠ jar 里有
+      const back = await evalInPage<string | null>(s, `(async function(){ const c = await cookieStore.get(${JSON.stringify(c.name)}); return c ? c.value : null; })()`);
+      const stuck = back === c.value;
+      results.push(`${c.name}: ${r.ok ? (stuck ? '✅ 已写入并回读确认' : `⚠️ set 无报错但回读不一致(可能被服务端/策略 rotate)`) : `❌ ${r.msg}`}`);
+    }
+    return `🍪 注入完成(${t.url}):\n${results.join('\n')}\n注:注入后建议刷新/导航验证登录态真正生效(服务端可能校验设备指纹,如小红书 web_session)。`;
+  } finally { await s.close(); }
 }
