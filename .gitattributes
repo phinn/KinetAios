@@ -1,0 +1,26 @@
+# 换行策略与机器配置(core.autocrlf)解耦:仓库永远 LF,checkout 不转换。
+# 这台是跨平台仓库(macOS 开发 + Windows 构建),不锁策略时两台机器
+# 互相"修正"行尾 → git 警告刷屏 + 假 diff + sh 脚本在 Windows 编辑后带 \r 炸。
+* text=auto eol=lf
+
+# Windows 批处理/PowerShell 按惯例保持 CRLF(cmd.exe 的 goto/label 对 LF 不友好)
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.ps1 text eol=crlf
+
+# 二进制:防止任何 text=auto 误判(git 二进制检测已可靠,这里双保险)
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.icns binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.node binary
+*.exe binary
+*.dll binary
+*.asar binary
+*.sr binary
