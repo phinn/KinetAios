@@ -9,15 +9,51 @@ import crypto from 'node:crypto';
 
 // 原子写:同目录 tmp 文件 + rename 替换。直接 writeFileSync 覆盖在写一半崩溃/断电时会留下
 // 截断损坏的源文件(用户源码!);rename 在同一文件系统上是原子的。tmp 名带随机后缀防并发互踩。
-function atomicWrite(p: string, content: string): void {
+function atomicWriteRaw(p: string, buf: Buffer): void {
   const tmp = `${p}.${crypto.randomBytes(4).toString('hex')}.tmp`;
   try {
-    fs.writeFileSync(tmp, content, 'utf8');
+    fs.writeFileSync(tmp, buf);
+    if (process.platform === 'win32' && fs.existsSync(p)) fs.unlinkSync(p); // Windows rename 不覆盖已有文件
     fs.renameSync(tmp, p);
   } catch (e) {
     try { fs.rmSync(tmp, { force: true }); } catch { /* 清理失败无所谓 */ }
     throw e;
   }
+}
+
+// ── 写入保真管线(CRLF 事故 2026-09-29 的根修)──
+// 项目文件常见形态 = CRLF + 无 BOM(Windows 仓库)。此前两条路都会污染,逼模型绕道
+// shell/PowerShell(PowerShell 又有 BOM/全局替换/`r`n 转义三连坑,详见用户事故记录):
+//   1. edit_file 失配:模型 old_string 用 \n,文件实际 \r\n,差一个 \r 匹配不上
+//   2. write_file 覆盖:CRLF 文件被写成 LF,产生全文件 diff 噪声
+// 根修 = 让 edit_file/write_file 在 CRLF/BOM 文件上天然可用,消灭绕道的理由。
+// Write-fidelity: edits preserve the file's BOM & CRLF style; write_file keeps BOM too.
+// 禁止覆盖的二进制后缀(文本工具误写会损坏文件)。
+const BINARY_EXTS = new Set(['.png', '.jpg', '.jpeg', '.gif', '.webp', '.ico', '.icns', '.pdf', '.zip', '.gz', '.tgz', '.7z', '.rar', '.exe', '.dll', '.dylib', '.so', '.bin', '.woff', '.woff2', '.ttf', '.otf', '.eot', '.mp3', '.mp4', '.mov', '.wav', '.flac', '.sqlite', '.db', '.p8', '.keystore', '.jks', '.sr']);
+function isBinaryPath(p: string): boolean {
+  return BINARY_EXTS.has(path.extname(p).toLowerCase());
+}
+// 检测 BOM 前缀字节(UTF-8 / UTF-16LE / UTF-16BE),无则返回 null。
+function bomPrefix(buf: Buffer): Buffer | null {
+  if (buf.length >= 3 && buf[0] === 0xef && buf[1] === 0xbb && buf[2] === 0xbf) return Buffer.from([0xef, 0xbb, 0xbf]);
+  if (buf.length >= 2 && buf[0] === 0xff && buf[1] === 0xfe) return Buffer.from([0xff, 0xfe]);
+  if (buf.length >= 2 && buf[0] === 0xfe && buf[1] === 0xff) return Buffer.from([0xfe, 0xff]);
+  return null;
+}
+// edit_file 专用:替换后的文本按原文件风格编码回字节(保 BOM + 保 CRLF)。
+// UTF-16 文件不重编码(decodeBuffer 已转 UTF-8 字符串,写回会丢双字节形态)——
+// 这种文件交给报错提示,不在字符串层硬修。
+function encodeWithStyle(buf: Buffer, text: string): Buffer | null {
+  const bom = bomPrefix(buf);
+  const utf16 = bom && bom.length === 2;
+  if (utf16) return null; // UTF-16 保真超出字符串工具能力,拒绝并提示
+  const crlf = buf.includes(13); // 含任何 \r 即视为 CRLF 系文件
+  const out = crlf ? text.replace(/\r?\n/g, '\r\n') : text;
+  const body = Buffer.from(out, 'utf8');
+  return bom ? Buffer.concat([bom, body]) : body;
+}
+function atomicWrite(p: string, content: string): void {
+  atomicWriteRaw(p, Buffer.from(content, 'utf8'));
 }
 import type { Provider, ToolDef } from './glm';
 import * as store from './store';
@@ -602,19 +638,31 @@ const writeFile: Tool = {
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     const content = (args.content as string) ?? '';
     if (!p) return '缺少 path';
+    if (isBinaryPath(p) && fs.existsSync(p)) return `拒绝覆盖二进制文件: ${path.basename(p)}(${path.extname(p)})。文本工具会损坏它。`;
     // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
     const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, true);
     if (guard) return guard;
     try {
       // 写前快照(仅当文件已存在,新文件没东西可存)。best-effort,失败不阻塞。
-      if (ctx.convId && fs.existsSync(p)) {
-        try {
-          const before = decodeBuffer(fs.readFileSync(p));
-          takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'write_file', contentBefore: before });
-        } catch { /* snapshot 失败不影响主流程 */ }
+      let raw: Buffer | null = null;
+      if (fs.existsSync(p)) {
+        try { raw = fs.readFileSync(p); } catch { /* 读不到就当新文件 */ }
+        if (ctx.convId && raw) {
+          try {
+            takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'write_file', contentBefore: decodeBuffer(raw) });
+          } catch { /* snapshot 失败不影响主流程 */ }
+        }
       }
       fs.mkdirSync(path.dirname(p), { recursive: true });
-      atomicWrite(p, content);
+      // 写入保真:已有文件保留原 BOM(防 PowerShell 式 BOM 丢失/重复);
+      // 新文件统一 LF + 无 BOM(跨平台仓库事实标准)。
+      if (raw) {
+        const bom = bomPrefix(raw);
+        const body = Buffer.from(content, 'utf8');
+        atomicWriteRaw(p, bom ? Buffer.concat([bom, body]) : body);
+      } else {
+        atomicWrite(p, content);
+      }
       return `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
@@ -1351,30 +1399,49 @@ const editFile: Tool = {
     const newS = String(args.new_string ?? '');
     if (!p) return '缺少 path';
     if (!oldS) return '缺少 old_string';
+    if (isBinaryPath(p)) return `拒绝编辑二进制文件: ${path.basename(p)}(${path.extname(p)})。文本工具会损坏它。`;
     // 沙箱检查:readOnly 拦截写;workspaceWrite 限制 cwd 内。
     const guard = sandboxCheck(ctx.sandbox, p, ctx.cwd, true);
     if (guard) return guard;
+    let raw: Buffer;
     let body: string;
     try {
-      body = decodeBuffer(fs.readFileSync(p));
+      raw = fs.readFileSync(p);
+      body = decodeBuffer(raw);
     } catch {
       return `读不到: ${p}`;
     }
     // 读到原文后立刻快照,在替换/写入之前。哪怕后续 oldS 找不到也不会丢回滚点。
     if (ctx.convId) takeSnapshot({ convId: ctx.convId, cwd: ctx.cwd, absPath: p, tool: 'edit_file', contentBefore: body });
-    if (!body.includes(oldS)) return `未找到要替换的片段(检查缩进/空格是否完全一致)。文件 ${body.length} 字节,未改动。`;
-    let out: string;
+    // CRLF 容错匹配:模型按 \n 写 old_string,CRLF 文件里差一个 \r 永远失配
+    // (2026-09-29 事故根因,逼模型绕道 PowerShell 反被 BOM/全局替换毒害)。
+    // 解法:直接匹配失败时,把 old/new 的 \n 升级成 \r\n 再试一次。
+    // CRLF-tolerant match: if literal match fails, retry with \n → \r\n in old/new.
+    let oldEff = oldS;
+    let newEff = newS;
+    if (!body.includes(oldS) && oldS.includes('\n') && !oldS.includes('\r')) {
+      const oldCRLF = oldS.replace(/\n/g, '\r\n');
+      if (body.includes(oldCRLF)) {
+        oldEff = oldCRLF;
+        newEff = newS.includes('\r') ? newS : newS.replace(/\n/g, '\r\n');
+      }
+    }
+    if (!body.includes(oldEff)) return `未找到要替换的片段(检查缩进/空格是否完全一致)。文件 ${body.length} 字节,未改动。`;
+    let text: string;
     let count: number;
     if (args.replace_all === true) {
-      count = body.split(oldS).length - 1;
-      out = body.split(oldS).join(newS);
+      count = body.split(oldEff).length - 1;
+      text = body.split(oldEff).join(newEff);
     } else {
-      const i = body.indexOf(oldS);
-      out = body.slice(0, i) + newS + body.slice(i + oldS.length);
+      const i = body.indexOf(oldEff);
+      text = body.slice(0, i) + newEff + body.slice(i + oldEff.length);
       count = 1;
     }
+    // 写回保真:原文件是 CRLF/BOM 就按原样编码,不产生全文件换行 diff,不丢 BOM。
+    const encoded = encodeWithStyle(raw, text);
+    if (!encoded) return '该文件是 UTF-16 编码,字符串级编辑会破坏它,请用支持编码的编辑器处理。';
     try {
-      atomicWrite(p, out);
+      atomicWriteRaw(p, encoded);
       return `已替换 ${count} 处 → ${p}`;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;

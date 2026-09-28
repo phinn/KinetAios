@@ -115,7 +115,16 @@ export function listSnapshots(cwd: string, convId?: string): SnapshotMeta[] {
 export function restoreSnapshot(cwd: string, id: string): { ok: boolean; error?: string } {
   try {
     const snap = JSON.parse(fs.readFileSync(file(cwd, id), 'utf8')) as Snapshot;
-    fs.writeFileSync(snap.absPath, snap.contentBefore, 'utf8');
+    // BOM 保真:快照存的是 decode 后文本(BOM 已剥离);原文件带 BOM 时 restore 要补回,
+    // 否则回滚后的文件和改前字节不一致(C 井/PS1 等对 BOM 敏感)。
+    // Re-add BOM on restore when the current file has one (decode stripped it).
+    let buf = Buffer.from(snap.contentBefore, 'utf8');
+    try {
+      const cur = fs.readFileSync(snap.absPath);
+      const bom = cur.length >= 3 && cur[0] === 0xef && cur[1] === 0xbb && cur[2] === 0xbf;
+      if (bom) buf = Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), buf]);
+    } catch { /* 当前文件读不到(已被删),按无 BOM 写 */ }
+    fs.writeFileSync(snap.absPath, buf);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: String(e) };
