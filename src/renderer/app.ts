@@ -5094,6 +5094,14 @@ async function showSettings() {
   localMcpServerCache = s.localMcpServer ?? { enabled: false, port: 18109, token: '' };
   remoteMcpServersCache = s.remoteMcpServers ?? [];
   disabledPluginsCache = s.disabledPlugins ?? [];
+  // 接力链缓存必须在 markClean() 之前回填!markClean 会用 readSettingsForm() 覆写
+  // lastSettingsSnapshot,而 readSettingsForm 读的正是 goalChainCache —— 若此时缓存
+  // 还是模块初始值 [],快照被毒化成空链,随后 L5900 处的回填再读毒化快照 ⇒ 链被清空。
+  // (budget/mcpServers/disabledPlugins 等缓存都在此同步,goalChainCache 漏了才踩坑)
+  // Seed goal-chain cache BEFORE markClean(): markClean overwrites lastSettingsSnapshot
+  // from readSettingsForm() which reads goalChainCache — a late seed would round-trip
+  // the empty init value back into the snapshot and wipe the chain on next save.
+  goalChainCache = s.goalProfileChain ?? [];
   lastSettingsSnapshot = s;
   const root = document.getElementById('settings')!;
   root.innerHTML = `
@@ -5901,7 +5909,9 @@ async function showSettings() {
   }
 
   // ── Goal 监工:模型接力链列表(goalProfileChain 有序数组,UI 上可增删)──
-  goalChainCache = lastSettingsSnapshot?.goalProfileChain ?? [];
+  // goalChainCache 回填在 showSettings() 顶部(markClean 之前),此处只渲染。
+  // Seed happens at the top of showSettings() — do NOT re-seed here from
+  // lastSettingsSnapshot: after markClean() it's readSettingsForm() 的回写,会形成自噬循环。
   async function renderProfileList(profiles?: any[]) {
     if (!profiles) {
       const cur = await api.getSettings();
@@ -5955,7 +5965,7 @@ async function showSettings() {
   void renderProfileList();
 
   // ── Goal 监工:模型接力链列表(goalProfileChain 有序数组,UI 上可增删)──
-  goalChainCache = lastSettingsSnapshot?.goalProfileChain ?? [];
+  // 回填在 showSettings() 顶部(markClean 之前),此处只渲染,不再从快照 re-seed。
   const renderGoalChain = (): void => {
     const box = document.getElementById('s-goal-chain-list');
     if (!box) return;
@@ -5971,6 +5981,7 @@ async function showSettings() {
       (btn as HTMLElement).onclick = () => {
         goalChainCache = goalChainCache.filter((x) => x !== (btn as HTMLElement).dataset.goalChainDel);
         renderGoalChain();
+        updateSaveDot(); // 链是 button 增删,不冒泡 input/change → 手动点亮脏点,防改完不保存静默丢
       };
     });
   };
@@ -5980,6 +5991,7 @@ async function showSettings() {
     if (sel.value && !goalChainCache.includes(sel.value)) {
       goalChainCache.push(sel.value);
       renderGoalChain();
+      updateSaveDot(); // 同上:button 点击不触发脏检测
     }
     sel.value = '';
   };
