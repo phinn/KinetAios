@@ -372,7 +372,8 @@ function applyI18nDOM(): void {
     // 用 scheduleRenderMain(debounce→updateLastTurnIncremental) 替代:
     // 只增量更新最后一个 turn + head,不重建整列;已在下一帧排队则合并。
     if (conv.id === selectedId) scheduleRenderMain();
-    if (currentView === 'workbench') renderWorkbench();
+    // 工作台:并发任务下广播频率 = 任务数 × 事件数,全量重建走调度器合并。
+    if (currentView === 'workbench') scheduleWorkbench();
     if (currentView === 'town') townOnConversationChanged();
     if (currentView === 'nexus') nexusOnConversationChanged();
     // 转发 conversation 更新给所有插件 iframe (替代轮询)
@@ -395,7 +396,7 @@ function applyI18nDOM(): void {
     if (selectedId === id) selectedId = order[0] ?? null;
     renderSidebar();
     renderMain();
-    if (currentView === 'workbench') renderWorkbench();
+    if (currentView === 'workbench') scheduleWorkbench(); // 全量重建走调度器(会话删除也会触发)
     if (currentView === 'town') townOnConversationChanged();
     if (currentView === 'nexus') nexusOnConversationChanged();
   });
@@ -479,7 +480,7 @@ function applyI18nDOM(): void {
           const now = Date.now();
           if (now - (wbRecentRefreshAt[convId] ?? 0) > 300) {
             wbRecentRefreshAt[convId] = now;
-            renderWorkbench();
+            scheduleWorkbench(); // 节流合并,N 任务并发时不再 N 倍全量重建
           }
         }
       }
@@ -9136,8 +9137,27 @@ function missionCard(c: Conversation): string {  const last = c.turns[c.turns.le
   </div>`;
 }
 
+let wbRenderScheduled = false;
+// 工作台全量重建调度器:并发任务下 onConversation/status/missionTimer 会以每秒多次的
+// 频率请求重建,直接执行 = innerHTML 风暴(重建整视图 + 重绑全部监听器 + scrollTop 归零)。
+// 统一走 250ms 尾随节流:一串请求合并成一次,实时性够用(卡片文本秒级刷新)。
+// Coalesce workbench full rebuilds: concurrent tasks trigger onConversation/status/
+// missionTimer several times per second; rebuilding the whole view (innerHTML + all
+// listeners + scroll reset) each time is a storm. Trailing 250ms throttle merges bursts.
+function scheduleWorkbench(): void {
+  if (wbRenderScheduled) return;
+  wbRenderScheduled = true;
+  setTimeout(() => {
+    wbRenderScheduled = false;
+    if (currentView === 'workbench') renderWorkbench();
+  }, 250);
+}
+
 function renderWorkbench() {
   const root = document.getElementById('workbench')!;
+  // 全量 innerHTML 替换会重置 scrollTop;保留视口位置,重建后恢复(内容高度缩小时浏览器自行 clamp)。
+  // innerHTML replacement resets scrollTop — capture and restore it.
+  const prevScroll = root.scrollTop;
   const groups = new Map<string, string[]>();
   for (const id of order) {
     const c = convs.get(id);
@@ -9207,8 +9227,10 @@ function renderWorkbench() {
     };
   });
   // running 存在时每秒刷新墙上的耗时/进度(仅 workbench 视图激活期间)
+  // 走调度器节流:每秒的重建与 onConversation/status 触发的重建合并成 ≤4 次/秒,
+  // 且全部带滚动恢复 —— 修前每秒 innerHTML 全量替换,滚动位置反复被打断。
   if (missionTimer) { clearInterval(missionTimer); missionTimer = null; }
-  if (running.length) missionTimer = setInterval(() => { if (currentView === 'workbench') renderWorkbench(); else if (missionTimer) { clearInterval(missionTimer); missionTimer = null; } }, 1000);
+  if (running.length) missionTimer = setInterval(() => { if (currentView === 'workbench') scheduleWorkbench(); else if (missionTimer) { clearInterval(missionTimer); missionTimer = null; } }, 1000);
   const townBtn = document.getElementById('wb-goto-town');
   if (townBtn) townBtn.onclick = () => showTown();
   root.querySelectorAll<HTMLElement>('.wb-card').forEach((card) => {
@@ -9217,6 +9239,7 @@ function renderWorkbench() {
     card.querySelector<HTMLElement>('.wb-ctx')!.onclick = (e) => { e.stopPropagation(); void openContextModal(cwd); };
     card.onclick = () => void openProject(cwd);
   });
+  root.scrollTop = prevScroll; // 恢复视口(内容缩短时浏览器自动 clamp)
 }
 
 function projCard(cwd: string, ids: string[]): string {

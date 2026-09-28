@@ -1753,7 +1753,15 @@ function updateOverlay(): void {
 }
 
 // ── 增量更新(流式事件到达时) / Incremental update (on streaming events) ──
+// rAF 在这里是错的节流器:它把"每个事件一次重建"变成"每帧一次重建"(60fps),
+// 而 updateOverlay 是全量 innerHTML + simpleMarkdown 解析最近 8 轮全文 —— 流式期间
+// 等于 60 次/秒的 markdown 解析 + DOM 全换。改 500ms 尾随节流:状态文本秒级新鲜度足够,
+// 主线程压力从 60×/s 降到 2×/s。
+// rAF is the wrong throttle here — it converts "rebuild per event" into "rebuild per
+// frame" (60fps), and updateOverlay is a full innerHTML + markdown re-parse of the
+// last 8 turns. 500ms trailing throttle keeps text fresh enough at 2 rebuilds/sec.
 let nexusOverlayPending = false;
+const NEXUS_OVERLAY_THROTTLE = 500;
 export function refreshNexusNode(conv: Conversation): void {
   // 更新对应节点的状态 / Update the corresponding node's state
   for (const ring of rings) {
@@ -1765,15 +1773,17 @@ export function refreshNexusNode(conv: Conversation): void {
     }
   }
   // Phase 9: dashboard 模式也要更新 / Update dashboard too in dashboard mode
-  // 用 rAF 防抖:高频 token 流时避免每帧全量 innerHTML 重建。
   if (overlayMode === 'dashboard' || conv.id === selectedNodeId) {
     if (nexusOverlayPending) return;
     nexusOverlayPending = true;
-    requestAnimationFrame(() => {
+    setTimeout(() => {
       nexusOverlayPending = false;
+      const ov = document.getElementById('nexus-overlay');
+      // overlay 不在渲染树(offsetParent null = 祖先 .active 被摘)→ 已切走视图,不重建
+      if (!ov || ov.offsetParent === null) return;
       updateOverlay();
       updateMinimap();
-    });
+    }, NEXUS_OVERLAY_THROTTLE);
   }
 }
 

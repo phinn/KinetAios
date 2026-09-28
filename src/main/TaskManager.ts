@@ -33,6 +33,9 @@ export class TaskManager {
   private aborts = new Map<string, AbortController>();
   // Goal loop 取消标志:cancel() 设置后,runGoalLoop 的下一轮检查时退出。
   private goalLoopStopped = new Set<string>();
+  // 上下文估算缓存(estContextTokens):directHistory 引用+长度不变 → 复用上次结果,
+  // 避免每秒 UI 轮询对 MB 级历史全量 stringify。会话删除时一并清理。
+  private ctxEstCache = new Map<string, { ref: ChatMsg[]; len: number; val: { tokens: number; modelMax: number; pct: number } }>();
   // 追踪每个会话切换前的引擎(用于判断同族切换是否需要清空上下文)。
   private lastEngine: Record<string, EngineKind> = {};
   // P3: done 事件计数器,用于触发周期性 idle reflection(每 5 次 done 触发一次记忆 GC)
@@ -306,6 +309,7 @@ export class TaskManager {
     clearSteer(id); // P1: 清理打断缓冲,防 Map 无限累积
     clearKillHook(id); // P1: kill hook 同步撤(防泄漏到同 id 的新会话)
     this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
+    this.ctxEstCache.delete(id); // P1: 估算缓存同步清(防 key 无限累积)
     for (const e of this.engines.values()) e.releaseConv?.(id); // P1: 引擎侧 per-conv 状态(codexStates / V2 fingerprints…)
     this.emit.emitRemoved(id);
   }
@@ -1465,10 +1469,20 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const modelMax = getSettings().v2ModelWindow || 1_000_000;
     const conv = this.convs.get(convId);
     if (!conv) return { tokens: 0, modelMax, pct: 0 };
-    // 只对 Direct 引擎有意义(CLI 引擎的上下文由各自的 CLI 管理)
+    // UI 每秒轮询(elapsed ticker):全量 estTokenCount 要对整条 directHistory 逐条
+    // JSON.stringify(tool_calls) + 逐字符累计,MB 级历史下每秒一次会打满主进程事件循环,
+    // 拖慢所有 IPC(2026-09-29 "任务多了界面卡" 实测卡点之一)。
+    // 缓存:directHistory 引用与长度都没变 → 估算必然不变,直接复用上次结果。
+    // The UI polls this every second; full re-estimation stringifies the entire
+    // directHistory each time. Cache by reference+length — same array = same estimate.
+    const hist = conv.directHistory;
+    const cache = this.ctxEstCache.get(convId);
+    if (cache && cache.ref === hist && cache.len === hist.length) return cache.val;
     const { estTokenCount } = require('./AgentLoop') as typeof import('./AgentLoop');
-    const tokens = estTokenCount(conv.directHistory);
-    return { tokens, modelMax, pct: Math.min(100, Math.round((tokens / modelMax) * 100)) };
+    const tokens = estTokenCount(hist);
+    const val = { tokens, modelMax, pct: Math.min(100, Math.round((tokens / modelMax) * 100)) };
+    this.ctxEstCache.set(convId, { ref: hist, len: hist.length, val });
+    return val;
   }
 
   // ── Pin/Unpin Turn:锁定的 turn 在 compact 时永远保留 ──
