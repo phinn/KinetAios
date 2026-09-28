@@ -276,12 +276,15 @@ const emitter: TaskManagerEmitter = {
     let payload: Conversation = { ...conv, directHistory: [] };
     if (conv.turnsLoaded !== false) {
       // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
+      // traj 计入权重:快照分级配额后单 turn 可达 256K 字符,漏计会让 600K
+      // 降级闸门失灵(2026-08 卡死事故同族载荷,直发 history 时已修过一次)。
       let weight = 0;
       for (const t of conv.turns) {
         weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
         if (t.steps) for (const s of t.steps) {
           weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
         }
+        if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
       }
       if (weight > IPC_TURNS_CHAR_LIMIT) {
         const last = conv.turns[conv.turns.length - 1];
@@ -1092,12 +1095,14 @@ function registerIpc(): void {
     // 与 emitConversation 同族瘦身:hydrate 过的会话 turns 可达 MB 级,
     // 每次拉列表全量 structured clone 过 IPC 是 2026-08 卡死事故的漏网同类。
     if (c.turnsLoaded === false) return { ...c, directHistory: [] };
+    // 与 emitConversation 同口径:traj 计入估重(快照配额放宽后单 turn 可达 256K)。
     let weight = 0;
     for (const t of c.turns) {
       weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
       if (t.steps) for (const s of t.steps) {
         weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
       }
+      if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
     }
     if (weight > IPC_TURNS_CHAR_LIMIT) {
       const last = c.turns[c.turns.length - 1];

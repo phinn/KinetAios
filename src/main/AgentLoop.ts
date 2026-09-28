@@ -1,6 +1,6 @@
 // ReAct loop: model ↔ tools until the model answers without a tool_call, or max turns hit.
 // Verbatim port of Swift AgentLoop.run. DirectEngine's trim-history logic lives here too.
-import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy } from '../shared/types';
+import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy, TrajRecord } from '../shared/types';
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
@@ -632,11 +632,28 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
 // 轨迹快照:把最终 messages 转成可持久化的 TrajRecord 列表。
 // - system → system;_memory → context(记忆注入);content 以 [早期对话摘要] 开头 → compacted
 // - tool role / 带 tool_calls 的 assistant → tool;其余 assistant → message
-// 每条截断 2K 字符(traj 只做透视,不做回放)。
+// 分级截断见 TRAJ_TIER_LIMITS(透视不做回放,但 system/记忆/摘要须够长才有透视价值)。
 // Snapshot final messages into TrajRecords for the Trajectory inspector.
 const TRAJ_TEXT_LIMIT = 2000;
+// 分级配额:轨迹面板的独有价值是 system/context/compacted(工具全文在步骤卡里已有),
+// 短截它们 = 透视失真;tool/user/message 在别处可看全文,维持 2K 降噪。
+// Tiered quotas: system/context/compacted get 16K (only visible here);
+// tool/user/message stay 2K (full text lives in step cards).
+const TRAJ_TIER_LIMITS: Record<TrajRecord['kind'], number> = {
+  system: 16_000,
+  context: 16_000,
+  compacted: 16_000,
+  tool: TRAJ_TEXT_LIMIT,
+  user: TRAJ_TEXT_LIMIT,
+  message: TRAJ_TEXT_LIMIT,
+};
+// 单 turn 轨迹总字符预算(applyEvent 拼接护栏 TRAJ_MAX_RECORDS=200 条之外的兜底):
+// 200 条 × 全 16K 理论上界 3.2MB → 256K 预算下按序保留头部完整、尾部截断。
+// Per-turn total budget to keep turns.data / IPC broadcast bounded.
+const TRAJ_TOTAL_BUDGET = 256_000;
 function snapshotTraj(messages: ChatMsg[]): import('../shared/types').TrajRecord[] {
   const out: import('../shared/types').TrajRecord[] = [];
+  let total = 0;
   for (const m of messages) {
     const text = typeof m.content === 'string'
       ? m.content
@@ -654,11 +671,14 @@ function snapshotTraj(messages: ChatMsg[]): import('../shared/types').TrajRecord
             : m.role === 'assistant'
               ? 'message'
               : 'user';
-    out.push({
-      kind,
-      role: m.role,
-      text: text.length > TRAJ_TEXT_LIMIT ? text.slice(0, TRAJ_TEXT_LIMIT) + '\n…[截断]' : text,
-    });
+    const limit = TRAJ_TIER_LIMITS[kind];
+    let kept = text.length > limit ? text.slice(0, limit) + `\n…[已截断,原文 ${text.length} 字符]` : text;
+    // 总预算兜底:超支时该条整体降为占位(保 idx 序号对齐,透视序列不断链)。
+    if (total + kept.length > TRAJ_TOTAL_BUDGET && kept.length < TRAJ_TOTAL_BUDGET) {
+      kept = `…[超出单 turn 轨迹总预算 ${TRAJ_TOTAL_BUDGET} 字符,此条原文 ${text.length} 字符已省略]`;
+    }
+    total += kept.length;
+    out.push({ kind, role: m.role, text: kept });
   }
   return out;
 }

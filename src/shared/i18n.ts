@@ -1211,6 +1211,8 @@ const ZH_CN: Dict = {
   // ── 会话导出 ──
   'export.title': '导出会话',
   'traj.title': '轨迹(模型上下文透视)',
+  'traj.expandAll': '全部展开',
+  'traj.collapseAll': '全部收起',
   'export.md': 'Markdown',
   'export.html': 'HTML',
   'export.json': 'JSON',
@@ -2539,6 +2541,8 @@ const EN: Dict = {
   // ── Export conversation ──
   'export.title': 'Export',
   'traj.title': 'Trajectory (model context)',
+  'traj.expandAll': 'Expand all',
+  'traj.collapseAll': 'Collapse all',
   'export.md': 'Markdown',
   'export.html': 'HTML',
   'export.json': 'JSON',
@@ -3861,6 +3865,8 @@ const ZH_TW: Dict = {
   // ── 會話匯出 ──
   'export.title': '匯出會話',
   'traj.title': '軌跡(模型上下文透視)',
+  'traj.expandAll': '全部展開',
+  'traj.collapseAll': '全部收起',
   'export.md': 'Markdown',
   'export.html': 'HTML',
   'export.json': 'JSON',
@@ -5141,6 +5147,8 @@ const JA: Dict = {
   // ── セッションエクスポート ──
   'export.title': 'エクスポート',
   'traj.title': 'トレーリ(モデルコンテキスト)',
+  'traj.expandAll': 'すべて展開',
+  'traj.collapseAll': 'すべて折りたたむ',
   'export.md': 'Markdown',
   'export.html': 'HTML',
   'export.json': 'JSON',

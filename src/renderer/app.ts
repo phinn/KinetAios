@@ -2914,11 +2914,14 @@ function openTrajInspector(t: Turn): void {
     <div class="traj-head">
       <div class="traj-title">${tr('traj.title')} <span class="traj-count">(${records.length})</span></div>
       <div class="traj-summary">${esc(summary)}</div>
+      <button class="ghost traj-expand">${tr('traj.expandAll')}</button>
+      <button class="ghost traj-copy" title="${esc(tr('copy.text'))}">${ICON.copy}</button>
       <button class="ghost traj-close">✕</button>
     </div>
     <div class="traj-list"></div>`;
   overlay.appendChild(box);
   const list = box.querySelector('.traj-list')!;
+  const rows: HTMLDetailsElement[] = [];
   records.forEach((r, idx) => {
     const badge = TRAJ_BADGE[r.kind] ?? { label: r.kind, cls: 't-user' };
     const row = document.createElement('details');
@@ -2926,8 +2929,24 @@ function openTrajInspector(t: Turn): void {
     const preview = r.text.replace(/\s+/g, ' ').slice(0, 160);
     row.innerHTML = `<summary><span class="traj-idx">#${idx + 1}</span><span class="traj-badge">${badge.label}</span><span class="traj-role">${esc(r.role)}</span><span class="traj-preview">${esc(preview)}${r.text.length > 160 ? '…' : ''}</span></summary><pre class="traj-full"></pre>`;
     (row.querySelector('.traj-full') as HTMLElement).textContent = r.text;
+    rows.push(row);
     list.appendChild(row);
   });
+  // 批量展开/收起:长 system prompt / 记忆注入要逐条点开太折磨。
+  // Expand/collapse all — flipping many 16K records one by one is miserable.
+  const expandBtn = box.querySelector('.traj-expand') as HTMLElement;
+  let allOpen = false;
+  expandBtn.onclick = () => {
+    allOpen = !allOpen;
+    for (const r of rows) r.open = allOpen;
+    expandBtn.textContent = allOpen ? tr('traj.collapseAll') : tr('traj.expandAll');
+  };
+  (box.querySelector('.traj-copy') as HTMLElement).onclick = (e) => {
+    const full = records
+      .map((r, idx) => `#${idx + 1} [${TRAJ_BADGE[r.kind]?.label ?? r.kind}/${r.role}]\n${r.text}`)
+      .join('\n\n' + '─'.repeat(40) + '\n\n');
+    void copyText(full, e.currentTarget as HTMLElement);
+  };
   (box.querySelector('.traj-close') as HTMLElement).onclick = () => overlay.remove();
   overlay.onclick = (e) => { if (e.target === overlay) overlay.remove(); };
   document.body.appendChild(overlay);

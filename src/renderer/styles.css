@@ -6620,6 +6620,10 @@ select:focus-visible {
 .traj-row.t-message .traj-badge { color: var(--text-dim); }
 .traj-row.t-tool .traj-badge { color: #d97b6c; border-color: #d97b6c55; }
 .traj-row.t-tool { border-left: 2px solid #d97b6c; }
+/* 头部操作钮:展开全部 / 复制全文(继承 .ghost 基础态,这里只管尺寸与不换行) */
+.traj-expand, .traj-copy {
+  font-size: .75rem; padding: 3px 8px; white-space: nowrap; flex-shrink: 0;
+}
 
 /* ═══ JS 显隐工具类:替代内联 style="display:none",配合 classList.toggle('js-hidden') ═══ */
 .js-hidden { display: none !important; }
