@@ -61,6 +61,22 @@ Good for machine migration, backup, sharing across providers. See [[Long-Term-Me
 
 The Skills tab aggregates every skill / command / agent from all sources — Claude Code, Codex, plugin-contributed, and the app's own **built-in skills** (read-only, shipped with the app; the first one, `data-analysis`, ports the V3 analysis discipline). Search, view, and edit user-level source files directly; plugin/built-in skills are read-only. Changes take effect immediately. See [[Skills]].
 
+## Goal Supervisor
+
+Long-running `/goal` sessions: a persona-driven supervisor reviews each Worker turn against your taste, accepts output or raises new requirements — built for overnight runs.
+
+| Field | Description |
+|---|---|
+| Supervisor | Enable the acceptance loop (requires a non-empty persona) |
+| Supervisor model | Which model plays the supervisor (e.g. a cheap fast one); empty = follow the session model |
+| Model failover chain | Ordered profile list. When the current model hits quota/auth errors, the Worker rotates to the next profile and keeps running |
+| 5h-window failover | Coding-plan 5h quota nearly used up → switch to the next profile proactively, before the error; threshold defaults to 100% (switch when full) |
+| Fuse: max iterations / hours / cost | Hard caps for overnight runs. 0 = unlimited. Exceeding any stops the run |
+
+**Failover chain gotcha (fixed in v3.9.3):** the chain is cached renderer-side and seeded when the settings panel opens. Previously the seed ran *after* `markClean()` — which snapshots the form (including the not-yet-seeded empty cache) as the dirty-check baseline — so the first open after a cold start showed an empty chain, and one save wiped it. Also note add/remove on the chain is button-driven (no `input`/`change` bubbling): the dirty dot lights up via an explicit `updateSaveDot()` call.
+
+The chain is read live by the runtime (`getFailoverChain()` re-reads settings each time), so editing the chain mid-overnight-run takes effect on the next failover without restart.
+
 ## Messaging
 
 Configure Feishu and WeCom bot integrations. See [[Messaging-Bots]] for full details.

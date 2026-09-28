@@ -146,6 +146,19 @@ isContextTooLong(e) → 砍半预算(15K)trim history → 重试本轮一次
 
 Anthropic cache token 计费:`cache_read_input_tokens` 按 input 价算(实际 ~10%,高估但比漏掉好);`cache_creation_input_tokens` 按 input 价算(实际 ~125%)。
 
+## 轨迹快照(traj)
+
+`snapshotTraj`(`AgentLoop.ts:654`)每轮把最终 messages 折叠成 `TrajRecord[]` 发 `traj` 事件;渲染层上下文检查器逐 turn 展示(可展开/复制)。类型:`system`(提示词)、`context`(记忆注入,`_memory` 标记)、`compacted`(头部摘要)、`tool`(tool role / 带 tool_calls 的 assistant)、`message`、`user`。
+
+分级配额 —— 检查器的独有价值是「只有它能看到的」:
+
+| 类型 | 限额 | 原因 |
+|---|---|---|
+| system / context / compacted | 16K | 只有轨迹面板能看到,短截=透视失真 |
+| tool / user / message | 2K | 全文在步骤卡/气泡里已有 |
+
+单 turn 总预算 256K(超支把该条降为占位,保 idx 序号对齐不断链)。多次 run 的快照按序拼接,超限保「最早 system/context + 最新全部」(types.ts)。`emitConversation` / `get-conversations` 估重补 traj 权重,600K IPC 闸门不失灵。
+
 ## 关键源文件
 
 - `src/main/AgentLoop.ts` —— ReAct loop + trim + compact

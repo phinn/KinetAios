@@ -146,6 +146,19 @@ Both providers normalize the response into the same `Completion`:
 
 Anthropic cache token billing: `cache_read_input_tokens` charged at input rate (actually ~10%, over-estimate but better than under); `cache_creation_input_tokens` at input rate (actually ~125%).
 
+## Trajectory snapshot (traj)
+
+`snapshotTraj` (`AgentLoop.ts:654`) folds the final messages into `TrajRecord[]` each turn and emits a `traj` event; the renderer's context inspector renders it per turn (expand/copy). Kinds: `system` (prompt), `context` (memory injection, `_memory` marker), `compacted` (head summary), `tool` (tool role / assistant with tool_calls), `message`, `user`.
+
+Tiered quotas — the inspector's unique value is what only it can show:
+
+| Kind | Limit | Why |
+|---|---|---|
+| system / context / compacted | 16K | Only visible here; short-truncating them defeats the purpose |
+| tool / user / message | 2K | Full text lives in step cards / bubbles |
+
+Per-turn total budget 256K (overflow degrades a record to a placeholder, keeping index alignment). Turn snapshots are concatenated across runs with the earliest system/context + latest turns preserved (types.ts). `emitConversation` / `get-conversations` add traj weight to the estimate so the 600K IPC gate still fires.
+
 ## Key source files
 
 - `src/main/AgentLoop.ts` — ReAct loop + trim + compact
