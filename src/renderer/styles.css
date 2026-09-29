@@ -2377,6 +2377,45 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
    旋转弧冻结成灰色静态环(数据层清单状态不变,只是不再暗示"仍在执行") */
 .turn:not(.streaming) .todo-spin { animation: none; border-top-color: var(--text-faint); opacity: 0.65; }
 .turn:not(.streaming) .todo-in_progress .todo-text { color: var(--text-dim); }
+/* ── 工作流卡(team 超集):阶段时间轴 + agent 胶囊 ── */
+.workflow-card summary { cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.workflow-card .name { color: var(--text-dim); font-size: 0.846rem; display: inline-flex; align-items: center; gap: 6px; }
+.wf-sum { margin-left: auto; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, "Cascadia Code", monospace; }
+.wf-timeline { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; padding-left: 2px; }
+/* 阶段行:左竖线串起时间轴 */
+.wf-stage { position: relative; padding-left: 22px; }
+.wf-stage::before { content: ''; position: absolute; left: 8px; top: 18px; bottom: -10px; width: 1px; background: var(--border-soft); }
+.wf-stage:last-child::before { display: none; }
+.wf-stage-head { display: flex; align-items: center; gap: 7px; }
+.wf-node { flex-shrink: 0; position: absolute; left: 2px; top: 1px; width: 13px; height: 13px; border-radius: 50%; background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text-faint); font-size: 0.575rem; font-weight: 700; display: flex; align-items: center; justify-content: center; font-family: ui-monospace, "Cascadia Code", monospace; }
+.wf-stage-done .wf-node { background: color-mix(in srgb, var(--ok) 22%, transparent); color: var(--ok); }
+.wf-stage-running .wf-node { background: color-mix(in srgb, var(--accent) 25%, transparent); color: var(--accent); box-shadow: 0 0 0 3px var(--accent-glow); }
+.wf-stage-failed .wf-node { background: color-mix(in srgb, var(--err) 22%, transparent); color: var(--err); }
+.wf-stage-label { font-size: 0.846rem; color: var(--text); font-weight: 500; }
+.wf-stage-pending .wf-stage-label { color: var(--text-faint); }
+.wf-stage-status { display: inline-flex; align-items: center; }
+.wf-stage-status svg { width: 12px; height: 12px; }
+.wf-stage-done .wf-stage-status { color: var(--ok); }
+.wf-stage-running .wf-stage-status { color: var(--accent); }
+.wf-stage-failed .wf-stage-status { color: var(--err); }
+.wf-stage-pending .wf-stage-status { color: var(--text-faint); }
+/* 成员胶囊网格 */
+.wf-members { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.wf-chip { display: inline-flex; align-items: center; gap: 5px; padding: 2.5px 9px 2.5px 7px; border-radius: 99px; font-size: 0.75rem; border: 1px solid var(--border-soft); background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--text-dim); max-width: 220px; }
+.wf-chip-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wf-chip svg { flex-shrink: 0; }
+.wf-chip-dot { flex-shrink: 0; width: 6px; height: 6px; border-radius: 50%; background: var(--text-faint); opacity: 0.5; }
+.wf-chip-running { border-color: color-mix(in srgb, var(--accent) 45%, var(--border-soft)); color: var(--text); box-shadow: 0 0 8px var(--accent-glow); }
+.wf-chip-running .wf-chip-dot { background: var(--accent); opacity: 1; animation: wfpulse 1.1s ease-in-out infinite; }
+.wf-chip-done { color: var(--text); }
+.wf-chip-done .wf-chip-dot { background: var(--ok); opacity: 1; }
+.wf-chip-done > svg { color: var(--ok); }
+.wf-chip-failed { border-color: color-mix(in srgb, var(--err) 40%, var(--border-soft)); color: var(--err); }
+.wf-chip-failed .wf-chip-dot { background: var(--err); opacity: 1; }
+@keyframes wfpulse { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.5); opacity: 0.55; } }
+/* 回合结束后工作流胶囊停跳(同 todo-spin 停转逻辑) */
+.turn:not(.streaming) .wf-chip-running .wf-chip-dot { animation: none; }
+.wf-tool-sum { color: var(--text-faint); font-size: 0.769rem; }
 /* ── 命令面板(Ctrl/Cmd+K)── */
 #palette { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #palette[hidden] { display: none; }

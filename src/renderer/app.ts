@@ -4,7 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -2686,6 +2686,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     body.className = 'ai-body';
     // 任务清单卡(DSH 式):本 turn 有 todo_write 状态 → 置顶展示(最终态随 turn 持久化,历史回放可见)
     if (t.todos?.length) body.appendChild(buildTodoCard(t.todos));
+    // 工作流卡(team 超集):本 turn 有 workflow 状态 → 置顶展示(随 turn 持久化,历史回放可见)
+    if (t.workflow) body.appendChild(buildWorkflowCard(t.workflow));
     if (t.steps.length) {
       body.appendChild(buildStepsEl(t.steps, streaming));
     }
@@ -3417,6 +3419,88 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   return el;
 }
 
+// ── 工作流卡(team 超集):阶段时间轴 + agent 胶囊网格,聊天流内嵌 ──
+// 状态语义与 todo 卡一致:done 绿 / running 橙(发光)/ failed 红 / pending 灰。
+// 数据由 AgentEvent.workflow 整表替换驱动(与 todo 同模式),随 turn 持久化 → 历史回放可见最终态。
+function buildWorkflowCard(w: WorkflowState): HTMLElement {
+  const el = document.createElement('div');
+  el.className = 'step workflow-card';
+  // 内容签名:增量更新用(状态/摘要变化才重建)
+  el.dataset.sig = w.stages.map((s) => s.label + s.status + s.members.map((m) => m.name + m.status + (m.summary ?? '')).join('|')).join('\u0001') + w.status;
+  const det = document.createElement('details');
+  det.open = w.status === 'running'; // 运行中展开,结束后收起(用户可点开)
+  const summary = document.createElement('summary');
+  const doneStages = w.stages.filter((s) => s.status === 'done').length;
+  const failedStages = w.stages.filter((s) => s.status === 'failed').length;
+  const totalMembers = w.stages.reduce((n, s) => n + s.members.length, 0);
+  const statusIcon = w.status === 'running'
+    ? '<span class="todo-spin"></span>'
+    : w.status === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>')
+    : w.status === 'cancelled' ? svg('<circle cx="12" cy="12" r="8"/>')
+    : svg('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>');
+  summary.innerHTML = `<span class="name">${statusIcon} ${esc(w.title)}</span>` +
+    `<span class="wf-sum">${doneStages}/${w.stages.length}${failedStages ? ` · ${failedStages} ${sv.xCircle}` : ''} · ${totalMembers} agents${w.usd > 0 ? ` · $${w.usd.toFixed(4)}` : ''}</span>`;
+  det.appendChild(summary);
+
+  const timeline = document.createElement('div');
+  timeline.className = 'wf-timeline';
+  w.stages.forEach((stage, si) => {
+    const row = document.createElement('div');
+    row.className = `wf-stage wf-stage-${stage.status}`;
+    // 阶段头:序号节点 + 阶段名 + 状态
+    const head = document.createElement('div');
+    head.className = 'wf-stage-head';
+    const node = document.createElement('span');
+    node.className = 'wf-node';
+    node.textContent = String(si + 1);
+    head.appendChild(node);
+    const label = document.createElement('span');
+    label.className = 'wf-stage-label';
+    label.textContent = stage.label;
+    head.appendChild(label);
+    const st = document.createElement('span');
+    st.className = 'wf-stage-status';
+    st.innerHTML = stage.status === 'running' ? '<span class="todo-spin"></span>'
+      : stage.status === 'done' ? svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>')
+      : stage.status === 'failed' ? svg('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>')
+      : svg('<circle cx="12" cy="12" r="8"/>');
+    head.appendChild(st);
+    row.appendChild(head);
+    // 成员胶囊网格
+    if (stage.members.length) {
+      const grid = document.createElement('div');
+      grid.className = 'wf-members';
+      for (const m of stage.members) {
+        const chip = document.createElement('span');
+        chip.className = `wf-chip wf-chip-${m.status}`;
+        chip.title = `${m.name} · ${m.role}${m.summary ? `\n${m.summary}` : ''}`;
+        const dot = document.createElement('span');
+        dot.className = 'wf-chip-dot';
+        chip.appendChild(dot);
+        const nm = document.createElement('span');
+        nm.className = 'wf-chip-name';
+        nm.textContent = m.name;
+        chip.appendChild(nm);
+        if (m.status === 'running') {
+          const spin = document.createElement('span');
+          spin.className = 'todo-spin';
+          chip.appendChild(spin);
+        } else if (m.status === 'done') {
+          chip.insertAdjacentHTML('beforeend', svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>', 11, 11));
+        } else if (m.status === 'failed') {
+          chip.insertAdjacentHTML('beforeend', svg('<path d="M6.5 6.5l11 11M17.5 6.5l-11 11"/>', 11, 11));
+        }
+        grid.appendChild(chip);
+      }
+      row.appendChild(grid);
+    }
+    timeline.appendChild(row);
+  });
+  det.appendChild(timeline);
+  el.appendChild(det);
+  return el;
+}
+
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -3436,6 +3520,27 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
       const plan = JSON.parse(s.args) as { goal?: string; nodes?: unknown };
       if (Array.isArray(plan.nodes) && plan.nodes.length) return renderPlanCard(plan);
     } catch { /* args 非 JSON → 走通用工具卡渲染 */ }
+  }
+  // workflow_run 工具卡 → 收起为一行摘要(阶段/成员可视化已由 workflow 事件卡承担,避免重复噪声)。
+  // 只在「工作流卡已存在时」收起;否则(事件丢失/旧数据)保留通用卡,信息不丢。
+  if ((s.name === 'workflow_run' || s.name.endsWith('workflow_run')) && !s.pending) {
+    const turnEl0 = document.querySelector('.turn');
+    if (turnEl0?.querySelector('.workflow-card')) {
+      const el = document.createElement('div');
+      el.className = 'step';
+      const det = document.createElement('details');
+      const summary = document.createElement('summary');
+      const status = stepStatusOf(s.result);
+      if (status === 'err') el.classList.add('step-err');
+      summary.innerHTML = `<span class="name">${SVGI_SET.users()} workflow_run</span><span class="wf-tool-sum">${esc((s.result.match(/# 工作流「(.+?)」/) ?? [])[1] ?? '')} · ${Math.round((s.durationMs ?? 0) / 1000)}s</span>`;
+      det.appendChild(summary);
+      const body = document.createElement('div');
+      body.className = 'ev-body';
+      body.textContent = s.result.length > 3000 ? s.result.slice(0, 3000) + '…' : s.result;
+      det.appendChild(body);
+      el.appendChild(det);
+      return el;
+    }
   }
   // summary 行:spinner/状态徽章 + 工具名 + 一行摘要 + 耗时
   const sumBits: string[] = [];
@@ -3655,6 +3760,22 @@ function updateLastTurnIncremental(): void {
     }
   } else if (oldTodoCard) {
     oldTodoCard.remove();
+  }
+  // 工作流卡增量更新:workflow_run 状态推进 → t.workflow 变化 → 按签名替换(同 todo 模式)。
+  const oldWfCard = turnEl.querySelector('.workflow-card');
+  const wfSig = t.workflow
+    ? t.workflow.stages.map((s) => s.label + s.status + s.members.map((m) => m.name + m.status + (m.summary ?? '')).join('|')).join('\u0001') + t.workflow.status
+    : '';
+  if (wfSig) {
+    if (!oldWfCard || (oldWfCard as HTMLElement).dataset.sig !== wfSig) {
+      const fresh = buildWorkflowCard(t.workflow!);
+      // 保留用户手动展开/收起状态:新卡默认开(运行中),若旧卡已存在且被收起则继承
+      const oldDet = oldWfCard?.querySelector('details');
+      if (oldDet && oldWfCard) { (fresh.querySelector('details') as HTMLDetailsElement).open = oldDet.open; }
+      oldWfCard ? oldWfCard.replaceWith(fresh) : turnEl.querySelector('.ai-body')?.prepend(fresh);
+    }
+  } else if (oldWfCard) {
+    oldWfCard.remove();
   }
   // 同步 streaming-status(toggle based on conv.statusNote)。
   const oldStatus = turnEl.querySelector('.streaming-status');
