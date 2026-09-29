@@ -13,4 +13,17 @@
 
 ---
 
+**English**
+
+### ✨ Features
+
+- **Traj snapshot tiered quotas + checker bulk expand/copy** (f9c5698) — snapshots are truncated per record type: system/context/compacted 16K (only the trajectory panel ever shows them; short truncation = distorted view), tool/user/message stay at 2K (full text already lives in step cards), 256K total budget per turn; overflow drops from the tail in order. Context checker supports per-turn trajectory expand/copy; emitConversation/get-conversations include traj weight in token estimates so the 600K IPC gate still trips correctly
+
+### 🐛 Fixes
+
+- **UI jank under concurrent tasks** (5200b38) — three storms that scaled with task count: (1) workbench full innerHTML rebuilds at high frequency → scheduleWorkbench 250ms throttle + scrollTop restore; (2) estContextTokens stringified the entire directHistory every second → ctxEstCache (reuses when reference + length unchanged); (3) nexus refreshNexusNode rAF throttling rebuilt everything every frame → 500ms trailing throttle + offsetParent visibility guard. Lesson: rAF is the wrong throttle (aligns to frames, doesn't reduce frequency) — use time-window throttling + visibility guards + scroll restore
+- **Goal chain wiped on session start** (c4be299) — init race: markClean() rebased dirty-detection with readSettingsForm(), which reads goalChainCache, but the cache was backfilled after markClean → read an empty [] poisoning the snapshot → first settings open after every cold start showed an empty chain, and saving wiped it. Fix: backfill moved before markClean (aligned with other caches); chain add/remove used button onclick that doesn't bubble input/change, added updateSaveDot so edits can't be silently lost
+- **Windows CRLF/BOM write triple-pit root fix** (e248965) — edit_file detects newline style on read and normalizes old_string/new_string before matching (incl. replace_all); decodeBuffer strips \ufeff BOM; atomicWrite preserves BOM. Previously CRLF files could never match a \n old_string
+- **Repo newline policy** (c1b395c) — added .gitattributes: LF in repo, CRLF for Windows scripts, so CRLF incidents stay dead
+
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.9.2...v3.9.3

@@ -88,6 +88,19 @@ isContextTooLong(e) → 砍半预算(15K)trim history → 重试本轮一次
 
 `isContextTooLong` 是 best-effort:match `context length|too long|maximum context|上下文|exceed|prompt is too` 等关键字 + HTTP 413。**只重试一次**(ponytail:没做更激进的递归回退,够用)。
 
+## turn 内工具结果折叠(foldOldToolResults)
+
+v3.9.4 新增(AgentLoop.ts),对标 Claude Code 的 microcompact。每次 `streamComplete` 前,主循环生成一个**折叠视图**发给 API(替代原始数组):
+
+- 触发门:上下文估算 > 150K tokens(小 turn 完全零感知)
+- 旧工具结果(保留最近 10 条)折叠为摘要行:`[已折叠 web_fetch https://…] 头 80 字… + 重新调用同一工具即可取回`
+- 同一批 `assistant(tool_calls)` 的参数同步砍成 `'{}'`(edit_file 的 `new_string` 动辄几 KB);**id 保留**,assistant↔tool 配对不破,openai/anthropic 协议仍合法
+- 永不折叠:有文本内容的 assistant、`_transient` 结果、截屏类空 content
+
+为什么需要:不折叠时,一个调 N 次 LLM 的 turn 会把每条早期工具结果重发 N 次 → O(N²) 输入增长。实测事故:单 turn 499 次调用烧掉 99.8M input tokens(单笔 $6.99)并撞 5h 限流。
+
+**只改视图,不动原数组。** 原始 `messages` 数组从不被修改 —— directHistory 持久化、traj 存证、compaction spill 看到的都是全文。turn 结束后的 `compactHistory` 30K 预算照旧、作用于未折叠原文。wrapUp 收尾调用同样走折叠视图。
+
 ## 摘要压缩(compactHistory)
 
 `compactHistory`(`AgentLoop.ts:158`):

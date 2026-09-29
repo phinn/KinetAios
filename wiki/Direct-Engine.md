@@ -88,6 +88,19 @@ isContextTooLong(e) → halve budget (15K) trim history → retry this turn once
 
 `isContextTooLong` is best-effort: matches `context length|too long|maximum context|上下文|exceed|prompt is too` + HTTP 413. **Retries only once** (ponytail: no recursive fallback, sufficient).
 
+## Intra-turn tool-result folding (foldOldToolResults)
+
+Added in v3.9.4 (AgentLoop.ts), modeled on Claude Code's microcompact. Before every `streamComplete` the loop builds a **folded view** and sends that to the API instead of the raw array:
+
+- Trigger gate: estimated context > 150K tokens (small turns are untouched)
+- Old tool results (all but the most recent 10) collapse to summary lines: `[folded web_fetch https://…] first-80-chars… + re-run the same tool to retrieve`
+- The paired `assistant(tool_calls)` batch arguments are cut to `'{}'` in the same pass (edit_file's `new_string` is often several KB); **ids are kept**, so assistant↔tool pairing survives and the openai/anthropic protocol stays valid
+- Never folded: assistants with visible text content, `_transient` results, screenshot-style empty content
+
+Why it matters: without folding, a turn that makes N LLM calls resends every earlier tool result N times → O(N²) input growth. Measured incident: 499 calls in one turn burned 99.8M input tokens ($6.99 for a single call) and tripped the 5-hour rate limit.
+
+**Only the view changes.** The original `messages` array is never mutated — directHistory persistence, traj evidence, and compaction spill all see the full text. The end-of-turn `compactHistory` 30K budget works as before, on the unfolded originals. The wrapUp finishing call also uses the folded view.
+
 ## Compaction (compactHistory)
 
 `compactHistory` (`AgentLoop.ts:158`):

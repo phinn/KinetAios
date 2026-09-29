@@ -21,3 +21,13 @@
 ---
 
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.9.0...v3.9.1
+
+---
+
+**English**
+
+- **Goal-driven context continuation**: multi-goal conversations load a single static goal text at session start; cross-goal shifts lose the execution chain (what's done / what's pending / what state the files are in). Added goal chain + turn-by-turn progress persistence, auto-injected into the next session's system prompt, making "switch goal mid-conversation" first-class
+- **System-prompt slimming**: goal/progress sections merged into a structured block, no more interleaved duplication; long historical block descriptions compressed
+- **Traj snapshot weight**: traj records injected into context-estimation weight, so the IPC 600K gate no longer undercounts
+
+**Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.9.0...v3.9.1

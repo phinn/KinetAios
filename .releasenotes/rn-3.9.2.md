@@ -19,4 +19,12 @@
 
 ---
 
+**English**
+
+- **Usage dashboard overhaul** (4d3a4e3, 4285671) — trend chart aligned with Cherry Studio: daily bars + Token/cost metric switch + per-model coloring; time range extended to 6 presets (3D/7D/30D/6M(90)/180D/1Y(365)), default 1M; heatmap weeks scale with range (1Y ≈ 53 weeks + month labels); 5 ticks with year for long X ranges
+- **Project ranking card** (09432ef) — 4th ranking card: aggregates token/cost/requests by last segment of conversations.cwd, forming a 2×2 grid with model/engine/conversation rankings; project names color-hashed
+- **web-auto web-automation plugin** (392a6f6) — browser workflow templates from real campaigns
+- **browser_* tool group hardens field-tested pitfalls** (2f54fc7) — browserType's three injection modes (value/paste/insertText covering React controlled inputs / ProseMirror / contenteditable) + post-injection read-back verification ("text in DOM ≠ framework received it"); browserUpload goes through the CDP DOM.setFileInputFiles single bridge; browserCookie writes via cookieStore.set (CDP Network.setCookie silently fails) and reads via CDP (sees HttpOnly)
+- **Goal-driven context continuation (v2)** — goal chain + turn progress injected into the system prompt
+
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.9.1...v3.9.2
