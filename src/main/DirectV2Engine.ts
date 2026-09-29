@@ -1276,7 +1276,7 @@ ${failedDetail || '  (无)'}
       sandbox: getSettings().sandbox,
       emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
       // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
-      teamRun: async ({ teamId, memberNames, message }) => {
+      teamRun: async ({ teamId, memberNames, message }): Promise<{ text: string; answers: Map<string, string> }> => {
         const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
         const { emitTeamEvent } = await import('./team-events');
 
@@ -1298,9 +1298,9 @@ ${failedDetail || '  (无)'}
 
         if (memberNames.length <= 1) {
           const name = memberNames[0];
-          if (!name) return '';
+          if (!name) return { text: '', answers: new Map() };
           const m = store.loadTeamMember(teamId, name);
-          if (!m) return `[${name}] (member 不存在)`;
+          if (!m) return { text: `[${name}] (member 不存在)`, answers: new Map() };
           try {
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
@@ -1309,11 +1309,11 @@ ${failedDetail || '  (无)'}
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, source: `team:${m.name}` });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
-            return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
+            return { text: `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`, answers: new Map([[name, r.answer]]) };
           } catch (e) {
             store.upsertTeamMember({ ...m, last_message: message, last_result: `错误: ${(e as Error)?.message}`, status: 'failed', updated_at: Date.now() / 1000 });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'failed' });
-            return `### ${m.name}\n错误: ${(e as Error)?.message}\n`;
+            return { text: `### ${m.name}\n错误: ${(e as Error)?.message}\n`, answers: new Map([[name, `错误: ${(e as Error)?.message}`]]) };
           }
         }
 
@@ -1321,6 +1321,7 @@ ${failedDetail || '  (无)'}
         const members = memberNames.map(n => store.loadTeamMember(teamId, n)).filter((m): m is NonNullable<typeof m> => m !== null);
         const results = await runMembersParallel({ members, message, runOpts });
         const parts: string[] = [];
+        const answers = new Map<string, string>();
         let totalUsd = 0;
         let totalTokens = 0;
         let totalIn = 0;
@@ -1334,9 +1335,10 @@ ${failedDetail || '  (无)'}
           totalIn += r.tokensIn;
           totalOut += r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+          answers.set(m.name, r.answer);
         }
         if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
-        return parts.join('\n');
+        return { text: parts.join('\n'), answers };
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
         // 跨引擎子任务(v2 也支持调用 claude/codex 一次性任务)

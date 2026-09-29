@@ -194,9 +194,9 @@ export class DirectV3Engine implements Engine {
 
         if (memberNames.length <= 1) {
           const name = memberNames[0];
-          if (!name) return '';
+          if (!name) return { text: '', answers: new Map() };
           const m = store.loadTeamMember(teamId, name);
-          if (!m) return `[${name}] (member 不存在)`;
+          if (!m) return { text: `[${name}] (member 不存在)`, answers: new Map() };
           try {
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
@@ -205,11 +205,11 @@ export class DirectV3Engine implements Engine {
             onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
-            return `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`;
+            return { text: `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`, answers: new Map([[name, r.answer]]) };
           } catch (e) {
             store.upsertTeamMember({ ...m, last_message: message, last_result: `错误: ${(e as Error)?.message}`, status: 'failed', updated_at: Date.now() / 1000 });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'failed' });
-            return `### ${m.name}\n错误: ${(e as Error)?.message}\n`;
+            return { text: `### ${m.name}\n错误: ${(e as Error)?.message}\n`, answers: new Map([[name, `错误: ${(e as Error)?.message}`]]) };
           }
         }
 
@@ -217,6 +217,7 @@ export class DirectV3Engine implements Engine {
         const members = memberNames.map(n => store.loadTeamMember(teamId, n)).filter((m): m is NonNullable<typeof m> => m !== null);
         const results = await runMembersParallel({ members, message, runOpts });
         const parts: string[] = [];
+        const answers = new Map<string, string>();
         let totalUsd = 0;
         let totalTokens = 0;
         for (const m of members) {
@@ -226,9 +227,10 @@ export class DirectV3Engine implements Engine {
           totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
           totalTokens += r.tokensIn + r.tokensOut;
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
+          answers.set(m.name, r.answer);
         }
         if (totalUsd > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens });
-        return parts.join('\n');
+        return { text: parts.join('\n'), answers };
       },
     };
 
