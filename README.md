@@ -6,6 +6,8 @@
 [![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
 [![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-Windows%2011%20%7C%20macOS-black)](https://github.com/phinn/KinetAios/releases/latest)
+[![Discussions](https://img.shields.io/github/discussions/phinn/KinetAios)](https://github.com/phinn/KinetAios/discussions)
+[![Good First Issues](https://img.shields.io/badge/-good%20first%20issues-7057ff)](https://github.com/phinn/KinetAios/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
 > 🌐 **[Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
