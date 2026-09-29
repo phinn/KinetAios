@@ -307,7 +307,14 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
     let completion: Completion;
     try {
-      completion = await provider.streamComplete(messages, defs, snapshot, signal, (tok) =>
+      // turn 内折叠:超阈值时折叠旧工具结果为摘要行(仅本次调用的视图,messages 原数组不动)。
+      // 对标 Claude Code microcompact — 单 turn 长跑不再 O(N²) 重发全量工具结果。
+      const { view, folded, savedTokens } = foldOldToolResults(messages, snapshot.apiProtocol);
+      if (folded > 0) {
+        onEvent({ type: 'context', action: 'trimmed', beforeTokens: estTokenCount(messages, snapshot.apiProtocol), afterTokens: estTokenCount(view, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
+        onEvent({ type: 'status', text: `♻️ 已折叠 ${folded} 条早期工具结果(省 ~${Math.round(savedTokens / 1000)}K tokens,重调同一工具可取回)` });
+      }
+      completion = await provider.streamComplete(view, defs, snapshot, signal, (tok) =>
         onEvent({ type: 'token', text: tok }),
       );
     } catch (e) {
@@ -426,8 +433,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   if (!signal.aborted) {
     try {
       onEvent({ type: 'status', text: '⏳ 已达轮数上限,正在收尾总结…' });
+      const { view: wrapUpView } = foldOldToolResults(messages, snapshot.apiProtocol);
       const wrapUp = await provider.streamComplete(
-        [...messages, { role: 'user', content: '[系统] 已达最大工具调用轮数。不要再调用任何工具,立即基于已完成的进展给出最终总结回答。', _transient: true } as typeof messages[number]],
+        [...wrapUpView, { role: 'user', content: '[系统] 已达最大工具调用轮数。不要再调用任何工具,立即基于已完成的进展给出最终总结回答。', _transient: true } as typeof messages[number]],
         [], // 无工具 → 模型只能输出文本
         snapshot, signal,
         (tok) => onEvent({ type: 'token', text: tok }),
@@ -818,6 +826,95 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
   }
   // 记忆消息本就处于头部,pinned 紧随其后,摘要消息在 pinned 之后(它们都是"永不可丢"的头部上下文)。
   return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...sanitizeToolPairs(kept.reverse())];
+}
+
+// ── turn 内工具结果折叠(intra-turn tool-result folding)──
+// 场景:长跑 ReAct 循环单 turn 内数百次 LLM 调用,每条工具结果都会被后续每次调用重发,
+// N 次调用 = O(N²) token 增长(实测:499 次调用烧 99.8M input tokens,撞 5h 限流)。
+// 方案(对标 Claude Code microcompact):调用前生成一个"折叠视图"喂给 API,
+// 只折叠已消费的旧工具结果为摘要行,保留最近 KEEP_RECENT 条完整 + 当前步永不折叠。
+// ⚠️ 只改发给模型的视图,messages 原始数组不动 → directHistory / traj 存证 / spill 均不受影响。
+// Intra-turn folding: old tool results collapse to summary lines before each API call.
+// Returns a NEW array; the original `messages` (persisted to directHistory) stays intact.
+const FOLD_KEEP_RECENT = 10;        // 保留最近 N 条工具结果完整(recent tail 永不折叠)
+const FOLD_TRIGGER_TOKENS = 150_000; // 上下文估超此值才折叠(小 turn 零感知)
+const FOLD_RESUME_HINT = '\n[本条工具结果已折叠以节省上下文。如仍需要,重新调用同一工具即可取回。]';
+
+// 从 tool_call arguments 里提取可读的目标(路径/URL/query),摘要行让模型知道"去哪重取"。
+function foldTargetOf(name: string, argsJson: string): string {
+  try {
+    const a = JSON.parse(argsJson || '{}') as Record<string, unknown>;
+    const pick = (...keys: string[]): string => {
+      for (const k of keys) { const v = a[k]; if (typeof v === 'string' && v.trim()) return v.trim(); }
+      return '';
+    };
+    const v =
+      name === 'web_fetch' ? pick('url') :
+      name === 'web_search' || name === 'market_search' ? pick('query') :
+      name === 'read_file' ? pick('path', 'file') :
+      name === 'write_file' ? pick('path', 'file') :
+      name === 'edit_file' ? pick('path', 'file') :
+      name === 'grep' ? pick('pattern') :
+      name === 'glob' ? pick('pattern') :
+      name === 'shell' ? pick('command') :
+      name === 'browser_navigate' ? pick('url') :
+      pick('path', 'url', 'query', 'command', 'file', 'pattern');
+    if (!v) return '';
+    return v.length > 120 ? v.slice(0, 117) + '…' : v;
+  } catch { return ''; }
+}
+
+// 折叠视图生成:超阈值时把(除最近 KEEP_RECENT 条外的)旧工具结果替换为摘要行。
+// 摘要行格式:「[已折叠 tool_name 目标]」 — 模型知道看过什么、结果去哪了、怎么取回。
+export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: ChatMsg[]; folded: number; savedTokens: number } {  const total = estTokenCount(msgs, proto);
+  if (total <= FOLD_TRIGGER_TOKENS) return { view: msgs, folded: 0, savedTokens: 0 };
+  // 收集全部 tool 消息下标(排除 _transient —— 尚未消费;截屏类 content 为空只有图,折叠无意义)
+  const toolIdx: number[] = [];
+  for (let k = 0; k < msgs.length; k++) {
+    const m = msgs[k];
+    if (m.role === 'tool' && !m._transient && typeof m.content === 'string' && m.content.length > 0) toolIdx.push(k);
+  }
+  if (toolIdx.length <= FOLD_KEEP_RECENT) return { view: msgs, folded: 0, savedTokens: 0 };
+  const foldSet = new Set(toolIdx.slice(0, toolIdx.length - FOLD_KEEP_RECENT));
+  // 相邻 assistant(tool_calls)也一起折叠:folded 结果 + 完整参数原文并存无意义,参数才是大头。
+  // 只折叠"全部 tool_calls 都已折叠"的 assistant,且无文本内容(有文本的保留原文)。
+  const assistantFullyFolded = new Set<number>();
+  for (let k = 0; k < msgs.length; k++) {
+    const m = msgs[k];
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0 &&
+        !(typeof m.content === 'string' && m.content.trim().length > 0) &&
+        m.tool_calls.every((tc) => msgs.some((x, xi) => x.role === 'tool' && x.tool_call_id === tc.id && foldSet.has(xi)))) {
+      assistantFullyFolded.add(k);
+    }
+  }
+  const c = coefFor(proto);
+  let saved = 0;
+  const view = msgs.map((m, k) => {
+    if (foldSet.has(k) && typeof m.content === 'string') {
+      // 找到对应的 assistant.tool_calls 拿 name/args 生成摘要行
+      const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
+      const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
+      const target = tc ? foldTargetOf(tc.function.name, tc.function.arguments) : '';
+      const head = m.content.slice(0, 80).replace(/\s+/g, ' ').trim();
+      const line = `[已折叠 ${tc?.function.name ?? 'tool'}${target ? ` ${target}` : ''}] ${head}…${FOLD_RESUME_HINT}`;
+      saved += Math.max(0, Math.floor((m.content.length - line.length) * c));
+      return { ...m, content: line };
+    }
+    if (assistantFullyFolded.has(k) && Array.isArray(m.tool_calls)) {
+      const desc = m.tool_calls.map((t2) => `${t2.function.name}(${foldTargetOf(t2.function.name, t2.function.arguments)})`).join('; ');
+      const line = `[已折叠工具调用批次: ${desc}]`;
+      saved += Math.max(0, Math.floor((JSON.stringify(m.tool_calls).length - line.length) * c));
+      // arguments 置 '{}' 真正砍掉参数原文(edit_file 的 new_string 动辄几 KB);
+      // id 保留 → 与折叠后 tool 结果的 tool_call_id 配对不破,协议仍合法。信息由 desc 摘要行承载。
+      return {
+        ...m,
+        content: line,
+        tool_calls: m.tool_calls.map((t2) => ({ ...t2, function: { ...t2.function, arguments: '{}' } })),
+      };
+    }
+    return m;
+  });
+  return { view, folded: foldSet.size, savedTokens: saved };
 }
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
