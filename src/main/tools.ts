@@ -198,7 +198,7 @@ export interface ToolCtx {
   }) => Promise<string>;
   // P2:AgentTeams 调度。给定 teamId + memberNames + message,实现方负责跑每个 member 并把结果串成文本。
   // broadcast 时返回多成员拼接结果;send 单成员时返回该成员结果。
-  teamRun?: (a: { teamId: string; memberNames: string[]; message: string }) => Promise<string>;
+  teamRun?: (a: { teamId: string; memberNames: string[]; message: string }) => Promise<{ text: string; answers: Map<string, string> }>;
   signal?: AbortSignal;
   convId?: string;
   // 当前 turn id:层间压缩(dag-executor)等拿不到 conv.turns 的场景用来给 spill 存证挂轮次。
@@ -1938,7 +1938,8 @@ const teamBroadcast: Tool = {
     const members = store.listTeamMembers(teamId);
     if (members.length === 0) return `team 不存在或已关闭: ${teamId}`;
     try {
-      return await ctx.teamRun({ teamId, memberNames: members.map((m) => m.member_id), message });
+      const r = await ctx.teamRun({ teamId, memberNames: members.map((m) => m.member_id), message });
+      return r.text;
     } catch (e) {
       return `team_broadcast 失败: ${(e as Error)?.message ?? e}`;
     }
@@ -1969,7 +1970,7 @@ const teamSend: Tool = {
     if (!member) return `member 不存在: ${teamId}/${memberName}`;
     try {
       const out = await ctx.teamRun({ teamId, memberNames: [memberName], message });
-      return out; // 单 member,直接返回结果文本
+      return out.text; // 单 member,直接返回结果文本
     } catch (e) {
       return `team_send 失败: ${(e as Error)?.message ?? e}`;
     }
@@ -1993,6 +1994,161 @@ const teamClose: Tool = {
     if (!teamId) return '缺少 team_id';
     const n = store.deleteTeam(teamId);
     return `已关闭 team ${teamId}(删除 ${n} 个 member)`;
+  },
+};
+
+// ── workflow_run:AgentTeam 的超集(阶段化多 agent 编排)──
+// team 是"一轮 broadcast 全并行";workflow 加「阶段 × 成员」二维结构:
+// 阶段串行,阶段内成员并行(直接调 ctx.teamRun),上一阶段全部回答汇总注入下一阶段 prompt。
+// 状态推进通过 ctx.emit({type:'workflow'}) 整表替换发出(与 todo_write 同模式):
+// 实时驱动聊天流内嵌工作流卡 + 随 turn 持久化,历史回放可见最终态。无新表、无新 IPC 通道。
+const workflowRun: Tool = {
+  name: 'workflow_run',
+  description:
+    '运行一个**多阶段多 agent 工作流**(team 超集)。每个阶段有若干 named agent 并行执行,\n' +
+    '阶段串行推进,上一阶段所有 agent 的回答自动汇总注入下一阶段,最终返回全流程产出。\n' +
+    '**与 team_broadcast 的区别**:team_broadcast 是单轮全员并行;workflow_run 是多阶段流水线,\n' +
+    '支持「并行调研 → 交叉评审 → 终审合成」这类分阶段编排。UI 会实时渲染阶段时间轴 + agent 胶囊。\n\n' +
+    '约束:\n' +
+    '- 需要先 spawn_team 创建团队,成员跑在该 team 的 members 上(member history 持久累积)\n' +
+    '- 阶段上限 7,单阶段成员上限 8(复用 team 上限),总耗时 = 各阶段串行之和\n' +
+    '- 适合任务间有依赖的多步编排;各任务完全独立时直接 team_broadcast 更省',
+  parameters: {
+    type: 'object',
+    properties: {
+      team_id: { type: 'string', description: 'spawn_team 返回的 team_id' },
+      title: { type: 'string', description: '工作流名(显示用),如 "深度事实核查流水线"' },
+      stages: {
+        type: 'array',
+        description: '阶段列表(串行执行)。每个阶段 = { label, members: [{name, prompt}] }',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: '阶段名,如 "并行事实核查"' },
+            members: {
+              type: 'array',
+              description: '本阶段参与的成员(必须是 team 里已存在的 member name)+ 各自的阶段性 prompt',
+              items: {
+                type: 'object',
+                properties: {
+                  name: { type: 'string', description: 'team 成员名' },
+                  prompt: { type: 'string', description: '该成员在本阶段要处理的指令' },
+                },
+                required: ['name', 'prompt'],
+              },
+            },
+          },
+          required: ['label', 'members'],
+        },
+      },
+    },
+    required: ['team_id', 'title', 'stages'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId || !ctx.teamRun) return '该上下文不支持 workflow run(无 convId 或 teamRun)';
+    const teamId = String(args.team_id ?? '').trim();
+    const title = String(args.title ?? '').trim() || '工作流';
+    const stageDefs = (args.stages as Array<{
+      label?: string; members?: Array<{ name?: string; prompt?: string }>;
+    }> | undefined) ?? [];
+    if (!teamId) return '缺少 team_id';
+    if (stageDefs.length === 0) return '缺少 stages';
+    if (stageDefs.length > 7) return '阶段过多(上限 7),请合并或拆成多次 workflow_run';
+
+    const roster = store.listTeamMembers(teamId);
+    if (roster.length === 0) return `team 不存在或已关闭: ${teamId}`;
+    const rosterIds = new Set(roster.map((m) => m.member_id));
+
+    // 校验 + 初始化状态骨架(全部 pending)。prompt 不进 UI 状态(太长),只留在本地驱动执行。
+    const stagePrompts: string[][] = [];
+    // 各阶段结果(workflow_run 返回的 answers)。run 闭包内声明 — 模块级会跨并发调用互相污染。
+    const results: Array<{ text: string; answers: Map<string, string> }> = [];
+    const state = {
+      workflowId: teamId,
+      title,
+      stages: [] as import('../shared/types').WorkflowStage[],
+      activeStage: 0,
+      status: 'running' as import('../shared/types').WorkflowState['status'],
+      usd: 0,
+    };
+    for (const sd of stageDefs) {
+      const label = String(sd.label ?? '').trim() || '阶段';
+      const ms = sd.members ?? [];
+      if (ms.length === 0) return `阶段「${label}」没有成员`;
+      if (ms.length > 8) return `阶段「${label}」成员过多(上限 8)`;
+      const wms: import('../shared/types').WorkflowMember[] = [];
+      const prompts: string[] = [];
+      for (const m of ms) {
+        const name = String(m.name ?? '').trim();
+        const prompt = String(m.prompt ?? '').trim();
+        if (!name || !prompt) return `阶段「${label}」的每个成员必须有 name 和 prompt`;
+        if (!rosterIds.has(name)) return `成员「${name}」不在 team ${teamId} 中`;
+        wms.push({ name, role: roster.find((r) => r.member_id === name)?.role ?? '', status: 'pending' });
+        prompts.push(prompt);
+      }
+      state.stages.push({ label, status: 'pending', members: wms });
+      stagePrompts.push(prompts);
+    }
+
+    const emitState = (): void => ctx.emit?.({ type: 'workflow', state: JSON.parse(JSON.stringify(state)) });
+
+    // 阶段串行推进。上一阶段所有成员回答(含失败信息)汇总后注入下一阶段每条 prompt 前面。
+    // teamRun 内部已处理:并行执行、member history 持久化、TeamEvent 实时事件、cost 上报。
+    for (let i = 0; i < state.stages.length; i++) {
+      const stage = state.stages[i];
+      stage.status = 'running';
+      state.activeStage = i;
+      for (const m of stage.members) m.status = 'running';
+      emitState();
+
+      // 上一阶段汇总(阶段 0 无)。失败的成员回答是错误文本,原样传递让下一阶段知情。
+      const carry = i > 0
+        ? '\n\n---\n# 上一阶段产出(只读参考)\n' + stageDefs[i - 1].members!.map((m) => {
+            const a = results[i - 1].answers.get(String(m.name));
+            return `### ${m.name}\n${a || '(无回答)'}`;
+          }).join('\n\n')
+        : '';
+      let res: { text: string; answers: Map<string, string> };
+      try {
+        res = await ctx.teamRun({
+          teamId,
+          memberNames: stage.members.map((m) => m.name),
+          message: stagePrompts[i].map((p) => `【你的任务】${p}`).join('\n\n') + carry,
+        });
+      } catch (e) {
+        // teamRun 整体失败(引擎层异常):标记本阶段失败并终止后续阶段
+        stage.status = 'failed';
+        state.status = 'failed';
+        emitState();
+        return `工作流「${title}」在第 ${i + 1} 阶段失败: ${(e as Error)?.message ?? e}`;
+      }
+      results[i] = res;
+
+      let stageFailed = false;
+      for (const m of stage.members) {
+        const a = res.answers.get(m.name);
+        if (a === undefined) { m.status = 'failed'; m.summary = '(无结果)'; stageFailed = true; continue; }
+        m.status = 'done';
+        m.summary = a.slice(0, 300);
+      }
+      // 任一成员失败 → 阶段标 failed(成员间互不掩盖);本阶段其余成员已由 teamRun 跑完
+      stage.status = stageFailed ? 'failed' : 'done';
+      emitState();
+    }
+
+    state.status = state.stages.some((s) => s.status === 'failed') ? 'failed' : 'done';
+    emitState();
+
+    // 汇总输出给主 LLM(完整回答,主 agent 据此写最终答复)
+    const parts: string[] = [`# 工作流「${title}」完成`];
+    for (let i = 0; i < state.stages.length; i++) {
+      parts.push(`## 阶段 ${i + 1}:${state.stages[i].label}`);
+      for (const m of stageDefs[i].members!) {
+        const a = results[i].answers.get(String(m.name));
+        parts.push(`### ${m.name}\n${a || '(无回答)'}\n`);
+      }
+    }
+    return parts.join('\n');
   },
 };
 
@@ -2918,7 +3074,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
