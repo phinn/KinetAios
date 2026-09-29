@@ -73,6 +73,20 @@ FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (
 
 ## 关联规范
 
+### Release checklist（打 tag 前必须全走）
+
+**历史教训：v3.8.1~v3.9.3 连续 6 版 release note 漏英文段，因为双语要求从未写进本文件、且无机械校验。此 checklist 是硬性流程，不是建议。**
+
+打任何 release tag（`vX.Y.Z`）之前，逐项执行：
+
+1. **版本号三处同步** — `package.json` + `package-lock.json`（两处 version）+ `README.md` / `README.zh-CN.md` 的 current 版本
+2. **Release note 必须中英双语** — `.releasenotes/rn-<ver>.md`：中文正文 → `---` → `**English**` → 英文正文 → `---` → Full Changelog（格式参照 rn-3.4.0）
+3. **回查前 3 版** — `for v in ...; do grep -c '^\*\*English\*\*' .releasenotes/rn-<v>.md; done` 必须全 ≥1，发现漏的直接补
+4. **wiki 中英同步** — 新功能章节写进 `wiki/*.md` 时，同名 `.zh-CN.md` 必须同步（反之亦然）
+5. **`npm run typecheck`** 通过
+6. **机械校验** — `bash scripts/pre-tag-check.sh <ver>` 全绿才允许 commit+tag
+7. `git commit` + `git tag -a` + `git push --follow-tags`
+
 ### 插件开发 → `KinetAiosPlugin.md`
 
 **一旦任务涉及开发插件（新增 / 修改 / 调试插件），必须先读 [`KinetAiosPlugin.md`](./KinetAiosPlugin.md)。** 该文件包含完整的插件开发 SOP（7 步流程）、plugin.json 字段参考、分类注册表、贡献点代码模板和验证 checklist。

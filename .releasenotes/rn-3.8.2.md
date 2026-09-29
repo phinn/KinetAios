@@ -12,4 +12,16 @@
 
 ---
 
+**English**
+
+### ✨ Features
+
+- **Sidebar channel tooltip** (9ba9ed5) — hovering a channel row pops a 350ms panorama: current step / todo progress / token spend / latest output, harness-style; fixed-positioned on body so it never covers the list (197bed8), one-click dismiss if you dislike it (3557f1d), off by default (7d6b37e)
+
+### 🐛 Fixes
+
+- **feishu/wecom_send_file conversation-origin gating** (0901541) — the Feishu/WeCom channels are only open to sessions of that origin: previously local-channel sessions could call them too, once mistakenly pushing a release note into a WeCom group
+- **Embedding pipeline outage P0** (7d30a5e) — the Zhipu anthropic endpoint (`/api/anthropic`) doesn't contain the `/v4` substring and was killed by the guard → from 8/5 all memories had zero vectors and semantic recall silently degraded to substring matching; the fix rewrites the endpoint to `/api/paas/v4` automatically, with a backfill script for existing data (18627/18627 fully backfilled)
+- **Memory governance trio** (7d30a5e) — rule-type memories are filtered out of semantic dedup and decay (no longer mistakenly removed); correction strikes attribute tightly to the correction phrasing itself (no more cross-turn misattribution); deleteConversation cascades cleanup of conv_facts anchors
+
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.8.1...v3.8.2

@@ -1,6 +1,7 @@
 每次修改完提交git并push
 打tag的时候package一起改
 新功能记得多国语言一起做
+**打 release tag 前必须跑 `bash scripts/pre-tag-check.sh <版本号>`,全绿才能 tag**(release note 中英双语/版本号三处/历史 rn 回查都由它把关,漏英文段的事故发生过 6 次)
 
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 

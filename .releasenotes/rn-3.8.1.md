@@ -23,4 +23,27 @@
 
 ---
 
+**English**
+
+### 🔒 Security hardening (five fixes)
+
+- **P0 credential encryption coverage** (d4c7518) — sensitive fields in `settings.json` uniformly sealed with `@enc:` encryption: `modelProfiles[].apiKey` / `balanceApiKey` (previously plaintext on disk), wecomBot.secret, all feishu fields, MCP tokens; `web_fetch` redirect SSRF fix (redirects to internal addresses are refused)
+- **P0 unified approval gate for plugin tools** (c61f38a) — `pluginTools()` wraps tools per the manifest `approval` declaration, default `always`: before the fix, office-suite's 18 tools all ran exec with zero confirm, and the whole hw-diag plugin bypassed the approval chain
+- **P1 trio** (941f4f6) — CSP tightened (removed leftover unpkg remote-script source) + main-window navigation protection (intercepts `will-navigate` / `setWindowOpenHandler`) + MCP token brute-force rate limiting
+- **P2** (2dc9048) — Computer Use authorization revoke entry (one-click revoke on the settings page) + snapshot directory git-ignored locally
+- **Defense in depth** — `settings.json` persisted 0600, MCP CORS drops `'null'`/`file://`, web_fetch response body 16MB cap (381e20a); `escapeHtml`/`esc` all gained single-quote escaping, closing onclick single-quoted-attribute injection (3d32ea2)
+
+### ✨ Features
+
+- **Sidebar live running status** (98fcb24) — channel rows get engine statusNote in place (matching the Mac app); the current step is visible at a glance instead of just the words "running"
+- **compactMeta compact mode** (6416e1d) — new settings toggle: tool output keeps only summary lines; paths in tool output are clickable (Shift+click opens in the system), same interaction for inline-code paths (0731188)
+- **DirectV2 executePlanSteps extraction** (51459c1) — the run/replan execution loops merged into one, shrinking the patch surface
+- **Collapse button for old turns** (cccee2a) — expanded history turns can collapse again, fixing the previous one-way fold
+- **marketing-kit plugin v1.2/v1.3** (4f067a5/58cf524) — 6 read-only tools (search / HN traction / Reddit voice-of-customer / SEO audit / funnel calc / keyword expansion) + panel contribution (marketing console: funnel calculator + research workbench + launch checklist), postMessage bridge with zero host changes
+
+### 🐛 Fixes & 📖 Docs
+
+- Five long-session usability items (bd449af): sidebar time buckets / date separators / streaming live meta / command palette expansion / contextTooLong recovery guidance
+- README first-screen 30-second TL;DR + Star CTA (acaeb0d); hero screenshot updated to a real v3.8 session (a2c610d); wiki Tools-and-MCP completed with the 40+ tool inventory (85300c2); cross-platform positioning corrected (11c1002)
+
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.8.0...v3.8.1

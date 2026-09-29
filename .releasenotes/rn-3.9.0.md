@@ -6,4 +6,10 @@
 
 ---
 
+**English**
+
+### ✨ Features
+
+- **Steer user-interruption channel** (96eafbb) — a running session no longer must finish first: ⌘Enter steers in place. The message enters a latest-wins interruption buffer; the engine picks it up at loop boundaries and injects it as `[⚡ 用户打断]` — no abort, no new turn, context continues; failed interruption degrades to queueing automatically; Enter queues / ⌘Enter steers immediately via send-key split, the head-of-queue message carries a ⚡ steer button; Direct-family engines only
+
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v3.8.2...v3.9.0
