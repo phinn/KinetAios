@@ -443,6 +443,9 @@ export type AgentEvent =
   | { type: 'traj'; records: TrajRecord[] } // 轨迹:本轮模型真实看到的 messages 快照(含 system/记忆注入/压缩摘要)
   // 任务清单卡(DSH 式):引擎调 todo_write 时整表替换,renderer 渲染逐项状态卡
   | { type: 'todo'; todos: TodoItem[] }
+  // Workflow(team 超集):阶段化多 agent 编排。每次状态推进整表替换(与 todo 同语义),
+  // 随 turn 持久化 → 历史回放可见最终态;流式期间实时驱动聊天流内嵌工作流卡。
+  | { type: 'workflow'; state: WorkflowState }
   | { type: 'done' }
   // kind 用于下游区分失败原因(可选,缺省时按旧逻辑只看 message):
   //   'maxTurns'      — 达到轮次上限(可续跑,非致命)
@@ -455,6 +458,34 @@ export interface TodoItem {
   content: string;
   // failed/skipped 仅由 V3 DAG 执行器发出(节点失败/依赖跳过);todo_write 工具 schema 仍是 3 枚举
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
+}
+
+// ── Workflow:AgentTeam 的超集(阶段化编排)──
+// team 是"一轮 broadcast 全并行";workflow 在其上加「阶段 × 成员」二维结构:
+// 阶段串行,阶段内成员并行(fanOut),上一阶段汇总输出注入下一阶段 prompt。
+// 数据模型刻意与 todo 同构(整表替换、随 turn 持久化、无新表、无新 IPC 通道)。
+export type WorkflowMemberStatus = 'pending' | 'running' | 'done' | 'failed';
+
+export interface WorkflowMember {
+  name: string;      // 成员名(team 内唯一)
+  role: string;      // 职责描述
+  status: WorkflowMemberStatus;
+  summary?: string;  // 完成后的回答摘要(截断,完整回答在 team member 的 last_result)
+}
+
+export interface WorkflowStage {
+  label: string;           // 阶段名,如 "并行事实核查"
+  status: 'pending' | 'running' | 'done' | 'failed';
+  members: WorkflowMember[];
+}
+
+export interface WorkflowState {
+  workflowId: string;      // 挂靠的 team_id(工作流跑在 team 的 members 上)
+  title: string;           // 工作流名,如 "深度事实核查流水线"
+  stages: WorkflowStage[];
+  activeStage: number;     // 当前(或最后完成的)阶段索引
+  status: 'running' | 'done' | 'failed' | 'cancelled';
+  usd: number;             // 累计成本(阶段汇总)
 }
 
 /** 远程 Agent 事件 —— 当本机 MCP Server 被远程调用 run_agent 时,转发到 dashboard UI。 */
@@ -522,6 +553,7 @@ export type Turn = {
   histStart?: number;
   traj?: TrajRecord[]; // 轨迹:本 turn 最终发给模型的完整 messages 快照(system+memory+history+user)
   todos?: TodoItem[]; // 本 turn 的任务清单最终状态(todo_write 整表替换;随 turn 持久化,历史回放可见)
+  workflow?: WorkflowState; // 本 turn 的工作流最终快照(workflow_run 整表替换;随 turn 持久化,历史回放可见)
 };
 
 // ── conv_events:append-only 事件日志(参考 deepseek-harness Session)──
@@ -1202,6 +1234,10 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
     case 'todo':
       // 任务清单整表替换(DSH 语义):挂在当前 turn 上,随 turn 持久化 + 增量渲染
       t.todos = ev.todos;
+      break;
+    case 'workflow':
+      // 工作流状态整表替换(与 todo 同语义):流式实时驱动聊天流内嵌卡 + 随 turn 持久化
+      t.workflow = ev.state;
       break;
     case 'done':
     case 'error': {
