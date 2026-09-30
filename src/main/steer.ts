@@ -42,6 +42,49 @@ export function clearSteer(convId: string): void {
   buffers.delete(convId);
 }
 
+// ── Goal 修正队列:goal 循环运行中用户发的消息 ≠ 普通消息,是「方向修正」──
+// Goal correction queue: messages sent while the goal loop is running are
+// directional corrections, not regular turns. They are parked here and consumed
+// at the next loop boundary, where they become the HIGHEST-priority instruction
+// for both the Worker (dispatch prompt) and the Supervisor (verdict context).
+//
+// 与 steer 缓冲的区别:steer = 轮内原地注入(引擎正在跑,打断当前 turn);
+// 修正队列 = 轮间注入(goal loop 每轮 dispatch 之前消费,作为下一轮的驱动)。
+// 只存最新一条(同 steer 的 latest-wins 语义):用户连发多条时,最后一条才是最终意图。
+const corrections = new Map<string, string>();
+
+/** 用户在 goal 循环运行中发消息 → 入队(latest-wins)。 */
+export function pushCorrection(convId: string, text: string): void {
+  corrections.set(convId, text.trim());
+}
+
+/** goal loop 每轮 dispatch 前取走修正(取走即清除);无则返回 null。 */
+export function pullCorrection(convId: string): string | null {
+  const t = corrections.get(convId);
+  if (t === undefined) return null;
+  corrections.delete(convId);
+  return t;
+}
+
+/** 监工评估前「偷看」修正但不消费(监工和 Worker 都要看到同一条)。 */
+export function peekCorrection(convId: string): string | null {
+  return corrections.get(convId) ?? null;
+}
+
+/** 会话删除/cancel 时清理,防 Map 无限累积。 */
+export function clearCorrection(convId: string): void {
+  corrections.delete(convId);
+}
+
+/**
+ * 修正文本的标准包裹格式。明确优先级:用户实时修正 > 监工 requirement > 原 goal。
+ * Standard wrapper for corrections. Explicit priority: live user correction
+ * beats Supervisor requirement beats the original goal text.
+ */
+export function correctionText(text: string): string {
+  return `[⚡ 用户方向修正] 用户在目标推进过程中发来实时修正,优先级最高,覆盖此前的所有指令(包括监工要求):\n${text}\n\n不要重做已完成的工作。以这条修正为准调整后续方向;若修正与原目标冲突,以修正为准。`;
+}
+
 // ── CLI 软打断的 kill 通道 ──
 // Direct 系只需 pull 注入;CLI 引擎(claudeCode/codex)没有注入通道,必须真的杀掉
 // 子进程,run() 的外层循环才能在边界 pull 到 steer 并 --resume 续段。

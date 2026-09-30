@@ -440,6 +440,10 @@ function applyI18nDOM(): void {
         // 后台会话完成标记:不是当前正在看的会话 → 侧栏加小圆点提示
         if (convId !== selectedId) { bgDoneConvs.add(convId); renderSidebar(); }
         // 消息排队:回合结束自动发出队列里的下一条
+        // goal 循环例外:flushQueue 只在监工评估窗口(status='ready')外才会发出,
+        // 而那个窗口发出的消息会被主进程 goalLoopLive 拦下转修正队列 —— 与 UI 排队
+        // 语义冲突(UI 队列已清、消息却变成下一轮修正)。goal 会话的 queued 消息
+        // 不自动 flush,改为直接转修正队列(用户排队的本意就是"接下来的方向")。
         flushQueue(convId);
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
@@ -4194,12 +4198,25 @@ function removeQueued(convId: string, idx: number): void {
   renderQueue();
 }
 
-/** 回合结束后调用:该会话仍 ready 且有队列 → 发出下一条(每次 ready 只发一条,发完等下一轮 done) */
+/** 回合结束后调用:该会话仍 ready 且有队列 → 发出下一条(每次 ready 只发一条,发完等下一轮 done)
+ *  goal 循环例外(2026-09-30):goal 活跃的会话不 flush —— 监工评估窗口 status 短暂
+ *  'ready',此时 flush 出去的消息会被主进程 goalLoopLive 拦成"修正",与 UI 排队语义
+ *  (回合结束按序发出)冲突且用户无感知。goal 会话的排队消息在 flush 时直接转修正
+ *  队列(api.send → 主进程入队),消息不丢、方向生效,一次交接干净利落。 */
 function flushQueue(convId: string): void {
   const q = queuedByConv.get(convId);
   if (!q?.length) return;
   const conv = convs.get(convId);
-  if (!conv || conv.status !== 'ready' || conv.turns.at(-1)?.done !== true) return;
+  if (!conv) return;
+  if (conv.goal) {
+    // goal 会话:整队转修正(latest-wins,只留最后一条 —— 与主进程修正队列语义一致)
+    const last = q[q.length - 1];
+    queuedByConv.delete(convId);
+    renderQueue();
+    void api.send(convId, last);
+    return;
+  }
+  if (conv.status !== 'ready' || conv.turns.at(-1)?.done !== true) return;
   const next = q.shift()!;
   if (!q.length) queuedByConv.delete(convId); else queuedByConv.set(convId, q);
   renderQueue();

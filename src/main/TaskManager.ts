@@ -12,7 +12,7 @@ import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './e
 import { loadSkillBody } from './skills';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
-import { pushSteer, clearSteer, clearKillHook, triggerKill } from './steer';
+import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -33,6 +33,11 @@ export class TaskManager {
   private aborts = new Map<string, AbortController>();
   // Goal loop 取消标志:cancel() 设置后,runGoalLoop 的下一轮检查时退出。
   private goalLoopStopped = new Set<string>();
+  // Goal loop 存活标志:从 runGoalLoop 进入到退出全程置位(含监工评估窗口)。
+  // sendCore 用它判定"消息应走修正队列":监工 await 期间 status 短暂回 'ready',
+  // 只看 status 会让用户消息在此窗口走正常 dispatch,与循环下一轮并发跑同一会话
+  // (历史交错的根源)。以存活标志为准,不看 status。
+  private goalLoopLive = new Set<string>();
   // 上下文估算缓存(estContextTokens):directHistory 引用+长度不变 → 复用上次结果,
   // 避免每秒 UI 轮询对 MB 级历史全量 stringify。会话删除时一并清理。
   private ctxEstCache = new Map<string, { ref: ChatMsg[]; len: number; val: { tokens: number; modelMax: number; pct: number } }>();
@@ -307,6 +312,7 @@ export class TaskManager {
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
     this.extractionLocks.delete(id); // P1: 清理 extraction lock,防止残留 resolved Promise 堆积
     clearSteer(id); // P1: 清理打断缓冲,防 Map 无限累积
+    clearCorrection(id); // P1: goal 修正队列一并清(防泄漏到同 id 的新会话)
     clearKillHook(id); // P1: kill hook 同步撤(防泄漏到同 id 的新会话)
     this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
     this.ctxEstCache.delete(id); // P1: 估算缓存同步清(防 key 无限累积)
@@ -351,6 +357,7 @@ export class TaskManager {
 
   cancel(id: string): void {
     clearSteer(id); // 已 abort,待注入的打断一并清掉
+    clearCorrection(id); // 取消 goal 循环时,未消费的修正一并作废(用户语义:全部停)
     clearKillHook(id); // kill hook 同步撤:取消后 triggerKill 不应再杀任何进程
     const ac = this.aborts.get(id);
     if (ac) {
@@ -417,7 +424,43 @@ export class TaskManager {
     if (!conv) return;
     this.ensureTurns(id); // 懒加载:engine 读 lastTurn.prompt,turns 必须先就位
     const prompt = text.trim();
-    if (!prompt || conv.status === 'running') return;
+    if (!prompt) return;
+
+    // /goal <text>:设置会话目标。不发给引擎。控制面命令,最先处理 —— 放在修正队列
+    // 逻辑之后会被 goalLoopLive 分支当普通文本入队。2026-09-30 上移:纯状态改写零
+    // 副作用,goal 循环每轮现读 conv.goal(P1 修过闭包快照),运行中重设天然安全;
+    // 修前被 running guard 静默吞掉,过夜任务无法中途改目标。
+    // /goal(无参数):清除目标。UI 会收到 conversation 事件后刷新。
+    const goalMatchEarly = prompt.match(/^\/goal(?:\s+(.*))?$/i);
+    if (goalMatchEarly) {
+      const goalText = goalMatchEarly[1]?.trim() || null;
+      conv.goal = goalText;
+      store.saveConversation(conv);
+      const tg = newTurn(prompt);
+      tg.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
+      tg.done = true;
+      conv.turns.push(tg);
+      store.appendEvent(conv.id, tg.id, goalText ? { type: 'goal/set', goal: goalText } : { type: 'goal/clear' });
+      conv.updatedAt = Date.now();
+      store.saveTurn(conv.id, tg);
+      this.emit.emitConversation(conv);
+      return;
+    }
+    // ── goal 循环运行中:消息 = 方向修正,入队不丢弃 ──
+    // 修前:status==='running' 一律静默 return —— goal 模式下循环几乎恒为 running,
+    // 用户发的消息无声消失(最痛的坑)。现在:goal 活跃的会话把消息 park 进修正队列,
+    // 由 runGoalLoop 在下一轮 dispatch 前消费为最高优先级指令(Worker + 监工都可见)。
+    // 判定用 goalLoopLive 而非 status:监工 await 期间 status 短暂回 'ready'(done 事件
+    // 所致),只看 status 会让消息在该窗口走正常 dispatch,与循环下一轮并发跑同一会话。
+    // 非 goal 会话保持原语义(运行中不可插话,前端本来就不给发)。
+    if (this.goalLoopLive.has(id) || (conv.status === 'running' && conv.goal)) {
+      if (conv.goal) {
+        pushCorrection(id, prompt);
+        conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
+        this.emit.emitConversation(conv);
+      }
+      return; // 非 goal 会话维持旧 guard:静默拒绝(调用方 UI 不给 running 会话发消息)
+    }
 
     // ── 纠错信号检测(2026-09 纠错闭环 ④ strike 端)──
     // 用户带着不满回来(「你又…」「我说过…」「还是…」「不是让你…」)→ 大概率上一轮违反了
@@ -443,25 +486,6 @@ export class TaskManager {
     // dropdown can't dispatch into a disabled engine.
     if (!this.engines.has(conv.engine)) {
       this.failTurn(conv, prompt, t(getSettings().lang, 'tmgr.engineDisabled'));
-      return;
-    }
-
-    // /goal <text>:设置会话目标(持续注入 systemPrompt,引导整个会话)。不发给引擎。
-    // /goal(无参数):清除目标。UI 会收到 conversation 事件后刷新。
-    const goalMatch = prompt.match(/^\/goal(?:\s+(.*))?$/i);
-    if (goalMatch) {
-      const goalText = goalMatch[1]?.trim() || null;
-      conv.goal = goalText;
-      store.saveConversation(conv);
-      // 插入一个已完成的 turn 作为视觉反馈(不发给引擎)
-      const t = newTurn(prompt);
-      t.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
-      t.done = true;
-      conv.turns.push(t);
-      store.appendEvent(conv.id, t.id, goalText ? { type: 'goal/set', goal: goalText } : { type: 'goal/clear' });
-      conv.updatedAt = Date.now(); // /goal 也算活动。
-      store.saveTurn(conv.id, t);
-      this.emit.emitConversation(conv);
       return;
     }
 
@@ -561,6 +585,8 @@ export class TaskManager {
     }).finally(async () => {
       this.aborts.delete(id);
       clearSteer(id); // turn 收尾:没被消费的打断清掉,防泄漏到下一个 turn 的上下文
+      // 注意:普通 turn 收尾不清 correction —— goal 循环中收到的修正要留给
+      // runGoalLoop 轮边界消费;非 goal 会话的修正队列本就不该有内容(见 sendCore)。
       clearKillHook(id); // kill hook 同步撤(turn 已结束, hook 生命周期 = run 生命周期)
       // 整轮结束后的持久化/goal 接力:detach 模式下 renderer 的 invoke 早已返回,
       // 这里是唯一收尾点;阻塞模式下调用方 await 到这里全部做完,语义与旧版一致。
@@ -627,11 +653,13 @@ export class TaskManager {
     // 用户 cancel() 的语义是"停掉 goal 循环且不许复活",标记保留到会话删除或重新 /goal。
     // 这里能进来说明用户刚显式发起新目标(/goal 重设了 conv.goal),视为重新授权,清掉旧标记。
     this.goalLoopStopped.delete(id);
+    this.goalLoopLive.add(id); // 存活标志:整个循环期间 sendCore 一律走修正队列
+    // 用户取消会 abort 当前 ac,循环检测到后退出(声明在 try 外:finally 收尾也要读)
+    let currentAc = initialAc;
+    try {
     // P2(goal 域):轮数上限从投影取 —— goal/set 后累计的 user/message 轮数持久在事件流里,
     // 重启不再重置(GOAL_MAX_ITERATIONS 只是单次循环的迭代保护,持久记账以投影为准)。
     const admittedRounds = () => store.projectGoal(conv.id).rounds;
-    // 用户取消会 abort 当前 ac,循环检测到后退出
-    let currentAc = initialAc;
 
     // 切换 failover 链上的下一个模型。返回 null = 链尽(真停);否则返回新 profile 显示名。
     const nextFailover = (): { name: string } | null => {
@@ -673,6 +701,14 @@ export class TaskManager {
 {"verdict":"complete","requirement":"一句验收通过的理由"}
 verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。`;
       const user = `目标:「${conv.goal}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
+      // 用户实时修正:运行中发来的消息 park 在修正队列。必须让监工看到,否则监工
+      // 按旧方向出 requirement,与 Worker 收到的修正互相矛盾(修前的真实缺口:
+      // ⌘Enter steer 能到 Worker 但监工不可见;普通 send 被 running guard 丢弃)。
+      // peek 不消费:同一条还要由轮边界 pullCorrection 注入 Worker。
+      const liveCorrection = peekCorrection(id);
+      const corrSection = liveCorrection
+        ? `\n\n⚠️ 用户刚发来实时方向修正(优先级最高,你的 requirement 必须以它为准,不得再按旧方向要求):\n${liveCorrection}\n`
+        : '';
       try {
         // 监工模型:goalSupervisorModel 非空 → 找同名/同 model 字段的 profile 或直接当 model id 用;
         // 空 → 跟随会话当前模型(snapshot(null) = 主配置/会话 profile)。
@@ -682,7 +718,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           supProfileId = pf?.id ?? null;
         }
         const comp = await supervisorComplete(
-          [{ role: 'system', content: sys }, { role: 'user', content: user }],
+          [{ role: 'system', content: sys }, { role: 'user', content: user + corrSection }],
           supProfileId, signal,
         );
         const lo = comp.content.indexOf('{');
@@ -805,6 +841,18 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }
       if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
 
+      // ── 用户方向修正(最高优先级):覆盖监工 requirement / 默认推进语 ──
+      // sendCore 在 running 时把用户消息 park 进修正队列,这里在下一轮 dispatch 前
+      // 消费:直接替换 nextPrompt(不是拼接 —— 用户说了"别搞 X 了改做 Y",旧指令
+      // 拼在后面只会稀释优先级)。监工那边在 supervise() 里通过 peekCorrection
+      // 看到同一条,验收也会顺新方向,两条线不再互相矛盾。
+      const userCorrection = pullCorrection(id);
+      if (userCorrection) {
+        nextPrompt = correctionText(userCorrection);
+        conv.statusNote = '📨 已注入你的方向修正,本轮生效';
+        this.emit.emitConversation(conv);
+      }
+
       // 用户取消(cancel 会 abort + 设 goalLoopStopped)或会话被删除 → 停止
       if (currentAc.signal.aborted || this.goalLoopStopped.has(id) || !this.convs.has(id)) break;
 
@@ -842,6 +890,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }).finally(() => {
         this.aborts.delete(id);
         clearSteer(id); // goal loop 每轮收尾:同上,清残留打断
+        clearCorrection(id); // 每轮收尾清修正队列(轮边界已消费,残留属异常路径,防累积)
         clearKillHook(id); // goal loop 同步撤 hook
       });
 
@@ -865,19 +914,24 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         this.emit.emitConversation(conv);
       }
     }
-    // 循环结束 → 确保状态恢复 + 清理标记。
-    // 只在"非用户取消"路径清标记:cancel() 设置的 goalLoopStopped 若在这里被删,
-    // 下一次普通 send 会把标记当不存在 → goal 循环复活,违背用户停止语义。
-    // (用户取消遗留的标记由 runGoalLoop 入口在用户显式重新 /goal 时才清。)
-    if (!currentAc.signal.aborted && !this.goalLoopStopped.has(id)) {
-      // 正常完结(无取消) → 清理(防御:正常路径标记本就不在)
-      this.goalLoopStopped.delete(id);
-    } else if (!this.goalLoopStopped.has(id)) {
-      this.goalLoopStopped.delete(id); // abort 但非 cancel(如会话删除已另清)→ 也清
-    }
-    if (this.convs.has(id) && conv.status === 'running') {
-      conv.status = 'ready';
-      this.emit.emitConversation(conv);
+    } finally {
+      this.goalLoopLive.delete(id); // 存活标志随循环退出撤销(sendCore 恢复正常 guard)
+      // 循环退出时未消费的修正已无处可去(没有"下一轮"了)→ 清掉,防泄漏到未来轮次
+      clearCorrection(id);
+      // 循环结束 → 确保状态恢复 + 清理标记。
+      // 只在"非用户取消"路径清标记:cancel() 设置的 goalLoopStopped 若在这里被删,
+      // 下一次普通 send 会把标记当不存在 → goal 循环复活,违背用户停止语义。
+      // (用户取消遗留的标记由 runGoalLoop 入口在用户显式重新 /goal 时才清。)
+      if (!currentAc.signal.aborted && !this.goalLoopStopped.has(id)) {
+        // 正常完结(无取消) → 清理(防御:正常路径标记本就不在)
+        this.goalLoopStopped.delete(id);
+      } else if (!this.goalLoopStopped.has(id)) {
+        this.goalLoopStopped.delete(id); // abort 但非 cancel(如会话删除已另清)→ 也清
+      }
+      if (this.convs.has(id) && conv.status === 'running') {
+        conv.status = 'ready';
+        this.emit.emitConversation(conv);
+      }
     }
   }
 
