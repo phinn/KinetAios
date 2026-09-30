@@ -124,6 +124,9 @@ export function codemodePromptSection(tools: readonly Tool[]): string {
 - 参数是对象;\`tools["mcp__x__y"](…)\` 与 \`tools.mcp__x__y(…)\` 等价
 - 脚本抛错/参数非法 → 该次调用 reject(Error,消息为工具错误文本);用 try/catch 或 allSettled 兜
 - \`store(key,val)\`/\`load(key)\` 跨 codemode 调用共享 JSON(随会话持久);\`console.log\` 与 return 一起返回
+- **Promise.allSettled 并行只对只读工具有意义**:写类工具(shell/write_file)每个都要人工确认弹窗,
+  并行的多个确认弹窗只会保留最后一个、其余自动拒绝 —— 并行发写工具等于全部被拒
+- 脚本中途失败/超时,本次已写入的 store() 不会落盘(宿主契约),别依赖"先存一半再出错"
 - 返回值务必精炼:对象/数组/短文本。不要 return 整个原始工具输出(那等于白干)`;
   return head + `\n\n## 嵌套工具声明(TypeScript 签名)\n\n\`\`\`ts\n${codemodeDeclarations(tools)}\n\`\`\``;
 }
@@ -138,7 +141,9 @@ function kickWarm(tools: readonly Tool[]): void {
   void warmCodemode(tools);
 }
 
-/** renderDeclarations 的带缓存包装(工具集 key = 名字+描述长度哈希);模块未加载时给名字清单。 */
+/** renderDeclarations 的带缓存包装(工具集 key = 名字+描述长度哈希;模块未加载时给名字清单)。 */
+// ponytail: key 用名字+描述长度而非内容哈希 —— MCP 工具热更描述且长度恰好不变时会用旧签名
+// (后果仅限 prompt 略旧,参数 schema 同源)。升级路径:换 djb2 内容哈希。
 function codemodeDeclarations(tools: readonly Tool[]): string {
   const key = tools.filter((t) => t.name !== 'codemode').map((t) => t.name + ':' + t.description.length).join('|');
   if (declCache && declCache.key === key) return declCache.text;
@@ -225,9 +230,12 @@ export const codemodeTool: Tool = {
       adapter.register(sb);
       // store:会话级持久 JSON(与 remember_fact 同语义层;codemode 内的 store() 写回同一份)
       const storeData = loadStore(ctx.convId);
-      const result = await sb.execute(code, { signal: ctx.signal, store: storeData });
+      // memoryLimitBytes 默认 256MB:pi 默认不限制,wasm 线性内存按需涨,一个失控脚本能把主机内存吃爆。
+      // 256MB 对批量编排绰绰有余;溢出时 QuickJS 抛 RangeError(可被脚本 catch),worker 不炸。
+      const result = await sb.execute(code, { signal: ctx.signal, store: storeData, memoryLimitBytes: 256 * 1024 * 1024 });
 
-      // ④ 落存证(storeWrites)
+      // ④ 落存证(storeWrites)—— 仅成功时:pi 的 done 消息只在成功路径带 writes,
+      // 失败/超时/中止时 worker 已终止,中途 store() 的进度拿不到(pi 契约,已在 prompt 指南声明)。
       if (result.ok && result.storeWrites) {
         const next = { ...storeData };
         for (const [k, v] of Object.entries(result.storeWrites.set ?? {})) next[k] = v;
@@ -244,9 +252,21 @@ export const codemodeTool: Tool = {
       } else {
         lines.push('✅ 完成。');
       }
+      // console 输出设上限:pi 不限制,模型可以 console.log 巨量数据把它灌进上下文,
+      // 等于绕过「中间结果不进上下文」的卖点。单条 4K / 总量 16K,超出截断并提示用 return 精炼值。
+      // Console output capped: unlimited output would flood the context and defeat the purpose.
+      const MAX_CONSOLE_LINE = 4_000;
+      const MAX_CONSOLE_TOTAL = 16_000;
+      let consoleTotal = 0;
+      let consoleTruncated = false;
       for (const item of result.output ?? []) {
-        if (item.type === 'text' && item.text) lines.push(`[console] ${item.text}`);
+        if (item.type !== 'text' || !item.text) continue;
+        if (consoleTotal >= MAX_CONSOLE_TOTAL) { consoleTruncated = true; break; }
+        const t2 = item.text.length > MAX_CONSOLE_LINE ? item.text.slice(0, MAX_CONSOLE_LINE) + '…[截断]' : item.text;
+        consoleTotal += t2.length;
+        lines.push(`[console] ${t2}`);
       }
+      if (consoleTruncated) lines.push(`…[console 输出超 ${MAX_CONSOLE_TOTAL} 字符已截断 —— 大数据请 return 精炼汇总,不要 console.log]`);
       if (result.ok) {
         // value 精炼化:超长截断(带全量落盘提示,与其它工具口径一致)
         let text: string;
