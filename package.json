@@ -43,7 +43,9 @@
     "asar": true,
     "asarUnpack": [
       "**/better-sqlite3/**",
-      "**/*.node"
+      "**/*.node",
+      "**/@earendil-works/pi-codemode/**",
+      "**/quickjs-wasi/**"
     ],
     "extraResources": [
       {
@@ -106,6 +108,7 @@
     "typescript": "^5.5.0"
   },
   "dependencies": {
+    "@earendil-works/pi-codemode": "^0.99.1",
     "@larksuiteoapi/node-sdk": "^1.72.0",
     "@wecom/aibot-node-sdk": "^1.0.7",
     "better-sqlite3": "^11.1.0",
