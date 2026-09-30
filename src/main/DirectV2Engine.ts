@@ -26,6 +26,7 @@ import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, compactWithSpill } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
+import { codemodeTool, codemodePromptSection } from './codemode';
 import { getSettings, snapshot } from './settings';
 import { pullSteer, steerMessage } from './steer';
 import { mcp } from './mcp';
@@ -421,6 +422,12 @@ export class DirectV2Engine implements Engine {
     const snap = { ...base, model: conv.model || base.model };
     const provider = currentProvider(snap);
 
+    // ── 工具集(按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具)──
+    // 工具集先于 systemPrompt 组装:codemodePromptSection(tools) 要把嵌套工具签名拼进 system。
+    // Tool set is built before the prompt so codemodePromptSection(tools) can inline the signatures.
+    const channel = conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined;
+    const tools = [...allTools(channel), ...(await mcp.directTools(2000)), codemodeTool];
+
     // ── 构建 systemPrompt(与 v1 共享 base,追加 v2 能力描述)──
     const goalSection = conv.goal
       ? `\n\n# 🎯 会话目标\n你当前的核心目标是:\n${conv.goal}\n请在每一步操作中都朝这个目标推进。\n**当你确认目标已经完成时,在回答的最末尾输出 \`[GOAL_COMPLETE]\` 标记。**`
@@ -446,20 +453,19 @@ export class DirectV2Engine implements Engine {
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +
-      pluginSystemPrompts('directV2', prompt);
+      pluginSystemPrompts('directV2', prompt) +
+      codemodePromptSection(tools);
 
     // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
+    // codemode 的嵌套工具表:沙箱脚本可调用的工具 = 本会话全量(审批/沙箱/隐私闸由各工具自身把关)。
+    ctx.nestedTools = tools;
 
     // P0-1:从策略包取 stepSummaryMaxChars(给 execHistory 的精简版) + stepResultMaxChars(给 PlanStep.result 的完整版)。
     // PlanStep.result 存完整版(最多 stepResultMaxChars),Judge/replan 引用;execHistory 追加的摘要用 stepSummaryMaxChars 截断。
     const policy = this.policy(conv);
     const stepMaxChars = policy.stepSummaryMaxChars || 500;
     const stepFullChars = policy.stepResultMaxChars || 4000;
-
-    // ── 工具集(按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具)──
-    const channel = conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined;
-    const tools = [...allTools(channel), ...(await mcp.directTools(2000))];
 
     // ── 构建 user input ──
     const refSection = refBlock ?? '';

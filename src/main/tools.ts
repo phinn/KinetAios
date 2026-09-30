@@ -214,6 +214,9 @@ export interface ToolCtx {
   // 任务清单卡(todo_write)等工具向 UI 发结构化事件的出口。引擎侧接到 onEvent;
   // 子 agent(readOnlyTools)不传 emit —— 子任务不污染主会话的清单卡。
   emit?: (e: import('../shared/types').AgentEvent) => void;
+  // codemode(代码编排)的嵌套工具集:引擎组装工具列表后回填,供沙箱脚本调用。
+  // Nested tool table for the codemode tool: engines backfill it after assembling the tool list.
+  nestedTools?: readonly Tool[];
 }
 
 export interface Tool {
