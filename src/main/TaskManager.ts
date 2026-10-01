@@ -365,6 +365,14 @@ export class TaskManager {
       this.aborts.delete(id);
     }
     this.goalLoopStopped.add(id); // 通知 goal loop 停止
+    // 立即撤销 goalLoopLive:否则「停止后秒发新消息」会命中 sendCore 的修正队列分支
+    // (goalLoopLive 还在 → pushCorrection),而循环顶检测到 aborted 直接 break,
+    // 收尾 finally 的 clearCorrection 把这条修正无声丢掉 —— 用户消息彻底蒸发(实际踩坑:
+    // goal 频道停止后发「继续」连发数条全部消失)。撤销后 sendCore 恢复正常 guard,
+    // 停止后的消息走正常 dispatch = 新回合,符合"停了,新消息就是新任务"的用户语义。
+    // Revoke liveness immediately: a message sent right after Stop would otherwise be
+    // parked as a correction and then silently dropped by the loop's exit cleanup.
+    this.goalLoopLive.delete(id);
     const conv = this.convs.get(id);
     this.ensureTurns(id); // cancel 要写 lastTurn(done/error 标记),先 hydrate
     if (conv && conv.status === 'running') {
@@ -435,6 +443,11 @@ export class TaskManager {
     if (goalMatchEarly) {
       const goalText = goalMatchEarly[1]?.trim() || null;
       conv.goal = goalText;
+      // 用户显式(重)设目标 = 重新授权 goal 循环:清掉上次 cancel 留下的停止标记。
+      // 2026-09-30:runGoalLoop 入口的清标记已收紧为 explicit-only(防 Auto-Loop 接力
+      // 抹掉用户停止语义),「重新 /goal」的清标记职责移到这个唯一显式入口。
+      // 修前它藏在 runGoalLoop 入口无条件清 —— 连用户刚取消后的 Auto-Loop 误燃都会清。
+      if (goalText) this.goalLoopStopped.delete(id);
       store.saveConversation(conv);
       const tg = newTurn(prompt);
       tg.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
@@ -604,11 +617,17 @@ export class TaskManager {
       this.emit.emitConversation(conv); // final flush
 
       // ── Goal Auto-Loop:有 goal 且本轮未出错且未标记完成 → 自动发下一轮 ──
-      if (conv.goal && isDirectFamily(conv.engine) && lastTurn && !lastTurn.error && lastTurn.answer) {
+      // 取消守卫(2026-09-30):用户刚点过停止(ac 已 abort / stopped 标记在)→ 禁止接力。
+      // 修前:cancel 置 ready 后,收尾 finally 照样命中接力(turn.answer 已有部分内容、
+      // error 为空)→ 重燃 runGoalLoop → 入口清掉 stopped 标记 → 用户停止语义被破坏。
+      if (
+        conv.goal && isDirectFamily(conv.engine) && lastTurn && !lastTurn.error && lastTurn.answer &&
+        !ac.signal.aborted && !this.goalLoopStopped.has(id)
+      ) {
         // 立即恢复 running 状态(applyEvent 的 done 会把它设成 ready,这里夺回)
         conv.status = 'running';
         this.emit.emitConversation(conv);
-        await this.runGoalLoop(conv, id, ac);
+        await this.runGoalLoop(conv, id, ac, false); // explicit=false:Auto-Loop 接力,非用户显式授权
       }
     });
 
@@ -626,7 +645,7 @@ export class TaskManager {
   // complete(替身点头才算完)。否则退化为旧模式(Worker 自报 [GOAL_COMPLETE] 即完成)。
   // failover:goalProfileChain 非空时,Worker 报 quota/auth 错 → 按序切下一个 profile 接着跑
   // (network/other 不切,同模型退避重试由 glm 层负责)。过夜保险丝:轮数/小时/成本三重上限。
-  private async runGoalLoop(conv: Conversation, id: string, initialAc: AbortController): Promise<void> {
+  private async runGoalLoop(conv: Conversation, id: string, initialAc: AbortController, explicit = true): Promise<void> {
     const S = getSettings();
     const maxIter = Math.max(1, S.goalMaxIterations || 20);
     const startedAt = Date.now();
@@ -651,8 +670,10 @@ export class TaskManager {
 
     // 清除上次的取消标记 — 仅限"非用户取消"遗留(见 runGoalLoop 出口注释):
     // 用户 cancel() 的语义是"停掉 goal 循环且不许复活",标记保留到会话删除或重新 /goal。
-    // 这里能进来说明用户刚显式发起新目标(/goal 重设了 conv.goal),视为重新授权,清掉旧标记。
-    this.goalLoopStopped.delete(id);
+    // 只有用户显式 /goal(explicit=true,重新授权)才清旧标记;Auto-Loop 接力(explicit=false)
+    // 不得清 —— 否则"停止→下一 turn 完成→Auto-Loop 重燃→标记被抹"会让停止形同虚设。
+    // Defense in depth:接力路径现已被调用方的取消守卫挡住,这里兜底。
+    if (explicit) this.goalLoopStopped.delete(id);
     this.goalLoopLive.add(id); // 存活标志:整个循环期间 sendCore 一律走修正队列
     // 用户取消会 abort 当前 ac,循环检测到后退出(声明在 try 外:finally 收尾也要读)
     let currentAc = initialAc;
