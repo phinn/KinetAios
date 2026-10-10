@@ -1283,7 +1283,7 @@ ${failedDetail || '  (无)'}
       emit: onEvent, // todo_write 等工具 → UI 结构化事件(任务清单卡)
       // P2:AgentTeams 调度(v2 也支持)。broadcast 时并行,team_send 时单 member。
       teamRun: async ({ teamId, memberNames, message }): Promise<{ text: string; answers: Map<string, string> }> => {
-        const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
+        const { runMember, runMembersParallel } = await import('./teams');
         const { emitTeamEvent } = await import('./team-events');
 
         // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 spawn 对齐)。
@@ -1311,8 +1311,8 @@ ${failedDetail || '  (无)'}
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
-            const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
-            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, source: `team:${m.name}` });
+            // 计价改用 runMember 逐次累加的真实 usd(子模型/缓存差异已含)
+            onEvent({ type: 'cost', usd: r.usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, cacheRead: r.cacheRead || undefined, source: `team:${m.name}` });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
             return { text: `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`, answers: new Map([[name, r.answer]]) };
@@ -1336,7 +1336,7 @@ ${failedDetail || '  (无)'}
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
-          totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
+          totalUsd += r.usd; // runMember 逐次累加的真实 usd(子模型/缓存差异已含)
           totalTokens += r.tokensIn + r.tokensOut;
           totalIn += r.tokensIn;
           totalOut += r.tokensOut;

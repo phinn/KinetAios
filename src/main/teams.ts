@@ -15,9 +15,9 @@
 // - 跨主会话共享 team(每个主 conv 独立)
 
 import type { ChatMsg, TeamEvent } from '../shared/types';
-import { priceUSD } from './glm';
 import type { Provider } from './glm';
 import { runAgentLoop } from './AgentLoop';
+import type { AgentEvent } from '../shared/types';
 import * as store from './store';
 import { readOnlyTools } from './tools';
 import { SUBAGENT_PROMPT, SUBAGENT_TIMEOUT_MS } from './engines';
@@ -60,7 +60,7 @@ export async function runMember(opts: {
   member: store.TeamMember;
   userMessage: string;
   runOpts: MemberRunOpts;
-}): Promise<{ newHistory: ChatMsg[]; answer: string; tokensIn: number; tokensOut: number }> {
+}): Promise<{ newHistory: ChatMsg[]; answer: string; tokensIn: number; tokensOut: number; cacheRead: number; usd: number }> {
   const { member, userMessage, runOpts } = opts;
   const { provider, snap, signal, cwd, confirm, convId, onTeamEvent } = runOpts;
   const history = parseMemberHistory(member.history);
@@ -76,6 +76,33 @@ export async function runMember(opts: {
     `# 团队领导指令\n${userMessage}\n\n` +
     `# 你的任务\n完成上述指令并用简洁中文汇报结论。不要假设其他成员的进度。`;
 
+  // 真实 LLM 用量记账:从 onEvent 聚合 cost 事件(tokensIn/tokensOut 是 API 返回的真实 token,
+  // 此前用 content.length 字符数冒充,口径虚高 ~3-4 倍且把输出算进输入)。
+  let tokensIn = 0;
+  let tokensOut = 0;
+  let cacheRead = 0;
+  let memberUsd = 0;
+  const wrappedOnEvent = (e: AgentEvent): void => {
+    if (!onTeamEvent) return;
+    if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });
+    else if (e.type === 'tool') {
+      // args/result 全量透传:成员卡片可见「调了什么工具、参数、拿到什么」。
+      // Full args/result passthrough — the member card shows what each member is actually doing.
+      onTeamEvent(member.name, { type: 'memberTool', memberName: member.name, toolName: e.name, toolResult: e.result, toolArgs: e.args, durationMs: e.durationMs });
+      // 同步入 conv_events(考古面板可回放);teamId 冗余进 member 字段,失败不拖垮执行。
+      // Also persisted into the conv event stream for forensics; best-effort, never breaks the run.
+      try { store.appendEvent(convId, 'team', { type: 'team/tool', member: member.name, name: e.name, args: e.args.slice(0, 4000), result: e.result.slice(0, 4000), durationMs: e.durationMs }); } catch { /* 存证失败不拖垮 */ }
+    }
+    else if (e.type === 'cost') {
+      // 真实用量记账:API 返回的 token(此前 return 处用 content.length 字符数冒充,口径虚高 ~3-4 倍)
+      tokensIn += e.tokensIn ?? 0;
+      tokensOut += e.tokensOut ?? Math.max(0, (e.tokens ?? 0) - (e.tokensIn ?? 0));
+      cacheRead += e.cacheRead ?? 0;
+      memberUsd += e.usd;
+      onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens, tokensIn: e.tokensIn, tokensOut: e.tokensOut });
+    }
+  };
+
   const out = await runAgentLoop({
     provider,
     tools: readOnlyTools(),
@@ -86,19 +113,7 @@ export async function runMember(opts: {
     ctx: { cwd, confirm, convId, crossProjectMemory: opts.runOpts.crossProjectMemory },
     signal: ac.signal,
     // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
-    onEvent: (e) => {
-      if (!onTeamEvent) return;
-      if (e.type === 'token') onTeamEvent(member.name, { type: 'memberToken', memberName: member.name, text: e.text });
-      else if (e.type === 'tool') {
-        // args/result 全量透传:成员卡片可见「调了什么工具、参数、拿到什么」。
-        // Full args/result passthrough — the member card shows what each member is actually doing.
-        onTeamEvent(member.name, { type: 'memberTool', memberName: member.name, toolName: e.name, toolResult: e.result, toolArgs: e.args, durationMs: e.durationMs });
-        // 同步入 conv_events(考古面板可回放);teamId 冗余进 member 字段,失败不拖垮执行。
-        // Also persisted into the conv event stream for forensics; best-effort, never breaks the run.
-        try { store.appendEvent(convId, 'team', { type: 'team/tool', member: member.name, name: e.name, args: e.args.slice(0, 4000), result: e.result.slice(0, 4000), durationMs: e.durationMs }); } catch { /* 存证失败不拖垮 */ }
-      }
-      else if (e.type === 'cost') onTeamEvent(member.name, { type: 'memberCost', memberName: member.name, usd: e.usd, tokens: e.tokens, tokensIn: e.tokensIn, tokensOut: e.tokensOut });
-    },
+    onEvent: wrappedOnEvent,
   });
 
   clearTimeout(timer);
@@ -110,11 +125,23 @@ export async function runMember(opts: {
     .join('\n')
     .trim();
 
-  // 估算 token 数(mvp 简化:用 priceUSD 同口径)
-  const tokensIn = out.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : 0), 0);
-  const tokensOut = answer.length;
-
-  return { newHistory: out, answer, tokensIn, tokensOut };
+  // 返回值记 real token 口径(上面 wrappedOnEvent 聚合的 API 真实用量,含缓存拆分),
+  // 不再用 content.length 字符数冒充。history 侧折叠防无界膨胀:
+  // member history 持久累积(SQLite TEXT 列),多轮团队协作后会撑爆下次注入 →
+  // 超预算时把旧 tool 结果/截图折叠为占位(与主 AgentLoop foldOldToolResults 同思路,简化版)。
+  const FOLD_KEEP = 6; // 保留最近 6 条不折叠
+  const BUDGET_CHARS = 60_000; // ~15K tokens,与主循环 reactive trim 预算同量级
+  let est = out.reduce((s, m) => s + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+  if (est > BUDGET_CHARS) {
+    for (let i = 0; i < out.length - FOLD_KEEP && est > BUDGET_CHARS; i++) {
+      const m = out[i];
+      if (m.role !== 'tool' || typeof m.content !== 'string') continue;
+      if (m.content.startsWith('[已折叠')) continue;
+      est -= m.content.length;
+      m.content = `[已折叠 ${m.content.length} 字符的工具结果]`;
+    }
+  }
+  return { newHistory: out, answer, tokensIn, tokensOut, cacheRead, usd: memberUsd };
 }
 
 /**
@@ -125,7 +152,7 @@ export async function runMembersParallel(opts: {
   members: store.TeamMember[];
   message: string;
   runOpts: MemberRunOpts;
-}): Promise<Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; error?: string }>> {
+}): Promise<Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; cacheRead: number; usd: number; error?: string }>> {
   const { members, message, runOpts } = opts;
   const results = await Promise.allSettled(
     members.map(async (m) => {
@@ -136,31 +163,23 @@ export async function runMembersParallel(opts: {
         runOpts.onTeamEvent?.(m.name, { type: 'memberDone', memberName: m.name, answer: r.answer });
         runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'done' });
         try { store.appendEvent(runOpts.convId, 'team', { type: 'team/done', member: m.name, answer: r.answer.slice(0, 4000) }); } catch { /* 存证失败不拖垮 */ }
-        return { name: m.name, answer: r.answer, newHistory: r.newHistory, tokensIn: r.tokensIn, tokensOut: r.tokensOut };
+        return { name: m.name, answer: r.answer, newHistory: r.newHistory, tokensIn: r.tokensIn, tokensOut: r.tokensOut, cacheRead: r.cacheRead, usd: r.usd };
       } catch (e) {
         const errMsg = (e as Error)?.message ?? String(e);
         runOpts.onTeamEvent?.(m.name, { type: 'memberStatus', memberName: m.name, status: 'failed' });
         try { store.appendEvent(runOpts.convId, 'team', { type: 'team/status', member: m.name, status: `failed: ${errMsg.slice(0, 500)}` }); } catch { /* 存证失败不拖垮 */ }
         // 失败时保留原有 history(不清空),避免丢失 member 累积的对话上下文
         const oldHistory = parseMemberHistory(m.history);
-        return { name: m.name, answer: `错误: ${errMsg}`, newHistory: oldHistory, tokensIn: 0, tokensOut: 0, error: errMsg };
+        return { name: m.name, answer: `错误: ${errMsg}`, newHistory: oldHistory, tokensIn: 0, tokensOut: 0, cacheRead: 0, usd: 0, error: errMsg };
       }
     }),
   );
-  const map = new Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; error?: string }>();
+  const map = new Map<string, { answer: string; newHistory: ChatMsg[]; tokensIn: number; tokensOut: number; cacheRead: number; usd: number; error?: string }>();
   for (const r of results) {
     if (r.status === 'fulfilled') {
       const v = r.value;
-      map.set(v.name, { answer: v.answer, newHistory: v.newHistory, tokensIn: v.tokensIn, tokensOut: v.tokensOut, error: v.error });
+      map.set(v.name, { answer: v.answer, newHistory: v.newHistory, tokensIn: v.tokensIn, tokensOut: v.tokensOut, cacheRead: v.cacheRead, usd: v.usd, error: v.error });
     }
   }
   return map;
-}
-
-/**
- * 计算单次 member 调用的 USD 成本(给 UI 显示)。
- * ponytail: 价格快照由 provider 配置决定;这里用 priceUSD 简单估算。
- */
-export function memberCostUSD(snap: import('../shared/types').ConfigSnapshot, tokensIn: number, tokensOut: number): number {
-  return priceUSD(snap.model, tokensIn, tokensOut);
 }

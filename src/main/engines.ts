@@ -369,7 +369,7 @@ class DirectEngine implements Engine {
       // P2:AgentTeams 调度。broadcast 时并行,team_send 时单 member。结果拼成文本返回给主 LLM。
       // 返回结构化:text = 拼好的 markdown(给 LLM),answers = 每成员最终回答(workflow_run 阶段汇总用)。
       teamRun: async ({ teamId, memberNames, message }): Promise<{ text: string; answers: Map<string, string> }> => {
-        const { runMember, runMembersParallel, memberCostUSD } = await import('./teams');
+        const { runMember, runMembersParallel } = await import('./teams');
         const { emitTeamEvent } = await import('./team-events');
 
         // 子 agent model:频道子模型 > 全局子模型 > 主 agent 模型(与 spawn 对齐,team member 不该固定用主模型)。
@@ -398,8 +398,8 @@ class DirectEngine implements Engine {
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'running' });
             const r = await runMember({ member: m, userMessage: message, runOpts });
             store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: 'done', updated_at: Date.now() / 1000 });
-            const usd = memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
-            onEvent({ type: 'cost', usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, source: `team:${name}` });
+            // 计价改用 runMember 内已按子模型逐次累加的真实 usd;cache 拆分透传
+            onEvent({ type: 'cost', usd: r.usd, tokens: r.tokensIn + r.tokensOut, tokensIn: r.tokensIn, tokensOut: r.tokensOut, cacheRead: r.cacheRead || undefined, source: `team:${name}` });
             emitTeamEvent(teamId, { type: 'memberDone', memberName: name, answer: r.answer });
             emitTeamEvent(teamId, { type: 'memberStatus', memberName: name, status: 'done' });
             return { text: `### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`, answers: new Map([[name, r.answer]]) };
@@ -419,19 +419,21 @@ class DirectEngine implements Engine {
         let totalTokens = 0;
         let totalIn = 0;
         let totalOut = 0;
+        let totalCache = 0;
         for (const m of members) {
           const r = results.get(m.name);
           if (!r) { parts.push(`### ${m.name}\n(无结果)\n`); continue; }
           store.upsertTeamMember({ ...m, history: JSON.stringify(r.newHistory), last_message: message, last_result: r.answer, status: r.error ? 'failed' : 'done', updated_at: Date.now() / 1000 });
-          totalUsd += memberCostUSD(teamSnap, r.tokensIn, r.tokensOut); // 按 member 实际用的子模型计价
+          totalUsd += r.usd; // runMember 内已按子模型逐次累加的真实 usd
           totalTokens += r.tokensIn + r.tokensOut;
           totalIn += r.tokensIn;
           totalOut += r.tokensOut;
+          totalCache += r.cacheRead;
           answers.set(m.name, r.answer);
           parts.push(`### ${m.name} (${m.role})\n${r.answer || '(无回答)'}\n`);
         }
         // 零成本本地模型(Ollama)也要上报 tokens — 此前 totalUsd>0 才发,本地 member 的 token 统计整组丢失。
-        if (totalUsd > 0 || totalTokens > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, source: 'team:broadcast' });
+        if (totalUsd > 0 || totalTokens > 0) onEvent({ type: 'cost', usd: totalUsd, tokens: totalTokens, tokensIn: totalIn, tokensOut: totalOut, cacheRead: totalCache || undefined, source: 'team:broadcast' });
         return { text: parts.join('\n'), answers };
       },
       spawn: async ({ prompt: sub, signal: childSignal, engine, model, scope }) => {
