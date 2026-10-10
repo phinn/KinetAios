@@ -771,10 +771,21 @@ function coefFor(proto?: string): number {
 // 消息字符体积 = content + tool_calls(JSON 串)。tool_calls 之前漏算 → 大 tool result 误判余量、超发。
 export function estMsgChars(m: ChatMsg): number {
   let content = '';
+  let extra = 0;
   if (typeof m.content === 'string') content = m.content;
-  else if (Array.isArray(m.content)) content = m.content.map((p) => { const tp = p as { text?: string }; return tp.text ?? ''; }).join('');
+  else if (Array.isArray(m.content)) {
+    // 多模态:image_url 必须计入估算,否则 fold 触发判断长期低估 → 截图堆积不折叠
+    // (KinetVM 频道 32% input 的帮凶之一)。vision 图按 tile 计费、与 base64 长度无关,
+    // 不能按字符折算(会高估数百倍,把 trim 吓成全砍)—— 每张按固定 token 量折算成 chars
+    // (1600×900 PNG, detail auto,经验值 ~2K tokens;coef 0.75 → ~2700 chars)。
+    for (const p of m.content) {
+      const tp = p as { text?: string; image_url?: { url?: string } };
+      if (tp.text) content += tp.text;
+      else if (tp.image_url?.url) extra += 2700;
+    }
+  }
   const tc = Array.isArray(m.tool_calls) ? JSON.stringify(m.tool_calls).length : 0;
-  return content.length + tc;
+  return content.length + extra + tc;
 }
 
 // 导出给 renderer / UI 用:估算一批消息的 token 总量(用当前校准系数)。
@@ -836,9 +847,11 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
 // ⚠️ 只改发给模型的视图,messages 原始数组不动 → directHistory / traj 存证 / spill 均不受影响。
 // Intra-turn folding: old tool results collapse to summary lines before each API call.
 // Returns a NEW array; the original `messages` (persisted to directHistory) stays intact.
-const FOLD_KEEP_RECENT = 10;        // 保留最近 N 条工具结果完整(recent tail 永不折叠)
-const FOLD_TRIGGER_TOKENS = 150_000; // 上下文估超此值才折叠(小 turn 零感知)
+const FOLD_KEEP_RECENT = 6;         // 保留最近 N 条工具结果完整(recent tail 永不折叠)
+const FOLD_TRIGGER_TOKENS = 80_000; // 上下文估超此值才折叠(小 turn 零感知)
+const FOLD_KEEP_RECENT_IMAGES = 3;  // 截图豁免:最近 N 张截图保留原图(近期视觉上下文仍可用)
 const FOLD_RESUME_HINT = '\n[本条工具结果已折叠以节省上下文。如仍需要,重新调用同一工具即可取回。]';
+const FOLD_IMAGE_PLACEHOLDER = '[截图已折叠以节省上下文。如仍需查看,重新调用同一工具截屏即可取回。]';
 
 // 从 tool_call arguments 里提取可读的目标(路径/URL/query),摘要行让模型知道"去哪重取"。
 function foldTargetOf(name: string, argsJson: string): string {
@@ -866,16 +879,24 @@ function foldTargetOf(name: string, argsJson: string): string {
 
 // 折叠视图生成:超阈值时把(除最近 KEEP_RECENT 条外的)旧工具结果替换为摘要行。
 // 摘要行格式:「[已折叠 tool_name 目标]」 — 模型知道看过什么、结果去哪了、怎么取回。
-export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: ChatMsg[]; folded: number; savedTokens: number } {  const total = estTokenCount(msgs, proto);
+export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: ChatMsg[]; folded: number; savedTokens: number } {
+  const total = estTokenCount(msgs, proto);
   if (total <= FOLD_TRIGGER_TOKENS) return { view: msgs, folded: 0, savedTokens: 0 };
-  // 收集全部 tool 消息下标(排除 _transient —— 尚未消费;截屏类 content 为空只有图,折叠无意义)
+  // 收集全部 tool 消息下标(排除 _transient —— 尚未消费;折叠无意义)
+  // 含多模态(数组 content):截图消息必须参与折叠,否则长跑会话里图片永不回收。
   const toolIdx: number[] = [];
   for (let k = 0; k < msgs.length; k++) {
     const m = msgs[k];
-    if (m.role === 'tool' && !m._transient && typeof m.content === 'string' && m.content.length > 0) toolIdx.push(k);
+    if (m.role === 'tool' && !m._transient && m.content != null &&
+        (typeof m.content === 'string' ? m.content.length > 0 : m.content.length > 0)) toolIdx.push(k);
   }
   if (toolIdx.length <= FOLD_KEEP_RECENT) return { view: msgs, folded: 0, savedTokens: 0 };
   const foldSet = new Set(toolIdx.slice(0, toolIdx.length - FOLD_KEEP_RECENT));
+  // 截图豁免:数组 content(多模态截图)里带 image part 的消息,只豁免最近 N 张,
+  // 更早的照常折叠 —— 否则 472 张 2560×1440 截图在长跑会话里永不回收(2026-10 实测占 KinetVM 频道 32% input)。
+  const imageMsgIdx = toolIdx.filter((k) => Array.isArray(msgs[k].content) &&
+    (msgs[k].content as ContentPart[]).some((p) => p.type === 'image_url'));
+  const imageExempt = new Set(imageMsgIdx.slice(-FOLD_KEEP_RECENT_IMAGES));
   // 相邻 assistant(tool_calls)也一起折叠:folded 结果 + 完整参数原文并存无意义,参数才是大头。
   // 只折叠"全部 tool_calls 都已折叠"的 assistant,且无文本内容(有文本的保留原文)。
   const assistantFullyFolded = new Set<number>();
@@ -883,7 +904,8 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
     const m = msgs[k];
     if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0 &&
         !(typeof m.content === 'string' && m.content.trim().length > 0) &&
-        m.tool_calls.every((tc) => msgs.some((x, xi) => x.role === 'tool' && x.tool_call_id === tc.id && foldSet.has(xi)))) {
+        m.tool_calls.every((tc) => msgs.some((x, xi) => x.role === 'tool' && x.tool_call_id === tc.id && foldSet.has(xi) && !imageExempt.has(xi)))) {
+      // 截图豁免的消息:其 assistant 也不能折叠参数(否则 tool_call_id 悬空、模型失去"从哪重截"的线索)
       assistantFullyFolded.add(k);
     }
   }
@@ -898,6 +920,21 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
       const head = m.content.slice(0, 80).replace(/\s+/g, ' ').trim();
       const line = `[已折叠 ${tc?.function.name ?? 'tool'}${target ? ` ${target}` : ''}] ${head}…${FOLD_RESUME_HINT}`;
       saved += Math.max(0, Math.floor((m.content.length - line.length) * c));
+      return { ...m, content: line };
+    }
+    // 多模态截图消息:保留 text part(截图说明/几何信息),image part 换占位文本。
+    // 折叠后 content 退化为纯字符串 —— 协议合法(tool 消息 content 可为 string),图片即被回收。
+    if (foldSet.has(k) && Array.isArray(m.content) && !imageExempt.has(k)) {
+      const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
+      const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
+      const target = tc ? foldTargetOf(tc.function.name, tc.function.arguments) : '';
+      const parts = m.content as ContentPart[];
+      const textPart = parts.filter((p) => p.type === 'text').map((p) => (p as { text: string }).text).join(' ');
+      const head = textPart.slice(0, 80).replace(/\s+/g, ' ').trim();
+      const line = `[已折叠 ${tc?.function.name ?? 'screenshot'}${target ? ` ${target}` : ''}] ${head}…${FOLD_IMAGE_PLACEHOLDER}`;
+      // saved 按 vision tile 固定值估算(与 estMsgChars 口径一致),不按 base64 字符折算
+      const imgCount = parts.filter((p) => p.type === 'image_url').length;
+      saved += imgCount * 2700 + Math.max(0, Math.floor((textPart.length - line.length) * c));
       return { ...m, content: line };
     }
     if (assistantFullyFolded.has(k) && Array.isArray(m.tool_calls)) {

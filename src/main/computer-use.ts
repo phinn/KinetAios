@@ -306,9 +306,11 @@ async function captureScreenInner(): Promise<ScreenshotResult> {
     // 平台动作空间:Windows/Linux = 物理像素;macOS = 点(CGEvent/cliclick 的坐标语义)
     const spaceW = process.platform === 'darwin' ? width : physW;
     const spaceH = process.platform === 'darwin' ? height : physH;
-    // 请求物理像素分辨率(×dpr),但缩放到合理尺寸防止太大
-    const targetW = Math.min(physW, 2560);
-    const targetH = Math.min(physH, 1440);
+    // 请求物理像素分辨率(×dpr)。上限 1600×900:GUI 坐标/布局识别足够,
+    // 且 vision token 按像素计费 —— 2560×1440 的截图(detail auto)每张吃 ~2-5K tokens,
+    // 长跑会话 472 张 × 每步重发曾是 KinetVM 频道 32% input 的来源(配合 fold 截图回收)。
+    const targetW = Math.min(physW, 1600);
+    const targetH = Math.min(physH, 900);
     const sources = await desktopCapturer.getSources({
       types: ['screen'],
       thumbnailSize: { width: targetW, height: targetH },

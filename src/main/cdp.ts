@@ -601,8 +601,20 @@ export async function browserScreenshot(tabId?: string, urlSubstr?: string): Pro
   const t = await findTarget(tabId, urlSubstr);
   const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
   try {
-    // captureBeyondViewport=false 只拍视口内容(和真实浏览器看到的一致)
-    const r = await s.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
+    // captureBeyondViewport=false 只拍视口内容(和真实浏览器看到的一致)。
+    // clip 限宽 1600:此截图只用于视觉确认(真实点击走 DOM selector),全宽 2560 PNG
+    // 每张多烧 ~2K vision tokens,长跑会话里是主要 input 来源之一。
+    // Clip width to 1600: visual confirmation only (real clicks go through DOM selectors).
+    const metrics = await s.send('Page.getLayoutMetrics').catch(() => null);
+    const cw = metrics?.contentSize?.width ?? metrics?.cssContentSize?.width ?? 0;
+    const ch = metrics?.contentSize?.height ?? metrics?.cssContentSize?.height ?? 0;
+    const vw = Math.min(cw || 1600, 1600);
+    const vh = Math.min(ch || 1200, 1200);
+    const r = await s.send('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: false,
+      ...(cw > 1600 || ch > 1200 ? { clip: { x: 0, y: 0, width: vw, height: vh, scale: 1 } } : {}),
+    });
     return { ok: true, base64: r.data, note: `窗口内容截图成功 (${t.title})` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
