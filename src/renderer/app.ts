@@ -4765,6 +4765,7 @@ function tokSplitLabel(tokensIn: number, tokensOut: number, total: number): stri
 const TOKEN_SOURCE_LABELS: Record<string, string> = {
   llm: '对话', merge: '对话合并', compact: '摘要压缩', judge: 'V2 评审',
   claude: 'Claude CLI', codex: 'Codex CLI', subagent: '子任务', 'team:broadcast': '团队广播',
+  sum: '本轮累计',
 };
 function tokenSourceLabel(src: string | undefined): string {
   if (!src) return 'LLM 调用';
@@ -4812,7 +4813,8 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
     body.innerHTML = `<div class="mm-empty">${escHtml(String((e as Error)?.message ?? e))}</div>`;
     return;
   }
-  const metas = rows.filter((rw) => rw.type === 'turn/meta' && rw.turnId === turnId);
+  // 'sum' 行是 done 时的累计汇总(非真实调用),参与逐条列表会与 llm 行重复相加 → 排除。
+  const metas = rows.filter((rw) => rw.type === 'turn/meta' && rw.turnId === turnId && (rw.data as { source?: string }).source !== 'sum');
   if (metas.length === 0) {
     // 旧数据:turn/meta 没落过 → 只给聚合数
     body.innerHTML = `<div class="mm-empty">该会话无逐次调用记录(旧版本数据)</div>`;

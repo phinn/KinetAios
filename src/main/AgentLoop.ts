@@ -952,7 +952,30 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
   }
   const c = coefFor(proto);
   let saved = 0;
+  // 尾部豁免窗口内的 write_file/edit_file:工具结果必须保留(重试/对照需要),但调用参数
+  // (new_string 动辄 10K+)模型已不需要原文 —— 写过的内容就在文件里,edit 结果也回显了。
+  // 巨型 args 退化为摘要行,tool_call_id 与 id 配对保持协议合法。
+  const TAIL_ARG_PRUNE = ['write_file', 'edit_file'];
+  const tailArgsLimit = toolIdx.length - FOLD_KEEP_RECENT;
   const view = msgs.map((m, k) => {
+    if (k >= tailArgsLimit && m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+      let changed = false;
+      let argsSaved = 0;
+      const tool_calls = m.tool_calls.map((tc) => {
+        if (!TAIL_ARG_PRUNE.includes(tc.function.name)) return tc;
+        const argsLen = tc.function.arguments.length;
+        if (argsLen < 2000) return tc; // 小参数不动,零感知
+        const target = foldTargetOf(tc.function.name, tc.function.arguments) || '(无路径)';
+        const kb = (argsLen / 1024).toFixed(1);
+        argsSaved += argsLen;
+        changed = true;
+        return { ...tc, function: { ...tc.function, arguments: JSON.stringify({ _folded: `已写入 ${target}(内容 ${kb}K,原文在文件/结果里)` }) } };
+      });
+      if (changed) {
+        saved += Math.max(0, Math.floor(argsSaved * c));
+        return { ...m, tool_calls };
+      }
+    }
     if (foldSet.has(k) && typeof m.content === 'string') {
       // 找到对应的 assistant.tool_calls 拿 name/args 生成摘要行
       const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));

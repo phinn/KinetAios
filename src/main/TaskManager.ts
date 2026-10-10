@@ -1041,7 +1041,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           store.appendMessage('assistant', t.answer, conv.id);
         }
         if (t.costUSD > 0) {
-          store.appendEvent(conv.id, t.id, { type: 'turn/meta', costUSD: t.costUSD, tokensIn: t.tokensIn ?? 0, tokensOut: t.tokensOut ?? 0 });
+          // source:'sum' = turn 累计汇总行(非一次真实调用)。此前无标记,与逐次 llm 行
+          // 在统计里被重复相加(某 turn 74M 被算成 148M);明细浮层与 DB 统计都按此标记排除。
+          store.appendEvent(conv.id, t.id, { type: 'turn/meta', costUSD: t.costUSD, tokensIn: t.tokensIn ?? 0, tokensOut: t.tokensOut ?? 0, source: 'sum' });
         }
         store.appendEvent(conv.id, t.id, { type: 'assistant/message', text: t.answer || '' });
         break;
