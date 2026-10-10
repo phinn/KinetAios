@@ -3023,23 +3023,47 @@ function buildStepsEl(steps: { name: string; args: string; result: string; durat
       if (runLen >= 3) {
         const totalMs = steps.slice(i, j).reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
         const agg = buildAggCard(steps[i].name, runLen, totalMs, steps.slice(i, j));
+        agg.dataset.from = String(i);
+        agg.dataset.to = String(j - 1);
         inner.appendChild(agg);
         tickMap.push({ start: i, end: j - 1, el: agg });
         i = j;
       } else {
         const card = renderStep(steps[i], false);
+        card.dataset.i = String(i);
         inner.appendChild(card);
         tickMap.push({ start: i, end: i, el: card });
         i++;
       }
     }
   } else {
-    // expanded 即流式态:pending 卡显示转圈;非流式重渲染时 pending 按中断显示
-    // 溢出时同样只建尾段(流式会话跑到 500+ 步时也不再全量建卡)
-    for (let k = renderFrom; k < steps.length; k++) {
-      const card = renderStep(steps[k], expanded);
-      inner.appendChild(card);
-      tickMap.push({ start: k, end: k, el: card });
+    // expanded 即流式态:pending 卡显示转圈。流式也做连续同名 ≥3 聚合(2026-10-20):
+    // 修前流式逐卡 append,子 agent 连读 15 个文件就刷 15 行,把正文顶出屏幕。
+    // 聚合卡流式期最后一张可吸收后续同名步骤(done 时全量重建规则不变)。
+    // Streaming also run-length-aggregates ≥3 same-name steps; the tail agg card
+    // absorbs subsequent same-name steps until a different tool arrives.
+    for (let k = renderFrom; k < steps.length; ) {
+      let j = k;
+      while (j < steps.length && steps[j].name === steps[k].name) j++;
+      const runLen = j - k;
+      if (runLen >= 3) {
+        const slice = steps.slice(k, j);
+        const totalMs = slice.reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
+        const agg = buildAggCard(steps[k].name, runLen, totalMs, slice);
+        agg.dataset.from = String(k);
+        agg.dataset.to = String(j - 1);
+        // 流式尾段聚合卡:最后一次 run 仍可能在增长 → 标记可吸收,done 后冻结
+        if (j >= steps.length) agg.dataset.tail = '1';
+        inner.appendChild(agg);
+        k = j;
+      } else {
+        for (let x = k; x < j; x++) {
+          const card = renderStep(steps[x], expanded);
+          card.dataset.i = String(x);
+          inner.appendChild(card);
+        }
+        k = j;
+      }
     }
   }
   wrap.appendChild(inner);
@@ -3070,6 +3094,66 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   det.addEventListener('toggle', () => { if (det.open) buildChildren(); });
   det.appendChild(inner);
   return det;
+}
+
+// 流式聚合吸收:把新增的同名 step 追加进聚合卡(计数+1、总耗时累加)。
+// 吸收不触碰 summary 之外的结构:子卡是懒构建的(首次展开才 renderStep),
+// 所以这里只更新 summary 文本 + steps 数组引用,展开时自然渲染最新全量。
+// Absorb a new same-name step into a streaming agg card (lazy children ⇒ only
+// the summary text needs updating; expansion always renders the fresh array).
+function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalMs: number): void {
+  agg.dataset.to = String(Number(agg.dataset.to ?? '-1') + 1);
+  const label = agg.querySelector('.agg-label');
+  if (label) label.innerHTML = `${esc(name)} <b>× ${count}</b>`;
+  const dur = agg.querySelector('.dur');
+  if (dur) dur.textContent = fmtStepDur(totalMs);
+  else {
+    const d = document.createElement('span');
+    d.className = 'dur';
+    d.textContent = fmtStepDur(totalMs);
+    agg.querySelector('summary')?.appendChild(d);
+  }
+}
+
+// 增量路径用的游标:返回 steps-wrap 已覆盖的最大 steps 下标(不含)。
+// 聚合卡用 data-to,单卡用 data-i;裸卡(旧数据无标记)返回 -1 → 调用方全量重建兜底。
+// Cursor for the incremental path: max steps index already covered by the DOM.
+function lastCoveredIdx(wrap: HTMLElement): number {
+  const last = wrap.querySelector('.steps > *:last-child') as HTMLElement | null;
+  if (!last) return 0;
+  if (last.dataset.to != null) return Number(last.dataset.to) + 1;
+  if (last.dataset.i != null) return Number(last.dataset.i) + 1;
+  return -1; // 裸卡无标记(历史数据)→ 调用方走全量重建
+}
+
+// 增量补挂(run-length 版):新段内连续同名 ≥3 → 一张聚合卡(尾段标记可吸收);
+// 其余单卡挂 data-i。offset=新段在 t.steps 里的起始下标。
+// Incremental append with run-length aggregation; tail run gets the absorbable tag.
+function appendStepsRunLength(inner: HTMLElement, steps: Array<{ name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }>, offset: number, totalSoFar: number): void {
+  const frag = document.createDocumentFragment();
+  let i = 0;
+  while (i < steps.length) {
+    let j = i;
+    while (j < steps.length && steps[j].name === steps[i].name) j++;
+    const runLen = j - i;
+    if (runLen >= 3) {
+      const slice = steps.slice(i, j);
+      const totalMs = slice.reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
+      const agg = buildAggCard(steps[i].name, runLen, totalMs, slice);
+      agg.dataset.from = String(offset + i);
+      agg.dataset.to = String(offset + j - 1);
+      if (offset + j >= totalSoFar) agg.dataset.tail = '1';
+      frag.appendChild(agg);
+    } else {
+      for (let k = i; k < j; k++) {
+        const card = renderStep(steps[k], true);
+        card.dataset.i = String(offset + k);
+        frag.appendChild(card);
+      }
+    }
+    i = j;
+  }
+  inner.appendChild(frag);
 }
 
 // 刻度条:每步一个点(绿成功/红失败/黄警告/灰中断),点击展开步骤区并跳到对应卡
@@ -3513,6 +3597,10 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   const isPending = !!s.pending && live;
   const isInterrupted = (!!s.pending && !live) || !!s.interrupted;
   if (isPending) el.classList.add('running');
+  // data-name:pending→done 原位替换时检测「同名三连 → 收聚合」用;
+  // data-i:增量路径的 steps 下标锚(全量重建路径由调用方另行覆盖)。
+  // data-name/data-i: for in-place pending→done swap and tri-run collapse detection.
+  el.dataset.name = s.name;
   if (s.startId) { el.dataset.sid = s.startId; el.dataset.pending = s.pending ? '1' : '0'; }
   const status = isPending ? 'ok' : isInterrupted ? 'warn' : stepStatusOf(s.result);
   if (status === 'err') el.classList.add('step-err');
@@ -3722,28 +3810,53 @@ function updateLastTurnIncremental(): void {
   if (t.steps.length) {
     if (oldSteps) {
       const inner = oldSteps.querySelector('.steps') as HTMLElement | null;
-      const have = inner ? inner.children.length : 0;
-      if (inner && t.steps.length > have) {
-        // 只补挂新增 step(库里的 steps 只追加不修改,序号即稳定对齐);增量=流式态 → live=true
-        const frag = document.createDocumentFragment();
-        for (let si = have; si < t.steps.length; si++) frag.appendChild(renderStep(t.steps[si], true));
-        inner.appendChild(frag);
+      let have = lastCoveredIdx(oldSteps as HTMLElement);
+      if (inner && have >= 0 && t.steps.length > have) {
+        // 流式聚合增量:先看末卡是不是可吸收的聚合卡(tail 标记),是且新段同名 → 直接吸收
+        // (O(1),不建 DOM);否则按 run-length 补挂,连续同名 ≥3 建聚合卡。
+        // Incremental: absorb into tail agg card if same name (O(1)); else run-length append.
+        const tailAgg = inner.lastElementChild as HTMLElement | null;
+        const firstNew = t.steps[have];
+        const tailAggName = (tailAgg?.querySelector('.agg-label')?.textContent ?? '').replace(/\s*×.*$/, '').trim();
+        if (tailAgg?.dataset.tail === '1' && firstNew && firstNew.name === tailAggName) {
+          // 只累加聚合卡自身覆盖区间 [from..end] 的耗时,别把前面无关步骤算进来;
+          // count = 新末下标 - from + 1
+          const from = Number(tailAgg.dataset.from ?? tailAgg.dataset.to ?? '0');
+          const slice = t.steps.slice(from);
+          const totalMs = slice.reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
+          absorbIntoAggCard(tailAgg, firstNew.name, t.steps.length - from, totalMs);
+        } else {
+          appendStepsRunLength(inner, t.steps.slice(have), have, t.steps.length);
+        }
         // 概要计数同步(steps.length 变化)
         const cnt = oldSteps.querySelector('.steps-count');
         if (cnt) cnt.innerHTML = `${sv.wrench} ${stepsSummaryLabel(t.steps)}`;
-      } else if (!inner) {
+      } else if (!inner || have < 0) {
+        // 无 inner(异常)或旧 DOM 无区间标记(历史渲染产物)→ 全量重建,一次付清对齐成本
         const fresh = buildStepsEl(t.steps, true);
         oldSteps.replaceWith(fresh);
       }
       // pending → done 原位替换:tool_start 挂的 spinner 卡在结果到达后换成成品卡。
-      // 按 index 对齐遍历,只动 data-pending="1" 且数据已非 pending 的卡 — 常态 O(1)。
+      // 卡片带覆盖区间标记:单卡 data-i=N,聚合卡 data-from/to=[a,b] — 按 data-i 对齐,不再依赖序号漂移。
+      // Pending→done in-place swap keyed on data-i (stable across agg cards).
       const stepsInner = oldSteps?.querySelector('.steps') ?? turnEl.querySelector('.steps');
       if (stepsInner) {
-        const cards = stepsInner.children;
-        for (let si = 0; si < cards.length && si < t.steps.length; si++) {
-          const card = cards[si] as HTMLElement;
-          if (card.dataset.pending === '1' && !t.steps[si].pending) {
-            card.replaceWith(renderStep(t.steps[si], true));
+        for (const card of Array.from(stepsInner.children) as HTMLElement[]) {
+          if (card.dataset.pending !== '1') continue;
+          const idx = card.dataset.i != null ? Number(card.dataset.i) : -1;
+          if (idx >= 0 && idx < t.steps.length && !t.steps[idx].pending) {
+            // 前两张卡与将转正卡同名三连 → 全量重建收聚合(聚合后卡数少,重建廉价)。
+            // data-name 由 renderStep 统一打,聚合卡无 data-name 不参与三连。
+            const sibs = Array.from(stepsInner.children);
+            const pos = sibs.indexOf(card);
+            const prev2 = sibs.slice(Math.max(0, pos - 2), pos);
+            if (prev2.length === 2 && prev2.every((p) => (p as HTMLElement).dataset.name === t.steps[idx].name)) {
+              oldSteps.replaceWith(buildStepsEl(t.steps, true));
+              break;
+            }
+            const fresh = renderStep(t.steps[idx], true);
+            fresh.dataset.i = String(idx);
+            card.replaceWith(fresh);
           }
         }
       }
