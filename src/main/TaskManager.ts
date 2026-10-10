@@ -1030,6 +1030,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           // 否则重建 turns 时"输入"虚高、"输出"恒为 0,与内存态 applyEvent 口径冲突。
           tokensIn: ev.tokensIn ?? 0,
           tokensOut: ev.tokensOut ?? 0,
+          // 缓存拆分(2026-10):cache_read ~10% 价 / cache_creation ~125% 价单列存证
+          cacheRead: ev.cacheRead,
+          cacheCreation: ev.cacheCreation,
           source: ev.source,
         });
         break;

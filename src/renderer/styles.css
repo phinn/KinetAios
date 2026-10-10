@@ -6708,6 +6708,7 @@ select:focus-visible {
 .tok-src { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
 .tok-nums { white-space: nowrap; }
 .tok-cost { color: var(--text-dim); white-space: nowrap; min-width: 52px; text-align: right; }
+.tok-cache { color: var(--accent, #7aa2f7); opacity: 0.85; } /* cache_read 拆分标记(⚡) */
 .tok-time { color: var(--text-faint); white-space: nowrap; font-size: 0.692rem; }
 .tok-row.tok-total { border-top: 1px solid var(--border-soft); margin-top: 2px; padding-top: 6px; font-weight: 600; color: var(--text); }
 

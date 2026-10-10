@@ -4837,20 +4837,23 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
   const totIn = metas.reduce((a, rw) => a + Number((rw.data as { tokensIn?: number }).tokensIn ?? 0), 0);
   const totOut = metas.reduce((a, rw) => a + Number((rw.data as { tokensOut?: number }).tokensOut ?? 0), 0);
   const totUsd = metas.reduce((a, rw) => a + Number((rw.data as { costUSD?: number }).costUSD ?? 0), 0);
+  const totCache = metas.reduce((a, rw) => a + Number((rw.data as { cacheRead?: number }).cacheRead ?? 0), 0);
   body.innerHTML = '';
   metas.forEach((rw, i) => {
-    const d = rw.data as { tokensIn?: number; tokensOut?: number; costUSD?: number; source?: string };
+    const d = rw.data as { tokensIn?: number; tokensOut?: number; costUSD?: number; source?: string; cacheRead?: number };
     const when = new Date(rw.ts).toLocaleTimeString();
     const after = toolsAfter(i);
     // 行摘要:这次调用之后做了什么(工具名列表 / 最终回答)
     const action = after.length === 0
       ? (i + 1 === metas.length ? `${sv.checkCircle} 输出最终回答` : '(无工具动作)')
       : sv.wrench + ' ' + after.map((t) => (t.data as { name?: string }).name ?? '?').join(' · ');
+    // 缓存命中标注(cache_read ~10% 价,命中率高 = 长会话成本低)
+    const cacheTag = (d.cacheRead ?? 0) > 0 ? ` <span class="tok-cache" title="cache_read(缓存命中,~10% 价)">⚡${fmt(d.cacheRead ?? 0)}</span>` : '';
     const row = document.createElement('div');
     row.className = 'tok-row tok-row-click';
     row.innerHTML = `<div class="tok-row-main"><span class="tok-idx">${i + 1}</span>
       <span class="tok-src">${escHtml(tokenSourceLabel(d.source))}</span>
-      <span class="tok-nums">↑${fmt(d.tokensIn ?? 0)} ↓${fmt(d.tokensOut ?? 0)}</span>
+      <span class="tok-nums">↑${fmt(d.tokensIn ?? 0)} ↓${fmt(d.tokensOut ?? 0)}${cacheTag}</span>
       <span class="tok-cost">${fmtCost(Number(d.costUSD ?? 0))}</span>
       <span class="tok-time">${when}</span></div>
       <div class="tok-row-sub" title="${escHtml(action)}">${escHtml(action)}</div>`;
@@ -4879,7 +4882,7 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
   });
   const total = document.createElement('div');
   total.className = 'tok-row tok-total';
-  total.innerHTML = `<span class="tok-idx">Σ</span><span class="tok-src">${metas.length} 次调用</span><span class="tok-nums">↑${fmt(totIn)} ↓${fmt(totOut)}</span><span class="tok-cost">${fmtCost(totUsd)}</span><span class="tok-time"></span>`;
+  total.innerHTML = `<span class="tok-idx">Σ</span><span class="tok-src">${metas.length} 次调用</span><span class="tok-nums">↑${fmt(totIn)} ↓${fmt(totOut)}${totCache > 0 ? ` <span class="tok-cache" title="其中缓存读取(≈10% 价)">⚡${fmt(totCache)}</span>` : ''}</span><span class="tok-cost">${fmtCost(totUsd)}</span><span class="tok-time"></span>`;
   body.appendChild(total);
   place();
 }

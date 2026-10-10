@@ -35,6 +35,11 @@ export type Completion = {
   rawAssistant: ChatMsg; // OpenAI-format, fed back into AgentLoop history regardless of protocol
   tokensIn: number;
   tokensOut: number;
+  // 缓存拆分(可选,Anthropic 协议原生 / OpenAI 协议 cached_tokens):
+  // cacheRead ~10% 价、cacheCreation ~125% 价,tokensIn 仍含二者(总注入口径不变),
+  // 拆分单列用于精确计价与明细浮层展示。0/缺省 = 无缓存或端点未报。
+  cacheRead?: number;
+  cacheCreation?: number;
 };
 
 export class GLMError extends Error {
@@ -198,7 +203,10 @@ export async function embed(texts: string[], snap: ConfigSnapshot, signal?: Abor
 }
 
 // MARK: cost — rough USD price table. Same logic as Swift AgentLoop.priceUSD.
-export function priceUSD(model: string, tokensIn: number, tokensOut: number): number {
+// 缓存计价(2026-10):tokensIn 拆出 cacheRead(~10% 价)/ cacheCreation(~125% 价)后,
+// 剩余新鲜 input 按全价计 —— 修正此前 cache_read 全按 input 价导致成本系统性高估。
+// 缺省(旧调用方/无缓存)行为与旧版完全一致。
+export function priceUSD(model: string, tokensIn: number, tokensOut: number, cacheRead = 0, cacheCreation = 0): number {
   const s = getSettings();
   const m = model.toLowerCase();
   const isGLM = m.startsWith('glm');
@@ -206,7 +214,8 @@ export function priceUSD(model: string, tokensIn: number, tokensOut: number): nu
   const defOut = isGLM ? 0.00000021 : 0.000015;
   const inRate = s.priceInPerMTok > 0 ? s.priceInPerMTok / 1_000_000 : defIn;
   const outRate = s.priceOutPerMTok > 0 ? s.priceOutPerMTok / 1_000_000 : defOut;
-  return tokensIn * inRate + tokensOut * outRate;
+  const fresh = Math.max(tokensIn - cacheRead - cacheCreation, 0); // 新鲜 input(全价)
+  return fresh * inRate + cacheRead * inRate * 0.1 + cacheCreation * inRate * 1.25 + tokensOut * outRate;
 }
 
 // Output cap by model family. GLM-4.6 supports 16K; most OpenAI-compatible endpoints
@@ -382,6 +391,8 @@ class OpenAICompatibleProvider implements Provider {
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let tokensIn = 0;
     let tokensOut = 0;
+    // OpenAI 协议缓存拆分:prompt_tokens_details.cached_tokens(读缓存,~10% 价)
+    let cacheRead = 0;
 
     for await (const payload of sseLines(resp)) {
       // sseLines 已剥 "data:" 前缀并聚合多行帧;'[DONE]' 哨兵直接透出
@@ -394,26 +405,29 @@ class OpenAICompatibleProvider implements Provider {
         if (obj.usage) {
           tokensIn = intFrom(obj.usage.prompt_tokens) || tokensIn;
           tokensOut = intFrom(obj.usage.completion_tokens) || tokensOut;
+          // cached_tokens ⊂ prompt_tokens(总注入不变,拆出按 10% 价计)
+          const cached = intFrom(obj.usage.prompt_tokens_details?.cached_tokens);
+          if (cached > 0) cacheRead = cached;
         }
-      const delta = obj.choices?.[0]?.delta;
-      if (!delta) continue;
-      if (typeof delta.content === 'string' && delta.content) {
-        content += delta.content;
-        onToken(delta.content);
-      }
-      if (Array.isArray(delta.tool_calls)) {
-        for (const tc of delta.tool_calls) {
-          const idx = tc.index ?? 0;
-          const fn = tc.function ?? {};
-          const entry = calls.get(idx) ?? { id: '', name: '', args: '' };
-          if (tc.id) entry.id = tc.id;
-          if (fn.name) entry.name = fn.name;
-          // args: OpenAI standard = streamed String fragments; some GLM endpoints = whole dict once.
-          if (typeof fn.arguments === 'string') entry.args += fn.arguments;
-          else if (fn.arguments && typeof fn.arguments === 'object') entry.args = JSON.stringify(fn.arguments);
-          calls.set(idx, entry);
+        const delta = obj.choices?.[0]?.delta;
+        if (!delta) continue;
+        if (typeof delta.content === 'string' && delta.content) {
+          content += delta.content;
+          onToken(delta.content);
         }
-      }
+        if (Array.isArray(delta.tool_calls)) {
+          for (const tc of delta.tool_calls) {
+            const idx = tc.index ?? 0;
+            const fn = tc.function ?? {};
+            const entry = calls.get(idx) ?? { id: '', name: '', args: '' };
+            if (tc.id) entry.id = tc.id;
+            if (fn.name) entry.name = fn.name;
+            // args: OpenAI standard = streamed String fragments; some GLM endpoints = whole dict once.
+            if (typeof fn.arguments === 'string') entry.args += fn.arguments;
+            else if (fn.arguments && typeof fn.arguments === 'object') entry.args = JSON.stringify(fn.arguments);
+            calls.set(idx, entry);
+          }
+        }
       } catch {
         continue;
       }
@@ -424,7 +438,7 @@ class OpenAICompatibleProvider implements Provider {
       .map(([, v]) => v)
       .filter((v) => v.name)
       .map((v) => ({ id: v.id, name: v.name, arguments: v.args }));
-    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut };
+    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
   }
 }
 
@@ -625,6 +639,8 @@ async function ollamaStreamInner(
   const calls = new Map<number, { id: string; name: string; args: string }>();
   let tokensIn = 0;
   let tokensOut = 0;
+  // OpenAI 协议缓存拆分(同流式路径):cached_tokens ⊂ prompt_tokens
+  let cacheRead = 0;
 
   const reader = resp.body?.getReader();
   if (!reader) throw new GLMError('noBody');
@@ -696,9 +712,8 @@ async function ollamaStreamInner(
     .map(([, v]) => v)
     .filter((v) => v.name)
     .map((v) => ({ id: v.id, name: v.name, arguments: v.args }));
-  return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut };
+  return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
 }
-
 // image_url → Anthropic image block。data: URL 的 payload 必须是纯 base64 才转 base64 source;
 // 畸形 data: URL(含换行/非 base64 字符)降级丢弃 —— GLM 会把它映射成缺 file_url 的 file 块 → 400 [1214]。
 function anthImagePart(p: { image_url?: { url: string } }): { type: 'image'; source: Record<string, string> } | null {
@@ -830,6 +845,8 @@ class AnthropicProvider implements Provider {
     const blocks = new Map<number, { id: string; name: string; args: string }>();
     let tokensIn = 0;
     let tokensOut = 0;
+    let cacheRead = 0; // cache_read_input_tokens(读缓存,~10% 价)
+    let cacheCreation = 0; // cache_creation_input_tokens(写缓存,~125% 价)
 
     for await (const payload of sseLines(resp)) {
       // sseLines 已剥前缀+聚合;NDJSON 透传行(无 data: 前缀)不是 Anthropic 事件 → 跳过。
@@ -844,9 +861,11 @@ class AnthropicProvider implements Provider {
       if (!type) continue;
       if (type === 'message_start') {
         // input_tokens 不含缓存;cache_read(读,~10% 价)/ cache_creation(写,~125% 价)单列。
-        // 全计入 tokensIn(按 input 价统计 → cache_read 高估,但不漏算,比漏掉缓存消耗更接近真实)。
+        // tokensIn 仍为总注入口径(三者之和),cache 拆分单列供精确计价与明细展示。
         const u = obj.message?.usage ?? obj.usage ?? {};
-        const n = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
+        cacheRead = intFrom(u.cache_read_input_tokens);
+        cacheCreation = intFrom(u.cache_creation_input_tokens);
+        const n = intFrom(u.input_tokens) + cacheCreation + cacheRead;
         if (n > 0) tokensIn = n; // 智谱兼容端点在这里发占位 0 → 别覆盖掉后续 delta 里的真实值
       } else if (type === 'message_delta') {
         // 原生 Anthropic:input 只在 message_start,delta 只有 output_tokens;
@@ -854,7 +873,10 @@ class AnthropicProvider implements Provider {
         // 真实 input + cache_read 全在 delta.usage 里 → 这里兜底读 input,取更大值。
         const u = obj.usage ?? {};
         tokensOut = Math.max(tokensOut, intFrom(u.output_tokens));
-        const inDelta = intFrom(u.input_tokens) + intFrom(u.cache_creation_input_tokens) + intFrom(u.cache_read_input_tokens);
+        const dRead = intFrom(u.cache_read_input_tokens);
+        const dCreation = intFrom(u.cache_creation_input_tokens);
+        if (dRead + dCreation > cacheRead + cacheCreation) { cacheRead = dRead; cacheCreation = dCreation; }
+        const inDelta = intFrom(u.input_tokens) + cacheCreation + cacheRead;
         if (inDelta > tokensIn) tokensIn = inDelta;
       } else if (type === 'content_block_start') {
         const idx = obj.index ?? 0;
@@ -884,7 +906,7 @@ class AnthropicProvider implements Provider {
       .map(([, v]) => v)
       .filter((v) => v.name)
       .map((v) => ({ id: v.id, name: v.name, arguments: v.args || '{}' }));
-    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut };
+    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead, cacheCreation };
   }
 
   // OpenAI tool def → Anthropic (function/parameters → name/input_schema)
