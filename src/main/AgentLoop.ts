@@ -849,7 +849,7 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
 // Returns a NEW array; the original `messages` (persisted to directHistory) stays intact.
 const FOLD_KEEP_RECENT = 6;         // 保留最近 N 条工具结果完整(recent tail 永不折叠)
 const FOLD_TRIGGER_TOKENS = 80_000; // 上下文估超此值才折叠(小 turn 零感知)
-const FOLD_KEEP_RECENT_IMAGES = 3;  // 截图豁免:最近 N 张截图保留原图(近期视觉上下文仍可用)
+const FOLD_KEEP_RECENT_IMAGES = 1;  // 截图豁免:只保最新 1 张 —— computer-use 场景截图看一眼即弃(确认→点击→下一张),几乎不回看 2 轮前的图;回看走占位符重截(2026-10 用户定调:3 张浪费)
 const FOLD_RESUME_HINT = '\n[本条工具结果已折叠以节省上下文。如仍需要,重新调用同一工具即可取回。]';
 const FOLD_IMAGE_PLACEHOLDER = '[截图已折叠以节省上下文。如仍需查看,重新调用同一工具截屏即可取回。]';
 
@@ -877,11 +877,48 @@ function foldTargetOf(name: string, argsJson: string): string {
   } catch { return ''; }
 }
 
+// 多模态截图消息(带 image part 的 tool 消息,非 _transient)总数 - 豁免窗口 = 超窗旧图数。
+function imageMsgCountOverExempt(msgs: ChatMsg[]): number {
+  let n = 0;
+  for (const m of msgs) {
+    if (m.role === 'tool' && !m._transient && Array.isArray(m.content) &&
+        (m.content as ContentPart[]).some((p) => p.type === 'image_url')) n++;
+  }
+  return Math.max(0, n - FOLD_KEEP_RECENT_IMAGES);
+}
+
+// 仅收图模式(总闸未过、toolIdx 数也不够折时用):把豁免窗口外的旧截图 image part
+// 换成占位文本(保留 text part 的说明/几何信息),文本类工具结果一律不动。
+function foldStaleImagesOnly(msgs: ChatMsg[]): { view: ChatMsg[]; folded: number; savedTokens: number } {
+  const imageMsgIdx: number[] = [];
+  for (let k = 0; k < msgs.length; k++) {
+    const m = msgs[k];
+    if (m.role === 'tool' && !m._transient && Array.isArray(m.content) &&
+        (m.content as ContentPart[]).some((p) => p.type === 'image_url')) imageMsgIdx.push(k);
+  }
+  const stale = new Set(imageMsgIdx.slice(0, imageMsgIdx.length - FOLD_KEEP_RECENT_IMAGES));
+  if (stale.size === 0) return { view: msgs, folded: 0, savedTokens: 0 };
+  const view = msgs.map((m, k) => {
+    if (!stale.has(k)) return m;
+    const parts = m.content as ContentPart[];
+    const textPart = parts.filter((p) => p.type === 'text').map((p) => (p as { text: string }).text).join(' ');
+    const head = textPart.slice(0, 80).replace(/\s+/g, ' ').trim();
+    const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
+    const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
+    const line = `[已折叠 ${tc?.function.name ?? 'screenshot'}] ${head}…${FOLD_IMAGE_PLACEHOLDER}`;
+    return { ...m, content: line };
+  });
+  return { view, folded: stale.size, savedTokens: stale.size * 2700 };
+}
+
 // 折叠视图生成:超阈值时把(除最近 KEEP_RECENT 条外的)旧工具结果替换为摘要行。
 // 摘要行格式:「[已折叠 tool_name 目标]」 — 模型知道看过什么、结果去哪了、怎么取回。
 export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: ChatMsg[]; folded: number; savedTokens: number } {
   const total = estTokenCount(msgs, proto);
-  if (total <= FOLD_TRIGGER_TOKENS) return { view: msgs, folded: 0, savedTokens: 0 };
+  // 豁免窗口外的旧截图不做总闸判断 —— computer-use 循环(少量文本+图)可能长期在
+  // 40-60K 徘徊,够不到 80K 总闸,旧图会无限堆积;而旧图看一眼即弃,任何时候收都无信息损失。
+  const overStaleImages = imageMsgCountOverExempt(msgs) > 0;
+  if (total <= FOLD_TRIGGER_TOKENS && !overStaleImages) return { view: msgs, folded: 0, savedTokens: 0 };
   // 收集全部 tool 消息下标(排除 _transient —— 尚未消费;折叠无意义)
   // 含多模态(数组 content):截图消息必须参与折叠,否则长跑会话里图片永不回收。
   const toolIdx: number[] = [];
@@ -890,7 +927,11 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
     if (m.role === 'tool' && !m._transient && m.content != null &&
         (typeof m.content === 'string' ? m.content.length > 0 : m.content.length > 0)) toolIdx.push(k);
   }
-  if (toolIdx.length <= FOLD_KEEP_RECENT) return { view: msgs, folded: 0, savedTokens: 0 };
+  if (toolIdx.length <= FOLD_KEEP_RECENT) {
+    // 总闸没过、只有旧图超窗:不进全量 foldSet 流程,单独收图(保 text part)。
+    if (overStaleImages) return foldStaleImagesOnly(msgs);
+    return { view: msgs, folded: 0, savedTokens: 0 };
+  }
   const foldSet = new Set(toolIdx.slice(0, toolIdx.length - FOLD_KEEP_RECENT));
   // 截图豁免:数组 content(多模态截图)里带 image part 的消息,只豁免最近 N 张,
   // 更早的照常折叠 —— 否则 472 张 2560×1440 截图在长跑会话里永不回收(2026-10 实测占 KinetVM 频道 32% input)。
