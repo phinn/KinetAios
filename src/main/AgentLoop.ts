@@ -92,13 +92,20 @@ function extractFileOps(msgs: ChatMsg[]): FileOps {
  * modified = written ∪ edited;readOnly = read - modified。
  */
 function mergeFileOpsWithPersisted(convId: string, newOps: FileOps): { readFiles: string[]; modifiedFiles: string[] } {
-  // 从 conv_facts 读取已有的 file_registry
-  let existing: { read: string[]; written: string[]; edited: string[] };
+  // 从 conv_facts 读取已有的 file_registry。逐键归一化:旧版本构建写入的存量可能缺键
+  // (实锤案例:{"read":[...],"edited":[...]} 无 written → [...undefined] 抛 "existing.written is not iterable",
+  // 整个 compaction 被拖垮),不能只靠整体 try/catch 兜。
+  const DEFAULT_OPS = { read: [] as string[], written: [] as string[], edited: [] as string[] };
+  let existing: { read: string[]; written: string[]; edited: string[] } = { ...DEFAULT_OPS };
   try {
     const raw = loadFact(convId, 'file_registry');
-    existing = raw ? JSON.parse(raw) : { read: [], written: [], edited: [] };
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<typeof DEFAULT_OPS>;
+      const arr = (v: unknown): string[] => Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : [];
+      existing = { read: arr(parsed.read), written: arr(parsed.written), edited: arr(parsed.edited) };
+    }
   } catch {
-    existing = { read: [], written: [], edited: [] };
+    existing = { ...DEFAULT_OPS };
   }
 
   const read = new Set([...existing.read, ...newOps.read]);
