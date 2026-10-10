@@ -7,6 +7,7 @@ VER="${1:?用法: pre-tag-check.sh <版本号,如 3.9.5>}"
 fail=0
 ok()   { echo "  ✅ $1"; }
 bad()  { echo "  ❌ $1"; fail=1; }
+warn() { echo "  ⚠️  $1"; }
 
 echo "== pre-tag-check v$VER =="
 
@@ -38,6 +39,18 @@ fi
 # 4. package-lock 顶层 version 与 package.json 一致
 LOCKV=$(python3 -c "import json;print(json.load(open('package-lock.json'))['version'])" 2>/dev/null)
 [ "$LOCKV" = "$VER" ] && ok "package-lock 顶层 version = $VER" || bad "package-lock 顶层 version = ${LOCKV:-无} ≠ $VER"
+
+# 5. GitHub Release 页正文非空(tag 推上去不会带正文,需 gh release edit 手动灌;历史 3.9.5-3.9.7 三页曾空白)
+if command -v gh >/dev/null 2>&1; then
+  RELBODY=$(gh release view "v$VER" --json body -q '.body' 2>/dev/null | wc -c | tr -d ' ')
+  if [ -z "$RELBODY" ] || [ "$RELBODY" -lt 1000 ]; then
+    warn "GitHub Release v$VER 页正文过短(${RELBODY:-0} 字符,可能是空页)→ 发版后立即: gh release edit v$VER --notes-file .releasenotes/rn-$VER.md"
+  else
+    ok "GitHub Release v$VER 页正文 = ${RELBODY} 字符"
+  fi
+else
+  warn "未安装 gh CLI,无法核验 GitHub Release 页(发版后手动检查 releases 页)"
+fi
 
 echo "== $([ $fail -eq 0 ] && echo 'ALL PASS — 可以 commit + tag' || echo 'FAIL — 修完再发') =="
 exit $fail

@@ -85,7 +85,8 @@ FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (
 4. **wiki 中英同步** — 新功能章节写进 `wiki/*.md` 时，同名 `.zh-CN.md` 必须同步（反之亦然）
 5. **`npm run typecheck`** 通过
 6. **机械校验** — `bash scripts/pre-tag-check.sh <ver>` 全绿才允许 commit+tag
-7. `git commit` + `git tag -a` + `git push --follow-tags`
+7. `git commit`(显式列文件,禁 `add -A`)+ `git tag -a` + `git push --follow-tags`
+8. **建 GitHub Release 页(必须,不自动)** — tag 推上去**不会**带正文,页面只有 Full Changelog 一行。立即执行 `gh release edit vX.Y.Z --notes-file .releasenotes/rn-X.Y.Z.md`,然后 `gh release view vX.Y.Z --json body -q '.body' | wc -c` 核验 >3000 字符。历史欠账:v3.9.5/3.9.6/3.9.7 三页空白,靠人肉想起来才补
 
 ### 插件开发 → `KinetAiosPlugin.md`
 
