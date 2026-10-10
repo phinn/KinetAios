@@ -314,6 +314,29 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
     let completion: Completion;
     try {
+      // 主动 compaction:fold(microcompact)之前,若 turn 内上下文估算已超主动触发线,
+      // 直接走 compactHistory 结构化压缩(摘要替换 head)—— 不等 API 400 报错才被动裁剪。
+      // 修复场景:单 turn 长跑(KinetVM computer-use 类)稳定爬到 400-520K 才撞 400,
+      // 此前唯一闸门是 fold(80K 触发,但 tool 消息占比低时救不了)和三级 fallback(已太晚)。
+      // 触发线 = FOLD_TRIGGER_TOKENS 的 2 倍(160K):fold 先管 microcompact,这条管结构化压缩;
+      // 保留预算用 policy.interStepCompactBudget(direct 30K / hifi 翻倍,v2 走动态值)。
+      // / Proactive compaction: before microcompact, if estimated context exceeds the
+      // proactive trigger, run structured compaction instead of waiting for API 400.
+      if (ctx.convId && !signal.aborted) {
+        const PROACTIVE_COMPACT_TRIGGER = FOLD_TRIGGER_TOKENS * 2;
+        const estNow = estTokenCount(messages, snapshot.apiProtocol);
+        if (estNow > PROACTIVE_COMPACT_TRIGGER) {
+          const beforeTokens = estNow;
+          messages = await compactWithSpill(messages, () =>
+            compactHistory(messages, opts.policy?.interStepCompactBudget ?? 30_000, provider, snapshot, signal, onEvent, ctx.convId),
+          { convId: ctx.convId });
+          const afterTokens = estTokenCount(messages, snapshot.apiProtocol);
+          if (afterTokens < beforeTokens) {
+            onEvent({ type: 'context', action: 'compacted', beforeTokens, afterTokens } as AgentEvent & { type: 'context' });
+            onEvent({ type: 'status', text: `🗜️ 上下文 ${Math.round(beforeTokens / 1000)}K 超主动压缩线,已结构化压缩 → ${Math.round(afterTokens / 1000)}K(摘要保留早期决策,完整文本见 spill 存证)` });
+          }
+        }
+      }
       // turn 内折叠:超阈值时折叠旧工具结果为摘要行(仅本次调用的视图,messages 原数组不动)。
       // 对标 Claude Code microcompact — 单 turn 长跑不再 O(N²) 重发全量工具结果。
       const { view, folded, savedTokens } = foldOldToolResults(messages, snapshot.apiProtocol);
@@ -383,13 +406,16 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
 
     // Report cost each LLM call — multi-turn tool-calling totals sum across calls.
     if (completion.tokensIn + completion.tokensOut > 0) {
-      const usd = priceUSD(snapshot.model, completion.tokensIn, completion.tokensOut);
+      const usd = priceUSD(snapshot.model, completion.tokensIn, completion.tokensOut, completion.cacheRead ?? 0, completion.cacheCreation ?? 0);
       onEvent({
         type: 'cost',
         usd,
         tokens: completion.tokensIn + completion.tokensOut,
         tokensIn: completion.tokensIn,
         tokensOut: completion.tokensOut,
+        // 缓存拆分(2026-10):cache_read ~10% 价单列,明细浮层可见、成本口径不再高估
+        cacheRead: completion.cacheRead,
+        cacheCreation: completion.cacheCreation,
         source: 'llm',
       });
     }
