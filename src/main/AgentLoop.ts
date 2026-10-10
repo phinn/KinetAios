@@ -1245,6 +1245,24 @@ export async function compactHistory(
 // 全量入库曾让 history.db turns 表膨胀到 298MB。
 const STEP_RESULT_UI_LIMIT = 4000;
 
+// 工具执行结果三档判定(启发式,基于原始 result 前缀;2026-10 埋点)。
+// 判"业务失败"的信号都是本仓工具约定的固定前缀:execute() 抛错/未知工具/参数坏,
+// 工具内部自报错(❌/超时/[exit N]);⚠️ 参数截断类也是执行失败。
+// 其余一律 ok —— 工具把错误当正常业务结果返回时(如 grep 无命中)不算失败。
+// Heuristic over the raw tool result; UI 截断/截图伪装不影响判定(用的是原始 result)。
+export function toolOutcomeOf(result: string): 'ok' | 'error' | 'aborted' {
+  if (result === '[已停止]' || result.startsWith('[已停止]')) return 'aborted';
+  if (
+    result.startsWith('工具出错:') ||
+    result.startsWith('未知工具:') ||
+    result.startsWith('⚠️ 参数') ||
+    result.includes('[超时(') ||
+    /^\[exit \d+\]/.test(result) ||
+    result.startsWith('❌')
+  ) return 'error';
+  return 'ok';
+}
+
 async function runToolBatch(
   calls: { id: string; name: string; arguments: string }[],
   tools: Tool[],
@@ -1262,7 +1280,7 @@ async function runToolBatch(
     if (signal.aborted) {
       while (i < calls.length) {
         const c = calls[i];
-        onEvent({ type: 'tool', name: c.name, args: c.arguments, result: '[已停止]' });
+        onEvent({ type: 'tool', name: c.name, args: c.arguments, result: '[已停止]', outcome: 'aborted' });
         results.push({ role: 'tool', tool_call_id: c.id, content: '[已停止]' });
         i++;
       }
@@ -1283,10 +1301,11 @@ async function runToolBatch(
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
+          const outcome = toolOutcomeOf(result); // 埋点:判定基于原始 result,截图伪装/截断不影响
           const shot = parseScreenshotResult(result);
           const uiResult = shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
           // images: 截图 base64 随事件下发(仅内存/广播;saveTurn 持久化时剥离)
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, outcome, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
           const forModel = shot ? result : truncateForModel(result, truncateThreshold);
           return { c, result: forModel, dur };
@@ -1318,7 +1337,7 @@ async function runToolBatch(
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
       const shot = parseScreenshotResult(result);
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, startId: call.id, images: shot ? [shot.b64] : undefined });
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, outcome: toolOutcomeOf(result), startId: call.id, images: shot ? [shot.b64] : undefined });
       // 截图工具(只读,但防御性处理)—— 超限降级(b64 空)当文本
       if (shot && shot.b64) {
         results.push({

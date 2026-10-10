@@ -1019,6 +1019,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           name: ev.name,
           args: ev.args,
           result: ev.result.length > 4_000 ? ev.result.slice(0, 4_000) + '…[截断,全文见 turns 快照]' : ev.result,
+          durationMs: ev.durationMs,
+          outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
         });
         break;
       case 'cost':

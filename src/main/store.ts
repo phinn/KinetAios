@@ -513,7 +513,7 @@ export function rebuildTurnsFromEvents(convId: string): Turn[] {
         t.done = true;
         break;
       case 'tool/call':
-        t.steps.push({ id: `${e.seq}`, name: e.data.name, args: e.data.args, result: e.data.result, ts: e.ts, durationMs: e.data.durationMs });
+        t.steps.push({ id: `${e.seq}`, name: e.data.name, args: e.data.args, result: e.data.result, ts: e.ts, durationMs: e.data.durationMs, outcome: e.data.outcome });
         break;
       case 'turn/error':
         t.error = e.data.message;

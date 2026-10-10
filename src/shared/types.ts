@@ -432,7 +432,9 @@ export type EmbedSnapshot = {
 // The unified event model — every engine emits these; the dashboard renders them.
 export type AgentEvent =
   | { type: 'token'; text: string }
-  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[] }
+  // outcome: 工具执行结果三档(2026-10 埋点,复盘 Computer Use 失败模式用)。
+  // ok=业务成功;error=执行失败(抛错/参数坏/工具报错);aborted=用户中止。旧事件/CLI 引擎不带 → undefined。
+  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[]; outcome?: ToolOutcome }
   // 工具开始执行(runToolBatch 执行前发)→ renderer 先挂"运行中"卡片,结果到达后原位替换。
   // startId = 模型的 tool_call_id,与完成事件配对;CLI 引擎/子任务转发没有此事件(降级为旧行为)。
   | { type: 'tool_start'; name: string; args: string; startId: string }
@@ -509,6 +511,11 @@ export type VoiceChatEventPayload =
   | { type: 'error'; message: string }
   | { type: 'ready' };
 
+// 工具执行结果三档埋点(2026-10):复盘 Computer Use / 工具失败模式用。
+// ok=业务成功;error=执行失败(抛错/参数坏/工具自报错);aborted=用户中止。
+// 判定在 AgentLoop.toolOutcomeOf(基于原始 result 前缀启发式);CLI/MCP 引擎不标(undefined)。
+export type ToolOutcome = 'ok' | 'error' | 'aborted';
+
 export type TaskStep = {
   id: string;
   name: string;
@@ -516,6 +523,7 @@ export type TaskStep = {
   result: string;
   ts: number;
   durationMs?: number; // 工具执行耗时(回放用)
+  outcome?: ToolOutcome; // 执行结果三档埋点(复盘失败模式;旧数据/CLI 引擎无此字段)
   // ── 工具卡片可视化(DSH 式运行中态)──
   pending?: boolean; // tool_start 已到、tool 结果未到 → 卡片显示 spinner
   interrupted?: boolean; // turn 结束时仍是 pending(出错/取消)→ 卡片标灰不再转圈
@@ -568,7 +576,7 @@ export type Turn = {
 export type ConvEvent =
   | { type: 'user/message'; text: string }
   | { type: 'assistant/message'; text: string }
-  | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number }
+  | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number; outcome?: ToolOutcome }
   | { type: 'turn/error'; message: string }
   | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number; cacheRead?: number; cacheCreation?: number; source?: string }
   // spill 存证(v3.6.3 瘦身):dropped 截断为前 20 条×500 字符,droppedTotal 记录真实条数
@@ -1192,12 +1200,13 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
           pending.result = ev.result;
           pending.durationMs = ev.durationMs;
           pending.pending = false;
+          if (ev.outcome) pending.outcome = ev.outcome; // 埋点透传(旧引擎无 → 保持 undefined)
           if (imgs?.length) pending.images = imgs;
           break;
         }
       }
       // 无 startId(CLI 引擎/子任务转发)或配对失败 → 追加(旧行为)
-      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs, images: imgs });
+      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs, outcome: ev.outcome, images: imgs });
       break;
     }
     case 'cost':
