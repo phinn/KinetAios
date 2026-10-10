@@ -103,18 +103,14 @@ function renderKpis(u: UsageStat): void {
     if (p === null) return null;
     return { text: fmtPct(p), up: p >= 0 };
   };
-  const cacheHit = u.range.inputTokens > 0 ? ((u.range.inputTokens * 0 + cacheFromTokens(u)) * 100).toFixed(1) + '%' : null;
+  // 真口径命中率(2026-10):cost_log 拆分列 cache_read / (input) — input 含缓存(cache 是 input 的子集),
+  // 命中率 = cacheRead / inputTokens。旧数据列默认 0 → 显示 0%(准确反映"无数据")而非伪近似。
+  const cacheHit = u.range.inputTokens > 0 ? ((u.range.cacheRead / u.range.inputTokens) * 100).toFixed(1) + '%' : null;
   document.getElementById('u-kpis')!.innerHTML =
     kpiCard('u-kpi-cost', tr('u.kpi.cost'), fmtCost(u.range.cost), fmtCostFull(u.range.cost), chip(u.range.cost, u.prev.cost), sparkC, '#e8b339') +
     kpiCard('u-kpi-total', tr('u.kpi.total'), fmtTok(u.range.totalTokens), fmtNum(u.range.totalTokens) + ' tok' + (u.range.requests ? ` · ${fmtNum(u.range.requests)} ${tr('u.kpi.requests')}` : ''), chip(u.range.totalTokens, u.prev.totalTokens), sparkT, '#4c8dff') +
     kpiCard('u-kpi-in', tr('u.kpi.input'), fmtTok(u.range.inputTokens), fmtNum(u.range.inputTokens) + ' tok' + (cacheHit ? ` · ${tr('u.kpi.cacheHit')} ${cacheHit}` : ''), chip(u.range.inputTokens, u.prev.inputTokens), sparkI, '#4ec27a') +
     kpiCard('u-kpi-out', tr('u.kpi.output'), fmtTok(u.range.outputTokens), fmtNum(u.range.outputTokens) + ' tok', chip(u.range.outputTokens, u.prev.outputTokens), sparkO, '#e2614c');
-}
-// 缓存命中率:输入 token 相对总 token 的占比近似(本地无 prompt_cache 计费拆分,标口径)。
-// 注意:这是近似口径 —— 精确值需 provider 返回 cached_tokens,cost_log 暂未存。
-function cacheFromTokens(u: UsageStat): number {
-  const total = u.range.inputTokens + u.range.outputTokens;
-  return total > 0 ? u.range.inputTokens / total : 0;
 }
 
 // ── 26 周热力图(GitHub 风格):5 档 = 分位数 50/75/90,tooltip 显示当日明细 ──

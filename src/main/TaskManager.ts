@@ -612,7 +612,7 @@ export class TaskManager {
       // 记本轮 turn 的增量(t.costUSD),不是 conv.cost 累计值,否则多轮会重复。
       const lastTurn = conv.turns[conv.turns.length - 1];
       if (lastTurn && lastTurn.costUSD > 0) {
-        store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0), lastTurn.tokensIn ?? 0, lastTurn.tokensOut ?? 0);
+        store.logCost(conv.id, conv.engine, lastTurn.costUSD, (lastTurn.tokensIn ?? 0) + (lastTurn.tokensOut ?? 0), lastTurn.tokensIn ?? 0, lastTurn.tokensOut ?? 0, lastTurn.cacheRead ?? 0, lastTurn.cacheCreation ?? 0);
       }
       this.emit.emitConversation(conv); // final flush
 
@@ -920,7 +920,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // 记本轮 cost → 成本看板
       const goalTurn = conv.turns[conv.turns.length - 1];
       if (goalTurn && goalTurn.costUSD > 0) {
-        store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0), goalTurn.tokensIn ?? 0, goalTurn.tokensOut ?? 0);
+        store.logCost(conv.id, conv.engine, goalTurn.costUSD, (goalTurn.tokensIn ?? 0) + (goalTurn.tokensOut ?? 0), goalTurn.tokensIn ?? 0, goalTurn.tokensOut ?? 0, goalTurn.cacheRead ?? 0, goalTurn.cacheCreation ?? 0);
       }
       // 出错不在循环尾 break —— 回到循环头由 failover 逻辑判定是否换模型续跑
     }

@@ -67,7 +67,8 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, name TEXT, data TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS cost_log(
       id TEXT PRIMARY KEY, conv_id TEXT, engine TEXT, amount REAL, tokens INTEGER, ts REAL,
-      tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);
+      tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0,
+      cache_read INTEGER DEFAULT 0, cache_creation INTEGER DEFAULT 0);
     CREATE TABLE IF NOT EXISTS custom_tools(
       id TEXT PRIMARY KEY, name TEXT, description TEXT, parameters TEXT, command_tpl TEXT, timeout_ms INTEGER, created_at REAL);
     CREATE TABLE IF NOT EXISTS memory_meta(
@@ -146,6 +147,11 @@ export function initStore(): void {
   }
   // cost_log 加输入/输出拆分列(v3.6.4):旧行默认 0。
   for (const col of ['tokens_in', 'tokens_out'] as const) {
+    if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
+  }
+  // cost_log 加缓存拆分列(v3.9.7):cache_read(~10% 价)/ cache_creation(~125% 价),
+  // 看板真口径命中率与计价修正的数据源;旧行默认 0。
+  for (const col of ['cache_read', 'cache_creation'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
@@ -1332,8 +1338,8 @@ export function deleteTemplate(id: string): void {
 // - 热力图:按日 token 总量,5 档 = 分位数 50/75/90(与 Juejin Usage levelFor 一致)
 // - 模型/引擎/会话排行:cost_log JOIN conversations 取 model
 export interface UsageAggregate {
-  range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
-  prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+  range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number; cacheRead: number; cacheCreation: number };
+  prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number; cacheRead: number; cacheCreation: number };
   daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
   byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
   byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
@@ -1351,12 +1357,12 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
   const dayMs = 86400_000;
   const rangeStart = Date.now() - rangeDays * dayMs;
   const prevStart = rangeStart - rangeDays * dayMs;
-  type Row = { engine: string; amount: number; tokens: number; ts: number; tokens_in: number; tokens_out: number; conv_id: string };
+  type Row = { engine: string; amount: number; tokens: number; ts: number; tokens_in: number; tokens_out: number; cache_read: number; cache_creation: number; conv_id: string };
   // 全量 cost_log 拉 JS 聚合(1.4 万行,内存可忽略;SQL date() 无法对齐本地时区且做不了双窗口)
   const rows = db.prepare(
-    `SELECT engine, amount, tokens, ts, tokens_in, tokens_out, conv_id FROM cost_log WHERE ts >= ? ORDER BY ts ASC;`,
+    `SELECT engine, amount, tokens, ts, tokens_in, tokens_out, cache_read, cache_creation, conv_id FROM cost_log WHERE ts >= ? ORDER BY ts ASC;`,
   ).all(prevStart) as Array<Row>;
-  const empty = { cost: 0, totalTokens: 0, inputTokens: 0, outputTokens: 0, requests: 0 };
+  const empty = { cost: 0, totalTokens: 0, inputTokens: 0, outputTokens: 0, requests: 0, cacheRead: 0, cacheCreation: 0 };
   const cur = { ...empty }, prev = { ...empty };
   // 按日聚合用本地时区(热力图以「日」为单位,UTC 切日会错位 8 小时)
   // Daily buckets use local time — the heatmap is day-granular and UTC would shift days.
@@ -1375,8 +1381,10 @@ export function usageAggregate(rangeDays: number): UsageAggregate {
   };
   for (const r of rows) {
     const t = r.tokens || 0, c = r.amount || 0, i = r.tokens_in || 0, o = r.tokens_out || 0;
+    const cr = r.cache_read || 0, cc = r.cache_creation || 0;
     const bucket = r.ts >= rangeStart ? cur : prev;
     bucket.cost += c; bucket.totalTokens += t; bucket.inputTokens += i; bucket.outputTokens += o; bucket.requests += 1;
+    bucket.cacheRead += cr; bucket.cacheCreation += cc;
     if (r.ts >= rangeStart) {
       const dk = loc(r.ts);
       const d = dayMap.get(dk) ?? { tokens: 0, cost: 0, requests: 0, inputTokens: 0, outputTokens: 0 };
@@ -1448,9 +1456,9 @@ function convTitleFromTurns(convId: string): string {
 }
 
 // MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
-export function logCost(convId: string, engine: string, amount: number, tokens: number, tokensIn = 0, tokensOut = 0): void {
-  stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts, tokens_in, tokens_out) VALUES(?,?,?,?,?,?,?,?);')
-    .run(rid(), convId, engine, amount, tokens, Date.now(), tokensIn, tokensOut);
+export function logCost(convId: string, engine: string, amount: number, tokens: number, tokensIn = 0, tokensOut = 0, cacheRead = 0, cacheCreation = 0): void {
+  stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts, tokens_in, tokens_out, cache_read, cache_creation) VALUES(?,?,?,?,?,?,?,?,?,?);')
+    .run(rid(), convId, engine, amount, tokens, Date.now(), tokensIn, tokensOut, cacheRead, cacheCreation);
 }
 export function costStats(): { today: number; week: number; month: number; byEngine: Record<string, number>; byDay: Array<{ date: string; cost: number }> } {
   const now = Date.now();

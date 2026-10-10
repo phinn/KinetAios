@@ -544,6 +544,10 @@ export type Turn = {
   costUSD: number;
   tokensIn: number;
   tokensOut: number;
+  // 缓存拆分累计(cost 事件逐次累加):cache_read ~10% 价 / cache_creation ~125% 价。
+  // 供 done 时 logCost 落 cost_log 拆分列 + 看板真口径命中率;旧 turn 无此字段(undefined → 0)。
+  cacheRead?: number;
+  cacheCreation?: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
   /** 失败原因分类(来自 AgentEvent.error.kind):renderer 据此区分展示 — maxTurns 可续跑(amber 警示而非红色报错)。 */
   errorKind?: 'maxTurns' | 'transient' | 'contextTooLong';
@@ -1017,8 +1021,8 @@ export interface KinetAPI {
   arenaStats(): Promise<Array<{ engine: string; sessions: number; totalCost: number; totalTokens: number; totalTools: number; avgCost: number; avgTokens: number; avgTools: number; avgTurnDurationMs: number; costByDay: Array<{ date: string; cost: number }> }>>;
   // ── 用量看板聚合(KPI/环比/热力图/模型/引擎/会话)──
   usageStats(rangeDays: number): Promise<{
-    range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
-    prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number };
+    range: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number; cacheRead: number; cacheCreation: number };
+    prev: { cost: number; totalTokens: number; inputTokens: number; outputTokens: number; requests: number; cacheRead: number; cacheCreation: number };
     daily: Array<{ date: string; tokens: number; cost: number; requests: number; inputTokens: number; outputTokens: number }>;
     byModel: Array<{ model: string; tokens: number; cost: number; requests: number }>;
     byEngine: Array<{ engine: string; tokens: number; cost: number; requests: number }>;
@@ -1208,6 +1212,9 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       // 不再把总数硬塞进 tokensIn —— 那会让"输入"虚高、"输出"恒为 0。
       t.tokensIn += ev.tokensIn ?? 0;
       t.tokensOut += ev.tokensOut ?? 0;
+      // 缓存拆分逐次累加(与 tokensIn 同口径;缺省引擎为 undefined,不污染)。
+      if (ev.cacheRead) t.cacheRead = (t.cacheRead ?? 0) + ev.cacheRead;
+      if (ev.cacheCreation) t.cacheCreation = (t.cacheCreation ?? 0) + ev.cacheCreation;
       break;
     case 'status':
       conv.statusNote = ev.text;
