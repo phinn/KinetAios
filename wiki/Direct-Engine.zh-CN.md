@@ -92,7 +92,7 @@ isContextTooLong(e) → 砍半预算(15K)trim history → 重试本轮一次
 
 v3.9.4 新增(AgentLoop.ts),对标 Claude Code 的 microcompact。每次 `streamComplete` 前,主循环生成一个**折叠视图**发给 API(替代原始数组):
 
-- 触发门:上下文估算 > 150K tokens(小 turn 完全零感知)
+- 触发门:上下文估算 > 80K tokens(小 turn 完全零感知;最近 6 条豁免窗口内的 write/edit 巨型参数退化为摘要)
 - 旧工具结果(保留最近 10 条)折叠为摘要行:`[已折叠 web_fetch https://…] 头 80 字… + 重新调用同一工具即可取回`
 - 同一批 `assistant(tool_calls)` 的参数同步砍成 `'{}'`(edit_file 的 `new_string` 动辄几 KB);**id 保留**,assistant↔tool 配对不破,openai/anthropic 协议仍合法
 - 永不折叠:有文本内容的 assistant、`_transient` 结果、截屏类空 content
@@ -106,6 +106,7 @@ v3.9.4 新增(AgentLoop.ts),对标 Claude Code 的 microcompact。每次 `stream
 `compactHistory`(`AgentLoop.ts:158`):
 
 - turn 末尾按需(超 30K token)调一次
+- **步间主动压缩(2026-10)**:主循环每步工具结果落地后、下一轮 LLM 调用前,上下文估算超主动触发线(fold 触发线的 2 倍 = 160K)即直接走结构化压缩,不等 API 的 contextTooLong(400)被动兜底;失败降级为仅 fold,不中断回合
 - tail 保留完整轮次(`trimHistoryToTokenBudget`)
 - head 调一次 LLM 压成「[早期对话摘要]」user 消息
 - 摘要 prompt 保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈
@@ -151,13 +152,13 @@ v3.9.4 新增(AgentLoop.ts),对标 Claude Code 的 microcompact。每次 `stream
 
 ## 成本计算
 
-`priceUSD(model, tokensIn, tokensOut)`(`glm.ts:96`):
+`priceUSD(model, in, out, cacheRead, cacheCreation)`(`glm.ts`):
 
 - GLM 系列用 GLM 价(`0.00000007 / token` in)
 - 其他用 OpenAI 默认价(`0.000003 / token` in)
 - ⚙ → 价格 可以覆盖(API key 旁边)
 
-Anthropic cache token 计费:`cache_read_input_tokens` 按 input 价算(实际 ~10%,高估但比漏掉好);`cache_creation_input_tokens` 按 input 价算(实际 ~125%)。
+缓存拆分计费(2026-10):`cache_read` 按 input 价的 ~10% 算、`cache_creation` 按 ~125% 算,精确计价替代此前"cache_read 全按 input 价"的系统性高估。`tokensIn` 保持总注入口径(input+cache_creation+cache_read)不变;拆分单列透传 Completion/AgentEvent/turn/meta 并落 cost_log(`cache_read`/`cache_creation` 列),用量看板缓存命中率 = cacheRead/inputTokens 真口径;明细浮层逐行 ⚡ 标记。
 
 ## 轨迹快照(traj)
 

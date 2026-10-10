@@ -92,7 +92,7 @@ isContextTooLong(e) → halve budget (15K) trim history → retry this turn once
 
 Added in v3.9.4 (AgentLoop.ts), modeled on Claude Code's microcompact. Before every `streamComplete` the loop builds a **folded view** and sends that to the API instead of the raw array:
 
-- Trigger gate: estimated context > 150K tokens (small turns are untouched)
+- Trigger gate: estimated context > 80K tokens (small turns are untouched; write/edit mega-args inside the recent-6 exempt window degrade to summaries)
 - Old tool results (all but the most recent 10) collapse to summary lines: `[folded web_fetch https://…] first-80-chars… + re-run the same tool to retrieve`
 - The paired `assistant(tool_calls)` batch arguments are cut to `'{}'` in the same pass (edit_file's `new_string` is often several KB); **ids are kept**, so assistant↔tool pairing survives and the openai/anthropic protocol stays valid
 - Never folded: assistants with visible text content, `_transient` results, screenshot-style empty content
@@ -106,6 +106,7 @@ Why it matters: without folding, a turn that makes N LLM calls resends every ear
 `compactHistory` (`AgentLoop.ts:158`):
 
 - Runs at end of turn when over 30K tokens
+- **Proactive mid-run compaction (2026-10)**: in the main loop, after each tool result lands and before the next LLM call, an estimate past the proactive trigger (2× the fold gate = 160K) runs structured compaction directly instead of waiting for the API's contextTooLong (400); on failure it degrades to fold-only without aborting the turn
 - Tail keeps complete recent turns (`trimHistoryToTokenBudget`)
 - Head is summarized by an LLM into a "[early conversation summary]" user message
 - Summary prompt preserves: task goal, key decisions, settled conclusions, important file paths/commands/tech stack
@@ -151,13 +152,13 @@ Both providers normalize the response into the same `Completion`:
 
 ## Cost calculation
 
-`priceUSD(model, tokensIn, tokensOut)` (`glm.ts:96`):
+`priceUSD(model, in, out, cacheRead, cacheCreation)` (`glm.ts`):
 
 - GLM family uses GLM price (`0.00000007 / token` in)
 - Others use OpenAI default (`0.000003 / token` in)
 - ⚙ → Pricing can override (next to API key)
 
-Anthropic cache token billing: `cache_read_input_tokens` charged at input rate (actually ~10%, over-estimate but better than under); `cache_creation_input_tokens` at input rate (actually ~125%).
+Cache-split billing (2026-10): `cache_read` is priced at ~10% of input rate and `cache_creation` at ~125%, replacing the systematic overestimate of billing cache_read at full input price. `tokensIn` keeps its total-injection definition (input+cache_creation+cache_read); the split is threaded through Completion/AgentEvent/turn/meta and persisted into cost_log (`cache_read`/`cache_creation` columns), the usage dashboard cache-hit rate uses the true ratio cacheRead/inputTokens, and the detail overlay marks cache rows with ⚡.
 
 ## Trajectory snapshot (traj)
 
