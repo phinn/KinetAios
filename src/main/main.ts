@@ -3004,8 +3004,18 @@ if (!gotLock) {
         safeSend(dashboardWin, 'job-update', info);
       },
       emitJobEvent: (convId, turnId, jobId, ev) => {
-        // 独立 job-event 频道:job 事件不进 agent-event(turn 状态机),renderer 只用于 Job 面板展示。
+        // v4: job 事件双通道 — ①独立 job-event(Job 面板);②折叠进 agent-event,后台 Legis/V3-deep
+        // 的 status/todo 在会话流里实时可见(修前渲染端 onJobEvent 空实现,job 运行但 UI 零状态)。
+        // 注意:turn 状态机安全 — job 事件不碰 done/error 终态(执行器内部已用 terminalGate 拦内层 done),
+        // applyEvent 对 status/todo 只写 statusNote/todos,不触发 sidebar 终态逻辑。
         safeSend(dashboardWin, 'job-event', { convId, jobId, ev });
+        if (convId) {
+          if (ev.type === 'status' || ev.type === 'todo' || ev.type === 'context') {
+            // 与 260 行同款双窗口语义:dashboard 实时,quick/arena 不推(job 是 dashboard 概念)。
+            safeSend(dashboardWin, 'agent-event', { convId, ev });
+          }
+          // 后台 token 不进主流(避免与回贴 turn 重复),Job 面板已有速率展示。
+        }
       },
     });
     // 把 taskManager 暴露给延迟加载模块(mcp-server 的 export/import session 等)。
