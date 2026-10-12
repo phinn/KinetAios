@@ -2380,7 +2380,7 @@ function ensureElapsedTicker(): void {
       const rpop = document.getElementById('running-pop');
       if (rpop && !rpop.hidden) renderRunningPop();
       // 上下文占用实时化:每秒拉一次估算(轻 IPC),运行中也能看到离窗口多远(修前只在 done 回填)。
-      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
+      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4';
       if (isDirectFam && selectedId) {
         void api.estContextTokens(selectedId).then((r) => {
           conv.ctxTokens = r.tokens;
@@ -2454,7 +2454,7 @@ function renderHead(conv: Conversation | undefined) {
   // 配置档下拉:Direct 家族引擎(direct + directV2)+ 有配置档时显示
   const profileSel = document.getElementById('profile-select') as HTMLSelectElement | null;
   const hasProfiles = !!(profileSel && profileSel.options.length > 1);
-  const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
+  const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4';
   if (profileSel) {
     profileSel.value = conv.profileId || '';
     profileSel.classList.toggle('js-hidden', !(isDirectFam && hasProfiles));
@@ -2569,7 +2569,7 @@ function syncEngineSelect(conv: Conversation | undefined) {
   const current = conv?.engine ?? 'direct';
   // Direct 家族永远可用;claudeCode/codex/deepseek-harness 等引擎类插件由各自插件开关控制
   // (pluginEngineIds 同时包含内置映射(claude-code→claudeCode 等)和 plugin:<name>)。
-  const want: EngineKind[] = ['direct', 'directV2', 'directV3', ...pluginEngineIds];
+  const want: EngineKind[] = ['direct', 'directV2', 'directV3', 'directV4', ...pluginEngineIds];
   if (!want.includes(current)) want.push(current);
   const have = [...sel.options].map((o) => o.value);
   const same = have.length === want.length && have.every((v, i) => v === want[i]);
@@ -2756,7 +2756,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       };
       // ⏵ 继续(断点续打):Direct 家族中断/失败后,directHistory 保留了已完成的 Partial 产物,
       // 发一条续做指令让模型从断点接上 — 区别于「重试」的原样重做。
-      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3';
+      const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4';
       if (isDirectFam && t.done) {
         const cont = document.createElement('button');
         cont.className = 'ghost retry-btn';
@@ -9809,7 +9809,7 @@ function handleSlash(composer: HTMLTextAreaElement): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   const v = composer.value;
   // Only while the user is still typing the name token (no space yet) and only for Direct family.
-  if (!conv || (conv.engine !== 'direct' && conv.engine !== 'directV2' && conv.engine !== 'directV3') || !v.startsWith('/') || /\s/.test(v.slice(1))) {
+  if (!conv || (conv.engine !== 'direct' && conv.engine !== 'directV2' && conv.engine !== 'directV3' && conv.engine !== 'directV4') || !v.startsWith('/') || /\s/.test(v.slice(1))) {
     closeSlash();
     return;
   }
