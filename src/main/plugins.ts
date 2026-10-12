@@ -545,8 +545,10 @@ export function pluginListSnap(): Array<{
       enabled: isPluginEnabled(p.manifest.name),
       error: p.error,
       dir: p.dir,
-      engine: p.manifest.engine ? { bin: p.manifest.engine.bin, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
-      engineError: p.manifest.engine ? validateEngineSpec(p.manifest.engine) : undefined,
+      engine: p.manifest.engine ? { bin: p.manifest.engine.bin, id: p.manifest.engine.id, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
+      // v4: 无 bin 的内置开关型 spec(有 id)合法,不报 engine.bin missing
+      // v4: bin-less builtin-toggle specs (with id) are valid, no error.
+      engineError: p.manifest.engine ? (typeof p.manifest.engine.bin === 'string' && p.manifest.engine.bin.trim() ? validateEngineSpec(p.manifest.engine) : p.manifest.engine.id ? undefined : 'engine.bin missing') : undefined,
       // v3.1: settings schema + 当前值(secret 值不回传 renderer,防泄漏)。
       engineSettings: p.manifest.engine?.settings ?? undefined,
       engineSettingsValues: (() => {
