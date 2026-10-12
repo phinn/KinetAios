@@ -6,6 +6,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/phinn/KinetAios?style=social)](https://github.com/phinn/KinetAios)
 [![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
 [![Platforms](https://img.shields.io/badge/platform-Windows%2011%20%7C%20macOS-black)](https://github.com/phinn/KinetAios/releases/latest)
+[![Mac App Store](https://img.shields.io/badge/Download_on_the-Mac_App_Store-007AFF)](https://apps.apple.com/app/id6809450051)
 [![Discussions](https://img.shields.io/github/discussions/phinn/KinetAios)](https://github.com/phinn/KinetAios/discussions)
 [![Good First Issues](https://img.shields.io/badge/-good%20first%20issues-7057ff)](https://github.com/phinn/KinetAios/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
 
@@ -55,6 +56,8 @@ Most AI clients lock you into one provider, drop context when you switch engines
 ## Install
 
 Grab the latest release:
+
+- **macOS (App Store)** — [Get KinetAios on the Mac App Store](https://apps.apple.com/app/id6809450051)) ($6.99 one-time, auto-updates) — same app, no build required. The free route below always stays free.
 
 - **Windows** — [Download `KinetAios-Setup-<version>.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer, current: 3.9.8; install → launch → paste your API key)
 - **macOS** — [Download the latest `.dmg`](https://github.com/phinn/KinetAios/releases/latest) (drag to Applications, same three steps)
