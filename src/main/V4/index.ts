@@ -155,17 +155,22 @@ export class DirectV4Engine implements Engine {
       return;
     }
 
-    // ── 路由(V3 router 照搬)──
+    // ── 路由(V3 router)+ V4 Legis 语义修正 ──
+    // V4 语义:用户显式选择了 Legis 引擎,期望的就是"意图编译为计划图"范式;
+    // 只有 fast(秒答)和 analysis(报告流)保持原路径,其余一律进 Legis 编译执行。
+    // 修复前:照搬 V3 启发式路由,"无文件路径的多步运维任务"被判 std → 用户以为 Legis 没生效。
+    // 编译失败时 legis-executor 内部自动退化 std,兜底安全。
     const route = routeTask(prompt, conv.directHistory, { hasGoal: !!conv.goal });
+    const v4Route: 'fast' | 'std' | 'legis' = route === 'fast' || route === 'std' ? route : 'legis';
     const skillTag = skillBlock ? `📦 ${prompt.match(/^\/([\w-]+)/)?.[1] ?? 'skill'} | ` : '';
-    onEvent({ type: 'status', text: `${skillTag}🧭 v4: 路由 → ${route.toUpperCase()}${isAnalysisTask(prompt) ? ' · 📊 分析模式(std)' : ''}` });
+    onEvent({ type: 'status', text: `${skillTag}🧭 v4: 路由 → ${v4Route.toUpperCase()}${isAnalysisTask(prompt) ? ' · 📊 分析模式(std)' : ''}` });
 
     let updatedHistory: ChatMsg[] = conv.directHistory;
 
     try {
-      if (route === 'fast') {
+      if (v4Route === 'fast') {
         updatedHistory = await executeFastPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: conv.directHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
-      } else if (route === 'std') {
+      } else if (v4Route === 'std') {
         updatedHistory = await executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: conv.directHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
       } else {
         // ── deep → Legis 流水线 ──
@@ -188,10 +193,14 @@ export class DirectV4Engine implements Engine {
             const jobId = submitLegisJob({ conv, provider, tools, systemPrompt, memoryBlock, snap, userInput, ctx, policy, plan });
             if (jobId) {
               onEvent({ type: 'status', text: `🚀 v4: 已转入后台执行(Job ${jobId.slice(0, 8)})。完成后结果自动回贴本会话。` });
-              onEvent({ type: 'done' });
+              onEvent({ type: 'status', text: '⏳ v4: 后台执行中 — 完成后自动回贴' });
+              // handoff done:turn 不落终态、conv 保持 running —— 后台 job 期间侧栏呼吸点/状态条持续,
+              // 真正终局由 appendJobResult 的回贴 turn 承载(AgentDoneEvent.handoff 扩展位)。
+              onEvent({ type: 'done', handoff: true });
               return;
             }
           }
+          onEvent({ type: 'status', text: '⚙️ v4: Legis 图执行中(Runtime 零 LLM replay)' });
           const result = await executeLegis({
             plan, provider, tools, systemPrompt, memoryBlock, snapshot: snap, ctx, signal, policy,
             history: conv.directHistory,

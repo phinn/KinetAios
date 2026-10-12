@@ -460,7 +460,7 @@ export type AgentEvent =
   // Workflow(team 超集):阶段化多 agent 编排。每次状态推进整表替换(与 todo 同语义),
   // 随 turn 持久化 → 历史回放可见最终态;流式期间实时驱动聊天流内嵌工作流卡。
   | { type: 'workflow'; state: WorkflowState }
-  | { type: 'done' }
+  | { type: 'done'; handoff?: boolean }
   // kind 用于下游区分失败原因(可选,缺省时按旧逻辑只看 message):
   //   'maxTurns'      — 达到轮次上限(可续跑,非致命)
   //   'transient'     — 瞬时 API 错误(限流/网络/5xx),已退避重试耗尽
@@ -560,6 +560,7 @@ export type Turn = {
   steps: TaskStep[];
   error: string | null;
   done: boolean;
+  handoffPending?: boolean; // deep→后台 Job 交接的 turn:done 保持 false,appendJobResult 回贴时收尾为 done(防死转圈)
   ts: number;
   costUSD: number;
   tokensIn: number;
@@ -1275,8 +1276,12 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
         if (s.pending) { s.pending = false; s.interrupted = true; }
       }
       if (ev.type === 'done') {
-        t.done = true;
-        conv.status = 'ready';
+        // deep 任务已交接后台 Job 的 turn 不算终态:后续 job 事件还会折进本 turn,
+        // turn 保持未完(pill 灰点),conv 回到 running — 直至 appendJobResult 补真正的终局。
+        const handedOff = ev.handoff === true;
+        t.done = handedOff ? false : true;
+        t.handoffPending = handedOff || undefined;
+        conv.status = handedOff ? 'running' : 'ready';
       } else {
         t.error = ev.message;
         t.errorKind = ev.kind; // 2026-09:失败分类透传(renderer 区分 maxTurns 可续跑等)

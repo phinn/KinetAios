@@ -279,6 +279,9 @@ export class TaskManager {
     const conv = this.convs.get(convId);
     if (!conv) return; // 会话已删:吞掉(与 applyAndPersist 的迟到事件策略一致)
     this.hydrate(convId);
+    // 收尾 handoff turn(deep→Job 交接的未完 turn):结果已回贴,标记完成防死转圈
+    const ho = [...conv.turns].reverse().find((x) => x.handoffPending);
+    if (ho) { ho.done = true; ho.handoffPending = false; }
     const turn = newTurn(`[后台 Job] ${opts.title}`);
     turn.answer = opts.answer;
     turn.done = true;
