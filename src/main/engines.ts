@@ -1281,6 +1281,7 @@ export function codexCliConfig(): CliEngineConfig {
 
 import { DirectV2Engine } from './DirectV2Engine';
 import { DirectV3Engine } from './V3';
+import { DirectV4Engine } from './V4';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   const engines = new Map<EngineKind, Engine>([
@@ -1288,18 +1289,23 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
     ['directV2', new DirectV2Engine(confirm)],
     ['directV3', new DirectV3Engine(confirm)],
   ]);
+  // V4(Legis)插件化:与 claude-code/codex 同模式 —— 引擎实现内置(V4Engine),
+  // plugins/legis-engine/plugin.json 提供开关。默认关闭(实验引擎),开启后解锁。
+  // V4 (Legis) is plugin-gated like claude-code/codex: builtin implementation +
+  // plugin manifest toggle. Off by default (experimental).
   // claudeCode / codex v3.2 插件化:插件目录 plugins/claude-code、plugins/codex 提供
   // manifest(设置页可单独开关),但引擎仍走内置 config(保 sandbox 映射 / --resume /
   // 语义化报错),不走声明式 pluginCliConfig。开关以插件启停为准(替代 enableCliEngines)。
-  // claudeCode/codex are now plugin-gated: manifests live in plugins/, engines still
-  // use builtin configs; enabling is per-plugin (replaces the global enableCliEngines).
   const pluginNames = new Set(pluginEngines().map((p) => p.pluginName));
+  if (pluginNames.has('legis-engine')) engines.set('directV4', new DirectV4Engine(confirm));
   if (pluginNames.has('claude-code')) engines.set('claudeCode', new CliEngineAdapter(claudeCliConfig()));
   if (pluginNames.has('codex')) engines.set('codex', new CliEngineAdapter(codexCliConfig()));
   // 其余插件引擎(Plugin SDK v3):plugin:<name> 注册,复用 CliEngineAdapter 骨架。
   // 与内置 id 冲突不可能(前缀隔离),插件之间重名 → 后者覆盖(与 tools 摊平同语义)。
+  // 内置开关型(engine.id 指向内置 kind、无 bin)的已在上方按内置实现注册,不重复挂 adapter。
   for (const { pluginName, spec } of pluginEngines()) {
     if (pluginName === 'claude-code' || pluginName === 'codex') continue; // 已按内置 config 注册
+    if (!spec.bin) continue; // 内置开关型(如 legis-engine):无 bin,不走 CliEngineAdapter
     engines.set(`plugin:${pluginName}` as EngineKind, new CliEngineAdapter(pluginCliConfig(pluginName, spec)));
   }
   return engines;
@@ -1329,7 +1335,7 @@ function pluginCliConfig(pluginName: string, spec: PluginEngineSpec): CliEngineC
     });
   return {
     name: `plugin:${pluginName}` as EngineKind,
-    bin: interp(spec.bin),
+    bin: interp(spec.bin ?? ''),
     label,
     notFoundKey: 'eng.pluginNotFound',
     noResultKey: 'eng.pluginNoResult',

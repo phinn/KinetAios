@@ -1,0 +1,25 @@
+{
+  "name": "legis-engine",
+  "version": "1.0.0",
+  "author": "phinn",
+  "category": "dev",
+  "keywords": [
+    "v4",
+    "legis",
+    "engine",
+    "plan",
+    "assertion"
+  ],
+  "engines": [],
+  "engine": {
+    "id": "directV4",
+    "label": "Kaios v4 (Legis)",
+    "builtin": true
+  },
+  "capabilityComments": {
+    "engine": "复制 claude-code 插件模式:内置引擎挂插件开关。engines.ts 里 DirectV4Engine 无条件注册;插件 disabled → EnginePolicies 过滤;关闭态 UI 隐藏、开启态解锁。与 claude-code/codex 的差异:那两个是外部 CLI 协议引擎(engine.bin),V4 是内核内置引擎挂插件开关(engine.id 直指内置 kind)。"
+  },
+  "built": {
+    "ts": "src/main/V4/*.ts → dist/main/V4/*.js"
+  }
+}

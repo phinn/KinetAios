@@ -58,8 +58,12 @@ export interface PluginManifest {
 // v3: 插件引擎声明 —— 声明式 CliEngineConfig 子集。
 // 插件不需要写 JS 解析器;行→事件映射从 protocol 预设里选(见 engines.ts engineProtocol())。
 export interface PluginEngineSpec {
-  /** CLI 可执行名(resolveBin 查 PATH + 常见安装目录)。 */
-  bin: string;
+  /** CLI 可执行名(resolveBin 查 PATH + 常见安装目录)。
+   *  v4: 可缺省 —— 缺省时为「内置引擎挂插件开关」型,必须给 id(指向内置 EngineKind,
+   *  如 legis-engine 的 "directV4")。buildEngines 据此注册内置实现而非 CliEngineAdapter。 */
+  bin?: string;
+  /** 内置开关型引擎的目标 id(PluginEngineSpec 无 bin 时必填)。 */
+  id?: EngineKind;
   /** 协议预设: ndjson(逐行 JSON.tool/.text/.done)/ jsonl-claude(claude stream-json 兼容)/
    *  jsonl-codex(codex exec --json 兼容)/ plain(整段 stdout 当文本)。默认 plain。 */
   protocol?: 'ndjson' | 'jsonl-claude' | 'jsonl-codex' | 'plain';
@@ -498,7 +502,7 @@ export function pluginListSnap(): Array<{
   error?: string;
   dir: string;
   // v3: 引擎贡献摘要(有 engine 贡献点时非空)。renderer 用于下拉注入 + label 表。
-  engine?: { bin: string; label?: string; protocol?: string };
+  engine?: { bin?: string; label?: string; protocol?: string; id?: string };
   // v3: engine spec 校验错误(非空 = 引擎未注册,设置页卡片亮红)。如 protocol 拼错。
   engineError?: string;
   // v3.1: 引擎设置 schema(详情面板渲染输入框用)。
@@ -587,13 +591,24 @@ export function validateEngineSpec(spec: PluginEngineSpec): string | undefined {
 
 // 给 buildEngines 用: 所有【已启用】插件贡献的引擎清单(engine spec 校验过的)。
 // spec 非法 → 跳过(引擎不注册,但 error 经 pluginList 透出到设置页卡片,不阻断其它插件)。
+// v4: engine.bin 可缺省 —— 内置引擎挂插件开关(如 legis-engine)没有 CLI bin,
+// 此时仍进清单(buildEngines 按 pluginName 分流),bin 型插件照旧走 CliEngineAdapter。
+// Engines contributed by enabled plugins. bin is now optional: builtin engines
+// gated by a plugin toggle (e.g. legis-engine) have no CLI; bin-style plugins
+// still go through CliEngineAdapter as before.
 export function pluginEngines(): Array<{ pluginName: string; spec: PluginEngineSpec }> {
   const out: Array<{ pluginName: string; spec: PluginEngineSpec }> = [];
   for (const p of loadPlugins()) {
     if (!isPluginEnabled(p.manifest.name)) continue;
     const spec = p.manifest.engine;
-    if (!spec || typeof spec.bin !== 'string' || !spec.bin.trim()) continue;
-    if (validateEngineSpec(spec)) continue;
+    if (!spec || typeof spec !== 'object') continue;
+    if (typeof spec.bin === 'string' && spec.bin.trim()) {
+      // CLI 型插件引擎:校验 bin 型 spec(协议映射/断点恢复等)
+      if (validateEngineSpec(spec)) continue;
+    } else if (!spec.id) {
+      // 内置开关型:必须声明 id(指向内置 EngineKind),否则无法注册
+      continue;
+    }
     out.push({ pluginName: p.manifest.name, spec });
   }
   return out;
