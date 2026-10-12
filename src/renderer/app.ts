@@ -2558,7 +2558,7 @@ let pluginEngineIds: EngineKind[] = [];
 
 // 内置引擎插件 manifest name → 内置引擎 id(claudeCode/codex 保持老 id,老会话不迁移)。
 // Builtin engine plugins keep their legacy engine ids — no conversation migration needed.
-const BUILTIN_ENGINE_PLUGINS: Record<string, EngineKind> = { 'claude-code': 'claudeCode', 'codex': 'codex' };
+const BUILTIN_ENGINE_PLUGINS: Record<string, EngineKind> = { 'claude-code': 'claudeCode', 'codex': 'codex', 'legis-engine': 'directV4' };
 
 function engineIdOf(name: string): EngineKind {
   return BUILTIN_ENGINE_PLUGINS[name] ?? (`plugin:${name}` as EngineKind);

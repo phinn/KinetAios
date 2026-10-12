@@ -1443,6 +1443,7 @@ a { color: var(--accent); }
 .dot.eng-direct { background: #c4a7ff; }
 .dot.eng-directV2 { background: #8ab4ff; }
 .dot.eng-directV3 { background: #7eeab5; }
+.dot.eng-directV4 { background: #f5c86b; }
 .dot.eng-claudeCode { background: #d97757; }
 .dot.eng-codex { background: #10a37f; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }

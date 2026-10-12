@@ -29,15 +29,15 @@ export type ApprovalPolicy = 'always' | 'never';
 
 // 内置引擎种类。插件引擎(Plugin SDK v3)用 `plugin:<name>` 前缀,不在此穷举。
 // Builtin engine kinds. Plugin engines use the `plugin:<name>` prefix (Plugin SDK v3).
-export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'claudeCode' | 'codex';
-export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'claudeCode', 'codex'];
+export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'directV4' | 'claudeCode' | 'codex';
+export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'directV4', 'claudeCode', 'codex'];
 export type EngineKind = BuiltinEngineKind | `plugin:${string}`;
 
 // ── 后台 Job(V3 deep 路径 Job 化)──
 // Job 是引擎无关的后台执行单元:提交后立即可继续对话,完成/失败/取消状态经 IPC 通知。
 // Job is an engine-agnostic background execution unit; the session stays usable after submit.
 export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'killed';
-export type JobKind = 'v3-deep' | 'dispatch';
+export type JobKind = 'v3-deep' | 'v4-legis' | 'dispatch';
 // renderer 可见的 Job 摘要(payload/checkpoint 不出主进程,体积大且无展示价值)
 export interface JobInfo {
   id: string;
@@ -146,6 +146,17 @@ export const ENGINE_POLICIES: Record<BuiltinEngineKind, EngineContextPolicy> = {
     stepResultMaxChars: 0,
     subAgentScope: 'none',
   },
+  // v4 DirectV4(Legis):LLM 编译计划图后退场;Runtime 0-LLM 执行,replay 节点
+  // 直跑工具链。上下文按"每节点摘要"累积,和 V3 deep 一致的保守值。
+  directV4: {
+    trimBudget: 60_000,
+    interStepCompactBudget: 60_000,
+    truncateThreshold: 10_000,
+    appendStepSummary: true,
+    stepSummaryMaxChars: 600,
+    stepResultMaxChars: 4000,
+    subAgentScope: 'last_n_turns',
+  },
 };
 
 // v2 动态预算计算:根据用户配置的模型窗口大小和预算比例,算出 trim/compact/truncate 阈值。
@@ -217,6 +228,7 @@ export const ENGINE_LABELS: Record<BuiltinEngineKind, string> = {
   direct: 'Kaios (Direct)',
   directV2: 'Kaios v2 (Plan·Verify)',
   directV3: 'Kaios v3 (Adaptive)',
+  directV4: 'Kaios v4 (Legis)',
   claudeCode: 'Claude Code',
   codex: 'Codex',
 };

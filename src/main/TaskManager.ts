@@ -294,7 +294,7 @@ export class TaskManager {
       conv.statusNote = '⚠️ 后台 Job 结果已回贴;会话忙,上下文未合并(下轮对话不含 job 历史)';
     }
     const last = conv.turns[conv.turns.length - 1];
-    if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3') {
+    if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4') {
       conv.ctxTokens = estTokenCount(conv.directHistory);
     }
     void last;
@@ -982,7 +982,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     // 但 abort 可能引发 engine 内部 error 事件 → 用 signal.aborted 区分)。
     if (ev.type === 'done' || ev.type === 'error') {
       // 上下文占用估算(Direct 系才有 directHistory;CLI 引擎的上下文在其进程内,估不了)
-      if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3') {
+      if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4') {
         conv.ctxTokens = estTokenCount(conv.directHistory);
       }
       this.emit.notifyDone(conv, ev.type === 'done' ? 'done' : 'error', signal.aborted);
@@ -1761,7 +1761,7 @@ ${memorySamples || '(无记忆)'}`;
 // Direct 家族引擎(direct + directV2)共享 directHistory 上下文。
 // 切换引擎时,同族之间保留上下文,跨族(→ CLI)清空。
 function isDirectFamily(e: EngineKind): boolean {
-  return e === 'direct' || e === 'directV2' || e === 'directV3';
+  return e === 'direct' || e === 'directV2' || e === 'directV3' || e === 'directV4';
 }
 
 // cwd must exist and be a directory; otherwise CLIs ENOENT with an opaque message.
