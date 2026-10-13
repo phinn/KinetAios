@@ -10870,6 +10870,8 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
     }
     case 'turn/error':
       return { icon: sv.xCircle, title: tr('ev.error'), body: String(d.message ?? '') };
+    case 'turn/status':
+      return { icon: SVGI_SET.target(), title: String(d.text ?? '').slice(0, 120), body: '' };
     case 'turn/meta':
       const srcTag = d.source ? ` [${tokenSourceLabel(String(d.source))}]` : '';
       return { icon: sv.chart, title: tr('ev.meta') + srcTag, body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };

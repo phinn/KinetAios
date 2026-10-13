@@ -182,14 +182,15 @@ export class DirectV4Engine implements Engine {
         updatedHistory = await executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: conv.directHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
       } else {
         // ── deep → Legis 流水线 ──
-        const plan = await compileLegisPlan({
+        const { plan, probedHistory } = await compileLegisPlan({
           userInput, history: conv.directHistory, systemPrompt, provider, snap, signal,
           onEvent: terminalGate(onEvent), ctx, policy, memoryBlock, goal: conv.goal ?? undefined,
         });
         if (!plan) {
-          // 编译失败 → 退化 std(与 V3 降级路径一致)
-          onEvent({ type: 'status', text: '🔄 v4: 立法失败,退化为标准执行' });
-          updatedHistory = await executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: conv.directHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
+          // 编译失败 → 退化 std。关键:继承 planner 的探查现场(12 轮只读探查 history),
+          // 否则 std 从零重探,双倍烧钱烧步(2026-10-13 事故:planner 白跑 12 轮 + std 重跑 104 步)。
+          onEvent({ type: 'status', text: '🔄 v4: 立法失败,退化为标准执行(已继承立法期探查现场)' });
+          updatedHistory = await executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: probedHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
         } else {
           // 广播计划
           onEvent({

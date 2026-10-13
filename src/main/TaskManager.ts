@@ -1015,6 +1015,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           store.appendEvent(conv.id, t.id, { type: 'session/started', engine: conv.engine, sessionId: conv.engineSessionId });
         }
         break;
+      case 'status':
+        // 路由决策/退化原因等 status 只发 UI 不落库 → DB 黑盒,排查靠猜(2026-10-13 事故)。
+        // 落一条轻量事件,考古面板可回放「为什么走了这条路」。
+        store.appendEvent(conv.id, t.id, { type: 'turn/status', text: ev.text });
+        break;
       case 'tool':
         store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`, conv.id);
         store.appendEvent(conv.id, t.id, {

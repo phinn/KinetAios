@@ -591,6 +591,7 @@ export type ConvEvent =
   | { type: 'assistant/message'; text: string }
   | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number; outcome?: ToolOutcome }
   | { type: 'turn/error'; message: string }
+  | { type: 'turn/status'; text: string } // 路由决策/引擎相位存证(路由→LEGIS、立法失败退化等):复盘"为什么走这条路"
   | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number; cacheRead?: number; cacheCreation?: number; source?: string }
   // spill 存证(v3.6.3 瘦身):dropped 截断为前 20 条×500 字符,droppedTotal 记录真实条数
   | { type: 'compaction/spill'; dropped: ChatMsg[]; droppedTotal?: number; summary?: string }

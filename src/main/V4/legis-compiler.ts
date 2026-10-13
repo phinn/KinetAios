@@ -130,7 +130,7 @@ export interface CompileOpts {
   goal?: string;
 }
 
-export async function compileLegisPlan(opts: CompileOpts): Promise<LegisPlan | null> {
+export async function compileLegisPlan(opts: CompileOpts): Promise<{ plan: LegisPlan | null; probedHistory: ChatMsg[] }> {
   const { userInput, history, systemPrompt, provider, snap, signal, onEvent, ctx, policy, memoryBlock, goal } = opts;
   onEvent({ type: 'status', text: '📜 v4: 立法中(编译计划)...' });
 
@@ -157,22 +157,29 @@ export async function compileLegisPlan(opts: CompileOpts): Promise<LegisPlan | n
   });
 
   // 从 history 尾部提取 submit_legis_plan 的 tool call
+  // 探查成果不丢弃:planner 12 轮的只读探查 history 返回给调用方,退化 std 时继承(2026-10-13:两次白烧事故)。
+  // 尾部是本轮 userInput 的 user 消息(runAgentLoop 收到 history+userInput 分体),去掉防 std 重复追加。
+  const probedHistory = updated.filter((m) => !m._memory && m.role !== 'system');
+  while (probedHistory.length && probedHistory[probedHistory.length - 1].role === 'user'
+    && probedHistory[probedHistory.length - 1].content === userInput) {
+    probedHistory.pop(); // 恰好是本轮 userInput 的尾部 user 消息(可能是多条同文,全剥)
+  }
   const planCall = extractPlanCall(updated);
   if (!planCall) {
-    onEvent({ type: 'status', text: '⚠️ v4: 模型未提交立法计划,退化为 std 执行' });
-    return null;
+    onEvent({ type: 'status', text: '⚠️ v4: 模型未提交立法计划,退化 std(继承立法探查现场)' });
+    return { plan: null, probedHistory };
   }
 
   const plan = parseLegisPlan(planCall.arguments);
   if (!plan) {
-    onEvent({ type: 'status', text: '⚠️ v4: 立法计划解析失败,退化为 std 执行' });
-    return null;
+    onEvent({ type: 'status', text: '⚠️ v4: 立法计划解析失败,退化 std(继承立法探查现场)' });
+    return { plan: null, probedHistory };
   }
 
   const validation = validateLegisPlan(plan);
   if (!validation.ok) {
-    onEvent({ type: 'status', text: `⚠️ v4: 立法计划被编译器拒绝(${validation.reason}),退化为 std 执行` });
-    return null;
+    onEvent({ type: 'status', text: `⚠️ v4: 立法计划被编译器拒绝(${validation.reason}),退化 std(继承立法探查现场)` });
+    return { plan: null, probedHistory };
   }
 
   const replayCount = plan.nodes.filter((n) => n.kind === 'replay').length;
@@ -180,7 +187,7 @@ export async function compileLegisPlan(opts: CompileOpts): Promise<LegisPlan | n
     type: 'status',
     text: `📜 v4: 立法完成 — ${plan.nodes.length} 节点(${replayCount} replay 零LLM / ${plan.nodes.length - replayCount} agent),验收断言 ${plan.acceptance.length} 条`,
   });
-  return plan;
+  return { plan, probedHistory };
 }
 
 /** 从 planner history 尾部提取 submit_legis_plan 的 arguments。 */
