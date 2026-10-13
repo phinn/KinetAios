@@ -99,7 +99,46 @@ export const LEGIS_PLAN_SYSTEM_SUFFIX = `
 - replay 的 script.tool 只允许: ${[...REPLAY_ALLOWED_TOOLS].join(', ')}。写文件(edit_file/write_file)禁止进 script —— 写内容必须 agent 节点。
 - 节点 id 唯一;deps 引用必须存在;DAG 不能有环。
 
-先探查(只读工具),想清楚后一次性调用 submit_legis_plan。
+## ⏱ 探查预算(硬纪律)
+**至多 3 轮只读探查,然后必须调用 submit_legis_plan。**
+- 已有上下文(history 里的近期工具结果)先读,能不探就不探。
+- 探查的目的是"够写计划",不是"找到答案"—— 答案在执行阶段找。
+- 未提交计划而烧到轮数上限 = 立法失败,系统会退化 std 并丢弃你的全部工作,这是最差结局。
+- 不确定的信息写进 agent 节点的 action 让执行时现场判断,不要试图现在就查清。
+- 长任务/继续型任务:计划图可以拆阶段,先立当前阶段(acceptance 写本阶段验收),完成后再立下一阶段。
+
+## 完整示例(照此结构与粒度)
+用户:"修复 ESP32 无法编译的问题,然后烧录验证"
+\`\`\`json
+{
+  "goal": "修复编译错误并烧录验证",
+  "summary": "先复现错误定位根因,修复后 typecheck,再烧录+串口验证",
+  "nodes": [
+    { "id": "s1", "title": "复现编译错误", "kind": "replay",
+      "action": "跑编译拿到原始报错",
+      "script": [{ "tool": "shell", "args": { "command": "npm run build 2>&1 | tail -40" } }],
+      "asserts": [{ "type": "exitZero" }], "deps": [], "parallelizable": false },
+    { "id": "a1", "title": "定位并修复根因", "kind": "agent",
+      "action": "读 s1 输出的报错,定位对应源文件,修复根因(注意同类隐患一起修)。禁止只修表象。",
+      "tools": ["read_file", "grep", "edit_file"],
+      "asserts": [{ "type": "outputNotEmpty", "note": "修复报告(改了什么文件、为什么)" }], "deps": ["s1"], "parallelizable": false },
+    { "id": "s2", "title": "编译验证", "kind": "replay",
+      "action": "修复后必须编译通过",
+      "script": [{ "tool": "shell", "args": { "command": "npm run build" } }],
+      "asserts": [{ "type": "exitZero" }], "deps": ["a1"], "parallelizable": false },
+    { "id": "a2", "title": "烧录并串口验证", "kind": "agent",
+      "action": "烧录固件到设备,采串口输出确认无 boot loop、预期日志出现。",
+      "tools": ["shell", "serial_monitor"],
+      "asserts": [{ "type": "outputContains", "value": "预期启动日志关键词" }], "deps": ["s2"], "parallelizable": false }
+  ],
+  "acceptance": [
+    { "type": "exitZero", "value": "npm run build" },
+    { "type": "outputContains", "value": "预期启动日志关键词" }
+  ]
+}
+\`\`\`
+
+先探查(至多 3 轮),想清楚后**立即**调用 submit_legis_plan。
 `;
 
 // submit_legis_plan 伪工具(与 V3 submitPlanPseudoTool 同款:run 返回占位,真解析在 history 尾部)
