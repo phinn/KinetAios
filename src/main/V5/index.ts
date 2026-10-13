@@ -238,6 +238,13 @@ export class DirectV5Engine implements Engine {
     // 实验路径(Universe)仍由 grader 终裁,这里不改 runner。
     if (outcome.finished && !outcome.aborted) runOutcome.success = outcome.success || outcome.trace!.length > 0;
     const facts: AttributionFacts = this.attribute(runOutcome, outcome, templateId, removed);
+    // ── 结算(死亡即结算)。provider 挂起=世界停摆不是个体过错,不进结算、不留疤、
+    // 不计 aborted 次数,同基因原样留在活体池,窗口重置后点继续即同基因续跑。
+    if (outcome.cause === 'provider_suspended') {
+      onEvent({ type: 'status', text: `⏸ v5: 个体挂起 — ${outcome.detail ?? 'provider 暂不可用'}。个体保留在活体池,恢复后继续,基因无损。` });
+      onEvent({ type: 'done' });
+      return;
+    }
     reg.settle(runOutcome, genome, facts);
     if (!outcome.aborted && !outcome.success) this.lastAttribution.set(genome.lineage, facts);
 
@@ -253,11 +260,6 @@ export class DirectV5Engine implements Engine {
 
     // ── 终态事件 ──
     if (outcome.aborted) {
-      // provider 挂起(quota 429/5h 窗口满、断网、auth):个体无罪,留在活体池,
-      // 窗口重置后同基因续跑 —— 不结算死亡、不留疤、不突变,进化零污染。
-      if (outcome.cause === 'provider_suspended') {
-        onEvent({ type: 'status', text: `⏸ v5: 个体挂起 — ${outcome.detail ?? 'provider 暂不可用'}。个体保留在活体池,恢复后继续,基因无损。` });
-      }
       onEvent({ type: 'done' });
       return;
     }

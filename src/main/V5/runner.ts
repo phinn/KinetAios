@@ -24,6 +24,7 @@ export type EvoEvent =
   | { what: 'breed'; genomeId: string; lineage: string; generation: number; from: string }
   | { what: 'mutate'; genomeId: string; lineage: string; generation: number; cause: DeathCause }
   | { what: 'death'; genomeId: string; cause: DeathCause }
+  | { what: 'suspended'; genomeId: string } // provider 挂起:个体留池零记账(世界停了不是个体的错)
   | { what: 'gamete'; genomeId: string };
 
 /** 任务模板(实验的"环境"):grader 确定性,不经 LLM。 */
@@ -202,6 +203,11 @@ export class Universe {
       this.history.push(outcome);
       const facts = this.attribute(outcome, tpl, genome);
       const wasAborted = outcome.aborted;
+      // provider 挂起(world 停摆)不结算:个体留池零记账,与生产路径 index.ts 同语义
+      if (outcome.cause === 'provider_suspended') {
+        this.events.push({ what: 'suspended', genomeId: genome.genomeId });
+        continue;
+      }
       this.reg.settle(outcome, genome, facts);
       if (!wasAborted && !outcome.success) this.lastAttribution.set(genome.lineage, facts);
       this.events.push({ what: 'death', genomeId: genome.genomeId, cause: outcome.aborted ? 'aborted' : outcome.cause });

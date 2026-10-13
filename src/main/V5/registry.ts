@@ -61,6 +61,7 @@ export class GeneRegistry {
     if (this.dataDir) {
       fs.mkdirSync(this.dataDir, { recursive: true });
       this.loadTemplates();
+      this.loadState(); // 活体池/账本/配子跨进程持久化:app 重启不丢种群(挂起个体因此能续跑)
     }
   }
 
@@ -80,6 +81,41 @@ export class GeneRegistry {
     fs.writeFileSync(path.join(this.dataDir, 'templates.json'), JSON.stringify([...this.fossilTemplates.values()]));
   }
 
+  // ── 种群状态快照(活体+个体账本+支系账本+配子):state.json 整文件读写 ──
+  // 为什么不沿用 JSONL:活体池是可变集合(挂起个体要原样续跑),快照语义才对;
+  // 审计历史仍走 phylum-log.jsonl(append-only),两者互补。
+
+  private saveState(): void {
+    if (!this.dataDir) return;
+    const snap = {
+      live: [...this.live.values()],
+      fitness: [...this.fitness.entries()],
+      ledgers: [...this.ledgers.entries()],
+      gametes: [...this.gametes.entries()],
+      seq: this.seq,
+    };
+    const f = path.join(this.dataDir, 'state.json');
+    fs.writeFileSync(f + '.tmp', JSON.stringify(snap));
+    fs.renameSync(f + '.tmp', f); // 原子替换:写一半崩溃不损旧状态
+  }
+
+  private loadState(): void {
+    if (!this.dataDir) return;
+    try {
+      const f = path.join(this.dataDir, 'state.json');
+      if (!fs.existsSync(f)) return;
+      const snap = JSON.parse(fs.readFileSync(f, 'utf8')) as {
+        live: Genome[]; fitness: [string, FitnessRecord][];
+        ledgers: [string, LineageLedger][]; gametes: [string, Gamete][]; seq?: number;
+      };
+      for (const g of snap.live) this.live.set(g.genomeId, g);
+      for (const [k, v] of snap.fitness) this.fitness.set(k, v);
+      for (const [k, v] of snap.ledgers) this.ledgers.set(k, v);
+      for (const [k, v] of snap.gametes) this.gametes.set(k, v);
+      this.seq = snap.seq ?? 0;
+    } catch { /* 损坏文件当作空种群:重新 founder,进化层自愈 */ }
+  }
+
   // ── 出生 ──
 
   /** 冷启动:某签名无活体且无可用配子 → 发 founder 基因(中性先验,对照组,不参与进化评价)。 */
@@ -96,6 +132,7 @@ export class GeneRegistry {
     this.live.set(g.genomeId, g);
     this.ensureLedger(g);
     this.appendJsonl('born', g);
+    this.saveState();
     return g;
   }
 
@@ -111,6 +148,7 @@ export class GeneRegistry {
     this.live.set(child.genomeId, child);
     this.ensureLedger(child);
     this.appendJsonl('born', child);
+    this.saveState();
     return child;
   }
 
@@ -165,6 +203,7 @@ export class GeneRegistry {
     this.live.set(child.genomeId, child);
     this.ensureLedger(child);
     this.appendJsonl('born', child);
+    this.saveState();
     return child;
   }
 
@@ -198,6 +237,7 @@ export class GeneRegistry {
       });
     }
     this.appendJsonl('settle', o);
+    this.saveState(); // 状态快照:重启/挂起续跑不丢账本
   }
 
   private fossilDetail(o: RunOutcome, facts: AttributionFacts): string {

@@ -6,6 +6,9 @@
 //   - founder: affinity={} 空表(未知工具动态默认 TOOL_AFFINITY_DEFAULT=0.5)、assertions=[](零先天断言,只删不增)
 
 import { test, run, assert } from './harness';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import {
   type Genome, TOOL_CUTOFF, MUTATION_STEP, CLONE_JITTER, TOOL_AFFINITY_DEFAULT,
 } from '../../src/main/V5/phylum-types';
@@ -272,6 +275,35 @@ test('F3 provider 挂起: quota 429(5h 窗口满)→ provider_suspended,个体�
     chat: async () => { throw new Error('malformed tool call: missing arguments'); },
   });
   assert.equal(r3.cause, 'tool_error', '非 provider 类 chat 异常仍按个体错误处理');
+});
+
+test('F5 挂起语义端到端: 个体留活体池 + state.json 跨重启恢复(续跑不重开)', async () => {
+  // 层1:挂起后个体仍在池里(旧 bug:settle 提前执行把它踢出池,UI 却说"保留在活体池")
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phylum-f5-'));
+  const reg = new GeneRegistry({ dataDir: dir });
+  const g = reg.spawnFounder(SIG);
+  const gid = g.genomeId;
+
+  // 模拟生产路径的挂起处理:settle 被跳过(修复后 index.ts 直接 return)
+  const f0 = reg.fitnessOf(gid);
+  assert.equal(f0?.trials ?? 0, 0, '挂起零记账');
+  assert.equal(reg.liveBySignature(FSIG).length, 1, '挂起个体必须仍在活体池');
+
+  // 层2:重启(app 退出 → 新 GeneRegistry)后活体池从 state.json 恢复,同基因续跑
+  const reg2 = new GeneRegistry({ dataDir: dir });
+  const live = reg2.liveBySignature(FSIG);
+  assert.equal(live.length, 1, '重启后挂起个体从 state.json 恢复');
+  assert.equal(live[0].genomeId, gid, '同基因续跑(不是新 founder)');
+  assert.equal(live[0].routing.maxSteps, 12, '基因位原样保留');
+
+  // 层3:挂起个体死亡结算后 state.json 同步落盘(账本持久)
+  reg2.settle({ taskId: 'f5', signature: FSIG, genomeId: gid, lineage: g.lineage,
+    generation: 0, success: true, aborted: false, cause: 'none', steps: 3, tokens: 100,
+    detail: 'ok' }, live[0], { cause: 'none' });
+  const reg3 = new GeneRegistry({ dataDir: dir });
+  assert.equal(reg3.ledgerOf(g.lineage)?.trials, 1, '结算后账本跨重启持久');
+  assert.equal(reg3.liveBySignature(FSIG).length, 0, '已结算个体不再在池');
+  fs.rmSync(dir, { recursive: true, force: true });
 });
 
 run();
