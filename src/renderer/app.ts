@@ -6399,8 +6399,19 @@ async function showSettings() {
   // 缓存上一次拉取的插件列表,搜索过滤时复用避免重复 IPC。 — Cache for search filtering.
   let pluginCache: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; enabled: boolean; error?: string; dir: string; engine?: { bin?: string; id?: string; label?: string; protocol?: string }; engineError?: string; engineSettings?: Array<{ key: string; label?: string; placeholder?: string; default?: string; secret?: boolean }>; engineSettingsValues?: Record<string, string> }> = [];
 
+  // 内置引擎直系卡片(V1/V2/V3):engines.ts 直接注册、无插件实体,但列表里要可见 —
+  // V4/V5 有插件实体可见,V1-V3 却凭空缺席,用户会问"V1/V2/V3 去哪了"(2026-10-13)。
+  // 合成虚拟卡片进"引擎"分组:仅展示,无开关/卸载/详情。Builtin direct-family engines
+  // (V1/V2/V3) have no plugin entity — render synthetic display-only cards in the Engines group.
+  const BUILTIN_ENGINE_CARDS: Array<typeof pluginCache[number]> = [
+    { name: 'kaios-v1', version: 'built-in', description: tr('settings.plugin.builtinEngine.v1'), category: 'engine', icon: sv.bot, permissions: [], engines: ['direct'], toolCount: 0, slashCommandCount: 0, tools: [], slashCommands: [], enabled: true, dir: '', engine: { label: tr('engine.direct') } },
+    { name: 'kaios-v2', version: 'built-in', description: tr('settings.plugin.builtinEngine.v2'), category: 'engine', icon: sv.bot, permissions: [], engines: ['direct'], toolCount: 0, slashCommandCount: 0, tools: [], slashCommands: [], enabled: true, dir: '', engine: { label: tr('engine.directV2') } },
+    { name: 'kaios-v3', version: 'built-in', description: tr('settings.plugin.builtinEngine.v3'), category: 'engine', icon: sv.bot, permissions: [], engines: ['direct'], toolCount: 0, slashCommandCount: 0, tools: [], slashCommands: [], enabled: true, dir: '', engine: { label: tr('engine.directV3') } },
+  ];
+
   const renderPluginStats = (): void => {
     const el = document.getElementById('s-plugin-stats')!;
+    // 统计只算真实插件(pluginCache),内置引擎卡不计 — Stats count real plugins only.
     const total = pluginCache.length;
     const enabled = pluginCache.filter((p) => p.enabled).length;
     const errored = pluginCache.filter((p) => p.error || p.engineError).length;
@@ -6417,13 +6428,14 @@ async function showSettings() {
   const renderPluginList = (filter = ''): void => {
     const el = document.getElementById('s-plugins')!;
     const q = filter.trim().toLowerCase();
+    const withBuiltin = [...BUILTIN_ENGINE_CARDS, ...pluginCache];
     const filtered = q
-      ? pluginCache.filter((p) =>
+      ? withBuiltin.filter((p) =>
           p.name.toLowerCase().includes(q) ||
           (p.description ?? '').toLowerCase().includes(q) ||
           (p.author ?? '').toLowerCase().includes(q),
         )
-      : pluginCache;
+      : withBuiltin;
 
     if (!filtered.length) {
       el.innerHTML = q
@@ -6485,10 +6497,10 @@ async function showSettings() {
       </div>
       <div class="s-plugin-actions">
         <label class="s-plugin-switch" title="${hasError ? tr('settings.plugin.switchError') : (p.enabled ? tr('settings.plugin.switchDisable') : tr('settings.plugin.switchEnable'))}">
-          <input type="checkbox" class="s-plugin-toggle" data-toggle="${esc(p.name)}" ${toggleChecked} ${toggleDisabled} />
+          ${p.dir ? `<input type="checkbox" class="s-plugin-toggle" data-toggle="${esc(p.name)}" ${toggleChecked} ${toggleDisabled} />` : ''}
           <span class="s-plugin-switch-track"><span class="s-plugin-switch-thumb"></span></span>
         </label>
-        ${!hasError ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
+        ${!hasError && p.dir ? `<button class="s-plugin-uninstall" data-uninstall="${esc(p.name)}" title="${esc(tr('settings.plugins.uninstall'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>` : ''}
       </div>
       ${renderPluginDetail(p)}
     </div>`;
