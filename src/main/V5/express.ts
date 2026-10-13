@@ -42,10 +42,11 @@ export function express(genome: Genome, allTools: readonly Tool[], requiredTools
     tools,
     removedTools,
     protectedTools,
-    // 步数预算:基因值 + 调用方门级护栏(缺省 STEP_BUDGET_CEIL)。
-    // 护栏传 0 = 无限(对齐宿主 maxTurns=0 语义):基因值不被夹,死亡归因也不再走 step_budget。
+    // 步数预算完全跟随宿主设置(AgentLoop userMax 同语义):
+    // 护栏 0 = 无限 → 个体预算 Infinity,循环不设墙(step_budget 死亡不可能触发);
+    // 非 0 → 基因值被门级护栏夹紧(基因只能低于不能高于宿主天花板)。
     maxSteps: stepBudgetCeil === 0
-      ? genome.routing.maxSteps
+      ? Infinity
       : Math.min(genome.routing.maxSteps, stepBudgetCeil ?? STEP_BUDGET_CEIL),
     instinctPrompt: instinct(genome),
     assertions: genome.assertions,

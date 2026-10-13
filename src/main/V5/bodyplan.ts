@@ -61,6 +61,8 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   let lastOutput = '';
   let retryAfterAssertion = false; // 每个个体一生只许断言重试一次(防重试黑洞)
 
+  // maxSteps=Infinity(宿主 maxTurns=0)时循环无墙 —— 停止靠模型自己收敛、
+  // abort 信号、stall 类保护;有墙时 steps 基因决定预算。
   while (steps < body.maxSteps) {
     if (signal?.aborted) return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: 'aborted by signal' };
     steps++;
