@@ -1,0 +1,26 @@
+{
+  "name": "phylum-engine",
+  "version": "1.0.0",
+  "author": "phinn",
+  "engines": [],
+  "engine": {
+    "id": "directV5",
+    "label": "Kaios v5 (Phylum)",
+    "builtin": true
+  },
+  "capabilityComments": {
+    "engine": "复制 legis-engine 插件模式:内置引擎挂插件开关。engines.ts 里 DirectV5Engine 无条件注册;插件 disabled → EnginePolicies 过滤;关闭态 UI 隐藏、开启态解锁。与 legis 的差异:V5 是种群进化引擎(每 prompt 归一化为任务模板 → 基因表达硬约束执行 → 死亡归因 → 疤痕遗传),基因库按 conv 持久化 JSONL 到 userData/phylum/<convId>/。",
+    "gene": "基因三件套:routing_prior + tool_affinity(死亡归因罚肇事亲和 0.30/步,<0.2 摘除)+ instinct_prompt。断言位只删不改不进化(防 Goodhart)。"
+  },
+  "built": {
+    "ts": "src/main/V5/*.ts → dist/main/V5/*.js"
+  },
+  "category": "engine",
+  "keywords": [
+    "phylum",
+    "gene",
+    "evolution",
+    "population",
+    "V5"
+  ]
+}

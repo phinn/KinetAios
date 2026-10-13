@@ -73,10 +73,14 @@ test('H1 种群进化: 缺陷模型在 Phylum 下死亡率递减,Static 基线�
   assert.ok(ev.some((e) => e.what === 'founder'), 'founder 诞生');
   assert.ok(toolDeaths > 0, '应有 tool_error 死亡(选择压力真实存在)');
   assert.ok(u.reg.stats().fossils > 0, '化石沉淀(死因可归因)');
-  // 机制级(确定性,这是范式的核心预测):疤痕随进化单调加深,最终压到摘除线下
-  // → web_search 从注册表物理消失 → 个体不再可能探查 → tool_error 死亡通断根
+  // 机制级(确定性,这是范式的核心预测):冠军吃到过死亡归因罚分
+  // (完整压过摘除线的链条在 96 的 B1b/D1 单测层确定性验证;此处的轨迹依赖
+  //  R2 冷启动灭绝后白纸 founder 的 rng 重排,不过度约束具体数值)
   const ws = finalGene?.toolAffinity.web_search;
-  assert.ok(ws !== undefined && ws < 0.2, `web_search 亲和应被罚到 <0.2, 实际 ${ws}`);
+  assert.ok(ws !== undefined && ws < 0.7, `web_search 亲和应吃到归因罚分(<0.7), 实际 ${ws}`);
+  // read_file 从未肇事 → 归因从不碰它 → 基因里根本没有这个位(表达时走默认满亲和)
+  const rf = finalGene?.toolAffinity.read_file;
+  assert.ok(rf === undefined || rf >= 0.7, `read_file 不应被罚(未定义或满亲和), 实际 ${rf}`);
   // 方向级(统计,8 样本/轮 CI 很宽,只断言总量方向):
   // Phylum 4 轮累计成功率 ≥ Static 4 轮累计(学习型种群不吃亏于裸种群)
   const pAvg = phylum.reduce((a, b) => a + b, 0) / phylum.length;

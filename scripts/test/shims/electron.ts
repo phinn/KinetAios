@@ -8,6 +8,8 @@ import { join } from 'node:path';
 // KINET_TEST_USERDATA 环境变量可显式指定(调试用);缺省每进程独立 mkdtemp。
 let dir: string | null = null;
 export const app = {
+  // 测试环境等价于未打包的 dev 运行(loadPlugins 据此扫源码 plugins/)
+  isPackaged: false,
   getPath(name: string): string {
     if (name !== 'userData') throw new Error(`[test-shim] 未实现的 getPath: ${name}`);
     if (process.env.KINET_TEST_USERDATA) return process.env.KINET_TEST_USERDATA;

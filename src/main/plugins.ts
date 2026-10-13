@@ -238,8 +238,10 @@ export function loadPlugins(): LoadedPlugin[] {
   // 开发模式: 同时扫描项目源码目录的 plugins/ — Dev mode: also scan source-tree plugins/.
   // 通过 app.isPackaged 判断: 打包后不扫源码目录。
   if (!app.isPackaged) {
-    // __dirname 在 dist/main/ 下, 往上两级到项目根。
-    const devRoot = path.resolve(__dirname, '..', '..', 'plugins');
+    // __dirname 在 dist/main/ 下, 往上两级到项目根;bundle 场景(测试)退回 cwd。
+    const fromDir = path.resolve(__dirname, '..', '..', 'plugins');
+    const fromCwd = path.resolve(process.cwd(), 'plugins');
+    const devRoot = fs.existsSync(fromDir) ? fromDir : fromCwd;
     try {
       const devDirs = fs
         .readdirSync(devRoot, { withFileTypes: true })

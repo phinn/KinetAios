@@ -1282,6 +1282,7 @@ export function codexCliConfig(): CliEngineConfig {
 import { DirectV2Engine } from './DirectV2Engine';
 import { DirectV3Engine } from './V3';
 import { DirectV4Engine } from './V4';
+import { DirectV5Engine } from './V5';
 
 export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
   const engines = new Map<EngineKind, Engine>([
@@ -1298,6 +1299,9 @@ export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<En
   // 语义化报错),不走声明式 pluginCliConfig。开关以插件启停为准(替代 enableCliEngines)。
   const pluginNames = new Set(pluginEngines().map((p) => p.pluginName));
   if (pluginNames.has('legis-engine')) engines.set('directV4', new DirectV4Engine(confirm));
+  // V5(Phylum)同款插件门:phylum-engine 插件开关控制,默认关闭(实验引擎)。
+  // confirm 直传(写类工具照样走 shell 确认桥);基因库由引擎自持(userData/phylum/)。
+  if (pluginNames.has('phylum-engine')) engines.set('directV5', new DirectV5Engine(confirm));
   if (pluginNames.has('claude-code')) engines.set('claudeCode', new CliEngineAdapter(claudeCliConfig()));
   if (pluginNames.has('codex')) engines.set('codex', new CliEngineAdapter(codexCliConfig()));
   // 其余插件引擎(Plugin SDK v3):plugin:<name> 注册,复用 CliEngineAdapter 骨架。

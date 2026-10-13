@@ -29,8 +29,8 @@ export type ApprovalPolicy = 'always' | 'never';
 
 // 内置引擎种类。插件引擎(Plugin SDK v3)用 `plugin:<name>` 前缀,不在此穷举。
 // Builtin engine kinds. Plugin engines use the `plugin:<name>` prefix (Plugin SDK v3).
-export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'directV4' | 'claudeCode' | 'codex';
-export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'directV4', 'claudeCode', 'codex'];
+export type BuiltinEngineKind = 'direct' | 'directV2' | 'directV3' | 'directV4' | 'directV5' | 'claudeCode' | 'codex';
+export const BUILTIN_ENGINE_KINDS: readonly BuiltinEngineKind[] = ['direct', 'directV2', 'directV3', 'directV4', 'directV5', 'claudeCode', 'codex'];
 export type EngineKind = BuiltinEngineKind | `plugin:${string}`;
 
 // ── 后台 Job(V3 deep 路径 Job 化)──
@@ -157,6 +157,17 @@ export const ENGINE_POLICIES: Record<BuiltinEngineKind, EngineContextPolicy> = {
     stepResultMaxChars: 4000,
     subAgentScope: 'last_n_turns',
   },
+  // v5 DirectV5(Phylum):个体短命、单任务执行,不看 conv 历史;工具结果截断保守。
+  // bodyplan 自管步数(maxSteps 基因表达),这里的 trimBudget 只兜底极长工具输出。
+  directV5: {
+    trimBudget: 30_000,
+    interStepCompactBudget: 0,
+    truncateThreshold: 4_000,
+    appendStepSummary: false,
+    stepSummaryMaxChars: 0,
+    stepResultMaxChars: 0,
+    subAgentScope: 'none',
+  },
 };
 
 // v2 动态预算计算:根据用户配置的模型窗口大小和预算比例,算出 trim/compact/truncate 阈值。
@@ -229,6 +240,7 @@ export const ENGINE_LABELS: Record<BuiltinEngineKind, string> = {
   directV2: 'Kaios v2 (Plan·Verify)',
   directV3: 'Kaios v3 (Adaptive)',
   directV4: 'Kaios v4 (Legis)',
+  directV5: 'Kaios v5 (Phylum)',
   claudeCode: 'Claude Code',
   codex: 'Codex',
 };

@@ -10,6 +10,7 @@ export const ENGINE_COLORS: Record<EngineKind, string> = {
   directV2: '#8ab4ff',   // Kaios v2 — 冷蓝
   directV3: '#7eeab5',   // Kaios v3 — 薄荷绿
   directV4: '#f5c86b',   // Kaios v4 Legis — 琥珀金(立法者)
+  directV5: '#5fd4a8',   // Kaios v5 Phylum — 青碧绿(种群/基因)
   claudeCode: '#d97757', // Claude — 品牌橙
   codex: '#10a37f',      // Codex — 品牌绿
 };
