@@ -263,7 +263,8 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000, sig
         const code = err ? (err as NodeJS.ErrnoException & { code?: number | string }).code ?? 1 : 0;
         if (err && code !== 0) out = `[exit ${code}] ${out}`;
         if (!out.trim()) out = '(无输出)\n';
-        resolve(out);
+        // 尾部 exit code:0 也显式回显,让模型不用猜"空输出=成功还是没跑"
+        resolve(`${out}\n[exit ${code}]\n`);
       },
     );
     // 支持 abort:用户点"停止"时杀掉正在跑的子进程。
@@ -365,7 +366,10 @@ const shell: Tool = {
     // binary 验证数小时)。命中长任务特征 → 600s;其余维持 120s。
     const longTask = /xcodebuild|swift build|gradle|\.gradlew|ninja|cmake --build|burst|boot |等待|restart|reboot|hdiutil|productbuild|xcrun altool/i.test(cmd);
     const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, longTask ? 600_000 : 120_000, ctx.signal));
-    const trimmed = out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
+    // 时间戳头:LLM 手算 epoch 窗口必错(实测 DB 查询查空→误判"没事件"),直接把当前时刻喂给它。
+    const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
+    const header = `[now: ${stamp} | epoch=${Math.floor(Date.now() / 1000)}]\n`;
+    const trimmed = header + (out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out); // 防止大输出撑爆对话上下文
     // 隐私闸:shell 输出同样会进对话 → 出网。开启时检测命中走 confirm(拒绝则不出网)。
     const blocked = await privacyGate(trimmed);
     if (blocked) return blocked;
