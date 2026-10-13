@@ -6490,7 +6490,7 @@ async function showSettings() {
 
     return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}${p.enabled ? '' : ' s-plugin-row-disabled'}" data-plugin-name="${esc(p.name)}">
       ${iconHtml}
-      <div class="s-plugin-info" data-plugin-detail="${esc(p.name)}">
+      <div class="s-plugin-info" ${p.dir ? `data-plugin-detail="${esc(p.name)}"` : ''}>
         <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span>${p.engine ? `<span class="s-plugin-engine-badge" title="${esc(p.engine.label ?? p.engine.id ?? '')}">${sv.target} ${esc(p.engine.label ?? p.engine.id ?? '')}</span>` : ''}</div>
         <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
         <div class="s-plugin-tags">${engineTags}${permTags}${errBadge}</div>
