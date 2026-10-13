@@ -29,7 +29,7 @@ import { express } from './express';
 import { runBodyPlan } from './bodyplan';
 import { signatureOfTemplate } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
-import { geneSnapshot, type Genome, type RunOutcome } from './phylum-types';
+import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL } from './phylum-types';
 
 // ── 任务模板归一化(v1 签名)────────────────────────────────
 // 生产化第一步:不做 embedding,不拍指纹 —— 用保守的动词+对象规则归一化。
@@ -131,7 +131,10 @@ export class DirectV5Engine implements Engine {
     }
     const genome: Genome = live[0];
     const gene = geneSnapshot(genome);
-    const removed = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? []).removedTools;
+    // 门级步数护栏跟随宿主 maxTurns 配置(0 = 无限,与 AgentLoop userMax 语义一致);
+    // 非 0 时夹紧基因值,无限时基因值就是个体预算(仍受 MAX_STEPS_MAX 进化值域约束)。
+    const stepCeil = (getSettings().maxTurns ?? 50) === 0 ? 0 : STEP_BUDGET_CEIL;
+    const removed = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).removedTools;
     const genTag = `🧬 v5·${tplLabel} | 个体 ${genome.genomeId} 第 ${genome.generation} 代` +
       (removed.length ? ` | 已摘除: ${removed.join(',')}` : '');
     onEvent({ type: 'status', text: genTag });
@@ -144,7 +147,7 @@ export class DirectV5Engine implements Engine {
       pluginSystemPrompts('directV5', prompt);
 
     // ── 执行(bodyplan 共享循环;工具注册表已被表达过滤)──
-    const tools = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? []).tools;
+    const tools = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).tools;
     const ctx: ToolCtx = {
       cwd: conv.cwd,
       confirm: this.confirm,
@@ -163,7 +166,7 @@ export class DirectV5Engine implements Engine {
       outcome = await runBodyPlan({
         task: prompt,
         cwd: conv.cwd,
-        body: express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? []),
+        body: express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil),
         genome,
         chat: providerChatFn(provider, snap, signal),
         tools,

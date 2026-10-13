@@ -25,7 +25,7 @@ export interface ExpressResult extends ExpressedBody {
  *   模型选错;必需工具保护解决的是"注册表整体摘除导致任务物理不可能",不是"保证成功"。
  *   亲和回升由死亡归因 essential_tool_missing 驱动(见 registry.mutateFrom)。
  */
-export function express(genome: Genome, allTools: readonly Tool[], requiredTools: readonly string[]): ExpressResult {
+export function express(genome: Genome, allTools: readonly Tool[], requiredTools: readonly string[], stepBudgetCeil?: number): ExpressResult {
   const required = new Set(requiredTools);
   const removedTools: string[] = [];
   const protectedTools: string[] = [];
@@ -42,7 +42,11 @@ export function express(genome: Genome, allTools: readonly Tool[], requiredTools
     tools,
     removedTools,
     protectedTools,
-    maxSteps: Math.min(genome.routing.maxSteps, STEP_BUDGET_CEIL),
+    // 步数预算:基因值 + 调用方门级护栏(缺省 STEP_BUDGET_CEIL)。
+    // 护栏传 0 = 无限(对齐宿主 maxTurns=0 语义):基因值不被夹,死亡归因也不再走 step_budget。
+    maxSteps: stepBudgetCeil === 0
+      ? genome.routing.maxSteps
+      : Math.min(genome.routing.maxSteps, stepBudgetCeil ?? STEP_BUDGET_CEIL),
     instinctPrompt: instinct(genome),
     assertions: genome.assertions,
   };
