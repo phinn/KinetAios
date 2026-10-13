@@ -236,4 +236,42 @@ test('G2 abort 零污染: 中止=无痕死亡(个体移出活体、零账本/配
   assertEq(lg?.aborted, 1, '审计计数独立记账');
 });
 
+test('F3 provider 挂起: quota 429(5h 窗口满)→ provider_suspended,个体无罪不记账', async () => {
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  const gid = g.genomeId;
+  assert.equal(reg.fitnessOf(gid)?.trials ?? 0, 0);
+  const { GLMError } = await import('../../src/main/glm');
+  const body = express(g, [], [], 6);
+  // chat 直接抛 429 quota(用户实录场景);工具本可执行,但 LLM 一开口就挂
+  const r = await runBodyPlan({
+    task: 't', body, tools: [],
+    chat: async () => { throw new GLMError('http', 429, '已达到 5 小时的使用上限', 'quota'); },
+  });
+  assert.equal(r.cause, 'provider_suspended', 'quota 必须走挂起通道,不是 tool_error');
+  assert.equal(r.aborted, true, '挂起=aborted:settle 只记 aborted,不记 trial/疤');
+
+  // 结算通路核对:挂起只进 aborted 桶,trials/successes/归因疤痕零污染
+  reg.settle({ taskId: 'f3', signature: FSIG, genomeId: gid, lineage: g.lineage,
+    generation: 0, success: r.success, aborted: r.aborted, cause: r.cause,
+    steps: r.steps, tokens: r.tokens, detail: r.detail }, g, { cause: 'provider_suspended' });
+  const f = reg.fitnessOf(gid);
+  assert.equal(f?.trials, 0, '挂起不得记 trial');
+  assert.equal(f?.aborted, 1, '挂起只进 aborted 桶');
+
+  // 断网同理(network):世界停了 ≠ 个体的错
+  const r2 = await runBodyPlan({
+    task: 't', body, tools: [],
+    chat: async () => { throw new Error('fetch failed: connect ECONNRESET'); },
+  });
+  assert.equal(r2.cause, 'provider_suspended');
+
+  // 对照:普通 chat 异常仍归 tool_error(保真突变信号)
+  const r3 = await runBodyPlan({
+    task: 't', body, tools: [],
+    chat: async () => { throw new Error('malformed tool call: missing arguments'); },
+  });
+  assert.equal(r3.cause, 'tool_error', '非 provider 类 chat 异常仍按个体错误处理');
+});
+
 run();

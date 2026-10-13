@@ -9,6 +9,7 @@
 import type { AgentEvent, ChatMsg } from '../../shared/types';
 import type { Completion } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
+import { GLMError } from '../glm';
 import { type Genome, type DeathCause, type ExpressedBody, cloneGenome } from './phylum-types';
 import type { TraceStep } from './phylum-types';
 import { checkAssertions } from './express';
@@ -78,6 +79,14 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       comp = await chat(messages, toolDefs);
     } catch (err) {
       if (signal?.aborted) return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: 'aborted during LLM call' };
+      // provider 侧错误(quota 429/5h 窗口满、network 断连、auth)= 世界停了,不是个体的错。
+      // quota/network/auth → 挂起退出:不结算、不留疤、不突变,个体原样留在活体池,
+      // 窗口重置/链路恢复后同基因续跑(进化零污染)。工具自身的错才配叫 tool_error。
+      const cls = GLMError.classify(err);
+      if (cls === 'quota' || cls === 'network' || cls === 'auth') {
+        return { success: false, aborted: true, cause: 'provider_suspended', steps, tokens, lastOutput,
+          detail: `provider ${cls}: ${(err as Error).message}` };
+      }
       return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, detail: `chat error: ${(err as Error).message}` };
     }
     tokens += (comp.tokensIn ?? 0) + (comp.tokensOut ?? 0);

@@ -37,6 +37,7 @@ export type DeathCause =
   | 'essential_tool_missing'  // 死于必需工具被亲和过滤摘除 → 亲和回升(环境教育)
   | 'wrong_answer'            // 断言全过但产物语义错误(由任务的 grader 判定)
   | 'fossil_miss'             // 化石重放失败 → 降级开荒(化石不直接删,连续 miss 才退役)
+  | 'provider_suspended'      // provider 侧停供(quota 429/5h 窗口/network/auth):世界停了,不是个体的错 → 挂起,零进化信号
   | 'aborted'                 // 用户中止:不算进化信号,fitness 记 abort 不记败
   | 'none';                   // 成功
 

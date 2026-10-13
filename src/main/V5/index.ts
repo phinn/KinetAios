@@ -253,6 +253,11 @@ export class DirectV5Engine implements Engine {
 
     // ── 终态事件 ──
     if (outcome.aborted) {
+      // provider 挂起(quota 429/5h 窗口满、断网、auth):个体无罪,留在活体池,
+      // 窗口重置后同基因续跑 —— 不结算死亡、不留疤、不突变,进化零污染。
+      if (outcome.cause === 'provider_suspended') {
+        onEvent({ type: 'status', text: `⏸ v5: 个体挂起 — ${outcome.detail ?? 'provider 暂不可用'}。个体保留在活体池,恢复后继续,基因无损。` });
+      }
       onEvent({ type: 'done' });
       return;
     }
