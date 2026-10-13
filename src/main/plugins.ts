@@ -514,6 +514,13 @@ export function pluginListSnap(): Array<{
 }> {
   return loadPlugins().map((p) => {
     const cat = p.manifest.category ?? 'misc';
+    // 未注册分类校验(2026-10-13 事故:phylum-engine 写了 "engine" → 设置页凭空消失)。
+    // loader 层不能拒绝加载(降级 misc 即可),但要露警告让设置页红徽章可见,否则又是静默黑盒。
+    const categoryWarning = p.error
+      ? undefined
+      : !['office', 'dev', 'media', 'data', 'system', 'creative', 'education', 'misc'].includes(cat)
+        ? `未知分类 "${cat}"(已按 misc 显示)— 允许: office/dev/media/data/system/creative/education/misc`
+        : undefined;
     // 读图标 SVG 内容(如果声明了)
     let iconSvg: string | undefined;
     if (p.manifest.icon) {
@@ -545,7 +552,7 @@ export function pluginListSnap(): Array<{
       panelTitle: p.manifest.panelTitle ?? p.manifest.name,
       panelIcon: p.manifest.panelIcon ? (() => { try { const ip = resolvePluginFile(p.dir, p.manifest.panelIcon!); return ip ? fs.readFileSync(ip, 'utf8') : undefined; } catch { return undefined; } })() : undefined,
       enabled: isPluginEnabled(p.manifest.name),
-      error: p.error,
+      error: categoryWarning ?? p.error, // 分类警告走同一 error 通道,设置页红徽章可见
       dir: p.dir,
       engine: p.manifest.engine ? { bin: p.manifest.engine.bin, id: p.manifest.engine.id, label: p.manifest.engine.label, protocol: p.manifest.engine.protocol } : undefined,
       // v4: 无 bin 的内置开关型 spec(有 id)合法,不报 engine.bin missing

@@ -6433,9 +6433,11 @@ async function showSettings() {
     }
 
     // 按分类分组 — Group by category.
+    // 未注册分类不静默消失:归入 misc 并标记,否则 manifest 写错分类的插件在设置页凭空蒸发
+    // (2026-10-13 事故:phylum-engine category:"engine" 未注册 → 列表里看不到,像没装一样)。
     const grouped: Record<string, typeof filtered> = {};
     for (const p of filtered) {
-      const cat = p.category || 'misc';
+      const cat = PLUGIN_CATS.includes(p.category as (typeof PLUGIN_CATS)[number]) ? p.category : 'misc';
       (grouped[cat] ??= []).push(p);
     }
 

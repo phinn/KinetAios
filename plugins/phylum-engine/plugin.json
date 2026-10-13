@@ -15,7 +15,7 @@
   "built": {
     "ts": "src/main/V5/*.ts → dist/main/V5/*.js"
   },
-  "category": "engine",
+  "category": "dev",
   "keywords": [
     "phylum",
     "gene",
