@@ -10,6 +10,7 @@ import type { AgentEvent, ChatMsg } from '../../shared/types';
 import type { Completion } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
 import { type Genome, type DeathCause, type ExpressedBody, cloneGenome } from './phylum-types';
+import type { TraceStep } from './phylum-types';
 import { checkAssertions } from './express';
 import type { AssertionGene } from './phylum-types';
 
@@ -25,6 +26,10 @@ export interface BodyPlanResult {
   violatedAssertionId?: string;
   /** 归因:肇事工具(cause=tool_error) */
   culpritTool?: string;
+  /** 全程工具调用轨迹(成功时被 registry 沉积为化石模板;死亡时只留墓志铭不留轨迹) */
+  trace?: TraceStep[];
+  /** 自然完成:模型交了 final answer(生产路径的成功语义;实验路径仍由 grader 终裁) */
+  finished?: boolean;
   detail: string;
 }
 
@@ -60,6 +65,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   let tokens = 0;
   let lastOutput = '';
   let retryAfterAssertion = false; // 每个个体一生只许断言重试一次(防重试黑洞)
+  const trace: TraceStep[] = [];   // 全程轨迹:每次成功执行的工具调用(成功时沉积为化石)
 
   // maxSteps=Infinity(宿主 maxTurns=0)时循环无墙 —— 停止靠模型自己收敛、
   // abort 信号、stall 类保护;有墙时 steps 基因决定预算。
@@ -77,10 +83,15 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
     tokens += (comp.tokensIn ?? 0) + (comp.tokensOut ?? 0);
 
     // 无工具调用 = 个体认为任务完成,交最后陈述
+    // finished=true 是"自然完成"信号:生产路径 = 成功(有工具轨迹背书);
+    // 实验路径 grader 仍终裁(0 步 finished = 空谈,grader 判 wrong_answer)。
     if (!comp.toolCalls?.length) {
       lastOutput = comp.content || lastOutput;
-      return { success: false, aborted: false, cause: 'wrong_answer', steps, tokens, lastOutput,
-        detail: 'finished without tool use — grader decides' };
+      const finished = trace.length > 0;
+      return finished
+        ? { success: true, aborted: false, cause: 'none', steps, tokens, lastOutput, trace, finished: true, detail: 'final answer with tool trace' }
+        : { success: false, aborted: false, cause: 'wrong_answer', steps, tokens, lastOutput, finished: true,
+            detail: 'finished without any tool use — nothing was done' };
     }
 
     // 顺序执行本步全部工具调用(写工具本来就串行;v1 不做并发)
@@ -123,6 +134,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
           violatedAssertionId: violated.id, detail: `assertion '${violated.id}' violated after retry on '${call.name}'` };
       }
 
+      trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
       messages.push(assistantToolMsg(call));
       messages.push({ role: 'user', content: `[tool:${call.name}] ${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}` });
     }
@@ -131,6 +143,12 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   // 步数预算耗尽
   return { success: false, aborted: false, cause: 'step_budget', steps, tokens, lastOutput,
     detail: `exceeded maxSteps=${body.maxSteps}` };
+}
+
+/** 工具参数解析(轨迹记录用;坏 JSON 记空参,不炸执行)。 */
+function safeParseArgs(raw?: string): Record<string, unknown> {
+  try { return raw ? (JSON.parse(raw) as Record<string, unknown>) : {}; }
+  catch { return {}; }
 }
 
 /** assistant 消息里回放 tool_call(OpenAI wire 格式)。 */

@@ -236,12 +236,17 @@ export class Universe {
     });
     const g = tpl.grade({ lastOutput: r.lastOutput, steps: r.steps });
     const success = r.aborted ? false : g.success;
-    const cause: DeathCause = r.aborted ? 'aborted' : (g.success ? 'none' : r.cause);
+    // grader 失败 + 有真实工具轨迹 → 归因 wrong_answer(语义错,突变扰动);
+    // grader 失败 + 无轨迹 → bodyplan 已给 wrong_answer;成功 → none(无突变)。
+    const cause: DeathCause = r.aborted ? 'aborted'
+      : (g.success ? 'none'
+        : (r.finished && (r.trace?.length ?? 0) > 0 ? 'wrong_answer' : r.cause));
     return {
       taskId: `${tpl.id}#v${variant}`, signature: genome.signature,
       genomeId: genome.genomeId, lineage: genome.lineage, generation: genome.generation,
       success, aborted: r.aborted, cause, steps: r.steps, tokens: r.tokens,
       detail: r.detail || g.detail,
+      trace: r.trace,
     };
   }
 

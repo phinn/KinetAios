@@ -10,8 +10,11 @@ import path from 'node:path';
 import {
   type FitnessRecord, type FossilRecord, type Gamete, type Genome,
   type LineageLedger, type RunOutcome, type DeathCause,
+  type TraceTemplate, type TraceSlot, type TraceStep,
   AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP, MAX_STEPS_MAX,
+  FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS,
 } from './phylum-types';
+import { extractSlots } from './replay';
 import { signatureOfTemplate } from './signature';
 
 /** 归因器输入:一次执行结束时的全部事实(不带任何解释)。 */
@@ -46,6 +49,8 @@ export class GeneRegistry {
   /** 配子库:成功死者留下的基因快照 */
   private gametes = new Map<string, Gamete>();
   private fossils: FossilRecord[] = [];
+  /** 可执行化石模板(档②轨迹重放):成功轨迹的槽位化骨架,跨会话持久化 */
+  private fossilTemplates = new Map<string, TraceTemplate>();
   private rng: () => number;
   private dataDir?: string;
   private seq = 0; // id 单调序号
@@ -53,7 +58,26 @@ export class GeneRegistry {
   constructor(init: RegistryInit = {}) {
     this.rng = init.rng ?? Math.random;
     this.dataDir = init.dataDir;
-    if (this.dataDir) fs.mkdirSync(this.dataDir, { recursive: true });
+    if (this.dataDir) {
+      fs.mkdirSync(this.dataDir, { recursive: true });
+      this.loadTemplates();
+    }
+  }
+
+  /** 从 templates.json 读回化石模板(基因/账本走 JSONL 追加,模板是可变结构 → 整文件快照)。 */
+  private loadTemplates(): void {
+    if (!this.dataDir) return;
+    try {
+      const f = path.join(this.dataDir, 'templates.json');
+      if (!fs.existsSync(f)) return;
+      const arr = JSON.parse(fs.readFileSync(f, 'utf8')) as TraceTemplate[];
+      for (const t of arr) this.fossilTemplates.set(t.id, t);
+    } catch { /* 损坏文件当作无化石:进化层自愈 */ }
+  }
+
+  private saveTemplates(): void {
+    if (!this.dataDir) return;
+    fs.writeFileSync(path.join(this.dataDir, 'templates.json'), JSON.stringify([...this.fossilTemplates.values()]));
   }
 
   // ── 出生 ──
@@ -163,6 +187,10 @@ export class GeneRegistry {
     if (o.aborted) return; // 中止:不进配子/化石,零进化信号
     if (o.success) {
       this.gametes.set(g.genomeId, { genome: structuredClone(g), recent: { ...f }, diedAt: Date.now() });
+      // 化石沉积:成功 + 带轨迹 + 支系近窗达标(FOSSIL_DEPOSIT_RATE,比繁殖线更高的种群背书)。
+      // 同签名只保留最新一份(重复任务本质同一生态位;旧模板自动被顶替)。
+      const rate = lg.trials === 0 ? 0 : lg.successes / lg.trials;
+      if (o.trace?.length && rate >= FOSSIL_DEPOSIT_RATE) this.depositFossil(o.trace, g, o.detail, lg.trials, rate);
     } else {
       this.fossils.push({
         genomeId: g.genomeId, lineage: g.lineage, signature: g.signature,
@@ -199,6 +227,61 @@ export class GeneRegistry {
 
   fossilBySignature(sig: string): FossilRecord[] {
     return this.fossils.filter((f) => f.signature === sig);
+  }
+
+  // ── 可执行化石(档②轨迹重放)──
+
+  /** 成功轨迹 → 槽位化模板。参数形状保留,实例相关值进槽位表(重放时按 kind 重抽)。 */
+  private depositFossil(trace: TraceStep[], g: Genome, taskExample: string, trials: number, rate: number): void {
+    const t: TraceTemplate = {
+      version: 1, id: this.nextId('tpl'), signature: g.signature, lineage: g.lineage,
+      steps: structuredClone(trace),
+      slots: extractSlots(trace),
+      taskExample: taskExample.slice(0, 2000),
+      bornAt: Date.now(), replayHits: 0, replayMisses: 0,
+    };
+    // 同签名替换:新化石继承旧化石的重放口碑(.hits/-misses),不重置教训
+    const old = this.templateBySignature(g.signature);
+    if (old) { t.replayHits = old.replayHits; t.replayMisses = old.replayMisses; this.fossilTemplates.delete(old.id); }
+    this.fossilTemplates.set(t.id, t);
+    this.saveTemplates();
+    void trials; void rate; // 语义已并入上方判定,参数留作签名文档
+  }
+
+  templateBySignature(sig: string): TraceTemplate | undefined {
+    for (const t of this.fossilTemplates.values()) if (t.signature === sig) return t;
+    return undefined;
+  }
+
+  /** 重放质量记账:hit 归零 miss,miss 累计达 FOSSIL_MISS_RETIRE → 退役(环境漂移检测)。 */
+  noteReplay(id: string, hit: boolean): void {
+    const t = this.fossilTemplates.get(id);
+    if (!t) return;
+    if (hit) { t.replayHits++; t.replayMisses = 0; }
+    else {
+      t.replayMisses++;
+      if (t.replayMisses >= FOSSIL_MISS_RETIRE) { this.fossilTemplates.delete(id); this.saveTemplates(); return; }
+    }
+    this.saveTemplates();
+  }
+
+  /** 档①冻结路由判定:支系近窗达标 → 本能 prompt 注入"路线已验证,按基因工具先验走"。 */
+  isConverged(sig: string): boolean {
+    let lg: LineageLedger | undefined;
+    for (const l of this.ledgers.values()) if (l.signature === sig) { lg = l; break; }
+    if (!lg || lg.trials < CONVERGE_MIN_TRIALS) return false;
+    return lg.successes / lg.trials >= FOSSIL_DEPOSIT_RATE;
+  }
+
+  templatesCount(): number { return this.fossilTemplates.size; }
+
+  /** [测试垫片] 直改支系账本(99 烟囱造收敛态;生产路径由 settle 累积)。按签名找首个账本,没有就造 L0。 */
+  debugFillLedger(sig: string, trials: number, successes: number): void {
+    for (const l of this.ledgers.values()) {
+      if (l.signature === sig) { l.trials = trials; l.successes = successes; return; }
+    }
+    this.ledgers.set(`L0-${sig}`, { lineage: `L0-${sig}`, signature: sig, generation: 0,
+      trials, successes, costZSum: 0, stepsSum: 0, aborted: 0, bornGenCounter: trials });
   }
 
   gameteCount(): number { return this.gametes.size; }

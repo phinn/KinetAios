@@ -36,8 +36,44 @@ export type DeathCause =
   | 'step_budget'             // 死于步数超限 → granularity 上升(步子拆细)
   | 'essential_tool_missing'  // 死于必需工具被亲和过滤摘除 → 亲和回升(环境教育)
   | 'wrong_answer'            // 断言全过但产物语义错误(由任务的 grader 判定)
+  | 'fossil_miss'             // 化石重放失败 → 降级开荒(化石不直接删,连续 miss 才退役)
   | 'aborted'                 // 用户中止:不算进化信号,fitness 记 abort 不记败
   | 'none';                   // 成功
+
+/** 轨迹步:一次工具调用的最小记录(化石模板的骨架单元,KB 级)。 */
+export interface TraceStep {
+  tool: string;
+  /** JSON.parse 后的工具参数(槽位化:填充值被换掉,形状保留) */
+  args: Record<string, unknown>;
+}
+
+/** 化石模板:成功轨迹的参数槽位化骨架(档②轨迹重放;档③真编译的输入)。
+ *  与 FossilRecord(死因墓志铭)不同:这是**可执行的**遗产 —— 重放新任务时按
+ *  槽位类型从任务文本抽参数填入,断言 gate 把关,失败自动回退 LLM 开荒。 */
+export interface TraceTemplate {
+  version: typeof GENOME_SCHEMA_VERSION;
+  id: string;
+  signature: string;
+  lineage: LineageId;          // 出处血脉(记账/退役参考)
+  steps: TraceStep[];
+  /** 槽位表:从任务文本抽取的参数(重放时重新抽取填充)。空 = 全常量轨迹,直接重放。 */
+  slots: TraceSlot[];
+  /** 任务文本样例(抽槽参考,重放时不参与执行) */
+  taskExample: string;
+  bornAt: number;
+  /** 重放质量记账:命中/未命中(连续 miss 达 FOSSIL_MISS_RETIRE → 退役) */
+  replayHits: number;
+  replayMisses: number;
+}
+
+/** 参数槽位:模板里某个参数是任务实例相关的,重放时需从新任务文本抽取。 */
+export interface TraceSlot {
+  /** 槽位路径,如 "steps.0.args.path"(JSON pointer 风格,从模板根寻址) */
+  path: string;
+  kind: 'path' | 'url' | 'query';
+  /** 抽取失败时的缺省值(上一版成功值;query 类兜底也可直接用) */
+  fallback: unknown;
+}
 
 // ── 基因三件套 ──
 
@@ -139,6 +175,17 @@ export const BREED_MIN_TRIALS = 12;
 /** 个体死亡后 fitness 合并进支系账本前的最近表现窗口。 */
 export const RECENT_WINDOW = 3;
 
+// ── 化石层(档②轨迹重放;修正版设计:种群终态是墓园,化石零 token 运行)──
+
+/** 支系近窗成功率 ≥ 此值才值得沉积化石模板(垃圾轨迹不值得重放)。0.8:比繁殖线(0.7)更高 —— 化石是种群最高背书。 */
+export const FOSSIL_DEPOSIT_RATE = 0.8;
+
+/** 化石连续重放失败达此数 → 退役(环境漂移:化石是零感知的,错得安静,靠计数器发现)。 */
+export const FOSSIL_MISS_RETIRE = 2;
+
+/** 收敛判定:支系近窗 trials ≥ 此数且成功率 ≥ FOSSIL_DEPOSIT_RATE → 本能 prompt 冻结路由(档①)。 */
+export const CONVERGE_MIN_TRIALS = 6;
+
 /** 出生后至少经历这么多任务才可参与繁殖判定(防"出生即繁殖"震荡)。 */
 export const MIN_AGE_BEFORE_BREED = 4;
 
@@ -167,6 +214,10 @@ export interface RunOutcome {
   /** 归一化成本(token 计,结算时类内转 z) */
   tokens: number;
   detail: string;
+  /** 成功轨迹(结构化;成功结算时被 registry 沉积为化石模板) */
+  trace?: TraceStep[];
+  /** bodyplan 自然完成(final answer):生产路径的成功语义 */
+  finished?: boolean;
 }
 
 /** 基因表达产物:bodyplan 执行器的硬约束(绕过 prompt 的表达通路)。 */

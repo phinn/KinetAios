@@ -29,7 +29,8 @@ import { express } from './express';
 import { runBodyPlan } from './bodyplan';
 import { signatureOfTemplate } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
-import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL } from './phylum-types';
+import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
+import { replay } from './replay';
 
 // ── 任务模板归一化(v1 签名)────────────────────────────────
 // 生产化第一步:不做 embedding,不拍指纹 —— 用保守的动词+对象规则归一化。
@@ -114,6 +115,36 @@ export class DirectV5Engine implements Engine {
     const templateId = templateIdOfPrompt(prompt);
     const reg = this.reg();
     const tplLabel = templateId;
+    const sig = signatureOfTemplate(templateId);
+
+    // ── 化石重放优先(修正版设计:种群的理想终态是墓园 —— 化石零 token 跑着,LLM 只在边界外开荒)──
+    // 命中 → 零 LLM 交付;失败 → 降级开荒(尸体退回出生调度,不浪费这一轮进化信号)。
+    const tpl = reg.templateBySignature(sig);
+    if (tpl) {
+      const replayTools = allTools();
+      const replayCtx: ToolCtx = {
+        cwd: conv.cwd, confirm: this.confirm, signal,
+        convId: conv.id, turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
+        crossProjectMemory: conv.crossProjectMemory === true, sandbox: getSettings().sandbox,
+      };
+      const assertions = reg.liveBySignature(sig)[0]?.assertions ?? [];
+      const r = await replay(tpl, prompt, replayTools, assertions, replayCtx, (i, name, out) => {
+        onEvent({ type: 'tool', name, args: '(化石重放)', result: out, outcome: 'ok' });
+      });
+      reg.noteReplay(tpl.id, r.hit);
+      if (r.hit && r.output !== undefined) {
+        onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${r.steps} 步,0 LLM 调用)。` });
+        const answer = r.output.trim() || '(任务完成,无文本产物)';
+        conv.directHistory = [
+          ...conv.directHistory,
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: answer },
+        ];
+        onEvent({ type: 'done' });
+        return;
+      }
+      onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${r.miss?.reason ?? '?'}),回退 LLM 开荒。` });
+    }
 
     // 出生:无活体 → 配子克隆 / founder
     if (reg.needsFounder(signatureOfTemplate(templateId))) {
@@ -131,6 +162,8 @@ export class DirectV5Engine implements Engine {
     }
     const genome: Genome = live[0];
     const gene = geneSnapshot(genome);
+    // 档①冻结路由:支系近窗达标 → 本能 prompt 注入"路线已验证"指令(软先验,零额外 token)。
+    const converged = reg.isConverged(sig);
     // 门级步数护栏跟随宿主 maxTurns 配置(0 = 无限,与 AgentLoop userMax 语义一致);
     // 非 0 时夹紧基因值,无限时基因值就是个体预算(仍受 MAX_STEPS_MAX 进化值域约束)。
     const stepCeil = (getSettings().maxTurns ?? 50) === 0 ? 0 : STEP_BUDGET_CEIL;
@@ -163,10 +196,16 @@ export class DirectV5Engine implements Engine {
     const startedTokens = Date.now();
     let outcome;
     try {
+      const body = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil);
+      if (converged) {
+        body.instinctPrompt = (body.instinctPrompt ? body.instinctPrompt + '\n' : '') +
+          `这支支系已有连续成功记录(近窗成功率≥${FOSSIL_DEPOSIT_RATE},trials≥${CONVERGE_MIN_TRIALS})。` +
+          '沿用已验证的工具路线与参数风格,不要尝试新路线。';
+      }
       outcome = await runBodyPlan({
         task: prompt,
         cwd: conv.cwd,
-        body: express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil),
+        body,
         genome,
         chat: providerChatFn(provider, snap, signal),
         tools,
@@ -192,7 +231,12 @@ export class DirectV5Engine implements Engine {
       steps: outcome.steps,
       tokens: outcome.tokens,
       detail: outcome.detail,
+      trace: outcome.trace,
+      finished: outcome.finished,
     };
+    // 生产成功语义:bodyplan 自然完成(有工具轨迹的 final answer)= success。
+    // 实验路径(Universe)仍由 grader 终裁,这里不改 runner。
+    if (outcome.finished && !outcome.aborted) runOutcome.success = outcome.success || outcome.trace!.length > 0;
     const facts: AttributionFacts = this.attribute(runOutcome, outcome, templateId, removed);
     reg.settle(runOutcome, genome, facts);
     if (!outcome.aborted && !outcome.success) this.lastAttribution.set(genome.lineage, facts);

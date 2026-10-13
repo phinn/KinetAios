@@ -157,10 +157,11 @@ test('F1 bodyplan 成功路径: 工具真跑 + cause=success + 结算入账', as
     cwd: '/tmp/phylum-test-f1',
   });
   assertEq(r.aborted, false);
-  // 裸 bodyplan 不带 grader:「无工具调用交卷」→ success=false + wrong_answer,留给上层 grader 裁定
-  // (runner 里才映射为 success=grader 结论 / cause=none)
-  assertEq(r.success, false);
-  assertEq(r.cause, 'wrong_answer');
+  // 生产语义:有工具轨迹的自然完成 = success(bodyplan 自裁);
+  // 实验路径 grader 仍可在 runner 层否决(runner 映射为 wrong_answer + 归因)。
+  assertEq(r.success, true);
+  assertEq(r.cause, 'none');
+  assertEq(r.finished, true);
   assertEq(r.lastOutput.includes('phylum-ok'), true, `lastOutput=${r.lastOutput}`);
   // 结算 1 条成功 → 支系账本 1/1
   reg.settle({
