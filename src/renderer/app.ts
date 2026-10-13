@@ -6433,15 +6433,16 @@ async function showSettings() {
     }
 
     // 按分类分组 — Group by category.
-    // 未注册分类不静默消失:归入 misc 并标记,否则 manifest 写错分类的插件在设置页凭空蒸发
-    // (2026-10-13 事故:phylum-engine category:"engine" 未注册 → 列表里看不到,像没装一样)。
+    // 引擎贡献点插件(p.engine)单独归"引擎"分组置顶:它们是 V4/V5 这类引擎的实体,
+    // 淹在"开发"分组中部 + 卡片无引擎标识,用户找不到"V4/V5 引擎插件在哪"(2026-10-13 反馈)。
+    // Plugins with an engine contribution get a pinned "Engines" group.
     const grouped: Record<string, typeof filtered> = {};
     for (const p of filtered) {
-      const cat = PLUGIN_CATS.includes(p.category as (typeof PLUGIN_CATS)[number]) ? p.category : 'misc';
+      const cat = p.engine ? 'engine' : PLUGIN_CATS.includes(p.category as (typeof PLUGIN_CATS)[number]) ? p.category : 'misc';
       (grouped[cat] ??= []).push(p);
     }
 
-    el.innerHTML = PLUGIN_CATS.filter((c) => grouped[c]?.length)
+    el.innerHTML = (['engine', ...PLUGIN_CATS] as string[]).filter((c) => grouped[c]?.length)
       .map((cat) => {
         const items = grouped[cat]!;
         const catLabel = tr(`settings.plugins.cat.${cat}` as 'settings.plugins.cat.office');
@@ -6478,7 +6479,7 @@ async function showSettings() {
     return `<div class="s-plugin-row${hasError ? ' s-plugin-row-err' : ''}${p.enabled ? '' : ' s-plugin-row-disabled'}" data-plugin-name="${esc(p.name)}">
       ${iconHtml}
       <div class="s-plugin-info" data-plugin-detail="${esc(p.name)}">
-        <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span></div>
+        <div class="s-plugin-name">${esc(p.name)} <span class="s-plugin-ver">v${esc(p.version)}</span>${p.engine ? `<span class="s-plugin-engine-badge" title="${esc(p.engine.label ?? p.engine.id ?? '')}">${sv.target} ${esc(p.engine.label ?? p.engine.id ?? '')}</span>` : ''}</div>
         <div class="s-plugin-meta">${p.description ? esc(p.description) + ' · ' : ''}${p.toolCount} ${esc(tr('settings.plugins.tools'))}${slashInfo}${p.author ? ' · ' + esc(p.author) : ''}</div>
         <div class="s-plugin-tags">${engineTags}${permTags}${errBadge}</div>
       </div>

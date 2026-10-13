@@ -2974,6 +2974,9 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 
 /* 引擎标签 */
 .s-plugin-engine { font-size: 0.692rem; padding: 1px 5px; border-radius: 3px; background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 20%, transparent); text-transform: uppercase; letter-spacing: .03em; }
+/* 引擎贡献点插件徽章(设置页插件列表,2026-10-13):名称旁显眼标识 "compass 引擎label",与 .s-plugin-engine 标签区分 — Engine badge next to plugin name. */
+.s-plugin-engine-badge { display: inline-flex; align-items: center; gap: 3px; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 0.7rem; font-weight: 600; vertical-align: middle; background: color-mix(in srgb, var(--accent) 14%, transparent); color: var(--accent); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); }
+.s-plugin-engine-badge svg { width: 11px; height: 11px; }
 
 /* 操作区 */
 .s-plugin-actions { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
