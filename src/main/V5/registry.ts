@@ -10,7 +10,7 @@ import path from 'node:path';
 import {
   type FitnessRecord, type FossilRecord, type Gamete, type Genome,
   type LineageLedger, type RunOutcome, type DeathCause,
-  AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP,
+  AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP, MAX_STEPS_MAX,
 } from './phylum-types';
 import { signatureOfTemplate } from './signature';
 
@@ -64,7 +64,7 @@ export class GeneRegistry {
     const lineage = `L0-${sig}`;
     const g: Genome = {
       version: 1, genomeId: this.nextId('g'), lineage, signature: sig,
-      routing: { maxSteps: 6, granularity: 0.7, successPrior: 0.5 },
+      routing: { maxSteps: 12, granularity: 0.7, successPrior: 0.5 },
       affinity: {},
       assertions: [], // founder 无先天断言:断言只能由人工注入或死因删除产生
       generation: 0, bornAt: Date.now(),
@@ -115,7 +115,9 @@ export class GeneRegistry {
         break;
       }
       case 'step_budget': {
-        child.routing.maxSteps = Math.min(8, child.routing.maxSteps + 1);
+        // +4/次:6→12 的旧参数下 +1 要连死 6 次才爬满,选择压力浪费在重复踩同一堵墙;
+        // 现值域 [1,40],4 次死亡内爬到典型任务所需(12→16→20→24)。
+        child.routing.maxSteps = Math.min(MAX_STEPS_MAX, child.routing.maxSteps + 4);
         break;
       }
       case 'assertion_fail': {

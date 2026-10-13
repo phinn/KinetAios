@@ -48,7 +48,7 @@ export interface Genome {
   signature: string;           // 任务签名(实验内 = 任务模板 id;生产化时 L0 指纹扩展)
   /** ① 路由先验 */
   routing: {
-    /** 分解上限:1 = 直接执行不分解。值域 [1,8]。表达 = bodyplan 执行器 maxSteps。 */
+    /** 分解上限:1 = 直接执行不分解。值域 [1,40]。表达 = bodyplan 执行器 maxSteps。 */
     maxSteps: number;
     /** 0..1:任务分解粒度(高 = 小步快跑)。表达 = bodyplan 每步工具调用预算(取整 1-3)。 */
     granularity: number;
@@ -120,12 +120,15 @@ export const AFFINITY_PENALTY = 0.15;
 /** 必需工具缺失死亡后,全表亲和回升量("环境教育":这支血脉知道不能饿死自己)。 */
 export const ESSENTIAL_RECOVERY = 0.1;
 
-/** 个体单次任务步数硬上限(门级护栏,基因只能低于不能高于它)。 */
-export const STEP_BUDGET_CEIL = 16;
+/** 个体单次任务步数硬上限(门级护栏,基因只能低于不能高于它)。
+ *  对齐宿主 Direct 引擎实战:真实任务一次工具调用算一步(查→读→改→验就 4+ 步),
+ *  宿主默认 maxTurns=50,这里给 64 留出长 IO(shell 链)余量。 */
+export const STEP_BUDGET_CEIL = 64;
 
-/** maxSteps 基因位值域。 */
+/** maxSteps 基因位值域。上限 40:进化的自由度要够真实任务用,
+ *  门级护栏 STEP_BUDGET_CEIL=64 仍在外面兜底(基因只能低于不能高于它)。 */
 export const MAX_STEPS_MIN = 1;
-export const MAX_STEPS_MAX = 8;
+export const MAX_STEPS_MAX = 40;
 
 /** 繁殖条件:支系近窗口成功率 ≥ 此值才获得繁殖权。0.7:上轮设计定的繁殖线。 */
 export const BREED_SUCCESS_RATE = 0.7;
