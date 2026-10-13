@@ -360,7 +360,11 @@ const shell: Tool = {
     const ok = await ctx.confirm(finalCmd);
     if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
     // 焦点守卫:命令若抢了前台(启动 app/panel/simctl 等),执行完自动把前台还给用户
-    const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, 120_000, ctx.signal));
+    // 长任务豁免:xcodebuild/burst/boot 等待/系统安装类命令天然 300s+,120s 硬杀会制造
+    // "源码已修但 binary 仍旧"的验证幻觉(2026-10-12 事故:超时杀掉 xcodebuild,agent 拿旧
+    // binary 验证数小时)。命中长任务特征 → 600s;其余维持 120s。
+    const longTask = /xcodebuild|swift build|gradle|\.gradlew|ninja|cmake --build|burst|boot |等待|restart|reboot|hdiutil|productbuild|xcrun altool/i.test(cmd);
+    const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, longTask ? 600_000 : 120_000, ctx.signal));
     const trimmed = out.length > 20000 ? out.slice(0, 20000) + '\n…[输出过长,已截断]' : out; // 防止大输出撑爆对话上下文
     // 隐私闸:shell 输出同样会进对话 → 出网。开启时检测命中走 confirm(拒绝则不出网)。
     const blocked = await privacyGate(trimmed);

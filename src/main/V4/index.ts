@@ -157,11 +157,19 @@ export class DirectV4Engine implements Engine {
 
     // ── 路由(V3 router)+ V4 Legis 语义修正 ──
     // V4 语义:用户显式选择了 Legis 引擎,期望的就是"意图编译为计划图"范式;
-    // 只有 fast(秒答)和 analysis(报告流)保持原路径,其余一律进 Legis 编译执行。
-    // 修复前:照搬 V3 启发式路由,"无文件路径的多步运维任务"被判 std → 用户以为 Legis 没生效。
-    // 编译失败时 legis-executor 内部自动退化 std,兜底安全。
+    // 只有 fast(秒答)保持原路径;std/deep 一律进 Legis 编译执行(编译失败内部自动退化 std,兜底安全)。
+    // isAnalysisTask 的 std 钉死在 V4 放宽:排障/修复类任务句句带 .log/.json/"数据",
+    // 会被分析正则误拦 — 带 修复/排查/调试/验证/引导 信号的照常进 Legis。
+    // (事故:2026-10-12 通宵 UEFI 排障 14 turn 全走裸 std,Legis 0 次触发,单 turn 294 步。)
+    // 延续指令感知:"继续/可以,你做/看看为什么X修掉" 单看文本会落 fast(轻上下文),
+    // 但前 2 turn 工具步数 ≥8 说明多步任务进行中 — 一律不允许 fast(轻上下文会丢任务现场)。
+    const repairSignal = /修复|修掉|修好|排查|调试|排障|验证|重试|引导|装机|装系统|卡在|卡住|boot|install|build|编译|烧录|burst/i.test(prompt);
     const route = routeTask(prompt, conv.directHistory, { hasGoal: !!conv.goal });
-    const v4Route: 'fast' | 'std' | 'legis' = route === 'fast' || route === 'std' ? route : 'legis';
+    const analysisPin = route === 'std' && isAnalysisTask(prompt) && !repairSignal;
+    const recentSteps = conv.turns.slice(-2).reduce((n, t) => n + (t.steps?.length ?? 0), 0);
+    const v4Route: 'fast' | 'std' | 'legis' = route === 'fast' && recentSteps < 8 && !repairSignal
+      ? 'fast'
+      : analysisPin ? 'std' : 'legis';
     const skillTag = skillBlock ? `📦 ${prompt.match(/^\/([\w-]+)/)?.[1] ?? 'skill'} | ` : '';
     onEvent({ type: 'status', text: `${skillTag}🧭 v4: 路由 → ${v4Route.toUpperCase()}${isAnalysisTask(prompt) ? ' · 📊 分析模式(std)' : ''}` });
 
