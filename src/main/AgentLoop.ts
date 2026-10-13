@@ -203,6 +203,12 @@ export interface RunOpts {
   // 瞬时错误(限流/网络/5xx)退避重试的延迟(ms),按尝试次数(1-based)取值。
   // 缺省指数退避 1s/2s/4s(上限 8s)。测试可传 () => 0 跳过真实等待。
   retryBackoffMs?: (attempt: number) => number;
+  // 轮级挂点(供 Legis planner 等调用方做工具断供):beforeLoop 首轮前调一次,
+  // onTurnStart 每轮开头调(1-based 轮号)。挂点可替换 opts.tools —— runAgentLoop 每轮从这里重读工具集。
+  turnHooks?: {
+    beforeLoop?: (opts: { tools: Tool[] }) => void;
+    onTurnStart?: (turn: number, opts: { tools: Tool[] }) => void;
+  };
   onEvent: (e: AgentEvent) => void;
 }
 
@@ -249,6 +255,18 @@ function warnIfProtectedOverBudget(messages: ChatMsg[], budget: number, proto: s
 
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
+  // 轮级挂点:Legis planner 工具断供用。curTools 可被挂点替换,每轮重读(defs/execute 都跟着换)。
+  const hooks = opts.turnHooks;
+  let curTools: Tool[] = tools;
+  if (hooks?.onTurnStart) {
+    const holder: { tools: Tool[] } = { tools: curTools };
+    hooks.beforeLoop?.(holder);
+    curTools = holder.tools;
+  } else if (hooks?.beforeLoop) {
+    const holder: { tools: Tool[] } = { tools: curTools };
+    hooks.beforeLoop(holder);
+    curTools = holder.tools;
+  }
   // reactive trim 预算:从策略包取(覆盖硬编码 15K)。hifi 模式策略 trimBudget 已翻倍,不用再读 hifiContextBudget。
   const trimBudget = opts.policy?.trimBudget ?? 15_000;
   // maxTurns 解析(修复:用户设置曾被 V3 硬编码完全无视):
@@ -302,6 +320,13 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
   for (let i = 0; i < maxTurns; i++) {
+    // 轮级挂点:每轮开头可断供/替换工具集(1-based 轮号)。defs/execute 都用 curTools,断供本轮即生效。
+    if (hooks?.onTurnStart) {
+      const holder: { tools: Tool[] } = { tools: curTools };
+      hooks.onTurnStart(i + 1, holder);
+      curTools = holder.tools;
+    }
+    const defs: ToolDef[] = curTools.map(toolDef);
     // ── 用户打断(Steer)注入点:每轮 LLM 调用前检查缓冲 ──
     // UI ⌘Enter → TaskManager.interrupt() 写缓冲 → 这里取走,作为 user 消息注入当前上下文。
     // 不带 _transient:打断是真实用户输入,随返回值写回 directHistory,后续轮次持续可见。
@@ -455,7 +480,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
-    messages.push(...(await runToolBatch(completion.toolCalls, tools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000)));
+    messages.push(...(await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000)));
     // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);

@@ -173,8 +173,23 @@ export async function compileLegisPlan(opts: CompileOpts): Promise<{ plan: Legis
   const { userInput, history, systemPrompt, provider, snap, signal, onEvent, ctx, policy, memoryBlock, goal } = opts;
   onEvent({ type: 'status', text: '📜 v4: 立法中(编译计划)...' });
 
-  // 规划工具集 = 只读探查工具 + submit_legis_plan(写入工具不在 planner 手,防越权写)
-  const planTools = [...readOnlyTools(), submitLegisPseudoTool];
+  // ── 探查预算:两阶段工具断供(2026-10-13 三连败的机制级修法) ──
+  // 软约束(few-shot/提示词纪律)已被实证三次打穿:模型看不见轮数,每轮只有"再探一步"的局部诱惑。
+  // 机制:前 3 轮全量只读工具;第 4 轮起**物理断供**探查工具,只留 submit_legis_plan —— 模型想再探也没有工具可调,
+  // 唯一可调的就是交图。预算耗尽是硬墙,不靠模型自觉。
+  const PROBE_TURNS = 3;
+  const planToolsFull = [...readOnlyTools(), submitLegisPseudoTool];
+  const planToolsSubmitOnly = [submitLegisPseudoTool];
+  const probeGuard = {
+    beforeLoop(opts: { tools: Tool[] }) { opts.tools = planToolsFull; }, // 首轮:全量只读探查
+    // 每轮开始前被调用:第 4 轮起断供探查工具
+    onTurnStart(turn: number, opts: { tools: Tool[] }) {
+      if (turn > PROBE_TURNS && opts.tools !== planToolsSubmitOnly) {
+        opts.tools = planToolsSubmitOnly;
+        onEvent({ type: 'status', text: `🔒 v4: 探查预算(${PROBE_TURNS} 轮)用尽 — 断供探查工具,只剩 submit_legis_plan` });
+      }
+    },
+  };
 
   const suffix = LEGIS_PLAN_SYSTEM_SUFFIX + (goal
     ? `\n\n## 本会话有既定目标(无人值守)\ngoal: ${goal}\nacceptance 必须直接针对该目标的可验证完成证据设计。`
@@ -182,7 +197,7 @@ export async function compileLegisPlan(opts: CompileOpts): Promise<{ plan: Legis
 
   const updated = await runAgentLoop({
     provider,
-    tools: planTools,
+    tools: planToolsFull,
     systemPrompt: systemPrompt + suffix,
     memoryBlock,
     snapshot: snap,
@@ -190,9 +205,10 @@ export async function compileLegisPlan(opts: CompileOpts): Promise<{ plan: Legis
     history,
     ctx,
     signal,
-    maxTurns: 12, // 编译保险丝:探查+提交,12 轮足够;防 planner 无限探查
+    maxTurns: 12, // 编译保险丝:探查(3)+交图窗口,12 轮足够;防 planner 无限探查
     policy,
     onEvent,
+    turnHooks: probeGuard,
   });
 
   // 从 history 尾部提取 submit_legis_plan 的 tool call
