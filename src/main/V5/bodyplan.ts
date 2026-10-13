@@ -52,6 +52,16 @@ export interface BodyPlanOpts {
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 4000;
+/** 重复动作熔断阈值:连续 N 次完全相同调用判死(step_budget)。 */
+const REPEAT_BREAK_LIMIT = 3;
+/** 进度门:连续 N 步无 final answer → step_budget(防"永远再试一下")。 */
+const PROGRESS_WINDOW = 24;
+/** 上下文预算:messages 总字符超此值 → 折叠最旧的中间工具输出(保 system/首条任务/最近窗口)。 */
+const CONTEXT_BUDGET_CHARS = 60_000;
+/** 折叠后保留的最近消息对数(留足眼前上下文)。 */
+const CONTEXT_KEEP_RECENT = 8;
+/** 步数墙硬上限:基因再怎么进化也不能越过(宿主 maxTurns=0 时基因自主预算的天花板)。 */
+export const MAX_STEPS_HARD_CAP = 200;
 
 export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   const { task, body, chat, tools, signal, onEvent } = opts;
@@ -67,12 +77,23 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   let lastOutput = '';
   let retryAfterAssertion = false; // 每个个体一生只许断言重试一次(防重试黑洞)
   const trace: TraceStep[] = [];   // 全程轨迹:每次成功执行的工具调用(成功时沉积为化石)
+  let lastActionKey = '';          // 重复动作熔断:连续完全相同 (tool+args) 计数
+  let repeatCount = 0;
+  let progressWindow = 0;          // 进度门:无 final answer 的滚动窗口步数
 
-  // maxSteps=Infinity(宿主 maxTurns=0)时循环无墙 —— 停止靠模型自己收敛、
-  // abort 信号、stall 类保护;有墙时 steps 基因决定预算。
+  // maxSteps 有墙(基因值,宿主 maxTurns=0 时=个体基因自主预算)。停止靠墙、
+  // abort 信号、以及下面三个机制级熔断(重复/无进展/上下文超限)。
   while (steps < body.maxSteps) {
     if (signal?.aborted) return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: 'aborted by signal' };
     steps++;
+    progressWindow++;
+
+    // 进度门:个体连续跑满 PROGRESS_WINDOW 步仍没交过 final answer → 判定进展死亡。
+    // (409 次 shell 的那次事故:个体一直在"再试一下",永远不收口。)
+    if (progressWindow >= PROGRESS_WINDOW && steps < body.maxSteps) {
+      return { success: false, aborted: false, cause: 'step_budget', steps, tokens, lastOutput,
+        detail: `进度门熔断: no final answer within ${PROGRESS_WINDOW}-step window` };
+    }
 
     let comp: Completion;
     try {
@@ -127,6 +148,23 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       if (output.startsWith('[aborted')) {
         return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: `tool '${call.name}' aborted` };
       }
+
+      // ── 重复动作熔断(机制级,2026-10-13 事故):连续 REPEAT_BREAK_LIMIT 次
+      // 完全相同的 (tool + args) → 判死。这不是策略问题,是电路短路,交给进化解决。
+      {
+        const key = `${call.name}:${(call.arguments ?? '').trim()}`;
+        if (key === lastActionKey) {
+          repeatCount++;
+          if (repeatCount >= REPEAT_BREAK_LIMIT) {
+            return { success: false, aborted: false, cause: 'step_budget', steps, tokens, lastOutput, culpritTool: call.name,
+              detail: `重复熔断: same call '${call.name}' x${repeatCount}` };
+          }
+        } else {
+          lastActionKey = key;
+          repeatCount = 1;
+        }
+      }
+
       lastOutput = output;
       onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), outcome: 'ok' });
 
@@ -146,6 +184,23 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
       messages.push(assistantToolMsg(call));
       messages.push({ role: 'user', content: `[tool:${call.name}] ${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}` });
+    }
+
+    // 进度门不因"执行了工具"而重置 —— 409 次 shell 的事故里个体每步都在动、
+    // 但永远不收口。窗口只在个体交出 final answer(循环成功退出)时才结束。
+
+    // ── 上下文折叠(机制级):messages 总字符超预算 → 把最旧的中间工具输出
+    // 替换为一行摘要,保 system、首条任务和最近 CONTEXT_KEEP_RECENT 条。
+    // (443 步事故的另一半:4000 字/步 × 数百步从不清,后段模型只见得旧回声。)
+    const totalChars = () => messages.reduce((n, m) => n + (typeof m.content === 'string' ? m.content.length : JSON.stringify(m.content).length), 0);
+    if (totalChars() > CONTEXT_BUDGET_CHARS && messages.length > CONTEXT_KEEP_RECENT + 2) {
+      const foldEnd = messages.length - CONTEXT_KEEP_RECENT;
+      for (let i = 1; i < foldEnd; i++) {
+        const c = messages[i].content;
+        if (messages[i].role === 'user' && typeof c === 'string' && c.startsWith('[tool:')) {
+          messages[i] = { role: 'user', content: `[tool 输出已折叠] (超上下文预算,历史已归档)` };
+        }
+      }
     }
   }
 

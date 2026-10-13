@@ -6,6 +6,7 @@
 // executor params, assertion gates). Only style-level soft priors go into the prompt.
 
 import type { Tool } from '../tools';
+import { MAX_STEPS_HARD_CAP } from './bodyplan';
 import {
   type ExpressedBody, type Genome, type AssertionGene,
   TOOL_CUTOFF, TOOL_AFFINITY_DEFAULT, STEP_BUDGET_CEIL,
@@ -42,11 +43,13 @@ export function express(genome: Genome, allTools: readonly Tool[], requiredTools
     tools,
     removedTools,
     protectedTools,
-    // 步数预算完全跟随宿主设置(AgentLoop userMax 同语义):
-    // 护栏 0 = 无限 → 个体预算 Infinity,循环不设墙(step_budget 死亡不可能触发);
-    // 非 0 → 基因值被门级护栏夹紧(基因只能低于不能高于宿主天花板)。
+    // 步数预算(2026-10-13 无限循环事故修法):宿主 maxTurns=0 不再翻译成 Infinity。
+    // 理由:那次 founder(基因 12 步)裸奔 443 步/3.6h 直到人肉取消 —— 「无限」对个体
+    // 没有进化意义,只有烧钱意义。宿主 0 的语义 = 信任基因:预算就是个体自己的
+    // maxSteps 基因(founder 12,由 step_budget 死亡 +4/次 自主进化,上限 MAX_STEPS_MAX)。
+    // 门级护栏 stepBudgetCeil>0 时仍然夹紧(基因只能低于宿主天花板)。
     maxSteps: stepBudgetCeil === 0
-      ? Infinity
+      ? Math.min(genome.routing.maxSteps, MAX_STEPS_HARD_CAP)
       : Math.min(genome.routing.maxSteps, stepBudgetCeil ?? STEP_BUDGET_CEIL),
     instinctPrompt: instinct(genome),
     assertions: genome.assertions,

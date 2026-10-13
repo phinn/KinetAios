@@ -306,4 +306,49 @@ test('F5 挂起语义端到端: 个体留活体池 + state.json 跨重启恢复(
   fs.rmSync(dir, { recursive: true, force: true });
 });
 
+// ── H. 机制级熔断(2026-10-13 443 步/409 shell 事故的三道保险丝) ──
+test('F6 重复动作熔断: 连续相同调用×3 → step_budget 判死', async () => {
+  const loop: ChatFn = scriptChat(
+    Array.from({ length: 10 }, () => ({ toolName: 'shell', args: { cmd: 'sleep 3600' } })));
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  const r = await runBodyPlan({
+    chat: loop, tools: ALL_TOOLS, task: '死循环任务',
+    body: express(g, ALL_TOOLS, ['shell']),
+    cwd: '/tmp/phylum-test-f6',
+  });
+  assert.equal(r.success, false);
+  assert.equal(r.aborted, false);
+  assert.equal(r.cause, 'step_budget');
+  assert.ok(r.detail!.includes('重复'), `detail 应标明重复熔断, got: ${r.detail}`);
+  assert.ok(r.steps! <= 4, `应在 ≤4 步内熔断, got steps=${r.steps}`);
+});
+
+test('F7 进度门: 连续 24 步无 final answer → step_budget 判死', async () => {
+  // 每步都不同(绕开重复熔断),但永远不收口
+  let n = 0;
+  const wander: ChatFn = async () => ({ content: '', toolCalls: [
+    { id: `w${++n}`, name: 'shell', arguments: JSON.stringify({ cmd: `echo ${n}` }) }],
+    rawAssistant: { role: 'assistant', content: '', tool_calls: [] },
+  } as never);
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  g.routing.maxSteps = 40; // founder 12 步会先撞墙;拉到 40 让进度门(24)先触发
+  const r = await runBodyPlan({
+    chat: wander, tools: ALL_TOOLS, task: '漫游不收口',
+    body: express(g, ALL_TOOLS, ['shell']),
+    cwd: '/tmp/phylum-test-f7',
+  });
+  assert.equal(r.cause, 'step_budget');
+  assert.ok(r.detail!.includes('进度门'), `detail 应标明进度门, got: ${r.detail}`);
+  assert.equal(r.steps, 24);
+});
+
+test('F8 步数墙硬上限: 基因 maxSteps=9999 被夹到 200', async () => {
+  const g = mkRegistry().spawnFounder(SIG);
+  g.routing.maxSteps = 9999; // 模拟失控进化出的超预算基因
+  const body = express(g, ALL_TOOLS, ['shell']);
+  assert.ok(body.maxSteps <= 200, `硬上限应生效, got ${body.maxSteps}`);
+});
+
 run();
