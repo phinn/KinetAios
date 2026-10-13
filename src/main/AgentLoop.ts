@@ -285,6 +285,15 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   } else {
     maxTurns = userMax; // 无内部上限 → 用用户设置(含 opts.maxTurns===0 的历史语义)
   }
+  // 长 IO 任务轮数放宽(2026-10 KinetVM 复盘):重打 ISO→重启 VM→截屏观察一条链就 3-5 分钟,
+  // max-turns 12 的上限对"长 shell 密集型"任务过短 — 三连败全是烧满 12 轮被砍,不是无解。
+  // 启发:任务文本含装机/镜像/虚拟机/烧录类信号 → 内部上限 ×2(仍受用户天花板约束)。
+  // / Long-IO turn relief: image building / VM boot / flashing chains are dominated by long
+  // shell steps; double the internal cap (user ceiling still applies).
+  const longIoTask = /装机|镜像|虚拟机|安装程序|autounattend|ISO|qemu|vnc|烧录|刷机|装机报告|hdiutil|createinstallmedia/i.test(userInput);
+  if (longIoTask && opts.maxTurns != null && opts.maxTurns > 0) {
+    maxTurns = Math.min(opts.maxTurns * 2, userMax > 0 ? userMax : opts.maxTurns * 2);
+  }
   const defs: ToolDef[] = tools.map(toolDef);
 
   // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
@@ -319,6 +328,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let retriedNuclear = false;
   let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
+  // 假设升级 nudge(2026-10 KinetVM 三连败复盘):同一轮里多个工具结果连续 error
+  // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
+  // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
+  let nudgedHypothesis = false;
   for (let i = 0; i < maxTurns; i++) {
     // 轮级挂点:每轮开头可断供/替换工具集(1-based 轮号)。defs/execute 都用 curTools,断供本轮即生效。
     if (hooks?.onTurnStart) {
@@ -480,7 +493,28 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
-    messages.push(...(await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000)));
+    const batchResults = await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000);
+    messages.push(...batchResults);
+    // ── 假设升级 nudge:单轮 ≥3 个工具结果连续 error → 推模型升级假设层级 ──
+    // 复盘依据:KinetVM 装机 1900+ 调用耗在 GUI 坐标层反复点击,从未验证介质层假设。
+    // 注入 [系统] nudge(_transient,不写回 directHistory),一次会话只推一次。
+    if (!nudgedHypothesis && !signal.aborted) {
+      const outcomes = batchResults.map((m) => (typeof m.content === 'string' ? toolOutcomeOf(m.content) : 'ok'));
+      const lastErrStreak = (() => {
+        let n = 0;
+        for (let k = outcomes.length - 1; k >= 0 && outcomes[k] === 'error'; k++) n++;
+        return n;
+      })();
+      if (lastErrStreak >= 3) {
+        nudgedHypothesis = true;
+        onEvent({ type: 'status', text: '🧭 连续多个工具失败,已注入假设升级提示' });
+        messages.push({
+          role: 'user',
+          content: '[系统] 连续多个工具调用失败。请停止在同一层面换姿势重试,先升级假设:当前假设处于哪一层(操作层/介质层/协议层)?用一次只读探查直接验证更底层的假设(例如:文件/介质真的存在且可读吗?依赖的服务/设备真的在预期状态吗?),再决定下一步。',
+          _transient: true,
+        });
+      }
+    }
     // abort 在工具执行中触发 → runToolBatch 补了 [已停止] 后正常返回,
     // 但不应继续下一轮 LLM 调用 → 在这里截断,确保 messages 以合法 assistant 结尾。
     if (signal.aborted) return finalizeAbortedMessages(messages);
@@ -1039,8 +1073,8 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
       const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
       const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
       const target = tc ? foldTargetOf(tc.function.name, tc.function.arguments) : '';
-      const head = m.content.slice(0, 80).replace(/\s+/g, ' ').trim();
-      const line = `[已折叠 ${tc?.function.name ?? 'tool'}${target ? ` ${target}` : ''}] ${head}…${FOLD_RESUME_HINT}`;
+      const head = m.content.slice(0, 200).replace(/\s+/g, ' ').trim();
+      const line = `[已折叠 ${tc?.function.name ?? 'tool'}${target ? ` ${target}` : ''}] ${head}${m.content.length > 200 ? '…' : ''}${FOLD_RESUME_HINT}`;
       saved += Math.max(0, Math.floor((m.content.length - line.length) * c));
       return { ...m, content: line };
     }
