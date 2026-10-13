@@ -1,0 +1,15 @@
+{
+  "name": "vm-console",
+  "approval": "never",
+  "version": "1.0.0",
+  "description": "VM 控制台插件 —— VNC 截屏(统一左上原点坐标)、macOS Vision OCR、QMP send-key 底层注入(无键盘布局问题)。固化 2026-10 KinetVM 装机三天踩坑实录:Vision 左下原点坐标偏移、手撸 RFB 协议反复重写、vncdo 逐字打字键盘布局错位。",
+  "author": "KinetAios",
+  "category": "dev",
+  "icon": "icon.svg",
+  "homepage": "https://github.com/KinetAios/vm-console",
+  "license": "MIT",
+  "engines": ["direct"],
+  "permissions": ["shell", "fs"],
+  "keywords": ["VNC", "QEMU", "QMP", "虚拟机", "VM", "截屏", "OCR", "send-key", "ramfb", "装机", "Windows", "arm64", "WinPE", "无人值守", "KinetVM"],
+  "tools": "index.js#tools"
+}
