@@ -27,7 +27,7 @@ import {
 } from '../engines';
 import { express } from './express';
 import { runBodyPlan } from './bodyplan';
-import { signatureOfTemplate } from './signature';
+import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
 import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
 import { replay } from './replay';
@@ -112,10 +112,12 @@ export class DirectV5Engine implements Engine {
     const provider = currentProvider(snap);
 
     // ── 签名 + 出生调度(与 Universe.runTemplateRound 同语义,单任务内联)──
+    // 重量进签名:heavy/light 分池(基因/账本/化石隔离),防止 12 步 founder 误领小时级任务。
     const templateId = templateIdOfPrompt(prompt);
+    const weight = weightOfPrompt(prompt);
     const reg = this.reg();
-    const tplLabel = templateId;
-    const sig = signatureOfTemplate(templateId);
+    const tplLabel = `${templateId}@${weight}`;
+    const sig = signatureOfTemplateWeighted(templateId, weight);
 
     // ── 化石重放优先(修正版设计:种群的理想终态是墓园 —— 化石零 token 跑着,LLM 只在边界外开荒)──
     // 命中 → 零 LLM 交付;失败 → 降级开荒(尸体退回出生调度,不浪费这一轮进化信号)。
@@ -147,17 +149,17 @@ export class DirectV5Engine implements Engine {
     }
 
     // 出生:无活体 → 配子克隆 / founder
-    if (reg.needsFounder(signatureOfTemplate(templateId))) {
-      const gam = reg.bestGamete(signatureOfTemplate(templateId));
+    if (reg.needsFounder(sig)) {
+      const gam = reg.bestGamete(sig);
       if (gam) reg.cloneFrom(gam.genome);
-      else reg.spawnFounder(templateId);
+      else reg.spawnFounder(templateId, weight);
     }
 
     // 公平曝光:取轮转首位活体(单会话单任务;多活体时按出生序轮转)
-    const live = reg.liveBySignature(signatureOfTemplate(templateId));
+    const live = reg.liveBySignature(sig);
     if (!live.length) {
       onEvent({ type: 'error', message: 'v5: 基因库无活体(异常状态),已重置 founder' });
-      reg.spawnFounder(templateId);
+      reg.spawnFounder(templateId, weight);
       return;
     }
     const genome: Genome = live[0];
@@ -221,7 +223,7 @@ export class DirectV5Engine implements Engine {
     // ── 结算(死亡即结算;用户中止 = 无痕)──
     const runOutcome: RunOutcome = {
       taskId: conv.id,
-      signature: signatureOfTemplate(templateId),
+      signature: sig,
       genomeId: genome.genomeId,
       lineage: genome.lineage,
       generation: genome.generation,
@@ -249,8 +251,8 @@ export class DirectV5Engine implements Engine {
     if (!outcome.aborted && !outcome.success) this.lastAttribution.set(genome.lineage, facts);
 
     // ── 替补出生:种群永续。按归因定向突变(疤痕遗传)/无归因则克隆冠军 ──
-    if (!outcome.aborted && reg.liveBySignature(signatureOfTemplate(templateId)).length === 0) {
-      const gam = reg.bestGamete(signatureOfTemplate(templateId));
+    if (!outcome.aborted && reg.liveBySignature(sig).length === 0) {
+      const gam = reg.bestGamete(sig);
       if (gam) {
         const inh = this.lastAttribution.get(gam.genome.lineage);
         if (inh) reg.mutateFrom(gam.genome, inh);

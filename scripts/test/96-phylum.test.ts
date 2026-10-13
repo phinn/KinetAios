@@ -15,15 +15,20 @@ import {
 import { GeneRegistry } from '../../src/main/V5/registry';
 import { express, checkAssertions } from '../../src/main/V5/express';
 import { runBodyPlan, type ChatFn, type ToolDefLike } from '../../src/main/V5/bodyplan';
+import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
+import { HEAVY_FOUNDER_STEPS } from '../../src/main/V5/registry';
 import { scriptChat } from './phylum-mock';
 import type { Tool } from '../../src/main/tools';
 import type { AssertionDsl } from '../../src/main/V5/phylum-types';
 
 const SIG = 'data-clean@v1';
-const FSIG = `tpl@v1:${SIG}`; // 冻结后的完整签名
+const FSIG = signatureOfTemplateWeighted(SIG, 'light'); // 冻结后的完整签名(分池后带重量后缀)
 
 function assertEq(actual: unknown, expected: unknown, msg?: string): void {
   assert.strictEqual(actual, expected, msg);
+}
+function assertNotEq(actual: unknown, expected: unknown, msg?: string): void {
+  assert.notStrictEqual(actual, expected, msg);
 }
 
 function mkRegistry(): GeneRegistry {
@@ -44,6 +49,22 @@ test('A1 冷启动: 无匹配 → founder 诞生且零战绩不可繁殖', () =>
 });
 
 // ── B. 死亡归因 → 定向突变位点 ───────────────────────────────────
+test('A9 重量分池: heavy/light 同模板不同签名,founder/账本/化石互不串池', () => {
+  const reg = mkRegistry();
+  const sigH = signatureOfTemplateWeighted('kx', 'heavy');
+  const sigL = signatureOfTemplateWeighted('kx', 'light');
+  assertNotEq(sigH, sigL);
+
+  // light 池先出生 founder(12 步),heavy 池冷启动自己发 founder(maxSteps=60),
+  // 两池活体/配子完全隔离 —— 12 步个体不会再被派去干小时级任务。
+  const fl = reg.spawnFounder('kx', 'light');
+  assertEq(fl.routing.maxSteps, 12);
+  const fh = reg.spawnFounder('kx', 'heavy');
+  assertEq(fh.routing.maxSteps, HEAVY_FOUNDER_STEPS);
+  assertEq(sigH, fh.signature);
+  assertEq(reg.liveBySignature(sigL).length, 1);
+  assertEq(reg.liveBySignature(sigH).length, 1);
+});
 test('B1 tool_error 归因: 肇事工具亲和下降 AFFINITY_PENALTY,其余基因位不动', () => {
   const reg = mkRegistry();
   const parent = reg.spawnFounder(SIG);

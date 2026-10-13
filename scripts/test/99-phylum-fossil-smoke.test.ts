@@ -15,7 +15,7 @@ import {
   FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS,
   type TraceStep,
 } from '../../src/main/V5/phylum-types';
-import { signatureOfTemplate } from '../../src/main/V5/signature';
+import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
 import assert from 'node:assert/strict';
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -27,7 +27,7 @@ import type { Tool, ToolCtx } from '../../src/main/tools';
 function makeSuccess(reg: GeneRegistry, templateId: string, trace: TraceStep[]): void {
   const g = reg.spawnFounder(templateId);
   // 直接把 founder 顶到成功态:settle 只看 outcome.success + 支系账本
-  reg.debugFillLedger(signatureOfTemplate(templateId), 8, 7); // 近窗 7/8 = 0.875 ≥ 0.8(存款线)
+  reg.debugFillLedger(signatureOfTemplateWeighted(templateId, 'light'), 8, 7); // 近窗 7/8 = 0.875 ≥ 0.8(存款线)
   reg.settle({
     success: true, aborted: false, cause: 'none', steps: 3, tokens: 0,
     lastOutput: 'ok', trace, finished: true, detail: 'task example for fossil',
@@ -36,7 +36,7 @@ function makeSuccess(reg: GeneRegistry, templateId: string, trace: TraceStep[]):
 
 test('H1: 成功轨迹沉积化石 → 同签名取回 → JSON 持久化读回', () => {
   const dir = mkdtempSync(join(tmpdir(), 'v5fossil-'));
-  const sig = signatureOfTemplate('fossil-h1');
+  const sig = signatureOfTemplateWeighted('fossil-h1', 'light');
   let reg = new GeneRegistry({ rng: () => 0.5, dataDir: dir });
   makeSuccess(reg, 'fossil-h1', [
     { tool: 'read_file', args: { path: '/tmp/in.txt' } },
@@ -56,7 +56,7 @@ test('H1: 成功轨迹沉积化石 → 同签名取回 → JSON 持久化读回'
 
 test('H2: 重放命中链路(extractSlots → replay)→ 断言 gate + hit 记账', async () => {
   const reg = new GeneRegistry({ rng: () => 0.5 });
-  const sig = signatureOfTemplate('fossil-h2');
+  const sig = signatureOfTemplateWeighted('fossil-h2', 'light');
   const trace: TraceStep[] = [
     { tool: 'read_file', args: { path: '/tmp/in.txt' } },
     { tool: 'shell', args: { command: 'echo done' } },
@@ -86,7 +86,7 @@ test('H2: 重放命中链路(extractSlots → replay)→ 断言 gate + hit 记�
 
 test('H3: 任务漂移 → 槽位缺失 → miss ×2 → 化石退役', async () => {
   const reg = new GeneRegistry({ rng: () => 0.5 });
-  const sig = signatureOfTemplate('fossil-h3');
+  const sig = signatureOfTemplateWeighted('fossil-h3', 'light');
   const trace: TraceStep[] = [
     { tool: 'shell', args: { command: 'grep -c ERROR /var/log/app-2026-10-13.log' } },
   ];
@@ -102,7 +102,7 @@ test('H3: 任务漂移 → 槽位缺失 → miss ×2 → 化石退役', async ()
 
 test('H4: 收敛判定 isConverged(档①冻结路由门)', () => {
   const reg = new GeneRegistry({ rng: () => 0.5 });
-  const sig = signatureOfTemplate('converge-h4');
+  const sig = signatureOfTemplateWeighted('converge-h4', 'light');
   const g = reg.spawnFounder('converge-h4');
   assert.equal(g.signature, sig, 'spawnFounder 内部签名一次,与外部一致');
   assert.equal(reg.isConverged(sig), false, '无账本数据不收敛');

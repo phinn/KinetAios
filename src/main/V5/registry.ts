@@ -15,7 +15,7 @@ import {
   FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS,
 } from './phylum-types';
 import { extractSlots } from './replay';
-import { signatureOfTemplate } from './signature';
+import { signatureOfTemplateWeighted } from './signature';
 
 /** 归因器输入:一次执行结束时的全部事实(不带任何解释)。 */
 export interface AttributionFacts {
@@ -36,6 +36,9 @@ export interface RegistryInit {
   /** 随机源:默认 Math.random;实验注入种子 RNG 保证可复现 */
   rng?: () => number;
 }
+
+/** heavy 签名 founder 的步数预算:小时级任务给足探索空间,但仍受 bodyplan 硬墙 200 兜底 */
+export const HEAVY_FOUNDER_STEPS = 32;
 
 const emptyFitness = (): FitnessRecord => ({ trials: 0, successes: 0, costZSum: 0, stepsSum: 0, aborted: 0 });
 
@@ -118,13 +121,14 @@ export class GeneRegistry {
 
   // ── 出生 ──
 
-  /** 冷启动:某签名无活体且无可用配子 → 发 founder 基因(中性先验,对照组,不参与进化评价)。 */
-  spawnFounder(templateId: string): Genome {
-    const sig = signatureOfTemplate(templateId);
+  /** 冷启动:某签名无活体且无可用配子 → 发 founder 基因(中性先验,对照组,不参与进化评价)。
+   *  heavy 池 founder 起步 32 步(2026-10-13 分池修法:重活不靠死 5 次 step_budget 爬预算)。 */
+  spawnFounder(templateId: string, weight: 'heavy' | 'light' = 'light'): Genome {
+    const sig = signatureOfTemplateWeighted(templateId, weight);
     const lineage = `L0-${sig}`;
     const g: Genome = {
       version: 1, genomeId: this.nextId('g'), lineage, signature: sig,
-      routing: { maxSteps: 12, granularity: 0.7, successPrior: 0.5 },
+      routing: { maxSteps: weight === 'heavy' ? HEAVY_FOUNDER_STEPS : 12, granularity: 0.7, successPrior: 0.5 },
       affinity: {},
       assertions: [], // founder 无先天断言:断言只能由人工注入或死因删除产生
       generation: 0, bornAt: Date.now(),

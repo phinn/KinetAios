@@ -8,7 +8,7 @@
 import { GeneRegistry, type AttributionFacts } from './registry';
 import { express } from './express';
 import { runBodyPlan, type ChatFn } from './bodyplan';
-import { signatureOfTemplate } from './signature';
+import { signatureOfTemplateWeighted } from './signature';
 import type {
   Genome, RunOutcome, ExpressedBody, DeathCause, LineageLedger,
 } from './phylum-types';
@@ -30,6 +30,8 @@ export type EvoEvent =
 /** 任务模板(实验的"环境"):grader 确定性,不经 LLM。 */
 export interface TaskTemplate {
   id: string;
+  /** 任务重量:heavy/light 分池(签名带 @weight,基因/账本/化石隔离)。缺省 light。 */
+  weight?: 'heavy' | 'light';
   /** 第 i 个副本的任务文本 */
   render(variant: number): string;
   /** 语义判分:true=产物正确 */
@@ -151,7 +153,7 @@ export class Universe {
     // 出本轮曲线:只用本轮 outcome —— 累计值会把学习曲线抹平,不诚实
     const fresh: RoundStat[] = [];
     for (const tpl of this.opts.templates) {
-      const sig = signatureOfTemplate(tpl.id);
+      const sig = signatureOfTemplateWeighted(tpl.id, tpl.weight ?? 'light');
       const rows = this.history.slice(ob).filter((o) => o.signature === sig);
       const n = rows.length || 1;
       fresh.push({
@@ -166,7 +168,7 @@ export class Universe {
   }
 
   private async runTemplateRound(tpl: TaskTemplate, opts: RoundOpts, round: number): Promise<void> {
-    const sig = signatureOfTemplate(tpl.id);
+    const sig = signatureOfTemplateWeighted(tpl.id, tpl.weight ?? 'light');
 
     // 出生调度
     if (this.reg.needsFounder(sig)) {
@@ -175,7 +177,7 @@ export class Universe {
         const child = this.reg.cloneFrom(gam.genome);
         this.events.push({ what: 'breed', genomeId: child.genomeId, lineage: child.lineage, generation: child.generation, from: gam.genome.genomeId });
       } else {
-        const f = this.reg.spawnFounder(tpl.id);
+        const f = this.reg.spawnFounder(tpl.id, tpl.weight ?? 'light');
         if (this.pendingAffinity[tpl.id]) Object.assign(f.affinity, this.pendingAffinity[tpl.id]);
         if (opts.forceAffinity) Object.assign(f.affinity, opts.forceAffinity);
         this.events.push({ what: 'founder', genomeId: f.genomeId, signature: sig });
