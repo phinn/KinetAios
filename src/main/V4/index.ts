@@ -175,6 +175,13 @@ export class DirectV4Engine implements Engine {
 
     let updatedHistory: ChatMsg[] = conv.directHistory;
 
+    // 立法编译结果存证(2026-10):成功 N 节点 / 退化 std + 原因,落 conv_events(legis/compile),
+    // 复盘"立法成功还是静默降级"不再靠猜。
+    const legisT0 = Date.now();
+    const legisCompileEvent = (degraded: boolean, reason?: string, nodes = 0, edges = 0): void => {
+      onEvent({ type: 'legis/compile', nodes, edges, durationMs: Date.now() - legisT0, degraded, reason });
+    };
+
     try {
       if (v4Route === 'fast') {
         updatedHistory = await executeFastPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: conv.directHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
@@ -189,10 +196,12 @@ export class DirectV4Engine implements Engine {
         if (!plan) {
           // 编译失败 → 退化 std。关键:继承 planner 的探查现场(12 轮只读探查 history),
           // 否则 std 从零重探,双倍烧钱烧步(2026-10-13 事故:planner 白跑 12 轮 + std 重跑 104 步)。
+          legisCompileEvent(true, 'submit_legis_plan 未提交/解析失败');
           onEvent({ type: 'status', text: '🔄 v4: 立法失败,退化为标准执行(已继承立法期探查现场)' });
           updatedHistory = await executeStdPath({ provider, tools, systemPrompt, memoryBlock, snapshot: snap, userInput, history: probedHistory, ctx, signal, policy, onEvent: terminalGate(onEvent) });
         } else {
           // 广播计划
+          legisCompileEvent(false, undefined, plan.nodes.length, plan.nodes.reduce((n, x) => n + x.deps.length, 0));
           onEvent({
             type: 'status',
             text: `📜 v4: ${plan.summary}\n${plan.nodes.map((n) => `  [${n.id}] ${n.kind === 'replay' ? '⚙️' : '🤖'} ${n.title} (deps: [${n.deps.join(',')}])`).join('\n')}\n验收: ${plan.acceptance.length} 条断言`,

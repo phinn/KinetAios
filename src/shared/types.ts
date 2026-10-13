@@ -464,6 +464,7 @@ export type AgentEvent =
   | { type: 'tool_start'; name: string; args: string; startId: string }
   | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number; cacheRead?: number; cacheCreation?: number; source?: string }
   | { type: 'status'; text: string }
+  | { type: 'legis/compile'; nodes: number; edges: number; durationMs: number; degraded: boolean; reason?: string } // 立法编译结果(V4):编译成功 N 节点 / 退化 std + 原因
   | { type: 'sessionStarted'; id: string } // CLI engines (claude/codex) report their session id for --resume
   | { type: 'context'; action: 'compacted' | 'trimmed'; beforeTokens: number; afterTokens: number } // 上下文压缩事件 → renderer 可视化
   | { type: 'traj'; records: TrajRecord[] } // 轨迹:本轮模型真实看到的 messages 快照(含 system/记忆注入/压缩摘要)
@@ -604,6 +605,7 @@ export type ConvEvent =
   | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number; outcome?: ToolOutcome }
   | { type: 'turn/error'; message: string }
   | { type: 'turn/status'; text: string } // 路由决策/引擎相位存证(路由→LEGIS、立法失败退化等):复盘"为什么走这条路"
+  | { type: 'legis/compile'; nodes: number; edges: number; durationMs: number; degraded: boolean; reason?: string } // 立法编译结果存证(2026-10):成功/退化不再黑盒
   | { type: 'turn/meta'; costUSD: number; tokensIn: number; tokensOut: number; cacheRead?: number; cacheCreation?: number; source?: string }
   // spill 存证(v3.6.3 瘦身):dropped 截断为前 20 条×500 字符,droppedTotal 记录真实条数
   | { type: 'compaction/spill'; dropped: ChatMsg[]; droppedTotal?: number; summary?: string }
@@ -1253,6 +1255,12 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       break;
     case 'status':
       conv.statusNote = ev.text;
+      break;
+    case 'legis/compile':
+      // 立法编译结果:更新 statusNote 短暂可见,不改 conv 状态(编译失败已由 V4 发 status 兜底)。
+      conv.statusNote = ev.degraded
+        ? `📜 立法失败 → 退化 std(${ev.reason ?? '未知原因'})`
+        : `📜 立法完成 — ${ev.nodes} 节点/${ev.edges} 边(${Math.round(ev.durationMs / 100) / 10}s)`;
       break;
     case 'context':
       // 压缩事件:在 statusNote 里显示(可视化提示)。UI 可额外渲染进度条。

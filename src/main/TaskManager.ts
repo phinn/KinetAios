@@ -1020,6 +1020,14 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         // 落一条轻量事件,考古面板可回放「为什么走了这条路」。
         store.appendEvent(conv.id, t.id, { type: 'turn/status', text: ev.text });
         break;
+      case 'legis/compile':
+        // 立法编译结果存证(2026-10):成功 N 节点 or 退化 std 及原因,不再黑盒。
+        store.appendEvent(conv.id, t.id, {
+          type: 'legis/compile',
+          nodes: ev.nodes, edges: ev.edges, durationMs: ev.durationMs,
+          degraded: ev.degraded, reason: ev.reason,
+        });
+        break;
       case 'tool':
         store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`, conv.id);
         store.appendEvent(conv.id, t.id, {

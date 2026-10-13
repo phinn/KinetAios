@@ -10872,6 +10872,16 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
       return { icon: sv.xCircle, title: tr('ev.error'), body: String(d.message ?? '') };
     case 'turn/status':
       return { icon: SVGI_SET.target(), title: String(d.text ?? '').slice(0, 120), body: '' };
+    case 'legis/compile': {
+      // 立法编译结果存证(2026-10):节点/边/耗时/是否退化 std,复盘"立法成功还是静默降级"。
+      const n = Number(d.nodes ?? 0), e = Number(d.edges ?? 0);
+      const degrade = d.degraded ? ` → ${tr('ev.legisDegrade')}` : '';
+      return {
+        icon: SVGI_SET.target(),
+        title: `${tr('ev.legisCompile')}: ${n} ${tr('ev.legisNodes')} / ${e} ${tr('ev.legisEdges')} · ${Math.round(Number(d.durationMs ?? 0))}ms${degrade}`,
+        body: d.reason ? String(d.reason) : '',
+      };
+    }
     case 'turn/meta':
       const srcTag = d.source ? ` [${tokenSourceLabel(String(d.source))}]` : '';
       return { icon: sv.chart, title: tr('ev.meta') + srcTag, body: `$${Number(d.costUSD ?? 0).toFixed(4)} · ↑${d.tokensIn ?? 0} ↓${d.tokensOut ?? 0}` };
