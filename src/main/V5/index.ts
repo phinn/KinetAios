@@ -77,9 +77,10 @@ const V5_SYSTEM_SUFFIX = `
 `;
 
 /** Provider.streamComplete → bodyplan.ChatFn 适配(去 snap 形)。 */
-function providerChatFn(provider: Provider, snap: ReturnType<typeof snapshot>, signal: AbortSignal) {
+function providerChatFn(provider: Provider, snap: ReturnType<typeof snapshot>, signal: AbortSignal, onEvent?: (e: AgentEvent) => void) {
   return async (messages: ChatMsg[], toolDefs: ToolDef[]): Promise<Completion> =>
-    provider.streamComplete(messages, toolDefs, snap, signal, () => {});
+    // onToken 透传:个体思考期的流式 token 实时上屏(可见性),不影响工具调用解析。
+    provider.streamComplete(messages, toolDefs, snap, signal, onEvent ? (tok) => onEvent({ type: 'token', text: tok }) : () => {});
 }
 
 export class DirectV5Engine implements Engine {
@@ -209,7 +210,7 @@ export class DirectV5Engine implements Engine {
         cwd: conv.cwd,
         body,
         genome,
-        chat: providerChatFn(provider, snap, signal),
+        chat: providerChatFn(provider, snap, signal, onEvent),
         tools,
         signal,
         onEvent,

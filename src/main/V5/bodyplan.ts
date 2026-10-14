@@ -96,6 +96,8 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
     }
 
     let comp: Completion;
+    // 每步 status:个体思考期间 UI 状态条有心跳(否则长时间 LLM 调用看起来像死了)。
+    onEvent?.({ type: 'status', text: `⚙️ v5 个体第 ${steps}/${body.maxSteps} 步 — 推理中…` });
     try {
       comp = await chat(messages, toolDefs);
     } catch (err) {
@@ -138,12 +140,20 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       catch { return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name, detail: `bad JSON args for '${call.name}'` }; }
 
       let output: string;
+      // tool_start 先挂"运行中"spinner 卡(与 AgentLoop 同协议,startId 配对原位替换)。
+      // 没有它,个体思考+执行期间 UI 完全静默 → "状态在动但不知道在干嘛"(2026-10-14 用户反馈)。
+      const startId = `bp${steps}-${call.name}`;
+      onEvent?.({ type: 'tool_start', name: call.name, args: call.arguments ?? '', startId });
       try {
         const ctx: ToolCtx = { cwd: opts.cwd, confirm: async () => true, signal };
+        const t0 = Date.now();
         output = await tool.run(args, ctx);
+        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), durationMs: Date.now() - t0, outcome: 'ok', startId });
       } catch (err) {
+        const msg = `tool '${call.name}' threw: ${(err as Error).message}`;
+        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: msg, outcome: 'error', startId });
         return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name,
-          detail: `tool '${call.name}' threw: ${(err as Error).message}` };
+          detail: msg };
       }
       if (output.startsWith('[aborted')) {
         return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: `tool '${call.name}' aborted` };
@@ -166,7 +176,6 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       }
 
       lastOutput = output;
-      onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), outcome: 'ok' });
 
       // 断言 gate
       const violated: AssertionGene | null = checkAssertions(body.assertions, { name: call.name, output, exitCode: exitCodeOf(output) });
