@@ -505,6 +505,13 @@ export class TaskManager {
       return;
     }
 
+    // ── 非 goal 会话 running guard:双跑防线(2026-10-14 事故)──
+    // renderer 状态可能陈旧,且飞书/语音/cron 等入口绕过 UI 直接调 send。若 running 中放行,
+    // 同一会话会出现两个 engine.run 并行:旧轮收尾 finally 无条件 aborts.delete(id),会把
+    // 新轮刚注册的 AC 误删 —— 之后用户点停止,aborts.get(id) 为空,停止永远无效。
+    // 统一语义:running 中来新消息 = 停旧开新(与 renderer 行为一致)。
+    if (conv.status === 'running') this.cancel(id);
+
     store.appendMessage('user', prompt, conv.id);
     conv.turns.push(newTurn(prompt));
     store.appendEvent(conv.id, conv.turns[conv.turns.length - 1].id, { type: 'user/message', text: prompt });
@@ -599,7 +606,10 @@ export class TaskManager {
       // crash recovery 只为进程崩溃设计(重启后恢复),同进程内异常不应触发。
       if (conv.engine === 'directV2') store.clearV2State(conv.id);
     }).finally(async () => {
-      this.aborts.delete(id);
+      // 世代校验:整轮收尾只删自己这代 AC。若 maps 里已不是自己(新轮已注册),
+      // 说明发生过"停旧开新"—— 误删会让用户之后的停止永远无效(2026-10-14 事故根因)。
+      const curAc = this.aborts.get(id);
+      if (curAc === ac) this.aborts.delete(id);
       clearSteer(id); // turn 收尾:没被消费的打断清掉,防泄漏到下一个 turn 的上下文
       // 注意:普通 turn 收尾不清 correction —— goal 循环中收到的修正要留给
       // runGoalLoop 轮边界消费;非 goal 会话的修正队列本就不该有内容(见 sendCore)。
