@@ -2409,7 +2409,7 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshotWithHide, captureWindowByName, detectBlankFrame, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { captureScreenshotWithHide, captureWindowByName, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
 import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, browserUpload, browserCookie, killAgentChrome } from './cdp';
 
 // 截图产物回执(2026-10-15 事故:agent 不知道截图落在哪、两种语言目录是同一张图)。
@@ -2418,7 +2418,7 @@ import { browserNavigate, browserSnapshot, browserClick, browserType, browserSel
 // Shot receipt: persist capture to userData/shots/ and report absolute path + fingerprint.
 // Same-fingerprint-as-last-shot is rejected outright — nothing changed on screen.
 const recentShotFingerprints: { fp: string; path: string; at: number }[] = [];
-async function persistShotReceipt(base64: string, fp: string | undefined, _w?: number, _h?: number, label = 'shot'): Promise<{ path: string; md5: string; dedup: boolean }> {
+async function persistShotReceipt(base64: string, fp: string | undefined, label = 'shot'): Promise<{ path: string; md5: string; dedup: boolean }> {
   const { app } = require('electron') as typeof import('electron');
   const crypto = require('node:crypto') as typeof import('node:crypto');
   const fs = require('node:fs') as typeof import('node:fs');
@@ -2493,7 +2493,7 @@ const screenshot: Tool = {
     // Receipt: persist + absolute path + md5 — no more "where did the shot go".
     let receipt = '';
     try {
-      const rp = await persistShotReceipt(r.base64, r.contentMd5, r.width, r.height, 'screen');
+      const rp = await persistShotReceipt(r.base64, r.contentMd5, 'screen');
       receipt = rp.dedup
         ? `\n⚠️ 与上一张画面指纹相同(${rp.md5})——屏幕没变化,别把同一张图当两次产物交付`
         : `\n📁 已存: ${rp.path} (md5:${rp.md5})`;
@@ -2520,7 +2520,7 @@ const screenshot_window: Tool = {
     if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
     let receipt = '';
     try {
-      const rp = await persistShotReceipt(r.base64, r.contentMd5, r.width, r.height, `win-${title.slice(0, 12)}`);
+      const rp = await persistShotReceipt(r.base64, r.contentMd5, `win-${title.slice(0, 12)}`);
       receipt = rp.dedup
         ? `\n⚠️ 与上一张画面指纹相同(${rp.md5})——画面没变化,别把同一张图当两次产物交付`
         : `\n📁 已存: ${rp.path} (md5:${rp.md5})`;
