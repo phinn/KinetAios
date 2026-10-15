@@ -6,6 +6,7 @@
 // Mouse/Keyboard: PowerShell (Windows) / cliclick (macOS) / xdotool (Linux).
 import { desktopCapturer, screen as electronScreen, BrowserWindow } from 'electron';
 import { exec, execSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 
 // ── Screenshot ── 截屏,返回 base64 PNG + 屏幕尺寸
 export interface ScreenshotResult {
@@ -16,6 +17,87 @@ export interface ScreenshotResult {
   height?: number;
   error?: string;
   note?: string;          // 坐标/定位相关的附加提示(如窗口原点解析失败)
+  contentMd5?: string;    // 画面内容的短指纹(采样像素 hash,非整文件 MD5)——同画面重复截图可识别
+}
+
+// ── 黑帧检测 + 画面指纹(blank-frame gate + fingerprint)──
+// 2026-10-15 M5Chat/KinetBrief DUO 截图事故:simctl io screenshot 与 DeviceHub 相机按钮
+// 内部走设备渲染缓冲,联动设备的 backing store 全黑 → 尺寸对、文件非空、content-length 正常,
+// 唯独像素全 0。模型看到"截图成功"就交货,桌面落了三张纯黑图(两张 MD5 相同)才发现。
+// 教训:截屏层"拿到画面"的唯一可信判据是像素本身有变化,不是调用成功。
+// 闸门:抽样像素,全黑/全白/纯色/近纯色(alpha 全零)判为黑帧,返回 error 并提示换
+// 屏幕合成路径(screencapture -R / -l / screenshot_window —— 走 WindowServer 合成才能
+// 看到联动设备窗口的真实画面)。检测自身失败不拦截截图(闸门失效 ≠ 画面有问题)。
+// / Blank-frame gate: a "successful" capture whose pixels are uniform (all-black /
+// / all-white / solid color / all-zero alpha) is a rendering-buffer artifact (e.g.
+// / linked-device simulators via simctl / DeviceHub camera button). Only WindowServer
+// / compositing sees the real pixels there. Detect via sampled pixels and reject
+// / with guidance. Detection failures never block the capture itself.
+export function detectBlankFrame(img: Electron.NativeImage): string | null {
+  try {
+    const size = img.getSize();
+    const w = size.width;
+    const h = size.height;
+    if (w <= 0 || h <= 0) return '空图像(0×0)';
+    const buf = img.toBitmap(); // BGRA
+    const bpp = Math.floor(buf.length / (w * h)) || 4;
+    // 采样:目标 ~64×64 网格,大图也不超过几万样本,单次 <20ms
+    const stepX = Math.max(1, Math.floor(w / 64));
+    const stepY = Math.max(1, Math.floor(h / 64));
+    let min = 255, max = 0, sum = 0, n = 0, alphaNonZero = 0;
+    const colors = new Set<number>();
+    for (let y = 0; y < h; y += stepY) {
+      for (let x = 0; x < w; x += stepX) {
+        const o = (y * w + x) * bpp;
+        const b = buf[o], g = buf[o + 1], r = buf[o + 2], a = buf[o + 3];
+        if (a !== 0) alphaNonZero++;
+        // 亮度 = Rec.601 luma
+        const luma = (b * 299 + g * 587 + r * 114) / 1000;
+        if (luma < min) min = luma;
+        if (luma > max) max = luma;
+        sum += luma;
+        n++;
+        // 量化到 16 级再进 Set,抗压缩噪声
+        colors.add(((r >> 4) << 8) | ((g >> 4) << 4) | (b >> 4));
+      }
+    }
+    if (n === 0) return '截图采样为空';
+    if (alphaNonZero === 0) return `全帧 alpha=0(合成层无画面,${n} 样本)`;
+    const mean = sum / n;
+    if (colors.size <= 2) {
+      const kind = max < 8 ? '纯黑' : min > 247 ? '纯白' : `单色(亮度≈${mean.toFixed(0)})`;
+      return `${kind}:像素无变化,截屏层未取到真实画面(设备/渲染缓冲黑帧)。` +
+        `改用屏幕合成路径:macOS \`screencapture -R x,y,w,h\` / \`screencapture -l <windowId>\`,或 KinetAios 的 screenshot/screenshot_window 工具(走 WindowServer 合成)。`;
+    }
+    return null;
+  } catch {
+    return null; // 检测自身失败不拦截图(闸门失效 ≠ 画面有问题)
+  }
+}
+
+// 画面短指纹:同 detectBlankFrame 的采样网格,量化色拼 buffer 算 MD5 前 8 位。
+// 用途:两次截图指纹相同 = 画面没变(模型"截图了"但屏幕根本没动 / 同图不同名交付)。
+// Frame fingerprint: same fingerprint ⇒ identical picture (no-op click / duplicate delivery).
+export function frameFingerprint(img: Electron.NativeImage): string {
+  try {
+    const size = img.getSize();
+    const w = size.width;
+    const h = size.height;
+    const buf = img.toBitmap();
+    const bpp = Math.floor(buf.length / (w * h)) || 4;
+    const stepX = Math.max(1, Math.floor(w / 32));
+    const stepY = Math.max(1, Math.floor(h / 32));
+    const parts: number[] = [];
+    for (let y = 0; y < h; y += stepY) {
+      for (let x = 0; x < w; x += stepX) {
+        const o = (y * w + x) * bpp;
+        parts.push(buf[o + 2], buf[o + 1], buf[o]);
+      }
+    }
+    return createHash('md5').update(Buffer.from(parts)).digest('hex').slice(0, 8);
+  } catch {
+    return 'unknown';
+  }
 }
 
 // ── 坐标换算(截图空间 → 平台动作空间)──
@@ -154,6 +236,14 @@ export async function captureWindowByName(
       pid: host?.pid,
       name: src.name,
     });
+    // 黑帧闸:窗口模式拍的是窗口自己的 backing store,同样可能是黑帧(Duo 联动设备窗口)。
+    // 硬拦:黑帧直接返回 error(带改用全屏截图的指引),不再"截图成功 + ⚠️ 注"两可。
+    // Blank-frame gate (hard): reject uniform frames with guidance, not a warning.
+    const blank = detectBlankFrame(src.thumbnail);
+    if (blank) {
+      return { ok: false, error: `❌ 疑似黑帧:${blank}\n(窗口截图同源 backing store,先试全屏 screenshot:若全屏有画面而本窗口黑,即该窗口渲染缓冲不可截)` };
+    }
+    const fp = frameFingerprint(src.thumbnail);
     const dataUrl = src.thumbnail.toDataURL();
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
     return {
@@ -162,9 +252,10 @@ export async function captureWindowByName(
       base64,
       width: size.width,
       height: size.height,
-      note: bounds
+      contentMd5: fp,
+      note: (bounds
         ? `坐标系:窗口「${src.name}」局部像素(已自动换算到屏幕坐标,原点 ${bounds.x},${bounds.y})`
-        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算,也不会绑定后台投递。若反复出现,检查系统设置 → 隐私与安全性 → 屏幕录制 是否已授权 KinetAios。可改用全屏 screenshot 截图后再用其坐标点击。`,
+        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算,也不会绑定后台投递。若反复出现,检查系统设置 → 隐私与安全性 → 屏幕录制 是否已授权 KinetAios。可改用全屏 screenshot 截图后再用其坐标点击。`),
     };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -324,10 +415,18 @@ async function captureScreenInner(): Promise<ScreenshotResult> {
     const size = thumb.getSize();
     const dataUrl = thumb.toDataURL();
     if (!dataUrl || dataUrl.length < 1000) return { ok: false, error: 'Screenshot too small' };
+    // 黑帧闸(硬拦):全零/单色/纯色的整屏 = 渲染层没画面,拒绝返回 —— 2026-10-15 Duo
+    // 模拟器 87 连黑帧事故的教训:文件存在+尺寸对≠有画面。
+    // 同时算画面指纹,全屏截图暂不因指纹拦(桌面静态很正常),仅附在返回里供连续比对。
+    // Blank-frame gate (hard): a uniform full-screen capture means the render layer had
+    // nothing — reject instead of returning a "successful" black shot.
+    const blank = detectBlankFrame(thumb);
+    if (blank) return { ok: false, error: `❌ 截图疑似黑帧(${blank})。若目标在模拟器/联动设备窗口,改用全屏 screenshot 或窗口所属 app 直截路径` };
+    const fp = frameFingerprint(thumb);
     // 记录几何:模型坐标(截图空间)→ 动作空间 的换算依据(见 mapScreenshotCoords)
     setCaptureGeometry({ imgW: size.width, imgH: size.height, spaceW, spaceH, originX: 0, originY: 0, kind: 'screen', at: Date.now() });
     const base64 = dataUrl.slice(dataUrl.indexOf(',') + 1);
-    return { ok: true, dataUrl, base64, width: size.width, height: size.height };
+    return { ok: true, dataUrl, base64, width: size.width, height: size.height, contentMd5: fp };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
   }

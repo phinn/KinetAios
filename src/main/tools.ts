@@ -2409,8 +2409,35 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshotWithHide, captureWindowByName, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { captureScreenshotWithHide, captureWindowByName, detectBlankFrame, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
 import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, browserUpload, browserCookie, killAgentChrome } from './cdp';
+
+// 截图产物回执(2026-10-15 事故:agent 不知道截图落在哪、两种语言目录是同一张图)。
+// 落盘 userData/shots/<ts>-<fingerprint>.png + 返回绝对路径与指纹;指纹与最近一张相同
+// 直接拒绝(画面没变,存两张只是浪费,还制造"同图不同名"陷阱)。
+// Shot receipt: persist capture to userData/shots/ and report absolute path + fingerprint.
+// Same-fingerprint-as-last-shot is rejected outright — nothing changed on screen.
+const recentShotFingerprints: { fp: string; path: string; at: number }[] = [];
+async function persistShotReceipt(base64: string, fp: string | undefined, _w?: number, _h?: number, label = 'shot'): Promise<{ path: string; md5: string; dedup: boolean }> {
+  const { app } = require('electron') as typeof import('electron');
+  const crypto = require('node:crypto') as typeof import('node:crypto');
+  const fs = require('node:fs') as typeof import('node:fs');
+  const path = require('node:path') as typeof import('node:path');
+  const dir = path.join(app.getPath('userData'), 'shots');
+  fs.mkdirSync(dir, { recursive: true });
+  const buf = Buffer.from(base64, 'base64');
+  const md5 = crypto.createHash('md5').update(buf).digest('hex').slice(0, 12);
+  // 文件级去重:同指纹的图重名落盘纯属垃圾(2026-10-15 kb_192_shots 两语言同图事故)
+  const sameFile = Boolean(fp) && recentShotFingerprints.some((s) => s.fp === fp);
+  const name = `${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}_${label}_${md5}.png`;
+  const p = path.join(dir, name);
+  fs.writeFileSync(p, buf);
+  if (fp) {
+    recentShotFingerprints.unshift({ fp, path: p, at: Date.now() });
+    if (recentShotFingerprints.length > 20) recentShotFingerprints.pop();
+  }
+  return { path: p, md5, dedup: sameFile };
+}
 
 // P0-fix: 鼠标/键盘工具的审批门。此前这组工具完全绕过 confirm —— shell 执行要弹窗,
 // 往用户前台窗口注入键盘输入/任意坐标点击却不需要任何确认。现在:
@@ -2462,14 +2489,23 @@ const screenshot: Tool = {
   async run(args: any) {
     const r = await captureScreenshotWithHide(Boolean(args?.hide_self));
     if (!r.ok || !r.base64) return `❌ 截屏失败: ${r.error}`;
+    // 产物回执:落盘 + 绝对路径 + MD5,agent 与用户都不再问"截图去哪了"。
+    // Receipt: persist + absolute path + md5 — no more "where did the shot go".
+    let receipt = '';
+    try {
+      const rp = await persistShotReceipt(r.base64, r.contentMd5, r.width, r.height, 'screen');
+      receipt = rp.dedup
+        ? `\n⚠️ 与上一张画面指纹相同(${rp.md5})——屏幕没变化,别把同一张图当两次产物交付`
+        : `\n📁 已存: ${rp.path} (md5:${rp.md5})`;
+    } catch { /* 落盘失败不影响截图主流程 */ }
     // 返回特殊格式:AgentLoop 会识别 __IMAGE_BASE64__ 前缀,将其转为 image_url content part 注入对话。
-    return `📷 截屏成功 (${r.width}×${r.height})${args?.hide_self ? ' [已隐藏自身窗口]' : ''}\n__IMAGE_BASE64__:${r.base64}`;
+    return `📷 截屏成功 (${r.width}×${r.height})${args?.hide_self ? ' [已隐藏自身窗口]' : ''}${receipt}\n__IMAGE_BASE64__:${r.base64}`;
   },
 };
 
 const screenshot_window: Tool = {
   name: 'screenshot_window',
-  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸。',
+  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。',
   parameters: {
     type: 'object',
     properties: {
@@ -2482,7 +2518,14 @@ const screenshot_window: Tool = {
     const title = String(args?.title ?? '');
     const r = await captureWindowByName(title);
     if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
-    return `🪟 窗口「${title}」内容截取成功 (${r.width}×${r.height})${r.note ? `\n${r.note}` : ''}\n__IMAGE_BASE64__:${r.base64}`;
+    let receipt = '';
+    try {
+      const rp = await persistShotReceipt(r.base64, r.contentMd5, r.width, r.height, `win-${title.slice(0, 12)}`);
+      receipt = rp.dedup
+        ? `\n⚠️ 与上一张画面指纹相同(${rp.md5})——画面没变化,别把同一张图当两次产物交付`
+        : `\n📁 已存: ${rp.path} (md5:${rp.md5})`;
+    } catch { /* 落盘失败不影响截图主流程 */ }
+    return `🪟 窗口「${title}」内容截取成功 (${r.width}×${r.height})${receipt}${r.note ? `\n${r.note}` : ''}\n__IMAGE_BASE64__:${r.base64}`;
   },
 };
 
