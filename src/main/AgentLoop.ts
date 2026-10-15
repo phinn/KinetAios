@@ -15,6 +15,40 @@ import type { ConvEvent } from '../shared/types';
 const SPILL_SLIM_COUNT = 20;
 const SPILL_SLIM_CONTENT = 500;
 
+// ── 删前全文备份(spill to file,2026-10-15)──
+// 事故复盘:V1 引擎多条删除路径"删了就删了"—— spill 事件 2026-09 瘦身后只存
+// 20 条×500 字符,proactive compact 甚至不写 spill 事件,三级 fallback 裸 trim
+// 零审计。用户铁律:删之前先备份。
+// 方案:任何压缩/裁剪动手前,把"删之前的完整消息数组"整包落盘到
+// userData/spills/<convId>/<ts>-<kind>.json(含 role/content/tool_calls 全文)。
+// DB spill 事件保持 slim(UI 只展示条数);文件是可还原的全文副本,人工可查。
+// KINET_SPILL_DIR 环境变量可覆盖目录(测试用);落盘失败静默(备份是增强,不能反过来阻断主流程)。
+let spillSeq = 0; // 同毫秒撞名防护(见 spillToFile)
+export function spillFileDir(convId: string): string {
+  const base = process.env.KINET_SPILL_DIR || path.join(app.getPath('userData'), 'spills');
+  return path.join(base, convId);
+}
+export function spillToFile(convId: string, kind: string, msgs: ChatMsg[]): string | null {
+  try {
+    const dir = spillFileDir(convId);
+    fs.mkdirSync(dir, { recursive: true });
+    // 序号后缀:同一毫秒内连环压缩(toISOString 只有 ms 精度)文件名会撞车互相覆盖,
+    // 备份被静默吞掉 —— 单调计数器保证唯一。
+    spillSeq = (spillSeq + 1) % 10000;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(dir, `${ts}-${spillSeq}-${kind}.json`);
+    fs.writeFileSync(file, JSON.stringify({ kind, at: new Date().toISOString(), count: msgs.length, msgs }, null, 1));
+    // 备份目录防膨胀:单会话只留最近 20 份(每次都是全量快照,旧的没有回放价值)
+    const files = fs.readdirSync(dir).filter((f) => f.endsWith('.json')).sort();
+    while (files.length > 20) {
+      try { fs.unlinkSync(path.join(dir, files.shift()!)); } catch { /* 竞态忽略 */ }
+    }
+    return file;
+  } catch {
+    return null;
+  }
+}
+
 // ── compaction seam:压缩的唯一入口。所有引擎经此调 compactHistory,spill 存证在此归一,
 // 引擎侧不再各自复制「引用集合差 + appendEvent」逻辑(此前 v1/v2/V3 共 4 份拷贝)。
 // dropped = 引用集合差(memory/pinned 会被 compactHistory 重排,不能按位置 diff)。
@@ -22,10 +56,13 @@ const SPILL_SLIM_CONTENT = 500;
 export async function compactWithSpill(
   before: ChatMsg[],
   compact: () => Promise<ChatMsg[]>,
-  opts: { convId: string; turnId?: string },
+  opts: { convId: string; turnId?: string; kind?: string },
 ): Promise<ChatMsg[]> {
+  // 删前全文备份:压缩还没动手,先把 before 整包落盘(turnId 有无都要 ——
+  // proactive compact 此前无 turnId 早退、连审计都没有,是"删了无痕"的根源之一)。
+  spillToFile(opts.convId, opts.kind ?? 'compact', before);
   const after = await compact();
-  if (!opts.turnId) return after; // 拿不到 turn_id(如 V3 dag 层间压缩)→ 只压缩不存证
+  if (!opts.turnId) return after; // 拿不到 turn_id(如 V3 dag 层间压缩)→ 文件已备份,DB 事件跳过
   try {
     const kept = new Set(after);
     const dropped = before.filter((m) => !kept.has(m));
@@ -395,7 +432,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         if (!retriedAfterShrink) {
           // 第一级:用 trimBudget 全预算重试(与 fa7740a 前的原版一致,不再过度激进)
           retriedAfterShrink = true;
-          const beforeTokens = estTokenCount(messages, snapshot.apiProtocol); // 修前恒发 0,进度卡看不到裁剪量
+          const beforeTokens = estTokenCount(messages, snapshot.apiProtocol);
+          // 删前全文备份(fce63613 事故:35M→15K 裸删无痕,回放不可考)
+          spillToFile(ctx.convId || 'unknown-conv', 'fallback-L1-trim', messages);
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), trimBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: t(getSettings().lang, 'al.ctxTooLong') });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens: estTokenCount(messages, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
@@ -407,6 +446,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           retriedNuclear = true;
           const miniBudget = Math.floor(trimBudget / 4);
           const beforeTokens = estTokenCount(messages, snapshot.apiProtocol);
+          spillToFile(ctx.convId || 'unknown-conv', 'fallback-L2-nuclear', messages);
           messages = [{ role: 'system', content: systemPrompt }, ...memMsg, ...trimHistoryToTokenBudget(dropTransient(messages), miniBudget, snapshot.apiProtocol)];
           onEvent({ type: 'status', text: '⚠️ 上下文严重超长,已激进裁剪到最小集' });
           onEvent({ type: 'context', action: 'trimmed', beforeTokens, afterTokens: estTokenCount(messages, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });

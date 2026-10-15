@@ -23,7 +23,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { AgentEvent, ChatMsg, Conversation } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, compactWithSpill } from './AgentLoop';
+import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, compactWithSpill, spillToFile } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
 import { codemodeTool, codemodePromptSection } from './codemode';
@@ -484,6 +484,8 @@ export class DirectV2Engine implements Engine {
       plan = resumedPlan;
       // P0-14: 恢复的 execHistory 可能很长(crash 发生在步骤 8 → 累积了 8 步完整历史)。
       // 直接传入 Executor 会导致第一轮 LLM 调用就超长。先 trim 到策略预算内。
+      // 删前全文备份(resume 的 execHistory 是崩溃前的全部工作痕迹,砍了就找不回)
+      spillToFile(conv.id, 'v2-resume-trim', resumedHistory);
       const recoveryPolicy = this.policy(conv);
       execHistory = trimHistoryToTokenBudget(resumedHistory, recoveryPolicy.trimBudget ?? 40_000, snap.apiProtocol);
       const doneCount = plan.steps.filter((s) => s.status === 'done' || s.status === 'skipped').length;
@@ -551,6 +553,7 @@ export class DirectV2Engine implements Engine {
       // P2-1-fix: 退化路径也要 trim plannerMessages,防止探查阶段的大段工具输出撑爆 executor。
       // 不像正常路径那样只取 planConclusion —— 退化场景没有 plan,executor 需要探查发现的文件路径。
       const fallbackPolicy = this.policy(conv);
+      spillToFile(conv.id, 'v2-fallback-trim', plannerMessages);
       const trimmedPlannerMsgs = trimHistoryToTokenBudget(plannerMessages, fallbackPolicy.trimBudget, snap.apiProtocol);
       const execMessages = await runAgentLoop({
         provider,
