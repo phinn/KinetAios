@@ -354,6 +354,9 @@ const shell: Tool = {
   },
   async run(args, ctx) {
     const cmd = (args.command as string) ?? '';
+    // 宿主自杀守卫:先于 git 守卫和 confirm —— 两次误杀事故(2026-09-14/10-15)的机械闸。
+    const killHit = hostKillViolation(cmd);
+    if (killHit) return `🚫 已拦截 — ${killHit}`;
     // git 跨仓库写操作守卫:先于用户 confirm 弹出,消息里带两个仓库路径,用户自己判断放不放行。
     const violation = gitCrossRepoViolation(cmd, ctx.cwd);
     if (violation) return `🚫 已拦截 — ${violation}`;
@@ -444,6 +447,95 @@ export function enforceBackgroundOpen(cmd: string): string {
     return `${m[1]}${m[2]}-gj ${flags}`;    // 裸 open → 补 -gj
   });
   return rewritten.join('\n');
+}
+
+// ── 宿主进程自杀守卫(机械闸,2026-10-15)──
+// 两次事故(2026-09-14、2026-10-15):清后台进程时用宽泛 pkill 模式("KinetAios"/cwd
+// 子串),而宿主自身命令行里就含这些子串 → 宿主全家被杀、任务无声中断。prose 铁律拦不住
+// 执行层手滑(同黑帧闸逻辑:"调用成功"≠"没误伤"),这里做机械硬拦:
+//   1) pkill/killall 模式串与宿主指纹互为子串(cwd / main.js / userData 路径)→ 拦
+//   2) pkill/killall 按进程名命中宿主可执行名(Electron 及 Helper)→ 拦
+//   3) kill <pid> / taskkill /PID 命中宿主进程树(main + 全部子孙)→ 拦
+// 放行:精确 PID 杀非宿主进程、与宿主指纹无关的任意模式。铁律:清宿主进程只由用户手动退出。
+// / Host suicide guard: model must never pkill/killall by substring — the host's own
+// cmdline contains those substrings. Mechanically block kill commands whose target
+// matches host fingerprints (cwd/main.js/userData), host process name, or host PID tree.
+let hostTreeCache: { at: number; pids: Set<number> } | null = null;
+function hostProcessTreePids(): Set<number> {
+  if (hostTreeCache && Date.now() - hostTreeCache.at < 10_000) return hostTreeCache.pids; // 10s 缓存:同轮多杀不必反复 ps
+  const out = new Set<number>();
+  try {
+    if (process.platform === 'win32') return out; // Windows 无 ps;靠镜像名/指纹拦
+    const lines = execFileSync('ps', ['-axo', 'pid=,ppid='], { timeout: 3000 }).toString();
+    const rows = [...lines.trim().split('\n')].map((l) => l.trim().split(/\s+/).map(Number));
+    const kids = new Map<number, number[]>();
+    for (const [pid, ppid] of rows) {
+      if (!kids.has(ppid!)) kids.set(ppid!, []);
+      kids.get(ppid!)!.push(pid!);
+    }
+    const queue = [process.pid];
+    while (queue.length) {
+      const p = queue.pop()!;
+      if (out.has(p)) continue;
+      out.add(p);
+      for (const c of kids.get(p) ?? []) queue.push(c);
+    }
+  } catch { /* ps 失败 → 空集,只靠模式拦 */ }
+  hostTreeCache = { at: Date.now(), pids: out };
+  return out;
+}
+
+export function hostKillViolation(cmd: string): string | null {
+  if (!/\b(pkill|killall|kill|taskkill)\b/.test(cmd)) return null;
+  let userData = '';
+  try { userData = require('electron').app.getPath('userData'); } catch { /* 非 main 环境 */ }
+  const mainJs = process.argv[1] ?? '';
+  const cwd = process.cwd();
+  const exeName = path.basename(process.execPath).replace(/\.exe$/i, ''); // dev 下 = Electron
+  const fingerprints = [cwd, mainJs, userData, process.execPath].filter(Boolean)
+    .filter((s, i, a) => a.indexOf(s) === i);
+  const fpHit = (pat: string): boolean =>
+    fingerprints.some((f) => f.includes(pat) && pat.length >= 4) || fingerprints.some((f) => pat.includes(f));
+  const segs = cmd.split(/(?:&&|\|\||;|\||\n)/);
+  for (const raw of segs) {
+    const seg = raw.trim();
+    if (/^kill\s/.test(seg)) {
+      // kill <pid>(含 kill -9 <pid>):PID 命中宿主进程树 → 拦
+      const pids = seg.split(/\s+/).filter((t) => /^\d+$/.test(t)).map(Number);
+      const tree = hostProcessTreePids();
+      if (pids.length && tree.size && pids.some((p) => tree.has(p))) {
+        return `kill ${pids.join(' ')} 命中 KinetAios 宿主进程树(main+子孙 ${tree.size} 个进程)。宿主自杀被硬拦 —— 宿主退出只由用户手动操作;清其它进程请用精确 PID`;
+      }
+      continue;
+    }
+    if (/^(pkill|killall)\s/.test(seg)) {
+      const m = seg.match(/^(?:pkill|killall)\s+(?:-[A-Za-z]+\s+)*['"]?([^'"]+?)['"]?\s*$/);
+      const pat = (m?.[1] ?? '').trim();
+      if (!pat || pat.startsWith('-')) continue;
+      if (fpHit(pat)) {
+        return `pkill/killall 模式「${pat}」与宿主指纹互为子串(${fingerprints.join(' | ')})。两次误杀事故(2026-09-14/2026-10-15)同根因 —— 禁宽泛模式,改用 kill <精确PID> 或精确二进制路径`;
+      }
+      if (pat === exeName || pat.startsWith(`${exeName} Helper`)) {
+        return `pkill/killall「${pat}」命中宿主进程名(${exeName})→ 宿主全家会被连杀。改用 kill <精确PID>`;
+      }
+      continue;
+    }
+    if (/^taskkill\s/i.test(seg)) {
+      const im = seg.match(/\/IM\s+"?([^"\s]+)"?/i);
+      if (im) {
+        const img = im[1].replace(/\.exe$/i, '');
+        if (img === exeName || fpHit(im[1])) {
+          return `taskkill /IM ${im[1]} 命中宿主镜像/指纹。改用 /PID 精确指定非宿主进程`;
+        }
+      }
+      const pids = [...seg.matchAll(/\/PID\s+(\d+)/gi)].map((x) => Number(x[1]));
+      const tree = hostProcessTreePids();
+      if (pids.length && tree.size && pids.some((p) => tree.has(p))) {
+        return 'taskkill /PID 命中 KinetAios 宿主进程树。已硬拦';
+      }
+    }
+  }
+  return null;
 }
 
 // ── 编码检测 ──
