@@ -931,6 +931,129 @@ export function trimHistoryToTokenBudget(msgs: ChatMsg[], budget: number, proto?
   return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...sanitizeToolPairs(kept.reverse())];
 }
 
+// ── 跨 turn 历史预算化(2026-10-15):directHistory 进 AgentLoop 前的唯一闸门 ──
+// 事故背景:fce63613 会话跨 turn 上下文爬到 35M tokens 烧 $327 才撞 API 400。
+// turn 内已有 proactive compact(160K 触发)+ fold(80K),但两者都只作用于 run() 的
+// 局部 messages —— 上一 turn 收尾存回 conv.directHistory 的体量没有任何闸门把关,
+// 下一 turn 全量原样进 prompt。head 长会话每 turn 3-6K 用户输入 + 大量工具输出时,
+// 每新 turn 的"基础地板"就涨几 M,几十 turn 必然滑向 30M+(2026-10-08/09 同型事故)。
+//
+// 三级策略(温和→彻底,原文永不删除):
+//  L0 短会话零感知:总量 ≤ budget 直接原样返回(绝大多数会话走这条,零行为变化);
+//  L1 先折旧工具输出:foldOldToolResults(KEEP_RECENT 只保最近 8 条)—— 工具结果
+//     通常可重取,折叠成摘要行信息损失最小;仍超 → L2;
+//  L2 砍最老 turn(受保护消息豁免:_memory/_pinned/[早期对话摘要]),从最老往新丢,
+//     丢出的 turn 换成一条机械占位摘要(角色数/工具数/字节量 + 建议 recall_memory),
+//     直到 tail 装进预算。机械摘要零 LLM 调用(收口处的 compactHistory 已负责语义摘要,
+//     这里是"下一轮就要发请求"的保命闸,不做贵调用)。
+// ⚠️ 只改发给模型的视图,不写回 conv.directHistory → 原文仍在库,可被 recall/审计回放。
+// 硬收敛闸:与 trimHistoryToTokenBudget 的区别 —— 不强制保首条非保护消息。
+// trim 的 `&& kept.length` 守卫在"单条消息自身超预算"时永不收敛(fce63613 三级
+// fallback 无效的根因);这里装不下就跳过,保证输出恒 ≤ 预算(极端时返回空历史,
+// runAgentLoop 退化为 system+memory+当轮 user,语义正确)。
+function hardCapToBudget(msgs: ChatMsg[], budget: number, proto?: string): ChatMsg[] {
+  if (estTokenCount(msgs, proto) <= budget) return msgs;
+  const isProt = (m: ChatMsg): boolean =>
+    !!m._memory || !!m._pinned ||
+    (typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+  const protectedMsgs = msgs.filter(isProt);
+  let base = protectedMsgs;
+  let guard = 0;
+  // 受保护消息自身互相挤压(理论路径):丢最老的,保到预算内
+  while (base.length && estTokenCount(base, proto) > budget && guard++ < 1000) {
+    base = base.slice(1);
+  }
+  const rest = msgs.filter((m) => !protectedMsgs.includes(m));
+  const kept: ChatMsg[] = [];
+  let total = estTokenCount(base, proto);
+  for (let k = rest.length - 1; k >= 0; k--) {
+    const t = Math.floor(estMsgChars(rest[k]) * coefFor(proto)) + 20;
+    if (total + t > budget) continue; // 装不下就跳过(不强制保首条)→ 收敛保证
+    total += t;
+    kept.unshift(rest[k]);
+  }
+  // 极端优雅化:一条都没保进(如单条 1.5M 巨消息)→ 截断保尾放入,留"存在痕迹"
+  // (模型至少知道有过这条输入,而非凭空消失;字节级截断,零语义承诺)。
+  if (!kept.length && rest.length) {
+    const last = rest[rest.length - 1];
+    if (typeof last.content === 'string') {
+      const remainTok = Math.max(budget - estTokenCount(base, proto) - 200, 1000);
+      const keepChars = Math.floor(remainTok / coefFor(proto));
+      kept.push({ ...last, content: `…[单条消息过大已截断,仅保留尾部 ${Math.round(keepChars / 1000)}K 字符]\n` + last.content.slice(-keepChars) });
+    }
+    // 多模态巨消息不截(base64 无意义),放弃 — 空历史由 runAgentLoop 兜(system+memory+user)。
+  }
+  return [...base, ...sanitizeToolPairs(kept)];
+}
+
+export function budgetCrossTurnHistory(
+  history: ChatMsg[],
+  budget: number,
+  proto?: string,
+): ChatMsg[] {
+  if (!history.length || budget <= 0) return history;
+  if (estTokenCount(history, proto) <= budget) return history; // L0
+
+  // L1:折旧工具输出(视图层折叠,原数组不动;KEEP_RECENT 沿用 turn 内默认)
+  let view = foldOldToolResults(history, proto).view;
+  if (estTokenCount(view, proto) <= budget) return view;
+
+  // L2:从尾往前累积"保得住的最新段",其余(最老、价值密度最低的头部)压缩为一条
+  // 机械占位。受保护消息(_memory/_pinned/[早期对话摘要])永不可丢 —— 即使落进
+  // 弃置区间也从占位旁原样提取回来。
+  const isProtected = (m: ChatMsg): boolean =>
+    !!m._memory || !!m._pinned ||
+    (typeof m.content === 'string' && m.content.startsWith('[早期对话摘要]'));
+  // tailBudget:给保留尾段的预算(占位本身 + 后续 user input/工具回合留余量,按 95% 计)。
+  const tok = view.map((m) => Math.floor(estMsgChars(m) * coefFor(proto)) + 20);
+  const tailBudget = Math.floor(budget * 0.95);
+  let acc = 0;
+  let keepFrom = view.length; // [keepFrom, len) 保留;[0, keepFrom) 弃置→占位
+  for (let k = view.length - 1; k >= 0; k--) {
+    const t = tok[k];
+    if (acc + t <= tailBudget) {
+      acc += t;
+      keepFrom = k;
+    } else {
+      break; // 保连续尾段:从尾往前第一次装不下即停(不跳收,维持时序完整性)
+    }
+  }
+  if (keepFrom >= view.length) {
+    // 尾段一条都保不进(尾部单条超预算)→ 硬收敛闸收口(不强制保首条)。
+    return hardCapToBudget(view, budget, proto);
+  }
+  const droppedMsgs = view.slice(0, keepFrom);
+  const keptMsgs = view.slice(keepFrom);
+  if (!droppedMsgs.length) {
+    // 弃置区为空但整体超预算 → 尾部自身超预算,硬收敛闸收口。
+    return hardCapToBudget(view, budget, proto);
+  }
+  // 机械占位:一条 user 角色的"这段历史已摘要"标记,含统计(零 LLM 调用)。
+  // _transient:只在当轮模型视图可见,dropTransient 剔除 → 不写回 directHistory。
+  // (否则占位落库会让历史索引漂移/逐轮重复摘要,每 turn 由本函数重新生成即可。)
+  let userTurns = 0, toolMsgs = 0, chars = 0;
+  for (const m of droppedMsgs) {
+    if (m.role === 'user' && !m._memory) userTurns++;
+    if (m.role === 'tool') toolMsgs++;
+    chars += estMsgChars(m);
+  }  const placeholder: ChatMsg = {
+    role: 'user',
+    _transient: true,
+    content: `[早期对话已按预算压缩为摘要:共 ${userTurns} 个早期 turn、${toolMsgs} 条工具调用结果、约 ${Math.round(chars / 1000)}K 字符。` +
+      `早期关键决策请以本会话 [早期对话摘要] 为准;需要细节用 recall_memory 检索历史会话摘要。]`,
+  };
+  // 受保护消息从弃置区原样提取(位置已由占位概括,正文必须幸存:记忆/锁定/已有摘要永不可丢)。
+  const rescued = droppedMsgs.filter(isProtected);
+  let out = sanitizeToolPairs([placeholder, ...rescued, ...keptMsgs]);
+  // 兜底硬闸:占位+营救+尾段合计若仍超(如受保护消息本身巨大),硬收敛闸收口。
+  const outTok = estTokenCount(out, proto);
+  if (outTok > budget) {
+    console.warn('[AgentLoop] budgetCrossTurnHistory: 摘要化后仍超预算(%dK > %dK),硬收敛闸收口', Math.round(outTok / 1000), Math.round(budget / 1000));
+    out = hardCapToBudget(out, budget, proto);
+  }
+  return out;
+}
+
 // ── turn 内工具结果折叠(intra-turn tool-result folding)──
 // 场景:长跑 ReAct 循环单 turn 内数百次 LLM 调用,每条工具结果都会被后续每次调用重发,
 // N 次调用 = O(N²) token 增长(实测:499 次调用烧 99.8M input tokens,撞 5h 限流)。

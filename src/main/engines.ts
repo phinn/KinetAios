@@ -12,7 +12,7 @@ import path from 'node:path';
 import os from 'node:os';
 import type { AgentEvent, AppSettings, ApprovalPolicy, ChatMsg, Conversation, EngineKind, SandboxMode } from '../shared/types';
 import { resolveEnginePolicy } from '../shared/types';
-import { runAgentLoop, compactHistory, compactWithSpill } from './AgentLoop';
+import { runAgentLoop, compactHistory, compactWithSpill, budgetCrossTurnHistory } from './AgentLoop';
 import { trackFileOpFromToolEvent } from './AgentLoop';
 import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
@@ -556,7 +556,12 @@ function skillCatalogSection(): string {
       memoryBlock,
       snapshot: snap,
       userInput,
-      history: conv.directHistory,
+      // 跨 turn 预算闸(2026-10-15):head 长会话的 directHistory 进 loop 前先预算化。
+      // 修的场景:历史 35M tokens 仍被全量原样发(requested_max_tokens 超限),
+      // turn 内 proactive compact / fold 只管 run() 局部,管不到跨 turn 存量。
+      // 预算口径:2× fold 触发线 = 160K —— 大于 fold 的 80K(不抢活),小于
+      // 大多数供应商单请求硬限。只改视图,原历史不写回,长会话不再"每 turn 涨地基"。
+      history: budgetCrossTurnHistory(conv.directHistory, 160_000, snap.apiProtocol),
       ctx,
       signal,
       contextMode: conv.contextMode,
