@@ -500,6 +500,22 @@ export function hostKillViolation(cmd: string): string | null {
   for (const raw of segs) {
     const seg = raw.trim();
     if (/^kill\s/.test(seg)) {
+      // 间接杀:kill $(pgrep -f <模式>) —— 命令替换运行时才展开成宿主 pid,静态必须查内层模式
+      // / Indirect kill via command substitution: check the inner pattern now, the pid only
+      // exists at runtime — too late once the shell expands it.
+      const sub = seg.match(/\$\(([^)]+)\)/);
+      if (sub) {
+        const inner = sub[1].trim();
+        const innerPat = inner.replace(/^(?:pgrep|pkill)\s+(?:-\S+\s+)*/i, '').replace(/^['"]|['"]$/g, '');
+        if (innerPat && !innerPat.startsWith('-')) {
+          if (fpHit(innerPat)) {
+            return `kill \$(…) 内层模式「${innerPat}」命中宿主指纹 → 展开后会杀宿主。已拦;改用 kill <精确PID>`;
+          }
+          if (innerPat.toLowerCase() === exeName.toLowerCase()) {
+            return `kill \$(…) 内层进程名「${innerPat}」即宿主(${exeName})。已拦;改用 kill <精确PID>`;
+          }
+        }
+      }
       // kill <pid>(含 kill -9 <pid>):PID 命中宿主进程树 → 拦
       const pids = seg.split(/\s+/).filter((t) => /^\d+$/.test(t)).map(Number);
       const tree = hostProcessTreePids();
@@ -509,14 +525,21 @@ export function hostKillViolation(cmd: string): string | null {
       continue;
     }
     if (/^(pkill|killall)\s/.test(seg)) {
-      const m = seg.match(/^(?:pkill|killall)\s+(?:-[A-Za-z]+\s+)*['"]?([^'"]+?)['"]?\s*$/);
-      const pat = (m?.[1] ?? '').trim();
-      if (!pat || pat.startsWith('-')) continue;
-      if (fpHit(pat)) {
-        return `pkill/killall 模式「${pat}」与宿主指纹互为子串(${fingerprints.join(' | ')})。两次误杀事故(2026-09-14/2026-10-15)同根因 —— 禁宽泛模式,改用 kill <精确PID> 或精确二进制路径`;
-      }
-      if (pat === exeName || pat.startsWith(`${exeName} Helper`)) {
-        return `pkill/killall「${pat}」命中宿主进程名(${exeName})→ 宿主全家会被连杀。改用 kill <精确PID>`;
+      // token 化:引号串保留整体;剥掉全部 flag(短旗 -f/-9/-SIG 前缀、长旗 --full),
+      // 剩下的每个 token 都是独立的模式/进程名 —— pkill 单模式,killall 可多进程名。
+      // 之前用惰性正则取"最后一个参数",--full 没剥、killall Electron Other 只查了整体,均漏。
+      const rest = seg.replace(/^(?:pkill|killall)\s+/, '');
+      const tokens = rest.match(/"[^"]*"|'[^']*'|\S+/g) ?? [];
+      const pats = tokens
+        .map((t) => t.replace(/^['"]|['"]$/g, ''))
+        .filter((t) => t && !t.startsWith('-'));
+      for (const pat of pats) {
+        if (fpHit(pat)) {
+          return `pkill/killall 模式「${pat}」与宿主指纹互为子串(${fingerprints.join(' | ')})。两次误杀事故(2026-09-14/2026-10-15)同根因 —— 禁宽泛模式,改用 kill <精确PID> 或精确二进制路径`;
+        }
+        if (pat.toLowerCase() === exeName.toLowerCase() || new RegExp(`^${exeName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} Helper$`, 'i').test(pat)) {
+          return `pkill/killall「${pat}」命中宿主进程名(${exeName})→ 宿主全家会被连杀。改用 kill <精确PID>`;
+        }
       }
       continue;
     }
