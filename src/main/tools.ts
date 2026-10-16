@@ -2524,7 +2524,7 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshotWithHide, captureWindowByName, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey } from './computer-use';
+import { captureScreenshotWithHide, captureWindowByName, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey, withEffectVerify } from './computer-use';
 import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, browserUpload, browserCookie, killAgentChrome } from './cdp';
 
 // 截图产物回执(2026-10-15 事故:agent 不知道截图落在哪、两种语言目录是同一张图)。
@@ -2663,12 +2663,15 @@ const mouseAction: Tool = {
     const x = Number(args.x);
     const y = Number(args.y);
     if (isNaN(x) || isNaN(y)) return '❌ 无效坐标';
-    const r = await doMouseClick({
-      x, y,
-      button: (args.button as 'left' | 'right' | 'middle') || 'left',
-      doubleClick: Boolean(args.double_click),
-    });
-    return r.ok ? `✅ 鼠标点击 (${Math.round(x)}, ${Math.round(y)}) ${args.button || 'left'}${args.double_click ? ' 双击' : ''}` : `❌ ${r.error}`;
+    // P0-fix 生效验证:投递前后画面指纹 diff,两次无变化 → 降级警告(假成功探测)
+    const r = await withEffectVerify(`鼠标点击 (${Math.round(x)}, ${Math.round(y)})`, () =>
+      doMouseClick({
+        x, y,
+        button: (args.button as 'left' | 'right' | 'middle') || 'left',
+        doubleClick: Boolean(args.double_click),
+      }));
+    const warn = r.warn ? `\n${r.warn}` : '';
+    return r.ok ? `✅ 鼠标点击 (${Math.round(x)}, ${Math.round(y)}) ${args.button || 'left'}${args.double_click ? ' 双击' : ''}${warn}` : `❌ ${r.error}`;
   },
 };
 
@@ -2728,8 +2731,9 @@ const keyboardTypeTool: Tool = {
     if (!text) return '❌ 空文本';
     const gate = await cuGate(ctx, `键盘输入文本(${text.length} 字符,进入当前前台/后台锁定窗口)`);
     if (gate) return gate;
-    const r = await doKeyboardType(text);
-    return r.ok ? `✅ 输入文本: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''} (${text.length} 字符)` : `❌ ${r.error}`;
+    const r = await withEffectVerify(`键盘输入「${text.slice(0, 20)}」`, () => doKeyboardType(text));
+    const warn = r.warn ? `\n${r.warn}` : '';
+    return r.ok ? `✅ 输入文本: ${text.slice(0, 50)}${text.length > 50 ? '…' : ''} (${text.length} 字符)${warn}` : `❌ ${r.error}`;
   },
 };
 
@@ -2748,8 +2752,9 @@ const keyboardKeyTool: Tool = {
     if (!key) return '❌ 空按键';
     const gate = await cuGate(ctx, `按键/组合键: ${key}`);
     if (gate) return gate;
-    const r = await doKeyboardKey(key);
-    return r.ok ? `✅ 按键: ${key}` : `❌ ${r.error}`;
+    const r = await withEffectVerify(`按键 ${key}`, () => doKeyboardKey(key));
+    const warn = r.warn ? `\n${r.warn}` : '';
+    return r.ok ? `✅ 按键: ${key}${warn}` : `❌ ${r.error}`;
   },
 };
 

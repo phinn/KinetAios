@@ -1387,3 +1387,55 @@ function shellEscape(s: string): string {
   // Basic shell escaping for macOS/Linux
   return "'" + s.replace(/'/g, "'\\''") + "'";
 }
+
+// ── 动作生效验证(2026-10-16):点击/输入后画面指纹 diff,假成功降级为警告 ──
+// 事故背景:点击/键入"调用成功"≠"动作生效"(同黑帧闸逻辑:文件存在+尺寸对≠有画面)。
+// 长跑会话曾出现连点无一命中的假成功链。
+// 关键修正(烟囱9d 实测):真实屏幕有环境动态(时钟秒跳/光标闪/通知角标,实测 0.94% 像素
+// 持续变化),naive 前后对比必然把"环境在动"误判成"动作生效" → 永不告警,闸形同虚设。
+// 方案:动作前拍两张(隔 300ms)测"环境动态基线" —— 基线不稳定(环境本身在抖)→ 无法
+// 判定,跳过验证不误报;基线稳定 → 动作后两张对比,仍与基线一致才算"无变化"→ warn。
+// 判定"无法判定"比误报/漏报都诚实:验证是探测不是执法。
+// / Effect verification with ambient-motion baseline: real screens keep changing (clock
+// seconds, cursor blink). Two pre-frames measure ambient motion; if ambient itself is
+// unstable we skip verification instead of guessing. If ambient is stable and both
+// post-frames equal the baseline, downgrade "ok" to a warning.
+let effectVerifyBusy = false; // 串行化:并发动作的前后帧会互相污染
+export async function withEffectVerify<T extends { ok: boolean; error?: string }>(
+  label: string, fn: () => Promise<T>,
+): Promise<T & { warn?: string }> {
+  const b1 = await captureScreenForVerify();
+  const out = await fn();
+  if (!out.ok || b1 === null) return out;
+  if (effectVerifyBusy) return out;
+  effectVerifyBusy = true;
+  try {
+    // 环境动态基线:b1 已是动作前帧,再拍一张。两者不同 = 环境本身在动(时钟/光标),
+    // 动作效果被环境噪声淹没 → 跳过(不误报也不拦正常流程)。
+    const b2 = await captureScreenForVerify();
+    if (b2 === null || b2 !== b1) return out;
+    await new Promise((r) => setTimeout(r, 400));
+    const a1 = await captureScreenForVerify();
+    if (a1 === null || a1 !== b1) return out; // 有变化 → 生效
+    await new Promise((r) => setTimeout(r, 500));
+    const a2 = await captureScreenForVerify();
+    if (a2 === null || a2 !== b1) return out;
+    return { ...out, warn: `⚠️ ${label}已投递,但前后画面指纹一致(已排除环境动态)—— 动作大概率未命中任何控件(坐标错位/窗口失焦/目标无响应)。建议:重截屏核对坐标后再试,或改用 ax_script/browser_* 元素级操作` };
+  } finally {
+    effectVerifyBusy = false;
+  }
+}
+
+// 验证用截屏:桌面缩略图 32px 网格指纹(与 frameFingerprint 同判据,独立入口避免隐身/黑帧闸副作用)
+async function captureScreenForVerify(): Promise<string | null> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['screen'],
+      thumbnailSize: { width: 800, height: 500 },
+    });
+    if (!sources.length) return null;
+    const thumb = sources[0].thumbnail;
+    if (thumb.isEmpty()) return null;
+    return frameFingerprint(thumb);
+  } catch { return null; }
+}
