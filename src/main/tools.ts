@@ -182,6 +182,13 @@ export type SpawnScopeConfig =
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
+  // DedupeGuard:turn 级工具调用去重状态(runAgentLoop 生命周期内创建/持有,跨 turn 不复用)。
+  // key = toolName + 规范化参数;value = { count, lastResult }。由 AgentLoop 内部读写,引擎/工具不碰。
+  // 离线调用(烟囱/工具直跑)可不传 → 守卫关闭。
+  dedupe?: {
+    window: Map<string, { count: number; lastResult: string; lastStep: number }>;
+    step: number; // 单调递增调用序号(跨 batch 累计)
+  };
   spawn?: (a: {
     prompt: string;
     signal: AbortSignal;

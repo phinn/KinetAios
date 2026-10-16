@@ -148,6 +148,12 @@ export function getSettings(): AppSettings {
   } catch {
     cache = { ...DEFAULTS };
   }
+  // 烟囱/自动化通道:环境变量覆盖 maxTurns,让离线测试能走到「用户天花板耗尽」路径。
+  // 必须放 try/catch 之后:纯 node 下 electron.app.getPath throw → catch 用 DEFAULTS,
+  // 覆盖写 try 里会被跳过(实测坑)。只影响显式设了该变量的进程,产品行为零影响。
+  // (ponytail: 若烟囱场景增多,升级为通用 overrides map)
+  const smokeMax = process.env.KINET_SMOKE_MAXTURNS;
+  if (smokeMax != null && smokeMax !== '') cache.maxTurns = parseInt(smokeMax, 10) || 0;
   return cache;
 }
 

@@ -292,6 +292,9 @@ function warnIfProtectedOverBudget(messages: ChatMsg[], budget: number, proto: s
 
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
+  // DedupeGuard 状态:turn 级,由 loop 自己初始化(调用方无需关心;传入已有 dedupe 时复用 —— V2 executor
+  // 跨 step 共享同一 loop 实例时保持计数连续)。传入的 ctx 若无 dedupe 就地挂上,保证守卫始终生效。
+  if (!ctx.dedupe) ctx.dedupe = { window: new Map(), step: 0 };
   // 轮级挂点:Legis planner 工具断供用。curTools 可被挂点替换,每轮重读(defs/execute 都跟着换)。
   const hooks = opts.turnHooks;
   let curTools: Tool[] = tools;
@@ -376,7 +379,24 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
   // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
   let nudgedHypothesis = false;
-  for (let i = 0; i < maxTurns; i++) {
+  // 🔄 relay 接力(2026-10-16 P1):长任务跑满轮数上限 ≠ 任务完成。此前直接 wrapUp 总结,
+  // 断点信息全靠模型从折叠历史里捞(935 步 turn 的教训)。现在耗尽时先看 relay 余额:
+  // 有余量 → 注入断点续跑指令扩容继续;用完 → 走原 wrapUp。仅当上限来自「用户天花板」时接力
+  // (fast/deep 的内部路线上限照旧硬切,不破坏路由预算);用户选无限时无上限概念,不接力;abort 不接力。
+  const capFromUserCeiling = !(opts.maxTurns != null && opts.maxTurns > 0 && opts.maxTurns < userMax);
+  const RELAY_MAX_JUMPS = 2;   // 最多接力 2 跳
+  const RELAY_TURNS = 30;      // 每跳 +30 轮
+  let relayJumps = 0;
+  let cap = maxTurns;
+  for (let i = 0; ; i++) {
+    if (i >= cap) {
+      if (!capFromUserCeiling || userMax <= 0 || signal.aborted || relayJumps >= RELAY_MAX_JUMPS) break; // 真耗尽 → 下方 wrapUp
+      relayJumps++;
+      cap += RELAY_TURNS;
+      messages.push({ role: 'user', content: relayResumePrompt(messages, cap), _transient: true });
+      onEvent({ type: 'status', text: `🔄 轮数上限已到但任务未完,自动接力第 ${relayJumps}/${RELAY_MAX_JUMPS} 跳(+${RELAY_TURNS} 轮)` });
+      continue;
+    }
     // 轮级挂点:每轮开头可断供/替换工具集(1-based 轮号)。defs/execute 都用 curTools,断供本轮即生效。
     if (hooks?.onTurnStart) {
       const holder: { tools: Tool[] } = { tools: curTools };
@@ -596,6 +616,35 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   return dropTransient(messages);
 }
 
+// relay 接力续跑指令:从 messages 提炼断点快照(最近 assistant 意图 + 最近工具结果头部),
+// 比 wrapUp"总结吧"更能把任务推向完成。快照拼进指令,模型不用从折叠历史里捞线索。
+function relayResumePrompt(messages: ChatMsg[], newCap: number): string {
+  // 从尾部找最后一条带 tool_calls 的 assistant(任务前沿意图)+ 其后的工具结果头部
+  let lastIntent = '';
+  let lastToolHeads: string[] = [];
+  for (let k = messages.length - 1; k >= 0 && lastToolHeads.length < 4; k--) {
+    const m = messages[k];
+    if (m.role === 'assistant' && Array.isArray(m.content) && (m.content as ContentPart[]).length === 0 && lastIntent === '') {
+      // assistant 纯 tool_calls(content 为空数组)—— 意图在 tool_calls 的 args 里
+      continue;
+    }
+    if (m.role === 'tool' && typeof m.content === 'string') {
+      lastToolHeads.unshift(m.content.slice(0, 200).replace(/\s+/g, ' '));
+      continue;
+    }
+    if (m.role === 'assistant' && typeof m.content === 'string' && m.content.trim() && lastIntent === '') {
+      lastIntent = m.content.slice(-400);
+    }
+  }
+  const parts = [
+    '[系统] 已达轮数上限,但任务按原目标继续执行(轮数预算已扩容,无需向用户确认)。',
+    lastIntent ? `你最近的表述:${lastIntent}` : '',
+    lastToolHeads.length ? `最近工具结果摘要:\n${lastToolHeads.map((s, i) => `${i + 1}. ${s}`).join('\n')}` : '',
+    '请直接从中断处继续,不要重复已完成的步骤;若目标确已达成,直接给最终总结。',
+  ].filter(Boolean);
+  return parts.join('\n');
+}
+
 // 尝试修复被 max_tokens 截断的 tool_call arguments JSON。
 // 场景:模型生成长 write_file content 时,输出被 max_tokens 切断,
 // arguments JSON 字符串不完整(引号/括号未闭合)→ JSON.parse 失败。
@@ -738,6 +787,64 @@ function repairTruncatedJSON(raw: string): Record<string, unknown> | null {
 async function execute(tc: { name: string; arguments: string }, tools: Tool[], ctx: ToolCtx): Promise<string> {
   const tool = tools.find((t) => t.name === tc.name);
   if (!tool) return `未知工具: ${tc.name}`;
+  // ── DedupeGuard:turn 级近似重复调用拦截(2026-10-16 P1,数据实证:89 个 300+ 步 mega-turn
+  // 中 42% 调用与 5 步前的同参调用完全重复,25% 是紧邻 2 步内的原地打转)──
+  // 规则:turn 内同 (tool, args) 第 4 次起拒执行,回注上次结果 + 强制升级假设。
+  // 白名单:截图/采样/传感类工具天然幂等且预期重复(观察状态变化),不拦。
+  // 状态挂在 ctx.dupe(turn 级,runAgentLoop 每 turn 新建 ctx → 跨 turn 零污染)。
+  // / DedupeGuard: 4th identical (tool, args) call within one turn is refused with the
+  // previous result + an escalation hint. Screenshot/sampling tools are whitelisted.
+  if (ctx.dedupe && !DEDUPE_WHITELIST.has(tc.name)) {
+    const normArgs = normalizeArgsForDedupe(tc.name, tc.arguments);
+    const key = tc.name + '::' + normArgs;
+    const entry = ctx.dedupe.window.get(key);
+    const step = ++ctx.dedupe.step;
+    if (entry && entry.count >= 3) {
+      entry.count++;
+      entry.lastStep = step;
+      return (
+        `⛔ [DedupeGuard] 这是本任务内第 ${entry.count} 次以完全相同的参数调用 ${tc.name}。上次结果(直接复用,不再执行):\n` +
+        `${entry.lastResult.slice(0, 2000)}\n` +
+        `[系统] 相同输入必然产生相同输出。停止重试同一调用:要么参数中有信息是错的(换目标/换方法),` +
+        `要么这个调用已经无法推进任务 —— 升级假设层级或直接基于已有信息收尾。`
+      );
+    }
+    const result = await executeWithParsedArgs(tool, tc, ctx);
+    ctx.dedupe.window.set(key, { count: (entry?.count ?? 0) + 1, lastResult: result, lastStep: step });
+    // 窗口防泄漏:mega-turn 数千调用只留热 key(map 上限 500,超了删最早插入的)
+    if (ctx.dedupe.window.size > 500) {
+      const first = ctx.dedupe.window.keys().next().value;
+      if (first) ctx.dedupe.window.delete(first);
+    }
+    return result;
+  }
+  // runToolReal/executeWithParsedArgs 定义在下方(带 JSON 截断容错修复)
+  return executeWithParsedArgs(tool, tc, ctx);
+}
+
+// 白名单:幂等观察类工具 —— 截图/鼠标(状态会变)/串口/传感采样,重复调用是预期行为。
+const DEDUPE_WHITELIST = new Set([
+  'screenshot', 'screenshot_window', 'browser_screenshot', 'mouse_click', 'mouse_drag', 'mouse_scroll',
+  'keyboard_type', 'keyboard_key', 'serial_monitor', 'serial_read', 'gpio_read', 'serial_session',
+  'vnc_snap', 'ask_user', 'todo_write', 'remember_fact',
+]);
+
+// 参数规范化:剥离时间戳/随机字段,只留语义参数(防 "ts=xxx" 差异骗过 dedupe)。
+function normalizeArgsForDedupe(name: string, argsJson: string): string {
+  try {
+    const a = JSON.parse(argsJson || '{}') as Record<string, unknown>;
+    for (const k of Object.keys(a)) {
+      if (/^(ts|timestamp|nonce|_t|seq|requestId|id)$/i.test(k)) delete a[k];
+    }
+    let s = JSON.stringify(a);
+    if (s.length > 4000) s = s.slice(0, 4000); // 巨型参数(write content)按前 4K 指纹
+    return s;
+  } catch {
+    return argsJson.slice(0, 4000); // 非法 JSON 按原文指纹
+  }
+}
+// executeWithParsedArgs:复用原 execute 的完整前置处理(JSON 截断容错修复 + 解析失败守卫),解析后走 runToolReal。
+async function executeWithParsedArgs(tool: Tool, tc: { name: string; arguments: string }, ctx: ToolCtx): Promise<string> {
   let args: Record<string, unknown> = {};
   let parsedOk = true;
   try {
@@ -768,6 +875,11 @@ async function execute(tc: { name: string; arguments: string }, tools: Tool[], c
   if (!parsedOk && Object.keys(args).length === 0) {
     return `⚠️ 参数解析失败:模型输出的 JSON 不完整(可能被 max_tokens 截断)。请重试,缩短参数内容。`;
   }
+  return runToolReal(tool, tc, args, ctx);
+}
+
+// runToolReal:真正调用工具 runner。错误包装与原 execute 一致(abort 时返回'[已停止]'而非错误文本)。
+async function runToolReal(tool: Tool, tc: { name: string; arguments: string }, args: Record<string, unknown>, ctx: ToolCtx): Promise<string> {
   try {
     return await tool.run(args, ctx);
   } catch (e) {

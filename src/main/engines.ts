@@ -357,9 +357,12 @@ class DirectEngine implements Engine {
     // ctx.spawn:dispatch_agent 起子任务 —— 复用 runAgentLoop,独立 history、只读工具、maxTurns 限 8。
     // 子任务事件只转发 cost(也花钱)+ tool(带前缀供 UI 观感),吞掉 token 防刷屏。
     // P1:支持 scope 参数,按需注入 parent history。scope 切片逻辑由 resolveSpawnHistory 集中处理。
+    // Turn 级 DedupeGuard 状态:每 turn 新建 → 跨 turn 零污染(mega-turn 循环重复调用拦截)
+    const dedupeState = { step: 0, window: new Map<string, { count: number; lastResult: string; lastStep: number }>() };
     const ctx: ToolCtx = {
       cwd: conv.cwd,
       confirm: this.confirm,
+      dedupe: dedupeState,
       signal,
       convId: conv.id,
       channel: conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined, // 来源通道:send_file 工具门控用
