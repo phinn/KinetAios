@@ -6,15 +6,51 @@
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import nodeFetch from 'node-fetch'; // Node 16 无全局 fetch → polyfill(见下)
+import type { Readable } from 'node:stream';
 
 // Node 16 无全局 fetch(Node 18 起内置)→ node-fetch@2 polyfill。
 // glm.ts/tools.ts/web_search 等大量裸用 fetch(),必须在这里先挂全局,且要早于一切业务模块。
 if (typeof (globalThis as { fetch?: unknown }).fetch !== 'function') {
-  (globalThis as { fetch: unknown }).fetch = nodeFetch;
-  // node-fetch@2 的 AbortSignal 兼容 Node 16 原生 AbortController/AbortSignal
   (globalThis as { Headers: unknown }).Headers = nodeFetch.Headers;
   (globalThis as { Request: unknown }).Request = nodeFetch.Request;
   (globalThis as { Response: unknown }).Response = nodeFetch.Response;
+  (globalThis as { fetch: unknown }).fetch = wrapFetch(nodeFetch);
+}
+
+// node-fetch@2 的 resp.body 是 Node Readable(PassThrough),没有 WHATWG ReadableStream 的
+// getReader();glm.ts 的 SSE 解析 / tools.ts 的流式下载都按 web-stream API 用它。
+// Node 16 也没有原生 ReadableStream → 把 Node 流包装成最小 getReader()/cancel() 形状。
+// / node-fetch@2 body is a Node stream; wrap into a minimal WHATWG-stream-like shape.
+function nodeStreamToWebBody(stream: Readable): { getReader(): { read(): Promise<{ done: boolean; value?: Uint8Array }>; cancel(): Promise<void> }; cancel(): Promise<void> } {
+  const iter = stream[Symbol.asyncIterator]();
+  const read = async (): Promise<{ done: boolean; value?: Uint8Array }> => {
+    try {
+      const r = await iter.next();
+      return r.done ? { done: true, value: undefined } : { done: false, value: r.value as Uint8Array };
+    } catch {
+      return { done: true, value: undefined };
+    }
+  };
+  const destroy = async (): Promise<void> => {
+    try { stream.destroy(); } catch { /* 已销毁 / already destroyed */ }
+  };
+  return {
+    getReader: () => ({ read, cancel: destroy }),
+    cancel: destroy,
+  };
+}
+
+// 包一层 fetch:返回的 Response.body 换成带 getReader() 的包装(Node 16 目标)。
+// Node 18+ 原生 fetch 不经过这里(globalThis.fetch 已存在,整个 polyfill 块跳过)。
+function wrapFetch(f: typeof nodeFetch): typeof fetch {
+  return (async (url: any, init?: any) => {
+    const resp = await f(url, init);
+    const body = resp.body as Readable | null;
+    if (body && typeof (body as any).getReader !== 'function') {
+      (resp as any).body = nodeStreamToWebBody(body);
+    }
+    return resp as unknown as Response;
+  }) as unknown as typeof fetch;
 }
 
 // %APPDATA%\KinetAios(windows)/ ~/Library/Application Support/KinetAios (mac)
