@@ -2545,6 +2545,9 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .turn .err.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 8%, transparent); border-left-color: var(--warn); }
 .turn .err.warn .retry-btn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 35%, transparent); }
 .turn .err.warn .retry-btn:hover { background: color-mix(in srgb, var(--warn) 12%, transparent); }
+/* cancelled = 用户主动停止,正常操作 → 中性琥珀(非错误红),弱化背景;按钮仍是 warn 色系(续跑) */
+.turn .err.cancelled { color: var(--warn); background: color-mix(in srgb, var(--warn) 4%, transparent); border-left-color: color-mix(in srgb, var(--warn) 55%, transparent); }
+.turn .err.cancelled svg { opacity: 0.75; }
 
 /* input — chat composer,产品最核心的交互入口。
    液态玻璃:半透明 + blur,透出底层背景渐变。*/

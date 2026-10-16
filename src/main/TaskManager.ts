@@ -383,7 +383,7 @@ export class TaskManager {
       if (turn && !turn.done) {
         turn.done = true;
         const lang = getSettings().lang;
-        if (!turn.answer) turn.error = t(lang, 'tmgr.cancelled');
+        if (!turn.answer) { turn.error = t(lang, 'tmgr.cancelled'); turn.errorKind = 'cancelled'; }
         else conv.statusNote = t(lang, 'tmgr.stopped');
       }
       conv.status = 'ready';

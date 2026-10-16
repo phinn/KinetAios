@@ -584,7 +584,7 @@ export type Turn = {
   cacheCreation?: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
   /** 失败原因分类(来自 AgentEvent.error.kind):renderer 据此区分展示 — maxTurns 可续跑(amber 警示而非红色报错)。 */
-  errorKind?: 'maxTurns' | 'transient' | 'contextTooLong';
+  errorKind?: 'maxTurns' | 'transient' | 'contextTooLong' | 'cancelled';
   // 本 turn 在 directHistory 中的消息区间起点(send 时记录)。
   // pinTurn 由此把 turn 级锁定映射到消息级 _pinned 标记(trim/compact 保护读的是消息标记)。
   // 旧数据/压缩重排后无此值或失配 → applyPin 拒绝标记并说明原因,不会假装生效。

@@ -2429,7 +2429,7 @@ function ensureElapsedTicker(): void {
 
 // 上下文 gauge 文案:✍ 3.2K / 1M · 0.3%(超 10% 才显示百分比,避免永远 0.x% 噪声)
 function ctxGaugeText(conv: Conversation): string {
-  const tok = `${(conv.ctxTokens! / 1000).toFixed(1)}K`;
+  const tok = fmtTok(conv.ctxTokens!);
   const max = conv.ctxMax ? ` / ${(conv.ctxMax / 1_000_000).toFixed(conv.ctxMax >= 1_000_000 ? 0 : 1).replace(/\.0$/, '')}M` : '';
   const pct = conv.ctxPct != null && conv.ctxPct >= 10 ? ` · ${conv.ctxPct}%` : '';
   return `✍ ${tok}${max}${pct}`;
@@ -2748,7 +2748,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (t.error) {
       const e = document.createElement('div');
       // maxTurns 可续跑(发"继续"即可接上)→ amber 警示而非红色报错;其余保持红色
-      e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '');
+      // cancelled = 用户主动停止,是正常操作不是错误 → 中性样式 + ⏵ 续跑,不显示重试
+      e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '') + (t.errorKind === 'cancelled' ? ' cancelled' : '');
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
       // contextTooLong:重试无用(裁剪到最小集仍超窗)→ 给真正的解法入口,不给误导性的重试
       if (t.errorKind === 'contextTooLong') {
@@ -2769,16 +2770,10 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       }
       // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
       // 瞬时错误(退避重试耗尽):按钮文案区分,提示"重试通常能过",降低"要改 prompt"的误判
-      const retry = document.createElement('button');
-      retry.className = 'ghost retry-btn';
-      retry.textContent = '↻ ' + (t.errorKind === 'transient' ? tr('turn.retryTransient') : tr('turn.retry'));
-      retry.onclick = () => {
-        if (conv.status === 'running' || !t.prompt.trim()) return;
-        scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
-        void api.send(conv.id, t.prompt);
-      };
+      // cancelled:用户主动停止 ≠ 出错 → 不给「重试」(没有错误可重试),Direct 家族仍有 ⏵ 断点续跑
       // ⏵ 继续(断点续打):Direct 家族中断/失败后,directHistory 保留了已完成的 Partial 产物,
       // 发一条续做指令让模型从断点接上 — 区别于「重试」的原样重做。
+      // 注意在 cancelled 守卫之外:用户主动停止的 turn,续跑就是主操作。
       const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4' || conv.engine === 'directV5';
       if (isDirectFam && t.done) {
         const cont = document.createElement('button');
@@ -2792,6 +2787,16 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         };
         e.appendChild(cont);
       }
+      // ↻ 重试 / 切换配置档:仅真实错误给(cancelled 不是错误,无需重试入口)
+      if (t.errorKind !== 'cancelled') {
+        const retry = document.createElement('button');
+        retry.className = 'ghost retry-btn';
+        retry.textContent = '↻ ' + (t.errorKind === 'transient' ? tr('turn.retryTransient') : tr('turn.retry'));
+        retry.onclick = () => {
+          if (conv.status === 'running' || !t.prompt.trim()) return;
+          scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
+          void api.send(conv.id, t.prompt);
+        };
       // quota/auth 类错误 → 「切换配置档并重试」:按 goal failover 链轮转,一键完成切换+重发
       const errText = t.error.toLowerCase();
       if (/quota|429|余额|balance|欠费|unauthorized|401|403|invalid.{0,8}key|api.?key|认证/.test(errText)) {
@@ -2817,6 +2822,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         e.appendChild(sw);
       }
       e.appendChild(retry);
+      }
       body.appendChild(e);
     }
     // turn 级右键菜单:复制 / 重试(失败时) / 从此处分叉
@@ -4571,7 +4577,7 @@ function updateStreamRate(): void {
   while (streamTokenTimes.length && now - streamTokenTimes[0] > 5000) streamTokenTimes.shift();
   const span = streamTokenTimes.length ? (now - streamTokenTimes[0]) / 1000 : 0;
   const rate = span > 0.2 ? streamTokenTimes.length / span : 0;
-  const totalStr = streamTokenTotal > 1000 ? (streamTokenTotal / 1000).toFixed(1) + 'k' : String(streamTokenTotal);
+  const totalStr = fmtTok(streamTokenTotal);
   el.innerHTML = rate > 0 ? `${ICON.bolt} ${rate.toFixed(1)} tok/s · ${totalStr} tok` : `${SVGI_SET.pauseCircle(11)} ${totalStr} tok`;
 }
 
@@ -4890,8 +4896,16 @@ function streamMetaText(conv: Conversation): string {
 }
 
 // turn 页脚 token 展示:输入/输出分开(↑in ↓out);旧数据无拆分(两者皆 0)时回退总数。
+// token 计数统一格式化:1,234 → 1.2k;1,459,300 → 14.6M(自动进位,修「↑14593.5k」溢出)。
+// toFixed(1) 去尾零(.0),保证 900→900 / 1200→1.2k / 1500000→1.5M 全区间紧凑。
+export function fmtTok(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(n);
+}
+
 function tokSplitLabel(tokensIn: number, tokensOut: number, total: number): string {
-  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const fmt = fmtTok;
   if (tokensIn > 0 || tokensOut > 0) return `↑${fmt(tokensIn)} ↓${fmt(tokensOut)}`;
   return `${fmt(total)} tok`;
 }
@@ -4918,7 +4932,7 @@ function closeTokenBreakdown(): void {
 async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTMLElement): Promise<void> {
   if (tokPopEl) { closeTokenBreakdown(); return; } // 已开着 → 点同处关闭
   closeTokenBreakdown();
-  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const fmt = fmtTok;
   const pop = document.createElement('div');
   pop.className = 'tok-pop';
   pop.innerHTML = `<div class="tok-pop-head">Token 明细 <span class="bp-dim">${escHtml(turnId.slice(0, 8))}</span></div><div class="tok-pop-body"><div class="mm-empty">加载中…</div></div>`;
