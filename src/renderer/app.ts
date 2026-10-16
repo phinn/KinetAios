@@ -1647,8 +1647,31 @@ function showInputOverlay(title: string, placeholder: string): Promise<string | 
 (window as unknown as Record<string, unknown>).__teamBroadcast = teamBroadcast;
 (window as unknown as Record<string, unknown>).__teamDelete = teamDelete;
 
-function escapeHtml(s: string): string {
-  // 单引号必须转义:onclick='...${name}...' 这类单引号属性里,不转义 ' 即可逃逸注入 JS。
+// 续跑断点快照:⏵ 按钮发出的不再是泛化基句(会翻历史捞旧线索跑偏),而是机械拼装
+// 本 turn 的任务清单前沿(in_progress/pending)+ 最后几步工具动作,让模型接着断点干。
+// 数据源 = Turn.todos / Turn.steps(随 turn 持久化,中断也保得住)。2026-10-16 Duo 漂移事故的根修。
+function buildContinuePrompt(t: Turn): string {
+  const lines: string[] = [tr('turn.continuePrompt')];
+  const todos = t.todos ?? [];
+  if (todos.length) {
+    const mark = (s: TodoItem['status']) => (s === 'completed' ? '[x]' : s === 'in_progress' ? '[→]' : '[ ]');
+    lines.push('');
+    lines.push(tr('turn.contTodoHeader'));
+    for (const td of todos) lines.push(`${mark(td.status)} ${td.content}`);
+  }
+  const steps = t.steps ?? [];
+  if (steps.length) {
+    lines.push('');
+    lines.push(tr('turn.contStepsHeader'));
+    for (const s of steps.slice(-4)) {
+      const args = s.args.length > 140 ? s.args.slice(0, 140) + '…' : s.args;
+      lines.push(`[${s.name}] ${args}`);
+    }
+  }
+  return lines.join('\n');
+}
+
+function escapeHtml(s: string): string {  // 单引号必须转义:onclick='...${name}...' 这类单引号属性里,不转义 ' 即可逃逸注入 JS。
   // Single quotes MUST be escaped: unescaped ' breaks out of onclick='...' attribute JS.
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
@@ -2765,7 +2788,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         cont.onclick = () => {
           if (conv.status === 'running') return;
           scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
-          void api.send(conv.id, tr('turn.continuePrompt'));
+          void api.send(conv.id, buildContinuePrompt(t));
         };
         e.appendChild(cont);
       }
