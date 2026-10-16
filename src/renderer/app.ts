@@ -7304,6 +7304,9 @@ function closeMoreMenu() {
     renderSidebar();
     searchInput.focus();
   };
+  // 命中区修复:X 按钮只有 ~16px,mousedown/mouseup 之间鼠标微抖就会一次落 input 一次落按钮,
+  // click 不触发 → 表现为「点好几次才生效」。mousedown 阻默认后 input 不抢焦点,click 必达。
+  searchClear.addEventListener('mousedown', (e) => e.preventDefault());
   // ⚡ 运行中筛选:点击切换 runningOnly,只显示 running 状态的会话。
   document.getElementById('sb-running-filter')!.onclick = () => {
     runningOnly = !runningOnly;

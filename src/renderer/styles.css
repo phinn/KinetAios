@@ -1202,6 +1202,8 @@ a { color: var(--accent); }
   position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: var(--text-faint); padding: 2px; cursor: pointer;
   display: flex; align-items: center; justify-content: center; border-radius: 4px;
+  /* 命中区扩到 24×24(Apple HIG 最小可点目标),视觉仍是小 X;压过 input 保证不被吃事件 */
+  margin: -6px -8px; padding: 8px; z-index: 1;
 }
 .sb-search-clear:hover { color: var(--text); background: rgba(255,255,255,0.07); }
 
