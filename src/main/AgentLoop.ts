@@ -333,12 +333,16 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   }
   const defs: ToolDef[] = tools.map(toolDef);
 
-  // 记忆作为 history 头部 user 消息:模型看得到,但不拼进 systemPrompt(稳定系统缓存)。
+  // 记忆注入在 history 尾部(userInput 之前):记忆块内容每轮都变(新事实/strikes/摘要追加),
+  // 放头部会打穿其后全部历史的 prompt cache —— 2026-10-16 全库分析:cache 命中率仅 18.3%,
+  // 根因即此。放尾部 = 前缀(system+history)跨轮字节级稳定,每轮只有记忆块本身重发。
+  // Anthropic 路径连续 user 会合并(见 glm.ts),记忆块与 userInput 合并为一条尾部 user,
+  // 被末条消息的 cache 断点覆盖。dropTransient 仍会从返回值剔除,不进 directHistory。
   const memMsg: ChatMsg[] = memoryBlock && memoryBlock.trim()
     ? [{ role: 'user', content: memoryBlock, _memory: true }]
     : [];
 
-  let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...memMsg, ...history];
+  let messages: ChatMsg[] = [{ role: 'system', content: systemPrompt }, ...history];
   // 多模态:解析 \x00IMAGES[...]\\x00 标记,将图片转为 OpenAI vision content parts。
   const imgMatch = userInput.match(/\x00IMAGES(\[.+?\])\x00/s);
   let userContent: string | ContentPart[] = userInput;
@@ -358,6 +362,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
   }
   messages.push({ role: 'user', content: userContent });
+  // 记忆块插在尾部(userInput 之后):头部位置会打穿其后全部历史的 cache(见 memMsg 注释)。
+  // 同为 user 角色 → Anthropic 侧与 userInput 合并成一条;OpenAI 侧连续 user 可被模型正常读取。
+  if (memMsg.length) messages.push(...memMsg);
 
   // reactive trim 用:上下文超长报错时三级 fallback — 全预算 → 1/4 → nuclear 退出。
   // ponytail:错误格式不统一,best-effort。

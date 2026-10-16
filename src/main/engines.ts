@@ -552,7 +552,10 @@ function skillCatalogSection(): string {
     const updated = await runAgentLoop({
       provider,
       tools,
-      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + pluginSystemPrompts('direct', prompt) + codemodePromptSection(tools),
+      // ⚡ cache 冻结分区(2026-10-16):前缀必须是「跨轮字节级稳定」的大块,动态项全部后置。
+      // pluginSystemPrompts 依赖当前 prompt(关键词命中翻转会让其后所有内容 cache miss),
+      // 所以挪到 codemodePromptSection(嵌套工具签名大段)之后,让 codemode 段保持前缀稳定。
+      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

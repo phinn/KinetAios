@@ -453,8 +453,9 @@ export class DirectV2Engine implements Engine {
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +
-      pluginSystemPrompts('directV2', prompt) +
-      codemodePromptSection(tools);
+      // ⚡ cache 冻结分区:plugin(依赖当前 prompt,动态)放 codemode 大段之后,同 v1。
+      codemodePromptSection(tools) +
+      pluginSystemPrompts('directV2', prompt);
 
     // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
