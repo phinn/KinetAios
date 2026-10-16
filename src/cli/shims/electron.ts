@@ -5,6 +5,17 @@
 // CLI 运行在无窗口环境,safeStorage 声明不可用 → settings 回退明文存取(向后兼容)。
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import nodeFetch from 'node-fetch'; // Node 16 无全局 fetch → polyfill(见下)
+
+// Node 16 无全局 fetch(Node 18 起内置)→ node-fetch@2 polyfill。
+// glm.ts/tools.ts/web_search 等大量裸用 fetch(),必须在这里先挂全局,且要早于一切业务模块。
+if (typeof (globalThis as { fetch?: unknown }).fetch !== 'function') {
+  (globalThis as { fetch: unknown }).fetch = nodeFetch;
+  // node-fetch@2 的 AbortSignal 兼容 Node 16 原生 AbortController/AbortSignal
+  (globalThis as { Headers: unknown }).Headers = nodeFetch.Headers;
+  (globalThis as { Request: unknown }).Request = nodeFetch.Request;
+  (globalThis as { Response: unknown }).Response = nodeFetch.Response;
+}
 
 // %APPDATA%\KinetAios(windows)/ ~/Library/Application Support/KinetAios (mac)
 // 与 Electron app.setName('KinetAios') 后的 userData 完全一致。
