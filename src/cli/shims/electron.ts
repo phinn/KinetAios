@@ -47,7 +47,8 @@ function wrapFetch(f: typeof nodeFetch): typeof fetch {
     const resp = await f(url, init);
     const body = resp.body as Readable | null;
     if (body && typeof (body as any).getReader !== 'function') {
-      (resp as any).body = nodeStreamToWebBody(body);
+      // ⚠️ node-fetch@2 的 body 是原型上的 getter(无 setter),直接赋值静默失败 —— 必须 defineProperty
+      Object.defineProperty(resp, 'body', { value: nodeStreamToWebBody(body), configurable: true, enumerable: true, writable: false });
     }
     return resp as unknown as Response;
   }) as unknown as typeof fetch;
