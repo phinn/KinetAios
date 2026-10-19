@@ -450,7 +450,17 @@ export class TaskManager {
       // 2026-09-30:runGoalLoop 入口的清标记已收紧为 explicit-only(防 Auto-Loop 接力
       // 抹掉用户停止语义),「重新 /goal」的清标记职责移到这个唯一显式入口。
       // 修前它藏在 runGoalLoop 入口无条件清 —— 连用户刚取消后的 Auto-Loop 误燃都会清。
-      if (goalText) this.goalLoopStopped.delete(id);
+      if (goalText) {
+        this.goalLoopStopped.delete(id);
+      } else {
+        // 2026-10-19:清除目标 = 连 goal 循环一起停。修前只置 conv.goal=null,循环还挂在
+        // goalLoopLive 上继续跑(下轮 prompt 变成 `推进目标: "null"` 空转烧钱),且此后用户
+        // 发的每条消息命中下方修正队列分支 —— conv.goal 已 null → 连 park 都不 park,静默
+        // return,消息全部蒸发(实踩:「goal 清除后,后面的消息就发送不出去了」)。
+        // cancel() 幂等:abort 当前轮 + 立即撤 goalLoopLive + 置 stopped 标记 + 清修正队列;
+        // 之后消息恢复正常 dispatch(停了,新消息就是新任务)。停止标记留给下一次显式 /goal 清。
+        this.cancel(id);
+      }
       store.saveConversation(conv);
       const tg = newTurn(prompt);
       tg.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
@@ -469,13 +479,19 @@ export class TaskManager {
     // 判定用 goalLoopLive 而非 status:监工 await 期间 status 短暂回 'ready'(done 事件
     // 所致),只看 status 会让消息在该窗口走正常 dispatch,与循环下一轮并发跑同一会话。
     // 非 goal 会话保持原语义(运行中不可插话,前端本来就不给发)。
-    if (this.goalLoopLive.has(id) || (conv.status === 'running' && conv.goal)) {
-      if (conv.goal) {
-        pushCorrection(id, prompt);
-        conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
-        this.emit.emitConversation(conv);
-      }
-      return; // 非 goal 会话维持旧 guard:静默拒绝(调用方 UI 不给 running 会话发消息)
+    // 2026-10-19:goalLoopLive 在但 goal 已被清(/goal 无参数 → cancel 整循环)→ 不再走
+    // 这里。修前静默 return,消息无声蒸发;现在落到下方正常 guard(cancel 已把 status
+    // 置 ready,直接开新回合)。goal 循环里允许非 goal 会话的 running guard 兜底。
+    if (conv.goal && (this.goalLoopLive.has(id) || conv.status === 'running')) {
+      pushCorrection(id, prompt);
+      conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
+      this.emit.emitConversation(conv);
+      return;
+    }
+    if (this.goalLoopLive.has(id) && !conv.goal) {
+      // 残留的 liveness 标记(循环退出前的微小窗口)但目标已清 → 用户消息走正常 dispatch,
+      // 绝不静默吞掉。防御性分支:正常路径 /goal 清除时会同步 cancel 撤掉 goalLoopLive。
+      this.goalLoopLive.delete(id);
     }
 
     // ── 纠错信号检测(2026-09 纠错闭环 ④ strike 端)──
@@ -733,8 +749,12 @@ export class TaskManager {
 {"verdict":"continue","requirement":"给 Worker 的下一条具体要求"}
 或
 {"verdict":"complete","requirement":"一句验收通过的理由"}
-verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。`;
-      const user = `目标:「${conv.goal}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
+verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。
+硬性红线(违反即失职):
+1. 用户中途发来的实时方向修正优先级最高:若看到「⚠️ 用户实时修正」,你的 requirement 必须围绕它,不得继续旧方向。
+2. 禁止要求 Worker 回滚、撤销、删除已完成的工作 —— 除非用户修正里明确要求。已有产出只能在其上叠加、修补或调整方向;删文件/还原改动一律不许出现在 requirement 里。
+3. 验收以本轮实际产出和 git 变化为据,不得臆测 Worker 没做过的内容,也不得反复要求已达标的事项。`;
+      const user = `目标:「${conv.goal ?? '(已无目标)'}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
       // 用户实时修正:运行中发来的消息 park 在修正队列。必须让监工看到,否则监工
       // 按旧方向出 requirement,与 Worker 收到的修正互相矛盾(修前的真实缺口:
       // ⌘Enter steer 能到 Worker 但监工不可见;普通 send 被 running guard 丢弃)。
@@ -817,7 +837,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
             store.appendEvent(conv.id, lastTurn.id, { type: 'goal/failover', from: (lastTurn.error || '').slice(0, 120), to: nx.name, reason: cls });
             conv.statusNote = `⚡ 模型 ${why} → 切换到 ${nx.name} 继续`;
             this.emit.emitConversation(conv);
-            failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
+            failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal ?? '(已无目标)'}」。从中断处接着做,不要重做已完成的部分。`;
           }
         }
         if (!failoverRetry) {
@@ -873,7 +893,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           }
         }
       }
-      if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
+      // 目标在中途被清(/goal 无参数会 cancel 整个循环)→ 兜底防御:不再生成
+      // `推进目标: "null"` 的空转 prompt(修前真实路径:清 goal 后循环残留一轮,
+      // 下轮 prompt 字面拼出 null 继续烧钱)。
+      if (!conv.goal) break;
+      if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。注意:只在其上继续推进,不要重做或回滚已完成的工作。`;
 
       // ── 用户方向修正(最高优先级):覆盖监工 requirement / 默认推进语 ──
       // sendCore 在 running 时把用户消息 park 进修正队列,这里在下一轮 dispatch 前
@@ -924,7 +948,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }).finally(() => {
         this.aborts.delete(id);
         clearSteer(id); // goal loop 每轮收尾:同上,清残留打断
-        clearCorrection(id); // 每轮收尾清修正队列(轮边界已消费,残留属异常路径,防累积)
+        // 注意:这里【不许】clearCorrection —— finally 挂在 await 的 runPromise 上,先于
+        // runGoalLoop 轮边界的 pullCorrection 执行;用户轮中发的方向修正会在这里被误清,
+        // 监工 peek 不到、Worker 下一轮也收不到 → 监工按旧目标出 requirement,Worker 瞎跑
+        // (2026-10-19 实踩:用户中途插入新任务,goal 循环无视并把做好的工作回滚)。
+        // 残留清理由循环退出的 finally(下方统一收尾)负责,轮与轮之间修正必须存活。
         clearKillHook(id); // goal loop 同步撤 hook
       });
 
