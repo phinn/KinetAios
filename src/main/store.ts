@@ -186,7 +186,8 @@ export function checkpointWal(): void {
 // Prepared statement 缓存:热路径函数(appendMessage/saveTurn 等)每次调用都 prepare,
 // 产生大量临时 Statement JS 对象 + GC 压力。缓存复用,避免内存抖动。
 const stmtCache = new Map<string, Database.Statement>();
-function stmt(sql: string): Database.Statement {
+/** 缓存式 prepare(web-companion 复用同一缓存,避免重复 prepare)。 */
+export function stmt(sql: string): Database.Statement {
   let s = stmtCache.get(sql);
   if (!s) { s = db.prepare(sql); stmtCache.set(sql, s); }
   return s;

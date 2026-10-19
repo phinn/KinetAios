@@ -2,9 +2,10 @@
 // Web Companion: LAN HTTP server + QR-code onboarding for phone browsers.
 //
 // 场景:手机在同一局域网,扫桌面端弹出的二维码 → 打开内联 Web 页 →
-//   1. 看会话列表 + 最近对话内容(只读,脱敏:不含 directHistory/traj 等重载荷)
-//   2. 继续/新建对话(走 TaskManager.sendDetached,与桌面端同一数据面)
-//   3. 轻量轮询刷新运行中的会话(SSE 复杂度高,轮询 2s 足够手机场景)
+//   1. 项目分组会话列表(与桌面侧栏同规则:cwd basename 分组,未分类兜底)
+//   2. 搜索:标题/cwd 过滤 + FTS5 全文(store.searchEnriched,带会话跳转)
+//   3. 看会话内容(只读切片)、继续/新建对话、取消运行中任务
+//   4. 轻量轮询刷新(2s 运行中 / 5s 空闲;SSE 留待后续)
 //
 // 安全(对齐 mcp-server.ts 的既有实践):
 //   - 绑定 0.0.0.0(局域网可达),token 必须非空(URL query 携带,启动时强制)
@@ -16,19 +17,23 @@
 
 import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
-import crypto from 'node:crypto';
 import os from 'node:os';
 import QRCode from 'qrcode';
 import { __getTM } from './main-instance';
 import { getSettings } from './settings';
+import { searchEnriched, stmt as dbStmt } from './store';
 
 type SessionInfo = {
   id: string;
   title: string;
   status: string;
+  statusNote: string | null;
   updatedAt: number;
   engine: string;
   turnCount: number;
+  project: string;
+  cwd: string;
+  preview: string; // 最后一条 turn 的回答摘要(120 字),列表页免点开即可判断内容
 };
 
 /** 从 URL query 取 token(query 顺序无关;兼容 ?x=1&token=t 与 ?token=t&x=1)。 */
@@ -41,16 +46,21 @@ function queryToken(url: string): string {
   }
 }
 
+/** 项目分组名:cwd basename;与桌面端 projName 同规则(home/空 = 未分类)。 */
+export function projectName(cwd: string, homeDir: string, ungrouped: string): string {
+  if (!cwd || cwd === homeDir) return ungrouped;
+  const base = cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop();
+  return base || cwd;
+}
+
 /** 手机页单 turn 的展示切片(不透传 steps 全文/重载荷)。 */
-function sliceTurn(t: { id: string; prompt: string; answer: string; error: string | null; done: boolean; ts: number; statusNote?: string | null }) {
-  return {
-    id: t.id,
-    prompt: t.prompt,
-    answer: t.answer,
-    error: t.error,
-    done: t.done,
-    ts: t.ts,
-  };
+function sliceTurn(t: { id: string; prompt: string; answer: string; error: string | null; done: boolean; ts: number }) {
+  return { id: t.id, prompt: t.prompt, answer: t.answer, error: t.error, done: t.done, ts: t.ts };
+}
+
+function clamp(s: string, n: number): string {
+  const t = (s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? t.slice(0, n) + '…' : t;
 }
 
 export class WebCompanionServer {
@@ -146,7 +156,7 @@ export class WebCompanionServer {
     // 页面本体(GET /):内联 HTML,无外部依赖。
     if (method === 'GET' && (path === '/' || path === '/index.html')) {
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      res.end(pageHtml(this.token));
+      res.end(pageHtml(this.token, uiStrings()));
       return;
     }
 
@@ -155,12 +165,15 @@ export class WebCompanionServer {
       return this.json(res, 404, { ok: false, error: 'not found' });
     }
 
-    // 静态数据接口(只读)。?conv=<id> 附加返回该会话最近 turns(手机端展开会话用)。
+    // 只读接口:全局状态 / 会话详情 / 全文搜索。
     if (method === 'GET' && path === '/api/state') {
       const payload = this.statePayload();
       const convId = this.url.searchParams.get('conv') ?? '';
       if (convId) payload.conv = this.convDetail(convId);
       return this.json(res, 200, payload);
+    }
+    if (method === 'GET' && path === '/api/search') {
+      return this.json(res, 200, this.searchPayload(this.url.searchParams.get('q') ?? ''));
     }
 
     // 写操作:发消息 / 新建会话 / 取消。
@@ -181,19 +194,75 @@ export class WebCompanionServer {
     return this.json(res, 404, { ok: false, error: 'not found' });
   }
 
-  /** 汇总当前会话状态(给 /api/state)。 */
+  /** 汇总当前会话状态(给 /api/state):含项目分组名 + 末条回答摘要。 */
   private statePayload(): Record<string, unknown> {
     const tm = __getTM();
     if (!tm) return { ok: true, convs: [], serverTs: Date.now() };
+    const home = os.homedir();
+    const ungrouped = getSettings().lang === 'en' ? 'Unfiled' : '未分类';
     const convs: SessionInfo[] = tm.list().map((c) => ({
       id: c.id,
       title: c.customTitle || c.firstPrompt || '(未命名)',
       status: c.status,
+      statusNote: c.statusNote,
       updatedAt: c.updatedAt ?? c.createdAt,
       engine: c.engine,
       turnCount: c.turnCount ?? c.turns.length,
+      project: projectName(c.cwd, home, ungrouped),
+      cwd: c.cwd,
+      // head 模式:末条预览直接从 store 标量查询拿,不 hydrate 整个 turns。
+      preview: this.lastPreview(c.id),
     }));
     return { ok: true, convs, serverTs: Date.now() };
+  }
+
+  /** 末条 turn 摘要:一条 SQL 取 conv 最后一条 data,抽 prompt/answer/error。 */
+  private lastPreview(convId: string): string {
+    try {
+      const row = lastTurnQuery(convId);
+      if (!row) return '';
+      const o = JSON.parse(row.data) as { prompt?: string; answer?: string; error?: string | null };
+      return clamp(o.answer || o.prompt || o.error || '', 120);
+    } catch {
+      return '';
+    }
+  }
+
+  /** 全文搜索:标题/cwd 内存过滤 + FTS5 内容检索(store.searchEnriched)。 */
+  private searchPayload(q: string): Record<string, unknown> {
+    const query = q.trim();
+    if (!query) return { ok: true, convs: [], msgs: [] };
+    const ql = query.toLowerCase();
+    const tm = __getTM();
+    const home = os.homedir();
+    const ungrouped = getSettings().lang === 'en' ? 'Unfiled' : '未分类';
+    // 1) 会话命中:标题/cwd/项目名模糊。
+    const convs = tm
+      ? tm.list()
+          .filter((c) => {
+            const title = (c.customTitle || c.firstPrompt || '').toLowerCase();
+            const proj = projectName(c.cwd, home, ungrouped).toLowerCase();
+            return title.includes(ql) || (c.cwd || '').toLowerCase().includes(ql) || proj.includes(ql);
+          })
+          .slice(0, 20)
+          .map((c) => ({
+            id: c.id,
+            title: c.customTitle || c.firstPrompt || '(未命名)',
+            project: projectName(c.cwd, home, ungrouped),
+            updatedAt: c.updatedAt ?? c.createdAt,
+          }))
+      : [];
+    // FTS5 MATCH 语法错误(query 含保留字)→ store 内部已降级为 LIKE,这里直传。
+    let msgs: Array<{ role: string; content: string; convId: string | null; convTitle: string | null }> = [];
+    try {
+      msgs = searchEnriched(query, 30).map((r) => ({
+        role: r.role,
+        content: clamp(r.content, 160),
+        convId: r.convId,
+        convTitle: r.convTitle,
+      }));
+    } catch { /* db 异常降级为空结果 */ }
+    return { ok: true, convs, msgs };
   }
 
   /** 单会话详情:最近 20 turns 的展示切片(turns 未加载时 hydrate)。 */
@@ -237,11 +306,17 @@ export class WebCompanionServer {
     }
   }
 
-  /** 读取单个会话的最近 turns(给 /api/state?conv=xxx;也可独立端点)。 */
   private json(res: ServerResponse, status: number, body: unknown): void {
     res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8' });
     res.end(JSON.stringify(body));
   }
+}
+
+/** 末条 turn 标量查询(prepare 一次复用;store 打开时才可调)。 */
+export function lastTurnQuery(convId: string): { data: string } | undefined {
+  return dbStmt(
+    `SELECT data FROM turns WHERE conv_id=? ORDER BY created_at DESC LIMIT 1;`,
+  ).get(convId) as { data: string } | undefined;
 }
 
 /** 收集本机所有非内部 IPv4 的局域网地址,拼出带 token 的接入 URL(192.168 优先)。 */
@@ -266,10 +341,31 @@ export function lanUrls(port: number, token: string): string[] {
   }
 }
 
+/** 手机页 UI 字符串(跟随桌面端语言设置;页面零依赖,由服务端渲染)。 */
+function uiStrings(): Record<string, string> {
+  const en = getSettings().lang === 'en';
+  return en
+    ? {
+        search: 'Search chats & content…', projects: 'Projects', ungrouped: 'Unfiled',
+        newChat: '+ New', running: 'Running', idle: 'Idle', cancel: 'Stop',
+        loadTurns: 'Loading…', noTurns: '(No messages yet)', send: 'Send',
+        sendPlaceholder: 'Message…', empty: 'No chats yet.\nTap “+ New” to start.',
+        secConv: 'Chats', secMsg: 'Messages', searchEmpty: 'No results', back: 'Chats',
+      }
+    : {
+        search: '搜索会话与内容…', projects: '项目', ungrouped: '未分类',
+        newChat: '+ 新对话', running: '运行中', idle: '空闲', cancel: '停止',
+        loadTurns: '加载对话…', noTurns: '(暂无消息)', send: '发送',
+        sendPlaceholder: '输入消息…', empty: '还没有会话\n点「+ 新对话」开始',
+        secConv: '会话', secMsg: '对话内容', searchEmpty: '无结果', back: '会话',
+      };
+}
+
 // ── 手机端页面(内联,零依赖)──
 // token 由服务端渲染进页面;页面内 fetch 统一带 x-kinet-token header。
-function pageHtml(token: string): string {
+function pageHtml(token: string, L: Record<string, string>): string {
   const tokenJson = JSON.stringify(token);
+  const LJson = JSON.stringify(L);
   return `<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -281,18 +377,28 @@ function pageHtml(token: string): string {
   :root { color-scheme: dark; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: #0d1117; color: #e6edf3; font: 15px/1.5 -apple-system, "PingFang SC", "Segoe UI", Roboto, sans-serif; padding-bottom: env(safe-area-inset-bottom); }
-  header { position: sticky; top: 0; background: rgba(13,17,23,.92); backdrop-filter: blur(8px); padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 10px; z-index: 10; }
+  header { position: sticky; top: 0; background: rgba(13,17,23,.94); backdrop-filter: blur(8px); padding: 10px 14px; border-bottom: 1px solid #21262d; display: flex; align-items: center; gap: 10px; z-index: 10; }
   header h1 { font-size: 17px; font-weight: 600; flex: 1; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; flex: none; }
   .dot.off { background: #f85149; }
-  main { padding: 12px 16px 90px; }
-  .conv { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .searchbar { padding: 10px 14px; position: sticky; top: 0; background: #0d1117; z-index: 9; }
+  .searchbar input { width: 100%; background: #161b22; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 9px 12px; font: inherit; }
+  .searchbar input:focus { outline: none; border-color: #1f6feb; }
+  main { padding: 0 14px 96px; }
+  .proj { margin-bottom: 8px; }
+  .proj-head { display: flex; align-items: center; gap: 8px; padding: 10px 4px 6px; color: #8b949e; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; user-select: none; }
+  .proj-head .n { color: #6e7681; font-weight: 400; }
+  .proj-head .chev { transition: transform .15s; }
+  .proj.closed .chev { transform: rotate(-90deg); }
+  .proj.closed .conv-list { display: none; }
+  .conv { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; }
   .conv.active { border-color: #1f6feb; }
   .conv .row1 { display: flex; gap: 8px; align-items: center; }
-  .conv .title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #21262d; color: #8b949e; }
+  .conv .title { font-weight: 600; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 14px; }
+  .badge { font-size: 11px; padding: 2px 8px; border-radius: 99px; background: #21262d; color: #8b949e; flex: none; }
   .badge.running { background: #1f2937; color: #58a6ff; }
-  .conv .meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
+  .conv .preview { font-size: 12px; color: #8b949e; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv .meta { font-size: 11px; color: #6e7681; margin-top: 3px; }
   .turns { margin-top: 10px; border-top: 1px solid #21262d; padding-top: 8px; }
   .turn { margin-bottom: 10px; }
   .turn .q { color: #79c0ff; font-size: 13px; margin-bottom: 4px; white-space: pre-wrap; word-break: break-word; }
@@ -303,33 +409,46 @@ function pageHtml(token: string): string {
   .btn { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
   .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
   .btn:disabled { opacity: .5; }
-  .composer { position: fixed; bottom: 0; left: 0; right: 0; background: #161b22; border-top: 1px solid #21262d; padding: 10px 16px; display: flex; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .composer { position: fixed; bottom: 0; left: 0; right: 0; background: #161b22; border-top: 1px solid #21262d; padding: 10px 14px; display: none; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
+  .composer.show { display: flex; }
   .composer textarea { flex: 1; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; font: inherit; resize: none; height: 44px; }
-  .empty { text-align: center; color: #8b949e; padding: 48px 0; }
-  .spin { display: inline-block; width: 14px; height: 14px; border: 2px solid #58a6ff; border-top-color: transparent; border-radius: 50%; animation: rot 0.8s linear infinite; vertical-align: -2px; margin-right: 6px; }
+  .empty { text-align: center; color: #8b949e; padding: 48px 0; white-space: pre-line; }
+  .sec-title { color: #8b949e; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 12px 4px 6px; }
+  .msg { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
+  .msg .role { font-size: 11px; color: #6e7681; margin-bottom: 2px; }
+  .msg .content { font-size: 13px; color: #c9d1d9; white-space: pre-wrap; word-break: break-word; }
+  .msg .from { font-size: 11px; color: #58a6ff; margin-top: 4px; }
+  .spin { display: inline-block; width: 12px; height: 12px; border: 2px solid #58a6ff; border-top-color: transparent; border-radius: 50%; animation: rot 0.8s linear infinite; vertical-align: -1px; margin-right: 5px; }
   @keyframes rot { to { transform: rotate(360deg); } }
+  .back { background: none; border: none; color: #58a6ff; font-size: 14px; cursor: pointer; padding: 4px; }
 </style>
 </head>
 <body>
 <header>
+  <button class="back" id="back" style="display:none">‹ <span id="back-t"></span></button>
   <span class="dot" id="conn"></span>
-  <h1>KinetAios</h1>
-  <button class="btn primary" id="new">+ 新对话</button>
+  <h1 id="h-title">KinetAios</h1>
+  <button class="btn primary" id="new">${L.newChat}</button>
 </header>
-<main id="list"><div class="empty">加载中…</div></main>
-<div class="composer">
-  <textarea id="input" placeholder="输入消息,继续当前对话…"></textarea>
-  <button class="btn primary" id="send">发送</button>
+<div class="searchbar"><input id="q" type="search" placeholder="${L.search}" /></div>
+<main id="list"><div class="empty">…</div></main>
+<div class="composer" id="composer">
+  <textarea id="input" placeholder="${L.sendPlaceholder}"></textarea>
+  <button class="btn primary" id="send">${L.send}</button>
 </div>
 <script>
 const TOKEN = ${tokenJson};
+const L = ${LJson};
 const H = { 'Content-Type': 'application/json', 'x-kinet-token': TOKEN };
 let convs = [];
-let openId = null;   // 展开中的会话
-let busy = false;    // 阻塞 send 进行中
+let openId = null;    // 展开中的会话(会话详情模式)
+let searchMode = false;
+let searchTimer = null;
+let busy = false;     // 阻塞 send 进行中
 let timer = null;
+const collapsed = new Set(); // 折叠的项目组
 
-function esc(s) { const d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 function fmtTs(ts) {
   const d = new Date(ts);
   const p = (n) => String(n).padStart(2, '0');
@@ -343,71 +462,157 @@ async function api(path, body) {
   return j;
 }
 
-// 拉全局会话列表;展开的会话追加拉 turns 详情。
 async function refresh() {
   try {
     const st = await api('/api/state');
     document.getElementById('conn').classList.remove('off');
     convs = st.convs || [];
-    render();
-    if (openId && !busy) {
-      const det = await api('/api/state?conv=' + encodeURIComponent(openId));
-      renderTurns(openId, det.turns || []);
-    }
+    if (!searchMode && !openId) renderProjects();
   } catch (e) {
     document.getElementById('conn').classList.add('off');
   }
 }
 
-function render() {
+// ── 项目分组视图(默认)──
+function renderProjects() {
   const el = document.getElementById('list');
-  if (!convs.length) { el.innerHTML = '<div class="empty">还没有会话<br><br>点右上角「+ 新对话」开始</div>'; return; }
-  el.innerHTML = convs.map((c) => {
-    const open = c.id === openId;
-    const badge = c.status === 'running'
-      ? '<span class="badge running"><span class="spin"></span>运行中</span>'
-      : '<span class="badge">' + esc(c.engine) + '</span>';
-    return '<div class="conv' + (open ? ' active' : '') + '" data-id="' + c.id + '">' +
-      '<div class="row1"><div class="title">' + esc(c.title) + '</div>' + badge + '</div>' +
-      '<div class="meta">' + c.turnCount + ' 轮 · ' + fmtTs(c.updatedAt) + (open ? ' · 点击收起' : ' · 点击展开') + '</div>' +
-      (open ? '<div class="turns" id="turns-' + c.id + '"><div class="meta">加载对话…</div></div>' : '') +
-      '</div>';
-  }).join('');
-  el.querySelectorAll('.conv').forEach((n) => {
-    n.onclick = (e) => {
-      if (e.target.closest('.turns') && !e.target.closest('.conv')) return;
-      const id = n.dataset.id;
-      openId = (openId === id) ? null : id;
-      render();
-      if (openId) refresh();
+  document.getElementById('composer').classList.remove('show');
+  if (!convs.length) { el.innerHTML = '<div class="empty">' + esc(L.empty) + '</div>'; return; }
+  const groups = new Map();
+  for (const c of convs) {
+    if (!groups.has(c.project)) groups.set(c.project, []);
+    groups.get(c.project).push(c);
+  }
+  let html = '<div class="sec-title">' + esc(L.projects) + ' · ' + convs.length + '</div>';
+  for (const [proj, list] of groups) {
+    const closed = collapsed.has(proj);
+    html += '<div class="proj' + (closed ? ' closed' : '') + '" data-proj="' + esc(proj) + '">' +
+      '<div class="proj-head"><span class="chev">▾</span>' + esc(proj) + ' <span class="n">' + list.length + '</span>' +
+      (list.some((c) => c.status === 'running') ? '<span class="badge running">' + esc(L.running) + '</span>' : '') +
+      '</div><div class="conv-list">';
+    for (const c of list) {
+      const badge = c.status === 'running'
+        ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>'
+        : '<span class="badge">' + esc(c.engine) + '</span>';
+      html += '<div class="conv" data-id="' + c.id + '">' +
+        '<div class="row1"><div class="title">' + esc(c.title) + '</div>' + badge + '</div>' +
+        (c.preview ? '<div class="preview">' + esc(c.preview) + '</div>' : '') +
+        '<div class="meta">' + c.turnCount + ' · ' + fmtTs(c.updatedAt) + '</div>' +
+        '</div>';
+    }
+    html += '</div></div>';
+  }
+  el.innerHTML = html;
+  el.querySelectorAll('.proj-head').forEach((n) => {
+    n.onclick = () => {
+      const proj = n.parentElement.dataset.proj;
+      if (collapsed.has(proj)) collapsed.delete(proj); else collapsed.add(proj);
+      renderProjects();
     };
+  });
+  el.querySelectorAll('.conv').forEach((n) => {
+    n.onclick = () => openConv(n.dataset.id);
   });
 }
 
-function renderTurns(convId, turns) {
-  if (openId !== convId) return;
-  const box = document.getElementById('turns-' + convId);
-  if (!box) return;
-  if (!turns.length) { box.innerHTML = '<div class="meta">(暂无对话)</div>'; return; }
-  box.innerHTML = turns.map((t) =>
+async function openConv(id) {
+  openId = id;
+  searchMode = false;
+  document.getElementById('q').value = '';
+  document.getElementById('back').style.display = '';
+  document.getElementById('back-t').textContent = L.back;
+  document.getElementById('composer').classList.add('show');
+  const el = document.getElementById('list');
+  el.innerHTML = '<div class="empty"><span class="spin"></span>' + esc(L.loadTurns) + '</div>';
+  await refreshDetail();
+  window.scrollTo(0, document.body.scrollHeight);
+}
+
+async function refreshDetail() {
+  if (!openId) return;
+  try {
+    const det = await api('/api/state?conv=' + encodeURIComponent(openId));
+    const c = convs.find((x) => x.id === openId);
+    renderDetail(det.turns || [], c);
+  } catch (e) { /* keep */ }
+}
+
+function renderDetail(turns, c) {
+  if (!openId) return;
+  const el = document.getElementById('list');
+  const head = c ? '<div class="conv active" style="margin-bottom:12px"><div class="row1"><div class="title">' + esc(c.title) + '</div>' +
+    (c.status === 'running' ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>'
+      : '<button class="btn" data-cancel="1">' + esc(L.cancel) + '</button>') + '</div></div>' : '';
+  if (!turns.length) { el.innerHTML = head + '<div class="empty">' + esc(L.noTurns) + '</div>'; return; }
+  el.innerHTML = head + turns.map((t) =>
     '<div class="turn">' +
       '<div class="q">🧑 ' + esc(t.prompt) + '</div>' +
       (t.answer ? '<div class="a' + (t.done ? '' : ' running') + '">' + esc(t.answer) + '</div>' : (t.done ? '' : '<div class="a running"></div>')) +
       (t.error ? '<div class="err">⚠ ' + esc(t.error) + '</div>' : '') +
     '</div>'
   ).join('');
-  box.scrollIntoView({ block: 'nearest' });
+  const stop = el.querySelector('[data-cancel]');
+  if (stop) stop.onclick = () => api('/api/cancel', { convId: openId }).then(() => refresh());
 }
 
+function backToList() {
+  openId = null;
+  searchMode = false;
+  document.getElementById('back').style.display = 'none';
+  document.getElementById('composer').classList.remove('show');
+  document.getElementById('q').value = '';
+  renderProjects();
+  refresh();
+}
+document.getElementById('back').onclick = backToList;
+
+// ── 搜索:防抖 350ms;会话(标题/cwd/项目)+ 内容(FTS5)两组结果 ──
+const qEl = document.getElementById('q');
+qEl.addEventListener('input', () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(doSearch, 350);
+});
+
+async function doSearch() {
+  const q = qEl.value.trim();
+  if (openId) { openId = null; document.getElementById('back').style.display = 'none'; document.getElementById('composer').classList.remove('show'); }
+  if (!q) { searchMode = false; renderProjects(); return; }
+  searchMode = true;
+  const el = document.getElementById('list');
+  try {
+    const r = await api('/api/search?q=' + encodeURIComponent(q));
+    let html = '';
+    if (r.convs.length) {
+      html += '<div class="sec-title">' + esc(L.secConv) + '</div>' + r.convs.map((c) =>
+        '<div class="conv" data-id="' + c.id + '"><div class="row1"><div class="title">' + esc(c.title) + '</div><span class="badge">' + esc(c.project) + '</span></div><div class="meta">' + fmtTs(c.updatedAt) + '</div></div>'
+      ).join('');
+    }
+    if (r.msgs.length) {
+      html += '<div class="sec-title">' + esc(L.secMsg) + '</div>' + r.msgs.map((m, i) =>
+        '<div class="msg" data-i="' + i + '"><div class="role">' + (m.role === 'user' ? '🧑' : '🤖') + ' ' + esc(m.role) + '</div><div class="content">' + esc(m.content) + '</div>' +
+        (m.convId ? '<div class="from">→ ' + esc(m.convTitle || '') + '</div>' : '') + '</div>'
+      ).join('');
+    }
+    el.innerHTML = html || '<div class="empty">' + esc(L.searchEmpty) + '</div>';
+    el.querySelectorAll('.conv').forEach((n) => { n.onclick = () => openConv(n.dataset.id); });
+    el.querySelectorAll('.msg').forEach((n) => {
+      const m = r.msgs[Number(n.dataset.i)];
+      n.onclick = () => { if (m.convId) openConv(m.convId); };
+    });
+  } catch (e) { /* keep */ }
+}
+
+// ── 新对话 ──
 document.getElementById('new').onclick = async () => {
   try {
     const j = await api('/api/new', {});
-    openId = j.convId;
     await refresh();
+    openConv(j.convId);
     document.getElementById('input').focus();
-  } catch (e) { alert('新建失败: ' + e.message); }
+  } catch (e) { alert('error: ' + e.message); }
 };
 
+// ── 发送(阻塞等答案)──
 document.getElementById('send').onclick = doSend;
 document.getElementById('input').addEventListener('keydown', (e) => {
   if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) doSend();
@@ -422,23 +627,24 @@ async function doSend() {
     const j = await api('/api/new', {}).catch(() => null);
     if (!j) return;
     openId = j.convId;
+    document.getElementById('composer').classList.add('show');
   }
   busy = true; btn.disabled = true; btn.textContent = '…';
   inp.value = '';
-  render();
   try {
-    // 阻塞 send:等答案。期间轮询只刷列表不再拉详情,答案一次性上屏。
     await api('/api/send', { convId: openId, text });
-  } catch (e) { alert('发送失败: ' + e.message); }
-  busy = false; btn.disabled = false; btn.textContent = '发送';
+  } catch (e) { alert('error: ' + e.message); }
+  busy = false; btn.disabled = false; btn.textContent = L.send;
   await refresh();
+  await refreshDetail();
 }
 
-// 轮询:busy 时 3s 刷列表(看运行状态),空闲 5s。
+// 轮询:详情模式 2.5s 刷新内容(看流式进度);列表模式 5s;busy 时 3s。
 function loop() {
-  refresh().finally(() => {
+  const step = openId ? refreshDetail() : Promise.resolve();
+  Promise.allSettled([refresh(), step]).finally(() => {
     clearTimeout(timer);
-    timer = setTimeout(loop, busy ? 3000 : 5000);
+    timer = setTimeout(loop, busy ? 3000 : (openId ? 2500 : 5000));
   });
 }
 loop();
