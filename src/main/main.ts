@@ -38,6 +38,7 @@ import { currentProvider } from './glm';
 import { listSkills, readSkillSource, saveSkillSource } from './skills';
 import { mcp } from './mcp';
 import { localMcpServer } from './mcp-server';
+import { webCompanionServer } from './web-companion';
 import { allTools } from './tools';
 import { killAgentChrome } from './cdp';
 import { binEnv } from './engines';
@@ -1387,6 +1388,12 @@ if (!gotLock) {
         localMcpServer.setToken(s.localMcpServer.token || '');
         localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token || '').catch((e) => {
           console.warn('[mcp-server] 自启动失败:', e.message);
+        });
+      }
+      // 手机伴侣:settings 开启 + token 非空才自启(token 空则跳过,等用户在设置里生成)。
+      if (s.webRemote?.enabled && s.webRemote?.token) {
+        webCompanionServer.start(s.webRemote.port, s.webRemote.token).catch((e) => {
+          console.warn('[web-companion] 自启动失败:', e.message);
         });
       }
     }

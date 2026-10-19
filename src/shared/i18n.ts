@@ -1028,6 +1028,16 @@ const ZH_CN: Dict = {
   'settings.mesh.noRemote': '暂无远程节点',
   'settings.mesh.delete': '删除',
 
+  // ── 手机伴侣(Web Companion):扫码接入 ──
+  'settings.webremote.title': '手机接入(扫码)',
+  'settings.webremote.desc': '在同一局域网内,用手机浏览器扫码访问:查看会话进度、继续对话、新建会话。Token 用于防止局域网内其他设备未授权访问。',
+  'settings.webremote.start': '启动并显示二维码',
+  'settings.webremote.showQr': '显示二维码',
+  'settings.webremote.needToken': '请先生成或填写 Token',
+  'settings.webremote.started': '✓ 已启动 :{port},手机扫码接入',
+  'settings.webremote.qrTitle': '手机扫码接入 KinetAios',
+  'settings.webremote.qrTip': '确保手机与电脑在同一局域网,用相机扫码打开',
+
   // ── 余额查询 ──
   'settings.balance.window5h': '5h窗口',
   'settings.balance.week': '本周',
@@ -2371,6 +2381,16 @@ const EN: Dict = {
   'settings.mesh.noRemote': 'No remote nodes',
   'settings.mesh.delete': 'Delete',
 
+  // ── Web Companion (phone access via QR) ──
+  'settings.webremote.title': 'Phone access (QR code)',
+  'settings.webremote.desc': 'On the same LAN, scan the QR code with your phone browser: watch session progress, continue chats, or start new ones. The token prevents unauthorized access from other LAN devices.',
+  'settings.webremote.start': 'Start & show QR code',
+  'settings.webremote.showQr': 'Show QR code',
+  'settings.webremote.needToken': 'Generate or enter a token first',
+  'settings.webremote.started': '✓ Started on :{port} — scan with your phone',
+  'settings.webremote.qrTitle': 'Scan to open KinetAios on your phone',
+  'settings.webremote.qrTip': 'Make sure your phone is on the same LAN, then scan with the camera app',
+
   // ── Balance ──
   'settings.balance.window5h': '5h window',
   'settings.balance.week': 'This week',
@@ -3706,6 +3726,16 @@ const ZH_TW: Dict = {
   'settings.mesh.stopped': '已停止',
   'settings.mesh.noRemote': '暫無遠端節點',
   'settings.mesh.delete': '刪除',
+
+  // ── 手機伴侶(Web Companion):掃碼接入 ──
+  'settings.webremote.title': '手機接入(掃碼)',
+  'settings.webremote.desc': '在同一區域網路內,用手機瀏覽器掃碼存取:查看會話進度、繼續對話、新建會話。Token 用於防止區網內其他裝置未授權存取。',
+  'settings.webremote.start': '啟動並顯示 QR Code',
+  'settings.webremote.showQr': '顯示 QR Code',
+  'settings.webremote.needToken': '請先產生或填寫 Token',
+  'settings.webremote.started': '✓ 已啟動 :{port},手機掃碼接入',
+  'settings.webremote.qrTitle': '手機掃碼接入 KinetAios',
+  'settings.webremote.qrTip': '確保手機與電腦在同一區域網路,用相機掃碼開啟',
 
   // ── 餘額查詢 ──
   'settings.balance.window5h': '5h窗口',
@@ -5064,6 +5094,16 @@ const JA: Dict = {
   'settings.mesh.stopped': '停止しました',
   'settings.mesh.noRemote': 'リモートノードなし',
   'settings.mesh.delete': '削除',
+
+  // ── スマホコンパニオン(QR コードで接続)──
+  'settings.webremote.title': 'スマホ接続(QR コード)',
+  'settings.webremote.desc': '同じ LAN 内でスマホのブラウザから QR コードをスキャン:セッション進捗の確認・会話の続き・新規セッション作成。トークンで LAN 内の未許可アクセスを防ぎます。',
+  'settings.webremote.start': '起動して QR コードを表示',
+  'settings.webremote.showQr': 'QR コードを表示',
+  'settings.webremote.needToken': '先にトークンを生成または入力してください',
+  'settings.webremote.started': '✓ 起動しました :{port} — スマホでスキャン',
+  'settings.webremote.qrTitle': 'スキャンしてスマホで KinetAios を開く',
+  'settings.webremote.qrTip': 'スマホと PC が同じ LAN にいることを確認し、カメラでスキャン',
 
   // ── 残高照会 ──
   'settings.balance.window5h': '5hウィンドウ',

@@ -39,6 +39,8 @@ const DEFAULTS: AppSettings = {
   closeBehavior: 'minimize', // 窗口关闭行为:quit 退出 / minimize 最小化到任务栏 / tray 最小化到托盘
   // 多机协作:默认关闭 MCP Server;端口 18109;token 空 = 不鉴权(仅局域网内信任环境用)。
   localMcpServer: { enabled: false, port: 18109, token: '' },
+  // 手机伴侣:默认关闭;端口 18110;token 空 = 启动时自动生成随机 token(UI 与 server 都强制非空)。
+  webRemote: { enabled: false, port: 18110, token: '' },
   // 远程 MCP server 列表默认为空(用户在设置里添加其它机器)。
   remoteMcpServers: [],
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
@@ -144,6 +146,7 @@ export function getSettings(): AppSettings {
     if (s.wecomOA) s.wecomOA = { ...s.wecomOA, corpsecret: decStr(s.wecomOA.corpsecret) };
     if (s.feishuBot) s.feishuBot = { ...s.feishuBot, appSecret: decStr(s.feishuBot.appSecret) };
     if (s.localMcpServer) s.localMcpServer = { ...s.localMcpServer, token: decStr(s.localMcpServer.token) };
+    if (s.webRemote) s.webRemote = { ...s.webRemote, token: decStr(s.webRemote.token) };
     cache = s;
   } catch {
     cache = { ...DEFAULTS };
@@ -177,6 +180,7 @@ export function saveSettings(s: AppSettings): void {
   if (s.wecomOA) toWrite.wecomOA = { ...s.wecomOA, corpsecret: encStr(s.wecomOA.corpsecret) };
   if (s.feishuBot) toWrite.feishuBot = { ...s.feishuBot, appSecret: encStr(s.feishuBot.appSecret) };
   if (s.localMcpServer) toWrite.localMcpServer = { ...s.localMcpServer, token: encStr(s.localMcpServer.token) };
+  if (s.webRemote) toWrite.webRemote = { ...s.webRemote, token: encStr(s.webRemote.token) };
   // 0600:文件里是加密凭据,但仍不该让同机其它用户可读(实测默认 0644)。
   // Windows 忽略 mode 参数(ACL 体系),POSIX 生效。
   try { fs.chmodSync(file(), 0o600); } catch { /* 首次写前文件可能不存在,写完再试一次 */ }

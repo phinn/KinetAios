@@ -5766,6 +5766,27 @@ async function showSettings() {
           </div>
         </div>
 
+        <!-- 手机伴侣:二维码扫码接入 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.webremote.title')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.webremote.desc')}</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;margin:8px 0 0 46px">
+            <label class="field-desc" style="margin:0">${tr('settings.mesh.port')}</label>
+            <input id="s-wr-port" type="number" value="${s.webRemote?.port ?? 18110}" style="width:100px" />
+            <label class="field-desc" style="margin:0">Token</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="s-wr-token" type="password" value="${esc(s.webRemote?.token ?? '')}" placeholder="${tr('settings.mesh.tokenPh')}" style="flex:1" />
+              <button id="s-wr-gentoken" class="btn-sm" title="${tr('settings.mesh.genToken')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin:10px 0 0 46px">
+            <button id="s-wr-start" class="primary btn-sm">${tr('settings.webremote.start')}</button>
+            <button id="s-wr-stop" class="btn-sm">${tr('settings.mesh.stop')}</button>
+            <button id="s-wr-qr" class="btn-sm" style="display:none">${tr('settings.webremote.showQr')}</button>
+            <span class="test-msg" id="s-wr-msg"></span>
+          </div>
+        </div>
+
         <!-- 远程节点 -->
         <div class="s-sub-panel">
           <div class="s-sub-panel-title">${tr('settings.mesh.remoteTitle')}</div>
@@ -5926,6 +5947,61 @@ async function showSettings() {
     const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
     (document.getElementById('s-mcp-token') as HTMLInputElement).value = token;
   };
+
+  // ── 手机伴侣:token 生成 / 启停 / 二维码弹层 ──
+  // QR 弹层用原生 <dialog>: 居中 + 遮罩,点背景关。
+  document.getElementById('s-wr-gentoken')!.onclick = () => {
+    const buf = new Uint8Array(24);
+    crypto.getRandomValues(buf);
+    const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    (document.getElementById('s-wr-token') as HTMLInputElement).value = token;
+  };
+  let wrQrSvg = ''; // 最近一次启动返回的二维码(「显示二维码」复用,免重复起服务)
+  document.getElementById('s-wr-start')!.onclick = async () => {
+    const port = Number((document.getElementById('s-wr-port') as HTMLInputElement).value) || 18110;
+    const token = (document.getElementById('s-wr-token') as HTMLInputElement).value.trim();
+    const msg = document.getElementById('s-wr-msg')!;
+    if (!token) {
+      msg.textContent = tr('settings.webremote.needToken');
+      msg.style.color = 'var(--danger)';
+      return;
+    }
+    const r = await api.webRemoteStart(port, token);
+    if (r.ok && r.qrSvg) {
+      wrQrSvg = r.qrSvg;
+      msg.innerHTML = esc(tr('settings.webremote.started', { port }));
+      msg.style.color = 'var(--ok)';
+      (document.getElementById('s-wr-qr') as HTMLElement).style.display = '';
+      showQrModal(r.qrSvg);
+    } else {
+      msg.innerHTML = `${sv.xCircle} ${esc(r.error ?? '')}`;
+      msg.style.color = 'var(--danger)';
+    }
+  };
+  document.getElementById('s-wr-stop')!.onclick = async () => {
+    await api.webRemoteStop();
+    const msg = document.getElementById('s-wr-msg')!;
+    msg.textContent = tr('settings.mesh.stopped');
+    msg.style.color = 'var(--muted)';
+    (document.getElementById('s-wr-qr') as HTMLElement).style.display = 'none';
+  };
+  document.getElementById('s-wr-qr')!.onclick = () => { if (wrQrSvg) showQrModal(wrQrSvg); };
+  function showQrModal(svg: string): void {
+    document.getElementById('wr-qr-modal')?.remove();
+    const dlg = document.createElement('div');
+    dlg.id = 'wr-qr-modal';
+    dlg.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    // 白底卡片:二维码深色模块在浅色背景上对比度最高,扫码成功率最好。
+    dlg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:22px 22px 14px;max-width:340px;text-align:center">
+      <div style="color:#111;font-size:14px;font-weight:600;margin-bottom:10px">${esc(tr('settings.webremote.qrTitle'))}</div>
+      <div style="width:240px;height:240px;margin:0 auto">${svg}</div>
+      <div style="color:#555;font-size:12px;margin-top:10px;word-break:break-all">${esc(tr('settings.webremote.qrTip'))}</div>
+      <button id="wr-qr-close" class="btn-sm" style="margin-top:12px">${esc(tr('common.close'))}</button>
+    </div>`;
+    document.body.appendChild(dlg);
+    dlg.onclick = (e) => { if (e.target === dlg) dlg.remove(); };
+    (dlg.querySelector('#wr-qr-close') as HTMLElement).onclick = () => dlg.remove();
+  }
 
   // ── 替身画像(Persona)──
   await initPersonaTab(s.persona ?? '');
@@ -6903,6 +6979,11 @@ function readSettingsForm(): AppSettings {
       enabled: (document.getElementById('s-mcp-enabled') as HTMLInputElement).checked,
       port: Number((document.getElementById('s-mcp-port') as HTMLInputElement).value) || 18109,
       token: (document.getElementById('s-mcp-token') as HTMLInputElement).value,
+    },
+    webRemote: {
+      enabled: Boolean((document.getElementById('s-wr-enabled') as HTMLInputElement)?.checked),
+      port: Number((document.getElementById('s-wr-port') as HTMLInputElement)?.value) || 18110,
+      token: (document.getElementById('s-wr-token') as HTMLInputElement)?.value ?? '',
     },
     remoteMcpServers: remoteMcpServersCache,
     disabledPlugins: disabledPluginsCache,

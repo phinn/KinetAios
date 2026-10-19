@@ -50,6 +50,10 @@ const api: KinetAPI = {
   startMcpServer: (port, token) => ipcRenderer.invoke('start-mcp-server', port, token),
   stopMcpServer: () => ipcRenderer.invoke('stop-mcp-server'),
   mcpServerStatus: () => ipcRenderer.invoke('mcp-server-status'),
+  // 手机伴侣:二维码扫码接入
+  webRemoteStart: (port, token) => ipcRenderer.invoke('web-remote-start', port, token),
+  webRemoteStop: () => ipcRenderer.invoke('web-remote-stop'),
+  webRemoteStatus: () => ipcRenderer.invoke('web-remote-status'),
   listRemoteNodes: () => ipcRenderer.invoke('list-remote-nodes'),
   callRemoteAgent: (serverName, prompt) => ipcRenderer.invoke('call-remote-agent', serverName, prompt),
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),

@@ -28,6 +28,7 @@ import { currentProvider } from '../glm';
 import { listSkills, readSkillSource, saveSkillSource } from '../skills';
 import { mcp } from '../mcp';
 import { localMcpServer } from '../mcp-server';
+import { webCompanionServer } from '../web-companion';
 import { allTools } from '../tools';
 import { killAgentChrome } from '../cdp';
 import { binEnv } from '../engines';
@@ -84,6 +85,26 @@ export function register(): void {
       url: `http://${os.hostname()}:${s.localMcpServer.port}/mcp`,
     };
   });
+
+  // ── 手机伴侣:启动/停止 + 二维码 ──
+  // token 必须非空(同 MCP server 的安全闸);启动成功即返回二维码 SVG + 所有局域网 URL。
+  ipcMain.handle('web-remote-start', async (_e, port: number, token: string) => {
+    try {
+      if (!token || !token.trim()) {
+        return { ok: false, error: '安全限制:必须设置访问令牌(token),否则局域网内任何设备都能操控本机 Agent。' };
+      }
+      await webCompanionServer.start(port, token.trim());
+      const { qrSvg, urls } = await webCompanionServer.buildQr(port, token.trim());
+      return { ok: true, qrSvg, url: urls[0] };
+    } catch (err) {
+      return { ok: false, error: (err as Error).message };
+    }
+  });
+  ipcMain.handle('web-remote-stop', async () => {
+    await webCompanionServer.stop();
+    return { ok: true };
+  });
+  ipcMain.handle('web-remote-status', () => webCompanionServer.status());
 
   // 系统文件夹选择器(renderer 无 Node,只能走 main 的 dialog)。
   ipcMain.handle('pick-directory', async () => {

@@ -319,6 +319,9 @@ export type AppSettings = {
   // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──
   // 开启后,局域网内其它机器可通过 SSE transport 连接,调用本机工具(shell / read_file / web_fetch 等)。
   localMcpServer: { enabled: boolean; port: number; token: string };
+  // ── 手机伴侣:局域网 HTTP server + 二维码扫码接入(手机浏览器看会话/继续对话)──
+  // token 复用 MCP 的安全思路:必须非空才能启动,空 token = 任何局域网设备都能操控本机 Agent。
+  webRemote: { enabled: boolean; port: number; token: string };
   // ── 多机协作:远程 MCP Server 列表(把别的 KinetAios 节点当工具用)──
   remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
   // ── 插件管理:被禁用的插件 name 列表(空 = 全部启用) ──
@@ -925,6 +928,11 @@ export interface KinetAPI {
   startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;
   stopMcpServer(): Promise<{ ok: boolean }>;
   mcpServerStatus(): Promise<{ running: boolean; port: number; url: string }>;
+  // ── 手机伴侣:启动/停止 + 生成接入二维码(SVG,内含 http://ip:port/?token=xxx)──
+  // 手机扫码或浏览器打开 URL → 局域网内查看会话 / 继续对话 / 新建会话。
+  webRemoteStart(port: number, token: string): Promise<{ ok: boolean; error?: string; qrSvg?: string; url?: string }>;
+  webRemoteStop(): Promise<{ ok: boolean }>;
+  webRemoteStatus(): Promise<{ running: boolean; port: number; urls: string[] }>;
   // ── 多机协作:远程节点信息 + 远程任务调用 ──
   listRemoteNodes(): Promise<Array<{ name: string; url?: string; online: boolean; toolCount: number }>>;
   callRemoteAgent(serverName: string, prompt: string): Promise<string>;
