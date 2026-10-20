@@ -38,7 +38,7 @@
 > | 11 | agent.policy.json 声明式沙箱(deny/ask/allow 静态闸,mtime 缓存,坏 JSON 旁路) | ✅ 已落地 | 0c3beaf |
 > | 8 | 插件市场契约(marketplace.json name 不可变+retired+renames 幂等迁移) | ✅ 已落地(加载器侧;市场 UI 待续) | 0c3beaf |
 > | 6 | V5 基因池持久化 | ✅ 债务实况修正:4.0.0 已有 state.json/templates.json;本轮补齐疤痕库持久化缺口 | ac874a9 |
-> | 2 | security-audit skill 内置 | ⬜ 待做(先建内置 skill 目录软链机制验证) | — |
+> | 2 | security-audit skill 内置 | ✅ 已落地 | f3459c2 |
 > | 3 | Ralph Loop 自迭代基因型 | ⬜ 待做 | — |
 
 ### P0 · 立即做(几小时~2 天,直接增强现有能力)

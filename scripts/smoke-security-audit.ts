@@ -1,19 +1,7 @@
 /* 冒烟:security-audit 内置 skill 扫描 + 正文加载 + load_skill 工具链。
- * skills.ts 顶层 import { app } from 'electron' — RUN_AS_NODE 下 require('electron') 返回二进制路径
- * 字符串而非模块,app 是 undefined(agent-policy 能跑是因为它 try/catch 兜底,skills.ts 不兜)。
- * 在任何 src import 前劫持 Module._load 注入 mock electron。
- * 跑法: ELECTRON_RUN_AS_NODE=1 ./node_modules/.bin/electron <tsx cli.mjs> scripts/smoke-security-audit.ts */
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const Module = require('node:module');
-const origLoad: (...a: unknown[]) => unknown = Module._load;
-Module._load = function (request: unknown, ...rest: unknown[]) {
-  if (request === 'electron') {
-    return { app: { isPackaged: false, getPath: () => '/tmp/kinet-smoke-userdata' } };
-  }
-  return origLoad.call(this, request, ...rest);
-};
-
-// tsx 直译 TS:直接 import 项目内模块(tsx 会同时编译依赖树,require 裸 .ts 反而不行)
+ * 依赖:tsx(ESM loader 直译 TS)。skills.ts 的 builtinRoot() 已对 app.isPackaged
+ * try/catch 兜底(f3459c2),裸 tsx 即可跑,不需要 mock electron。
+ * 跑法: npx tsx scripts/smoke-security-audit.ts */
 import { listSkills, loadSkillBody, readSkillSource } from '../src/main/skills';
 
 // ① 扫描:builtin source 的 security-audit 必须可见
