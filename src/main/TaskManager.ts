@@ -319,6 +319,8 @@ export class TaskManager {
     this.cancel(id);
     store.deleteConversation(id);
     this.convs.delete(id);
+    this.lastTouchAt.delete(id); // 节流时间戳随会话销毁,防 Map 泄漏
+    this.lastCostSaveAt.delete(id);
     this.order = this.order.filter((x) => x !== id);
     delete this.lastEngine[id]; // P1: 清理引擎记录,防止 key 无限累积
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
@@ -1089,11 +1091,31 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     }
   }
 
+  // ── 写节流(2026-10-20 卡死事故)──
+  // 流式期间 persist 每秒收几十个事件:此前每个事件都同步 touch + 每个 cost 全量
+  // saveTurn(MB 级 turn JSON stringify 重写)→ 2.1GB 库上 O(n²) 写放大,主进程
+  // event loop 被同步 SQLite 堵几十秒(看门狗样本:renderer 心跳停摆栈停在
+  // sqlite3_step→pread),所有 IPC(含「取消 goal」按钮)排队超时 = 界面卡死。
+  // 两个节流阀:touch 3s 一次(侧栏排序不需要秒级精度);cost 的 saveTurn 5s 一次
+  // (turn/meta 事件流已全量存证,重启后 loadTurns 从事件流重建,不丢账)。
+  // ── Write throttling (2026-10-20 freeze incident). Streaming emits dozens of
+  // events/sec; each triggered a sync touch, each cost a full MB-level saveTurn —
+  // O(n²) write amplification on a 2.1GB DB blocked the main event loop for tens of
+  // seconds. Throttle: touch ≥3s, cost saveTurn ≥5s (turn/meta events remain the
+  // durable record; loadTurns rebuilds from the event stream after a crash).
+  private lastTouchAt = new Map<string, number>();
+  private lastCostSaveAt = new Map<string, number>();
+
   private persist(conv: Conversation, ev: AgentEvent): void {
     const t = conv.turns[conv.turns.length - 1];
     if (!t) return;
     conv.updatedAt = Date.now(); // 更新最后活动时间,侧栏排序和时间显示用。
-    store.touchConversation(conv.id); // 同步写库,确保所有事件路径都持久化 updated_at。
+    const now = Date.now();
+    const lastTouch = this.lastTouchAt.get(conv.id) ?? 0;
+    if (now - lastTouch >= 3_000) {
+      this.lastTouchAt.set(conv.id, now);
+      store.touchConversation(conv.id); // 同步写库(节流后),updated_at 持久化兜底。
+    }
     switch (ev.type) {
       case 'sessionStarted':
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume
@@ -1125,8 +1147,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
         });
         break;
-      case 'cost':
-        store.saveTurn(conv.id, t);
+      case 'cost': {
+        // 节流:cost 每步一发,长 turn 全量 saveTurn(MB 级 stringify)是 O(n²) 写放大;
+        // 事件流已全量存证,这里 5s 一次兜底快照即可,done 时必有一次最终 saveTurn。
+        // Throttle: cost fires per step; the event stream is the durable record —
+        // snapshot at most every 5s (done always saves the final turn).
+        const lastCost = this.lastCostSaveAt.get(conv.id) ?? 0;
+        if (now - lastCost >= 5_000) {
+          this.lastCostSaveAt.set(conv.id, now);
+          store.saveTurn(conv.id, t);
+        }
         store.appendEvent(conv.id, t.id, {
           type: 'turn/meta',
           costUSD: ev.usd,
@@ -1140,6 +1170,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           source: ev.source,
         });
         break;
+      }
       case 'done':
         // ⚠️ 无条件 saveTurn:空回复(思考模型烧光预算零输出)也要落库,否则 turn 永远
         // done=false,重启后还会被 resume 重发,UI 永远 running(2026-09-09 事故)。
@@ -1177,7 +1208,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         out += `\n<${b.label}>\n${b.value}\n</${b.label}>`;
       }
       out += '\n</memory_blocks>';
-      out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。';
+      out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。注意:更新前先对照本会话目标——不要把其它项目的进展写成本会话的成果,也不要反过来。';
     }
 
     // ── 会话级事实锚点(remember_fact):自动注入,模型不必自觉 recall(2026-09 接线)──
