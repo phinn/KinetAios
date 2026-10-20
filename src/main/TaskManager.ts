@@ -394,6 +394,10 @@ export class TaskManager {
         const lang = getSettings().lang;
         if (!turn.answer) { turn.error = t(lang, 'tmgr.cancelled'); turn.errorKind = 'cancelled'; }
         else conv.statusNote = t(lang, 'tmgr.stopped');
+        // 同 applyAndPersist 的终态覆盖:取消标记必须落 turns 缓存,否则重启后
+        // 「已停止 + ⏵ 断点续跑」按钮消失(UI 判据 t.error && t.done,缓存里为空)。
+        // errorKind 是 UI 样式判据(cancelled 不给「重试」),事件流补不回,只能靠这里。
+        store.saveTurn(conv.id, turn);
       }
       conv.status = 'ready';
       this.emit.emitConversation(conv);
@@ -1049,6 +1053,18 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   private applyAndPersist(conv: Conversation, id: string, ev: AgentEvent, prompt: string, signal: AbortSignal): void {
     if (!this.convs.has(id)) { /* 已删除的会话:吞掉所有迟到事件,不广播不落库 */ return; }
     applyEvent(conv, ev);
+    // 终态快照(error/done)必须在 persist 之前写进 turn 并落库。
+    // 修 2026-10-20 事故:error 事件原先只 appendEvent(conv.id,t.id,{type:'turn/error'})、
+    // turns.data 缓存里 error/done 全空 —— 重启时 loadTurns「缓存可解析即原样用」,
+    // 事件流那份正确的重建版被丢弃 → 失败频道重开后既无失败态也无 ⏵ 继续按钮(UI 判据是 t.error && t.done)。
+    // 缓存与事件流不一致时,终态字段一律以本次运行为准覆盖进缓存。
+    const lt = conv.turns[conv.turns.length - 1];
+    if (lt && ev.type === 'error') {
+      lt.error = ev.message;
+      lt.errorKind = ev.kind; // 与 applyEvent 同口径:UI 据此选样式 + 是否给「重试」
+      lt.done = true;
+      store.saveTurn(conv.id, lt);
+    }
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);
     // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
