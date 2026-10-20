@@ -1289,10 +1289,14 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       // 多次 runAgentLoop(v2 planner/executor/replan)各自快照 → 拼接保留全程轨迹。
       // 总量护栏:实测 977 个 turn 的 traj 占 83MB,长任务多轮快照拼接会滚雪球。
       // 超限保留「最早的 system/context + 最新的全部」——透视价值集中在新轨迹。
-      const merged = [...(t.traj ?? []), ...ev.records];
-      t.traj = merged.length <= TRAJ_MAX_RECORDS
-        ? merged
-        : [...merged.slice(0, 4), ...merged.slice(merged.length - TRAJ_MAX_RECORDS + 4)];
+      // 修 2026-10-20 卡顿(心跳停摆 15 份样本):原实现每轮 API 调用都
+      // [...(t.traj??[]), ...ev.records] 全量复制 200 条×16K(单 turn 实测 272KB traj/
+      // 1.4MB turn JSON),主进程+renderer 每事件各跑一遍,renderer 心跳被堵到 30s+。
+      // 改 O(1) 原地 push + 滑窗:预算内直接 push;超限一次性 shift 到窗口,不再整份复制。
+      if (!t.traj) t.traj = [];
+      for (const r of ev.records) t.traj.push(r);
+      const overflow = t.traj.length - TRAJ_MAX_RECORDS;
+      if (overflow > 0) t.traj.splice(4, overflow); // 保留最早 4 条锚点,挤掉锚点后最旧一批
       break;
     }
     case 'todo':
