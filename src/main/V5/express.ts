@@ -5,6 +5,7 @@
 // Gene expression: Genome → ExpressedBody, all HARD constraints (registry filtering,
 // executor params, assertion gates). Only style-level soft priors go into the prompt.
 
+import fs from 'node:fs';
 import type { Tool } from '../tools';
 import { MAX_STEPS_HARD_CAP } from './bodyplan';
 import {
@@ -90,6 +91,7 @@ function violates(a: AssertionGene, last: { name: string; output: string; exitCo
     }
     case 'output_not_empty': return last.output.trim().length === 0;
     case 'line_count_gt': return last.output.split('\n').length <= c.value;
+    case 'file_exists': return !fs.existsSync(c.path);
     default: return true;
   }
 }

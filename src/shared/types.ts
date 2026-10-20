@@ -813,6 +813,10 @@ export type Conversation = {
   /** 跨引擎切换时自动生成的上下文摘要(让新引擎知道之前做了什么)。
    *  首次 run 后消费并清除。null = 无待注入摘要。 */
   crossEngineContext?: string | null;
+  /** Ralph 自迭代拓扑(仅 DirectV5 引擎消费;2026-10)。true = 单轮 run 外面再包一层
+   *  任务级验收循环:验收断言不过 → 结构化反馈重进,直到通过或轮数熔断。
+   *  基因断言(after_each_tool)与 Ralph 验收不同层:前者拦每步,后者裁整轮交付物。 */
+  loopRalph?: boolean;
   /** 企信会话映射 key(格式: `wecom:${userid}`)。
    *  非空 = 该会话由企信机器人创建,用于按用户复用会话避免每条消息新建频道。 */
   wecomKey?: string | null;

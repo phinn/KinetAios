@@ -27,6 +27,8 @@ import {
 } from '../engines';
 import { express } from './express';
 import { runBodyPlan } from './bodyplan';
+import { runRalphLoop, type RalphOpts } from './ralph';
+import { settleRalph, acceptanceFromPrompt } from './ralph-settle';
 import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
 import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
@@ -162,6 +164,14 @@ export class DirectV5Engine implements Engine {
       return;
     }
     const genome: Genome = live[0];
+
+    // ── Ralph 拓扑(conv.loopRalph=true):任务级自迭代,验收不过带反馈重进。
+    // 个体结算与普通 run 同一套账(配子/疤痕/替补),只是单次执行变成多轮循环。──
+    if (conv.loopRalph === true) {
+      await this.runRalph({ conv, prompt, templateId, weight, sig, genome, memoryBlock, refBlock, signal, onEvent, reg });
+      return;
+    }
+
     const gene = geneSnapshot(genome);
     // 档①冻结路由:支系近窗达标 → 本能 prompt 注入"路线已验证"指令(软先验,零额外 token)。
     const converged = reg.isConverged(sig);
@@ -310,7 +320,70 @@ export class DirectV5Engine implements Engine {
     return { cause: o.cause === 'none' ? 'none' : o.cause };
   }
 
+  /**
+   * Ralph 拓扑入口(conv.loopRalph=true):单次 bodyplan 执行外面包一层任务级验收循环。
+   * 与普通 run 的关键差异:
+   *   - 轮数熔断不算个体死亡以外的额外惩罚:整条循环编码成一次 RunOutcome 结算
+   *     (accepted=success / max_loops=wrong_answer 疤痕 / aborted=零信号)。
+   *   - 验收口径:任务文本里的「验收:」段解析为 AssertionDsl(见 parseAcceptance),
+     解析不出任何断言 = 没有 Ralph 验收的入口条件,退回普通单轮(防误开启)。
+   */
+  private async runRalph(a: {
+    conv: { id: string; cwd: string; profileId?: string | null; model?: string; directHistory: ChatMsg[]; turns: Array<{ id: string }> };
+    prompt: string; templateId: string; weight: 'heavy' | 'light'; sig: string; genome: Genome;
+    memoryBlock?: string; refBlock?: string; signal: AbortSignal;
+    onEvent: (e: AgentEvent) => void;
+    reg: GeneRegistry;
+  }): Promise<void> {
+    const { conv, prompt, templateId, weight, sig, genome, signal, onEvent, reg } = a;
+    const stepCeil = (getSettings().maxTurns ?? 50) === 0 ? 0 : STEP_BUDGET_CEIL;
+    const tools = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).tools;
+    const genTag = `🔁🧬 v5·ralph@${templateId}@${weight} | 个体 ${genome.genomeId} 第 ${genome.generation} 代(自迭代拓扑)`;
+    onEvent({ type: 'status', text: genTag });
+
+    const ralphOpts: RalphOpts = {
+      task: prompt,
+      cwd: conv.cwd,
+      genome,
+      acceptance: acceptanceFromPrompt(prompt) ?? { assertions: [] },
+      stepBudgetCeil: stepCeil,
+      chat: (() => { const snap = snapshot(conv.profileId); return providerChatFn(currentProvider({ ...snap, model: conv.model || snap.model }), snap, signal, onEvent); })(),
+      tools,
+      signal,
+      onEvent,
+    };
+    let r;
+    try {
+      r = await runRalphLoop(ralphOpts);
+    } catch (e) {
+      onEvent({ type: 'error', message: `v5 ralph 出错: ${(e as Error)?.message ?? String(e)}` });
+      return;
+    }
+
+    // ── 结算:整条循环 = 一次进化信号(配子/疤痕/替补由 settleRalph 全包)──
+    const outcome = settleRalph(reg, r, genome, conv.id);
+
+    if (outcome.aborted) { onEvent({ type: 'done' }); return; }
+    if (r.accepted) {
+      const answer = r.last?.lastOutput?.trim() || '(任务完成,无文本产物)';
+      onEvent({ type: 'status', text: `✅ v5·ralph: 验收通过(${r.loops} 轮 / ${r.totalSteps} 步)。基因已入配子池。` });
+      conv.directHistory = [
+        ...conv.directHistory,
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: answer },
+      ];
+      onEvent({ type: 'done' });
+      return;
+    }
+    onEvent({ type: 'error', message: `v5·ralph: 轮数熔断(${r.loops} 轮)。失败断言: ${r.loopLog[r.loopLog.length - 1]?.verdict.failed.map((f) => f.id).join(', ') || '(无)'}。wrong_answer 疤痕已入库,该支系后代将定向规避。` });
+  }
+
   releaseConv?(convId: string): void {
     void convId; // 基因库是进程级资产,不随会话释放
   }
 }
+
+export { runRalphLoop } from './ralph';
+export type { RalphOpts, RalphResult } from './ralph';
+export { evaluateAcceptance, describeCheck } from './ralph-accept';
+export type { AcceptanceSpec, AcceptanceVerdict, AcceptanceFail } from './ralph-accept';

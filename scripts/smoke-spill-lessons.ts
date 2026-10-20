@@ -1,5 +1,7 @@
 /* 冒烟: tool-spill 落盘→grep 回捞(真模块)+ lessons 存取 SQL 语义(真 better-sqlite3)。
- * 用法: npx tsx scripts/smoke-spill-lessons.ts
+ * 用法(已验证;勿用裸 npx tsx —— 系统 node ABI(127)与 electron 编译的 better-sqlite3(125)不匹配):
+ *   ELECTRON_RUN_AS_NODE=1 node_modules/.bin/electron \
+ *     "$(npm exec -c 'node -p "require.resolve(\"tsx/dist/cli.mjs\")"')" scripts/smoke-spill-lessons.ts
  * 注: electron 在 node 下 import 只是 stub(app=undefined),tool-spill 因 KINET_TOOL_OUTPUT_DIR
  * 已设不会走 app.getPath,故可直接测真函数。 */
 import fs from 'node:fs';
