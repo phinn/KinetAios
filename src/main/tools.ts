@@ -62,6 +62,7 @@ import { getSettings } from './settings';
 import { privacyGate } from './privacy-gate';
 import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
+import { checkAgentPolicy } from './agent-policy';
 import { compactHistory } from './AgentLoop';
 
 // Sanitize error messages before returning to the LLM — strip absolute paths and stack traces
@@ -368,8 +369,14 @@ const shell: Tool = {
     // git 跨仓库写操作守卫:先于用户 confirm 弹出,消息里带两个仓库路径,用户自己判断放不放行。
     const violation = gitCrossRepoViolation(cmd, ctx.cwd);
     if (violation) return `🚫 已拦截 — ${violation}`;
+    // 声明式策略(2026-10 P2,OpenShell 式最小版):仓库根/用户级 agent.policy.json 静态闸。
+    // deny 直接拒不弹窗;ask 强制确认(消息标注来源规则)。文件不存在 = 零开销旁路。
+    const pv = checkAgentPolicy(cmd, ctx.cwd);
+    if (pv.action === 'deny') {
+      return `🚫 已被 agent.policy.json 拦截 — ${pv.reason ?? '命中 deny 规则'}(规则文件: ${pv.source})`;
+    }
     const finalCmd = enforceBackgroundOpen(cmd);
-    const ok = await ctx.confirm(finalCmd);
+    const ok = await ctx.confirm(pv.action === 'ask' ? `⚠️ 策略要求确认(${pv.reason ?? '命中 ask 规则'}):\n${finalCmd}` : finalCmd);
     if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
     // 焦点守卫:命令若抢了前台(启动 app/panel/simctl 等),执行完自动把前台还给用户
     // 长任务豁免:xcodebuild/burst/boot 等待/系统安装类命令天然 300s+,120s 硬杀会制造
