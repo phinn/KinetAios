@@ -56,7 +56,11 @@ type ScanRoot = {
 // source='builtin' → 技能面板只读(saveSkillSource 已拦截),用户级同名 skill 优先(先到先得)。
 // Bundled skills ship with the app: resources/skills/ when packaged, repo skills/ in dev.
 function builtinRoot(): ScanRoot | null {
-  const dir = app.isPackaged
+  // RUN_AS_NODE(冒烟脚本/脚本化调用)下 electron 模块缺 app —— 与 agent-policy 同款兜底:
+  // 非 packaged 时 __dirname 解析不受影响,只有 isPackaged 读取会炸。优雅降级为 dev 路径。
+  // Under RUN_AS_NODE the electron module has no `app`; degrade gracefully to the dev path.
+  const packaged = (() => { try { return app.isPackaged; } catch { return false; } })();
+  const dir = packaged
     ? path.join(process.resourcesPath, 'skills')
     : path.resolve(__dirname, '..', '..', 'skills');
   return { dir, source: 'builtin', type: 'skill', mode: 'skill-dir' };
