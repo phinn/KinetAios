@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
+import { grepToolOutput } from './tool-spill';
 import crypto from 'node:crypto';
 
 // 原子写:同目录 tmp 文件 + rename 替换。直接 writeFileSync 覆盖在写一半崩溃/断电时会留下
@@ -1490,6 +1491,40 @@ const grep: Tool = {
     // 隐私闸:grep 结果含匹配行原文,可能带出 .env/密钥文件内容,出网前过闸。
     const blocked = await privacyGate(out);
     return blocked ?? out;
+  },
+};
+
+// grep_tool_output:回捞「工具输出溢出落盘」的历史全文(context-mode 式,2026-10)。
+// 主 agent 截断超长工具输出时会全文落盘并在结果尾部给出文件名,本工具按文件名/全文检索。
+// 只读、只搜 userData/tool-outputs/,不碰工作区;无 convId(极老会话/理论路径)时降级为"无落盘"。
+const grepToolOutputTool: Tool = {
+  name: 'grep_tool_output',
+  readOnly: true,
+  description: '回捞历史工具输出全文(此前因超长被截断、全文已落盘的那部分)。默认搜当前会话的落盘文件;pattern 为正则。刚执行的超长工具(shell/read_file/web_fetch 等)结果尾部若提示「全文已落盘」,用本工具按正则取回中段,不必重跑命令。',
+  parameters: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: '正则表达式(大小写不敏感)' },
+      file: { type: 'string', description: '可选:只搜这一个落盘文件名(如 1729-01.txt);不传搜全会话' },
+      context: { type: 'number', description: '可选:每个命中附带前后 N 行(默认 2,上限 15)' },
+      maxHits: { type: 'number', description: '可选:最多返回命中数(默认 30,上限 200)' },
+    },
+    required: ['pattern'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId) return '本会话无 ID(异常状态),无法回捞落盘输出。';
+    const pattern = String(args.pattern ?? '');
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern, 'i');
+    } catch {
+      return `非法正则: ${pattern}`;
+    }
+    const context = Math.max(0, Math.min(15, Number(args.context ?? 2)));
+    const maxHits = Math.max(1, Math.min(200, Number(args.maxHits ?? 30)));
+    const fileFilter = args.file ? String(args.file) : undefined;
+    const hits = grepToolOutput(ctx.convId, pattern, { context, maxHits, file: fileFilter });
+    return hits || `无匹配「${pattern}」(本会话可能没有落盘的超长工具输出,或该词不在被截断的中段)`;
   },
 };
 
@@ -3255,7 +3290,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -3280,7 +3315,7 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  return [readFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。

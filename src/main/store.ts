@@ -173,6 +173,11 @@ export function initStore(): void {
     db.exec(`ALTER TABLE memories ADD COLUMN strikes INTEGER DEFAULT 0;`);
   if (!hasColumn('memories', 'struck_at'))
     db.exec(`ALTER TABLE memories ADD COLUMN struck_at REAL;`);
+  // lessons 层(2026-10,hindsight 启发): kind='lesson' 存「任务/工程教训」(踩坑复盘),
+  // 与 fact(用户事实)分流。scope_cwd = 教训适用的仓库根(绝对路径);
+  // NULL = 全局教训(任何项目可注入)。不进检索式召回池 —— 教训靠 cwd 匹配的常驻注入。
+  if (!hasColumn('memories', 'scope_cwd'))
+    db.exec(`ALTER TABLE memories ADD COLUMN scope_cwd TEXT;`);
   // P0: 初始化 Memory Blocks 默认值
   initMemoryBlocks();
 }
@@ -713,12 +718,12 @@ export function searchMemories(q: string, limit = 20, restrictConvId?: string): 
   if (restrictConvId) {
     return db.prepare(
       `SELECT id, content, conversation_id, importance FROM memories
-       WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
+       WHERE kind NOT IN ('rule', 'lesson') AND content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
        ORDER BY importance DESC, created_at DESC LIMIT ?;`,
     ).all(like, restrictConvId, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
   }
   return db.prepare(
-    `SELECT id, content, conversation_id, importance FROM memories WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
+    `SELECT id, content, conversation_id, importance FROM memories WHERE kind NOT IN ('rule', 'lesson') AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
   ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
 }
 
@@ -863,6 +868,45 @@ export function listRules(): RuleMemory[] {
 /** 违规计数 +1,进入热区。被用户纠正(「你又…」「我说过…」)时调用。 */
 export function strikeRule(id: string): void {
   db.prepare(`UPDATE memories SET strikes = COALESCE(strikes,0) + 1, struck_at = ? WHERE id = ?;`).run(Date.now(), id);
+}
+
+// ── lessons 层(2026-10,hindsight 启发)──
+// kind='lesson':任务/工程教训(踩坑→根因→对策),与 fact(关于用户的事实)分流。
+// 注入走 cwd 匹配的常驻小节,不进检索式召回池(教训必须确定性出现,不能被相关性挤掉)。
+
+/** 新增教训。scopeCwd = 适用仓库根(绝对路径),null = 全局。内容精确去重。 */
+export function addLesson(content: string, convId?: string, scopeCwd?: string | null, importance = 7): string {
+  const existing = db.prepare(`SELECT id FROM memories WHERE kind='lesson' AND content = ?;`).get(content) as { id: string } | undefined;
+  if (existing) return existing.id;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare(`INSERT INTO memories(id, content, created_at, conversation_id, importance, kind, scope_cwd)
+              VALUES(?,?,?,?,?, 'lesson', ?);`).run(
+    id, content, Date.now() / 1000, convId ?? null, Math.max(1, Math.min(10, importance)), scopeCwd ?? null,
+  );
+  return id;
+}
+
+export interface LessonMemory {
+  id: string;
+  content: string;
+  scopeCwd: string | null;
+  importance: number;
+  createdAt: number;
+}
+
+/**
+ * 对当前 cwd 生效的教训:scope_cwd 为 NULL(全局)或等于 cwd(仓库级)。
+ * 仓库级按 importance 优先 —— 同一仓库教训比全局教训更具体,先占注入位。
+ */
+export function loadLessons(cwd: string, limit = 12): LessonMemory[] {
+  const rows = db.prepare(
+    `SELECT id, content, scope_cwd, importance, created_at FROM memories
+     WHERE kind='lesson' AND (scope_cwd IS NULL OR scope_cwd = ?)
+     ORDER BY (scope_cwd IS NOT NULL) DESC, importance DESC, created_at DESC
+     LIMIT ?;`).all(cwd, limit) as Array<{
+    id: string; content: string; scope_cwd: string | null; importance: number; created_at: number;
+  }>;
+  return rows.map((r) => ({ id: r.id, content: r.content, scopeCwd: r.scope_cwd, importance: r.importance ?? 7, createdAt: r.created_at }));
 }
 
 /**
@@ -1538,9 +1582,10 @@ export function scoredMemories(
   const halfLife = 30 * 86400_000; // 30 天(ms)
   const now = Date.now();
   // restrictConvId:只参与本会话产生的记忆 + 无归属的全局记忆(与 recall 注入的会话限制同规则)。
+  // rule / lesson 不进检索池:两者都是常驻注入(铁律区 / 项目教训区),检索命中只会重复占位。
   let mems = restrictConvId
-    ? loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === restrictConvId)
-    : loadMemories();
+    ? loadMemories().filter((m) => (m.conversation_id === null || m.conversation_id === restrictConvId) && m.kind !== 'rule' && m.kind !== 'lesson')
+    : loadMemories().filter((m) => m.kind !== 'rule' && m.kind !== 'lesson');
   // onlyIds(2026-09):只在召回候选集内重排 —— 修前从全池选 top-N,importance 高但与当前
   // 无关的记忆(relevance=0)能挤掉真正相关的候选,检索式记忆名存实亡。
   if (onlyIds) mems = mems.filter((m) => onlyIds.has(m.id));

@@ -1192,6 +1192,20 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       out += hot.map((r) => `- ${r.content}(犯过 ${r.strikes} 次,最近一次:${new Date(r.struckAt!).toISOString().slice(0, 10)})`).join('\n');
     }
 
+    // ── Lessons(hindsight 式任务教训,2026-10)──
+    // kind='lesson' 的记忆:不在检索池(searchMemories/scoredMemories 按 kind='fact' 过滤),
+    // 静态注入 —— 教训是"环境属性"不是"查询相关",踩过坑就必须在场。
+    // 范围:scope_cwd 为 NULL(全局)或等于当前会话 cwd(仓库级),仓库级优先。
+    if (conv.cwd) {
+      const lessons = store.loadLessons(conv.cwd, 8);
+      if (lessons.length) {
+        out += '\n\n## 📒 项目教训(本仓库踩过的坑,动手前先核对)\n';
+        out += lessons
+          .map((l) => `- ${l.scopeCwd ? '' : '[全局] '}${l.content}(${new Date(l.createdAt * 1000).toISOString().slice(0, 10)})`)
+          .join('\n');
+      }
+    }
+
     if (limited.length) {
       out += '\n\n## 关于用户(长期记忆,回答时参考)\n' + limited.map((m) => `- ${m}`).join('\n');
       const allCount = store.memoryCount();
@@ -1291,10 +1305,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   判别标准:fact 描述"世界是怎样的",rule 约束"助手应该怎么做"。同一次纠正,两边都提:fact 记录现象,rule 记录约束。
   例:用户说「别再用 HTTPS push,会卡超时,走 SSH」→ rule: { "text": "禁止 HTTPS push,必须走 SSH", "because": "HTTPS 无凭据卡 120s 超时", "triggers": "git push;push origin;推送" }。
   没有 rule 就输出空数组,不要硬凑。
+- "lessons": [{ "text": "≤ 40字陈述句,写清「场景+做法+原因」", "importance": 6-10 }] 数组 —— 踩坑后的技术教训,关于「怎么做这件事会失败/成功」,不是对助手的约束(rule 管那个),也不是用户偏好(fact 管那个)。
+  什么时候提取 lesson:修复了报错/调试通了问题/发现了反直觉机制,且下次在同一个仓库大概率再遇到。例:"simctl recordVideo 是 VFR,画面静止不出帧,duration 元数据缩水,验内容用帧数别信 duration" / "Electron spawn .cmd 必须 shell:true 否则 CVE 拦截直接报错" / "patch 旧 appInfo 必 409,新版本要克隆新 appInfo"。
+  同一次踩坑,rule 和 lesson 都提:rule 记「禁止/必须」约束,lesson 记「技术机制为什么」。没有 lesson 就输出空数组,不要硬凑。
 - "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"KinetAios","p":"用","o":"better-sqlite3"} / {"s":"项目","p":"构建","o":"npm run dist"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节(如临时变量名)、纯时间敏感(今天/这次)、单次 bug 的具体修复步骤(除非是通用 pattern)。
 豁免(必须提取,上面"一次性细节"不适用):产物形态决策("X 图=直传不套壳")、用户明确否决的方案("否决了裸图拼接")、路径级产物位置("KinetBrief 素材在 framed_v1 目录")、用户对成品的验收标准("截图必须亮色")。这类正是跨会话最易丢、丢了会重犯的。
-无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"triples":[]}。只输出 JSON,不要解释。`;
+无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"lessons":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
@@ -1312,12 +1329,23 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         ac.signal,
         () => {},
       );
-      const { facts, projectFacts, rules, triples } = parseExtraction(comp.content);
+      const { facts, projectFacts, rules, triples, lessons } = parseExtraction(comp.content);
       // rules 优先落库:不走去重管线(fact 的模糊去重会误杀措辞相近但约束不同的规则),
       // upsertRule 内部按内容精确去重。
       for (const r of rules.slice(0, 3)) {
         store.upsertRule(r.text, r.triggers || null, convId, 9);
       }
+
+      // lessons 落库(2026-10):教训与事实分流,不走去重管线(lesson 自带内容精确去重,
+      // 且教训措辞敏感性高 —— 模糊去重可能误杀「差一个限定条件」的两条不同教训)。
+      // scope = 当前会话 cwd(hindsight 思路:教训绑仓库,不全局污染)。
+      if (lessons.length) {
+        const convCwd = store.getConversationCwd(convId);
+        for (const l of lessons.slice(0, 3)) {
+          store.addLesson(l.text, convId, convCwd ?? null, l.importance || 8);
+        }
+      }
+
       const existingFacts = store.allMemoryContents();
 
       // ── 去重策略:精确匹配 → 模糊去重(Jaccard) → 语义去重(embedding cosine)
@@ -1842,9 +1870,10 @@ function parseExtraction(s: string): {
   facts: Array<{ text: string; importance: number }>;
   projectFacts: Array<{ text: string; importance: number }>;
   rules: Array<{ text: string; because: string; triggers: string }>;
+  lessons: Array<{ text: string; importance: number }>;
   triples: Array<{ s: string; p: string; o: string }>;
 } {
-  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, rules: [] as Array<{ text: string; because: string; triggers: string }>, triples: [] as Array<{ s: string; p: string; o: string }> };
+  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, rules: [] as Array<{ text: string; because: string; triggers: string }>, lessons: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
   const lo = s.indexOf('{');
   const hi = s.lastIndexOf('}');
   if (lo >= 0 && hi > lo) {
@@ -1894,13 +1923,14 @@ function parseExtraction(s: string): {
             })
             .filter((t): t is { s: string; p: string; o: string } => t !== null)
         : [];
-      return { facts, projectFacts, rules, triples };
+      const lessons = parseFactArray(obj.lessons).filter((l) => l.importance >= 5 || l.text.length > 10);
+      return { facts, projectFacts, rules, lessons, triples };
     } catch {
       return empty;
     }
   }
   // 兼容老格式(纯 facts [])
-  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], rules: [], triples: [] };
+  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], rules: [], lessons: [], triples: [] };
 }
 
 function parseFactsLegacy(s: string): string[] {

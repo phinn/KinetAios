@@ -15,6 +15,10 @@ import type { ConvEvent } from '../shared/types';
 const SPILL_SLIM_COUNT = 20;
 const SPILL_SLIM_CONTENT = 500;
 
+// ── 工具输出溢出落盘(context-mode 式,2026-10)──
+import { spillToolOutput } from './tool-spill';
+
+
 // ── 删前全文备份(spill to file,2026-10-15)──
 // 事故复盘:V1 引擎多条删除路径"删了就删了"—— spill 事件 2026-09 瘦身后只存
 // 20 条×500 字符,proactive compact 甚至不写 spill 事件,三级 fallback 裸 trim
@@ -1644,11 +1648,15 @@ async function runToolBatch(
           const dur = Date.now() - t0;
           const outcome = toolOutcomeOf(result); // 埋点:判定基于原始 result,截图伪装/截断不影响
           const shot = parseScreenshotResult(result);
+          // 工具输出溢出落盘: 发给模型前截断,全文先落盘,模型可 grep_tool_output 回捞(见 tool-spill.ts)
+          const spillFile = shot ? null : spillToolOutput(ctx.convId ?? '', c.name, result);
+          const forModel0 = shot ? result : truncateForModel(result, truncateThreshold);
+          const forModel = spillFile ? `${forModel0}\n\n[工具输出全文 ${result.length} 字符已落盘: ${spillFile}。被截断丢失的中段可用 grep_tool_output(pattern=…, file=此路径) 回捞]` : forModel0;
           const uiResult = shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
           // images: 截图 base64 随事件下发(仅内存/广播;saveTurn 持久化时剥离)
           onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, outcome, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
+
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
-          const forModel = shot ? result : truncateForModel(result, truncateThreshold);
           return { c, result: forModel, dur };
         }),
       );
