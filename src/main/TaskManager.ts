@@ -899,6 +899,29 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       if (!conv.goal) break;
       if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。注意:只在其上继续推进,不要重做或回滚已完成的工作。`;
 
+      // ── 预算分级降级(paperclip 式治理,P1 2026-10)──
+      // 硬顶 100% = 暂停(上面 maxCost/maxMs 分支)太粗:过夜任务往往死在前一晚最后几轮。
+      // 分级:≥80% 预警(注入收敛指令,让模型收尾而不是开新坑)/ ≥95% 强制收尾。
+      // conv.cost 由 AgentLoop cost 事件累计(含 cache 折价),与 maxCost 同一口径。
+      if (maxCost > 0 && conv.cost > 0) {
+        const pct = conv.cost / maxCost;
+        if (pct >= 0.95) {
+          nextPrompt = `💰⚠️ 预算告急:已消耗 $${conv.cost.toFixed(2)} / 上限 $${maxCost.toFixed(2)}(${(pct * 100).toFixed(0)}%)。` +
+            `立即收尾:不要再开启新的子任务/新文件/新实验,把当前已完成的部分整理成结论与交付物,说明哪些做了哪些没做,然后结束本轮。目标:「${conv.goal}」`;
+        } else if (pct >= 0.8) {
+          nextPrompt += `\n\n💰 预算提示:本轮预算已用 ${(pct * 100).toFixed(0)}%($${conv.cost.toFixed(2)} / $${maxCost.toFixed(2)})。` +
+            `优先完成最有价值的剩余工作,避免大规模重写或探索性展开;下轮若达 95% 将要求强制收尾。`;
+        }
+      } else if (maxMs > 0 && Date.now() - startedAt > maxMs * 0.8) {
+        // 时长同款分级(成本未配 maxCost 时时长是唯一信号)
+        const tp = (Date.now() - startedAt) / maxMs;
+        if (tp >= 0.95) {
+          nextPrompt = `⏰⚠️ 时间告急:已运行 ${((Date.now() - startedAt) / 3600_000).toFixed(1)}h / 上限 ${(maxMs / 3600_000).toFixed(1)}h。立即收尾整理结论,不再开新工作。目标:「${conv.goal}」`;
+        } else {
+          nextPrompt += `\n\n⏰ 时间提示:运行预算已用 ${(tp * 100).toFixed(0)}%,收拢范围优先收尾。`;
+        }
+      }
+
       // ── 用户方向修正(最高优先级):覆盖监工 requirement / 默认推进语 ──
       // sendCore 在 running 时把用户消息 park 进修正队列,这里在下一轮 dispatch 前
       // 消费:直接替换 nextPrompt(不是拼接 —— 用户说了"别搞 X 了改做 Y",旧指令

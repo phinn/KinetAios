@@ -1201,8 +1201,13 @@ export function updateMemory(id: string, content: string): void {
   if (hasTable('memory_embeddings')) db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(id);
 }
 
-export function deleteMemory(id: string): void {
-  // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
+/** 查记忆的 kind(lesson_manage 校验用)。不存在返回 null。 */
+export function getMemoryKind(id: string): string | null {
+  const r = db.prepare('SELECT kind FROM memories WHERE id=?;').get(id) as { kind: string | null } | undefined;
+  return r?.kind ?? null;
+}
+
+export function deleteMemory(id: string): void {  // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
   // 事务保证原子性。
   db.transaction(() => {
     db.prepare('DELETE FROM memories WHERE id=?;').run(id);

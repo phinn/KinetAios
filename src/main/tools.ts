@@ -1939,6 +1939,56 @@ const memoryAppend: Tool = {
   },
 };
 
+// lesson_manage(2026-10 P1):教训自维护 —— 发现注入的教训过时/写错/环境已变时修正或删除。
+// 教训是"环境属性"常驻注入,错教训每轮都在污染上下文,必须给模型自清理通道(不能只靠人肉开 SQLite)。
+const lessonManage: Tool = {
+  name: 'lesson_manage',
+  description:
+    '管理「项目教训」(📒 注入区的踩坑教训)。action=list 列出对当前仓库生效的全部教训(含 id);\n' +
+    'action=forget 按 id 删除一条已过时/已失效的教训(如:坑已在新版本修复、教训描述的环境已不存在);\n' +
+    'action=revise 按 id 改写教训内容(保持 ≤40 字,写清场景+做法+原因)。\n' +
+    '只在确认教训确实过时或错误时才删,不要为了"省上下文"删除仍然有效的教训。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'forget', 'revise'], description: 'list=列出;forget=删除;revise=改写' },
+      id: { type: 'string', description: 'forget/revise 必填:教训 id(list 输出里的)' },
+      content: { type: 'string', description: 'revise 必填:新的教训内容' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    const act = String(args.action ?? 'list');
+    const cwd = ctx.cwd ?? '';
+    if (act === 'list') {
+      const lessons = cwd ? store.loadLessons(cwd, 50) : store.loadLessons(process.cwd(), 50);
+      if (!lessons.length) return '(当前仓库无生效教训)';
+      return lessons
+        .map((l) => `${l.id} | ${l.scopeCwd ? '仓库级' : '全局'} | importance=${l.importance} | ${new Date(l.createdAt * 1000).toISOString().slice(0, 10)} | ${l.content}`)
+        .join('\n');
+    }
+    const id = String(args.id ?? '').trim();
+    if (!id) return 'forget/revise 需要 id(先 action=list 查看)';
+    if (act === 'forget') {
+      // 删前校验:只允许动 lesson 类;不存在直接报(不静默假成功)
+      const target = store.getMemoryKind(id);
+      if (target === null) return `id ${id} 不存在`;
+      if (target !== 'lesson') return `id ${id} 不是教训(${target}),拒绝删除 —— fact/rule 走 memory 管理或设置页`;
+      store.deleteMemory(id);
+      return `✅ 已删除教训 ${id}`;
+    }
+    if (act === 'revise') {
+      const content = String(args.content ?? '').trim();
+      if (!content) return 'revise 需要 content';
+      const target = store.getMemoryKind(id);
+      if (target !== 'lesson') return `id ${id} 不是教训或不存在`;
+      store.updateMemory(id, content);
+      return `✅ 已改写教训 ${id}: ${content}`;
+    }
+    return `未知 action: ${act}`;
+  },
+};
+
 // dispatch_agent:派发独立子任务给子 agent。Direct 默认走 runAgentLoop(只读工具集);
 // engine=claudeCode / codex 时跨引擎:走对应 CLI 的 one-shot 模式,只读、不递归。
 // 对应 CC 的 AgentTool 最小版 + 跨引擎扩展。readOnly 留空 → 串行,避免同轮多个 subagent 并发 LLM 风暴。
@@ -3290,7 +3340,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
