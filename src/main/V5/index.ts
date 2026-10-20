@@ -88,8 +88,6 @@ export class DirectV5Engine implements Engine {
 
   /** 基因库:进程级单例,跨会话共享(全 app 一个种群,不 per-conv 割裂)。 */
   private static registry: GeneRegistry | null = null;
-  /** lineage → 最近一次死亡归因(疤痕遗传的权威通路,内存即生命周期)。 */
-  private lastAttribution = new Map<string, AttributionFacts>();
 
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
@@ -249,13 +247,14 @@ export class DirectV5Engine implements Engine {
       return;
     }
     reg.settle(runOutcome, genome, facts);
-    if (!outcome.aborted && !outcome.success) this.lastAttribution.set(genome.lineage, facts);
+    // 疤痕入库(2026-10 持久化:修前引擎层内存 Map,重启即丢,定向突变退化成盲目克隆)
+    if (!outcome.aborted && !outcome.success) reg.recordScar(genome.lineage, facts);
 
     // ── 替补出生:种群永续。按归因定向突变(疤痕遗传)/无归因则克隆冠军 ──
     if (!outcome.aborted && reg.liveBySignature(sig).length === 0) {
       const gam = reg.bestGamete(sig);
       if (gam) {
-        const inh = this.lastAttribution.get(gam.genome.lineage);
+        const inh = reg.scarOf(gam.genome.lineage);
         if (inh) reg.mutateFrom(gam.genome, inh);
         else reg.cloneFrom(gam.genome);
       }
