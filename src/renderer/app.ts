@@ -2570,6 +2570,9 @@ function renderHead(conv: Conversation | undefined) {
   // 跨项目记忆 toggle:同步高亮。=== true = 开(默认关)。
   const cmXpmem = document.getElementById('cm-xpmem');
   if (cmXpmem) cmXpmem.classList.toggle('active', conv.crossProjectMemory === true);
+  // Ralph 循环 toggle:同步高亮。=== true = 开(默认关)。
+  const cmRalph = document.getElementById('cm-ralph');
+  if (cmRalph) cmRalph.classList.toggle('active', conv.loopRalph === true);
 }
 
 // Rebuild the engine dropdown from the toggle. Direct is always present; Claude/Codex only when
@@ -7715,6 +7718,17 @@ function closeMoreMenu() {
       const newEnabled = !(conv?.crossProjectMemory === true);
       void api.setCrossProjectMemory(selectedId, newEnabled);
       xpmemBtn.classList.toggle('active', newEnabled);
+    };
+  }
+  // Ralph 循环 toggle:true = DirectV5 会话走 Ralph 自迭代拓扑(默认关)。
+  const ralphBtn = document.getElementById('cm-ralph');
+  if (ralphBtn) {
+    ralphBtn.onclick = () => {
+      if (!selectedId) return;
+      const conv = convs.get(selectedId);
+      const newEnabled = !(conv?.loopRalph === true);
+      void api.setLoopRalph(selectedId, newEnabled);
+      ralphBtn.classList.toggle('active', newEnabled);
     };
   }
   // 清除目标:发送 /goal(无参数)清除

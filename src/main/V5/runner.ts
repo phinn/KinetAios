@@ -53,6 +53,9 @@ export interface UniverseOpts {
    * 默认人格:直接调第一个必需工具,零缺陷 —— 无选择压力,进化无从谈起。
    */
   chatFactory?: (ctx: { rng: () => number; tpl: TaskTemplate; variant: number; body: ExpressedBody }) => ChatFn;
+  /** 基因库落盘目录(可选)。缺省 = 纯内存(单测隔离,不污染生产 phylum 数据);
+   *  长实验传入目录 → 种群/账本/疤痕随 GeneRegistry 持久化,重启可续跑。 */
+  dataDir?: string;
 }
 
 export interface RoundOpts {
@@ -134,7 +137,7 @@ export class Universe {
   constructor(private opts: UniverseOpts) {
     this.rng = opts.rng ?? seededRng(1);
     this.tools = opts.tools ?? mockTools(opts.toolSuccessPrior ?? {}, this.rng);
-    this.reg = new GeneRegistry({ rng: this.rng });
+    this.reg = new GeneRegistry({ rng: this.rng, ...(opts.dataDir ? { dataDir: opts.dataDir } : {}) });
   }
 
   /** 实验旋钮:预设某签名 founder 的指定工具亲和(对照实验用,隔离基因差异)。

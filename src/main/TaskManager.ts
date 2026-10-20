@@ -256,6 +256,15 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  // 会话级 Ralph 自迭代开关 —— true = DirectV5 会话走 Ralph 循环拓扑(验收不过带反馈重进)。
+  setLoopRalph(id: string, enabled: boolean): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.loopRalph = enabled;
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   // 会话级跨项目记忆开关 —— false = 检索/注入只看本会话,防止多任务线串扰。
   setCrossProjectMemory(id: string, enabled: boolean): void {
     const conv = this.convs.get(id);

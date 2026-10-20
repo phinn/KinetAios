@@ -324,6 +324,7 @@ const ZH_CN: Dict = {
   'composer.voiceChat': '语音对话',
   'composer.persona': '替身画像',
   'composer.xpmem': '跨项目记忆',
+  'composer.ralph': 'Ralph 循环',
 
   'model.title': '模型(Direct 引擎,每会话独立;回车应用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟随主模型)',
@@ -335,6 +336,7 @@ const ZH_CN: Dict = {
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身画像(开/关) — 开启后 AI 模仿你的做事风格',
   'xpmem.toggle': '跨项目记忆(开/关) — 关闭后本会话只检索自己的历史与记忆,不串其他会话',
+  'ralph.toggle': 'Ralph 自迭代循环(开/关) — 开启后 DirectV5 引擎在本会话启用任务级验收循环:验收不过会带反馈自动重试,直到通过或轮数熔断',
 
   'skill.title': '选择 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -1677,6 +1679,7 @@ const EN: Dict = {
   'composer.voiceChat': 'Voice chat',
   'composer.persona': 'Persona',
   'composer.xpmem': 'Cross-project memory',
+  'composer.ralph': 'Ralph loop',
 
   'model.title': 'Model (Direct engine, per-session; Enter to apply)',
   'model.subTitle': 'Sub-agent model (dispatch_agent / spawn_team; empty = follow main model)',
@@ -1688,6 +1691,7 @@ const EN: Dict = {
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'Persona (on/off) — AI mimics your working style when on',
   'xpmem.toggle': 'Cross-project memory (on/off) — when off, this session only searches its own history and memories',
+  'ralph.toggle': 'Ralph self-iteration loop (on/off) — when on, the DirectV5 engine enables task-level acceptance loops for this session: failed acceptance retries automatically with feedback until it passes or the loop budget trips',
 
   'skill.title': 'Pick a skill (Direct)',
   'skill.lbl': 'Skill',
@@ -3024,6 +3028,7 @@ const ZH_TW: Dict = {
   'composer.voiceChat': '語音對話',
   'composer.persona': '替身畫像',
   'composer.xpmem': '跨專案記憶',
+  'composer.ralph': 'Ralph 循環',
 
   'model.title': '模型(Direct 引擎,每工作階段獨立;Enter 套用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟隨主模型)',
@@ -3035,6 +3040,7 @@ const ZH_TW: Dict = {
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身畫像(開/關) — 開啟後 AI 模仿你的做事風格',
   'xpmem.toggle': '跨專案記憶(開/關) — 關閉後本工作階段只檢索自己的歷史與記憶',
+  'ralph.toggle': 'Ralph 自迭代循環(開/關) — 開啟後 DirectV5 引擎在本工作階段啟用任務級驗收循環:驗收不過會帶回饋自動重試,直到通過或輪數熔斷',
 
   'skill.title': '選擇 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -4380,6 +4386,7 @@ const JA: Dict = {
   'composer.voiceChat': '音声チャット',
   'composer.persona': 'ペルソナ',
   'composer.xpmem': 'プロジェクト横断メモリ',
+  'composer.ralph': 'Ralph ループ',
 
   'model.title': 'モデル(Direct エンジン、セッション単位、Enter で適用)',
   'model.subTitle': 'サブエージェントモデル(dispatch_agent / spawn_team 用、空 = メインモデルに追随)',
@@ -4391,6 +4398,7 @@ const JA: Dict = {
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'ペルソナ(オン/オフ) — オン時、AI があなたの作業スタイルを模倣',
   'xpmem.toggle': 'プロジェクト横断メモリ(オン/オフ) — オフ時、このセッションは自分の履歴とメモリのみ検索',
+  'ralph.toggle': 'Ralph 自己反復ループ(オン/オフ) — オン時、DirectV5 エンジンはこのセッションでタスク級検収ループを有効化:検収不合格ならフィードバック付きで自動再試行し、合格か最大試行回数で停止',
 
   'skill.title': 'Skill を選択(Direct)',
   'skill.lbl': 'Skill',

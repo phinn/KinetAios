@@ -136,6 +136,7 @@ export function initStore(): void {
     ['high_fidelity', 'INTEGER'], // deprecated: 旧列,保留做 migration 兼容(见 context_mode)
     ['context_mode', 'TEXT'],     // 上下文模式:standard(默认) / hifi(不截断+大预算) / 未来可扩展
     ['persona_enabled', 'INTEGER'], // 替身画像开关:1 = 注入(默认), 0 = 本会话关闭
+    ['loop_ralph', 'INTEGER'],    // V5 Ralph 自迭代开关:1 = 该会话 DirectV5 走 Ralph 循环(默认 0/NULL = 关)
     ['cross_project_memory', 'INTEGER'], // 跨项目记忆开关:1 = 全局检索, 0/NULL = 仅本会话(默认)
     ['updated_at', 'REAL'],       // 最后活动时间:每次 saveTurn / saveConversation 时更新。用于侧栏"按最近活动排序"
     ['sub_agent_model', 'TEXT'],  // 子 agent 模型(空 = 跟随主模型),每会话独立保存
@@ -298,6 +299,7 @@ type ConvRow = {
   high_fidelity: number;
   context_mode: string | null;
   persona_enabled: number | null;
+  loop_ralph: number | null;
   cross_project_memory: number | null;
   updated_at: number | null;
   sub_agent_model: string | null;
@@ -307,14 +309,14 @@ type ConvRow = {
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
        high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, persona_enabled=excluded.persona_enabled,
        updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key,
-       cross_project_memory=excluded.cross_project_memory;`,
+       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
@@ -323,6 +325,7 @@ export function saveConversation(c: Conversation): void {
     c.contextMode === 'hifi' ? 1 : 0,
     c.contextMode ?? 'standard',
     c.personaEnabled === false ? 0 : 1,
+    c.loopRalph === true ? 1 : 0,
     c.updatedAt ?? Date.now(),
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
@@ -572,7 +575,7 @@ export function loadConvTurns(convId: string): Turn[] {
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
-      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
   // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
@@ -642,6 +645,7 @@ export function loadConversations(): Conversation[] {
       profileId: r.profile_id ?? null,
       contextMode: r.context_mode === 'hifi' ? 'hifi' : (r.high_fidelity ? 'hifi' : 'standard'), // 优先读 context_mode,旧数据从 high_fidelity 迁移
       personaEnabled: r.persona_enabled === 0 ? false : true, // 0 = 显式关闭,其余(含 null/旧数据) = 默认开
+      loopRalph: r.loop_ralph === 1, // 1 = Ralph 自迭代拓扑开;NULL/0 = 关(默认,走普通单轮)
       crossProjectMemory: r.cross_project_memory === 1, // 1 = 开;NULL/0 = 关(每频道默认关)
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,

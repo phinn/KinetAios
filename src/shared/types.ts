@@ -1110,6 +1110,8 @@ export interface KinetAPI {
   savePersona(persona: string): Promise<{ ok: boolean; error?: string }>;
   /** 设置会话级替身画像开关 */
   setPersonaEnabled(convId: string, enabled: boolean): Promise<boolean>;
+  /** 设置会话级 Ralph 自迭代开关(true = DirectV5 走 Ralph 循环拓扑) */
+  setLoopRalph(convId: string, enabled: boolean): Promise<boolean>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   // ── 后台 Job ──
   listJobs(convId?: string): Promise<JobInfo[]>;
