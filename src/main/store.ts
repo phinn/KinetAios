@@ -310,7 +310,7 @@ type ConvRow = {
 export function saveConversation(c: Conversation): void {
   db.prepare(
     `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
