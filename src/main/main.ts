@@ -440,6 +440,18 @@ function createDashboard(): BrowserWindow {
       }, 1000);
     }
   });
+  // renderer console 黑匣子(2026-10-21):init 阶段的 TypeError 在渲染进程里被吞,
+  // 主进程侧只见"按钮无反应"零痕迹 —— console-message 落盘后,重启实例即可查
+  // renderer 报错原文+行号,不用再盲猜。Renderer console persisted for post-mortem.
+  win.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
+    if (!message.includes('Uncaught') && !message.includes('Error') && !message.includes('error')) return;
+    try {
+      const fs = require('fs') as typeof import('fs');
+      const f = require('path').join(app.getPath('userData'), 'renderer-console.log');
+      if (fs.existsSync(f) && fs.statSync(f).size > 5 * 1024 * 1024) fs.renameSync(f, `${f}.old`);
+      fs.appendFileSync(f, `[${new Date().toISOString()}] ${message} @${sourceId}:${line}\n`);
+    } catch { /* ignore */ }
+  });
   // 卡死黑匣子:unresponsive 触发时 1)记录日志 2)sample 抓 renderer 全线程栈到
   // unresponsive-sample.txt(macOS)/ pslist(Windows)3)10s 后若恢复记 responsive。
   // 此前多次"卡死"crash.log 零 unresponsive 记录 —— 定性存疑,需现场证据。
