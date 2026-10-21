@@ -9048,6 +9048,14 @@ function createPcmWorkletUrl(): string {
 // 复制文本到剪贴板,带短暂"已复制"反馈
 // Electron contextIsolation 下 navigator.clipboard 经常静默失效 → 走 IPC 主进程 clipboard 模块
 async function copyText(text: string, btn?: HTMLElement): Promise<void> {
+  // 空串防线(2026-10-21):clipboard.writeText('') 在 macOS 上"成功"返回但剪贴板等于被清空
+  // —— 用户看到按钮变 ✓ / 以为复制了,⌘V 却什么都没有(实踩报障:「复制了但剪切板没有内容」)。
+  // 空串来源:出错轮/流式未产出时复制 t.answer ?? ''、纯图片消息清掉 \x00IMAGES 块后为空、
+  // 流式中代码块 textContent 尚未渲染。空 = 什么都不写 + 明确报错,绝不假装成功。
+  if (!text || !text.trim()) {
+    uxToast.err(tr('toast.copyEmpty'));
+    return;
+  }
   let ok = false;
   // 路径 1:IPC → 主进程 Electron clipboard(最可靠)
   try {
@@ -9076,6 +9084,9 @@ async function copyText(text: string, btn?: HTMLElement): Promise<void> {
     btn.innerHTML = SVGI_SET.checkCircle();
     setTimeout(() => { btn.innerHTML = orig; }, 1200);
   }
+  // 成功也给轻反馈:修前只有按钮 ✓(右键菜单/无 btn 调用点完全没有反馈),失败则静默
+  if (ok) uxToast.ok(tr('toast.copied'));
+  else uxToast.err(tr('toast.copyFailed'));
 }
 
 function speakText(text: string): void {
