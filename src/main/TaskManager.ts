@@ -510,6 +510,17 @@ export class TaskManager {
     if (conv.goal && (this.goalLoopLive.has(id) || conv.status === 'running')) {
       pushCorrection(id, prompt);
       conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
+      // 立即落一条可见回执 turn:修前只有 statusNote 过场,composer 已清空而 turns 无回显,
+      // 下一轮注入可能隔几分钟且呈「⚡ 用户方向修正」包裹形态 —— 用户体感「消息被吃掉」
+      // (2026-10-22 实踩:「好了」park 后 12 分钟才注入,用户以为丢失)。
+      // / Persist a visible ack turn immediately: statusNote alone + delayed wrapped
+      // injection read as "message eaten" (2026-10-22 real case).
+      const ack = newTurn(prompt);
+      ack.answer = '📨 已收下,不会丢。当前任务完成后、下一轮执行前注入(最高优先级,Worker 与监工都可见)。';
+      ack.done = true;
+      conv.turns.push(ack);
+      store.appendMessage('user', prompt, conv.id);
+      store.saveTurn(conv.id, ack);
       this.emit.emitConversation(conv);
       return;
     }
