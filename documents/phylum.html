@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Phylum:种群进化 Agent 引擎 — 提案(V2 修订)</title>
+<style>
+  :root {
+    --bg: #f7f4ee; --card: #fffdf9; --ink: #26221c; --sub: #6b6357;
+    --line: #e4ddd0; --accent: #8a4b2f; --good: #3a7d44; --warn: #b07a1f; --bad: #a63d2f;
+    --code: #efe9de;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.75 -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif; }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 34px; line-height: 1.3; margin: 0 0 8px; }
+  h2 { font-size: 24px; margin: 64px 0 12px; padding-top: 20px; border-top: 2px solid var(--line); }
+  h2 .no { color: var(--accent); font-variant-numeric: tabular-nums; margin-right: 8px; }
+  h3 { font-size: 18px; margin: 28px 0 8px; }
+  .meta { color: var(--sub); font-size: 14px; margin-bottom: 32px; }
+  .lead { font-size: 17px; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 22px; margin: 16px 0; }
+  .card.bad { border-left: 4px solid var(--bad); }
+  .card.good { border-left: 4px solid var(--good); }
+  .card.warn { border-left: 4px solid var(--warn); }
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 14.5px;
+    background: var(--card); }
+  th, td { border: 1px solid var(--line); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--code); font-weight: 600; }
+  code { background: var(--code); padding: 1px 6px; border-radius: 4px;
+    font: 13.5px/1.5 "SF Mono", Menlo, monospace; }
+  pre { background: var(--code); border: 1px solid var(--line); border-radius: 8px;
+    padding: 14px 18px; overflow-x: auto; font: 13px/1.6 "SF Mono", Menlo, monospace; }
+  .en { color: var(--sub); font-size: 14px; border-left: 3px solid var(--line);
+    padding-left: 14px; margin: 10px 0; }
+  .en b { color: var(--ink); }
+  .tag { display: inline-block; font-size: 12px; padding: 1px 10px; border-radius: 99px;
+    border: 1px solid var(--line); background: var(--code); color: var(--sub); margin-right: 6px; }
+  .k { color: var(--accent); font-weight: 600; }
+  .fig { margin: 20px 0; }
+  .figcap { color: var(--sub); font-size: 13.5px; margin-top: 6px; text-align: center; }
+  svg text { font-family: -apple-system, "PingFang SC", sans-serif; }
+  .foot { margin-top: 80px; color: var(--sub); font-size: 13px; border-top: 1px solid var(--line); padding-top: 16px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Phylum:种群进化 Agent 引擎</h1>
+<div class="meta">提案 V2 修订 · 2026-10-13 · KinetAios DirectV5(directV5 / phylum-engine 插件) ·
+状态:化石层已落地(1165999),真实模型批跑待验</div>
+
+<!-- ══════════════ 01 ══════════════ -->
+<h2><span class="no">01</span>主张与一句话设计</h2>
+<p class="lead">核心主张:<b>Agent 不学习,Agent 繁衍。</b>
+重复性任务流上,Phylum 种群的边际 token 成本随化石沉积趋近于零——
+LLM 不是种群的居民,是种群的燃料:烧一次,把轨迹烧成化石;此后同类任务直接重放化石,<span class="k">零 LLM 交付</span>。
+裸 ReAct 每次都重新烧一遍,成本是常数;Phylum 的成本是递减序列。</p>
+<div class="en"><b>EN.</b> Agents don't learn — they breed. On recurring task streams, Phylum's marginal token cost
+decays toward zero as successful traces fossilize into replayable templates. The LLM is the population's fuel,
+not its resident: burn once, deposit a fossil, replay forever after at zero LLM tokens. A bare ReAct agent
+re-burns every time — flat cost. Phylum's cost is a decreasing series.</div>
+
+<div class="card bad"><b>预注册边界(防事后挑数据):</b>Phylum 优势定义域 = <b>重复性任务流</b>(同类签名反复出现)。
+一次性任务没有种群意义,等价于裸模型,Phylum 不承诺任何优势。签名命中率即定义域判据。</div>
+
+<!-- ══════════════ 02 ══════════════ -->
+<h2><span class="no">02</span>基因与选择:三件套</h2>
+<table>
+<tr><th>基因位</th><th>内容</th><th>进化方式</th><th>表达机制</th></tr>
+<tr><td><b>routing_prior</b></td><td>maxSteps / 颗粒度 / 成功先验</td><td>定向突变(死因驱动)</td><td>硬约束:步数墙物理截断</td></tr>
+<tr><td><b>tool_affinity</b></td><td>数值向量,每工具一维</td><td>罚肇事(−0.30/步)、奖缺位(+0.3)、扰动</td><td>硬约束:亲和 &lt;0.2 从注册表<b>物理摘除</b>,不是提示词劝说</td></tr>
+<tr><td><b>assertion_templates</b></td><td>断言 DSL(exit_code_eq / output_not_empty / line_count_gt…)</td><td><b>只删不改不进化</b>(防 Goodhart)</td><td>硬约束:post-condition gate,违规即死</td></tr>
+</table>
+<p>LLM 行为约束必须上机制(断供/熔断/摘除),提示词只配当辅助——这是立法引擎(V4)三连败换来的教训。</p>
+<div class="en"><b>EN.</b> Three gene loci: routing priors, per-tool affinity vector, assertion templates.
+All expressed as <b>hard constraints</b> (tools physically removed from the registry below 0.2 affinity; assertion gate kills
+on violation), never as prompt suggestions. Assertions are delete-only — they never evolve, to block Goodharting.</div>
+
+<!-- ══════════════ 03 ══════════════ -->
+<h2><span class="no">03</span>死亡归因决定突变位点</h2>
+<p>每个个体的死因被结构化归因,子代在<b>死因位点</b>定向突变(疤痕遗传),不做盲目随机搜索:</p>
+<table>
+<tr><th>死因</th><th>归因字段</th><th>子代突变</th></tr>
+<tr><td><code>tool_error</code></td><td>culpritTool</td><td>肇事工具亲和 −0.30/步(叠加);&lt;0.2 摘除</td></tr>
+<tr><td><code>essential_tool_missing</code></td><td>missingTool</td><td>全表亲和回升 +0.3(环境教育:别把饭碗扔了);缺失工具拉到 0.3</td></tr>
+<tr><td><code>step_budget</code></td><td>—</td><td>maxSteps +4(值域 [1,40])</td></tr>
+<tr><td><code>assertion_fail</code></td><td>assertionId</td><td>违规断言从子代删除(只删铁律)</td></tr>
+<tr><td><code>wrong_answer</code></td><td>—</td><td>亲和小幅探索扰动(断言全过但语义错 → 不许加断言)</td></tr>
+<tr><td><code>aborted</code></td><td>—</td><td><b>无痕死亡</b>:零账本/配子/化石/归因(零进化信号)</td></tr>
+</table>
+<div class="en"><b>EN.</b> Structured death attribution drives targeted mutation at the culprit locus —
+no blind random search. Abortions leave no trace: zero ledger, gamete, fossil, or attribution.</div>
+
+<!-- ══════════════ 04 ══════════════ -->
+<h2><span class="no">04</span>成本曲线:为什么"归零"要靠重放而不是编译</h2>
+<p class="lead"><b>坑①(程序综合)先摆在这:</b>轨迹 → 程序的编译比一句话难一个数量级。
+轨迹里的参数不是常量——路径、URL、query 都是任务实例的函数;<span class="k">谁来填槽?</span>
+编译器必须同时解决参数实例化、环境漂移、语义等价性三个问题,而这三件事恰好是 LLM 最不可靠的地方。
+所以主路径不是编译:<b>是轨迹模板(槽位化)+ 断言 gate 的重放</b>。真编译挂远期(见 06 节档③)。</p>
+
+<p>成本曲线的正确读法是<b>期望 + 方差</b>,不是单点确定性曲线:</p>
+
+<div class="fig">
+<svg viewBox="0 0 860 340" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <!-- axes -->
+  <line x1="70" y1="20" x2="70" y2="290" stroke="#6b6357" stroke-width="1.5"/>
+  <line x1="70" y1="290" x2="830" y2="290" stroke="#6b6357" stroke-width="1.5"/>
+  <text x="30" y="40" font-size="13" fill="#6b6357">累计 token</text>
+  <text x="770" y="315" font-size="13" fill="#6b6357">任务轮次 →</text>
+  <!-- ReAct baseline: flat linear -->
+  <line x1="70" y1="290" x2="810" y2="60" stroke="#a63d2f" stroke-width="2.5"/>
+  <text x="640" y="70" font-size="13.5" fill="#a63d2f">裸 ReAct:线性,恒定斜率</text>
+  <!-- Phylum: steep early (population tuition), then flat, variance band -->
+  <!-- variance band polygon -->
+  <polygon points="70,290 190,120 330,78 500,62 810,52 810,86 500,74 330,96 190,168 70,290"
+           fill="#3a7d44" opacity="0.16"/>
+  <path d="M 70 290 L 190 144 Q 330 87 500 68 L 810 68" fill="none" stroke="#3a7d44" stroke-width="2.5"/>
+  <text x="520" y="115" font-size="13.5" fill="#3a7d44">Phylum:学费期陡 → 化石接单后斜率≈0</text>
+  <text x="520" y="133" font-size="12.5" fill="#3a7d44" opacity="0.8">期望 ~3×(学费期)带方差,非确定性</text>
+  <!-- tuition annotation -->
+  <line x1="190" y1="290" x2="190" y2="144" stroke="#b07a1f" stroke-dasharray="4 4" stroke-width="1.2"/>
+  <text x="120" y="250" font-size="12.5" fill="#b07a1f">学费期(种群并行开荒)</text>
+  <line x1="500" y1="290" x2="500" y2="68" stroke="#b07a1f" stroke-dasharray="4 4" stroke-width="1.2"/>
+  <text x="440" y="240" font-size="12.5" fill="#b07a1f">化石接管(重放=零 LLM)</text>
+</svg>
+<div class="figcap">图 4-1 · 累计 token 曲线(期望示意)。Phylum 前期学费 ≈ 3× ReAct(种群并行的进化学费),
+归因与沉积节奏有随机性(带状区间=方差);化石接管后边际斜率≈0。此曲线形态由 harness 双曲线(08 节)验证,不预设数值。</div>
+</div>
+
+<p>账本口径同步修正——账本记的是<b>统计量</b>,不是确定性流水:</p>
+<table>
+<tr><th>账本字段(档②口径)</th><th>含义</th><th>方差处理</th></tr>
+<tr><td><code>trials / successes</code></td><td>支系尝试/成功计数(含重放命中)</td><td>精确计数,无方差</td></tr>
+<tr><td><code>costZSum</code></td><td>类内归一化成本 z 分累计</td><td>期望 ~3× 学费期,带方差;跨签名不可比(类内归一)</td></tr>
+<tr><td>重放命中率(近窗)</td><td>化石接单占比</td><td>归因可能误判(tool_error 不总是工具的错)→ 退役/摘除线留冗余,不做单点阈值迷信</td></tr>
+</table>
+<div class="en"><b>EN.</b> Pit #1 (program synthesis) comes first: compiling traces into programs is an order of
+magnitude harder than it sounds — trace parameters are functions of the task instance (who fills the slots?),
+environments drift, and semantic equivalence is exactly where LLMs are least reliable. So the main path to zero
+is <b>slot-based trace templates + assertion-gated replay</b>, not compilation. Cost curves must be read as
+expectation + variance: tuition phase ≈3× ReAct with attribution noise; slope ≈0 once fossils take over.</div>
+
+<!-- ══════════════ 05 ══════════════ -->
+<h2><span class="no">05</span>出生与结算(工程现状:已落地)</h2>
+<p>已实现于 <code>src/main/V5/</code>(1165999,15 测试文件全绿):克隆+淘汰,替补出生接力;
+死因归因经结构化通路注入 <code>mutateFrom</code>;基因账本按签名/支系持久化 <code>userData/V5/genes</code>,
+跨会话存活。公平曝光:每个副本重新取活体表,死者即结算,不留"僵尸执行"稀释选择压力。</p>
+<div class="en"><b>EN.</b> Shipped: clone-and-cull with staggered replacement births; structured attribution
+feeds targeted mutation; per-lineage ledgers persist across sessions (userData/V5/genes).</div>
+
+<!-- ══════════════ 06 ══════════════ -->
+<h2><span class="no">06</span>三档退场:种群终态的去 LLM 化</h2>
+<p class="lead">种群不能永远烧燃料。收敛后的支系按三档退场,<b>档②就足以兑现"归零"主张,档③直接做是最贵路径</b>:</p>
+<table>
+<tr><th>档</th><th>机制</th><th>边际成本</th><th>工程风险</th><th>状态</th></tr>
+<tr><td><b>① 冻结路由</b></td><td>支系近窗达标(trials≥6 且成功率≥0.8)→ 本能 prompt:"路线已验证,沿用"</td><td>~30%(省 70%)</td><td>低 —— 只省推理长度,仍走 LLM</td><td>✅ 已落地 <code>isConverged</code></td></tr>
+<tr><td><b>② 轨迹重放</b></td><td>成功轨迹沉积为槽位化化石模板;同类任务先重放(参数槽+断言 gate),命中=零 LLM;未命中降级开荒</td><td><b>~0%</b></td><td>中 —— 槽位抽取与漂移管理(Voyager 已验证同类技能库路径)</td><td>✅ 已落地 <code>replay.ts</code></td></tr>
+<tr><td><b>③ 真程序编译</b></td><td>轨迹 → 确定性程序(参数实例化相关)</td><td>~0%(同②)</td><td>高 —— 坑①全套:参数/漂移/等价性;收益与②重叠</td><td>🕐 远期,不承诺时间表</td></tr>
+</table>
+<div class="card good"><b>为什么②是主路径:</b>归零主张的分母是"同类任务再跑一次的 token"。
+②用「上次的轨迹 + 这次填槽」直接交付,LLM 完全不在场,断言 gate 兜底正确性;
+③多买不到任何东西(同样 ~0%),却要先解决程序综合的全部难题。<b>先②后③是成本最优序,不是妥协。</b></div>
+<div class="en"><b>EN.</b> Three-tier exit so converged lineages stop burning fuel. Tier 1: frozen routing
+(instinct prompt, ~30% cost). Tier 2: trace replay — slot-filled fossils, assertion-gated, zero LLM on hit,
+auto-degrade on miss (the main path; Voyager validated the skill-library pattern). Tier 3: true program
+synthesis — high risk, zero extra benefit over Tier 2, explicitly deferred. Tier 2 alone delivers the zero-claim.</div>
+
+<!-- ══════════════ 07 ══════════════ -->
+<h2><span class="no">07</span>坑②:化石腐化闭环(重放不是终局,是带保质期的合约)</h2>
+<p class="lead">化石不是资产,是<b>带保质期的负债</b>:环境一漂移,重放就在正确性上撒谎。
+所以重放必须闭环——gate 不过就当场降级,并把"化石病"作为归因信号反哺基因库:</p>
+
+<div class="fig">
+<svg viewBox="0 0 860 420" width="100%" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#6b6357"/>
+    </marker>
+    <marker id="arrR" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#a63d2f"/>
+    </marker>
+  </defs>
+  <!-- new task -->
+  <rect x="30" y="40" width="150" height="52" rx="8" fill="#fffdf9" stroke="#e4ddd0"/>
+  <text x="105" y="62" font-size="13.5" text-anchor="middle" fill="#26221c">新任务(同签名)</text>
+  <text x="105" y="80" font-size="11.5" text-anchor="middle" fill="#6b6357">recurring request</text>
+  <!-- replay -->
+  <rect x="240" y="40" width="170" height="52" rx="8" fill="#efe9de" stroke="#b07a1f"/>
+  <text x="325" y="62" font-size="13.5" text-anchor="middle" fill="#26221c">② 化石重放</text>
+  <text x="325" y="80" font-size="11.5" text-anchor="middle" fill="#6b6357">槽位填充 · 零 LLM</text>
+  <!-- gate -->
+  <polygon points="540,66 610,30 680,66 610,102" fill="#fffdf9" stroke="#3a7d44" stroke-width="1.5"/>
+  <text x="610" y="60" font-size="13.5" text-anchor="middle" fill="#26221c">断言 gate</text>
+  <text x="610" y="78" font-size="11.5" text-anchor="middle" fill="#6b6357">exit_code / output / DSL</text>
+  <!-- HIT path -->
+  <rect x="700" y="30" width="140" height="52" rx="8" fill="#eaf3ec" stroke="#3a7d44" stroke-width="1.5"/>
+  <text x="770" y="52" font-size="13.5" text-anchor="middle" fill="#26221c">✅ 交付</text>
+  <text x="770" y="70" font-size="11.5" text-anchor="middle" fill="#3a7d44">0 LLM token · hits++</text>
+  <!-- MISS path: degrade -->
+  <rect x="540" y="150" width="200" height="64" rx="8" fill="#fdf1ef" stroke="#a63d2f" stroke-width="1.5"/>
+  <text x="640" y="174" font-size="13.5" text-anchor="middle" fill="#26221c">❌ 败 → 降级开荒</text>
+  <text x="640" y="192" font-size="11.5" text-anchor="middle" fill="#a63d2f">LLM 接管 · miss++(连续 2 次→退役)</text>
+  <text x="640" y="207" font-size="11.5" text-anchor="middle" fill="#a63d2f">零交付风险:gate 拦在用户之前</text>
+  <!-- reclaim -->
+  <rect x="240" y="150" width="200" height="64" rx="8" fill="#fffdf9" stroke="#e4ddd0"/>
+  <text x="340" y="174" font-size="13.5" text-anchor="middle" fill="#26221c">「化石病」归因入基因库</text>
+  <text x="340" y="192" font-size="11.5" text-anchor="middle" fill="#6b6357">漂移诊断 → affinity/槽位突变</text>
+  <text x="340" y="207" font-size="11.5" text-anchor="middle" fill="#6b6357">新成功轨迹重新竞争沉积</text>
+  <!-- deposit -->
+  <rect x="240" y="280" width="300" height="56" rx="8" fill="#efe9de" stroke="#b07a1f"/>
+  <text x="390" y="303" font-size="13.5" text-anchor="middle" fill="#26221c">成功 + 支系近窗≥0.8 → 沉积新化石</text>
+  <text x="390" y="321" font-size="11.5" text-anchor="middle" fill="#6b6357">同签名只留最新一份 · 继承重放口碑</text>
+  <!-- converge -->
+  <rect x="620" y="280" width="180" height="56" rx="8" fill="#eaf3ec" stroke="#3a7d44"/>
+  <text x="710" y="303" font-size="13.5" text-anchor="middle" fill="#26221c">档① 冻结路由</text>
+  <text x="710" y="321" font-size="11.5" text-anchor="middle" fill="#3a7d44">trials≥6 且近窗≥0.8</text>
+  <!-- edges -->
+  <line x1="180" y1="66" x2="236" y2="66" stroke="#6b6357" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="410" y1="66" x2="506" y2="66" stroke="#6b6357" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="684" y1="56" x2="696" y2="56" stroke="#3a7d44" stroke-width="1.8" marker-end="url(#arr)"/>
+  <text x="688" y="26" font-size="12" text-anchor="middle" fill="#3a7d44">过</text>
+  <line x1="610" y1="102" x2="610" y2="146" stroke="#a63d2f" stroke-width="1.8" marker-end="url(#arrR)"/>
+  <text x="622" y="128" font-size="12" fill="#a63d2f">败</text>
+  <line x1="536" y1="182" x2="444" y2="182" stroke="#a63d2f" stroke-width="1.5" marker-end="url(#arrR)"/>
+  <line x1="390" y1="276" x2="390" y2="218" stroke="#6b6357" stroke-width="1.5" marker-end="url(#arr)"/>
+  <text x="398" y="252" font-size="11.5" fill="#6b6357">开荒成功→沉积</text>
+  <line x1="540" y1="308" x2="616" y2="308" stroke="#6b6357" stroke-width="1.5" marker-end="url(#arr)"/>
+  <line x1="710" y1="276" x2="710" y2="106" stroke="#3a7d44" stroke-width="1.2" stroke-dasharray="5 4" marker-end="url(#arr)"/>
+  <text x="718" y="200" font-size="11.5" fill="#3a7d44">收敛→本能先行</text>
+</svg>
+<div class="figcap">图 7-1 · 化石腐化闭环:重放命中交付为零 token;败=gate 拦截(用户永远看不到坏产物)→
+降级 LLM 开荒 → 连续 2 次 miss 化石退役(环境漂移防护)→「化石病」归因反哺基因库 → 新成功轨迹重新沉积。
+化石会死,种群不会。</div>
+</div>
+
+<p>设计要点:</p>
+<ul>
+<li><b>gate 在交付之前</b>:重放的每一步过断言 DSL,坏产物到不了用户手里——这是重放敢接单的前提;</li>
+<li><b>退役线留冗余</b>:FOSSIL_MISS_RETIRE=2,归因可能误判,不做单点阈值迷信(呼应坑③);</li>
+<li><b>口碑继承</b>:同签名换化石时继承旧化石的重放战绩,漂移历史不清零;</li>
+<li><b>已落地</b>:<code>replay.ts</code>(extractSlots 槽位抽取 + replay 零 LLM 重放)、<code>registry.noteReplay</code>(hit/miss 记账+退役)、<code>templates.json</code> 持久化。</li>
+</ul>
+<div class="en"><b>EN.</b> Pit #2 (fossil rot): fossils are liabilities with a shelf life — environment drift
+makes replays lie about correctness. The loop: replay → assertion gate → pass = deliver at zero tokens;
+fail = gate blocks (user never sees a bad artifact) → degrade to LLM pioneering → 2 consecutive misses retire
+the fossil; "fossil disease" feeds back into the gene library as attribution, and fresh successful traces
+re-compete for deposit. Fossils die so the population doesn't.</div>
+
+<!-- ══════════════ 08 ══════════════ -->
+<h2><span class="no">08</span>验证:harness 双曲线</h2>
+<p class="lead">验收标准不是"成功率曲线"单指标,而是<b>成功率曲线 + 累计 token 曲线</b>两条一起看:
+成功率证明种群能活并收敛,token 曲线证明收敛后真的省——只有前者,档②接进去也无法证明主张。</p>
+<table>
+<tr><th>曲线</th><th>预期形态</th><th>判读</th></tr>
+<tr><td>成功率曲线</td><td>缺陷个体死亡率递减;Phylum 0→63→100% vs Static 恒 0%(mock 已验)</td><td>选择压力有效</td></tr>
+<tr><td>累计 token 曲线</td><td>学费期(≈3× ReAct,方差带)→ 化石接单后斜率≈0;长期累计低于 ReAct 线</td><td><b>归零主张的直接证据(含交叉点时刻)</b></td></tr>
+</table>
+<p>最小原型 scope:<b>模板存储 + 参数槽 + 断言 gate + 回退归因,不做程序综合</b>(等价于已落地的档②)。
+真实模型批跑(8 签名 × 副本)是下一站,量两条曲线;97 烟囱已确认确定性曲线形态,但 token 曲线必须真实模型出数。</p>
+<div class="en"><b>EN.</b> Acceptance = twin curves from the harness: success-rate (selection pressure works;
+already shaped in mock) + cumulative tokens (tuition ≈3× ReAct with variance, slope ≈0 after fossils take over —
+the direct evidence for the zero-claim, including the crossover point). Minimal prototype scope: template store +
+parameter slots + assertion gate + fallback attribution. No program synthesis.</div>
+
+<div class="foot">
+Phylum / DirectV5 · engine id <code>directV5</code> · plugin <code>phylum-engine</code>(默认关闭)·
+基因库 <code>userData/V5/genes</code> · 化石 <code>templates.json</code> ·
+已落地提交 <code>1165999</code> · 15 测试文件全绿 · V2 修订:三坑(程序综合/化石腐化/方差)焊入正文,三档退场定位档②为主路径
+</div>
+
+</div>
+</body>
+</html>
