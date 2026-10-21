@@ -213,6 +213,22 @@ function applyI18nDOM(): void {
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
 
+  // 后台降载:窗口失焦/被遮挡时冻结合成器动画 + 卸掉常驻玻璃模糊(styles.css 的
+  // html.anim-paused 规则)。Chromium 只节流后台 rAF,不节流 CSS 合成器动画 ——
+  // goal 脉冲/直播点/光标闪烁在无人看时仍逐帧合成,GPU 进程常驻 10–30% CPU,
+  // 且每帧重算 backdrop-filter 模糊把 WindowServer 顶满(全机 UI 卡)。回焦即恢复。
+  // / Background shedding: freeze compositor animations and drop always-on glass
+  // blur while unfocused/occluded. Chromium throttles background rAF but NOT
+  // compositor CSS animations — pulses/cursor-blink keep submitting frames nobody
+  // watches, pinning the GPU process and dragging WindowServer (system-wide jank).
+  const setAnimPaused = (paused: boolean): void => {
+    document.documentElement.classList.toggle('anim-paused', paused);
+  };
+  window.addEventListener('blur', () => setAnimPaused(true));
+  window.addEventListener('focus', () => setAnimPaused(false));
+  document.addEventListener('visibilitychange', () => setAnimPaused(document.hidden));
+  if (document.hidden) setAnimPaused(true);
+
   // 临时诊断:按 F8 打印 #input 布局链所有元素的实际渲染尺寸
   // Temp diagnostic: press F8 to dump #input layout chain dimensions
   document.addEventListener('keydown', (e) => {
@@ -436,7 +452,15 @@ function applyI18nDOM(): void {
         // Hold mode → anchor to the topmost visible turn so the re-render
         // (which changes content height via markdown re-parse) restores the same view.
         if (!userAtBottom) captureScrollAnchor();
-        renderMain();
+        // 2026-10-21 界面卡死修复:goal 循环每轮 done/error 都全量 renderMain
+        // (30 turn × markdown 重建),轮间间隔只有几秒 → 渲染层被重建任务连续
+        // 塞满,点击/聚焦作废(体感:卡死、输入框光标进不去)。改走增量路径:
+        // 只就地替换最后一个 turn(终态 markdown + 取消标记),内部在找不到
+        // streaming 元素时自动回退全量 renderMain —— 非循环场景语义不变。
+        // / Goal loops fire done/error every few seconds; a full renderMain per
+        // round wedged the renderer. Replace only the last turn in place; falls
+        // back to renderMain() when no streaming element exists.
+        updateLastTurnIncremental();
         // 后台会话完成标记:不是当前正在看的会话 → 侧栏加小圆点提示
         if (convId !== selectedId) { bgDoneConvs.add(convId); renderSidebar(); }
         // 消息排队:回合结束自动发出队列里的下一条
@@ -598,14 +622,28 @@ function closeAllCtxMenus(): void {
 // 全量重建仍保留给结构性变化(增删会话/搜索/排序),走 renderSidebar()。
 // Incremental sidebar update: patch dot class + meta text in place instead
 // of rebuilding the whole list on every agent event.
+// 侧栏全量重建的合并器(500ms 尾沿):refreshSidebarLi 的兜底路径(li 不在 DOM
+// —— 折叠组/筛选中)以前每个广播都同步全量 renderSidebar + 重排,运行中的会话
+// 在折叠组里 = 每个事件一次 94 项重建(2026-10-21 卡死的放大器之一)。
+// / Coalesce full sidebar rebuilds (500ms trailing). The !li fallback used to
+// rebuild the whole list per broadcast when the conv sat in a collapsed group.
+let sidebarRenderTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSidebarRender(): void {
+  if (sidebarRenderTimer) return;
+  sidebarRenderTimer = setTimeout(() => {
+    sidebarRenderTimer = null;
+    renderSidebar();
+  }, 500);
+}
+
 function refreshSidebarLi(convId: string): void {
   const c = convs.get(convId);
   if (!c) return;
   const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
-  if (!li) { renderSidebar(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 兜底全量
-  // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,直接走全量重渲
+  if (!li) { scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
+  // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,走合并的全量重渲
   const projLi = li.closest('li.sb-proj') as HTMLElement | null;
-  if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { renderSidebar(); return; }
+  if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { scheduleSidebarRender(); return; }
   const last = c.turns[c.turns.length - 1];
   const dot = li.querySelector('.dot');
   if (dot) {
@@ -692,7 +730,12 @@ function taskFingerprint(id: string): string {
   return [
     id === selectedId ? 1 : 0,
     c.customTitle ?? '', c.firstPrompt ?? '', c.turns[0]?.prompt ?? '',
-    c.status, c.turnCount ?? c.turns.length, c.updatedAt ?? c.createdAt,
+    // updatedAt 量化到分钟:persist 每个事件都 bump updatedAt(秒级),原样进指纹
+    // 会让运行中会话在每次 renderSidebar 都重建 li 节点(AX/DOM 抖动源)。时间
+    // 显示 fmtRelative 本就是分钟粒度,量化后每分钟至多重建一次。
+    // / Quantize updatedAt to minutes: persist bumps it per event, and the raw
+    // value forced an li rebuild on every renderSidebar for running convs.
+    c.status, c.turnCount ?? c.turns.length, Math.floor((c.updatedAt ?? c.createdAt) / 60_000),
     // statusNote 纳入指纹:运行中状态行文本变化 → li 重建(拿最新的 sb-live 行)。
     // 有 refreshSidebarLi 增量路径兜底,这里只是全量渲染时保证不是陈旧文本。
     c.statusNote ?? '',
@@ -3832,6 +3875,10 @@ function updateLastTurnIncremental(): void {
   if (turnEl.classList.contains('streaming') && (t.done || conv.status !== 'running')) {
     const turnsEl = document.getElementById('turns')!;
     turnsEl.replaceChild(renderTurn(conv, lastTurnIdx), turnEl);
+    // 终态 markdown 重排会改变内容高度:底部跟随者贴底,hold/冻结不滚
+    // (scrollDown 内部自带模式判断)。/ Final markdown re-parse changes height:
+    // re-stick followers to bottom; hold/frozen untouched (scrollDown guards).
+    if (userAtBottom && !scrollFrozen) scrollDown();
     return;
   }
   // steps 增量更新:只 append 新增的 step(按序号对齐),不再全量重建子树。

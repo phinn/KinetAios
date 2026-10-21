@@ -256,6 +256,43 @@ function safeSend(win: BrowserWindow | null, channel: string, data: unknown): vo
 // Broadcast slimming: oversized convs are sent head-only; renderer lazy-loads turns.
 const IPC_TURNS_CHAR_LIMIT = 600_000; // ~600KB 字符 ≈ 1.2MB UTF-16
 
+// ── 运行态广播合并器的状态(见 emitConversation 注释)──
+const convBroadcastPending = new Map<string, Conversation>();
+let convBroadcastTimer: NodeJS.Timeout | null = null;
+
+/** 原样发送一个 conversation 广播(瘦身逻辑不变),合并器与立即路径共用。 */
+function sendConversationNow(conv: Conversation): void {
+  // turnCount 归一化:turnCount 只在启动加载时由 SQL 聚合写入,运行期 push 新 turn
+  // 从不更新 → 广播里 turnCount 恒为旧值,renderer 侧按 turnCount 判断"有新 turn"
+  // 的合并逻辑永远不触发(用户消息不上屏)。turns 在内存时以真实长度为准,单一出口覆盖
+  // send/goal/failTurn/delete 所有路径。
+  if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
+  // directHistory(Direct 会话完整 LLM 消息,MB 级)永不进广播 —— 2026-08 卡死事故的
+  // 同族载荷,turns 修了它漏了。上下文检查器走 get-conversation-context 按需拉;
+  // renderer 只在引擎切换确认处读 .length,[] 语义足够。
+  let payload: Conversation = { ...conv, directHistory: [] };
+  if (conv.turnsLoaded !== false) {
+    // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
+    // traj 计入权重:快照分级配额后单 turn 可达 256K 字符,漏计会让 600K
+    // 降级闸门失灵(2026-08 卡死事故同族载荷,直发 history 时已修过一次)。
+    let weight = 0;
+    for (const t of conv.turns) {
+      weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
+      if (t.steps) for (const s of t.steps) {
+        weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
+      }
+      if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
+    }
+    if (weight > IPC_TURNS_CHAR_LIMIT) {
+      const last = conv.turns[conv.turns.length - 1];
+      payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
+    }
+  }
+  safeSend(dashboardWin, 'conversation', payload);
+  safeSend(quickWin, 'conversation', payload);
+  safeSend(arenaWin, 'conversation', payload);
+}
+
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
     safeSend(dashboardWin, 'agent-event', { convId, ev });
@@ -263,38 +300,35 @@ const emitter: TaskManagerEmitter = {
     safeSend(arenaWin, 'agent-event', { convId, ev });
   },
   // Broadcast slimming: see IPC_TURNS_CHAR_LIMIT above.
+  // ── 运行态广播合并(2026-10-21 界面卡死事故)──
+  // goal 循环一轮内 statusNote/turn 变更连发多次 emitConversation,每次都是
+  // MB 级 structured clone × 3 窗口;renderer 侧每个广播都触发 侧栏刷新 + rAF
+  // 增量渲染。多循环并发时渲染层被重建任务塞满,点击/聚焦落在"按下与抬起之间
+  // 节点被换掉"的目标上 → 界面卡死、输入框光标进不去(AX 树实测元素数在
+  // 983↔255 间翻转)。节流阀:status==='running' 的广播按 conv 合并,200ms
+  // 尾沿只发最新快照;终态/空闲(ready)立即发 —— 用户可见的状态切换不延迟,
+  // 循环轮边界的 ready 也不受影响(轮频低,本就不是洪峰)。
+  // / Coalesce running-state broadcasts per conv (200ms trailing edge).
+  // Terminal/idle (ready) states flush immediately. The 2026-10-21 wedge was
+  // caused by render-side churn at event frequency, not round frequency.
   emitConversation(conv: Conversation) {
-    // turnCount 归一化:turnCount 只在启动加载时由 SQL 聚合写入,运行期 push 新 turn
-    // 从不更新 → 广播里 turnCount 恒为旧值,renderer 侧按 turnCount 判断"有新 turn"
-    // 的合并逻辑永远不触发(用户消息不上屏)。turns 在内存时以真实长度为准,单一出口覆盖
-    // send/goal/failTurn/delete 所有路径。
-    // Normalize turnCount here: it's only seeded from SQL at load; keep it in sync
-    // with in-memory turns so consumers can trust it on every broadcast.
-    if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
-    // directHistory(Direct 会话完整 LLM 消息,MB 级)永不进广播 —— 2026-08 卡死事故的
-    // 同族载荷,turns 修了它漏了。上下文检查器走 get-conversation-context 按需拉;
-    // renderer 只在引擎切换确认处读 .length,[] 语义足够。
-    let payload: Conversation = { ...conv, directHistory: [] };
-    if (conv.turnsLoaded !== false) {
-      // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
-      // traj 计入权重:快照分级配额后单 turn 可达 256K 字符,漏计会让 600K
-      // 降级闸门失灵(2026-08 卡死事故同族载荷,直发 history 时已修过一次)。
-      let weight = 0;
-      for (const t of conv.turns) {
-        weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
-        if (t.steps) for (const s of t.steps) {
-          weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
-        }
-        if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
-      }
-      if (weight > IPC_TURNS_CHAR_LIMIT) {
-        const last = conv.turns[conv.turns.length - 1];
-        payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
-      }
+    if (conv.status !== 'running') {
+      // 终态立即发,并撤销该 conv 的待发合并快照(本条已是最新)。
+      convBroadcastPending.delete(conv.id);
+      sendConversationNow(conv);
+      return;
     }
-    safeSend(dashboardWin, 'conversation', payload);
-    safeSend(quickWin, 'conversation', payload);
-    safeSend(arenaWin, 'conversation', payload);
+    // 存引用不拷贝:flush 时读到的就是最新字段(turns 数组是同一引用)。
+    // 会话中途被删也无害:renderer 的 removedConvs 守卫会拒收迟到广播。
+    convBroadcastPending.set(conv.id, conv);
+    if (!convBroadcastTimer) {
+      convBroadcastTimer = setTimeout(() => {
+        convBroadcastTimer = null;
+        const pending = [...convBroadcastPending.values()];
+        convBroadcastPending.clear();
+        for (const c of pending) sendConversationNow(c);
+      }, 200);
+    }
   },
   emitRemoved(convId) {
     notifyLastAt.delete(convId); // P1: 会话删除即清,防 Map 无限累积

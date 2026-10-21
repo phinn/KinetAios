@@ -6835,3 +6835,20 @@ body.meta-compact .ai-meta-row:focus-within { opacity: 1; }
   .u-kpis { grid-template-columns: repeat(2, 1fr); }
   .u-rank-grid { grid-template-columns: 1fr; }
 }
+
+/* ── 后台降载(app.ts 失焦/遮挡时给 <html> 加 .anim-paused)──────────────────
+   Chromium 只节流后台 rAF,不节流 CSS 合成器动画:goal 脉冲/直播点/光标闪烁在
+   窗口无人看时仍逐帧合成;常驻 backdrop-filter(chat-head 全宽顶栏,aurora/serene
+   主题连整个 #sidebar)每帧重算模糊。两者相加把 GPU 进程钉在 10–30% CPU、
+   WindowServer 顶满 → 全机 UI 卡。失焦即冻结/卸载,回焦自动恢复,视觉零变化。
+   / Background shedding (app.ts toggles .anim-paused on blur/occlusion):
+   freeze all compositor animations and drop always-on glass blur while the
+   window is unfocused/hidden. Restored automatically on focus. */
+html.anim-paused *,
+html.anim-paused *::before,
+html.anim-paused *::after { animation-play-state: paused !important; }
+html.anim-paused .chat-head,
+html.anim-paused #sidebar {
+  backdrop-filter: none !important;
+  -webkit-backdrop-filter: none !important;
+}
