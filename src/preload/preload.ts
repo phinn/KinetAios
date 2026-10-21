@@ -10,6 +10,7 @@ const api: KinetAPI = {
   newConversation: (cwd, engine) => ipcRenderer.invoke('new-conversation', cwd, engine),
   forkConversation: (sourceId, uptoTurnId) => ipcRenderer.invoke('fork-conversation', sourceId, uptoTurnId),
   send: (id, text) => ipcRenderer.invoke('send', id, text),
+  clearGoal: (id) => ipcRenderer.invoke('clear-goal', id),
   cancel: (id) => ipcRenderer.invoke('cancel', id),
   interrupt: (id, text) => ipcRenderer.invoke('interrupt', id, text),
   listJobs: (convId) => ipcRenderer.invoke('job-list', convId),

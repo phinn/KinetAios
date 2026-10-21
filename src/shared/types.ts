@@ -885,6 +885,8 @@ export interface KinetAPI {
   /** 从某条 turn 处分叉出新会话(复制该 turn 及之前的历史,原会话不动) */
   forkConversation(sourceId: string, uptoTurnId: string): Promise<Conversation | null>;
   send(id: string, text: string): Promise<boolean>;
+  /** 硬清除会话目标:不走 send/turn 链,任何状态立即生效(goal 条 ✕ 专用)。 */
+  clearGoal(id: string): Promise<void>;
   cancel(id: string): Promise<boolean>;
   /** 用户打断(Steer):运行中会话原地转向,文本注入引擎下一轮上下文。仅 Direct 系引擎支持。 */
   interrupt(id: string, text: string): Promise<boolean>;

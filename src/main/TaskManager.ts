@@ -441,6 +441,16 @@ export class TaskManager {
   // 消费方继续用阻塞版 send()。
   // Fire-and-forget variant for the renderer IPC: resolves once the turn is
   // queued. Feishu / VoiceChat rely on the blocking send() semantics instead.
+  /** 硬清除会话目标:不走 send/turn 链,任何状态(running/idle)点击立即生效。 */
+  clearGoal(id: string): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.goal = null;
+    this.cancel(id); // 幂等:内含 goalLoopStopped/clearCorrection/clearSteer,空闲时是 no-op
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   async sendDetached(id: string, text: string): Promise<void> {
     return this.sendCore(id, text, true);
   }

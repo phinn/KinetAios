@@ -7732,7 +7732,7 @@ function closeMoreMenu() {
     };
   }
   // 清除目标:发送 /goal(无参数)清除
-  document.getElementById('btn-goal-clear')!.onclick = () => selectedId && void api.send(selectedId, '/goal');
+  document.getElementById('btn-goal-clear')!.onclick = () => { const id = selectedId; if (id) void api.clearGoal(id); };
   document.getElementById('btn-del')!.onclick = () => selectedId && void deleteConv(selectedId);
   document.getElementById('btn-ctx-inspector')!.onclick = () => selectedId && void openCtxInspector(selectedId);
   document.getElementById('ctx-insp-close')!.onclick = closeCtxInspector;
