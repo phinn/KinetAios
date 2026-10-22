@@ -294,12 +294,17 @@ export class WebCompanionServer {
         tm.cancel(id);
         return this.json(res, 200, { ok: true });
       }
-      // /api/send
+      // /api/send — sendDetached:入列即返回,不等整轮答案。修前阻塞版 send 要等答案
+      // (HTTP 可能挂几分钟,手机锁屏/切后台即断),现在手机端"发出即回执",进度靠既有轮询。
+      // / Fire-and-forget: HTTP round-trip no longer blocks on the full answer;
+      // progress streams via the existing polling loop.
+      // running 语义与桌面 sendCore 一致:goal 会话 = 修正队列(可见 ack turn),
+      // 非 goal = 停旧开新 —— 主进程统一裁决,手机端不做二次拦截。
       const id = String(args.convId ?? '');
       const text = String(args.text ?? '').trim();
       if (!text) return this.json(res, 400, { ok: false, error: '缺少消息内容' });
       if (!tm.get(id)) return this.json(res, 404, { ok: false, error: '会话不存在' });
-      await tm.send(id, text); // 阻塞版:答案就绪后返回(手机端"发出去→看回答"直觉)
+      void tm.sendDetached(id, text).catch(() => { /* 轮询会呈现 turn 错误态 */ });
       return this.json(res, 200, { ok: true });
     } catch (e) {
       return this.json(res, 500, { ok: false, error: (e as Error)?.message ?? String(e) });
@@ -351,6 +356,7 @@ function uiStrings(): Record<string, string> {
         loadTurns: 'Loading…', noTurns: '(No messages yet)', send: 'Send',
         sendPlaceholder: 'Message…', empty: 'No chats yet.\nTap “+ New” to start.',
         secConv: 'Chats', secMsg: 'Messages', searchEmpty: 'No results', back: 'Chats',
+        queued: 'Queued — streaming below…', newHere: '+', newTitle: 'New chat in this project',
       }
     : {
         search: '搜索会话与内容…', projects: '项目', ungrouped: '未分类',
@@ -358,6 +364,7 @@ function uiStrings(): Record<string, string> {
         loadTurns: '加载对话…', noTurns: '(暂无消息)', send: '发送',
         sendPlaceholder: '输入消息…', empty: '还没有会话\n点「+ 新对话」开始',
         secConv: '会话', secMsg: '对话内容', searchEmpty: '无结果', back: '会话',
+        queued: '已发出,回答流式生成中…', newHere: '+', newTitle: '在此项目新建对话',
       };
 }
 
@@ -389,6 +396,8 @@ function pageHtml(token: string, L: Record<string, string>): string {
   .proj-head { display: flex; align-items: center; gap: 8px; padding: 10px 4px 6px; color: #8b949e; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; cursor: pointer; user-select: none; }
   .proj-head .n { color: #6e7681; font-weight: 400; }
   .proj-head .chev { transition: transform .15s; }
+  .proj-head .proj-new { margin-left: auto; width: 22px; height: 22px; line-height: 20px; text-align: center; border: 1px solid #30363d; border-radius: 8px; color: #8b949e; font-size: 15px; font-weight: 400; flex: none; }
+  .proj-head .proj-new:active { background: #21262d; color: #e6edf3; }
   .proj.closed .chev { transform: rotate(-90deg); }
   .proj.closed .conv-list { display: none; }
   .conv { background: #161b22; border: 1px solid #21262d; border-radius: 12px; padding: 11px 13px; margin-bottom: 8px; }
@@ -444,8 +453,8 @@ let convs = [];
 let openId = null;    // 展开中的会话(会话详情模式)
 let searchMode = false;
 let searchTimer = null;
-let busy = false;     // 阻塞 send 进行中
 let timer = null;
+let pollFast = false;  // 发送后 12s 内用 1.5s 快节拍,之后回落(接住 ack/首 token)
 const collapsed = new Set(); // 折叠的项目组
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -488,6 +497,7 @@ function renderProjects() {
     const closed = collapsed.has(proj);
     html += '<div class="proj' + (closed ? ' closed' : '') + '" data-proj="' + esc(proj) + '">' +
       '<div class="proj-head"><span class="chev">▾</span>' + esc(proj) + ' <span class="n">' + list.length + '</span>' +
+      '<span class="proj-new" title="' + esc(L.newTitle || '') + '" data-newproj="' + esc(proj) + '">' + esc(L.newHere || '+') + '</span>' +
       (list.some((c) => c.status === 'running') ? '<span class="badge running">' + esc(L.running) + '</span>' : '') +
       '</div><div class="conv-list">';
     for (const c of list) {
@@ -508,6 +518,19 @@ function renderProjects() {
       const proj = n.parentElement.dataset.proj;
       if (collapsed.has(proj)) collapsed.delete(proj); else collapsed.add(proj);
       renderProjects();
+    };
+  });
+  // 项目组头「+」:在该项目的 cwd 下新建会话(修前「+ 新对话」只能落 homedir=未分类)。
+  el.querySelectorAll('[data-newproj]').forEach((n) => {
+    n.onclick = async (ev) => {
+      ev.stopPropagation(); // 别触发折叠
+      const proj = n.dataset.newproj;
+      const src = convs.find((c) => c.project === proj && c.cwd);
+      try {
+        const j = await api('/api/new', { cwd: src ? src.cwd : '' });
+        await refresh();
+        openConv(j.convId);
+      } catch (e) { alert('error: ' + e.message); }
     };
   });
   el.querySelectorAll('.conv').forEach((n) => {
@@ -541,8 +564,9 @@ function renderDetail(turns, c) {
   if (!openId) return;
   const el = document.getElementById('list');
   const head = c ? '<div class="conv active" style="margin-bottom:12px"><div class="row1"><div class="title">' + esc(c.title) + '</div>' +
-    (c.status === 'running' ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>'
-      : '<button class="btn" data-cancel="1">' + esc(L.cancel) + '</button>') + '</div></div>' : '';
+    '<span class="badge" title="' + esc(c.cwd || '') + '">' + esc(c.project || '') + '</span>' +
+    (c.status === 'running' ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>' +
+      '<button class="btn" data-cancel="1">' + esc(L.cancel) + '</button>' : '') + '</div></div>' : '';
   if (!turns.length) { el.innerHTML = head + '<div class="empty">' + esc(L.noTurns) + '</div>'; return; }
   el.innerHTML = head + turns.map((t) =>
     '<div class="turn">' +
@@ -612,41 +636,72 @@ document.getElementById('new').onclick = async () => {
   } catch (e) { alert('error: ' + e.message); }
 };
 
-// ── 发送(阻塞等答案)──
+// ── 发送(fire-and-forget:发出即回执,不等整轮答案;进度靠轮询)──
 document.getElementById('send').onclick = doSend;
 document.getElementById('input').addEventListener('keydown', (e) => {
-  if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) doSend();
+  // 手机软键盘没有 Ctrl/Cmd:Enter 直发,换行靠 textarea 自带「换行」键之外的场景。
+  // 桌面习惯(⌘+Enter)保留兼容;Shift+Enter 换行。
+  if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
 });
+
+// 乐观气泡:发送瞬间在详情底部插一条 prompt turn(done=false),
+// 下一次 refreshDetail 会用真实 turn 覆盖 innerHTML —— 若主进程把消息 park 进
+// goal 修正队列,真实 ack turn 会接替乐观气泡,语义自然收敛。
+let optTurn = null;
+function renderOptimistic(text) {
+  if (!openId) return;
+  const el = document.getElementById('list');
+  const div = document.createElement('div');
+  div.className = 'turn';
+  div.id = 'opt';
+  div.innerHTML = '<div class="q">🧑 ' + esc(text) + '</div>' +
+    '<div class="a running" id="opt-a"></div>' +
+    '<div class="meta" id="opt-note">' + esc(L.queued) + '</div>';
+  el.appendChild(div);
+  window.scrollTo(0, document.body.scrollHeight);
+}
+function clearOptimistic() { const n = document.getElementById('opt'); if (n) n.remove(); }
 
 async function doSend() {
   const inp = document.getElementById('input');
-  const btn = document.getElementById('send');
   const text = inp.value.trim();
-  if (!text || busy) return;
+  if (!text) return;
   if (!openId) {
     const j = await api('/api/new', {}).catch(() => null);
     if (!j) return;
     openId = j.convId;
     document.getElementById('composer').classList.add('show');
   }
-  busy = true; btn.disabled = true; btn.textContent = '…';
   inp.value = '';
+  renderOptimistic(text);
   try {
     await api('/api/send', { convId: openId, text });
-  } catch (e) { alert('error: ' + e.message); }
-  busy = false; btn.disabled = false; btn.textContent = L.send;
+    // 200 即已入列;立即拉一次详情接住 ack/running turn,不等下个轮询节拍。
+    pollFast = true;
+    setTimeout(() => { pollFast = false; }, 12000);
+    await refreshDetail();
+  } catch (e) {
+    // 失败回填:把文本放回输入框,乐观气泡撤掉,内容不丢。
+    clearOptimistic();
+    inp.value = text;
+    alert('error: ' + e.message);
+  }
   await refresh();
-  await refreshDetail();
 }
 
-// 轮询:详情模式 2.5s 刷新内容(看流式进度);列表模式 5s;busy 时 3s。
+// 轮询:详情 2.5s / 列表 5s / 发送后短促 1.5s;页面隐藏时暂停(省电,回来自动刷新)。
 function loop() {
   const step = openId ? refreshDetail() : Promise.resolve();
   Promise.allSettled([refresh(), step]).finally(() => {
     clearTimeout(timer);
-    timer = setTimeout(loop, busy ? 3000 : (openId ? 2500 : 5000));
+    const idle = document.hidden;
+    const gap = openId ? (pollFast ? 1500 : 2500) : 5000;
+    timer = setTimeout(loop, idle ? Math.max(gap, 15000) : gap);
   });
 }
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { clearTimeout(timer); loop(); } // 回到页面立即刷新,不等节拍
+});
 loop();
 </script>
 </body>
