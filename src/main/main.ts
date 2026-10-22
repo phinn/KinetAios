@@ -18,7 +18,8 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
+import { startMemorySyncAuto } from './memory-sync';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -1346,6 +1347,12 @@ if (!gotLock) {
       }
     });
     initStore();
+    // 记忆 Git 同步:挂自动 tick(每分钟查,autoSyncMinutes>0 且配置了 remote 才跑)
+    startMemorySyncAuto(
+      () => getSettings().memorySync,
+      app.getPath('userData'),
+      memoryStoreApi(),
+    );
     taskManager = new TaskManager(emitter);
     taskManager.load();
     // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。

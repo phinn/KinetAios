@@ -45,6 +45,7 @@ const DEFAULTS: AppSettings = {
   remoteMcpServers: [],
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
   pluginSettings: {},  // v3.1: 插件引擎设置用户值 { pluginName: { key: value } }
+  memorySync: { remote: '', branch: 'main', autoSyncMinutes: 0 }, // 记忆 Git 仓库同步:remote 空 = 未启用
   voiceAutoSend: false,
   autoLoadSkills: false, // 自动加载 Skills 默认关(用户显式打开才注入目录 + 注册 load_skill 工具)
   compactMeta: false, // 紧凑模式默认关:hover 才显示 turn 元信息行(耗时/token/费用),默认常驻

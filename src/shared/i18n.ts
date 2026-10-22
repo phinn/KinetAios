@@ -1003,6 +1003,13 @@ const ZH_CN: Dict = {
 
   // ── 多机协作 (Mesh) ──
   'settings.mesh.title': '多机协作 (MCP Bridge)',
+  'settings.memsync.title': '记忆同步 (Git 仓库)',
+  'settings.memsync.desc': '把记忆导出为文本(lessons.md + facts.ndjson + blocks.json)同步到 Git 仓库,可推 GitHub/Gitee,实现跨设备共享。对话原文不上传。',
+  'settings.memsync.remote': '仓库地址',
+  'settings.memsync.branch': '分支',
+  'settings.memsync.auto': '自动同步(分钟,0=关)',
+  'settings.memsync.test': '测试连接',
+  'settings.memsync.run': '立即同步',
   'settings.mesh.desc': '把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。',
   'settings.mesh.localTitle': '本机 MCP Server',
   'settings.mesh.localDesc': '开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)',
@@ -2359,6 +2366,13 @@ const EN: Dict = {
 
   // ── Mesh ──
   'settings.mesh.title': 'Mesh (MCP Bridge)',
+  'settings.memsync.title': 'Memory Sync (Git repo)',
+  'settings.memsync.desc': 'Export memories as text (lessons.md + facts.ndjson + blocks.json) into a Git repo — GitHub/Gitee both work, for cross-device sharing. Conversation transcripts never leave this machine.',
+  'settings.memsync.remote': 'Repo URL',
+  'settings.memsync.branch': 'Branch',
+  'settings.memsync.auto': 'Auto sync (minutes, 0=off)',
+  'settings.memsync.test': 'Test connection',
+  'settings.memsync.run': 'Sync now',
   'settings.mesh.desc': 'Expose local tools to other KinetAios nodes on the LAN, or connect to remote nodes as tools.',
   'settings.mesh.localTitle': 'Local MCP Server',
   'settings.mesh.localDesc': 'Allow other machines to call your tools via HTTP (shell / files / web)',
@@ -3708,6 +3722,13 @@ const ZH_TW: Dict = {
   'preview.emptySub': '讓 AI「畫一個網頁 / 做 SVG 圖表 / 寫互動式元件」，結果會在這裡即時預覽',
 
   'settings.mesh.title': '多機協作 (MCP Bridge)',
+  'settings.memsync.title': '記憶同步 (Git 倉庫)',
+  'settings.memsync.desc': '把記憶導出為文字(lessons.md + facts.ndjson + blocks.json)同步到 Git 倉庫,可推 GitHub/Gitee,實現跨裝置共享。對話原文不上傳。',
+  'settings.memsync.remote': '倉庫地址',
+  'settings.memsync.branch': '分支',
+  'settings.memsync.auto': '自動同步(分鐘,0=關)',
+  'settings.memsync.test': '測試連線',
+  'settings.memsync.run': '立即同步',
   'settings.mesh.desc': '把本機工具暴露給區域網路內其它 KinetAios 節點，或連接遠端節點作為工具使用。',
   'settings.mesh.localTitle': '本機 MCP Server',
   'settings.mesh.localDesc': '開啟後允許其它機器透過 HTTP 呼叫你的工具（shell / 檔案 / 網頁等）',
@@ -5079,6 +5100,13 @@ const JA: Dict = {
 
   // ── メッシュ (MCP Bridge) ──
   'settings.mesh.title': 'メッシュ (MCP Bridge)',
+  'settings.memsync.title': 'メモリ同期 (Git リポジトリ)',
+  'settings.memsync.desc': 'メモリをテキスト(lessons.md + facts.ndjson + blocks.json)として Git リポジトリへ同期。GitHub/Gitee 両対応、デバイス間共有を実現。会話本文は送信しません。',
+  'settings.memsync.remote': 'リポジトリ URL',
+  'settings.memsync.branch': 'ブランチ',
+  'settings.memsync.auto': '自動同期(分、0=オフ)',
+  'settings.memsync.test': '接続テスト',
+  'settings.memsync.run': '今すぐ同期',
   'settings.mesh.desc': 'ローカルツールを LAN 内の他の KinetAios ノードに公開、またはリモートノードをツールとして接続。',
   'settings.mesh.localTitle': 'ローカル MCP Server',
   'settings.mesh.localDesc': '有効化すると他のマシンが HTTP でツールを呼び出し可能（shell / ファイル / web）',

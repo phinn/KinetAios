@@ -135,6 +135,8 @@ const api: KinetAPI = {
   memoryTimeline: () => ipcRenderer.invoke('memory-timeline'),
   memoryDecay: () => ipcRenderer.invoke('memory-decay'),
   memoryDedup: () => ipcRenderer.invoke('memory-dedup'),
+  memorySyncRun: () => ipcRenderer.invoke('memory-sync-run'),
+  memorySyncTest: (cfg: unknown) => ipcRenderer.invoke('memory-sync-test', cfg),
   // P0: Memory Blocks
   memoryBlocksList: () => ipcRenderer.invoke('memory-blocks-list'),
   memoryBlockUpdate: (label: string, value: string) => ipcRenderer.invoke('memory-block-update', label, value),

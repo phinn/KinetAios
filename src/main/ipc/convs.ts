@@ -107,6 +107,8 @@ export function register(): void {
     s.goalFailover5hPct = Math.min(100, Math.max(50, Math.floor(norm(s.goalFailover5hPct, 100))));
     saveSettings(s);
     deps.rebuildTrayMenu(); // 语言切换后托盘菜单跟随
+    // 记忆同步:配置变更 → 重置自动同步节流(新周期立即生效)
+    void import('../memory-sync').then((m) => m.restartMemorySyncAuto());
     // 多机协作:remote server 配置变化 → 刷新 MCP 远程连接。
     if (JSON.stringify(old.remoteMcpServers ?? []) !== JSON.stringify(s.remoteMcpServers ?? [])) {
       mcp.setRemoteServers(s.remoteMcpServers ?? []);

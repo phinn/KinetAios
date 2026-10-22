@@ -898,6 +898,81 @@ export interface LessonMemory {
   createdAt: number;
 }
 
+// ── memory-sync 导出/导入(2026-10-22,Git 仓库方案,见 memory-sync.ts 头注释)──
+
+/** memories 全量导出(含 lessons/rules,按时间升序,导出物稳定可 diff) */
+export function exportMemoryRows(): import('../shared/types').MemoryRow[] {
+  const rows = db.prepare(
+    `SELECT id, content, created_at, conversation_id, importance, kind, trigger_kw, strikes, struck_at, scope_cwd
+     FROM memories ORDER BY created_at ASC, id ASC;`,
+  ).all() as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: String(r.id),
+    content: String(r.content ?? ''),
+    createdAt: Number(r.created_at ?? 0),
+    conversationId: (r.conversation_id as string | null) ?? null,
+    importance: Number(r.importance ?? 5),
+    kind: String(r.kind ?? 'fact'),
+    triggerKw: (r.trigger_kw as string | null) ?? null,
+    strikes: Number(r.strikes ?? 0),
+    struckAt: (r.struck_at as number | null) ?? null,
+    scopeCwd: (r.scope_cwd as string | null) ?? null,
+  }));
+}
+
+/** 按 id 幂等并入:存在即跳过(追加式事实流,内容以本地为准,不覆盖 strikes/struck_at 等本地状态) */
+export function importMemoryRows(rows: import('../shared/types').MemoryRow[]): number {
+  let added = 0;
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO memories(id, content, created_at, conversation_id, importance, kind, trigger_kw, strikes, struck_at, scope_cwd)
+     VALUES(?,?,?,?,?,?,?,?,?,?);`,
+  );
+  const tx = db.transaction((items: import('../shared/types').MemoryRow[]) => {
+    for (const r of items) {
+      const res = ins.run(r.id, r.content, r.createdAt, r.conversationId, r.importance,
+        r.kind, r.triggerKw, r.strikes, r.struckAt, r.scopeCwd);
+      if (res.changes > 0) added++;
+    }
+  });
+  tx(rows);
+  return added;
+}
+
+/** memory_blocks 全量(结构化常驻块,label→{content,updatedAt}) */
+export function exportMemoryBlocksData(): Array<{ label: string; content: string; updatedAt: number }> {
+  return db.prepare(`SELECT label, content, updated_at FROM memory_blocks ORDER BY label ASC;`)
+    .all() as Array<{ label: string; content: string; updatedAt: number }>;
+}
+
+/** memory-sync 的 MemoryStoreApi 工厂:字段名对齐 shared/types 的 MemoryRow/MemoryBlock 数据形状 */
+export function memoryStoreApi() {
+  return {
+    exportMemories: exportMemoryRows,
+    importMemories: importMemoryRows,
+    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    importBlock: (label: string, value: string, updatedAt: number): boolean => {
+      const cur = db.prepare(`SELECT updated_at FROM memory_blocks WHERE label = ?;`).get(label) as { updated_at: number } | undefined;
+      if (cur && cur.updated_at >= updatedAt) return false; // 本地不旧,不动
+      const r = updateMemoryBlock(label, value);
+      return r.ok;
+    },
+  };
+}
+
+/** lessons 按仓库分组(memories 里 kind='lesson',按 scope_cwd 聚合,NULL=全局) */
+export function exportLessonsGrouped(): Record<string, string[]> {
+  const rows = db.prepare(
+    `SELECT content, scope_cwd FROM memories WHERE kind='lesson'
+     ORDER BY importance DESC, created_at ASC;`,
+  ).all() as Array<{ content: string; scope_cwd: string | null }>;
+  const out: Record<string, string[]> = {};
+  for (const r of rows) {
+    const key = r.scope_cwd ?? '_global_';
+    (out[key] ??= []).push(r.content);
+  }
+  return out;
+}
+
 /**
  * 对当前 cwd 生效的教训:scope_cwd 为 NULL(全局)或等于 cwd(仓库级)。
  * 仓库级按 importance 优先 —— 同一仓库教训比全局教训更具体,先占注入位。

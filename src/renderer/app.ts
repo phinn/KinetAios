@@ -4,7 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -5789,8 +5789,7 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
-        <h3>${ICON.link} ${tr('settings.mesh.title')}</h3>
-        <div class="field-desc">${tr('settings.mesh.desc')}</div>
+        <h3>${ICON.link} ${tr('settings.mesh.title')}</h3>        <div class="field-desc">${tr('settings.mesh.desc')}</div>
 
         <!-- 本机 MCP Server -->
         <div class="s-sub-panel">
@@ -5848,6 +5847,25 @@ async function showSettings() {
             <input id="s-remote-token" type="password" placeholder="token" />
             <button id="s-remote-add" class="btn-sm">${tr('settings.mesh.remoteAdd')}</button>
           </div>
+        </div>
+
+        <!-- 记忆 Git 同步 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.memsync.title')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.memsync.desc')}</div>
+          <div style="display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center">
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.remote')}</span>
+            <input id="s-memsync-remote" placeholder="https://gitee.com/user/kinet-memory.git" />
+            <button id="s-memsync-test" class="btn-sm">${tr('settings.memsync.test')}</button>
+          </div>
+          <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;margin-top:8px">
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.branch')}</span>
+            <input id="s-memsync-branch" placeholder="main" style="max-width:140px" />
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.auto')}</span>
+            <input id="s-memsync-auto" type="number" min="0" style="max-width:90px" />
+            <button id="s-memsync-run" class="btn-sm">${tr('settings.memsync.run')}</button>
+          </div>
+          <div id="s-memsync-status" style="margin-top:8px;font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:160px;overflow:auto"></div>
         </div>
       </div>
       </div><!-- /mesh panel -->
@@ -6178,6 +6196,32 @@ async function showSettings() {
     (document.getElementById('s-remote-token') as HTMLInputElement).value = '';
     renderRemoteList();
   };
+
+  // ── 记忆 Git 同步:回显 + 测试连接 + 立即同步(2026-10-22)──
+  const msRemote = document.getElementById('s-memsync-remote') as HTMLInputElement | null;
+  if (msRemote) {
+    const ms = lastSettingsSnapshot?.memorySync ?? { remote: '', branch: 'main', autoSyncMinutes: 0 };
+    msRemote.value = ms.remote ?? '';
+    (document.getElementById('s-memsync-branch') as HTMLInputElement).value = ms.branch || 'main';
+    (document.getElementById('s-memsync-auto') as HTMLInputElement).value = String(ms.autoSyncMinutes ?? 0);
+    const statusEl = document.getElementById('s-memsync-status')!;
+    const fmt = (r: { ok: boolean; error?: string; detail?: string; steps?: MemorySyncResult['steps'] }) =>
+      (r.ok ? '✓' : '✗') + ' ' + (r.error ?? r.detail ?? '') + '\n' + (r.steps ?? []).map((s) => `[${s.step}] ${s.detail}`).join('\n');
+    document.getElementById('s-memsync-test')!.onclick = async () => {
+      statusEl.textContent = '…';
+      const r = await api.memorySyncTest({
+        remote: msRemote.value.trim(),
+        branch: (document.getElementById('s-memsync-branch') as HTMLInputElement).value.trim() || 'main',
+        autoSyncMinutes: 0,
+      });
+      statusEl.textContent = fmt(r);
+    };
+    document.getElementById('s-memsync-run')!.onclick = async () => {
+      statusEl.textContent = '…';
+      const r = await api.memorySyncRun();
+      statusEl.textContent = fmt(r);
+    };
+  }
   document.getElementById('s-mcp-start')!.onclick = async () => {
     const port = Number((document.getElementById('s-mcp-port') as HTMLInputElement).value) || 18109;
     const token = (document.getElementById('s-mcp-token') as HTMLInputElement).value;
@@ -7039,6 +7083,11 @@ function readSettingsForm(): AppSettings {
     disabledPlugins: disabledPluginsCache,
     // v3.1: 插件引擎设置不经设置表单(插件卡片自己管),原样透传最近快照。
     pluginSettings: lastSettingsSnapshot?.pluginSettings ?? {},
+    memorySync: {
+      remote: (document.getElementById('s-memsync-remote') as HTMLInputElement)?.value.trim() ?? '',
+      branch: (document.getElementById('s-memsync-branch') as HTMLInputElement)?.value.trim() || 'main',
+      autoSyncMinutes: Math.max(0, parseInt((document.getElementById('s-memsync-auto') as HTMLInputElement)?.value ?? '0', 10) || 0),
+    },
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
     // Goal 监工参数(goal tab):链缓存由 renderGoalChain 的增删维护,保存时写回。

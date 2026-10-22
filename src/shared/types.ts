@@ -329,6 +329,10 @@ export type AppSettings = {
   // ── 插件引擎设置(v3.1):用户在插件卡片填的占位符值 { pluginName: { key: value } } ──
   // 引擎注册时对 bin/args/cwdFlags/systemFlag 做 {key} 插值;{cwd} 保留给运行时。
   pluginSettings: Record<string, Record<string, string>>;
+  // ── 记忆 Git 仓库同步(2026-10-22)── remote 空 = 未启用;
+  // gitee/github 皆可(就是个 git remote,凭证走系统 git credential);
+  // 同步内容:lessons.md + facts.ndjson + blocks.json(对话原文不出本地,隐私分级 L2)。
+  memorySync: { remote: string; branch: string; autoSyncMinutes: number };
   // ── 语音实时输入(Web Speech API)── 开启后语音按钮切到实时模式:
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
@@ -764,6 +768,41 @@ export type EpisodicMemoryData = {
 // ── 会话导出 ──
 export type ExportFormat = 'markdown' | 'html' | 'json';
 
+// ── 记忆 Git 仓库同步(memory-sync,2026-10-22)──
+/** 同步设置:存 AppSettings,remote 空 = 未启用 */
+export type MemorySyncSettings = {
+  remote: string; // git 仓库地址(https/ssh,gitee/github 皆可)
+  branch: string; // 默认 main
+  autoSyncMinutes: number; // 0 = 关闭自动同步;>0 = 每 N 分钟一次
+};
+
+export type MemorySyncStepLog = { step: string; detail: string; at: string };
+
+/** memories 表行(store ↔ memory-sync 共用,列对齐 memories 全部 10 列) */
+export type MemoryRow = {
+  id: string;
+  content: string;
+  createdAt: number; // created_at,秒
+  conversationId: string | null;
+  importance: number;
+  kind: string; // fact | rule | lesson | preference
+  triggerKw: string | null;
+  strikes: number;
+  struckAt: number | null;
+  scopeCwd: string | null;
+};
+
+/** 一次同步的结果:ok=整体成功;steps 是逐步日志(UI 展示用) */
+export type MemorySyncResult = {
+  ok: boolean;
+  error?: string;
+  exported: number; // 本次导出的 memories 条数
+  imported: number; // 从远端并回的新增条数
+  commits: number;
+  pushed: boolean;
+  steps: MemorySyncStepLog[];
+};
+
 // ── Arena Diff 对比 ──
 export type ArenaDiffResult = {
   leftEngine: EngineKind;
@@ -1030,6 +1069,10 @@ export interface KinetAPI {
   memoryTimeline(): Promise<{ ok: boolean; items?: MemoryWithMeta[]; error?: string }>;
   memoryDecay(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
+  /** memory-sync:导出 SQLite 记忆 → git 仓库 commit+push;远端新条目并回本地 */
+  memorySyncRun(): Promise<MemorySyncResult>;
+  /** memory-sync:连通性测试(clone/pull dry-run) */
+  memorySyncTest(cfg: MemorySyncSettings): Promise<{ ok: boolean; error?: string; detail?: string }>;
   // ── P0: Memory Blocks(结构化核心记忆)──
   memoryBlocksList(): Promise<{ ok: boolean; blocks?: MemoryBlockData[]; error?: string }>;
   memoryBlockUpdate(label: string, value: string): Promise<{ ok: boolean; error?: string; droppedTail?: number; stored?: number }>;
