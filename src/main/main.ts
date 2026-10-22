@@ -1270,8 +1270,7 @@ if (!gotLock) {
       // / Hidden/minimized/occluded windows get their timers throttled — silence
       // is throttling, not a freeze. Skip and reset so refocusing can't misfire.
       const w = dashboardWin;
-      if (!w || w.isDestroyed() || !w.isVisible() || w.isMinimized() ||
-          (typeof w.isOccluded === 'function' && w.isOccluded())) {
+      if (!w || w.isDestroyed() || !w.isVisible() || w.isMinimized()) {
         lastBeat = Date.now();
         return;
       }
