@@ -1263,6 +1263,18 @@ if (!gotLock) {
     // 心跳恢复即复位标记:每次卡死episode都有自己的标题行(旧版只写第一次,后续卡死无标题难定位)。
     ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); freezeReported = false; });
     setInterval(() => {
+      // 窗口隐藏/最小化/被完全遮挡时,Chromium 会节流 renderer 的定时器(1s 心跳
+      // 退化成分钟级)——停摆是节流不是卡死,取证只会抓到空闲栈污染日志(2026-10-22
+      // 深夜 23:08/23:24 两次"冻结"即此误报)。跳过检测并刷新 lastBeat,避免回
+      // 前台瞬间用积压的静默误触发。
+      // / Hidden/minimized/occluded windows get their timers throttled — silence
+      // is throttling, not a freeze. Skip and reset so refocusing can't misfire.
+      const w = dashboardWin;
+      if (!w || w.isDestroyed() || !w.isVisible() || w.isMinimized() ||
+          (typeof w.isOccluded === 'function' && w.isOccluded())) {
+        lastBeat = Date.now();
+        return;
+      }
       const silent = Date.now() - lastBeat;
       if (silent < 5000 || sampling) return;
       if (!freezeReported) {
