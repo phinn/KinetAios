@@ -256,6 +256,15 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  // 会话级 Ralph 自迭代开关 —— true = DirectV5 会话走 Ralph 循环拓扑(验收不过带反馈重进)。
+  setLoopRalph(id: string, enabled: boolean): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.loopRalph = enabled;
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   // 会话级跨项目记忆开关 —— false = 检索/注入只看本会话,防止多任务线串扰。
   setCrossProjectMemory(id: string, enabled: boolean): void {
     const conv = this.convs.get(id);
@@ -310,6 +319,8 @@ export class TaskManager {
     this.cancel(id);
     store.deleteConversation(id);
     this.convs.delete(id);
+    this.lastTouchAt.delete(id); // 节流时间戳随会话销毁,防 Map 泄漏
+    this.lastCostSaveAt.delete(id);
     this.order = this.order.filter((x) => x !== id);
     delete this.lastEngine[id]; // P1: 清理引擎记录,防止 key 无限累积
     this.goalLoopStopped.delete(id); // P1: 清理 goal loop 停止标记
@@ -383,8 +394,12 @@ export class TaskManager {
       if (turn && !turn.done) {
         turn.done = true;
         const lang = getSettings().lang;
-        if (!turn.answer) turn.error = t(lang, 'tmgr.cancelled');
+        if (!turn.answer) { turn.error = t(lang, 'tmgr.cancelled'); turn.errorKind = 'cancelled'; }
         else conv.statusNote = t(lang, 'tmgr.stopped');
+        // 同 applyAndPersist 的终态覆盖:取消标记必须落 turns 缓存,否则重启后
+        // 「已停止 + ⏵ 断点续跑」按钮消失(UI 判据 t.error && t.done,缓存里为空)。
+        // errorKind 是 UI 样式判据(cancelled 不给「重试」),事件流补不回,只能靠这里。
+        store.saveTurn(conv.id, turn);
       }
       conv.status = 'ready';
       this.emit.emitConversation(conv);
@@ -426,6 +441,16 @@ export class TaskManager {
   // 消费方继续用阻塞版 send()。
   // Fire-and-forget variant for the renderer IPC: resolves once the turn is
   // queued. Feishu / VoiceChat rely on the blocking send() semantics instead.
+  /** 硬清除会话目标:不走 send/turn 链,任何状态(running/idle)点击立即生效。 */
+  clearGoal(id: string): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.goal = null;
+    this.cancel(id); // 幂等:内含 goalLoopStopped/clearCorrection/clearSteer,空闲时是 no-op
+    store.saveConversation(conv);
+    this.emit.emitConversation(conv);
+  }
+
   async sendDetached(id: string, text: string): Promise<void> {
     return this.sendCore(id, text, true);
   }
@@ -450,7 +475,17 @@ export class TaskManager {
       // 2026-09-30:runGoalLoop 入口的清标记已收紧为 explicit-only(防 Auto-Loop 接力
       // 抹掉用户停止语义),「重新 /goal」的清标记职责移到这个唯一显式入口。
       // 修前它藏在 runGoalLoop 入口无条件清 —— 连用户刚取消后的 Auto-Loop 误燃都会清。
-      if (goalText) this.goalLoopStopped.delete(id);
+      if (goalText) {
+        this.goalLoopStopped.delete(id);
+      } else {
+        // 2026-10-19:清除目标 = 连 goal 循环一起停。修前只置 conv.goal=null,循环还挂在
+        // goalLoopLive 上继续跑(下轮 prompt 变成 `推进目标: "null"` 空转烧钱),且此后用户
+        // 发的每条消息命中下方修正队列分支 —— conv.goal 已 null → 连 park 都不 park,静默
+        // return,消息全部蒸发(实踩:「goal 清除后,后面的消息就发送不出去了」)。
+        // cancel() 幂等:abort 当前轮 + 立即撤 goalLoopLive + 置 stopped 标记 + 清修正队列;
+        // 之后消息恢复正常 dispatch(停了,新消息就是新任务)。停止标记留给下一次显式 /goal 清。
+        this.cancel(id);
+      }
       store.saveConversation(conv);
       const tg = newTurn(prompt);
       tg.answer = goalText ? `🎯 会话目标已设置: ${goalText}` : '🎯 会话目标已清除';
@@ -469,13 +504,30 @@ export class TaskManager {
     // 判定用 goalLoopLive 而非 status:监工 await 期间 status 短暂回 'ready'(done 事件
     // 所致),只看 status 会让消息在该窗口走正常 dispatch,与循环下一轮并发跑同一会话。
     // 非 goal 会话保持原语义(运行中不可插话,前端本来就不给发)。
-    if (this.goalLoopLive.has(id) || (conv.status === 'running' && conv.goal)) {
-      if (conv.goal) {
-        pushCorrection(id, prompt);
-        conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
-        this.emit.emitConversation(conv);
-      }
-      return; // 非 goal 会话维持旧 guard:静默拒绝(调用方 UI 不给 running 会话发消息)
+    // 2026-10-19:goalLoopLive 在但 goal 已被清(/goal 无参数 → cancel 整循环)→ 不再走
+    // 这里。修前静默 return,消息无声蒸发;现在落到下方正常 guard(cancel 已把 status
+    // 置 ready,直接开新回合)。goal 循环里允许非 goal 会话的 running guard 兜底。
+    if (conv.goal && (this.goalLoopLive.has(id) || conv.status === 'running')) {
+      pushCorrection(id, prompt);
+      conv.statusNote = '📨 已收到方向修正,将在下一轮执行前生效';
+      // 立即落一条可见回执 turn:修前只有 statusNote 过场,composer 已清空而 turns 无回显,
+      // 下一轮注入可能隔几分钟且呈「⚡ 用户方向修正」包裹形态 —— 用户体感「消息被吃掉」
+      // (2026-10-22 实踩:「好了」park 后 12 分钟才注入,用户以为丢失)。
+      // / Persist a visible ack turn immediately: statusNote alone + delayed wrapped
+      // injection read as "message eaten" (2026-10-22 real case).
+      const ack = newTurn(prompt);
+      ack.answer = '📨 已收下,不会丢。当前任务完成后、下一轮执行前注入(最高优先级,Worker 与监工都可见)。';
+      ack.done = true;
+      conv.turns.push(ack);
+      store.appendMessage('user', prompt, conv.id);
+      store.saveTurn(conv.id, ack);
+      this.emit.emitConversation(conv);
+      return;
+    }
+    if (this.goalLoopLive.has(id) && !conv.goal) {
+      // 残留的 liveness 标记(循环退出前的微小窗口)但目标已清 → 用户消息走正常 dispatch,
+      // 绝不静默吞掉。防御性分支:正常路径 /goal 清除时会同步 cancel 撤掉 goalLoopLive。
+      this.goalLoopLive.delete(id);
     }
 
     // ── 纠错信号检测(2026-09 纠错闭环 ④ strike 端)──
@@ -733,8 +785,12 @@ export class TaskManager {
 {"verdict":"continue","requirement":"给 Worker 的下一条具体要求"}
 或
 {"verdict":"complete","requirement":"一句验收通过的理由"}
-verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。`;
-      const user = `目标:「${conv.goal}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
+verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位用户的标准 → continue 并在 requirement 里给尖锐具体的修改指令(像这位用户平时说话那样简短直接);产出确实达标 → complete。requirement 必须具体可执行,禁止"继续努力"这类空话。
+硬性红线(违反即失职):
+1. 用户中途发来的实时方向修正优先级最高:若看到「⚠️ 用户实时修正」,你的 requirement 必须围绕它,不得继续旧方向。
+2. 禁止要求 Worker 回滚、撤销、删除已完成的工作 —— 除非用户修正里明确要求。已有产出只能在其上叠加、修补或调整方向;删文件/还原改动一律不许出现在 requirement 里。
+3. 验收以本轮实际产出和 git 变化为据,不得臆测 Worker 没做过的内容,也不得反复要求已达标的事项。`;
+      const user = `目标:「${conv.goal ?? '(已无目标)'}」\n\n本轮 Worker 产出(截断):\n${answer.slice(-3000)}\n\n${diffStat ? `git 变化:\n${diffStat}` : '(无 git 变化)'}`;
       // 用户实时修正:运行中发来的消息 park 在修正队列。必须让监工看到,否则监工
       // 按旧方向出 requirement,与 Worker 收到的修正互相矛盾(修前的真实缺口:
       // ⌘Enter steer 能到 Worker 但监工不可见;普通 send 被 running guard 丢弃)。
@@ -817,7 +873,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
             store.appendEvent(conv.id, lastTurn.id, { type: 'goal/failover', from: (lastTurn.error || '').slice(0, 120), to: nx.name, reason: cls });
             conv.statusNote = `⚡ 模型 ${why} → 切换到 ${nx.name} 继续`;
             this.emit.emitConversation(conv);
-            failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal}」。从中断处接着做,不要重做已完成的部分。`;
+            failoverRetry = `⚠️ 上一模型不可用(${why}),已切换到「${nx.name}」。继续推进目标:「${conv.goal ?? '(已无目标)'}」。从中断处接着做,不要重做已完成的部分。`;
           }
         }
         if (!failoverRetry) {
@@ -873,7 +929,34 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           }
         }
       }
-      if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。`;
+      // 目标在中途被清(/goal 无参数会 cancel 整个循环)→ 兜底防御:不再生成
+      // `推进目标: "null"` 的空转 prompt(修前真实路径:清 goal 后循环残留一轮,
+      // 下轮 prompt 字面拼出 null 继续烧钱)。
+      if (!conv.goal) break;
+      if (!nextPrompt) nextPrompt = `继续推进目标:「${conv.goal}」。执行下一步。注意:只在其上继续推进,不要重做或回滚已完成的工作。`;
+
+      // ── 预算分级降级(paperclip 式治理,P1 2026-10)──
+      // 硬顶 100% = 暂停(上面 maxCost/maxMs 分支)太粗:过夜任务往往死在前一晚最后几轮。
+      // 分级:≥80% 预警(注入收敛指令,让模型收尾而不是开新坑)/ ≥95% 强制收尾。
+      // conv.cost 由 AgentLoop cost 事件累计(含 cache 折价),与 maxCost 同一口径。
+      if (maxCost > 0 && conv.cost > 0) {
+        const pct = conv.cost / maxCost;
+        if (pct >= 0.95) {
+          nextPrompt = `💰⚠️ 预算告急:已消耗 $${conv.cost.toFixed(2)} / 上限 $${maxCost.toFixed(2)}(${(pct * 100).toFixed(0)}%)。` +
+            `立即收尾:不要再开启新的子任务/新文件/新实验,把当前已完成的部分整理成结论与交付物,说明哪些做了哪些没做,然后结束本轮。目标:「${conv.goal}」`;
+        } else if (pct >= 0.8) {
+          nextPrompt += `\n\n💰 预算提示:本轮预算已用 ${(pct * 100).toFixed(0)}%($${conv.cost.toFixed(2)} / $${maxCost.toFixed(2)})。` +
+            `优先完成最有价值的剩余工作,避免大规模重写或探索性展开;下轮若达 95% 将要求强制收尾。`;
+        }
+      } else if (maxMs > 0 && Date.now() - startedAt > maxMs * 0.8) {
+        // 时长同款分级(成本未配 maxCost 时时长是唯一信号)
+        const tp = (Date.now() - startedAt) / maxMs;
+        if (tp >= 0.95) {
+          nextPrompt = `⏰⚠️ 时间告急:已运行 ${((Date.now() - startedAt) / 3600_000).toFixed(1)}h / 上限 ${(maxMs / 3600_000).toFixed(1)}h。立即收尾整理结论,不再开新工作。目标:「${conv.goal}」`;
+        } else {
+          nextPrompt += `\n\n⏰ 时间提示:运行预算已用 ${(tp * 100).toFixed(0)}%,收拢范围优先收尾。`;
+        }
+      }
 
       // ── 用户方向修正(最高优先级):覆盖监工 requirement / 默认推进语 ──
       // sendCore 在 running 时把用户消息 park 进修正队列,这里在下一轮 dispatch 前
@@ -924,7 +1007,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       }).finally(() => {
         this.aborts.delete(id);
         clearSteer(id); // goal loop 每轮收尾:同上,清残留打断
-        clearCorrection(id); // 每轮收尾清修正队列(轮边界已消费,残留属异常路径,防累积)
+        // 注意:这里【不许】clearCorrection —— finally 挂在 await 的 runPromise 上,先于
+        // runGoalLoop 轮边界的 pullCorrection 执行;用户轮中发的方向修正会在这里被误清,
+        // 监工 peek 不到、Worker 下一轮也收不到 → 监工按旧目标出 requirement,Worker 瞎跑
+        // (2026-10-19 实踩:用户中途插入新任务,goal 循环无视并把做好的工作回滚)。
+        // 残留清理由循环退出的 finally(下方统一收尾)负责,轮与轮之间修正必须存活。
         clearKillHook(id); // goal loop 同步撤 hook
       });
 
@@ -989,6 +1076,18 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   private applyAndPersist(conv: Conversation, id: string, ev: AgentEvent, prompt: string, signal: AbortSignal): void {
     if (!this.convs.has(id)) { /* 已删除的会话:吞掉所有迟到事件,不广播不落库 */ return; }
     applyEvent(conv, ev);
+    // 终态快照(error/done)必须在 persist 之前写进 turn 并落库。
+    // 修 2026-10-20 事故:error 事件原先只 appendEvent(conv.id,t.id,{type:'turn/error'})、
+    // turns.data 缓存里 error/done 全空 —— 重启时 loadTurns「缓存可解析即原样用」,
+    // 事件流那份正确的重建版被丢弃 → 失败频道重开后既无失败态也无 ⏵ 继续按钮(UI 判据是 t.error && t.done)。
+    // 缓存与事件流不一致时,终态字段一律以本次运行为准覆盖进缓存。
+    const lt = conv.turns[conv.turns.length - 1];
+    if (lt && ev.type === 'error') {
+      lt.error = ev.message;
+      lt.errorKind = ev.kind; // 与 applyEvent 同口径:UI 据此选样式 + 是否给「重试」
+      lt.done = true;
+      store.saveTurn(conv.id, lt);
+    }
     this.emit.emitEvent(id, ev);
     this.persist(conv, ev);
     // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
@@ -1013,11 +1112,31 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     }
   }
 
+  // ── 写节流(2026-10-20 卡死事故)──
+  // 流式期间 persist 每秒收几十个事件:此前每个事件都同步 touch + 每个 cost 全量
+  // saveTurn(MB 级 turn JSON stringify 重写)→ 2.1GB 库上 O(n²) 写放大,主进程
+  // event loop 被同步 SQLite 堵几十秒(看门狗样本:renderer 心跳停摆栈停在
+  // sqlite3_step→pread),所有 IPC(含「取消 goal」按钮)排队超时 = 界面卡死。
+  // 两个节流阀:touch 3s 一次(侧栏排序不需要秒级精度);cost 的 saveTurn 5s 一次
+  // (turn/meta 事件流已全量存证,重启后 loadTurns 从事件流重建,不丢账)。
+  // ── Write throttling (2026-10-20 freeze incident). Streaming emits dozens of
+  // events/sec; each triggered a sync touch, each cost a full MB-level saveTurn —
+  // O(n²) write amplification on a 2.1GB DB blocked the main event loop for tens of
+  // seconds. Throttle: touch ≥3s, cost saveTurn ≥5s (turn/meta events remain the
+  // durable record; loadTurns rebuilds from the event stream after a crash).
+  private lastTouchAt = new Map<string, number>();
+  private lastCostSaveAt = new Map<string, number>();
+
   private persist(conv: Conversation, ev: AgentEvent): void {
     const t = conv.turns[conv.turns.length - 1];
     if (!t) return;
     conv.updatedAt = Date.now(); // 更新最后活动时间,侧栏排序和时间显示用。
-    store.touchConversation(conv.id); // 同步写库,确保所有事件路径都持久化 updated_at。
+    const now = Date.now();
+    const lastTouch = this.lastTouchAt.get(conv.id) ?? 0;
+    if (now - lastTouch >= 3_000) {
+      this.lastTouchAt.set(conv.id, now);
+      store.touchConversation(conv.id); // 同步写库(节流后),updated_at 持久化兜底。
+    }
     switch (ev.type) {
       case 'sessionStarted':
         store.updateConversationSession(conv); // claude/codex session id → next turn --resume
@@ -1049,8 +1168,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
         });
         break;
-      case 'cost':
-        store.saveTurn(conv.id, t);
+      case 'cost': {
+        // 节流:cost 每步一发,长 turn 全量 saveTurn(MB 级 stringify)是 O(n²) 写放大;
+        // 事件流已全量存证,这里 5s 一次兜底快照即可,done 时必有一次最终 saveTurn。
+        // Throttle: cost fires per step; the event stream is the durable record —
+        // snapshot at most every 5s (done always saves the final turn).
+        const lastCost = this.lastCostSaveAt.get(conv.id) ?? 0;
+        if (now - lastCost >= 5_000) {
+          this.lastCostSaveAt.set(conv.id, now);
+          store.saveTurn(conv.id, t);
+        }
         store.appendEvent(conv.id, t.id, {
           type: 'turn/meta',
           costUSD: ev.usd,
@@ -1064,6 +1191,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           source: ev.source,
         });
         break;
+      }
       case 'done':
         // ⚠️ 无条件 saveTurn:空回复(思考模型烧光预算零输出)也要落库,否则 turn 永远
         // done=false,重启后还会被 resume 重发,UI 永远 running(2026-09-09 事故)。
@@ -1093,6 +1221,15 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const restrict = conv.crossProjectMemory === true ? undefined : conv.id;
 
     // ── P0: Memory Blocks(结构化核心记忆,每轮都注入,类似 Letta Memory Blocks)──
+    // 🎯 目标压制条款(2026-10-20 CarKeys 串台事故):blocks 是跨项目全局状态,
+    // 会话设了 /goal 时 goal 是唯一最高指令 —— 必须压过记忆块里其它项目的待办,
+    // 否则 active_goals 里「XX 项目唯一剩余闸门:…」这类可执行指令会把 Worker 带跑到别的项目。
+    // 🎯 Goal-primacy clause: memory blocks are global; an explicit /goal outranks
+    // any other project's todos inside them, or actionable lines like "remaining gate:
+    // …" hijack the worker into a sibling project.
+    if (conv.goal?.trim()) {
+      out += `\n\n# 🎯 本会话目标(最高优先级,先读这个)\n${conv.goal.trim()}\n下面注入的 memory_blocks 是跨项目全局记忆。**只有本会话目标优先**:记忆块中与其它项目相关的目标/待办/闸门(如其它 App 的上架、素材、提交事项)一律不作为本会话的工作依据,也不要顺着它们行动;除非用户在本会话消息里明确要求。`;
+    }
     const blocks = store.loadMemoryBlocks();
     const activeBlocks = blocks.filter((b) => b.value.trim());
     if (activeBlocks.length) {
@@ -1101,7 +1238,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         out += `\n<${b.label}>\n${b.value}\n</${b.label}>`;
       }
       out += '\n</memory_blocks>';
-      out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。';
+      out += '\n\n💡 你可以用 memory_replace / memory_append 工具更新这些记忆块(例如发现 project_context 过时了)。注意:更新前先对照本会话目标——不要把其它项目的进展写成本会话的成果,也不要反过来。';
     }
 
     // ── 会话级事实锚点(remember_fact):自动注入,模型不必自觉 recall(2026-09 接线)──
@@ -1162,6 +1299,20 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     if (hot.length) {
       out += '\n\n## 🔥 近期被纠正(重点盯防)\n';
       out += hot.map((r) => `- ${r.content}(犯过 ${r.strikes} 次,最近一次:${new Date(r.struckAt!).toISOString().slice(0, 10)})`).join('\n');
+    }
+
+    // ── Lessons(hindsight 式任务教训,2026-10)──
+    // kind='lesson' 的记忆:不在检索池(searchMemories/scoredMemories 按 kind='fact' 过滤),
+    // 静态注入 —— 教训是"环境属性"不是"查询相关",踩过坑就必须在场。
+    // 范围:scope_cwd 为 NULL(全局)或等于当前会话 cwd(仓库级),仓库级优先。
+    if (conv.cwd) {
+      const lessons = store.loadLessons(conv.cwd, 8);
+      if (lessons.length) {
+        out += '\n\n## 📒 项目教训(本仓库踩过的坑,动手前先核对)\n';
+        out += lessons
+          .map((l) => `- ${l.scopeCwd ? '' : '[全局] '}${l.content}(${new Date(l.createdAt * 1000).toISOString().slice(0, 10)})`)
+          .join('\n');
+      }
     }
 
     if (limited.length) {
@@ -1263,10 +1414,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   判别标准:fact 描述"世界是怎样的",rule 约束"助手应该怎么做"。同一次纠正,两边都提:fact 记录现象,rule 记录约束。
   例:用户说「别再用 HTTPS push,会卡超时,走 SSH」→ rule: { "text": "禁止 HTTPS push,必须走 SSH", "because": "HTTPS 无凭据卡 120s 超时", "triggers": "git push;push origin;推送" }。
   没有 rule 就输出空数组,不要硬凑。
+- "lessons": [{ "text": "≤ 40字陈述句,写清「场景+做法+原因」", "importance": 6-10 }] 数组 —— 踩坑后的技术教训,关于「怎么做这件事会失败/成功」,不是对助手的约束(rule 管那个),也不是用户偏好(fact 管那个)。
+  什么时候提取 lesson:修复了报错/调试通了问题/发现了反直觉机制,且下次在同一个仓库大概率再遇到。例:"simctl recordVideo 是 VFR,画面静止不出帧,duration 元数据缩水,验内容用帧数别信 duration" / "Electron spawn .cmd 必须 shell:true 否则 CVE 拦截直接报错" / "patch 旧 appInfo 必 409,新版本要克隆新 appInfo"。
+  同一次踩坑,rule 和 lesson 都提:rule 记「禁止/必须」约束,lesson 记「技术机制为什么」。没有 lesson 就输出空数组,不要硬凑。
 - "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"KinetAios","p":"用","o":"better-sqlite3"} / {"s":"项目","p":"构建","o":"npm run dist"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节(如临时变量名)、纯时间敏感(今天/这次)、单次 bug 的具体修复步骤(除非是通用 pattern)。
 豁免(必须提取,上面"一次性细节"不适用):产物形态决策("X 图=直传不套壳")、用户明确否决的方案("否决了裸图拼接")、路径级产物位置("KinetBrief 素材在 framed_v1 目录")、用户对成品的验收标准("截图必须亮色")。这类正是跨会话最易丢、丢了会重犯的。
-无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"triples":[]}。只输出 JSON,不要解释。`;
+无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"lessons":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
     const timer = setTimeout(() => ac.abort(), 30_000);
@@ -1284,12 +1438,23 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         ac.signal,
         () => {},
       );
-      const { facts, projectFacts, rules, triples } = parseExtraction(comp.content);
+      const { facts, projectFacts, rules, triples, lessons } = parseExtraction(comp.content);
       // rules 优先落库:不走去重管线(fact 的模糊去重会误杀措辞相近但约束不同的规则),
       // upsertRule 内部按内容精确去重。
       for (const r of rules.slice(0, 3)) {
         store.upsertRule(r.text, r.triggers || null, convId, 9);
       }
+
+      // lessons 落库(2026-10):教训与事实分流,不走去重管线(lesson 自带内容精确去重,
+      // 且教训措辞敏感性高 —— 模糊去重可能误杀「差一个限定条件」的两条不同教训)。
+      // scope = 当前会话 cwd(hindsight 思路:教训绑仓库,不全局污染)。
+      if (lessons.length) {
+        const convCwd = store.getConversationCwd(convId);
+        for (const l of lessons.slice(0, 3)) {
+          store.addLesson(l.text, convId, convCwd ?? null, l.importance || 8);
+        }
+      }
+
       const existingFacts = store.allMemoryContents();
 
       // ── 去重策略:精确匹配 → 模糊去重(Jaccard) → 语义去重(embedding cosine)
@@ -1814,9 +1979,10 @@ function parseExtraction(s: string): {
   facts: Array<{ text: string; importance: number }>;
   projectFacts: Array<{ text: string; importance: number }>;
   rules: Array<{ text: string; because: string; triggers: string }>;
+  lessons: Array<{ text: string; importance: number }>;
   triples: Array<{ s: string; p: string; o: string }>;
 } {
-  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, rules: [] as Array<{ text: string; because: string; triggers: string }>, triples: [] as Array<{ s: string; p: string; o: string }> };
+  const empty = { facts: [] as Array<{ text: string; importance: number }>, projectFacts: [] as Array<{ text: string; importance: number }>, rules: [] as Array<{ text: string; because: string; triggers: string }>, lessons: [] as Array<{ text: string; importance: number }>, triples: [] as Array<{ s: string; p: string; o: string }> };
   const lo = s.indexOf('{');
   const hi = s.lastIndexOf('}');
   if (lo >= 0 && hi > lo) {
@@ -1866,13 +2032,14 @@ function parseExtraction(s: string): {
             })
             .filter((t): t is { s: string; p: string; o: string } => t !== null)
         : [];
-      return { facts, projectFacts, rules, triples };
+      const lessons = parseFactArray(obj.lessons).filter((l) => l.importance >= 5 || l.text.length > 10);
+      return { facts, projectFacts, rules, lessons, triples };
     } catch {
       return empty;
     }
   }
   // 兼容老格式(纯 facts [])
-  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], rules: [], triples: [] };
+  return { facts: parseFactsLegacy(s).map((text) => ({ text, importance: 5 })), projectFacts: [], rules: [], lessons: [], triples: [] };
 }
 
 function parseFactsLegacy(s: string): string[] {

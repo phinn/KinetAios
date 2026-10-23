@@ -755,8 +755,8 @@ class AnthropicProvider implements Provider {
         } else {
           anthContent = [{ type: 'text', text: content }];
         }
-        // Anthropic 要求 user/assistant 严格交替。memoryBlock 头部消息(_memory)紧跟 history[0]
-        // 的首个用户输入会构成连续 user —— 合并进上一条 user。
+        // Anthropic 要求 user/assistant 严格交替。_memory 记忆块消息(现插在尾部,紧跟
+        // userInput)与倒数第二条 user 相邻 —— 合并进上一条 user,同时保持交替约束。
         // 安全:合并时保留 last 已有的 content blocks(含图片),只追加新 blocks。
         // Security: preserve existing content blocks (including images) when merging.
         const last = anth[anth.length - 1];
@@ -818,13 +818,24 @@ class AnthropicProvider implements Provider {
 
     const body: Record<string, unknown> = { model: snap.model, messages: anth, max_tokens: maxTokensFor(snap.model), stream: true };
     // Anthropic prompt cache:system + tools 是每轮稳定重复的大块 → 标 cache_control 命中缓存(读 ~10% 价)。
-    // messages 动态变化不缓存。免费 4 断点,这里用 2 个(system + 末个 tool 覆盖整个 tools 数组)。
+    // messages 动态变化不缓存。免费 4 断点,这里用 3 个(system + 末个 tool 覆盖整个 tools 数组 + messages 末条)。
+    // messages 末条断点:历史前缀跨轮稳定(记忆块已后置到尾部)→ 上轮的 system+tools+全部历史
+    // 作为本轮前缀原样重现,断点命中后只有新增部分全价。2026-10-16 全库分析:命中率 18.3% 的主修复。
     const system = systemParts.join('\n');
     if (system) body.system = [{ type: 'text', text: system, cache_control: { type: 'ephemeral' } }];
     if (tools.length) {
       const tt = tools.map((t) => this.anthTool(t));
       tt[tt.length - 1].cache_control = { type: 'ephemeral' }; // 标在最后一个 tool → 整个 tools 数组进缓存
       body.tools = tt;
+    }
+    if (anth.length) {
+      const lastMsg = anth[anth.length - 1];
+      const lastBlocks = Array.isArray(lastMsg.content) ? lastMsg.content : null;
+      if (lastBlocks && lastBlocks.length) {
+        lastBlocks[lastBlocks.length - 1] = { ...lastBlocks[lastBlocks.length - 1], cache_control: { type: 'ephemeral' } };
+      } else if (typeof lastMsg.content === 'string' && lastMsg.content) {
+        lastMsg.content = [{ type: 'text', text: lastMsg.content, cache_control: { type: 'ephemeral' } }];
+      }
     }
 
     const resp = await fetchUntil200(`${snap.baseURL}/v1/messages`, {

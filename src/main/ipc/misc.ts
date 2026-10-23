@@ -79,6 +79,9 @@ export function register(): void {
     if (conv?.cwd) ensureWatcher(conv.cwd);
     return conv;
   });
+  // 清目标硬通道:绕过 sendCore(旧实现是发 '/goal' 聊天消息,loop 全速跑时 IPC 延迟数秒,
+  // 用户观感=点了没反应 2026-10-21)。任何状态立即清 goal + cancel,零 turn 落库。
+  ipcMain.handle('clear-goal', (_e, id: string) => { deps.taskManager().clearGoal(id); });
   ipcMain.handle('send', async (_e, id: string, text: string) => {
     // await + 异常包装:send 同步段(如 SQLite 写失败)抛出时 renderer 此前毫无感知,只进 unhandledRejection。
     // sendDetached:turn 入列即返回 —— 阻塞版要等 engine.run 整轮结束,renderer 的

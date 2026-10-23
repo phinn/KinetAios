@@ -136,6 +136,7 @@ export function initStore(): void {
     ['high_fidelity', 'INTEGER'], // deprecated: 旧列,保留做 migration 兼容(见 context_mode)
     ['context_mode', 'TEXT'],     // 上下文模式:standard(默认) / hifi(不截断+大预算) / 未来可扩展
     ['persona_enabled', 'INTEGER'], // 替身画像开关:1 = 注入(默认), 0 = 本会话关闭
+    ['loop_ralph', 'INTEGER'],    // V5 Ralph 自迭代开关:1 = 该会话 DirectV5 走 Ralph 循环(默认 0/NULL = 关)
     ['cross_project_memory', 'INTEGER'], // 跨项目记忆开关:1 = 全局检索, 0/NULL = 仅本会话(默认)
     ['updated_at', 'REAL'],       // 最后活动时间:每次 saveTurn / saveConversation 时更新。用于侧栏"按最近活动排序"
     ['sub_agent_model', 'TEXT'],  // 子 agent 模型(空 = 跟随主模型),每会话独立保存
@@ -173,6 +174,11 @@ export function initStore(): void {
     db.exec(`ALTER TABLE memories ADD COLUMN strikes INTEGER DEFAULT 0;`);
   if (!hasColumn('memories', 'struck_at'))
     db.exec(`ALTER TABLE memories ADD COLUMN struck_at REAL;`);
+  // lessons 层(2026-10,hindsight 启发): kind='lesson' 存「任务/工程教训」(踩坑复盘),
+  // 与 fact(用户事实)分流。scope_cwd = 教训适用的仓库根(绝对路径);
+  // NULL = 全局教训(任何项目可注入)。不进检索式召回池 —— 教训靠 cwd 匹配的常驻注入。
+  if (!hasColumn('memories', 'scope_cwd'))
+    db.exec(`ALTER TABLE memories ADD COLUMN scope_cwd TEXT;`);
   // P0: 初始化 Memory Blocks 默认值
   initMemoryBlocks();
 }
@@ -186,7 +192,8 @@ export function checkpointWal(): void {
 // Prepared statement 缓存:热路径函数(appendMessage/saveTurn 等)每次调用都 prepare,
 // 产生大量临时 Statement JS 对象 + GC 压力。缓存复用,避免内存抖动。
 const stmtCache = new Map<string, Database.Statement>();
-function stmt(sql: string): Database.Statement {
+/** 缓存式 prepare(web-companion 复用同一缓存,避免重复 prepare)。 */
+export function stmt(sql: string): Database.Statement {
   let s = stmtCache.get(sql);
   if (!s) { s = db.prepare(sql); stmtCache.set(sql, s); }
   return s;
@@ -292,6 +299,7 @@ type ConvRow = {
   high_fidelity: number;
   context_mode: string | null;
   persona_enabled: number | null;
+  loop_ralph: number | null;
   cross_project_memory: number | null;
   updated_at: number | null;
   sub_agent_model: string | null;
@@ -301,14 +309,14 @@ type ConvRow = {
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
        high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, persona_enabled=excluded.persona_enabled,
        updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key,
-       cross_project_memory=excluded.cross_project_memory;`,
+       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
@@ -317,6 +325,7 @@ export function saveConversation(c: Conversation): void {
     c.contextMode === 'hifi' ? 1 : 0,
     c.contextMode ?? 'standard',
     c.personaEnabled === false ? 0 : 1,
+    c.loopRalph === true ? 1 : 0,
     c.updatedAt ?? Date.now(),
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
@@ -566,7 +575,7 @@ export function loadConvTurns(convId: string): Turn[] {
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
-      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
   // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
@@ -636,6 +645,7 @@ export function loadConversations(): Conversation[] {
       profileId: r.profile_id ?? null,
       contextMode: r.context_mode === 'hifi' ? 'hifi' : (r.high_fidelity ? 'hifi' : 'standard'), // 优先读 context_mode,旧数据从 high_fidelity 迁移
       personaEnabled: r.persona_enabled === 0 ? false : true, // 0 = 显式关闭,其余(含 null/旧数据) = 默认开
+      loopRalph: r.loop_ralph === 1, // 1 = Ralph 自迭代拓扑开;NULL/0 = 关(默认,走普通单轮)
       crossProjectMemory: r.cross_project_memory === 1, // 1 = 开;NULL/0 = 关(每频道默认关)
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,
@@ -712,12 +722,12 @@ export function searchMemories(q: string, limit = 20, restrictConvId?: string): 
   if (restrictConvId) {
     return db.prepare(
       `SELECT id, content, conversation_id, importance FROM memories
-       WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
+       WHERE kind NOT IN ('rule', 'lesson') AND content LIKE ? ESCAPE '\\' AND (conversation_id IS NULL OR conversation_id = ?)
        ORDER BY importance DESC, created_at DESC LIMIT ?;`,
     ).all(like, restrictConvId, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
   }
   return db.prepare(
-    `SELECT id, content, conversation_id, importance FROM memories WHERE kind != 'rule' AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
+    `SELECT id, content, conversation_id, importance FROM memories WHERE kind NOT IN ('rule', 'lesson') AND content LIKE ? ESCAPE '\\' ORDER BY importance DESC, created_at DESC LIMIT ?;`,
   ).all(like, limit) as Array<{ id: string; content: string; conversation_id: string | null; importance: number }>;
 }
 
@@ -862,6 +872,120 @@ export function listRules(): RuleMemory[] {
 /** 违规计数 +1,进入热区。被用户纠正(「你又…」「我说过…」)时调用。 */
 export function strikeRule(id: string): void {
   db.prepare(`UPDATE memories SET strikes = COALESCE(strikes,0) + 1, struck_at = ? WHERE id = ?;`).run(Date.now(), id);
+}
+
+// ── lessons 层(2026-10,hindsight 启发)──
+// kind='lesson':任务/工程教训(踩坑→根因→对策),与 fact(关于用户的事实)分流。
+// 注入走 cwd 匹配的常驻小节,不进检索式召回池(教训必须确定性出现,不能被相关性挤掉)。
+
+/** 新增教训。scopeCwd = 适用仓库根(绝对路径),null = 全局。内容精确去重。 */
+export function addLesson(content: string, convId?: string, scopeCwd?: string | null, importance = 7): string {
+  const existing = db.prepare(`SELECT id FROM memories WHERE kind='lesson' AND content = ?;`).get(content) as { id: string } | undefined;
+  if (existing) return existing.id;
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2);
+  db.prepare(`INSERT INTO memories(id, content, created_at, conversation_id, importance, kind, scope_cwd)
+              VALUES(?,?,?,?,?, 'lesson', ?);`).run(
+    id, content, Date.now() / 1000, convId ?? null, Math.max(1, Math.min(10, importance)), scopeCwd ?? null,
+  );
+  return id;
+}
+
+export interface LessonMemory {
+  id: string;
+  content: string;
+  scopeCwd: string | null;
+  importance: number;
+  createdAt: number;
+}
+
+// ── memory-sync 导出/导入(2026-10-22,Git 仓库方案,见 memory-sync.ts 头注释)──
+
+/** memories 全量导出(含 lessons/rules,按时间升序,导出物稳定可 diff) */
+export function exportMemoryRows(): import('../shared/types').MemoryRow[] {
+  const rows = db.prepare(
+    `SELECT id, content, created_at, conversation_id, importance, kind, trigger_kw, strikes, struck_at, scope_cwd
+     FROM memories ORDER BY created_at ASC, id ASC;`,
+  ).all() as Array<Record<string, unknown>>;
+  return rows.map((r) => ({
+    id: String(r.id),
+    content: String(r.content ?? ''),
+    createdAt: Number(r.created_at ?? 0),
+    conversationId: (r.conversation_id as string | null) ?? null,
+    importance: Number(r.importance ?? 5),
+    kind: String(r.kind ?? 'fact'),
+    triggerKw: (r.trigger_kw as string | null) ?? null,
+    strikes: Number(r.strikes ?? 0),
+    struckAt: (r.struck_at as number | null) ?? null,
+    scopeCwd: (r.scope_cwd as string | null) ?? null,
+  }));
+}
+
+/** 按 id 幂等并入:存在即跳过(追加式事实流,内容以本地为准,不覆盖 strikes/struck_at 等本地状态) */
+export function importMemoryRows(rows: import('../shared/types').MemoryRow[]): number {
+  let added = 0;
+  const ins = db.prepare(
+    `INSERT OR IGNORE INTO memories(id, content, created_at, conversation_id, importance, kind, trigger_kw, strikes, struck_at, scope_cwd)
+     VALUES(?,?,?,?,?,?,?,?,?,?);`,
+  );
+  const tx = db.transaction((items: import('../shared/types').MemoryRow[]) => {
+    for (const r of items) {
+      const res = ins.run(r.id, r.content, r.createdAt, r.conversationId, r.importance,
+        r.kind, r.triggerKw, r.strikes, r.struckAt, r.scopeCwd);
+      if (res.changes > 0) added++;
+    }
+  });
+  tx(rows);
+  return added;
+}
+
+/** memory_blocks 全量(结构化常驻块,label→{content,updatedAt}) */
+export function exportMemoryBlocksData(): Array<{ label: string; content: string; updatedAt: number }> {
+  return db.prepare(`SELECT label, content, updated_at FROM memory_blocks ORDER BY label ASC;`)
+    .all() as Array<{ label: string; content: string; updatedAt: number }>;
+}
+
+/** memory-sync 的 MemoryStoreApi 工厂:字段名对齐 shared/types 的 MemoryRow/MemoryBlock 数据形状 */
+export function memoryStoreApi() {
+  return {
+    exportMemories: exportMemoryRows,
+    importMemories: importMemoryRows,
+    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    importBlock: (label: string, value: string, updatedAt: number): boolean => {
+      const cur = db.prepare(`SELECT updated_at FROM memory_blocks WHERE label = ?;`).get(label) as { updated_at: number } | undefined;
+      if (cur && cur.updated_at >= updatedAt) return false; // 本地不旧,不动
+      const r = updateMemoryBlock(label, value);
+      return r.ok;
+    },
+  };
+}
+
+/** lessons 按仓库分组(memories 里 kind='lesson',按 scope_cwd 聚合,NULL=全局) */
+export function exportLessonsGrouped(): Record<string, string[]> {
+  const rows = db.prepare(
+    `SELECT content, scope_cwd FROM memories WHERE kind='lesson'
+     ORDER BY importance DESC, created_at ASC;`,
+  ).all() as Array<{ content: string; scope_cwd: string | null }>;
+  const out: Record<string, string[]> = {};
+  for (const r of rows) {
+    const key = r.scope_cwd ?? '_global_';
+    (out[key] ??= []).push(r.content);
+  }
+  return out;
+}
+
+/**
+ * 对当前 cwd 生效的教训:scope_cwd 为 NULL(全局)或等于 cwd(仓库级)。
+ * 仓库级按 importance 优先 —— 同一仓库教训比全局教训更具体,先占注入位。
+ */
+export function loadLessons(cwd: string, limit = 12): LessonMemory[] {
+  const rows = db.prepare(
+    `SELECT id, content, scope_cwd, importance, created_at FROM memories
+     WHERE kind='lesson' AND (scope_cwd IS NULL OR scope_cwd = ?)
+     ORDER BY (scope_cwd IS NOT NULL) DESC, importance DESC, created_at DESC
+     LIMIT ?;`).all(cwd, limit) as Array<{
+    id: string; content: string; scope_cwd: string | null; importance: number; created_at: number;
+  }>;
+  return rows.map((r) => ({ id: r.id, content: r.content, scopeCwd: r.scope_cwd, importance: r.importance ?? 7, createdAt: r.created_at }));
 }
 
 /**
@@ -1156,8 +1280,13 @@ export function updateMemory(id: string, content: string): void {
   if (hasTable('memory_embeddings')) db.prepare('DELETE FROM memory_embeddings WHERE memory_id=?;').run(id);
 }
 
-export function deleteMemory(id: string): void {
-  // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
+/** 查记忆的 kind(lesson_manage 校验用)。不存在返回 null。 */
+export function getMemoryKind(id: string): string | null {
+  const r = db.prepare('SELECT kind FROM memories WHERE id=?;').get(id) as { kind: string | null } | undefined;
+  return r?.kind ?? null;
+}
+
+export function deleteMemory(id: string): void {  // 级联清理孤儿数据(embeddings + meta)——没有外键约束,手动删。
   // 事务保证原子性。
   db.transaction(() => {
     db.prepare('DELETE FROM memories WHERE id=?;').run(id);
@@ -1537,9 +1666,10 @@ export function scoredMemories(
   const halfLife = 30 * 86400_000; // 30 天(ms)
   const now = Date.now();
   // restrictConvId:只参与本会话产生的记忆 + 无归属的全局记忆(与 recall 注入的会话限制同规则)。
+  // rule / lesson 不进检索池:两者都是常驻注入(铁律区 / 项目教训区),检索命中只会重复占位。
   let mems = restrictConvId
-    ? loadMemories().filter((m) => m.conversation_id === null || m.conversation_id === restrictConvId)
-    : loadMemories();
+    ? loadMemories().filter((m) => (m.conversation_id === null || m.conversation_id === restrictConvId) && m.kind !== 'rule' && m.kind !== 'lesson')
+    : loadMemories().filter((m) => m.kind !== 'rule' && m.kind !== 'lesson');
   // onlyIds(2026-09):只在召回候选集内重排 —— 修前从全池选 top-N,importance 高但与当前
   // 无关的记忆(relevance=0)能挤掉真正相关的候选,检索式记忆名存实亡。
   if (onlyIds) mems = mems.filter((m) => onlyIds.has(m.id));

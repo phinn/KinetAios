@@ -324,6 +324,7 @@ const ZH_CN: Dict = {
   'composer.voiceChat': '语音对话',
   'composer.persona': '替身画像',
   'composer.xpmem': '跨项目记忆',
+  'composer.ralph': 'Ralph 循环',
 
   'model.title': '模型(Direct 引擎,每会话独立;回车应用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟随主模型)',
@@ -335,6 +336,7 @@ const ZH_CN: Dict = {
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身画像(开/关) — 开启后 AI 模仿你的做事风格',
   'xpmem.toggle': '跨项目记忆(开/关) — 关闭后本会话只检索自己的历史与记忆,不串其他会话',
+  'ralph.toggle': 'Ralph 自迭代循环(开/关) — 开启后 DirectV5 引擎在本会话启用任务级验收循环:验收不过会带反馈自动重试,直到通过或轮数熔断',
 
   'skill.title': '选择 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -1001,6 +1003,13 @@ const ZH_CN: Dict = {
 
   // ── 多机协作 (Mesh) ──
   'settings.mesh.title': '多机协作 (MCP Bridge)',
+  'settings.memsync.title': '记忆同步 (Git 仓库)',
+  'settings.memsync.desc': '把记忆导出为文本(lessons.md + facts.ndjson + blocks.json)同步到 Git 仓库,可推 GitHub/Gitee,实现跨设备共享。对话原文不上传。',
+  'settings.memsync.remote': '仓库地址',
+  'settings.memsync.branch': '分支',
+  'settings.memsync.auto': '自动同步(分钟,0=关)',
+  'settings.memsync.test': '测试连接',
+  'settings.memsync.run': '立即同步',
   'settings.mesh.desc': '把本机工具暴露给局域网内其它 KinetAios 节点,或连接远程节点作为工具使用。',
   'settings.mesh.localTitle': '本机 MCP Server',
   'settings.mesh.localDesc': '开启后允许其它机器通过 HTTP 调用你的工具(shell / 文件 / 网页等)',
@@ -1027,6 +1036,16 @@ const ZH_CN: Dict = {
   'settings.mesh.stopped': '已停止',
   'settings.mesh.noRemote': '暂无远程节点',
   'settings.mesh.delete': '删除',
+
+  // ── 手机伴侣(Web Companion):扫码接入 ──
+  'settings.webremote.title': '手机接入(扫码)',
+  'settings.webremote.desc': '在同一局域网内,用手机浏览器扫码访问:查看会话进度、继续对话、新建会话。Token 用于防止局域网内其他设备未授权访问。',
+  'settings.webremote.start': '启动并显示二维码',
+  'settings.webremote.showQr': '显示二维码',
+  'settings.webremote.needToken': '请先生成或填写 Token',
+  'settings.webremote.started': '✓ 已启动 :{port},手机扫码接入',
+  'settings.webremote.qrTitle': '手机扫码接入 KinetAios',
+  'settings.webremote.qrTip': '确保手机与电脑在同一局域网,用相机扫码打开',
 
   // ── 余额查询 ──
   'settings.balance.window5h': '5h窗口',
@@ -1297,6 +1316,7 @@ const ZH_CN: Dict = {
   'toast.warning': '警告',
   'toast.copied': '已复制到剪贴板',
   'toast.copyFailed': '复制失败',
+  'toast.copyEmpty': '没有可复制的内容',
   'ui.omitted': '内容过长,已省略 {n} 字符(复制按钮可取全文)',
   'ui.expandAll': '展开全文(还有 {n} 字符)',
   'ui.collapse': '收起',
@@ -1667,6 +1687,7 @@ const EN: Dict = {
   'composer.voiceChat': 'Voice chat',
   'composer.persona': 'Persona',
   'composer.xpmem': 'Cross-project memory',
+  'composer.ralph': 'Ralph loop',
 
   'model.title': 'Model (Direct engine, per-session; Enter to apply)',
   'model.subTitle': 'Sub-agent model (dispatch_agent / spawn_team; empty = follow main model)',
@@ -1678,6 +1699,7 @@ const EN: Dict = {
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'Persona (on/off) — AI mimics your working style when on',
   'xpmem.toggle': 'Cross-project memory (on/off) — when off, this session only searches its own history and memories',
+  'ralph.toggle': 'Ralph self-iteration loop (on/off) — when on, the DirectV5 engine enables task-level acceptance loops for this session: failed acceptance retries automatically with feedback until it passes or the loop budget trips',
 
   'skill.title': 'Pick a skill (Direct)',
   'skill.lbl': 'Skill',
@@ -2344,6 +2366,13 @@ const EN: Dict = {
 
   // ── Mesh ──
   'settings.mesh.title': 'Mesh (MCP Bridge)',
+  'settings.memsync.title': 'Memory Sync (Git repo)',
+  'settings.memsync.desc': 'Export memories as text (lessons.md + facts.ndjson + blocks.json) into a Git repo — GitHub/Gitee both work, for cross-device sharing. Conversation transcripts never leave this machine.',
+  'settings.memsync.remote': 'Repo URL',
+  'settings.memsync.branch': 'Branch',
+  'settings.memsync.auto': 'Auto sync (minutes, 0=off)',
+  'settings.memsync.test': 'Test connection',
+  'settings.memsync.run': 'Sync now',
   'settings.mesh.desc': 'Expose local tools to other KinetAios nodes on the LAN, or connect to remote nodes as tools.',
   'settings.mesh.localTitle': 'Local MCP Server',
   'settings.mesh.localDesc': 'Allow other machines to call your tools via HTTP (shell / files / web)',
@@ -2370,6 +2399,16 @@ const EN: Dict = {
   'settings.mesh.stopped': 'Stopped',
   'settings.mesh.noRemote': 'No remote nodes',
   'settings.mesh.delete': 'Delete',
+
+  // ── Web Companion (phone access via QR) ──
+  'settings.webremote.title': 'Phone access (QR code)',
+  'settings.webremote.desc': 'On the same LAN, scan the QR code with your phone browser: watch session progress, continue chats, or start new ones. The token prevents unauthorized access from other LAN devices.',
+  'settings.webremote.start': 'Start & show QR code',
+  'settings.webremote.showQr': 'Show QR code',
+  'settings.webremote.needToken': 'Generate or enter a token first',
+  'settings.webremote.started': '✓ Started on :{port} — scan with your phone',
+  'settings.webremote.qrTitle': 'Scan to open KinetAios on your phone',
+  'settings.webremote.qrTip': 'Make sure your phone is on the same LAN, then scan with the camera app',
 
   // ── Balance ──
   'settings.balance.window5h': '5h window',
@@ -2639,6 +2678,7 @@ const EN: Dict = {
   'toast.warning': 'Warning',
   'toast.copied': 'Copied to clipboard',
   'toast.copyFailed': 'Copy failed',
+  'toast.copyEmpty': 'Nothing to copy',
   'ui.omitted': 'Content too long — {n} characters omitted (copy button gets full text)',
   'ui.expandAll': 'Show full text ({n} more characters)',
   'ui.collapse': 'Collapse',
@@ -3004,6 +3044,7 @@ const ZH_TW: Dict = {
   'composer.voiceChat': '語音對話',
   'composer.persona': '替身畫像',
   'composer.xpmem': '跨專案記憶',
+  'composer.ralph': 'Ralph 循環',
 
   'model.title': '模型(Direct 引擎,每工作階段獨立;Enter 套用)',
   'model.subTitle': '子 Agent 模型(dispatch_agent / spawn_team 用;空 = 跟隨主模型)',
@@ -3015,6 +3056,7 @@ const ZH_TW: Dict = {
   'ctxMode.hifi': '高保真',
   'persona.toggle': '替身畫像(開/關) — 開啟後 AI 模仿你的做事風格',
   'xpmem.toggle': '跨專案記憶(開/關) — 關閉後本工作階段只檢索自己的歷史與記憶',
+  'ralph.toggle': 'Ralph 自迭代循環(開/關) — 開啟後 DirectV5 引擎在本工作階段啟用任務級驗收循環:驗收不過會帶回饋自動重試,直到通過或輪數熔斷',
 
   'skill.title': '選擇 Skill(Direct)',
   'skill.lbl': 'Skill',
@@ -3680,6 +3722,13 @@ const ZH_TW: Dict = {
   'preview.emptySub': '讓 AI「畫一個網頁 / 做 SVG 圖表 / 寫互動式元件」，結果會在這裡即時預覽',
 
   'settings.mesh.title': '多機協作 (MCP Bridge)',
+  'settings.memsync.title': '記憶同步 (Git 倉庫)',
+  'settings.memsync.desc': '把記憶導出為文字(lessons.md + facts.ndjson + blocks.json)同步到 Git 倉庫,可推 GitHub/Gitee,實現跨裝置共享。對話原文不上傳。',
+  'settings.memsync.remote': '倉庫地址',
+  'settings.memsync.branch': '分支',
+  'settings.memsync.auto': '自動同步(分鐘,0=關)',
+  'settings.memsync.test': '測試連線',
+  'settings.memsync.run': '立即同步',
   'settings.mesh.desc': '把本機工具暴露給區域網路內其它 KinetAios 節點，或連接遠端節點作為工具使用。',
   'settings.mesh.localTitle': '本機 MCP Server',
   'settings.mesh.localDesc': '開啟後允許其它機器透過 HTTP 呼叫你的工具（shell / 檔案 / 網頁等）',
@@ -3706,6 +3755,16 @@ const ZH_TW: Dict = {
   'settings.mesh.stopped': '已停止',
   'settings.mesh.noRemote': '暫無遠端節點',
   'settings.mesh.delete': '刪除',
+
+  // ── 手機伴侶(Web Companion):掃碼接入 ──
+  'settings.webremote.title': '手機接入(掃碼)',
+  'settings.webremote.desc': '在同一區域網路內,用手機瀏覽器掃碼存取:查看會話進度、繼續對話、新建會話。Token 用於防止區網內其他裝置未授權存取。',
+  'settings.webremote.start': '啟動並顯示 QR Code',
+  'settings.webremote.showQr': '顯示 QR Code',
+  'settings.webremote.needToken': '請先產生或填寫 Token',
+  'settings.webremote.started': '✓ 已啟動 :{port},手機掃碼接入',
+  'settings.webremote.qrTitle': '手機掃碼接入 KinetAios',
+  'settings.webremote.qrTip': '確保手機與電腦在同一區域網路,用相機掃碼開啟',
 
   // ── 餘額查詢 ──
   'settings.balance.window5h': '5h窗口',
@@ -3975,6 +4034,7 @@ const ZH_TW: Dict = {
   'toast.warning': '警告',
   'toast.copied': '已複製到剪貼簿',
   'toast.copyFailed': '複製失敗',
+  'toast.copyEmpty': '沒有可複製的內容',
   'ui.omitted': '內容過長,已省略 {n} 字元(複製按鈕可取全文)',
   'ui.expandAll': '展開全文(還有 {n} 字元)',
   'ui.collapse': '收合',
@@ -4350,6 +4410,7 @@ const JA: Dict = {
   'composer.voiceChat': '音声チャット',
   'composer.persona': 'ペルソナ',
   'composer.xpmem': 'プロジェクト横断メモリ',
+  'composer.ralph': 'Ralph ループ',
 
   'model.title': 'モデル(Direct エンジン、セッション単位、Enter で適用)',
   'model.subTitle': 'サブエージェントモデル(dispatch_agent / spawn_team 用、空 = メインモデルに追随)',
@@ -4361,6 +4422,7 @@ const JA: Dict = {
   'ctxMode.hifi': 'Hi-Fi',
   'persona.toggle': 'ペルソナ(オン/オフ) — オン時、AI があなたの作業スタイルを模倣',
   'xpmem.toggle': 'プロジェクト横断メモリ(オン/オフ) — オフ時、このセッションは自分の履歴とメモリのみ検索',
+  'ralph.toggle': 'Ralph 自己反復ループ(オン/オフ) — オン時、DirectV5 エンジンはこのセッションでタスク級検収ループを有効化:検収不合格ならフィードバック付きで自動再試行し、合格か最大試行回数で停止',
 
   'skill.title': 'Skill を選択(Direct)',
   'skill.lbl': 'Skill',
@@ -5038,6 +5100,13 @@ const JA: Dict = {
 
   // ── メッシュ (MCP Bridge) ──
   'settings.mesh.title': 'メッシュ (MCP Bridge)',
+  'settings.memsync.title': 'メモリ同期 (Git リポジトリ)',
+  'settings.memsync.desc': 'メモリをテキスト(lessons.md + facts.ndjson + blocks.json)として Git リポジトリへ同期。GitHub/Gitee 両対応、デバイス間共有を実現。会話本文は送信しません。',
+  'settings.memsync.remote': 'リポジトリ URL',
+  'settings.memsync.branch': 'ブランチ',
+  'settings.memsync.auto': '自動同期(分、0=オフ)',
+  'settings.memsync.test': '接続テスト',
+  'settings.memsync.run': '今すぐ同期',
   'settings.mesh.desc': 'ローカルツールを LAN 内の他の KinetAios ノードに公開、またはリモートノードをツールとして接続。',
   'settings.mesh.localTitle': 'ローカル MCP Server',
   'settings.mesh.localDesc': '有効化すると他のマシンが HTTP でツールを呼び出し可能（shell / ファイル / web）',
@@ -5064,6 +5133,16 @@ const JA: Dict = {
   'settings.mesh.stopped': '停止しました',
   'settings.mesh.noRemote': 'リモートノードなし',
   'settings.mesh.delete': '削除',
+
+  // ── スマホコンパニオン(QR コードで接続)──
+  'settings.webremote.title': 'スマホ接続(QR コード)',
+  'settings.webremote.desc': '同じ LAN 内でスマホのブラウザから QR コードをスキャン:セッション進捗の確認・会話の続き・新規セッション作成。トークンで LAN 内の未許可アクセスを防ぎます。',
+  'settings.webremote.start': '起動して QR コードを表示',
+  'settings.webremote.showQr': 'QR コードを表示',
+  'settings.webremote.needToken': '先にトークンを生成または入力してください',
+  'settings.webremote.started': '✓ 起動しました :{port} — スマホでスキャン',
+  'settings.webremote.qrTitle': 'スキャンしてスマホで KinetAios を開く',
+  'settings.webremote.qrTip': 'スマホと PC が同じ LAN にいることを確認し、カメラでスキャン',
 
   // ── 残高照会 ──
   'settings.balance.window5h': '5hウィンドウ',
@@ -5269,6 +5348,7 @@ const JA: Dict = {
   'toast.warning': '警告',
   'toast.copied': 'クリップボードにコピーしました',
   'toast.copyFailed': 'コピー失敗',
+  'toast.copyEmpty': 'コピーする内容がありません',
   'ui.omitted': '内容が長いため {n} 文字を省略しました(コピーボタンで全文取得)',
   'ui.expandAll': '全文を表示(残り {n} 文字)',
   'ui.collapse': '折りたたむ',

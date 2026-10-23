@@ -51,6 +51,9 @@ export class GeneRegistry {
   private ledgers = new Map<string, LineageLedger>();
   /** 配子库:成功死者留下的基因快照 */
   private gametes = new Map<string, Gamete>();
+  /** 疤痕库:lineage → 最近死亡归因(定向突变依据)。随 state.json 持久化 ——
+   *  修前在引擎层纯内存:死亡与替补出生之间 app 重启,疤痕丢失,定向突变退化成盲目克隆。 */
+  private scars = new Map<string, AttributionFacts>();
   private fossils: FossilRecord[] = [];
   /** 可执行化石模板(档②轨迹重放):成功轨迹的槽位化骨架,跨会话持久化 */
   private fossilTemplates = new Map<string, TraceTemplate>();
@@ -95,6 +98,7 @@ export class GeneRegistry {
       fitness: [...this.fitness.entries()],
       ledgers: [...this.ledgers.entries()],
       gametes: [...this.gametes.entries()],
+      scars: [...this.scars.entries()],
       seq: this.seq,
     };
     const f = path.join(this.dataDir, 'state.json');
@@ -109,14 +113,27 @@ export class GeneRegistry {
       if (!fs.existsSync(f)) return;
       const snap = JSON.parse(fs.readFileSync(f, 'utf8')) as {
         live: Genome[]; fitness: [string, FitnessRecord][];
-        ledgers: [string, LineageLedger][]; gametes: [string, Gamete][]; seq?: number;
+        ledgers: [string, LineageLedger][]; gametes: [string, Gamete][];
+        scars?: [string, AttributionFacts][]; seq?: number;
       };
       for (const g of snap.live) this.live.set(g.genomeId, g);
       for (const [k, v] of snap.fitness) this.fitness.set(k, v);
       for (const [k, v] of snap.ledgers) this.ledgers.set(k, v);
       for (const [k, v] of snap.gametes) this.gametes.set(k, v);
+      for (const [k, v] of snap.scars ?? []) this.scars.set(k, v);
       this.seq = snap.seq ?? 0;
     } catch { /* 损坏文件当作空种群:重新 founder,进化层自愈 */ }
+  }
+
+  // ── 疤痕库(引擎层的定向突变依据,随 state.json 跨进程持久)──
+  /** 记录某 lineage 的最近死亡归因(死亡即结算时调用)。同 lineage 新疤痕覆盖旧疤。 */
+  recordScar(lineage: string, facts: AttributionFacts): void {
+    this.scars.set(lineage, facts);
+    this.saveState();
+  }
+  /** 取疤痕(替补出生时定突变方向);无痕返回 null。 */
+  scarOf(lineage: string): AttributionFacts | null {
+    return this.scars.get(lineage) ?? null;
   }
 
   // ── 出生 ──

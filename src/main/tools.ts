@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
+import { grepToolOutput } from './tool-spill';
 import crypto from 'node:crypto';
 
 // 原子写:同目录 tmp 文件 + rename 替换。直接 writeFileSync 覆盖在写一半崩溃/断电时会留下
@@ -61,6 +62,7 @@ import { getSettings } from './settings';
 import { privacyGate } from './privacy-gate';
 import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
+import { checkAgentPolicy } from './agent-policy';
 import { compactHistory } from './AgentLoop';
 
 // Sanitize error messages before returning to the LLM — strip absolute paths and stack traces
@@ -182,6 +184,13 @@ export type SpawnScopeConfig =
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
+  // DedupeGuard:turn 级工具调用去重状态(runAgentLoop 生命周期内创建/持有,跨 turn 不复用)。
+  // key = toolName + 规范化参数;value = { count, lastResult }。由 AgentLoop 内部读写,引擎/工具不碰。
+  // 离线调用(烟囱/工具直跑)可不传 → 守卫关闭。
+  dedupe?: {
+    window: Map<string, { count: number; lastResult: string; lastStep: number }>;
+    step: number; // 单调递增调用序号(跨 batch 累计)
+  };
   spawn?: (a: {
     prompt: string;
     signal: AbortSignal;
@@ -360,8 +369,14 @@ const shell: Tool = {
     // git 跨仓库写操作守卫:先于用户 confirm 弹出,消息里带两个仓库路径,用户自己判断放不放行。
     const violation = gitCrossRepoViolation(cmd, ctx.cwd);
     if (violation) return `🚫 已拦截 — ${violation}`;
+    // 声明式策略(2026-10 P2,OpenShell 式最小版):仓库根/用户级 agent.policy.json 静态闸。
+    // deny 直接拒不弹窗;ask 强制确认(消息标注来源规则)。文件不存在 = 零开销旁路。
+    const pv = checkAgentPolicy(cmd, ctx.cwd);
+    if (pv.action === 'deny') {
+      return `🚫 已被 agent.policy.json 拦截 — ${pv.reason ?? '命中 deny 规则'}(规则文件: ${pv.source})`;
+    }
     const finalCmd = enforceBackgroundOpen(cmd);
-    const ok = await ctx.confirm(finalCmd);
+    const ok = await ctx.confirm(pv.action === 'ask' ? `⚠️ 策略要求确认(${pv.reason ?? '命中 ask 规则'}):\n${finalCmd}` : finalCmd);
     if (!ok) return `❌ 用户拒绝执行: ${finalCmd}`;
     // 焦点守卫:命令若抢了前台(启动 app/panel/simctl 等),执行完自动把前台还给用户
     // 长任务豁免:xcodebuild/burst/boot 等待/系统安装类命令天然 300s+,120s 硬杀会制造
@@ -1486,6 +1501,40 @@ const grep: Tool = {
   },
 };
 
+// grep_tool_output:回捞「工具输出溢出落盘」的历史全文(context-mode 式,2026-10)。
+// 主 agent 截断超长工具输出时会全文落盘并在结果尾部给出文件名,本工具按文件名/全文检索。
+// 只读、只搜 userData/tool-outputs/,不碰工作区;无 convId(极老会话/理论路径)时降级为"无落盘"。
+const grepToolOutputTool: Tool = {
+  name: 'grep_tool_output',
+  readOnly: true,
+  description: '回捞历史工具输出全文(此前因超长被截断、全文已落盘的那部分)。默认搜当前会话的落盘文件;pattern 为正则。刚执行的超长工具(shell/read_file/web_fetch 等)结果尾部若提示「全文已落盘」,用本工具按正则取回中段,不必重跑命令。',
+  parameters: {
+    type: 'object',
+    properties: {
+      pattern: { type: 'string', description: '正则表达式(大小写不敏感)' },
+      file: { type: 'string', description: '可选:只搜这一个落盘文件名(如 1729-01.txt);不传搜全会话' },
+      context: { type: 'number', description: '可选:每个命中附带前后 N 行(默认 2,上限 15)' },
+      maxHits: { type: 'number', description: '可选:最多返回命中数(默认 30,上限 200)' },
+    },
+    required: ['pattern'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId) return '本会话无 ID(异常状态),无法回捞落盘输出。';
+    const pattern = String(args.pattern ?? '');
+    let re: RegExp;
+    try {
+      re = new RegExp(pattern, 'i');
+    } catch {
+      return `非法正则: ${pattern}`;
+    }
+    const context = Math.max(0, Math.min(15, Number(args.context ?? 2)));
+    const maxHits = Math.max(1, Math.min(200, Number(args.maxHits ?? 30)));
+    const fileFilter = args.file ? String(args.file) : undefined;
+    const hits = grepToolOutput(ctx.convId, pattern, { context, maxHits, file: fileFilter });
+    return hits || `无匹配「${pattern}」(本会话可能没有落盘的超长工具输出,或该词不在被截断的中段)`;
+  },
+};
+
 const glob: Tool = {
   name: 'glob',
   readOnly: true,
@@ -1894,6 +1943,56 @@ const memoryAppend: Tool = {
     } catch (e) {
       return `memory_append 失败: ${(e as Error)?.message ?? e}`;
     }
+  },
+};
+
+// lesson_manage(2026-10 P1):教训自维护 —— 发现注入的教训过时/写错/环境已变时修正或删除。
+// 教训是"环境属性"常驻注入,错教训每轮都在污染上下文,必须给模型自清理通道(不能只靠人肉开 SQLite)。
+const lessonManage: Tool = {
+  name: 'lesson_manage',
+  description:
+    '管理「项目教训」(📒 注入区的踩坑教训)。action=list 列出对当前仓库生效的全部教训(含 id);\n' +
+    'action=forget 按 id 删除一条已过时/已失效的教训(如:坑已在新版本修复、教训描述的环境已不存在);\n' +
+    'action=revise 按 id 改写教训内容(保持 ≤40 字,写清场景+做法+原因)。\n' +
+    '只在确认教训确实过时或错误时才删,不要为了"省上下文"删除仍然有效的教训。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['list', 'forget', 'revise'], description: 'list=列出;forget=删除;revise=改写' },
+      id: { type: 'string', description: 'forget/revise 必填:教训 id(list 输出里的)' },
+      content: { type: 'string', description: 'revise 必填:新的教训内容' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    const act = String(args.action ?? 'list');
+    const cwd = ctx.cwd ?? '';
+    if (act === 'list') {
+      const lessons = cwd ? store.loadLessons(cwd, 50) : store.loadLessons(process.cwd(), 50);
+      if (!lessons.length) return '(当前仓库无生效教训)';
+      return lessons
+        .map((l) => `${l.id} | ${l.scopeCwd ? '仓库级' : '全局'} | importance=${l.importance} | ${new Date(l.createdAt * 1000).toISOString().slice(0, 10)} | ${l.content}`)
+        .join('\n');
+    }
+    const id = String(args.id ?? '').trim();
+    if (!id) return 'forget/revise 需要 id(先 action=list 查看)';
+    if (act === 'forget') {
+      // 删前校验:只允许动 lesson 类;不存在直接报(不静默假成功)
+      const target = store.getMemoryKind(id);
+      if (target === null) return `id ${id} 不存在`;
+      if (target !== 'lesson') return `id ${id} 不是教训(${target}),拒绝删除 —— fact/rule 走 memory 管理或设置页`;
+      store.deleteMemory(id);
+      return `✅ 已删除教训 ${id}`;
+    }
+    if (act === 'revise') {
+      const content = String(args.content ?? '').trim();
+      if (!content) return 'revise 需要 content';
+      const target = store.getMemoryKind(id);
+      if (target !== 'lesson') return `id ${id} 不是教训或不存在`;
+      store.updateMemory(id, content);
+      return `✅ 已改写教训 ${id}: ${content}`;
+    }
+    return `未知 action: ${act}`;
   },
 };
 
@@ -3248,7 +3347,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -3273,7 +3372,7 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  return [readFile, grep, glob, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  return [readFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。

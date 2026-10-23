@@ -13,13 +13,17 @@ export type LineageId = string;
 /** 基因组版本:签名函数或 schema 变更时递增,旧基因不迁移,分桶存。 */
 export const GENOME_SCHEMA_VERSION = 1 as const;
 
-/** 断言类型 DSL:全是确定性检查,不经 LLM 之手(防幻觉遗传的第一道闸)。 */
+/** 断言类型 DSL:全是确定性检查,不经 LLM 之手(防幻觉遗传的第一道闸)。
+ *  两层共用:①基因断言(每步工具输出,express 后随 body) ②Ralph 任务验收(整轮交付物,
+ *  ralph-accept)。file_* 三个类型只有验收层用(基因断言不碰磁盘——每步读盘成本不可控)。 */
 export type AssertionDsl =
   | { type: 'exit_code_eq'; value: number }          // 前置:上一工具是 shell
   | { type: 'regex_contains'; pattern: string }      // 对最后工具输出
   | { type: 'output_not_empty' }                     // 最后工具输出非空
   | { type: 'line_count_gt'; value: number }         // 最后工具输出行数
-  | { type: 'file_exists'; path: string };           // 工作目录内相对路径
+  | { type: 'file_exists'; path: string }            // 验收层:cwd 内相对/绝对路径
+  | { type: 'regex_file_contains'; path: string; pattern: string }        // 验收层:文件内容
+  | { type: 'file_line_count_gt'; path: string; value: number };          // 验收层:文件行数
 
 /** 断言基因位:门级免疫系统,只删不增不自由变异(见 DESIGN_NOTE.md 防 Goodhart)。 */
 export interface AssertionGene {

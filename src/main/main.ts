@@ -18,7 +18,8 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from './store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
+import { startMemorySyncAuto } from './memory-sync';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -38,6 +39,7 @@ import { currentProvider } from './glm';
 import { listSkills, readSkillSource, saveSkillSource } from './skills';
 import { mcp } from './mcp';
 import { localMcpServer } from './mcp-server';
+import { webCompanionServer } from './web-companion';
 import { allTools } from './tools';
 import { killAgentChrome } from './cdp';
 import { binEnv } from './engines';
@@ -255,6 +257,43 @@ function safeSend(win: BrowserWindow | null, channel: string, data: unknown): vo
 // Broadcast slimming: oversized convs are sent head-only; renderer lazy-loads turns.
 const IPC_TURNS_CHAR_LIMIT = 600_000; // ~600KB 字符 ≈ 1.2MB UTF-16
 
+// ── 运行态广播合并器的状态(见 emitConversation 注释)──
+const convBroadcastPending = new Map<string, Conversation>();
+let convBroadcastTimer: NodeJS.Timeout | null = null;
+
+/** 原样发送一个 conversation 广播(瘦身逻辑不变),合并器与立即路径共用。 */
+function sendConversationNow(conv: Conversation): void {
+  // turnCount 归一化:turnCount 只在启动加载时由 SQL 聚合写入,运行期 push 新 turn
+  // 从不更新 → 广播里 turnCount 恒为旧值,renderer 侧按 turnCount 判断"有新 turn"
+  // 的合并逻辑永远不触发(用户消息不上屏)。turns 在内存时以真实长度为准,单一出口覆盖
+  // send/goal/failTurn/delete 所有路径。
+  if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
+  // directHistory(Direct 会话完整 LLM 消息,MB 级)永不进广播 —— 2026-08 卡死事故的
+  // 同族载荷,turns 修了它漏了。上下文检查器走 get-conversation-context 按需拉;
+  // renderer 只在引擎切换确认处读 .length,[] 语义足够。
+  let payload: Conversation = { ...conv, directHistory: [] };
+  if (conv.turnsLoaded !== false) {
+    // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
+    // traj 计入权重:快照分级配额后单 turn 可达 256K 字符,漏计会让 600K
+    // 降级闸门失灵(2026-08 卡死事故同族载荷,直发 history 时已修过一次)。
+    let weight = 0;
+    for (const t of conv.turns) {
+      weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
+      if (t.steps) for (const s of t.steps) {
+        weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
+      }
+      if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
+    }
+    if (weight > IPC_TURNS_CHAR_LIMIT) {
+      const last = conv.turns[conv.turns.length - 1];
+      payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
+    }
+  }
+  safeSend(dashboardWin, 'conversation', payload);
+  safeSend(quickWin, 'conversation', payload);
+  safeSend(arenaWin, 'conversation', payload);
+}
+
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
     safeSend(dashboardWin, 'agent-event', { convId, ev });
@@ -262,38 +301,35 @@ const emitter: TaskManagerEmitter = {
     safeSend(arenaWin, 'agent-event', { convId, ev });
   },
   // Broadcast slimming: see IPC_TURNS_CHAR_LIMIT above.
+  // ── 运行态广播合并(2026-10-21 界面卡死事故)──
+  // goal 循环一轮内 statusNote/turn 变更连发多次 emitConversation,每次都是
+  // MB 级 structured clone × 3 窗口;renderer 侧每个广播都触发 侧栏刷新 + rAF
+  // 增量渲染。多循环并发时渲染层被重建任务塞满,点击/聚焦落在"按下与抬起之间
+  // 节点被换掉"的目标上 → 界面卡死、输入框光标进不去(AX 树实测元素数在
+  // 983↔255 间翻转)。节流阀:status==='running' 的广播按 conv 合并,200ms
+  // 尾沿只发最新快照;终态/空闲(ready)立即发 —— 用户可见的状态切换不延迟,
+  // 循环轮边界的 ready 也不受影响(轮频低,本就不是洪峰)。
+  // / Coalesce running-state broadcasts per conv (200ms trailing edge).
+  // Terminal/idle (ready) states flush immediately. The 2026-10-21 wedge was
+  // caused by render-side churn at event frequency, not round frequency.
   emitConversation(conv: Conversation) {
-    // turnCount 归一化:turnCount 只在启动加载时由 SQL 聚合写入,运行期 push 新 turn
-    // 从不更新 → 广播里 turnCount 恒为旧值,renderer 侧按 turnCount 判断"有新 turn"
-    // 的合并逻辑永远不触发(用户消息不上屏)。turns 在内存时以真实长度为准,单一出口覆盖
-    // send/goal/failTurn/delete 所有路径。
-    // Normalize turnCount here: it's only seeded from SQL at load; keep it in sync
-    // with in-memory turns so consumers can trust it on every broadcast.
-    if (conv.turnsLoaded !== false) conv.turnCount = conv.turns.length;
-    // directHistory(Direct 会话完整 LLM 消息,MB 级)永不进广播 —— 2026-08 卡死事故的
-    // 同族载荷,turns 修了它漏了。上下文检查器走 get-conversation-context 按需拉;
-    // renderer 只在引擎切换确认处读 .length,[] 语义足够。
-    let payload: Conversation = { ...conv, directHistory: [] };
-    if (conv.turnsLoaded !== false) {
-      // 估重不打日志、不 stringify —— 只遍历字符串 length,O(n) 且零拷贝。
-      // traj 计入权重:快照分级配额后单 turn 可达 256K 字符,漏计会让 600K
-      // 降级闸门失灵(2026-08 卡死事故同族载荷,直发 history 时已修过一次)。
-      let weight = 0;
-      for (const t of conv.turns) {
-        weight += (t.prompt?.length ?? 0) + (t.answer?.length ?? 0);
-        if (t.steps) for (const s of t.steps) {
-          weight += (s.args?.length ?? 0) + (s.result?.length ?? 0) + 64;
-        }
-        if (t.traj) for (const r of t.traj) weight += r.text.length + 48;
-      }
-      if (weight > IPC_TURNS_CHAR_LIMIT) {
-        const last = conv.turns[conv.turns.length - 1];
-        payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
-      }
+    if (conv.status !== 'running') {
+      // 终态立即发,并撤销该 conv 的待发合并快照(本条已是最新)。
+      convBroadcastPending.delete(conv.id);
+      sendConversationNow(conv);
+      return;
     }
-    safeSend(dashboardWin, 'conversation', payload);
-    safeSend(quickWin, 'conversation', payload);
-    safeSend(arenaWin, 'conversation', payload);
+    // 存引用不拷贝:flush 时读到的就是最新字段(turns 数组是同一引用)。
+    // 会话中途被删也无害:renderer 的 removedConvs 守卫会拒收迟到广播。
+    convBroadcastPending.set(conv.id, conv);
+    if (!convBroadcastTimer) {
+      convBroadcastTimer = setTimeout(() => {
+        convBroadcastTimer = null;
+        const pending = [...convBroadcastPending.values()];
+        convBroadcastPending.clear();
+        for (const c of pending) sendConversationNow(c);
+      }, 200);
+    }
   },
   emitRemoved(convId) {
     notifyLastAt.delete(convId); // P1: 会话删除即清,防 Map 无限累积
@@ -438,6 +474,18 @@ function createDashboard(): BrowserWindow {
         }
       }, 1000);
     }
+  });
+  // renderer console 黑匣子(2026-10-21):init 阶段的 TypeError 在渲染进程里被吞,
+  // 主进程侧只见"按钮无反应"零痕迹 —— console-message 落盘后,重启实例即可查
+  // renderer 报错原文+行号,不用再盲猜。Renderer console persisted for post-mortem.
+  win.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
+    if (!message.includes('Uncaught') && !message.includes('Error') && !message.includes('error')) return;
+    try {
+      const fs = require('fs') as typeof import('fs');
+      const f = require('path').join(app.getPath('userData'), 'renderer-console.log');
+      if (fs.existsSync(f) && fs.statSync(f).size > 5 * 1024 * 1024) fs.renameSync(f, `${f}.old`);
+      fs.appendFileSync(f, `[${new Date().toISOString()}] ${message} @${sourceId}:${line}\n`);
+    } catch { /* ignore */ }
   });
   // 卡死黑匣子:unresponsive 触发时 1)记录日志 2)sample 抓 renderer 全线程栈到
   // unresponsive-sample.txt(macOS)/ pslist(Windows)3)10s 后若恢复记 responsive。
@@ -1215,6 +1263,17 @@ if (!gotLock) {
     // 心跳恢复即复位标记:每次卡死episode都有自己的标题行(旧版只写第一次,后续卡死无标题难定位)。
     ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); freezeReported = false; });
     setInterval(() => {
+      // 窗口隐藏/最小化/被完全遮挡时,Chromium 会节流 renderer 的定时器(1s 心跳
+      // 退化成分钟级)——停摆是节流不是卡死,取证只会抓到空闲栈污染日志(2026-10-22
+      // 深夜 23:08/23:24 两次"冻结"即此误报)。跳过检测并刷新 lastBeat,避免回
+      // 前台瞬间用积压的静默误触发。
+      // / Hidden/minimized/occluded windows get their timers throttled — silence
+      // is throttling, not a freeze. Skip and reset so refocusing can't misfire.
+      const w = dashboardWin;
+      if (!w || w.isDestroyed() || !w.isVisible() || w.isMinimized()) {
+        lastBeat = Date.now();
+        return;
+      }
       const silent = Date.now() - lastBeat;
       if (silent < 5000 || sampling) return;
       if (!freezeReported) {
@@ -1299,6 +1358,12 @@ if (!gotLock) {
       }
     });
     initStore();
+    // 记忆 Git 同步:挂自动 tick(每分钟查,autoSyncMinutes>0 且配置了 remote 才跑)
+    startMemorySyncAuto(
+      () => getSettings().memorySync,
+      app.getPath('userData'),
+      memoryStoreApi(),
+    );
     taskManager = new TaskManager(emitter);
     taskManager.load();
     // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。
@@ -1387,6 +1452,12 @@ if (!gotLock) {
         localMcpServer.setToken(s.localMcpServer.token || '');
         localMcpServer.start(s.localMcpServer.port, s.localMcpServer.token || '').catch((e) => {
           console.warn('[mcp-server] 自启动失败:', e.message);
+        });
+      }
+      // 手机伴侣:settings 开启 + token 非空才自启(token 空则跳过,等用户在设置里生成)。
+      if (s.webRemote?.enabled && s.webRemote?.token) {
+        webCompanionServer.start(s.webRemote.port, s.webRemote.token).catch((e) => {
+          console.warn('[web-companion] 自启动失败:', e.message);
         });
       }
     }

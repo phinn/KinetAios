@@ -4,7 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
+import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -212,6 +212,22 @@ function applyI18nDOM(): void {
   // 只有 #input 的 drop 真正接收文件(见 wireUi)。
   document.addEventListener('dragover', (e) => e.preventDefault());
   document.addEventListener('drop', (e) => e.preventDefault());
+
+  // 后台降载:窗口失焦/被遮挡时冻结合成器动画 + 卸掉常驻玻璃模糊(styles.css 的
+  // html.anim-paused 规则)。Chromium 只节流后台 rAF,不节流 CSS 合成器动画 ——
+  // goal 脉冲/直播点/光标闪烁在无人看时仍逐帧合成,GPU 进程常驻 10–30% CPU,
+  // 且每帧重算 backdrop-filter 模糊把 WindowServer 顶满(全机 UI 卡)。回焦即恢复。
+  // / Background shedding: freeze compositor animations and drop always-on glass
+  // blur while unfocused/occluded. Chromium throttles background rAF but NOT
+  // compositor CSS animations — pulses/cursor-blink keep submitting frames nobody
+  // watches, pinning the GPU process and dragging WindowServer (system-wide jank).
+  const setAnimPaused = (paused: boolean): void => {
+    document.documentElement.classList.toggle('anim-paused', paused);
+  };
+  window.addEventListener('blur', () => setAnimPaused(true));
+  window.addEventListener('focus', () => setAnimPaused(false));
+  document.addEventListener('visibilitychange', () => setAnimPaused(document.hidden));
+  if (document.hidden) setAnimPaused(true);
 
   // 临时诊断:按 F8 打印 #input 布局链所有元素的实际渲染尺寸
   // Temp diagnostic: press F8 to dump #input layout chain dimensions
@@ -436,7 +452,15 @@ function applyI18nDOM(): void {
         // Hold mode → anchor to the topmost visible turn so the re-render
         // (which changes content height via markdown re-parse) restores the same view.
         if (!userAtBottom) captureScrollAnchor();
-        renderMain();
+        // 2026-10-21 界面卡死修复:goal 循环每轮 done/error 都全量 renderMain
+        // (30 turn × markdown 重建),轮间间隔只有几秒 → 渲染层被重建任务连续
+        // 塞满,点击/聚焦作废(体感:卡死、输入框光标进不去)。改走增量路径:
+        // 只就地替换最后一个 turn(终态 markdown + 取消标记),内部在找不到
+        // streaming 元素时自动回退全量 renderMain —— 非循环场景语义不变。
+        // / Goal loops fire done/error every few seconds; a full renderMain per
+        // round wedged the renderer. Replace only the last turn in place; falls
+        // back to renderMain() when no streaming element exists.
+        updateLastTurnIncremental();
         // 后台会话完成标记:不是当前正在看的会话 → 侧栏加小圆点提示
         if (convId !== selectedId) { bgDoneConvs.add(convId); renderSidebar(); }
         // 消息排队:回合结束自动发出队列里的下一条
@@ -598,14 +622,28 @@ function closeAllCtxMenus(): void {
 // 全量重建仍保留给结构性变化(增删会话/搜索/排序),走 renderSidebar()。
 // Incremental sidebar update: patch dot class + meta text in place instead
 // of rebuilding the whole list on every agent event.
+// 侧栏全量重建的合并器(500ms 尾沿):refreshSidebarLi 的兜底路径(li 不在 DOM
+// —— 折叠组/筛选中)以前每个广播都同步全量 renderSidebar + 重排,运行中的会话
+// 在折叠组里 = 每个事件一次 94 项重建(2026-10-21 卡死的放大器之一)。
+// / Coalesce full sidebar rebuilds (500ms trailing). The !li fallback used to
+// rebuild the whole list per broadcast when the conv sat in a collapsed group.
+let sidebarRenderTimer: ReturnType<typeof setTimeout> | null = null;
+function scheduleSidebarRender(): void {
+  if (sidebarRenderTimer) return;
+  sidebarRenderTimer = setTimeout(() => {
+    sidebarRenderTimer = null;
+    renderSidebar();
+  }, 500);
+}
+
 function refreshSidebarLi(convId: string): void {
   const c = convs.get(convId);
   if (!c) return;
   const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
-  if (!li) { renderSidebar(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 兜底全量
-  // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,直接走全量重渲
+  if (!li) { scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
+  // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,走合并的全量重渲
   const projLi = li.closest('li.sb-proj') as HTMLElement | null;
-  if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { renderSidebar(); return; }
+  if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { scheduleSidebarRender(); return; }
   const last = c.turns[c.turns.length - 1];
   const dot = li.querySelector('.dot');
   if (dot) {
@@ -692,7 +730,12 @@ function taskFingerprint(id: string): string {
   return [
     id === selectedId ? 1 : 0,
     c.customTitle ?? '', c.firstPrompt ?? '', c.turns[0]?.prompt ?? '',
-    c.status, c.turnCount ?? c.turns.length, c.updatedAt ?? c.createdAt,
+    // updatedAt 量化到分钟:persist 每个事件都 bump updatedAt(秒级),原样进指纹
+    // 会让运行中会话在每次 renderSidebar 都重建 li 节点(AX/DOM 抖动源)。时间
+    // 显示 fmtRelative 本就是分钟粒度,量化后每分钟至多重建一次。
+    // / Quantize updatedAt to minutes: persist bumps it per event, and the raw
+    // value forced an li rebuild on every renderSidebar for running convs.
+    c.status, c.turnCount ?? c.turns.length, Math.floor((c.updatedAt ?? c.createdAt) / 60_000),
     // statusNote 纳入指纹:运行中状态行文本变化 → li 重建(拿最新的 sb-live 行)。
     // 有 refreshSidebarLi 增量路径兜底,这里只是全量渲染时保证不是陈旧文本。
     c.statusNote ?? '',
@@ -2429,7 +2472,7 @@ function ensureElapsedTicker(): void {
 
 // 上下文 gauge 文案:✍ 3.2K / 1M · 0.3%(超 10% 才显示百分比,避免永远 0.x% 噪声)
 function ctxGaugeText(conv: Conversation): string {
-  const tok = `${(conv.ctxTokens! / 1000).toFixed(1)}K`;
+  const tok = fmtTok(conv.ctxTokens!);
   const max = conv.ctxMax ? ` / ${(conv.ctxMax / 1_000_000).toFixed(conv.ctxMax >= 1_000_000 ? 0 : 1).replace(/\.0$/, '')}M` : '';
   const pct = conv.ctxPct != null && conv.ctxPct >= 10 ? ` · ${conv.ctxPct}%` : '';
   return `✍ ${tok}${max}${pct}`;
@@ -2570,6 +2613,9 @@ function renderHead(conv: Conversation | undefined) {
   // 跨项目记忆 toggle:同步高亮。=== true = 开(默认关)。
   const cmXpmem = document.getElementById('cm-xpmem');
   if (cmXpmem) cmXpmem.classList.toggle('active', conv.crossProjectMemory === true);
+  // Ralph 循环 toggle:同步高亮。=== true = 开(默认关)。
+  const cmRalph = document.getElementById('cm-ralph');
+  if (cmRalph) cmRalph.classList.toggle('active', conv.loopRalph === true);
 }
 
 // Rebuild the engine dropdown from the toggle. Direct is always present; Claude/Codex only when
@@ -2748,7 +2794,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (t.error) {
       const e = document.createElement('div');
       // maxTurns 可续跑(发"继续"即可接上)→ amber 警示而非红色报错;其余保持红色
-      e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '');
+      // cancelled = 用户主动停止,是正常操作不是错误 → 中性样式 + ⏵ 续跑,不显示重试
+      e.className = 'err' + (t.errorKind === 'maxTurns' ? ' warn' : '') + (t.errorKind === 'cancelled' ? ' cancelled' : '');
       e.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px;margin-right:4px"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>' + esc(t.error);
       // contextTooLong:重试无用(裁剪到最小集仍超窗)→ 给真正的解法入口,不给误导性的重试
       if (t.errorKind === 'contextTooLong') {
@@ -2769,16 +2816,10 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       }
       // ↻ 重试:原样重发(attachments 已编进 prompt 文本,主进程幂等解析图片标记)
       // 瞬时错误(退避重试耗尽):按钮文案区分,提示"重试通常能过",降低"要改 prompt"的误判
-      const retry = document.createElement('button');
-      retry.className = 'ghost retry-btn';
-      retry.textContent = '↻ ' + (t.errorKind === 'transient' ? tr('turn.retryTransient') : tr('turn.retry'));
-      retry.onclick = () => {
-        if (conv.status === 'running' || !t.prompt.trim()) return;
-        scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
-        void api.send(conv.id, t.prompt);
-      };
+      // cancelled:用户主动停止 ≠ 出错 → 不给「重试」(没有错误可重试),Direct 家族仍有 ⏵ 断点续跑
       // ⏵ 继续(断点续打):Direct 家族中断/失败后,directHistory 保留了已完成的 Partial 产物,
       // 发一条续做指令让模型从断点接上 — 区别于「重试」的原样重做。
+      // 注意在 cancelled 守卫之外:用户主动停止的 turn,续跑就是主操作。
       const isDirectFam = conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4' || conv.engine === 'directV5';
       if (isDirectFam && t.done) {
         const cont = document.createElement('button');
@@ -2792,6 +2833,16 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         };
         e.appendChild(cont);
       }
+      // ↻ 重试 / 切换配置档:仅真实错误给(cancelled 不是错误,无需重试入口)
+      if (t.errorKind !== 'cancelled') {
+        const retry = document.createElement('button');
+        retry.className = 'ghost retry-btn';
+        retry.textContent = '↻ ' + (t.errorKind === 'transient' ? tr('turn.retryTransient') : tr('turn.retry'));
+        retry.onclick = () => {
+          if (conv.status === 'running' || !t.prompt.trim()) return;
+          scrollFrozen = false; viewMode = 'follow'; userAtBottom = true;
+          void api.send(conv.id, t.prompt);
+        };
       // quota/auth 类错误 → 「切换配置档并重试」:按 goal failover 链轮转,一键完成切换+重发
       const errText = t.error.toLowerCase();
       if (/quota|429|余额|balance|欠费|unauthorized|401|403|invalid.{0,8}key|api.?key|认证/.test(errText)) {
@@ -2817,6 +2868,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
         e.appendChild(sw);
       }
       e.appendChild(retry);
+      }
       body.appendChild(e);
     }
     // turn 级右键菜单:复制 / 重试(失败时) / 从此处分叉
@@ -3823,6 +3875,10 @@ function updateLastTurnIncremental(): void {
   if (turnEl.classList.contains('streaming') && (t.done || conv.status !== 'running')) {
     const turnsEl = document.getElementById('turns')!;
     turnsEl.replaceChild(renderTurn(conv, lastTurnIdx), turnEl);
+    // 终态 markdown 重排会改变内容高度:底部跟随者贴底,hold/冻结不滚
+    // (scrollDown 内部自带模式判断)。/ Final markdown re-parse changes height:
+    // re-stick followers to bottom; hold/frozen untouched (scrollDown guards).
+    if (userAtBottom && !scrollFrozen) scrollDown();
     return;
   }
   // steps 增量更新:只 append 新增的 step(按序号对齐),不再全量重建子树。
@@ -4571,7 +4627,7 @@ function updateStreamRate(): void {
   while (streamTokenTimes.length && now - streamTokenTimes[0] > 5000) streamTokenTimes.shift();
   const span = streamTokenTimes.length ? (now - streamTokenTimes[0]) / 1000 : 0;
   const rate = span > 0.2 ? streamTokenTimes.length / span : 0;
-  const totalStr = streamTokenTotal > 1000 ? (streamTokenTotal / 1000).toFixed(1) + 'k' : String(streamTokenTotal);
+  const totalStr = fmtTok(streamTokenTotal);
   el.innerHTML = rate > 0 ? `${ICON.bolt} ${rate.toFixed(1)} tok/s · ${totalStr} tok` : `${SVGI_SET.pauseCircle(11)} ${totalStr} tok`;
 }
 
@@ -4890,8 +4946,16 @@ function streamMetaText(conv: Conversation): string {
 }
 
 // turn 页脚 token 展示:输入/输出分开(↑in ↓out);旧数据无拆分(两者皆 0)时回退总数。
+// token 计数统一格式化:1,234 → 1.2k;1,459,300 → 14.6M(自动进位,修「↑14593.5k」溢出)。
+// toFixed(1) 去尾零(.0),保证 900→900 / 1200→1.2k / 1500000→1.5M 全区间紧凑。
+export function fmtTok(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+  if (n >= 1000) return `${(n / 1000).toFixed(1).replace(/\.0$/, '')}k`;
+  return String(n);
+}
+
 function tokSplitLabel(tokensIn: number, tokensOut: number, total: number): string {
-  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const fmt = fmtTok;
   if (tokensIn > 0 || tokensOut > 0) return `↑${fmt(tokensIn)} ↓${fmt(tokensOut)}`;
   return `${fmt(total)} tok`;
 }
@@ -4918,7 +4982,7 @@ function closeTokenBreakdown(): void {
 async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTMLElement): Promise<void> {
   if (tokPopEl) { closeTokenBreakdown(); return; } // 已开着 → 点同处关闭
   closeTokenBreakdown();
-  const fmt = (n: number): string => (n > 1000 ? (n / 1000).toFixed(1) + 'k' : String(n));
+  const fmt = fmtTok;
   const pop = document.createElement('div');
   pop.className = 'tok-pop';
   pop.innerHTML = `<div class="tok-pop-head">Token 明细 <span class="bp-dim">${escHtml(turnId.slice(0, 8))}</span></div><div class="tok-pop-body"><div class="mm-empty">加载中…</div></div>`;
@@ -5725,8 +5789,7 @@ async function showSettings() {
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
-        <h3>${ICON.link} ${tr('settings.mesh.title')}</h3>
-        <div class="field-desc">${tr('settings.mesh.desc')}</div>
+        <h3>${ICON.link} ${tr('settings.mesh.title')}</h3>        <div class="field-desc">${tr('settings.mesh.desc')}</div>
 
         <!-- 本机 MCP Server -->
         <div class="s-sub-panel">
@@ -5752,6 +5815,27 @@ async function showSettings() {
           </div>
         </div>
 
+        <!-- 手机伴侣:二维码扫码接入 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.webremote.title')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.webremote.desc')}</div>
+          <div style="display:grid;grid-template-columns:auto 1fr;gap:8px 10px;align-items:center;margin:8px 0 0 46px">
+            <label class="field-desc" style="margin:0">${tr('settings.mesh.port')}</label>
+            <input id="s-wr-port" type="number" value="${s.webRemote?.port ?? 18110}" style="width:100px" />
+            <label class="field-desc" style="margin:0">Token</label>
+            <div style="display:flex;gap:8px;align-items:center">
+              <input id="s-wr-token" type="password" value="${esc(s.webRemote?.token ?? '')}" placeholder="${tr('settings.mesh.tokenPh')}" style="flex:1" />
+              <button id="s-wr-gentoken" class="btn-sm" title="${tr('settings.mesh.genToken')}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="3"/><circle cx="8" cy="8" r="1.2"/><circle cx="16" cy="8" r="1.2"/><circle cx="8" cy="16" r="1.2"/><circle cx="16" cy="16" r="1.2"/><circle cx="12" cy="12" r="1.2"/></svg></button>
+            </div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;margin:10px 0 0 46px">
+            <button id="s-wr-start" class="primary btn-sm">${tr('settings.webremote.start')}</button>
+            <button id="s-wr-stop" class="btn-sm">${tr('settings.mesh.stop')}</button>
+            <button id="s-wr-qr" class="btn-sm" style="display:none">${tr('settings.webremote.showQr')}</button>
+            <span class="test-msg" id="s-wr-msg"></span>
+          </div>
+        </div>
+
         <!-- 远程节点 -->
         <div class="s-sub-panel">
           <div class="s-sub-panel-title">${tr('settings.mesh.remoteTitle')}</div>
@@ -5763,6 +5847,25 @@ async function showSettings() {
             <input id="s-remote-token" type="password" placeholder="token" />
             <button id="s-remote-add" class="btn-sm">${tr('settings.mesh.remoteAdd')}</button>
           </div>
+        </div>
+
+        <!-- 记忆 Git 同步 -->
+        <div class="s-sub-panel">
+          <div class="s-sub-panel-title">${tr('settings.memsync.title')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.memsync.desc')}</div>
+          <div style="display:grid;grid-template-columns:120px 1fr auto;gap:8px;align-items:center">
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.remote')}</span>
+            <input id="s-memsync-remote" placeholder="https://gitee.com/user/kinet-memory.git" />
+            <button id="s-memsync-test" class="btn-sm">${tr('settings.memsync.test')}</button>
+          </div>
+          <div style="display:grid;grid-template-columns:120px 1fr;gap:8px;align-items:center;margin-top:8px">
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.branch')}</span>
+            <input id="s-memsync-branch" placeholder="main" style="max-width:140px" />
+            <span style="color:var(--muted);font-size:12px">${tr('settings.memsync.auto')}</span>
+            <input id="s-memsync-auto" type="number" min="0" style="max-width:90px" />
+            <button id="s-memsync-run" class="btn-sm">${tr('settings.memsync.run')}</button>
+          </div>
+          <div id="s-memsync-status" style="margin-top:8px;font-size:12px;color:var(--muted);white-space:pre-wrap;max-height:160px;overflow:auto"></div>
         </div>
       </div>
       </div><!-- /mesh panel -->
@@ -5913,6 +6016,61 @@ async function showSettings() {
     (document.getElementById('s-mcp-token') as HTMLInputElement).value = token;
   };
 
+  // ── 手机伴侣:token 生成 / 启停 / 二维码弹层 ──
+  // QR 弹层用原生 <dialog>: 居中 + 遮罩,点背景关。
+  document.getElementById('s-wr-gentoken')!.onclick = () => {
+    const buf = new Uint8Array(24);
+    crypto.getRandomValues(buf);
+    const token = Array.from(buf, (b) => b.toString(16).padStart(2, '0')).join('');
+    (document.getElementById('s-wr-token') as HTMLInputElement).value = token;
+  };
+  let wrQrSvg = ''; // 最近一次启动返回的二维码(「显示二维码」复用,免重复起服务)
+  document.getElementById('s-wr-start')!.onclick = async () => {
+    const port = Number((document.getElementById('s-wr-port') as HTMLInputElement).value) || 18110;
+    const token = (document.getElementById('s-wr-token') as HTMLInputElement).value.trim();
+    const msg = document.getElementById('s-wr-msg')!;
+    if (!token) {
+      msg.textContent = tr('settings.webremote.needToken');
+      msg.style.color = 'var(--danger)';
+      return;
+    }
+    const r = await api.webRemoteStart(port, token);
+    if (r.ok && r.qrSvg) {
+      wrQrSvg = r.qrSvg;
+      msg.innerHTML = esc(tr('settings.webremote.started', { port }));
+      msg.style.color = 'var(--ok)';
+      (document.getElementById('s-wr-qr') as HTMLElement).style.display = '';
+      showQrModal(r.qrSvg);
+    } else {
+      msg.innerHTML = `${sv.xCircle} ${esc(r.error ?? '')}`;
+      msg.style.color = 'var(--danger)';
+    }
+  };
+  document.getElementById('s-wr-stop')!.onclick = async () => {
+    await api.webRemoteStop();
+    const msg = document.getElementById('s-wr-msg')!;
+    msg.textContent = tr('settings.mesh.stopped');
+    msg.style.color = 'var(--muted)';
+    (document.getElementById('s-wr-qr') as HTMLElement).style.display = 'none';
+  };
+  document.getElementById('s-wr-qr')!.onclick = () => { if (wrQrSvg) showQrModal(wrQrSvg); };
+  function showQrModal(svg: string): void {
+    document.getElementById('wr-qr-modal')?.remove();
+    const dlg = document.createElement('div');
+    dlg.id = 'wr-qr-modal';
+    dlg.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;align-items:center;justify-content:center';
+    // 白底卡片:二维码深色模块在浅色背景上对比度最高,扫码成功率最好。
+    dlg.innerHTML = `<div style="background:#fff;border-radius:14px;padding:22px 22px 14px;max-width:340px;text-align:center">
+      <div style="color:#111;font-size:14px;font-weight:600;margin-bottom:10px">${esc(tr('settings.webremote.qrTitle'))}</div>
+      <div style="width:240px;height:240px;margin:0 auto">${svg}</div>
+      <div style="color:#555;font-size:12px;margin-top:10px;word-break:break-all">${esc(tr('settings.webremote.qrTip'))}</div>
+      <button id="wr-qr-close" class="btn-sm" style="margin-top:12px">${esc(tr('common.close'))}</button>
+    </div>`;
+    document.body.appendChild(dlg);
+    dlg.onclick = (e) => { if (e.target === dlg) dlg.remove(); };
+    (dlg.querySelector('#wr-qr-close') as HTMLElement).onclick = () => dlg.remove();
+  }
+
   // ── 替身画像(Persona)──
   await initPersonaTab(s.persona ?? '');
 
@@ -6038,6 +6196,32 @@ async function showSettings() {
     (document.getElementById('s-remote-token') as HTMLInputElement).value = '';
     renderRemoteList();
   };
+
+  // ── 记忆 Git 同步:回显 + 测试连接 + 立即同步(2026-10-22)──
+  const msRemote = document.getElementById('s-memsync-remote') as HTMLInputElement | null;
+  if (msRemote) {
+    const ms = lastSettingsSnapshot?.memorySync ?? { remote: '', branch: 'main', autoSyncMinutes: 0 };
+    msRemote.value = ms.remote ?? '';
+    (document.getElementById('s-memsync-branch') as HTMLInputElement).value = ms.branch || 'main';
+    (document.getElementById('s-memsync-auto') as HTMLInputElement).value = String(ms.autoSyncMinutes ?? 0);
+    const statusEl = document.getElementById('s-memsync-status')!;
+    const fmt = (r: { ok: boolean; error?: string; detail?: string; steps?: MemorySyncResult['steps'] }) =>
+      (r.ok ? '✓' : '✗') + ' ' + (r.error ?? r.detail ?? '') + '\n' + (r.steps ?? []).map((s) => `[${s.step}] ${s.detail}`).join('\n');
+    document.getElementById('s-memsync-test')!.onclick = async () => {
+      statusEl.textContent = '…';
+      const r = await api.memorySyncTest({
+        remote: msRemote.value.trim(),
+        branch: (document.getElementById('s-memsync-branch') as HTMLInputElement).value.trim() || 'main',
+        autoSyncMinutes: 0,
+      });
+      statusEl.textContent = fmt(r);
+    };
+    document.getElementById('s-memsync-run')!.onclick = async () => {
+      statusEl.textContent = '…';
+      const r = await api.memorySyncRun();
+      statusEl.textContent = fmt(r);
+    };
+  }
   document.getElementById('s-mcp-start')!.onclick = async () => {
     const port = Number((document.getElementById('s-mcp-port') as HTMLInputElement).value) || 18109;
     const token = (document.getElementById('s-mcp-token') as HTMLInputElement).value;
@@ -6890,10 +7074,20 @@ function readSettingsForm(): AppSettings {
       port: Number((document.getElementById('s-mcp-port') as HTMLInputElement).value) || 18109,
       token: (document.getElementById('s-mcp-token') as HTMLInputElement).value,
     },
+    webRemote: {
+      enabled: Boolean((document.getElementById('s-wr-enabled') as HTMLInputElement)?.checked),
+      port: Number((document.getElementById('s-wr-port') as HTMLInputElement)?.value) || 18110,
+      token: (document.getElementById('s-wr-token') as HTMLInputElement)?.value ?? '',
+    },
     remoteMcpServers: remoteMcpServersCache,
     disabledPlugins: disabledPluginsCache,
     // v3.1: 插件引擎设置不经设置表单(插件卡片自己管),原样透传最近快照。
     pluginSettings: lastSettingsSnapshot?.pluginSettings ?? {},
+    memorySync: {
+      remote: (document.getElementById('s-memsync-remote') as HTMLInputElement)?.value.trim() ?? '',
+      branch: (document.getElementById('s-memsync-branch') as HTMLInputElement)?.value.trim() || 'main',
+      autoSyncMinutes: Math.max(0, parseInt((document.getElementById('s-memsync-auto') as HTMLInputElement)?.value ?? '0', 10) || 0),
+    },
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
     // Goal 监工参数(goal tab):链缓存由 renderGoalChain 的增删维护,保存时写回。
@@ -7622,8 +7816,19 @@ function closeMoreMenu() {
       xpmemBtn.classList.toggle('active', newEnabled);
     };
   }
+  // Ralph 循环 toggle:true = DirectV5 会话走 Ralph 自迭代拓扑(默认关)。
+  const ralphBtn = document.getElementById('cm-ralph');
+  if (ralphBtn) {
+    ralphBtn.onclick = () => {
+      if (!selectedId) return;
+      const conv = convs.get(selectedId);
+      const newEnabled = !(conv?.loopRalph === true);
+      void api.setLoopRalph(selectedId, newEnabled);
+      ralphBtn.classList.toggle('active', newEnabled);
+    };
+  }
   // 清除目标:发送 /goal(无参数)清除
-  document.getElementById('btn-goal-clear')!.onclick = () => selectedId && void api.send(selectedId, '/goal');
+  document.getElementById('btn-goal-clear')!.onclick = () => { const id = selectedId; if (id) void api.clearGoal(id); };
   document.getElementById('btn-del')!.onclick = () => selectedId && void deleteConv(selectedId);
   document.getElementById('btn-ctx-inspector')!.onclick = () => selectedId && void openCtxInspector(selectedId);
   document.getElementById('ctx-insp-close')!.onclick = closeCtxInspector;
@@ -8939,6 +9144,14 @@ function createPcmWorkletUrl(): string {
 // 复制文本到剪贴板,带短暂"已复制"反馈
 // Electron contextIsolation 下 navigator.clipboard 经常静默失效 → 走 IPC 主进程 clipboard 模块
 async function copyText(text: string, btn?: HTMLElement): Promise<void> {
+  // 空串防线(2026-10-21):clipboard.writeText('') 在 macOS 上"成功"返回但剪贴板等于被清空
+  // —— 用户看到按钮变 ✓ / 以为复制了,⌘V 却什么都没有(实踩报障:「复制了但剪切板没有内容」)。
+  // 空串来源:出错轮/流式未产出时复制 t.answer ?? ''、纯图片消息清掉 \x00IMAGES 块后为空、
+  // 流式中代码块 textContent 尚未渲染。空 = 什么都不写 + 明确报错,绝不假装成功。
+  if (!text || !text.trim()) {
+    uxToast.err(tr('toast.copyEmpty'));
+    return;
+  }
   let ok = false;
   // 路径 1:IPC → 主进程 Electron clipboard(最可靠)
   try {
@@ -8967,6 +9180,9 @@ async function copyText(text: string, btn?: HTMLElement): Promise<void> {
     btn.innerHTML = SVGI_SET.checkCircle();
     setTimeout(() => { btn.innerHTML = orig; }, 1200);
   }
+  // 成功也给轻反馈:修前只有按钮 ✓(右键菜单/无 btn 调用点完全没有反馈),失败则静默
+  if (ok) uxToast.ok(tr('toast.copied'));
+  else uxToast.err(tr('toast.copyFailed'));
 }
 
 function speakText(text: string): void {

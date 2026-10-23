@@ -453,8 +453,9 @@ export class DirectV2Engine implements Engine {
       rulesSection +
       (rulesBlock ?? '') +
       (contextBlock ?? '') +
-      pluginSystemPrompts('directV2', prompt) +
-      codemodePromptSection(tools);
+      // ⚡ cache 冻结分区:plugin(依赖当前 prompt,动态)放 codemode 大段之后,同 v1。
+      codemodePromptSection(tools) +
+      pluginSystemPrompts('directV2', prompt);
 
     // ── 构建 ToolCtx ──
     const ctx: ToolCtx = this.buildCtx(conv, snap, signal, onEvent);
@@ -1275,9 +1276,12 @@ ${failedDetail || '  (无)'}
 
   private buildCtx(conv: Conversation, snap: ReturnType<typeof snapshot>, signal: AbortSignal, onEvent: (e: AgentEvent) => void): ToolCtx {
     const provider = currentProvider(snap);
+    // Turn 级 DedupeGuard 状态:每 turn 新建 → 跨 turn 零污染(mega-turn 循环重复调用拦截)
+    const dedupeState = { step: 0, window: new Map<string, { count: number; lastResult: string; lastStep: number }>() };
     return {
       cwd: conv.cwd,
       confirm: this.confirm,
+      dedupe: dedupeState,
       signal,
       convId: conv.id,
       channel: conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined, // 来源通道:send_file 工具门控用

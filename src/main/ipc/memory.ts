@@ -266,4 +266,22 @@ export function register(): void {
     }
   });
 
+  // ── memory-sync Git 仓库同步(2026-10-22)──
+  const { memorySyncRun, memorySyncTest } = require('../memory-sync') as typeof import('../memory-sync');
+  ipcMain.handle('memory-sync-run', async (_e, cfg?: import('../../shared/types').MemorySyncSettings) => {
+    try {
+      if (!cfg?.remote?.trim()) return { ok: false, error: '未配置仓库地址', exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
+      return await memorySyncRun(cfg);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e), exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
+    }
+  });
+  ipcMain.handle('memory-sync-test', async (_e, cfg?: import('../../shared/types').MemorySyncSettings) => {
+    try {
+      if (!cfg?.remote?.trim()) return { ok: false, error: '未配置仓库地址' };
+      return await memorySyncTest(cfg);
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
 }

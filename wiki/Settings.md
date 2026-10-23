@@ -57,6 +57,16 @@ i18n internals: [[i18n]].
 
 Good for machine migration, backup, sharing across providers. See [[Long-Term-Memory]].
 
+## Memory Git-repo sync (v4.0.2+)
+
+Memory as code: long-term memories are exported as text views and synced to a git repo (gitee / GitHub both work) for two-machine sync and cross-device migration.
+
+- **Local SQLite stays the source of truth**; exports are text views: `lessons.md` (project lessons, grouped by repo) + `facts.ndjson` (all memories) + `blocks.json` (persistent memory blocks).
+- **Privacy tiers**: L0 lessons in plaintext, L1 facts/blocks, L2 conversation history **never leaves the machine** (never exported).
+- **Bidirectional & idempotent**: pull before push; remote entries merge back (memories upsert by id, lessons deduped, blocks LWW by updated_at).
+- Credentials reuse the system `git credential` (just push to the repo once yourself); configure remote + branch + optional auto-sync interval in Settings.
+- Settings → Long-term memory → "Git sync"; includes a connectivity test (clone/pull dry-run).
+
 ## Skills (v3.7.2+)
 
 The Skills tab aggregates every skill / command / agent from all sources — Claude Code, Codex, plugin-contributed, and the app's own **built-in skills** (read-only, shipped with the app; the first one, `data-analysis`, ports the V3 analysis discipline). Search, view, and edit user-level source files directly; plugin/built-in skills are read-only. Changes take effect immediately. See [[Skills]].

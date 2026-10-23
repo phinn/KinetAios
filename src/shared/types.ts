@@ -319,6 +319,9 @@ export type AppSettings = {
   // ── 多机协作:本机 MCP Server 配置(把自己暴露为远程工具节点)──
   // 开启后,局域网内其它机器可通过 SSE transport 连接,调用本机工具(shell / read_file / web_fetch 等)。
   localMcpServer: { enabled: boolean; port: number; token: string };
+  // ── 手机伴侣:局域网 HTTP server + 二维码扫码接入(手机浏览器看会话/继续对话)──
+  // token 复用 MCP 的安全思路:必须非空才能启动,空 token = 任何局域网设备都能操控本机 Agent。
+  webRemote: { enabled: boolean; port: number; token: string };
   // ── 多机协作:远程 MCP Server 列表(把别的 KinetAios 节点当工具用)──
   remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
   // ── 插件管理:被禁用的插件 name 列表(空 = 全部启用) ──
@@ -326,6 +329,10 @@ export type AppSettings = {
   // ── 插件引擎设置(v3.1):用户在插件卡片填的占位符值 { pluginName: { key: value } } ──
   // 引擎注册时对 bin/args/cwdFlags/systemFlag 做 {key} 插值;{cwd} 保留给运行时。
   pluginSettings: Record<string, Record<string, string>>;
+  // ── 记忆 Git 仓库同步(2026-10-22)── remote 空 = 未启用;
+  // gitee/github 皆可(就是个 git remote,凭证走系统 git credential);
+  // 同步内容:lessons.md + facts.ndjson + blocks.json(对话原文不出本地,隐私分级 L2)。
+  memorySync: { remote: string; branch: string; autoSyncMinutes: number };
   // ── 语音实时输入(Web Speech API)── 开启后语音按钮切到实时模式:
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
@@ -584,7 +591,7 @@ export type Turn = {
   cacheCreation?: number;
   pinned?: boolean; // 用户锁定此 turn → compact 时永远保留(不被摘要压缩)
   /** 失败原因分类(来自 AgentEvent.error.kind):renderer 据此区分展示 — maxTurns 可续跑(amber 警示而非红色报错)。 */
-  errorKind?: 'maxTurns' | 'transient' | 'contextTooLong';
+  errorKind?: 'maxTurns' | 'transient' | 'contextTooLong' | 'cancelled';
   // 本 turn 在 directHistory 中的消息区间起点(send 时记录)。
   // pinTurn 由此把 turn 级锁定映射到消息级 _pinned 标记(trim/compact 保护读的是消息标记)。
   // 旧数据/压缩重排后无此值或失配 → applyPin 拒绝标记并说明原因,不会假装生效。
@@ -761,6 +768,41 @@ export type EpisodicMemoryData = {
 // ── 会话导出 ──
 export type ExportFormat = 'markdown' | 'html' | 'json';
 
+// ── 记忆 Git 仓库同步(memory-sync,2026-10-22)──
+/** 同步设置:存 AppSettings,remote 空 = 未启用 */
+export type MemorySyncSettings = {
+  remote: string; // git 仓库地址(https/ssh,gitee/github 皆可)
+  branch: string; // 默认 main
+  autoSyncMinutes: number; // 0 = 关闭自动同步;>0 = 每 N 分钟一次
+};
+
+export type MemorySyncStepLog = { step: string; detail: string; at: string };
+
+/** memories 表行(store ↔ memory-sync 共用,列对齐 memories 全部 10 列) */
+export type MemoryRow = {
+  id: string;
+  content: string;
+  createdAt: number; // created_at,秒
+  conversationId: string | null;
+  importance: number;
+  kind: string; // fact | rule | lesson | preference
+  triggerKw: string | null;
+  strikes: number;
+  struckAt: number | null;
+  scopeCwd: string | null;
+};
+
+/** 一次同步的结果:ok=整体成功;steps 是逐步日志(UI 展示用) */
+export type MemorySyncResult = {
+  ok: boolean;
+  error?: string;
+  exported: number; // 本次导出的 memories 条数
+  imported: number; // 从远端并回的新增条数
+  commits: number;
+  pushed: boolean;
+  steps: MemorySyncStepLog[];
+};
+
 // ── Arena Diff 对比 ──
 export type ArenaDiffResult = {
   leftEngine: EngineKind;
@@ -810,6 +852,10 @@ export type Conversation = {
   /** 跨引擎切换时自动生成的上下文摘要(让新引擎知道之前做了什么)。
    *  首次 run 后消费并清除。null = 无待注入摘要。 */
   crossEngineContext?: string | null;
+  /** Ralph 自迭代拓扑(仅 DirectV5 引擎消费;2026-10)。true = 单轮 run 外面再包一层
+   *  任务级验收循环:验收断言不过 → 结构化反馈重进,直到通过或轮数熔断。
+   *  基因断言(after_each_tool)与 Ralph 验收不同层:前者拦每步,后者裁整轮交付物。 */
+  loopRalph?: boolean;
   /** 企信会话映射 key(格式: `wecom:${userid}`)。
    *  非空 = 该会话由企信机器人创建,用于按用户复用会话避免每条消息新建频道。 */
   wecomKey?: string | null;
@@ -878,6 +924,8 @@ export interface KinetAPI {
   /** 从某条 turn 处分叉出新会话(复制该 turn 及之前的历史,原会话不动) */
   forkConversation(sourceId: string, uptoTurnId: string): Promise<Conversation | null>;
   send(id: string, text: string): Promise<boolean>;
+  /** 硬清除会话目标:不走 send/turn 链,任何状态立即生效(goal 条 ✕ 专用)。 */
+  clearGoal(id: string): Promise<void>;
   cancel(id: string): Promise<boolean>;
   /** 用户打断(Steer):运行中会话原地转向,文本注入引擎下一轮上下文。仅 Direct 系引擎支持。 */
   interrupt(id: string, text: string): Promise<boolean>;
@@ -925,6 +973,11 @@ export interface KinetAPI {
   startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;
   stopMcpServer(): Promise<{ ok: boolean }>;
   mcpServerStatus(): Promise<{ running: boolean; port: number; url: string }>;
+  // ── 手机伴侣:启动/停止 + 生成接入二维码(SVG,内含 http://ip:port/?token=xxx)──
+  // 手机扫码或浏览器打开 URL → 局域网内查看会话 / 继续对话 / 新建会话。
+  webRemoteStart(port: number, token: string): Promise<{ ok: boolean; error?: string; qrSvg?: string; url?: string }>;
+  webRemoteStop(): Promise<{ ok: boolean }>;
+  webRemoteStatus(): Promise<{ running: boolean; port: number; urls: string[] }>;
   // ── 多机协作:远程节点信息 + 远程任务调用 ──
   listRemoteNodes(): Promise<Array<{ name: string; url?: string; online: boolean; toolCount: number }>>;
   callRemoteAgent(serverName: string, prompt: string): Promise<string>;
@@ -1016,6 +1069,10 @@ export interface KinetAPI {
   memoryTimeline(): Promise<{ ok: boolean; items?: MemoryWithMeta[]; error?: string }>;
   memoryDecay(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
+  /** memory-sync:导出 SQLite 记忆 → git 仓库 commit+push;远端新条目并回本地 */
+  memorySyncRun(): Promise<MemorySyncResult>;
+  /** memory-sync:连通性测试(clone/pull dry-run) */
+  memorySyncTest(cfg: MemorySyncSettings): Promise<{ ok: boolean; error?: string; detail?: string }>;
   // ── P0: Memory Blocks(结构化核心记忆)──
   memoryBlocksList(): Promise<{ ok: boolean; blocks?: MemoryBlockData[]; error?: string }>;
   memoryBlockUpdate(label: string, value: string): Promise<{ ok: boolean; error?: string; droppedTail?: number; stored?: number }>;
@@ -1098,6 +1155,8 @@ export interface KinetAPI {
   savePersona(persona: string): Promise<{ ok: boolean; error?: string }>;
   /** 设置会话级替身画像开关 */
   setPersonaEnabled(convId: string, enabled: boolean): Promise<boolean>;
+  /** 设置会话级 Ralph 自迭代开关(true = DirectV5 走 Ralph 循环拓扑) */
+  setLoopRalph(convId: string, enabled: boolean): Promise<boolean>;
   onAgentEvent(cb: (convId: string, ev: AgentEvent) => void): void;
   // ── 后台 Job ──
   listJobs(convId?: string): Promise<JobInfo[]>;
@@ -1275,10 +1334,14 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
       // 多次 runAgentLoop(v2 planner/executor/replan)各自快照 → 拼接保留全程轨迹。
       // 总量护栏:实测 977 个 turn 的 traj 占 83MB,长任务多轮快照拼接会滚雪球。
       // 超限保留「最早的 system/context + 最新的全部」——透视价值集中在新轨迹。
-      const merged = [...(t.traj ?? []), ...ev.records];
-      t.traj = merged.length <= TRAJ_MAX_RECORDS
-        ? merged
-        : [...merged.slice(0, 4), ...merged.slice(merged.length - TRAJ_MAX_RECORDS + 4)];
+      // 修 2026-10-20 卡顿(心跳停摆 15 份样本):原实现每轮 API 调用都
+      // [...(t.traj??[]), ...ev.records] 全量复制 200 条×16K(单 turn 实测 272KB traj/
+      // 1.4MB turn JSON),主进程+renderer 每事件各跑一遍,renderer 心跳被堵到 30s+。
+      // 改 O(1) 原地 push + 滑窗:预算内直接 push;超限一次性 shift 到窗口,不再整份复制。
+      if (!t.traj) t.traj = [];
+      for (const r of ev.records) t.traj.push(r);
+      const overflow = t.traj.length - TRAJ_MAX_RECORDS;
+      if (overflow > 0) t.traj.splice(4, overflow); // 保留最早 4 条锚点,挤掉锚点后最旧一批
       break;
     }
     case 'todo':

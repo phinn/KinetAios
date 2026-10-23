@@ -221,8 +221,79 @@ export function loadPluginCommandBody(name: string): { body: string; dir: string
 
 // ponytail: 同步加载 + 进程级缓存。require() 自带 require.cache, 二次调用零成本。
 // 失败兜底: 任一插件炸了不影响其它, 记到 error 字段让 UI 露出来。
+
+// ── marketplace.json(2026-10 P2, 抄 paperclip 插件市场契约)──
+// name 是插件的不变身份: 目录名/settings 引用/引擎 id(plugin:<name>)全部锚定它。
+// 插件改名时旧 name 必须 retire 而非复用 —— 否则旧目录残留会把两个不同插件混成一条记录。
+// renames 表让 loader 自动迁移存量引用(disabledPlugins / pluginEngineSettings),
+// 用户无感升级;市场侧展示「曾用名」防新装目录撞旧名。
+interface Marketplace {
+  name: string;           // 当前名(不变身份)
+  retired?: string[];     // 永久退役名(曾用名,不许任何新插件再用)
+  renames?: Array<{ from: string; to: string; at: string }>; // 迁移记录(Loader 用来修存量引用)
+}
+function marketplaceFile(): string {
+  return path.join(app.getPath('userData'), 'plugins', 'marketplace.json');
+}
+function loadMarketplace(): Marketplace {
+  try {
+    const m = JSON.parse(fs.readFileSync(marketplaceFile(), 'utf8')) as Marketplace;
+    if (m && typeof m === 'object' && m.name) return { name: m.name, retired: m.retired ?? [], renames: m.renames ?? [] };
+  } catch { /* 无文件/坏 JSON = 空市场 */ }
+  return { name: '', retired: [], renames: [] };
+}
+/**
+ * 应用 renames 迁移:把 settings 里对旧名的引用改写到新名。
+ * 幂等:旧名引用不存在时零写入。settings 写失败不阻断加载(下次启动重试)。
+ * @returns 实际发生的迁移列表(给 UI 提示用)
+ */
+export function applyPluginRenames(): Array<{ from: string; to: string }> {
+  const mp = loadMarketplace();
+  const applied: Array<{ from: string; to: string }> = [];
+  if (!mp.renames?.length) return applied;
+  try {
+    const s = getSettings();
+    let dirty = false;
+    const map = new Map(mp.renames.map((r) => [r.from, r.to]));
+    // disabledPlugins 引用迁移
+    const disabled = s.disabledPlugins ?? [];
+    const migratedDisabled = disabled.map((n) => {
+      const to = map.get(n);
+      if (to && to !== n) { applied.push({ from: n, to }); dirty = true; return to; }
+      return n;
+    });
+    // pluginEngineSettings 键名迁移(值原样保留 —— 配置跟着身份走)
+    const pes = (s as Record<string, unknown>).pluginEngineSettings as Record<string, Record<string, string>> | undefined;
+    if (pes) {
+      const migratedPes: Record<string, Record<string, string>> = {};
+      for (const [k, v] of Object.entries(pes)) {
+        const to = map.get(k);
+        if (to && to !== k) { applied.push({ from: k, to }); dirty = true; migratedPes[to] = v; }
+        else migratedPes[k] = v;
+      }
+      (s as Record<string, unknown>).pluginEngineSettings = migratedPes;
+    }
+    if (dirty) {
+      if (migratedDisabled.length !== disabled.length || migratedDisabled.some((n, i) => n !== disabled[i])) {
+        (s as Record<string, unknown>).disabledPlugins = migratedDisabled;
+      }
+      saveSettings(s);
+    }
+  } catch { /* settings 不可写 → 保留旧引用,UI 会以旧名显示禁用态,不致命 */ }
+  return applied;
+}
+/** 名字占用检查:目录名不得与 marketplace 现名/退役名冲突(防旧目录残留撞新插件)。 */
+export function isNameContested(name: string): { contested: boolean; reason?: string } {
+  const mp = loadMarketplace();
+  if (mp.name && name !== mp.name && mp.retired?.includes(name)) {
+    return { contested: true, reason: `「${name}」是插件 ${mp.name} 的退役曾用名,禁止复用(身份不可变契约)` };
+  }
+  return { contested: false };
+}
+
 export function loadPlugins(): LoadedPlugin[] {
   if (cache) return cache;
+  applyPluginRenames(); // 启动/缓存失效后自动迁移存量引用(幂等)
   const root = path.join(app.getPath('userData'), 'plugins');
   const out: LoadedPlugin[] = [];
   let dirs: string[] = [];
