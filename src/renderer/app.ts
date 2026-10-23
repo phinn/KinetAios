@@ -6217,8 +6217,16 @@ async function showSettings() {
       statusEl.textContent = fmt(r);
     };
     document.getElementById('s-memsync-run')!.onclick = async () => {
+      // 立即同步必须传表单当前值:修 2026-10-23 报障「设置了仓库地址仍提示未配置」——
+      // 此前 run 无参调用,主进程 cfg=undefined 直接判空返回,填了/保存了都永远报「未配置仓库地址」。
+      const cfg = {
+        remote: msRemote.value.trim(),
+        branch: (document.getElementById('s-memsync-branch') as HTMLInputElement).value.trim() || 'main',
+        autoSyncMinutes: 0,
+      };
+      if (!cfg.remote) { statusEl.textContent = '✗ ' + tr('settings.memsync.noRemote'); return; }
       statusEl.textContent = '…';
-      const r = await api.memorySyncRun();
+      const r = await api.memorySyncRun(cfg);
       statusEl.textContent = fmt(r);
     };
   }

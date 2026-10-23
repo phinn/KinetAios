@@ -270,8 +270,15 @@ export function register(): void {
   const { memorySyncRun, memorySyncTest } = require('../memory-sync') as typeof import('../memory-sync');
   ipcMain.handle('memory-sync-run', async (_e, cfg?: import('../../shared/types').MemorySyncSettings) => {
     try {
-      if (!cfg?.remote?.trim()) return { ok: false, error: '未配置仓库地址', exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
-      return await memorySyncRun(cfg);
+      // 兜底:调用方没传(旧 renderer / 自动 tick 之外的路径)→ 回落读已保存设置,
+      // 防「设置了仓库地址仍报未配置」(2026-10-23 报障根因之一)。
+      let c = cfg;
+      if (!c?.remote?.trim()) {
+        const saved = getSettings().memorySync;
+        if (saved?.remote?.trim()) c = { ...saved, ...c, remote: saved.remote };
+      }
+      if (!c?.remote?.trim()) return { ok: false, error: '未配置仓库地址', exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
+      return await memorySyncRun(c);
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e), exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
     }

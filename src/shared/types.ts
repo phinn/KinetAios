@@ -1070,7 +1070,7 @@ export interface KinetAPI {
   memoryDecay(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   /** memory-sync:导出 SQLite 记忆 → git 仓库 commit+push;远端新条目并回本地 */
-  memorySyncRun(): Promise<MemorySyncResult>;
+  memorySyncRun(cfg?: MemorySyncSettings): Promise<MemorySyncResult>;
   /** memory-sync:连通性测试(clone/pull dry-run) */
   memorySyncTest(cfg: MemorySyncSettings): Promise<{ ok: boolean; error?: string; detail?: string }>;
   // ── P0: Memory Blocks(结构化核心记忆)──
