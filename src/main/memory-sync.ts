@@ -101,7 +101,7 @@ function storeApi(): MemoryStoreApi {
   return {
     exportMemories: () => s.exportMemoryRows(),
     importMemories: (rows) => s.importMemoryRows(rows),
-    exportBlocks: () => s.exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    exportBlocks: () => s.exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.value, updatedAt: b.updatedAt })),
     importBlock: (label, value, updatedAt) => {
       const cur = s.loadMemoryBlock(label);
       if (!cur) return false;

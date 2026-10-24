@@ -939,9 +939,9 @@ export function importMemoryRows(rows: import('../shared/types').MemoryRow[]): n
 }
 
 /** memory_blocks 全量(结构化常驻块,label→{content,updatedAt}) */
-export function exportMemoryBlocksData(): Array<{ label: string; content: string; updatedAt: number }> {
-  return db.prepare(`SELECT label, content, updated_at FROM memory_blocks ORDER BY label ASC;`)
-    .all() as Array<{ label: string; content: string; updatedAt: number }>;
+export function exportMemoryBlocksData(): Array<{ label: string; value: string; updatedAt: number }> {
+  return db.prepare(`SELECT label, value, updated_at FROM memory_blocks ORDER BY label ASC;`)
+    .all() as Array<{ label: string; value: string; updatedAt: number }>;
 }
 
 /** memory-sync 的 MemoryStoreApi 工厂:字段名对齐 shared/types 的 MemoryRow/MemoryBlock 数据形状 */
@@ -949,7 +949,7 @@ export function memoryStoreApi() {
   return {
     exportMemories: exportMemoryRows,
     importMemories: importMemoryRows,
-    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.value, updatedAt: b.updatedAt })),
     importBlock: (label: string, value: string, updatedAt: number): boolean => {
       const cur = db.prepare(`SELECT updated_at FROM memory_blocks WHERE label = ?;`).get(label) as { updated_at: number } | undefined;
       if (cur && cur.updated_at >= updatedAt) return false; // 本地不旧,不动

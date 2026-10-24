@@ -64,6 +64,10 @@ async function main(): Promise<void> {
     if (memB.length !== 3) fail(`② B 机导入后应有 3 条,实际 ${memB.length}`);
     if (importedB.length !== 3) fail(`② B 机实际导入 ${importedB.length} 条,应 3`);
     if (!blocksBHas(storeB, 'user_profile')) fail('② blocks 未导入');
+    // 回归(2026-10-24):store.exportBlocks 映射曾把列名写错(SELECT content,实际列是 value)
+    // 且 .map 把 value.content 又抄一遍 —— 双重错配。这里断言导出值非空,锁死该类 bug。
+    const bval = storeB.exportBlocks().find((b) => b.label === 'user_profile')?.value ?? '';
+    if (!bval.includes('短指令')) fail(`② blocks 导出值丢失(拿到空/错值): ${JSON.stringify(bval)}`);
     console.log(`✓ ② B 机拉到 3 条 memories + blocks,imported=${r2.imported}`);
 
     // ③ B 机加一条,再 push
