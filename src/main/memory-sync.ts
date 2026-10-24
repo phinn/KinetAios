@@ -48,6 +48,14 @@ export interface MemoryStoreApi {
   exportBlocks(): Array<{ label: string; value: string; updatedAt: number }>;
   /** 按 updated_at 新者胜并入 block(字数上限由 store 内部裁) */
   importBlock(label: string, value: string, updatedAt: number): boolean;
+  /** 全量会话行(id/engine/cwd/title/goal/direct_history/updated_at/…,跨设备接续对话用) */
+  exportConversations(): Array<Record<string, unknown>>;
+  /** 按 id 幂等导入会话行,返回新导入条数(已存在跳过,本地为准) */
+  importConversations(rows: Array<Record<string, unknown>>): number;
+  /** 全量 turn 行(conv_id + data 整 turn JSON),FTS 回填在导入侧做 */
+  exportTurns(): Array<{ id: string; conv_id: string; data: string; created_at: number }>;
+  /** 按 turn id 幂等导入 + 回填 FTS history/history_conv,返回新导入条数 */
+  importTurns(rows: Array<{ id: string; conv_id: string; data: string; created_at: number }>): number;
 }
 
 // ── 导出文本渲染 ─────────────────────────────────────────────
@@ -109,6 +117,10 @@ function storeApi(): MemoryStoreApi {
       const r = s.updateMemoryBlock(label, value);
       return r.ok;
     },
+    exportConversations: () => s.exportConversations(),
+    importConversations: (rows) => s.importConversations(rows),
+    exportTurns: () => s.exportTurns().map((t) => ({ id: t.id, conv_id: t.convId, data: t.data, created_at: t.ts })),
+    importTurns: (rows) => s.importTurns(rows.map((t) => ({ id: t.id, convId: t.conv_id, data: t.data, ts: t.created_at }))),
   };
 }
 
@@ -190,6 +202,21 @@ export async function memorySync(
           }
         } catch { /* 远端还没有 blocks.json,首推 */ }
         // lessons.md 里的 lesson 不单独导回 —— facts.ndjson 是全量真相,md 只是视图
+        // 4b) 会话 + turns:跨设备接续对话(2026-10-24)。幂等:conv/turn 都按 id 跳过已存在。
+        try {
+          const convText = await fs.readFile(path.join(dir, 'conversations.ndjson'), 'utf8');
+          const remoteConvs = convText.trim() ? convText.trim().split('\n')
+            .map((l) => { try { return JSON.parse(l) as Record<string, unknown>; } catch { return null; } })
+            .filter((o): o is Record<string, unknown> => !!o) : [];
+          const nc = store.importConversations(remoteConvs);
+          if (nc > 0) log('convs', `${nc} 个远端会话并入本地`);
+          const turnText = await fs.readFile(path.join(dir, 'turns.ndjson'), 'utf8');
+          const remoteTurns = turnText.trim() ? turnText.trim().split('\n')
+            .map((l) => { try { return JSON.parse(l) as { id: string; conv_id: string; data: string; created_at: number }; } catch { return null; } })
+            .filter((o): o is { id: string; conv_id: string; data: string; created_at: number } => !!o) : [];
+          const nt = store.importTurns(remoteTurns);
+          if (nt > 0) log('turns', `${nt} 个远端轮次并入本地(FTS 已回填,可跨设备检索)`);
+        } catch { /* 远端还没有 conversations.ndjson,首推 */ }
       } catch { /* 远端尚无 facts.ndjson,首推 */ }
     }
 
@@ -200,7 +227,14 @@ export async function memorySync(
     await fs.writeFile(path.join(dir, 'lessons.md'), renderLessonsMd(rows), 'utf8');
     await fs.writeFile(path.join(dir, 'blocks.json'),
       JSON.stringify(store.exportBlocks(), null, 2), 'utf8');
-    result.exported = rows.length;
+    // 会话 + turns 原文(ndjson;turns.data 是 saveTurn 的整 turn JSON,还原=直接 INSERT)
+    const convs = store.exportConversations();
+    const turns = store.exportTurns();
+    await fs.writeFile(path.join(dir, 'conversations.ndjson'),
+      convs.map((c) => JSON.stringify(c)).join('\n') + (convs.length ? '\n' : ''), 'utf8');
+    await fs.writeFile(path.join(dir, 'turns.ndjson'),
+      turns.map((t) => JSON.stringify(t)).join('\n') + (turns.length ? '\n' : ''), 'utf8');
+    result.exported = rows.length + convs.length + turns.length;
 
     // 5) commit(有变更才提交)
     await git(dir, ['add', '-A']);

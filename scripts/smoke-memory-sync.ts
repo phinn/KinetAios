@@ -33,7 +33,11 @@ async function main(): Promise<void> {
       { id: 'm3', content: '禁止 pkill -f KinetAios', createdAt: 3, conversationId: null, importance: 9, kind: 'lesson', triggerKw: null, strikes: 0, struckAt: null, scopeCwd: null },
     ];
     const blocksA = new Map([['user_profile', '# 用户画像\n- 短指令']]);
-    const mkStore = (mems: MemoryRow[], importedIds: string[]): MemoryStoreApi => ({
+    const mkStore = (mems: MemoryRow[], importedIds: string[],
+                     convs: Array<{ id: string; title: string; engine: string; goal: string | null }>,
+                     turns: Array<{ id: string; conv_id: string; data: string; created_at: number }>,
+                     ftsIndexed: string[],
+                     convIds: string[] = []): MemoryStoreApi => ({
       exportMemories: () => mems,
       importMemories: (rows) => {
         let n = 0;
@@ -42,9 +46,37 @@ async function main(): Promise<void> {
       },
       exportBlocks: () => [...blocksA.entries()].map(([label, value]) => ({ label, value, updatedAt: 42 })),
       importBlock: (label, value) => { blocksA.set(label, blocksA.get(label)?.length! >= value.length ? blocksA.get(label)! : value); return true; },
+      exportConversations: () => convs.map((c) => ({ ...c })),
+      importConversations: (rows) => {
+        let n = 0;
+        for (const r of rows) if (!convs.some((c) => c.id === r.id)) { convs.push({ ...r }); convIds.push(r.id); n++; }
+        return n;
+      },
+      exportTurns: () => turns.map((t) => ({ ...t })),
+      importTurns: (rows) => {
+        let n = 0;
+        for (const r of rows) if (!turns.some((t) => t.id === r.id)) {
+          turns.push({ ...r });
+          // 模拟真实 store.importTurns 的 FTS 回填:prompt+answer 双条入"索引"
+          try {
+            const o = JSON.parse(r.data) as { prompt?: string; answer?: string };
+            if (o.prompt) ftsIndexed.push(o.prompt);
+            if (o.answer) ftsIndexed.push(o.answer);
+          } catch { /* 脏行跳过 */ }
+          n++;
+        }
+        return n;
+      },
     });
     const importedA: string[] = [];
-    const storeA = mkStore(memA, importedA);
+    const ftsA: string[] = [];
+    const convsA: Array<{ id: string; title: string; engine: string; goal: string | null }> = [];
+    const turnsA: Array<{ id: string; conv_id: string; data: string; created_at: number }> = [
+      { id: 't1', conv_id: 'c1', data: JSON.stringify({ id: 't1', prompt: 'KinetLoop 千万别启动', answer: '记住了', steps: [], error: null, done: true }), created_at: 1 },
+      { id: 't2', conv_id: 'c1', data: JSON.stringify({ id: 't2', prompt: '顺便查下 gitee 同步', answer: '已配好', steps: [], error: null, done: true }), created_at: 2 },
+    ];
+    const storeA = mkStore(memA, importedA, convsA, turnsA, ftsA);
+    convsA.push({ id: 'c1', title: 'CarKeys 排查', engine: 'direct', goal: '查 ✕ 按钮无响应' });
     const cfg = { remote: bare, branch: 'main', autoSyncMinutes: 0 };
 
     // ① A 机首同步(clone 空 bare → 导出 → commit → push)
@@ -55,14 +87,21 @@ async function main(): Promise<void> {
     }
     console.log(`✓ ① A 机首同步 ok exported=${r1.exported} commits=${r1.commits}`);
 
-    // ② B 机(空库)同步:应把 A 的 3 条全部导入
+    // ② B 机(空库)同步:应把 A 的 3 条 memories + 1 会话 + 2 turns 全部导入
     const memB: MemoryRow[] = [];
     const importedB: string[] = [];
-    const storeB = mkStore(memB, importedB);
+    const convsB: Array<{ id: string; title: string; engine: string; goal: string | null }> = [];
+    const turnsB: Array<{ id: string; conv_id: string; data: string; created_at: number }> = [];
+    const ftsB: string[] = [];
+    const storeB = mkStore(memB, importedB, convsB, turnsB, ftsB);
     const r2 = await memorySync(cfg, join(dir, 'b'), storeB);
     if (!r2.ok) fail(`② B 机同步失败: ${r2.error ?? JSON.stringify(r2.steps)}`);
     if (memB.length !== 3) fail(`② B 机导入后应有 3 条,实际 ${memB.length}`);
     if (importedB.length !== 3) fail(`② B 机实际导入 ${importedB.length} 条,应 3`);
+    if (convsB.length !== 1) fail(`② B 机应导入 1 会话,实际 ${convsB.length}`);
+    if (turnsB.length !== 2) fail(`② B 机应导入 2 turns,实际 ${turnsB.length}`);
+    if (ftsB.length < 2) fail(`② B 机 FTS 回填应 ≥2 条,实际 ${ftsB.length}`);
+    if (!ftsB.some((t) => t.includes('KinetLoop'))) fail(`② FTS 回填缺 prompt 正文,ftsB=${JSON.stringify(ftsB)}`);
     if (!blocksBHas(storeB, 'user_profile')) fail('② blocks 未导入');
     // 回归(2026-10-24):store.exportBlocks 映射曾把列名写错(SELECT content,实际列是 value)
     // 且 .map 把 value.content 又抄一遍 —— 双重错配。这里断言导出值非空,锁死该类 bug。
@@ -70,28 +109,37 @@ async function main(): Promise<void> {
     if (!bval.includes('短指令')) fail(`② blocks 导出值丢失(拿到空/错值): ${JSON.stringify(bval)}`);
     console.log(`✓ ② B 机拉到 3 条 memories + blocks,imported=${r2.imported}`);
 
-    // ③ B 机加一条,再 push
+    // ③ B 机加一条 memory + 一个新会话,再 push
     memB.push({ id: 'm4', content: 'B 机独有:KinetLoop 勿启动', createdAt: 4, conversationId: null, importance: 5, kind: 'fact', triggerKw: null, strikes: 0, struckAt: null, scopeCwd: null });
+    convsB.push({ id: 'c2', title: 'B 机会话', engine: 'direct', goal: null });
+    turnsB.push({ id: 't3', conv_id: 'c2', data: JSON.stringify({ id: 't3', prompt: 'p', answer: 'B 机产出' }), created_at: 3 });
     const r3 = await memorySync(cfg, join(dir, 'b'), storeB);
     if (!r3.ok || !r3.pushed) fail(`③ B 机二推失败: ${r3.error}`);
 
-    // ④ A 机再同步:拉到 m4,且自身 3 条不重复导入(importedA 仍空)
+    // ④ A 机再同步:拉到 m4 + c2/t3,且自身已有条目不重复导入
     const r4 = await memorySync(cfg, workA, storeA);
     if (!r4.ok) fail(`④ A 机回拉失败: ${r4.error}`);
     if (memA.length !== 4) fail(`④ A 机应有 4 条,实际 ${memA.length}`);
+    if (convsA.length !== 2) fail(`④ A 机应有 2 会话,实际 ${convsA.length}`);
+    if (turnsA.length !== 3) fail(`④ A 机应有 3 turns,实际 ${turnsA.length}`);
     if (importedA.length !== 1 || importedA[0] !== 'm4') fail(`④ A 机应恰好导入 m4,实际 ${JSON.stringify(importedA)}`);
 
-    // ⑤ 幂等:连续同步第 3 次,memories 不涨、facts.ndjson 行数稳定
+    // ⑤ 幂等:连续同步第 3 次,memories/turns 不涨、facts.ndjson 行数稳定
     const before = memA.length;
+    const turnsBefore = turnsA.length;
     await memorySync(cfg, workA, storeA);
     await memorySync(cfg, workA, storeA);
     if (memA.length !== before) fail(`⑤ 幂等破坏:${before} → ${memA.length}`);
+    if (turnsA.length !== turnsBefore) fail(`⑤ turns 幂等破坏:${turnsBefore} → ${turnsA.length}`);
+    if (convsA.length !== 2) fail(`⑤ convs 幂等破坏:2 → ${convsA.length}`);
     const mirror = join(workA, 'memory-sync', 'memory-sync-' + bare.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-64));
     const ndjson = readFileSync(join(mirror, 'facts.ndjson'), 'utf8').trim().split('\n');
     if (ndjson.length !== 4) fail(`⑤ facts.ndjson 应 4 行,实际 ${ndjson.length}`);
+    const turnsMirror = readFileSync(join(mirror, 'turns.ndjson'), 'utf8').trim().split('\n');
+    if (turnsMirror.length !== 3) fail(`⑤ turns.ndjson 应 3 行,实际 ${turnsMirror.length}`);
 
-    console.log('✓ ④⑤ 双向回拉 + 幂等全部通过');
-    console.log('\nPASS 5/5 — memory-sync 双机互同步全链路 ✓');
+    console.log('✓ ④⑤ 双向回拉(会话+turns) + 幂等全部通过');
+    console.log('\nPASS — memory-sync 全量同步(memories+blocks+conversations+turns+FTS) ✓');
     rmSync(dir, { recursive: true, force: true });
   } catch (e) {
     fail((e as Error).stack ?? String(e));

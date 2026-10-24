@@ -214,6 +214,86 @@ export function appendMessage(role: string, content: string, convId?: string): v
   })();
 }
 
+// ── memory-sync 会话导出/导入(2026-10-24):conversations + turns 跨设备 ──
+// 导出的是"还原 Conversation 所需的最小行集"(不含 turns/事件,turns 单独导)。
+// Export minimal conversation rows (turns exported separately as ndjson).
+
+/** 导出全部会话行(ndjson 行形状:ConvExportRow) */
+export function exportConversations(): Array<Record<string, unknown>> {
+  const rows = db.prepare(
+    `SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
+            branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
+            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory
+     FROM conversations ORDER BY created_at ASC;`,
+  ).all() as Array<Record<string, unknown>>;
+  return rows;
+}
+
+/** 导出全部 turns(id + conv_id + data 原文 + created_at),data 即 saveTurn 写入的整 turn JSON */
+export function exportTurns(): Array<{ id: string; convId: string; data: string; ts: number }> {
+  const rows = db.prepare(
+    `SELECT id, conv_id AS convId, data, created_at AS ts FROM turns ORDER BY created_at ASC;`,
+  ).all() as Array<{ id: string; convId: string; data: string; ts: number }>;
+  return rows;
+}
+
+/**
+ * 导入远端会话:按 id 跳过已存在(本地为准,防覆盖本地更新的 direct_history)。
+ * 返回实际新建条数。
+ */
+export function importConversations(rows: Array<Record<string, unknown>>): number {
+  let n = 0;
+  for (const r of rows) {
+    if (typeof r.id !== 'string' || !r.id) continue;
+    const exists = db.prepare('SELECT 1 FROM conversations WHERE id = ?;').get(r.id);
+    if (exists) continue;
+    db.prepare(
+      `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
+                                 branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
+                                 updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
+       VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+    ).run(
+      r.id, r.engine ?? 'direct', r.cwd ?? '', r.created_at ?? Date.now() / 1000,
+      r.custom_title ?? null, r.direct_history ?? null, r.engine_session_id ?? null, r.model ?? null,
+      r.branch_info ?? null, r.pipeline_id ?? null, r.goal ?? null, r.profile_id ?? null,
+      r.context_mode ?? null, r.persona_enabled ?? null, r.loop_ralph ?? null,
+      r.updated_at ?? null, r.sub_agent_model ?? null, r.wecom_key ?? null, r.feishu_key ?? null,
+      r.cross_project_memory ?? null,
+    );
+    n++;
+  }
+  return n;
+}
+
+/**
+ * 导入远端 turns:按 id 跳过已存在;新建的顺带回填 FTS
+ * (appendMessage 同款截断:每 turn 贡献 user prompt + assistant answer 两条,
+ * 保证跨设备 recall_memory 能搜到同步来的对话)。
+ */
+export function importTurns(rows: Array<{ id: string; convId: string; data: string; ts: number }>): number {
+  const insert = db.prepare(
+    'INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?);',
+  );
+  let n = 0;
+  for (const r of rows) {
+    if (!r.id || !r.data) continue;
+    const exists = db.prepare('SELECT 1 FROM turns WHERE id = ?;').get(r.id);
+    if (exists) continue;
+    db.transaction(() => {
+      insert.run(r.id, r.convId, r.data, r.ts);
+      // FTS 回填:坏 JSON 单条跳过不炸整批
+      try {
+        const t = JSON.parse(r.data) as { prompt?: string; answer?: string };
+        if (t.prompt) appendMessage('user', t.prompt, r.convId);
+        if (t.answer) appendMessage('assistant', t.answer, r.convId);
+      } catch { /* 跳过坏行 */ }
+    })();
+    n++;
+  }
+  return n;
+}
+
+
 export function search(q: string, limit = 20, restrictConvId?: string): Array<{ role: string; content: string }> {
   const fts = sanitize(q);
   if (!fts) return [];
@@ -956,6 +1036,11 @@ export function memoryStoreApi() {
       const r = updateMemoryBlock(label, value);
       return r.ok;
     },
+    exportConversations,
+    importConversations,
+    exportTurns: () => exportTurns().map((t) => ({ id: t.id, conv_id: t.convId, data: t.data, created_at: t.ts })),
+    importTurns: (rows: Array<{ id: string; conv_id: string; data: string; created_at: number }>) =>
+      importTurns(rows.map((t) => ({ id: t.id, convId: t.conv_id, data: t.data, ts: t.created_at }))),
   };
 }
 
