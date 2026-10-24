@@ -46,26 +46,23 @@ async function main(): Promise<void> {
       },
       exportBlocks: () => [...blocksA.entries()].map(([label, value]) => ({ label, value, updatedAt: 42 })),
       importBlock: (label, value) => { blocksA.set(label, blocksA.get(label)?.length! >= value.length ? blocksA.get(label)! : value); return true; },
-      exportConversations: () => convs.map((c) => ({ ...c })),
-      importConversations: (rows) => {
-        let n = 0;
-        for (const r of rows) if (!convs.some((c) => c.id === r.id)) { convs.push({ ...r }); convIds.push(r.id); n++; }
-        return n;
+      exportConversations: () => (function* () { for (const c of convs) yield { ...c }; })(),
+      importConversationRow: (row) => {
+        if (convs.some((c) => c.id === row.id)) return false;
+        convs.push({ ...row }); convIds.push(String(row.id)); return true;
       },
-      exportTurns: () => turns.map((t) => ({ ...t })),
-      importTurns: (rows) => {
-        let n = 0;
-        for (const r of rows) if (!turns.some((t) => t.id === r.id)) {
-          turns.push({ ...r });
-          // 模拟真实 store.importTurns 的 FTS 回填:prompt+answer 双条入"索引"
-          try {
-            const o = JSON.parse(r.data) as { prompt?: string; answer?: string };
-            if (o.prompt) ftsIndexed.push(o.prompt);
-            if (o.answer) ftsIndexed.push(o.answer);
-          } catch { /* 脏行跳过 */ }
-          n++;
-        }
-        return n;
+      exportTurns: () => (function* () { for (const t of turns) yield { ...t }; })(),
+      importTurnsLine: (line: string) => {
+        const r = JSON.parse(line) as { id: string; conv_id: string; data: string; created_at: number };
+        if (turns.some((t) => t.id === r.id)) return false;
+        turns.push({ ...r });
+        // 模拟真实 store.importTurns 的 FTS 回填:prompt+answer 双条入"索引"
+        try {
+          const o = JSON.parse(r.data) as { prompt?: string; answer?: string };
+          if (o.prompt) ftsIndexed.push(o.prompt);
+          if (o.answer) ftsIndexed.push(o.answer);
+        } catch { /* 脏行跳过 */ }
+        return true;
       },
     });
     const importedA: string[] = [];
