@@ -64,6 +64,7 @@ async function main(): Promise<void> {
         } catch { /* 脏行跳过 */ }
         return true;
       },
+      countTurns: () => turns.length,
     });
     const importedA: string[] = [];
     const ftsA: string[] = [];
@@ -132,8 +133,15 @@ async function main(): Promise<void> {
     const mirror = join(workA, 'memory-sync', 'memory-sync-' + bare.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-64));
     const ndjson = readFileSync(join(mirror, 'facts.ndjson'), 'utf8').trim().split('\n');
     if (ndjson.length !== 4) fail(`⑤ facts.ndjson 应 4 行,实际 ${ndjson.length}`);
-    const turnsMirror = readFileSync(join(mirror, 'turns.ndjson'), 'utf8').trim().split('\n');
-    if (turnsMirror.length !== 3) fail(`⑤ turns.ndjson 应 3 行,实际 ${turnsMirror.length}`);
+    // turns 现为分片+gzip:镜像里校验分片文件存在、gunzip 后行数=3
+    const shardFiles = (await import('node:fs')).readdirSync(mirror).filter((f) => /^turns-\d{4}\.ndjson\.gz$/.test(f)).sort();
+    if (shardFiles.length < 1) fail('⑤ turns 分片缺失');
+    let turnsMirror = 0;
+    for (const f of shardFiles) {
+      const body = (await import('node:zlib')).gunzipSync(readFileSync(join(mirror, f))).toString('utf8').trim();
+      turnsMirror += body ? body.split('\n').length : 0;
+    }
+    if (turnsMirror !== 3) fail(`⑤ turns 分片应共 3 行,实际 ${turnsMirror}`);
 
     console.log('✓ ④⑤ 双向回拉(会话+turns) + 幂等全部通过');
     console.log('\nPASS — memory-sync 全量同步(memories+blocks+conversations+turns+FTS) ✓');

@@ -260,6 +260,11 @@ export function importConversationRow(r: Record<string, unknown>): boolean {
   return true;
 }
 
+/** turns 总行数(同步进度百分比分母) */
+export function countTurns(): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM turns;').get() as { n: number }).n;
+}
+
 /**
  * 导入单行远端 turn(ndjson 一行):已存在(id 命中)返回 false;
  * 新建时顺带回填 FTS(appendMessage 同款截断:每 turn 贡献 user prompt + assistant answer 两条,
@@ -1035,6 +1040,7 @@ export function memoryStoreApi() {
     importConversationRow,
     exportTurns,
     importTurnsLine,
+    countTurns,
   };
 }
 

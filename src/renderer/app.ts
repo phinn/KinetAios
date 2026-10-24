@@ -527,6 +527,19 @@ function applyI18nDOM(): void {
     api.confirmResponse2(req.id, approved);
   });
 
+  // memory-sync 同步进度:阶段名映射中文短词,pct=-1 表示该阶段无百分比(网络 IO)
+  const memSyncPhaseLabel = (phase: string): string => ({
+    'clone': '克隆仓库', 'pull': '拉取远端', 'import-convs': '导入会话',
+    'import-turns': '导入轮次', 'export-convs': '导出会话', 'export-turns': '导出轮次',
+    'commit': '提交', 'push': '推送远端',
+  } as Record<string, string>)[phase] ?? phase;
+  api.onMemorySyncProgress(({ phase, p }) => {
+    const el = document.getElementById('s-memsync-status');
+    if (!el) return; // 设置页没开着就丢弃(下次同步重新显示)
+    const pct = p >= 0 ? ` ${Math.min(99, Math.round(p * 100))}%` : '';
+    el.textContent = tr('settings.memsync.progress', { phase: memSyncPhaseLabel(phase), pct: pct.trim() || '…' });
+  });
+
   // Agent Team 实时事件:member 状态/token/工具/完成
   api.onTeamEvent((teamId, ev) => {
     handleTeamEvent(teamId, ev);

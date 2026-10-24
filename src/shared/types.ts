@@ -1071,6 +1071,8 @@ export interface KinetAPI {
   memoryDedup(): Promise<{ ok: boolean; pruned?: number; error?: string }>;
   /** memory-sync:导出 SQLite 记忆 → git 仓库 commit+push;远端新条目并回本地 */
   memorySyncRun(cfg?: MemorySyncSettings): Promise<MemorySyncResult>;
+  /** memory-sync 同步进度(阶段 phase + 可选 0~1 百分比,-1=无百分比) */
+  onMemorySyncProgress(cb: (p: { phase: string; p: number }) => void): void;
   /** memory-sync:连通性测试(clone/pull dry-run) */
   memorySyncTest(cfg: MemorySyncSettings): Promise<{ ok: boolean; error?: string; detail?: string }>;
   // ── P0: Memory Blocks(结构化核心记忆)──

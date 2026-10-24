@@ -278,7 +278,10 @@ export function register(): void {
         if (saved?.remote?.trim()) c = { ...saved, ...c, remote: saved.remote };
       }
       if (!c?.remote?.trim()) return { ok: false, error: '未配置仓库地址', exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
-      return await memorySyncRun(c);
+      // 进度桥:同步全程可达数十秒~数分钟(首推 turns 上 GB),事件推 renderer 实时刷状态栏
+      return await memorySyncRun(c, (phase, p) => {
+        _e.sender.send('memory-sync-progress', { phase, p: p ?? -1 });
+      });
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e), exported: 0, imported: 0, commits: 0, pushed: false, steps: [] };
     }
