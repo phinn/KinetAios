@@ -747,11 +747,25 @@ export function loadConversations(): Conversation[] {
 // 批量读取最近的 turns(prompt + answer),供替身画像分析用。
 // Load recent turns (prompt + answer) for persona generation.
 export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: string; engine: string; cwd: string }> {
+  // 画像防串味(2026-10-25):纯时间序 LIMIT 200 会被单一项目密集期淹没(如 CubeCraft 连测两周
+  // → 200 轮全是 iOS 模拟器话题 → 画像变成"iOS 工程师"导致其它项目会话说话带偏)。
+  // 改为按项目 cwd 归并配额采样:每项目最多 ceil(limit/项目数) 轮,项目数上限 8(超出的极旧项目不进画像)。
+  // Anti-drift: per-project quota sampling so one project's sprint can't drown out the rest.
   const rows = db.prepare(
-    `SELECT t.data, c.engine, c.cwd FROM turns t
-     JOIN conversations c ON t.conv_id = c.id
-     ORDER BY t.created_at DESC LIMIT ?;`,
-  ).all(limit) as Array<{ data: string; engine: string; cwd: string }>;
+    `WITH recent AS (
+       SELECT t.data, t.created_at AS ca, c.engine, c.cwd
+       FROM turns t JOIN conversations c ON t.conv_id = c.id
+       ORDER BY t.created_at DESC LIMIT 2000
+     ),
+     nproj AS (SELECT count(DISTINCT cwd) AS n FROM recent),
+     ranked AS (
+       SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.cwd ORDER BY r.ca DESC) AS rn
+       FROM recent r
+     )
+     SELECT data, engine, cwd FROM ranked
+     WHERE rn <= max(8, ? / max((SELECT n FROM nproj), 1))  -- 每项目(cwd)配额;项目极少时单项目仍可到 limit
+     ORDER BY ca DESC LIMIT ?;`,
+  ).all(limit, limit) as Array<{ data: string; engine: string; cwd: string }>;
   const results: Array<{ prompt: string; answer: string; engine: string; cwd: string }> = [];
   for (const r of rows) {
     try {
