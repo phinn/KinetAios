@@ -4518,6 +4518,10 @@ async function jumpGo(it: JumpItem): Promise<void> {
   if (it.via === 'body') {
     const q = (document.getElementById('jump-input') as HTMLInputElement).value.trim();
     if (q) {
+      // #chat-search 挂在 #chat-content 里,只有 chat 分栏可见;停在 Git/规则等分栏时
+      // 必须先切回,否则搜索条打开了对用户不可见。
+      // / #chat-search lives in #chat-content (chat tab only) — switch back first.
+      if (activeTab !== 'chat') showTab('chat');
       chatSearchOpen();
       const si = document.getElementById('chat-search-input') as HTMLInputElement | null;
       if (si) {
