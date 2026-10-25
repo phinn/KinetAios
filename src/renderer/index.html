@@ -368,6 +368,15 @@
     </div>
   </div>
 
+  <!-- 频道速跳面板(Ctrl/Cmd+P):全量会话直达,标题/cwd/FTS 正文三路模糊 -->
+  <div id="jump" hidden>
+    <div class="palette-box">
+      <input id="jump-input" data-i18n-placeholder="jump.placeholder" placeholder="跳到频道:标题 / 项目 / 正文…" spellcheck="false" autocomplete="off" />
+      <div id="jump-list"></div>
+      <div class="palette-foot"><span>↑↓ 选择</span><span>↵ 跳转</span><span>Esc 关闭</span></div>
+    </div>
+  </div>
+
   <div id="modal" role="dialog" aria-modal="true" aria-label="命令执行确认">
     <div class="modal-card">
       <h3 data-i18n="modal.title">要执行 shell 命令?</h3>

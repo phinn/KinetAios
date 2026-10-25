@@ -62,7 +62,10 @@ function dotState(c: Conversation, id?: string): string {
   return c.turns[c.turns.length - 1]?.error ? 'error' : 'ready';
 }
 let draftPrevId: string | null = null; // showChat 上次处理的频道,用于检测切换 / last conv id showChat saw
-const collapsedProjects = new Set<string>(); // sidebar 分组折叠状态(内存,不持久化)
+// sidebar 分组折叠状态:内存 + localStorage 持久化(重启后保持,项目多时靠折叠找项目)
+const collapsedProjects: Set<string> = (() => {
+  try { return new Set(JSON.parse(localStorage.getItem('sb-collapsed-projects') ?? '[]') as string[]); } catch { return new Set<string>(); }
+})();
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashHolding = false;  // mousedown 标签时临时抑制 blur 关闭
@@ -242,6 +245,12 @@ function applyI18nDOM(): void {
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
       e.preventDefault();
       if (paletteEl().hidden) openPalette(); else closePalette();
+      return;
+    }
+    // Ctrl/Cmd+P → 频道速跳(任意视图;p 命中浏览器打印,Ctrl+P 桌面端无冲突)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (jumpEl().hidden) openJump(); else closeJump();
       return;
     }
     // '?' → 快捷键速查(焦点不在输入框时;Shift+/ = '?')
@@ -793,6 +802,8 @@ function buildProjLi(cwd: string): HTMLElement {
     const wasCollapsed = collapsedProjects.has(cwd);
     if (wasCollapsed) collapsedProjects.delete(cwd);
     else collapsedProjects.add(cwd);
+    // 持久化折叠态(重启后项目组保持收起;存 cwd 全路径,项目改名/增删互不影响)
+    try { localStorage.setItem('sb-collapsed-projects', JSON.stringify([...collapsedProjects])); } catch { /* quota */ }
     // 就地切换 collapsed class + chevron,避免全量重渲保证动画连续。
     const tasksUl = projLi.querySelector('.sb-proj-tasks');
     const chevron = head.querySelector('.sb-chevron');
@@ -4382,6 +4393,182 @@ function paletteMove(dir: 1 | -1): void {
   rows[paletteSel]?.scrollIntoView({ block: 'nearest' });
 }
 
+// ── 频道速跳面板(Ctrl/Cmd+P)──
+// 项目/频道多了之后侧栏找会话的第二条路:全量会话直达,不用先滚到搜索框。
+// 三路命中合并:①标题/cwd 前缀→包含打分(内存,零延迟);②FTS 正文命中(防抖 250ms 异步)。
+// 命中正文的结果跳会话后自动打开会话内搜索并带入关键词,直达上下文。
+type JumpItem = { cid: string; title: string; proj: string; ts: number; score: number; via: 'title' | 'body'; snippet?: string };
+let jumpSel = 0;
+let jumpFiltered: JumpItem[] = [];
+let jumpFtsSeq = 0;          // 防竞态:旧 FTS 响应不得覆盖新结果
+let jumpDebounce: ReturnType<typeof setTimeout> | null = null;
+let jumpRestoreFocus: HTMLElement | null = null;
+
+function convTitle(c: Conversation): string {
+  return c.customTitle || c.firstPrompt?.slice(0, 60) || c.turns[0]?.prompt?.slice(0, 60) || tr('head.newConv');
+}
+
+function jumpScore(q: string, title: string, proj: string): number {
+  const ql = q.toLowerCase();
+  const t = title.toLowerCase();
+  const p = proj.toLowerCase();
+  if (t.startsWith(ql)) return 3;
+  if (p.startsWith(ql)) return 2.5;
+  if (t.includes(ql)) return 2;
+  if (p.includes(ql)) return 1.5;
+  // 多 token AND:每个 token 都命中标题或项目(如 "kinet sync")
+  const toks = ql.split(/\s+/).filter(Boolean);
+  if (toks.length > 1 && toks.every((tk) => t.includes(tk) || p.includes(tk))) return 1;
+  return -1;
+}
+
+function jumpEl(): HTMLElement { return document.getElementById('jump')!; }
+
+function renderJumpList(): void {
+  const list = document.getElementById('jump-list')!;
+  jumpSel = Math.min(jumpSel, Math.max(0, jumpFiltered.length - 1));
+  list.innerHTML = '';
+  jumpFiltered.forEach((it, i) => {
+    const row = document.createElement('div');
+    row.className = 'palette-row jump-row' + (i === jumpSel ? ' sel' : '');
+    const label = document.createElement('span');
+    label.className = 'p-label';
+    label.textContent = it.title;
+    row.appendChild(label);
+    const proj = document.createElement('span');
+    proj.className = 'jump-proj';
+    proj.textContent = it.proj || tr('wb.ungrouped');
+    row.appendChild(proj);
+    if (it.snippet) {
+      const hint = document.createElement('span');
+      hint.className = 'p-hint';
+      hint.textContent = it.snippet;
+      row.appendChild(hint);
+    }
+    row.onclick = () => { void jumpGo(it); };
+    row.onmousemove = () => { if (jumpSel !== i) { jumpSel = i; list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel')); row.classList.add('sel'); } };
+    list.appendChild(row);
+  });
+  if (!jumpFiltered.length) {
+    const none = document.createElement('div');
+    none.className = 'palette-empty';
+    none.textContent = tr('jump.noResults');
+    list.appendChild(none);
+  }
+}
+
+/** 本地标题/项目三路打分(同步,输入即刷);FTS 结果由异步回调 mergeJumpFts 注入 */
+function jumpFilter(q: string): void {
+  const ql = q.trim().toLowerCase();
+  const items: JumpItem[] = [];
+  if (!ql) {
+    // 空查询 = 最近会话直达(同侧栏 order,即最近活动序)
+    for (const id of order.slice(0, 20)) {
+      const c = convs.get(id);
+      if (!c) continue;
+      items.push({ cid: id, title: convTitle(c), proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: 0, via: 'title' });
+    }
+  } else {
+    for (const [id, c] of convs) {
+      const title = convTitle(c);
+      const s = jumpScore(ql, title, projName(c.cwd || ''));
+      if (s > 0) items.push({ cid: id, title, proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: s, via: 'title' });
+    }
+    items.sort((a, b) => (b.score - a.score) || ((b.ts) - (a.ts)));
+  }
+  jumpFiltered = items.slice(0, 30);
+  renderJumpList();
+}
+
+/** FTS 正文命中并入面板(仅补不在标题结果里的会话;seq 防旧响应竞态) */
+function mergeJumpFts(q: string, seq: number, rows: Array<{ role: string; content: string; convId: string | null; convTitle: string | null }>): void {
+  if (seq !== jumpFtsSeq || !q.trim()) return;
+  const have = new Set(jumpFiltered.map((x) => x.cid));
+  const base = jumpFiltered.length ? Math.max(...jumpFiltered.map((x) => x.score)) : 0;
+  const extra: JumpItem[] = [];
+  for (const r of rows) {
+    if (!r.convId || have.has(r.convId)) continue;
+    have.add(r.convId);
+    const c = convs.get(r.convId);
+    extra.push({
+      cid: r.convId,
+      title: (c && convTitle(c)) || r.convTitle || r.convId.slice(0, 8),
+      proj: c ? projName(c.cwd || '') : '',
+      ts: c ? (c.updatedAt ?? c.createdAt) : 0,
+      score: base > 0 ? 0.5 : 0,
+      via: 'body',
+      snippet: (r.role === 'user' ? '🔑 ' + tr('jump.bodyHit') + ' · ' : '') + r.content.replace(/\s+/g, ' ').slice(0, 80),
+    });
+  }
+  if (!extra.length) { if (base === 0) renderJumpList(); return; }
+  jumpFiltered = [...jumpFiltered, ...extra].slice(0, 30);
+  renderJumpList();
+}
+
+async function jumpGo(it: JumpItem): Promise<void> {
+  closeJump();
+  selectedId = it.cid;
+  showChat();
+  renderSidebar();
+  // 正文命中 → 顺带打开会话内搜索并带入关键词,直达匹配上下文
+  if (it.via === 'body') {
+    const q = (document.getElementById('jump-input') as HTMLInputElement).value.trim();
+    if (q) {
+      chatSearchOpen();
+      const si = document.getElementById('chat-search-input') as HTMLInputElement | null;
+      if (si) {
+        si.value = q;
+        si.dispatchEvent(new Event('input'));
+      }
+    }
+  }
+}
+
+function openJump(): void {
+  jumpRestoreFocus = document.activeElement as HTMLElement | null;
+  jumpEl().hidden = false;
+  jumpSel = 0;
+  const input = document.getElementById('jump-input') as HTMLInputElement;
+  input.value = '';
+  jumpFilter('');
+  input.focus();
+}
+
+function closeJump(): void {
+  jumpEl().hidden = true;
+  jumpFtsSeq++;               // 作废在途 FTS 请求
+  if (jumpDebounce) { clearTimeout(jumpDebounce); jumpDebounce = null; }
+  jumpRestoreFocus?.focus?.();
+  jumpRestoreFocus = null;
+}
+
+function onJumpInput(): void {
+  const input = document.getElementById('jump-input') as HTMLInputElement;
+  const q = input.value;
+  jumpFilter(q);              // 本地命中即时刷
+  if (jumpDebounce) clearTimeout(jumpDebounce);
+  const ql = q.trim();
+  if (!ql) return;
+  jumpDebounce = setTimeout(async () => {
+    const seq = ++jumpFtsSeq;
+    try {
+      const rows = await api.searchHistory(ql);
+      mergeJumpFts(ql, seq, rows);
+    } catch { /* FTS 失败不影响标题命中 */ }
+  }, 250);
+}
+
+function jumpMove(dir: 1 | -1): void {
+  if (!jumpFiltered.length) return;
+  jumpSel = (jumpSel + dir + jumpFiltered.length) % jumpFiltered.length;
+  const list = document.getElementById('jump-list')!;
+  list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
+  const rows = list.querySelectorAll('.palette-row');
+  rows[jumpSel]?.classList.add('sel');
+  rows[jumpSel]?.scrollIntoView({ block: 'nearest' });
+}
+
+
 // ── 消息排队(DSH 式)──
 // running 时输入 + Enter → 消息入队(发送键仍是停止);回合结束(done/error/取消)
 // 自动按序发出下一条。会话删除即清队。
@@ -7913,6 +8100,22 @@ function openPathExternal(path: string): void {
     }
   });
   paletteEl().addEventListener('mousedown', (e) => { if (e.target === paletteEl()) closePalette(); });
+  // ── 频道速跳面板(⌘P)──
+  const jumpInput = document.getElementById('jump-input') as HTMLInputElement;
+  jumpInput.addEventListener('input', () => { jumpSel = 0; onJumpInput(); });
+  jumpInput.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowDown') { e.preventDefault(); jumpMove(1); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); jumpMove(-1); }
+    else if (e.key === 'Enter') {
+      e.preventDefault();
+      const it = jumpFiltered[jumpSel];
+      if (it) void jumpGo(it);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      closeJump();
+    }
+  });
+  jumpEl().addEventListener('mousedown', (e) => { if (e.target === jumpEl()) closeJump(); });
   document.getElementById('modal-ok')!.onclick = () => closeConfirm(true);
   document.getElementById('modal-cancel')!.onclick = () => closeConfirm(false);
   // 项目背景编辑器(workbench 卡片「背景」按钮触发)。

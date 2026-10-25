@@ -2422,6 +2422,11 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* ── 命令面板(Ctrl/Cmd+K)── */
 #palette { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #palette[hidden] { display: none; }
+/* 频道速跳面板(⌘P):复用 palette-box 样式,仅遮罩容器选择器并列 */
+#jump { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+#jump[hidden] { display: none; }
+.jump-row .p-hint { flex-shrink: 0; }
+.jump-proj { color: var(--text-dim); background: var(--bg-subtle, rgba(127,127,127,0.12)); border-radius: 6px; padding: 1px 7px; font-size: 11px; }
 .palette-box { width: min(560px, 92vw); max-height: 62vh; display: flex; flex-direction: column; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); overflow: hidden; animation: ctx-pop var(--dur-fast) var(--ease-out); }
 #palette-input { border: none; outline: none; background: transparent; padding: 14px 16px; font-size: 1rem; color: var(--text); border-bottom: 1px solid var(--border-soft); }
 #palette-list { overflow-y: auto; padding: 6px; flex: 1; }
