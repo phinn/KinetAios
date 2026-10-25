@@ -66,6 +66,10 @@ let draftPrevId: string | null = null; // showChat 上次处理的频道,用于�
 const collapsedProjects: Set<string> = (() => {
   try { return new Set(JSON.parse(localStorage.getItem('sb-collapsed-projects') ?? '[]') as string[]); } catch { return new Set<string>(); }
 })();
+// 三个写入口(组头点击/折叠全部/展开全部)统一走这里,防漏持久化
+function saveCollapsedProjects(): void {
+  try { localStorage.setItem('sb-collapsed-projects', JSON.stringify([...collapsedProjects])); } catch { /* quota */ }
+}
 const slashMenu = document.getElementById('slash-menu')!;
 let skills: SkillInfo[] = []; // lazily fetched on first /
 let slashHolding = false;  // mousedown 标签时临时抑制 blur 关闭
@@ -803,7 +807,7 @@ function buildProjLi(cwd: string): HTMLElement {
     if (wasCollapsed) collapsedProjects.delete(cwd);
     else collapsedProjects.add(cwd);
     // 持久化折叠态(重启后项目组保持收起;存 cwd 全路径,项目改名/增删互不影响)
-    try { localStorage.setItem('sb-collapsed-projects', JSON.stringify([...collapsedProjects])); } catch { /* quota */ }
+    saveCollapsedProjects();
     // 就地切换 collapsed class + chevron,避免全量重渲保证动画连续。
     const tasksUl = projLi.querySelector('.sb-proj-tasks');
     const chevron = head.querySelector('.sb-chevron');
@@ -7888,10 +7892,12 @@ function closeMoreMenu() {
             const cc = convs.get(id);
             if (cc) collapsedProjects.add(cc.cwd || '');
           }
+          saveCollapsedProjects();
           renderSidebar();
           break;
         case 'expand-all':
           collapsedProjects.clear();
+          saveCollapsedProjects();
           renderSidebar();
           break;
       }
