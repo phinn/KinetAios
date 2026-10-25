@@ -564,7 +564,11 @@ function loadTurns(convId: string): Turn[] {
   // Self-heal: event-rebuilt turns only fill holes; parseable cache wins (superset with pinned/traj).
   const healed = rebuildTurnsFromEvents(convId);
   if (healed.length === 0) return cached;
-  const merged = new Map(cached.filter((t) => t.prompt).map((t) => [t.id, t]));
+  // 防丢账:仅按 prompt 非空过滤会把「纯 error 轮」(prompt='')滤掉 → 重启后报错轮消失。
+  // 改为:可解析缓存一律保留(prompt 或 error 任一存在即有效)。Keep parseable cache turns; pure-error turns must survive.
+  const merged = new Map(
+    cached.filter((t) => t.prompt || t.error || t.answer).map((t) => [t.id, t] as const),
+  );
   for (const t of healed) {
     if (!merged.get(t.id)) merged.set(t.id, t);
   }
@@ -640,7 +644,12 @@ function parseTurn(data: string): Turn {
   try {
     const o = JSON.parse(data) as Partial<Turn> & { prompt: string };
     const t = newTurn(o.prompt ?? '');
-    return { ...t, ...o, id: o.id ?? t.id, ts: o.ts ?? t.ts, error: o.error ?? null };
+    // 数组字段归一化:老版本序列化可能写 null/undefined 覆盖模板的 [],下游 .length / for-of 直接炸
+    // (2026-10-25 老会话 "list is not iterable" 的根修)。Normalize array fields: null → [].
+    const merged = { ...t, ...o, id: o.id ?? t.id, ts: o.ts ?? t.ts, error: o.error ?? null } as Turn;
+    merged.steps = Array.isArray(merged.steps) ? merged.steps : [];
+    if (merged.todos && !Array.isArray(merged.todos)) merged.todos = undefined;
+    return merged;
   } catch {
     return newTurn('(unparseable turn)');
   }
