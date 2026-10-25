@@ -540,12 +540,8 @@ function applyI18nDOM(): void {
     api.confirmResponse2(req.id, approved);
   });
 
-  // memory-sync 同步进度:阶段名映射中文短词,pct=-1 表示该阶段无百分比(网络 IO)
-  const memSyncPhaseLabel = (phase: string): string => ({
-    'clone': '克隆仓库', 'pull': '拉取远端', 'import-convs': '导入会话',
-    'import-turns': '导入轮次', 'export-convs': '导出会话', 'export-turns': '导出轮次',
-    'commit': '提交', 'push': '推送远端',
-  } as Record<string, string>)[phase] ?? phase;
+  // memory-sync 同步进度:阶段名走 i18n(memsync.phase.*),pct=-1 表示该阶段无百分比(网络 IO)
+  const memSyncPhaseLabel = (phase: string): string => tr(`settings.memsync.phase.${phase}`);
   api.onMemorySyncProgress(({ phase, p }) => {
     const el = document.getElementById('s-memsync-status');
     if (!el) return; // 设置页没开着就丢弃(下次同步重新显示)
@@ -4447,6 +4443,13 @@ function renderJumpList(): void {
       const hint = document.createElement('span');
       hint.className = 'p-hint';
       hint.textContent = it.snippet;
+      row.appendChild(hint);
+    } else if (it.ts) {
+      // 标题/cwd 命中行放相对时间(与 workbench 卡片同款 timeAgo),扫视更快
+      // / Title/cwd hits show relative time — faster visual scan
+      const hint = document.createElement('span');
+      hint.className = 'p-hint';
+      hint.textContent = timeAgo(it.ts);
       row.appendChild(hint);
     }
     row.onclick = () => { void jumpGo(it); };
