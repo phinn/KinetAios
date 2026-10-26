@@ -8333,9 +8333,24 @@ function openPathExternal(path: string): void {
     composing = false;
     composeEndedAt = Date.now();
   });
+  // 焦点被抢(webview tab 切换 / quick panel / 托盘通知)会硬中断 composition 且不派发
+  // compositionend → composing 永久卡 true,之后所有 Enter 被吞(体感:输入法切不回来)。
+  // blur 时 composition 必然已中断 → 强制复位。
+  // Focus steal (webview tab / quick panel / tray) hard-aborts the composition without
+  // firing compositionend → composing sticks true forever and every Enter is swallowed.
+  // A blur guarantees the composition is over → force reset.
+  composer.addEventListener('blur', () => {
+    composing = false;
+    composeEndedAt = 0;
+  });
   composer.addEventListener('keydown', (e) => {
     // IME 组合输入中(中文/日文等还没确认候选):按键交给输入法,避免 Enter 确认词被误当成发送。
-    // 用手动跟踪的 composing 替代 e.isComposing,后者在某些 IME 上会卡 true。
+    // 自愈优先:浏览器实时回报已退出 composition(keyCode 非 229 且 isComposing=false)
+    // 但手动标记还卡着 → 说明手动标记过时(焦点竞争丢事件),当场纠正。
+    // Self-heal first: if the browser reports composition is over (keyCode !== 229 &&
+    // isComposing === false) while our manual flag is still set, the flag is stale
+    // (focus race dropped events) — correct it on the spot.
+    if (composing && !e.isComposing && e.keyCode !== 229) composing = false;
     if (composing || e.isComposing || e.keyCode === 229) return;
     // compositionend 后短时间内的 Enter 视为 IME 确认键,不发送。
     // 搜狗输入法:确认候选词的 Enter 在 compositionend 之后几毫秒内到达,100ms 足够区分。
