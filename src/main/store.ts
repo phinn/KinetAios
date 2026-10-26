@@ -155,6 +155,10 @@ export function initStore(): void {
   for (const col of ['cache_read', 'cache_creation'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
+  // cron_tasks 加 conv_id 列:定时任务绑定固定频道(每次触发复用同一会话,防侧栏滚雪球)。
+  // cron_tasks.conv_id: bind each task to one persistent channel (reused on every fire).
+  if (!hasColumn('cron_tasks', 'conv_id'))
+    db.exec(`ALTER TABLE cron_tasks ADD COLUMN conv_id TEXT;`);
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
   if (!hasColumn('memories', 'conversation_id'))
     db.exec(`ALTER TABLE memories ADD COLUMN conversation_id TEXT;`);
@@ -1468,12 +1472,22 @@ export interface CronRow {
   enabled: boolean;
   lastRun: number | null;
   createdAt: number;
+  // 绑定的会话 id:同一定时任务固定复用一个频道,避免每次触发新建会话把侧栏撑爆。
+  // 会话被用户删除后由 dispatcher 检测并重建(null = 尚未建立)。
+  // Bound conversation id: one cron task reuses one channel. Dispatcher recreates
+  // it if the user deleted the conversation (null = not created yet).
+  convId: string | null;
 }
 export function listCronTasks(): CronRow[] {
-  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
-    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number;
+  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at, conv_id FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
+    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number; conv_id: string | null;
   }>;
-  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at }));
+  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at, convId: r.conv_id }));
+}
+// 更新定时任务绑定的会话 id(dispatcher 建/换频道时调用)。
+// Update the bound conversation id (called by the dispatcher when creating/rebinding).
+export function setCronConvId(id: string, convId: string | null): void {
+  db.prepare('UPDATE cron_tasks SET conv_id=? WHERE id=?;').run(convId, id);
 }
 export function addCronTask(t: { id: string; cron: string; prompt: string; cwd?: string }): void {
   db.prepare('INSERT INTO cron_tasks(id, cron, prompt, cwd, enabled, created_at) VALUES(?,?,?,?,1,?);')
