@@ -1426,6 +1426,13 @@ a { color: var(--accent); }
 .sb-proj-head:hover .sb-pacts { display: inline-flex; }
 .sb-chevron { display: inline-block; width: 10px; font-size: 0.769rem; color: var(--text-faint); text-align: center; transition: transform var(--dur-normal) var(--ease-out); }
 .sb-chevron.collapsed { transform: rotate(-90deg); }
+/* 折叠组内有 running 会话 → 组头亮呼吸点,提示"里面有活的",不用展开翻找 */
+li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
+  content: ''; display: inline-block; width: 7px; height: 7px;
+  border-radius: 50%; background: var(--ok, #34c77b);
+  margin-right: 5px; vertical-align: 1px;
+  animation: dot-retry-pulse 1.6s ease-in-out infinite;
+}
 .sb-pico { font-size: 0.769rem; opacity: 0.85; }
 .sb-pname { flex: 1; font-weight: 600; font-size: 0.769rem; color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
 .sb-pcount { font-size: 0.615rem; color: var(--text-faint); background: rgba(255,255,255,0.05); padding: 1px 5px; border-radius: 6px; font-variant-numeric: tabular-nums; }

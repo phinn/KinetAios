@@ -660,8 +660,7 @@ function scheduleSidebarRender(): void {
 
 function refreshSidebarLi(convId: string): void {
   const c = convs.get(convId);
-  if (!c) return;
-  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
+  if (!c) return;  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
   if (!li) { scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
   // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,走合并的全量重渲
   const projLi = li.closest('li.sb-proj') as HTMLElement | null;
@@ -675,6 +674,7 @@ function refreshSidebarLi(convId: string): void {
   }
   // running class 同步(dot 态与 CSS 选择器共用)
   li.classList.toggle('running', c.status === 'running');
+  syncProjRunningHint(c.cwd);
   // 标题也要就地刷新:rename 后 onConversation → refreshSidebarLi,若只更新 dot/时间,
   // 侧栏会一直显示旧名字(此前靠全量 renderSidebar 兜底,增量优化后丢了)。
   const titleEl = li.querySelector('.title');
@@ -809,6 +809,8 @@ function buildProjLi(cwd: string): HTMLElement {
     const chevron = head.querySelector('.sb-chevron');
     if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
     if (chevron) chevron.classList.toggle('collapsed', !wasCollapsed);
+    // 手动折叠/展开后同步组头呼吸点(折叠且组内有 running → 亮 sb-has-running)
+    syncProjRunningHint(cwd);
   };
   head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
     e.stopPropagation();
@@ -825,6 +827,17 @@ function buildProjLi(cwd: string): HTMLElement {
   tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
   projLi.appendChild(tasksUl);
   return projLi;
+}
+
+// 折叠组 running 呼吸点:renderSidebar 尾部与 refreshSidebarLi(局部刷新)共用,
+// 防两处逻辑漂移。条件:组持久折叠 + 未被搜索/筛选强制展开 + 组内有 running。
+function syncProjRunningHint(cwd: string): void {
+  const projLi = document.querySelector<HTMLElement>(`#conv-list li.sb-proj[data-cwd="${CSS.escape(cwd)}"]`);
+  if (!projLi) return;
+  const hiddenRunning = collapsedProjects.has(cwd) &&
+    !projLi.classList.contains('sb-forced-open') &&
+    projLi.querySelectorAll('li[data-cid].running').length > 0;
+  projLi.classList.toggle('sb-has-running', hiddenRunning);
 }
 
 function renderSidebar() {
@@ -940,7 +953,11 @@ function renderSidebar() {
       // 计数与折叠态可能变化 → 就地同步
       const count = projLi.querySelector('.sb-pcount');
       if (count) count.textContent = String(ids.length);
-      const collapsed = collapsedProjects.has(cwd);
+      // 搜索/运行中筛选命中折叠组 → 临时展开(不改 collapsedProjects 持久态):
+      // 否则命中项渲染在 max-height:0 的组里,用户"搜到了却看不见"。
+      // 组头挂 sb-forced-open 标记,清空搜索后按持久态收回。
+      const collapsed = collapsedProjects.has(cwd) && !(searchQuery || runningOnly);
+      projLi.classList.toggle('sb-forced-open', collapsedProjects.has(cwd) && !collapsed);
       const tasksUl = projLi.querySelector('.sb-proj-tasks') as HTMLElement;
       tasksUl.classList.toggle('collapsed', collapsed);
       projLi.querySelector('.sb-chevron')?.classList.toggle('collapsed', collapsed);
@@ -952,6 +969,13 @@ function renderSidebar() {
       }
       ul.appendChild(projLi);
     }
+  }
+  // 折叠组内有 running 会话 → 组头亮 sb-has-running(呼吸点),用户知道"里面有活的"
+  // 不用逐个展开找;展开组本身不遮蔽(task li 的 dot 本来就可见),无需标记。
+  if (sidebarMode !== 'flat') {
+    ul.querySelectorAll<HTMLElement>('li.sb-proj[data-cwd]').forEach((projLi) => {
+      if (projLi.dataset.cwd) syncProjRunningHint(projLi.dataset.cwd);
+    });
   }
   // 清理:本帧未渲染但仍挂在 DOM 上的任务 li(被删会话/cwd 换组后旧组残留)与消失的项目组。
   taskPool.forEach((li, cid) => { if (!renderedCids.has(cid)) li.remove(); });
@@ -9577,6 +9601,23 @@ function showChat() {
   document.getElementById('chat-view')!.classList.add('active');
   syncViewButtons();
   renderMain();
+  // 切进被折叠分组里的频道 → 临时展开该组并滚动定位,否则"切过去了,侧栏找不到"。
+  // sb-forced-open 临时展开,持久折叠态不写回:只是这次替用户打开,清筛选/重渲后按用户折叠态收回。
+  // Switched into a channel inside a collapsed group → force-expand (transient,
+  // sb-forced-open) + scroll into view. Persisted collapse state untouched.
+  if (selectedId) {
+    const li = document.querySelector(`#conv-list li[data-cid="${selectedId}"]`) as HTMLElement | null;
+    const projLi = li?.closest('li.sb-proj') as HTMLElement | null;
+    const cwd = projLi?.dataset.cwd || '';
+    if (projLi && cwd && collapsedProjects.has(cwd) && !projLi.classList.contains('sb-forced-open')) {
+      projLi.classList.add('sb-forced-open');
+      (projLi.querySelector('.sb-proj-tasks') as HTMLElement | null)?.classList.remove('collapsed');
+      projLi.querySelector('.sb-chevron')?.classList.remove('collapsed');
+      syncProjRunningHint(cwd);
+    }
+    const target = document.querySelector(`#conv-list li[data-cid="${selectedId}"]`) as HTMLElement | null;
+    target?.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function showPipeline() {
