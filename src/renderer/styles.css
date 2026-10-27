@@ -1250,7 +1250,7 @@ a { color: var(--accent); }
 .sb-mi-ico { font-size: 1rem; width: auto; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
 .sb-mi-ico svg { width: 26px; height: 26px; opacity: .85; }
 .sb-mi-label { font-size: 0.846rem; line-height: 1.25; color: var(--text-dim); word-break: break-all; }
-#conv-list { list-style: none; margin: 0; padding: 4px 6px 6px; overflow-y: auto; flex: 1; }
+#conv-list { list-style: none; margin: 0; padding: 4px 6px 6px; overflow-y: auto; flex: 1; min-height: 0; }
 #conv-list::-webkit-scrollbar { width: 4px; }
 #conv-list::-webkit-scrollbar-thumb { border: none; background: color-mix(in srgb, var(--text-faint) 40%, transparent); border-radius: 2px; }
 #conv-list::-webkit-scrollbar-thumb:hover { background: var(--text-dim); }
