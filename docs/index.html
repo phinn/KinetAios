@@ -189,6 +189,12 @@ h1 .grad{background:var(--grad);-webkit-background-clip:text;background-clip:tex
 .eng-card p{font-size:13px;color:var(--muted);line-height:1.65}
 .eng-card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
 .eng-card .tag{font-size:10px;font-family:ui-monospace,monospace;padding:3px 8px;border-radius:4px;background:var(--surface2);color:var(--dim)}
+/* 统一线性图标(内联 SVG symbol,stroke 跟随文字色) | Unified line icons */
+svg.li{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
+.eng-card .ic{font-size:20px}
+.eng-row .ic{font-size:14px}
+.dag-item .di{font-size:17px}
+.msg .av svg.li{width:14px;height:14px}
 
 /* ===== SCENARIOS ===== */
 .scenes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
@@ -357,7 +363,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             </div>
           </div>
           <div class="msg ai">
-            <div class="av">✦</div>
+            <div class="av"><svg class="li"><use href="#i-sparkle"/></svg></div>
             <div class="body">
               <div class="name">Direct V2 · 推广文案</div>
               <div class="bubble" data-i18n="m_reply">已经按"客户视角 + 利益点优先"重写,开头一句钩子 + 三个支撑卖点 + CTA。</div>
@@ -365,7 +371,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             </div>
           </div>
           <div class="msg ai" id="typingMsg" style="display:none">
-            <div class="av">⌘</div>
+            <div class="av"><svg class="li"><use href="#i-terminal"/></svg></div>
             <div class="body">
               <div class="name">Claude Code · 代码重构</div>
               <div class="typing"><span></span><span></span><span></span></div>
@@ -375,37 +381,37 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <aside class="mock-right">
           <div class="h" data-i18n="m_engines">引擎</div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">⌘</div>
+            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-terminal"/></svg></div>
             <div class="nm">Claude Code</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)">⚡</div>
+            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-route"/></svg></div>
             <div class="nm">Direct V3</div>
             <div class="st run">running</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(255,154,92,.12);color:var(--orange)">⚖</div>
+            <div class="ic" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-scale"/></svg></div>
             <div class="nm">Direct V4 Legis</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)">🧬</div>
+            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-gitbranch"/></svg></div>
             <div class="nm">Direct V5 Phylum</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">▶</div>
+            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-zap"/></svg></div>
             <div class="nm">Direct V2</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)">{}</div>
+            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-braces"/></svg></div>
             <div class="nm">Codex</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(255,215,95,.12);color:var(--gold)">⚡</div>
+            <div class="ic" style="background:rgba(255,215,95,.12);color:var(--gold)"><svg class="li"><use href="#i-zap"/></svg></div>
             <div class="nm">DeepSeek</div>
             <div class="st">idle</div>
           </div>
@@ -445,7 +451,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <div class="products">
       <a class="pcard" href="https://phinn.github.io/kinetapp/" target="_blank" style="--cardGrad:linear-gradient(135deg,#00E5B5,#00B5E5)">
         <div class="glow" style="background:var(--mint)"></div>
-        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)">💪</div>
+        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-dumbbell"/></svg></div>
         <h4>KinetFit</h4>
         <div class="tag" data-i18n="ps_fit_tag"></div>
         <p data-i18n="ps_fit_desc"></p>
@@ -453,7 +459,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       </a>
       <a class="pcard" href="https://apps.apple.com/app/id6780600464" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#00B5E5)">
         <div class="glow" style="background:var(--purple)"></div>
-        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)">🌙</div>
+        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-moon"/></svg></div>
         <h4>KinetSoul</h4>
         <div class="tag" data-i18n="ps_agt_tag"></div>
         <p data-i18n="ps_agt_desc"></p>
@@ -461,7 +467,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       </a>
       <a class="pcard" href="https://phinn.github.io/kinetbrief/" target="_blank" style="--cardGrad:linear-gradient(135deg,#FF9A5C,#FFD75F)">
         <div class="glow" style="background:var(--orange)"></div>
-        <div class="pico" style="background:rgba(255,154,92,.12);color:var(--orange)">📋</div>
+        <div class="pico" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-notebookpen"/></svg></div>
         <h4>KinetBrief</h4>
         <div class="tag" data-i18n="ps_brf_tag"></div>
         <p data-i18n="ps_brf_desc"></p>
@@ -469,7 +475,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       </a>
       <a class="pcard" href="https://github.com/phinn/KinetMagicDisk" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#FFD75F,#FF9A5C)">
         <div class="glow" style="background:var(--gold)"></div>
-        <div class="pico" style="background:rgba(255,215,95,.12);color:var(--gold)">🌞</div>
+        <div class="pico" style="background:rgba(255,215,95,.12);color:var(--gold)"><svg class="li"><use href="#i-sun"/></svg></div>
         <h4>KinetMagicDisk</h4>
         <div class="tag" data-i18n="ps_dsk_tag"></div>
         <p data-i18n="ps_dsk_desc"></p>
@@ -477,7 +483,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       </a>
       <a class="pcard" href="https://github.com/phinn/KinetAgent" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#00E5B5,#9B7EFF)">
         <div class="glow" style="background:var(--mint)"></div>
-        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)">📱</div>
+        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-smartphone"/></svg></div>
         <h4>KinetAgent</h4>
         <div class="tag" data-i18n="ps_agt2_tag"></div>
         <p data-i18n="ps_agt2_desc"></p>
@@ -486,7 +492,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#00B5E5,#9B7EFF)">
         <span class="soon-badge" data-i18n="ps_soon"></span>
         <div class="glow" style="background:var(--cyan)"></div>
-        <div class="pico" style="background:rgba(0,181,229,.12);color:var(--cyan)">🪟</div>
+        <div class="pico" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-appwindow"/></svg></div>
         <h4>KinetMagicWindow</h4>
         <div class="tag" data-i18n="ps_win_tag"></div>
         <p data-i18n="ps_win_desc"></p>
@@ -495,7 +501,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#FF9A5C)">
         <span class="soon-badge" data-i18n="ps_soon"></span>
         <div class="glow" style="background:var(--purple)"></div>
-        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)">⌘</div>
+        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-command"/></svg></div>
         <h4>KinetDock</h4>
         <div class="tag" data-i18n="ps_dck_tag"></div>
         <p data-i18n="ps_dck_desc"></p>
@@ -533,43 +539,43 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <p class="h-sub" data-i18n="eng_sub"></p>
     <div class="engines">
       <div class="eng-card">
-        <div class="top"><div class="ic">⌘</div><h3>Claude Code</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-terminal"/></svg></div><h3>Claude Code</h3></div>
         <div class="for">code · tools · mcp</div>
         <p data-i18n="eng_c"></p>
         <div class="tags"><span class="tag">refactor</span><span class="tag">debug</span><span class="tag">test</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">▶</div><h3>Direct V2</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-zap"/></svg></div><h3>Direct V2</h3></div>
         <div class="for">ReAct · the daily driver</div>
         <p data-i18n="eng_g"></p>
         <div class="tags"><span class="tag">ReAct</span><span class="tag">context-compaction</span><span class="tag">daily-driver</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">▶</div><h3>Direct V3</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-route"/></svg></div><h3>Direct V3</h3></div>
         <div class="for">intent router · auto-dispatch</div>
         <p data-i18n="eng_g3"></p>
         <div class="tags"><span class="tag">router</span><span class="tag">auto</span><span class="tag">default</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">🏛</div><h3>Direct V4 Legis</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-scale"/></svg></div><h3>Direct V4 Legis</h3></div>
         <div class="for">intent → assertion plan · verify</div>
         <p data-i18n="eng_g4"></p>
         <div class="tags"><span class="tag">deterministic</span><span class="tag">assert</span><span class="tag">0-drift</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">🧬</div><h3>Direct V5 Phylum</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-gitbranch"/></svg></div><h3>Direct V5 Phylum</h3></div>
         <div class="for">population evolution · multi-branch</div>
         <p data-i18n="eng_g5"></p>
         <div class="tags"><span class="tag">explore</span><span class="tag">evolve</span><span class="tag">multi-branch</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">{}</div><h3>Codex</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-braces"/></svg></div><h3>Codex</h3></div>
         <div class="for">code · patch · exec</div>
         <p data-i18n="eng_o"></p>
         <div class="tags"><span class="tag">patch</span><span class="tag">exec</span><span class="tag">sandbox</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">⚡</div><h3>DeepSeek Harness</h3></div>
+        <div class="top"><div class="ic"><svg class="li"><use href="#i-zap"/></svg></div><h3>DeepSeek Harness</h3></div>
         <div class="for">reasoning · long context</div>
         <p data-i18n="eng_d"></p>
         <div class="tags"><span class="tag">reasoning</span><span class="tag">128K</span><span class="tag">dsh</span></div>
@@ -670,19 +676,19 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 
       <div class="dag-list">
         <div class="dag-item">
-          <div class="di" style="background:rgba(0,229,181,.12);color:var(--mint)">⚙</div>
+          <div class="di" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-cog"/></svg></div>
           <div><h4 data-i18n="arc_1t">DAG 调度器</h4><p data-i18n="arc_1"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(155,126,255,.12);color:var(--purple)">🚌</div>
+          <div class="di" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-bus"/></svg></div>
           <div><h4 data-i18n="arc_2t">ToolBus 工具总线</h4><p data-i18n="arc_2"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(0,181,229,.12);color:var(--cyan)">🧠</div>
+          <div class="di" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-brain"/></svg></div>
           <div><h4 data-i18n="arc_3t">长期记忆</h4><p data-i18n="arc_3"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(255,154,92,.12);color:var(--orange)">🛡</div>
+          <div class="di" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-shield"/></svg></div>
           <div><h4 data-i18n="arc_4t">沙箱隔离</h4><p data-i18n="arc_4"></p></div>
         </div>
       </div>
@@ -1158,5 +1164,29 @@ applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "
 })();
 </script>
 
+
+<!-- ===== 内联 SVG 图标表(Lucide 24x24, stroke=currentColor) | Inline icon sprite ===== -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
+    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M12 19h4.5a3.5 3.5 0 0 0 0-7h-8a3.5 3.5 0 0 1 0-7H12"/></symbol>
+    <symbol id="i-scale" viewBox="0 0 24 24"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></symbol>
+    <symbol id="i-gitbranch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+    <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
+    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
+    <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></symbol>
+    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
+    <symbol id="i-notebookpen" viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/></symbol>
+    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
+    <symbol id="i-smartphone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
+    <symbol id="i-appwindow" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></symbol>
+    <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
+    <symbol id="i-cog" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+    <symbol id="i-bus" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></symbol>
+    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></symbol>
+    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  </defs>
+</svg>
 </body>
 </html>
