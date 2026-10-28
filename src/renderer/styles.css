@@ -1438,8 +1438,13 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .sb-pcount { font-size: 0.615rem; color: var(--text-faint); background: rgba(255,255,255,0.05); padding: 1px 5px; border-radius: 6px; font-variant-numeric: tabular-nums; }
 .sb-pacts { display: none; }
 .sb-proj-tasks { list-style: none; margin: 0; padding: 0 0 4px;
-  overflow: hidden; transition: max-height var(--dur-normal) var(--ease-out), opacity var(--dur-fast) var(--ease-out); max-height: 1000px; }
-.sb-proj-tasks.collapsed { max-height: 0; opacity: 0; padding: 0; }
+  overflow: hidden; transition: max-height var(--dur-normal) var(--ease-out), opacity var(--dur-fast) var(--ease-out);
+  /* ⚠️ 不得写死 max-height 上限(2026-10-28):56 条频道 ≈1700px > 1000px,
+     overflow:hidden 会把超出部分静默裁掉,#conv-list 感知不到 → 永远拉不到(用户实锤踩坑)。
+     展开态 max-height:none 真实撑开;折叠动画用 height 0↔auto 关键字过渡,
+     Electron 31(Chromium 126)不支持 interpolate-size → 忽略该行,退化为无动画直接开合,布局永远正确。 */
+  max-height: none; interpolate-size: allow-keywords; height: auto; }
+.sb-proj-tasks.collapsed { height: 0; opacity: 0; padding: 0; }
 .sb-proj-tasks li {
   padding: 4px 8px 4px 20px; border-radius: 6px; cursor: pointer; margin: 0 2px 1px;
   display: flex; align-items: center; gap: 7px; position: relative;
