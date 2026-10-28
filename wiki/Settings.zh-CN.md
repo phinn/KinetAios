@@ -62,7 +62,7 @@ i18n 实现详见 [[i18n]]。
 memory as code:把长期记忆导出成文本视图同步到一个 git 仓库(gitee / github 皆可),双机互同步、跨设备迁移。
 
 - **真相源仍是本地 SQLite**;导出物是文本视图:`lessons.md`(项目教训,按仓库分区)+ `facts.ndjson`(memories 全量)+ `blocks.json`(memory_blocks 常驻块)。
-- **隐私分级**:L0 lessons 明文、L1 facts/blocks、L2 对话原文**不出本地**(永不导出)。
+- **隐私分级**:L0 lessons 明文、L1 facts/blocks;4.0.3 起对话原文也随同步携带(进你自己的私有仓库:conversations + turns,分片+gzip 存储,导入后回填 FTS,`recall_memory` 跨设备可检索)。仓库在你手上,仍无第三方服务。
 - **双向幂等**:push 前先 pull;远端新条目并回本地(memories 按 id UPSERT、lessons 去重、blocks 按 updated_at LWW)。
 - 凭证复用系统 `git credential`(你 push 过该仓库即可);设置里填 remote + 分支 + 可选自动同步间隔。
 - 设置 → 长期记忆 → 「Git 同步」;提供连通性测试(clone/pull dry-run)。

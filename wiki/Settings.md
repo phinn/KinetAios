@@ -62,7 +62,7 @@ Good for machine migration, backup, sharing across providers. See [[Long-Term-Me
 Memory as code: long-term memories are exported as text views and synced to a git repo (gitee / GitHub both work) for two-machine sync and cross-device migration.
 
 - **Local SQLite stays the source of truth**; exports are text views: `lessons.md` (project lessons, grouped by repo) + `facts.ndjson` (all memories) + `blocks.json` (persistent memory blocks).
-- **Privacy tiers**: L0 lessons in plaintext, L1 facts/blocks, L2 conversation history **never leaves the machine** (never exported).
+- **Privacy tiers**: L0 lessons in plaintext, L1 facts/blocks, L2 conversation history — since v4.0.3, transcripts sync too (into your own private repo: conversations + turns, sharded + gzipped, FTS backfilled on import so `recall_memory` works across devices). The repo is yours; still zero third-party services.
 - **Bidirectional & idempotent**: pull before push; remote entries merge back (memories upsert by id, lessons deduped, blocks LWW by updated_at).
 - Credentials reuse the system `git credential` (just push to the repo once yourself); configure remote + branch + optional auto-sync interval in Settings.
 - Settings → Long-term memory → "Git sync"; includes a connectivity test (clone/pull dry-run).

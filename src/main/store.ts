@@ -155,6 +155,10 @@ export function initStore(): void {
   for (const col of ['cache_read', 'cache_creation'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
+  // cron_tasks 加 conv_id 列:定时任务绑定固定频道(每次触发复用同一会话,防侧栏滚雪球)。
+  // cron_tasks.conv_id: bind each task to one persistent channel (reused on every fire).
+  if (!hasColumn('cron_tasks', 'conv_id'))
+    db.exec(`ALTER TABLE cron_tasks ADD COLUMN conv_id TEXT;`);
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
   if (!hasColumn('memories', 'conversation_id'))
     db.exec(`ALTER TABLE memories ADD COLUMN conversation_id TEXT;`);
@@ -213,6 +217,86 @@ export function appendMessage(role: string, content: string, convId?: string): v
     if (convId) stmt('INSERT OR REPLACE INTO history_conv(id, conv_id) VALUES (?, ?);').run(Number(r.lastInsertRowid), convId);
   })();
 }
+
+// ── memory-sync 会话导出/导入(2026-10-24):conversations + turns 跨设备 ──
+// 全部流式(iterate/readline):库可到 GB 级,一次性 .all()/join 会撞 V8 字符串上限
+// ("Invalid string length")或直接撑爆堆。Export/import stream line-by-line.
+
+/** 导出全部会话行(惰性 generator,调用方 for-of 逐行消费,勿 Array.from) */
+export function* exportConversationsIter(): Generator<Record<string, unknown>> {
+  const iter = db.prepare(
+    `SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
+            branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
+            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory
+     FROM conversations ORDER BY created_at ASC;`,
+  ).iterate() as IterableIterator<Record<string, unknown>>;
+  for (const row of iter) yield row;
+}
+
+/** 导出全部 turns(惰性流式;data 即 saveTurn 写入的整 turn JSON 原文;字段名对齐同步协议 conv_id/created_at) */
+export function* exportTurns(): Generator<{ id: string; conv_id: string; data: string; created_at: number }> {
+  const iter = db.prepare(
+    `SELECT id, conv_id, data, created_at FROM turns ORDER BY created_at ASC;`,
+  ).iterate() as IterableIterator<{ id: string; conv_id: string; data: string; created_at: number }>;
+  for (const row of iter) yield row;
+}
+
+/**
+ * 导入单条远端会话行:已存在(id 命中)返回 false(本地为准,防覆盖本地更新的 direct_history)。
+ */
+export function importConversationRow(r: Record<string, unknown>): boolean {
+  if (typeof r.id !== 'string' || !r.id) return false;
+  const exists = db.prepare('SELECT 1 FROM conversations WHERE id = ?;').get(r.id);
+  if (exists) return false;
+  db.prepare(
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
+                               branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
+                               updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+  ).run(
+    r.id, r.engine ?? 'direct', r.cwd ?? '', r.created_at ?? Date.now() / 1000,
+    r.custom_title ?? null, r.direct_history ?? null, r.engine_session_id ?? null, r.model ?? null,
+    r.branch_info ?? null, r.pipeline_id ?? null, r.goal ?? null, r.profile_id ?? null,
+    r.context_mode ?? null, r.persona_enabled ?? null, r.loop_ralph ?? null,
+    r.updated_at ?? null, r.sub_agent_model ?? null, r.wecom_key ?? null, r.feishu_key ?? null,
+    r.cross_project_memory ?? null,
+  );
+  return true;
+}
+
+/** turns 总行数(同步进度百分比分母) */
+export function countTurns(): number {
+  return (db.prepare('SELECT COUNT(*) AS n FROM turns;').get() as { n: number }).n;
+}
+
+/**
+ * 导入单行远端 turn(ndjson 一行):已存在(id 命中)返回 false;
+ * 新建时顺带回填 FTS(appendMessage 同款截断:每 turn 贡献 user prompt + assistant answer 两条,
+ * 保证跨设备 recall_memory 能搜到同步来的对话)。坏 JSON 返回 false 不炸整批。
+ */
+export function importTurnsLine(line: string): boolean {
+  let r: { id?: string; conv_id?: string; data?: string; created_at?: number };
+  try {
+    r = JSON.parse(line) as typeof r;
+  } catch {
+    return false;
+  }
+  if (!r.id || !r.data || !r.conv_id) return false;
+  const exists = db.prepare('SELECT 1 FROM turns WHERE id = ?;').get(r.id);
+  if (exists) return false;
+  db.transaction(() => {
+    db.prepare('INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?);')
+      .run(r.id, r.conv_id, r.data, r.created_at ?? 0);
+    // FTS 回填:坏 turn JSON 单条跳过不炸整批
+    try {
+      const t = JSON.parse(r.data!) as { prompt?: string; answer?: string };
+      if (t.prompt) appendMessage('user', t.prompt, r.conv_id!);
+      if (t.answer) appendMessage('assistant', t.answer, r.conv_id!);
+    } catch { /* 跳过坏行 */ }
+  })();
+  return true;
+}
+
 
 export function search(q: string, limit = 20, restrictConvId?: string): Array<{ role: string; content: string }> {
   const fts = sanitize(q);
@@ -484,7 +568,11 @@ function loadTurns(convId: string): Turn[] {
   // Self-heal: event-rebuilt turns only fill holes; parseable cache wins (superset with pinned/traj).
   const healed = rebuildTurnsFromEvents(convId);
   if (healed.length === 0) return cached;
-  const merged = new Map(cached.filter((t) => t.prompt).map((t) => [t.id, t]));
+  // 防丢账:仅按 prompt 非空过滤会把「纯 error 轮」(prompt='')滤掉 → 重启后报错轮消失。
+  // 改为:可解析缓存一律保留(prompt 或 error 任一存在即有效)。Keep parseable cache turns; pure-error turns must survive.
+  const merged = new Map(
+    cached.filter((t) => t.prompt || t.error || t.answer).map((t) => [t.id, t] as const),
+  );
   for (const t of healed) {
     if (!merged.get(t.id)) merged.set(t.id, t);
   }
@@ -560,7 +648,12 @@ function parseTurn(data: string): Turn {
   try {
     const o = JSON.parse(data) as Partial<Turn> & { prompt: string };
     const t = newTurn(o.prompt ?? '');
-    return { ...t, ...o, id: o.id ?? t.id, ts: o.ts ?? t.ts, error: o.error ?? null };
+    // 数组字段归一化:老版本序列化可能写 null/undefined 覆盖模板的 [],下游 .length / for-of 直接炸
+    // (2026-10-25 老会话 "list is not iterable" 的根修)。Normalize array fields: null → [].
+    const merged = { ...t, ...o, id: o.id ?? t.id, ts: o.ts ?? t.ts, error: o.error ?? null } as Turn;
+    merged.steps = Array.isArray(merged.steps) ? merged.steps : [];
+    if (merged.todos && !Array.isArray(merged.todos)) merged.todos = undefined;
+    return merged;
   } catch {
     return newTurn('(unparseable turn)');
   }
@@ -658,11 +751,25 @@ export function loadConversations(): Conversation[] {
 // 批量读取最近的 turns(prompt + answer),供替身画像分析用。
 // Load recent turns (prompt + answer) for persona generation.
 export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: string; engine: string; cwd: string }> {
+  // 画像防串味(2026-10-25):纯时间序 LIMIT 200 会被单一项目密集期淹没(如 CubeCraft 连测两周
+  // → 200 轮全是 iOS 模拟器话题 → 画像变成"iOS 工程师"导致其它项目会话说话带偏)。
+  // 改为按项目 cwd 归并配额采样:每项目最多 ceil(limit/项目数) 轮,项目数上限 8(超出的极旧项目不进画像)。
+  // Anti-drift: per-project quota sampling so one project's sprint can't drown out the rest.
   const rows = db.prepare(
-    `SELECT t.data, c.engine, c.cwd FROM turns t
-     JOIN conversations c ON t.conv_id = c.id
-     ORDER BY t.created_at DESC LIMIT ?;`,
-  ).all(limit) as Array<{ data: string; engine: string; cwd: string }>;
+    `WITH recent AS (
+       SELECT t.data, t.created_at AS ca, c.engine, c.cwd
+       FROM turns t JOIN conversations c ON t.conv_id = c.id
+       ORDER BY t.created_at DESC LIMIT 2000
+     ),
+     nproj AS (SELECT count(DISTINCT cwd) AS n FROM recent),
+     ranked AS (
+       SELECT r.*, ROW_NUMBER() OVER (PARTITION BY r.cwd ORDER BY r.ca DESC) AS rn
+       FROM recent r
+     )
+     SELECT data, engine, cwd FROM ranked
+     WHERE rn <= max(8, ? / max((SELECT n FROM nproj), 1))  -- 每项目(cwd)配额;项目极少时单项目仍可到 limit
+     ORDER BY ca DESC LIMIT ?;`,
+  ).all(limit, limit) as Array<{ data: string; engine: string; cwd: string }>;
   const results: Array<{ prompt: string; answer: string; engine: string; cwd: string }> = [];
   for (const r of rows) {
     try {
@@ -939,9 +1046,9 @@ export function importMemoryRows(rows: import('../shared/types').MemoryRow[]): n
 }
 
 /** memory_blocks 全量(结构化常驻块,label→{content,updatedAt}) */
-export function exportMemoryBlocksData(): Array<{ label: string; content: string; updatedAt: number }> {
-  return db.prepare(`SELECT label, content, updated_at FROM memory_blocks ORDER BY label ASC;`)
-    .all() as Array<{ label: string; content: string; updatedAt: number }>;
+export function exportMemoryBlocksData(): Array<{ label: string; value: string; updatedAt: number }> {
+  return db.prepare(`SELECT label, value, updated_at FROM memory_blocks ORDER BY label ASC;`)
+    .all() as Array<{ label: string; value: string; updatedAt: number }>;
 }
 
 /** memory-sync 的 MemoryStoreApi 工厂:字段名对齐 shared/types 的 MemoryRow/MemoryBlock 数据形状 */
@@ -949,13 +1056,18 @@ export function memoryStoreApi() {
   return {
     exportMemories: exportMemoryRows,
     importMemories: importMemoryRows,
-    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    exportBlocks: () => exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.value, updatedAt: b.updatedAt })),
     importBlock: (label: string, value: string, updatedAt: number): boolean => {
       const cur = db.prepare(`SELECT updated_at FROM memory_blocks WHERE label = ?;`).get(label) as { updated_at: number } | undefined;
       if (cur && cur.updated_at >= updatedAt) return false; // 本地不旧,不动
       const r = updateMemoryBlock(label, value);
       return r.ok;
     },
+    exportConversations: exportConversationsIter,
+    importConversationRow,
+    exportTurns,
+    importTurnsLine,
+    countTurns,
   };
 }
 
@@ -1360,12 +1472,22 @@ export interface CronRow {
   enabled: boolean;
   lastRun: number | null;
   createdAt: number;
+  // 绑定的会话 id:同一定时任务固定复用一个频道,避免每次触发新建会话把侧栏撑爆。
+  // 会话被用户删除后由 dispatcher 检测并重建(null = 尚未建立)。
+  // Bound conversation id: one cron task reuses one channel. Dispatcher recreates
+  // it if the user deleted the conversation (null = not created yet).
+  convId: string | null;
 }
 export function listCronTasks(): CronRow[] {
-  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
-    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number;
+  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at, conv_id FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
+    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number; conv_id: string | null;
   }>;
-  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at }));
+  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at, convId: r.conv_id }));
+}
+// 更新定时任务绑定的会话 id(dispatcher 建/换频道时调用)。
+// Update the bound conversation id (called by the dispatcher when creating/rebinding).
+export function setCronConvId(id: string, convId: string | null): void {
+  db.prepare('UPDATE cron_tasks SET conv_id=? WHERE id=?;').run(convId, id);
 }
 export function addCronTask(t: { id: string; cron: string; prompt: string; cwd?: string }): void {
   db.prepare('INSERT INTO cron_tasks(id, cron, prompt, cwd, enabled, created_at) VALUES(?,?,?,?,1,?);')

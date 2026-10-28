@@ -1207,6 +1207,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         store.appendEvent(conv.id, t.id, { type: 'assistant/message', text: t.answer || '' });
         break;
       case 'error':
+        // ⚠️ 与 done 分支同权:失败 turn 也必须无条件落库。此前只有 done 才 saveTurn,
+        // error 的内存态(t.done=true/t.error=…)重启即丢 → 老的 saveTurn 节流残片里
+        // done=false,重启后被 resume 重发,UI 永远 running(与 2026-09-09 同类事故)。
+        // / A failed turn must persist too — same unconditional saveTurn as 'done'.
+        store.saveTurn(conv.id, t);
         store.appendMessage('assistant', `⚠️ ${ev.message}`, conv.id);
         store.appendEvent(conv.id, t.id, { type: 'turn/error', message: ev.message });
         break;

@@ -11,7 +11,7 @@
  * - gitee/github 皆可:就是个 git remote,凭证复用系统 git credential(用户已 push 过该仓库即可)。
  */
 import { execFile } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, createReadStream, createWriteStream } from 'node:fs';
 import * as path from 'node:path';
 import type { MemorySyncSettings, MemorySyncResult, MemoryRow } from '../shared/types';
 
@@ -39,6 +39,114 @@ function repoDirName(remote: string): string {
   return `memory-sync-${safe}`;
 }
 
+// ── ndjson 流式读写(2026-10-24):库 GB 级,整文件进内存/整串拼接都会撞 V8 字符串上限 ──
+
+/** 逐行读 ndjson(按需创建 readstream;文件不存在时不产生任何行) */
+async function* ndjsonLines(file: string): AsyncGenerator<string> {
+  let stream: import('node:fs').ReadStream | null = null;
+  try {
+    stream = createReadStream(file, { encoding: 'utf8' });
+    const rl = (require('node:readline') as typeof import('node:readline')).createInterface({ input: stream, crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (line.trim()) yield line;
+    }
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException)?.code !== 'ENOENT') throw e;
+  } finally {
+    stream?.destroy();
+  }
+}
+
+/** 逐行写 ndjson:write(line) 由调用方回调,内部攒 8MB 批量刷盘,单行不落大字符串 */
+async function writeNdjson(file: string, produce: (write: (line: string) => void) => void): Promise<void> {
+  const out = createWriteStream(file, { encoding: 'utf8' });
+  let buf = '';
+  const write = (line: string): void => {
+    buf += line + '\n';
+    if (buf.length >= 8 * 1024 * 1024) { out.write(buf); buf = ''; }
+  };
+  produce(write);
+  if (buf) out.write(buf);
+  await new Promise<void>((resolve, reject) => { out.end(() => resolve()); out.on('error', reject); });
+}
+
+// turns 专用:分片 + gzip。教训(2026-10-24):7023 turns 全量单文件 881MB,
+// gitee pre-receive 单文件 100MB 配额直接拒收整个 push("exceeds quota 100MB")。
+// 按累计字节切片(行序稳定 → 旧片内容不变 → git blob 复用,只有尾片有新存储),
+// 每片 gzip(turn JSON 压缩率 ~31%,远端仓库长期体积同比例省)。
+const TURN_SHARD_BYTES = 64 * 1024 * 1024; // 预留余量:gitee 硬上限 100MB
+
+const shardName = (base: string, n: number): string => `${base}-${String(n).padStart(4, '0')}.ndjson.gz`;
+
+/** 列出 dir 下某 base 的全部分片文件名(字典序 = 分片序),含旧版裸 ndjson 单文件 */
+async function listShards(dir: string, base: string): Promise<string[]> {
+  const names = await fs.readdir(dir).catch(() => [] as string[]);
+  return names
+    .filter((f) => f === `${base}.ndjson` || (f.startsWith(`${base}-`) && (f.endsWith('.ndjson.gz') || f.endsWith('.ndjson'))))
+    .sort();
+}
+
+/** 分片 + gzip 逐行写:先清旧版全部文件(单文件/旧分片),再按 64MB 累计切片,返回片数 */
+async function writeNdjsonSharded(dir: string, base: string,
+                                  produce: (write: (line: string) => void) => void): Promise<number> {
+  for (const f of await listShards(dir, base)) await fs.rm(path.join(dir, f), { force: true });
+  const createGzip = (require('node:zlib') as typeof import('node:zlib')).createGzip;
+  let n = 0;
+  const outs: Array<import('node:fs').WriteStream> = []; // 全部片要等 finish 才算落盘(git add 前)
+  let failErr: Error | null = null;
+  const openShard = (): { gz: import('node:zlib').Gzip } => {
+    const out = createWriteStream(path.join(dir, shardName(base, n + 1)));
+    const gz = createGzip();
+    gz.pipe(out); // 数据流:gzip 变换流(源) → 文件(汇);方向反了会 no-op/崩
+    gz.on('error', (e) => { failErr = failErr ?? e; });
+    out.on('error', (e) => { failErr = failErr ?? e; });
+    outs.push(out);
+    return { gz };
+  };
+  let { gz } = openShard();
+  let used = 0;
+  let buf = '';
+  const write = (line: string): void => {
+    const len = Buffer.byteLength(line) + 1;
+    // 满片换新(空片时即便单行超限也直接写,单行本身不会到 64MB 量级)
+    if (used > 0 && used + len > TURN_SHARD_BYTES) {
+      if (buf) { gz.write(buf); buf = ''; }
+      gz.end();
+      n++;
+      ({ gz } = openShard());
+      used = 0;
+    }
+    buf += line + '\n';
+    used += len;
+    if (buf.length >= 8 * 1024 * 1024) { gz.write(buf); buf = ''; }
+  };
+  produce(write);
+  if (buf) gz.write(buf);
+  gz.end();
+  await new Promise<void>((resolve) => {
+    let done = 0;
+    for (const o of outs) {
+      o.on('finish', () => { if (++done === outs.length) resolve(); });
+    }
+  });
+  if (failErr) throw failErr;
+  return n + 1;
+}
+
+/** 逐行读全部分片(自动解压;按文件名序拼回完整行序) */
+async function* ndjsonShardedLines(dir: string, base: string): AsyncGenerator<string> {
+  const createGunzip = (require('node:zlib') as typeof import('node:zlib')).createGunzip;
+  for (const f of await listShards(dir, base)) {
+    const isGz = f.endsWith('.gz');
+    const input = createReadStream(path.join(dir, f));
+    const stream = isGz ? input.pipe(createGunzip()) : input;
+    const rl = (require('node:readline') as typeof import('node:readline')).createInterface({ input: stream, crlfDelay: Infinity });
+    for await (const line of rl) {
+      if (line.trim()) yield line;
+    }
+  }
+}
+
 export interface MemoryStoreApi {
   /** memories 全量(id 去重后的追加式事实流) */
   exportMemories(): import('../shared/types').MemoryRow[];
@@ -48,6 +156,16 @@ export interface MemoryStoreApi {
   exportBlocks(): Array<{ label: string; value: string; updatedAt: number }>;
   /** 按 updated_at 新者胜并入 block(字数上限由 store 内部裁) */
   importBlock(label: string, value: string, updatedAt: number): boolean;
+  /** 全量会话行,惰性流式(generator;库 GB 级禁止一次性数组化,V8 字符串上限会炸) */
+  exportConversations(): Generator<Record<string, unknown>>;
+  /** 导入单条远端会话行,返回是否新建(已存在跳过,本地为准) */
+  importConversationRow(row: Record<string, unknown>): boolean;
+  /** 全量 turn 行,惰性流式(conv_id + data 整 turn JSON) */
+  exportTurns(): Generator<{ id: string; conv_id: string; data: string; created_at: number }>;
+  /** 导入单行远端 turn(ndjson 一行)+ 回填 FTS,返回是否新建 */
+  importTurnsLine(line: string): boolean;
+  /** turns 总行数(导出进度分母) */
+  countTurns(): number;
 }
 
 // ── 导出文本渲染 ─────────────────────────────────────────────
@@ -101,7 +219,7 @@ function storeApi(): MemoryStoreApi {
   return {
     exportMemories: () => s.exportMemoryRows(),
     importMemories: (rows) => s.importMemoryRows(rows),
-    exportBlocks: () => s.exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.content, updatedAt: b.updatedAt })),
+    exportBlocks: () => s.exportMemoryBlocksData().map((b) => ({ label: b.label, value: b.value, updatedAt: b.updatedAt })),
     importBlock: (label, value, updatedAt) => {
       const cur = s.loadMemoryBlock(label);
       if (!cur) return false;
@@ -109,13 +227,27 @@ function storeApi(): MemoryStoreApi {
       const r = s.updateMemoryBlock(label, value);
       return r.ok;
     },
+    exportConversations: () => s.exportConversationsIter(),
+    importConversationRow: (row) => s.importConversationRow(row),
+    exportTurns: () => (function* () {
+      for (const t of s.exportTurns()) yield { id: t.id, conv_id: t.conv_id, data: t.data, created_at: t.created_at };
+    })(),
+    importTurnsLine: (line) => s.importTurnsLine(line),
+    countTurns: () => s.countTurns(),
   };
 }
 
 /** 供 IPC 调用:cfg + userData 根目录,自动补 store 实现 */
-export async function memorySyncRun(cfg: MemorySyncSettings): Promise<MemorySyncResult> {
+export async function memorySyncRun(
+  cfg: MemorySyncSettings,
+  onProgress?: (phase: string, p?: number) => void,
+): Promise<MemorySyncResult> {
   const { app } = require('electron') as typeof import('electron');
-  return memorySync(cfg, app.getPath('userData'), storeApi());
+  const s = require('./store') as typeof import('./store');
+  return memorySync(cfg, app.getPath('userData'), storeApi(), {
+    onProgress,
+    turnsTotal: s.countTurns(),
+  });
 }
 
 /** 连通性测试:只 clone/fetch,不写不推 */
@@ -137,20 +269,24 @@ export async function memorySyncTest(cfg: MemorySyncSettings): Promise<{ ok: boo
 /**
  * 执行一次同步:导出 → clone/pull → 合并(远端行并回本地)→ commit → push。
  * 幂等性:memories 按 id 去重(importMemories 跳过已存在 id),重复同步无副作用。
+ * opts.onProgress:阶段进度(phase + 0~1),UI 状态栏实时显示;opts.turnsTotal 支撑 turns 导出百分比。
  */
 export async function memorySync(
   cfg: MemorySyncSettings,
   workDir: string, // userData 根(镜像仓库放 userData/memory-sync-<name>/)
   store: MemoryStoreApi,
+  opts?: { onProgress?: (phase: string, p?: number) => void; turnsTotal?: number },
 ): Promise<MemorySyncResult> {
   const result: MemorySyncResult = { ok: false, pushed: false, imported: 0, commits: 0, exported: 0, error: undefined, steps: [] };
   const log = (step: string, detail: string) => { result.steps.push({ step, detail, at: new Date().toISOString() }); };
+  const prog = opts?.onProgress ?? (() => {});
   try {
     const baseDir = path.join(workDir, 'memory-sync');
     const dir = path.join(baseDir, repoDirName(cfg.remote));
     const branch = cfg.branch || 'main';
 
     // 1) 确保镜像仓库存在(clone 一次,后续复用)
+    prog('clone');
     let hasRepo = false;
     try {
       const st = await fs.stat(path.join(dir, '.git'));
@@ -169,6 +305,7 @@ export async function memorySync(
     }
 
     // 2) pull 远端最新(push 前必拉,双端互推不炸)
+    prog('pull');
     await git(dir, ['fetch', 'origin']);
     const st = await git(dir, ['rev-parse', '--verify', `origin/${branch}`]);
     if (st.ok) {
@@ -190,6 +327,23 @@ export async function memorySync(
           }
         } catch { /* 远端还没有 blocks.json,首推 */ }
         // lessons.md 里的 lesson 不单独导回 —— facts.ndjson 是全量真相,md 只是视图
+        // 4b) 会话 + turns:跨设备接续对话(2026-10-24)。流式逐行导入(库 GB 级,禁止整文件进内存)。
+        // 幂等:conv/turn 都按 id 跳过已存在。
+        try {
+          prog('import-convs');
+          let nc = 0;
+          for await (const line of ndjsonLines(path.join(dir, 'conversations.ndjson'))) {
+            try { if (store.importConversationRow(JSON.parse(line) as Record<string, unknown>)) nc++; } catch { /* 脏行跳过 */ }
+          }
+          if (nc > 0) log('convs', `${nc} 个远端会话并入本地`);
+          prog('import-turns', 0);
+          let nt = 0;
+          for await (const line of ndjsonShardedLines(dir, 'turns')) {
+            if (store.importTurnsLine(line)) { nt++; if (nt % 500 === 0) prog('import-turns', nt / Math.max(1, opts?.turnsTotal ?? nt)); }
+          }
+          prog('import-turns', 1);
+          if (nt > 0) log('turns', `${nt} 个远端轮次并入本地(FTS 已回填,可跨设备检索)`);
+        } catch { /* 远端还没有 conversations.ndjson,首推 */ }
       } catch { /* 远端尚无 facts.ndjson,首推 */ }
     }
 
@@ -200,7 +354,26 @@ export async function memorySync(
     await fs.writeFile(path.join(dir, 'lessons.md'), renderLessonsMd(rows), 'utf8');
     await fs.writeFile(path.join(dir, 'blocks.json'),
       JSON.stringify(store.exportBlocks(), null, 2), 'utf8');
-    result.exported = rows.length;
+    // 会话 + turns 原文。conversations 单文件 ndjson 流式逐行写;
+    // turns 分片+gzip(单文件 881MB 超 gitee 100MB 配额,push 被远端拒收的根因)。
+    // join()/writeFile 整串在 GB 级库上撞 V8 字符串上限,必须流式。
+    prog('export-convs');
+    const convPath = path.join(dir, 'conversations.ndjson');
+    let convCount = 0;
+    await writeNdjson(convPath, (write) => {
+      for (const c of store.exportConversations()) { write(JSON.stringify(c)); convCount++; }
+    });
+    prog('export-turns', 0);
+    const turnsTotal = opts?.turnsTotal ?? 0;
+    let turnCount = 0;
+    await writeNdjsonSharded(dir, 'turns', (write) => {
+      for (const t of store.exportTurns()) {
+        write(JSON.stringify(t)); turnCount++;
+        if (turnsTotal > 0 && turnCount % 500 === 0) prog('export-turns', turnCount / turnsTotal);
+      }
+    });
+    prog('export-turns', 1);
+    result.exported = rows.length + convCount + turnCount;
 
     // 5) commit(有变更才提交)
     await git(dir, ['add', '-A']);
@@ -217,6 +390,7 @@ export async function memorySync(
     // 6) push(无 remote 或网络失败不阻塞整体 ok=false 只在硬错时)
     const hasRemote = (await git(dir, ['remote'])).stdout.trim().length > 0;
     if (hasRemote && result.commits > 0) {
+      prog('push');
       const pr = await git(dir, ['push', 'origin', `HEAD:${branch}`], 120_000);
       if (pr.ok) { result.pushed = true; log('push', 'ok'); }
       else {

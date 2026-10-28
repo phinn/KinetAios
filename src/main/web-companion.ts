@@ -22,6 +22,7 @@ import QRCode from 'qrcode';
 import { __getTM } from './main-instance';
 import { getSettings } from './settings';
 import { searchEnriched, stmt as dbStmt } from './store';
+import type { TaskStep } from '../shared/types';
 
 type SessionInfo = {
   id: string;
@@ -54,8 +55,21 @@ export function projectName(cwd: string, homeDir: string, ungrouped: string): st
 }
 
 /** 手机页单 turn 的展示切片(不透传 steps 全文/重载荷)。 */
-function sliceTurn(t: { id: string; prompt: string; answer: string; error: string | null; done: boolean; ts: number }) {
-  return { id: t.id, prompt: t.prompt, answer: t.answer, error: t.error, done: t.done, ts: t.ts };
+function sliceTurn(t: {
+  id: string; prompt: string; answer: string; error: string | null; done: boolean; ts: number;
+  steps?: TaskStep[];
+}) {
+  // steps 精简片:手机端渲染工具轨迹(哪个工具、跑没跑完、结果摘要)。
+  // 结果截 200 字 + 剥换行防串行;旧 turn 无 steps(undefined → 空数组)。
+  // / Slim step chips for the phone: tool name + status + short result excerpt.
+  const steps = (t.steps ?? []).slice(-30).map((s) => ({
+    name: s.name,
+    result: clamp(s.result || '', 200),
+    pending: s.pending === true,
+    outcome: s.outcome ?? null,
+    durationMs: s.durationMs ?? null,
+  }));
+  return { id: t.id, prompt: t.prompt, answer: t.answer, error: t.error, done: t.done, ts: t.ts, steps };
 }
 
 function clamp(s: string, n: number): string {
@@ -412,6 +426,16 @@ function pageHtml(token: string, L: Record<string, string>): string {
   .turn { margin-bottom: 10px; }
   .turn .q { color: #79c0ff; font-size: 13px; margin-bottom: 4px; white-space: pre-wrap; word-break: break-word; }
   .turn .a { color: #e6edf3; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
+  .steps { margin: 2px 0 6px; display: flex; flex-direction: column; gap: 3px; }
+  .step { font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #8b949e; background: #0d1117; border: 1px solid #21262d; border-radius: 7px; padding: 4px 8px; word-break: break-all; }
+  .step b { color: #a5b1bd; font-weight: 600; }
+  .step .ms { color: #6e7681; margin-left: 6px; }
+  .step.run { border-color: #1f4a7a; animation: pulse 1.2s ease-in-out infinite; }
+  .step.run b::after { content: " ⏳"; }
+  .step.ok b::before { content: "✓ "; color: #3fb950; }
+  .step.bad { border-color: #5c2321; }
+  .step.bad b::before { content: "✗ "; color: #f85149; }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
   .turn .a.running::after { content: "▍"; animation: blink 1s infinite; color: #58a6ff; }
   .turn .err { color: #f85149; font-size: 13px; margin-top: 4px; }
   @keyframes blink { 50% { opacity: 0; } }
@@ -571,12 +595,24 @@ function renderDetail(turns, c) {
   el.innerHTML = head + turns.map((t) =>
     '<div class="turn">' +
       '<div class="q">🧑 ' + esc(t.prompt) + '</div>' +
+      stepsHtml(t.steps) +
       (t.answer ? '<div class="a' + (t.done ? '' : ' running') + '">' + esc(t.answer) + '</div>' : (t.done ? '' : '<div class="a running"></div>')) +
       (t.error ? '<div class="err">⚠ ' + esc(t.error) + '</div>' : '') +
     '</div>'
   ).join('');
   const stop = el.querySelector('[data-cancel]');
   if (stop) stop.onclick = () => api('/api/cancel', { convId: openId }).then(() => refresh());
+}
+
+// 工具轨迹行:✓/⏳/✗ + 工具名 + 结果摘要(等宽小字)。无轨迹返回空串。
+function stepsHtml(steps) {
+  if (!steps || !steps.length) return '';
+  return '<div class="steps">' + steps.map((s) => {
+    const cls = s.pending ? 'run' : (s.outcome === 'error' ? 'bad' : 'ok');
+    const ms = s.durationMs ? '<span class="ms">' + (s.durationMs > 999 ? (s.durationMs / 1000).toFixed(1) + 's' : s.durationMs + 'ms') + '</span>' : '';
+    return '<div class="step ' + cls + '"><b>' + esc(s.name) + '</b>' + ms +
+      (s.result ? '<br>' + esc(s.result) : '') + '</div>';
+  }).join('') + '</div>';
 }
 
 function backToList() {

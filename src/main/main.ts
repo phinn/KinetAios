@@ -27,7 +27,7 @@ import { listSnapshots, restoreSnapshot } from './snapshots';
 import { registerUpdateIpc } from './updater';
 import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap, savePluginEngineSettings } from './plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from './cron';
-import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun } from './store';
+import { listCronTasks, addCronTask, updateCronTask, deleteCronTask, touchCronLastRun, setCronConvId } from './store';
 import { setTaskManagerForWatchers, ensureWatcher, listWatchers, startWatcher, stopWatcher } from './watcher';
 import { setTaskManager } from './main-instance';
 import { initJobManager, jobManager } from './JobManager';
@@ -1411,28 +1411,46 @@ if (!gotLock) {
       getFeishuBridge().start().catch((e) => console.warn('[feishu] 自启动失败:', e.message));
     }
     for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);
-    // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。dispatcher 起新会话并发 prompt。
+    // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。
     setCronTasks(listCronTasks().map((r) => ({
       id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled,
       lastRun: r.lastRun ?? undefined, createdAt: r.createdAt,
     })));
-    // cron 任务 → 最近一次派发的会话 id(重入门闩用)
-    const cronConvByTask = new Map<string, string>();
+    // dispatcher:同一定时任务固定复用一个频道(cron_tasks.conv_id 持久化),不再每次触发
+    // 都 newConversation 把侧栏撑爆。会话被用户删了 → 自动重建并回写;cwd 改了 → 换新频道。
+    // 重入门闩:绑定的会话还在 running 就跳过本次触发 —— 跑 10 分钟的 * * * * * 任务
+    // 不会每分钟叠一个并发实例。
+    // 每次触发前清空上下文(turns/directHistory/engineSessionId 落库重置):cron 轮次彼此
+    // 独立,不复用上轮对话,避免 token 随触发次数滚雪球。turns 留在库里没必要 —— UI 侧
+    // 该频道每次触发都是一轮干净的问答,历史意义有限;要留痕看 cron 日志即可。
+    // Dispatcher: one cron task = one persistent channel (cron_tasks.conv_id). Recreate
+    // only if the user deleted it; rebind if cwd changed; skip while still running.
+    // Clear context before every fire (turns/directHistory/engineSessionId, persisted) —
+    // cron runs are independent; never replay last run's tokens.
     setDispatcher((task) => {
       try {
-        // 重入门闩:同任务上一轮会话还在跑就跳过本次触发 —— 跑 10 分钟的
-        // * * * * * 任务之前每分钟再起一个,滚雪球出 N 个并发实例。
-        const prevId = cronConvByTask.get(task.id);
-        if (prevId) {
-          const prev = taskManager.get(prevId);
-          if (prev && prev.status === 'running') {
+        const row = listCronTasks().find((r) => r.id === task.id);
+        const wantCwd = task.cwd || os.homedir();
+        let convId = row?.convId ?? null;
+        if (convId) {
+          const prev = taskManager.get(convId);
+          if (!prev) {
+            convId = null; // 用户删了频道 → 下面的分支重建
+            setCronConvId(task.id, null);
+          } else if (prev.status === 'running') {
             console.log(`[cron] 任务 ${task.id} 上一轮仍在运行,跳过本次触发`);
             return;
+          } else if (prev.cwd !== wantCwd) {
+            convId = null; // cwd 变更 → 换新频道(旧频道保留,不删用户数据)
+          } else {
+            taskManager.clearConversation(convId); // 每轮独立上下文,不烧上轮 token
           }
         }
-        const conv = taskManager.newConversation(task.cwd || os.homedir());
-        cronConvByTask.set(task.id, conv.id); // 每任务只留最新 conv id,有界
-        taskManager.send(conv.id, task.prompt);
+        if (!convId) {
+          convId = taskManager.newConversation(wantCwd).id;
+          setCronConvId(task.id, convId);
+        }
+        taskManager.send(convId, task.prompt);
         touchCronLastRun(task.id, Date.now());
       } catch (e) {
         console.warn('cron dispatch failed', e);
