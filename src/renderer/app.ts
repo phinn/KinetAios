@@ -3712,6 +3712,34 @@ function buildWorkflowCard(w: WorkflowState): HTMLElement {
   return el;
 }
 
+// ── 产物图片提取(WorkBuddy 式内联预览的数据源)──
+// Media path extraction for inline step previews.
+// 场景:write_file 写出 png / shell 脚本 print 产物路径 / screenshot_window 返回落盘路径。
+// 规则:args.path 命中图片扩展 → 直接采用(最高置信);否则从 result 文本里正则捞
+// 「含路径分隔符 + 图片扩展名」的 token(result 里的 "已写入 /a/b.png (123 字节)" 等)。
+// 去重 + 过滤明显的非产物(以 .map 中间产物不管,媒体读失败时 UI 自动移除占位)。
+const MEDIA_EXTS_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+
+function extractMediaPaths(s: { name: string; args: string; result: string }): string[] {
+  const out: string[] = [];
+  const push = (p: string): void => {
+    const clean = p.replace(/[)>'"`,;]+$/, '').trim();
+    if (clean && MEDIA_EXTS_RE.test(clean) && !out.includes(clean)) out.push(clean);
+  };
+  // 1) args.path(写文件类工具,最高置信)
+  try {
+    const ap = String(JSON.parse(s.args)?.path ?? '');
+    if (ap) push(ap);
+  } catch { /* 流式中间态 args 不完整 */ }
+  // 2) result 文本里的路径 token:要求含路径分隔符,避免裸 "icon.png" 误报
+  const tokens = s.result.split(/[\s|]+/);
+  for (const tok of tokens) {
+    if (!/[\\/]/.test(tok)) continue;
+    if (MEDIA_EXTS_RE.test(tok)) push(tok);
+  }
+  return out;
+}
+
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -3794,6 +3822,42 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
         det.appendChild(chipRow);
       }
     } catch { /* args 非 JSON(流式中间态)→ 无 chip,不影响原有渲染 */ }
+  }
+  // 产物内联预览(WorkBuddy 式):工具完成后,从 args/result 里提取图片路径 →
+  // 直接在 step 卡内渲染缩略图网格,点击放大(灯箱)。历史 turn 重渲染同样生效(纯函数、无副作用)。
+  // Inline media preview: after tool finishes, extract image paths from args/result →
+  // thumbnail grid inside the step card; click to lightbox. Works for history re-renders too.
+  if (!isPending) {
+    const mediaPaths = extractMediaPaths(s);
+    if (mediaPaths.length) {
+      const grid = document.createElement('div');
+      grid.className = 'step-media';
+      // 相对路径按当前会话 cwd 解析(与 fileDrawer 同口径)。
+      const curCwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+      for (const mp of mediaPaths.slice(0, 6)) { // 上限 6 张防 DOM 爆炸
+        const fig = document.createElement('button');
+        fig.className = 'step-media-item';
+        fig.title = mp;
+        fig.innerHTML = '<span class="step-media-ph"></span>';
+        // 懒加载:入场后再拉 base64(避免一次渲染几十张卡时全部读盘)。
+        // Lazy: fetch base64 after paint, not during render.
+        requestAnimationFrame(() => {
+          void window.kinet.mediaRead(mp, curCwd || undefined).then(r => {
+            if (!r.ok || !r.dataUrl) { fig.remove(); if (!grid.children.length) grid.remove(); return; }
+            const img = document.createElement('img');
+            img.src = r.dataUrl;
+            img.alt = mp.split(/[\\/]/).pop() || mp;
+            img.onclick = () => openImgLightbox(r.dataUrl!);
+            fig.replaceChildren(img);
+          }).catch(() => { fig.remove(); if (!grid.children.length) grid.remove(); });
+        });
+        grid.appendChild(fig);
+      }
+      // 挂在 details 外(step 卡根):完成态 steps 折叠后缩略图仍可见 ——
+      // 这正是「做完直接可见」的核心;details 内只留可展开的文本细节。
+      // Attach outside <details>: collapsed steps still show thumbnails.
+      el.appendChild(grid);
+    }
   }
   // edit_file/write_file → 真 diff 视图(删行红/增行绿),替代裸 args 墙。
   // args 是结构化 JSON(old_string/new_string / content),数据现成;解析失败退回原有 args 展示。

@@ -61,6 +61,7 @@ const api: KinetAPI = {
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   readFile: (rel, cwd) => ipcRenderer.invoke('read-file', rel, cwd),
   fileRead: (abs) => ipcRenderer.invoke('file-read', abs),
+  mediaRead: (abs, cwd) => ipcRenderer.invoke('media-read', abs, cwd),
   fileWrite: (abs, content) => ipcRenderer.invoke('file-write', abs, content),
   getBrand: () => ipcRenderer.invoke('get-brand'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),

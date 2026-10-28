@@ -2303,6 +2303,19 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .step-imgs { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
 .step-img { max-width: 240px; max-height: 150px; border-radius: 8px; border: 1px solid var(--border-soft); cursor: zoom-in; transition: transform var(--dur-fast) var(--ease-out); background: var(--bg-elev); }
 .step-img:hover { transform: scale(1.02); border-color: var(--accent-dim); }
+/* 产物内联缩略图(WorkBuddy 式):shell/write_file 产出的图片文件,step 卡内直接可见 */
+.step-media { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
+.step-media-item { all: unset; box-sizing: border-box; width: 132px; height: 92px; border-radius: 8px; border: 1px solid var(--border-soft); background: var(--bg-elev); display: flex; align-items: center; justify-content: center; overflow: hidden; cursor: zoom-in; transition: transform var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.step-media-item:hover { transform: translateY(-1px); border-color: var(--accent-dim); }
+.step-media-item img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.step-media-ph { width: 100%; height: 100%; background: linear-gradient(90deg, transparent, var(--border-soft), transparent); animation: media-ph 1.1s infinite; border-radius: 7px; }
+@keyframes media-ph { 0% { opacity: 0.4; } 50% { opacity: 1; } 100% { opacity: 0.4; } }
+/* 抽屉灯箱(独立于 app.ts 的 img-lightbox,避免模块循环依赖) */
+.fd-lightbox { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
+.fd-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
+/* 抽屉图片预览态:非代码文件 → <img> 容器 */
+.fd-imgwrap { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; align-items: center; justify-content: center; padding: 16px; }
+.fd-imgwrap img { max-width: 100%; max-height: 100%; border-radius: 8px; cursor: zoom-in; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25); }
 .img-lightbox { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
 .img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
 @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }

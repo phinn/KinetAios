@@ -134,6 +134,31 @@ export function register(): void {
     }
   });
 
+  // 图片/富媒体预览:绝对路径 → base64 data URL(聊天流缩略图 + 文件抽屉大图)。
+  // Media preview: absolute path → base64 data URL (inline thumbs + drawer preview).
+  // 只放行图片扩展白名单(拒绝任意二进制读取);20MB 上限防 OOM。
+  // 路径解析相对 cwd(与 fileDrawer resolver 口径一致);系统敏感目录仍拦截。
+  ipcMain.handle('media-read', (_e, abs: string, cwd?: string) => {
+    const MEDIA_MIME: Record<string, string> = {
+      '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.gif': 'image/gif',
+      '.webp': 'image/webp', '.bmp': 'image/bmp', '.svg': 'image/svg+xml', '.avif': 'image/avif',
+    };
+    try {
+      let full = abs || '';
+      if (cwd && !/^[A-Za-z]:[\\/]|^\//.test(full)) full = cwd.replace(/[\\/]+$/, '') + '/' + full.replace(/^\.\//, '');
+      if (deps.isBlockedSystemPath(full)) return { ok: false, error: '安全限制:不允许读取系统目录' };
+      const ext = path.extname(full).toLowerCase();
+      const mime = MEDIA_MIME[ext];
+      if (!mime) return { ok: false, error: `不支持的图片格式: ${ext || '(无扩展名)'}` };
+      const stat = fs.statSync(full);
+      if (stat.size > 20 * 1024 * 1024) return { ok: false, error: `图片超过 20MB 上限: ${(stat.size / 1048576).toFixed(1)}MB` };
+      const b64 = fs.readFileSync(full).toString('base64');
+      return { ok: true, dataUrl: `data:${mime};base64,${b64}` };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   // Files 窗口编辑器:绝对路径读全文(无 20KB 截断、无 cwd 越界检查 —— 用户主动挑的文件)。
   ipcMain.handle('file-read', (_e, abs: string) => {
     try {
