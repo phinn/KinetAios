@@ -256,6 +256,24 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 .pcard.soon:hover{transform:none;box-shadow:none}
 .pcard .soon-badge{position:absolute;top:14px;right:14px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.08em;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);z-index:2}
 .pcard{position:relative;border:1px solid var(--line);border-radius:14px;padding:28px 24px;background:var(--surface);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s;text-decoration:none;display:flex;flex-direction:column}
+
+/* ===== SUITE BANNER(全家桶横幅,打通 kinetapp 总推广页)===== */
+.suite-banner{position:relative;display:block;margin-top:24px;border-radius:16px;padding:1px;background:linear-gradient(135deg,rgba(0,229,181,.5),rgba(155,126,255,.5) 45%,rgba(255,154,92,.5));transition:transform .2s,box-shadow .2s}
+.suite-banner:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,229,181,.10)}
+.suite-banner .sb-grad{position:absolute;inset:1px;border-radius:15px;background:linear-gradient(120deg,rgba(0,229,181,.06),rgba(155,126,255,.06) 50%,rgba(255,154,92,.06));pointer-events:none}
+.suite-banner .sb-body{position:relative;display:flex;justify-content:space-between;align-items:center;gap:28px;padding:26px 30px;flex-wrap:wrap}
+.suite-banner .sb-eyebrow{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.14em;color:var(--muted);margin-bottom:8px}
+.suite-banner h3{font-size:clamp(18px,2.2vw,24px);font-weight:700;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(135deg,#E8EEF2,#00E5B5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.suite-banner p{font-size:13px;color:var(--muted);max-width:520px}
+.suite-banner .sb-cta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;font-weight:600;color:var(--mint)}
+.suite-banner .sb-arrow{transition:transform .2s}
+.suite-banner:hover .sb-arrow{transform:translateX(4px)}
+.suite-banner .sb-timeline{display:flex;flex-direction:column;gap:7px;flex-shrink:0;padding-left:24px;border-left:1px solid var(--line)}
+.suite-banner .sb-row{display:flex;align-items:center;gap:10px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px}
+.suite-banner .sb-t{color:var(--dim);width:20px;text-align:right}
+.suite-banner .sb-dot{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
+.suite-banner .sb-app{color:var(--muted)}
+@media(max-width:760px){.suite-banner .sb-timeline{display:none}}
 .pcard:hover{transform:translateY(-3px);border-color:transparent;box-shadow:0 12px 40px rgba(0,0,0,.4)}
 .pcard::before{content:"";position:absolute;inset:0;padding:1px;border-radius:14px;background:var(--cardGrad);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .2s}
 .pcard:hover::before{opacity:1}
@@ -411,7 +429,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <h2 class="h-title" data-i18n="ps_title"></h2>
     <p class="h-sub" data-i18n="ps_sub"></p>
     <div class="products">
-      <a class="pcard" href="https://phinn.github.io/kinet/index2.html" target="_blank" style="--cardGrad:linear-gradient(135deg,#00E5B5,#00B5E5)">
+      <a class="pcard" href="https://phinn.github.io/kinetapp/" target="_blank" style="--cardGrad:linear-gradient(135deg,#00E5B5,#00B5E5)">
         <div class="glow" style="background:var(--mint)"></div>
         <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)">💪</div>
         <h4>KinetFit</h4>
@@ -470,6 +488,26 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <span class="plink" style="color:var(--purple)"><span data-i18n="ps_soon"></span></span>
       </a>
     </div>
+
+    <!-- Kinet 全家桶横幅:打通总推广页流量 -->
+    <a class="suite-banner" href="https://phinn.github.io/kinetapp/" target="_blank" aria-label="Kinet Suite">
+      <div class="sb-grad" aria-hidden="true"></div>
+      <div class="sb-body">
+        <div class="sb-left">
+          <div class="sb-eyebrow">KINET SUITE · A COMPLETE DAY</div>
+          <h3 data-i18n="sb_title"></h3>
+          <p data-i18n="sb_desc"></p>
+          <div class="sb-cta"><span data-i18n="sb_cta"></span> <span class="sb-arrow">→</span></div>
+        </div>
+        <div class="sb-timeline" aria-hidden="true">
+          <div class="sb-row"><span class="sb-t">06</span><div class="sb-dot" style="--c:#00E5B5"></div><span class="sb-app">Fit</span></div>
+          <div class="sb-row"><span class="sb-t">10</span><div class="sb-dot" style="--c:#9B7EFF"></div><span class="sb-app">Soul</span></div>
+          <div class="sb-row"><span class="sb-t">14</span><div class="sb-dot" style="--c:#FF9A5C"></div><span class="sb-app">Task</span></div>
+          <div class="sb-row"><span class="sb-t">18</span><div class="sb-dot" style="--c:#00B5E5"></div><span class="sb-app">Brief</span></div>
+          <div class="sb-row"><span class="sb-t">22</span><div class="sb-dot" style="--c:#FFD75F"></div><span class="sb-app">+16 more</span></div>
+        </div>
+      </div>
+    </a>
   </div>
 </section>
 
@@ -724,6 +762,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
   <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;width:100%;align-items:center">
     <div>© 2026 KinetAios · <span data-i18n="foot_tag">Windows & macOS 的 AI 总机</span></div>
     <div style="display:flex;align-items:center;gap:16px">
+      <a href="https://phinn.github.io/kinetapp/" target="_blank" style="color:var(--muted);font-size:13px;text-decoration:none" onmouseover="this.style.color='var(--mint)'" onmouseout="this.style.color='var(--muted)'" data-i18n="nav_suite">Kinet 全家桶</a>
       <a href="mailto:phinn@outlook.com" style="color:var(--mint);font-size:13px">✉ phinn@outlook.com</a>
       <span style="color:var(--dim)">Windows 10+ · macOS 13+ · 64-bit</span>
     </div>
@@ -758,6 +797,10 @@ const I18N = {
     ps_win_desc:"macOS 窗口管理器。全局热键平铺半屏/四象限/多列,布局引擎 2 秒自动纠偏,告别手动拖拽。",
     ps_dck_tag:"菜单栏 · 收纳 · 零遥测",
     ps_dck_desc:"菜单栏图标收纳管理器。仅辅助功能一项权限,零网络零遥测,退出即还原、卸载无痕迹。",
+    sb_title:"一个 Kinet,装下完整的一天",
+    sb_desc:"Fit 出汗、Soul 专注、Task 推进、Brief 收拢 —— 20+ 个 App 沿着一天的节奏接力。KinetAios 是其中的 AI 总机。",
+    sb_cta:"进入 Kinet 全家桶",
+    nav_suite:"Kinet 全家桶",
     ps_soon:"即将上线",
     ps_learn:"了解产品",
     eng_title:"多 AI 引擎,各跑各的",
@@ -826,6 +869,10 @@ const I18N = {
     ps_win_desc:"macOS 視窗管理器。全域熱鍵平鋪半屏/四象限/多欄,佈局引擎 2 秒自動矯正,告別手動拖曳。",
     ps_dck_tag:"選單列 · 收納 · 零遙測",
     ps_dck_desc:"選單列圖示收納管理器。僅輔助功能一項權限,零網路零遙測,結束即還原、解除安裝無痕跡。",
+    sb_title:"一個 Kinet,裝下完整的一天",
+    sb_desc:"Fit 流汗、Soul 專注、Task 推進、Brief 收攏 —— 20+ 個 App 沿著一天的節奏接力。KinetAios 是其中的 AI 總機。",
+    sb_cta:"進入 Kinet 全家桶",
+    nav_suite:"Kinet 全家桶",
     ps_soon:"即將上線",
     ps_learn:"了解產品",
     eng_title:"多 AI 引擎,各跑各的",
@@ -894,6 +941,10 @@ const I18N = {
     ps_win_desc:"macOS window manager. Tile halves/quadrants/columns with global hotkeys; the layout engine self-corrects within 2 seconds. Stop dragging by hand.",
     ps_dck_tag:"Menu Bar · Declutter · Zero Telemetry",
     ps_dck_desc:"Menu bar icon manager. One Accessibility permission, zero network, zero telemetry. Quit restores everything; uninstall leaves no trace.",
+    sb_title:"One Kinet for your whole day",
+    sb_desc:"Fit to sweat, Soul to focus, Task to move, Brief to settle — 20+ apps handing off along the rhythm of your day. KinetAios is the AI switchboard among them.",
+    sb_cta:"Explore the Kinet Suite",
+    nav_suite:"Kinet Suite",
     ps_soon:"Coming soon",
     ps_learn:"Learn more",
     eng_title:"Multiple AI engines, each on its own",
@@ -962,6 +1013,10 @@ const I18N = {
     ps_win_desc:"macOS ウィンドウマネージャ。グローバルホットキーで半分/四分割/複数列にタイリング、レイアウトエンジンが 2 秒で自動補正。手動ドラッグはもう卒業。",
     ps_dck_tag:"メニューバー · 整理 · テレメトリゼロ",
     ps_dck_desc:"メニューバーアイコン整理マネージャ。アクセシビリティ権限 1 つだけ、ネットワーク・テレメトリゼロ。終了すれば元通り、アンインストールも痕跡なし。",
+    sb_title:"ひとつの Kinet で、一日まるごと",
+    sb_desc:"Fit で汗を流し、Soul で集中し、Task を前進させ、Brief でまとめる —— 20+ のアプリが一日のリズムに沿ってリレー。KinetAios はその中の AI スイッチボード。",
+    sb_cta:"Kinet スイートを見る",
+    nav_suite:"Kinet スイート",
     ps_soon:"近日公開",
     ps_learn:"製品詳細",
     eng_title:"マルチ AI エンジン、それぞれ独立",
