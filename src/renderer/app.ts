@@ -3206,6 +3206,14 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   const sum = document.createElement('summary');
   sum.innerHTML = `<span class="agg-ico">${sv.wrench}</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
   det.appendChild(sum);
+  // 聚合卡媒体预览:同段内任一 step 产出图片(如连续 shell 写图)时,
+  // 摘要行下方直接给缩略图网格 —— 折叠态可见,这是「做完直接可见」的主路径
+  // (连续 shell 调用是 Agent 写图的最常见形态,子卡默认不展开)。
+  // Agg-card media: collapsed previews when any step in the run produced images.
+  try {
+    const mediaPaths = [...new Set(steps.flatMap(st => extractMediaPaths({ name, args: st.args, result: st.result })))].slice(0, 6);
+    if (mediaPaths.length) attachMediaGrid(det, mediaPaths);
+  } catch { /* 预览失败不影响主卡 */ }
   const inner = document.createElement('div');
   inner.className = 'steps agg-inner';
   let built = false;
@@ -3224,7 +3232,7 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
 // 所以这里只更新 summary 文本 + steps 数组引用,展开时自然渲染最新全量。
 // Absorb a new same-name step into a streaming agg card (lazy children ⇒ only
 // the summary text needs updating; expansion always renders the fresh array).
-function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalMs: number): void {
+function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalMs: number, steps?: { args: string; result: string }[]): void {
   agg.dataset.to = String(Number(agg.dataset.to ?? '-1') + 1);
   const label = agg.querySelector('.agg-label');
   if (label) label.innerHTML = `${esc(name)} <b>× ${count}</b>`;
@@ -3235,6 +3243,21 @@ function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalM
     d.className = 'dur';
     d.textContent = fmtStepDur(totalMs);
     agg.querySelector('summary')?.appendChild(d);
+  }
+  // 媒体增量吸收:新段里出现图片产物 → 补进聚合卡网格(去重:已有同 title 的跳过)。
+  // Media absorb: merge newly produced images into the agg card grid (dedup by title).
+  if (steps?.length) {
+    try {
+      const fresh = [...new Set(steps.flatMap(st => extractMediaPaths({ name, args: st.args, result: st.result })))];
+      if (!fresh.length) return;
+      let grid = agg.querySelector('.step-media') as HTMLElement | null;
+      const have = new Set<string>();
+      grid?.querySelectorAll('.step-media-item').forEach(el => have.add((el as HTMLElement).title));
+      const add = fresh.filter(p => !have.has(p)).slice(0, 6);
+      if (!add.length) return;
+      if (!grid) { grid = document.createElement('div'); grid.className = 'step-media'; agg.insertBefore(grid, agg.querySelector('.agg-inner')); }
+      attachMediaGrid(grid, add); // 直接往已有网格里追加(fig 级)
+    } catch { /* 预览失败不影响主卡 */ }
   }
 }
 
@@ -3717,13 +3740,14 @@ function buildWorkflowCard(w: WorkflowState): HTMLElement {
 // 场景:write_file 写出 png / shell 脚本 print 产物路径 / screenshot_window 返回落盘路径。
 // 规则:args.path 命中图片扩展 → 直接采用(最高置信);否则从 result 文本里正则捞
 // 「含路径分隔符 + 图片扩展名」的 token(result 里的 "已写入 /a/b.png (123 字节)" 等)。
-// 去重 + 过滤明显的非产物(以 .map 中间产物不管,媒体读失败时 UI 自动移除占位)。
+// 去重 + 过滤明显的非产物(媒体读失败时 UI 自动移除占位,所以宁可多捞不可漏)。
 const MEDIA_EXTS_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
 
 function extractMediaPaths(s: { name: string; args: string; result: string }): string[] {
   const out: string[] = [];
   const push = (p: string): void => {
-    const clean = p.replace(/[)>'"`,;]+$/, '').trim();
+    // 剥掉尾随标点/包裹符: (a.png) "a.jpg", `a.webp` → 干净路径
+    const clean = p.replace(/^[("'`<]+/, '').replace(/[)"'`>,.;:]+$/, '').trim();
     if (clean && MEDIA_EXTS_RE.test(clean) && !out.includes(clean)) out.push(clean);
   };
   // 1) args.path(写文件类工具,最高置信)
@@ -3731,13 +3755,87 @@ function extractMediaPaths(s: { name: string; args: string; result: string }): s
     const ap = String(JSON.parse(s.args)?.path ?? '');
     if (ap) push(ap);
   } catch { /* 流式中间态 args 不完整 */ }
-  // 2) result 文本里的路径 token:要求含路径分隔符,避免裸 "icon.png" 误报
-  const tokens = s.result.split(/[\s|]+/);
+  // 2) result 文本里的路径 token:含路径分隔符的绝对/相对路径(高置信)。
+  //    先捞引号/括号包裹的整段(空格路径「Application Support/...」不切断),再兜底按空白切。
+  //    首尾包裹符 (( [ " ' ` )剥掉再判断 —— 「(build/icon-256.png)」「"hero.jpg",」是常见排版。
+  //    无引号的空格路径接受截断:读盘失败自动移除,不产生死图。
+  const seenToken = new Set<string>();
+  const tokens: string[] = [];
+  // 先跑截图回执锚点,再 quoted-strip:quoted 正则会把「(md5:abc)」当括号段剥掉,
+  // 锚点的右边界就没了 —— 顺序不可对调。
+  // Run the screenshot-receipt anchor BEFORE quoted-strip: the bracket pass eats "(md5:...)".
+  let rest = s.result;
+  {
+    const m = rest.match(/(?:已存|saved|stored)[^:\n:]*[:：]\s*(.+?)\s*\(md5:/i);
+    if (m) {
+      const p = m[1].trim().replace(/^[({["'`]+|[)\}"'`,.;:]+$/g, '');
+      if (p && MEDIA_EXTS_RE.test(p) && !seenToken.has(p)) { seenToken.add(p); tokens.push(p); rest = rest.replace(m[0], ' '); }
+    }
+  }
+  // quoted/bracketed 整段(内部可含空格):"(Application Support/x.png)" 、'"a b.png"'
+  const quoted = rest.match(/"([^"\n]{1,300})"|\(([^()\n]{1,300})\)|\[([^\[\]\n]{1,300})\]/g) ?? [];
+  for (const q of quoted) {
+    const inner = q.slice(1, -1).trim();
+    if (inner && MEDIA_EXTS_RE.test(inner) && !seenToken.has(inner)) { seenToken.add(inner); tokens.push(inner); }
+    // 已收整段从原文剔除,防空白切分把 "Application Support/x.png" 切成假路径重复收集
+    rest = rest.replace(q, ' ');
+  }
+  for (const raw of rest.split(/[\s|]+/)) {
+    if (!raw) continue;
+    const stripped = raw.replace(/^[({\["'`]+|[)\}\]"'`,.;:]+$/g, '');
+    if (stripped && !seenToken.has(stripped)) { seenToken.add(stripped); tokens.push(stripped); }
+  }
   for (const tok of tokens) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(tok)) continue; // URL(scheme://)不是文件路径
     if (!/[\\/]/.test(tok)) continue;
     if (MEDIA_EXTS_RE.test(tok)) push(tok);
   }
+  // 3) 裸文件名兜底:agent 输出常写 "duo_final_sheet.png 2007×2853"、
+  //    "产物: a.png b.png"(无分隔符)。裸名 + 图片扩展也捞,媒体读按 cwd 解析;
+  //    读不到自动移除,不产生死图。排除 URL(http)与已捞过的。
+  if (out.length < 6) {
+    for (const tok of tokens) {
+      if (/^[a-z]+:\/\//i.test(tok) || /[\\/]/.test(tok)) continue;
+      if (MEDIA_EXTS_RE.test(tok) && tok.length > 4) {
+        const clean = tok.replace(/[)"'`>,.;:]+$/, '');
+        if (clean && MEDIA_EXTS_RE.test(clean) && !out.includes(clean)) {
+          out.push(clean);
+          if (out.length >= 6) break;
+        }
+      }
+    }
+  }
   return out;
+}
+
+// ── 产物缩略图网格(WorkBuddy 式「做完直接可见」的渲染器,step 卡与聚合卡共用)──
+// Media grid renderer shared by single step cards and aggregate cards.
+// 懒加载:入场后一帧再拉 base64;读盘失败/非图 → 原子移除,空网格自清。
+// 相对路径按当前会话 cwd 解析(与 fileDrawer 同口径)。上限 6 张防 DOM 爆炸。
+function attachMediaGrid(host: HTMLElement, mediaPaths: string[]): void {
+  const grid = document.createElement('div');
+  grid.className = 'step-media';
+  const curCwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+  for (const mp of mediaPaths.slice(0, 6)) {
+    const fig = document.createElement('button');
+    fig.className = 'step-media-item';
+    fig.title = mp;
+    fig.innerHTML = '<span class="step-media-ph"></span>';
+    // 懒加载:入场后再拉 base64(避免一次渲染几十张卡时全部读盘)。
+    // Lazy: fetch base64 after paint, not during render.
+    requestAnimationFrame(() => {
+      void window.kinet.mediaRead(mp, curCwd || undefined).then(r => {
+        if (!r.ok || !r.dataUrl) { fig.remove(); if (!grid.children.length) grid.remove(); return; }
+        const img = document.createElement('img');
+        img.src = r.dataUrl;
+        img.alt = mp.split(/[\\/]/).pop() || mp;
+        img.onclick = () => openImgLightbox(r.dataUrl!);
+        fig.replaceChildren(img);
+      }).catch(() => { fig.remove(); if (!grid.children.length) grid.remove(); });
+    });
+    grid.appendChild(fig);
+  }
+  host.appendChild(grid);
 }
 
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
@@ -3830,33 +3928,10 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   if (!isPending) {
     const mediaPaths = extractMediaPaths(s);
     if (mediaPaths.length) {
-      const grid = document.createElement('div');
-      grid.className = 'step-media';
-      // 相对路径按当前会话 cwd 解析(与 fileDrawer 同口径)。
-      const curCwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
-      for (const mp of mediaPaths.slice(0, 6)) { // 上限 6 张防 DOM 爆炸
-        const fig = document.createElement('button');
-        fig.className = 'step-media-item';
-        fig.title = mp;
-        fig.innerHTML = '<span class="step-media-ph"></span>';
-        // 懒加载:入场后再拉 base64(避免一次渲染几十张卡时全部读盘)。
-        // Lazy: fetch base64 after paint, not during render.
-        requestAnimationFrame(() => {
-          void window.kinet.mediaRead(mp, curCwd || undefined).then(r => {
-            if (!r.ok || !r.dataUrl) { fig.remove(); if (!grid.children.length) grid.remove(); return; }
-            const img = document.createElement('img');
-            img.src = r.dataUrl;
-            img.alt = mp.split(/[\\/]/).pop() || mp;
-            img.onclick = () => openImgLightbox(r.dataUrl!);
-            fig.replaceChildren(img);
-          }).catch(() => { fig.remove(); if (!grid.children.length) grid.remove(); });
-        });
-        grid.appendChild(fig);
-      }
       // 挂在 details 外(step 卡根):完成态 steps 折叠后缩略图仍可见 ——
       // 这正是「做完直接可见」的核心;details 内只留可展开的文本细节。
       // Attach outside <details>: collapsed steps still show thumbnails.
-      el.appendChild(grid);
+      attachMediaGrid(el, mediaPaths);
     }
   }
   // edit_file/write_file → 真 diff 视图(删行红/增行绿),替代裸 args 墙。
@@ -4015,7 +4090,7 @@ function updateLastTurnIncremental(): void {
           const from = Number(tailAgg.dataset.from ?? tailAgg.dataset.to ?? '0');
           const slice = t.steps.slice(from);
           const totalMs = slice.reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
-          absorbIntoAggCard(tailAgg, firstNew.name, t.steps.length - from, totalMs);
+          absorbIntoAggCard(tailAgg, firstNew.name, t.steps.length - from, totalMs, slice);
         } else {
           appendStepsRunLength(inner, t.steps.slice(have), have, t.steps.length);
         }
