@@ -1,13 +1,13 @@
 <!DOCTYPE html>
-<html lang="zh-Hans">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <!-- ===== SEO META ===== -->
-<title>KinetAios — Local-First AI Agent Dashboard | Direct V3 + Claude Code + Codex + DeepSeek Harness</title>
-<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 四个引擎家族，支持跨引擎长期记忆、27 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。开源 GPL v3，Windows & macOS。">
-<meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, MCP, Electron, TypeScript, 飞书Bot, 企微Bot, 多Agent, 跨引擎记忆, 本地 AI, AI 工作台, 开源 AI Agent, KinetAios">
+<title>KinetAios — Local-First AI Agent Dashboard | Direct V5 + Claude Code + Codex + DeepSeek Harness</title>
+<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 Direct V1–V5（V3 意图路由 / V4 立法者 / V5 种群进化）、Claude Code、Codex、DeepSeek Harness，支持跨引擎长期记忆与 Git 跨设备同步、30+ 内置工具、21 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。开源 GPL v3，Windows & macOS。">
+<meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, V4 Legis, V5 Phylum, memory sync, MCP, Electron, TypeScript, 飞书Bot, 企微Bot, 多Agent, 跨引擎记忆, 本地 AI, AI 工作台, 开源 AI Agent, KinetAios">
 <meta name="author" content="Kinet">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://phinn.github.io/KinetAios/">
@@ -23,7 +23,7 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="KinetAios">
 <meta property="og:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta property="og:description" content="Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families in one window. Cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta property="og:description" content="Run Direct V1–V5 (intent router / Legis / Phylum), Claude Code, Codex, and DeepSeek Harness — seven engines in one window. Cross-engine long-term memory with Git sync across devices, 30+ tools, 21 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
 <meta property="og:url" content="https://phinn.github.io/KinetAios/">
 <meta property="og:image" content="https://phinn.github.io/KinetAios/og-image.png">
 <meta property="og:locale" content="zh_CN">
@@ -34,7 +34,7 @@
 <!-- ===== Twitter Card ===== -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta name="twitter:description" content="Four engine families in one window: Direct V1/V2/V3, Claude Code, Codex, DeepSeek Harness. Cross-engine memory, 27 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta name="twitter:description" content="Seven engines in one window: Direct V1–V5 (Legis, Phylum), Claude Code, Codex, DeepSeek Harness. Cross-engine memory with Git sync, 30+ tools, 21 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
 <meta name="twitter:image" content="https://phinn.github.io/KinetAios/og-image.png">
 
 <!-- ===== JSON-LD 结构化数据 ===== -->
@@ -43,7 +43,7 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "KinetAios",
-  "description": "Local-first multi-engine AI agent dashboard. Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families side-by-side with cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
+  "description": "Local-first multi-engine AI agent dashboard. Run Direct V1–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, and DeepSeek Harness — six engines side-by-side with cross-engine long-term memory + Git device sync, 30+ built-in tools, 21 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
   "applicationCategory": "DeveloperApplication",
   "operatingSystem": "Windows 11, macOS",
   "license": "https://www.gnu.org/licenses/gpl-3.0.html",
@@ -53,15 +53,18 @@
     "priceCurrency": "USD"
   },
   "programmingLanguage": "TypeScript",
-  "softwareVersion": "3.2.0",
+  "softwareVersion": "4.0.3",
   "url": "https://phinn.github.io/KinetAios/",
   "downloadUrl": "https://github.com/phinn/KinetAios/releases",
   "featureList": [
-    "Four engine families: Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness",
-    "Direct V3 with intent router (fast/standard/deep) and DAG-parallel tool execution",
-    "Plan-Execute-Verify-Judge 4-layer architecture",
-    "Cross-engine persistent long-term memory (SQLite + FTS5 + semantic recall)",
-    "27 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
+    "Six engines in one window: Direct V1–V5 + Claude Code + Codex + DeepSeek Harness",
+    "Direct V3 intent router (fast/standard/deep) with DAG-parallel tool execution",
+    "V4 Legis: one-shot intent compilation to an assertion plan graph — LLM woken only on assertion failure",
+    "V5 Phylum: population-based task evolution (candidate solutions compete, winner feeds memory)",
+    "Cross-engine persistent long-term memory (SQLite + FTS5) with Git cross-device sync",
+    "Tool-output spill-to-disk + grep-back recall for long agent runs",
+    "Lessons layer (hindsight: learn vs remember) + goal budget governors",
+    "30+ built-in tools, 21 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
     "MCP client + server (bidirectional, remote agent control)",
     "Feishu + Enterprise WeChat Bot remote control",
     "Multi-agent teams + sub-agent dispatch",
@@ -382,6 +385,16 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             <div class="st run">running</div>
           </div>
           <div class="eng-row">
+            <div class="ic" style="background:rgba(255,154,92,.12);color:var(--orange)">⚖</div>
+            <div class="nm">Direct V4 Legis</div>
+            <div class="st">idle</div>
+          </div>
+          <div class="eng-row">
+            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)">🧬</div>
+            <div class="nm">Direct V5 Phylum</div>
+            <div class="st">idle</div>
+          </div>
+          <div class="eng-row">
             <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">▶</div>
             <div class="nm">Direct V2</div>
             <div class="st">idle</div>
@@ -414,8 +427,9 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <section style="padding:0;border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="stats">
-      <div class="stat"><div class="val">3</div><div class="label" data-i18n="st_eng">AI 引擎</div></div>
-      <div class="stat"><div class="val">10+</div><div class="label" data-i18n="st_tools">内置工具</div></div>
+      <div class="stat"><div class="val">7</div><div class="label" data-i18n="st_eng">AI 引擎</div></div>
+      <div class="stat"><div class="val">30+</div><div class="label" data-i18n="st_tools">内置工具</div></div>
+      <div class="stat"><div class="val">21</div><div class="label" data-i18n="st_plug">内置插件</div></div>
       <div class="stat"><div class="val">4</div><div class="label" data-i18n="st_lang">UI 语言</div></div>
       <div class="stat"><div class="val">0</div><div class="label" data-i18n="st_upload">后端上传</div></div>
     </div>
@@ -525,16 +539,28 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <div class="tags"><span class="tag">refactor</span><span class="tag">debug</span><span class="tag">test</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">▶</div><h3>Direct V3</h3></div>
-        <div class="for">DAG parallel · intent router</div>
-        <p data-i18n="eng_g3"></p>
-        <div class="tags"><span class="tag">fast</span><span class="tag">deep</span><span class="tag">DAG</span></div>
+        <div class="top"><div class="ic">▶</div><h3>Direct V2</h3></div>
+        <div class="for">ReAct · the daily driver</div>
+        <p data-i18n="eng_g"></p>
+        <div class="tags"><span class="tag">ReAct</span><span class="tag">context-compaction</span><span class="tag">daily-driver</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic">▶</div><h3>Direct V2</h3></div>
-        <div class="for">copy · research · chat</div>
-        <p data-i18n="eng_g"></p>
-        <div class="tags"><span class="tag">文案</span><span class="tag">翻译</span><span class="tag">i18n</span></div>
+        <div class="top"><div class="ic">▶</div><h3>Direct V3</h3></div>
+        <div class="for">intent router · auto-dispatch</div>
+        <p data-i18n="eng_g3"></p>
+        <div class="tags"><span class="tag">router</span><span class="tag">auto</span><span class="tag">default</span></div>
+      </div>
+      <div class="eng-card">
+        <div class="top"><div class="ic">🏛</div><h3>Direct V4 Legis</h3></div>
+        <div class="for">intent → assertion plan · verify</div>
+        <p data-i18n="eng_g4"></p>
+        <div class="tags"><span class="tag">deterministic</span><span class="tag">assert</span><span class="tag">0-drift</span></div>
+      </div>
+      <div class="eng-card">
+        <div class="top"><div class="ic">🧬</div><h3>Direct V5 Phylum</h3></div>
+        <div class="for">population evolution · multi-branch</div>
+        <p data-i18n="eng_g5"></p>
+        <div class="tags"><span class="tag">explore</span><span class="tag">evolve</span><span class="tag">multi-branch</span></div>
       </div>
       <div class="eng-card">
         <div class="top"><div class="ic">{}</div><h3>Codex</h3></div>
@@ -708,6 +734,8 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <div class="feat"><div class="num">04</div><div><h4 data-i18n="f_4t"></h4><p data-i18n="f_4"></p></div></div>
       <div class="feat"><div class="num">05</div><div><h4 data-i18n="f_5t"></h4><p data-i18n="f_5"></p></div></div>
       <div class="feat"><div class="num">06</div><div><h4 data-i18n="f_6t"></h4><p data-i18n="f_6"></p></div></div>
+      <div class="feat"><div class="num">07</div><div><h4 data-i18n="f_7t"></h4><p data-i18n="f_7"></p></div></div>
+      <div class="feat"><div class="num">08</div><div><h4 data-i18n="f_8t"></h4><p data-i18n="f_8"></p></div></div>
     </div>
   </div>
 </section>
@@ -772,15 +800,15 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <script>
 const I18N = {
   "zh-Hans": {
-    badge:"Windows & macOS · 多 AI 引擎并发的 AI 总机",
+    badge:"Windows & macOS · 7 引擎 · 30+ 工具 · 21 插件",
     h1:'你的 Mac 的 <span class="grad">AI 总机</span><br>一个面板,多个 AI 同时干活',
-    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四个引擎家族,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
+    sub:"Direct V2–V5(V3 意图路由 / V4 立法者 / V5 种群进化)、Claude Code、Codex、DeepSeek Harness——七个引擎,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
     dl:"下载试用", learn:"了解更多",
     m_sessions:"会话", m_engines:"引擎",
     m_prompt:"把这份产品文档改成给客户看的推广文案,要直白",
     m_reply:'已经按"客户视角 + 利益点优先"重写,开头一句钩子 + 三个支撑卖点 + CTA。',
     m_tool:"用户偏好:深色商务风、四语言",
-    st_eng:"AI 引擎", st_tools:"内置工具", st_lang:"UI 语言", st_upload:"后端上传",
+    st_eng:"AI 引擎", st_tools:"内置工具", st_plug:"内置插件", st_lang:"UI 语言", st_upload:"后端上传",
     ps_title:"KinetAios 产品系列",
     ps_sub:"七款产品,覆盖健康管理、AI 工作台、磁盘窗口工具与手机远程操控,各有专长。",
     ps_fit_tag:"健康 · 健身 · 运动追踪",
@@ -806,15 +834,17 @@ const I18N = {
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每个引擎一个独立 agent,各自循环、各自状态、各自产出。互不阻塞,你只管下达任务。",
     eng_c:"长代码任务主力。会调工具、改文件、跑命令,从重构到 debug 一条龙。",
-    eng_g3:"最新自研引擎。意图路由器按查询自动选 fast / standard / deep 三档执行路径,deep 路径把工具调用构建为 DAG 并行执行,多步任务真实加速。",
-    eng_g:"自研引擎,Plan-Execute-Verify-Judge 四层架构。工具并发、子 Agent 派发、上下文压缩,Token 消耗低至三分之一。",
+    eng_g3:"意图路由引擎。按查询自动选 fast / standard / deep 三档执行路径,deep 路径把工具调用构建为 DAG 并行执行,多步任务真实加速。",
+    eng_g4:"立法者引擎。意图一次编译为断言计划图,断言失败才唤回 LLM——长任务零漂移,Token 省一个量级。",
+    eng_g5:"种群进化引擎。多变异体并行跑同一任务,择优胜出,策略自我进化。",
+    eng_g:"Plan-Execute-Verify-Judge 四层架构,ReAct 循环 + 上下文压缩。工具并发、子 Agent 派发,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系代码引擎。patch / exec / 沙盒写,任务清晰、产出可控。",
     eng_d:"DeepSeek 推理引擎,擅长长上下文复杂推理任务。spawn dsh CLI,OpenAI 兼容 SSE,自带 token 计费。",
     arc_title:"多 Agent 并发调度",
     arc_sub:"AgentScheduler 做 DAG 拓扑调度,每个 agent 独立循环但共享工具总线和跨引擎记忆。",
     arc_1t:"DAG 调度器", arc_1:"拓扑排序依赖关系,空闲即派任务,阻塞的 agent 不影响其他 agent。",
-    arc_2t:"ToolBus 工具总线", arc_2:"shell / read_file / web_fetch / recall_memory 等 20+ 工具统一注册,所有 agent 共享。",
-    arc_3t:"跨引擎长期记忆", arc_3:"每轮对话后台抽取用户事实入库,切换引擎记忆不丢。FTS5 全文搜索 + 语义向量召回。",
+    arc_2t:"ToolBus 工具总线", arc_2:"shell / read_file / web_fetch / recall_memory 等 30+ 工具统一注册,所有 agent 共享。",
+    arc_3t:"跨引擎长期记忆", arc_3:"每轮对话后台抽取用户事实入库,切换引擎记忆不丢。FTS5 全文搜索 + 语义向量召回,记忆库支持 Git 跨设备同步。",
     arc_4t:"沙箱隔离", arc_4:"每个 agent 的文件操作限制在各自 workspace 内,readOnly / workspaceWrite 权限可控。",
     sc_title:"不止写代码",
     sc_sub:"多引擎分工,从工程师到市场运营,各职业都能找到顺手的工作流。",
@@ -825,16 +855,18 @@ const I18N = {
     ob_title:"看每个 agent 在想什么",
     ob_sub:"状态、步骤、工具调用、产出,全部实时呈现。AI 不再是黑盒。",
     f_1t:"并发多 agent", f_1:"每个会话独立循环,同时跑多个任务,不互相阻塞。",
-    f_2t:"工具调用可观测", f_2:"shell / read_file / web_fetch / recall_memory,每一步都看得见。",
+    f_2t:"工具调用可观测", f_2:"30+ 内置工具与 21 个插件,每一步都看得见。支持 MCP 双向集成。",
     f_3t:"连续会话", f_3:"同一对话多轮追问,新建才开新会话;重启不丢历史。",
     f_4t:"跨引擎 resume", f_4:"扫 Claude / Codex 历史 sessions,选一条续接,任务连贯。",
-    f_5t:"跨引擎长期记忆", f_5:"每轮后台抽用户事实入库,切换引擎不丢记忆。FTS5 + 语义向量双重召回。",
+    f_5t:"跨引擎长期记忆", f_5:"每轮后台抽用户事实入库,切换引擎不丢记忆。FTS5 + 语义向量双重召回,Git 仓库跨设备同步。",
     f_6t:"工作区", f_6:"终端、文件、对话三 tab 绑定 cwd,改完直接在 app 内验证。",
+    f_7t:"Goal 监工 + 预算分级", f_7:"长期目标自动监督:卡住即介入,预算不足按优先级降级,长任务不烂尾。",
+    f_8t:"工具输出落盘回捞", f_8:"超长工具输出自动落盘,按正则回捞中段,上下文不爆、细节数据不丢。",
     pr_title:"隐私在你手里",
     pr_sub:"API key 走系统 Keychain,对话存本地 SQLite,不上传任何后台。跨平台 Electron,资源占用低。",
     fq_title:"常见问题",
     q_1:"这跟 Raycast / Alfred 是一回事吗?", a_1:"不一样。Raycast 是启动器,KinetAios 是 AI 总机——多 agent 引擎并发的运行时,重点不是「快速启动 app」而是「让多个 AI 同时帮你干活、状态全可见」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是单引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 装进同一面板——四个引擎家族,各自并发跑、状态全可见、跨引擎 resume。同时管多个 agent,是单引擎桌面版做不了的。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"它们是单引擎。KinetAios 把 Direct V2–V5、Claude Code、Codex、DeepSeek Harness 装进同一面板——七个引擎各自并发跑、状态全可见、跨引擎 resume。V4 立法者 / V5 种群进化这类自研范式,单引擎产品没有对应物。",
     q_3:"数据去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);对话和记忆在本地 SQLite;不上传任何后台。你的引擎、你的 key、你的数据。",
     q_4:"Claude Code / Codex 怎么用?需要自己配?", a_4:"KinetAios 自动发现已装的 claude / codex CLI。没装的话,设置页有引导。Direct 引擎只需 API key。",
     q_5:"支持什么模型?", a_5:"Direct 引擎看你接的 key(默认 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本机 CLI 配置(可走任何它们支持的模型)。引擎 ≠ 模型。",
@@ -844,15 +876,15 @@ const I18N = {
     foot_contact:"联系我们"
   },
   "zh-Hant": {
-    badge:"Windows & macOS · 多 AI 引擎併發的 AI 總機",
+    badge:"Windows & macOS · 7 引擎 · 30+ 工具 · 21 外掛",
     h1:'你的 Mac 的 <span class="grad">AI 總機</span><br>一個面板,多個 AI 同時幹活',
-    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四個引擎家族,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
+    sub:"Direct V2–V5(V3 意圖路由 / V4 立法者 / V5 種群進化)、Claude Code、Codex、DeepSeek Harness——七個引擎,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
     dl:"下載試用", learn:"了解更多",
     m_sessions:"會話", m_engines:"引擎",
     m_prompt:"把這份產品文件改成給客戶看的推廣文案,要直白",
     m_reply:'已經按「客戶視角 + 利益點優先」重寫,開頭一句鉤子 + 三個支撐賣點 + CTA。',
     m_tool:"使用者偏好:深色商務風、四語言",
-    st_eng:"AI 引擎", st_tools:"內建工具", st_lang:"UI 語言", st_upload:"後端上傳",
+    st_eng:"AI 引擎", st_tools:"內建工具", st_plug:"內建外掛", st_lang:"UI 語言", st_upload:"後端上傳",
     ps_title:"KinetAios 產品系列",
     ps_sub:"七款產品,覆蓋健康管理、AI 工作台、磁碟視窗工具與手機遠端操控,各有專長。",
     ps_fit_tag:"健康 · 健身 · 運動追蹤",
@@ -878,8 +910,10 @@ const I18N = {
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每個引擎一個獨立 agent,各自循環、各自狀態、各自產出。互不阻塞,你只管下達任務。",
     eng_c:"長程式碼任務主力。會調工具、改檔案、跑命令,從重構到 debug 一條龍。",
-    eng_g3:"最新自研引擎。意圖路由器按查詢自動選 fast / standard / deep 三檔執行路徑,deep 路徑把工具呼叫建構為 DAG 平行執行,多步任務真實加速。",
-    eng_g:"自研引擎,Plan-Execute-Verify-Judge 四層架構。工具併發、子 Agent 派發、上下文壓縮,Token 消耗低至三分之一。",
+    eng_g3:"意圖路由引擎。按查詢自動選 fast / standard / deep 三檔執行路徑,deep 路徑把工具呼叫建構為 DAG 平行執行,多步任務真實加速。",
+    eng_g4:"立法者引擎。意圖一次編譯為斷言計劃圖,斷言失敗才喚回 LLM——長任務零漂移,Token 省一個量級。",
+    eng_g5:"種群進化引擎。多變異體並行跑同一任務,擇優勝出,策略自我進化。",
+    eng_g:"Plan-Execute-Verify-Judge 四層架構,ReAct 循環 + 上下文壓縮。工具併發、子 Agent 派發,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系程式碼引擎。patch / exec / 沙盒寫,任務清晰、產出可控。",
     eng_d:"DeepSeek 推理引擎,擅長長上下文複雜推理任務。spawn dsh CLI,OpenAI 相容 SSE,自帶 token 計費。",
     arc_title:"多 Agent 併發調度",
@@ -897,16 +931,18 @@ const I18N = {
     ob_title:"看每個 agent 在想什麼",
     ob_sub:"狀態、步驟、工具呼叫、產出,全部即時呈現。AI 不再是黑盒。",
     f_1t:"併發多 agent", f_1:"每個會話獨立循環,同時跑多個任務,不互相阻塞。",
-    f_2t:"工具呼叫可觀測", f_2:"shell / read_file / web_fetch / recall_memory,每一步都看得見。",
+    f_2t:"工具呼叫可觀測", f_2:"shell / read_file / web_fetch / recall_memory 等 30+ 工具,每一步都看得見。",
     f_3t:"連續會話", f_3:"同一對話多輪追問,新建才開新會話;重啟不丟歷史。",
     f_4t:"跨引擎 resume", f_4:"掃 Claude / Codex 歷史 sessions,選一條續接,任務連貫。",
-    f_5t:"跨引擎長期記憶", f_5:"每輪後台抽使用者事實入庫,切換引擎不丟記憶。FTS5 + 語意向量雙重召回。",
+    f_5t:"跨引擎長期記憶", f_5:"每輪後台抽使用者事實入庫,切換引擎不丟記憶。FTS5 + 語意向量雙重召回,記憶庫可 Git 同步跨裝置。",
     f_6t:"工作區", f_6:"終端、檔案、對話三 tab 綁定 cwd,改完直接在 app 內驗證。",
+    f_7t:"Goal 監工 + 預算分級", f_7:"長期目標自動監督:卡住即介入,預算不足按優先級降級,長任務不爛尾。",
+    f_8t:"工具輸出落盤回撈", f_8:"超長工具輸出自動落盤,按正則回撈中段,上下文不爆、細節資料不丟。",
     pr_title:"隱私在你手裡",
     pr_sub:"API key 走系統 Keychain,對話存本地 SQLite,不上傳任何後台。跨平台 Electron,資源佔用低。",
     fq_title:"常見問題",
     q_1:"這跟 Raycast / Alfred 是一回事嗎?", a_1:"不一樣。Raycast 是啟動器,KinetAios 是 AI 總機——多 agent 引擎併發的執行時,重點不是「快速啟動 app」而是「讓多個 AI 同時幫你幹活、狀態全可見」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 裝進同一面板——四個引擎家族,各自併發跑、狀態全可見、跨引擎 resume。同時管多個 agent,是單引擎桌面版做不了的。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Direct V2–V5(V3 意圖路由 / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness 裝進同一面板——七個引擎併發跑、狀態全可見、跨引擎 resume。同時管多個 agent,是單引擎桌面版做不了的。",
     q_3:"資料去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);對話和記憶在本地 SQLite;不上傳任何後台。你的引擎、你的 key、你的資料。",
     q_4:"Claude Code / Codex 怎麼用?需要自己配?", a_4:"KinetAios 自動發現已裝的 claude / codex CLI。沒裝的話,設定頁有引導。Direct 引擎只需 API key。",
     q_5:"支援什麼模型?", a_5:"Direct 引擎看你接的 key(預設 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本機 CLI 配置(可走任何它們支援的模型)。引擎 ≠ 模型。",
@@ -916,15 +952,15 @@ const I18N = {
     foot_contact:"聯絡我們"
   },
   "en": {
-    badge:"Windows & macOS · Multi-engine AI switchboard",
+    badge:"Windows & macOS · 7 engines · 30+ tools · 21 plugins",
     h1:'Your Mac\'s <span class="grad">AI Switchboard</span><br>One panel, multiple AIs working at once',
-    sub:"Direct V1 / V2 / V3, Claude Code, Codex, DeepSeek Harness — four engine families, each running independently, all status visible. Code, copy, research — each engine has its strength.",
+    sub:"Direct V2–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, DeepSeek Harness — seven engines, each running independently, all status visible. Code, copy, research — each has its strength.",
     dl:"Download", learn:"Learn more",
     m_sessions:"Sessions", m_engines:"Engines",
     m_prompt:"Turn this product doc into customer-facing marketing copy, keep it punchy",
     m_reply:'Rewritten with "customer angle + benefit-first" approach. Lead hook + 3 supporting points + CTA.',
     m_tool:"User preferences: dark business style, 4 languages",
-    st_eng:"AI Engines", st_tools:"Built-in Tools", st_lang:"UI Languages", st_upload:"Backend Upload",
+    st_eng:"AI Engines", st_tools:"Built-in Tools", st_plug:"Built-in Plugins", st_lang:"UI Languages", st_upload:"Backend Upload",
     ps_title:"KinetAios Product Suite",
     ps_sub:"Seven products covering health management, AI workbench, disk & window utilities, and phone-based remote control.",
     ps_fit_tag:"Health · Fitness · Activity Tracking",
@@ -950,7 +986,9 @@ const I18N = {
     eng_title:"Multiple AI engines, each on its own",
     eng_sub:"Each engine runs as an independent agent — own loop, own status, own output. No blocking. You just hand out tasks.",
     eng_c:"Heavy-lift code tasks. Calls tools, edits files, runs commands — refactor to debug in one flow.",
-    eng_g3:"Latest built-in engine. Intent router picks fast / standard / deep path per query; the deep path executes tool calls as a DAG with parallel branches — real speedups on multi-step tasks.",
+    eng_g3:"Intent router. Picks fast / standard / deep path per query; the deep path executes tool calls as a DAG with parallel branches — real speedups on multi-step tasks.",
+    eng_g4:"The Legislator. Compiles intent once into an assertion plan graph; the LLM is only re-invoked when an assertion fails — zero drift on long tasks, an order of magnitude fewer tokens.",
+    eng_g5:"Population evolution. Multiple variants race on the same task, the fittest wins — strategies evolve themselves.",
     eng_g:"Built-in engine with Plan-Execute-Verify-Judge architecture. Concurrent tools, sub-agent dispatch, context compaction — 1/3 token usage.",
     eng_o:"OpenAI-family code engine. Patch / exec / sandbox writes. Clean tasks, controlled output.",
     eng_d:"DeepSeek reasoning engine — long-context complex reasoning. Spawns dsh CLI, OpenAI-compatible SSE, built-in token metering.",
@@ -969,16 +1007,18 @@ const I18N = {
     ob_title:"See what each agent is thinking",
     ob_sub:"Status, steps, tool calls, output — all in real time. AI is no longer a black box.",
     f_1t:"Concurrent agents", f_1:"Each session has its own loop. Run multiple tasks simultaneously without blocking.",
-    f_2t:"Observable tool calls", f_2:"shell / read_file / web_fetch / recall_memory — every step visible.",
+    f_2t:"Observable tool calls", f_2:"30+ built-in tools and 21 plugins, every step visible. MCP in both directions.",
     f_3t:"Continuous sessions", f_3:"Multi-turn follow-ups in the same chat; new chat opens a new session. Restart-safe history.",
     f_4t:"Cross-engine resume", f_4:"Scan Claude / Codex history sessions, pick one to continue. Tasks stay coherent.",
-    f_5t:"Cross-engine memory", f_5:"Background fact extraction each turn. Persists across engine switches. FTS5 + semantic dual recall.",
+    f_5t:"Cross-engine memory", f_5:"Background fact extraction each turn. Persists across engine switches. FTS5 + semantic dual recall, Git-synced across devices.",
     f_6t:"Workspace", f_6:"Terminal, files, chat tabs bound to cwd. Edit and verify within the app.",
+    f_7t:"Goal supervisor + budget tiers", f_7:"Long-running goals supervise themselves: intervene when stuck, degrade by priority when budget runs low. No more half-finished marathons.",
+    f_8t:"Tool output spillover + grep-back", f_8:"Oversized tool outputs spill to disk; grep back the middle by regex. Context stays lean, details stay reachable.",
     pr_title:"Privacy in your hands",
     pr_sub:"API keys in OS Keychain (DPAPI / Keychain), conversations in local SQLite, no backend upload. Cross-platform Electron, low footprint.",
     fq_title:"FAQ",
     q_1:"Is this like Raycast / Alfred?", a_1:"No. Raycast is a launcher; KinetAios is an AI switchboard — a multi-agent concurrent runtime. The point isn't 'quick app launch' but 'multiple AIs working for you simultaneously, all visible.' They coexist fine.",
-    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness in one panel — four engine families running concurrently, all-visible, cross-engine resume. Managing multiple agents at once is what single-engine desktops can't do.",
+    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Direct V2–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, and DeepSeek Harness in one panel — seven engines running concurrently, all-visible, cross-engine resume. Managing multiple agents at once is what single-engine desktops can't do.",
     q_3:"Where does my data go?", a_3:"API key in OS Keychain (DPAPI / Keychain); conversations and memory in local SQLite; no backend upload. Your engines, your keys, your data.",
     q_4:"How do Claude Code / Codex work? Do I need to configure them?", a_4:"KinetAios auto-discovers installed claude / codex CLIs. If not installed, settings page has a guide. Direct engine only needs an API key.",
     q_5:"Which models are supported?", a_5:"Direct engine depends on your key (default glm-4-plus / glm-4-flash); Claude Code / Codex follow your local CLI config (any model they support). Engine ≠ model.",
@@ -988,15 +1028,15 @@ const I18N = {
     foot_contact:"Contact"
   },
   "ja": {
-    badge:"Windows & macOS · マルチエンジン AI 総合受付",
+    badge:"Windows & macOS · 7 エンジン · 30+ ツール · 21 プラグイン",
     h1:'Mac の <span class="grad">AI 総合受付</span><br>1 パネルで複数 AI が同時に稼働',
-    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——4つのエンジンファミリー、それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
+    sub:"Direct V2–V5(V3 意図ルーター / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness——7つのエンジン、それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
     dl:"ダウンロード", learn:"詳細",
     m_sessions:"セッション", m_engines:"エンジン",
     m_prompt:"この製品ドキュメントを顧客向けの販促コピーに変更。ストレートに",
     m_reply:'「顧客視点 + ベネフィット優先」でリライト。リード文の鉤 + 3つの支え + CTA。',
     m_tool:"ユーザー設定:ダークビジネス風、4言語",
-    st_eng:"AI エンジン", st_tools:"内蔵ツール", st_lang:"UI 言語", st_upload:"バックエンド送信",
+    st_eng:"AI エンジン", st_tools:"内蔵ツール", st_plug:"内蔵プラグイン", st_lang:"UI 言語", st_upload:"バックエンド送信",
     ps_title:"KinetAios 製品ラインナップ",
     ps_sub:"7つの製品、健康管理、AIワークベンチ、ディスク&ウィンドウユーティリティ、スマホからのリモート操作をカバー。",
     ps_fit_tag:"健康 · フィットネス · 活動追跡",
@@ -1022,8 +1062,10 @@ const I18N = {
     eng_title:"マルチ AI エンジン、それぞれ独立",
     eng_sub:"各エンジンが独立 agent として稼動。独自ループ、独自ステータス、独自アウトプット。互いにブロックしない。タスクを渡すだけ。",
     eng_c:"長期コードタスクの主力。ツール呼び、ファイル編集、コマンド実行。リファクタから debug まで一気通貫。",
-    eng_g3:"最新の自研エンジン。意図ルーターがクエリごとに fast / standard / deep パスを選択、deep パスはツール呼びを DAG で並行実行。複数ステップタスクに本物の高速化。",
-    eng_g:"自研エンジン、Plan-Execute-Verify-Judge 4層アーキテクチャ。ツール並行、サブ Agent 派遣、コンテキスト圧縮。Token 消費 3分の1。",
+    eng_g3:"意図ルーターエンジン。クエリごとに fast / standard / deep パスを選択、deep パスはツール呼びを DAG で並行実行。複数ステップタスクに本物の高速化。",
+    eng_g4:"立法者エンジン。意図を一度だけアサーション計画グラフへコンパイル、アサーション失敗時のみ LLM を再呼び出し——長期タスクのドリフトゼロ、Token は一桁削減。",
+    eng_g5:"種族進化エンジン。複数バリアントが同一タスクを並行走査、最適戦略が自己進化。",
+    eng_g:"Plan-Execute-Verify-Judge 4層アーキテクチャ。ツール並行、サブ Agent 派遣、コンテキスト圧縮。Token 消費 3分の1。",
     eng_o:"OpenAI 系コードエンジン。patch / exec / サンドボックス書き。タスク明確、アウトプット制御可能。",
     eng_d:"DeepSeek 推論エンジン、長コンテキスト複雑推論が得意。dsh CLI を spawn、OpenAI 互換 SSE、token 計量内蔵。",
     arc_title:"マルチ Agent 並行スケジューリング",
@@ -1041,16 +1083,18 @@ const I18N = {
     ob_title:"各 agent の思考を可視化",
     ob_sub:"ステータス、ステップ、ツール呼び、アウトプット。すべてリアルタイム。AI はもう黒箱ではない。",
     f_1t:"並行マルチ agent", f_1:"各セッションが独立ループ。複数タスクを同時実行、互いにブロックしない。",
-    f_2t:"ツール呼び可観測", f_2:"shell / read_file / web_fetch / recall_memory。全ステップが見える。",
+    f_2t:"ツール呼び出し可視化", f_2:"30+ 内蔵ツールと 21 プラグイン、全ステップが見える。MCP 双方向対応。",
     f_3t:"連続セッション", f_3:"同一対話で複数ターン追及。新規時のみ新セッション。再起動で履歴は失われない。",
     f_4t:"クロスエンジン resume", f_4:"Claude / Codex 履歴 sessions をスキャン、継続するものを選択。タスクは一貫。",
-    f_5t:"クロスエンジン長期記憶", f_5:"毎ターン背景で事実抽出。エンジン切替でも記憶は消えない。FTS5 + 意味ベクトル双重召回。",
+    f_5t:"クロスエンジン長期記憶", f_5:"毎ターン背景で事実抽出。エンジン切替でも記憶は消えない。FTS5 + 意味ベクトル二重召回、Git 同期で端末間共有。",
     f_6t:"ワークスペース", f_6:"ターミナル、ファイル、チャットの3 tab が cwd にバインド。編集後 app 内で検証。",
+    f_7t:"Goal 監督 + 予算段階", f_7:"長期ゴールは自動監督:スタックしたら介入、予算不足なら優先度で段階縮小。長期タスクを放置しない。",
+    f_8t:"ツール出力のディスク退避", f_8:"長大なツール出力は自動ディスク退避、正規表現で中間を再取得。コンテキストは軽く、詳細は失われない。",
     pr_title:"プライバシーはあなたの手に",
     pr_sub:"API key は OS Keychain (DPAPI / Keychain)、対話はローカル SQLite、バックエンド送信なし。クロスプラットフォーム Electron、低リソース。",
     fq_title:"よくある質問",
     q_1:"Raycast / Alfred と同じですか?", a_1:"違います。Raycast はランチャー、KinetAios は AI 総合受付——マルチ agent エンジンの並行ランタイム。「アプリの高速起動」ではなく「複数 AI が同時に作業、ステータスすべて可視」が目的。共存可能です。",
-    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness を1パネルに収めます——4つのエンジン家族が並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理はシングルエンジンにはできない機能です。",
+    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Direct V2–V5(V3 意図ルーティング / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness を1パネルに収めます——7エンジンが並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理はシングルエンジンにはできない機能です。",
     q_3:"データはどこへ?", a_3:"API key は OS Keychain (DPAPI / Keychain)、対話と記憶はローカル SQLite、バックエンド送信なし。あなたのエンジン、あなたの key、あなたのデータ。",
     q_4:"Claude Code / Codex の使い方は? 自分で設定?", a_4:"KinetAios がインストール済みの claude / codex CLI を自動検出。未インストールの場合は設定ページにガイド。Direct エンジンは API key のみ。",
     q_5:"対応モデルは?", a_5:"Direct エンジンは鍵次第(デフォルト glm-4-plus / glm-4-flash)、Claude Code / Codex はローカル CLI 設定に従う(対応する任意のモデル)。エンジン ≠ モデル。",
@@ -1062,7 +1106,7 @@ const I18N = {
 };
 
 function applyLang(l){
-  if(!I18N[l]) l = "zh-Hans";
+  if(!I18N[l]) l = "en";
   const dict = I18N[l];
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const k = el.getAttribute("data-i18n");
@@ -1085,7 +1129,7 @@ document.querySelectorAll(".lang button").forEach(b => {
 
 const urlLang = new URLSearchParams(location.search).get("lang");
 const saved = (()=>{try{return localStorage.getItem("ka_lang")}catch(e){return null}})();
-applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "zh-Hans"));
+applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "en"));
 
 // typing indicator cycle
 (function(){
