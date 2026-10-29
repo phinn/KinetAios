@@ -2414,9 +2414,19 @@ function renderMain() {
     updatePreview(artifactHtml);
     renderArtifactVersions(conv);
   } else {
-    if (tabPreview) tabPreview.classList.remove('has-artifact');
-    currentArtifactHtml = null;
-    if (activeTab === 'preview') showPreviewEmpty();
+    // 最后一轮无产物 ≠ 会话无产物:重启/翻历史会话时 lastTurn 常是纯文字,
+    // 但早期 turn 可能留有 artifact 版本 → 扫全量,有则亮 tab 并自动看最新版本。
+    const versions = collectArtifacts(conv);
+    if (versions.length) {
+      if (tabPreview) tabPreview.classList.add('has-artifact');
+      artifactViewIdx = -1;
+      updatePreview(versions[versions.length - 1].html);
+      renderArtifactVersions(conv);
+    } else {
+      if (tabPreview) tabPreview.classList.remove('has-artifact');
+      currentArtifactHtml = null;
+      if (activeTab === 'preview') showPreviewEmpty();
+    }
   }
   // 会话内搜索激活 → DOM 重建后重挂高亮(切会话/done 重渲染都会清掉 mark)
   if (chatSearch.q && !chatSearchBar().hidden) chatSearchApply();
