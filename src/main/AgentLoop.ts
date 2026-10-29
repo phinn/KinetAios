@@ -450,8 +450,12 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         onEvent({ type: 'context', action: 'trimmed', beforeTokens: estTokenCount(messages, snapshot.apiProtocol), afterTokens: estTokenCount(view, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
         onEvent({ type: 'status', text: `♻️ 已折叠 ${folded} 条早期工具结果(省 ~${Math.round(savedTokens / 1000)}K tokens,重调同一工具可取回)` });
       }
-      completion = await provider.streamComplete(view, defs, snapshot, signal, (tok) =>
-        onEvent({ type: 'token', text: tok }),
+      completion = await provider.streamComplete(view, defs, snapshot, signal, (tok, kind) =>
+        // kind='reason' → 思维链增量事件(reasoning token 不进正文 answer,由 renderer 独立渲染折叠卡)。
+        // kind 缺省 = 正文 token(旧路径,行为不变)。
+        kind === 'reason'
+          ? onEvent({ type: 'token', text: tok, channel: 'reasoning' } as AgentEvent & { type: 'token'; channel: 'reasoning' })
+          : onEvent({ type: 'token', text: tok }),
       );
     } catch (e) {
       const name = (e as Error)?.name;
