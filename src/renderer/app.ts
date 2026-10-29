@@ -425,9 +425,13 @@ function applyI18nDOM(): void {
     if (selectedId === id) selectedId = order[0] ?? null;
     renderSidebar();
     renderMain();
-    if (currentView === 'workbench') scheduleWorkbench(); // 全量重建走调度器(会话删除也会触发)
+    if (currentView === 'workbench') scheduleWorkbench(); // 会话删除也会触发
     if (currentView === 'town') townOnConversationChanged();
     if (currentView === 'nexus') nexusOnConversationChanged();
+  });
+  // 系统通知点击 → 聚焦并切到对应会话(会话可能已被删,缺失则静默留在当前)
+  api.onFocusConversation((id) => {
+    if (id && convs.has(id)) { selectedId = id; showChat(); renderSidebar(); }
   });
   // 非 token 事件(tool/cost/status/context)的 renderMain 做 debounce:
   // AgentLoop 一轮 ReAct 可能连发多个 tool+cost 事件,每次 renderMain 全量重建 DOM +
@@ -5351,7 +5355,20 @@ function collectArtifacts(conv: Conversation): ArtifactVersion[] {
   const covered = new Set(list.map(v => v.turnId));
   for (let i = 0; i < conv.turns.length; i++) {
     const t = conv.turns[i];
-    if (covered.has(t.id)) continue;
+    if (covered.has(t.id)) {
+      // 尾 turn 是流式生长区:缓存里可能存的是首帧旧 html,每次重扫都重新 detect 覆盖,
+      // 保证「刷新预览」拿到的是最终 answer 而非流式中途的截断产物。
+      if (i >= conv.turns.length - 1) {
+        const fresh = detectArtifact(t.answer);
+        if (fresh) {
+          const lastV = list[list.length - 1];
+          if (fresh !== lastV.html) { lastV.html = fresh; lastV.title = artifactTitleOf(fresh); }
+        } else {
+          list.pop(); // 尾 turn 的产物被删空(极端:answer 被清)→ 版本失效
+        }
+      }
+      continue;
+    }
     const html = detectArtifact(t.answer);
     if (html) list.push({ turnId: t.id, turnIdx: i, html, title: artifactTitleOf(html), ts: t.ts });
   }
@@ -8444,17 +8461,20 @@ function closeMoreMenu() {
   // ── Artifact 预览 tab + 控制按钮 ──
   document.getElementById('tab-preview')!.onclick = () => openPreviewPane();
   document.getElementById('btn-preview-refresh')!.onclick = () => {
-    const html = currentArtifactHtml;
-    if (html) {
-      const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
-      if (iframe) {
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        if (iframe.dataset.blobUrl) URL.revokeObjectURL(iframe.dataset.blobUrl);
-        iframe.dataset.blobUrl = url;
-        iframe.src = url;
+    // 不是重放旧 blob:从最新 turns 重扫 artifact 流水线(尾 turn 流式缓存会在此刷新),
+    // 有版本 → 看最新;一个都没有 → 清空进空态(避免幽灵预览残留)。
+    const conv = selectedId ? convs.get(selectedId) : undefined;
+    if (conv) {
+      const list = collectArtifacts(conv);
+      if (list.length) {
+        artifactViewIdx = -1; // 刷新语义 = 回到最新版本
+        updatePreview(list[list.length - 1].html);
+        renderArtifactVersions(conv);
+        return;
       }
     }
+    currentArtifactHtml = null;
+    showPreviewEmpty();
   };
   document.getElementById('btn-preview-open')!.onclick = () => {
     // 把 artifact HTML 写到临时文件,用系统浏览器打开
@@ -8868,6 +8888,7 @@ function openPathExternal(path: string): void {
           void steerNow(runConv.id, draft);
         } else {
           enqueueMessage(runConv.id, draft);
+          uxToast.info(tr('queue.enqueued')); // 入队反馈:chip 行在 composer 上方,但打字时视线在输入框,toast 补一记确认
         }
         return;
       }
