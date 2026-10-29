@@ -1297,11 +1297,13 @@ function showConfirmDialog(title: string, body: string, opts?: { okLabel?: strin
   document.getElementById('confirm-body')!.textContent = body;
   const ok = document.getElementById('confirm-ok')!;
   ok.textContent = opts?.okLabel ?? tr('common.ok');
+  const cancel = document.getElementById('confirm-cancel')!;
   modal.classList.add('show');
-  ok.focus();
+  // 默认焦点在「取消」:危险操作(删除/清空)不能因顺手回车被确认。
+  // Enter/Space 交给浏览器原生行为——只触发当前聚焦的按钮;Escape 仍取消。
+  cancel.focus();
   confirmDialogFocusRestore = trapFocus(modal);
   return new Promise((resolve) => {
-    const cancel = document.getElementById('confirm-cancel')!;
     if (activeConfirmDone) activeConfirmDone(false); // 上一个未完成的确认先取消(避免 Promise 永挂)
     const done = (v: boolean) => {
       ok.onclick = null;
@@ -1316,8 +1318,7 @@ function showConfirmDialog(title: string, body: string, opts?: { okLabel?: strin
     ok.onclick = () => done(true);
     cancel.onclick = () => done(false);
     document.onkeydown = (e) => {
-      if (e.key === 'Enter') done(true);
-      else if (e.key === 'Escape') done(false);
+      if (e.key === 'Escape') done(false);
     };
   });
 }
@@ -5456,6 +5457,11 @@ function scheduleArtifactCheck(): void {
 
 /** 更新预览 iframe 内容。用 blob: URL 而非 srcdoc(兼容性更好,绕过部分 CSP 限制)。 */
 function updatePreview(html: string): void {
+  // 同内容短路:流式期间 checkArtifact 每 600ms 调一次,artifact 围栏闭合后 detect 返回
+  // 同一份 html,无条件重建 blob+重载 iframe 会让预览持续白闪(用户感知为「界面在抖」)。
+  // 内容没变且 iframe 还在 → 什么都不做;iframe 被清(空态/切 tab)才走完整重建。
+  const curIframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
+  if (html === currentArtifactHtml && curIframe && curIframe.dataset.blobUrl) return;
   currentArtifactHtml = html;
   const body = document.getElementById('preview-body');
   if (!body) return;  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
@@ -8468,6 +8474,10 @@ function closeMoreMenu() {
       const list = collectArtifacts(conv);
       if (list.length) {
         artifactViewIdx = -1; // 刷新语义 = 回到最新版本
+        // 刷新 = 强制重载:先清 blobUrl 标记,绕过 updatePreview 的同内容短路
+        // (内容没变也要真的重载一次,iframe 内部卡死时靠它救活)
+        const f = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
+        if (f?.dataset.blobUrl) { URL.revokeObjectURL(f.dataset.blobUrl); delete f.dataset.blobUrl; }
         updatePreview(list[list.length - 1].html);
         renderArtifactVersions(conv);
         return;
