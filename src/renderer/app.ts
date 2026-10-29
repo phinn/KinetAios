@@ -3262,7 +3262,9 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
         chip.className = 'fd-chip';
         chip.title = p;
         const short = p.split(/[\\/]/).pop() || p;
-        chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
+        // 文件名后跟 ±行数徽章(与子卡 summary 的 .dfb 同源):折叠态直接看到每个文件改了多少
+        const badge = diffBadgeOf(name, st.args);
+        chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>${badge}`;
         chip.onclick = () => { void fileDrawer?.open(p); };
         chipRow.appendChild(chip);
         added++;

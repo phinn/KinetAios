@@ -6952,3 +6952,6 @@ html.anim-paused #sidebar {
   border-radius: 8px; padding: 3px 10px; cursor: pointer; font-size: 0.8rem;
 }
 .ctx-banner button:hover { color: var(--text); border-color: var(--text-dim); }
+
+/* 聚合卡文件 chip 内的 ±行数徽章(复用 .dfb 子徽章,字号微调适配 chip 高度) */
+.fd-chip .dfb { gap: 3px; font-size: 0.72rem; }
