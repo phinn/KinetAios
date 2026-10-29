@@ -454,7 +454,10 @@ function applyI18nDOM(): void {
     applyEvent(conv, ev);
     if (convId === selectedId) {
       if (ev.type === 'token') {
-        streamAppend(ev.text);
+        // 思维链增量不进正文流(应用时 applyEvent 已折进 t.reasoning),
+        // 仅打节拍触发重渲(渲染函数从 t.reasoning 生成折叠卡)。 / CoT tokens never enter the answer stream.
+        if (ev.channel === 'reasoning') scheduleRenderMain();
+        else streamAppend(ev.text);
       } else if (ev.type === 'done' || ev.type === 'error') {
         convRetrying.delete(convId); // 终态:退出 retrying 态
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
@@ -2522,6 +2525,18 @@ function ensureElapsedTicker(): void {
           applyGaugeColor(stat, conv.ctxPct ?? 0);
         }
       }
+      // 上下文满劝导 banner:≥90% 且未在跑时,头部提示「归纳开新对话」(WorkBuddy 式)。
+      // 每会话只弹一次(弹过记 ctxAdvised);点 × 关闭。文案进 #ctx-banner-text。
+      const banner = document.getElementById('ctx-banner');
+      if (banner) {
+        const shouldShow = (conv.ctxPct ?? 0) >= 90 && conv.status !== 'running' && conv.ctxAdvised !== true;
+        if (shouldShow) {
+          const txt = document.getElementById('ctx-banner-text');
+          if (txt) txt.textContent = tr('ctx.suggestNew', { pct: Math.round(conv.ctxPct ?? 0) });
+          banner.hidden = false;
+          conv.ctxAdvised = true;
+        }
+      }
     }
   }, 1000);
 }
@@ -2820,6 +2835,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (t.steps.length) {
       body.appendChild(buildStepsEl(t.steps, streaming));
     }
+    // 思维链卡(WorkBuddy 对齐):流式期米色斜体实时滚动;done 后收成 <details> 折叠,正文优先。
+    if (t.reasoning) body.appendChild(buildReasoningCard(t.reasoning, streaming));
     const ans = document.createElement('div');
     ans.className = 'answer';
     if (streaming) {
@@ -3531,6 +3548,21 @@ function stepSummaryText(name: string, args: string): string {
   return text;
 }
 
+// write/edit 的变更量徽章:args(old_string/new_string 或 content)按换行数粗算 +N/-M。
+// 只做提示性徽章不做精确 diff(引号转义会让行数略有偏差,扫读够用)。
+function diffBadgeOf(name: string, args: string): string {
+  if (name !== 'write_file' && name !== 'edit_file') return '';
+  try {
+    const a = JSON.parse(args) as { content?: string; new_string?: string; old_string?: string };
+    const add = (a.content ?? a.new_string ?? '').split('\n').length;
+    const del = a.old_string ? a.old_string.split('\n').length : 0;
+    if (add <= 0 && del <= 0) return '';
+    const addStr = add > 0 ? `<span class="dfb-add">+${add}</span>` : '';
+    const delStr = del > 0 ? `<span class="dfb-del">-${del}</span>` : '';
+    return `<span class="dfb">${addStr}${delStr}</span>`;
+  } catch { return ''; }
+}
+
 // 卡片成败态:只认硬信号(exit code / Traceback / ⚠️ 前缀)—— grep 输出里出现 "Error" 单词不算失败。
 function stepStatusOf(result: string): 'ok' | 'warn' | 'err' {
   const head = result.slice(0, 400);
@@ -3701,6 +3733,34 @@ function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
 
 // ── 任务清单卡(DSH 式):todo_write 事件 → 逐项状态卡,流式期间实时更新 ──
 // 状态图标:completed 绿勾 / in_progress 旋转弧 / pending 空心圈。头部带计数摘要。
+// ── 思维链卡(reasoning 渲染):流式期=展开的米色斜体块实时追加;done=收成折叠 details,不抢正文视线 ──
+// WorkBuddy 同款交互:浅灰斜体、可展开、默认收起。reasoning 增量由 main(glm.ts reasoning_content/thinking)经
+// token(reasoning) 事件落到 t.reasoning,历史 turn 直接从持久化数据重放。
+function buildReasoningCard(reasoning: string, streaming: boolean): HTMLElement {
+  const det = document.createElement('details');
+  det.className = 'reasoning-card';
+  if (streaming) det.open = true;
+  const sum = document.createElement('summary');
+  const label = document.createElement('span');
+  label.className = 'reasoning-label';
+  label.textContent = tr('turn.reasoning');
+  sum.appendChild(label);
+  const chev = document.createElement('span');
+  chev.className = 'reasoning-chevron';
+  chev.textContent = '▸';
+  sum.appendChild(chev);
+  det.appendChild(sum);
+  const body = document.createElement('div');
+  body.className = 'reasoning-body';
+  // 流式期只保留尾部(头部思维链价值低,渲染成本高);done 后全量。
+  const text = streaming ? reasoning.slice(-REASONING_TAIL_LIMIT) : reasoning;
+  body.textContent = text;
+  // 流式期自动贴底(思维链滚动区独立);用户点 summary 收起后停止干扰由 open 属性控制。
+  if (streaming) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+  det.appendChild(body);
+  return det;
+}
+
 function buildTodoCard(todos: TodoItem[]): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step todo-card';
@@ -3979,6 +4039,9 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   const summaryText = stepSummaryText(s.name, s.args);
   const dur = fmtStepDur(s.durationMs);
   sumBits.push(`<span class="sum">${esc(summaryText)}</span>`);
+  // write/edit 的变更量徽章(WorkBuddy 式「+12/-3」一眼看改了多少;args 算行数,不依赖 result 文案)
+  const diffBadge = diffBadgeOf(s.name, s.args);
+  if (diffBadge && !isPending) sumBits.push(diffBadge);
   if (dur) sumBits.push(`<span class="dur">${esc(dur)}</span>`);
   if (isPending) sumBits.push(`<span class="dur">${esc(tr('step.running'))}</span>`);
   else if (isInterrupted) sumBits.push(`<span class="dur">${esc(tr('step.interrupted'))}</span>`);
@@ -8366,6 +8429,9 @@ function closeMoreMenu() {
   document.getElementById('ctx-insp-cancel')!.onclick = closeCtxInspector;
   document.getElementById('ctx-insp-save')!.onclick = () => void saveCtxInspector();
   document.getElementById('ctx-insp-add')!.onclick = () => addCtxMsg();
+  // 上下文满劝导 banner:+ 新对话 / × 关闭(关 = 本次会话不再弹,ctxAdvised 已置 true)
+  document.getElementById('ctx-banner-new')!.onclick = () => document.getElementById('btn-clear')?.click();
+  document.getElementById('ctx-banner-close')!.onclick = () => { const b = document.getElementById('ctx-banner'); if (b) b.hidden = true; };
   document.getElementById('btn-send')!.onclick = () => void send();
   // ── 聊天内容事件委托(单监听器;流式稳定前缀持续重建 DOM,委托天然免疫)──
   // .code-copy → 复制所在代码块;.file-ref → 右侧文件抽屉打开
@@ -10997,6 +11063,8 @@ function clipForUi(s: string): string {
 // Answers render a 30K head by default with an "expand" button — full md() runs
 // only on demand; collapse folds back to the head to release DOM/memory.
 const ANSWER_HEAD_LIMIT = 30_000;
+// 思维链流式期只渲染尾部 6K(头部中间推导价值低);done 后全量展示。
+const REASONING_TAIL_LIMIT = 6_000;
 function mountAnswer(ans: HTMLElement, full: string): void {
   const renderHead = (): void => {
     ans.innerHTML = '';
