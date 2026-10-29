@@ -516,6 +516,7 @@ function applyI18nDOM(): void {
         if (html) {
           updatePreview(html);
           showPreviewTab();
+          renderArtifactVersions(conv);
         }
       }
     }
@@ -2407,9 +2408,11 @@ function renderMain() {
   const lastTurn = conv.turns[conv.turns.length - 1];
   const artifactHtml = lastTurn ? detectArtifact(lastTurn.answer) : null;
   const tabPreview = document.getElementById('tab-preview');
+  artifactViewIdx = -1; // 切会话回到「最新版本」语义
   if (artifactHtml) {
     if (tabPreview) tabPreview.classList.add('has-artifact');
     updatePreview(artifactHtml);
+    renderArtifactVersions(conv);
   } else {
     if (tabPreview) tabPreview.classList.remove('has-artifact');
     currentArtifactHtml = null;
@@ -5284,6 +5287,59 @@ function streamAppend(text: string) {
 let artifactDebounce: ReturnType<typeof setTimeout> | null = null;
 let currentArtifactHtml: string | null = null; // 当前预览的 HTML 内容(给刷新/打开按钮用)
 let artifactAutoSwitch = true; // 检测到 artifact 时自动切到预览 tab(用户手动切回后不再自动切)
+// ── Artifact 版本面板:会话内所有带 artifact 的 turn = 一个版本序列 ──
+// 同一 turn 内多次流式更新覆盖当前版本;跨 turn 追加新版本(AI 迭代产物时历史可回看)。
+// 缓存按 (convId, turnId) 存,增量扫描只处理新增 turn,长会话不重复跑正则。
+interface ArtifactVersion { turnId: string; turnIdx: number; html: string; title: string; ts: number; }
+const artifactCache = new Map<string, ArtifactVersion[]>(); // convId → 版本列表(旧→新)
+let artifactViewIdx = -1; // 当前查看的版本下标(-1=最后版本;点历史版本后固定)
+
+/** 从 artifact HTML 提取标题:<title> 优先,退化用首个 h1,再退化「未命名」。 */
+function artifactTitleOf(html: string): string {
+  const t = html.match(/<title>([^<]{1,80})<\/title>/i);
+  if (t?.[1]?.trim()) return t[1].trim();
+  const h = html.match(/<h1[^>]*>([\s\S]{1,80}?)<\/h1>/i);
+  if (h?.[1]) return h[1].replace(/<[^>]+>/g, '').trim().slice(0, 60) || tr('preview.untitled');
+  return tr('preview.untitled');
+}
+
+/** 扫描会话 turns 收集 artifact 版本(增量:缓存里已覆盖的 turn 跳过)。 */
+function collectArtifacts(conv: Conversation): ArtifactVersion[] {
+  let list = artifactCache.get(conv.id);
+  if (!list) { list = []; artifactCache.set(conv.id, list); }
+  const covered = new Set(list.map(v => v.turnId));
+  for (let i = 0; i < conv.turns.length; i++) {
+    const t = conv.turns[i];
+    if (covered.has(t.id)) continue;
+    const html = detectArtifact(t.answer);
+    if (html) list.push({ turnId: t.id, turnIdx: i, html, title: artifactTitleOf(html), ts: t.ts });
+  }
+  return list;
+}
+
+/** 渲染预览头部的版本条:版本 chip(标题+序号),当前查看的高亮;点击切换 iframe 内容。 */
+function renderArtifactVersions(conv: Conversation): void {
+  const bar = document.getElementById('artifact-versions');
+  if (!bar) return;
+  const list = collectArtifacts(conv);
+  bar.hidden = list.length <= 1; // 单版本不占地方
+  if (!list.length) return;
+  const cur = artifactViewIdx >= 0 && artifactViewIdx < list.length ? artifactViewIdx : list.length - 1;
+  bar.innerHTML = list.map((v, i) =>
+    `<button class="av-chip${i === cur ? ' active' : ''}" data-i="${i}" title="${esc(v.title)} · ${new Date(v.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}">` +
+    `<span class="av-num">v${i + 1}</span><span class="av-title">${esc(v.title)}</span></button>`).join('');
+  bar.querySelectorAll<HTMLElement>('.av-chip').forEach(el => {
+    el.onclick = () => {
+      const i = Number(el.dataset.i);
+      const v = list[i];
+      if (!v) return;
+      artifactViewIdx = i;
+      updatePreview(v.html);
+      renderArtifactVersions(conv); // 刷新高亮
+    };
+  });
+}
+
 
 /** 从 markdown 文本中提取 HTML/SVG artifact。返回完整 HTML 文档(可直接塞 iframe)。 */
 function detectArtifact(md: string): string | null {
@@ -5340,25 +5396,11 @@ function scheduleArtifactCheck(): void {
   }, 600);
 }
 
-/** 检测当前会话最后一个 turn 的 answer 是否包含 artifact,如有则更新预览。 */
-function checkArtifact(): void {
-  const conv = selectedId ? convs.get(selectedId) : undefined;
-  if (!conv) return;
-  const lastTurn = conv.turns[conv.turns.length - 1];
-  if (!lastTurn) return;
-  const html = detectArtifact(lastTurn.answer);
-  if (html) {
-    updatePreview(html);
-    showPreviewTab();
-  }
-}
-
 /** 更新预览 iframe 内容。用 blob: URL 而非 srcdoc(兼容性更好,绕过部分 CSP 限制)。 */
 function updatePreview(html: string): void {
   currentArtifactHtml = html;
   const body = document.getElementById('preview-body');
-  if (!body) return;
-  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
+  if (!body) return;  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
   let iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
   if (!iframe) {
     body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>';
@@ -5371,6 +5413,22 @@ function updatePreview(html: string): void {
   if (iframe.dataset.blobUrl) URL.revokeObjectURL(iframe.dataset.blobUrl);
   iframe.dataset.blobUrl = url;
   iframe.src = url;
+}
+
+/** 检测当前会话最后一个 turn 的 answer 是否包含 artifact,如有则更新预览(流式防抖+done 各调一次)。 */
+function checkArtifact(): void {
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  if (!conv) return;
+  const lastTurn = conv.turns[conv.turns.length - 1];
+  if (!lastTurn) return;
+  const html = detectArtifact(lastTurn.answer);
+  if (html) {
+    // 同一 turn 流式迭代 = 覆盖当前查看版本;仅当用户没钉在历史版本时才跟随最新
+    if (artifactViewIdx < 0) artifactViewIdx = -1;
+    updatePreview(html);
+    showPreviewTab();
+    renderArtifactVersions(conv);
+  }
 }
 
 /** 显示预览 tab 按钮 + 自动切换到预览面板(首次检测到 artifact 时)。 */
@@ -5402,14 +5460,17 @@ function showPreviewEmpty(): void {
 function openPreviewPane(): void {
   showTab('preview');
   document.getElementById('tab-preview')!.classList.remove('has-artifact');
-  // 如果当前没有 artifact 内容,显示空状态
+  // 如果当前没有 artifact 内容,先扫整个会话的版本列表(多版本历史会话也能直接看最新)
   if (!currentArtifactHtml) {
-    // 尝试检测当前 turn
     const conv = selectedId ? convs.get(selectedId) : undefined;
-    const lastTurn = conv?.turns[conv.turns.length - 1];
-    if (lastTurn) {
-      const html = detectArtifact(lastTurn.answer);
-      if (html) { updatePreview(html); return; }
+    if (conv) {
+      const list = collectArtifacts(conv);
+      if (list.length) {
+        artifactViewIdx = -1; // 打开即看最新版本
+        updatePreview(list[list.length - 1].html);
+        renderArtifactVersions(conv);
+        return;
+      }
     }
     showPreviewEmpty();
   }

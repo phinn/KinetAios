@@ -284,6 +284,8 @@
             <button class="ghost" id="btn-preview-open" title="在浏览器中打开"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></button>
             <button class="ghost" id="btn-preview-close" title="关闭预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
+          <!-- Artifact 版本条:同一会话内 AI 迭代产物形成的版本序列,点击回看历史版本 -->
+          <div id="artifact-versions" class="artifact-versions" hidden></div>
           <div class="preview-body" id="preview-body">
             <iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>
           </div>

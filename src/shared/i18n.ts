@@ -1003,6 +1003,7 @@ const ZH_CN: Dict = {
 
   // ── 预览面板 ──
   'preview.emptyHint': '等待 AI 生成 HTML/SVG 内容…',
+  'preview.untitled': '未命名产物',
   'preview.emptySub': '让 AI「画一个网页 / 做 SVG 图表 / 写交互式组件」,结果会在这里实时预览',
 
   // ── 多机协作 (Mesh) ──
@@ -2383,6 +2384,7 @@ const EN: Dict = {
 
   // ── Preview panel ──
   'preview.emptyHint': 'Waiting for AI to generate HTML/SVG content…',
+  'preview.untitled': 'Untitled artifact',
   'preview.emptySub': 'Ask AI to "draw a webpage / make an SVG chart / build an interactive component" — results preview here live',
 
   // ── Mesh ──
@@ -3753,6 +3755,7 @@ const ZH_TW: Dict = {
 
   // ── 預覽面板 ──
   'preview.emptyHint': '等待 AI 生成 HTML/SVG 內容…',
+  'preview.untitled': '未命名產物',
   'preview.emptySub': '讓 AI「畫一個網頁 / 做 SVG 圖表 / 寫互動式元件」，結果會在這裡即時預覽',
 
   'settings.mesh.title': '多機協作 (MCP Bridge)',
@@ -5147,6 +5150,7 @@ const JA: Dict = {
 
   // ── プレビューパネル ──
   'preview.emptyHint': 'AI による HTML/SVG コンテンツの生成を待っています…',
+  'preview.untitled': '無題の成果物',
   'preview.emptySub': 'AI に「ウェブページを描く / SVG チャートを作る / インタラクティブコンポーネントを書く」ように指示すると、結果がここにリアルタイムプレビューされます',
 
   // ── メッシュ (MCP Bridge) ──

@@ -1643,6 +1643,28 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .cht#tab-preview { display: none; }
 .cht#tab-preview.has-artifact { display: inline-block; }
 
+/* ── Artifact 版本条 / Artifact version bar ── */
+.artifact-versions {
+  display: flex; align-items: center; gap: 4px; flex-wrap: nowrap; overflow-x: auto;
+  padding: 4px 12px; border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--bg-side) 60%, transparent);
+  scrollbar-width: thin;
+}
+.artifact-versions[hidden] { display: none; }
+.av-chip {
+  flex-shrink: 0; display: inline-flex; align-items: center; gap: 4px;
+  max-width: 180px; padding: 1.5px 8px; border-radius: 999px;
+  border: 1px solid var(--border); background: transparent;
+  font-size: 0.769rem; color: var(--text-dim); cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.av-chip:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--text); }
+.av-chip.cur { background: color-mix(in srgb, var(--accent) 18%, transparent); color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
+.av-chip .av-num { font-weight: 600; opacity: .8; }
+.av-chip .av-title { overflow: hidden; text-overflow: ellipsis; }
+.av-hint { margin-left: auto; flex-shrink: 0; font-size: 0.7rem; color: var(--text-faint); }
+
 /* ── Team 面板 / Team panel ── */
 .chat-team-pane { flex: 1; display: flex; flex-direction: column; min-height: 0; }
 .chat-team-pane[hidden] { display: none; }
