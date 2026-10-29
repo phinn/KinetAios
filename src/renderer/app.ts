@@ -2572,6 +2572,10 @@ function applyGaugeColor(el: HTMLElement, pct: number): void {
   el.classList.toggle('stat-danger', pct >= 90);
 }
 
+// renderHead 上次渲染的会话 id:余额气泡只在会话真正切换时才收起(见 renderHead 内注释)。
+// Last conv id seen by renderHead — the balance popover closes only on a real switch.
+let headLastConvId: string | null | undefined; // undefined = 初始,首次 renderHead 视为切换
+
 function renderHead(conv: Conversation | undefined) {
   renderQueue(); // 队列 chip 行跟随所选会话(签名缓存,高频调用零重建)
   const dot = document.getElementById('head-dot')!;
@@ -2614,11 +2618,16 @@ function renderHead(conv: Conversation | undefined) {
     profileSel.value = conv.profileId || '';
     profileSel.classList.toggle('js-hidden', !(isDirectFam && hasProfiles));
   }
-  // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义);气泡随会话切换关闭
+  // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义)
   const balBtn = document.getElementById('btn-balance') as HTMLButtonElement | null;
   if (balBtn) balBtn.hidden = !(isDirectFam && hasProfiles);
   const balPop = document.getElementById('balance-pop');
-  if (balPop) balPop.hidden = true;
+  // 气泡只在「真正切会话/新建」时关:renderHead 在运行中被 status/token/tool 事件高频调,
+  // 之前无条件 hidden=true 会把用户刚点开的余额气泡秒关(表现:结果框一闪而过)。
+  // / Close the balance popover only on a real conversation switch: renderHead runs on
+  // every streaming event, the unconditional hide made the popover flash away mid-run.
+  if (balPop && (conv?.id ?? null) !== headLastConvId) balPop.hidden = true;
+  headLastConvId = conv?.id ?? null;
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
