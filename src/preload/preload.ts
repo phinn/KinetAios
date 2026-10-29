@@ -214,6 +214,10 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('conversation-removed');
     ipcRenderer.on('conversation-removed', (_e: IpcRendererEvent, id) => cb(id));
   },
+  onFocusConversation: (cb) => {
+    ipcRenderer.removeAllListeners('focus-conversation');
+    ipcRenderer.on('focus-conversation', (_e: IpcRendererEvent, id: string) => cb(id));
+  },
   onFilesCwd: (cb) => {
     ipcRenderer.removeAllListeners('files-cwd');
     ipcRenderer.on('files-cwd', (_e: IpcRendererEvent, cwd: string) => cb(cwd));

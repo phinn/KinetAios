@@ -1181,6 +1181,8 @@ export interface KinetAPI {
   onArenaCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
+  // 系统通知点击 → 主进程要求聚焦并切换到对应会话(notifyOnDone 链路)
+  onFocusConversation(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string; rulesNote?: string }) => void): void;
   // 隐私闸独立弹窗:与 shell confirm 分离,不受「不再询问」/approval 短路影响。
   onPrivacyRequest(cb: (req: { id: string; msg: string }) => void): void;

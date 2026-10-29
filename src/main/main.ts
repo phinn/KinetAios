@@ -376,7 +376,11 @@ const emitter: TaskManagerEmitter = {
     const body = `${convTitle}${snippet ? '\n' + snippet : ''}`;
     try {
       const n = new Notification({ title, body: body.slice(0, 120) });
-      n.on('click', () => { showDashboard(); });
+      // 点击通知 → 聚焦主窗 + 切到对应会话(用户从通知直接进入上下文,不等侧栏翻找)
+      n.on('click', () => {
+        showDashboard();
+        try { dashboardWin?.webContents.send('focus-conversation', conv.id); } catch { /* 窗口已销毁 */ }
+      });
       n.show();
     } catch { /* 通知权限被拒/系统不支持 → 静默 */ }
     // 任务栏闪烁(Windows)/ dock 无操作;聚焦后 Electron 自动停闪
