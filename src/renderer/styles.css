@@ -2357,6 +2357,12 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .fd-imgwrap img { max-width: 100%; max-height: 100%; border-radius: 8px; cursor: zoom-in; box-shadow: 0 4px 24px rgba(0, 0, 0, 0.25); }
 .img-lightbox { position: fixed; inset: 0; z-index: var(--z-modal); background: rgba(0, 0, 0, 0.78); backdrop-filter: blur(6px); display: flex; align-items: center; justify-content: center; cursor: zoom-out; animation: lb-in var(--dur-fast) var(--ease-out); }
 .img-lightbox img { max-width: 92vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 12px 48px rgba(0, 0, 0, 0.5); }
+/* 画廊模式:左右切换箭头 + 计数(单图不渲染) */
+.ilb-nav { position: fixed; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; border: none; background: rgba(255,255,255,.12); color: #fff; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(4px); transition: background .12s; }
+.ilb-nav:hover { background: rgba(255,255,255,.28); }
+.ilb-prev { left: 16px; }
+.ilb-next { right: 16px; }
+.ilb-count { position: fixed; right: 18px; bottom: 16px; padding: 2px 10px; border-radius: 999px; background: rgba(0,0,0,.45); color: rgba(255,255,255,.85); font-size: .8rem; backdrop-filter: blur(4px); }
 @keyframes lb-in { from { opacity: 0; } to { opacity: 1; } }
 /* ── 语法高亮 token 色(highlight.ts)— 全部走语义变量,明暗主题自适应 ── */
 .tok-com { color: var(--text-faint); font-style: italic; }

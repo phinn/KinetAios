@@ -3596,13 +3596,40 @@ function fmtStepDur(ms?: number): string {
 }
 
 // 截图灯箱:点击步骤卡里的内联截图 → 全屏浮层,点击关闭。
-function openImgLightbox(src: string): void {
+/** 画廊式灯箱:传入整组图源 + 起始下标,←/→ 或左右箭头切换,Esc/点击遮罩关闭,右下角计数。 */
+function openImgLightbox(srcs: string | string[], start = 0): void {
   document.querySelector('.img-lightbox')?.remove();
+  const list = Array.isArray(srcs) ? srcs : [srcs];
+  let idx = Math.max(0, Math.min(start, list.length - 1));
   const ov = document.createElement('div');
   ov.className = 'img-lightbox';
   const img = document.createElement('img');
-  img.src = src;
+  const show = () => { img.src = list[idx]; };
+  show();
   ov.appendChild(img);
+  if (list.length > 1) {
+    // 左右切换箭头 + 计数;单张时不渲染(保持旧的单图观感)
+    const prev = document.createElement('button');
+    prev.className = 'ilb-nav ilb-prev';
+    prev.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+    prev.onclick = (e) => { e.stopPropagation(); idx = (idx - 1 + list.length) % list.length; show(); };
+    const next = document.createElement('button');
+    next.className = 'ilb-nav ilb-next';
+    next.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+    next.onclick = (e) => { e.stopPropagation(); idx = (idx + 1) % list.length; show(); };
+    const count = document.createElement('span');
+    count.className = 'ilb-count';
+    const upd = () => { count.textContent = `${idx + 1} / ${list.length}`; };
+    upd();
+    ov.append(prev, next, count);
+    ov.onkeydown = (e) => {
+      if (e.key === 'ArrowLeft') { idx = (idx - 1 + list.length) % list.length; show(); upd(); }
+      else if (e.key === 'ArrowRight') { idx = (idx + 1) % list.length; show(); upd(); }
+      else if (e.key === 'Escape') ov.remove();
+    };
+    ov.tabIndex = -1;
+    ov.focus();
+  }
   ov.onclick = () => ov.remove();
   document.body.appendChild(ov);
 }
@@ -3978,6 +4005,7 @@ function attachMediaGrid(host: HTMLElement, mediaPaths: string[]): void {
   const grid = document.createElement('div');
   grid.className = 'step-media';
   const curCwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+  const loaded: string[] = []; // 已成功加载的 dataUrl(按网格顺序)→ 画廊灯箱共用序列
   for (const mp of mediaPaths.slice(0, 6)) {
     const fig = document.createElement('button');
     fig.className = 'step-media-item';
@@ -3991,7 +4019,9 @@ function attachMediaGrid(host: HTMLElement, mediaPaths: string[]): void {
         const img = document.createElement('img');
         img.src = r.dataUrl;
         img.alt = mp.split(/[\\/]/).pop() || mp;
-        img.onclick = () => openImgLightbox(r.dataUrl!);
+        loaded.push(r.dataUrl);
+        const at = loaded.length - 1;
+        img.onclick = () => openImgLightbox(loaded.slice(), at); // 画廊:整组可翻
         fig.replaceChildren(img);
       }).catch(() => { fig.remove(); if (!grid.children.length) grid.remove(); });
     });
@@ -4155,13 +4185,14 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   if (s.images?.length) {
     const row = document.createElement('div');
     row.className = 'step-imgs';
-    for (const b64 of s.images) {
+    const srcs = s.images.map(b64 => `data:image/png;base64,${b64}`);
+    for (let i = 0; i < srcs.length; i++) {
       const img = document.createElement('img');
       img.className = 'step-img';
       img.loading = 'lazy';
       img.alt = `${s.name} screenshot`;
-      img.src = `data:image/png;base64,${b64}`;
-      img.onclick = () => openImgLightbox(img.src);
+      img.src = srcs[i];
+      img.onclick = () => openImgLightbox(srcs, i); // 画廊模式:从点的那张开始左右翻
       row.appendChild(img);
     }
     det.appendChild(row);
