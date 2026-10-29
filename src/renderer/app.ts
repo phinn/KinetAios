@@ -4,7 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
+import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -485,6 +485,8 @@ function applyI18nDOM(): void {
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
       } else if (ev.type === 'status') {
+        // 进度跟随:status 变化(工具开跑/结束)时用户在底部 → 贴底
+        if (userAtBottom && convId === selectedId) stickToBottomSoon();
         // 瞬时重试/空回复推促的 status 文本 → 标记 retrying(侧栏 dot 用),结束/下条非重试 status 清除。
         // best-effort 文本派生(主进程无结构化 retrying 信号);不命中不改变行为。
         const was = convRetrying.has(convId);
@@ -498,6 +500,12 @@ function applyI18nDOM(): void {
       } else {
         // tool/cost/context — debounce 到下一帧
         scheduleRenderMain();
+        // 进度跟随:工具事件到达且用户在底部 → 保持贴底;滚离时呼吸提示有新动作
+        // (cost 高频不带新 DOM,不触发;pulseJumpBtn 是纯视觉 1.4s 自灭)
+        if (ev.type === 'tool') {
+          if (userAtBottom && !scrollFrozen) stickToBottomSoon();
+          else if (convId === selectedId) pulseJumpBtn();
+        }
       }
       // Artifact 检测:done 时最终检测一次(流式期间已有防抖检测)
       if (ev.type === 'done') {
@@ -565,7 +573,7 @@ function applyI18nDOM(): void {
   });
 
   // 加载已保存的模型配置档到缓存 + 填充下拉
-  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; lastSettingsSnapshot = s; });
+  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; lastSettingsSnapshot = s; initApprovalPill(s.approval); });
   void fillModelHints();
   wireUi();
   initScrollBottomBtn();
@@ -3206,6 +3214,46 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   const sum = document.createElement('summary');
   sum.innerHTML = `<span class="agg-ico">${sv.wrench}</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
   det.appendChild(sum);
+  // 最近动作行(WorkBuddy 式过程感):折叠态直接显示最近一个 step 的一行摘要,
+  // 「它最近在干嘛」不用展开就能扫到;流式增量吸收时由 absorbIntoAggCard 同步更新。
+  // Last-action line: collapsed state still shows the most recent step's summary.
+  const last = steps[steps.length - 1];
+  if (last && count > 1) {
+    const lastTxt = stepSummaryText(name, last.args);
+    if (lastTxt) {
+      const la = document.createElement('div');
+      la.className = 'agg-last';
+      la.textContent = `└ ${lastTxt}`;
+      la.title = lastTxt;
+      det.appendChild(la);
+    }
+  }
+  // 聚合卡文件 chips:段内 write_file/edit_file 动过的文件直接挂卡根,
+  // 折叠态可见可点(开抽屉)——「这段批量操作动了哪些文件」一眼扫到。
+  // Agg file chips: files touched by write/edit steps in this run, on card root.
+  if (name === 'write_file' || name === 'edit_file') {
+    const seen = new Set<string>();
+    const chipRow = document.createElement('div');
+    chipRow.className = 'step-files step-files-root';
+    let added = 0;
+    for (const st of steps) {
+      try {
+        const p = String(JSON.parse(st.args)?.path ?? '');
+        if (!p || seen.has(p) || !fileDrawer) continue;
+        seen.add(p);
+        const chip = document.createElement('button');
+        chip.className = 'fd-chip';
+        chip.title = p;
+        const short = p.split(/[\\/]/).pop() || p;
+        chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
+        chip.onclick = () => { void fileDrawer?.open(p); };
+        chipRow.appendChild(chip);
+        added++;
+      } catch { /* 流式中间态 */ }
+      if (added >= 6) break; // 防爆量:一段最多亮 6 个文件 chip
+    }
+    if (added) det.appendChild(chipRow);
+  }
   // 聚合卡媒体预览:同段内任一 step 产出图片(如连续 shell 写图)时,
   // 摘要行下方直接给缩略图网格 —— 折叠态可见,这是「做完直接可见」的主路径
   // (连续 shell 调用是 Agent 写图的最常见形态,子卡默认不展开)。
@@ -3243,6 +3291,45 @@ function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalM
     d.className = 'dur';
     d.textContent = fmtStepDur(totalMs);
     agg.querySelector('summary')?.appendChild(d);
+  }
+  // 最近动作行同步:吸收新 step 后刷新为最新一条摘要(折叠态过程感的关键)。
+  // Last-action line refresh: keep collapsed preview on the newest step.
+  if (steps?.length) {
+    const la = agg.querySelector('.agg-last') as HTMLElement | null;
+    const lastTxt = stepSummaryText(name, steps[steps.length - 1].args);
+    if (lastTxt) {
+      if (la) { la.textContent = `└ ${lastTxt}`; la.title = lastTxt; la.classList.remove('flash'); void la.offsetWidth; la.classList.add('flash'); }
+      else {
+        const nla = document.createElement('div');
+        nla.className = 'agg-last flash';
+        nla.textContent = `└ ${lastTxt}`;
+        nla.title = lastTxt;
+        agg.insertBefore(nla, agg.querySelector('.step-media'));
+      }
+    }
+    // 文件 chips 增量吸收:write/edit 段新动到的文件补进卡根 chipRow(去重,上限 6)。
+    // File chips absorb: append newly touched files (dedup, cap 6).
+    if (name === 'write_file' || name === 'edit_file') {
+      let chipRow = agg.querySelector(':scope > .step-files-root') as HTMLElement | null;
+      const have = new Set<string>();
+      chipRow?.querySelectorAll('.fd-chip').forEach(c => have.add((c as HTMLElement).title));
+      for (const st of steps) {
+        try {
+          const p = String(JSON.parse(st.args)?.path ?? '');
+          if (!p || have.has(p) || !fileDrawer) continue;
+          have.add(p);
+          if (!chipRow) { chipRow = document.createElement('div'); chipRow.className = 'step-files step-files-root'; agg.insertBefore(chipRow, agg.querySelector('.step-media')); }
+          if (chipRow.children.length >= 6) break;
+          const chip = document.createElement('button');
+          chip.className = 'fd-chip';
+          chip.title = p;
+          const short = p.split(/[\\/]/).pop() || p;
+          chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
+          chip.onclick = () => { void fileDrawer?.open(p); };
+          chipRow.appendChild(chip);
+        } catch { /* 流式中间态 */ }
+      }
+    }
   }
   // 媒体增量吸收:新段里出现图片产物 → 补进聚合卡网格(去重:已有同 title 的跳过)。
   // Media absorb: merge newly produced images into the agg card grid (dedup by title).
@@ -3903,13 +3990,16 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   det.appendChild(summary);
   // 文件类工具(read_file/write_file/edit_file):args 里的 path 渲染成可点 chip,
   // 点击 → 右侧文件抽屉打开该文件(DeepSeek/Codex 式左右分屏)。
+  // ⚠️ chip 挂卡根(el)而非 <details> 内:折叠态也要可见可点 ——
+  // 「这个工具动过哪个文件」是扫读时最想要的信息,不该被折叠藏起来。
   // File tools: render path arg as clickable chip → open in right drawer.
+  // Chip mounts on the card root (outside <details>): stays visible/clickable collapsed.
   if (s.name === 'read_file' || s.name === 'write_file' || s.name === 'edit_file') {
     try {
       const argPath = String(JSON.parse(s.args)?.path ?? '');
       if (argPath && fileDrawer) {
         const chipRow = document.createElement('div');
-        chipRow.className = 'step-files';
+        chipRow.className = 'step-files step-files-root';
         const chip = document.createElement('button');
         chip.className = 'fd-chip';
         chip.title = argPath;
@@ -3917,7 +4007,7 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
         chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
         chip.onclick = () => { void fileDrawer?.open(argPath); };
         chipRow.appendChild(chip);
-        det.appendChild(chipRow);
+        el.appendChild(chipRow);
       }
     } catch { /* args 非 JSON(流式中间态)→ 无 chip,不影响原有渲染 */ }
   }
@@ -5668,6 +5758,41 @@ function applyScrollAnchor(): void {
 // Show floating arrow when user scrolls up; click to jump to bottom.
 // Guard: 防止 reload 后重复创建 Observer(内存泄漏)
 let scrollBottomInited = false;
+// ── approval 档位常驻指示(WorkBuddy 对齐)──
+// 输入框旁 pill:always=橙点「确认」/ never=绿点「自动」。点击即切,立即保存。
+// 常驻可见解决「 approval 藏在设置页且不知道当前是哪档」;任务中途也能一键切换。
+// Approval pill: persistent indicator + one-click toggle, saved immediately.
+let approvalCurrent: ApprovalPolicy = 'always';
+function initApprovalPill(policy: ApprovalPolicy): void {
+  approvalCurrent = policy;
+  syncApprovalPill();
+  const pill = document.getElementById('approval-pill');
+  pill?.addEventListener('click', async () => {
+    const next: ApprovalPolicy = approvalCurrent === 'always' ? 'never' : 'always';
+    try {
+      const cur = await api.getSettings();
+      await api.saveSettings({ ...cur, approval: next });
+      approvalCurrent = next;
+      syncApprovalPill();
+      uxToast.info(tr('approval.pill.switched', { mode: approvalModeLabel(next) }));
+    } catch { /* 保存失败保持原档 */ }
+  });
+}
+function approvalModeLabel(p: ApprovalPolicy): string {
+  return p === 'always' ? tr('approval.pill.always') : tr('approval.pill.never');
+}
+function syncApprovalPill(): void {
+  const pill = document.getElementById('approval-pill');
+  if (!pill) return;
+  pill.dataset.mode = approvalCurrent;
+  const label = pill.querySelector('.ap-label');
+  if (label) label.textContent = approvalModeLabel(approvalCurrent);
+  pill.title = tr('approval.pill.title');
+  // 设置页 select 若已渲染,双向同步
+  const sel = document.getElementById('s-approval') as HTMLSelectElement | null;
+  if (sel) sel.value = approvalCurrent;
+}
+
 function initScrollBottomBtn(): void {
   const turns = document.getElementById('turns');
   const btn = document.getElementById('scroll-bottom-btn');
@@ -5771,6 +5896,24 @@ function updateBadge(): void {
   } else {
     badge?.remove();
   }
+}
+
+// ── 进度跟随:工具/状态事件到达且用户在底部时贴底 ──
+// scrollDown 自带 follow/冻结守卫 + rAF 合并,这里只做事件侧的显式触发点。
+// Progress stick: explicit trigger on tool/status events; guards live in scrollDown.
+function stickToBottomSoon(): void {
+  if (userAtBottom && !scrollFrozen) scrollDown();
+}
+
+// 滚离底部 + 有新工具动作 → jump 按钮呼吸提示(1.4s 自灭,定时器去重)。
+// Breathing hint on the jump-to-bottom button when new tool activity arrives off-screen.
+function pulseJumpBtn(): void {
+  const jbtn = document.getElementById('scroll-bottom-btn');
+  if (!jbtn || jbtn.classList.contains('visible')) return;
+  jbtn.classList.add('has-new');
+  if (jbtn.dataset.newTimer) return;
+  const t = window.setTimeout(() => { delete jbtn.dataset.newTimer; jbtn.classList.remove('has-new'); }, 1400);
+  jbtn.dataset.newTimer = String(t);
 }
 
 // ---------- settings ----------
@@ -7415,7 +7558,11 @@ function readSettingsForm(): AppSettings {
     model: (document.getElementById('s-model') as HTMLInputElement).value,
     apiProtocol: (document.getElementById('s-proto') as HTMLSelectElement).value as AppSettings['apiProtocol'],
     reasoning: (document.getElementById('s-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
-    approval: (document.getElementById('s-approval') as HTMLSelectElement).value as AppSettings['approval'],
+    approval: (() => {
+      const v = (document.getElementById('s-approval') as HTMLSelectElement).value as ApprovalPolicy;
+      approvalCurrent = v; syncApprovalPill(); // 设置页改动 → pill 同步
+      return v;
+    })(),
     sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
     notifyOnDone: (document.getElementById('s-notify-done') as HTMLInputElement).checked,

@@ -2103,6 +2103,18 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
   animation: badge-pop 0.3s ease-out;
 }
 @keyframes badge-pop { from { transform: scale(0); } to { transform: scale(1); } }
+/* 滚离底部 + 流式新动作:jump 按钮呼吸提示 / Breathing hint: new activity below */
+.scroll-bottom-btn.has-new {
+  opacity: 1;
+  transform: none;
+  pointer-events: none; /* 纯视觉提示,不改变点击语义 */
+  animation: sb-breathe 1.4s var(--ease-out);
+}
+@keyframes sb-breathe {
+  0%   { box-shadow: 0 0 0 0 var(--accent); }
+  45%  { box-shadow: 0 0 0 8px transparent; color: var(--accent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
 /* 空状态 — 无会话 / 无消息时的引导提示。
    合并 flex 布局(L2063 原有)与图标/居中样式,消除两条 .empty 规则冲突。 */
 .empty { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100%; min-height: 200px; text-align: center; color: var(--text-faint); font-size: 1rem; padding: 80px 20px; user-select: none; gap: 6px; }
@@ -2501,6 +2513,13 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .agg-hint { margin-left: auto; font-size: 0.7rem; color: var(--text-faint); }
 .step-agg[open] .agg-hint { display: none; }
 .agg-inner { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; }
+/* 聚合卡「最近动作」行:折叠态显示最近一步摘要(WorkBuddy 式过程感) */
+.agg-last { margin: 2px 0 0 30px; font-size: 0.769rem; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 聚合卡根上的文件 chips:去掉单卡 chips 的 22px 左缩进(挂在 details 级) */
+.step-files-root { padding-left: 30px; }
+/* 流式中间态脉冲:聚合卡吸收新动作时「最近动作」行闪一下 */
+.agg-last.flash { animation: aggFlash 0.9s var(--ease-out) 1; }
+@keyframes aggFlash { 0% { color: var(--accent); } 100% { color: var(--text-faint); } }
 /* ── 时间线刻度条(minimap)── */
 .tick-strip { display: flex; flex-wrap: wrap; gap: 2px; padding: 6px 10px 8px; border-top: 1px dashed var(--border-soft); }
 .tick { width: 8px; height: 8px; border-radius: 2px; cursor: pointer; background: var(--border-soft); transition: transform var(--dur-fast) var(--ease-out); }
@@ -2602,6 +2621,20 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 输入框 focus 态顶部 accent 渐变光带 / Focus top accent gradient strip */
 #input:focus-within::before { content: ''; position: absolute; top: -1px; left: 0; right: 0; height: 1px; background: linear-gradient(90deg, transparent, var(--accent) 30%, var(--accent) 70%, transparent); opacity: 0.6; pointer-events: none; }
 .composer-bar { display: flex; align-items: center; gap: 6px; position: relative; height: 32px; flex-shrink: 0; }
+/* approval 档位 pill:常驻指示 + 点击切换 / Approval mode pill: persistent + one-click toggle */
+.approval-pill {
+  display: inline-flex; align-items: center; gap: 5px;
+  height: 24px; padding: 0 9px; border-radius: 12px;
+  background: var(--surface-chip-soft, rgba(255,255,255,.06));
+  border: 1px solid var(--border-soft, var(--border));
+  color: var(--text-dim); font-size: 0.8rem; cursor: pointer;
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  flex-shrink: 0;
+}
+.approval-pill:hover { color: var(--text); border-color: var(--border); }
+.approval-pill .ap-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); transition: background var(--dur-fast) var(--ease-out); }
+.approval-pill[data-mode='always'] .ap-dot { background: #e8a13a; box-shadow: 0 0 5px rgba(232,161,58,.5); }  /* 每次确认=琥珀 */
+.approval-pill[data-mode='never']  .ap-dot { background: #4cb782; box-shadow: 0 0 5px rgba(76,183,130,.5); }  /* 自动放行=绿 */
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
   position: relative; /* 供 listening::after 麦克风脉冲环定位 / anchor for listening::after mic pulse ring */
