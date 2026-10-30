@@ -604,6 +604,9 @@ const ZH_CN: Dict = {
   'empty.noKeySub': '还没有配置模型 — 先在设置里选择接口与模型,再开始第一条任务',
   'empty.cfgModel': '⚙ 配置模型',
 
+  'conv.pin': '置顶',
+  'sb.bucketToggle': '点击折叠/展开该时间组',
+  'conv.unpin': '取消置顶',
   'conv.rename': '改名',
   'conv.delete': '删除',
   'conv.ctx': '上下文检查器',
@@ -1986,6 +1989,9 @@ const EN: Dict = {
   'empty.noKeySub': 'No model configured yet — pick a provider and model in Settings first',
   'empty.cfgModel': '⚙ Configure model',
 
+  'conv.pin': 'Pin to top',
+  'sb.bucketToggle': 'Click to collapse/expand this group',
+  'conv.unpin': 'Unpin',
   'conv.rename': 'Rename',
   'conv.delete': 'Delete',
   'conv.ctx': 'Context inspector',
@@ -3362,6 +3368,9 @@ const ZH_TW: Dict = {
   'empty.noKeySub': '尚未設定模型 — 先在設定裡選擇介面與模型,再開始第一條任務',
   'empty.cfgModel': '⚙ 設定模型',
 
+  'conv.pin': '置頂',
+  'sb.bucketToggle': '點擊摺疊/展開該時間組',
+  'conv.unpin': '取消置頂',
   'conv.rename': '改名',
   'conv.delete': '刪除',
   'conv.ctx': '上下文檢查器',
@@ -4758,6 +4767,9 @@ const JA: Dict = {
   'empty.noKeySub': 'モデルが未設定です — 先に設定でプロバイダーとモデルを選んでください',
   'empty.cfgModel': '⚙ モデルを設定',
 
+  'conv.pin': 'ピン留め',
+  'sb.bucketToggle': 'クリックで折りたたみ/展開',
+  'conv.unpin': 'ピン解除',
   'conv.rename': '名前変更',
   'conv.delete': '削除',
   'conv.ctx': 'コンテキストインスペクター',

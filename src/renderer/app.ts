@@ -36,6 +36,8 @@ let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'group
 let sidebarCollapsed = localStorage.getItem('sb-collapsed') === '1';
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
+// 时间桶折叠态(localStorage 持久化,桶名=键;搜索/运行中筛选时强制展开防"搜到了看不见")
+let collapsedBuckets = new Set<string>(JSON.parse(localStorage.getItem('sb-buckets') || '[]'));
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
 // 默认按最近活动排序(用户最关心最近活跃的频道)。持久化到 localStorage。
 let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
@@ -630,6 +632,10 @@ function showConvMenu(convId: string, x: number, y: number): void {
   ctxTargetConvId = convId;
   ctxTargetProjCwd = null;
   ctxProjMenu.hidden = true;
+  // 置顶项文案随会话状态切换(置顶/取消置顶)
+  const c = convs.get(convId);
+  const pinState = ctxConvMenu.querySelector('#ctx-pin-state');
+  if (pinState) pinState.textContent = c?.pinned ? tr('ctx.unpin') : '';
   ctxConvMenu.hidden = false;
   focusMenuKeyboard(ctxConvMenu);
   requestAnimationFrame(() => {
@@ -897,12 +903,16 @@ function renderSidebar() {
 
   // 上游去重保险:order 若因竞态出现重复 id,渲染层不再放大成重复 DOM
   visibleOrder = [...new Set(visibleOrder)];
-  // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。
+  // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。置顶会话恒排最前(次序仍按活动时间)。
   if (sortByRecent) {
     visibleOrder.sort((a, b) => {
       const ca = convs.get(a);
       const cb = convs.get(b);
       if (!ca || !cb) return 0;
+      // 置顶优先:pin 先比(互斥),再按 updatedAt 倒序
+      const pa = ca.pinned ? 1 : 0;
+      const pb = cb.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
       return (cb.updatedAt ?? cb.createdAt) - (ca.updatedAt ?? ca.createdAt);
     });
   }
@@ -950,11 +960,23 @@ function renderSidebar() {
       const b = timeBucket(convs.get(id)!.updatedAt ?? convs.get(id)!.createdAt);
       if (b !== lastBucket) {
         lastBucket = b;
+        const collapsed = collapsedBuckets.has(b) && !searchQuery && !runningOnly;
         const sep = document.createElement('li');
         sep.className = 'sb-time-sep';
-        sep.textContent = b;
+        sep.title = tr('sb.bucketToggle');
+        sep.innerHTML = `<span>${esc(b)}</span><span class="sb-bucket-chev${collapsed ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+        sep.dataset.bucket = b;
+        // 桶头可点击折叠本桶(与项目组同套路,localStorage 记忆;搜索/运行中筛选强制展开)
+        sep.onclick = () => {
+          if (collapsedBuckets.has(b)) collapsedBuckets.delete(b);
+          else collapsedBuckets.add(b);
+          localStorage.setItem('sb-buckets', JSON.stringify([...collapsedBuckets]));
+          renderSidebar();
+        };
         ul.appendChild(sep);
       }
+      // 本桶已折叠 → 跳过渲染条目(DOM 不生成,桶头保留计数语义)
+      if (collapsedBuckets.has(lastBucket) && !(searchQuery || runningOnly)) continue;
       ul.appendChild(obtainTaskLi(id, taskPool));
       renderedCids.add(id);
     }
@@ -1160,7 +1182,7 @@ function taskLi(id: string): HTMLElement {
     e.preventDefault();
     showConvMenu(id, e.clientX, e.clientY);
   });
-  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${c.pinned ? '<span class="pin-mark" data-i18n-title="ctx.pin" title="' + esc(tr('ctx.pin')) + '">📌</span>' : ''}${esc(title)}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   if (bgDoneConvs.has(id)) {
     const dot = document.createElement('span');
     dot.className = 'bg-done-dot';
@@ -8375,6 +8397,9 @@ function closeMoreMenu() {
           break;
         case 'rename':
           await renameConv(id);
+          break;
+        case 'pin':
+          await window.kinet.setPinned(id, !c.pinned);
           break;
         case 'ctx':
           await openCtxInspector(id);
