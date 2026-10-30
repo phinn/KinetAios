@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
+import { initStore, startHistorySlim, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
 import { startMemorySyncAuto } from './memory-sync';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
@@ -1370,6 +1370,8 @@ if (!gotLock) {
     );
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // FTS 存量重缩(异步,见 store.startHistorySlim):旧 4K cap 行压到 1200,history_content 曾 567MB。
+    startHistorySlim();
     // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。
     // Job 事件桥接进会话事件流(agent-event 频道),renderer 无需新订阅路径。
     setTeamEventEmitter((teamId, ev) => {

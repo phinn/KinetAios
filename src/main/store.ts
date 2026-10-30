@@ -210,9 +210,56 @@ export function stmt(sql: string): Database.Statement {
 }
 
 // MARK: message-level FTS (recall_memory searches this)
-// ponytail: FTS 只服务搜索,行内容封顶 4K —— 工具结果全文(8-12KB)曾是 433MB 库的主要增长源;
-// 搜索命中显示前 4K 足够,需要全文去 turns 里看。
-const FTS_CONTENT_CAP = 4_000;
+// ponytail: FTS 只服务搜索,行内容封顶 —— 工具结果全文(8-12KB)曾是 433MB 库的主要增长源;
+// 搜索命中需要全文去 turns 里看。
+// 2026-10-30 二次瘦身:cap 4000→1200。实测消费链(recall_memory)最多只读 content 前 500 字符
+// (embedding 重排 hitTexts slice(0,500))+ 200 字符预览,4K 是 3 倍冗余;history_content 曾占 567MB。
+// 1200 = 重排 500 × 2 余量 + 预览 200。匹配召回范围同步缩到前 1200 字符 —— 关键词集中于
+// 开头/上下文头部,实测尾部样本 61% 行本就 ≤1K,召回质量无感知差异。
+// ponytail: FTS is search-only; rows capped. recall_memory reads ≤500 chars (rerank) +
+// 200 (preview); 1200 covers both with headroom. history_content was 567MB at cap=4000.
+const FTS_CONTENT_CAP = 1_200;
+
+// ── 存量重缩(2026-10-30):旧 cap=4000 时代写入的超长行,分批压到新 cap ──
+// 启动后异步跑(app idle 不抢启动);批间 setTimeout 让事件循环呼吸,better-sqlite3 同步
+// 事务单批 <100ms 不冻结 UI。截断只去尾部 → 各行前 500 字符不变,已存的
+// memory_embeddings(按前 500 字符算的向量)全部保持有效,无需重建。
+// 已完成后的开销 = 启动时一次 EXISTS 探测(索引内极限快),零常驻成本。
+// One-shot backfill: rows written under the old 4K cap get re-trimmed to the new cap in
+// background batches. Tail-only truncation keeps each row's first 500 chars intact, so
+// existing memory_embeddings stay valid.
+const SLIM_BATCH = 800;
+export function startHistorySlim(): void {
+  try {
+    // 快速探测:是否还有超长行(扫描到第一行即返回,已完成时全表跳过)。
+    const hasLong = db
+      .prepare('SELECT 1 FROM history WHERE length(content) > ? LIMIT 1;')
+      .get(FTS_CONTENT_CAP);
+    if (!hasLong) return;
+    let cursor = 0;
+    const tick = (): void => {
+      try {
+        const rows = db
+          .prepare(
+            'SELECT rowid AS rid, content FROM history WHERE rowid > ? AND length(content) > ? ORDER BY rowid LIMIT ?;',
+          )
+          .all(cursor, FTS_CONTENT_CAP, SLIM_BATCH) as Array<{ rid: number; content: string }>;
+        if (rows.length === 0) return; // 全部完成
+        cursor = rows[rows.length - 1].rid;
+        const upd = db.prepare('UPDATE history SET content = ? WHERE rowid = ?;');
+        db.transaction(() => {
+          for (const r of rows) upd.run(r.content.slice(0, FTS_CONTENT_CAP), r.rid);
+        })();
+        setTimeout(tick, 30);
+      } catch {
+        // 单批失败静默放弃:下轮启动自动续跑(EXISTS 仍会命中剩余行)。
+      }
+    };
+    setTimeout(tick, 3_000); // 等 app 完全起来再动手,不抢启动窗口
+  } catch {
+    // 探测失败(表未建/旧库)直接跳过,不阻塞初始化。
+  }
+}
 
 // turns 持久化的 steps[].result 截断阈值(2026-10-30 库体检):超过才截,只留头部。
 // 内存态/广播/conv_events 全文不受影响 — 此常量只约束 turns.data 落盘版本。
