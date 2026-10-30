@@ -214,6 +214,13 @@ export function stmt(sql: string): Database.Statement {
 // 搜索命中显示前 4K 足够,需要全文去 turns 里看。
 const FTS_CONTENT_CAP = 4_000;
 
+// turns 持久化的 steps[].result 截断阈值(2026-10-30 库体检):超过才截,只留头部。
+// 内存态/广播/conv_events 全文不受影响 — 此常量只约束 turns.data 落盘版本。
+// Truncation cap for persisted step results (turns.data only). In-memory, broadcast,
+// and conv_events keep full text.
+const RESULT_PERSIST_CAP = 4_000;
+const RESULT_PERSIST_KEEP_HEAD = 2_000;
+
 export function appendMessage(role: string, content: string, convId?: string): void {
   const capped = content.length > FTS_CONTENT_CAP ? content.slice(0, FTS_CONTENT_CAP) + '\n…[FTS 截断,全文见会话]' : content;
   // 事务包裹:FTS 行 + conv 映射行必须同生共死,否则崩溃后留无映射的孤儿 FTS 行。
@@ -463,8 +470,31 @@ export function saveTurn(convId: string, t: Turn): void {
   // 截图 base64(step.images,单张可达数百 KB)只活在内存/广播 — 不落库,
   // 防止 SQLite turns.data 与事件重放被图片撑爆。renderer 会话内仍可渲染。
   // Screenshot base64 stays in-memory/broadcast only — never persisted.
-  const slim: Turn = t.steps?.some((s) => s.images?.length)
-    ? { ...t, steps: t.steps.map((s) => (s.images?.length ? { ...s, images: undefined } : s)) }
+  const hasImages = t.steps?.some((s) => s.images?.length) ?? false;
+  // 工具结果持久化截断(2026-10-30 库体检):turns 表 942MB 里 55% 是 steps[].result 全文
+  // (头部大会话单 turn 250KB),且与 conv_events tool/call 双份存全文。result 从不进 LLM
+  // 上下文(directHistory 才是;AgentLoop 重放也只取 prompt+answer)→ 截断零影响 agent,
+  // 全文回查走 conv_events。>RESULT_PERSIST_CAP 截断,留头 + 长度注记。内存态不动。
+  // Persist-side result truncation: 55% of the 942MB turns table is step results, which
+  // never enter LLM context (directHistory holds that). Full text remains in conv_events.
+  const hasFatResults = t.steps?.some((s) => (s.result?.length ?? 0) > RESULT_PERSIST_CAP) ?? false;
+  const slim: Turn = hasImages || hasFatResults
+    ? {
+        ...t,
+        steps: t.steps?.map((s) => {
+          let st = s;
+          if (st.images?.length) st = { ...st, images: undefined };
+          if ((st.result?.length ?? 0) > RESULT_PERSIST_CAP) {
+            st = {
+              ...st,
+              result:
+                st.result.slice(0, RESULT_PERSIST_KEEP_HEAD) +
+                `\n…[已截断,略去 ${(st.result.length - RESULT_PERSIST_KEEP_HEAD).toLocaleString()} 字符,全文见事件日志]`,
+            };
+          }
+          return st;
+        }),
+      }
     : t;
   // 事务包裹:turn UPSERT + 活动时间戳同生共死。
   db.transaction(() => {
