@@ -1210,10 +1210,9 @@ a { color: var(--accent); }
   position: absolute; right: -2px; top: 50%; transform: translateY(-50%);
   background: none; border: none; color: var(--text-faint); cursor: pointer;
   display: flex; align-items: center; justify-content: center; border-radius: 4px;
-  /* 命中区 24×24(Apple HIG 最小可点目标)。禁用负 margin 补偿:
-     margin 叠在 translateY(-50%) 定位数学上会把按钮顶出输入框上沿(× 飘出事故),
-     直接用 width/height 撑命中区,视觉 × 仍居中 */
-  width: 24px; height: 24px; z-index: 1;
+  /* 命中区 24×24。必须重置全局 button{padding:6px 12px}:24px 宽(border-box)扣掉
+     左右 padding 24px = 内容盒 0px,flex 收缩把 SVG 压成 0 宽 → × 隐形(8f90fa5 回归) */
+  padding: 0; width: 24px; height: 24px; z-index: 1;
 }
 .sb-search-clear:hover { color: var(--text); background: rgba(255,255,255,0.07); }
 
