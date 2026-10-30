@@ -343,6 +343,11 @@ function applyI18nDOM(): void {
     const brandEl = document.getElementById('brand');
     if (brandEl) brandEl.textContent = PRODUCT;
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
+    // 品牌名下方版本小字:IPC 回填后移除 hidden(hidden 兜底是 !important,不能只改 display)
+    void api.getAppVersion().then((v) => {
+      const verEl = document.getElementById('brand-ver');
+      if (verEl) { verEl.textContent = 'v' + v; verEl.removeAttribute('hidden'); }
+    }).catch(() => {});
     applyI18nDOM();
 
     const list = await api.getConversations();

@@ -1165,6 +1165,12 @@ a { color: var(--accent); }
 }
 .sb-collapse-btn { margin-left: auto; opacity: 0.35; }
 .sb-collapse-btn:hover { opacity: 1; }
+/* 品牌名下版本小字(v4.0.4)— 渲染侧等 IPC 回填,拿不到就保持 hidden */
+.sb-brand-ver {
+  font-size: 0.66rem; font-weight: 500; opacity: 0.38;
+  letter-spacing: 0; flex-shrink: 0; padding-top: 3px;
+  font-variant-numeric: tabular-nums;
+}
 #sidebar.collapsed .sb-brand { display: none; }
 
 /* sb-topbar — 搜索框 + 新建按钮 */
