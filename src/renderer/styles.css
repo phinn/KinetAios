@@ -418,10 +418,7 @@
   color: var(--accent);
 }
 /* Serene: 用户气泡 */
-[data-theme="serene"] .msg.user .bubble {
-  background: linear-gradient(135deg, var(--accent), #c8898f);
-  color: #fff;
-}
+/* Serene: 用户气泡 — 回落 base 中性 chip(v4.0.4 定调,同 tahoe/sierra) */
 /* Serene: 滚动条 */
 [data-theme="serene"] ::-webkit-scrollbar-thumb {
   background: rgba(183,110,121,.25);
@@ -684,41 +681,18 @@
 }
 /* Tahoe: 用户气泡 — systemBlue 精致液态(iMessage 亮色版)
    三段渐变 + 顶部高光带 + 边缘冷色描边 */
-[data-theme="tahoe"] .msg.user .bubble {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 30%),
-    linear-gradient(135deg, var(--accent) 0%, #409cff 50%, #66b3ff 100%);
-  color: #fff;
-  border: 1px solid rgba(140,200,255,0.40);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.45),    /* 顶部白色高光带 */
-    0 2px 12px rgba(10,132,255,0.25),
-    0 4px 20px rgba(10,132,255,0.15);
-  text-shadow: 0 1px 1px rgba(0,40,100,0.30);  /* 文字微立体 */
-}
+/* Tahoe: 用户气泡 — 回落 base 中性 chip(v4.0.4 定调:不抢正文视觉,强调色留给头像);
+   旧「液态玻璃」三重发光+白字已废弃,与中性化方向自相矛盾 */
 /* Tahoe: AI 气泡 — 半透明白雾玻璃(精致版)
    多层 blur + 顶部高光 + 边光描边 */
-[data-theme="tahoe"] .msg .bubble {
-  background: rgba(255,255,255,0.45);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
-  border: 1px solid rgba(255,255,255,0.55);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.70),    /* 顶部高光带(核心!) */
-    0 2px 8px rgba(10,40,80,0.08),
-    0 4px 16px rgba(10,40,80,0.05);
+/* Tahoe: 用户气泡 — 中性 chip(玻璃雾面,深字),对齐全局去发光方向;强调色只留给头像/主按钮 */
+[data-theme="tahoe"] .msg.user .bubble {
+  background: var(--bg-elev);
+  color: var(--text);
+  border: 1px solid var(--border-soft);
+  box-shadow: var(--shadow-sm);
 }
-/* Tahoe: 滚动条 — 蓝紫渐变(精致液态) */
-[data-theme="tahoe"] ::-webkit-scrollbar-thumb {
-  background: linear-gradient(180deg, rgba(10,40,80,0.20), rgba(10,40,80,0.28));
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-[data-theme="tahoe"] ::-webkit-scrollbar-thumb:hover {
-  background: linear-gradient(180deg, rgba(10,132,255,0.50), rgba(175,82,222,0.50));
-  background-clip: content-box;
-  border: 2px solid transparent;
-}
+/* Tahoe: 滚动条 — 回落全局中性 thumb;旧蓝紫渐变 hover 已废弃(俗气主源) */
 /* Tahoe: 状态点用系统色 */
 [data-theme="tahoe"] .dot.ready { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.3); }
 [data-theme="tahoe"] .dot.running { background: var(--accent); box-shadow: 0 0 8px rgba(10,132,255,.3); }
@@ -2077,7 +2051,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .ch-goal.goal-active .goal-icon { animation: goal-icon-pulse 2s ease-in-out infinite; }
 @keyframes goal-active-pulse { 0%, 100% { opacity: 0; } 50% { opacity: 0.6; } }
 @keyframes goal-icon-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.stat { font-size: 0.846rem; color: var(--text-dim); }
+.stat { font-size: 0.846rem; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时
    scrollbar 出现/消失引发布局宽变 → 文本 reflow → 高度变化 → 抖动循环。 */
@@ -2134,7 +2108,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
   padding: 0 3px;
   box-shadow: 0 2px 6px rgba(0,0,0,.3);
   pointer-events: none;
-  animation: badge-pop 0.3s ease-out;
+  animation: badge-pop 0.3s var(--ease-out);
 }
 @keyframes badge-pop { from { transform: scale(0); } to { transform: scale(1); } }
 /* 滚离底部 + 流式新动作:jump 按钮呼吸提示 / Breathing hint: new activity below */
@@ -2545,7 +2519,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .palette-empty { padding: 18px; text-align: center; color: var(--text-faint); font-size: 0.846rem; }
 .palette-foot { display: flex; gap: 14px; padding: 6px 14px; border-top: 1px solid var(--border-soft); font-size: 0.7rem; color: var(--text-faint); }
 /* ── 快捷键速查表 ── */
-.sheet-overlay { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s ease-out; }
+.sheet-overlay { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s var(--ease-out); }
 .sheet-card { width: min(420px, 90vw); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: 14px; padding: 18px 20px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); }
 .sheet-card h3 { margin: 0 0 12px; font-size: 1rem; color: var(--text); }
 .sheet-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: 0.846rem; color: var(--text-dim); }
@@ -2734,7 +2708,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 }
 .composer-bar .tool:active { transform: scale(0.92); }
 .composer-bar .tool .lbl { display: none; }
-.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: 0.846rem; padding: 3px 8px; border-radius: 16px; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; }
+.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: 0.846rem; padding: 3px 8px; border-radius: 16px; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; font-variant-numeric: tabular-nums; }
 .composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; }
 /* 上下文模式选择器:hifi 时强调色高亮,提醒用户在烧 token */
 .composer-bar #ctx-mode-select { min-width: 80px; max-width: 110px; }
@@ -2765,7 +2739,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* Combined meta+actions row: left=meta info, right=action icons. Always visible. */
 .ai-meta-row { display: flex; align-items: center; gap: 8px; margin-top: 6px; font-size: 0.846rem; color: var(--text-faint); user-select: none; }
 .ai-meta-left { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
-.ai-meta-left .meta-item { display: inline-flex; align-items: center; gap: 2px; }
+.ai-meta-left .meta-item { display: inline-flex; align-items: center; gap: 2px; font-variant-numeric: tabular-nums; }
 .ai-meta-left .meta-sep { width: 1px; height: 10px; background: var(--border-soft, var(--border)); flex-shrink: 0; }
 .ai-meta-actions { display: flex; gap: 2px; flex-shrink: 0; opacity: 0.35; transition: opacity var(--dur-fast) var(--ease-out); }
 .ai-body:hover .ai-meta-actions { opacity: 1; }
@@ -2773,8 +2747,8 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 用户气泡悬浮复制按钮 — 默认隐藏,hover 才显示 */
 .bubble { position: relative; }
 .bubble-copy {
-  position: absolute; bottom: 2px; right: 2px;
-  padding: 2px 5px; font-size: 0.846rem; line-height: 1;
+  position: absolute; bottom: 4px; right: 4px;
+  padding: 3px 7px; font-size: 0.846rem; line-height: 1; border-radius: 6px;
   opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); cursor: pointer;
 }
 .bubble:hover .bubble-copy { opacity: 0.6; }
@@ -3971,20 +3945,8 @@ button.sm { padding: 3px 8px; font-size: 0.846rem; }
 [data-theme="sierra"] select:hover {
   border-color: var(--text-faint);
 }
-/* Sierra: 用户气泡 — systemOrange 精致液态(iMessage 暖色版)
-   三段渐变 + 顶部高光带 + 边缘暖色描边 */
-[data-theme="sierra"] .msg.user .bubble {
-  background:
-    linear-gradient(180deg, rgba(255,255,255,0.25) 0%, transparent 30%),
-    linear-gradient(135deg, var(--accent) 0%, #ffb340 50%, #ff8c00 100%);
-  color: #fff;
-  border: 1px solid rgba(255,200,100,0.40);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.45),    /* 顶部白色高光带 */
-    0 2px 12px rgba(255,159,10,0.25),
-    0 4px 20px rgba(255,159,10,0.15);
-  text-shadow: 0 1px 1px rgba(180,80,0,0.30);  /* 文字微立体 */
-}
+/* Sierra: 用户气泡 — 回落 base 中性 chip(v4.0.4 定调,同 tahoe);
+   旧「iMessage 暖色液态」渐变+发光+白字已废弃 */
 /* Sierra: AI 气泡 — 半透明暖白雾玻璃(精致版)
    多层 blur + 顶部高光 + 边缘暖色描边 */
 [data-theme="sierra"] .msg .bubble {
@@ -6717,7 +6679,7 @@ select:focus-visible {
   inset: 0;
   border-radius: 50%;
   background: rgba(255,255,255,0.3);
-  animation: ripple 400ms ease-out;
+  animation: ripple 400ms var(--ease-out);
   pointer-events: none;
 }
 @keyframes ripple {
