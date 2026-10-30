@@ -1207,11 +1207,13 @@ a { color: var(--accent); }
   transform: translateY(-50%); pointer-events: none;
 }
 .sb-search-clear {
-  position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
-  background: none; border: none; color: var(--text-faint); padding: 2px; cursor: pointer;
+  position: absolute; right: -2px; top: 50%; transform: translateY(-50%);
+  background: none; border: none; color: var(--text-faint); cursor: pointer;
   display: flex; align-items: center; justify-content: center; border-radius: 4px;
-  /* 命中区扩到 24×24(Apple HIG 最小可点目标),视觉仍是小 X;压过 input 保证不被吃事件 */
-  margin: -6px -8px; padding: 8px; z-index: 1;
+  /* 命中区 24×24(Apple HIG 最小可点目标)。禁用负 margin 补偿:
+     margin 叠在 translateY(-50%) 定位数学上会把按钮顶出输入框上沿(× 飘出事故),
+     直接用 width/height 撑命中区,视觉 × 仍居中 */
+  width: 24px; height: 24px; z-index: 1;
 }
 .sb-search-clear:hover { color: var(--text); background: rgba(255,255,255,0.07); }
 
