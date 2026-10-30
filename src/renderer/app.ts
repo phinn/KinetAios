@@ -174,7 +174,7 @@ const SVGI_SET = {
   shield2: (w = 14) => svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>', w), // 安全
   sync: (w = 14) => svg('<path d="M7 4v10M7 14l-3-3M7 14l3-3M17 20V10M17 10l-3 3M17 10l3 3"/>', w), // git 已同步(上下对齐箭头)
   skip: (w = 14) => svg('<path d="M5 5l7 7-7 7M13 5l7 7-7 7"/>', w),                               // skipped(双箭头跳过)
-  sparkles: (w = 14) => svg('<path d="M12 4l1.7 4.3L18 10l-4.3 1.7L12 16l-1.7-4.3L6 10l4.3-1.7z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', w), // 思维链/魔法(sparkles)
+  sparkles: (w = 14) => svg('<path d="M11 3.5C11.6 7.6 13.4 9.4 18 10.5C13.4 11.6 11.6 13.4 11 17.5C10.4 13.4 8.6 11.6 4 10.5C8.6 9.4 10.4 7.6 11 3.5Z"/><path d="M18.5 14C18.7 15.7 19.3 16.3 21 16.7C19.3 17.1 18.7 17.7 18.5 19.4C18.3 17.7 17.7 17.1 16 16.7C17.7 16.3 18.3 15.7 18.5 14Z"/>', w), // 思维链/魔法(sparkles, 曲线凹边四角星)
 } as const;
 // 语义别名:evLabel/STATUS_ICON 等调用点只写名字不写尺寸,统一 14px(头部等大号场景手动传 w)。
 const sv = {
@@ -3141,7 +3141,7 @@ function avatarEl(kind: 'user' | 'ai'): HTMLElement {
   if (kind === 'user') {
     a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0113 0z"/></svg>';
   } else {
-    a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg>';
+    a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2C11.7 7 13.9 9.3 20 11C13.9 12.7 11.7 15 11 20C10.3 15 8.1 12.7 2 11C8.1 9.3 10.3 7 11 2Z"/><path d="M19 14.5C19.25 16.6 20 17.35 22 18C20 18.65 19.25 19.4 19 21.5C18.75 19.4 18 18.65 16 18C18 17.35 18.75 16.6 19 14.5Z" opacity="0.75"/></svg>';
   }
   return a;
 }
