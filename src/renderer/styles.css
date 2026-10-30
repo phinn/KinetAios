@@ -2248,7 +2248,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 
 @keyframes bubble-pop { from { opacity: 0; transform: scale(0.96) translateX(4px); } to { opacity: 1; transform: scale(1) translateX(0); } }
 /* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
-.msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: var(--r-sm); font-size: var(--fs-xl); }
+.msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: var(--r-sm); font-size: 1rem; }
 .msg.user .bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
 .msg.user .bubble strong { font-weight: 700; }
 .msg .ai-body { min-width: 0; flex: 1; }
@@ -2277,7 +2277,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer a:hover { text-decoration-color: var(--accent); }
 .answer a:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: var(--r-xs); }
 .answer h1,.answer h2,.answer h3 { margin: 14px 0 6px; }
-.answer h1 { font-size: var(--fs-t1); } .answer h2 { font-size: var(--fs-t2); } .answer h3 { font-size: var(--fs-t2); }
+.answer h1 { font-size: var(--fs-t1); } .answer h2 { font-size: var(--fs-t2); } .answer h3 { font-size: 1rem; }
 .answer h4,.answer h5,.answer h6 { margin: 10px 0 4px; font-size: 1rem; }
 .answer ul,.answer ol { margin: 0 0 8px; padding-left: 22px; }
 .answer blockquote { margin: 0 0 8px; padding: 4px 12px; border-left: 3px solid var(--accent-dim); color: var(--text-dim); background: var(--bg-elev-2); border-radius: 0 var(--r-sm) var(--r-sm) 0; }
@@ -2292,7 +2292,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer .task-done { text-decoration: line-through; color: var(--text-faint); }
 .answer del { color: var(--text-faint); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: var(--r-md); }
-.answer .ic { padding: 1px 6px; font-size: var(--fs-xl); border: 1px solid var(--border-soft); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+.answer .ic { padding: 1px 6px; font-size: 1rem; border: 1px solid var(--border-soft); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
 /* 代码块:语言标签 + 圆角容器 + 左侧行号槽 / Code block: lang label + rounded container */
 .answer .code-block { position: relative; margin: 0 0 10px; border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-xs); }
 .answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: var(--fs-sm); font-family: ui-monospace, monospace; color: var(--accent-dim); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 0 var(--r-md) 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none; z-index: 1; backdrop-filter: blur(4px); font-weight: 600; }
@@ -2303,7 +2303,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer .code-block .code-copy { position: absolute; top: 4px; right: 4px; z-index: 2; padding: 3px 5px; border-radius: var(--r-sm); opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); background: var(--bg-elev); border: 1px solid var(--border-soft); color: var(--text-dim); }
 .answer .code-block:hover .code-copy { opacity: 0.6; }
 .answer .code-block .code-copy:hover { opacity: 1; color: var(--accent); border-color: var(--accent-dim); }
-.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: var(--fs-xl); border: 1px solid var(--border-soft); line-height: 1.55; }
+.answer .code { display: block; padding: 12px 14px; overflow-x: auto; white-space: pre; user-select: text; font-size: 1rem; border: 1px solid var(--border-soft); line-height: 1.55; }
 /* 带行号代码块:span.cl + CSS counter / Numbered code lines via counter */
 .answer .code.has-ln { counter-reset: cline; padding-left: 8px; }
 .answer .code.has-ln .cl { display: block; counter-increment: cline; }
@@ -2339,7 +2339,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .steps-ico svg { vertical-align: -2px; }
 .steps-wrap > summary:hover .steps-count { color: var(--text-dim); }
 .steps { margin: 6px 0 2px; }
-.step { position: relative; border-left: 1px solid var(--border-soft, var(--border)); padding: 4px 12px; margin-bottom: 2px; background: transparent; border-radius: 0 var(--r-md) var(--r-md) 0; font-size: var(--fs-xl); transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.step { position: relative; border-left: 1px solid var(--border-soft, var(--border)); padding: 4px 12px; margin-bottom: 2px; background: transparent; border-radius: 0 var(--r-md) var(--r-md) 0; font-size: 1rem; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
 .step:hover { background: var(--bg-elev); border-left-color: var(--accent-dim); }
 /* 工具步骤 running 状态:左侧脉冲色条 + 微弱背景 / Running state: pulsing left bar + subtle bg */
 .step.running { border-left-color: var(--accent); background: linear-gradient(90deg, var(--accent-glow), transparent 70%); }
@@ -2666,7 +2666,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   .palette-row .p-hint { display: none; }
   .todo-sum { display: none; }
 }
-.step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: var(--fs-md); color: var(--text-dim); user-select: text; }
+.step pre { margin: 4px 0 0; white-space: pre; overflow-x: auto; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 1rem; color: var(--text-dim); user-select: text; }
 /* 区分 args(输入)和 result(输出):result 用更暗的色表示返回值 / Distinguish args from result */
 .step pre.step-result { color: var(--text-faint); border-left: 2px solid var(--border-soft); padding-left: 8px; overflow-x: auto; }
 .step-label { font-size: var(--fs-sm); font-weight: 600; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.04em; margin: 8px 0 2px; }
