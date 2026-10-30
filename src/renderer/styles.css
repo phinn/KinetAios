@@ -227,10 +227,7 @@
   -webkit-text-fill-color: transparent;
 }
 /* Aurora: 用户气泡用极光渐变边框 */
-[data-theme="aurora"] .msg.user .bubble {
-  border-color: var(--accent-dim);
-  background: linear-gradient(135deg, rgba(196,167,255,.10), rgba(116,197,255,.08));
-}
+/* Aurora 用户气泡:跟随 base 中性 chip,毛玻璃已由 .msg .bubble 共享规则提供 */
 /* Aurora: 滚动条极光色 */
 [data-theme="aurora"] ::-webkit-scrollbar-thumb {
   background: var(--accent-dim);
@@ -2228,7 +2225,9 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
    边框+底色+阴影三件套是"卡片感"的来源,正文直接裸排在阅读列里 */
 .msg.ai .bubble { background: transparent; border: none; box-shadow: none; padding: 2px 0 0; max-width: none; }
 .msg.ai { gap: 12px; }
-.msg.user .bubble { max-width: 78%; border-top-right-radius: 5px; background: linear-gradient(135deg, var(--accent-glow), var(--accent-glow)); border-color: var(--accent-dim); animation: bubble-pop 0.2s var(--ease-out) both; }
+/* 用户消息:中性 chip(对齐 WB)— 不抢正文视觉,强调色只留给头像;
+   假渐变(两色标同值)+ accent 描边 = 脏便签感,已废弃 */
+.msg.user .bubble { max-width: 78%; padding: 9px 13px; border-radius: 14px; border-top-right-radius: 5px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; animation: bubble-pop 0.2s var(--ease-out) both; }
 
 @keyframes bubble-pop { from { opacity: 0; transform: scale(0.96) translateX(4px); } to { opacity: 1; transform: scale(1) translateX(0); } }
 /* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
