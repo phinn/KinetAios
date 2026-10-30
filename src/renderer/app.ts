@@ -174,6 +174,7 @@ const SVGI_SET = {
   shield2: (w = 14) => svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>', w), // 安全
   sync: (w = 14) => svg('<path d="M7 4v10M7 14l-3-3M7 14l3-3M17 20V10M17 10l-3 3M17 10l3 3"/>', w), // git 已同步(上下对齐箭头)
   skip: (w = 14) => svg('<path d="M5 5l7 7-7 7M13 5l7 7-7 7"/>', w),                               // skipped(双箭头跳过)
+  sparkles: (w = 14) => svg('<path d="M12 4l1.7 4.3L18 10l-4.3 1.7L12 16l-1.7-4.3L6 10l4.3-1.7z"/><path d="M19 15l.8 2.2L22 18l-2.2.8L19 21l-.8-2.2L16 18l2.2-.8z"/>', w), // 思维链/魔法(sparkles)
 } as const;
 // 语义别名:evLabel/STATUS_ICON 等调用点只写名字不写尺寸,统一 14px(头部等大号场景手动传 w)。
 const sv = {
@@ -3794,20 +3795,20 @@ function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
 // token(reasoning) 事件落到 t.reasoning,历史 turn 直接从持久化数据重放。
 function buildReasoningCard(reasoning: string, streaming: boolean): HTMLElement {
   const det = document.createElement('details');
-  det.className = 'reasoning-card';
+  det.className = 'reason-card' + (streaming ? ' streaming' : '');
   if (streaming) det.open = true;
   const sum = document.createElement('summary');
   const label = document.createElement('span');
-  label.className = 'reasoning-label';
-  label.textContent = tr('turn.reasoning');
+  label.className = 'rc-label';
+  label.innerHTML = SVGI_SET.sparkles(13) + ' <span>' + esc(tr('turn.reasoning')) + '</span>';
   sum.appendChild(label);
   const chev = document.createElement('span');
-  chev.className = 'reasoning-chevron';
-  chev.textContent = '▸';
+  chev.className = 'rc-chev';
+  chev.innerHTML = svg('<path d="M9 6l6 6-6 6"/>', 12);
   sum.appendChild(chev);
   det.appendChild(sum);
   const body = document.createElement('div');
-  body.className = 'reasoning-body';
+  body.className = 'rc-body';
   // 流式期只保留尾部(头部思维链价值低,渲染成本高);done 后全量。
   const text = streaming ? reasoning.slice(-REASONING_TAIL_LIMIT) : reasoning;
   body.textContent = text;

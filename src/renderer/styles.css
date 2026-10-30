@@ -2439,14 +2439,19 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .todo-card .name { color: var(--text-dim); font-size: 0.846rem; }
 .todo-sum { margin-left: auto; display: inline-flex; align-items: center; gap: 3px; font-size: 0.769rem; color: var(--text-faint); font-family: ui-monospace, "Cascadia Code", monospace; }
 .todo-sum svg { vertical-align: -2px; }
-/* 思维链卡(reasoning 流):流式米色斜体正文,完成后收成 <details> 折叠卡 */
-.reason-card { border: 1px solid var(--border-soft); border-radius: 10px; background: var(--bg-elev); margin: 4px 0 6px; overflow: hidden; }
-.reason-card summary { cursor: pointer; display: flex; align-items: center; gap: 8px; padding: 6px 12px; color: var(--text-dim); font-size: 0.846rem; user-select: none; }
+/* 思维链卡(reasoning 流):WB 式无框轻折叠——summary 一行灰字(sparkles 图标+文案+chevron),
+   done 后正文斜体淡灰;不画框不铺底,和去框后的 AI 回复同一气质。
+   Reasoning card: borderless light collapsible, aligned with frameless AI answers. */
+.reason-card { margin: 2px 0 6px; }
+.reason-card summary { cursor: pointer; display: flex; align-items: center; gap: 6px; padding: 2px 0; color: var(--text-faint); font-size: 0.846rem; user-select: none; list-style: none; }
 .reason-card summary::-webkit-details-marker { display: none; }
-.reason-card .rc-chev { transition: transform 0.15s ease; color: var(--text-faint); flex-shrink: 0; }
+.reason-card summary:hover { color: var(--text-dim); }
+.reason-card .rc-label { display: inline-flex; align-items: center; gap: 6px; }
+.reason-card .rc-label svg { opacity: 0.8; }
+.reason-card .rc-chev { transition: transform 0.15s ease; color: var(--text-faint); flex-shrink: 0; display: inline-flex; }
 .reason-card[open] .rc-chev { transform: rotate(90deg); }
-.reason-card .rc-live { padding: 2px 12px 8px; font-size: 0.8rem; font-style: italic; color: var(--text-faint); white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: hidden; line-height: 1.55; }
-.reason-card .rc-body { padding: 2px 12px 10px; font-size: 0.8rem; font-style: italic; color: var(--text-dim); white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
+.reason-card .rc-live { padding: 4px 0 2px 19px; font-size: 0.8rem; font-style: italic; color: var(--text-faint); white-space: pre-wrap; word-break: break-word; max-height: 180px; overflow: hidden; line-height: 1.55; }
+.reason-card .rc-body { padding: 4px 0 2px 19px; font-size: 0.8rem; font-style: italic; color: var(--text-faint); white-space: pre-wrap; word-break: break-word; line-height: 1.55; }
 /* 思维链 shimmer:字面脉冲扫光(流式时) */
 .reason-card.streaming .rc-live { background: linear-gradient(100deg, var(--text-faint) 40%, var(--text-dim) 50%, var(--text-faint) 60%); background-size: 200% 100%; -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent; animation: rcShimmer 2.2s linear infinite; }
 @keyframes rcShimmer { from { background-position: 120% 0; } to { background-position: -80% 0; } }
