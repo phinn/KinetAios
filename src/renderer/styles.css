@@ -853,6 +853,14 @@
 #head-status { color: var(--text-dim); font-size: 0.923rem; margin-left: 6px; }
 #turns, #q-out { user-select: text; cursor: text; }
 * { box-sizing: border-box; }
+
+/* [hidden] 全局兜底:作者样式里的 display:flex/grid/inline-flex 优先级高于 UA 样式表的
+   [hidden]{display:none},导致 .hidden=true 完全失效(历史事故:搜索条关不掉、排队行不隐藏、
+   侧栏搜索 × 负 margin 飘出输入框)。此规则用 !important 一次性盖掉所有同类隐患,
+   显式 [hidden]{display:none} 的单点补丁(#chat-search/#queue-row/#palette/#jump 等)已被它覆盖,
+   保留不删但不再需要逐个补。JS 里若要强制显示某「hidden」元素,应移除属性而非改 style.display。 */
+[hidden] { display: none !important; }
+
 html, body { height: 100%; margin: 0; }
 
 /* Windows 默认滚动条粗灰色方块丑。全局自定义:细、半透明、悬浮加深,所有窗口统一。
@@ -2392,7 +2400,6 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 消息排队 chip 行 */
 #queue-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 4px 2px; }
 /* 同 #chat-search:display:flex 压过 [hidden],必须显式补(排队行为空时隐藏) */
-#queue-row[hidden] { display: none; }
 #queue-row[hidden] { display: none; }
 #queue-row .queue-label { font-size: 0.769rem; color: var(--text-faint); }
 #queue-row .queue-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 320px; padding: 3px 6px 3px 10px; border: 1px solid var(--border-soft); border-radius: 12px; background: var(--bg-elev); font-size: 0.846rem; color: var(--text-dim); }
