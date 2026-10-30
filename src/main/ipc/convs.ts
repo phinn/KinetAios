@@ -53,6 +53,7 @@ export function register(): void {
     jobManager().submitDispatch(opts));
   ipcMain.handle('clear-conversation', (_e, id: string) => deps.taskManager().clearConversation(id));
   ipcMain.handle('rename', (_e, id: string, title: string) => deps.taskManager().rename(id, title));
+  ipcMain.handle('set-pinned', (_e, id: string, pinned: boolean) => deps.taskManager().setPinned(id, !!pinned));
   ipcMain.handle('set-cwd', (_e, id: string, cwd: string) => deps.taskManager().setCwd(id, cwd));
   ipcMain.handle('set-engine', (_e, id: string, engine: EngineKind) => {
     deps.taskManager().setEngine(id, engine);

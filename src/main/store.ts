@@ -150,6 +150,12 @@ export function initStore(): void {
   for (const col of ['tokens_in', 'tokens_out'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
+  // 会话置顶(2026-10-30):pinned 1 = 置顶;pinned_at = 置顶时间(置顶组内部排序)。
+  for (const col of [['pinned', 'INTEGER DEFAULT 0'], ['pinned_at', 'REAL']] as const) {
+    const [cn, cd] = col;
+    assertDdlIdent(cn, 'column'); assertDdlIdent(cd, 'type');
+    if (!hasColumn('conversations', cn)) db.exec(`ALTER TABLE conversations ADD COLUMN ${cn} ${cd};`);
+  }
   // cost_log 加缓存拆分列(v3.9.7):cache_read(~10% 价)/ cache_creation(~125% 价),
   // 看板真口径命中率与计价修正的数据源;旧行默认 0。
   for (const col of ['cache_read', 'cache_creation'] as const) {
@@ -227,7 +233,7 @@ export function* exportConversationsIter(): Generator<Record<string, unknown>> {
   const iter = db.prepare(
     `SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
             branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
-            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory
+            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at
      FROM conversations ORDER BY created_at ASC;`,
   ).iterate() as IterableIterator<Record<string, unknown>>;
   for (const row of iter) yield row;
@@ -251,15 +257,15 @@ export function importConversationRow(r: Record<string, unknown>): boolean {
   db.prepare(
     `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
                                branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
-                               updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+                               updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
   ).run(
     r.id, r.engine ?? 'direct', r.cwd ?? '', r.created_at ?? Date.now() / 1000,
     r.custom_title ?? null, r.direct_history ?? null, r.engine_session_id ?? null, r.model ?? null,
     r.branch_info ?? null, r.pipeline_id ?? null, r.goal ?? null, r.profile_id ?? null,
     r.context_mode ?? null, r.persona_enabled ?? null, r.loop_ralph ?? null,
     r.updated_at ?? null, r.sub_agent_model ?? null, r.wecom_key ?? null, r.feishu_key ?? null,
-    r.cross_project_memory ?? null,
+    r.cross_project_memory ?? null, r.pinned ?? 0, r.pinned_at ?? null,
   );
   return true;
 }
@@ -389,18 +395,21 @@ type ConvRow = {
   sub_agent_model: string | null;
   wecom_key: string | null;
   feishu_key: string | null;
+  pinned: number | null;
+  pinned_at: number | null;
 };
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
        high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, persona_enabled=excluded.persona_enabled,
        updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key,
-       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory;`,
+       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory,
+       pinned=excluded.pinned, pinned_at=excluded.pinned_at;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
@@ -414,11 +423,20 @@ export function saveConversation(c: Conversation): void {
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
     c.feishuKey ?? null,
-    c.crossProjectMemory === true ? 1 : 0);
+    c.crossProjectMemory === true ? 1 : 0,
+    c.pinned === true ? 1 : 0,
+    c.pinnedAt ?? null);
 }
 
 export function updateConversationMeta(c: Conversation): void {
   db.prepare('UPDATE conversations SET custom_title=? WHERE id=?;').run(c.customTitle, c.id);
+}
+
+/** 置顶状态单列更新(2026-10-30):轻量只写 pinned/pinned_at 两列,不整行重写,避免覆盖并发中的其它字段。 */
+export function setConversationPinned(id: string, pinned: boolean): void {
+  db.prepare('UPDATE conversations SET pinned=?, pinned_at=? WHERE id=?;').run(
+    pinned ? 1 : 0, pinned ? Date.now() : null, id,
+  );
 }
 
 export function updateConversationCwd(c: Conversation): void {
@@ -743,6 +761,8 @@ export function loadConversations(): Conversation[] {
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,
       feishuKey: r.feishu_key ?? null,
+      pinned: r.pinned === 1,
+      pinnedAt: r.pinned_at ?? undefined,
     };
     return conv;
   });

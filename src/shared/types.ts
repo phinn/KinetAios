@@ -833,6 +833,8 @@ export type Conversation = {
   cwd: string;
   createdAt: number;
   updatedAt?: number; // 最后活动时间(saveTurn 时更新),用于侧栏排序和时间显示
+  pinned?: boolean; // 置顶:侧栏排序时置顶组恒在最新组之前;持久化到 conversations.pinned
+  pinnedAt?: number; // 置顶时间:置顶组内部按此倒序(后置顶的在上)
   customTitle: string | null;
   directHistory: ChatMsg[]; // Direct-only OpenAI-format, persisted for cross-turn + restart context
   engineSessionId: string | null; // claude/codex session id → --resume next turn (persisted)
@@ -939,6 +941,8 @@ export interface KinetAPI {
   deleteConversation(id: string): Promise<boolean>;
   clearConversation(id: string): Promise<boolean>;
   rename(id: string, title: string): Promise<boolean>;
+  /** 置顶/取消置顶(2026-10-30):落库 conversations.pinned,侧栏置顶组渲染 */
+  setPinned(id: string, pinned: boolean): Promise<boolean>;
   setCwd(id: string, cwd: string): Promise<boolean>;
   setEngine(id: string, engine: EngineKind): Promise<boolean>;
   setModel(id: string, model: string): Promise<boolean>;

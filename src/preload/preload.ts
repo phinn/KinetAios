@@ -29,6 +29,7 @@ const api: KinetAPI = {
   deleteConversation: (id) => ipcRenderer.invoke('delete-conversation', id),
   clearConversation: (id) => ipcRenderer.invoke('clear-conversation', id),
   rename: (id, title) => ipcRenderer.invoke('rename', id, title),
+  setPinned: (id, pinned) => ipcRenderer.invoke('set-pinned', id, pinned),
   setCwd: (id, cwd) => ipcRenderer.invoke('set-cwd', id, cwd),
   setEngine: (id, engine) => ipcRenderer.invoke('set-engine', id, engine),
   setModel: (id, model) => ipcRenderer.invoke('set-model', id, model),

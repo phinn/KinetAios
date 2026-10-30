@@ -361,6 +361,16 @@ export class TaskManager {
     this.emit.emitConversation(conv);
   }
 
+  /** 置顶/取消置顶(2026-10-30):内存改 + 单列落库 + 广播。 */
+  setPinned(id: string, pinned: boolean): void {
+    const conv = this.convs.get(id);
+    if (!conv) return;
+    conv.pinned = pinned;
+    conv.pinnedAt = pinned ? Date.now() : undefined;
+    store.setConversationPinned(id, pinned);
+    this.emit.emitConversation(conv);
+  }
+
   setCwd(id: string, cwd: string): void {
     const conv = this.convs.get(id);
     if (!conv) return;
