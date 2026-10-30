@@ -307,7 +307,7 @@ const ZH_CN: Dict = {
   'git.actConfirmDiscard': '确定丢弃所有未暂存的更改?此操作不可撤销。',
   'git.actConfirmStashPop': '确定弹出最近的贮藏?',
 
-  'composer.placeholder': '给 {product} 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)',
+  'composer.placeholder': '今天帮你做些什么? @ 添加上下文,/ 调用技能与指令',
   'scrollBottom.title': '回到最新消息',
   'send.failed': '发送失败:{msg}',
 
@@ -1689,7 +1689,7 @@ const EN: Dict = {
   'git.actConfirmDiscard': 'Discard all unstaged changes? This cannot be undone.',
   'git.actConfirmStashPop': 'Pop the latest stash?',
 
-  'composer.placeholder': 'Give {product} a task…  (Enter to send, Shift+Enter for newline; files can be dropped)',
+  'composer.placeholder': 'What can I help with? @ for context, / for skills',
   'scrollBottom.title': 'Jump to latest',
   'send.failed': 'Send failed: {msg}',
 
@@ -3065,7 +3065,7 @@ const ZH_TW: Dict = {
   'git.actConfirmDiscard': '確定丟棄所有未暫存的變更?此操作不可撤銷。',
   'git.actConfirmStashPop': '確定彈出最近的貯藏?',
 
-  'composer.placeholder': '給 {product} 下達任務…  (Enter 傳送,Shift+Enter 換行;可拖入檔案)',
+  'composer.placeholder': '今天幫你做些什麼? @ 加入上下文,/ 調用技能與指令',
   'scrollBottom.title': '回到最新訊息',
   'send.failed': '傳送失敗:{msg}',
 
@@ -4446,7 +4446,7 @@ const JA: Dict = {
   'git.actConfirmDiscard': '未ステージの変更をすべて破棄しますか?元に戻せません。',
   'git.actConfirmStashPop': '最新のスタッシュをポップしますか?',
 
-  'composer.placeholder': '{product} にタスクを…  (Enter で送信、Shift+Enter で改行、ファイルもドロップ可)',
+  'composer.placeholder': '今日は何をお手伝いしましょう? @ でコンテキスト追加、/ でスキル呼び出し',
   'scrollBottom.title': '最新メッセージへ',
   'send.failed': '送信失敗:{msg}',
 
