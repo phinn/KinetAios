@@ -1622,8 +1622,9 @@ async function runToolBatch(
   truncateThreshold = 8000,
 ): Promise<ChatMsg[]> {
   const results: ChatMsg[] = [];
-  // 执行前发个 status → 聊天框 streaming 区显示「执行 X, Y…」,让用户知道在跑工具(不只三点)。
-  if (calls.length) onEvent({ type: 'status', text: t(getSettings().lang, 'al.executing', { tools: calls.map((c) => c.name).join(', ') }) });
+  // (2026-10-30)不再发「执行 X」status:tool_start 卡片(spinner+工具名+计时)已承接全部表达,
+  // 两者同帧出现=流式区「卡片+状态行」双报同一工具名。Claude/Codex 的 status(重试/requesting)
+  // 与卡片不重叠,不受影响。token 到达时 applyEvent 清 statusNote 的路径保留,兜住其他 status。
   let i = 0;
   while (i < calls.length) {
     if (signal.aborted) {
