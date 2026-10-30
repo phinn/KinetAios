@@ -570,6 +570,13 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
     const batchResults = await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000);
     messages.push(...batchResults);
+    // 轮间分隔:中间轮(content + tool_calls)的过渡叙述与下一轮正文之间补空行,防止多轮 content
+    // 无缝首尾相连糊成一坨(2026-10-30 用户截图实锤)。只在下轮前发一次,done 轮不吃(保尾格式)。
+    // / Inter-round separator: insert blank line after a middle round's narration so successive
+    // rounds don't fuse into one wall of text. Emitted once before the next round; final round untouched.
+    if (typeof completion.content === 'string' && completion.content.trim()) {
+      onEvent({ type: 'token', text: '\n\n' });
+    }
     // ── 假设升级 nudge:单轮 ≥3 个工具结果连续 error → 推模型升级假设层级 ──
     // 复盘依据:KinetVM 装机 1900+ 调用耗在 GUI 坐标层反复点击,从未验证介质层假设。
     // 注入 [系统] nudge(_transient,不写回 directHistory),一次会话只推一次。

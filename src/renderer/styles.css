@@ -2293,6 +2293,9 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer del { color: var(--text-faint); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: var(--r-md); }
 .answer .ic { padding: 1px 6px; font-size: 1rem; border: 1px solid var(--border-soft); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+/* 折叠批次引用 chip:模型复述 AgentLoop 折叠行时弱化显示,不与正文争夺注意力 */
+/* Muted chip for echoed folded-batch markers — keep them visually secondary to prose */
+.answer .fold-chip { display: inline-block; padding: 1px 7px; font-size: 0.85em; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); background: var(--code-bg); border: 1px dashed var(--border-soft); border-radius: 999px; opacity: .8; }
 /* 代码块:语言标签 + 圆角容器 + 左侧行号槽 / Code block: lang label + rounded container */
 .answer .code-block { position: relative; margin: 0 0 10px; border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-xs); }
 .answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: var(--fs-sm); font-family: ui-monospace, monospace; color: var(--accent-dim); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 0 var(--r-md) 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none; z-index: 1; backdrop-filter: blur(4px); font-weight: 600; }

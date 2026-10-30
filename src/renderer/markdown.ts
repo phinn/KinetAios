@@ -188,6 +188,11 @@ function renderList(nodes: LNode[]): string {
 // Inline formatting on already-escaped text: code, links, bold, italic, strikethrough, images.
 function inline(s: string): string {
   return s
+    // 折叠批次引用降权:模型常把「[已折叠工具调用批次: …]」当正文复述,机械行混进叙述观感差
+    // (2026-10-30 用户截图)。识别 AgentLoop 的固定折叠行,渲染成弱化 chip,不再当普通方括号文本。
+    // / Demote folded-batch echoes: the model sometimes restates AgentLoop's mechanical
+    // folded-line marker in prose; render it as a muted chip instead of plain bracket text.
+    .replace(/\[已折叠工具调用批次: ([^\]]*)\]/g, (_m, desc) => `<span class="fold-chip">⌘ ${desc}</span>`)
     .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
     .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, (_m, alt, src) => `<img src="${src.replace(/"/g, '&quot;')}" alt="${alt}" loading="lazy" />`)
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
