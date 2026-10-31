@@ -54,6 +54,16 @@ const convDrafts = new Map<string, string>();
 const sendHistory: string[] = [];
 let sendHistoryIdx = -1; // -1 = 手打态;回填态中 ↑ 往旧走 / ↓ 往新走,走到空即回到手打态
 const SEND_HISTORY_MAX = 50;
+// 统一记录点:send() 成功路径 + running 会话的排队/转向路径都走这里。
+// Single recorder: both the successful send() path and the queue/steer paths (running conv) funnel here.
+// 之前只有 send() 记录 → 用户在 running 会话高频用排队,↑ 永远无历史可回填(实锤 bug)。
+// Previously only send() recorded → heavy queue users had an always-empty history (real bug).
+function recordSendHistory(text: string): void {
+  const t = text.trim();
+  if (!t || sendHistory[sendHistory.length - 1] === t) return;
+  sendHistory.push(t);
+  if (sendHistory.length > SEND_HISTORY_MAX) sendHistory.splice(0, sendHistory.length - SEND_HISTORY_MAX);
+}
 // 已删除会话 id(有界缓存):挡住删除后迟到的 onConversation 广播复活幽灵
 const removedConvs = new Set<string>();
 // 会话级"瞬时重试中"标记(从 status 事件文本派生):侧栏 dot 显示 retrying 态,与 conv.status 互补。
@@ -9051,6 +9061,7 @@ function openPathExternal(path: string): void {
       if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
         composer.value = '';
         autosize(composer);
+        recordSendHistory(draft); // 排队/转向也算"发送过",否则 running 会话高频路径历史永远为空
         if (e.metaKey || e.ctrlKey) {
           void steerNow(runConv.id, draft);
         } else {
@@ -10207,9 +10218,7 @@ async function send() {
     // Send history (shell habit): remember the raw typed text so ↑ recalls it in an empty composer.
     // 去重相邻重复;有附件时 text 含包装块,只记手打部分,回填不惊扰。
     // Dedupe consecutive duplicates; store raw typed text only (attachment wrappers excluded).
-    const typedText = typed.trim();
-    if (typedText && sendHistory[sendHistory.length - 1] !== typedText) sendHistory.push(typedText);
-    if (sendHistory.length > SEND_HISTORY_MAX) sendHistory.splice(0, sendHistory.length - SEND_HISTORY_MAX);
+    recordSendHistory(typed);
     sendHistoryIdx = -1;
     composer.value = '';
     autosize(composer);
