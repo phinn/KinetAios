@@ -24,7 +24,11 @@ function hasColumn(table: string, column: string): boolean {
 // DDL 列名/类型断言:ALTER TABLE 拼接的字面量必须符合标识符/类型语法。
 // migration 清单是代码内字面量,当前全安全;断言防的是未来手滑把外部输入拼进清单。
 function assertDdlIdent(s: string, kind: 'column' | 'type'): void {
-  const ok = kind === 'column' ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(s) : /^[A-Z ]+$/.test(s);
+  // type 允许尾随 "DEFAULT <数字字面量>"(如 INTEGER DEFAULT 0)——置顶列迁移经此通道,
+  // 其余大写类型词/空格不变;数字与小数点无法构成注入面。
+  const ok = kind === 'column'
+    ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
+    : /^[A-Z ]+(?: DEFAULT -?[0-9.]+)?$/.test(s);
   if (!ok) throw new Error(`initStore: illegal DDL ${kind}: ${s}`);
 }
 
