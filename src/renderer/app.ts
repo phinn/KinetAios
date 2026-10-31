@@ -49,11 +49,14 @@ const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
 // Per-conversation drafts: save on switch away, restore on switch back. v3.6.3 起持久化到 localStorage。
 const convDrafts = new Map<string, string>();
-// composer 空时 ↑ 回填的发送历史(shell 习惯);仅存手打文本,内存态即可。
-// Send history for ↑ recall in an empty composer (shell habit); typed text only, in-memory.
+// composer 空时 ↑ 回填的发送历史(shell 习惯);仅存手打文本,localStorage 持久化。
+// Send history for ↑ recall in an empty composer (shell habit); typed text only, persisted in localStorage.
+// 内存态在重启后清空 → 用户重启后按 ↑ 无反应(实锤反馈"还是没反应"的根因),必须落盘。
+// In-memory state dies on restart → ↑ was dead after relaunch (the "still no response" report); persist it.
 const sendHistory: string[] = [];
 let sendHistoryIdx = -1; // -1 = 手打态;回填态中 ↑ 往旧走 / ↓ 往新走,走到空即回到手打态
 const SEND_HISTORY_MAX = 50;
+try { sendHistory.push(...JSON.parse(localStorage.getItem('send-history') || '[]')); } catch { /* 损坏即当空 */ }
 // 统一记录点:send() 成功路径 + running 会话的排队/转向路径都走这里。
 // Single recorder: both the successful send() path and the queue/steer paths (running conv) funnel here.
 // 之前只有 send() 记录 → 用户在 running 会话高频用排队,↑ 永远无历史可回填(实锤 bug)。
@@ -63,6 +66,7 @@ function recordSendHistory(text: string): void {
   if (!t || sendHistory[sendHistory.length - 1] === t) return;
   sendHistory.push(t);
   if (sendHistory.length > SEND_HISTORY_MAX) sendHistory.splice(0, sendHistory.length - SEND_HISTORY_MAX);
+  localStorage.setItem('send-history', JSON.stringify(sendHistory));
 }
 // 已删除会话 id(有界缓存):挡住删除后迟到的 onConversation 广播复活幽灵
 const removedConvs = new Set<string>();
@@ -269,9 +273,18 @@ function applyI18nDOM(): void {
       if (paletteEl().hidden) openPalette(); else closePalette();
       return;
     }
-    // ↑/↓ 侧栏会话切换:仅当焦点不在输入类控件(避免吃掉 composer 光标移动/回填、搜索框、设置表单)
-    // ↑/↓ sidebar conversation nav; skipped when focus is in any editable control.
-    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+    // ↑/↓ 侧栏会话切换:焦点在输入类控件时裸键让给 composer(光标移动/回填),Alt+↑/↓ 全局兜底 ——
+    // 发送后焦点自动回 composer 是常态,裸 ↑↓ 在该状态下永远到不了侧栏(用户实测"没反应"的第二个根因)。
+    // ↑/↓ sidebar conversation nav; bare keys are ceded to focused editable controls
+    // (caret/recall), Alt+↑/↓ works everywhere — focus returns to composer after send, so bare
+    // ↑/↓ could never reach the sidebar in that common state (second "no response" root cause).
+    const isSidebarNav = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+    if (isSidebarNav && e.altKey && !e.ctrlKey && !e.metaKey && currentView === 'chat') {
+      e.preventDefault();
+      sidebarStep(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (isSidebarNav && !e.altKey && !e.ctrlKey && !e.metaKey) {
       const ae = document.activeElement as HTMLElement | null;
       const editable = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.isContentEditable);
       if (!editable && currentView === 'chat') {
@@ -4631,6 +4644,7 @@ function showShortcutsSheet(): void {
     ['Ctrl/⌘ F', tr('keys.search')],
     ['↑ (composer 空)', tr('keys.recallLast')],
     ['↑ / ↓ (侧栏)', tr('keys.sidebarNav')],
+    ['⌥↑ / ⌥↓', tr('keys.sidebarNavAlt')],
     ['Enter / Shift+Enter', tr('keys.enter')],
     ['Esc', tr('keys.esc')],
     ['?', tr('keys.help')],
