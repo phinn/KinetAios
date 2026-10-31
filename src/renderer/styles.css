@@ -2538,10 +2538,10 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .turn:not(.streaming) .wf-chip-running .wf-chip-dot { animation: none; }
 .wf-tool-sum { color: var(--text-faint); font-size: var(--fs-sm); }
 /* ── 命令面板(Ctrl/Cmd+K)── */
-#palette { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+#palette { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #palette[hidden] { display: none; }
 /* 频道速跳面板(⌘P):复用 palette-box 样式,仅遮罩容器选择器并列 */
-#jump { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
+#jump { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.35); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: flex-start; justify-content: center; padding-top: 12vh; }
 #jump[hidden] { display: none; }
 .jump-row .p-hint { flex-shrink: 0; }
 .jump-proj { color: var(--text-dim); background: var(--bg-subtle, rgba(127,127,127,0.12)); border-radius: var(--r-md); padding: 1px 7px; font-size: var(--fs-sm); }
@@ -2559,7 +2559,7 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .palette-empty { padding: 18px; text-align: center; color: var(--text-faint); font-size: var(--fs-md); }
 .palette-foot { display: flex; gap: 14px; padding: 6px 14px; border-top: 1px solid var(--border-soft); font-size: var(--fs-xs); color: var(--text-faint); }
 /* ── 快捷键速查表 ── */
-.sheet-overlay { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.4); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s var(--ease-out); }
+.sheet-overlay { position: fixed; inset: 0; z-index: var(--z-topmost); background: rgba(0, 0, 0, 0.4); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; animation: lb-in 0.15s var(--ease-out); }
 .sheet-card { width: min(420px, 90vw); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: var(--r-xl); padding: 18px 20px; box-shadow: 0 24px 80px rgba(0, 0, 0, 0.5); }
 .sheet-card h3 { margin: 0 0 12px; font-size: 1rem; color: var(--text); }
 .sheet-row { display: flex; align-items: center; gap: 12px; padding: 5px 0; font-size: var(--fs-md); color: var(--text-dim); }
@@ -6916,9 +6916,14 @@ select:focus-visible {
 }
 .scroll-top-btn { bottom: calc(var(--input-h, 74px) + 64px); }
 /* 紧凑模式:meta 行默认隐藏,悬停该轮时浮现(保留占位防跳动) */
-body.meta-compact .ai-meta-row { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
-body.meta-compact .turn:hover .ai-meta-row,
-body.meta-compact .ai-meta-row:focus-within { opacity: 1; }
+/* 紧凑模式只藏左侧 meta 信息(耗时/token/费用),右侧操作图标(语音/复制/分叉/重试)保持常显 —
+   藏整行会把高频操作也藏掉,违背「合并 meta+actions 为单行、始终可见」的设计初衷。 */
+/* Compact mode hides only the left meta info; right-side action icons stay visible. */
+body.meta-compact .ai-meta-row .ai-meta-left { opacity: 0; transition: opacity var(--dur-fast) var(--ease-out); }
+body.meta-compact .turn:hover .ai-meta-left,
+body.meta-compact .ai-meta-left:focus-within { opacity: 1; }
+/* token 明细浮层锚在 meta-tok 上,行隐藏时浮层仍须可见(浮层挂 body 不受影响,兜底声明) */
+body.meta-compact .ai-meta-left:has(+ .ai-meta-actions:hover) { opacity: 1; }
 
 /* ═══ Composer token 估算 ═══ */
 .composer-bar .composer-tok {

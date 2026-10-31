@@ -49,6 +49,11 @@ const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
 // Per-conversation drafts: save on switch away, restore on switch back. v3.6.3 起持久化到 localStorage。
 const convDrafts = new Map<string, string>();
+// composer 空时 ↑ 回填的发送历史(shell 习惯);仅存手打文本,内存态即可。
+// Send history for ↑ recall in an empty composer (shell habit); typed text only, in-memory.
+const sendHistory: string[] = [];
+let sendHistoryIdx = -1; // -1 = 手打态;回填态中 ↑ 往旧走 / ↓ 往新走,走到空即回到手打态
+const SEND_HISTORY_MAX = 50;
 // 已删除会话 id(有界缓存):挡住删除后迟到的 onConversation 广播复活幽灵
 const removedConvs = new Set<string>();
 // 会话级"瞬时重试中"标记(从 status 事件文本派生):侧栏 dot 显示 retrying 态,与 conv.status 互补。
@@ -254,6 +259,17 @@ function applyI18nDOM(): void {
       if (paletteEl().hidden) openPalette(); else closePalette();
       return;
     }
+    // ↑/↓ 侧栏会话切换:仅当焦点不在输入类控件(避免吃掉 composer 光标移动/回填、搜索框、设置表单)
+    // ↑/↓ sidebar conversation nav; skipped when focus is in any editable control.
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      const ae = document.activeElement as HTMLElement | null;
+      const editable = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.isContentEditable);
+      if (!editable && currentView === 'chat') {
+        e.preventDefault();
+        sidebarStep(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+    }
     // Ctrl/Cmd+P → 频道速跳(任意视图;p 命中浏览器打印,Ctrl+P 桌面端无冲突)
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
@@ -319,6 +335,7 @@ function applyI18nDOM(): void {
     lang = settings.lang;
     applyTheme(settings.theme);
     applyFontScale(settings.fontScale ?? 100);
+    applyCompactMeta(settings.compactMeta === true);
     const brand = await api.getBrand();
     PRODUCT = brand.productName;
     HOME_DIR = brand.homeDir;
@@ -2065,8 +2082,7 @@ function showCommitDialog(): void {
   // Enter(无 Shift)直接提交 / Enter (no Shift) to submit
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (!okBtn.disabled) okBtn.click();
+      e.preventDefault();      if (!okBtn.disabled) okBtn.click();
     }
   });
   okBtn.onclick = async () => {
@@ -3855,7 +3871,15 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   const failed = todos.filter((t) => t.status === 'failed').length;
   const skipped = todos.filter((t) => t.status === 'skipped').length;
   const det = document.createElement('details');
-  det.open = true;
+  // 默认展开;用户手动收起过 → 重建(增量/全量)时不弹回,尊重偏好。
+  // Expanded by default; once the user collapses, rebuilds keep it collapsed.
+  det.open = localStorage.getItem('todo-card-collapsed') !== '1';
+  det.addEventListener('toggle', () => {
+    // 程序化 set open 也触发 toggle → 逻辑幂等,落的就是当前真实状态。
+    // toggle fires for programmatic changes too; persisting current state is idempotent.
+    if (det.open) localStorage.removeItem('todo-card-collapsed');
+    else localStorage.setItem('todo-card-collapsed', '1');
+  });
   const summary = document.createElement('summary');
   // 摘要计数:文本符号 ✓⟳✗⇥○ 换成内联 SVG;颜色语义走 .todo-sum SVG stroke=currentColor。
   summary.innerHTML = `<span class="name">${sv.listCheck} ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ${sv.checkCircle} · ${doing} ${sv.clock} · ${failed ? `${failed} ${sv.xCircle} · ` : ''}${skipped ? `${skipped} ${sv.skip} · ` : ''}${todos.length - done - doing - failed - skipped} ${svg('<circle cx="12" cy="12" r="8"/>')}</span>`;
@@ -4380,6 +4404,10 @@ function updateLastTurnIncremental(): void {
   if (todoSig) {
     if (!oldTodoCard || (oldTodoCard as HTMLElement).dataset.sig !== todoSig) {
       const fresh = buildTodoCard(t.todos!);
+      // 保留用户手动展开/收起状态:内容重建不应弹回展开(与 workflow-card 同模式)
+      // Preserve the user's manual collapse across sig-based rebuilds (same pattern as workflow-card).
+      const oldDet = oldTodoCard?.querySelector('details');
+      if (oldDet) { (fresh.querySelector('details') as HTMLDetailsElement).open = (oldDet as HTMLDetailsElement).open; }
       oldTodoCard ? oldTodoCard.replaceWith(fresh) : turnEl.querySelector('.ai-body')?.prepend(fresh);
     }
   } else if (oldTodoCard) {
@@ -4563,13 +4591,36 @@ function atMove(dir: 1 | -1): void {
 }
 
 // ── 快捷键速查表(? 呼出)──
+// ↑/↓ 在侧栏会话列表上移动选择(shell 习惯)。offsetParent 过滤自动跳过折叠分组里的隐藏项;
+// clamp 不回绕(与上下键直觉一致)。
+// ↑/↓ moves the selection across visible conversation items in the sidebar (shell habit).
+// offsetParent filter skips items hidden inside collapsed groups; clamp, no wraparound.
+function sidebarStep(delta: 1 | -1): void {
+  const lis = Array.from(document.querySelectorAll<HTMLElement>('#conv-list li[data-cid]'))
+    .filter((li) => li.offsetParent !== null);
+  if (!lis.length) return;
+  const cur = lis.findIndex((li) => li.dataset.cid === selectedId);
+  // 当前不在列表(如被过滤)→ 落第一个;否则相邻移动。
+  const next = lis[Math.min(lis.length - 1, Math.max(0, cur < 0 ? 0 : cur + delta))];
+  if (!next || next.dataset.cid === selectedId) return;
+  selectedId = next.dataset.cid!;
+  showChat();
+  // active 高亮就地更新,避免全量重建;并保证目标条目可见。
+  document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+  next.classList.add('active');
+  next.scrollIntoView({ block: 'nearest' });
+}
+
 function showShortcutsSheet(): void {
   document.querySelector('.sheet-overlay')?.remove();
   const ov = document.createElement('div');
   ov.className = 'sheet-overlay';
   const rows: Array<[string, string]> = [
     ['Ctrl/⌘ K', tr('keys.palette')],
+    ['Ctrl/⌘ P', tr('keys.channels')],
     ['Ctrl/⌘ F', tr('keys.search')],
+    ['↑ (composer 空)', tr('keys.recallLast')],
+    ['↑ / ↓ (侧栏)', tr('keys.sidebarNav')],
     ['Enter / Shift+Enter', tr('keys.enter')],
     ['Esc', tr('keys.esc')],
     ['?', tr('keys.help')],
@@ -4790,6 +4841,19 @@ function closePalette(): void {
 function paletteMove(dir: 1 | -1): void {
   if (!paletteFiltered.length) return;
   paletteSel = (paletteSel + dir + paletteFiltered.length) % paletteFiltered.length;
+  paletteSyncSel();
+}
+
+// Home/End 直跳首尾(⌘K 面板列表较长时省得连按 ↑↓)。
+// Home/End jump straight to first/last row (long lists).
+function paletteJump(which: 'home' | 'end'): void {
+  if (!paletteFiltered.length) return;
+  paletteSel = which === 'home' ? 0 : paletteFiltered.length - 1;
+  paletteSyncSel();
+}
+
+// 渲染选中态:去旧高亮、亮新行、滚入视野(三个入口共用)。
+function paletteSyncSel(): void {
   const list = document.getElementById('palette-list')!;
   list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
   const rows = list.querySelectorAll('.palette-row');
@@ -4976,6 +5040,17 @@ function onJumpInput(): void {
 function jumpMove(dir: 1 | -1): void {
   if (!jumpFiltered.length) return;
   jumpSel = (jumpSel + dir + jumpFiltered.length) % jumpFiltered.length;
+  jumpSyncSel();
+}
+
+// Home/End 直跳首尾(与 ⌘K 面板同款)。Home/End jump to first/last, same as the palette.
+function jumpJump(which: 'home' | 'end'): void {
+  if (!jumpFiltered.length) return;
+  jumpSel = which === 'home' ? 0 : jumpFiltered.length - 1;
+  jumpSyncSel();
+}
+
+function jumpSyncSel(): void {
   const list = document.getElementById('jump-list')!;
   list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
   const rows = list.querySelectorAll('.palette-row');
@@ -6172,6 +6247,14 @@ function applyFontScale(scale: number): void {
   document.documentElement.style.fontSize = `${(scale / 100) * 13}px`;
 }
 
+// 紧凑模式开关落 body class:CSS 侧 .meta-compact 规则早已就位(hover/focus-within 才显示
+// ai-meta-row),但此前从未接线 —— 开关存了设置却无任何效果(死样式)。
+// Compact-mode toggle lands on body class. The CSS rules (.meta-compact) existed but were
+// never wired: the setting persisted yet had zero visual effect.
+function applyCompactMeta(on: boolean): void {
+  document.body.classList.toggle('meta-compact', on);
+}
+
 async function showSettings() {
   currentView = 'settings';
   hideAllViews();
@@ -6999,6 +7082,7 @@ async function showSettings() {
     renderTown(); // 重渲小镇(风格可能变了) / re-render town (style may have changed)
     applyTheme(ns.theme);
     applyFontScale(ns.fontScale ?? 100);
+    applyCompactMeta(ns.compactMeta === true);
     applyI18nDOM();
     renderSidebar();
     renderMain();
@@ -8653,6 +8737,8 @@ function openPathExternal(path: string): void {
   paletteInput.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); paletteMove(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); paletteMove(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); paletteJump('home'); }
+    else if (e.key === 'End') { e.preventDefault(); paletteJump('end'); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       const act = paletteFiltered[paletteSel];
@@ -8669,6 +8755,8 @@ function openPathExternal(path: string): void {
   jumpInput.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); jumpMove(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); jumpMove(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); jumpJump('home'); }
+    else if (e.key === 'End') { e.preventDefault(); jumpJump('end'); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       const it = jumpFiltered[jumpSel];
@@ -8924,6 +9012,35 @@ function openPathExternal(path: string): void {
       if (e.key === 'ArrowDown') { e.preventDefault(); atMove(1); return; }
       if (e.key === 'ArrowUp') { e.preventDefault(); atMove(-1); return; }
       if (e.key === 'Escape') { e.preventDefault(); closeAtMenu(); return; }
+    }
+    // shell 习惯:composer 为空时 ↑ 调出上一条发送过的输入;回填态中 ↓ 往回走新的,穿到底恢复空。
+    // Shell habit: ↑ in an empty composer recalls the last sent input; ↓ walks back toward
+    // newer entries while recalling, and past the newest restores the empty composer.
+    // 手打态且非空时不劫持 ↑(光标移动/多行编辑不受影响)。IME 与菜单已在上游 return。
+    // Don't hijack ↑ while typing (non-empty composer) — normal caret movement is preserved.
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (e.key === 'ArrowUp' && !composer.value.trim() && sendHistory.length) {
+        e.preventDefault();
+        sendHistoryIdx = sendHistoryIdx === -1 ? sendHistory.length - 1 : Math.max(0, sendHistoryIdx - 1);
+        composer.value = sendHistory[sendHistoryIdx];
+        autosize(composer);
+        // 光标落末尾(shell 一致),否则回填后 ↑ 的下一次按键行为反直觉
+        composer.setSelectionRange(composer.value.length, composer.value.length);
+        return;
+      }
+      if (e.key === 'ArrowDown' && sendHistoryIdx !== -1) {
+        e.preventDefault();
+        sendHistoryIdx++;
+        if (sendHistoryIdx >= sendHistory.length) {
+          sendHistoryIdx = -1;
+          composer.value = '';
+        } else {
+          composer.value = sendHistory[sendHistoryIdx];
+        }
+        autosize(composer);
+        composer.setSelectionRange(composer.value.length, composer.value.length);
+        return;
+      }
     }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -10086,7 +10203,14 @@ async function send() {
     if (imageAttachments.length) {
       imageAttachments = [];
     }
-    renderAttach();
+    // 发送历史(shell 习惯):存用户手打原文(typed),供 composer 空时 ↑ 回填。
+    // Send history (shell habit): remember the raw typed text so ↑ recalls it in an empty composer.
+    // 去重相邻重复;有附件时 text 含包装块,只记手打部分,回填不惊扰。
+    // Dedupe consecutive duplicates; store raw typed text only (attachment wrappers excluded).
+    const typedText = typed.trim();
+    if (typedText && sendHistory[sendHistory.length - 1] !== typedText) sendHistory.push(typedText);
+    if (sendHistory.length > SEND_HISTORY_MAX) sendHistory.splice(0, sendHistory.length - SEND_HISTORY_MAX);
+    sendHistoryIdx = -1;
     composer.value = '';
     autosize(composer);
     convDrafts.delete(selectedId); // 发送成功,清掉该频道草稿
