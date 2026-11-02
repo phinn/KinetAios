@@ -10222,11 +10222,12 @@ async function send() {
       return; // 不清空,用户可重试
     }
     // 发送成功 → 清空 composer + 附件 + 强制滚到最新消息
-    if (files.length) {
+    // chips 是手动渲染的(renderAttach 仅在粘贴/截图/删除时调用):数组清了不重画,
+    // 附件 chip 会残留在输入框里(截图 chip 高频路径,2026-10-31 用户报告)。
+    if (files.length || imageAttachments.length) {
       attachments = [];
-    }
-    if (imageAttachments.length) {
       imageAttachments = [];
+      renderAttach();
     }
     // 发送历史(shell 习惯):存用户手打原文(typed),供 composer 空时 ↑ 回填。
     // Send history (shell habit): remember the raw typed text so ↑ recalls it in an empty composer.
