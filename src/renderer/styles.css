@@ -919,7 +919,7 @@ a { color: var(--accent); }
    - 完全隐藏 .sb-head / .sb-search / #conv-list / .sb-foot
    - 显示独立的图标栏 .sb-rail,贴在 sidebar 内部 */
 #sidebar { transition: width 200ms var(--ease-out); overflow: hidden; }
-#sidebar.collapsed { width: 48px; }
+#sidebar.collapsed { width: 48px !important; }
 #sidebar.collapsed > .sb-brand,
 #sidebar.collapsed > .sb-topbar,
 #sidebar.collapsed > .sb-tools,
@@ -936,6 +936,15 @@ a { color: var(--accent); }
 
 /* sidebar — 侧栏容器,对齐 SwiftUI 版 macOS sidebar vibrancy 感
    更透明的背景 + 无顶部光带 + 更柔和的右边框 */
+/* ── 侧栏拖拽调宽 resizer:夹在 sidebar 与 main 之间,3px 热区 / Sidebar width resizer ── */
+#sb-resizer {
+  width: 3px; flex-shrink: 0; cursor: col-resize;
+  background: transparent; position: relative; z-index: 5;
+}
+#sb-resizer:hover, #sb-resizer.dragging { background: var(--accent-dim, var(--accent)); }
+body.resizing { cursor: col-resize; user-select: none; }
+body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 */
+
 #sidebar {
   width: 256px; flex-shrink: 0;
   background: var(--surface-pane, var(--bg-side));
@@ -2298,7 +2307,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer .fold-chip { display: inline-block; padding: 1px 7px; font-size: 0.85em; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); background: var(--code-bg); border: 1px dashed var(--border-soft); border-radius: 999px; opacity: .8; }
 /* 代码块:语言标签 + 圆角容器 + 左侧行号槽 / Code block: lang label + rounded container */
 .answer .code-block { position: relative; margin: 0 0 10px; border-radius: var(--r-lg); overflow: hidden; box-shadow: var(--shadow-xs); }
-.answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: var(--fs-sm); font-family: ui-monospace, monospace; color: var(--accent-dim); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 0 var(--r-md) 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none; z-index: 1; backdrop-filter: blur(4px); font-weight: 600; }
+.answer .code-block .code-lang { position: absolute; top: 0; left: 0; font-size: var(--fs-sm); font-family: ui-monospace, monospace; color: var(--accent-dim); background: var(--bg-elev); padding: 2px 8px; border-radius: 0 0 var(--r-md) 0; border-right: 1px solid var(--border-soft); border-bottom: 1px solid var(--border-soft); text-transform: uppercase; letter-spacing: 0.06em; pointer-events: none; z-index: 1; font-weight: 600; }
 .answer .code-block .code { border-radius: 0; margin: 0; }
 /* 有语言标签时给代码区顶部留空间 / Reserve top padding when lang label exists */
 .answer .code-block:has(.code-lang) .code { padding-top: 24px; }
@@ -2846,6 +2855,11 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 }
 .composer-more-menu .cm-item.active {
   color: var(--accent);
+}
+/* 菜单内截图进行中:与 bar 的 .tool.loading 同语义(置灰防重复点) */
+.composer-more-menu .cm-item.loading {
+  opacity: 0.5;
+  pointer-events: none;
 }
 /* ── theme-popup — 侧栏底部主题快捷切换弹出菜单,向上展开 ── */
 .theme-popup {
@@ -6632,8 +6646,8 @@ select:focus-visible {
 
 /* ── 中等窗口(601-1024px) / Medium window ── */
 @media (max-width: 1024px) {
-  /* 侧栏稍窄 / Slightly narrower sidebar */
-  #sidebar { width: 220px; }
+  /* 侧栏稍窄(仅未手动调宽时生效:手动宽度走 inline style 优先) / Slightly narrower sidebar (unless user-resized) */
+  #sidebar:not([style*="width"]) { width: 220px; }
   /* workbench 卡片改为单列 / Workbench single column */
   .wb-grid { grid-template-columns: 1fr !important; }
   /* settings 两列改一列 / Settings single column */
