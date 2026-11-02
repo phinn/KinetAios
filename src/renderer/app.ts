@@ -8330,6 +8330,44 @@ function wireUi() {
   // 初始化折叠状态 / Apply persisted collapsed state on load
   applySidebarCollapsed();
 
+  // ── 侧栏拖拽调宽 / Sidebar drag-to-resize ──
+  // 夹在 sidebar 与 main 之间的 3px 热区;宽度记 localStorage('sb-width'),
+  // 上下限 200/420(过窄内容溢出、过宽挤压聊天区)。折叠态不响应。
+  const sbResizer = document.getElementById('sb-resizer')!;
+  const SIDEBAR_MIN = 200, SIDEBAR_MAX = 420;
+  const applySidebarWidth = (w: number) => {
+    document.getElementById('sidebar')!.style.width = `${w}px`;
+  };
+  // 恢复持久化宽度(越界回 256)
+  const savedW = parseInt(localStorage.getItem('sb-width') || '', 10);
+  if (!Number.isNaN(savedW) && savedW >= SIDEBAR_MIN && savedW <= SIDEBAR_MAX) applySidebarWidth(savedW);
+  sbResizer.addEventListener('pointerdown', (e) => {
+    if (sidebarCollapsed) return;
+    e.preventDefault();
+    sbResizer.setPointerCapture(e.pointerId);
+    sbResizer.classList.add('dragging');
+    document.body.classList.add('resizing');
+    const startX = e.clientX;
+    const startW = document.getElementById('sidebar')!.getBoundingClientRect().width;
+    const onMove = (ev: PointerEvent) => {
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(startW + ev.clientX - startX)));
+      applySidebarWidth(w);
+    };
+    const onUp = (ev: PointerEvent) => {
+      sbResizer.releasePointerCapture(e.pointerId);
+      sbResizer.removeEventListener('pointermove', onMove);
+      sbResizer.removeEventListener('pointerup', onUp);
+      sbResizer.removeEventListener('pointercancel', onUp);
+      sbResizer.classList.remove('dragging');
+      document.body.classList.remove('resizing');
+      const w = Math.min(SIDEBAR_MAX, Math.max(SIDEBAR_MIN, Math.round(startW + ev.clientX - startX)));
+      localStorage.setItem('sb-width', String(w));
+    };
+    sbResizer.addEventListener('pointermove', onMove);
+    sbResizer.addEventListener('pointerup', onUp);
+    sbResizer.addEventListener('pointercancel', onUp);
+  });
+
 // 收起 ⋯ 更多菜单 (Launchpad 风格浮层)
 // Close the ⋯ more panel (Launchpad-style overlay)
 function closeMoreMenu() {
@@ -9165,6 +9203,7 @@ function openPathExternal(path: string): void {
     captureBtn.onclick = async () => {
       console.log('[capture] 按钮点击', btnId, 'hideSelf =', hideSelf);
       captureBtn.classList.add('loading');
+      closeComposerMore(); // 已移入 more 菜单:触发后立即收起菜单
       try {
         // 步骤 1:拿全屏截图(main 进程 desktopCapturer 优先,回退 getDisplayMedia)
         let fullDataUrl: string | null = null;
@@ -9240,8 +9279,8 @@ function openPathExternal(path: string): void {
       }
     };
   };
-  bindCapture('btn-capture', false);
-  bindCapture('btn-capture-hide', true);
+  bindCapture('cm-capture', false);
+  bindCapture('cm-capture-hide', true);
 
   // ── 区域截图 overlay:全屏显示截图 + 拖拽选区 → 裁剪返回 dataUrl ──
   // 复用 inspect overlay 的模式:全屏遮罩 + crosshair + 选择框。
