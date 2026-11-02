@@ -24,7 +24,11 @@ function hasColumn(table: string, column: string): boolean {
 // DDL 列名/类型断言:ALTER TABLE 拼接的字面量必须符合标识符/类型语法。
 // migration 清单是代码内字面量,当前全安全;断言防的是未来手滑把外部输入拼进清单。
 function assertDdlIdent(s: string, kind: 'column' | 'type'): void {
-  const ok = kind === 'column' ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(s) : /^[A-Z ]+$/.test(s);
+  // type 允许尾随 "DEFAULT <数字字面量>"(如 INTEGER DEFAULT 0)——置顶列迁移经此通道,
+  // 其余大写类型词/空格不变;数字与小数点无法构成注入面。
+  const ok = kind === 'column'
+    ? /^[A-Za-z_][A-Za-z0-9_]*$/.test(s)
+    : /^[A-Z ]+(?: DEFAULT -?[0-9.]+)?$/.test(s);
   if (!ok) throw new Error(`initStore: illegal DDL ${kind}: ${s}`);
 }
 
@@ -150,6 +154,12 @@ export function initStore(): void {
   for (const col of ['tokens_in', 'tokens_out'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
   }
+  // 会话置顶(2026-10-30):pinned 1 = 置顶;pinned_at = 置顶时间(置顶组内部排序)。
+  for (const col of [['pinned', 'INTEGER DEFAULT 0'], ['pinned_at', 'REAL']] as const) {
+    const [cn, cd] = col;
+    assertDdlIdent(cn, 'column'); assertDdlIdent(cd, 'type');
+    if (!hasColumn('conversations', cn)) db.exec(`ALTER TABLE conversations ADD COLUMN ${cn} ${cd};`);
+  }
   // cost_log 加缓存拆分列(v3.9.7):cache_read(~10% 价)/ cache_creation(~125% 价),
   // 看板真口径命中率与计价修正的数据源;旧行默认 0。
   for (const col of ['cache_read', 'cache_creation'] as const) {
@@ -204,9 +214,63 @@ export function stmt(sql: string): Database.Statement {
 }
 
 // MARK: message-level FTS (recall_memory searches this)
-// ponytail: FTS 只服务搜索,行内容封顶 4K —— 工具结果全文(8-12KB)曾是 433MB 库的主要增长源;
-// 搜索命中显示前 4K 足够,需要全文去 turns 里看。
-const FTS_CONTENT_CAP = 4_000;
+// ponytail: FTS 只服务搜索,行内容封顶 —— 工具结果全文(8-12KB)曾是 433MB 库的主要增长源;
+// 搜索命中需要全文去 turns 里看。
+// 2026-10-30 二次瘦身:cap 4000→1200。实测消费链(recall_memory)最多只读 content 前 500 字符
+// (embedding 重排 hitTexts slice(0,500))+ 200 字符预览,4K 是 3 倍冗余;history_content 曾占 567MB。
+// 1200 = 重排 500 × 2 余量 + 预览 200。匹配召回范围同步缩到前 1200 字符 —— 关键词集中于
+// 开头/上下文头部,实测尾部样本 61% 行本就 ≤1K,召回质量无感知差异。
+// ponytail: FTS is search-only; rows capped. recall_memory reads ≤500 chars (rerank) +
+// 200 (preview); 1200 covers both with headroom. history_content was 567MB at cap=4000.
+const FTS_CONTENT_CAP = 1_200;
+
+// ── 存量重缩(2026-10-30):旧 cap=4000 时代写入的超长行,分批压到新 cap ──
+// 启动后异步跑(app idle 不抢启动);批间 setTimeout 让事件循环呼吸,better-sqlite3 同步
+// 事务单批 <100ms 不冻结 UI。截断只去尾部 → 各行前 500 字符不变,已存的
+// memory_embeddings(按前 500 字符算的向量)全部保持有效,无需重建。
+// 已完成后的开销 = 启动时一次 EXISTS 探测(索引内极限快),零常驻成本。
+// One-shot backfill: rows written under the old 4K cap get re-trimmed to the new cap in
+// background batches. Tail-only truncation keeps each row's first 500 chars intact, so
+// existing memory_embeddings stay valid.
+const SLIM_BATCH = 800;
+export function startHistorySlim(): void {
+  try {
+    // 快速探测:是否还有超长行(扫描到第一行即返回,已完成时全表跳过)。
+    const hasLong = db
+      .prepare('SELECT 1 FROM history WHERE length(content) > ? LIMIT 1;')
+      .get(FTS_CONTENT_CAP);
+    if (!hasLong) return;
+    let cursor = 0;
+    const tick = (): void => {
+      try {
+        const rows = db
+          .prepare(
+            'SELECT rowid AS rid, content FROM history WHERE rowid > ? AND length(content) > ? ORDER BY rowid LIMIT ?;',
+          )
+          .all(cursor, FTS_CONTENT_CAP, SLIM_BATCH) as Array<{ rid: number; content: string }>;
+        if (rows.length === 0) return; // 全部完成
+        cursor = rows[rows.length - 1].rid;
+        const upd = db.prepare('UPDATE history SET content = ? WHERE rowid = ?;');
+        db.transaction(() => {
+          for (const r of rows) upd.run(r.content.slice(0, FTS_CONTENT_CAP), r.rid);
+        })();
+        setTimeout(tick, 30);
+      } catch {
+        // 单批失败静默放弃:下轮启动自动续跑(EXISTS 仍会命中剩余行)。
+      }
+    };
+    setTimeout(tick, 3_000); // 等 app 完全起来再动手,不抢启动窗口
+  } catch {
+    // 探测失败(表未建/旧库)直接跳过,不阻塞初始化。
+  }
+}
+
+// turns 持久化的 steps[].result 截断阈值(2026-10-30 库体检):超过才截,只留头部。
+// 内存态/广播/conv_events 全文不受影响 — 此常量只约束 turns.data 落盘版本。
+// Truncation cap for persisted step results (turns.data only). In-memory, broadcast,
+// and conv_events keep full text.
+const RESULT_PERSIST_CAP = 4_000;
+const RESULT_PERSIST_KEEP_HEAD = 2_000;
 
 export function appendMessage(role: string, content: string, convId?: string): void {
   const capped = content.length > FTS_CONTENT_CAP ? content.slice(0, FTS_CONTENT_CAP) + '\n…[FTS 截断,全文见会话]' : content;
@@ -227,7 +291,7 @@ export function* exportConversationsIter(): Generator<Record<string, unknown>> {
   const iter = db.prepare(
     `SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
             branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
-            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory
+            updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at
      FROM conversations ORDER BY created_at ASC;`,
   ).iterate() as IterableIterator<Record<string, unknown>>;
   for (const row of iter) yield row;
@@ -251,15 +315,15 @@ export function importConversationRow(r: Record<string, unknown>): boolean {
   db.prepare(
     `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model,
                                branch_info, pipeline_id, goal, profile_id, context_mode, persona_enabled, loop_ralph,
-                               updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
+                               updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?);`,
   ).run(
     r.id, r.engine ?? 'direct', r.cwd ?? '', r.created_at ?? Date.now() / 1000,
     r.custom_title ?? null, r.direct_history ?? null, r.engine_session_id ?? null, r.model ?? null,
     r.branch_info ?? null, r.pipeline_id ?? null, r.goal ?? null, r.profile_id ?? null,
     r.context_mode ?? null, r.persona_enabled ?? null, r.loop_ralph ?? null,
     r.updated_at ?? null, r.sub_agent_model ?? null, r.wecom_key ?? null, r.feishu_key ?? null,
-    r.cross_project_memory ?? null,
+    r.cross_project_memory ?? null, r.pinned ?? 0, r.pinned_at ?? null,
   );
   return true;
 }
@@ -389,18 +453,21 @@ type ConvRow = {
   sub_agent_model: string | null;
   wecom_key: string | null;
   feishu_key: string | null;
+  pinned: number | null;
+  pinned_at: number | null;
 };
 
 export function saveConversation(c: Conversation): void {
   db.prepare(
-    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO conversations(id, engine, cwd, created_at, custom_title, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, cross_project_memory, pinned, pinned_at)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(id) DO UPDATE SET engine=excluded.engine, cwd=excluded.cwd,
        custom_title=excluded.custom_title, engine_session_id=excluded.engine_session_id, model=excluded.model,
        branch_info=excluded.branch_info, pipeline_id=excluded.pipeline_id, goal=excluded.goal, profile_id=excluded.profile_id,
        high_fidelity=excluded.high_fidelity, context_mode=excluded.context_mode, persona_enabled=excluded.persona_enabled,
        updated_at=excluded.updated_at, sub_agent_model=excluded.sub_agent_model, wecom_key=excluded.wecom_key, feishu_key=excluded.feishu_key,
-       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory;`,
+       loop_ralph=excluded.loop_ralph, cross_project_memory=excluded.cross_project_memory,
+       pinned=excluded.pinned, pinned_at=excluded.pinned_at;`,
   ).run(c.id, c.engine, c.cwd, c.createdAt, c.customTitle, c.engineSessionId, c.model,
     c.branchInfo ? JSON.stringify(c.branchInfo) : null,
     c.pipelineId ?? null,
@@ -414,11 +481,20 @@ export function saveConversation(c: Conversation): void {
     c.subAgentModel ?? null,
     c.wecomKey ?? null,
     c.feishuKey ?? null,
-    c.crossProjectMemory === true ? 1 : 0);
+    c.crossProjectMemory === true ? 1 : 0,
+    c.pinned === true ? 1 : 0,
+    c.pinnedAt ?? null);
 }
 
 export function updateConversationMeta(c: Conversation): void {
   db.prepare('UPDATE conversations SET custom_title=? WHERE id=?;').run(c.customTitle, c.id);
+}
+
+/** 置顶状态单列更新(2026-10-30):轻量只写 pinned/pinned_at 两列,不整行重写,避免覆盖并发中的其它字段。 */
+export function setConversationPinned(id: string, pinned: boolean): void {
+  db.prepare('UPDATE conversations SET pinned=?, pinned_at=? WHERE id=?;').run(
+    pinned ? 1 : 0, pinned ? Date.now() : null, id,
+  );
 }
 
 export function updateConversationCwd(c: Conversation): void {
@@ -445,8 +521,31 @@ export function saveTurn(convId: string, t: Turn): void {
   // 截图 base64(step.images,单张可达数百 KB)只活在内存/广播 — 不落库,
   // 防止 SQLite turns.data 与事件重放被图片撑爆。renderer 会话内仍可渲染。
   // Screenshot base64 stays in-memory/broadcast only — never persisted.
-  const slim: Turn = t.steps?.some((s) => s.images?.length)
-    ? { ...t, steps: t.steps.map((s) => (s.images?.length ? { ...s, images: undefined } : s)) }
+  const hasImages = t.steps?.some((s) => s.images?.length) ?? false;
+  // 工具结果持久化截断(2026-10-30 库体检):turns 表 942MB 里 55% 是 steps[].result 全文
+  // (头部大会话单 turn 250KB),且与 conv_events tool/call 双份存全文。result 从不进 LLM
+  // 上下文(directHistory 才是;AgentLoop 重放也只取 prompt+answer)→ 截断零影响 agent,
+  // 全文回查走 conv_events。>RESULT_PERSIST_CAP 截断,留头 + 长度注记。内存态不动。
+  // Persist-side result truncation: 55% of the 942MB turns table is step results, which
+  // never enter LLM context (directHistory holds that). Full text remains in conv_events.
+  const hasFatResults = t.steps?.some((s) => (s.result?.length ?? 0) > RESULT_PERSIST_CAP) ?? false;
+  const slim: Turn = hasImages || hasFatResults
+    ? {
+        ...t,
+        steps: t.steps?.map((s) => {
+          let st = s;
+          if (st.images?.length) st = { ...st, images: undefined };
+          if ((st.result?.length ?? 0) > RESULT_PERSIST_CAP) {
+            st = {
+              ...st,
+              result:
+                st.result.slice(0, RESULT_PERSIST_KEEP_HEAD) +
+                `\n…[已截断,略去 ${(st.result.length - RESULT_PERSIST_KEEP_HEAD).toLocaleString()} 字符,全文见事件日志]`,
+            };
+          }
+          return st;
+        }),
+      }
     : t;
   // 事务包裹:turn UPSERT + 活动时间戳同生共死。
   db.transaction(() => {
@@ -743,6 +842,8 @@ export function loadConversations(): Conversation[] {
       subAgentModel: r.sub_agent_model ?? null,
       wecomKey: r.wecom_key ?? null,
       feishuKey: r.feishu_key ?? null,
+      pinned: r.pinned === 1,
+      pinnedAt: r.pinned_at ?? undefined,
     };
     return conv;
   });

@@ -307,7 +307,7 @@ const ZH_CN: Dict = {
   'git.actConfirmDiscard': '确定丢弃所有未暂存的更改?此操作不可撤销。',
   'git.actConfirmStashPop': '确定弹出最近的贮藏?',
 
-  'composer.placeholder': '给 {product} 下达任务…  (Enter 发送,Shift+Enter 换行;可拖入文件)',
+  'composer.placeholder': '今天帮你做些什么? @ 添加上下文,/ 调用技能与指令',
   'scrollBottom.title': '回到最新消息',
   'send.failed': '发送失败:{msg}',
 
@@ -344,6 +344,7 @@ const ZH_CN: Dict = {
   'skill.allCats': '全部',
   'quick.placeholder': '⌘/Ctrl+Alt+Space 唤出。输入任务,Enter 发送…',
   'quick.hint': '答案流式显示在下方;完整对话在主窗口。',
+  'quick.sendFailed': '发送失败,草稿已保留。按 Enter 重试。',
   'dash.title': '仪表盘',
   'dash.open': '打开仪表盘',
   'dash.sessions': '会话',
@@ -603,6 +604,9 @@ const ZH_CN: Dict = {
   'empty.noKeySub': '还没有配置模型 — 先在设置里选择接口与模型,再开始第一条任务',
   'empty.cfgModel': '⚙ 配置模型',
 
+  'conv.pin': '置顶',
+  'sb.bucketToggle': '点击折叠/展开该时间组',
+  'conv.unpin': '取消置顶',
   'conv.rename': '改名',
   'conv.delete': '删除',
   'conv.ctx': '上下文检查器',
@@ -732,6 +736,10 @@ const ZH_CN: Dict = {
   'settings.approval': 'shell 执行确认',
   'settings.approval.always': '每次确认',
   'settings.approval.never': '从不(自动放行)',
+  'approval.pill.title': 'shell 执行确认档位(点击切换)',
+  'approval.pill.always': '确认',
+  'approval.pill.never': '自动',
+  'approval.pill.switched': 'shell 执行确认已切换为「{mode}」',
   'settings.sandbox': 'Claude Code / Codex 沙盒',
   'settings.sandbox.readOnly': '只读(规划)',
   'settings.sandbox.workspaceWrite': '工作区写入',
@@ -999,6 +1007,7 @@ const ZH_CN: Dict = {
 
   // ── 预览面板 ──
   'preview.emptyHint': '等待 AI 生成 HTML/SVG 内容…',
+  'preview.untitled': '未命名产物',
   'preview.emptySub': '让 AI「画一个网页 / 做 SVG 图表 / 写交互式组件」,结果会在这里实时预览',
 
   // ── 多机协作 (Mesh) ──
@@ -1137,6 +1146,10 @@ const ZH_CN: Dict = {
   'prompt.delTitle': '删除会话?',
   'prompt.delOk': '删除',
   'turn.continue': '继续',
+  'turn.reasoning': '思考过程',
+  'ctx.suggestNew': '上下文占用 {pct}%,接近窗口上限。建议归纳要点后开新对话。',
+  'ctx.newConv': '归纳并开新对话',
+  'ctx.dismiss': '知道了',
   'turn.continueTip': '从已有进度继续,不重做已完成的部分',
   'turn.contTodoHeader': '--- 任务清单断点(以此为前沿继续,勿翻旧线索) ---',
   'turn.contStepsHeader': '--- 中断前最后几步动作(工具/参数摘要) ---',
@@ -1153,6 +1166,10 @@ const ZH_CN: Dict = {
   'keys.search': '会话内搜索',
   'keys.enter': '发送 / 换行',
   'keys.esc': '关闭浮层',
+  'keys.channels': '频道速跳',
+  'keys.recallLast': '调出上一条发送过的输入',
+  'keys.sidebarNav': '切换会话(上/下一个)',
+  'keys.sidebarNavAlt': '切换会话(任意焦点下兜底)',
   'keys.help': '本速查表',
   'keys.debug': '布局调试',
   'palette.placeholder': '搜索命令、视图、技能…',
@@ -1679,7 +1696,7 @@ const EN: Dict = {
   'git.actConfirmDiscard': 'Discard all unstaged changes? This cannot be undone.',
   'git.actConfirmStashPop': 'Pop the latest stash?',
 
-  'composer.placeholder': 'Give {product} a task…  (Enter to send, Shift+Enter for newline; files can be dropped)',
+  'composer.placeholder': 'What can I help with? @ for context, / for skills',
   'scrollBottom.title': 'Jump to latest',
   'send.failed': 'Send failed: {msg}',
 
@@ -1716,6 +1733,7 @@ const EN: Dict = {
   'skill.allCats': 'All',
   'quick.placeholder': '⌘/Ctrl+Alt+Space to summon. Type a task, Enter to send…',
   'quick.hint': 'Answers stream below; the full conversation lives in the main window.',
+  'quick.sendFailed': 'Send failed; your draft is kept. Press Enter to retry.',
   'dash.title': 'Dashboard',
   'dash.open': 'Open dashboard',
   'dash.sessions': 'Sessions',
@@ -1975,6 +1993,9 @@ const EN: Dict = {
   'empty.noKeySub': 'No model configured yet — pick a provider and model in Settings first',
   'empty.cfgModel': '⚙ Configure model',
 
+  'conv.pin': 'Pin to top',
+  'sb.bucketToggle': 'Click to collapse/expand this group',
+  'conv.unpin': 'Unpin',
   'conv.rename': 'Rename',
   'conv.delete': 'Delete',
   'conv.ctx': 'Context inspector',
@@ -2104,6 +2125,10 @@ const EN: Dict = {
   'settings.approval': 'Shell approval',
   'settings.approval.always': 'Ask every time',
   'settings.approval.never': 'Never (auto-approve)',
+  'approval.pill.title': 'Shell approval mode (click to toggle)',
+  'approval.pill.always': 'Ask',
+  'approval.pill.never': 'Auto',
+  'approval.pill.switched': 'Shell approval switched to "{mode}"',
   'settings.sandbox': 'Claude Code / Codex sandbox',
   'settings.sandbox.readOnly': 'Read-only (plan)',
   'settings.sandbox.workspaceWrite': 'Workspace write',
@@ -2371,6 +2396,7 @@ const EN: Dict = {
 
   // ── Preview panel ──
   'preview.emptyHint': 'Waiting for AI to generate HTML/SVG content…',
+  'preview.untitled': 'Untitled artifact',
   'preview.emptySub': 'Ask AI to "draw a webpage / make an SVG chart / build an interactive component" — results preview here live',
 
   // ── Mesh ──
@@ -2508,6 +2534,10 @@ const EN: Dict = {
   'prompt.delTitle': 'Delete conversation?',
   'prompt.delOk': 'Delete',
   'turn.continue': 'Continue',
+  'turn.reasoning': 'Reasoning',
+  'ctx.suggestNew': 'Context is at {pct}% of the model window. Consider summarizing and starting a new conversation.',
+  'ctx.newConv': 'Summarize & start new',
+  'ctx.dismiss': 'Dismiss',
   'turn.continueTip': 'Resume from progress made so far — no redo of completed work',
   'turn.contTodoHeader': '--- Todo snapshot (continue from this frontier; do not dig old threads) ---',
   'turn.contStepsHeader': '--- Last few tool actions before interruption (name/args digest) ---',
@@ -2524,6 +2554,10 @@ const EN: Dict = {
   'keys.search': 'Search in conversation',
   'keys.enter': 'Send / newline',
   'keys.esc': 'Close overlay',
+  'keys.channels': 'Jump to channel',
+  'keys.recallLast': 'Recall last sent input',
+  'keys.sidebarNav': 'Switch conversation (prev/next)',
+  'keys.sidebarNavAlt': 'Switch conversation (works regardless of focus)',
   'keys.help': 'This cheat sheet',
   'keys.debug': 'Layout debug',
   'palette.placeholder': 'Search commands, views, skills…',
@@ -3045,7 +3079,7 @@ const ZH_TW: Dict = {
   'git.actConfirmDiscard': '確定丟棄所有未暫存的變更?此操作不可撤銷。',
   'git.actConfirmStashPop': '確定彈出最近的貯藏?',
 
-  'composer.placeholder': '給 {product} 下達任務…  (Enter 傳送,Shift+Enter 換行;可拖入檔案)',
+  'composer.placeholder': '今天幫你做些什麼? @ 加入上下文,/ 調用技能與指令',
   'scrollBottom.title': '回到最新訊息',
   'send.failed': '傳送失敗:{msg}',
 
@@ -3082,6 +3116,7 @@ const ZH_TW: Dict = {
   'skill.allCats': '全部',
   'quick.placeholder': '⌘/Ctrl+Alt+Space 喚出。輸入任務,Enter 傳送…',
   'quick.hint': '答案串流顯示在下方;完整對話在主視窗。',
+  'quick.sendFailed': '傳送失敗,草稿已保留。按 Enter 重試。',
   'dash.title': '儀表板',
   'dash.open': '開啟儀表板',
   'dash.sessions': '工作階段',
@@ -3341,6 +3376,9 @@ const ZH_TW: Dict = {
   'empty.noKeySub': '尚未設定模型 — 先在設定裡選擇介面與模型,再開始第一條任務',
   'empty.cfgModel': '⚙ 設定模型',
 
+  'conv.pin': '置頂',
+  'sb.bucketToggle': '點擊摺疊/展開該時間組',
+  'conv.unpin': '取消置頂',
   'conv.rename': '改名',
   'conv.delete': '刪除',
   'conv.ctx': '上下文檢查器',
@@ -3737,6 +3775,7 @@ const ZH_TW: Dict = {
 
   // ── 預覽面板 ──
   'preview.emptyHint': '等待 AI 生成 HTML/SVG 內容…',
+  'preview.untitled': '未命名產物',
   'preview.emptySub': '讓 AI「畫一個網頁 / 做 SVG 圖表 / 寫互動式元件」，結果會在這裡即時預覽',
 
   'settings.mesh.title': '多機協作 (MCP Bridge)',
@@ -3888,6 +3927,10 @@ const ZH_TW: Dict = {
   'prompt.delTitle': '刪除工作階段?',
   'prompt.delOk': '刪除',
   'turn.continue': '繼續',
+  'turn.reasoning': '思考過程',
+  'ctx.suggestNew': '上下文佔用 {pct}%,接近視窗上限。建議歸納要點後開新對話。',
+  'ctx.newConv': '歸納並開新對話',
+  'ctx.dismiss': '知道了',
   'turn.continueTip': '從已有進度繼續,不重做已完成的部分',
   'turn.contTodoHeader': '--- 任務清單斷點(以此為前沿繼續,勿翻舊線索) ---',
   'turn.contStepsHeader': '--- 中斷前最後幾步動作(工具/參數摘要) ---',
@@ -3904,6 +3947,10 @@ const ZH_TW: Dict = {
   'keys.search': '會話內搜尋',
   'keys.enter': '發送 / 換行',
   'keys.esc': '關閉浮層',
+  'keys.channels': '頻道速跳',
+  'keys.recallLast': '調出上一條發送過的輸入',
+  'keys.sidebarNav': '切換會話(上/下一個)',
+  'keys.sidebarNavAlt': '切換會話(任意焦點下兜底)',
   'keys.help': '本速查表',
   'keys.debug': '佈局調試',
   'palette.placeholder': '搜尋命令、視圖、技能…',
@@ -4420,7 +4467,7 @@ const JA: Dict = {
   'git.actConfirmDiscard': '未ステージの変更をすべて破棄しますか?元に戻せません。',
   'git.actConfirmStashPop': '最新のスタッシュをポップしますか?',
 
-  'composer.placeholder': '{product} にタスクを…  (Enter で送信、Shift+Enter で改行、ファイルもドロップ可)',
+  'composer.placeholder': '今日は何をお手伝いしましょう? @ でコンテキスト追加、/ でスキル呼び出し',
   'scrollBottom.title': '最新メッセージへ',
   'send.failed': '送信失敗:{msg}',
 
@@ -4457,6 +4504,7 @@ const JA: Dict = {
   'skill.allCats': 'すべて',
   'quick.placeholder': '⌘/Ctrl+Alt+Space で呼び出し。タスクを入力、Enter で送信…',
   'quick.hint': '回答は下記にストリーミング表示。完全な会話はメインウィンドウにあります。',
+  'quick.sendFailed': '送信に失敗しました。下書きは保持されています。Enter で再送…',
   'dash.title': 'ダッシュボード',
   'dash.open': 'ダッシュボードを開く',
   'dash.sessions': 'セッション',
@@ -4720,6 +4768,10 @@ const JA: Dict = {
   'prompt.delTitle': 'セッションを削除しますか?',
   'prompt.delOk': '削除',
   'turn.continue': '続行',
+  'turn.reasoning': '思考プロセス',
+  'ctx.suggestNew': 'コンテキストがモデル窓の {pct}% に達しました。要点をまとめて新しい会話を開始してください。',
+  'ctx.newConv': '要約して新規会話',
+  'ctx.dismiss': '閉じる',
   'turn.continueTip': '既存の進捗から再開 — 完了済みの作業はやり直しません',
   'turn.contTodoHeader': '--- タスク断点(この最前線から続行。古い手がかりを掘らない) ---',
   'turn.contStepsHeader': '--- 中断前の最終アクション数ステップ(ツール/引数要約) ---',
@@ -4727,6 +4779,9 @@ const JA: Dict = {
   'empty.noKeySub': 'モデルが未設定です — 先に設定でプロバイダーとモデルを選んでください',
   'empty.cfgModel': '⚙ モデルを設定',
 
+  'conv.pin': 'ピン留め',
+  'sb.bucketToggle': 'クリックで折りたたみ/展開',
+  'conv.unpin': 'ピン解除',
   'conv.rename': '名前変更',
   'conv.delete': '削除',
   'conv.ctx': 'コンテキストインスペクター',
@@ -5123,6 +5178,7 @@ const JA: Dict = {
 
   // ── プレビューパネル ──
   'preview.emptyHint': 'AI による HTML/SVG コンテンツの生成を待っています…',
+  'preview.untitled': '無題の成果物',
   'preview.emptySub': 'AI に「ウェブページを描く / SVG チャートを作る / インタラクティブコンポーネントを書く」ように指示すると、結果がここにリアルタイムプレビューされます',
 
   // ── メッシュ (MCP Bridge) ──
@@ -5464,6 +5520,10 @@ const JA: Dict = {
   'keys.debug': 'レイアウトデバッグ',
   'keys.enter': '送信 / 改行',
   'keys.esc': 'ポップアップを閉じる',
+  'keys.channels': 'チャンネルへジャンプ',
+  'keys.recallLast': '前回送信内容を呼び出す',
+  'keys.sidebarNav': '会話を切り替え(前/次)',
+  'keys.sidebarNavAlt': '会話を切り替え(フォーカス不問)',
   'keys.help': 'このショートカット一覧',
   'keys.palette': 'コマンドパレット',
   'keys.search': 'セッション内検索',

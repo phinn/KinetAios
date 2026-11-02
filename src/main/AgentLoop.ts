@@ -450,8 +450,12 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         onEvent({ type: 'context', action: 'trimmed', beforeTokens: estTokenCount(messages, snapshot.apiProtocol), afterTokens: estTokenCount(view, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
         onEvent({ type: 'status', text: `♻️ 已折叠 ${folded} 条早期工具结果(省 ~${Math.round(savedTokens / 1000)}K tokens,重调同一工具可取回)` });
       }
-      completion = await provider.streamComplete(view, defs, snapshot, signal, (tok) =>
-        onEvent({ type: 'token', text: tok }),
+      completion = await provider.streamComplete(view, defs, snapshot, signal, (tok, kind) =>
+        // kind='reason' → 思维链增量事件(reasoning token 不进正文 answer,由 renderer 独立渲染折叠卡)。
+        // kind 缺省 = 正文 token(旧路径,行为不变)。
+        kind === 'reason'
+          ? onEvent({ type: 'token', text: tok, channel: 'reasoning' } as AgentEvent & { type: 'token'; channel: 'reasoning' })
+          : onEvent({ type: 'token', text: tok }),
       );
     } catch (e) {
       const name = (e as Error)?.name;
@@ -566,6 +570,13 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
     const batchResults = await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000);
     messages.push(...batchResults);
+    // 轮间分隔:中间轮(content + tool_calls)的过渡叙述与下一轮正文之间补空行,防止多轮 content
+    // 无缝首尾相连糊成一坨(2026-10-30 用户截图实锤)。只在下轮前发一次,done 轮不吃(保尾格式)。
+    // / Inter-round separator: insert blank line after a middle round's narration so successive
+    // rounds don't fuse into one wall of text. Emitted once before the next round; final round untouched.
+    if (typeof completion.content === 'string' && completion.content.trim()) {
+      onEvent({ type: 'token', text: '\n\n' });
+    }
     // ── 假设升级 nudge:单轮 ≥3 个工具结果连续 error → 推模型升级假设层级 ──
     // 复盘依据:KinetVM 装机 1900+ 调用耗在 GUI 坐标层反复点击,从未验证介质层假设。
     // 注入 [系统] nudge(_transient,不写回 directHistory),一次会话只推一次。
@@ -1618,8 +1629,9 @@ async function runToolBatch(
   truncateThreshold = 8000,
 ): Promise<ChatMsg[]> {
   const results: ChatMsg[] = [];
-  // 执行前发个 status → 聊天框 streaming 区显示「执行 X, Y…」,让用户知道在跑工具(不只三点)。
-  if (calls.length) onEvent({ type: 'status', text: t(getSettings().lang, 'al.executing', { tools: calls.map((c) => c.name).join(', ') }) });
+  // (2026-10-30)不再发「执行 X」status:tool_start 卡片(spinner+工具名+计时)已承接全部表达,
+  // 两者同帧出现=流式区「卡片+状态行」双报同一工具名。Claude/Codex 的 status(重试/requesting)
+  // 与卡片不重叠,不受影响。token 到达时 applyEvent 清 statusNote 的路径保留,兜住其他 status。
   let i = 0;
   while (i < calls.length) {
     if (signal.aborted) {

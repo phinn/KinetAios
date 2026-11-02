@@ -31,6 +31,8 @@ export type ToolCall = { id: string; name: string; arguments: string };
 
 export type Completion = {
   content: string;
+  // 思维链全文(流式 reasoning 增量累积;不入 rawAssistant —— 历史回放不重发思考,协议如此)。
+  reasoning?: string;
   toolCalls: ToolCall[];
   rawAssistant: ChatMsg; // OpenAI-format, fed back into AgentLoop history regardless of protocol
   tokensIn: number;
@@ -155,7 +157,7 @@ export interface Provider {
     tools: ToolDef[],
     snap: ConfigSnapshot,
     signal: AbortSignal,
-    onToken: (t: string) => void,
+    onToken: (t: string, kind?: 'answer' | 'reason') => void,
   ): Promise<Completion>;
 }
 
@@ -347,7 +349,9 @@ class OpenAICompatibleProvider implements Provider {
     tools: ToolDef[],
     snap: ConfigSnapshot,
     signal: AbortSignal,
-    onToken: (t: string) => void,
+    // kind='reason' 标记思维链增量(GLM/DeepSeek 的 reasoning_content、Anthropic thinking、Ollama thinking 字段)。
+    // 默认参数保持旧调用点(onToken only)兼容。
+    onToken: (t: string, kind?: 'answer' | 'reason') => void,
   ): Promise<Completion> {
     // ponytail: 允许空 key —— Ollama(localhost:11434)不需 auth,其它服务会 401 自报错。
     // if (!snap.apiKey) throw new GLMError('noKey');
@@ -388,6 +392,7 @@ class OpenAICompatibleProvider implements Provider {
     );
 
     let content = '';
+  let reasoning = '';
     const calls = new Map<number, { id: string; name: string; args: string }>();
     let tokensIn = 0;
     let tokensOut = 0;
@@ -411,6 +416,11 @@ class OpenAICompatibleProvider implements Provider {
         }
         const delta = obj.choices?.[0]?.delta;
         if (!delta) continue;
+        // 思维链增量(GLM-4.6+/DeepSeek-R1 等):reasoning_content 先于 content 到达。
+        if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+          reasoning += delta.reasoning_content;
+          onToken(delta.reasoning_content, 'reason');
+        }
         if (typeof delta.content === 'string' && delta.content) {
           content += delta.content;
           onToken(delta.content);
@@ -438,7 +448,7 @@ class OpenAICompatibleProvider implements Provider {
       .map(([, v]) => v)
       .filter((v) => v.name)
       .map((v) => ({ id: v.id, name: v.name, arguments: v.args }));
-    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
+    return { content, reasoning: reasoning || undefined, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
   }
 }
 
@@ -549,7 +559,7 @@ async function ollamaStream(
   tools: ToolDef[],
   snap: ConfigSnapshot,
   signal: AbortSignal,
-  onToken: (t: string) => void,
+  onToken: (t: string, kind?: 'answer' | 'reason') => void,
   wireMsgs: Record<string, unknown>[],
 ): Promise<Completion> {
   // Ollama 原生端点要求 tool_calls[].function.arguments 是 JSON **对象**,不接受
@@ -626,7 +636,7 @@ async function ollamaStreamInner(
   base: string,
   body: Record<string, unknown>,
   signal: AbortSignal,
-  onToken: (t: string) => void,
+  onToken: (t: string, kind?: 'answer' | 'reason') => void,
 ): Promise<Completion> {
   const resp = await fetchUntil200(`${base}/api/chat`, {
     method: 'POST',
@@ -636,6 +646,7 @@ async function ollamaStreamInner(
   });
 
   let content = '';
+  let reasoning = '';
   const calls = new Map<number, { id: string; name: string; args: string }>();
   let tokensIn = 0;
   let tokensOut = 0;
@@ -681,6 +692,11 @@ async function ollamaStreamInner(
           }
           const msg = obj.message;
           if (!msg) continue;
+          // Ollama 原生 /api/chat:thinking 字段承载思维链(深度思考模型,如 qwen3-r1 系)。
+          if (typeof msg.thinking === 'string' && msg.thinking) {
+            reasoning += msg.thinking;
+            onToken(msg.thinking, 'reason');
+          }
           if (typeof msg.content === 'string' && msg.content) {
             content += msg.content;
             onToken(msg.content);
@@ -712,7 +728,7 @@ async function ollamaStreamInner(
     .map(([, v]) => v)
     .filter((v) => v.name)
     .map((v) => ({ id: v.id, name: v.name, arguments: v.args }));
-  return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
+  return { content, reasoning: reasoning || undefined, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead };
 }
 // image_url → Anthropic image block。data: URL 的 payload 必须是纯 base64 才转 base64 source;
 // 畸形 data: URL(含换行/非 base64 字符)降级丢弃 —— GLM 会把它映射成缺 file_url 的 file 块 → 400 [1214]。
@@ -731,7 +747,7 @@ class AnthropicProvider implements Provider {
     tools: ToolDef[],
     snap: ConfigSnapshot,
     signal: AbortSignal,
-    onToken: (t: string) => void,
+    onToken: (t: string, kind?: 'answer' | 'reason') => void,
   ): Promise<Completion> {
     if (!snap.apiKey) throw new GLMError('noKey');
 
@@ -853,6 +869,7 @@ class AnthropicProvider implements Provider {
 
     // 2) parse Anthropic SSE: text_delta → onToken; input_json_delta → stitch tool args
     let content = '';
+    let reasoning = '';
     const blocks = new Map<number, { id: string; name: string; args: string }>();
     let tokensIn = 0;
     let tokensOut = 0;
@@ -899,7 +916,11 @@ class AnthropicProvider implements Provider {
       } else if (type === 'content_block_delta') {
         const idx = obj.index ?? 0;
         const delta = obj.delta ?? {};
-        if (delta.type === 'text_delta' && delta.text) {
+        // Anthropic 扩展思维:thinking_delta(text_delta 前到达;signature_delta 是校验签名,忽略)。
+        if (delta.type === 'thinking_delta' && typeof delta.thinking === 'string' && delta.thinking) {
+          reasoning += delta.thinking;
+          onToken(delta.thinking, 'reason');
+        } else if (delta.type === 'text_delta' && delta.text) {
           content += delta.text;
           onToken(delta.text);
         } else if (delta.type === 'input_json_delta' && typeof delta.partial_json === 'string') {
@@ -917,7 +938,7 @@ class AnthropicProvider implements Provider {
       .map(([, v]) => v)
       .filter((v) => v.name)
       .map((v) => ({ id: v.id, name: v.name, arguments: v.args || '{}' }));
-    return { content, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead, cacheCreation };
+    return { content, reasoning: reasoning || undefined, toolCalls, rawAssistant: rawAssistant(content, toolCalls), tokensIn, tokensOut, cacheRead, cacheCreation };
   }
 
   // OpenAI tool def → Anthropic (function/parameters → name/input_schema)

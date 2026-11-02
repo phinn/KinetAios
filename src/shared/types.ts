@@ -462,7 +462,9 @@ export type EmbedSnapshot = {
 
 // The unified event model — every engine emits these; the dashboard renders them.
 export type AgentEvent =
-  | { type: 'token'; text: string }
+  // channel:'reasoning' = 思维链增量(GLM reasoning_content / Anthropic thinking / Ollama thinking)。
+  // 渲染层据此进独立折叠卡,不混入正文。不带 channel = 正文 token(兼容旧事件/CLI 引擎)。
+  | { type: 'token'; text: string; channel?: 'reasoning' }
   // outcome: 工具执行结果三档(2026-10 埋点,复盘 Computer Use 失败模式用)。
   // ok=业务成功;error=执行失败(抛错/参数坏/工具报错);aborted=用户中止。旧事件/CLI 引擎不带 → undefined。
   | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[]; outcome?: ToolOutcome }
@@ -527,7 +529,8 @@ export type RemoteAgentEvent =
   | { type: 'start'; prompt: string }
   | { type: 'status'; text: string }
   | { type: 'tool'; name: string }
-  | { type: 'token'; text: string }
+  // channel:'reasoning' 与 AgentEvent 同构(远程转发思维链增量)。
+  | { type: 'token'; text: string; channel?: 'reasoning' }
   | { type: 'cost'; usd: number; tokens: number; tokensIn?: number; tokensOut?: number; cacheRead?: number; cacheCreation?: number; source?: string }
   | { type: 'done'; summary: string }
   | { type: 'error'; message: string };
@@ -577,6 +580,9 @@ export type Turn = {
   id: string;
   prompt: string;
   answer: string;
+  // 思维链:流式 reasoning 增量累积;回合结束收进折叠卡(不进持久历史渲染主体)。
+  // 只在 direct 系引擎 + 模型支持时非空;undefined = 无思维链(不渲染折叠卡)。
+  reasoning?: string;
   steps: TaskStep[];
   error: string | null;
   done: boolean;
@@ -821,11 +827,14 @@ export type Conversation = {
   ctxTokens?: number; // 上下文占用估算(direct 系 done 时按 directHistory 估算;CLI 引擎无法估,不设)
   ctxMax?: number;    // 上下文窗口上限(与 ctxTokens 配对,给 gauge 算百分比;v3.6.3 实时化)
   ctxPct?: number;    // 上下文占用百分比(0-100,运行中实时刷新)
+  ctxAdvised?: boolean; // 上下文满劝导 banner 已弹过(每会话一次,≥90% 时弹)
   goal?: string | null; // 会话目标(通过 /goal 设置,持续注入 systemPrompt 直到清除)
   contextMode?: ContextMode; // 上下文模式:standard(默认省 token) / hifi(不截断+大预算) / 未来可扩展
   cwd: string;
   createdAt: number;
   updatedAt?: number; // 最后活动时间(saveTurn 时更新),用于侧栏排序和时间显示
+  pinned?: boolean; // 置顶:侧栏排序时置顶组恒在最新组之前;持久化到 conversations.pinned
+  pinnedAt?: number; // 置顶时间:置顶组内部按此倒序(后置顶的在上)
   customTitle: string | null;
   directHistory: ChatMsg[]; // Direct-only OpenAI-format, persisted for cross-turn + restart context
   engineSessionId: string | null; // claude/codex session id → --resume next turn (persisted)
@@ -932,6 +941,8 @@ export interface KinetAPI {
   deleteConversation(id: string): Promise<boolean>;
   clearConversation(id: string): Promise<boolean>;
   rename(id: string, title: string): Promise<boolean>;
+  /** 置顶/取消置顶(2026-10-30):落库 conversations.pinned,侧栏置顶组渲染 */
+  setPinned(id: string, pinned: boolean): Promise<boolean>;
   setCwd(id: string, cwd: string): Promise<boolean>;
   setEngine(id: string, engine: EngineKind): Promise<boolean>;
   setModel(id: string, model: string): Promise<boolean>;
@@ -984,6 +995,8 @@ export interface KinetAPI {
   pickDirectory(): Promise<string>;
   readFile(rel: string, cwd: string): Promise<{ ok: boolean; name?: string; content?: string; error?: string }>;
   fileRead(abs: string): Promise<{ ok: boolean; content?: string; error?: string }>;
+  /** 图片预览:绝对路径(或相对 cwd)→ base64 data URL。扩展白名单 + 20MB 上限 */
+  mediaRead(abs: string, cwd?: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   fileWrite(abs: string, content: string): Promise<{ ok: boolean; error?: string }>;
   getBrand(): Promise<{ productName: string; homeDir: string; version: string }>;
   quickSubmit(text: string): Promise<string>;
@@ -1172,6 +1185,8 @@ export interface KinetAPI {
   onArenaCwd(cb: (cwd: string) => void): void;
   onConversation(cb: (conv: Conversation) => void): void;
   onConversationRemoved(cb: (convId: string) => void): void;
+  // 系统通知点击 → 主进程要求聚焦并切换到对应会话(notifyOnDone 链路)
+  onFocusConversation(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string; rulesNote?: string }) => void): void;
   // 隐私闸独立弹窗:与 shell confirm 分离,不受「不再询问」/approval 短路影响。
   onPrivacyRequest(cb: (req: { id: string; msg: string }) => void): void;
@@ -1236,6 +1251,7 @@ export function newTurn(prompt: string): Turn {
     id: rid(),
     prompt,
     answer: '',
+    reasoning: '',
     steps: [],
     error: null,
     done: false,
@@ -1270,7 +1286,9 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
   switch (ev.type) {
     case 'token':
       conv.statusNote = null;
-      t.answer += ev.text;
+      // 思维链增量走独立通道,不污染正文;回合结束由渲染层收折叠卡。
+      if (ev.channel === 'reasoning') t.reasoning = (t.reasoning ?? '') + ev.text;
+      else t.answer += ev.text;
       break;
     case 'tool_start': {
       // 运行中卡片:先占位(spinner),结果到达时按 startId 原位替换。

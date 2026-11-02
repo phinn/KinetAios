@@ -9,6 +9,23 @@
 import { CodeEditor, detectLang } from './code-editor';
 import type { KinetAPI } from '../shared/types';
 
+/** 图片扩展白名单(与 main media-read 的 MEDIA_MIME 保持一致)。 */
+const MEDIA_EXTS_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+
+/** 简易灯箱:全屏遮罩 + 居中大图,点击/Esc 关闭。自包含,不依赖 app.ts(避免循环 import)。 */
+function openDrawerLightbox(src: string): void {
+  const mask = document.createElement('div');
+  mask.className = 'fd-lightbox';
+  const img = document.createElement('img');
+  img.src = src;
+  mask.appendChild(img);
+  const close = () => { mask.remove(); window.removeEventListener('keydown', onKey); };
+  const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); close(); } };
+  mask.onclick = close;
+  window.addEventListener('keydown', onKey, true);
+  document.body.appendChild(mask);
+}
+
 declare global {
   interface Window {
     kinet: KinetAPI;
@@ -49,13 +66,14 @@ export function mountFileDrawer(host: HTMLElement, tr: TrFn): FileDrawer {
         <span class="fd-name"></span>
         <button class="fd-close" title=""></button>
       </div>
-      <div class="fd-body"><div class="fd-editor-host"></div></div>
+      <div class="fd-body"><div class="fd-editor-host"></div><div class="fd-img-host" hidden></div></div>
     </div>`;
   host.appendChild(root);
 
   const nameEl = root.querySelector<HTMLElement>('.fd-name')!;
   const closeBtn = root.querySelector<HTMLElement>('.fd-close')!;
   const editorHost = root.querySelector<HTMLElement>('.fd-editor-host')!;
+  const imgHost = root.querySelector<HTMLElement>('.fd-img-host')!;
   const resizer = root.querySelector<HTMLElement>('.fd-resizer')!;
 
   closeBtn.title = tr('fd.close');
@@ -99,6 +117,31 @@ export function mountFileDrawer(host: HTMLElement, tr: TrFn): FileDrawer {
     const name = abs.split(/[\\/]/).pop() || abs;
     nameEl.textContent = name;
     nameEl.title = abs;
+    // 图片文件 → mediaRead 取 data URL 渲染 <img>(WorkBuddy 式成品预览);
+    // 其它文件 → 原有 CodeEditor 只读展示。
+    // Image files render as <img> via mediaRead; everything else keeps the code editor.
+    if (MEDIA_EXTS_RE.test(name)) {
+      editorHost.hidden = true;
+      imgHost.hidden = false;
+      imgHost.innerHTML = '<div class="fd-img-loading">⏳</div>';
+      const seq = ++loadSeq;
+      const r = await window.kinet.mediaRead(abs);
+      if (seq !== loadSeq) return;
+      if (r.ok && r.dataUrl) {
+        imgHost.innerHTML = '';
+        const img = document.createElement('img');
+        img.className = 'fd-img';
+        img.src = r.dataUrl;
+        img.alt = name;
+        img.onclick = () => openDrawerLightbox(r.dataUrl!);
+        imgHost.appendChild(img);
+      } else {
+        imgHost.innerHTML = `<div class="fd-img-loading">⚠ ${r.error ?? 'read error'}</div>`;
+      }
+      return;
+    }
+    imgHost.hidden = true;
+    editorHost.hidden = false;
     editor.value = '';
     editor.lang = detectLang(abs);
     const seq = ++loadSeq;

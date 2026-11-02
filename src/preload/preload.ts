@@ -29,6 +29,7 @@ const api: KinetAPI = {
   deleteConversation: (id) => ipcRenderer.invoke('delete-conversation', id),
   clearConversation: (id) => ipcRenderer.invoke('clear-conversation', id),
   rename: (id, title) => ipcRenderer.invoke('rename', id, title),
+  setPinned: (id, pinned) => ipcRenderer.invoke('set-pinned', id, pinned),
   setCwd: (id, cwd) => ipcRenderer.invoke('set-cwd', id, cwd),
   setEngine: (id, engine) => ipcRenderer.invoke('set-engine', id, engine),
   setModel: (id, model) => ipcRenderer.invoke('set-model', id, model),
@@ -61,6 +62,7 @@ const api: KinetAPI = {
   pickDirectory: () => ipcRenderer.invoke('pick-directory'),
   readFile: (rel, cwd) => ipcRenderer.invoke('read-file', rel, cwd),
   fileRead: (abs) => ipcRenderer.invoke('file-read', abs),
+  mediaRead: (abs, cwd) => ipcRenderer.invoke('media-read', abs, cwd),
   fileWrite: (abs, content) => ipcRenderer.invoke('file-write', abs, content),
   getBrand: () => ipcRenderer.invoke('get-brand'),
   quickSubmit: (text) => ipcRenderer.invoke('quick-submit', text),
@@ -212,6 +214,10 @@ const api: KinetAPI = {
   onConversationRemoved: (cb) => {
     ipcRenderer.removeAllListeners('conversation-removed');
     ipcRenderer.on('conversation-removed', (_e: IpcRendererEvent, id) => cb(id));
+  },
+  onFocusConversation: (cb) => {
+    ipcRenderer.removeAllListeners('focus-conversation');
+    ipcRenderer.on('focus-conversation', (_e: IpcRendererEvent, id: string) => cb(id));
   },
   onFilesCwd: (cb) => {
     ipcRenderer.removeAllListeners('files-cwd');

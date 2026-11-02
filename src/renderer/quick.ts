@@ -53,13 +53,25 @@ input.addEventListener('keydown', (e) => {
 });
 input.focus();
 
+// v3.6.4:发送成功后才清空输入(此前先清空再 await,IPC 失败会静默丢草稿);
+// submitting 防止连按 Enter 重复建会话;失败时草稿保留在输入框,按 Enter 即可重试。
+let submitting = false;
 async function submit() {
+  if (submitting) return;
   const text = input.value.trim();
   if (!text) return;
-  input.value = '';
+  submitting = true;
   out.textContent = '…';
   conv = null;
-  activeId = await api.quickSubmit(text);
+  try {
+    activeId = await api.quickSubmit(text);
+    input.value = '';
+  } catch (e) {
+    console.error('[quick] submit failed:', e);
+    out.textContent = t(lang, 'quick.sendFailed');
+  } finally {
+    submitting = false;
+  }
 }
 
 function paint() {

@@ -12,8 +12,9 @@
     <aside id="sidebar" role="navigation" aria-label="Sidebar">
       <!-- 品牌区 — 极简,名字+折叠 -->
       <div class="sb-brand">
-        <span class="sb-brand-spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg></span>
+        <span class="sb-brand-spark"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2C11.7 7 13.9 9.3 20 11C13.9 12.7 11.7 15 11 20C10.3 15 8.1 12.7 2 11C8.1 9.3 10.3 7 11 2Z"/><path d="M19 14.5C19.25 16.6 20 17.35 22 18C20 18.65 19.25 19.4 19 21.5C18.75 19.4 18 18.65 16 18C18 17.35 18.75 16.6 19 14.5Z" opacity="0.75"/></svg></span>
         <span class="sb-brand-name" id="brand">KinetAios</span>
+        <span class="sb-brand-ver" id="brand-ver" hidden>v</span>
         <button class="ghost sb-icon-btn sb-collapse-btn" id="btn-collapse-sidebar" data-i18n-title="sidebar.collapse" data-i18n-aria="a11y.collapseSidebar" aria-label="收起侧边栏" title="收起侧边栏"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg></button>
       </div>
       <!-- 搜索栏 — 搜索框 + 新建按钮 -->
@@ -95,6 +96,7 @@
       <div class="ctx-menu" id="ctx-conv-menu" hidden>
         <button class="ctx-item" data-act="select"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 10 4 15 9 20"/><path d="M20 4v7a4 4 0 01-4 4H4"/></svg></span><span data-i18n="ctx.select">切换到此会话</span><span class="ctx-key">↵</span></button>
         <button class="ctx-item" data-act="rename"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.828 2.828 0 114 4L7.5 20.5 2 22l1.5-5.5L17 3z"/></svg></span><span data-i18n="ctx.rename">重命名…</span><span class="ctx-key">F2</span></button>
+        <button class="ctx-item" data-act="pin"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 01-1.11 1.79l-1.78.9A2 2 0 005 15.24V16a1 1 0 001 1h12a1 1 0 001-1v-.76a2 2 0 00-1.11-1.79l-1.78-.9A2 2 0 0115 10.76V6h1a2 2 0 002-2V2H6v2a2 2 0 002 2h1z"/></svg></span><span data-i18n="ctx.pin">置顶</span><span class="ctx-key" id="ctx-pin-state"></span></button>
         <button class="ctx-item" data-act="ctx"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg></span><span data-i18n="conv.ctx">查看上下文</span></button>
         <div class="ctx-sep"></div>
         <button class="ctx-item" data-act="copy-id"><span class="ctx-ico"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg></span><span data-i18n="ctx.copyId">复制会话 ID</span></button>
@@ -125,6 +127,11 @@
               <span class="stat" id="head-stat"></span>
             </span>
             <span class="status" id="head-status"></span>
+            <div class="ctx-banner" id="ctx-banner" hidden>
+              <span id="ctx-banner-text"></span>
+              <button class="ghost" id="ctx-banner-new" data-i18n-title="head.newConv" title="新建会话">+ 新对话</button>
+              <button class="ghost" id="ctx-banner-close" aria-label="关闭">×</button>
+            </div>
             <span class="ch-actions">
               <button class="ghost ch-icon" id="btn-clear" data-i18n-title="head.clear" title="清空当前会话"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 11-6.22-8.56"/><path d="M21 3l-9.5 9.5"/></svg></button>
               <button class="ghost ch-icon" id="btn-ctx-inspector" title="上下文检查器(查看/编辑发送给模型的消息列表)" data-i18n-title="head.ctxInspectorTitle"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button>
@@ -176,6 +183,7 @@
             <div id="attach-row" class="attach-row"></div>
             <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" data-i18n-aria="a11y.chatInput" aria-label="输入消息… (Enter 发送, Shift+Enter 换行)" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
+              <button id="approval-pill" class="approval-pill" data-i18n-title="approval.pill.title" title="shell 执行确认档位(点击切换)"><span class="ap-dot"></span><span class="ap-label">确认</span></button>
               <button class="tool btn-more-tools" id="btn-composer-more" data-i18n-title="composer.moreTools" title="更多工具"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg></button>
               <button class="tool" id="btn-attach" data-i18n-title="attach.title" title="添加文件(可多选 / 可拖入)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.4 11l-9.2 9.2a5 5 0 01-7-7l9.2-9.2a3.5 3.5 0 014.9 4.9l-9.2 9.2a2 2 0 01-2.8-2.8l8.5-8.5"/></svg></button>
               <button class="tool" id="btn-capture" data-i18n-title="vision.capture" title="截图"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg></button>
@@ -278,6 +286,8 @@
             <button class="ghost" id="btn-preview-open" title="在浏览器中打开"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/><path d="M15 3h6v6M10 14L21 3"/></svg></button>
             <button class="ghost" id="btn-preview-close" title="关闭预览"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           </div>
+          <!-- Artifact 版本条:同一会话内 AI 迭代产物形成的版本序列,点击回看历史版本 -->
+          <div id="artifact-versions" class="artifact-versions" hidden></div>
           <div class="preview-body" id="preview-body">
             <iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>
           </div>

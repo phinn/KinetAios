@@ -18,7 +18,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
+import { initStore, startHistorySlim, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
 import { startMemorySyncAuto } from './memory-sync';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
@@ -376,7 +376,11 @@ const emitter: TaskManagerEmitter = {
     const body = `${convTitle}${snippet ? '\n' + snippet : ''}`;
     try {
       const n = new Notification({ title, body: body.slice(0, 120) });
-      n.on('click', () => { showDashboard(); });
+      // 点击通知 → 聚焦主窗 + 切到对应会话(用户从通知直接进入上下文,不等侧栏翻找)
+      n.on('click', () => {
+        showDashboard();
+        try { dashboardWin?.webContents.send('focus-conversation', conv.id); } catch { /* 窗口已销毁 */ }
+      });
       n.show();
     } catch { /* 通知权限被拒/系统不支持 → 静默 */ }
     // 任务栏闪烁(Windows)/ dock 无操作;聚焦后 Electron 自动停闪
@@ -1366,6 +1370,8 @@ if (!gotLock) {
     );
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // FTS 存量重缩(异步,见 store.startHistorySlim):旧 4K cap 行压到 1200,history_content 曾 567MB。
+    startHistorySlim();
     // 后台 Job:hydrate 遗留 running/queued → failed(M3 断点续跑后改 paused)。
     // Job 事件桥接进会话事件流(agent-event 频道),renderer 无需新订阅路径。
     setTeamEventEmitter((teamId, ev) => {

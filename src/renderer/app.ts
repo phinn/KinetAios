@@ -4,7 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
-import type { AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
+import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -36,6 +36,8 @@ let sidebarMode: 'grouped' | 'flat' = (localStorage.getItem('sb-mode') as 'group
 let sidebarCollapsed = localStorage.getItem('sb-collapsed') === '1';
 // 运行中筛选:开启后侧栏只显示 running 状态的会话(快速跳到正在工作的频道)。
 let runningOnly = false;
+// 时间桶折叠态(localStorage 持久化,桶名=键;搜索/运行中筛选时强制展开防"搜到了看不见")
+let collapsedBuckets = new Set<string>(JSON.parse(localStorage.getItem('sb-buckets') || '[]'));
 // 排序模式:default = 按创建顺序(order 数组);recent = 按最后活动时间(updatedAt)倒序。
 // 默认按最近活动排序(用户最关心最近活跃的频道)。持久化到 localStorage。
 let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
@@ -47,6 +49,25 @@ const bgDoneConvs = new Set<string>();
 // 每频道草稿:切频道前保存当前 composer 文本,切回时恢复。内存 Map,不持久化(会话关掉即丢,合理)。
 // Per-conversation drafts: save on switch away, restore on switch back. v3.6.3 起持久化到 localStorage。
 const convDrafts = new Map<string, string>();
+// composer 空时 ↑ 回填的发送历史(shell 习惯);仅存手打文本,localStorage 持久化。
+// Send history for ↑ recall in an empty composer (shell habit); typed text only, persisted in localStorage.
+// 内存态在重启后清空 → 用户重启后按 ↑ 无反应(实锤反馈"还是没反应"的根因),必须落盘。
+// In-memory state dies on restart → ↑ was dead after relaunch (the "still no response" report); persist it.
+const sendHistory: string[] = [];
+let sendHistoryIdx = -1; // -1 = 手打态;回填态中 ↑ 往旧走 / ↓ 往新走,走到空即回到手打态
+const SEND_HISTORY_MAX = 50;
+try { sendHistory.push(...JSON.parse(localStorage.getItem('send-history') || '[]')); } catch { /* 损坏即当空 */ }
+// 统一记录点:send() 成功路径 + running 会话的排队/转向路径都走这里。
+// Single recorder: both the successful send() path and the queue/steer paths (running conv) funnel here.
+// 之前只有 send() 记录 → 用户在 running 会话高频用排队,↑ 永远无历史可回填(实锤 bug)。
+// Previously only send() recorded → heavy queue users had an always-empty history (real bug).
+function recordSendHistory(text: string): void {
+  const t = text.trim();
+  if (!t || sendHistory[sendHistory.length - 1] === t) return;
+  sendHistory.push(t);
+  if (sendHistory.length > SEND_HISTORY_MAX) sendHistory.splice(0, sendHistory.length - SEND_HISTORY_MAX);
+  localStorage.setItem('send-history', JSON.stringify(sendHistory));
+}
 // 已删除会话 id(有界缓存):挡住删除后迟到的 onConversation 广播复活幽灵
 const removedConvs = new Set<string>();
 // 会话级"瞬时重试中"标记(从 status 事件文本派生):侧栏 dot 显示 retrying 态,与 conv.status 互补。
@@ -174,6 +195,7 @@ const SVGI_SET = {
   shield2: (w = 14) => svg('<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>', w), // 安全
   sync: (w = 14) => svg('<path d="M7 4v10M7 14l-3-3M7 14l3-3M17 20V10M17 10l-3 3M17 10l3 3"/>', w), // git 已同步(上下对齐箭头)
   skip: (w = 14) => svg('<path d="M5 5l7 7-7 7M13 5l7 7-7 7"/>', w),                               // skipped(双箭头跳过)
+  sparkles: (w = 14) => svg('<path d="M11 3.5C11.6 7.6 13.4 9.4 18 10.5C13.4 11.6 11.6 13.4 11 17.5C10.4 13.4 8.6 11.6 4 10.5C8.6 9.4 10.4 7.6 11 3.5Z"/><path d="M18.5 14C18.7 15.7 19.3 16.3 21 16.7C19.3 17.1 18.7 17.7 18.5 19.4C18.3 17.7 17.7 17.1 16 16.7C17.7 16.3 18.3 15.7 18.5 14Z"/>', w), // 思维链/魔法(sparkles, 曲线凹边四角星)
 } as const;
 // 语义别名:evLabel/STATUS_ICON 等调用点只写名字不写尺寸,统一 14px(头部等大号场景手动传 w)。
 const sv = {
@@ -251,6 +273,26 @@ function applyI18nDOM(): void {
       if (paletteEl().hidden) openPalette(); else closePalette();
       return;
     }
+    // ↑/↓ 侧栏会话切换:焦点在输入类控件时裸键让给 composer(光标移动/回填),Alt+↑/↓ 全局兜底 ——
+    // 发送后焦点自动回 composer 是常态,裸 ↑↓ 在该状态下永远到不了侧栏(用户实测"没反应"的第二个根因)。
+    // ↑/↓ sidebar conversation nav; bare keys are ceded to focused editable controls
+    // (caret/recall), Alt+↑/↓ works everywhere — focus returns to composer after send, so bare
+    // ↑/↓ could never reach the sidebar in that common state (second "no response" root cause).
+    const isSidebarNav = e.key === 'ArrowUp' || e.key === 'ArrowDown';
+    if (isSidebarNav && e.altKey && !e.ctrlKey && !e.metaKey && currentView === 'chat') {
+      e.preventDefault();
+      sidebarStep(e.key === 'ArrowDown' ? 1 : -1);
+      return;
+    }
+    if (isSidebarNav && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      const ae = document.activeElement as HTMLElement | null;
+      const editable = ae && (ae.tagName === 'TEXTAREA' || ae.tagName === 'INPUT' || ae.tagName === 'SELECT' || ae.isContentEditable);
+      if (!editable && currentView === 'chat') {
+        e.preventDefault();
+        sidebarStep(e.key === 'ArrowDown' ? 1 : -1);
+        return;
+      }
+    }
     // Ctrl/Cmd+P → 频道速跳(任意视图;p 命中浏览器打印,Ctrl+P 桌面端无冲突)
     if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'p') {
       e.preventDefault();
@@ -316,6 +358,7 @@ function applyI18nDOM(): void {
     lang = settings.lang;
     applyTheme(settings.theme);
     applyFontScale(settings.fontScale ?? 100);
+    applyCompactMeta(settings.compactMeta === true);
     const brand = await api.getBrand();
     PRODUCT = brand.productName;
     HOME_DIR = brand.homeDir;
@@ -342,6 +385,11 @@ function applyI18nDOM(): void {
     const brandEl = document.getElementById('brand');
     if (brandEl) brandEl.textContent = PRODUCT;
     (document.getElementById('composer') as HTMLTextAreaElement).placeholder = tr('composer.placeholder', { product: PRODUCT });
+    // 品牌名下方版本小字:IPC 回填后移除 hidden(hidden 兜底是 !important,不能只改 display)
+    void api.getAppVersion().then((v) => {
+      const verEl = document.getElementById('brand-ver');
+      if (verEl) { verEl.textContent = 'v' + v; verEl.removeAttribute('hidden'); }
+    }).catch(() => {});
     applyI18nDOM();
 
     const list = await api.getConversations();
@@ -425,9 +473,13 @@ function applyI18nDOM(): void {
     if (selectedId === id) selectedId = order[0] ?? null;
     renderSidebar();
     renderMain();
-    if (currentView === 'workbench') scheduleWorkbench(); // 全量重建走调度器(会话删除也会触发)
+    if (currentView === 'workbench') scheduleWorkbench(); // 会话删除也会触发
     if (currentView === 'town') townOnConversationChanged();
     if (currentView === 'nexus') nexusOnConversationChanged();
+  });
+  // 系统通知点击 → 聚焦并切到对应会话(会话可能已被删,缺失则静默留在当前)
+  api.onFocusConversation((id) => {
+    if (id && convs.has(id)) { selectedId = id; showChat(); renderSidebar(); }
   });
   // 非 token 事件(tool/cost/status/context)的 renderMain 做 debounce:
   // AgentLoop 一轮 ReAct 可能连发多个 tool+cost 事件,每次 renderMain 全量重建 DOM +
@@ -454,7 +506,10 @@ function applyI18nDOM(): void {
     applyEvent(conv, ev);
     if (convId === selectedId) {
       if (ev.type === 'token') {
-        streamAppend(ev.text);
+        // 思维链增量不进正文流(应用时 applyEvent 已折进 t.reasoning),
+        // 仅打节拍触发重渲(渲染函数从 t.reasoning 生成折叠卡)。 / CoT tokens never enter the answer stream.
+        if (ev.channel === 'reasoning') scheduleRenderMain();
+        else streamAppend(ev.text);
       } else if (ev.type === 'done' || ev.type === 'error') {
         convRetrying.delete(convId); // 终态:退出 retrying 态
         // done/error 必须立即渲染(状态切换 + 最终 answer markdown)
@@ -485,6 +540,8 @@ function applyI18nDOM(): void {
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
       } else if (ev.type === 'status') {
+        // 进度跟随:status 变化(工具开跑/结束)时用户在底部 → 贴底
+        if (userAtBottom && convId === selectedId) stickToBottomSoon();
         // 瞬时重试/空回复推促的 status 文本 → 标记 retrying(侧栏 dot 用),结束/下条非重试 status 清除。
         // best-effort 文本派生(主进程无结构化 retrying 信号);不命中不改变行为。
         const was = convRetrying.has(convId);
@@ -498,6 +555,12 @@ function applyI18nDOM(): void {
       } else {
         // tool/cost/context — debounce 到下一帧
         scheduleRenderMain();
+        // 进度跟随:工具事件到达且用户在底部 → 保持贴底;滚离时呼吸提示有新动作
+        // (cost 高频不带新 DOM,不触发;pulseJumpBtn 是纯视觉 1.4s 自灭)
+        if (ev.type === 'tool') {
+          if (userAtBottom && !scrollFrozen) stickToBottomSoon();
+          else if (convId === selectedId) pulseJumpBtn();
+        }
       }
       // Artifact 检测:done 时最终检测一次(流式期间已有防抖检测)
       if (ev.type === 'done') {
@@ -505,6 +568,7 @@ function applyI18nDOM(): void {
         if (html) {
           updatePreview(html);
           showPreviewTab();
+          renderArtifactVersions(conv);
         }
       }
     }
@@ -565,7 +629,7 @@ function applyI18nDOM(): void {
   });
 
   // 加载已保存的模型配置档到缓存 + 填充下拉
-  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; lastSettingsSnapshot = s; });
+  api.getSettings().then((s) => { profileCache = s.modelProfiles || []; lastSettingsSnapshot = s; initApprovalPill(s.approval); });
   void fillModelHints();
   wireUi();
   initScrollBottomBtn();
@@ -608,6 +672,10 @@ function showConvMenu(convId: string, x: number, y: number): void {
   ctxTargetConvId = convId;
   ctxTargetProjCwd = null;
   ctxProjMenu.hidden = true;
+  // 置顶项文案随会话状态切换(置顶/取消置顶)
+  const c = convs.get(convId);
+  const pinState = ctxConvMenu.querySelector('#ctx-pin-state');
+  if (pinState) pinState.textContent = c?.pinned ? tr('ctx.unpin') : '';
   ctxConvMenu.hidden = false;
   focusMenuKeyboard(ctxConvMenu);
   requestAnimationFrame(() => {
@@ -660,8 +728,7 @@ function scheduleSidebarRender(): void {
 
 function refreshSidebarLi(convId: string): void {
   const c = convs.get(convId);
-  if (!c) return;
-  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
+  if (!c) return;  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
   if (!li) { scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
   // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,走合并的全量重渲
   const projLi = li.closest('li.sb-proj') as HTMLElement | null;
@@ -675,6 +742,7 @@ function refreshSidebarLi(convId: string): void {
   }
   // running class 同步(dot 态与 CSS 选择器共用)
   li.classList.toggle('running', c.status === 'running');
+  syncProjRunningHint(c.cwd);
   // 标题也要就地刷新:rename 后 onConversation → refreshSidebarLi,若只更新 dot/时间,
   // 侧栏会一直显示旧名字(此前靠全量 renderSidebar 兜底,增量优化后丢了)。
   const titleEl = li.querySelector('.title');
@@ -809,6 +877,8 @@ function buildProjLi(cwd: string): HTMLElement {
     const chevron = head.querySelector('.sb-chevron');
     if (tasksUl) tasksUl.classList.toggle('collapsed', !wasCollapsed);
     if (chevron) chevron.classList.toggle('collapsed', !wasCollapsed);
+    // 手动折叠/展开后同步组头呼吸点(折叠且组内有 running → 亮 sb-has-running)
+    syncProjRunningHint(cwd);
   };
   head.querySelector<HTMLElement>('[data-act="new"]')!.onclick = (e) => {
     e.stopPropagation();
@@ -825,6 +895,17 @@ function buildProjLi(cwd: string): HTMLElement {
   tasksUl.className = 'sb-proj-tasks' + (collapsed ? ' collapsed' : '');
   projLi.appendChild(tasksUl);
   return projLi;
+}
+
+// 折叠组 running 呼吸点:renderSidebar 尾部与 refreshSidebarLi(局部刷新)共用,
+// 防两处逻辑漂移。条件:组持久折叠 + 未被搜索/筛选强制展开 + 组内有 running。
+function syncProjRunningHint(cwd: string): void {
+  const projLi = document.querySelector<HTMLElement>(`#conv-list li.sb-proj[data-cwd="${CSS.escape(cwd)}"]`);
+  if (!projLi) return;
+  const hiddenRunning = collapsedProjects.has(cwd) &&
+    !projLi.classList.contains('sb-forced-open') &&
+    projLi.querySelectorAll('li[data-cid].running').length > 0;
+  projLi.classList.toggle('sb-has-running', hiddenRunning);
 }
 
 function renderSidebar() {
@@ -862,12 +943,16 @@ function renderSidebar() {
 
   // 上游去重保险:order 若因竞态出现重复 id,渲染层不再放大成重复 DOM
   visibleOrder = [...new Set(visibleOrder)];
-  // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。
+  // 按最近活动排序:用 updatedAt(或 fallback createdAt)倒序。置顶会话恒排最前(次序仍按活动时间)。
   if (sortByRecent) {
     visibleOrder.sort((a, b) => {
       const ca = convs.get(a);
       const cb = convs.get(b);
       if (!ca || !cb) return 0;
+      // 置顶优先:pin 先比(互斥),再按 updatedAt 倒序
+      const pa = ca.pinned ? 1 : 0;
+      const pb = cb.pinned ? 1 : 0;
+      if (pa !== pb) return pb - pa;
       return (cb.updatedAt ?? cb.createdAt) - (ca.updatedAt ?? ca.createdAt);
     });
   }
@@ -915,11 +1000,23 @@ function renderSidebar() {
       const b = timeBucket(convs.get(id)!.updatedAt ?? convs.get(id)!.createdAt);
       if (b !== lastBucket) {
         lastBucket = b;
+        const collapsed = collapsedBuckets.has(b) && !searchQuery && !runningOnly;
         const sep = document.createElement('li');
         sep.className = 'sb-time-sep';
-        sep.textContent = b;
+        sep.title = tr('sb.bucketToggle');
+        sep.innerHTML = `<span>${esc(b)}</span><span class="sb-bucket-chev${collapsed ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>`;
+        sep.dataset.bucket = b;
+        // 桶头可点击折叠本桶(与项目组同套路,localStorage 记忆;搜索/运行中筛选强制展开)
+        sep.onclick = () => {
+          if (collapsedBuckets.has(b)) collapsedBuckets.delete(b);
+          else collapsedBuckets.add(b);
+          localStorage.setItem('sb-buckets', JSON.stringify([...collapsedBuckets]));
+          renderSidebar();
+        };
         ul.appendChild(sep);
       }
+      // 本桶已折叠 → 跳过渲染条目(DOM 不生成,桶头保留计数语义)
+      if (collapsedBuckets.has(lastBucket) && !(searchQuery || runningOnly)) continue;
       ul.appendChild(obtainTaskLi(id, taskPool));
       renderedCids.add(id);
     }
@@ -940,7 +1037,11 @@ function renderSidebar() {
       // 计数与折叠态可能变化 → 就地同步
       const count = projLi.querySelector('.sb-pcount');
       if (count) count.textContent = String(ids.length);
-      const collapsed = collapsedProjects.has(cwd);
+      // 搜索/运行中筛选命中折叠组 → 临时展开(不改 collapsedProjects 持久态):
+      // 否则命中项渲染在 max-height:0 的组里,用户"搜到了却看不见"。
+      // 组头挂 sb-forced-open 标记,清空搜索后按持久态收回。
+      const collapsed = collapsedProjects.has(cwd) && !(searchQuery || runningOnly);
+      projLi.classList.toggle('sb-forced-open', collapsedProjects.has(cwd) && !collapsed);
       const tasksUl = projLi.querySelector('.sb-proj-tasks') as HTMLElement;
       tasksUl.classList.toggle('collapsed', collapsed);
       projLi.querySelector('.sb-chevron')?.classList.toggle('collapsed', collapsed);
@@ -952,6 +1053,13 @@ function renderSidebar() {
       }
       ul.appendChild(projLi);
     }
+  }
+  // 折叠组内有 running 会话 → 组头亮 sb-has-running(呼吸点),用户知道"里面有活的"
+  // 不用逐个展开找;展开组本身不遮蔽(task li 的 dot 本来就可见),无需标记。
+  if (sidebarMode !== 'flat') {
+    ul.querySelectorAll<HTMLElement>('li.sb-proj[data-cwd]').forEach((projLi) => {
+      if (projLi.dataset.cwd) syncProjRunningHint(projLi.dataset.cwd);
+    });
   }
   // 清理:本帧未渲染但仍挂在 DOM 上的任务 li(被删会话/cwd 换组后旧组残留)与消失的项目组。
   taskPool.forEach((li, cid) => { if (!renderedCids.has(cid)) li.remove(); });
@@ -1114,7 +1222,7 @@ function taskLi(id: string): HTMLElement {
     e.preventDefault();
     showConvMenu(id, e.clientX, e.clientY);
   });
-  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${esc(title)}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title">${c.pinned ? '<span class="pin-mark" data-i18n-title="ctx.pin" title="' + esc(tr('ctx.pin')) + '">📌</span>' : ''}${esc(title)}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   if (bgDoneConvs.has(id)) {
     const dot = document.createElement('span');
     dot.className = 'bg-done-dot';
@@ -1257,11 +1365,13 @@ function showConfirmDialog(title: string, body: string, opts?: { okLabel?: strin
   document.getElementById('confirm-body')!.textContent = body;
   const ok = document.getElementById('confirm-ok')!;
   ok.textContent = opts?.okLabel ?? tr('common.ok');
+  const cancel = document.getElementById('confirm-cancel')!;
   modal.classList.add('show');
-  ok.focus();
+  // 默认焦点在「取消」:危险操作(删除/清空)不能因顺手回车被确认。
+  // Enter/Space 交给浏览器原生行为——只触发当前聚焦的按钮;Escape 仍取消。
+  cancel.focus();
   confirmDialogFocusRestore = trapFocus(modal);
   return new Promise((resolve) => {
-    const cancel = document.getElementById('confirm-cancel')!;
     if (activeConfirmDone) activeConfirmDone(false); // 上一个未完成的确认先取消(避免 Promise 永挂)
     const done = (v: boolean) => {
       ok.onclick = null;
@@ -1276,8 +1386,7 @@ function showConfirmDialog(title: string, body: string, opts?: { okLabel?: strin
     ok.onclick = () => done(true);
     cancel.onclick = () => done(false);
     document.onkeydown = (e) => {
-      if (e.key === 'Enter') done(true);
-      else if (e.key === 'Escape') done(false);
+      if (e.key === 'Escape') done(false);
     };
   });
 }
@@ -1996,8 +2105,7 @@ function showCommitDialog(): void {
   // Enter(无 Shift)直接提交 / Enter (no Shift) to submit
   ta.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      if (!okBtn.disabled) okBtn.click();
+      e.preventDefault();      if (!okBtn.disabled) okBtn.click();
     }
   });
   okBtn.onclick = async () => {
@@ -2372,13 +2480,25 @@ function renderMain() {
   const lastTurn = conv.turns[conv.turns.length - 1];
   const artifactHtml = lastTurn ? detectArtifact(lastTurn.answer) : null;
   const tabPreview = document.getElementById('tab-preview');
+  artifactViewIdx = -1; // 切会话回到「最新版本」语义
   if (artifactHtml) {
     if (tabPreview) tabPreview.classList.add('has-artifact');
     updatePreview(artifactHtml);
+    renderArtifactVersions(conv);
   } else {
-    if (tabPreview) tabPreview.classList.remove('has-artifact');
-    currentArtifactHtml = null;
-    if (activeTab === 'preview') showPreviewEmpty();
+    // 最后一轮无产物 ≠ 会话无产物:重启/翻历史会话时 lastTurn 常是纯文字,
+    // 但早期 turn 可能留有 artifact 版本 → 扫全量,有则亮 tab 并自动看最新版本。
+    const versions = collectArtifacts(conv);
+    if (versions.length) {
+      if (tabPreview) tabPreview.classList.add('has-artifact');
+      artifactViewIdx = -1;
+      updatePreview(versions[versions.length - 1].html);
+      renderArtifactVersions(conv);
+    } else {
+      if (tabPreview) tabPreview.classList.remove('has-artifact');
+      currentArtifactHtml = null;
+      if (activeTab === 'preview') showPreviewEmpty();
+    }
   }
   // 会话内搜索激活 → DOM 重建后重挂高亮(切会话/done 重渲染都会清掉 mark)
   if (chatSearch.q && !chatSearchBar().hidden) chatSearchApply();
@@ -2490,6 +2610,18 @@ function ensureElapsedTicker(): void {
           applyGaugeColor(stat, conv.ctxPct ?? 0);
         }
       }
+      // 上下文满劝导 banner:≥90% 且未在跑时,头部提示「归纳开新对话」(WorkBuddy 式)。
+      // 每会话只弹一次(弹过记 ctxAdvised);点 × 关闭。文案进 #ctx-banner-text。
+      const banner = document.getElementById('ctx-banner');
+      if (banner) {
+        const shouldShow = (conv.ctxPct ?? 0) >= 90 && conv.status !== 'running' && conv.ctxAdvised !== true;
+        if (shouldShow) {
+          const txt = document.getElementById('ctx-banner-text');
+          if (txt) txt.textContent = tr('ctx.suggestNew', { pct: Math.round(conv.ctxPct ?? 0) });
+          banner.hidden = false;
+          conv.ctxAdvised = true;
+        }
+      }
     }
   }, 1000);
 }
@@ -2506,6 +2638,10 @@ function applyGaugeColor(el: HTMLElement, pct: number): void {
   el.classList.toggle('stat-warn', pct >= 70 && pct < 90);
   el.classList.toggle('stat-danger', pct >= 90);
 }
+
+// renderHead 上次渲染的会话 id:余额气泡只在会话真正切换时才收起(见 renderHead 内注释)。
+// Last conv id seen by renderHead — the balance popover closes only on a real switch.
+let headLastConvId: string | null | undefined; // undefined = 初始,首次 renderHead 视为切换
 
 function renderHead(conv: Conversation | undefined) {
   renderQueue(); // 队列 chip 行跟随所选会话(签名缓存,高频调用零重建)
@@ -2549,11 +2685,16 @@ function renderHead(conv: Conversation | undefined) {
     profileSel.value = conv.profileId || '';
     profileSel.classList.toggle('js-hidden', !(isDirectFam && hasProfiles));
   }
-  // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义);气泡随会话切换关闭
+  // 余额按钮:跟随配置档选择器的显隐(有配置档可选 = 余额有意义)
   const balBtn = document.getElementById('btn-balance') as HTMLButtonElement | null;
   if (balBtn) balBtn.hidden = !(isDirectFam && hasProfiles);
   const balPop = document.getElementById('balance-pop');
-  if (balPop) balPop.hidden = true;
+  // 气泡只在「真正切会话/新建」时关:renderHead 在运行中被 status/token/tool 事件高频调,
+  // 之前无条件 hidden=true 会把用户刚点开的余额气泡秒关(表现:结果框一闪而过)。
+  // / Close the balance popover only on a real conversation switch: renderHead runs on
+  // every streaming event, the unconditional hide made the popover flash away mid-run.
+  if (balPop && (conv?.id ?? null) !== headLastConvId) balPop.hidden = true;
+  headLastConvId = conv?.id ?? null;
   // Model picker only matters for Direct family (CLI engines use their own models)
   model.style.display = (isDirectFam && !hasProfiles) ? '' : 'none';
   if (document.activeElement !== model) model.value = conv.model;
@@ -2788,6 +2929,8 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
     if (t.steps.length) {
       body.appendChild(buildStepsEl(t.steps, streaming));
     }
+    // 思维链卡(WorkBuddy 对齐):流式期米色斜体实时滚动;done 后收成 <details> 折叠,正文优先。
+    if (t.reasoning) body.appendChild(buildReasoningCard(t.reasoning, streaming));
     const ans = document.createElement('div');
     ans.className = 'answer';
     if (streaming) {
@@ -3064,7 +3207,7 @@ function avatarEl(kind: 'user' | 'ai'): HTMLElement {
   if (kind === 'user') {
     a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="8" r="3.5"/><path d="M5.5 20a6.5 6.5 0 0113 0z"/></svg>';
   } else {
-    a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none"><path d="M12 2L13.8 8.2L20 10L13.8 11.8L12 18L10.2 11.8L4 10L10.2 8.2Z" fill="currentColor"/><circle cx="19" cy="5" r="1.5" fill="currentColor" opacity="0.5"/><circle cx="5" cy="18" r="1" fill="currentColor" opacity="0.4"/></svg>';
+    a.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M11 2C11.7 7 13.9 9.3 20 11C13.9 12.7 11.7 15 11 20C10.3 15 8.1 12.7 2 11C8.1 9.3 10.3 7 11 2Z"/><path d="M19 14.5C19.25 16.6 20 17.35 22 18C20 18.65 19.25 19.4 19 21.5C18.75 19.4 18 18.65 16 18C18 17.35 18.75 16.6 19 14.5Z" opacity="0.75"/></svg>';
   }
   return a;
 }
@@ -3182,6 +3325,56 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
   const sum = document.createElement('summary');
   sum.innerHTML = `<span class="agg-ico">${sv.wrench}</span><span class="agg-label">${esc(name)} <b>× ${count}</b></span>` + (totalMs ? `<span class="dur">${fmtStepDur(totalMs)}</span>` : '') + `<span class="agg-hint">${esc(tr('steps.aggExpand'))}</span>`;
   det.appendChild(sum);
+  // 最近动作行(WorkBuddy 式过程感):折叠态直接显示最近一个 step 的一行摘要,
+  // 「它最近在干嘛」不用展开就能扫到;流式增量吸收时由 absorbIntoAggCard 同步更新。
+  // Last-action line: collapsed state still shows the most recent step's summary.
+  const last = steps[steps.length - 1];
+  if (last && count > 1) {
+    const lastTxt = stepSummaryText(name, last.args);
+    if (lastTxt) {
+      const la = document.createElement('div');
+      la.className = 'agg-last';
+      la.textContent = `└ ${lastTxt}`;
+      la.title = lastTxt;
+      det.appendChild(la);
+    }
+  }
+  // 聚合卡文件 chips:段内 write_file/edit_file 动过的文件直接挂卡根,
+  // 折叠态可见可点(开抽屉)——「这段批量操作动了哪些文件」一眼扫到。
+  // Agg file chips: files touched by write/edit steps in this run, on card root.
+  if (name === 'write_file' || name === 'edit_file') {
+    const seen = new Set<string>();
+    const chipRow = document.createElement('div');
+    chipRow.className = 'step-files step-files-root';
+    let added = 0;
+    for (const st of steps) {
+      try {
+        const p = String(JSON.parse(st.args)?.path ?? '');
+        if (!p || seen.has(p) || !fileDrawer) continue;
+        seen.add(p);
+        const chip = document.createElement('button');
+        chip.className = 'fd-chip';
+        chip.title = p;
+        const short = p.split(/[\\/]/).pop() || p;
+        // 文件名后跟 ±行数徽章(与子卡 summary 的 .dfb 同源):折叠态直接看到每个文件改了多少
+        const badge = diffBadgeOf(name, st.args);
+        chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>${badge}`;
+        chip.onclick = () => { void fileDrawer?.open(p); };
+        chipRow.appendChild(chip);
+        added++;
+      } catch { /* 流式中间态 */ }
+      if (added >= 6) break; // 防爆量:一段最多亮 6 个文件 chip
+    }
+    if (added) det.appendChild(chipRow);
+  }
+  // 聚合卡媒体预览:同段内任一 step 产出图片(如连续 shell 写图)时,
+  // 摘要行下方直接给缩略图网格 —— 折叠态可见,这是「做完直接可见」的主路径
+  // (连续 shell 调用是 Agent 写图的最常见形态,子卡默认不展开)。
+  // Agg-card media: collapsed previews when any step in the run produced images.
+  try {
+    const mediaPaths = [...new Set(steps.flatMap(st => extractMediaPaths({ name, args: st.args, result: st.result })))].slice(0, 6);
+    if (mediaPaths.length) attachMediaGrid(det, mediaPaths);
+  } catch { /* 预览失败不影响主卡 */ }
   const inner = document.createElement('div');
   inner.className = 'steps agg-inner';
   let built = false;
@@ -3200,7 +3393,7 @@ function buildAggCard(name: string, count: number, totalMs: number, steps: { arg
 // 所以这里只更新 summary 文本 + steps 数组引用,展开时自然渲染最新全量。
 // Absorb a new same-name step into a streaming agg card (lazy children ⇒ only
 // the summary text needs updating; expansion always renders the fresh array).
-function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalMs: number): void {
+function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalMs: number, steps?: { args: string; result: string }[]): void {
   agg.dataset.to = String(Number(agg.dataset.to ?? '-1') + 1);
   const label = agg.querySelector('.agg-label');
   if (label) label.innerHTML = `${esc(name)} <b>× ${count}</b>`;
@@ -3211,6 +3404,60 @@ function absorbIntoAggCard(agg: HTMLElement, name: string, count: number, totalM
     d.className = 'dur';
     d.textContent = fmtStepDur(totalMs);
     agg.querySelector('summary')?.appendChild(d);
+  }
+  // 最近动作行同步:吸收新 step 后刷新为最新一条摘要(折叠态过程感的关键)。
+  // Last-action line refresh: keep collapsed preview on the newest step.
+  if (steps?.length) {
+    const la = agg.querySelector('.agg-last') as HTMLElement | null;
+    const lastTxt = stepSummaryText(name, steps[steps.length - 1].args);
+    if (lastTxt) {
+      if (la) { la.textContent = `└ ${lastTxt}`; la.title = lastTxt; la.classList.remove('flash'); void la.offsetWidth; la.classList.add('flash'); }
+      else {
+        const nla = document.createElement('div');
+        nla.className = 'agg-last flash';
+        nla.textContent = `└ ${lastTxt}`;
+        nla.title = lastTxt;
+        agg.insertBefore(nla, agg.querySelector('.step-media'));
+      }
+    }
+    // 文件 chips 增量吸收:write/edit 段新动到的文件补进卡根 chipRow(去重,上限 6)。
+    // File chips absorb: append newly touched files (dedup, cap 6).
+    if (name === 'write_file' || name === 'edit_file') {
+      let chipRow = agg.querySelector(':scope > .step-files-root') as HTMLElement | null;
+      const have = new Set<string>();
+      chipRow?.querySelectorAll('.fd-chip').forEach(c => have.add((c as HTMLElement).title));
+      for (const st of steps) {
+        try {
+          const p = String(JSON.parse(st.args)?.path ?? '');
+          if (!p || have.has(p) || !fileDrawer) continue;
+          have.add(p);
+          if (!chipRow) { chipRow = document.createElement('div'); chipRow.className = 'step-files step-files-root'; agg.insertBefore(chipRow, agg.querySelector('.step-media')); }
+          if (chipRow.children.length >= 6) break;
+          const chip = document.createElement('button');
+          chip.className = 'fd-chip';
+          chip.title = p;
+          const short = p.split(/[\\/]/).pop() || p;
+          chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
+          chip.onclick = () => { void fileDrawer?.open(p); };
+          chipRow.appendChild(chip);
+        } catch { /* 流式中间态 */ }
+      }
+    }
+  }
+  // 媒体增量吸收:新段里出现图片产物 → 补进聚合卡网格(去重:已有同 title 的跳过)。
+  // Media absorb: merge newly produced images into the agg card grid (dedup by title).
+  if (steps?.length) {
+    try {
+      const fresh = [...new Set(steps.flatMap(st => extractMediaPaths({ name, args: st.args, result: st.result })))];
+      if (!fresh.length) return;
+      let grid = agg.querySelector('.step-media') as HTMLElement | null;
+      const have = new Set<string>();
+      grid?.querySelectorAll('.step-media-item').forEach(el => have.add((el as HTMLElement).title));
+      const add = fresh.filter(p => !have.has(p)).slice(0, 6);
+      if (!add.length) return;
+      if (!grid) { grid = document.createElement('div'); grid.className = 'step-media'; agg.insertBefore(grid, agg.querySelector('.agg-inner')); }
+      attachMediaGrid(grid, add); // 直接往已有网格里追加(fig 级)
+    } catch { /* 预览失败不影响主卡 */ }
   }
 }
 
@@ -3397,6 +3644,21 @@ function stepSummaryText(name: string, args: string): string {
   return text;
 }
 
+// write/edit 的变更量徽章:args(old_string/new_string 或 content)按换行数粗算 +N/-M。
+// 只做提示性徽章不做精确 diff(引号转义会让行数略有偏差,扫读够用)。
+function diffBadgeOf(name: string, args: string): string {
+  if (name !== 'write_file' && name !== 'edit_file') return '';
+  try {
+    const a = JSON.parse(args) as { content?: string; new_string?: string; old_string?: string };
+    const add = (a.content ?? a.new_string ?? '').split('\n').length;
+    const del = a.old_string ? a.old_string.split('\n').length : 0;
+    if (add <= 0 && del <= 0) return '';
+    const addStr = add > 0 ? `<span class="dfb-add">+${add}</span>` : '';
+    const delStr = del > 0 ? `<span class="dfb-del">-${del}</span>` : '';
+    return `<span class="dfb">${addStr}${delStr}</span>`;
+  } catch { return ''; }
+}
+
 // 卡片成败态:只认硬信号(exit code / Traceback / ⚠️ 前缀)—— grep 输出里出现 "Error" 单词不算失败。
 function stepStatusOf(result: string): 'ok' | 'warn' | 'err' {
   const head = result.slice(0, 400);
@@ -3415,13 +3677,40 @@ function fmtStepDur(ms?: number): string {
 }
 
 // 截图灯箱:点击步骤卡里的内联截图 → 全屏浮层,点击关闭。
-function openImgLightbox(src: string): void {
+/** 画廊式灯箱:传入整组图源 + 起始下标,←/→ 或左右箭头切换,Esc/点击遮罩关闭,右下角计数。 */
+function openImgLightbox(srcs: string | string[], start = 0): void {
   document.querySelector('.img-lightbox')?.remove();
+  const list = Array.isArray(srcs) ? srcs : [srcs];
+  let idx = Math.max(0, Math.min(start, list.length - 1));
   const ov = document.createElement('div');
   ov.className = 'img-lightbox';
   const img = document.createElement('img');
-  img.src = src;
+  const show = () => { img.src = list[idx]; };
+  show();
   ov.appendChild(img);
+  if (list.length > 1) {
+    // 左右切换箭头 + 计数;单张时不渲染(保持旧的单图观感)
+    const prev = document.createElement('button');
+    prev.className = 'ilb-nav ilb-prev';
+    prev.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>';
+    prev.onclick = (e) => { e.stopPropagation(); idx = (idx - 1 + list.length) % list.length; show(); };
+    const next = document.createElement('button');
+    next.className = 'ilb-nav ilb-next';
+    next.innerHTML = '<svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>';
+    next.onclick = (e) => { e.stopPropagation(); idx = (idx + 1) % list.length; show(); };
+    const count = document.createElement('span');
+    count.className = 'ilb-count';
+    const upd = () => { count.textContent = `${idx + 1} / ${list.length}`; };
+    upd();
+    ov.append(prev, next, count);
+    ov.onkeydown = (e) => {
+      if (e.key === 'ArrowLeft') { idx = (idx - 1 + list.length) % list.length; show(); upd(); }
+      else if (e.key === 'ArrowRight') { idx = (idx + 1) % list.length; show(); upd(); }
+      else if (e.key === 'Escape') ov.remove();
+    };
+    ov.tabIndex = -1;
+    ov.focus();
+  }
   ov.onclick = () => ov.remove();
   document.body.appendChild(ov);
 }
@@ -3567,6 +3856,34 @@ function renderPlanCard(plan: { goal?: string; nodes?: unknown }): HTMLElement {
 
 // ── 任务清单卡(DSH 式):todo_write 事件 → 逐项状态卡,流式期间实时更新 ──
 // 状态图标:completed 绿勾 / in_progress 旋转弧 / pending 空心圈。头部带计数摘要。
+// ── 思维链卡(reasoning 渲染):流式期=展开的米色斜体块实时追加;done=收成折叠 details,不抢正文视线 ──
+// WorkBuddy 同款交互:浅灰斜体、可展开、默认收起。reasoning 增量由 main(glm.ts reasoning_content/thinking)经
+// token(reasoning) 事件落到 t.reasoning,历史 turn 直接从持久化数据重放。
+function buildReasoningCard(reasoning: string, streaming: boolean): HTMLElement {
+  const det = document.createElement('details');
+  det.className = 'reason-card' + (streaming ? ' streaming' : '');
+  if (streaming) det.open = true;
+  const sum = document.createElement('summary');
+  const label = document.createElement('span');
+  label.className = 'rc-label';
+  label.innerHTML = SVGI_SET.sparkles(13) + ' <span>' + esc(tr('turn.reasoning')) + '</span>';
+  sum.appendChild(label);
+  const chev = document.createElement('span');
+  chev.className = 'rc-chev';
+  chev.innerHTML = svg('<path d="M9 6l6 6-6 6"/>', 12);
+  sum.appendChild(chev);
+  det.appendChild(sum);
+  const body = document.createElement('div');
+  body.className = 'rc-body';
+  // 流式期只保留尾部(头部思维链价值低,渲染成本高);done 后全量。
+  const text = streaming ? reasoning.slice(-REASONING_TAIL_LIMIT) : reasoning;
+  body.textContent = text;
+  // 流式期自动贴底(思维链滚动区独立);用户点 summary 收起后停止干扰由 open 属性控制。
+  if (streaming) requestAnimationFrame(() => { body.scrollTop = body.scrollHeight; });
+  det.appendChild(body);
+  return det;
+}
+
 function buildTodoCard(todos: TodoItem[]): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step todo-card';
@@ -3577,7 +3894,15 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   const failed = todos.filter((t) => t.status === 'failed').length;
   const skipped = todos.filter((t) => t.status === 'skipped').length;
   const det = document.createElement('details');
-  det.open = true;
+  // 默认展开;用户手动收起过 → 重建(增量/全量)时不弹回,尊重偏好。
+  // Expanded by default; once the user collapses, rebuilds keep it collapsed.
+  det.open = localStorage.getItem('todo-card-collapsed') !== '1';
+  det.addEventListener('toggle', () => {
+    // 程序化 set open 也触发 toggle → 逻辑幂等,落的就是当前真实状态。
+    // toggle fires for programmatic changes too; persisting current state is idempotent.
+    if (det.open) localStorage.removeItem('todo-card-collapsed');
+    else localStorage.setItem('todo-card-collapsed', '1');
+  });
   const summary = document.createElement('summary');
   // 摘要计数:文本符号 ✓⟳✗⇥○ 换成内联 SVG;颜色语义走 .todo-sum SVG stroke=currentColor。
   summary.innerHTML = `<span class="name">${sv.listCheck} ${esc(tr('todo.card'))}</span><span class="todo-sum">${done} ${sv.checkCircle} · ${doing} ${sv.clock} · ${failed ? `${failed} ${sv.xCircle} · ` : ''}${skipped ? `${skipped} ${sv.skip} · ` : ''}${todos.length - done - doing - failed - skipped} ${svg('<circle cx="12" cy="12" r="8"/>')}</span>`;
@@ -3688,6 +4013,112 @@ function buildWorkflowCard(w: WorkflowState): HTMLElement {
   return el;
 }
 
+// ── 产物图片提取(WorkBuddy 式内联预览的数据源)──
+// Media path extraction for inline step previews.
+// 场景:write_file 写出 png / shell 脚本 print 产物路径 / screenshot_window 返回落盘路径。
+// 规则:args.path 命中图片扩展 → 直接采用(最高置信);否则从 result 文本里正则捞
+// 「含路径分隔符 + 图片扩展名」的 token(result 里的 "已写入 /a/b.png (123 字节)" 等)。
+// 去重 + 过滤明显的非产物(媒体读失败时 UI 自动移除占位,所以宁可多捞不可漏)。
+const MEDIA_EXTS_RE = /\.(png|jpe?g|gif|webp|bmp|svg|avif)$/i;
+
+function extractMediaPaths(s: { name: string; args: string; result: string }): string[] {
+  const out: string[] = [];
+  const push = (p: string): void => {
+    // 剥掉尾随标点/包裹符: (a.png) "a.jpg", `a.webp` → 干净路径
+    const clean = p.replace(/^[("'`<]+/, '').replace(/[)"'`>,.;:]+$/, '').trim();
+    if (clean && MEDIA_EXTS_RE.test(clean) && !out.includes(clean)) out.push(clean);
+  };
+  // 1) args.path(写文件类工具,最高置信)
+  try {
+    const ap = String(JSON.parse(s.args)?.path ?? '');
+    if (ap) push(ap);
+  } catch { /* 流式中间态 args 不完整 */ }
+  // 2) result 文本里的路径 token:含路径分隔符的绝对/相对路径(高置信)。
+  //    先捞引号/括号包裹的整段(空格路径「Application Support/...」不切断),再兜底按空白切。
+  //    首尾包裹符 (( [ " ' ` )剥掉再判断 —— 「(build/icon-256.png)」「"hero.jpg",」是常见排版。
+  //    无引号的空格路径接受截断:读盘失败自动移除,不产生死图。
+  const seenToken = new Set<string>();
+  const tokens: string[] = [];
+  // 先跑截图回执锚点,再 quoted-strip:quoted 正则会把「(md5:abc)」当括号段剥掉,
+  // 锚点的右边界就没了 —— 顺序不可对调。
+  // Run the screenshot-receipt anchor BEFORE quoted-strip: the bracket pass eats "(md5:...)".
+  let rest = s.result;
+  {
+    const m = rest.match(/(?:已存|saved|stored)[^:\n:]*[:：]\s*(.+?)\s*\(md5:/i);
+    if (m) {
+      const p = m[1].trim().replace(/^[({["'`]+|[)\}"'`,.;:]+$/g, '');
+      if (p && MEDIA_EXTS_RE.test(p) && !seenToken.has(p)) { seenToken.add(p); tokens.push(p); rest = rest.replace(m[0], ' '); }
+    }
+  }
+  // quoted/bracketed 整段(内部可含空格):"(Application Support/x.png)" 、'"a b.png"'
+  const quoted = rest.match(/"([^"\n]{1,300})"|\(([^()\n]{1,300})\)|\[([^\[\]\n]{1,300})\]/g) ?? [];
+  for (const q of quoted) {
+    const inner = q.slice(1, -1).trim();
+    if (inner && MEDIA_EXTS_RE.test(inner) && !seenToken.has(inner)) { seenToken.add(inner); tokens.push(inner); }
+    // 已收整段从原文剔除,防空白切分把 "Application Support/x.png" 切成假路径重复收集
+    rest = rest.replace(q, ' ');
+  }
+  for (const raw of rest.split(/[\s|]+/)) {
+    if (!raw) continue;
+    const stripped = raw.replace(/^[({\["'`]+|[)\}\]"'`,.;:]+$/g, '');
+    if (stripped && !seenToken.has(stripped)) { seenToken.add(stripped); tokens.push(stripped); }
+  }
+  for (const tok of tokens) {
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(tok)) continue; // URL(scheme://)不是文件路径
+    if (!/[\\/]/.test(tok)) continue;
+    if (MEDIA_EXTS_RE.test(tok)) push(tok);
+  }
+  // 3) 裸文件名兜底:agent 输出常写 "duo_final_sheet.png 2007×2853"、
+  //    "产物: a.png b.png"(无分隔符)。裸名 + 图片扩展也捞,媒体读按 cwd 解析;
+  //    读不到自动移除,不产生死图。排除 URL(http)与已捞过的。
+  if (out.length < 6) {
+    for (const tok of tokens) {
+      if (/^[a-z]+:\/\//i.test(tok) || /[\\/]/.test(tok)) continue;
+      if (MEDIA_EXTS_RE.test(tok) && tok.length > 4) {
+        const clean = tok.replace(/[)"'`>,.;:]+$/, '');
+        if (clean && MEDIA_EXTS_RE.test(clean) && !out.includes(clean)) {
+          out.push(clean);
+          if (out.length >= 6) break;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// ── 产物缩略图网格(WorkBuddy 式「做完直接可见」的渲染器,step 卡与聚合卡共用)──
+// Media grid renderer shared by single step cards and aggregate cards.
+// 懒加载:入场后一帧再拉 base64;读盘失败/非图 → 原子移除,空网格自清。
+// 相对路径按当前会话 cwd 解析(与 fileDrawer 同口径)。上限 6 张防 DOM 爆炸。
+function attachMediaGrid(host: HTMLElement, mediaPaths: string[]): void {
+  const grid = document.createElement('div');
+  grid.className = 'step-media';
+  const curCwd = selectedId ? convs.get(selectedId)?.cwd ?? '' : '';
+  const loaded: string[] = []; // 已成功加载的 dataUrl(按网格顺序)→ 画廊灯箱共用序列
+  for (const mp of mediaPaths.slice(0, 6)) {
+    const fig = document.createElement('button');
+    fig.className = 'step-media-item';
+    fig.title = mp;
+    fig.innerHTML = '<span class="step-media-ph"></span>';
+    // 懒加载:入场后再拉 base64(避免一次渲染几十张卡时全部读盘)。
+    // Lazy: fetch base64 after paint, not during render.
+    requestAnimationFrame(() => {
+      void window.kinet.mediaRead(mp, curCwd || undefined).then(r => {
+        if (!r.ok || !r.dataUrl) { fig.remove(); if (!grid.children.length) grid.remove(); return; }
+        const img = document.createElement('img');
+        img.src = r.dataUrl;
+        img.alt = mp.split(/[\\/]/).pop() || mp;
+        loaded.push(r.dataUrl);
+        const at = loaded.length - 1;
+        img.onclick = () => openImgLightbox(loaded.slice(), at); // 画廊:整组可翻
+        fig.replaceChildren(img);
+      }).catch(() => { fig.remove(); if (!grid.children.length) grid.remove(); });
+    });
+    grid.appendChild(fig);
+  }
+  host.appendChild(grid);
+}
+
 function renderStep(s: { name: string; args: string; result: string; durationMs?: number; pending?: boolean; interrupted?: boolean; images?: string[]; startId?: string }, live = false): HTMLElement {
   const el = document.createElement('div');
   el.className = 'step';
@@ -3742,6 +4173,9 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   const summaryText = stepSummaryText(s.name, s.args);
   const dur = fmtStepDur(s.durationMs);
   sumBits.push(`<span class="sum">${esc(summaryText)}</span>`);
+  // write/edit 的变更量徽章(WorkBuddy 式「+12/-3」一眼看改了多少;args 算行数,不依赖 result 文案)
+  const diffBadge = diffBadgeOf(s.name, s.args);
+  if (diffBadge && !isPending) sumBits.push(diffBadge);
   if (dur) sumBits.push(`<span class="dur">${esc(dur)}</span>`);
   if (isPending) sumBits.push(`<span class="dur">${esc(tr('step.running'))}</span>`);
   else if (isInterrupted) sumBits.push(`<span class="dur">${esc(tr('step.interrupted'))}</span>`);
@@ -3753,13 +4187,16 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   det.appendChild(summary);
   // 文件类工具(read_file/write_file/edit_file):args 里的 path 渲染成可点 chip,
   // 点击 → 右侧文件抽屉打开该文件(DeepSeek/Codex 式左右分屏)。
+  // ⚠️ chip 挂卡根(el)而非 <details> 内:折叠态也要可见可点 ——
+  // 「这个工具动过哪个文件」是扫读时最想要的信息,不该被折叠藏起来。
   // File tools: render path arg as clickable chip → open in right drawer.
+  // Chip mounts on the card root (outside <details>): stays visible/clickable collapsed.
   if (s.name === 'read_file' || s.name === 'write_file' || s.name === 'edit_file') {
     try {
       const argPath = String(JSON.parse(s.args)?.path ?? '');
       if (argPath && fileDrawer) {
         const chipRow = document.createElement('div');
-        chipRow.className = 'step-files';
+        chipRow.className = 'step-files step-files-root';
         const chip = document.createElement('button');
         chip.className = 'fd-chip';
         chip.title = argPath;
@@ -3767,9 +4204,22 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
         chip.innerHTML = `${ICON.doc}<span class="fd-chip-name">${esc(short)}</span>`;
         chip.onclick = () => { void fileDrawer?.open(argPath); };
         chipRow.appendChild(chip);
-        det.appendChild(chipRow);
+        el.appendChild(chipRow);
       }
     } catch { /* args 非 JSON(流式中间态)→ 无 chip,不影响原有渲染 */ }
+  }
+  // 产物内联预览(WorkBuddy 式):工具完成后,从 args/result 里提取图片路径 →
+  // 直接在 step 卡内渲染缩略图网格,点击放大(灯箱)。历史 turn 重渲染同样生效(纯函数、无副作用)。
+  // Inline media preview: after tool finishes, extract image paths from args/result →
+  // thumbnail grid inside the step card; click to lightbox. Works for history re-renders too.
+  if (!isPending) {
+    const mediaPaths = extractMediaPaths(s);
+    if (mediaPaths.length) {
+      // 挂在 details 外(step 卡根):完成态 steps 折叠后缩略图仍可见 ——
+      // 这正是「做完直接可见」的核心;details 内只留可展开的文本细节。
+      // Attach outside <details>: collapsed steps still show thumbnails.
+      attachMediaGrid(el, mediaPaths);
+    }
   }
   // edit_file/write_file → 真 diff 视图(删行红/增行绿),替代裸 args 墙。
   // args 是结构化 JSON(old_string/new_string / content),数据现成;解析失败退回原有 args 展示。
@@ -3824,13 +4274,14 @@ function renderStep(s: { name: string; args: string; result: string; durationMs?
   if (s.images?.length) {
     const row = document.createElement('div');
     row.className = 'step-imgs';
-    for (const b64 of s.images) {
+    const srcs = s.images.map(b64 => `data:image/png;base64,${b64}`);
+    for (let i = 0; i < srcs.length; i++) {
       const img = document.createElement('img');
       img.className = 'step-img';
       img.loading = 'lazy';
       img.alt = `${s.name} screenshot`;
-      img.src = `data:image/png;base64,${b64}`;
-      img.onclick = () => openImgLightbox(img.src);
+      img.src = srcs[i];
+      img.onclick = () => openImgLightbox(srcs, i); // 画廊模式:从点的那张开始左右翻
       row.appendChild(img);
     }
     det.appendChild(row);
@@ -3927,7 +4378,7 @@ function updateLastTurnIncremental(): void {
           const from = Number(tailAgg.dataset.from ?? tailAgg.dataset.to ?? '0');
           const slice = t.steps.slice(from);
           const totalMs = slice.reduce((acc, x) => acc + (x.durationMs ?? 0), 0);
-          absorbIntoAggCard(tailAgg, firstNew.name, t.steps.length - from, totalMs);
+          absorbIntoAggCard(tailAgg, firstNew.name, t.steps.length - from, totalMs, slice);
         } else {
           appendStepsRunLength(inner, t.steps.slice(have), have, t.steps.length);
         }
@@ -3976,6 +4427,10 @@ function updateLastTurnIncremental(): void {
   if (todoSig) {
     if (!oldTodoCard || (oldTodoCard as HTMLElement).dataset.sig !== todoSig) {
       const fresh = buildTodoCard(t.todos!);
+      // 保留用户手动展开/收起状态:内容重建不应弹回展开(与 workflow-card 同模式)
+      // Preserve the user's manual collapse across sig-based rebuilds (same pattern as workflow-card).
+      const oldDet = oldTodoCard?.querySelector('details');
+      if (oldDet) { (fresh.querySelector('details') as HTMLDetailsElement).open = (oldDet as HTMLDetailsElement).open; }
       oldTodoCard ? oldTodoCard.replaceWith(fresh) : turnEl.querySelector('.ai-body')?.prepend(fresh);
     }
   } else if (oldTodoCard) {
@@ -4159,13 +4614,37 @@ function atMove(dir: 1 | -1): void {
 }
 
 // ── 快捷键速查表(? 呼出)──
+// ↑/↓ 在侧栏会话列表上移动选择(shell 习惯)。offsetParent 过滤自动跳过折叠分组里的隐藏项;
+// clamp 不回绕(与上下键直觉一致)。
+// ↑/↓ moves the selection across visible conversation items in the sidebar (shell habit).
+// offsetParent filter skips items hidden inside collapsed groups; clamp, no wraparound.
+function sidebarStep(delta: 1 | -1): void {
+  const lis = Array.from(document.querySelectorAll<HTMLElement>('#conv-list li[data-cid]'))
+    .filter((li) => li.offsetParent !== null);
+  if (!lis.length) return;
+  const cur = lis.findIndex((li) => li.dataset.cid === selectedId);
+  // 当前不在列表(如被过滤)→ 落第一个;否则相邻移动。
+  const next = lis[Math.min(lis.length - 1, Math.max(0, cur < 0 ? 0 : cur + delta))];
+  if (!next || next.dataset.cid === selectedId) return;
+  selectedId = next.dataset.cid!;
+  showChat();
+  // active 高亮就地更新,避免全量重建;并保证目标条目可见。
+  document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+  next.classList.add('active');
+  next.scrollIntoView({ block: 'nearest' });
+}
+
 function showShortcutsSheet(): void {
   document.querySelector('.sheet-overlay')?.remove();
   const ov = document.createElement('div');
   ov.className = 'sheet-overlay';
   const rows: Array<[string, string]> = [
     ['Ctrl/⌘ K', tr('keys.palette')],
+    ['Ctrl/⌘ P', tr('keys.channels')],
     ['Ctrl/⌘ F', tr('keys.search')],
+    ['↑ (composer 空)', tr('keys.recallLast')],
+    ['↑ / ↓ (侧栏)', tr('keys.sidebarNav')],
+    ['⌥↑ / ⌥↓', tr('keys.sidebarNavAlt')],
     ['Enter / Shift+Enter', tr('keys.enter')],
     ['Esc', tr('keys.esc')],
     ['?', tr('keys.help')],
@@ -4386,6 +4865,19 @@ function closePalette(): void {
 function paletteMove(dir: 1 | -1): void {
   if (!paletteFiltered.length) return;
   paletteSel = (paletteSel + dir + paletteFiltered.length) % paletteFiltered.length;
+  paletteSyncSel();
+}
+
+// Home/End 直跳首尾(⌘K 面板列表较长时省得连按 ↑↓)。
+// Home/End jump straight to first/last row (long lists).
+function paletteJump(which: 'home' | 'end'): void {
+  if (!paletteFiltered.length) return;
+  paletteSel = which === 'home' ? 0 : paletteFiltered.length - 1;
+  paletteSyncSel();
+}
+
+// 渲染选中态:去旧高亮、亮新行、滚入视野(三个入口共用)。
+function paletteSyncSel(): void {
   const list = document.getElementById('palette-list')!;
   list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
   const rows = list.querySelectorAll('.palette-row');
@@ -4572,6 +5064,17 @@ function onJumpInput(): void {
 function jumpMove(dir: 1 | -1): void {
   if (!jumpFiltered.length) return;
   jumpSel = (jumpSel + dir + jumpFiltered.length) % jumpFiltered.length;
+  jumpSyncSel();
+}
+
+// Home/End 直跳首尾(与 ⌘K 面板同款)。Home/End jump to first/last, same as the palette.
+function jumpJump(which: 'home' | 'end'): void {
+  if (!jumpFiltered.length) return;
+  jumpSel = which === 'home' ? 0 : jumpFiltered.length - 1;
+  jumpSyncSel();
+}
+
+function jumpSyncSel(): void {
   const list = document.getElementById('jump-list')!;
   list.querySelectorAll('.palette-row.sel').forEach((el) => el.classList.remove('sel'));
   const rows = list.querySelectorAll('.palette-row');
@@ -4966,6 +5469,72 @@ function streamAppend(text: string) {
 let artifactDebounce: ReturnType<typeof setTimeout> | null = null;
 let currentArtifactHtml: string | null = null; // 当前预览的 HTML 内容(给刷新/打开按钮用)
 let artifactAutoSwitch = true; // 检测到 artifact 时自动切到预览 tab(用户手动切回后不再自动切)
+// ── Artifact 版本面板:会话内所有带 artifact 的 turn = 一个版本序列 ──
+// 同一 turn 内多次流式更新覆盖当前版本;跨 turn 追加新版本(AI 迭代产物时历史可回看)。
+// 缓存按 (convId, turnId) 存,增量扫描只处理新增 turn,长会话不重复跑正则。
+interface ArtifactVersion { turnId: string; turnIdx: number; html: string; title: string; ts: number; }
+const artifactCache = new Map<string, ArtifactVersion[]>(); // convId → 版本列表(旧→新)
+let artifactViewIdx = -1; // 当前查看的版本下标(-1=最后版本;点历史版本后固定)
+
+/** 从 artifact HTML 提取标题:<title> 优先,退化用首个 h1,再退化「未命名」。 */
+function artifactTitleOf(html: string): string {
+  const t = html.match(/<title>([^<]{1,80})<\/title>/i);
+  if (t?.[1]?.trim()) return t[1].trim();
+  const h = html.match(/<h1[^>]*>([\s\S]{1,80}?)<\/h1>/i);
+  if (h?.[1]) return h[1].replace(/<[^>]+>/g, '').trim().slice(0, 60) || tr('preview.untitled');
+  return tr('preview.untitled');
+}
+
+/** 扫描会话 turns 收集 artifact 版本(增量:缓存里已覆盖的 turn 跳过)。 */
+function collectArtifacts(conv: Conversation): ArtifactVersion[] {
+  let list = artifactCache.get(conv.id);
+  if (!list) { list = []; artifactCache.set(conv.id, list); }
+  const covered = new Set(list.map(v => v.turnId));
+  for (let i = 0; i < conv.turns.length; i++) {
+    const t = conv.turns[i];
+    if (covered.has(t.id)) {
+      // 尾 turn 是流式生长区:缓存里可能存的是首帧旧 html,每次重扫都重新 detect 覆盖,
+      // 保证「刷新预览」拿到的是最终 answer 而非流式中途的截断产物。
+      if (i >= conv.turns.length - 1) {
+        const fresh = detectArtifact(t.answer);
+        if (fresh) {
+          const lastV = list[list.length - 1];
+          if (fresh !== lastV.html) { lastV.html = fresh; lastV.title = artifactTitleOf(fresh); }
+        } else {
+          list.pop(); // 尾 turn 的产物被删空(极端:answer 被清)→ 版本失效
+        }
+      }
+      continue;
+    }
+    const html = detectArtifact(t.answer);
+    if (html) list.push({ turnId: t.id, turnIdx: i, html, title: artifactTitleOf(html), ts: t.ts });
+  }
+  return list;
+}
+
+/** 渲染预览头部的版本条:版本 chip(标题+序号),当前查看的高亮;点击切换 iframe 内容。 */
+function renderArtifactVersions(conv: Conversation): void {
+  const bar = document.getElementById('artifact-versions');
+  if (!bar) return;
+  const list = collectArtifacts(conv);
+  bar.hidden = list.length <= 1; // 单版本不占地方
+  if (!list.length) return;
+  const cur = artifactViewIdx >= 0 && artifactViewIdx < list.length ? artifactViewIdx : list.length - 1;
+  bar.innerHTML = list.map((v, i) =>
+    `<button class="av-chip${i === cur ? ' active' : ''}" data-i="${i}" title="${esc(v.title)} · ${new Date(v.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}">` +
+    `<span class="av-num">v${i + 1}</span><span class="av-title">${esc(v.title)}</span></button>`).join('');
+  bar.querySelectorAll<HTMLElement>('.av-chip').forEach(el => {
+    el.onclick = () => {
+      const i = Number(el.dataset.i);
+      const v = list[i];
+      if (!v) return;
+      artifactViewIdx = i;
+      updatePreview(v.html);
+      renderArtifactVersions(conv); // 刷新高亮
+    };
+  });
+}
+
 
 /** 从 markdown 文本中提取 HTML/SVG artifact。返回完整 HTML 文档(可直接塞 iframe)。 */
 function detectArtifact(md: string): string | null {
@@ -5022,25 +5591,16 @@ function scheduleArtifactCheck(): void {
   }, 600);
 }
 
-/** 检测当前会话最后一个 turn 的 answer 是否包含 artifact,如有则更新预览。 */
-function checkArtifact(): void {
-  const conv = selectedId ? convs.get(selectedId) : undefined;
-  if (!conv) return;
-  const lastTurn = conv.turns[conv.turns.length - 1];
-  if (!lastTurn) return;
-  const html = detectArtifact(lastTurn.answer);
-  if (html) {
-    updatePreview(html);
-    showPreviewTab();
-  }
-}
-
 /** 更新预览 iframe 内容。用 blob: URL 而非 srcdoc(兼容性更好,绕过部分 CSP 限制)。 */
 function updatePreview(html: string): void {
+  // 同内容短路:流式期间 checkArtifact 每 600ms 调一次,artifact 围栏闭合后 detect 返回
+  // 同一份 html,无条件重建 blob+重载 iframe 会让预览持续白闪(用户感知为「界面在抖」)。
+  // 内容没变且 iframe 还在 → 什么都不做;iframe 被清(空态/切 tab)才走完整重建。
+  const curIframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
+  if (html === currentArtifactHtml && curIframe && curIframe.dataset.blobUrl) return;
   currentArtifactHtml = html;
   const body = document.getElementById('preview-body');
-  if (!body) return;
-  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
+  if (!body) return;  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
   let iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
   if (!iframe) {
     body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>';
@@ -5053,6 +5613,22 @@ function updatePreview(html: string): void {
   if (iframe.dataset.blobUrl) URL.revokeObjectURL(iframe.dataset.blobUrl);
   iframe.dataset.blobUrl = url;
   iframe.src = url;
+}
+
+/** 检测当前会话最后一个 turn 的 answer 是否包含 artifact,如有则更新预览(流式防抖+done 各调一次)。 */
+function checkArtifact(): void {
+  const conv = selectedId ? convs.get(selectedId) : undefined;
+  if (!conv) return;
+  const lastTurn = conv.turns[conv.turns.length - 1];
+  if (!lastTurn) return;
+  const html = detectArtifact(lastTurn.answer);
+  if (html) {
+    // 同一 turn 流式迭代 = 覆盖当前查看版本;仅当用户没钉在历史版本时才跟随最新
+    if (artifactViewIdx < 0) artifactViewIdx = -1;
+    updatePreview(html);
+    showPreviewTab();
+    renderArtifactVersions(conv);
+  }
 }
 
 /** 显示预览 tab 按钮 + 自动切换到预览面板(首次检测到 artifact 时)。 */
@@ -5084,14 +5660,17 @@ function showPreviewEmpty(): void {
 function openPreviewPane(): void {
   showTab('preview');
   document.getElementById('tab-preview')!.classList.remove('has-artifact');
-  // 如果当前没有 artifact 内容,显示空状态
+  // 如果当前没有 artifact 内容,先扫整个会话的版本列表(多版本历史会话也能直接看最新)
   if (!currentArtifactHtml) {
-    // 尝试检测当前 turn
     const conv = selectedId ? convs.get(selectedId) : undefined;
-    const lastTurn = conv?.turns[conv.turns.length - 1];
-    if (lastTurn) {
-      const html = detectArtifact(lastTurn.answer);
-      if (html) { updatePreview(html); return; }
+    if (conv) {
+      const list = collectArtifacts(conv);
+      if (list.length) {
+        artifactViewIdx = -1; // 打开即看最新版本
+        updatePreview(list[list.length - 1].html);
+        renderArtifactVersions(conv);
+        return;
+      }
     }
     showPreviewEmpty();
   }
@@ -5505,6 +6084,41 @@ function applyScrollAnchor(): void {
 // Show floating arrow when user scrolls up; click to jump to bottom.
 // Guard: 防止 reload 后重复创建 Observer(内存泄漏)
 let scrollBottomInited = false;
+// ── approval 档位常驻指示(WorkBuddy 对齐)──
+// 输入框旁 pill:always=橙点「确认」/ never=绿点「自动」。点击即切,立即保存。
+// 常驻可见解决「 approval 藏在设置页且不知道当前是哪档」;任务中途也能一键切换。
+// Approval pill: persistent indicator + one-click toggle, saved immediately.
+let approvalCurrent: ApprovalPolicy = 'always';
+function initApprovalPill(policy: ApprovalPolicy): void {
+  approvalCurrent = policy;
+  syncApprovalPill();
+  const pill = document.getElementById('approval-pill');
+  pill?.addEventListener('click', async () => {
+    const next: ApprovalPolicy = approvalCurrent === 'always' ? 'never' : 'always';
+    try {
+      const cur = await api.getSettings();
+      await api.saveSettings({ ...cur, approval: next });
+      approvalCurrent = next;
+      syncApprovalPill();
+      uxToast.info(tr('approval.pill.switched', { mode: approvalModeLabel(next) }));
+    } catch { /* 保存失败保持原档 */ }
+  });
+}
+function approvalModeLabel(p: ApprovalPolicy): string {
+  return p === 'always' ? tr('approval.pill.always') : tr('approval.pill.never');
+}
+function syncApprovalPill(): void {
+  const pill = document.getElementById('approval-pill');
+  if (!pill) return;
+  pill.dataset.mode = approvalCurrent;
+  const label = pill.querySelector('.ap-label');
+  if (label) label.textContent = approvalModeLabel(approvalCurrent);
+  pill.title = tr('approval.pill.title');
+  // 设置页 select 若已渲染,双向同步
+  const sel = document.getElementById('s-approval') as HTMLSelectElement | null;
+  if (sel) sel.value = approvalCurrent;
+}
+
 function initScrollBottomBtn(): void {
   const turns = document.getElementById('turns');
   const btn = document.getElementById('scroll-bottom-btn');
@@ -5610,6 +6224,24 @@ function updateBadge(): void {
   }
 }
 
+// ── 进度跟随:工具/状态事件到达且用户在底部时贴底 ──
+// scrollDown 自带 follow/冻结守卫 + rAF 合并,这里只做事件侧的显式触发点。
+// Progress stick: explicit trigger on tool/status events; guards live in scrollDown.
+function stickToBottomSoon(): void {
+  if (userAtBottom && !scrollFrozen) scrollDown();
+}
+
+// 滚离底部 + 有新工具动作 → jump 按钮呼吸提示(1.4s 自灭,定时器去重)。
+// Breathing hint on the jump-to-bottom button when new tool activity arrives off-screen.
+function pulseJumpBtn(): void {
+  const jbtn = document.getElementById('scroll-bottom-btn');
+  if (!jbtn || jbtn.classList.contains('visible')) return;
+  jbtn.classList.add('has-new');
+  if (jbtn.dataset.newTimer) return;
+  const t = window.setTimeout(() => { delete jbtn.dataset.newTimer; jbtn.classList.remove('has-new'); }, 1400);
+  jbtn.dataset.newTimer = String(t);
+}
+
 // ---------- settings ----------
 // 主题切换:改 <html data-theme>,变量级切换,所有窗口共享(主/dashboard/files/quick 都用 styles.css)。
 function applyTheme(theme: 'auto' | 'dark' | 'light' | 'aurora' | 'serene' | 'tahoe' | 'sierra' | 'craft' | 'seed'): void {
@@ -5637,6 +6269,14 @@ let autoThemeMql: MediaQueryList | null = null;
 /** Global font scaling: set fontSize on <html>, all inheriting elements follow. */
 function applyFontScale(scale: number): void {
   document.documentElement.style.fontSize = `${(scale / 100) * 13}px`;
+}
+
+// 紧凑模式开关落 body class:CSS 侧 .meta-compact 规则早已就位(hover/focus-within 才显示
+// ai-meta-row),但此前从未接线 —— 开关存了设置却无任何效果(死样式)。
+// Compact-mode toggle lands on body class. The CSS rules (.meta-compact) existed but were
+// never wired: the setting persisted yet had zero visual effect.
+function applyCompactMeta(on: boolean): void {
+  document.body.classList.toggle('meta-compact', on);
 }
 
 async function showSettings() {
@@ -6466,6 +7106,7 @@ async function showSettings() {
     renderTown(); // 重渲小镇(风格可能变了) / re-render town (style may have changed)
     applyTheme(ns.theme);
     applyFontScale(ns.fontScale ?? 100);
+    applyCompactMeta(ns.compactMeta === true);
     applyI18nDOM();
     renderSidebar();
     renderMain();
@@ -7252,7 +7893,11 @@ function readSettingsForm(): AppSettings {
     model: (document.getElementById('s-model') as HTMLInputElement).value,
     apiProtocol: (document.getElementById('s-proto') as HTMLSelectElement).value as AppSettings['apiProtocol'],
     reasoning: (document.getElementById('s-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
-    approval: (document.getElementById('s-approval') as HTMLSelectElement).value as AppSettings['approval'],
+    approval: (() => {
+      const v = (document.getElementById('s-approval') as HTMLSelectElement).value as ApprovalPolicy;
+      approvalCurrent = v; syncApprovalPill(); // 设置页改动 → pill 同步
+      return v;
+    })(),
     sandbox: (document.getElementById('s-sandbox') as HTMLSelectElement).value as AppSettings['sandbox'],
     planMode: (document.getElementById('s-plan') as HTMLInputElement).checked,
     notifyOnDone: (document.getElementById('s-notify-done') as HTMLInputElement).checked,
@@ -7861,6 +8506,9 @@ function closeMoreMenu() {
         case 'rename':
           await renameConv(id);
           break;
+        case 'pin':
+          await window.kinet.setPinned(id, !c.pinned);
+          break;
         case 'ctx':
           await openCtxInspector(id);
           break;
@@ -7967,17 +8615,24 @@ function closeMoreMenu() {
   // ── Artifact 预览 tab + 控制按钮 ──
   document.getElementById('tab-preview')!.onclick = () => openPreviewPane();
   document.getElementById('btn-preview-refresh')!.onclick = () => {
-    const html = currentArtifactHtml;
-    if (html) {
-      const iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
-      if (iframe) {
-        const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(blob);
-        if (iframe.dataset.blobUrl) URL.revokeObjectURL(iframe.dataset.blobUrl);
-        iframe.dataset.blobUrl = url;
-        iframe.src = url;
+    // 不是重放旧 blob:从最新 turns 重扫 artifact 流水线(尾 turn 流式缓存会在此刷新),
+    // 有版本 → 看最新;一个都没有 → 清空进空态(避免幽灵预览残留)。
+    const conv = selectedId ? convs.get(selectedId) : undefined;
+    if (conv) {
+      const list = collectArtifacts(conv);
+      if (list.length) {
+        artifactViewIdx = -1; // 刷新语义 = 回到最新版本
+        // 刷新 = 强制重载:先清 blobUrl 标记,绕过 updatePreview 的同内容短路
+        // (内容没变也要真的重载一次,iframe 内部卡死时靠它救活)
+        const f = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
+        if (f?.dataset.blobUrl) { URL.revokeObjectURL(f.dataset.blobUrl); delete f.dataset.blobUrl; }
+        updatePreview(list[list.length - 1].html);
+        renderArtifactVersions(conv);
+        return;
       }
     }
+    currentArtifactHtml = null;
+    showPreviewEmpty();
   };
   document.getElementById('btn-preview-open')!.onclick = () => {
     // 把 artifact HTML 写到临时文件,用系统浏览器打开
@@ -8056,6 +8711,9 @@ function closeMoreMenu() {
   document.getElementById('ctx-insp-cancel')!.onclick = closeCtxInspector;
   document.getElementById('ctx-insp-save')!.onclick = () => void saveCtxInspector();
   document.getElementById('ctx-insp-add')!.onclick = () => addCtxMsg();
+  // 上下文满劝导 banner:+ 新对话 / × 关闭(关 = 本次会话不再弹,ctxAdvised 已置 true)
+  document.getElementById('ctx-banner-new')!.onclick = () => document.getElementById('btn-clear')?.click();
+  document.getElementById('ctx-banner-close')!.onclick = () => { const b = document.getElementById('ctx-banner'); if (b) b.hidden = true; };
   document.getElementById('btn-send')!.onclick = () => void send();
   // ── 聊天内容事件委托(单监听器;流式稳定前缀持续重建 DOM,委托天然免疫)──
   // .code-copy → 复制所在代码块;.file-ref → 右侧文件抽屉打开
@@ -8103,6 +8761,8 @@ function openPathExternal(path: string): void {
   paletteInput.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); paletteMove(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); paletteMove(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); paletteJump('home'); }
+    else if (e.key === 'End') { e.preventDefault(); paletteJump('end'); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       const act = paletteFiltered[paletteSel];
@@ -8119,6 +8779,8 @@ function openPathExternal(path: string): void {
   jumpInput.addEventListener('keydown', (e) => {
     if (e.key === 'ArrowDown') { e.preventDefault(); jumpMove(1); }
     else if (e.key === 'ArrowUp') { e.preventDefault(); jumpMove(-1); }
+    else if (e.key === 'Home') { e.preventDefault(); jumpJump('home'); }
+    else if (e.key === 'End') { e.preventDefault(); jumpJump('end'); }
     else if (e.key === 'Enter') {
       e.preventDefault();
       const it = jumpFiltered[jumpSel];
@@ -8375,6 +9037,35 @@ function openPathExternal(path: string): void {
       if (e.key === 'ArrowUp') { e.preventDefault(); atMove(-1); return; }
       if (e.key === 'Escape') { e.preventDefault(); closeAtMenu(); return; }
     }
+    // shell 习惯:composer 为空时 ↑ 调出上一条发送过的输入;回填态中 ↓ 往回走新的,穿到底恢复空。
+    // Shell habit: ↑ in an empty composer recalls the last sent input; ↓ walks back toward
+    // newer entries while recalling, and past the newest restores the empty composer.
+    // 手打态且非空时不劫持 ↑(光标移动/多行编辑不受影响)。IME 与菜单已在上游 return。
+    // Don't hijack ↑ while typing (non-empty composer) — normal caret movement is preserved.
+    if (!e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+      if (e.key === 'ArrowUp' && !composer.value.trim() && sendHistory.length) {
+        e.preventDefault();
+        sendHistoryIdx = sendHistoryIdx === -1 ? sendHistory.length - 1 : Math.max(0, sendHistoryIdx - 1);
+        composer.value = sendHistory[sendHistoryIdx];
+        autosize(composer);
+        // 光标落末尾(shell 一致),否则回填后 ↑ 的下一次按键行为反直觉
+        composer.setSelectionRange(composer.value.length, composer.value.length);
+        return;
+      }
+      if (e.key === 'ArrowDown' && sendHistoryIdx !== -1) {
+        e.preventDefault();
+        sendHistoryIdx++;
+        if (sendHistoryIdx >= sendHistory.length) {
+          sendHistoryIdx = -1;
+          composer.value = '';
+        } else {
+          composer.value = sendHistory[sendHistoryIdx];
+        }
+        autosize(composer);
+        composer.setSelectionRange(composer.value.length, composer.value.length);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       // 消息排队(DSH 式):running 时 Enter → 入队(发送键仍保留停止语义),回合结束自动发出。
@@ -8384,10 +9075,12 @@ function openPathExternal(path: string): void {
       if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
         composer.value = '';
         autosize(composer);
+        recordSendHistory(draft); // 排队/转向也算"发送过",否则 running 会话高频路径历史永远为空
         if (e.metaKey || e.ctrlKey) {
           void steerNow(runConv.id, draft);
         } else {
           enqueueMessage(runConv.id, draft);
+          uxToast.info(tr('queue.enqueued')); // 入队反馈:chip 行在 composer 上方,但打字时视线在输入框,toast 补一记确认
         }
         return;
       }
@@ -9529,13 +10222,19 @@ async function send() {
       return; // 不清空,用户可重试
     }
     // 发送成功 → 清空 composer + 附件 + 强制滚到最新消息
-    if (files.length) {
+    // chips 是手动渲染的(renderAttach 仅在粘贴/截图/删除时调用):数组清了不重画,
+    // 附件 chip 会残留在输入框里(截图 chip 高频路径,2026-10-31 用户报告)。
+    if (files.length || imageAttachments.length) {
       attachments = [];
-    }
-    if (imageAttachments.length) {
       imageAttachments = [];
+      renderAttach();
     }
-    renderAttach();
+    // 发送历史(shell 习惯):存用户手打原文(typed),供 composer 空时 ↑ 回填。
+    // Send history (shell habit): remember the raw typed text so ↑ recalls it in an empty composer.
+    // 去重相邻重复;有附件时 text 含包装块,只记手打部分,回填不惊扰。
+    // Dedupe consecutive duplicates; store raw typed text only (attachment wrappers excluded).
+    recordSendHistory(typed);
+    sendHistoryIdx = -1;
     composer.value = '';
     autosize(composer);
     convDrafts.delete(selectedId); // 发送成功,清掉该频道草稿
@@ -9577,6 +10276,23 @@ function showChat() {
   document.getElementById('chat-view')!.classList.add('active');
   syncViewButtons();
   renderMain();
+  // 切进被折叠分组里的频道 → 临时展开该组并滚动定位,否则"切过去了,侧栏找不到"。
+  // sb-forced-open 临时展开,持久折叠态不写回:只是这次替用户打开,清筛选/重渲后按用户折叠态收回。
+  // Switched into a channel inside a collapsed group → force-expand (transient,
+  // sb-forced-open) + scroll into view. Persisted collapse state untouched.
+  if (selectedId) {
+    const li = document.querySelector(`#conv-list li[data-cid="${selectedId}"]`) as HTMLElement | null;
+    const projLi = li?.closest('li.sb-proj') as HTMLElement | null;
+    const cwd = projLi?.dataset.cwd || '';
+    if (projLi && cwd && collapsedProjects.has(cwd) && !projLi.classList.contains('sb-forced-open')) {
+      projLi.classList.add('sb-forced-open');
+      (projLi.querySelector('.sb-proj-tasks') as HTMLElement | null)?.classList.remove('collapsed');
+      projLi.querySelector('.sb-chevron')?.classList.remove('collapsed');
+      syncProjRunningHint(cwd);
+    }
+    const target = document.querySelector(`#conv-list li[data-cid="${selectedId}"]`) as HTMLElement | null;
+    target?.scrollIntoView({ block: 'nearest' });
+  }
 }
 
 function showPipeline() {
@@ -10670,6 +11386,8 @@ function clipForUi(s: string): string {
 // Answers render a 30K head by default with an "expand" button — full md() runs
 // only on demand; collapse folds back to the head to release DOM/memory.
 const ANSWER_HEAD_LIMIT = 30_000;
+// 思维链流式期只渲染尾部 6K(头部中间推导价值低);done 后全量展示。
+const REASONING_TAIL_LIMIT = 6_000;
 function mountAnswer(ans: HTMLElement, full: string): void {
   const renderHead = (): void => {
     ans.innerHTML = '';
