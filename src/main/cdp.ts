@@ -21,6 +21,7 @@ import WebSocket from 'ws';
 
 let chromeProc: ChildProcess | null = null;
 let chromePort = 0;
+let chromePid: number | null = null; // macOS open 拉起的 Chrome 不是子进程,记 PID 供退出清理
 let chromeStarting: Promise<string> | null = null; // 并发去重:同时多个工具调用只拉起一次
 
 function chromeBinCandidates(): string[] {
@@ -81,14 +82,16 @@ function httpGetJson(url: string, timeoutMs = 5000): Promise<any> {
 /** 确保 agent Chrome 已启动并返回 DevTools 端口。 */
 export async function ensureAgentChrome(): Promise<string> {
   // 已在跑:验证 DevTools 端口还活着(用户手动关掉 Chrome 的场景)
-  if (chromeProc && chromePort) {
+  // open -n 分支 chromeProc=null,靠 chromePid 判断
+  if ((chromeProc || chromePid) && chromePort) {
     try {
       await httpGetJson(`http://127.0.0.1:${chromePort}/json/version`, 2000);
       return String(chromePort);
     } catch {
       // 端口死了 → 当作未启动,重新拉
-      try { chromeProc.kill(); } catch { /* already dead */ }
-      chromeProc = null; chromePort = 0;
+      try { chromeProc?.kill(); } catch { /* already dead */ }
+      if (chromePid) { try { process.kill(chromePid, 'SIGTERM'); } catch { /* already dead */ } }
+      chromeProc = null; chromePort = 0; chromePid = null;
     }
   }
   if (chromeStarting) return chromeStarting;
@@ -100,24 +103,67 @@ export async function ensureAgentChrome(): Promise<string> {
     const port = await freePort();
     const profile = agentProfileDir();
     fs.mkdirSync(profile, { recursive: true });
-    const args = [
+    const chromeArgs = [
       `--remote-debugging-port=${port}`,
       `--user-data-dir=${profile}`,
       '--no-first-run', '--no-default-browser-check', '--disable-features=Translate',
       '--disable-background-networking', '--disable-component-update',
       '--window-size=1440,900',
-      // 不加 --headless:窗口留在后台即可,headless 模式部分网站(验证码/风控)会拦
+      // 不加 --headless:headless 模式部分网站(验证码/风控)会拦。
+      // --no-startup-window:启动时不建窗口 → macOS 上 open -n 仍会被 Chrome 激活置前盖掉
+      // 用户窗口(2026-11-02 实测 PID 前后对照证实),但配合 no-startup-window 后前台 PID
+      // 全程不变(实测 VERDICT: no-steal)。页面由 browser_navigate 经 CDP Target.createTarget
+      // 造出来(实测 /json/new + 页面加载正常),不是 GUI 启动页,验证码/风控场景不受影响。
+      '--no-startup-window',
       'about:blank',
     ];
-    const child = spawn(bin, args, { stdio: 'ignore', detached: false });
-    child.on('exit', () => { if (chromeProc === child) { chromeProc = null; chromePort = 0; } });
+    let child: ChildProcess;
+    let pid: number;
+    if (process.platform === 'darwin') {
+      // macOS 直接 spawn .app 内二进制会被 LaunchServices 激活置前,盖掉用户正在用的窗口
+      // (2026-11-02 用户报告:agent Chrome 反复盖掉手头浏览器)。open -n -gj = 新实例 +
+      // 后台启动不抢焦点,CDP/DevTools 端口行为与直接 spawn 完全一致。
+      // -n 必须带:用户自己的 Chrome 在跑时,不带 -n 的 open -gj 会复用用户实例(丢专属 profile)。
+      await new Promise<void>((resolve, reject) => {
+        const o = spawn('/usr/bin/open', [
+          '-n', '-g', '-j',
+          '-a', bin,
+          '--args', ...chromeArgs,
+        ], { stdio: 'ignore' });
+        o.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`open -n -gj 失败 exit=${code}`))));
+        o.on('error', reject);
+      });
+      // open 拉起的是独立进程(pgrep 匹配专属 profile 参数,不会误中用户日常 Chrome)
+      pid = await new Promise<number>((resolve, reject) => {
+        const deadline = Date.now() + 10000;
+        const tick = () => {
+          try {
+            const out = require('node:child_process').execSync(
+              `pgrep -f "user-data-dir=${profile}"`, { encoding: 'utf8' });
+            const first = out.split('\n').map((s: string) => Number(s.trim())).find((n: number) => n > 0);
+            if (first) return resolve(first);
+          } catch { /* not yet */ }
+          if (Date.now() > deadline) return reject(new Error('open 后 10s 未发现 agent Chrome 进程'));
+          setTimeout(tick, 300);
+        };
+        tick();
+      });
+      child = null as unknown as ChildProcess; // 非 app 子进程,清理由 chromePid 分支负责
+    } else {
+      child = spawn(bin, chromeArgs, { stdio: 'ignore', detached: false });
+      pid = child.pid ?? 0;
+      child.on('exit', () => { if (chromeProc === child) { chromeProc = null; chromePort = 0; chromePid = null; } });
+    }
     chromeProc = child;
+    chromePid = pid;
     chromePort = port;
 
     // 轮询等 DevTools HTTP 就绪(Chrome 启动要 1-3s)
     const deadline = Date.now() + 15000;
     while (Date.now() < deadline) {
-      if (child.exitCode !== null) throw new Error('Chrome 启动后立即退出(端口被占用或 profile 损坏)');
+      // open -n 拉起时 child=null,用 kill(pid,0) 探活(存在性检查,不真发信号)
+      if (child && child.exitCode !== null) throw new Error('Chrome 启动后立即退出(端口被占用或 profile 损坏)');
+      if (!child && pid) { try { process.kill(pid, 0); } catch { throw new Error('Chrome 启动后立即退出(端口被占用或 profile 损坏)'); } }
       try {
         await httpGetJson(`http://127.0.0.1:${port}/json/version`, 1500);
         return String(port);
@@ -137,8 +183,12 @@ export async function ensureAgentChrome(): Promise<string> {
 export function killAgentChrome(): void {
   if (chromeProc) {
     try { chromeProc.kill(); } catch { /* already dead */ }
-    chromeProc = null; chromePort = 0;
   }
+  // open -n 拉起的 macOS 分支:不是子进程,按 PID 收掉(只杀带专属 profile 的那个实例)
+  if (chromePid) {
+    try { process.kill(chromePid, 'SIGTERM'); } catch { /* already dead */ }
+  }
+  chromeProc = null; chromePort = 0; chromePid = null;
 }
 
 // ── Tab(页面)管理 ── Tab management ──
