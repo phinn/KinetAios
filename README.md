@@ -111,6 +111,29 @@ npm start
 - **Client**: the Direct engine auto-connects to MCP servers configured on your system (scans `~/.claude.json`, `~/.codex/config.toml`, Claude Desktop). stdio transport, auto-reconnect after unexpected drops. The 🔌 button shows connected servers/tools.
 - **Server**: a built-in MCP Server (HTTP+SSE) exposes a `run_agent` tool — remote machines can invoke your local full agent. Token auth (constant-time compare), 5-minute timeout, zombie-connection detection.
 
+### Tools
+
+## Tools
+
+| Tool | Description |
+|---|---|
+| `run_agent` | Run the full local agent (any engine) with a task prompt; streams progress and returns the final answer. Authenticated via bearer token, 5-minute timeout. |
+
+## Configuration
+
+```json
+{
+  "mcpServers": {
+    "kinetaios": {
+      "url": "http://127.0.0.1:18109/mcp",
+      "headers": { "Authorization": "Bearer <your-token>" }
+    }
+  }
+}
+```
+
+Enable it in KinetAios under **Settings → MCP Server** (pick a port, optionally set a token — omit the header if empty). Default port: `18109`, off by default.
+
 ### Long-term memory + memory graph
 - Each turn, durable "facts about the user" are extracted in the background → SQLite → injected into the next turn. Shared **across engines and sessions**.
 - **Memory graph** visualization: force-directed graph of memory provenance, conflict detection, timeline. Standalone fullscreen window.

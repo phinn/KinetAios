@@ -1,6 +1,6 @@
 # KinetAios 上游 PR 追踪表
 
-> 更新: 2026-10-28 | 仓库: phinn/KinetAios (v4.0.3)
+> 更新: 2026-11-02 | 仓库: phinn/KinetAios (v4.0.3)
 > 用途: 所有上游收录 PR 的状态快照。每次跟进前先跑一遍状态刷新(脚本见 /tmp/build_table.py 模式),不要凭记忆。
 
 ## 状态总览
@@ -9,11 +9,12 @@
 |---|---|---|---|---|
 | serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | Add KinetAios | ✅ MERGED 2026-10-19 | **主引流源**,已验证带来 referrer 流量 |
 | juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | KinetAios 用量采集 | ✅ MERGED 2026-10-08 | 国内渠道 |
-| e2b-dev/awesome-ai-agents | [#1397](https://github.com/e2b-dev/awesome-ai-agents/pull/1397) | Add kinetaios | ⏳ open, clean | CLA 已签;维护者审核慢(数周),定期回查 |
-| punkpeye/awesome-mcp-servers (60k⭐) | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | Developer Tools 区 | ⏳ open | Glama 目录已收录(条件满足),2026-10-28 已发跟进评论 |
-| kyrolabs/awesome-agents | [#902](https://github.com/kyrolabs/awesome-agents/pull/902) | Conversational / General Agents | ⏳ open | 旧 #781 被 botbocks 批量清理关闭(该仓库近期一半 PR 同遭遇,非针对);GitHub 不允许 reopen,已基于最新上游重开;**警惕再次被 bot 清理** |
+| **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | 收录页 | ✅ LIVE(免 PR 自动收录) | 2026-11-02 确认;AI & Agents 分类,README 特性已展示。**缺口:Tools 列表+config 块**(站方声明按 README `## Tools` 标题自动抓取)→ 11-02 双语 README 已补,等重抓 |
+| e2b-dev/awesome-ai-agents | [#1397](https://github.com/e2b-dev/awesome-ai-agents/pull/1397) | Add kinetaios | ⏳ open, clean | CLA 已签;维护者**活跃**(10-23~11-02 每日合并别人 PR),唯一解释=排期/排队,持续留回查评论即可 |
+| punkpeye/awesome-mcp-servers (60k⭐) | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | Developer Tools 区 | ⏳ open, clean | Glama A 级徽章+rebase 全齐,维护者 nudge 已回复,10-28 跟进评论后无新消息,只等合并 |
+| kyrolabs/awesome-agents | ~~#781~~ → ~~#902~~ | Conversational / General Agents | ❌ #902 被 botbocks 于 2026-10-29 关闭 | **bot 风暴确认**:10-29~10-31 连关 15+ PR(#900-#921 全军覆没,含早期 #586),30 天内该仓 **0 merge**。判定=仓库进入无人维护+bot 大清洗状态,**不再投**;等待期观察是否复活 |
 | Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | Cask: add kinetaios | ❌ closed(等重开) | bot 因"模板缺失"关闭(实为 AI 检测误伤);已补全官方模板+留言申请重开;**cask 本身三次修正全绿** |
-| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | KinetAios.KinetAios 4.0.3 | ⏳ open, 验证中 | CLA 已签;首轮验证败于 NSIS 静默参数,已修(neutral + ProductCode f65d9359…+ /S),等 bot 重跑 |
+| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | KinetAios.KinetAios 4.0.3 | ⏳ open, clean | **已进 moderator 人工审批队列**(10-28 policy bot 留言"requires a moderator to approve")。CLA 已签,验证流程走完,只等人 |
 
 ## 已关未合并(不再跟进)
 
@@ -36,8 +37,9 @@
 
 ## 下一步动作
 
-1. **winget**: 等 winget 验证 bot 重跑(通常 30-60 分钟出结果);若静默装仍失败,本地实测 `KinetAios.Setup.4.0.3.exe /S /currentuser`
-2. **Homebrew**: 若 3-5 天无人重开 → 关闭,stars ≥75 后用现成 cask(`docs/tmp` 已存最终版)再投
-3. **kyrolabs #902**: 每周查一次是否又被 bot 清理
-4. **e2b #1397 / punkpeye #14667**: 维护者节奏慢,每 2 周回查
-5. stars 过 75/100 后:重投 homebrew-cask(附 notability 改善说明)
+1. **README Tools/config 段**(11-02 已推):等 mcp.so 重抓 README,回查 https://mcp.so/servers/kinetaios 是否出现工具列表与 config;若 2 周未抓,发邮件/表单催更(站内无 PR 机制)
+2. **winget #463867**: 已在人工审批队列,不动;若 2-3 周无人批,礼貌 at moderator 询问
+3. **e2b #1397 / punkpeye #14667**: 维护者活跃但排期慢,每 2 周留一条简短回查评论(别刷屏)
+4. **Homebrew**: 若无人重开 → 放弃本轮,stars ≥75 后用现成 cask(`docs/tmp` 已存最终版)再投
+5. **kyrolabs**: 已放弃,仅在偶遇该仓库复活迹象(出现新 merge)时再评估
+6. stars 过 75/100 后:重投 homebrew-cask(附 notability 改善说明)

@@ -132,6 +132,27 @@ npm start
 - **客户端**:Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop),stdio 客户端,意外断开自动重连。🔌 按钮可查看已连服务/工具。
 - **服务端**:内置 MCP Server(HTTP+SSE)暴露 `run_agent` 工具 —— 远程机器可以调用本机完整 Agent。Token 鉴权(恒定时间比较)、5 分钟超时、僵尸连接检测。
 
+## 工具列表
+
+| 工具 | 说明 |
+|---|---|
+| `run_agent` | 运行本机完整 Agent(任意引擎)执行任务;流式推进并返回最终答案。Bearer token 鉴权,5 分钟超时。 |
+
+## 配置示例
+
+```json
+{
+  "mcpServers": {
+    "kinetaios": {
+      "url": "http://127.0.0.1:18109/mcp",
+      "headers": { "Authorization": "Bearer <your-token>" }
+    }
+  }
+}
+```
+
+在 KinetAios **设置 → MCP Server** 中启用(自选端口,可选设置 token —— 为空则省略该 header)。默认端口 `18109`,默认关闭。
+
 ### 长期记忆 + 记忆图谱
 - 每轮后台抽取「关于用户的持久事实」→ SQLite → 注入下轮。**跨引擎、跨会话**共享。
 - **记忆图谱**可视化:力导向图展示记忆溯源、冲突检测、时间线。独立全屏窗口。
