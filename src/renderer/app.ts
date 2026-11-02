@@ -1282,6 +1282,19 @@ function discardDraft(id: string): void {
   convDrafts.delete(id);
   try { localStorage.removeItem('draft:' + id); } catch { /* */ }
 }
+// 发送成功后的草稿清理:必须走 discardDraft(内存 Map + localStorage 双清)。
+// 已踩坑(2026-11-02):send()/queue/steer 清 composer.value='' 不派发 input 事件,
+// saveDraft 无机会覆盖;若只删内存 Map,localStorage['draft:<id>] 残留已发送文本,
+// 重启后 restoreDraft fallback 回填 → "已发出去的内容还在输入框"。
+// Draft cleanup after send must use discardDraft (memory Map + localStorage).
+// Pitfall 2026-11-02: setting composer.value='' fires no `input`, so saveDraft
+// never overwrites; clearing only the in-memory Map leaves the sent text in
+// localStorage and restoreDraft puts it back after restart.
+function clearComposerDraft(id: string | null): void {
+  if (id) discardDraft(id);
+  const composer = document.getElementById('composer') as HTMLTextAreaElement | null;
+  if (composer) { composer.value = ''; autosize(composer); }
+}
 
 // 相对时间格式化:刚刚 / N分钟前 / N小时前 / 昨天 / MM-DD / YYYY-MM-DD。
 // Relative time formatter for sidebar list items.
@@ -9111,8 +9124,7 @@ function openPathExternal(path: string): void {
       const runConv = selectedId ? convs.get(selectedId) : undefined;
       const draft = composer.value.trim();
       if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
-        composer.value = '';
-        autosize(composer);
+        clearComposerDraft(runConv.id); // queue/steer 也算发出:内存+localStorage 双清(2026-11-02 残留修复)
         recordSendHistory(draft); // 排队/转向也算"发送过",否则 running 会话高频路径历史永远为空
         if (e.metaKey || e.ctrlKey) {
           void steerNow(runConv.id, draft);
@@ -10274,9 +10286,7 @@ async function send() {
     // Dedupe consecutive duplicates; store raw typed text only (attachment wrappers excluded).
     recordSendHistory(typed);
     sendHistoryIdx = -1;
-    composer.value = '';
-    autosize(composer);
-    convDrafts.delete(selectedId); // 发送成功,清掉该频道草稿
+    clearComposerDraft(selectedId); // 发送成功:清 composer + 内存 Map + localStorage 双清(裸 convDrafts.delete 漏 localStorage,重启回填已发文本)
     document.getElementById('composer')!.focus();
     // 发送后强制滚到底部;一层 rAF 确保 onConversation → renderMain 已渲染新 turn DOM。
     // scrollDownForce 现在是同步的,所以延迟一帧即可。
