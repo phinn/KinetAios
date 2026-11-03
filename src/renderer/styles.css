@@ -1,4 +1,5 @@
 :root {
+  --read-col: 1360px; /* 阅读列宽:Windows 宽屏反馈 880→1120→1360 */
   color-scheme: dark; /* 原生控件(下拉菜单/spinner/滚动条/自动填充)跟随深色;各主题块按明暗覆盖 */
   --bg: #18181c;
   --bg-side: #131316;
@@ -2245,9 +2246,10 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 /* 阅读限宽:宽窗口下正文行过长伤可读性,居中限宽阅读列。
    #turns 保持全宽(滚动条贴右缘),内容层收敛。
    Readability measure: center content column on wide windows.
-   v4.0.6: 880→1120 — 宽屏两侧留白过大(用户反馈),行长 1120px@13px≈86ch 仍在可读区间 */
-#turns > .turn { max-width: 1120px; margin: 0 auto; width: 100%; }
-#turns > .turn-day-sep, #turns > .date-divider { max-width: 1120px; margin-left: auto; margin-right: auto; }
+   v4.0.6→now: 880→1120→1360 — Windows 宽屏(2560/1920 全屏)两侧留白仍过大;1360@13px≈105ch,
+   超 90ch 经验区间但用户明确偏好满铺;变量 --read-col 一次可调,主题可覆盖 */
+#turns > .turn { max-width: var(--read-col, 1360px); margin: 0 auto; width: 100%; }
+#turns > .turn-day-sep, #turns > .date-divider { max-width: var(--read-col, 1360px); margin-left: auto; margin-right: auto; }
 /* AI 回复:气泡框去掉,正文与页面同底色融合(WB 式呼吸感);
    边框+底色+阴影三件套是"卡片感"的来源,正文直接裸排在阅读列里 */
 .msg.ai .bubble { background: transparent; border: none; box-shadow: none; padding: 2px 0 0; max-width: none; }
@@ -2717,12 +2719,12 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   border-radius: var(--r-xl);
   box-shadow: 0 8px 28px rgba(0,0,0,0.32), 0 2px 8px rgba(0,0,0,0.18);
   padding: 4px 10px 2px;
-  max-width: 1120px; width: 100%; margin: 0 auto; /* 与阅读列同步 */
+  max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 与阅读列同步 */
   display: flex; flex-direction: column; gap: 2px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
 #input:focus-within #composer-card { border-color: var(--accent-dim); }
-#queue-row { max-width: 1120px; width: 100%; margin: 0 auto; /* 排队行跟卡片对齐 */ }
+#queue-row { max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 排队行跟卡片对齐 */ }
 #input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none; }
 #input textarea::placeholder { color: var(--text-faint); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
