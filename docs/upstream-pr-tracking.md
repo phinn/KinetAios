@@ -9,6 +9,7 @@
 |---|---|---|---|---|
 | serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | Add KinetAios | ✅ MERGED 2026-10-19 | **主引流源**,已验证带来 referrer 流量 |
 | juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | KinetAios 用量采集 | ✅ MERGED 2026-10-08 | 国内渠道 |
+| 1c7/chinese-independent-developer | [#1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 收录申请:3 个 macOS App | ✅ **已进主版面 2026-11-03**(1c7 两小时即合);同日留言补齐其余 16 个 App([comment-6606924972](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972)),等 1c7 合入 README |
 | **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | 收录页 | ✅ LIVE(免 PR 自动收录) | 2026-11-02 确认;AI & Agents 分类,README 特性已展示。**缺口:Tools 列表+config 块**(站方声明按 README `## Tools` 标题自动抓取)→ 11-02 双语 README 已补,等重抓 |
 | e2b-dev/awesome-ai-agents | [#1397](https://github.com/e2b-dev/awesome-ai-agents/pull/1397) | Add kinetaios | ⏳ open, clean | CLA 已签;⚠️ 11-03 复核**维护队列已死**(近 30 天 merged=0),停止回查评论,只做静默状态监测 |
 | punkpeye/awesome-mcp-servers (60k⭐) | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | Developer Tools 区 | ⏳ open, clean | Glama A 级徽章+rebase 全齐,维护者 nudge 已回复,10-28 跟进评论后无新消息,只等合并 |
