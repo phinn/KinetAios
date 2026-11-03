@@ -134,7 +134,8 @@ export function parseRecallPatch(text: string): RecallPatch | null {
 function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted || ms <= 0) { resolve(); return; }
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    const onAbort = (): void => { clearTimeout(t); resolve(); };
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }

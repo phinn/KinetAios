@@ -131,8 +131,9 @@ export function sleepBackoff(attempt: number, signal: AbortSignal): Promise<void
   const ms = BACKOFF_MS[Math.max(0, idx)] ?? 60_000;
   return new Promise((resolve) => {
     if (signal.aborted || ms <= 0) { resolve(); return; }
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    const onAbort = (): void => { clearTimeout(t); resolve(); };
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 

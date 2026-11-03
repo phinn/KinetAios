@@ -782,7 +782,7 @@ export class TaskManager {
             resolve(err ? '' : String(stdout).slice(-2000));
           });
           if (signal) {
-            const onAbort = (): void => resolve('');
+            const onAbort = (): void => { signal.removeEventListener('abort', onAbort); resolve(''); };
             signal.addEventListener('abort', onAbort, { once: true });
           }
         });
@@ -1442,7 +1442,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"lessons":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 30_000);
+    // 90s 预算:此调用跑完整 LLM 流式(可能含 429 退避重试),30s 会自我熔断
+    // → '[memory] extract failed: aborted' 噪声 + 事实白跑(2026-11-03 事故)。
+    const timer = setTimeout(() => ac.abort(), 90_000);
     const onParentAbort = (): void => ac.abort();
     if (parentSignal.aborted) ac.abort();
     else parentSignal.addEventListener('abort', onParentAbort, { once: true });
@@ -1589,7 +1591,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         }
       }
     } catch (e) {
-      console.error('[memory] extract failed:', (e as Error)?.message);
+      // abort 路径不降噪失败:新一轮开始旧轮摘要被熔断属预期调度(用户连发/切引擎),
+      // 打成 console.error 会污染日志;静默降级。只有非 abort 的真实失败才值得记录。
+      if (!parentSignal?.aborted && (e as Error)?.message !== 'aborted') {
+        console.error('[memory] extract failed:', (e as Error)?.message);
+      }
     } finally {
       clearTimeout(timer);
       parentSignal.removeEventListener('abort', onParentAbort);
@@ -1632,7 +1638,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     ).join('\n\n');
 
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 20_000);
+    const timer = setTimeout(() => ac.abort(), 60_000); // 20s 会自我熔断,同 facts 抽取(2026-11-03)
     const onParentAbort = (): void => ac.abort();
     if (parentSignal.aborted) { ac.abort(); return; }
     parentSignal.addEventListener('abort', onParentAbort, { once: true });
