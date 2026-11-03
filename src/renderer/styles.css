@@ -2242,11 +2242,12 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 }
 .msg.user .avatar { background: linear-gradient(135deg, var(--accent), var(--accent-dim)); color: #fff; }
 .msg.ai .avatar { background: linear-gradient(135deg, var(--bg-elev-2), var(--bg-elev)); border: 1px solid var(--border); color: var(--accent); box-shadow: 0 0 0 1px var(--accent-glow), var(--shadow-xs); }
-/* 阅读限宽(WB 对齐):宽窗口下正文行过长伤可读性,居中 880px 阅读列。
+/* 阅读限宽:宽窗口下正文行过长伤可读性,居中限宽阅读列。
    #turns 保持全宽(滚动条贴右缘),内容层收敛。
-   Readability measure: center content column on wide windows. */
-#turns > .turn { max-width: 880px; margin: 0 auto; width: 100%; }
-#turns > .turn-day-sep, #turns > .date-divider { max-width: 880px; margin-left: auto; margin-right: auto; }
+   Readability measure: center content column on wide windows.
+   v4.0.6: 880→1120 — 宽屏两侧留白过大(用户反馈),行长 1120px@13px≈86ch 仍在可读区间 */
+#turns > .turn { max-width: 1120px; margin: 0 auto; width: 100%; }
+#turns > .turn-day-sep, #turns > .date-divider { max-width: 1120px; margin-left: auto; margin-right: auto; }
 /* AI 回复:气泡框去掉,正文与页面同底色融合(WB 式呼吸感);
    边框+底色+阴影三件套是"卡片感"的来源,正文直接裸排在阅读列里 */
 .msg.ai .bubble { background: transparent; border: none; box-shadow: none; padding: 2px 0 0; max-width: none; }
@@ -2706,16 +2707,22 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 /* 恢复交互(容器只做定位) / re-enable interaction on children */
 #input > * { pointer-events: auto; }
 #input::before { display: none; }
-#input > :first-child {
+/* composer 视觉卡:独立 #composer-card 承载(不再用 :first-child —— queue-row 是文档序第一子元素,
+   其 [hidden] 盒子吃掉样式且 display:none 不渲染,卡片视觉随之消失;v4.0.5 排队功能引入的结构回归)。
+   The visual card lives on #composer-card (NOT :first-child — the hidden queue-row is the
+   first DOM child and swallows the card styles while rendering nothing). */
+#composer-card {
   background: var(--surface-input, var(--bg-side));
   border: 1px solid var(--border-soft, var(--border));
   border-radius: var(--r-xl);
   box-shadow: 0 8px 28px rgba(0,0,0,0.32), 0 2px 8px rgba(0,0,0,0.18);
   padding: 4px 10px 2px;
-  max-width: 880px; width: 100%; margin: 0 auto;
+  max-width: 1120px; width: 100%; margin: 0 auto; /* 与阅读列同步 */
+  display: flex; flex-direction: column; gap: 2px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
 }
-#input:focus-within > :first-child { border-color: var(--accent-dim); }
+#input:focus-within #composer-card { border-color: var(--accent-dim); }
+#queue-row { max-width: 1120px; width: 100%; margin: 0 auto; /* 排队行跟卡片对齐 */ }
 #input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none; }
 #input textarea::placeholder { color: var(--text-faint); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */

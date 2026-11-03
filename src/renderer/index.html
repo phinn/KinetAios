@@ -181,6 +181,8 @@
           <div id="input">
             <!-- 消息排队 chip 行(running 时 Enter 入队的消息)-->
             <div id="queue-row" hidden></div>
+            <!-- composer 卡壳:attach+输入+工具栏的视觉卡片。不用 :first-child 定位(queue-row 抢身份导致卡片消失),独立 id 稳定命中 -->
+            <div id="composer-card">
             <div id="attach-row" class="attach-row"></div>
             <textarea id="composer" rows="1" data-i18n-placeholder="composer.placeholder" data-i18n-aria="a11y.chatInput" aria-label="输入消息… (Enter 发送, Shift+Enter 换行)" placeholder="给 KinetAios 下达任务…"></textarea>
             <div class="composer-bar">
@@ -210,6 +212,7 @@
                 <button class="cm-item" id="cm-ralph" data-i18n-title="ralph.toggle"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 1l4 4-4 4"/><path d="M3 11V9a4 4 0 014-4h14"/><path d="M7 23l-4-4 4-4"/><path d="M21 13v2a4 4 0 01-4 4H3"/></svg><span data-i18n="composer.ralph">Ralph 循环</span></button>
               </div>
             </div>
+            </div><!-- /composer-card -->
             <div id="slash-menu" class="slash-menu" hidden></div>
             <div id="at-menu" class="slash-menu" hidden></div>
             <div id="mcp-menu" class="mcp-menu" hidden></div>
