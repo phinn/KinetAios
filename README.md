@@ -111,6 +111,29 @@ npm start
 - **Client**: the Direct engine auto-connects to MCP servers configured on your system (scans `~/.claude.json`, `~/.codex/config.toml`, Claude Desktop). stdio transport, auto-reconnect after unexpected drops. The 🔌 button shows connected servers/tools.
 - **Server**: a built-in MCP Server (HTTP+SSE) exposes a `run_agent` tool — remote machines can invoke your local full agent. Token auth (constant-time compare), 5-minute timeout, zombie-connection detection.
 
+### Tools
+
+## Tools
+
+| Tool | Description |
+|---|---|
+| `run_agent` | Run the full local agent (any engine) with a task prompt; streams progress and returns the final answer. Authenticated via bearer token, 5-minute timeout. |
+
+## Configuration
+
+```json
+{
+  "mcpServers": {
+    "kinetaios": {
+      "url": "http://127.0.0.1:18109/mcp",
+      "headers": { "Authorization": "Bearer <your-token>" }
+    }
+  }
+}
+```
+
+Enable it in KinetAios under **Settings → MCP Server** (pick a port, optionally set a token — omit the header if empty). Default port: `18109`, off by default.
+
 ### Long-term memory + memory graph
 - Each turn, durable "facts about the user" are extracted in the background → SQLite → injected into the next turn. Shared **across engines and sessions**.
 - **Memory graph** visualization: force-directed graph of memory provenance, conflict detection, timeline. Standalone fullscreen window.
@@ -278,12 +301,21 @@ npm run dist         # default target for the current platform
 
 ## The Kinet family
 
-KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.html):
+KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.html) — **19 apps on the App Store**, one app per job:
 
-- **KinetFit** — smart health companion
-- **KinetAgent** — AI automation assistant
-- **KinetBrief** — AI briefing / notes app
-- **KinetTask** — [local-first task manager with on-device AI](https://apps.apple.com/us/app/kinettask/id6780944289) (Mac App Store)
+**Flagships**
+
+- **[KinetAios on the Mac App Store](https://apps.apple.com/app/id6809450051)** — same agent, one-click install ($12.99); the open-source build in this repo is free
+- **[KinetTask](https://apps.apple.com/app/id6780944289)** — local-first task manager, on-device AI, data stays in local SQLite
+- **[KinetBrief](https://apps.apple.com/app/id6782778566)** — AI briefing / meeting notes — make today count
+- **[KinetFit](https://apps.apple.com/app/id6773755689)** — health companion — wake the body up first
+- **[KinetSoul](https://apps.apple.com/app/id6780600464)** — AI journal — give your feelings a way out
+
+**Also on the App Store**
+
+[KinetFlashFind](https://apps.apple.com/app/id6808698046) — every file, in under a second · [KinetMinutes](https://apps.apple.com/app/id6813593104) — notes ready when you leave the room · [KinetMorning](https://apps.apple.com/app/id6779978181) — daily check-in, visible from afar · [KinetElf](https://apps.apple.com/app/id6807457522) — a pocket elf that grows on you · [KinetStudy](https://apps.apple.com/app/id6797004663) — mistakes kept, parents not guessing · [KinetMagicDisk](https://apps.apple.com/app/id6813423397) — see who's eating your disk · [Clasp Focus](https://apps.apple.com/app/id6820942179) — close the lid and it begins · [DriftDesk](https://apps.apple.com/app/id6817377455) — a corner of calm in the menu bar · [DuoFolio](https://apps.apple.com/app/id6823855712) — a book built for the fold · [FurChart](https://apps.apple.com/app/id6817339084) — pet records, never in a drawer · [KinetRain](https://apps.apple.com/app/id6814033986) — rain on demand · [M5Chat](https://apps.apple.com/app/id6820196518) — multi-engine AI in your pocket · [Promptside](https://apps.apple.com/app/id6820624868) — one person is the whole crew · [KinetMemory](https://apps.apple.com/app/id6815923723) — spaced repetition, forgetting on schedule
+
+*KinetAgent (drive your Mac's Claude Code from iPhone), KinetMagicWindow and KinetDock are in development — full roadmap on the [family page](https://phinn.github.io/kinetapp/index.html).*
 
 ## License
 

@@ -86,14 +86,6 @@ api_key: sk-orca-...          # 在 OrcaRouter 控制台创建
 model: orcarouter/auto        # 自适应路由;也可指定 vendor/model,如 anthropic/claude-opus-4.8
 ```
 
-## Kinet 产品家族
-
-KinetAios 是 [Kinet 产品家族](https://phinn.github.io/kinetapp/index.html)的一员:
-
-- **KinetFit** — 智能健康管理助手
-- **KinetAgent** — AI 自动化助手
-- **KinetBrief** — 智能信息简报 / 笔记应用
-
 ### 从源码跑
 
 需要 **Node.js 18+** 和联网(native 模块 `better-sqlite3` 要编译)。
@@ -131,6 +123,27 @@ npm start
 ### MCP 集成(客户端 + 服务端)
 - **客户端**:Direct 引擎自动接入系统配置的 MCP 服务(扫描 `~/.claude.json` / `~/.codex/config.toml` / Claude Desktop),stdio 客户端,意外断开自动重连。🔌 按钮可查看已连服务/工具。
 - **服务端**:内置 MCP Server(HTTP+SSE)暴露 `run_agent` 工具 —— 远程机器可以调用本机完整 Agent。Token 鉴权(恒定时间比较)、5 分钟超时、僵尸连接检测。
+
+## 工具列表
+
+| 工具 | 说明 |
+|---|---|
+| `run_agent` | 运行本机完整 Agent(任意引擎)执行任务;流式推进并返回最终答案。Bearer token 鉴权,5 分钟超时。 |
+
+## 配置示例
+
+```json
+{
+  "mcpServers": {
+    "kinetaios": {
+      "url": "http://127.0.0.1:18109/mcp",
+      "headers": { "Authorization": "Bearer <your-token>" }
+    }
+  }
+}
+```
+
+在 KinetAios **设置 → MCP Server** 中启用(自选端口,可选设置 token —— 为空则省略该 header)。默认端口 `18109`,默认关闭。
 
 ### 长期记忆 + 记忆图谱
 - 每轮后台抽取「关于用户的持久事实」→ SQLite → 注入下轮。**跨引擎、跨会话**共享。
@@ -282,9 +295,18 @@ npm run dist         # 当前平台默认目标
 
 ## Kinet 家族
 
-KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一员:
+KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一员 —— **19 个 App 已上架 App Store**,一个 App 干一件事:
 
-- **KinetFit** — 智能健康伴侣
-- **KinetAgent** — AI 自动化助手
-- **KinetBrief** — AI 简报 / 笔记
-- **KinetTask** — [端侧 AI 任务管理器](https://apps.apple.com/cn/app/kinettask/id6780944289),数据全程本地 SQLite,不上云不建账号(Mac App Store)
+**旗舰**
+
+- **[KinetAios Mac App Store 版](https://apps.apple.com/cn/app/id6809450051)** —— 同一个 Agent,一键安装(¥68);本仓库开源版永久免费
+- **[KinetTask](https://apps.apple.com/cn/app/id6780944289)** —— 端侧 AI 任务管理器,数据全程本地 SQLite,不上云不建账号
+- **[KinetBrief](https://apps.apple.com/cn/app/id6782778566)** —— AI 会议纪要 —— 今日开会没白开
+- **[KinetFit](https://apps.apple.com/cn/app/id6773755689)** —— 健康管理 —— 先把身体打开
+- **[KinetSoul](https://apps.apple.com/cn/app/id6780600464)** —— AI 心理日记 —— 给情绪一个出口
+
+**同样在 App Store**
+
+[KinetFlashFind](https://apps.apple.com/cn/app/id6808698046) 全盘文件一秒到手 · [KinetMinutes](https://apps.apple.com/cn/app/id6813593104) 开完会纪要即有 · [KinetMorning](https://apps.apple.com/cn/app/id6779978181) 一声平安远程可见 · [KinetElf](https://apps.apple.com/cn/app/id6807457522) 会长大的口袋精灵 · [KinetStudy](https://apps.apple.com/cn/app/id6797004663) 错题有人管 · [KinetMagicDisk](https://apps.apple.com/cn/app/id6813423397) 谁占磁盘一眼看见 · [Clasp Focus](https://apps.apple.com/cn/app/id6820942179) 合上盖子就开始 · [DriftDesk](https://apps.apple.com/cn/app/id6817377455) 菜单栏声音角落 · [DuoFolio](https://apps.apple.com/cn/app/id6823855712) 为折叠而生的书 · [FurChart](https://apps.apple.com/cn/app/id6817339084) 毛孩子病历不翻抽屉 · [KinetRain](https://apps.apple.com/cn/app/id6814033986) 想下雨就下雨 · [M5Chat](https://apps.apple.com/cn/app/id6820196518) 口袋里的多引擎 AI · [Promptside](https://apps.apple.com/cn/app/id6820624868) 一个人就是整个剧组 · [KinetMemory](https://apps.apple.com/cn/app/id6815923723) 间隔复习该忘的才忘
+
+*KinetAgent(手机遥控电脑 Agent)、KinetMagicWindow、KinetDock 开发中 —— 完整路线图见[家族页](https://phinn.github.io/kinetapp/index.html)。*

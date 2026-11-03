@@ -376,7 +376,17 @@ async function realClick(s: CdpSession, selector: string): Promise<void> {
 // ── 导出:工具实现层直接调 ── Exported tool implementations ──
 
 export async function browserNavigate(url: string, newTab: boolean): Promise<string> {
-  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  // URL 归一化:裸域名补 https;本地绝对路径(/开头)或 file:// 走 file 协议直开,
+  // 不强加 https(否则 file:///... 被拼成 https://file///... 直接 ERR_CONNECTION_CLOSED)。
+  // Normalize: bare domains get https; absolute local paths go through file:// as-is.
+  if (/^file:\/\//i.test(url)) {
+    // 已是 file://,原样
+  } else if (/^\/(Users|home|tmp|var|private)\//.test(url) || /^[A-Za-z]:[\\/]/.test(url)) {
+    // 本地绝对路径(macOS/Unix 与 Windows 盘符)→ file:// 协议;空格等字符走 encodeURI
+    url = 'file://' + (url.includes(' ') ? encodeURI(url) : url);
+  } else if (!/^https?:\/\//i.test(url)) {
+    url = 'https://' + url;
+  }
   const targets = await listTargets();
   let target: CdpTarget;
   if (newTab || !targets.length) {
