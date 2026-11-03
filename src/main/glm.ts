@@ -139,7 +139,14 @@ async function fetchUntil200(url: string, init: RequestInit): Promise<Response> 
       throw e;
     } finally {
       clearTimeout(ttfbTimer); // headers 已到(或已抛错)→ 撤首字节看门狗,流阶段交给 sseLines
-      signal?.removeEventListener('abort', onOuterAbort);
+      // ⚠️ 不移除 onOuterAbort(2026-11-03 停止失效事故):resp.body 挂在 ttfbCtrl.signal 上,
+      // 若 headers 到手就移除监听,之后用户 abort 传导不到 body 流 → 点「停止」后 token
+      // 照吐照计费到服务端发完(16K 上限可达数十秒),停止观感失效。
+      // 监听器是 { once:true }:abort 触发即自清;未触发的残留 ≤ 重试次数,turn 结束
+      // signal abort 时批量触发自清,无跨轮泄漏。
+      // Keep the outer-abort listener after headers arrive: resp.body hangs off ttfbCtrl.signal,
+      // so severing it here meant Stop() no longer cancelled the body stream — tokens kept
+      // streaming and billing until the server finished.
     }
     if (resp.status === 200) return resp;
     const detail = await readErr(resp);

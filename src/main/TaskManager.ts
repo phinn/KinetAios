@@ -1103,6 +1103,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
     // 但 abort 可能引发 engine 内部 error 事件 → 用 signal.aborted 区分)。
     if (ev.type === 'done' || ev.type === 'error') {
+      // 终态清过时 statusNote:steer/排队提示(「⚡ 已插入用户打断」等)是过程性信息,
+      // turn 结束后仍挂着会误导用户以为下一轮还带旧提示(2026-11-03 排查发现)。
+      // Goal 循环的暂停类 note(时长/成本上限)不在 engine done 路径,不受影响。
+      if (conv.statusNote) conv.statusNote = null;
       // 上下文占用估算(Direct 系才有 directHistory;CLI 引擎的上下文在其进程内,估不了)
       if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4') {
         conv.ctxTokens = estTokenCount(conv.directHistory);
