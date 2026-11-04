@@ -1,6 +1,6 @@
 # KinetAios 上游 PR 追踪表
 
-> 更新: 2026-11-02 | 仓库: phinn/KinetAios (v4.0.3)
+> 更新: 2026-11-04 | 仓库: phinn/KinetAios (v4.0.3)
 > 用途: 所有上游收录 PR 的状态快照。每次跟进前先跑一遍状态刷新(脚本见 /tmp/build_table.py 模式),不要凭记忆。
 
 ## 状态总览
@@ -16,6 +16,7 @@
 | kyrolabs/awesome-agents | ~~#781~~ → ~~#902~~ | Conversational / General Agents | ❌ #902 被 botbocks 于 2026-10-29 关闭 | **bot 风暴确认**:10-29~10-31 连关 15+ PR(#900-#921 全军覆没,含早期 #586),30 天内该仓 **0 merge**。判定=仓库进入无人维护+bot 大清洗状态,**不再投**;等待期观察是否复活 |
 | Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | Cask: add kinetaios | ❌ closed(等重开) | bot 因"模板缺失"关闭(实为 AI 检测误伤);已补全官方模板+留言申请重开;**cask 本身三次修正全绿** |
 | microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | KinetAios.KinetAios 4.0.3 | ⏳ open, clean | **已进 moderator 人工审批队列**(10-28 policy bot 留言"requires a moderator to approve")。CLA 已签,验证流程走完,只等人 |
+| jamesmurdza/awesome-ai-devtools | [#1404](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1404) | Desktop & Mobile Applications 区 | ⏳ open, clean | 前身 #1096 被 devtools-repo-bot 以模板缺失关闭(描述缺 `## Description`+4 项 checklist 未勾,且 body 用错别仓模板口径);**bot 关闭的 PR 作者无法 reopen**(issues/GraphQL 双端点 422,与 Homebrew 同款)。改按本仓模板重写 body(fork 分支 add-kinetaios 复用)重开 **#1404**,开后 4 分钟 bot 静默+mergeable clean=模板校验通过。本仓只收**开发者工具**,general-purpose agent 是红线,body 已显式澄清"not a general-purpose assistant" |
 
 ## 已关未合并(不再跟进)
 
@@ -24,6 +25,7 @@
 | getagentseal/codeburn | [#1540](https://github.com/getagentseal/codeburn/pull/1540) | closed 2026-09-24, 未合并 | 此前误记为 merged;小仓库维护者不活跃 |
 | WangRongsheng/awesome-LLM-resources | [#232](https://github.com/WangRongsheng/awesome-LLM-resources/pull/232) | closed 2026-09-28, 未合并 | 同上 |
 | kyrolabs/awesome-agents | [#781](https://github.com/kyrolabs/awesome-agents/pull/781) | botbocks 批量清理 | 已由 #902 替代 |
+| jamesmurdza/awesome-ai-devtools | [#1096](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1096) | closed 2026-10-28(bot 模板校验),未合并 | body 用了别仓模板口径(缺 `## Description`/未勾 checklist);bot 关闭的 PR 作者不可 reopen(422),重写 body 开 #1404 替代 |
 
 ## 已实测的关键事实(2026-10-28)
 
