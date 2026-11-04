@@ -17,6 +17,7 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 [![Release](https://img.shields.io/github/v/release/phinn/KinetAios)](https://github.com/phinn/KinetAios/releases/latest)
 [![Discussions](https://img.shields.io/github/discussions/phinn/KinetAios)](https://github.com/phinn/KinetAios/discussions)
 [![Good First Issues](https://img.shields.io/badge/-good%20first%20issues-7057ff)](https://github.com/phinn/KinetAios/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[![Mac App Store](https://img.shields.io/badge/Download_on_the-Mac_App_Store-007AFF)](https://apps.apple.com/cn/app/id6809450051)
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
@@ -66,7 +67,7 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 下载最新发布:
 
 - **Windows** — [下载 `KinetAios-Setup-<版本号>.exe`](https://github.com/phinn/KinetAios/releases/latest)(NSIS 安装包,当前 4.0.6;安装 → 启动 → 填 API key 即用)
-- **macOS** — [下载最新 `.dmg`](https://github.com/phinn/KinetAios/releases/latest)(拖进 Applications,同样三步)
+- **macOS** — [下载最新 `.dmg`](https://github.com/phinn/KinetAios/releases/latest)(拖进 Applications,同样三步);或 [Mac App Store 版](https://apps.apple.com/cn/app/id6809450051)(¥68,自动更新;本仓库源码构建版永久免费)
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。
 

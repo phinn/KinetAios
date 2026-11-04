@@ -8,6 +8,7 @@
 [![Platforms](https://img.shields.io/badge/platform-Windows%2011%20%7C%20macOS-black)](https://github.com/phinn/KinetAios/releases/latest)
 [![Discussions](https://img.shields.io/github/discussions/phinn/KinetAios)](https://github.com/phinn/KinetAios/discussions)
 [![Good First Issues](https://img.shields.io/badge/-good%20first%20issues-7057ff)](https://github.com/phinn/KinetAios/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22)
+[![Mac App Store](https://img.shields.io/badge/Download_on_the-Mac_App_Store-007AFF)](https://apps.apple.com/app/id6809450051)
 
 > 🌐 **[Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
@@ -57,7 +58,7 @@ Most AI clients lock you into one provider, drop context when you switch engines
 Grab the latest release:
 
 - **Windows** — [Download `KinetAios-Setup-<version>.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer, current: 4.0.6; install → launch → paste your API key)
-- **macOS** — [Download the latest `.dmg`](https://github.com/phinn/KinetAios/releases/latest) (drag to Applications, same three steps)
+- **macOS** — [Download the latest `.dmg`](https://github.com/phinn/KinetAios/releases/latest) (drag to Applications, same three steps), or [get it on the Mac App Store](https://apps.apple.com/app/id6809450051) ($12.99; the source build in this repo stays free)
 
 > Unsigned builds → Windows SmartScreen / macOS Gatekeeper will warn; allow it manually.
 
