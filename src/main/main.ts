@@ -6,7 +6,10 @@ import { app as __app } from 'electron';
 import __path from 'node:path';
 import { getBrand } from './brand'; // ⚠️ 必须在这组 import 里:编译成 CJS 后 require 按声明顺序排放,
 // 放后面的组会在 setPath/setName 语句之后才 require → TDZ "Cannot access before initialization"
-const USERDATA_DIR = 'KinetAios';
+// 多实例逃生门(演示/录制/测试):KINET_USERDATA 指定独立 profile 目录。
+// 单实例锁按 userData 判定,不同 profile 可并存;不设则保持默认 'KinetAios'。
+// / Multi-instance escape hatch (demo/recording/testing): distinct userData = distinct single-instance lock.
+const USERDATA_DIR = process.env.KINET_USERDATA || 'KinetAios';
 __app.setPath('userData', __path.join(__app.getPath('appData'), USERDATA_DIR));
 // 显示名(菜单栏/getName)与 getBrand 同源:userData/brand.json 外置覆盖 → 内嵌 dist/brand.json。
 // 必须在 whenReady 前调;路径逻辑只此一份,别再手写 brand 解析。
@@ -1205,6 +1208,9 @@ if (!gotLock) {
   }
 
   app.whenReady().then(() => {
+    // 无障碍树常开(演示录制/E2E):KINET_A11Y=1 时强制构建 Chromium a11y 树,
+    // 供 AX API 按钮定位;默认关闭不影响正常用户。/ Force Chromium a11y tree for AX driving.
+    if (process.env.KINET_A11Y === '1') app.setAccessibilitySupportEnabled(true);
     // ── 隐私闸 confirm 桥注入(dashboardWin 就绪后;函数内每请求重取窗,重建窗不失效)──
     setPrivacyConfirm(privacyConfirm);
     // ── 版本更新检查:IPC + 启动静默检查(发现新版本推 'update-available')──
