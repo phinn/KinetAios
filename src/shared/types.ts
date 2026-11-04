@@ -1298,6 +1298,18 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
     }
     case 'tool': {
       const imgs = ev.images;
+      // 内存泄漏修(2026-11-04):新图落地时剥同 turn 更早 steps 的 images。
+      // computer-use 高频截图路径每张数百 KB~1MB,renderer 三窗口 + main 各持一份,
+      // 长会话线性膨胀(renderer RSS 峰值 744M)。与 FOLD_KEEP_RECENT_IMAGES=1 的
+      // 用户定调一致:只保最新 1 张可见,旧图 UI 显示为占位文本(需要时重截)。
+      // 注意:main 侧 applyAndPersist 也走这里 — 内存态同步瘦身,saveTurn 本就不存图。
+      if (imgs?.length) {
+        const cur = [...t.steps].reverse().find((s) => s.pending && s.startId === ev.startId);
+        const curId = cur?.id;
+        for (const s of t.steps) {
+          if (s.images?.length && s.id !== curId) s.images = undefined;
+        }
+      }
       // 有 startId → 找到对应 pending 卡原位补全(保持卡片位置 = 执行发起顺序)
       if (ev.startId) {
         const pending = [...t.steps].reverse().find((s) => s.pending && s.startId === ev.startId);
