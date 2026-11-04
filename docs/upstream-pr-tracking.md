@@ -66,6 +66,14 @@
    - ✅ HelloGitHub #4242 / ruanyf #13062 已投
    - ⏸→✅ **macnative.io 已投 3 App(11-04,用户注册账号后执行)**:KinetAios #9414 / KinetMagicDisk #9415 / KinetMinutes #9416 全进 review queue(`/profile/apps/<id>/upgrade` 页=已受理信号)。要点:①表单图标/截图是**即时上传**(onChange→POST /api/assets→assets.macnative.io),无 UI 回显,别被 "Drop or click" 迷惑;②React 受控 file input 用 DataTransfer+原生 dispatch 可靠注入;③提交后 URL 跳 listing id 即成功;④Clasp 是别人 App(seller Kihyuk Hong)已剔除;⑤官网 URL 用 dofollow 吃 SEO。第二批候选:DriftDesk #6817377455 / KinetRain #6814033986(等首批过审再投,ambience 类有 thin 风险别烧账号首印象)。素材缓存 /tmp/mn_assets+(icon/shots 已上传走 API,本地仅留档)
    - 排除(已查证):awesome-electron(暂停收录)、awesome-testflight-link(只收 TF 公链,无 TF 不资格)、垂直品类榜(无活跃池)
+   - ✅ **免费渠道实测盘点(11-04 下午)**:付费墙陷阱——TAAFT 免费通道已死(纯付费 Launch)、Toolify $99、aitools.fyi 跳付费 tally、DevHunt 提交指向 listingbott 付费、uneed.best CF 硬拦 IP。**可用免费渠道定论**:
+     - ✅ **meta.appinn.net 发现频道(中文区最高价值)**:phinn 账号有登录态(TL0),KinetAios 自荐帖已按官方模板(topic/77583)提交(标题【开发者自荐】KinetAios – …7 引擎/30+ 工具/21 插件;付费标价 $12.99/¥68),正文走 ProseMirror 合成 ClipboardEvent paste(⚠️ execCommand insertText 在 Discourse PM 上产生幻影状态,paste 事件才走事务)。**新号首帖进 staff 审核队列**,9-23 的 KinetTask 帖(#92332)至今 6 周匿名不可见=同样悬审,别重复投。发帖自动同步 Twitter@Appinn/Telegram@AppinnFX/Fediverse。模板铁律:付费软件必须标价格、标题不带网址、先写「发现理由」
+     - ✅ **MacUpdate**(老牌 Mac 目录):提交入口 /content/submit(需注册账号,免费)
+     - ✅ **少数派 Matrix**(sspai.com/matrix):免费投稿,有 Mac 工具文先例,长文评测向
+     - ✅ **Peerlist Launchpad**:免费 launch(需账号),PH 平替中最活跃
+     - ⚠️ **V2EX**:账号 shenjunjie0202 卡邀请码激活,发帖需用户领邀请码/攒 token
+     - ⚠️ **linux.do**:邀请码制(GitHub 5 年+账号可申请)
+     - 排除:SaaSHub/alternativeto/slant(CF 挡自动化,用户手动)、devhunt.org(开源 only)
 1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
 2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
 3. **winget #463867**: 不动;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
