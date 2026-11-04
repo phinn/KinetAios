@@ -24,6 +24,8 @@
 | punkpeye/awesome-mcp-servers | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | 2026-09-18 | open, 沉默 | 30d 547 merge 极活跃但本 PR 无 review——人工排期长非遗忘。**11-11(距上次跟进 2 周)留最后一条跟进**,再无回复则放弃跟进(挂着不吃亏) |
 | punkpeye/awesome-mcp-clients | [#321](https://github.com/punkpeye/awesome-mcp-clients/pull/321) | 2026-09-17 | open, 沉默 | 同维护者(#14667 同款 547/30d)。跟随 #14667 策略,不单独刷 |
 | jamesmurdza/awesome-ai-devtools | [#1404](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1404) | 2026-11-04 | open, clean | 模板校验 bot 已放行(开后 4 分钟静默)。前身 #1096 bot 模板关闭(缺 `## Description`+checklist,且 body 用错别仓模板)。**教训:投稿前先读目标仓 `.github/PULL_REQUEST_TEMPLATE.md`,别复用其它仓的 body 口径** |
+| linsa-io/macos-apps (847⭐) | [#228](https://github.com/linsa-io/macos-apps/pull/228) | 2026-11-04 | open, clean | Dev tools 区 AgentGrid 后字母序。learn-anything 系(格式 `[Name](link) - Desc.`,句号结尾/禁 A/An 开头/勿匿名链接)。30 天活跃,桌面工具向对口 |
+| WangRongsheng/awesome-LLM-resources (~9k⭐) | [#291](https://github.com/WangRongsheng/awesome-LLM-resources/pull/291) | 2026-11-04 | open, clean, +1/-0 | 中文区大榜。初投错插 Agent 区(自动续号 54),已用 Contents API 重放分支修正:**代码 Coding 区 #28(DeepSeek Harness 后)**,口径 30+ tools。教训:编号目录仓 fork 后须核对目标区实际行号,别信README 目录锚点 |
 
 ## ⏳ Open — 沉默仓(低/零吞吐,静默监测不主动刷)
 
