@@ -1,48 +1,69 @@
 # KinetAios 上游 PR 追踪表
 
-> 更新: 2026-11-04 | 仓库: phinn/KinetAios (v4.0.3)
-> 用途: 所有上游收录 PR 的状态快照。每次跟进前先跑一遍状态刷新(脚本见 /tmp/build_table.py 模式),不要凭记忆。
+> 更新: 2026-11-04 全量盘点 | 仓库: phinn/KinetAios (v4.0.6)
+> 盘点口径: GitHub search `author:phinn type:pr` = **30 个 PR**(11-04 扫描)。此前档案只记了 14 个,漏 1 个 MERGED(yzfly #586)和 9 个沉默 open。**每季度全量扫一次,日常只盯「下一步动作」**。刷新脚本模式: /tmp/pr_all.py(search API 翻页)+/tmp/diag14.py(mergeable_state+仓吞吐)。
 
-## 状态总览
+## ✅ 已合并(3 PR + 2 非 PR 收录)
 
-| 仓库 | PR | 状态 | 合并 | 备注 |
-|---|---|---|---|---|
-| serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | Add KinetAios | ✅ MERGED 2026-10-19 | **主引流源**,已验证带来 referrer 流量 |
-| juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | KinetAios 用量采集 | ✅ MERGED 2026-10-08 | 国内渠道 |
-| 1c7/chinese-independent-developer | [#1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 收录申请:3 个 macOS App | ✅ **已进主版面 2026-11-03**(1c7 两小时即合);同日留言补齐其余 16 个 App([comment-6606924972](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972)),等 1c7 合入 README |
-| **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | 收录页 | ✅ LIVE(免 PR 自动收录) | 2026-11-02 确认;AI & Agents 分类,README 特性已展示。**缺口:Tools 列表+config 块**(站方声明按 README `## Tools` 标题自动抓取)→ 11-02 双语 README 已补,等重抓 |
-| e2b-dev/awesome-ai-agents | [#1397](https://github.com/e2b-dev/awesome-ai-agents/pull/1397) | Add kinetaios | ⏳ open, clean | CLA 已签;⚠️ 11-03 复核**维护队列已死**(近 30 天 merged=0),停止回查评论,只做静默状态监测 |
-| punkpeye/awesome-mcp-servers (60k⭐) | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | Developer Tools 区 | ⏳ open, clean | Glama A 级徽章+rebase 全齐,维护者 nudge 已回复,10-28 跟进评论后无新消息,只等合并 |
-| kyrolabs/awesome-agents | ~~#781~~ → ~~#902~~ | Conversational / General Agents | ❌ #902 被 botbocks 于 2026-10-29 关闭 | **bot 风暴确认**:10-29~10-31 连关 15+ PR(#900-#921 全军覆没,含早期 #586),30 天内该仓 **0 merge**。判定=仓库进入无人维护+bot 大清洗状态,**不再投**;等待期观察是否复活 |
-| Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | Cask: add kinetaios | ❌ closed(等重开) | bot 因"模板缺失"关闭(实为 AI 检测误伤);已补全官方模板+留言申请重开;**cask 本身三次修正全绿** |
-| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | KinetAios.KinetAios 4.0.3 | ⏳ open, clean | **已进 moderator 人工审批队列**(10-28 policy bot 留言"requires a moderator to approve")。CLA 已签,验证流程走完,只等人 |
-| jamesmurdza/awesome-ai-devtools | [#1404](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1404) | Desktop & Mobile Applications 区 | ⏳ open, clean | 前身 #1096 被 devtools-repo-bot 以模板缺失关闭(描述缺 `## Description`+4 项 checklist 未勾,且 body 用错别仓模板口径);**bot 关闭的 PR 作者无法 reopen**(issues/GraphQL 双端点 422,与 Homebrew 同款)。改按本仓模板重写 body(fork 分支 add-kinetaios 复用)重开 **#1404**,开后 4 分钟 bot 静默+mergeable clean=模板校验通过。本仓只收**开发者工具**,general-purpose agent 是红线,body 已显式澄清"not a general-purpose assistant" |
-
-## 已关未合并(不再跟进)
-
-| 仓库 | PR | 结局 | 教训 |
+| 仓库 | PR | 合并日 | 备注 |
 |---|---|---|---|
-| getagentseal/codeburn | [#1540](https://github.com/getagentseal/codeburn/pull/1540) | closed 2026-09-24, 未合并 | 此前误记为 merged;小仓库维护者不活跃 |
-| WangRongsheng/awesome-LLM-resources | [#232](https://github.com/WangRongsheng/awesome-LLM-resources/pull/232) | closed 2026-09-28, 未合并 | 同上 |
-| kyrolabs/awesome-agents | [#781](https://github.com/kyrolabs/awesome-agents/pull/781) | botbocks 批量清理 | 已由 #902 替代 |
-| jamesmurdza/awesome-ai-devtools | [#1096](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1096) | closed 2026-10-28(bot 模板校验),未合并 | body 用了别仓模板口径(缺 `## Description`/未勾 checklist);bot 关闭的 PR 作者不可 reopen(422),重写 body 开 #1404 替代 |
+| serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | 2026-10-19 | **主引流源**,已验证 referrer 流量 |
+| juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | 2026-10-08 | 国内渠道,用量采集接入 |
+| yzfly/Awesome-MCP-ZH | [#586](https://github.com/yzfly/Awesome-MCP-ZH/pull/586) | 2026-09-18 | MCP 客户端中文列表。⚠️ 11-04 盘点才补录,当时漏记 |
+| 1c7/chinese-independent-developer | [issue #1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 2026-11-03 | 非 PR(issue 收录制):3 App 两小时进主版面,同日[留言补录 16 App](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972) 等站长合 README |
+| **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | LIVE | 非 PR 自动收录,2026-11-02 确认。缺口:Tools 列表+config 块,README `## Tools` 已补(11-02),等重抓 |
 
-## 已实测的关键事实(2026-10-28)
+## ⏳ Open — 高活跃仓(值得投入跟进)
 
-- **Homebrew cask 质量全绿**: `brew style` 无 offense;`brew audit --new --online` 唯一报错 = notability 门槛(75 stars, 我们 8⭐) → **短期内别再投 homebrew-cask 官方库**,等 stars ≥75 再试,或投第三方 tap
-- **cask 哈希即官方 release digest**: arm `175e014b…`, intel `3d790e39…` 直接来自 GH API digest 字段,无需重算
-- **NSIS ProductCode 推导**: `uuidv5(appId, 50e065bc-3134-11e6-9bab-38c9862bdaf3)`;`com.kinet.kinetaios` → `f65d9359-0830-527e-8b7c-f7153f15e828`(electron-builder NsisTarget.js L147)
-- **electron-builder NSIS 合并二进制 → winget Architecture: neutral**(arm64/intel 分写会被验证 bot 拒)
-- **winget 静默安装**: NSIS = `/S`(大写S);assistant 模式下 Custom: /currentuser
-- **exe SHA256**: `5A67D968D29F1473878E8C58195D5F012C3A678A511CD97F6DF153B9C3C03627`(与 GH release digest 一致)
-- **GitHub PR reopen API**: 已关闭 PR 不可 reopen(422), kyrolabs 那条是重开新 PR;但 Homebrew bot 用 issues API 也不行 —— 只能留言请维护者
-- **网络坑**: brew 拉 portable-ruby 走 ghcr.io 被墙(~100B/s), shell 里显式 `export https_proxy=http://127.0.0.1:10808` 走系统代理即通
+| 仓库 | PR | 投递 | 状态 | 备注 |
+|---|---|---|---|---|
+| jaywcjlove/awesome-mac (4.2k⭐) | [#4217](https://github.com/jaywcjlove/awesome-mac/pull/4217) | 2026-11-04 | open, **ahead 4 / behind 0** | 30d 193 merge 高吞吐。前身 [#2915](https://github.com/jaywcjlove/awesome-mac/pull/2915) 47 天未维护 DIRTY,11-04 用 Contents API 从上游 master 重放 4 行(EN/zh/ja/ko AI 区,Jan 后字母序)开新 PR。**当前最值得盯的一个** |
+| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | 2026-10-28 | open, moderator 队列 | CLA 签/验证绿/auto-merge 挂齐,纯排队。11-18 后仍无人批 → at moderator |
+| punkpeye/awesome-mcp-servers | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | 2026-09-18 | open, 沉默 | 30d 547 merge 极活跃但本 PR 无 review——人工排期长非遗忘。**11-11(距上次跟进 2 周)留最后一条跟进**,再无回复则放弃跟进(挂着不吃亏) |
+| punkpeye/awesome-mcp-clients | [#321](https://github.com/punkpeye/awesome-mcp-clients/pull/321) | 2026-09-17 | open, 沉默 | 同维护者(#14667 同款 547/30d)。跟随 #14667 策略,不单独刷 |
+| jamesmurdza/awesome-ai-devtools | [#1404](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1404) | 2026-11-04 | open, clean | 模板校验 bot 已放行(开后 4 分钟静默)。前身 #1096 bot 模板关闭(缺 `## Description`+checklist,且 body 用错别仓模板)。**教训:投稿前先读目标仓 `.github/PULL_REQUEST_TEMPLATE.md`,别复用其它仓的 body 口径** |
+
+## ⏳ Open — 沉默仓(低/零吞吐,静默监测不主动刷)
+
+| 仓库 | PR | 投递 | 备注 |
+|---|---|---|---|
+| steven2358/awesome-generative-ai | [#1400](https://github.com/steven2358/awesome-generative-ai/pull/1400) | 2026-09-19 | 30d ~2 merge 低速;0 评论。季度盘点 |
+| 0PandaDEV/awesome-windows | [#299](https://github.com/0PandaDEV/awesome-windows/pull/299) | 2026-09-17 | unstable(上游自身 CI),30d 仅 1 merge。季度盘点 |
+| deepseek-ai/awesome-deepseek-integration | [#739](https://github.com/deepseek-ai/awesome-deepseek-integration/pull/739) | 2026-09-18 | 官方仓五语条目+docs 页,0 回复。季度盘点 |
+| deepseek-ai/awesome-deepseek-agent | [#414](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/414) | 2026-09-03 | 最老的 open,0 回复。季度盘点 |
+| e2b-dev/awesome-ai-agents | [#1397](https://github.com/e2b-dev/awesome-ai-agents/pull/1397) | 2026-08-14 | ⚠️ 11-03 复核**队列已死**(30d merged=0),停止评论回查,只静默 API 查 merged |
+| ai-boost/awesome-harness-engineering | [#270](https://github.com/ai-boost/awesome-harness-engineering/pull/270) | 2026-09-18 | 0 回复。季度盘点 |
+| jiji262/awesome-deepseek-harness | [#19](https://github.com/jiji262/awesome-deepseek-harness/pull/19) | 2026-09-18 | 0 回复。季度盘点 |
+| reorx/awesome-chatgpt-api | [#203](https://github.com/reorx/awesome-chatgpt-api/pull/203) | 2026-09-17 | 0 回复。季度盘点 |
+| AMD-DEV-CONTEST/Radeon-hackathon-2026-07 | [#79](https://github.com/AMD-DEV-CONTEST/Radeon-hackathon-2026-07/pull/79) | 2026-08-04 | 赛事投稿仓,活动结束自然沉,不追 |
+
+## 🔒 Closed 未合并(11 个,含被替代前身)
+
+| 仓库 | PR | 关闭原因 |
+|---|---|---|
+| Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | audit 全绿但差 stars 门槛(需 ≥75,现 12)。stars 够后携 `docs/tmp` cask 重投 |
+| kyrolabs/awesome-agents | [#902](https://github.com/kyrolabs/awesome-agents/pull/902) / [#781](https://github.com/kyrolabs/awesome-agents/pull/781) | #781 被 botbocks 批量清理;#902 10-28 关(bot 维护),**放弃此仓不再投** |
+| Shubhamsaboo/awesome-llm-apps | [#1174](https://github.com/Shubhamsaboo/awesome-llm-apps/pull/1174) | 外部关闭,未合并 |
+| WangRongsheng/awesome-LLM-resources | [#232](https://github.com/WangRongsheng/awesome-LLM-resources/pull/232) | 外部关闭,未合并 |
+| getagentseal/codeburn | [#1538](https://github.com/getagentseal/codeburn/pull/1538) / [#1540](https://github.com/getagentseal/codeburn/pull/1540) | 外部关闭(provider 接入类 PR) |
+| jamesmurdza/awesome-ai-devtools | [#1093](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1093) / [#1096](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1096) | bot 模板校验关闭 → 重开为 #1404。**平台规则:bot(写权限者)关闭的 PR 作者无法 API reopen**(REST/GraphQL 双 422),唯一出路=改 body 开新 PR |
+| jaywcjlove/awesome-mac | [#2915](https://github.com/jaywcjlove/awesome-mac/pull/2915) | DIRTY(47 天上游漂移,四语 README 全冲突)→ API rebase 开 #4217 |
+
+## 自家仓 PR(2026-11-04 清零)
+
+| 仓库 | PR | 结局 |
+|---|---|---|
+| phinn/kinetbrief | [#1](https://github.com/phinn/kinetbrief/pull/1) | ✅ MERGED 11-04(App Store link) |
+| phinn/kinettask | [#1](https://github.com/phinn/kinettask/pull/1) | ✅ MERGED 11-04(App Store link) |
+| phinn/KinetAios | [#14](https://github.com/phinn/KinetAios/pull/14) | 🔒 closed(superseded):README 漂移 dirty;意图(MAS 徽章+Install 首选)已按现价 $12.99/¥68 直落 main `cc82e5e`,关单留言说明 |
 
 ## 下一步动作
 
-1. **README Tools/config 段**(11-02 已推):等 mcp.so 重抓 README,回查 https://mcp.so/servers/kinetaios 是否出现工具列表与 config;若 2 周未抓,发邮件/表单催更(站内无 PR 机制)
-2. **winget #463867**: 已在人工审批队列,不动;若 2-3 周无人批,礼貌 at moderator 询问(11-18 后仍无动静即执行;已建每周一 9:00 cron 自动巡查)
-3. **e2b #1397**: ⚠️ 11-03 复核**队列已死**——近 30 天 merged=0(此前"维护者每日合并"判断过时),10-28 后也无新评论。停止回查评论(刷了只会显示被无视),改为每半月静默 API 查 merged 状态,有动静再行动
-4. **punkpeye #14667**: 仓库极活跃(30 天 merged 547 个,11-02 刚合 #18312)但本 PR 10-28 后无回复无 review——大概率人工排期长而非被遗忘,11-11 左右(距上次跟进 2 周)留**最后一条**简短跟进评论;若再无回复则不再跟,PR 挂着不吃亏(Glama 徽章要求已全满足)
-5. **Homebrew**: 若无人重开 → 放弃本轮,stars ≥75 后用现成 cask(`docs/tmp` 已存最终版)再投(当前 12⭐,按近期增速尚远)
-6. stars 过 75/100 后:重投 homebrew-cask(附 notability 改善说明)
+1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
+2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
+3. **winget #463867**: 不动;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
+4. **punkpeye #14667**: 11-11 左右留最后一条简短跟进;无回复即停止跟进。#321 跟随不单独刷
+5. **沉默仓 9 个**(e2b/deepseek×2/ai-boost/jiji262/reorx/steven2358/0PandaDEV/AMD):**季度静默盘点**(下次 2027-02 跑 `/tmp/pr_all.py`),不逐个刷评论
+6. **Homebrew**: stars ≥75 重投(现 12)
+7. **mcp.so**: 11-16 前后回查 Tools/config 是否被抓到;2 周未抓 → 联系站方
+8. **季度全量盘点**: `author:phinn type:pr` 搜索,核对本表无遗漏(11-04 发现漏 yzfly #586 MERGED + 9 个沉默 open,就是没做全量盘点的代价)
