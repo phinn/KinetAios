@@ -10,7 +10,7 @@
 | serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | 2026-10-19 | **主引流源**,已验证 referrer 流量 |
 | juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | 2026-10-08 | 国内渠道,用量采集接入 |
 | yzfly/Awesome-MCP-ZH | [#586](https://github.com/yzfly/Awesome-MCP-ZH/pull/586) | 2026-09-18 | MCP 客户端中文列表。⚠️ 11-04 盘点才补录,当时漏记 |
-| 1c7/chinese-independent-developer | [issue #1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 2026-11-03 | 非 PR(issue 收录制):3 App 两小时进主版面,同日[留言补录 16 App](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972)。**11-04 大进展:站长已合 13 个进主版面 phinn 小节**(KinetAios/Brief/Minutes/Memory/Study/Morning/Clasp/M5Chat/Fit/Soul/Rain/Elf/DuoFolio);剩 3 个 cn 链接打不开(KinetTask/Promptside/FurChart 仅美港台上架),已[回帖补美区链接](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6628837060)(iTunes API 验证三 App us/hk/tw 全在架),等站长批次合入,下次盘点 grep README 核对 19 全齐 |
+| 1c7/chinese-independent-developer | [issue #1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 2026-11-03 | 非 PR(issue 收录制):3 App 两小时进主版面,同日[留言补录 16 App](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972)。11-04 站长合 13 个,补美区链接后**当日批次合入剩 3 个——[19/19 全齐](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6631384200),已回帖致谢,渠道收官 ✅**(11-04 grep README 核验) |
 | **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | LIVE | 非 PR 自动收录,2026-11-02 确认。缺口:Tools 列表+config 块,README `## Tools` 已补(11-02),等重抓 |
 | **521xueweihan/HelloGitHub** (186k⭐) | [issue #4242](https://github.com/521xueweihan/HelloGitHub/issues/4242) | 2026-11-04 | 🆕 开源自荐(按 submit-cn.yaml 字段:标题/描述/亮点/示例代码)。月刊只收开源项目,收录后进贡献人列表。周期≈月,下次盘点 12-初 |
 | **ruanyf/weekly** (科技爱好者周刊) | [issue #13062](https://github.com/ruanyf/weekly/issues/13062) | 2026-11-04 | 🆕 开源自荐(社区口吻:网址/痛点/特点/我是作者)。周刊每期 5-10 条从 issue 池挑,无时限,被选中有邮件通知 |
@@ -64,7 +64,7 @@
 ## 下一步动作
 
 0. **11-04 19 App 引流新渠道(用户指令:为 20 个在线 App 引流)**:
-   - ✅ CID 续录 16 App 已在队列(勿催,1c7 每日批次合入)
+   - ✅ CID 续录 16 App 批次合入完成(11-04 核验 19/19 全齐,渠道收官,见上表)
    - ✅ HelloGitHub #4242 / ruanyf #13062 已投
    - ⏸→✅ **macnative.io 已投 3 App(11-04,用户注册账号后执行)**:KinetAios #9414 / KinetMagicDisk #9415 / KinetMinutes #9416 全进 review queue(`/profile/apps/<id>/upgrade` 页=已受理信号)。要点:①表单图标/截图是**即时上传**(onChange→POST /api/assets→assets.macnative.io),无 UI 回显,别被 "Drop or click" 迷惑;②React 受控 file input 用 DataTransfer+原生 dispatch 可靠注入;③提交后 URL 跳 listing id 即成功;④Clasp 是别人 App(seller Kihyuk Hong)已剔除;⑤官网 URL 用 dofollow 吃 SEO。第二批候选:DriftDesk #6817377455 / KinetRain #6814033986(等首批过审再投,ambience 类有 thin 风险别烧账号首印象)。素材缓存 /tmp/mn_assets+(icon/shots 已上传走 API,本地仅留档)
    - 排除(已查证):awesome-electron(暂停收录)、awesome-testflight-link(只收 TF 公链,无 TF 不资格)、垂直品类榜(无活跃池)
@@ -79,7 +79,7 @@
 1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
 2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
 3. **winget #463867**: 阻塞=CLA 未签(用户手动签)+moderator 审;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
-3a. **CID(1c7)16 App 批次**: 站长 11-03 已合 MagicDisk/FlashFind/DriftDesk 进主版面,其余 16 个清单 phinn 已评论跟进,**勿催**,等批次合入;下次盘点直接 grep README 核对
+3a. ~~**CID(1c7)16 App 批次**~~ ✅ **收官(11-04)**:19/19 全进主版面(含 3 个美区链接补录),已致谢。后续无需跟进
 4. **punkpeye #14667**: 11-11 左右留最后一条简短跟进;无回复即停止跟进。#321 跟随不单独刷
 5. **沉默仓 9 个**(e2b/deepseek×2/ai-boost/jiji262/reorx/steven2358/0PandaDEV/AMD):**季度静默盘点**(下次 2027-02 跑 `/tmp/pr_all.py`),不逐个刷评论
 6. **Homebrew**: stars ≥75 重投(现 12)
