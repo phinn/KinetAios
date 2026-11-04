@@ -10597,6 +10597,25 @@ window.addEventListener('message', async (ev: MessageEvent) => {
       case 'getConversations':
         result = await api.getConversations();
         break;
+      // ── 推广 PR/渠道状态追踪(marketing-kit 面板)──
+      case 'promoList':
+        result = await api.promoList();
+        break;
+      case 'promoRefresh':
+        result = await api.promoRefresh();
+        break;
+      case 'promoAdd':
+        result = await api.promoAdd(args[0]);
+        break;
+      case 'promoRemove':
+        result = await api.promoRemove(args[0]);
+        break;
+      case 'promoImport':
+        result = await api.promoImport(args[0]);
+        break;
+      case 'promoExport':
+        result = await api.promoExport();
+        break;
       default:
         source?.postMessage({ target: data.source, id, error: `Unknown method: ${method}` }, replyOrigin);
         return;

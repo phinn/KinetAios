@@ -141,6 +141,7 @@
     <button class="mk-tab active" data-tab="funnel">漏斗计算</button>
     <button class="mk-tab" data-tab="research">调研工作台</button>
     <button class="mk-tab" data-tab="checklist">发布清单</button>
+    <button class="mk-tab" data-tab="promo">推广追踪</button>
   </div>
 
   <div id="mk-root">
@@ -195,6 +196,37 @@
         <div id="mk-checklist-pct"></div>
         <button class="mk-btn" id="mk-checklist-reset" style="margin-top:6px">↺ 重置本轮</button>
         <div id="mk-checklist" style="margin-top:8px"></div>
+      </div>
+    </div>
+    <!-- ═══ Tab 4: 推广追踪(promo dashboard — PR/渠道状态一键刷新) ═══ -->
+    <div class="mk-page" id="mk-page-promo">
+      <div class="mk-card">
+        <h3>📡 推广状态追踪</h3>
+        <div class="mk-hint">上游 PR / issue / 目录站 / 手动渠道全量状态。GitHub PR 实时查 API,Discourse 帖查公开 JSON,手动渠道登记下次行动日期。<b>刷新只拉状态,不改数据</b>;条目可动态增删,存 userData/promo-items.json。</div>
+        <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">
+          <button class="mk-btn" id="mk-promo-refresh">🔄 一键刷新全部状态</button>
+          <button class="mk-btn" id="mk-promo-import" title="选择导出的 promo JSON,整体替换当前条目">📥 导入</button>
+          <button class="mk-btn" id="mk-promo-export" title="全部条目导出为 JSON 文件(个人数据,可自行备份)">📤 导出</button>
+          <input type="file" id="mk-promo-file" accept=".json,application/json" style="display:none">
+          <span id="mk-promo-meta" style="font-size:11px;color:var(--text-faint)"></span>
+        </div>
+        <div id="mk-promo-summary" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"></div>
+        <div id="mk-promo-rows" style="margin-top:6px"></div>
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--text-dim)">➕ 添加追踪条目</summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <input id="mk-promo-f-name" placeholder="名称,如 punkpeye/awesome-mcp-servers" style="grid-column:1/3">
+            <input id="mk-promo-f-url" placeholder="链接(PR/issue/帖子 URL)" style="grid-column:1/3">
+            <select id="mk-promo-f-kind">
+              <option value="pr">GitHub PR/issue</option>
+              <option value="discourse">Discourse 帖</option>
+              <option value="manual">手动渠道</option>
+            </select>
+            <input id="mk-promo-f-next" placeholder="下次行动 YYYY-MM-DD(可选)">
+            <input id="mk-promo-f-note" placeholder="备注(可选)" style="grid-column:1/3">
+            <button class="mk-btn" id="mk-promo-add" style="grid-column:1/3">添加</button>
+          </div>
+        </details>
       </div>
     </div>
   </div>
@@ -410,6 +442,143 @@
     box.querySelectorAll('input').forEach(function(cb) { cb.checked = false; });
     updateProgress();
   };
+
+  // ═══ Tab 4: 推广追踪 ═══
+  var promoItems = [];
+  var KIND_BADGE = { pr: 'PR', issue: 'ISSUE', discourse: 'DISCOURSE', manual: 'MANUAL' };
+  var STATUS_COLOR = {
+    merged: 'var(--ok, #22c55e)', open: 'var(--warn, #eab308)', 'open-silent': 'var(--text-faint)',
+    open_review: 'var(--warn, #eab308)', waiting_merge: 'var(--warn, #eab308)',
+    published: 'var(--ok, #22c55e)', waiting: 'var(--text-faint)', blocked: 'var(--err, #ef4444)',
+    unknown: 'var(--text-faint)'
+  };
+  function fmtDate(iso) { return iso ? iso.slice(0, 10) : '—'; }
+  function daysUntil(d) {
+    if (!d) return null;
+    var ms = new Date(d + 'T00:00:00').getTime() - Date.now();
+    return Math.ceil(ms / 86400000);
+  }
+  function esc(s) {
+    var d = document.createElement('div'); d.textContent = String(s == null ? '' : s); return d.innerHTML;
+  }
+  function renderPromo() {
+    var rows = $('mk-promo-rows');
+    // 汇总
+    var merged = promoItems.filter(function(i) { return i.status === 'merged' || i.status === 'published'; }).length;
+    var active = promoItems.filter(function(i) { return i.status !== 'merged' && i.status !== 'published'; }).length;
+    var dueSoon = promoItems.filter(function(i) { var d = daysUntil(i.nextAction); return d !== null && d <= 7; }).length;
+    $('mk-promo-summary').innerHTML =
+      '<span class="mk-chip">共 ' + promoItems.length + '</span>' +
+      '<span class="mk-chip" style="color:' + STATUS_COLOR.merged + '">已合/已发 ' + merged + '</span>' +
+      '<span class="mk-chip">活跃 ' + active + '</span>' +
+      '<span class="mk-chip" style="color:' + (dueSoon ? 'var(--err,#ef4444)' : 'inherit') + '">7 天内到期 ' + dueSoon + '</span>';
+    // 行(按 nextAction 到期升序,无日期沉底)
+    var sorted = promoItems.slice().sort(function(a, b) {
+      var da = a.nextAction || '9999', db = b.nextAction || '9999';
+      return da < db ? -1 : da > db ? 1 : 0;
+    });
+    rows.innerHTML = sorted.map(function(it) {
+      var st = it.status || 'unknown';
+      var color = STATUS_COLOR[st] || 'var(--text-faint)';
+      var stTxt = st === 'open-silent' ? 'open·沉' : st;
+      var d = daysUntil(it.nextAction);
+      var due = d === null ? '' : (d <= 0 ? '<span style="color:var(--err,#ef4444)">今天/逾期</span>' : d <= 7 ? '<span style="color:var(--warn,#eab308)">' + d + '天</span>' : esc(d + '天'));
+      var meta = [];
+      if (it.lastChecked) meta.push('查:' + fmtDate(it.lastChecked));
+      if (it.lastStatusChange) meta.push('变:' + fmtDate(it.lastStatusChange));
+      var gh = '';
+      if ((it.kind === 'pr' || it.kind === 'issue') && it.state === 'merged') gh = ' ✅';
+      else if (it.state === 'closed') gh = ' 🚫';
+      else if (it.state === 'open') gh = ' 🟢';
+      return '<div class="mk-promo-row" data-id="' + esc(it.id) + '" style="display:grid;grid-template-columns:auto 1fr auto;gap:8px;padding:7px 8px;border:1px solid var(--border);border-radius:8px;margin-bottom:5px;align-items:center">' +
+        '<span style="font-size:10px;padding:2px 6px;border-radius:4px;background:var(--bg-input);color:var(--text-dim)">' + (KIND_BADGE[it.kind] || '?') + '</span>' +
+        '<div style="min-width:0">' +
+          '<a href="' + esc(it.url) + '" style="color:var(--text);font-size:12px;text-decoration:none;font-weight:600">' + esc(it.name) + '</a>' + gh +
+          '<div style="font-size:11px;color:var(--text-faint);margin-top:1px">' +
+            '<span style="color:' + color + ';font-weight:700">' + esc(stTxt) + '</span>' +
+            (it.nextAction ? ' · 行动:' + esc(it.nextAction) + '(' + due + ')' : '') +
+            (meta.length ? ' · ' + esc(meta.join(' ')) : '') +
+            (it.note ? ' · ' + esc(it.note) : '') +
+          '</div>' +
+        '</div>' +
+        '<button class="mk-promo-del" data-id="' + esc(it.id) + '" title="删除条目" style="background:none;border:none;color:var(--text-faint);cursor:pointer;font-size:13px;padding:2px 6px">✕</button>' +
+      '</div>';
+    }).join('');
+    rows.querySelectorAll('.mk-promo-del').forEach(function(btn) {
+      btn.onclick = function() {
+        if (!confirm('删除该条目?(只删本地追踪,不影响上游)')) return;
+        hostCall('promoRemove', [btn.getAttribute('data-id')]).then(renderAfterLoad).catch(function(e) { alert('删除失败: ' + e); });
+      };
+    });
+  }
+  function renderAfterLoad(r) {
+    if (r && r.items) { promoItems = r.items; renderPromo(); }
+  }
+  function loadPromo() {
+    hostCall('promoList', []).then(renderAfterLoad).catch(function(e) {
+      $('mk-promo-meta').textContent = '加载失败: ' + e;
+    });
+  }
+  $('mk-promo-refresh').onclick = function() {
+    var btn = this, meta = $('mk-promo-meta');
+    btn.disabled = true; meta.textContent = '刷新中…(逐条查 API,约几秒)';
+    var t0 = Date.now();
+    hostCall('promoRefresh', []).then(function(r) {
+      btn.disabled = false;
+      if (r && r.items) {
+        promoItems = r.items;
+        renderPromo();
+        var chg = (r.changed || []).length;
+        meta.textContent = '完成 ' + ((Date.now() - t0) / 1000).toFixed(1) + 's' + (r.failCount ? ' · ' + r.failCount + ' 条失败' : '') + (chg ? ' · ⚡' + chg + ' 条状态变化!' : ' · 无变化');
+        if (chg) console.log('状态变化:', r.changed);
+      }
+    }).catch(function(e) { btn.disabled = false; meta.textContent = '刷新失败: ' + e; });
+  };
+  $('mk-promo-add').onclick = function() {
+    var name = $('mk-promo-f-name').value.trim();
+    var url = $('mk-promo-f-url').value.trim();
+    if (!name || !url) { alert('名称和链接必填'); return; }
+    hostCall('promoAdd', [{ name: name, url: url, kind: $('mk-promo-f-kind').value, nextAction: $('mk-promo-f-next').value.trim() || null, note: $('mk-promo-f-note').value.trim() || null }])
+      .then(function(r) {
+        if (r && r.items) { promoItems = r.items; renderPromo(); }
+        $('mk-promo-f-name').value = ''; $('mk-promo-f-url').value = ''; $('mk-promo-f-next').value = ''; $('mk-promo-f-note').value = '';
+      }).catch(function(e) { alert('添加失败: ' + e); });
+  };
+  // ── 导入/导出(个人数据不进开源仓库,JSON 文件即数据载体) ──
+  $('mk-promo-export').onclick = function() {
+    hostCall('promoExport', []).then(function(r) {
+      if (!r || !r.ok || !r.json) { alert('导出失败: ' + (r && r.error || '未知')); return; }
+      var blob = new Blob([r.json], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'promo-items-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+      $('mk-promo-meta').textContent = '已导出 ' + promoItems.length + ' 条';
+    }).catch(function(e) { alert('导出失败: ' + e); });
+  };
+  $('mk-promo-import').onclick = function() { $('mk-promo-file').click(); };
+  $('mk-promo-file').onchange = function() {
+    var f = this.files && this.files[0];
+    this.value = ''; // 允许重选同一文件
+    if (!f) return;
+    var meta = $('mk-promo-meta');
+    var reader = new FileReader();
+    reader.onload = function() {
+      if (!confirm('导入将整体替换当前 ' + promoItems.length + ' 条条目,继续?')) return;
+      hostCall('promoImport', [String(reader.result)]).then(function(r) {
+        if (r && r.ok && r.items) {
+          promoItems = r.items; renderPromo();
+          meta.textContent = '已导入 ' + r.items.length + ' 条';
+        } else {
+          alert('导入失败: ' + (r && r.error || '未知'));
+        }
+      }).catch(function(e) { alert('导入失败: ' + e); });
+    };
+    reader.onerror = function() { alert('读文件失败'); };
+    reader.readAsText(f);
+  };
+  loadPromo();
 
   // 拉主题变量(宿主注入)
   hostCall('getTheme', []).then(function(vars) {

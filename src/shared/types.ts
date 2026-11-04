@@ -921,6 +921,25 @@ export type GitActionKind =
 
 export type GitActionResult = { ok: boolean; message?: string; error?: string };
 
+// ── 推广 PR/渠道状态追踪(promo dashboard)──
+// Promo tracking item: one upstream PR / issue / Discourse topic / manual channel entry.
+export interface PromoItem {
+  id: string; // 稳定 id:URL slug(host+path 小写),删除/导入去重按此定位
+  name: string; // 展示名,如 "owner/repo #123"(示例为占位,非真实追踪条目)
+  url: string;
+  kind: 'pr' | 'issue' | 'discourse' | 'url' | 'manual';
+  group?: string; // 分组:open-active / open-silent / merged / review / self-recommend / directory / manual
+  note?: string; // 备注:跟进策略、阻塞点、下次行动
+  nextAction?: string | null; // 下次行动日期 YYYY-MM-DD(panel 逾期高亮)
+  addedAt: string; // ISO 添加时间
+  status?: string; // 最新状态:open / merged / closed / live / review 等
+  title?: string; // 刷新时从远端拉到的标题
+  updatedAt?: string; // 远端最后动态
+  checkedAt?: string; // 本次刷新成功时间(有值=刷新成功)
+  detail?: string; // 刷新摘要:评论数、最后动态、HTTP 码等
+  error?: string; // 最近一次刷新失败原因(网络/限流)
+}
+
 // The API the preload exposes to the renderer via contextBridge (window.kinet).
 export interface KinetAPI {
   getConversations(): Promise<Conversation[]>;
@@ -1004,6 +1023,19 @@ export interface KinetAPI {
   openFiles(cwd?: string): Promise<void>;
   openArena(cwd?: string): Promise<void>;
   shellOpen(url: string): Promise<void>;
+  // ── 推广 PR/渠道状态追踪(promo dashboard;见 main/ipc/promo.ts)──
+  /** 列出全部追踪条目((userData)/promo-items.json;仓库不带种子,数据经 promoImport 导入) */
+  promoList(): Promise<PromoItem[]>;
+  /** 刷新状态:GitHub API 拉全部 PR/issue,Discourse 拉帖子;返回更新后的列表。net 永不抛错,失败条目带 error */
+  promoRefresh(): Promise<PromoItem[]>;
+  /** 动态添加追踪条目(自动识别 github pr/issue 与 discourse topic URL) */
+  promoAdd(input: { url: string; label?: string }): Promise<{ ok: boolean; item?: PromoItem; error?: string }>;
+  /** 删除追踪条目 */
+  promoRemove(id: string): Promise<{ ok: boolean }>;
+  /** 导入条目 JSON(整体替换;格式=promoExport 原样) */
+  promoImport(payload: string | PromoItem[]): Promise<{ ok: boolean; items?: PromoItem[]; error?: string }>;
+  /** 导出全部条目为 JSON 字符串(个人数据,仓库不携带) */
+  promoExport(): Promise<{ ok: boolean; json?: string; error?: string }>;
   // ── 版本更新检查(GitHub Releases;见 main/updater.ts)──
   /** 检查更新:force=true 强制走网络;false 时 24h 内吃本地缓存。错误放返回值的 error 字段,不抛异常 */
   checkUpdate(force?: boolean): Promise<UpdateInfo>;

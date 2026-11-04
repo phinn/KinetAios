@@ -70,6 +70,13 @@ const api: KinetAPI = {
   openFiles: (cwd) => ipcRenderer.invoke('open-files', cwd),
   openArena: (cwd) => ipcRenderer.invoke('open-arena', cwd),
   shellOpen: (url) => ipcRenderer.invoke('shell-open', url),
+  // ── 推广 PR/渠道状态追踪 ──
+  promoList: () => ipcRenderer.invoke('promo-list'),
+  promoRefresh: () => ipcRenderer.invoke('promo-refresh'),
+  promoAdd: (input) => ipcRenderer.invoke('promo-add', input),
+  promoRemove: (id) => ipcRenderer.invoke('promo-remove', id),
+  promoImport: (payload) => ipcRenderer.invoke('promo-import', payload),
+  promoExport: () => ipcRenderer.invoke('promo-export'),
   // ── 版本更新检查 ──
   checkUpdate: (force?: boolean) => ipcRenderer.invoke('check-update', force),
   getAppVersion: () => ipcRenderer.invoke('app-version'),
