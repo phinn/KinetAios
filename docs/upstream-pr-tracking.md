@@ -64,7 +64,7 @@
 0. **11-04 19 App 引流新渠道(用户指令:为 20 个在线 App 引流)**:
    - ✅ CID 续录 16 App 已在队列(勿催,1c7 每日批次合入)
    - ✅ HelloGitHub #4242 / ruanyf #13062 已投
-   - ⏸ **macnative.io**(1672⭐ awesome-native-macosx-apps 的站方):需注册账号才能 submit,且明拒 Electron browser wrapper——**留给用户决策**,若投只投 SwiftUI 系 App(Elf/Brief/Soul/Minutes 等),跳过 KinetAios
+   - ⏸→✅ **macnative.io 已投 3 App(11-04,用户注册账号后执行)**:KinetAios #9414 / KinetMagicDisk #9415 / KinetMinutes #9416 全进 review queue(`/profile/apps/<id>/upgrade` 页=已受理信号)。要点:①表单图标/截图是**即时上传**(onChange→POST /api/assets→assets.macnative.io),无 UI 回显,别被 "Drop or click" 迷惑;②React 受控 file input 用 DataTransfer+原生 dispatch 可靠注入;③提交后 URL 跳 listing id 即成功;④Clasp 是别人 App(seller Kihyuk Hong)已剔除;⑤官网 URL 用 dofollow 吃 SEO。第二批候选:DriftDesk #6817377455 / KinetRain #6814033986(等首批过审再投,ambience 类有 thin 风险别烧账号首印象)。素材缓存 /tmp/mn_assets+(icon/shots 已上传走 API,本地仅留档)
    - 排除(已查证):awesome-electron(暂停收录)、awesome-testflight-link(只收 TF 公链,无 TF 不资格)、垂直品类榜(无活跃池)
 1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
 2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
