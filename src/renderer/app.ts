@@ -5616,7 +5616,7 @@ function updatePreview(html: string): void {
   if (!body) return;  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
   let iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
   if (!iframe) {
-    body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>';
+    body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms allow-modals allow-downloads"></iframe>';
     iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
   }
   // 用 blob: URL 加载(比 srcdoc 兼容性好,Electron 不一定支持 srcdoc)
@@ -10533,7 +10533,7 @@ function showPluginPanel(name: string): void {
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
-      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads');
       iframe.srcdoc = panel.html;
       viewEl.appendChild(iframe);
     }
