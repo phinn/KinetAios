@@ -1,7 +1,7 @@
 # KinetAios 上游 PR 追踪表
 
 > 更新: 2026-11-04 全量盘点 | 仓库: phinn/KinetAios (v4.0.6)
-> 盘点口径: GitHub search `author:phinn type:pr` = **30 个 PR**(11-04 扫描)。此前档案只记了 14 个,漏 1 个 MERGED(yzfly #586)和 9 个沉默 open。**每季度全量扫一次,日常只盯「下一步动作」**。刷新脚本模式: /tmp/pr_all.py(search API 翻页)+/tmp/diag14.py(mergeable_state+仓吞吐)。
+> 盘点口径: GitHub search `author:phinn type:pr` = **30 个 PR**(11-04 扫描)。此前档案只记了 14 个,漏 1 个 MERGED(yzfly #586)和 9 个沉默 open。**每季度全量扫一次,日常只盯「下一步动作」**。刷新脚本已入库: `docs/scripts/pr_all.py`(search API 翻页)+ `docs/scripts/diag14.py`(mergeable_state+仓吞吐),token 走 git credential(osxkeychain)
 
 ## ✅ 已合并(3 PR + 2 非 PR 收录)
 
@@ -41,7 +41,7 @@
 
 | 仓库 | PR | 关闭原因 |
 |---|---|---|
-| Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | audit 全绿但差 stars 门槛(需 ≥75,现 12)。stars 够后携 `docs/tmp` cask 重投 |
+| Homebrew/homebrew-cask | [#297869](https://github.com/Homebrew/homebrew-cask/pull/297869) | audit 全绿但差 stars 门槛(需 ≥75,现 12)。stars 够后重投(cask 已丢,重投时按当时 release digest 重写) |
 | kyrolabs/awesome-agents | [#902](https://github.com/kyrolabs/awesome-agents/pull/902) / [#781](https://github.com/kyrolabs/awesome-agents/pull/781) | #781 被 botbocks 批量清理;#902 10-28 关(bot 维护),**放弃此仓不再投** |
 | Shubhamsaboo/awesome-llm-apps | [#1174](https://github.com/Shubhamsaboo/awesome-llm-apps/pull/1174) | 外部关闭,未合并 |
 | WangRongsheng/awesome-LLM-resources | [#232](https://github.com/WangRongsheng/awesome-LLM-resources/pull/232) | 外部关闭,未合并 |
