@@ -10591,6 +10591,10 @@ window.addEventListener('message', async (ev: MessageEvent) => {
       case 'getTheme':
         result = getThemeCssVars();
         break;
+      case 'openExternal':
+        // 插件 iframe(sandbox)内点外链会导航自身→srcdoc 白屏;转交宿主走 shell-open(协议白名单+系统浏览器)
+        result = await api.shellOpen(String(args[0]));
+        break;
       case 'send':
         result = await api.send(args[0], args[1]);
         break;

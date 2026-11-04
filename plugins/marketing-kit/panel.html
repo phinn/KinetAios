@@ -277,6 +277,14 @@
     };
   });
 
+  // 外链统一走宿主系统浏览器:iframe 内裸 <a href> 会导航自身→srcdoc 白屏
+  document.addEventListener('click', function(ev) {
+    var a = ev.target && ev.target.closest ? ev.target.closest('a[href]') : null;
+    if (!a) return;
+    ev.preventDefault();
+    hostCall('openExternal', [a.getAttribute('href')]);
+  }, true);
+
   var $ = function(id) { return document.getElementById(id); };
   var num = function(id) { var v = $(id).value.trim(); return v === '' ? null : Number(v); };
 
