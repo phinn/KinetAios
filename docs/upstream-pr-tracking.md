@@ -20,7 +20,7 @@
 | 仓库 | PR | 投递 | 状态 | 备注 |
 |---|---|---|---|---|
 | jaywcjlove/awesome-mac (4.2k⭐) | [#4217](https://github.com/jaywcjlove/awesome-mac/pull/4217) | 2026-11-04 | open, **ahead 4 / behind 0** | 30d 193 merge 高吞吐。前身 [#2915](https://github.com/jaywcjlove/awesome-mac/pull/2915) 47 天未维护 DIRTY,11-04 用 Contents API 从上游 master 重放 4 行(EN/zh/ja/ko AI 区,Jan 后字母序)开新 PR。**当前最值得盯的一个** |
-| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | 2026-10-28 | open, moderator 队列 | CLA 签/验证绿/auto-merge 挂齐,纯排队。11-18 后仍无人批 → at moderator |
+| microsoft/winget-pkgs | [#463867](https://github.com/microsoft/winget-pkgs/pull/463867) | 2026-10-28 | open, moderator 队列 | ❗11-04 核验:两条硬阻塞——①**CLA 未签**(bot 10-28 通知,需用户到 [CLA 系统](https://opensource.microsoft.com/cla/) 人工签,6 条评论无签署确认)②shellExecute 动态安装验证报错(label Validation-Completed 在,以 moderator 实批为准)。CLA 签完前纯排队 |
 | punkpeye/awesome-mcp-servers | [#14667](https://github.com/punkpeye/awesome-mcp-servers/pull/14667) | 2026-09-18 | open, 沉默 | 30d 547 merge 极活跃但本 PR 无 review——人工排期长非遗忘。**11-11(距上次跟进 2 周)留最后一条跟进**,再无回复则放弃跟进(挂着不吃亏) |
 | punkpeye/awesome-mcp-clients | [#321](https://github.com/punkpeye/awesome-mcp-clients/pull/321) | 2026-09-17 | open, 沉默 | 同维护者(#14667 同款 547/30d)。跟随 #14667 策略,不单独刷 |
 | jamesmurdza/awesome-ai-devtools | [#1404](https://github.com/jamesmurdza/awesome-ai-devtools/pull/1404) | 2026-11-04 | open, clean | 模板校验 bot 已放行(开后 4 分钟静默)。前身 #1096 bot 模板关闭(缺 `## Description`+checklist,且 body 用错别仓模板)。**教训:投稿前先读目标仓 `.github/PULL_REQUEST_TEMPLATE.md`,别复用其它仓的 body 口径** |
@@ -71,12 +71,13 @@
      - ✅ **MacUpdate**(老牌 Mac 目录):提交入口 /content/submit(需注册账号,免费)
      - ✅ **少数派 Matrix**(sspai.com/matrix):免费投稿,有 Mac 工具文先例,长文评测向
      - ✅ **Peerlist Launchpad**:免费 launch(需账号),PH 平替中最活跃
-     - ⚠️ **V2EX**:账号 shenjunjie0202 卡邀请码激活,发帖需用户领邀请码/攒 token
+     - 🚫 **V2EX(11-04 用户明确:不要搞了)**:无邀请码,账号 shenjunjie0202 未激活,**永久放弃此渠道,勿再提**
      - ⚠️ **linux.do**:邀请码制(GitHub 5 年+账号可申请)
      - 排除:SaaSHub/alternativeto/slant(CF 挡自动化,用户手动)、devhunt.org(开源 only)
 1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
 2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
-3. **winget #463867**: 不动;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
+3. **winget #463867**: 阻塞=CLA 未签(用户手动签)+moderator 审;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
+3a. **CID(1c7)16 App 批次**: 站长 11-03 已合 MagicDisk/FlashFind/DriftDesk 进主版面,其余 16 个清单 phinn 已评论跟进,**勿催**,等批次合入;下次盘点直接 grep README 核对
 4. **punkpeye #14667**: 11-11 左右留最后一条简短跟进;无回复即停止跟进。#321 跟随不单独刷
 5. **沉默仓 9 个**(e2b/deepseek×2/ai-boost/jiji262/reorx/steven2358/0PandaDEV/AMD):**季度静默盘点**(下次 2027-02 跑 `/tmp/pr_all.py`),不逐个刷评论
 6. **Homebrew**: stars ≥75 重投(现 12)
