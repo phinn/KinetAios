@@ -3,15 +3,17 @@
 > 更新: 2026-11-04 全量盘点 | 仓库: phinn/KinetAios (v4.0.6)
 > 盘点口径: GitHub search `author:phinn type:pr` = **30 个 PR**(11-04 扫描)。此前档案只记了 14 个,漏 1 个 MERGED(yzfly #586)和 9 个沉默 open。**每季度全量扫一次,日常只盯「下一步动作」**。刷新脚本已入库: `docs/scripts/pr_all.py`(search API 翻页)+ `docs/scripts/diag14.py`(mergeable_state+仓吞吐),token 走 git credential(osxkeychain)
 
-## ✅ 已合并(3 PR + 2 非 PR 收录)
+## ✅ 已合并(3 PR + 2 非 PR 收录) + 11-04 新投 issue(2)
 
 | 仓库 | PR | 合并日 | 备注 |
 |---|---|---|---|
 | serhii-londar/open-source-mac-os-apps (42k⭐) | [#1386](https://github.com/serhii-londar/open-source-mac-os-apps/pull/1386) | 2026-10-19 | **主引流源**,已验证 referrer 流量 |
 | juejin-cn/juejin-usage | [#201](https://github.com/juejin-cn/juejin-usage/pull/201) | 2026-10-08 | 国内渠道,用量采集接入 |
 | yzfly/Awesome-MCP-ZH | [#586](https://github.com/yzfly/Awesome-MCP-ZH/pull/586) | 2026-09-18 | MCP 客户端中文列表。⚠️ 11-04 盘点才补录,当时漏记 |
-| 1c7/chinese-independent-developer | [issue #1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 2026-11-03 | 非 PR(issue 收录制):3 App 两小时进主版面,同日[留言补录 16 App](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972) 等站长合 README |
+| 1c7/chinese-independent-developer | [issue #1736](https://github.com/1c7/chinese-independent-developer/issues/1736) | 2026-11-03 | 非 PR(issue 收录制):3 App 两小时进主版面,同日[留言补录 16 App](https://github.com/1c7/chinese-independent-developer/issues/1736#issuecomment-6606924972)。11-04 核验:1c7 仍在高频合入(每日批次),16 App **在队列等站长**,issue 制不催 |
 | **mcp.so**(目录站) | [servers/kinetaios](https://mcp.so/servers/kinetaios) | LIVE | 非 PR 自动收录,2026-11-02 确认。缺口:Tools 列表+config 块,README `## Tools` 已补(11-02),等重抓 |
+| **521xueweihan/HelloGitHub** (186k⭐) | [issue #4242](https://github.com/521xueweihan/HelloGitHub/issues/4242) | 2026-11-04 | 🆕 开源自荐(按 submit-cn.yaml 字段:标题/描述/亮点/示例代码)。月刊只收开源项目,收录后进贡献人列表。周期≈月,下次盘点 12-初 |
+| **ruanyf/weekly** (科技爱好者周刊) | [issue #13062](https://github.com/ruanyf/weekly/issues/13062) | 2026-11-04 | 🆕 开源自荐(社区口吻:网址/痛点/特点/我是作者)。周刊每期 5-10 条从 issue 池挑,无时限,被选中有邮件通知 |
 
 ## ⏳ Open — 高活跃仓(值得投入跟进)
 
@@ -59,6 +61,11 @@
 
 ## 下一步动作
 
+0. **11-04 19 App 引流新渠道(用户指令:为 20 个在线 App 引流)**:
+   - ✅ CID 续录 16 App 已在队列(勿催,1c7 每日批次合入)
+   - ✅ HelloGitHub #4242 / ruanyf #13062 已投
+   - ⏸ **macnative.io**(1672⭐ awesome-native-macosx-apps 的站方):需注册账号才能 submit,且明拒 Electron browser wrapper——**留给用户决策**,若投只投 SwiftUI 系 App(Elf/Brief/Soul/Minutes 等),跳过 KinetAios
+   - 排除(已查证):awesome-electron(暂停收录)、awesome-testflight-link(只收 TF 公链,无 TF 不资格)、垂直品类榜(无活跃池)
 1. **awesome-mac #4217**(11-04 开):等合并;1 周无动静礼貌跟进一次。此仓吞吐高,大概率快
 2. **awesome-ai-devtools #1404**(11-04 开):bot 校验已过,纯等人工
 3. **winget #463867**: 不动;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
