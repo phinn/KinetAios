@@ -7062,9 +7062,27 @@ html.anim-paused #sidebar {
 /* 聚合卡文件 chip 内的 ±行数徽章(复用 .dfb 子徽章,字号微调适配 chip 高度) */
 .fd-chip .dfb { gap: 3px; font-size: var(--fs-sm2); }
 
-/* ── viz-card:消息内嵌 HTML 可视化卡片(sandbox iframe + 源码折叠)────────── */
-/* Viz card: in-message live HTML rendering, mirroring WorkBuddy-style demo blocks. */
+/* ── viz-card:消息内嵌 HTML 可视化卡片(标题头+操作条+sandbox iframe+源码折叠)── */
+/* Viz card: in-message live HTML rendering with header actions, mirroring WorkBuddy demo blocks. */
 .answer .viz-card { margin: 4px 0 12px; border: 1px solid var(--border-soft); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-elev); box-shadow: var(--shadow-xs); }
+/* 标题头:标题 + 右侧操作按钮组 */
+.answer .viz-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); background: var(--bg-elev-2); }
+.answer .viz-head-title { flex: 1; font-size: var(--fs-sm2); font-weight: 600; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.answer .viz-actions { display: flex; align-items: center; gap: 2px; }
+.answer .viz-btn { display: inline-flex; align-items: center; gap: 5px; border: 0; background: transparent; color: var(--text-dim); border-radius: var(--r-md); padding: 4px 8px; cursor: pointer; font-size: var(--fs-sm2); white-space: nowrap; }
+.answer .viz-btn:hover { color: var(--text); background: var(--surface-hover, rgba(128,128,128,.08)); }
+.answer .viz-btn svg { flex: 0 0 auto; }
+/* 窄卡收敛:宽度贴内容(JS 按内层实报设 iframe 宽),标题压缩,按钮只留图标 */
+.answer .viz-card.viz-narrow .viz-head-title { max-width: 40%; }
+.answer .viz-card.viz-narrow .viz-btn span { display: none; }
+.answer .viz-card.viz-narrow .viz-btn { padding: 4px 6px; }
+.answer .viz-card.viz-narrow { max-width: fit-content; }
+.answer .viz-card.viz-narrow .viz-frame { width: auto; max-width: 100%; }
+/* fit-content 以内容最宽子元素为准(按钮行),不等于 iframe 收敛宽 → 用 inline width 兜住卡片 */
+/* fit-content sizes to the widest child (button row), not the iframe width → pin via inline width */
+.answer .viz-card.viz-narrow[data-pinned] { width: fit-content; }
+
+/* iframe 舞台:内层文档自带留白,这里只兜底白底 */
 .answer .viz-frame { display: block; width: 100%; border: 0; background: #fff; min-height: 80px; }
 .answer .viz-frame-msg { padding: 10px 14px; font-size: var(--fs-sm2); color: var(--text-dim); font-family: ui-monospace, monospace; }
 .answer .viz-src > summary { cursor: pointer; padding: 7px 14px; font-size: var(--fs-sm2); color: var(--text-dim); border-top: 1px solid var(--border-soft); background: var(--bg-elev-2); user-select: none; list-style: none; }

@@ -1406,6 +1406,15 @@ const ZH_CN: Dict = {
   'a11y.tabRules': '规则标签',
   'a11y.tabPreview': '预览标签',
   'a11y.tabTeam': '团队标签',
+  'viz.title': '可视化卡片',
+  'viz.download': '下载到本地',
+  'viz.downloadImg': '下载为图片',
+  'viz.copyCode': '复制代码',
+  'viz.viewCode': '查看代码',
+  'viz.src': '源码',
+  'viz.downloaded': '已下载 {name}',
+  'viz.imgSaved': '图片已保存',
+  'viz.imgFailed': '图片导出失败: {msg}',
 };
 
 const EN: Dict = {
@@ -2794,6 +2803,15 @@ const EN: Dict = {
   'a11y.tabRules': 'Rules tab',
   'a11y.tabPreview': 'Preview tab',
   'a11y.tabTeam': 'Team tab',
+  'viz.title': 'Visualization',
+  'viz.download': 'Download HTML',
+  'viz.downloadImg': 'Download as image',
+  'viz.copyCode': 'Copy code',
+  'viz.viewCode': 'View code',
+  'viz.src': 'Source',
+  'viz.downloaded': 'Downloaded {name}',
+  'viz.imgSaved': 'Image saved',
+  'viz.imgFailed': 'Image export failed: {msg}',
 };
 
 const ZH_TW: Dict = {
@@ -4177,6 +4195,15 @@ const ZH_TW: Dict = {
   'nexus.multiClear': '清除選擇',
   'nexus.multiOpen': '全部開啟',
   'nexus.toggleMinimap': '縮略圖開關',
+  'viz.title': '視覺化卡片',
+  'viz.download': '下載到本機',
+  'viz.downloadImg': '下載為圖片',
+  'viz.copyCode': '複製程式碼',
+  'viz.viewCode': '檢視程式碼',
+  'viz.src': '原始碼',
+  'viz.downloaded': '已下載 {name}',
+  'viz.imgSaved': '圖片已儲存',
+  'viz.imgFailed': '圖片匯出失敗: {msg}',
 };
 
 const JA: Dict = {
@@ -5561,6 +5588,15 @@ const JA: Dict = {
   'turn.retry': '再試行',
   'update.toast': '新バージョン {v} を検出 — 「設定 → 高度」で確認できます',
   'wb.running': '実行中',
+  'viz.title': 'ビジュアルカード',
+  'viz.download': 'ローカルにダウンロード',
+  'viz.downloadImg': '画像としてダウンロード',
+  'viz.copyCode': 'コードをコピー',
+  'viz.viewCode': 'コードを表示',
+  'viz.src': 'ソース',
+  'viz.downloaded': '{name} をダウンロードしました',
+  'viz.imgSaved': '画像を保存しました',
+  'viz.imgFailed': '画像のエクスポートに失敗: {msg}',
 };
 
 export const STRINGS: Record<Lang, Dict> = {

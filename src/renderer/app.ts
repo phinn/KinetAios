@@ -11488,6 +11488,18 @@ function mountVizFrames(root: ParentNode): void {
     iframe.dataset.vizId = fid;
     // textContent 永不为 null(DOM 属性),失败只可能是空 code → 空文档,不抛错
     const html = decodeHTMLEntities(code.textContent || '');
+    // 内层首个 h1-h3 提为卡片标题;没有则保留 i18n 默认「可视化卡片」
+    // Promote the first inner h1-h3 to the card title; fallback stays i18n default.
+    const titleEl = card.querySelector<HTMLElement>('[data-viz-title]');
+    if (titleEl) {
+      const m = html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
+      if (m) {
+        const plain = decodeHTMLEntities(m[1].replace(/<[^>]+>/g, '')).trim();
+        if (plain) { titleEl.textContent = plain.slice(0, 60); titleEl.removeAttribute('data-i18n'); }
+      }
+    }
+    // 留白治理改由内层实报内容宽(handler viz-narrow 收敛),不再猜类名。
+    // Gutter handling moved to inner-reported content width (no class-name guessing).
     let url = 'about:blank';
     try {
       url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
@@ -11500,7 +11512,7 @@ function mountVizFrames(root: ParentNode): void {
     // Height auto-fit: the injected boot reports body height via postMessage.
     // NEVER use documentElement.scrollHeight — it equals viewport height when
     // content is shorter, causing a +8px feedback loop until the 720 cap.
-    const boot = `(function(){function r(){var b=document.body;var h=b?Math.max(b.offsetHeight,b.scrollHeight):document.documentElement.scrollHeight;parent.postMessage({type:'viz-height',id:'${fid}',h:h},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var h=Math.max(b.offsetHeight,b.scrollHeight);var prev=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prev;parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
     // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
     const fed = /<\/head>/i.test(html)
       ? html.replace(/<\/head>/i, `<script>${boot}</script></head>`)
@@ -11522,6 +11534,59 @@ function mountVizFrames(root: ParentNode): void {
         }
       } catch { /* sandbox 跨域读不到就跳过(上报脚本已随文档自适配) */ }
     });
+    // ── 卡片头操作条:下载 HTML / 下载图片 / 复制代码 / 查看代码 ──
+    // Card header actions: download HTML / export as image / copy source / view source.
+    const fileBase = `viz-${fid}.html`;
+    const dlBtn = card.querySelector<HTMLButtonElement>('[data-viz-dl]');
+    if (dlBtn) dlBtn.onclick = () => {
+      // a[download] + blob URL:renderer 本地落盘,不经过 Node
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      a.download = fileBase;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      uxToast.ok(tr('viz.downloaded', { name: fileBase }));
+    };
+    const dlImgBtn = card.querySelector<HTMLButtonElement>('[data-viz-dlimg]');
+    if (dlImgBtn) dlImgBtn.onclick = () => {
+      // 拍帧通路:内层文档缩放到 2x 后 canvas 转 PNG 下载。
+      // Snapshot path: render inner doc into an offscreen <img> (blob URL is same-origin
+      // readable thanks to allow-same-origin), draw at 2x, export PNG.
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const scale = 2;
+            const cv = document.createElement('canvas');
+            cv.width = Math.max(img.naturalWidth, iframe.clientWidth || 600) * scale;
+            cv.height = Math.max(img.naturalHeight, iframe.clientHeight || 200) * scale;
+            const ctx = cv.getContext('2d');
+            if (!ctx) throw new Error('canvas 2d unavailable');
+            ctx.fillStyle = '#ffffff'; // 内层无背景时避免透明底
+            ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            const a = document.createElement('a');
+            a.href = cv.toDataURL('image/png');
+            a.download = fileBase.replace(/\.html$/, '.png');
+            a.click();
+            uxToast.ok(tr('viz.imgSaved'));
+          } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+        };
+        img.onerror = () => uxToast.err(tr('viz.imgFailed', { msg: 'image load failed' }));
+        img.src = iframe.src; // blob: URL,同源可读(allow-same-origin)
+      } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+    };
+    const copyBtn = card.querySelector<HTMLButtonElement>('[data-viz-copy]');
+    if (copyBtn) copyBtn.onclick = () => void copyText(html, copyBtn);
+    const viewBtn = card.querySelector<HTMLButtonElement>('[data-viz-view]');
+    if (viewBtn) viewBtn.onclick = () => {
+      // 查看/收起源码(details 开关),文案随状态互换
+      const det = card.querySelector<HTMLDetailsElement>('details.viz-src');
+      if (!det) return;
+      det.open = !det.open;
+      const label = viewBtn.querySelector('[data-i18n="viz.viewCode"]');
+      if (label) label.textContent = det.open ? tr('viz.collapse') : tr('viz.viewCode');
+    };
   }
 }
 
@@ -11531,7 +11596,7 @@ function mountVizFrames(root: ParentNode): void {
 if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
   (window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound = true;
   window.addEventListener('message', (ev: MessageEvent) => {
-    const d = ev.data as { type?: string; h?: number; href?: string; id?: string } | null;
+    const d = ev.data as { type?: string; h?: number; w?: number; href?: string; id?: string } | null;
     if (!d || typeof d !== 'object') return;
     if (d.type === 'viz-height' && typeof d.h === 'number' && d.h > 0) {
       // 按 mountVizFrames 播种的 data-viz-id 精确匹配发送者(跨域下 ev.source 不可比)
@@ -11542,6 +11607,23 @@ if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
       if (target) {
         const h = Math.min(Math.max(Math.round(d.h) + 8, 80), 720); // 上限 720 防失控文档
         target.style.height = `${h}px`;
+        // 内容宽不足容器 78% → 卡片收敛到内容宽(留白治理,数据由内层实报,不猜类名)
+        // Inner content narrower than 78% of container → shrink card to content width.
+        if (typeof d.w === 'number' && d.w > 0) {
+          const card = target.closest('.viz-card');
+          if (card instanceof HTMLElement) {
+            const avail = card.clientWidth - 2; // 边框
+            const isNarrow = d.w < avail * 0.78;
+            card.classList.toggle('viz-narrow', isNarrow);
+            if (isNarrow) {
+              card.style.width = `${d.w + 18}px`; // iframe(d.w+2) + 卡片横向 padding
+              target.style.width = `${d.w + 2}px`;
+            } else {
+              card.style.width = '';
+              target.style.width = '';
+            }
+          }
+        }
       }
     } else if (d.type === 'viz-open' && typeof d.href === 'string' && /^https?:/i.test(d.href)) {
       void window.kinet.openExternal(d.href);
