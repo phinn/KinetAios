@@ -273,8 +273,9 @@ export function isTransientError(e: unknown): boolean {
 function sleepAbortable(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted || ms <= 0) { resolve(); return; }
-    const t = setTimeout(resolve, ms);
-    signal.addEventListener('abort', () => { clearTimeout(t); resolve(); }, { once: true });
+    const onAbort = (): void => { clearTimeout(t); resolve(); };
+    const t = setTimeout(() => { signal.removeEventListener('abort', onAbort); resolve(); }, ms);
+    signal.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -961,6 +962,8 @@ function snapshotTraj(messages: ChatMsg[]): import('../shared/types').TrajRecord
 // history. The memory msg is re-injected fresh every turn by runAgentLoop, so it must not write
 // back to directHistory (otherwise it'd stack up across turns and go stale).
 function dropTransient(messages: ChatMsg[]): ChatMsg[] {
+  // 最后一条带图消息的下标(map 前算一次,别在回调里 O(n²) 重复扫)。
+  const lastImgIdx = findLastImgMsgIdx(messages);
   return messages
     .filter((m) => m.role !== 'system' && !m._memory && !m._transient)
     .map((m) => {
@@ -969,11 +972,30 @@ function dropTransient(messages: ChatMsg[]): ChatMsg[] {
         return { ...m, content: m.content.replace(/\x00IMAGES\[.+?\]\x00/s, '').trim() };
       }
       if (Array.isArray(m.content)) {
+        // 内存泄漏修(2026-11-04):含 image_url 的 tool 消息(截图,单张数百 KB~1MB+)整条
+        // 带图常驻 conv.directHistory,几十轮 computer-use 会话内存线性膨胀(renderer 峰值
+        // 744M / main jsHeap 峰值 442M)。模型语义上历史截图只需"看过"标记,回看走占位符重截。
+        // 存回 directHistory 的视图里图片换文本占位(请求视图 foldOldImages 本就只保最新 1 张,
+        // 与 FOLD_KEEP_RECENT_IMAGES=1 用户定调一致);最后一条带图消息保留原图(当轮可见)。
+        const hasImg = m.content.some((p) => p.type === 'image_url');
+        if (hasImg && messages.indexOf(m) !== lastImgIdx) {
+          const textPart = m.content.find((p) => p.type === 'text');
+          return { ...m, content: (textPart?.text ?? '') + '\n[📷 历史截图已释放(内存优化),需要时重新截屏]' };
+        }
         const textPart = m.content.find((p) => p.type === 'text');
         return { ...m, content: textPart?.text ?? '' };
       }
       return m;
     });
+}
+
+// messages 里最后一条含 image_url content part 的下标(没有 → -1)。
+function findLastImgMsgIdx(messages: ChatMsg[]): number {
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const c = messages[i].content;
+    if (Array.isArray(c) && c.some((p) => p.type === 'image_url')) return i;
+  }
+  return -1;
 }
 
 // 用户中断后,确保 messages 以合法的 assistant 消息结尾(否则下一轮 send 时 API 会收到

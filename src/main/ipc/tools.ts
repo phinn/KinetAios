@@ -156,6 +156,21 @@ export function register(): void {
     }
   });
 
+  // 外链转系统浏览器 — viz-card sandbox iframe 内无法直接 window.open(main 已拦),借道 IPC
+  // Open external URL via system browser — sandboxed viz iframes can't window.open (main intercepts), so route via IPC
+  ipcMain.handle('open-external', (_e, url: string) => {
+    try {
+      const u = new URL(String(url));
+      // 只放行 http(s),防 file:// / shell:// 类协议滥用
+      // Only allow http(s) to prevent file:// / shell:// style protocol abuse
+      if (u.protocol !== 'http:' && u.protocol !== 'https:') return { ok: false, error: 'protocol not allowed' };
+      void shell.openExternal(u.href);
+      return { ok: true };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
   // ── Visual Inspector:向 <webview> 的 guest contents 注入采集脚本 ──
   // 安全:不再接受任意 script 字符串(防 XSS → IPC → 任意 JS 执行)。
   // 改为白名单 action,主进程内部硬编码脚本,renderer 只传坐标参数。

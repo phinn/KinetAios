@@ -30,7 +30,7 @@ npm start
 
 | 功能 | 入口 | Wiki 页面 |
 |---|---|---|
-| 三代 Direct 引擎(V1 ReAct / V2 PEVJ / V3 意图路由 + DAG) | 会话头部引擎选择器 | [[Engines]] · [[Choose-Engine]] |
+| 五代 Direct 引擎(V1 ReAct / V2 PEVJ / V3 意图路由 + DAG / V4 Legis 立法者 / V5 Phylum 种群进化) | 会话头部引擎选择器 | [[Engines]] · [[Choose-Engine]] |
 | V3 deep 后台 Job + 节点断点续跑(3.8.0) | ⚙ →「复杂任务后台执行」 | [[Engines]] |
 | 插件引擎 v3(任意 CLI agent 注册为 `plugin:<name>`,纯 manifest) | 装好插件后的引擎下拉 | [[Plugins]] |
 | Direct 引擎内幕(ReAct, 压缩, 校准) | — | [[Direct-Engine]] |

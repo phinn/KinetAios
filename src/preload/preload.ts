@@ -70,6 +70,13 @@ const api: KinetAPI = {
   openFiles: (cwd) => ipcRenderer.invoke('open-files', cwd),
   openArena: (cwd) => ipcRenderer.invoke('open-arena', cwd),
   shellOpen: (url) => ipcRenderer.invoke('shell-open', url),
+  // ── 推广 PR/渠道状态追踪 ──
+  promoList: () => ipcRenderer.invoke('promo-list'),
+  promoRefresh: () => ipcRenderer.invoke('promo-refresh'),
+  promoAdd: (input) => ipcRenderer.invoke('promo-add', input),
+  promoRemove: (id) => ipcRenderer.invoke('promo-remove', id),
+  promoImport: (payload) => ipcRenderer.invoke('promo-import', payload),
+  promoExport: () => ipcRenderer.invoke('promo-export'),
   // ── 版本更新检查 ──
   checkUpdate: (force?: boolean) => ipcRenderer.invoke('check-update', force),
   getAppVersion: () => ipcRenderer.invoke('app-version'),
@@ -190,6 +197,7 @@ const api: KinetAPI = {
   transcribeAudio: (base64: string, mime: string) => ipcRenderer.invoke('transcribe-audio', base64, mime),
   // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
+  openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   // Visual Inspector:向 webview guest 注入采集脚本(白名单 action,不接受任意脚本)
   webviewInspect: (guestInstanceId: number, action: string, params?: Record<string, unknown>) => ipcRenderer.invoke('webview-inspect', guestInstanceId, action, params),
   // ── 替身画像(Persona)──

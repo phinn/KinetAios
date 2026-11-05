@@ -89,7 +89,12 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 【后台窗口纪律(零打扰)】用户反感画面被切换。macOS 上 shell 工具会自动把裸 open 重写为 open -gj(后台启动,不置前不抢焦点),所以:
 - 你用 shell 启动 app 后要查看内容 → 用 **screenshot_window** 按标题截窗口内容,不要把窗口带到前台
 - 只有用户明确要求"把 XX 打开到前台/显示出来"时,才用 osascript "tell application XX to activate" 把窗口带到最前
-- Windows 启动后台进程用 START /B;同样用 screenshot_window 看内容,不抢用户焦点`;
+- Windows 启动后台进程用 START /B;同样用 screenshot_window 看内容,不抢用户焦点
+
+【回复内嵌可视化(viz-card)】当回答适合配图示(架构图/流程对比/表格数据可视化/示意图/时间线/原型演示),在回复 markdown 里直接输出一个完整自包含的 \`\`\`html 代码块,客户端会把它渲染成消息内嵌的可视化卡片(sandbox iframe 直渲 + 可折叠源码),效果远好于纯文字描述。要求:
+- 单个 html 块 ≤ 400 行,自包含(内联 <style>,禁外链资源/外部脚本/网络请求)
+- 深浅主题都要可读:配色用中性底(如 #f6f6f8 / #1e1e24),不要依赖系统主题
+- 适合场景:方案对比、流程图、状态机、排期甘特、数据表格、UI 原型示意;一次回复最多 1-2 个,不要每个回答都硬塞`;
 
 // 来源渠道上下文:当会话由飞书/企信机器人创建时,注入来源提示,
 // 让 Agent 知道自己在聊天频道里运行,回复会自动发送到当前对话。
@@ -1406,6 +1411,86 @@ function pluginProtocolParser(protocol: string, pluginName: string): (line: stri
     }
     case 'jsonl-codex':
       return codexParseLine;
+    case 'jsonl-gemini': {
+      // gemini --output-format stream-json: init(session_id)/message(role+content,
+      // assistant delta=true 增量)/tool_use(tool_id+tool_name+parameters)/
+      // tool_result(tool_id+status+output)/error(severity)/result(status+stats)。
+      // schema 源: google-gemini/gemini-cli packages/core/src/output/types.ts (v0.67)。
+      // pending tool_use 按 conv.id 隔离,tool_result 到达配对 emit。
+      const pending = new Map<string, Map<string, { name: string; args: string }>>();
+      return (line, { conv, emit }) => {
+        const tr = line.trim();
+        if (!tr) return;
+        let obj: Record<string, any>;
+        try {
+          obj = JSON.parse(tr);
+        } catch {
+          return; // 非 JSON 行忽略(与 claude/codex 同策略)
+        }
+        let m = pending.get(conv.id);
+        if (!m) {
+          m = new Map();
+          pending.set(conv.id, m);
+        }
+        switch (obj.type as string) {
+          case 'init':
+            if (obj.session_id) emit({ type: 'sessionStarted', id: String(obj.session_id) });
+            break;
+          case 'message':
+            if (obj.role === 'assistant' && typeof obj.content === 'string' && obj.content) {
+              emit({ type: 'token', text: obj.delta === false ? obj.content + '\n' : obj.content });
+            }
+            break;
+          case 'tool_use':
+            m.set(String(obj.tool_id ?? ''), {
+              name: String(obj.tool_name ?? 'tool'),
+              args: safeStringify(obj.parameters ?? {}),
+            });
+            break;
+          case 'tool_result': {
+            const p = m.get(String(obj.tool_id ?? ''));
+            if (p) {
+              m.delete(String(obj.tool_id ?? ''));
+              trackFileOpFromToolEvent(conv.id, p.name, p.args);
+              emit({
+                type: 'tool',
+                name: p.name,
+                args: p.args,
+                result:
+                  typeof obj.output === 'string'
+                    ? obj.output
+                    : obj.error?.message
+                      ? String(obj.error.message)
+                      : '',
+              });
+            }
+            break;
+          }
+          case 'error':
+            // severity=warning 是非致命告警,gemini 自己会继续;只把 error 级别当终态
+            if (obj.severity === 'error') emit({ type: 'error', message: String(obj.message ?? 'gemini error') });
+            break;
+          case 'result': {
+            // stats 换算成本事件(免费但口径如实:tokens 真实、usd=0)
+            const st = obj.stats ?? {};
+            emit({
+              type: 'cost',
+              usd: 0,
+              tokens: Number(st.total_tokens) || 0,
+              tokensIn: Number(st.input_tokens) || 0,
+              tokensOut: Number(st.output_tokens) || 0,
+              source: 'gemini-cli',
+            });
+            if (obj.status === 'error') {
+              emit({ type: 'error', message: obj.error?.message ? String(obj.error.message) : 'gemini session failed' });
+            } else {
+              emit({ type: 'done' });
+            }
+            break;
+          }
+        }
+      };
+    }
     case 'ndjson': {
       const pending = new Map<string, Map<string, { name: string; args: string }>>();
       return (line, { conv, emit }) => {

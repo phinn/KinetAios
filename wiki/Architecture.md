@@ -86,7 +86,7 @@ Engines only emit events; `TaskManager` receives → `applyEvent` updates `Conve
 |---|---|
 | `main.ts` | Windows, tray, hotkey, IPC, shell-confirm bridge |
 | `TaskManager.ts` | Session lifecycle + engine dispatch + background memory extraction |
-| `engines.ts` | `Engine` interface + three implementations + cross-platform CLI spawn |
+| `engines.ts` | `Engine` interface + five Direct implementations + shared `CliEngineAdapter` + cross-platform CLI spawn |
 | `AgentLoop.ts` | Direct's ReAct loop + history compaction + reactive trim |
 | `glm.ts` | Provider + OpenAI/Anthropic dual-protocol SSE streaming + retry |
 | `tools.ts` | 10 built-in tools + cross-platform shell + dispatch_agent |
@@ -122,7 +122,7 @@ Schema is migrated idempotently on init (`hasColumn` prevents ALTER errors). See
 
 `approval: 'never'` short-circuits this (no modal).
 
-## Three-engine abstraction
+## Engine abstraction
 
 ```ts
 interface Engine {
@@ -131,4 +131,4 @@ interface Engine {
 }
 ```
 
-Three implementations: `DirectEngine` (built-in ReAct), `ClaudeCodeEngine` (spawns `claude -p`), `CodexEngine` (spawns `codex exec`). `TaskManager` owns all sessions and dispatches by `conv.engine`. See [[Engines]].
+Five built-in Direct implementations (V1 ReAct / V2 PEVJ / V3 intent router / V4 Legis / V5 Phylum — V4 & V5 are plugin-gated via the `legis-engine` / `phylum-engine` plugins, off by default) plus one `CliEngineAdapter` hosting Claude Code (`claude -p`), Codex (`codex exec`) and SDK v3 plugin engines. `TaskManager` owns all sessions and dispatches by `conv.engine`. See [[Engines]].

@@ -27,6 +27,14 @@ export function renderMarkdown(src: string): string {
     // 语法高亮(highlight.ts):token 按行切分发射,行号模式不会撕断跨行 span。
     const raw = code.replace(/\n$/, '');
     const lineCount = raw.split('\n').length;
+    // ── 可视化卡片(viz-card):```html 且为完整文档片段 → sandbox iframe 直渲 + 源码折叠 ──
+    // Viz card: a ```html fence holding a full-enough document renders as a live
+    // sandboxed iframe with the source tucked into a <details>; falls back to a
+    // normal highlighted code block for fragments.
+    if (typeof lang === 'string' && lang.toLowerCase() === 'html' && isVizCardDoc(raw)) {
+      blocks.push(renderVizCard(raw, blocks.length));
+      return `\x00${blocks.length - 1}\x00`;
+    }
     const hi = raw.length > HIGHLIGHT_MAX_CHARS ? esc(raw) : highlightCode(raw, typeof lang === 'string' ? lang : '');
     const numbered = lineCount > 12
       ? hi.split('\n').map((l: string) => `<span class="cl">${l}</span>`).join('\n')
@@ -153,6 +161,11 @@ export function renderMarkdown(src: string): string {
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+// esc 的逆操作:用于从 DOM textContent 还原 viz-card 原始 HTML(esc 只转义这三种实体)。
+// Inverse of esc: recover raw viz-card HTML from DOM textContent (esc escapes exactly these).
+export function decodeHTMLEntities(s: string): string {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
 
 // ── 嵌套列表 ──
 type RawItem = { indent: number; ordered: boolean; checked: boolean | null; text: string };
@@ -185,7 +198,46 @@ function renderList(nodes: LNode[]): string {
   return `<${tag}>${lis.join('')}</${tag}>`;
 }
 
-// Inline formatting on already-escaped text: code, links, bold, italic, strikethrough, images.
+// ── 可视化卡片(viz-card)────────────────────────────────────────────
+// 判定:文档级 HTML(有 <div|table|svg|section 等布局标签 + 最小体量)才算卡片;
+// 否则退回普通代码块(纯 <p> 一行式的「伪 html」不该渲染成图)。
+// Viz-card gate: only document-ish HTML (layout tags + minimum size) becomes a
+// card; trivial one-liner "html" fences stay as normal highlighted code.
+const VIZCARD_MIN_CHARS = 80;
+function isVizCardDoc(src: string): boolean {
+  if (src.length < VIZCARD_MIN_CHARS) return false;
+  return /<(div|table|svg|section|ul|ol|header|main|canvas)\b/i.test(src);
+}
+
+// 渲染:标题头 + 操作条(下载 HTML/下载图片/复制代码/查看代码)+ sandbox iframe
+// (srcdoc blob URL)+ 源码折叠(查看代码 = 展开 details)。主题透传由 app.ts 处理。
+// Card shell: header + action bar (download HTML/image, copy & view code) +
+// sandboxed iframe fed by blob: URL + collapsible source ("view code" opens it).
+// Theme pass-through handled in app.ts via postMessage.
+function renderVizCard(src: string, idx: number): string {
+  const blobUrl = `vizcard://${idx}`; // 运行时由 app.ts 替换为真实 blob URL
+  const dlIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>';
+  const imgIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>';
+  const copyIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>';
+  const codeIcon = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
+  return (
+    `<div class="viz-card" data-viz-card="${idx}">` +
+    `<div class="viz-head"><span class="viz-head-title" data-viz-title data-i18n="viz.title">可视化卡片</span>` +
+    `<div class="viz-actions">` +
+    `<button class="ghost viz-btn" data-viz-dl>${dlIcon}<span data-i18n="viz.download">下载到本地</span></button>` +
+    `<button class="ghost viz-btn" data-viz-dlimg>${imgIcon}<span data-i18n="viz.downloadImg">下载为图片</span></button>` +
+    `<button class="ghost viz-btn" data-viz-copy>${copyIcon}<span data-i18n="viz.copyCode">复制代码</span></button>` +
+    `<button class="ghost viz-btn" data-viz-view>${codeIcon}<span data-i18n="viz.viewCode">查看代码</span></button>` +
+    `</div></div>` +
+    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts allow-same-origin" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
+    `<div class="viz-frame-msg" hidden></div></div>` +
+    `<details class="viz-src"><summary data-i18n="viz.src">源码</summary>` +
+    `<div class="code-block"><span class="code-lang">html</span><button class="code-copy ghost" data-code-copy>${COPY_ICON}</button>` +
+    `<pre class="code"><code>${esc(src)}</code></pre></div></details></div>`
+  );
+}
+
+
 function inline(s: string): string {
   return s
     // 折叠批次引用降权:模型常把「[已折叠工具调用批次: …]」当正文复述,机械行混进叙述观感差

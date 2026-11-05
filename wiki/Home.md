@@ -30,7 +30,7 @@ See [[Getting-Started]] for details.
 
 | Feature | Entry | Wiki page |
 |---|---|---|
-| Three Direct generations (V1 ReAct / V2 PEVJ / V3 intent router + DAG) | Session header engine selector | [[Engines]] · [[Choose-Engine]] |
+| Five Direct generations (V1 ReAct / V2 PEVJ / V3 intent router + DAG / V4 Legis compiler / V5 Phylum population evolution) | Session header engine selector | [[Engines]] · [[Choose-Engine]] |
 | V3 deep background jobs + node checkpoints (v3.8.0) | ⚙ → "Run complex tasks in background" | [[Engines]] |
 | Plugin engines v3 (any CLI agent as `plugin:<name>`, manifest-only) | Engine dropdown, after installing the plugin | [[Plugins]] |
 | Direct engine internals (ReAct, compaction, calibration) | — | [[Direct-Engine]] |

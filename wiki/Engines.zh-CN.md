@@ -2,7 +2,7 @@
 
 # 引擎
 
-KinetAios 内置**三代 Direct 引擎**(V1/V2/V3),加上走插件系统的 CLI 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(几套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。在此之上,**插件引擎**(SDK v3)能把任意外部 CLI agent 注册为 `plugin:<name>` —— 见 [[Plugins]]。
+KinetAios 内置**五代 Direct 引擎**(V1–V5),加上走插件系统的 CLI 引擎,每个会话独立选。**切换引擎 = 清空跨引擎上下文**(几套引擎的历史格式不互通,Direct 存 `directHistory: ChatMsg[]`,Claude/Codex 各有 session id 走 `--resume`)。在此之上,**插件引擎**(SDK v3)能把任意外部 CLI agent 注册为 `plugin:<name>` —— 见 [[Plugins]]。
 
 ## 一句话区分
 
@@ -11,12 +11,14 @@ KinetAios 内置**三代 Direct 引擎**(V1/V2/V3),加上走插件系统的 CLI 
 | **Direct V1 (Kaios)** | 内置 ReAct loop,直连 LLM provider | `tools.ts` 内置工具 + MCP | 问答、小修改,精确控成本控步骤 |
 | **Direct V2** | 在 V1 工具上做 Plan-Execute-Verify-Judge | 同 V1 + 任务清单卡 | 带验证的多文件改动 |
 | **Direct V3** | 意图路由 → fast/std/deep;deep = DAG | 同 V1 + 分析模式 | 数据分析、跨文件重构、不确定用哪个时 |
+| **Direct V4 (Legis 立法者)** | V3 路由;deep 走 Legis 流水线:编译 → Runtime → 执行 | 同 V3 + 断言验收门 | 需要计划级严谨的长链路 deep 任务 |
+| **Direct V5 (Phylum 种群进化)** | 种群进化:prompt → 基因模板 → 活体表达执行 → 死亡结算 → 疤痕遗传 | 同 V3 + 亲和剪枝 | 可重复的任务族,历史失败能塑形后续执行 |
 | **Claude Code** *(插件开关)* | spawn `claude -p --output-format stream-json` | Claude Code 自带(Read/Write/Edit/Bash/Glob/Grep) | 已习惯 Claude Code CLI 的流 |
 | **Codex** *(插件开关)* | spawn `codex exec --json` | Codex 自带 | 已习惯 Codex CLI 的流 |
 | **DeepSeek Harness** *(插件引擎)* | spawn `dsh` CLI headless profile | 该 CLI 自带 | DeepSeek 一次性任务 |
 | **plugin:<name>** | spawn 插件声明的任意 CLI | 该 CLI 自带 | 想接入其它 CLI agent(零代码,纯 manifest) |
 
-CLI 引擎需要先在本机装好 CLI。它们**由插件开关控制**:在 ⚙ → 插件 里启用 `claude-code` / `codex` 插件,引擎才进下拉。V1/V2/V3 怎么选见 [[Choose-Engine]]。
+CLI 引擎需要先在本机装好 CLI。它们**由插件开关控制**:在 ⚙ → 插件 里启用 `claude-code` / `codex` 插件,引擎才进下拉。V1–V5 怎么选见 [[Choose-Engine]]。
 
 ## Direct V1 (Kaios)
 
@@ -53,6 +55,14 @@ deep 路径增强(v3.8.0):
 - **分析模式** —— 任务描述里出现数据文件(csv/xlsx/db)时,V3 自动加载 `data-analysis` 工作法:先摸 schema 再下结论、计算交给工具(python/sqlite)不心算、中间产物落盘、结论可溯源、关键数字交叉验证。状态栏出现「📊 分析模式」即已生效。
 
 逐任务对比见 [[Choose-Engine]]。
+
+## Direct V4 — Legis 立法者(可选 deep 流水线)
+
+`src/main/V4/`。V3 的路由保留:fast/std 原样复用;deep 改走 **Legis 流水线** —— LLM 先把需求"立法"成带断言的规约(编译),Runtime 持规约调度执行,执行完逐条断言验收,不合格自动回炉。适合需要计划级严谨的长链路任务。设计文档:`docs/V4-Legis-引擎设计.md`。
+
+## Direct V5 — Phylum 种群进化(实验)
+
+`src/main/V5/`。范式是 **Agent 不学习,Agent 繁衍**:每个 prompt 归一化为任务模板 id(签名),从基因库领取"活体个体表达"执行(硬约束:亲和摘工具/maxSteps 预算/断言 gate),执行结束死亡即结算,失败疤痕写回基因库遗传给后代。适合可重复的任务族。
 
 ## Claude Code
 

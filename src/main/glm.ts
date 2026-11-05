@@ -109,45 +109,78 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
     if (signal?.aborted) return reject(new Error('aborted'));
     let t: ReturnType<typeof setTimeout>;
     const onAbort = (): void => { clearTimeout(t); reject(new Error('aborted')); };
+    // 到点 resolve 时自摘监听:调用方(fetchUntil200 重试退避)不清理,
+    // 留着会在 turn signal 上堆积死监听器(2026-11-03 事故)。
     t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); resolve(); }, ms);
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
 // 建连 + 拿到 200:可重试状态码/网络错退避重试;不可重试(400/401/404 等)或耗尽则抛 GLMError。
-async function fetchUntil200(url: string, init: RequestInit): Promise<Response> {
+// 返回值附带 dispose():流消费完毕后由调用方调用,摘掉外层 abort 桥接监听。
+// ⚠️ dispose 必须调用:每个 ReAct step 都会走到这里,监听器挂在整轮 turn 的 signal 上,
+// 若正常完成不摘,长 turn 十几步就累积 10+ 个死监听器 → Node MaxListenersExceededWarning(2026-11-03 事故)。
+// ⚠️ dispose 也不能提前到 headers 一到就调(2026-11-03 停止失效事故):resp.body 挂在
+// ttfbCtrl.signal 上,监听器摘早了用户 abort 传导不到 body 流 → 点「停止」后 token
+// 照吐照计费到服务端发完。所以摘除时机 = 流消费完(或本函数抛错)。
+// / fetch-until-200 with retry. Returns { resp, dispose }: call dispose() after the body
+// stream is fully consumed to detach the outer-abort bridge listener (per-step leak fix),
+// but never earlier — resp.body hangs off the internal controller, so disposing at
+// headers-arrival breaks Stop() propagation (billing-until-server-finishes incident).
+async function fetchUntil200(
+  url: string,
+  init: RequestInit,
+): Promise<{ resp: Response; dispose: () => void }> {
   // signal 从 init.signal 提取,用于重试逻辑判断(不重复传参)。
   const signal = init.signal as AbortSignal | undefined;
   // 首字节看门狗:fetch() 阶段(建连/排队/请求体上传/等服务端回头)没有任何超时覆盖,
   // 服务端收下请求但迟迟不发响应头时 fetch 永挂 → turn 永远 running 且无事件。
   // 与 sseLines 的流静默看门狗互补:那个管「headers 之后断流」,这个管「headers 之前」。
   // 到点 abort 专用 controller(fetch 按 signal.reason 抛非 AbortError → 走可重试网络错退避);
-  // headers 一到就撤表,不影响正常长流。用户 abort(signal)实时传导。
+  // headers 一到就撤表,不影响正常长流。用户 abort(signal)经桥接监听实时传导。
   // / TTFB watchdog: fetch() itself has no timeout — a server that accepts the request but
   // never responds would hang the turn forever. Fired per attempt, cleared once headers arrive.
   const TTFB_TIMEOUT_MS = 120_000;
-  for (let attempt = 0; ; attempt++) {
-    let resp: Response;
-    const ttfbCtrl = new AbortController();
-    const ttfbTimer = setTimeout(() => ttfbCtrl.abort(new Error(`首字节超时 ${TTFB_TIMEOUT_MS / 1000}s(服务端已收请求但无响应,已中断重试)`)), TTFB_TIMEOUT_MS);
-    const onOuterAbort = (): void => ttfbCtrl.abort(signal?.reason);
-    signal?.addEventListener('abort', onOuterAbort, { once: true });
-    try {
-      resp = await fetch(url, { ...init, signal: ttfbCtrl.signal });
-    } catch (e) {
-      if (attempt < MAX_RETRY && !signal?.aborted) { await sleep(backoffMs(attempt), signal); continue; }
-      throw e;
-    } finally {
-      clearTimeout(ttfbTimer); // headers 已到(或已抛错)→ 撤首字节看门狗,流阶段交给 sseLines
-      signal?.removeEventListener('abort', onOuterAbort);
+  // 桥接监听(用户 signal → ttfbCtrl):每个 attempt 重挂,成功拿到 200 后保留给
+  // dispose 摘除;重试/抛错路径在 finally 里立即摘,防 signal 上堆积。
+  let detachBridge: (() => void) | null = null;
+  try {
+    for (let attempt = 0; ; attempt++) {
+      let resp: Response | undefined;
+      const ttfbCtrl = new AbortController();
+      const ttfbTimer = setTimeout(() => ttfbCtrl.abort(new Error(`首字节超时 ${TTFB_TIMEOUT_MS / 1000}s(服务端已收请求但无响应,已中断重试)`)), TTFB_TIMEOUT_MS);
+      const onOuterAbort = (): void => ttfbCtrl.abort(signal?.reason);
+      signal?.addEventListener('abort', onOuterAbort, { once: true });
+      detachBridge = signal ? () => signal.removeEventListener('abort', onOuterAbort) : null;
+      try {
+        resp = await fetch(url, { ...init, signal: ttfbCtrl.signal });
+      } catch (e) {
+        if (attempt < MAX_RETRY && !signal?.aborted) { await sleep(backoffMs(attempt), signal); continue; }
+        throw e;
+      } finally {
+        clearTimeout(ttfbTimer); // headers 已到(或已抛错)→ 撤首字节看门狗,流阶段交给 sseLines
+        if (resp === undefined || resp.status !== 200) { detachBridge?.(); detachBridge = null; } // 非终态(重试/抛错)立即摘;200 交给 dispose
+      }
+      if (resp.status === 200) {
+        // 移交桥接监听给 dispose:外层 finally 看到null 不会误摘,
+        // 调用方流消费完才真正摘除(保住用户 abort → body 流的传导链)。
+        const disposeBridge = detachBridge;
+        detachBridge = null;
+        return {
+          resp,
+          dispose: () => { disposeBridge?.(); },
+        };
+      }
+      const detail = await readErr(resp);
+      if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
+        await sleep(backoffMs(attempt), signal);
+        continue;
+      }
+      throw new GLMError('http', resp.status, detail, GLMError.classifyText(resp.status, detail));
     }
-    if (resp.status === 200) return resp;
-    const detail = await readErr(resp);
-    if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
-      await sleep(backoffMs(attempt), signal);
-      continue;
-    }
-    throw new GLMError('http', resp.status, detail, GLMError.classifyText(resp.status, detail));
+  } finally {
+    // 兜底:任何抛错路径(含 readErr 抛、sleep abort 抛)都确保桥接监听被摘。
+    detachBridge?.();
   }
 }
 
@@ -378,7 +411,7 @@ class OpenAICompatibleProvider implements Provider {
       return ollamaStream(messages, tools, snap, signal, onToken, wireMsgs);
     }
 
-    const resp = await fetchUntil200(`${snap.baseURL}/chat/completions`, {
+    const { resp, dispose } = await fetchUntil200(`${snap.baseURL}/chat/completions`, {
       method: 'POST',
       headers: {
         // Ollama(11434)不需要 key;留空就发 dummy,服务器忽略。其它服务一律 Bearer。
@@ -442,6 +475,7 @@ class OpenAICompatibleProvider implements Provider {
         continue;
       }
     }
+    dispose(); // 流消费完毕 → 摘外层 abort 桥接监听(每 ReAct 步挂 1 个,不摘会堆积成 MaxListeners 警告)
 
     const toolCalls = [...calls.entries()]
       .sort((a, b) => a[0] - b[0])
@@ -638,7 +672,7 @@ async function ollamaStreamInner(
   signal: AbortSignal,
   onToken: (t: string, kind?: 'answer' | 'reason') => void,
 ): Promise<Completion> {
-  const resp = await fetchUntil200(`${base}/api/chat`, {
+  const { resp, dispose } = await fetchUntil200(`${base}/api/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'application/x-ndjson' },
     body: JSON.stringify(body),
@@ -721,6 +755,7 @@ async function ollamaStreamInner(
     // Must release+cancel reader — otherwise TCP connection leaks and abort doesn't close the stream.
     try { reader.releaseLock(); } catch { /* already released */ }
     await reader.cancel().catch(() => {});
+    dispose(); // 流消费完毕 → 摘外层 abort 桥接监听(防 turn signal 上死监听器堆积)
   }
 
   const toolCalls = [...calls.entries()]
@@ -854,7 +889,7 @@ class AnthropicProvider implements Provider {
       }
     }
 
-    const resp = await fetchUntil200(`${snap.baseURL}/v1/messages`, {
+    const { resp, dispose } = await fetchUntil200(`${snap.baseURL}/v1/messages`, {
       method: 'POST',
       headers: {
         'x-api-key': snap.apiKey,
@@ -932,6 +967,8 @@ class AnthropicProvider implements Provider {
         }
       }
     }
+
+    dispose(); // 流消费完毕 → 摘外层 abort 桥接监听(防 turn signal 上死监听器堆积)
 
     const toolCalls = [...blocks.entries()]
       .sort((a, b) => a[0] - b[0])

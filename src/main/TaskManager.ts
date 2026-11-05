@@ -782,7 +782,7 @@ export class TaskManager {
             resolve(err ? '' : String(stdout).slice(-2000));
           });
           if (signal) {
-            const onAbort = (): void => resolve('');
+            const onAbort = (): void => { signal.removeEventListener('abort', onAbort); resolve(''); };
             signal.addEventListener('abort', onAbort, { once: true });
           }
         });
@@ -1103,6 +1103,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     // 任务完成通知:done/error 都是 turn 终态。用户 cancel 不通知(cancel() 自己不走路径,
     // 但 abort 可能引发 engine 内部 error 事件 → 用 signal.aborted 区分)。
     if (ev.type === 'done' || ev.type === 'error') {
+      // 终态清过时 statusNote:steer/排队提示(「⚡ 已插入用户打断」等)是过程性信息,
+      // turn 结束后仍挂着会误导用户以为下一轮还带旧提示(2026-11-03 排查发现)。
+      // Goal 循环的暂停类 note(时长/成本上限)不在 engine done 路径,不受影响。
+      if (conv.statusNote) conv.statusNote = null;
       // 上下文占用估算(Direct 系才有 directHistory;CLI 引擎的上下文在其进程内,估不了)
       if (conv.engine === 'direct' || conv.engine === 'directV2' || conv.engine === 'directV3' || conv.engine === 'directV4') {
         conv.ctxTokens = estTokenCount(conv.directHistory);
@@ -1438,7 +1442,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
 无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"lessons":[],"triples":[]}。只输出 JSON,不要解释。`;
     const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 30_000);
+    // 90s 预算:此调用跑完整 LLM 流式(可能含 429 退避重试),30s 会自我熔断
+    // → '[memory] extract failed: aborted' 噪声 + 事实白跑(2026-11-03 事故)。
+    const timer = setTimeout(() => ac.abort(), 90_000);
     const onParentAbort = (): void => ac.abort();
     if (parentSignal.aborted) ac.abort();
     else parentSignal.addEventListener('abort', onParentAbort, { once: true });
@@ -1585,7 +1591,11 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         }
       }
     } catch (e) {
-      console.error('[memory] extract failed:', (e as Error)?.message);
+      // abort 路径不降噪失败:新一轮开始旧轮摘要被熔断属预期调度(用户连发/切引擎),
+      // 打成 console.error 会污染日志;静默降级。只有非 abort 的真实失败才值得记录。
+      if (!parentSignal?.aborted && (e as Error)?.message !== 'aborted') {
+        console.error('[memory] extract failed:', (e as Error)?.message);
+      }
     } finally {
       clearTimeout(timer);
       parentSignal.removeEventListener('abort', onParentAbort);
@@ -1628,7 +1638,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     ).join('\n\n');
 
     const ac = new AbortController();
-    const timer = setTimeout(() => ac.abort(), 20_000);
+    const timer = setTimeout(() => ac.abort(), 60_000); // 20s 会自我熔断,同 facts 抽取(2026-11-03)
     const onParentAbort = (): void => ac.abort();
     if (parentSignal.aborted) { ac.abort(); return; }
     parentSignal.addEventListener('abort', onParentAbort, { once: true });

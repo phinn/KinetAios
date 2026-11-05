@@ -25,8 +25,9 @@ export function waitForGate(signal?: AbortSignal): Promise<void> {
   if (now >= parkedUntil) return Promise.resolve();
   const wait = parkedUntil - now;
   return new Promise((resolve, reject) => {
-    const t = setTimeout(() => { gate = Promise.resolve(); resolve(); }, wait);
-    signal?.addEventListener('abort', () => { clearTimeout(t); reject(new Error('aborted')); }, { once: true });
+    const onAbort = (): void => { clearTimeout(t); reject(new Error('aborted')); };
+    const t = setTimeout(() => { signal?.removeEventListener('abort', onAbort); gate = Promise.resolve(); resolve(); }, wait);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 

@@ -1,0 +1,25 @@
+{
+  "name": "gemini-cli",
+  "version": "1.0.0",
+  "description": "Gemini CLI(google-gemini/gemini-cli)插件引擎:在 KinetAios 里以多频道并行托管 gemini 会话 —— stream-json 实时渲染(token/工具调用/统计)、--resume 会话续接、共享端侧长期记忆。需已安装 gemini(npm i -g @google/gemini-cli)并完成 auth。",
+  "author": "KinetAios",
+  "category": "dev",
+  "keywords": ["gemini", "gemini-cli", "google", "cli", "agent", "ai"],
+  "engines": [],
+  "engine": {
+    "bin": "gemini",
+    "protocol": "jsonl-gemini",
+    "args": ["--output-format", "stream-json", "--approval-mode", "{approvalMode}"],
+    "label": "Gemini CLI",
+    "inject": "prompt",
+    "resume": { "idField": "session_id", "resumeFlag": "-r" },
+    "settings": [
+      {
+        "key": "approvalMode",
+        "label": "工具批准模式",
+        "placeholder": "default / auto_edit / yolo / plan",
+        "default": "default"
+      }
+    ]
+  }
+}

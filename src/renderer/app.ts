@@ -5,7 +5,7 @@ import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
 import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
-import { renderMarkdown as md } from './markdown';
+import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
 import { mountFileDrawer, type FileDrawer } from './file-drawer';
@@ -2952,7 +2952,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       // 同步 streamRawText buffer:renderMain 重建 DOM 时需重置 buffer 到当前 answer。
       streamRawText = t.answer ?? '';
       // 超长 answer 流式期只渲染头部(完整文本仍在 t.answer);done 后 mountAnswer 可展开全文。
-      if (t.answer) ans.innerHTML = md(t.answer.slice(0, ANSWER_HEAD_LIMIT));
+      if (t.answer) { ans.innerHTML = md(t.answer.slice(0, ANSWER_HEAD_LIMIT)); mountVizFrames(ans); }
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       // 非流式:头部 + 展开全文按钮(见 mountAnswer 注释)。
@@ -5444,6 +5444,10 @@ function streamAppend(text: string) {
             streamTailEl?.remove();
             target.insertAdjacentHTML('beforeend', deltaHtml);
             streamMdLen = streamStableLen;
+            // viz-card:闭合的 html 块已进入稳定前缀,立即挂 iframe(流式可见)。
+            // Viz cards land with their delta; iframe mounting is idempotent
+            // (data-viz-mounted guard), so extra calls are cheap no-ops.
+            mountVizFrames(target);
           }
           const tailText = streamRawText.slice(streamMdLen);
           if (tailText) {
@@ -5616,7 +5620,7 @@ function updatePreview(html: string): void {
   if (!body) return;  // 如果当前是空状态或 iframe 被移除了,先恢复 iframe
   let iframe = document.getElementById('preview-iframe') as HTMLIFrameElement | null;
   if (!iframe) {
-    body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms"></iframe>';
+    body.innerHTML = '<iframe id="preview-iframe" sandbox="allow-scripts allow-popups allow-forms allow-modals allow-downloads"></iframe>';
     iframe = document.getElementById('preview-iframe') as HTMLIFrameElement;
   }
   // 用 blob: URL 加载(比 srcdoc 兼容性好,Electron 不一定支持 srcdoc)
@@ -10533,7 +10537,7 @@ function showPluginPanel(name: string): void {
       iframe.style.width = '100%';
       iframe.style.height = '100%';
       iframe.style.border = 'none';
-      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms');
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads');
       iframe.srcdoc = panel.html;
       viewEl.appendChild(iframe);
     }
@@ -10591,11 +10595,34 @@ window.addEventListener('message', async (ev: MessageEvent) => {
       case 'getTheme':
         result = getThemeCssVars();
         break;
+      case 'openExternal':
+        // 插件 iframe(sandbox)内点外链会导航自身→srcdoc 白屏;转交宿主走 shell-open(协议白名单+系统浏览器)
+        result = await api.shellOpen(String(args[0]));
+        break;
       case 'send':
         result = await api.send(args[0], args[1]);
         break;
       case 'getConversations':
         result = await api.getConversations();
+        break;
+      // ── 推广 PR/渠道状态追踪(marketing-kit 面板)──
+      case 'promoList':
+        result = await api.promoList();
+        break;
+      case 'promoRefresh':
+        result = await api.promoRefresh();
+        break;
+      case 'promoAdd':
+        result = await api.promoAdd(args[0]);
+        break;
+      case 'promoRemove':
+        result = await api.promoRemove(args[0]);
+        break;
+      case 'promoImport':
+        result = await api.promoImport(args[0]);
+        break;
+      case 'promoExport':
+        result = await api.promoExport();
         break;
       default:
         source?.postMessage({ target: data.source, id, error: `Unknown method: ${method}` }, replyOrigin);
@@ -11437,11 +11464,192 @@ function clipForUi(s: string): string {
 const ANSWER_HEAD_LIMIT = 30_000;
 // 思维链流式期只渲染尾部 6K(头部中间推导价值低);done 后全量展示。
 const REASONING_TAIL_LIMIT = 6_000;
+// ── 可视化卡片装载(viz-card):innerHTML 里出现 viz-frame 占位后,真正建 iframe ──
+// Viz-card mount: after an innerHTML swap the placeholder <div class="viz-frame">
+// needs a live sandboxed <iframe> re-attached (innerHTML assignment destroys the
+// previous one). Height auto-fits content; streaming-safe (cheap to re-run).
+function mountVizFrames(root: ParentNode): void {
+  // 契约:markdown.ts 的 renderVizCard 发 iframe.viz-frame[data-viz-src="vizcard://N"],
+  // 真实源码在兄弟 <details.viz-src> 的 <code> 里(HTML 转义)。这里读出 → blob URL → 喂 iframe。
+  // Contract: the iframe placeholder carries vizcard://N; the escaped source lives in
+  // the sibling details>code. We unescape → blob: URL → iframe.src (CSP frame-src allows blob:).
+  const frames = root.querySelectorAll<HTMLIFrameElement>('iframe.viz-frame[data-viz-src]');
+  for (const iframe of Array.from(frames)) {
+    if (iframe.dataset.vizMounted === '1') continue; // 幂等:重挂载跳过
+    const card = iframe.closest('.viz-card');
+    const code = card?.querySelector<HTMLElement>('.viz-src code');
+    if (!card || !code) continue;
+    iframe.dataset.vizMounted = '1';
+    // 唯一 id:跨域 sandbox 下 contentWindow 与 ev.source 不全等,高度/外链回写
+    // 靠「消息带 id → 宿主按 id 精确找 frame」,不靠窗口引用比对。
+    // Unique id: cross-origin contentWindow identity is unreliable; the inner doc
+    // echoes this id in its postMessage so the host can locate the exact frame.
+    const fid = `viz-${Math.random().toString(36).slice(2, 10)}`;
+    iframe.dataset.vizId = fid;
+    // textContent 永不为 null(DOM 属性),失败只可能是空 code → 空文档,不抛错
+    const html = decodeHTMLEntities(code.textContent || '');
+    // 内层首个 h1-h3 提为卡片标题;没有则保留 i18n 默认「可视化卡片」
+    // Promote the first inner h1-h3 to the card title; fallback stays i18n default.
+    const titleEl = card.querySelector<HTMLElement>('[data-viz-title]');
+    if (titleEl) {
+      const m = html.match(/<h[1-3][^>]*>([\s\S]*?)<\/h[1-3]>/i);
+      if (m) {
+        const plain = decodeHTMLEntities(m[1].replace(/<[^>]+>/g, '')).trim();
+        if (plain) { titleEl.textContent = plain.slice(0, 60); titleEl.removeAttribute('data-i18n'); }
+      }
+    }
+    // 留白治理改由内层实报内容宽(handler viz-narrow 收敛),不再猜类名。
+    // Gutter handling moved to inner-reported content width (no class-name guessing).
+    let url = 'about:blank';
+    try {
+      url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    } catch { /* 反序列化失败 → 白卡壳仍在,源码可查 */ }
+    iframe.src = url;
+    // 高度自适应:sandbox 无 allow-same-origin,读不到内层 scrollHeight,
+    // 由内层脚本 postMessage({type:'viz-height',id,h}) 上报。
+    // 只量 body 系高度:documentElement.scrollHeight 在内容不满屏时=视口高,
+    // 宿主写回后再触发 resize → 正反馈死循环(每次 +8 直到上限)。
+    // Height auto-fit: the injected boot reports body height via postMessage.
+    // NEVER use documentElement.scrollHeight — it equals viewport height when
+    // content is shorter, causing a +8px feedback loop until the 720 cap.
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var h=Math.max(b.offsetHeight,b.scrollHeight);var prev=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prev;parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
+    const fed = /<\/head>/i.test(html)
+      ? html.replace(/<\/head>/i, `<script>${boot}</script></head>`)
+      : `<script>${boot}</script>` + html;
+    try {
+      const finalUrl = URL.createObjectURL(new Blob([fed], { type: 'text/html' }));
+      URL.revokeObjectURL(url); // 用带上报脚本的版本
+      iframe.src = finalUrl;
+    } catch { /* 极端字符异常 → 退回未注入版 */ }
+    // 主题透传 + 兜底高度(内层上报前先给个合理值,避免 0 高闪烁)
+    iframe.style.height = '160px';
+    iframe.addEventListener('load', () => {
+      try {
+        const win2 = iframe.contentWindow;
+        const doc2 = win2?.document;
+        if (win2 && doc2?.documentElement) {
+          const dark = document.documentElement.classList.contains('theme-dark') || !document.documentElement.classList.contains('theme-light');
+          doc2.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        }
+      } catch { /* sandbox 跨域读不到就跳过(上报脚本已随文档自适配) */ }
+    });
+    // ── 卡片头操作条:下载 HTML / 下载图片 / 复制代码 / 查看代码 ──
+    // Card header actions: download HTML / export as image / copy source / view source.
+    const fileBase = `viz-${fid}.html`;
+    const dlBtn = card.querySelector<HTMLButtonElement>('[data-viz-dl]');
+    if (dlBtn) dlBtn.onclick = () => {
+      // a[download] + blob URL:renderer 本地落盘,不经过 Node
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+      a.download = fileBase;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+      uxToast.ok(tr('viz.downloaded', { name: fileBase }));
+    };
+    const dlImgBtn = card.querySelector<HTMLButtonElement>('[data-viz-dlimg]');
+    if (dlImgBtn) dlImgBtn.onclick = () => {
+      // 拍帧通路:内层文档缩放到 2x 后 canvas 转 PNG 下载。
+      // Snapshot path: render inner doc into an offscreen <img> (blob URL is same-origin
+      // readable thanks to allow-same-origin), draw at 2x, export PNG.
+      try {
+        const img = new Image();
+        img.onload = () => {
+          try {
+            const scale = 2;
+            const cv = document.createElement('canvas');
+            cv.width = Math.max(img.naturalWidth, iframe.clientWidth || 600) * scale;
+            cv.height = Math.max(img.naturalHeight, iframe.clientHeight || 200) * scale;
+            const ctx = cv.getContext('2d');
+            if (!ctx) throw new Error('canvas 2d unavailable');
+            ctx.fillStyle = '#ffffff'; // 内层无背景时避免透明底
+            ctx.fillRect(0, 0, cv.width, cv.height);
+            ctx.drawImage(img, 0, 0, cv.width, cv.height);
+            const a = document.createElement('a');
+            a.href = cv.toDataURL('image/png');
+            a.download = fileBase.replace(/\.html$/, '.png');
+            a.click();
+            uxToast.ok(tr('viz.imgSaved'));
+          } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+        };
+        img.onerror = () => uxToast.err(tr('viz.imgFailed', { msg: 'image load failed' }));
+        img.src = iframe.src; // blob: URL,同源可读(allow-same-origin)
+      } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+    };
+    const copyBtn = card.querySelector<HTMLButtonElement>('[data-viz-copy]');
+    if (copyBtn) copyBtn.onclick = () => void copyText(html, copyBtn);
+    const viewBtn = card.querySelector<HTMLButtonElement>('[data-viz-view]');
+    if (viewBtn) viewBtn.onclick = () => {
+      // 查看/收起源码(details 开关),文案随状态互换
+      const det = card.querySelector<HTMLDetailsElement>('details.viz-src');
+      if (!det) return;
+      det.open = !det.open;
+      const label = viewBtn.querySelector('[data-i18n="viz.viewCode"]');
+      if (label) label.textContent = det.open ? tr('viz.collapse') : tr('viz.viewCode');
+    };
+  }
+}
+
+// viz-card blob 文档 postMessage 高度上报接收端(全局一次性注册)。
+// Receiver for inner-doc height reports; also forwards anchor clicks to system browser
+// (sandbox 里 target=_blank 默认被吞,且宿主 main 的 open handler 只挂顶层 webContents)。
+if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
+  (window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound = true;
+  window.addEventListener('message', (ev: MessageEvent) => {
+    const d = ev.data as { type?: string; h?: number; w?: number; href?: string; id?: string } | null;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'viz-height' && typeof d.h === 'number' && d.h > 0) {
+      // 按 mountVizFrames 播种的 data-viz-id 精确匹配发送者(跨域下 ev.source 不可比)
+      // Exact match via the per-frame id seeded at mount time (ev.source unreliable cross-origin)
+      const target = d.id
+        ? document.querySelector<HTMLIFrameElement>(`iframe.viz-frame[data-viz-id="${d.id}"]`)
+        : null;
+      if (target) {
+        const h = Math.min(Math.max(Math.round(d.h) + 8, 80), 720); // 上限 720 防失控文档
+        target.style.height = `${h}px`;
+        // 内容宽不足容器 78% → 卡片收敛到内容宽(留白治理,数据由内层实报,不猜类名)
+        // Inner content narrower than 78% of container → shrink card to content width.
+        if (typeof d.w === 'number' && d.w > 0) {
+          const card = target.closest('.viz-card');
+          if (card instanceof HTMLElement) {
+            // 基准=父容器宽(恒定)。不能用 card.clientWidth:它被上一次判定改写,
+            // 窄态重判时基准变小 → 不再满足阈值 → 弹宽 → 基准又变大 → 又缩,
+            // 每次写宽都触发内层 resize→上报,形成宽窄振荡闪烁。
+            // Base = parent width (constant). card.clientWidth is rewritten by our own
+            // previous decision — re-judging against the shrunk width flips narrow↔wide
+            // every report (each width write fires inner resize → report → flip).
+            const base = (card.parentElement?.clientWidth ?? card.clientWidth) - 2;
+            const wasNarrow = card.classList.contains('viz-narrow');
+            // 迟滞防抖:进窄 0.78 / 出窄 0.92,内容宽贴阈值时不再来回跳
+            // Hysteresis: enter narrow at 78%, exit at 92% — no flapping near threshold.
+            const isNarrow = wasNarrow ? d.w < base * 0.92 : d.w < base * 0.78;
+            card.classList.toggle('viz-narrow', isNarrow);
+            if (isNarrow) {
+              card.style.width = `${d.w + 18}px`; // iframe(d.w+2) + 卡片横向 padding
+              target.style.width = `${d.w + 2}px`;
+            } else {
+              card.style.width = '';
+              target.style.width = '';
+            }
+          }
+        }
+      }
+    } else if (d.type === 'viz-open' && typeof d.href === 'string' && /^https?:/i.test(d.href)) {
+      void window.kinet.openExternal(d.href);
+    }
+  });
+}
+// 挂载点统一处理:凡 container innerHTML 被整体替换后调用(流式帧重渲 / mountAnswer / renderTurn)。
+function afterAnswerRender(container: HTMLElement): void {
+  mountVizFrames(container);
+}
+
 function mountAnswer(ans: HTMLElement, full: string): void {
   const renderHead = (): void => {
     ans.innerHTML = '';
-    if (full.length <= ANSWER_HEAD_LIMIT) { ans.innerHTML = md(full); return; }
+    if (full.length <= ANSWER_HEAD_LIMIT) { ans.innerHTML = md(full); afterAnswerRender(ans); return; }
     ans.innerHTML = md(full.slice(0, ANSWER_HEAD_LIMIT));
+    afterAnswerRender(ans);
     const btn = document.createElement('button');
     btn.className = 'ghost answer-expand';
     btn.textContent = `⤵ ${tr('ui.expandAll', { n: String(full.length - ANSWER_HEAD_LIMIT) })}`;
@@ -11451,6 +11659,7 @@ function mountAnswer(ans: HTMLElement, full: string): void {
   const renderFull = (): void => {
     ans.innerHTML = '';
     ans.innerHTML = md(full);
+    afterAnswerRender(ans);
     const btn = document.createElement('button');
     btn.className = 'ghost answer-expand';
     btn.textContent = `⤴ ${tr('ui.collapse')}`;

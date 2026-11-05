@@ -157,7 +157,7 @@ append = (rulesBlock ?? '')    ← KINET.md
 
 # 关键约定
 - KinetAPI 是三层契约,加方法要同步改 3 处
-- 三引擎统一发 AgentEvent
+- 引擎统一发 AgentEvent
 ```
 
 ## 关键源文件

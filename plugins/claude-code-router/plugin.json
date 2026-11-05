@@ -1,0 +1,17 @@
+{
+  "name": "claude-code-router",
+  "version": "1.0.0",
+  "description": "Claude Code Router(ccr)插件引擎:经 ccr 智能路由把 Claude Code 会话转发到 DeepSeek/Kimi/Qwen/GLM 等更便宜的模型,同时享受 KinetAios 的多频道管理、长期记忆与工具生态。需已安装 ccr(npm i -g @musistudio/claude-code-router)并配好 ~/.claude-code-router/config.json。",
+  "author": "KinetAios",
+  "category": "dev",
+  "keywords": ["claude-code-router", "ccr", "router", "deepseek", "kimi", "glm", "qwen", "cli"],
+  "engines": [],
+  "engine": {
+    "bin": "ccr",
+    "protocol": "jsonl-claude",
+    "args": ["code", "-p", "--output-format", "stream-json", "--verbose"],
+    "label": "Claude Code Router",
+    "inject": "prompt",
+    "resume": { "idField": "session_id", "resumeFlag": "--resume" }
+  }
+}
