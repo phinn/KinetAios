@@ -23,7 +23,7 @@ The engine list **hot-rebuilds** after install / uninstall / enable / disable �
   "version": "1.0.0",
   "engine": {
     "bin": "my-agent",                    // CLI name, resolved from PATH + common install dirs
-    "protocol": "plain",                  // ndjson | jsonl-claude | jsonl-codex | plain (default)
+    "protocol": "plain",                  // ndjson | jsonl-claude | jsonl-codex | jsonl-gemini | plain (default)
     "args": ["--no-color"],               // argv prefix, before the prompt
     "cwdFlags": ["-C", "{cwd}"],          // {cwd} placeholder = session working dir
     "inject": "prompt",                   // prompt (default) | system
@@ -40,6 +40,7 @@ The engine list **hot-rebuilds** after install / uninstall / enable / disable �
 | `ndjson` | one JSON object per line: `{"type":"token","text":..}`, `{"type":"tool",...}`, `{"type":"cost",...}`, `{"type":"done"}`, `{"type":"error","message":..}` | CLIs you write yourself |
 | `jsonl-claude` | `claude -p --output-format stream-json` compatible | claude-protocol agents |
 | `jsonl-codex` | `codex exec --json` compatible | codex-protocol agents |
+| `jsonl-gemini` | `gemini --output-format json` compatible | gemini-protocol agents |
 | `plain` | entire stdout is the answer text | ordinary CLIs (git, ripgrep wrappers, …) |
 
 ### Session resume
@@ -59,6 +60,42 @@ The engine list **hot-rebuilds** after install / uninstall / enable / disable �
 - **Invalid specs** (bad `protocol` value, missing `bin`, broken `resume`) — the engine is not registered; the plugin card in Settings shows a red badge with the exact reason (hover for details).
 - **Name collisions**: two plugins contributing the same engine name — the later one wins (same semantics as tool flattening).
 - A plugin that contributes an engine ignores the manifest `engines` field (the engine *is* the entry point).
+
+## Bundled plugin engines
+
+Two plugin engines ship with the app. Both are **manifest-only** — the entire engine spec lives in `plugin.json`, there is no JS to maintain.
+
+### `plugin:claude-code-router` — Claude Code Router (ccr)
+
+Routes Claude Code sessions through [claude-code-router](https://github.com/musistudio/claude-code-router) to a cheaper backend (DeepSeek / Kimi / Qwen / GLM) while keeping KinetAios's multi-channel workspace, long-term memory and tool ecosystem.
+
+- `bin`: `ccr`, `protocol`: `jsonl-claude`, args `code -p --output-format stream-json --verbose`
+- `resume`: `--resume <session_id>`
+- Requires `ccr` on PATH (`npm i -g @musistudio/claude-code-router`) and a configured `~/.claude-code-router/config.json`.
+
+### `plugin:gemini-cli` — Gemini CLI
+
+Runs [google-gemini/gemini-cli](https://github.com/google-gemini/gemini-cli) as a managed engine: live token / tool-call / stats streaming, session resume, and the shared end-side long-term memory.
+
+- `bin`: `gemini`, `protocol`: `jsonl-gemini`, args `--output-format stream-json --approval-mode <mode>`
+- `resume`: `-r <session_id>`
+- The approval mode is a **plugin setting** (`default` / `auto_edit` / `yolo` / `plan`), editable in the plugin card.
+- Requires `gemini` on PATH (`npm i -g @google/gemini-cli`) and a completed auth.
+
+### `jsonl-gemini` protocol
+
+`gemini --output-format stream-json` emits one JSON object per line. The preset maps them onto KinetAios's unified event model:
+
+| gemini event | KinetAios event |
+|---|---|
+| `init` (`session_id`) | `sessionStarted` |
+| `message` (role=assistant, `delta=true` for incremental chunks) | `token` |
+| `tool_use` (`tool_id`, `tool_name`, `parameters`) | pending — paired with the matching `tool_result` |
+| `tool_result` (`tool_id`, `status`, `output`) | `tool` (name + args + result) |
+| `error` (`severity=error`) | `error` (`severity=warning` is non-fatal and ignored) |
+| `result` (`status`, `stats`) | terminal `done` + cost |
+
+Pending `tool_use` calls are buffered **per conversation**, so parallel conversations don't cross-pair their tool ids.
 
 ## Built-in example
 
