@@ -198,6 +198,8 @@ const api: KinetAPI = {
   // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  // viz-card 拍帧导出 PNG(离屏窗口 capturePage)
+  vizCapture: (html: string, width: number, height: number) => ipcRenderer.invoke('viz-capture', html, width, height),
   // Visual Inspector:向 webview guest 注入采集脚本(白名单 action,不接受任意脚本)
   webviewInspect: (guestInstanceId: number, action: string, params?: Record<string, unknown>) => ipcRenderer.invoke('webview-inspect', guestInstanceId, action, params),
   // ── 替身画像(Persona)──

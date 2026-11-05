@@ -1415,6 +1415,7 @@ const ZH_CN: Dict = {
   'viz.downloaded': '已下载 {name}',
   'viz.imgSaved': '图片已保存',
   'viz.imgFailed': '图片导出失败: {msg}',
+  'viz.collapse': '收起代码',
 };
 
 const EN: Dict = {
@@ -2812,6 +2813,7 @@ const EN: Dict = {
   'viz.downloaded': 'Downloaded {name}',
   'viz.imgSaved': 'Image saved',
   'viz.imgFailed': 'Image export failed: {msg}',
+  'viz.collapse': 'Collapse code',
 };
 
 const ZH_TW: Dict = {
@@ -4204,6 +4206,7 @@ const ZH_TW: Dict = {
   'viz.downloaded': '已下載 {name}',
   'viz.imgSaved': '圖片已儲存',
   'viz.imgFailed': '圖片匯出失敗: {msg}',
+  'viz.collapse': '收合程式碼',
 };
 
 const JA: Dict = {
@@ -5597,6 +5600,7 @@ const JA: Dict = {
   'viz.downloaded': '{name} をダウンロードしました',
   'viz.imgSaved': '画像を保存しました',
   'viz.imgFailed': '画像のエクスポートに失敗: {msg}',
+  'viz.collapse': 'コードを折りたたむ',
 };
 
 export const STRINGS: Record<Lang, Dict> = {

@@ -11549,32 +11549,39 @@ function mountVizFrames(root: ParentNode): void {
     };
     const dlImgBtn = card.querySelector<HTMLButtonElement>('[data-viz-dlimg]');
     if (dlImgBtn) dlImgBtn.onclick = () => {
-      // 拍帧通路:内层文档缩放到 2x 后 canvas 转 PNG 下载。
-      // Snapshot path: render inner doc into an offscreen <img> (blob URL is same-origin
-      // readable thanks to allow-same-origin), draw at 2x, export PNG.
-      try {
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const scale = 2;
-            const cv = document.createElement('canvas');
-            cv.width = Math.max(img.naturalWidth, iframe.clientWidth || 600) * scale;
-            cv.height = Math.max(img.naturalHeight, iframe.clientHeight || 200) * scale;
-            const ctx = cv.getContext('2d');
-            if (!ctx) throw new Error('canvas 2d unavailable');
-            ctx.fillStyle = '#ffffff'; // 内层无背景时避免透明底
-            ctx.fillRect(0, 0, cv.width, cv.height);
-            ctx.drawImage(img, 0, 0, cv.width, cv.height);
-            const a = document.createElement('a');
-            a.href = cv.toDataURL('image/png');
-            a.download = fileBase.replace(/\.html$/, '.png');
-            a.click();
-            uxToast.ok(tr('viz.imgSaved'));
-          } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
-        };
-        img.onerror = () => uxToast.err(tr('viz.imgFailed', { msg: 'image load failed' }));
-        img.src = iframe.src; // blob: URL,同源可读(allow-same-origin)
-      } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+      // 拍帧通路:离屏 BrowserWindow 渲染同一份 HTML → capturePage → PNG。
+      // (SVG foreignObject 方案实测不可行:整份 HTML 文档塞进 <img> 上下文
+      //  是非法 XML 且 Chromium 对 img 内 foreignObject 支持不可靠;旧
+      //  img.src = iframe.src 更是必挂 —— blob 里是 HTML 文档。)
+      // Snapshot path: an offscreen BrowserWindow renders the same HTML,
+      // then capturePage → PNG. (SVG foreignObject failed in practice;
+      // the old `img.src = iframe.src` never worked — the blob holds an
+      // HTML document, not an image.)
+      const src = iframe.dataset.vizSource || html; // 卡片自带的原始源码
+      const W = Math.max(80, Math.min(1200, iframe.clientWidth || 600));
+      const H = Math.max(80, Math.min(2400, iframe.clientHeight || 200));
+      void (async () => {
+        try {
+          dlImgBtn.disabled = true;
+          const res = await window.kinet!.vizCapture(src, W, H);
+          if (!res.ok || !res.dataUrl) throw new Error(res.error || 'capture failed');
+          // blob 包装下载:data: URL 顶层导航会被 Chromium 直接拦(实测),
+          // a[download] + blob: 与 HTML 下载按钮同通路。
+          // Wrap in a blob for download: top-level data: navigation is
+          // blocked by Chromium; a[download] + blob: matches the HTML button.
+          const a = document.createElement('a');
+          const b64 = res.dataUrl.split(',')[1] || '';
+          const raw = atob(b64);
+          const bin = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+          a.href = URL.createObjectURL(new Blob([bin], { type: 'image/png' }));
+          a.download = fileBase.replace(/\.html$/, '.png');
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+          uxToast.ok(tr('viz.imgSaved'));
+        } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+        finally { dlImgBtn.disabled = false; }
+      })();
     };
     const copyBtn = card.querySelector<HTMLButtonElement>('[data-viz-copy]');
     if (copyBtn) copyBtn.onclick = () => void copyText(html, copyBtn);

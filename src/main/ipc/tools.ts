@@ -171,6 +171,31 @@ export function register(): void {
     }
   });
 
+  // ── viz-card 拍帧导出 PNG ── renderer 传卡片 HTML + 尺寸,main 开离屏窗口渲染 → capturePage → base64。
+  // (renderer 内 SVG foreignObject 通路实测不可行:img 上下文对 foreignObject 渲染不可靠)
+  // Render viz-card HTML in an offscreen BrowserWindow, capturePage → PNG base64.
+  ipcMain.handle('viz-capture', async (_e, html: string, width: number, height: number) => {
+    const W = Math.max(200, Math.min(2400, Math.round(width) || 600));
+    const H = Math.max(100, Math.min(4000, Math.round(height) || 400));
+    let win: BrowserWindow | null = null;
+    try {
+      win = new BrowserWindow({
+        show: false, x: 0, y: 0, width: W, height: H, useContentSize: true,
+        webPreferences: { offscreen: true } // 不上屏,防抢焦点/闪窗
+      });
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      // 等渲染稳定:两帧 + 短延时(字体/布局落位)
+      await new Promise(r => setTimeout(r, 120));
+      const img = await win.webContents.capturePage();
+      const buf = img.toPNG();
+      return { ok: true, dataUrl: 'data:image/png;base64,' + buf.toString('base64') };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    } finally {
+      win?.destroy();
+    }
+  });
+
   // ── Visual Inspector:向 <webview> 的 guest contents 注入采集脚本 ──
   // 安全:不再接受任意 script 字符串(防 XSS → IPC → 任意 JS 执行)。
   // 改为白名单 action,主进程内部硬编码脚本,renderer 只传坐标参数。
