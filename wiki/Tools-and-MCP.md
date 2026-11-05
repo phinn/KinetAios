@@ -2,7 +2,7 @@
 
 # Tools + MCP
 
-The Direct engines (V1/V2/V3) share **40+ built-in tools** and auto-connect to MCP services configured on the system. Claude Code / Codex use their own CLI tooling, not this layer. KinetAios can also act as an **MCP server** exposing the full agent to remote machines — see [[MCP-Server]].
+The Direct engines (V1–V5) share **40+ built-in tools** and auto-connect to MCP services configured on the system. Claude Code / Codex use their own CLI tooling, not this layer. KinetAios can also act as an **MCP server** exposing the full agent to remote machines — see [[MCP-Server]].
 
 ## Built-in tools (40+, `src/main/tools.ts`)
 

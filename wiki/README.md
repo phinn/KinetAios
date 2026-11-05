@@ -18,8 +18,8 @@ Both files carry a language switcher at the top. See [[Wiki-Sync]] for the ratio
 | `Home` | Wiki landing / feature matrix / entry points |
 | `Getting-Started` | First launch → first task |
 | `Architecture` | Three-layer structure / shared/types.ts / KinetAPI contract |
-| `Engines` | Engine comparison (V1/V2/V3 + CLI + plugin engines) + when to use which |
-| `Choose-Engine` | V1/V2/V3 selection guide: cheat sheet + scenario table |
+| `Engines` | Engine comparison (Direct V1–V5 + CLI + plugin engines) + when to use which |
+| `Choose-Engine` | V1–V5 selection guide: cheat sheet + scenario table |
 | `Direct-Engine` | ReAct loop / memory injection / context management |
 | `Tools-and-MCP` | Built-in tools + MCP integration |
 | `Long-Term-Memory` | Extraction / injection / 🧠 panel / import-export |

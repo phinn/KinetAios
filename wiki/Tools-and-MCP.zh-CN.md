@@ -2,7 +2,7 @@
 
 # 工具系统 + MCP
 
-Direct 引擎(V1/V2/V3)共享 **40+ 内置工具**,并自动接入系统配置的 MCP 服务。Claude Code / Codex 用各自 CLI 的工具,不走这套。KinetAios 还能作为 **MCP 服务端**把完整 agent 暴露给远程机器 —— 见 [[MCP-Server]]。
+Direct 引擎(V1–V5)共享 **40+ 内置工具**,并自动接入系统配置的 MCP 服务。Claude Code / Codex 用各自 CLI 的工具,不走这套。KinetAios 还能作为 **MCP 服务端**把完整 agent 暴露给远程机器 —— 见 [[MCP-Server]]。
 
 ## 内置工具(40+,`src/main/tools.ts`)
 

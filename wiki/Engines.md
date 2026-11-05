@@ -2,7 +2,7 @@
 
 # Engines
 
-KinetAios ships **three generations of the built-in Direct engine** (V1/V2/V3) plus CLI engines wired through the plugin system. Each session picks one independently. **Switching engines clears cross-engine context** (the engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`). On top of these, **plugin engines** (SDK v3) can register any external CLI agent as `plugin:<name>` — see [[Plugins]].
+KinetAios ships **five generations of the built-in Direct engine** (V1–V5) plus CLI engines wired through the plugin system. Each session picks one independently. **Switching engines clears cross-engine context** (the engines don't share history formats — Direct stores `directHistory: ChatMsg[]`, Claude/Codex use session ids via `--resume`). On top of these, **plugin engines** (SDK v3) can register any external CLI agent as `plugin:<name>` — see [[Plugins]].
 
 ## One-liner
 
@@ -11,12 +11,14 @@ KinetAios ships **three generations of the built-in Direct engine** (V1/V2/V3) p
 | **Direct V1 (Kaios)** | Built-in ReAct loop, talks directly to LLM provider | `tools.ts` built-ins + MCP | Q&A, small edits, tight cost/step control |
 | **Direct V2** | Plan-Execute-Verify-Judge on top of V1's tools | Same + task-list cards | Multi-file changes with verification |
 | **Direct V3** | Intent router → fast/std/deep paths; deep = DAG | Same + analysis mode | Data analysis, cross-file refactors, "not sure" |
+| **Direct V4 (Legis)** | V3 router; deep path runs the Legis pipeline: compile → runtime → execute | Same as V3 + assertion gate | Long-horizon deep tasks needing plan-level rigor |
+| **Direct V5 (Phylum)** | Population evolution: prompt → gene template → living expression executes → death settlement → scar inheritance | Same as V3 + affinity pruning | Repeatable task families that benefit from evolved templates |
 | **Claude Code** *(plugin toggle)* | Spawns `claude -p --output-format stream-json` | Claude Code's own (Read/Write/Edit/Bash/Glob/Grep) | You're a Claude Code CLI user |
 | **Codex** *(plugin toggle)* | Spawns `codex exec --json` | Codex's own | You're a Codex CLI user |
 | **DeepSeek Harness** *(plugin engine)* | Spawns the `dsh` CLI headless profile | The CLI's own | One-shot DeepSeek runs |
 | **plugin:<name>** | Spawns whatever CLI the plugin declares | The CLI's own | Wire up another CLI agent (zero code, manifest-only) |
 
-CLI engines need their CLIs installed locally. They're **plugin-gated**: enable the `claude-code` / `codex` plugin in ⚙ → Plugins to add them to the engine dropdown. A guide for choosing between V1/V2/V3 lives at [[Choose-Engine]].
+CLI engines need their CLIs installed locally. They're **plugin-gated**: enable the `claude-code` / `codex` plugin in ⚙ → Plugins to add them to the engine dropdown. A guide for choosing between V1–V5 lives at [[Choose-Engine]].
 
 ## Direct V1 (Kaios)
 
@@ -53,6 +55,24 @@ Deep path extras (v3.8.0):
 - **Analysis mode** — when data files (csv/xlsx/db) appear in the task, V3 loads the `data-analysis` discipline: schema before conclusions, compute via tools (python/sqlite) not mental math, intermediate results on disk, sourced numbers, cross-checked key figures. Shows as 「📊 分析模式」 in the status bar.
 
 See [[Choose-Engine]] for a task-by-task comparison.
+
+## Direct V4 — Legis pipeline
+
+`src/main/V4/`. Same router as V3 (fast/std reuse V3 paths); the deep path runs the **Legis pipeline** instead of free-form DAG execution:
+
+1. **Compile** (LLM call #1) — `legis-compiler.ts`: the model submits a structured plan via forced `submit_legis_plan` tool-use. Nodes are typed `replay` (pure tool chains) or `agent` (sub-ReAct); the plan carries deterministic acceptance assertions. Compile-time validation: script tool whitelist, write ops forced to agent nodes, DAG acyclicity, unique node ids.
+2. **Runtime** — `legis-executor.ts`: topological layering (same layer: read-only parallel, writes serial — V3 semantics). `replay` nodes run with **zero LLM calls**; `agent` nodes run sub-agent loops. 429 → park with backoff, not fail.
+3. **Assert & recall** — assertion failure → minimal failure context recalled to the LLM (call #2..n) → patch → node resumes. Plan acceptance all-green → GOAL_COMPLETE.
+
+The essential difference from V3: **LLM appearances drop from "once per step" to "once per program"**. Router, JobManager background execution and checkpoint resume are all inherited from V3.
+
+## Direct V5 — population evolution (Phylum)
+
+`src/main/V5/`. paradigm: agents don't learn, they breed. The prompt is normalized into a task-template id (signature v1); a living expression is claimed from the gene pool and executed (hard constraints: affinity-pruned tools, maxSteps budget, assertion gate). Execution ends in death settlement; scars from failures are inherited by the next generation.
+
+- **Gene pool**: task templates with accumulated execution records (store tables, see `V5/`)
+- **Constraints**: affinity tool pruning + maxSteps + assertion gate (`V5/bodyplan.ts`, assertions shared with V4)
+- **When it wins**: repeatable task families where past failures should shape future attempts
 
 ## Claude Code
 
@@ -106,7 +126,7 @@ When you change `conv.engine`:
 - `engineSessionId` is cleared (the other engine's CLI session id is invalidated)
 - Cross-engine conversation context doesn't transfer (each engine stores its own)
 
-This is **intentional**: the three engines have different world models, tool sets, and state machines — forcing them to share would confuse users.
+This is **intentional**: the engines have different world models, tool sets, and state machines — forcing them to share would confuse users.
 
 ## Shared injections
 

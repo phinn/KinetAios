@@ -10,8 +10,8 @@ KinetAios auto-injects 4 kinds of "guidance material" into the agent's prompt. *
 |---|---|---|---|
 | `AGENTS.md` | cwd root | Direct engine auto-reads | systemPrompt concatenation |
 | `CLAUDE.md` | cwd root | Direct engine auto-reads (fallback for AGENTS.md) | systemPrompt concatenation |
-| `KINET.md` | cwd root, maintained via the app's "Rules" tab | All three engines inject | Direct: systemPrompt; Claude: `--append-system-prompt`; Codex: prompt head |
-| `KINET-CONTEXT.md` | cwd root, maintained via Workbench card's "Context" button | All three engines inject | Same as KINET.md |
+| `KINET.md` | cwd root, maintained via the app's "Rules" tab | All built-in engines inject | Direct (V1–V5): systemPrompt; Claude: `--append-system-prompt`; Codex: prompt head |
+| `KINET-CONTEXT.md` | cwd root, maintained via Workbench card's "Context" button | All built-in engines inject | Same as KINET.md |
 
 ## AGENTS.md / CLAUDE.md (project rules, external-tool convention)
 
@@ -47,7 +47,7 @@ export function loadRulesBlock(cwd: string): string {
 }
 ```
 
-- **All three engines inject this**
+- **All built-in engines inject this**
 - Loaded in `TaskManager.runTurn`, passed to engines via `EngineRunOpts.rulesBlock`
 - Direct appends after `loadProjectRules`; Claude passes via `--append-system-prompt`; Codex prepends to the prompt
 - Truncated at 8000
@@ -76,7 +76,7 @@ export function loadContextBlock(cwd: string): string {
 }
 ```
 
-- **All three engines inject this**
+- **All built-in engines inject this**
 - Truncated at **12000** (more than KINET.md — context is usually longer)
 - Passed via `EngineRunOpts.contextBlock`
 
@@ -157,7 +157,7 @@ append = (rulesBlock ?? '')    ← KINET.md
 
 # Key conventions
 - KinetAPI is a three-layer contract — adding a method requires 3 synced edits
-- All three engines emit the same AgentEvent union
+- All engines emit the same AgentEvent union
 ```
 
 ## Key source files

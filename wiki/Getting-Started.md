@@ -71,7 +71,7 @@ Session header **Engine** dropdown:
 - **Claude Code** — requires local `claude` CLI.
 - **Codex** — requires local `codex` CLI.
 
-Switching clears cross-engine context (the three engines don't share history formats). See [[Engines]].
+Switching clears cross-engine context (the engines don't share history formats). See [[Engines]].
 
 ## Try the global hotkey
 

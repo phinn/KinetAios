@@ -10,7 +10,7 @@ KinetAios 是 Electron + TypeScript 应用,典型的三进程模型。
 ┌────────────────────────────────────────────────────────┐
 │  Main process (src/main/*)                            │
 │  - app 生命周期、窗口、全局热键、IPC handler           │
-│  - agent 运行时(三引擎)、SQLite、settings、CLI spawn │
+│  - agent 运行时(七内置引擎)、SQLite、settings、CLI spawn │
 │  - 完整 Node 访问                                     │
 └────────────────────────────────────────────────────────┘
               ▲
@@ -86,7 +86,7 @@ type AgentEvent =
 |---|---|
 | `main.ts` | 窗口、托盘、热键、IPC、shell-confirm 桥 |
 | `TaskManager.ts` | 会话生命周期 + 引擎分发 + 后台记忆抽取 |
-| `engines.ts` | `Engine` interface + 三实现 + 跨平台 CLI spawn |
+| `engines.ts` | `Engine` interface + 五实现(Direct V1–V5) + 共享 `CliEngineAdapter` + 跨平台 CLI spawn |
 | `AgentLoop.ts` | Direct 的 ReAct loop + 历史压缩 + 反应式 trim |
 | `glm.ts` | Provider + OpenAI/Anthropic SSE 双协议流式 + 重试 |
 | `tools.ts` | 10 个内置工具 + 跨平台 shell + dispatch_agent |
@@ -122,7 +122,7 @@ Schema 在 init 时幂等 migrate(`hasColumn` 防 ALTER 报错)。详见 [[Long-
 
 `approval: 'never'` 直接绕过(不弹)。
 
-## 三引擎抽象
+## 引擎抽象
 
 ```ts
 interface Engine {
@@ -131,4 +131,4 @@ interface Engine {
 }
 ```
 
-三实现:`DirectEngine`(内置 ReAct)、`ClaudeCodeEngine`(spawn `claude -p`)、`CodexEngine`(spawn `codex exec`)。`TaskManager` 拥有所有会话,按 conv.engine 分发。详见 [[Engines]]。
+五个 Direct 内置实现(V1 ReAct / V2 PEVJ / V3 意图路由 / V4 Legis / V5 Phylum —— V4、V5 由 `legis-engine` / `phylum-engine` 插件开关控制,默认关闭),外加一个 `CliEngineAdapter` 托管 Claude Code(`claude -p`)、Codex(`codex exec`)和 SDK v3 插件引擎。`TaskManager` 拥有所有会话,按 conv.engine 分发。详见 [[Engines]]。
