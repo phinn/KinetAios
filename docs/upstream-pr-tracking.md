@@ -86,3 +86,10 @@
 6. **Homebrew**: stars ≥75 重投(现 12)
 7. **mcp.so**: 11-16 前后回查 Tools/config 是否被抓到;2 周未抓 → 联系站方
 8. **季度全量盘点**: `author:phinn type:pr` 搜索,核对本表无遗漏(11-04 发现漏 yzfly #586 MERGED + 9 个沉默 open,就是没做全量盘点的代价)
+
+### awesome-claude-code #3473(11-05 重投,新)
+
+- 形态:issue 表单推荐([Resource] 模板),非 PR;维护者单人,处理慢
+- 历史教训:10-15 同日双投 #2876+#2846,被静默 not_planned 双关 —— 该仓 contributing 明文"一次只推荐一个资源",双开即违规;gh CLI 提交被明令禁止(其 bot 会查,网页表单是唯一正道)
+- 11-05 合规重投单条 #3473:描述改为 Claude Code 主角式白描(参照同类收录条目 agent-workbench 仅 10⭐ 也被收,星数非门槛)
+- 跟进:给 2-3 周;若再被关,读关闭评论找真因,勿盲目三投
