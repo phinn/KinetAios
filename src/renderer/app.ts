@@ -11612,8 +11612,17 @@ if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
         if (typeof d.w === 'number' && d.w > 0) {
           const card = target.closest('.viz-card');
           if (card instanceof HTMLElement) {
-            const avail = card.clientWidth - 2; // 边框
-            const isNarrow = d.w < avail * 0.78;
+            // 基准=父容器宽(恒定)。不能用 card.clientWidth:它被上一次判定改写,
+            // 窄态重判时基准变小 → 不再满足阈值 → 弹宽 → 基准又变大 → 又缩,
+            // 每次写宽都触发内层 resize→上报,形成宽窄振荡闪烁。
+            // Base = parent width (constant). card.clientWidth is rewritten by our own
+            // previous decision — re-judging against the shrunk width flips narrow↔wide
+            // every report (each width write fires inner resize → report → flip).
+            const base = (card.parentElement?.clientWidth ?? card.clientWidth) - 2;
+            const wasNarrow = card.classList.contains('viz-narrow');
+            // 迟滞防抖:进窄 0.78 / 出窄 0.92,内容宽贴阈值时不再来回跳
+            // Hysteresis: enter narrow at 78%, exit at 92% — no flapping near threshold.
+            const isNarrow = wasNarrow ? d.w < base * 0.92 : d.w < base * 0.78;
             card.classList.toggle('viz-narrow', isNarrow);
             if (isNarrow) {
               card.style.width = `${d.w + 18}px`; // iframe(d.w+2) + 卡片横向 padding
