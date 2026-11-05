@@ -1186,6 +1186,7 @@ export interface KinetAPI {
   transcribeAudio(base64: string, mime: string): Promise<{ ok: boolean; text?: string; error?: string }>;
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
   clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
+  openExternal(url: string): Promise<{ ok: boolean; error?: string }>;
   // ── Visual Inspector:向 webview 注入 inspect 脚本,执行后返回元素信息 ──
   // 安全:白名单 action 模式,不接受任意脚本字符串 / Security: whitelist action, no arbitrary script string.
   // renderer 传 webview 的 guestInstanceId + action 名 + 结构化参数 → main 组装脚本 → executeJavaScript。

@@ -161,6 +161,11 @@ export function renderMarkdown(src: string): string {
 function esc(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
+// esc 的逆操作:用于从 DOM textContent 还原 viz-card 原始 HTML(esc 只转义这三种实体)。
+// Inverse of esc: recover raw viz-card HTML from DOM textContent (esc escapes exactly these).
+export function decodeHTMLEntities(s: string): string {
+  return s.replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+}
 
 // ── 嵌套列表 ──
 type RawItem = { indent: number; ordered: boolean; checked: boolean | null; text: string };
@@ -214,7 +219,7 @@ function renderVizCard(src: string, idx: number): string {
   const blobUrl = `vizcard://${idx}`; // 运行时由 app.ts 替换为真实 blob URL
   return (
     `<div class="viz-card" data-viz-card="${idx}">` +
-    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
+    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts allow-same-origin" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
     `<div class="viz-frame-msg" hidden></div></div>` +
     `<details class="viz-src"><summary data-i18n="viz.src">源码</summary>` +
     `<div class="code-block"><span class="code-lang">html</span><button class="code-copy ghost" data-code-copy>${COPY_ICON}</button>` +

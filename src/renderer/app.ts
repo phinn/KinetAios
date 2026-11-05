@@ -5,7 +5,7 @@ import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { engineColor } from './engine-colors';
 import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
-import { renderMarkdown as md } from './markdown';
+import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
 import { mountFileDrawer, type FileDrawer } from './file-drawer';
@@ -11469,50 +11469,84 @@ const REASONING_TAIL_LIMIT = 6_000;
 // needs a live sandboxed <iframe> re-attached (innerHTML assignment destroys the
 // previous one). Height auto-fits content; streaming-safe (cheap to re-run).
 function mountVizFrames(root: ParentNode): void {
-  const holders = root.querySelectorAll<HTMLDivElement>('div.viz-frame[data-src]');
-  for (const holder of Array.from(holders)) {
-    if (holder.querySelector('iframe')) continue;
-    const b64 = holder.dataset.src || '';
-    const iframe = document.createElement('iframe');
-    iframe.className = 'viz-iframe';
-    iframe.setAttribute('sandbox', 'allow-scripts');
-    iframe.setAttribute('title', 'visualization');
-    // blob URL 承载文档(CSP frame-src 已放行 blob:);about:srcdoc 在部分 CSP 下更脆。
+  // 契约:markdown.ts 的 renderVizCard 发 iframe.viz-frame[data-viz-src="vizcard://N"],
+  // 真实源码在兄弟 <details.viz-src> 的 <code> 里(HTML 转义)。这里读出 → blob URL → 喂 iframe。
+  // Contract: the iframe placeholder carries vizcard://N; the escaped source lives in
+  // the sibling details>code. We unescape → blob: URL → iframe.src (CSP frame-src allows blob:).
+  const frames = root.querySelectorAll<HTMLIFrameElement>('iframe.viz-frame[data-viz-src]');
+  for (const iframe of Array.from(frames)) {
+    if (iframe.dataset.vizMounted === '1') continue; // 幂等:重挂载跳过
+    const card = iframe.closest('.viz-card');
+    const code = card?.querySelector<HTMLElement>('.viz-src code');
+    if (!card || !code) continue;
+    iframe.dataset.vizMounted = '1';
+    // 唯一 id:跨域 sandbox 下 contentWindow 与 ev.source 不全等,高度/外链回写
+    // 靠「消息带 id → 宿主按 id 精确找 frame」,不靠窗口引用比对。
+    // Unique id: cross-origin contentWindow identity is unreliable; the inner doc
+    // echoes this id in its postMessage so the host can locate the exact frame.
+    const fid = `viz-${Math.random().toString(36).slice(2, 10)}`;
+    iframe.dataset.vizId = fid;
+    // textContent 永不为 null(DOM 属性),失败只可能是空 code → 空文档,不抛错
+    const html = decodeHTMLEntities(code.textContent || '');
     let url = 'about:blank';
     try {
-      const html = decodeURIComponent(escape(atob(b64)));
       url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
-    } catch { /* bad base64 → 空白,卡片外壳仍在 */ }
+    } catch { /* 反序列化失败 → 白卡壳仍在,源码可查 */ }
     iframe.src = url;
-    holder.textContent = '';
-    holder.appendChild(iframe);
+    // 高度自适应:sandbox 无 allow-same-origin,读不到内层 scrollHeight,
+    // 由内层脚本 postMessage({type:'viz-height',id,h}) 上报。
+    // 只量 body 系高度:documentElement.scrollHeight 在内容不满屏时=视口高,
+    // 宿主写回后再触发 resize → 正反馈死循环(每次 +8 直到上限)。
+    // Height auto-fit: the injected boot reports body height via postMessage.
+    // NEVER use documentElement.scrollHeight — it equals viewport height when
+    // content is shorter, causing a +8px feedback loop until the 720 cap.
+    const boot = `(function(){function r(){var b=document.body;var h=b?Math.max(b.offsetHeight,b.scrollHeight):document.documentElement.scrollHeight;parent.postMessage({type:'viz-height',id:'${fid}',h:h},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
+    const fed = /<\/head>/i.test(html)
+      ? html.replace(/<\/head>/i, `<script>${boot}</script></head>`)
+      : `<script>${boot}</script>` + html;
+    try {
+      const finalUrl = URL.createObjectURL(new Blob([fed], { type: 'text/html' }));
+      URL.revokeObjectURL(url); // 用带上报脚本的版本
+      iframe.src = finalUrl;
+    } catch { /* 极端字符异常 → 退回未注入版 */ }
+    // 主题透传 + 兜底高度(内层上报前先给个合理值,避免 0 高闪烁)
+    iframe.style.height = '160px';
     iframe.addEventListener('load', () => {
       try {
-        const win = iframe.contentWindow;
-        if (!win) return;
-        // 深浅主题跟随宿主:注入变量到 iframe 文档根。
-        const doc = win.document;
-        if (doc.documentElement) {
+        const win2 = iframe.contentWindow;
+        const doc2 = win2?.document;
+        if (win2 && doc2?.documentElement) {
           const dark = document.documentElement.classList.contains('theme-dark') || !document.documentElement.classList.contains('theme-light');
-          doc.documentElement.dataset.theme = dark ? 'dark' : 'light';
+          doc2.documentElement.dataset.theme = dark ? 'dark' : 'light';
         }
-        // 高度自适应:读 scrollHeight,上限 720px 防失控;ResizeObserver 跟内容变化。
-        const fit = (): void => {
-          const h = Math.min(Math.max((doc.documentElement?.scrollHeight || doc.body?.scrollHeight || 220) + 16, 120), 720);
-          if (Math.abs(iframe.height !== undefined ? Number(iframe.style.height || 0) - h : 1) > 2) iframe.style.height = `${h}px`;
-        };
-        fit();
-        iframe.style.height = `${Math.min(Math.max((doc.documentElement?.scrollHeight || doc.body?.scrollHeight || 220) + 16, 120), 720)}px`;
-        let ro: ResizeObserver | null = null;
-        try {
-          ro = new ResizeObserver(fit);
-          ro.observe(doc.documentElement);
-          ro.observe(doc.body || doc.documentElement);
-        } catch { /* 老 webview 无 RO → 只做一次性 fit */ }
-        (iframe as HTMLIFrameElement & { __vizRO?: ResizeObserver | null }).__vizRO = ro;
-      } catch { /* 跨域/时序问题静默 */ }
+      } catch { /* sandbox 跨域读不到就跳过(上报脚本已随文档自适配) */ }
     });
   }
+}
+
+// viz-card blob 文档 postMessage 高度上报接收端(全局一次性注册)。
+// Receiver for inner-doc height reports; also forwards anchor clicks to system browser
+// (sandbox 里 target=_blank 默认被吞,且宿主 main 的 open handler 只挂顶层 webContents)。
+if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
+  (window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound = true;
+  window.addEventListener('message', (ev: MessageEvent) => {
+    const d = ev.data as { type?: string; h?: number; href?: string; id?: string } | null;
+    if (!d || typeof d !== 'object') return;
+    if (d.type === 'viz-height' && typeof d.h === 'number' && d.h > 0) {
+      // 按 mountVizFrames 播种的 data-viz-id 精确匹配发送者(跨域下 ev.source 不可比)
+      // Exact match via the per-frame id seeded at mount time (ev.source unreliable cross-origin)
+      const target = d.id
+        ? document.querySelector<HTMLIFrameElement>(`iframe.viz-frame[data-viz-id="${d.id}"]`)
+        : null;
+      if (target) {
+        const h = Math.min(Math.max(Math.round(d.h) + 8, 80), 720); // 上限 720 防失控文档
+        target.style.height = `${h}px`;
+      }
+    } else if (d.type === 'viz-open' && typeof d.href === 'string' && /^https?:/i.test(d.href)) {
+      void window.kinet.openExternal(d.href);
+    }
+  });
 }
 // 挂载点统一处理:凡 container innerHTML 被整体替换后调用(流式帧重渲 / mountAnswer / renderTurn)。
 function afterAnswerRender(container: HTMLElement): void {
