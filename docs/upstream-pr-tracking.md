@@ -93,3 +93,10 @@
 - 历史教训:10-15 同日双投 #2876+#2846,被静默 not_planned 双关 —— 该仓 contributing 明文"一次只推荐一个资源",双开即违规;gh CLI 提交被明令禁止(其 bot 会查,网页表单是唯一正道)
 - 11-05 合规重投单条 #3473:描述改为 Claude Code 主角式白描(参照同类收录条目 agent-workbench 仅 10⭐ 也被收,星数非门槛)
 - 跟进:给 2-3 周;若再被关,读关闭评论找真因,勿盲目三投
+
+### GitHubDaily #1352 + CCR #1947 + ccr 插件引擎(11-05,新)
+
+- **GitHubDaily #1352**(48.4k⭐中文日报仓):【开源自荐】issue 格式(样例 #1351:项目地址/类别/标题/描述/亮点);README 十个月未更但日更自荐 5+ 条,渠道活跃;org 未挡,API 直投 201
+- **CCR Discussions #1947**(38k⭐ Show and tell 板块):同款先例 #1897=AgentManager 收编帖;发帖前先落地 `claude-code-router` 插件引擎(commit d10ba76)让故事真实 —— ccr code -p stream-json 透传+--resume,复用 jsonl-claude 协议,零代码纯 plugin.json 声明
+- GraphQL 发 discussion 要点:REST /discussions/categories 是 404,须走 GraphQL discussionCategories;createDiscussion 需 repositoryId+categoryId
+- 模式定案:**收编帖=先造集成事实再发帖**,比裸自荐转化高一个量级;同路线可复制到其它 CLI agent 生态(待选:opencode/gemini-cli/agentmanager 本身)
