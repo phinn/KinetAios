@@ -100,3 +100,11 @@
 - **CCR Discussions #1947**(38k⭐ Show and tell 板块):同款先例 #1897=AgentManager 收编帖;发帖前先落地 `claude-code-router` 插件引擎(commit d10ba76)让故事真实 —— ccr code -p stream-json 透传+--resume,复用 jsonl-claude 协议,零代码纯 plugin.json 声明
 - GraphQL 发 discussion 要点:REST /discussions/categories 是 404,须走 GraphQL discussionCategories;createDiscussion 需 repositoryId+categoryId
 - 模式定案:**收编帖=先造集成事实再发帖**,比裸自荐转化高一个量级;同路线可复制到其它 CLI agent 生态(待选:opencode/gemini-cli/agentmanager 本身)
+
+### gemini-cli 生态:jsonl-gemini 协议 + 插件引擎 + #30151(11-05,新)
+
+- **为什么选 gemini-cli 当第二个收编目标**:108.7k⭐(最大生态)、Show and tell 日更活跃(先例 #30101=Friday 托管帖)、`-p` headless+`--output-format stream-json`+`-r <session_id>` 集成面完整、npm 0.67.0 昨日刚发
+- **工程落地**(commit 6a961b3):第四协议预设 `jsonl-gemini`,schema 从官方 `packages/core/src/output/types.ts`(v0.67)逐字段核对(init/message delta/tool_use+tool_id/tool_result/result.stats);官方快照事件流驱动 harness ALL PASS;error severity=warning 不当终态;result.stats 折算 cost 事件(usd=0 口径如实)
+- **踩坑记录**:①cli-reference 里 `-p` 是带值 flag,但实测放 args 会与 stdin 输入冲突 —— 正解=不放 -p,spawn 的 stdin 是 pipe 时 gemini 自动进 headless 并把 stdin 内容前置为 prompt,argv 位置参数(unix)/stdin(cmd shim)双路都通,spawn 恒 end stdin 不挂死;②GraphQL createDiscussion 的 repositoryId 手查会打错(误抄 category id),先 `repository(){ id }` 单查;③discussion body 存 HTML,markdown 链接须 regex 转 `<a href>`
+- 帖:#30151 已发(先造集成事实再发帖,第三次复用收编帖模式)
+- opencode(sst, 网页档位)备选:无 Discussions 板块;`opencode run` 无 --output-format,只有 `-s/--session`+`--fork`+`--auto`;集成价值低于 gemini,暂缓
