@@ -27,6 +27,14 @@ export function renderMarkdown(src: string): string {
     // 语法高亮(highlight.ts):token 按行切分发射,行号模式不会撕断跨行 span。
     const raw = code.replace(/\n$/, '');
     const lineCount = raw.split('\n').length;
+    // ── 可视化卡片(viz-card):```html 且为完整文档片段 → sandbox iframe 直渲 + 源码折叠 ──
+    // Viz card: a ```html fence holding a full-enough document renders as a live
+    // sandboxed iframe with the source tucked into a <details>; falls back to a
+    // normal highlighted code block for fragments.
+    if (typeof lang === 'string' && lang.toLowerCase() === 'html' && isVizCardDoc(raw)) {
+      blocks.push(renderVizCard(raw, blocks.length));
+      return `\x00${blocks.length - 1}\x00`;
+    }
     const hi = raw.length > HIGHLIGHT_MAX_CHARS ? esc(raw) : highlightCode(raw, typeof lang === 'string' ? lang : '');
     const numbered = lineCount > 12
       ? hi.split('\n').map((l: string) => `<span class="cl">${l}</span>`).join('\n')
@@ -185,7 +193,36 @@ function renderList(nodes: LNode[]): string {
   return `<${tag}>${lis.join('')}</${tag}>`;
 }
 
-// Inline formatting on already-escaped text: code, links, bold, italic, strikethrough, images.
+// ── 可视化卡片(viz-card)────────────────────────────────────────────
+// 判定:文档级 HTML(有 <div|table|svg|section 等布局标签 + 最小体量)才算卡片;
+// 否则退回普通代码块(纯 <p> 一行式的「伪 html」不该渲染成图)。
+// Viz-card gate: only document-ish HTML (layout tags + minimum size) becomes a
+// card; trivial one-liner "html" fences stay as normal highlighted code.
+const VIZCARD_MIN_CHARS = 80;
+function isVizCardDoc(src: string): boolean {
+  if (src.length < VIZCARD_MIN_CHARS) return false;
+  return /<(div|table|svg|section|ul|ol|header|main|canvas)\b/i.test(src);
+}
+
+// 渲染:details 折叠外壳 + sandbox iframe(srcdoc blob URL)+ 主题透传。
+// iframe 走 blob: URL(CSP frame-src blob: 已放行);sandbox 无 allow-same-origin,
+// 卡内脚本可跑但碰不到宿主 DOM/存储。高度自适应由 app.ts 的 message 事件处理。
+// Card shell: <details> wraps a sandboxed iframe fed by blob: URL (CSP frame-src
+// allows blob:). No allow-same-origin → card scripts run but can't touch host.
+// Height auto-fit handled in app.ts via postMessage.
+function renderVizCard(src: string, idx: number): string {
+  const blobUrl = `vizcard://${idx}`; // 运行时由 app.ts 替换为真实 blob URL
+  return (
+    `<div class="viz-card" data-viz-card="${idx}">` +
+    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
+    `<div class="viz-frame-msg" hidden></div></div>` +
+    `<details class="viz-src"><summary data-i18n="viz.src">源码</summary>` +
+    `<div class="code-block"><span class="code-lang">html</span><button class="code-copy ghost" data-code-copy>${COPY_ICON}</button>` +
+    `<pre class="code"><code>${esc(src)}</code></pre></div></details></div>`
+  );
+}
+
+
 function inline(s: string): string {
   return s
     // 折叠批次引用降权:模型常把「[已折叠工具调用批次: …]」当正文复述,机械行混进叙述观感差

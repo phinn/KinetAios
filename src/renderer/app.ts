@@ -2952,7 +2952,7 @@ function renderTurn(conv: Conversation, i: number): HTMLElement {
       // 同步 streamRawText buffer:renderMain 重建 DOM 时需重置 buffer 到当前 answer。
       streamRawText = t.answer ?? '';
       // 超长 answer 流式期只渲染头部(完整文本仍在 t.answer);done 后 mountAnswer 可展开全文。
-      if (t.answer) ans.innerHTML = md(t.answer.slice(0, ANSWER_HEAD_LIMIT));
+      if (t.answer) { ans.innerHTML = md(t.answer.slice(0, ANSWER_HEAD_LIMIT)); mountVizFrames(ans); }
       else if (!conv.statusNote) ans.innerHTML = '<span class="typing"><i></i><i></i><i></i></span>';
     } else if (t.answer) {
       // 非流式:头部 + 展开全文按钮(见 mountAnswer 注释)。
@@ -5444,6 +5444,10 @@ function streamAppend(text: string) {
             streamTailEl?.remove();
             target.insertAdjacentHTML('beforeend', deltaHtml);
             streamMdLen = streamStableLen;
+            // viz-card:闭合的 html 块已进入稳定前缀,立即挂 iframe(流式可见)。
+            // Viz cards land with their delta; iframe mounting is idempotent
+            // (data-viz-mounted guard), so extra calls are cheap no-ops.
+            mountVizFrames(target);
           }
           const tailText = streamRawText.slice(streamMdLen);
           if (tailText) {
@@ -11460,11 +11464,67 @@ function clipForUi(s: string): string {
 const ANSWER_HEAD_LIMIT = 30_000;
 // 思维链流式期只渲染尾部 6K(头部中间推导价值低);done 后全量展示。
 const REASONING_TAIL_LIMIT = 6_000;
+// ── 可视化卡片装载(viz-card):innerHTML 里出现 viz-frame 占位后,真正建 iframe ──
+// Viz-card mount: after an innerHTML swap the placeholder <div class="viz-frame">
+// needs a live sandboxed <iframe> re-attached (innerHTML assignment destroys the
+// previous one). Height auto-fits content; streaming-safe (cheap to re-run).
+function mountVizFrames(root: ParentNode): void {
+  const holders = root.querySelectorAll<HTMLDivElement>('div.viz-frame[data-src]');
+  for (const holder of Array.from(holders)) {
+    if (holder.querySelector('iframe')) continue;
+    const b64 = holder.dataset.src || '';
+    const iframe = document.createElement('iframe');
+    iframe.className = 'viz-iframe';
+    iframe.setAttribute('sandbox', 'allow-scripts');
+    iframe.setAttribute('title', 'visualization');
+    // blob URL 承载文档(CSP frame-src 已放行 blob:);about:srcdoc 在部分 CSP 下更脆。
+    let url = 'about:blank';
+    try {
+      const html = decodeURIComponent(escape(atob(b64)));
+      url = URL.createObjectURL(new Blob([html], { type: 'text/html' }));
+    } catch { /* bad base64 → 空白,卡片外壳仍在 */ }
+    iframe.src = url;
+    holder.textContent = '';
+    holder.appendChild(iframe);
+    iframe.addEventListener('load', () => {
+      try {
+        const win = iframe.contentWindow;
+        if (!win) return;
+        // 深浅主题跟随宿主:注入变量到 iframe 文档根。
+        const doc = win.document;
+        if (doc.documentElement) {
+          const dark = document.documentElement.classList.contains('theme-dark') || !document.documentElement.classList.contains('theme-light');
+          doc.documentElement.dataset.theme = dark ? 'dark' : 'light';
+        }
+        // 高度自适应:读 scrollHeight,上限 720px 防失控;ResizeObserver 跟内容变化。
+        const fit = (): void => {
+          const h = Math.min(Math.max((doc.documentElement?.scrollHeight || doc.body?.scrollHeight || 220) + 16, 120), 720);
+          if (Math.abs(iframe.height !== undefined ? Number(iframe.style.height || 0) - h : 1) > 2) iframe.style.height = `${h}px`;
+        };
+        fit();
+        iframe.style.height = `${Math.min(Math.max((doc.documentElement?.scrollHeight || doc.body?.scrollHeight || 220) + 16, 120), 720)}px`;
+        let ro: ResizeObserver | null = null;
+        try {
+          ro = new ResizeObserver(fit);
+          ro.observe(doc.documentElement);
+          ro.observe(doc.body || doc.documentElement);
+        } catch { /* 老 webview 无 RO → 只做一次性 fit */ }
+        (iframe as HTMLIFrameElement & { __vizRO?: ResizeObserver | null }).__vizRO = ro;
+      } catch { /* 跨域/时序问题静默 */ }
+    });
+  }
+}
+// 挂载点统一处理:凡 container innerHTML 被整体替换后调用(流式帧重渲 / mountAnswer / renderTurn)。
+function afterAnswerRender(container: HTMLElement): void {
+  mountVizFrames(container);
+}
+
 function mountAnswer(ans: HTMLElement, full: string): void {
   const renderHead = (): void => {
     ans.innerHTML = '';
-    if (full.length <= ANSWER_HEAD_LIMIT) { ans.innerHTML = md(full); return; }
+    if (full.length <= ANSWER_HEAD_LIMIT) { ans.innerHTML = md(full); afterAnswerRender(ans); return; }
     ans.innerHTML = md(full.slice(0, ANSWER_HEAD_LIMIT));
+    afterAnswerRender(ans);
     const btn = document.createElement('button');
     btn.className = 'ghost answer-expand';
     btn.textContent = `⤵ ${tr('ui.expandAll', { n: String(full.length - ANSWER_HEAD_LIMIT) })}`;
@@ -11474,6 +11534,7 @@ function mountAnswer(ans: HTMLElement, full: string): void {
   const renderFull = (): void => {
     ans.innerHTML = '';
     ans.innerHTML = md(full);
+    afterAnswerRender(ans);
     const btn = document.createElement('button');
     btn.className = 'ghost answer-expand';
     btn.textContent = `⤴ ${tr('ui.collapse')}`;

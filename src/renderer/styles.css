@@ -7061,3 +7061,15 @@ html.anim-paused #sidebar {
 
 /* 聚合卡文件 chip 内的 ±行数徽章(复用 .dfb 子徽章,字号微调适配 chip 高度) */
 .fd-chip .dfb { gap: 3px; font-size: var(--fs-sm2); }
+
+/* ── viz-card:消息内嵌 HTML 可视化卡片(sandbox iframe + 源码折叠)────────── */
+/* Viz card: in-message live HTML rendering, mirroring WorkBuddy-style demo blocks. */
+.answer .viz-card { margin: 4px 0 12px; border: 1px solid var(--border-soft); border-radius: var(--r-lg); overflow: hidden; background: var(--bg-elev); box-shadow: var(--shadow-xs); }
+.answer .viz-frame { display: block; width: 100%; border: 0; background: #fff; min-height: 80px; }
+.answer .viz-frame-msg { padding: 10px 14px; font-size: var(--fs-sm2); color: var(--text-dim); font-family: ui-monospace, monospace; }
+.answer .viz-src > summary { cursor: pointer; padding: 7px 14px; font-size: var(--fs-sm2); color: var(--text-dim); border-top: 1px solid var(--border-soft); background: var(--bg-elev-2); user-select: none; list-style: none; }
+.answer .viz-src > summary::before { content: '▸ '; }
+.answer .viz-src[open] > summary::before { content: '▾ '; }
+.answer .viz-src > summary:hover { color: var(--text); }
+.answer .viz-src .code-block { margin: 0; border-radius: 0; box-shadow: none; }
+.answer .viz-src .code-block .code-lang { display: none; }
