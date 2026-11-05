@@ -146,7 +146,7 @@ Enable it in KinetAios under **Settings → MCP Server** (pick a port, optionall
 ### Skills / Commands / Agents / Plugins
 - Scans Claude Code's skills + commands + agents and Codex's skills. Invoke via the `/` menu or the ⚡ button.
 - **Skills panel** (Settings → Skills): aggregates skills from all third-party sources plus plugin contributions, with search, viewing, and direct source editing (plugin skills read-only). Edits take effect immediately.
-- **Plugin SDK v3**: plugins contribute tools, slash commands, hooks, and fullscreen panels. Injected on demand (keyword matching saves ~60% tokens). **21 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drones), an embedded & IoT suite (arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag), nestjs-dev, deepseek-harness, claude-code, codex, marketing-kit (marketing research: competitors / SEO / funnel / app-review mining + a marketing console panel), and more.
+- **Plugin SDK v3**: plugins contribute tools, slash commands, hooks, fullscreen panels, and engines. Injected on demand (keyword matching saves ~60% tokens). **26 built-in plugins**: office-suite, brainstorm (Excalidraw), math-practice, cpp-learning, low-altitude (drones), an embedded & IoT suite (arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag), nestjs-dev, deepseek-harness, gemini-cli, claude-code-router, claude-code, codex, marketing-kit (marketing research: competitors / SEO / funnel / app-review mining + a marketing console panel), and more.
 
 ### Sidebar (left to right)
 - **＋** new session.

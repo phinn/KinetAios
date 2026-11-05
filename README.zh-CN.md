@@ -159,7 +159,7 @@ npm start
 - 扫描 Claude Code 的 skills + commands + agents 和 Codex 的 skills。`/` 菜单或 ⚡ 按钮调用。**内置 skill 随 app 分发**(3.7.3+,首发的 `data-analysis` 移植了 V3 分析工作法:先摸 schema 再下结论、计算交给工具不心算、中间产物落盘、结论可溯源)。
 - **技能面板**(设置 → 技能):聚合三方来源 + 内置(只读)+ 插件贡献的全部技能,搜索、查看、直接编辑源文件(插件/内置技能只读),保存即时生效。
 - **模型配置档弹窗编辑**(3.7.3+):模型 tab「添加模型」,新增/编辑统一居中弹窗(配置名/key/URL/模型/协议/reasoning/价格/余额查询),内置测试连接。
-- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks、全屏面板和**引擎**。按需注入(keywords 关键词匹配省 ~60% token)。**21 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、claude-code、codex、marketing-kit(营销调研:竞品/SEO/漏斗/App 差评挖掘 + 营销控制台面板)等。
+- **插件 SDK v3**:插件可贡献工具、slash 命令、hooks、全屏面板和**引擎**。按需注入(keywords 关键词匹配省 ~60% token)。**26 个内置插件**:office-suite、brainstorm(Excalidraw)、math-practice、cpp-learning、low-altitude(无人机),arduino-dev / platformio-dev / serial-comm / modbus-dev / mqtt-dev / ble-dev / ota-dev / sensor-lookup / logic-analyzer / hw-diag(嵌入式 & IoT 全家桶)、nestjs-dev、deepseek-harness、gemini-cli、claude-code-router、claude-code、codex、marketing-kit(营销调研:竞品/SEO/漏斗/App 差评挖掘 + 营销控制台面板)等。
 
 ### 侧边栏按钮(从左到右)
 - **＋** 新建会话。
