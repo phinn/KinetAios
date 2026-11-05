@@ -12,17 +12,19 @@
 
 > 🌐 **[Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-![KinetAios hero screenshot](documents/hero-v3.8.jpg)
+<p align="center">
+  <img src="documents/hero-v3.8.jpg" alt="KinetAios dashboard" width="920">
+</p>
 
-![Four engines running side-by-side](documents/demo-arena.gif)
+![Seven engines running side-by-side](documents/demo-arena.gif)
 
-*Real session: parallel conversations across projects, engine badge per session (Direct / Claude Code / Codex), file & Git & rules tabs, token-cost accounting per turn.*
+*Real session: parallel conversations across projects, engine badge per session, file & Git & rules tabs, token-cost accounting per turn.*
 
 A **local-first AI agent dashboard** for **Windows 11 and macOS — both first-class platforms** (the "Win" folder name is historical; the repo is phinn/KinetAios). Platform differences (cmd.exe vs /bin/sh, hotkey, tray) are routed at runtime; features are aligned on both sides. Run multiple agent sessions concurrently with streaming answers, shell/file/search/MCP tools, SQLite history with long-term memory, a global hotkey, and a per-session model. **No account, no relay server — your own LLM API key is the only credential.**
 
 **The 30-second version:**
 
-- 🔀 **Four engines, one window** — Direct (in-house ReAct) + Claude Code + Codex + DeepSeek Harness; switch per session, hand off context via Pipeline
+- 🔀 **Seven engines, one window** — Direct V1–V5 (in-house ReAct line) + Claude Code + Codex; switch per session, hand off context via Pipeline
 - 🧠 **Long-term memory on local SQLite** — auto-extracted facts shared across all engines, survives restarts
 - 🔒 **Local-first, no account** — your API key is the only credential; nothing goes through a relay
 - 🛠 **30+ built-in tools + MCP client/server + plugins** — shell, files, web, screenshots, computer use out of the box
@@ -36,11 +38,11 @@ A **local-first AI agent dashboard** for **Windows 11 and macOS — both first-c
 
 ## Why KinetAios?
 
-Most AI clients lock you into one provider, drop context when you switch engines, and route your conversations through a relay. KinetAios runs **four engines in one window**, keeps long-term memory across all of them, and **never asks for an account**.
+Most AI clients lock you into one provider, drop context when you switch engines, and route your conversations through a relay. KinetAios runs **seven engines in one window**, keeps long-term memory across all of them, and **never asks for an account**.
 
 | | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
-| Four engines (Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness) | ✅ | — | — | — | — |
+| Seven engines (Direct V1–V5 + Claude Code + Codex, + plugin engines) | ✅ | — | — | — | — |
 | Local SQLite + automatic long-term memory | ✅ | — | — | — | — |
 | Cross-engine memory (one user profile shared by all engines) | ✅ | — | — | — | — |
 | Multiple parallel sessions | ✅ | — | ✅ | — | ✅ |
@@ -92,13 +94,14 @@ npm start
 
 ## Highlights
 
-### Four engines, switchable per session
+### Seven engines, switchable per session
 - **Direct V1 (Kaios)** — built-in ReAct loop with a dual-protocol provider (OpenAI-compatible & Anthropic, both directions of SSE streaming), tool-level concurrency, sub-agents, context compaction and retries.
 - **Direct V2** — next-gen ReAct on a Plan-Execute-Verify-Judge architecture, streaming tool calls, step-by-step task lists rendered live in the chat as checklist cards, plus a unified execution loop shared by plan and replan (retry / verification / checkpointing / compaction behave identically on both paths).
-- **Direct V3** — latest: an **intent router** picks `fast` / `standard` / `deep` per query; the `deep` path builds tool calls into a **dependency DAG and executes it in parallel** — real speedups on multi-step tasks.
+- **Direct V3** — an **intent router** picks `fast` / `standard` / `deep` per query; the `deep` path builds tool calls into a **dependency DAG and executes it in parallel** — real speedups on multi-step tasks.
+- **Direct V4 (Legis)** — legislation-style pipeline: the engine compiles a plan into explicit bill-like steps (`legis-compiler`), executes them under rules (`legis-executor`), and verifies with assertions before settling.
+- **Direct V5 (Phylum)** — population-based evolution loop: candidates run, get scored (`scorer`), and winning strategies are settled into the replay signature registry — the engine that improves itself across runs.
 - **Claude Code** — spawns `claude -p --output-format stream-json`, parses NDJSON, resumes with `--resume`.
 - **Codex** — spawns `codex exec --json`, parses JSONL, resumes.
-- **DeepSeek Harness** *(3.0+)* — spawns the `dsh` CLI over OpenAI-compatible SSE with built-in OpenAI / Pi-AI providers, retries and token billing. Switchable per session like every other engine.
 
 ### 30+ built-in tools
 `shell` (confirm before running; **focus guard** — if a command steals the foreground it's handed back automatically), `read_file`, `write_file`, `edit_file` (exact replace), `grep`, `glob`, `web_fetch` (SSRF guard + Jina Reader fallback), `web_search` (Bing → DuckDuckGo fallback), `recall_memory`, `git_diff` (read-only, no confirm), `remember_fact` / `recall_fact` (session anchors), `memory_replace` / `memory_append` (core memory blocks), `dispatch_agent` (read-only sub-agent with its own context), `spawn_team` / `team_broadcast` / `team_send` / `team_close` (multi-agent teams), `video_gen` (MiniMax H3 text-to-video), `todo_write` (shared task list, rendered live as checklist cards), and more.
@@ -204,9 +207,9 @@ Chain multiple stages, each with its own engine + prompt. The previous stage's o
 
 ---
 
-## Benchmarks: four engines, one real business task
+## Benchmarks: seven engines, one real business task
 
-The same **400k-row medical-device CRM cross-analysis** (multi-sheet × hospital tier × time window, producing an interactive ECharts report) — four engines, identical prompt, zero human intervention:
+The same **400k-row medical-device CRM cross-analysis** (multi-sheet × hospital tier × time window, producing an interactive ECharts report) — seven engines, identical prompt, zero human intervention:
 
 | Engine | Score /10 | Tokens | Key difference |
 |---|---|---|---|

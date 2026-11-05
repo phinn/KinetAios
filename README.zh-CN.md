@@ -21,17 +21,19 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 > 🌐 **[官网 / Website → https://phinn.github.io/KinetAios/](https://phinn.github.io/KinetAios/)**
 
-![KinetAios 主界面](documents/hero-v3.8.jpg)
+<p align="center">
+  <img src="documents/hero-v3.8.jpg" alt="KinetAios 主界面" width="920">
+</p>
 
 ![四引擎并跑](documents/demo-arena.gif)
 
-*真实会话截图:多项目并行会话、每会话独立引擎徽章(Direct / Claude Code / Codex)、文件 / Git / 规则多 tab、逐轮 token 成本统计。*
+*真实会话截图:多项目并行会话、每会话独立引擎徽章、文件 / Git / 规则多 tab、逐轮 token 成本统计。*
 
 本地 AI agent 仪表盘,**跨平台 —— Windows 11 和 macOS 都是一等公民**("Win"目录名是历史遗留,仓库即 phinn/KinetAios)。平台差异行为(shell 用 cmd.exe 还是 /bin/sh、热键、托盘)运行时按平台路由,功能两侧对齐。并发跑多个会话、流式答案、shell/文件/搜索/MCP 工具、SQLite 历史 + 长期记忆、全局热键、每会话独立模型。**无需账号,无需中继服务器 —— 你的 LLM API key 就是唯一凭证。**
 
 **30 秒版本:**
 
-- 🔀 **一个窗口四个引擎** —— Direct(自研 ReAct)+ Claude Code + Codex + DeepSeek Harness,每会话可切,Pipeline 跨引擎交接上下文
+- 🔀 **一个窗口七个引擎** —— Direct V1–V5(自研 ReAct 线)+ Claude Code + Codex,每会话可切,Pipeline 跨引擎交接上下文
 - 🧠 **本地 SQLite 长期记忆** —— 自动提取用户事实,所有引擎共享,重启不丢
 - 🔒 **本地优先,无需账号** —— API key 是唯一凭证,不经过任何中继
 - 🛠 **30+ 内置工具 + MCP 客户端/服务端 + 插件** —— shell、文件、网页、截图、Computer Use 开箱即用
@@ -45,11 +47,11 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 ## 为什么选 KinetAios?
 
-大多数 AI 客户端把你锁定在一个 provider 上,切引擎就丢上下文,对话还要走中继服务器。KinetAios **一个窗口跑四个引擎**,跨引擎长期记忆,**无需账号**。
+大多数 AI 客户端把你锁定在一个 provider 上,切引擎就丢上下文,对话还要走中继服务器。KinetAios **一个窗口跑七个引擎**,跨引擎长期记忆,**无需账号**。
 
 |  | KinetAios | Claude Desktop | Cherry Studio | Cursor | Codex Desktop |
 |---|---|---|---|---|---|
-| 四引擎切换(Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness) | ✅ | — | — | — | — |
+| 七引擎切换(Direct V1–V5 + Claude Code + Codex) | ✅ | — | — | — | — |
 | 本地 SQLite + 自动长期记忆 | ✅ | — | — | — | — |
 | 跨引擎记忆(一个用户画像,所有引擎共享) | ✅ | — | — | — | — |
 | 多并行会话 | ✅ | — | ✅ | — | ✅ |
@@ -105,10 +107,12 @@ npm start
 
 ## 功能
 
-### 四个引擎(每会话可切,切换清跨引擎上下文)
+### 七个内置引擎(每会话可切,切换清跨引擎上下文)
 - **Direct V1(Kaios)**:内置 ReAct 循环 + GLM/OpenAI 兼容 & Anthropic **双向 SSE 流式** Provider,带工具级并发、子 agent、上下文压缩与重试。
  - **Direct V2**:下一代 ReAct,Plan-Execute-Verify-Judge 四层架构,流式工具调用,分步任务清单(聊天流实时渲染为清单卡);计划执行与重规划共用统一执行循环(重试/验证/checkpoint/压缩两条路径行为一致)。
 - **Direct V3**:最新,**意图路由器(intent router)** 按查询自动选 `fast` / `standard` / `deep` 三档执行路径,`deep` 路径把工具调用按依赖关系构建为 **DAG 并行执行**(同层只读节点受限并发,写节点串行防竞态),多步任务有真实加速。**deep 任务可后台执行**(3.8+):提交 JobManager 后会话立即解锁,期间实时显示运行数与成本,完成自动回贴;DAG 每节点完成即落 checkpoint,**断点续跑**——任务终止/失败/重启后从断点继续,不再整图作废。引擎选择指南见 [wiki](https://github.com/phinn/KinetAios/wiki/Choose-Engine)。
+- **Direct V4(Legis 立法者)**:立法式流水线——把计划编译成显式"法案"步骤(`legis-compiler`),在规则约束下执行(`legis-executor`),落定前用断言验证(`assertions`)。
+- **Direct V5(Phylum 种群进化)**:种群进化循环——候选方案运行、打分(`scorer`),优胜策略沉淀进 replay signature 注册表,跨运行自我改进的引擎。
 - **Claude Code** *(插件开关)*:spawn `claude -p --output-format stream-json`,解析 NDJSON,`--resume` 续接。
 - **Codex** *(插件开关)*:spawn `codex exec --json`,解析 JSONL,`resume` 续接。
 - **DeepSeek Harness** *(3.0+,插件引擎)*:spawn `dsh` CLI,一次性执行任务并返回最终回答。和其他引擎一样可按会话切换。
