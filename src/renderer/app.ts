@@ -10539,6 +10539,9 @@ function showPluginPanel(name: string): void {
       iframe.style.border = 'none';
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads');
       iframe.srcdoc = panel.html;
+      // 收编窗口身份:bridge 只信任这个 WeakSet 里的 contentWindow(防 viz 卡伪造 plugin: 前缀)
+      // Register window identity: bridge trusts only contentWindows in this WeakSet (viz cards can't forge the prefix)
+      if (iframe.contentWindow) pluginBridgeWindows.add(iframe.contentWindow);
       viewEl.appendChild(iframe);
     }
   }
@@ -10575,16 +10578,29 @@ function getThemeCssVars(): Record<string, string> {
 
 // 监听 iframe postMessage — 桥接到真实 KinetAPI
 // Listen for iframe postMessage — bridge to real KinetAPI
+// 身份校验:只信任「已挂载插件面板 iframe 的 contentWindow」,按窗口引用而非消息里的 source 字符串。
+// Identity check: trust only contentWindow refs of mounted plugin-panel iframes — NOT the message's source string.
+// 背景:viz-card 内层是模型生成的任意 HTML,可把 source 伪造成 'plugin:x';按字符串前缀放行等于
+// 任意 HTML 可读会话列表/promo 数据/代发消息。2026-11-05 审计发现并修复。
+// viz inner docs are model-generated HTML that can fake source:'plugin:x'; prefix matching
+// would let any HTML read conversations/promo data or send messages. Fixed 2026-11-05.
+const pluginBridgeWindows = new WeakSet<Window>();
+// 插件面板 iframe 挂载时登记窗口引用(called from showPluginPanel)
+function registerPluginBridgeWindow(w: Window): void {
+  pluginBridgeWindows.add(w);
+}
+
 window.addEventListener('message', async (ev: MessageEvent) => {
   const data = ev.data;
   if (!data || typeof data !== 'object') return;
-  // 只处理 plugin bridge 消息 (source 以 'plugin:' 前缀或已知插件名标识)
-  // Only handle plugin bridge messages — accept any source that looks like a plugin
-  const knownSources = ['brainstorm', 'math-practice', 'low-altitude', 'office-suite', 'echo', 'serial-comm', 'arduino-dev', 'platformio-dev', 'nestjs-dev', 'hw-diag', 'logic-analyzer', 'sensor-lookup', 'modbus-dev', 'ota-dev', 'ble-dev', 'mqtt-dev'];
-  if (!knownSources.includes(data.source) && !data.source?.startsWith('plugin:')) return;
+  // 只处理 plugin bridge 消息:source 字段仍须 plugin:* 格式,但真校验在窗口引用
+  // Only handle plugin bridge messages — source field must still look like plugin:*, but the
+  // real check is the contentWindow identity below.
+  if (typeof data.source !== 'string' || !data.source.startsWith('plugin:')) return;
+  const source = ev.source as (Window | null);
+  if (!source || !pluginBridgeWindows.has(source)) return;
 
   const { id, method, args } = data;
-  const source = ev.source as (Window | null);
   const replyOrigin = ev.origin; // 锁定来源 origin, 避免 '*' / Lock origin for security
   try {
     let result: unknown;
