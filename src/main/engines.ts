@@ -1411,6 +1411,86 @@ function pluginProtocolParser(protocol: string, pluginName: string): (line: stri
     }
     case 'jsonl-codex':
       return codexParseLine;
+    case 'jsonl-gemini': {
+      // gemini --output-format stream-json: init(session_id)/message(role+content,
+      // assistant delta=true 增量)/tool_use(tool_id+tool_name+parameters)/
+      // tool_result(tool_id+status+output)/error(severity)/result(status+stats)。
+      // schema 源: google-gemini/gemini-cli packages/core/src/output/types.ts (v0.67)。
+      // pending tool_use 按 conv.id 隔离,tool_result 到达配对 emit。
+      const pending = new Map<string, Map<string, { name: string; args: string }>>();
+      return (line, { conv, emit }) => {
+        const tr = line.trim();
+        if (!tr) return;
+        let obj: Record<string, any>;
+        try {
+          obj = JSON.parse(tr);
+        } catch {
+          return; // 非 JSON 行忽略(与 claude/codex 同策略)
+        }
+        let m = pending.get(conv.id);
+        if (!m) {
+          m = new Map();
+          pending.set(conv.id, m);
+        }
+        switch (obj.type as string) {
+          case 'init':
+            if (obj.session_id) emit({ type: 'sessionStarted', id: String(obj.session_id) });
+            break;
+          case 'message':
+            if (obj.role === 'assistant' && typeof obj.content === 'string' && obj.content) {
+              emit({ type: 'token', text: obj.delta === false ? obj.content + '\n' : obj.content });
+            }
+            break;
+          case 'tool_use':
+            m.set(String(obj.tool_id ?? ''), {
+              name: String(obj.tool_name ?? 'tool'),
+              args: safeStringify(obj.parameters ?? {}),
+            });
+            break;
+          case 'tool_result': {
+            const p = m.get(String(obj.tool_id ?? ''));
+            if (p) {
+              m.delete(String(obj.tool_id ?? ''));
+              trackFileOpFromToolEvent(conv.id, p.name, p.args);
+              emit({
+                type: 'tool',
+                name: p.name,
+                args: p.args,
+                result:
+                  typeof obj.output === 'string'
+                    ? obj.output
+                    : obj.error?.message
+                      ? String(obj.error.message)
+                      : '',
+              });
+            }
+            break;
+          }
+          case 'error':
+            // severity=warning 是非致命告警,gemini 自己会继续;只把 error 级别当终态
+            if (obj.severity === 'error') emit({ type: 'error', message: String(obj.message ?? 'gemini error') });
+            break;
+          case 'result': {
+            // stats 换算成本事件(免费但口径如实:tokens 真实、usd=0)
+            const st = obj.stats ?? {};
+            emit({
+              type: 'cost',
+              usd: 0,
+              tokens: Number(st.total_tokens) || 0,
+              tokensIn: Number(st.input_tokens) || 0,
+              tokensOut: Number(st.output_tokens) || 0,
+              source: 'gemini-cli',
+            });
+            if (obj.status === 'error') {
+              emit({ type: 'error', message: obj.error?.message ? String(obj.error.message) : 'gemini session failed' });
+            } else {
+              emit({ type: 'done' });
+            }
+            break;
+          }
+        }
+      };
+    }
     case 'ndjson': {
       const pending = new Map<string, Map<string, { name: string; args: string }>>();
       return (line, { conv, emit }) => {

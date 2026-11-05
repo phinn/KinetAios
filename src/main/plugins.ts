@@ -65,8 +65,9 @@ export interface PluginEngineSpec {
   /** 内置开关型引擎的目标 id(PluginEngineSpec 无 bin 时必填)。 */
   id?: EngineKind;
   /** 协议预设: ndjson(逐行 JSON.tool/.text/.done)/ jsonl-claude(claude stream-json 兼容)/
-   *  jsonl-codex(codex exec --json 兼容)/ plain(整段 stdout 当文本)。默认 plain。 */
-  protocol?: 'ndjson' | 'jsonl-claude' | 'jsonl-codex' | 'plain';
+   *  jsonl-codex(codex exec --json 兼容)/ jsonl-gemini(gemini --output-format stream-json 兼容)/
+   *  plain(整段 stdout 当文本)。默认 plain。 */
+  protocol?: 'ndjson' | 'jsonl-claude' | 'jsonl-codex' | 'jsonl-gemini' | 'plain';
   /** argv 前缀(在 prompt 之前)。resume 子命令等复杂 argv 不支持 —— 需要时升级写 CliEngineConfig 插件。 */
   args?: string[];
   /** prompt 是否作为最后一个 argv 追加。默认 true。false 时 args 必须自含全部参数。 */
@@ -648,7 +649,7 @@ export function pluginListSnap(): Array<{
 // ── 导出: 插件引擎(v3 新增) ──────────────────────────────
 
 // protocol 合法值表(与 engines.ts pluginProtocolParser 的 case 一一对应)。
-export const PLUGIN_ENGINE_PROTOCOLS = ['ndjson', 'jsonl-claude', 'jsonl-codex', 'plain'] as const;
+export const PLUGIN_ENGINE_PROTOCOLS = ['ndjson', 'jsonl-claude', 'jsonl-codex', 'jsonl-gemini', 'plain'] as const;
 
 // 校验 engine spec,返回错误信息(合法返回 undefined)。loadPlugins 后、注册/列出前调用。
 export function validateEngineSpec(spec: PluginEngineSpec): string | undefined {
