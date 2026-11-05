@@ -116,3 +116,9 @@
 2. **slavakurilyak/awesome-ai-agents #931**(issue, 2.9k⭐):投稿机制=issue 模板(维护者转 PR,数据 id 带盐 hash);categories 选 AI Agents/Long-Term Memory/Local Inference/MCP Servers;近 30 closed merged 27,高活性
 3. **sindresorhus/awesome-electron**(27.3k⭐):blocked——投稿硬门槛 repo≥100 stars(现 12),达标后投 Closed Source 段(收 Obsidian/Notion);electronjs.org/apps 底层=electron/apps 仓,上游已限制外部 PR,判死勿投
 4. 已验证死路(不再试):pluja/awesome-privacy(外部 App 条目多被关)、alexanderop/awesome-local-first(<250⭐ 长期无外部 App merge)、vsouza/awesome-ios(只收组件不收成品 App)、iOS 侧品类列表仓(全 <100⭐)——**结论:iOS App 在 GitHub 列表仓无投放通路,资源全压 macOS/Electron/AI-Agent 侧**
+
+### 2026-11-05 wave-4(不同方向扫描)
+1. **ScoopInstaller/Extras #19258**(11-05 开):bucket/kinetaios.json,electron NSIS 双层解压(Expand-7zipArchive→$PLUGINSDIR 内层 7z);Windows 分发线第二通路(winget #463867 并行);近15 merged 10
+2. **deepseek-ai/awesome-deepseek-integration**:查重发现 #739 早在 9-18 已投(五语言行+docs/kinetaios/README.md+logo);本轮险情=PUT 覆盖旧分支丢内容,已从旧 head 7623ffcb 捞回 7 文件;**铁律:fork/PUT 前先 search author:phinn 查历史 PR**;官方仓停滞(最后 merge 2-23)低速跟
+3. 判死记录:awesome-mcp-clients 6.6k⭐(近20 closed 0 merged)、Awesome-MCP-ZH(已收录 185 行无需再投)、ACC(已有 #3473 在投,一次一条铁律)
+4. 挂盯:sindresorhus/awesome-electron(≥100★ 门槛);OpenClaw 394k⭐ 生态仓(awesome-openclaw 系未成形列表,观察)
