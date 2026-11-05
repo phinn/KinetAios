@@ -82,6 +82,8 @@
 3. **winget #463867**: 阻塞=CLA 未签(用户手动签)+moderator 审;11-18 后仍无人批 → at moderator(已有每周一 9:00 cron 巡查)
 3a. ~~**CID(1c7)16 App 批次**~~ ✅ **收官(11-04)**:19/19 全进主版面(含 3 个美区链接补录),已致谢。后续无需跟进
 4. **punkpeye #14667**: 11-11 左右留最后一条简短跟进;无回复即停止跟进。#321 跟随不单独刷
+4b. **awesome-mac #4267**(11-05 开,6 App×四语 25 行):Kinet 六件套批量条目,与 #4217 同仓不同 PR,等合并
+4c. **pay-once-mac-apps #7-#12**(11-05 开,6 PR 一 App 一 PR):新仓(2★)但明邀投稿,低星低成本试错;若两周无 merge 视为死仓即弃
 5. **沉默仓 9 个**(e2b/deepseek×2/ai-boost/jiji262/reorx/steven2358/0PandaDEV/AMD):**季度静默盘点**(下次 2027-02 跑 `/tmp/pr_all.py`),不逐个刷评论
 6. **Homebrew**: stars ≥75 重投(现 12)
 7. **mcp.so**: 11-16 前后回查 Tools/config 是否被抓到;2 周未抓 → 联系站方
