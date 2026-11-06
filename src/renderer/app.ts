@@ -5220,12 +5220,12 @@ function jumpSyncSel(): void {
 // ── 消息排队(DSH 式)──
 // running 时输入 + Enter → 消息入队(发送键仍是停止);回合结束(done/error/取消)
 // 自动按序发出下一条。会话删除即清队。
-const queuedByConv = new Map<string, string[]>();
+const queuedByConv = new Map<string, { text: string; imgs?: { name: string; dataUrl: string }[] }[]>();
 let queueRenderCache = '';
 
-function enqueueMessage(convId: string, text: string): void {
+function enqueueMessage(convId: string, text: string, imgs?: { name: string; dataUrl: string }[]): void {
   const q = queuedByConv.get(convId) ?? [];
-  q.push(text);
+  q.push(imgs?.length ? { text, imgs } : { text });
   queuedByConv.set(convId, q);
   renderQueue();
 }
@@ -5253,27 +5253,38 @@ function flushQueue(convId: string): void {
     const last = q[q.length - 1];
     queuedByConv.delete(convId);
     renderQueue();
-    void api.send(convId, last);
+    void sendTextWithImgs(convId, last.text, last.imgs);
     return;
   }
   if (conv.status !== 'ready' || conv.turns.at(-1)?.done !== true) return;
   const next = q.shift()!;
   if (!q.length) queuedByConv.delete(convId); else queuedByConv.set(convId, q);
   renderQueue();
-  void api.send(convId, next);
+  void sendTextWithImgs(convId, next.text, next.imgs);
+}
+
+/** 队列 flush 统一出口:组附件包装块后走 api.send,与主 send() 的正文组装一致。 */
+async function sendTextWithImgs(convId: string, text: string, imgs?: { name: string; dataUrl: string }[]): Promise<void> {
+  let full = text;
+  if (imgs?.length) {
+    const imgNote = imgs.length === 1 ? `\n\n[📷 1 张图片已附加]` : `\n\n[📷 ${imgs.length} 张图片已附加]`;
+    full += imgNote;
+    full += `\n\x00IMAGES${JSON.stringify(imgs.map((a) => JSON.stringify(a)))}\x00`;
+  }
+  await api.send(convId, full);
 }
 
 /**
  * 立即打断(Steer):运行中的会话原地转向。队列首条转打断时用;⌘Enter 直接走这里。
  * 失败(非 Direct 引擎 / 没在跑)→ 文本退回 composer,让用户改用排队或停止。
  */
-async function steerNow(convId: string, text: string): Promise<void> {
+async function steerNow(convId: string, text: string, imgs?: { name: string; dataUrl: string }[]): Promise<void> {
   const ok = await api.interrupt(convId, text);
   if (ok) return;
   const conv = convs.get(convId);
   // 退回输入框(排队语义兜底):running 且非 Direct → 自动降级为排队,不让用户文字丢失
   if (conv?.status === 'running') {
-    enqueueMessage(convId, text);
+    enqueueMessage(convId, text, imgs);
     uxToast.info(tr('queue.steerFail'));
   } else {
     const c = document.getElementById('composer') as HTMLTextAreaElement;
@@ -5287,7 +5298,7 @@ function renderQueue(): void {
   const row = document.getElementById('queue-row');
   if (!row) return;
   const q = selectedId ? queuedByConv.get(selectedId) : undefined;
-  const sig = q?.length ? q.map((m) => m.slice(0, 40)).join('\u0001') : '';
+  const sig = q?.length ? q.map((m) => m.text.slice(0, 40) + (m.imgs?.length ? `+${m.imgs.length}img` : '')).join('\u0001') : '';
   if (sig === queueRenderCache) return;
   queueRenderCache = sig;
   if (!q?.length) { row.hidden = true; row.innerHTML = ''; return; }
@@ -5302,7 +5313,8 @@ function renderQueue(): void {
     chip.className = 'queue-chip';
     const txt = document.createElement('span');
     txt.className = 'q-text';
-    txt.textContent = m.slice(0, 60) + (m.length > 60 ? '…' : '');
+    const imgTag = m.imgs?.length ? ` [📷×${m.imgs.length}]` : '';
+    txt.textContent = (m.text.slice(0, 60) + (m.text.length > 60 ? '…' : '') || '(图片)') + imgTag;
     chip.appendChild(txt);
     // ⚡ 立即打断:队首消息可转为 Steer 注入运行中的任务(仅 Direct 系引擎)。
     const sid = selectedId;
@@ -5313,7 +5325,7 @@ function renderQueue(): void {
       st.title = tr('queue.steerBtn');
       st.onclick = () => {
         removeQueued(sid, idx);
-        void steerNow(sid, m);
+        void steerNow(sid, m.text, m.imgs);
       };
       chip.appendChild(st);
     }
@@ -9369,25 +9381,24 @@ function openPathExternal(path: string): void {
       // ⌘/Ctrl+Enter → 立即打断(Steer):不排队,注入运行中的任务,原地转向。
       const runConv = selectedId ? convs.get(selectedId) : undefined;
       const draft = composer.value.trim();
-      if (runConv?.status === 'running' && draft && !attachments.length && !imageAttachments.length) {
-        clearComposerDraft(runConv.id); // queue/steer 也算发出:内存+localStorage 双清(2026-11-02 残留修复)
-        recordSendHistory(draft); // 排队/转向也算"发送过",否则 running 会话高频路径历史永远为空
-        if (e.metaKey || e.ctrlKey) {
+      const hasAttach = attachments.length > 0 || imageAttachments.length > 0;
+      if (runConv?.status === 'running' && (draft || hasAttach)) {
+        // 排队/转向统一走这里(2026-11-06:附件一起入队,不再残留 chip)。
+        // 修前:running+附件时文字入队、附件 chip 留在输入区 —— 用户视角即
+        // 「发送之后图片没有消失」,且下次发送会把旧图再带上。
+        // 排队通道存文本 + 图片快照;flushQueue 发出时按主 send 同款协议组装。
+        const imgs = imageAttachments.length ? [...imageAttachments] : undefined;
+        const hasFiles = attachments.length > 0;
+        clearComposerDraft(runConv.id); // 内存+localStorage 双清
+        if (imgs || hasFiles) { attachments = []; imageAttachments = []; renderAttach(); }
+        recordSendHistory(draft || (imgs?.[0]?.name ?? 'image')); // 纯图无字也记一条,↑ 可回填
+        if ((e.metaKey || e.ctrlKey) && !imgs && !hasFiles) {
+          // Steer(interrupt 通道只走纯文本):有附件时降级为排队,等回合结束原样发出。
           void steerNow(runConv.id, draft);
         } else {
-          enqueueMessage(runConv.id, draft);
-          uxToast.info(tr('queue.enqueued')); // 入队反馈:chip 行在 composer 上方,但打字时视线在输入框,toast 补一记确认
+          enqueueMessage(runConv.id, draft, imgs);
+          uxToast.info(tr('queue.enqueued'));
         }
-        return;
-      }
-      if (runConv?.status === 'running' && draft && (attachments.length || imageAttachments.length)) {
-        // running + 附件:排队通道只走纯文本(enqueueMessage 仅存 text)。
-        // 修前:文本被清、附件 chip 残留且静默丢弃 —— 用户视角即「发送后输入框没清干净」。
-        // 现在:发文本入队,附件 chip 保留可补发;toast 说明,不静默吃数据。
-        clearComposerDraft(runConv.id);
-        recordSendHistory(draft);
-        enqueueMessage(runConv.id, draft);
-        uxToast.warn(tr('queue.attachmentsKept'));
         return;
       }
       void send();
