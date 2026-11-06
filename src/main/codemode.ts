@@ -118,6 +118,7 @@ export function codemodePromptSection(tools: readonly Tool[]): string {
 
 适用:批量打标/分类 N 个条目、链式调用(搜→读→提炼)、\`await Promise.allSettled([...])\` 并行、
 把大输出过滤成小摘要、循环调用直到条件满足。单次调用一个工具时**不要**用 codemode(直接调更便宜)。
+与「探查合批」的分工:3~5 个同构只读调用直接同轮并行发 tool_calls 即可;超过 5 个、需要循环/条件/汇总的大批量才用本工具。
 
 规则:
 - 原生 JS,无 require/import/fetch/fs/timer;只读工具照常可用,shell 等写操作的审批弹窗照常触发
