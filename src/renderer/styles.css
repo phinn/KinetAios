@@ -1425,8 +1425,8 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 .sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; align-items: stretch; }
 .sb-proj-tasks li .title-row { display: flex; align-items: center; gap: 7px; min-width: 0; width: 100%; }
 .sb-proj-tasks li .sb-task-cwd { display: none; }
-.sb-proj-tasks li .sb-task-meta { display: flex; gap: 5px; align-items: center; width: 100%; }
-.sb-proj-tasks li .sb-task-time { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; flex-shrink: 0; margin-left: auto; }
+.sb-proj-tasks li .sb-task-meta { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
+.sb-proj-tasks li .sb-task-time { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
 
 /* 运行中实时状态行(对齐 Mac 版 statusNote):
  * 标题下一行,accent 色小字 + 呼吸动画,工具执行/重试/压缩等细粒度进度。
