@@ -6778,6 +6778,15 @@ async function showSettings() {
         <div class="s-section">
           <h3>${tr('settings.skills.title')}</h3>
           <div class="field-desc">${tr('settings.skills.desc')}</div>
+          <!-- 技能市场:anthropics/skills 官方库,搜索 + 一键安装到 ~/.kinetaios/skills -->
+          <div class="s-sub-panel" style="margin-top:10px">
+            <div class="s-plugin-toolbar">
+              <input type="text" id="s-market-search" class="s-plugin-search" placeholder="${tr('settings.skills.marketPh')}" />
+              <button id="s-market-fetch" class="btn-xs">${tr('settings.skills.marketFetch')}</button>
+            </div>
+            <span class="test-msg" id="s-market-msg"></span>
+            <div id="s-market" class="s-plugin-list"></div>
+          </div>
           <div class="s-plugin-toolbar" style="margin-top:12px">
             <input type="text" id="s-skill-search" class="s-plugin-search" placeholder="${tr('settings.skills.searchPh')}" />
           </div>
@@ -8066,6 +8075,61 @@ function initSkillsTab(): void {
     renderList((e.target as HTMLInputElement).value);
   };
 
+  // ── 技能市场:anthropics/skills 官方库,搜索 + 一键安装到 ~/.kinetaios/skills ──
+  const marketEl = document.getElementById('s-market')!;
+  const marketMsg = document.getElementById('s-market-msg')!;
+  const marketSearch = document.getElementById('s-market-search') as HTMLInputElement;
+  const marketFetchBtn = document.getElementById('s-market-fetch') as HTMLButtonElement;
+  type MarketItem = Awaited<ReturnType<typeof api.listMarketSkills>>['items'][number];
+  let marketItems: MarketItem[] = [];
+  const renderMarket = (): void => {
+    if (!marketItems.length) {
+      marketEl.innerHTML = `<div class="s-plugin-empty">${tr('settings.skills.marketEmpty')}</div>`;
+      return;
+    }
+    marketEl.innerHTML = marketItems.map((m) => `<div class="s-plugin-row">
+      <div class="s-plugin-info" style="flex:1">
+        <div class="s-plugin-name">${esc(m.name)}${m.installed ? ` <span class="s-plugin-ver">${esc(tr('settings.skills.marketInstalled'))}</span>` : ''}</div>
+        <div class="s-plugin-meta">${esc(m.description.slice(0, 110))}</div>
+      </div>
+      <div class="s-plugin-actions">
+        <button class="s-plugin-reload-btn s-market-install" data-path="${esc(m.path)}" data-name="${esc(m.name)}" ${m.installed ? 'disabled' : ''}>${m.installed ? tr('settings.skills.marketInstalled') : tr('settings.skills.marketInstall')}</button>
+      </div>
+    </div>`).join('');
+    marketEl.querySelectorAll<HTMLButtonElement>('.s-market-install').forEach((btn) => {
+      btn.onclick = async () => {
+        btn.disabled = true;
+        btn.textContent = tr('settings.skills.marketInstalling');
+        const r = await api.installMarketSkill(btn.dataset.path!);
+        if (r.ok) {
+          marketMsg.style.color = 'var(--ok)';
+          marketMsg.textContent = tr('settings.skills.marketDone', { name: btn.dataset.name!, file: r.file });
+          // 已装列表/市场状态刷新(重扫后本地列表会多出该技能)
+          void api.listSkills().then((all) => { cache = all; renderList((document.getElementById('s-skill-search') as HTMLInputElement)?.value ?? ''); });
+          await fetchMarket(marketSearch.value, true);
+        } else {
+          btn.disabled = false;
+          btn.textContent = tr('settings.skills.marketInstall');
+          marketMsg.style.color = 'var(--danger)';
+          marketMsg.textContent = r.error;
+        }
+      };
+    });
+  };
+  const fetchMarket = async (q: string, force = false): Promise<void> => {
+    marketFetchBtn.disabled = true;
+    marketMsg.style.color = '';
+    marketMsg.textContent = tr('settings.skills.marketLoading');
+    const r = await api.listMarketSkills(q);
+    marketFetchBtn.disabled = false;
+    if (r.error) { marketMsg.style.color = 'var(--danger)'; marketMsg.textContent = r.error; }
+    else marketMsg.textContent = '';
+    // force(安装后刷新)时 listMarketSkills 走缓存拿全量,再本地过滤,保持 installed 标签更新
+    marketItems = force ? r.items.filter((m) => !q.trim() || m.name.toLowerCase().includes(q.trim().toLowerCase()) || m.description.toLowerCase().includes(q.trim().toLowerCase())) : r.items;
+    renderMarket();
+  };
+  marketFetchBtn.onclick = () => { void fetchMarket(marketSearch.value); };
+  marketSearch.addEventListener('keydown', (e) => { if (e.key === 'Enter') void fetchMarket(marketSearch.value); });
 
   void api.listSkills().then((all) => {
     cache = all;

@@ -322,3 +322,111 @@ export function saveSkillSource(name: string, content: string): { ok: true; file
     return { ok: false, error: e instanceof Error ? e.message : String(e) };
   }
 }
+
+// ── 技能市场(anthropics/skills 官方库)──
+// listMarketSkills: 拉取 GitHub 仓库树 → 每个含 SKILL.md 的目录即一个技能;并发抓 frontmatter 拿描述;
+// 结果内存缓存 10 分钟。installMarketSkill: 下载该目录全部文件写入 ~/.kinetaios/skills/<name>/。
+// Market: enumerate SKILL.md dirs from the official GitHub repo, fetch frontmatter for
+// descriptions (concurrency-limited, 10-min cache); install downloads the whole dir to user root.
+const MARKET_REPO = 'anthropics/skills';
+const MARKET_BRANCH = 'main';
+const MARKET_CACHE_MS = 10 * 60 * 1000;
+
+export interface MarketSkill { name: string; path: string; description: string; installed: boolean }
+
+async function ghFetch(url: string): Promise<Response> {
+  const res = await fetch(url, {
+    headers: { 'User-Agent': 'KinetAios', 'Accept': 'application/vnd.github+json' },
+    signal: AbortSignal.timeout(15000),
+  });
+  if (!res.ok) throw new Error(`GitHub ${res.status}: ${url}`);
+  return res;
+}
+
+/** 简单并发池(保序返回)。— Minimal concurrency-limited map. */
+async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
+  const out: R[] = new Array(items.length);
+  let i = 0;
+  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
+    while (i < items.length) { const idx = i++; out[idx] = await fn(items[idx]); }
+  }));
+  return out;
+}
+
+/** 解析 SKILL.md frontmatter 的 name/description。— Parse frontmatter name/description. */
+function parseMarketFrontmatter(md: string): { name?: string; description?: string } {
+  const fm = md.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+  const pick = (key: string): string | undefined =>
+    fm.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim().replace(/^["']|["']$/g, '');
+  return { name: pick('name'), description: pick('description') };
+}
+
+let marketCache: { at: number; items: Array<Omit<MarketSkill, 'installed'>> } | null = null;
+
+export async function listMarketSkills(query = ''): Promise<{ items: MarketSkill[]; error?: string }> {
+  try {
+    if (!marketCache || Date.now() - marketCache.at > MARKET_CACHE_MS) {
+      const tree = await (await ghFetch(`https://api.github.com/repos/${MARKET_REPO}/git/trees/${MARKET_BRANCH}?recursive=1`)).json() as {
+        tree?: Array<{ path: string; type: string }>;
+      };
+      // 每个含 SKILL.md 的一级/任意目录 = 一个技能;排除隐藏目录与嵌套 example。
+      const skillDirs = (tree.tree ?? [])
+        .filter((e) => e.type === 'blob' && e.path.endsWith('/SKILL.md')
+          && !e.path.split('/').some((seg) => seg.startsWith('.') || seg === 'node_modules'))
+        .map((e) => e.path.slice(0, -'/SKILL.md'.length));
+      const raws = await pool(skillDirs, 6, async (dir) => {
+        try {
+          const md = await (await ghFetch(`https://raw.githubusercontent.com/${MARKET_REPO}/${MARKET_BRANCH}/${encodeURIComponent(dir)}/SKILL.md`)).text();
+          const fm = parseMarketFrontmatter(md);
+          const name = fm.name || dir.split('/').pop()!;
+          return { name, path: dir, description: (fm.description ?? '').replace(/\s+/g, ' ').slice(0, 200) } as Omit<MarketSkill, 'installed'>;
+        } catch { return null; }
+      });
+      marketCache = { at: Date.now(), items: raws.filter((x): x is Omit<MarketSkill, 'installed'> => !!x) };
+    }
+    const q = query.trim().toLowerCase();
+    // installed 每次现算(不进缓存):装完立刻反映,不用等缓存过期。
+    const installed = new Set(listSkills().map((s) => s.name.toLowerCase()));
+    const all = marketCache.items.map((m) => ({ ...m, installed: installed.has(m.name.toLowerCase()) }));
+    const items = q
+      ? all.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
+      : all;
+    return { items };
+  } catch (e) {
+    return { items: (marketCache?.items ?? []).map((m) => ({ ...m, installed: false })), error: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+// 安装:下载技能目录下全部文件(GitHub raw),写入用户级根 ~/.kinetaios/skills/<name>/。
+// 路径安全:relpath 逐段清洗,拒绝 .. 与绝对路径;写完清缓存触发重扫。
+export async function installMarketSkill(dirPath: string): Promise<{ ok: true; file: string; files: number } | { ok: false; error: string }> {
+  try {
+    const clean = dirPath.replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (!clean || clean.includes('..') || clean.split('/').some((seg) => seg.startsWith('.'))) {
+      return { ok: false, error: `illegal skill path: ${dirPath}` };
+    }
+    const name = clean.split('/').pop()!;
+    const tree = await (await ghFetch(`https://api.github.com/repos/${MARKET_REPO}/git/trees/${MARKET_BRANCH}?recursive=1`)).json() as {
+      tree?: Array<{ path: string; type: string }>;
+    };
+    const files = (tree.tree ?? []).filter((e) => e.type === 'blob' && (e.path === `${clean}/SKILL.md` || e.path.startsWith(`${clean}/`)));
+    if (!files.length) return { ok: false, error: `skill not found in ${MARKET_REPO}: ${clean}` };
+    const destRoot = path.join(os.homedir(), '.kinetaios', 'skills', name);
+    let written = 0;
+    let mainFile = '';
+    for (const f of files) {
+      const rel = f.path.slice(clean.length + 1);
+      const dest = path.join(destRoot, ...rel.split('/'));
+      if (!dest.startsWith(destRoot)) return { ok: false, error: `illegal relpath: ${rel}` };
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      const body = await (await ghFetch(`https://raw.githubusercontent.com/${MARKET_REPO}/${MARKET_BRANCH}/${f.path.split('/').map(encodeURIComponent).join('/')}`)).text();
+      fs.writeFileSync(dest, body, 'utf8');
+      written++;
+      if (rel === 'SKILL.md') mainFile = dest;
+    }
+    cache = null; // 触发全量重扫
+    return { ok: true, file: mainFile || destRoot, files: written };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) };
+  }
+}

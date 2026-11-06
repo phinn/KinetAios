@@ -1005,6 +1005,9 @@ export interface KinetAPI {
     webUrl?: string;                       // provider=minimax 时,token_type_mismatch 引导用户去网页控制台看余额
   }>;
   listSkills(): Promise<SkillInfo[]>;
+  // 技能市场:anthropics/skills 官方库搜索/安装 — Marketplace: search / install from official repo.
+  listMarketSkills(query: string): Promise<{ items: Array<{ name: string; path: string; description: string; installed: boolean }>; error?: string }>;
+  installMarketSkill(path: string): Promise<{ ok: true; file: string; files: number } | { ok: false; error: string }>;
   // 技能面板:读源文件全文 / 保存(插件与 builtin 只读)。— Skills panel: read full source / save.
   readSkillSource(name: string): Promise<{ source: SkillInfo['source']; type: SkillType; dir: string; file: string; content: string } | null>;
   saveSkillSource(name: string, content: string): Promise<{ ok: true; file: string } | { ok: false; error: string }>;

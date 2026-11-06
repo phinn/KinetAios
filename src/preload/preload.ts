@@ -49,6 +49,9 @@ const api: KinetAPI = {
   listSkills: () => ipcRenderer.invoke('list-skills'),
   readSkillSource: (name: string) => ipcRenderer.invoke('read-skill-source', name),
   saveSkillSource: (name: string, content: string) => ipcRenderer.invoke('save-skill-source', name, content),
+  // 技能市场:官方库搜索/安装 — Skills marketplace: search / install from official repo.
+  listMarketSkills: (query: string) => ipcRenderer.invoke('skills-market-list', query),
+  installMarketSkill: (path: string) => ipcRenderer.invoke('skills-market-install', path),
   listMcp: () => ipcRenderer.invoke('list-mcp'),
   mcpRescan: () => ipcRenderer.invoke('mcp-rescan'),
   startMcpServer: (port, token) => ipcRenderer.invoke('start-mcp-server', port, token),
