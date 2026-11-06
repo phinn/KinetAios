@@ -68,7 +68,7 @@ OrcaRouter | orcarouter provider | orcarouter 预设 | LLM 网关
 
 下载最新发布:
 
-- **Windows** — [下载 `KinetAios-Setup-<版本号>.exe`](https://github.com/phinn/KinetAios/releases/latest)(NSIS 安装包,当前 4.0.9;安装 → 启动 → 填 API key 即用)
+- **Windows** — [下载 `KinetAios-Setup-<版本号>.exe`](https://github.com/phinn/KinetAios/releases/latest)(NSIS 安装包,当前 4.1.0;安装 → 启动 → 填 API key 即用)
 - **macOS** — [下载最新 `.dmg`](https://github.com/phinn/KinetAios/releases/latest)(拖进 Applications,同样三步);或 [Mac App Store 版](https://apps.apple.com/cn/app/id6809450051)(¥68,自动更新;本仓库源码构建版永久免费)
 
 > 未签名构建 → Windows SmartScreen / macOS Gatekeeper 会警告,手动放行。

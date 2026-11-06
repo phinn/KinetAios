@@ -59,7 +59,7 @@ Most AI clients lock you into one provider, drop context when you switch engines
 
 Grab the latest release:
 
-- **Windows** — [Download `KinetAios-Setup-<version>.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer, current: 4.0.9; install → launch → paste your API key)
+- **Windows** — [Download `KinetAios-Setup-<version>.exe`](https://github.com/phinn/KinetAios/releases/latest) (NSIS installer, current: 4.1.0; install → launch → paste your API key)
 - **macOS** — [Download the latest `.dmg`](https://github.com/phinn/KinetAios/releases/latest) (drag to Applications, same three steps), or [get it on the Mac App Store](https://apps.apple.com/app/id6809450051) ($12.99; the source build in this repo stays free)
 
 > Unsigned builds → Windows SmartScreen / macOS Gatekeeper will warn; allow it manually.
