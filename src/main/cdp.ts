@@ -10,10 +10,10 @@
 // Launch is lazy (first browser_* call); the child process is killed on app quit.
 
 import { spawn, ChildProcess } from 'node:child_process';
+import * as path from 'node:path';
 import fs from 'node:fs';
 import net from 'node:net';
 import os from 'node:os';
-import path from 'node:path';
 import http from 'node:http';
 import WebSocket from 'ws';
 
@@ -376,14 +376,24 @@ async function realClick(s: CdpSession, selector: string): Promise<void> {
 // ── 导出:工具实现层直接调 ── Exported tool implementations ──
 
 export async function browserNavigate(url: string, newTab: boolean): Promise<string> {
-  // URL 归一化:裸域名补 https;本地绝对路径(/开头)或 file:// 走 file 协议直开,
-  // 不强加 https(否则 file:///... 被拼成 https://file///... 直接 ERR_CONNECTION_CLOSED)。
-  // Normalize: bare domains get https; absolute local paths go through file:// as-is.
+  // URL 归一化:裸域名补 https;本地绝对路径走 file:// 协议直开,不强加 https
+  // (否则 file:///... 被拼成 https://file///... 直接 ERR_CONNECTION_CLOSED)。
+  // 覆盖:Unix 绝对路径(任意 /开头目录,不只白名单)、Windows 盘符(转正斜杠+三斜杠)、
+  // ~ 展开、./ 与 ../ 相对路径(相对项目 cwd 解析)。
+  // Normalize: bare domains get https; local paths (unix abs / win drive / ~ / ./ ../)
+  // become file:// URLs instead of being forced onto https.
   if (/^file:\/\//i.test(url)) {
     // 已是 file://,原样
-  } else if (/^\/(Users|home|tmp|var|private)\//.test(url) || /^[A-Za-z]:[\\/]/.test(url)) {
-    // 本地绝对路径(macOS/Unix 与 Windows 盘符)→ file:// 协议;空格等字符走 encodeURI
-    url = 'file://' + (url.includes(' ') ? encodeURI(url) : url);
+  } else if (/^[A-Za-z]:[\\/]/.test(url)) {
+    // Windows 盘符 C:\a\b.html → file:///C:/a/b.html(host 位不能是盘符,须三斜杠)
+    url = 'file:///' + url.replace(/\\/g, '/').replace(/^([A-Za-z]):\/?/, '$1:/');
+    if (url.includes(' ')) url = encodeURI(url);
+  } else if (/^\/|^~\/|^\.\/|^\.\.\//.test(url)) {
+    // Unix 绝对路径 / ~/x(展开 home)/ ./ 与 ../(相对 cwd)
+    let p = url;
+    if (p.startsWith('~/')) p = (process.env.HOME || '') + p.slice(1);
+    if (!path.isAbsolute(p)) p = path.resolve(process.cwd(), p);
+    url = 'file://' + (url.includes(' ') || /[\u4e00-\u9fa5]/.test(url) ? encodeURI(p) : p);
   } else if (!/^https?:\/\//i.test(url)) {
     url = 'https://' + url;
   }
