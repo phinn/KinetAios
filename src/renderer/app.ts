@@ -865,7 +865,7 @@ function buildProjLi(cwd: string): HTMLElement {
     `<span class="sb-pico">${ICON.folder}</span>` +
     `<span class="sb-pname">${esc(name)}</span>` +
     `<span class="sb-pcount">0</span>` +
-    `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}">＋</button></span>`;
+    `<span class="sb-pacts"><button class="ca-btn" data-act="new" title="${esc(tr('wb.newTask'))}" aria-label="${esc(tr('wb.newTask'))}">＋</button></span>`;
   head.onclick = (e) => {
     if ((e.target as HTMLElement)?.closest('[data-act]')) return;
     const wasCollapsed = collapsedProjects.has(cwd);
@@ -961,6 +961,23 @@ function renderSidebar() {
   if (!visibleOrder.length) {
     const emptyIcon = '<svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" opacity="0.3"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>';
     const emptyText = runningOnly ? tr('sidebar.runningEmpty') : searchQuery ? tr('sidebar.searchEmpty') : tr('sidebar.empty');
+    // 真空态(非搜索/非过滤)升级为引导视图:主 CTA + 快捷入口,复用既有按钮与文案
+    if (!runningOnly && !searchQuery) {
+      ul.innerHTML = '<li class="sb-empty sb-empty-rich"><span class="sb-empty-icon">' + emptyIcon + '</span>'
+        + '<span class="sb-empty-text">' + esc(emptyText) + '</span>'
+        + '<button class="sb-empty-cta" id="sb-empty-new">+ ' + esc(tr('sidebar.newSession')) + '</button>'
+        + '<div class="sb-empty-quick">'
+        + '<button class="sb-empty-quick-item" data-go="m-dashboard">' + esc(tr('sidebar.moreDashboard')) + '</button>'
+        + '<button class="sb-empty-quick-item" data-go="m-town">' + esc(tr('sidebar.moreTown')) + '</button>'
+        + '<button class="sb-empty-quick-item" data-go="rail-settings">' + esc(tr('sidebar.settings')) + '</button>'
+        + '</div></li>';
+      const newBtn = ul.querySelector('#sb-empty-new');
+      if (newBtn) newBtn.addEventListener('click', () => (document.getElementById('btn-new') as HTMLButtonElement | null)?.click());
+      ul.querySelectorAll<HTMLButtonElement>('.sb-empty-quick-item').forEach((b) => {
+        b.addEventListener('click', () => (document.getElementById(b.dataset.go || '') as HTMLButtonElement | null)?.click());
+      });
+      return;
+    }
     ul.innerHTML = '<li class="sb-empty"><span class="sb-empty-icon">' + emptyIcon + '</span><span class="sb-empty-text">' + esc(emptyText) + '</span></li>';
     return;
   }
@@ -1223,7 +1240,7 @@ function taskLi(id: string): HTMLElement {
     e.preventDefault();
     showConvMenu(id, e.clientX, e.clientY);
   });
-  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title-row"><span class="title">${c.pinned ? '<span class="pin-mark" data-i18n-title="ctx.pin" title="' + esc(tr('ctx.pin')) + '">📌</span>' : ''}${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
+  li.innerHTML = `<span class="dot ${dotCls}${engCls}"></span><span class="title-wrap"><span class="title-row"><span class="title">${c.pinned ? '<span class="pin-mark" data-i18n-title="ctx.pin" title="' + esc(tr('ctx.pin')) + '">📌</span>' : ''}${esc(title)}</span><span class="sb-task-meta"><span class="sb-task-cwd">${esc(projName(c.cwd))}</span><span class="sb-task-time" title="${new Date(ts).toLocaleString()}">${metaText}</span></span></span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}" aria-label="${esc(tr('conv.ctx'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg></button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}" aria-label="${esc(tr('conv.rename'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.1 2.1 0 013 3L12 15l-4 1 1-4z"/></svg></button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}" aria-label="${esc(tr('conv.delete'))}"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/><path d="M10 11v6M14 11v6"/></svg></button></span>`;
   if (bgDoneConvs.has(id)) {
     const dot = document.createElement('span');
     dot.className = 'bg-done-dot';

@@ -248,11 +248,13 @@ function renderVizCard(src: string, idx: number): string {
 
 function inline(s: string): string {
   return s
-    // 折叠批次引用降权:模型常把「[已折叠工具调用批次: …]」当正文复述,机械行混进叙述观感差
-    // (2026-10-30 用户截图)。识别 AgentLoop 的固定折叠行,渲染成弱化 chip,不再当普通方括号文本。
-    // / Demote folded-batch echoes: the model sometimes restates AgentLoop's mechanical
-    // folded-line marker in prose; render it as a muted chip instead of plain bracket text.
+    // 折叠批次引用降权:模型常把 AgentLoop 的机械折叠标记当正文复述,机械行混进叙述观感差
+    // (2026-10-30 用户截图)。四种形态(批次行/续取提示/截图占位/摘要行)统一弱化成 chip。
+    // / Demote folded-marker echoes: the model sometimes restates AgentLoop's mechanical
+    // fold markers in prose; render all four forms as muted chips instead of plain text.
     .replace(/\[已折叠工具调用批次: ([^\]]*)\]/g, (_m, desc) => `<span class="fold-chip">⌘ ${desc}</span>`)
+    .replace(/\[(?:本条工具结果|截图)已折叠[^\]]*\]/g, '<span class="fold-chip">⌘ 已折叠</span>')
+    .replace(/\[已折叠 ([^\]]+)\] (([^<\n]{1,80})…) ?(?:\[截图已折叠[^\]]*\])?/g, (_m, name, head) => `<span class="fold-chip">⌘ 已折叠 ${name}: ${head}…</span>`)
     .replace(/`([^`]+)`/g, (_m, c) => `<code class="ic">${c}</code>`)
     .replace(/!\[([^\]]*)\]\((https?:[^)\s]+)\)/g, (_m, alt, src) => `<img src="${src.replace(/"/g, '&quot;')}" alt="${alt}" loading="lazy" />`)
     .replace(/\[([^\]]+)\]\((https?:[^)\s]+)\)/g, (_m, t, u) => `<a href="${u.replace(/"/g, '&quot;')}" target="_blank" rel="noreferrer">${t}</a>`)
