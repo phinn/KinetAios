@@ -3,6 +3,7 @@
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
+import { swapBaseUrlForProtocol } from '../shared/providerEndpoints';
 import { engineColor } from './engine-colors';
 import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
@@ -7046,17 +7047,12 @@ async function showSettings() {
     }, 0);
   }
 
-  // 协议切换时自动联动 Base URL —— 智谱 OpenAI ↔ Anthropic 地址不同
+  // 协议切换时自动联动 Base URL —— 共享映射(src/shared/providerEndpoints.ts,测试覆盖)
   document.getElementById('s-proto')!.onchange = () => {
     const baseEl = document.getElementById('s-base') as HTMLInputElement;
-    const proto = (document.getElementById('s-proto') as HTMLSelectElement).value;
-    const cur = baseEl.value.trim();
-    // 智谱:OpenAI 用 /api/paas/v4,Anthropic 用 /api/anthropic
-    if (proto === 'anthropic' && cur.includes('open.bigmodel.cn/api/paas/v4')) {
-      baseEl.value = 'https://open.bigmodel.cn/api/anthropic';
-    } else if (proto === 'openai' && cur.includes('open.bigmodel.cn/api/anthropic')) {
-      baseEl.value = 'https://open.bigmodel.cn/api/paas/v4';
-    }
+    const proto = (document.getElementById('s-proto') as HTMLSelectElement).value as 'openai' | 'anthropic';
+    const next = swapBaseUrlForProtocol(baseEl.value, proto);
+    if (next) baseEl.value = next;
   };
 
   // ── 多机协作:MCP Server 控制按钮 ──
@@ -7196,6 +7192,13 @@ async function showSettings() {
         (document.getElementById('pe-pin') as HTMLInputElement).value = String(preset.pin);
         (document.getElementById('pe-pout') as HTMLInputElement).value = String(preset.pout);
       }
+    };
+    // 协议切换联动 base URL(与主表单同规,共享 providerEndpoints 映射)
+    document.getElementById('pe-proto')!.onchange = () => {
+      const baseEl = document.getElementById('pe-base') as HTMLInputElement;
+      const proto = (document.getElementById('pe-proto') as HTMLSelectElement).value as 'openai' | 'anthropic';
+      const next = swapBaseUrlForProtocol(baseEl.value, proto);
+      if (next) baseEl.value = next;
     };
     (document.getElementById('pe-name') as HTMLInputElement).value = pf?.name ?? '';
     (document.getElementById('pe-key') as HTMLInputElement).value = pf?.apiKey ?? '';
