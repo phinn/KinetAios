@@ -316,7 +316,6 @@
   --surface-chip-focus:  rgba(28,31,46,.75);
   --surface-chip-soft:   rgba(22,24,36,.55);
   --surface-chip-soft-hover: rgba(28,31,46,.75);
-  border-color: rgba(37,40,57,.6);
 }
 /* aurora: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
 [data-theme="aurora"] .composer-bar .tool {
@@ -515,7 +514,6 @@
   --surface-chip-focus:  rgba(255,255,255,.78);
   --surface-chip-soft:   rgba(255,255,255,.60);
   --surface-chip-soft-hover: rgba(255,255,255,.78);
-  border-color: rgba(176,148,120,.30);
 }
 [data-theme="serene"] .chat-head {
   --surface-header: rgba(255,255,255,.45);
@@ -834,14 +832,9 @@
 }
 /* Tahoe: 环境胶囊 / composer 工具 — 液态玻璃材质,透出底色渐变 */
 [data-theme="tahoe"] .ch-env {
-  --surface-chip:        rgba(255,255,255,0.55);
   --surface-chip-focus:  rgba(255,255,255,0.72);
   --surface-chip-soft:   rgba(255,255,255,0.55);
   --surface-chip-soft-hover: rgba(255,255,255,0.72);
-  border-color: rgba(176,200,224,0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.50),
-    var(--shadow-xs);
 }
 [data-theme="tahoe"] .chat-head {
   --surface-header: rgba(245,250,255,0.55);
@@ -1552,11 +1545,9 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
    cwd 默认收窄只露尾部路径;focus 时展开占满剩余空间,blur 回缩。*/
 .ch-env {
   display: inline-flex; align-items: center; gap: 0;
-  background: var(--surface-chip, rgba(255,255,255,.06));
-  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
-  border: 1px solid var(--border-soft, var(--border)); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-xs);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   padding: 2px 4px 2px 8px;
   flex: 0 1 auto; min-width: 0; max-width: 75%;
   transition: max-width var(--dur, 0.3s) var(--ease-out),
@@ -1567,12 +1558,11 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 /* focus-within:整个胶囊不限宽度 + 边框微亮 + 表面略浓 */
 .ch-env:focus-within {
   max-width: 100%;
-  border-color: var(--accent-dim, rgba(10,132,255,.3));
   background: var(--surface-chip-focus, rgba(255,255,255,.12));
-  box-shadow: var(--shadow-focus, var(--shadow-xs));
+  border-radius: var(--r-lg);
 }
 .ch-env select { all: unset; font-size: var(--fs-lg); font-weight: 500; color: var(--text); cursor: pointer; padding: 3px 6px; border-radius: var(--r-sm); white-space: nowrap; flex-shrink: 0; }
-.ch-env select:hover { background: var(--bg-input); }
+.ch-env select:hover { background: var(--surface-chip-soft, var(--bg-input)); }
 .ch-env-sep { width: 1px; height: 14px; background: var(--border); flex-shrink: 0; margin: 0 4px; }
 /* cwd:默认中等宽度露尾部路径;focus 时展开到至少 320px */
 .ch-env .cwd {
@@ -4174,10 +4164,6 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   --surface-chip-focus:  rgba(255,248,240,0.72);
   --surface-chip-soft:   rgba(255,250,242,0.55);
   --surface-chip-soft-hover: rgba(255,248,240,0.72);
-  border-color: rgba(232,212,190,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.50),
-    var(--shadow-xs);
 }
 [data-theme="sierra"] .chat-head {
   --surface-header: rgba(255,250,242,0.55);
@@ -4523,8 +4509,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 [data-theme="craft"] .cht.active {
   border-bottom-color: var(--accent);
 }
-/* Craft: 环境胶囊 / composer 工具 — 方块面板 3D bevel,不透明 */
-[data-theme="craft"] .ch-env,
+/* Craft: composer 工具钮 — 方块面板 3D bevel,不透明(环境胶囊已平权化,不再上框) */
 [data-theme="craft"] .composer-bar .tool {
   --surface-chip:        var(--bg-elev);
   --surface-chip-focus:  var(--bg-input);
