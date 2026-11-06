@@ -36,18 +36,6 @@
         <button class="sb-mode ghost" id="sb-sort-toggle" data-i18n-title="sidebar.sortRecent" title="按最近活动排序"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h12M3 12h9M3 18h6"/><path d="M17 16l3 3 3-3"/><path d="M20 8V3"/></svg></button>
         <button class="sb-mode ghost" id="sb-mode-toggle" data-i18n-title="sidebar.modeFlat" title="平铺列表"><svg class="sb-mode-icon sb-mode-grouped" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h18M3 12h18M3 18h18"/></svg><svg class="sb-mode-icon sb-mode-flat" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 6h12M3 12h9M3 18h6"/></svg></button>
         <span class="sb-foot-sep"></span>
-        <button class="sb-mode ghost" id="sb-theme-toggle" data-i18n-title="sidebar.themeMenu" title="切换主题"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 000 20"/><path d="M12 2a14.5 14.5 0 010 20"/></svg></button>
-        <div id="theme-popup" class="theme-popup" hidden>
-          <button class="tp-item" data-theme="auto"><span class="tp-swatch tp-sw-auto"></span><span data-i18n="settings.theme.auto">自动</span></button>
-          <button class="tp-item" data-theme="dark"><span class="tp-swatch tp-sw-dark"></span><span data-i18n="settings.theme.dark">暗色</span></button>
-          <button class="tp-item" data-theme="light"><span class="tp-swatch tp-sw-light"></span><span data-i18n="settings.theme.light">淡色</span></button>
-          <button class="tp-item" data-theme="aurora"><span class="tp-swatch tp-sw-aurora"></span><span data-i18n="settings.theme.aurora">极光</span></button>
-          <button class="tp-item" data-theme="serene"><span class="tp-swatch tp-sw-serene"></span><span data-i18n="settings.theme.serene">雅致</span></button>
-          <button class="tp-item" data-theme="tahoe"><span class="tp-swatch tp-sw-tahoe"></span><span data-i18n="settings.theme.tahoe">液态玻璃</span></button>
-          <button class="tp-item" data-theme="sierra"><span class="tp-swatch tp-sw-sierra"></span><span data-i18n="settings.theme.sierra">暖阳</span></button>
-          <button class="tp-item" data-theme="craft"><span class="tp-swatch tp-sw-craft"></span><span data-i18n="settings.theme.craft">方块世界</span></button>
-          <button class="tp-item" data-theme="seed"><span class="tp-swatch tp-sw-seed"></span><span data-i18n="settings.theme.seed">高达SEED</span></button>
-        </div>
         <button class="sb-mode ghost sb-mini-btn" id="btn-wb" data-i18n-title="wb.open" data-i18n-aria="a11y.workbench" aria-label="工作台" title="工作台"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z"/></svg></button>
         <button class="sb-mode ghost sb-mini-btn" id="btn-settings" data-i18n-title="sidebar.settings" data-i18n-aria="a11y.settings" aria-label="设置" title="设置"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 00.3 1.8l.1.1a2 2 0 11-2.8 2.8l-.1-.1a1.7 1.7 0 00-1.8-.3 1.7 1.7 0 00-1 1.5V21a2 2 0 11-4 0v-.1a1.7 1.7 0 00-1.1-1.5 1.7 1.7 0 00-1.8.3l-.1.1a2 2 0 11-2.8-2.8l.1-.1a1.7 1.7 0 00.3-1.8 1.7 1.7 0 00-1.5-1H3a2 2 0 110-4h.1a1.7 1.7 0 001.5-1.1 1.7 1.7 0 00-.3-1.8l-.1-.1a2 2 0 112.8-2.8l.1.1a1.7 1.7 0 001.8.3H9a1.7 1.7 0 001-1.5V3a2 2 0 114 0v.1a1.7 1.7 0 001 1.5 1.7 1.7 0 001.8-.3l.1-.1a2 2 0 112.8 2.8l-.1.1a1.7 1.7 0 00-.3 1.8V9a1.7 1.7 0 001.5 1H21a2 2 0 110 4h-.1a1.7 1.7 0 00-1.5 1z"/></svg></button>
         <div class="sb-more-wrap">
@@ -89,6 +77,18 @@
           <button class="sb-more-item" id="m-cost"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreCost">成本看板</span></button>
           <button class="sb-more-item" id="m-town"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18M5 21V7l8-4v18M19 21V11l-6-4"/><path d="M9 9v.01M9 12v.01M9 15v.01M9 18v.01"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreTown">小镇</span></button>
           <button class="sb-more-item" id="m-nexus"><span class="sb-mi-ico"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><ellipse cx="12" cy="12" rx="10" ry="4"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(60 12 12)"/><ellipse cx="12" cy="12" rx="10" ry="4" transform="rotate(120 12 12)"/></svg></span><span class="sb-mi-label" data-i18n="sidebar.moreNexus">NEXUS</span></button>
+        </div>
+        <div class="sb-more-section-label" data-i18n="sidebar.moreTheme">外观</div>
+        <div class="sb-more-grid sb-theme-grid">
+          <button class="sb-theme-item" data-theme="auto"><span class="tp-swatch tp-sw-auto"></span><span data-i18n="settings.theme.auto">自动</span></button>
+          <button class="sb-theme-item" data-theme="dark"><span class="tp-swatch tp-sw-dark"></span><span data-i18n="settings.theme.dark">暗色</span></button>
+          <button class="sb-theme-item" data-theme="light"><span class="tp-swatch tp-sw-light"></span><span data-i18n="settings.theme.light">淡色</span></button>
+          <button class="sb-theme-item" data-theme="aurora"><span class="tp-swatch tp-sw-aurora"></span><span data-i18n="settings.theme.aurora">极光</span></button>
+          <button class="sb-theme-item" data-theme="serene"><span class="tp-swatch tp-sw-serene"></span><span data-i18n="settings.theme.serene">雅致</span></button>
+          <button class="sb-theme-item" data-theme="tahoe"><span class="tp-swatch tp-sw-tahoe"></span><span data-i18n="settings.theme.tahoe">液态玻璃</span></button>
+          <button class="sb-theme-item" data-theme="sierra"><span class="tp-swatch tp-sw-sierra"></span><span data-i18n="settings.theme.sierra">暖阳</span></button>
+          <button class="sb-theme-item" data-theme="craft"><span class="tp-swatch tp-sw-craft"></span><span data-i18n="settings.theme.craft">方块世界</span></button>
+          <button class="sb-theme-item" data-theme="seed"><span class="tp-swatch tp-sw-seed"></span><span data-i18n="settings.theme.seed">高达SEED</span></button>
         </div>
       </div>
 

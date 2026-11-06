@@ -2921,46 +2921,21 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   opacity: 0.5;
   pointer-events: none;
 }
-/* ── theme-popup — 侧栏底部主题快捷切换弹出菜单,向上展开 ── */
-.theme-popup {
-  position: absolute;
-  bottom: 100%;
-  left: 8px;
-  margin-bottom: 6px;
-  background: var(--bg-elev);
-  border: 1px solid var(--border);
-  border-radius: var(--r-lg);
-  box-shadow: var(--shadow-lg);
-  padding: 4px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  z-index: 60;
-  min-width: 130px;
-  animation: cm-pop var(--dur-fast, 0.15s) var(--ease-out, ease-out);
+/* ── 主题切换(2026-11-06 并入 ⋯ 更多菜单「外观」分区)──
+ * 修前:foot 独立调色板钮 + theme-popup 绝对定位浮层(已随 DOM 一起删除)。
+ * 现在:.sb-theme-grid 九宫格挂在 sb-more-menu 末分区,.sb-theme-item = 色板+主题名。
+ * tp-swatch 色板类保留复用(色值不受容器影响)。 */
+.sb-theme-grid { grid-template-columns: repeat(3, 1fr); }
+.sb-theme-item {
+  display: flex; flex-direction: row; align-items: center; gap: 7px;
+  padding: 7px 9px; border-radius: var(--r-md); border: 1px solid transparent;
+  background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-md);
+  cursor: pointer; text-align: left; white-space: nowrap; overflow: hidden;
+  transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
 }
-.theme-popup[hidden] { display: none; }
-.theme-popup .tp-item {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 10px;
-  border: none;
-  background: none;
-  color: var(--text-dim);
-  font-size: var(--fs-xl2);
-  border-radius: var(--r-md);
-  cursor: pointer;
-  transition: background var(--dur-fast, 0.15s), color var(--dur-fast, 0.15s);
-}
-.theme-popup .tp-item:hover {
-  background: var(--bg-input);
-  color: var(--text);
-}
-.theme-popup .tp-item.active {
-  color: var(--accent);
-  font-weight: 600;
-}
+.sb-theme-item:hover { background: color-mix(in srgb, var(--accent) 6%, var(--bg-input)); color: var(--text); }
+.sb-theme-item.active { color: var(--accent); font-weight: 600; border-color: color-mix(in srgb, var(--accent) 35%, transparent); }
+.sb-theme-item .tp-swatch { width: 12px; height: 12px; }
 /* 主题色板小圆点 — 每个主题一个代表色 */
 .tp-swatch {
   width: 14px;

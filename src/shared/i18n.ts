@@ -170,6 +170,7 @@ const ZH_CN: Dict = {
 
   'sidebar.moreViews': '视图',
   'sidebar.moreMemoryGroup': '记忆',
+  'sidebar.moreTheme': '外观',
   'sidebar.moreAutomation': '自动化',
   'sidebar.moreTools': '工具',
   'sidebar.moreOthers': '其他',
@@ -1602,6 +1603,7 @@ const EN: Dict = {
 
   'sidebar.moreViews': 'Views',
   'sidebar.moreMemoryGroup': 'Memory',
+  'sidebar.moreTheme': 'Appearance',
   'sidebar.moreAutomation': 'Automation',
   'sidebar.moreTools': 'Tools',
   'sidebar.moreOthers': 'Others',
@@ -3034,6 +3036,7 @@ const ZH_TW: Dict = {
 
   'sidebar.moreViews': '視圖',
   'sidebar.moreMemoryGroup': '記憶',
+  'sidebar.moreTheme': '外觀',
   'sidebar.moreAutomation': '自動化',
   'sidebar.moreTools': '工具',
   'sidebar.moreOthers': '其他',
@@ -4460,6 +4463,7 @@ const JA: Dict = {
 
   'sidebar.moreViews': 'ビュー',
   'sidebar.moreMemoryGroup': 'メモリ',
+  'sidebar.moreTheme': '外観',
   'sidebar.moreAutomation': 'オートメーション',
   'sidebar.moreTools': 'ツール',
   'sidebar.moreOthers': 'その他',

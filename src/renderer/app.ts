@@ -8677,34 +8677,30 @@ function closeMoreMenu() {
     sortBtn.classList.toggle('active', sortByRecent);
     renderSidebar();
   };
-  // ── 侧栏底部主题快捷切换弹出菜单 ──
-  // 点调色板按钮弹出主题选择,选择后立即切换 + 持久化,无需进设置页面。
-  const tpBtn = document.getElementById('sb-theme-toggle');
-  const tpPopup = document.getElementById('theme-popup');
-  if (tpBtn && tpPopup) {
+  // ── 主题切换(并入 ⋯ 更多菜单「外观」分区,2026-11-06)──
+  // moreMenuOpenHook 声明在使用点之前(TDZ),openMoreMenu 定义处(下方)消费。
+  let moreMenuOpenHook: (() => void) | null = null;
+  // 修前:foot 独立调色板按钮 + 向上弹出的 theme-popup,8 钮挤爆底栏。
+  // 现在:主题九宫格常驻 ⋯ 菜单末分区,点色板即切换 + 持久化;激活项高亮在菜单
+  // 每次打开时同步(openMoreMenu 内调 syncActiveTheme)。
+  // Theme picker now lives in the ⋯ menu's "Appearance" section; clicking a swatch
+  // applies + persists immediately. Active state syncs each time the menu opens.
+  const themeMenu = document.getElementById('sb-more-menu');
+  const themeItems = themeMenu?.querySelectorAll<HTMLElement>('.sb-theme-item');
+  if (themeMenu && themeItems?.length) {
     // 标记当前激活的主题项。
     const syncActiveTheme = () => {
       const cur = document.documentElement.dataset.themeSetting || document.documentElement.dataset.theme || 'tahoe';
-      tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
+      themeItems.forEach(el => {
         el.classList.toggle('active', el.dataset.theme === cur);
       });
     };
-    tpBtn.onclick = (e) => {
-      e.stopPropagation();
-      syncActiveTheme();
-      tpPopup.hidden = !tpPopup.hidden;
-    };
-    // 点外部关闭。
-    document.addEventListener('click', (e) => {
-      if (!tpPopup.hidden && !(e.target as HTMLElement)?.closest('#sb-theme-toggle, #theme-popup'))
-        tpPopup.hidden = true;
-    });
     // 选中某个主题 → 立即应用 + 保存。
-    tpPopup.querySelectorAll<HTMLElement>('.tp-item').forEach(el => {
+    themeItems.forEach(el => {
       el.onclick = async () => {
         const theme = el.dataset.theme as AppSettings['theme'];
-        tpPopup.hidden = true;
         applyTheme(theme);
+        syncActiveTheme();
         // 持久化到 settings.json / persist to settings.json
         const s = await api.getSettings();
         if (s.theme !== theme) {
@@ -8713,6 +8709,9 @@ function closeMoreMenu() {
         }
       };
     });
+    // 菜单打开时同步激活态:openMoreMenu 是函数声明(后续块)不能重赋值,
+    // 用模块级钩子变量,真正 openMoreMenu 每次执行时调用。
+    moreMenuOpenHook = syncActiveTheme;
   }
 
   // 低频按钮收纳进 ⋯ 下拉菜单(图表/文件/Arena/记忆/快照)
@@ -8767,8 +8766,8 @@ function closeMoreMenu() {
   moreOverlay.className = 'sb-more-overlay';
   moreOverlay.id = 'sb-more-overlay';
   document.body.appendChild(moreOverlay);
-  function openMoreMenu() { moreMenu.classList.add('open'); moreOverlay.classList.add('open'); }
-  function closeMoreMenuPanel() { moreMenu.classList.remove('open'); moreOverlay.classList.remove('open'); }
+  function openMoreMenu() { moreMenu.classList.add('open'); moreOverlay.classList.add('open'); moreMenuOpenHook?.(); }
+  function closeMoreMenuPanel() { moreMenu.classList.remove('open'); moreOverlay.classList.remove('open'); moreMenuOpenHook = null; }
   moreBtn.onclick = (e) => { e.stopPropagation(); if (moreMenu.classList.contains('open')) closeMoreMenuPanel(); else openMoreMenu(); };
   moreOverlay.onclick = () => closeMoreMenuPanel();
   // Esc 键关闭
