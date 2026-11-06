@@ -12512,6 +12512,9 @@ const PRESETS = [
   { id: 'glm', labelKey: 'preset.glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.2', proto: 'openai', pin: 0.07, pout: 0.21 },  { id: 'deepseek', labelKey: 'preset.deepseek', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat', proto: 'openai', pin: 0.27, pout: 1.1 },
   { id: 'orcarouter', labelKey: 'preset.orcarouter', baseURL: 'https://api.orcarouter.ai/v1', model: 'orcarouter/auto', proto: 'openai', pin: 0, pout: 0 },
   { id: 'qwen', labelKey: 'preset.qwen', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-max', proto: 'openai', pin: 0.29, pout: 0.86 },
+  // 阿里百炼 Token Plan(订阅制 Credits):Anthropic 兼容端点,官方推荐 model=auto 智能路由(opus=qwen3.8-max/sonnet=qwen3.8-flash/haiku=qwen3.6-flash)。
+  // 价格不填(按套餐计费非按量);夜间 22:00-08:00 qwen3.8 系 Credits 4 折。
+  { id: 'aliyun-token-plan', labelKey: 'preset.aliyun-token-plan', baseURL: 'https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic', model: 'auto', proto: 'anthropic', pin: 0, pout: 0 },
   { id: 'ollama', labelKey: 'preset.ollama', baseURL: 'http://localhost:11434/v1', model: 'llama3.2', proto: 'openai', pin: 0, pout: 0 },
   { id: 'custom', labelKey: 'preset.custom', baseURL: '', model: '', proto: 'openai', pin: 0, pout: 0 },
 ];

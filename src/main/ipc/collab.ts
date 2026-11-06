@@ -252,7 +252,18 @@ export function register(): void {
     const bal = balanceSnapshot(profileId ?? null);
     console.log('[get-balance] provider:', bal.provider, 'url:', bal.url, 'scheme:', bal.authScheme, 'keySet:', !!bal.apiKey);
     if (!bal.apiKey) return { ok: false, message: '未设置 API Key' };
-    if (!bal.url) return { ok: false, message: '当前端点不支持余额查询' };
+    if (!bal.url) {
+      // 无余额 API 的订阅制 provider → 网页控制台引导(MiniMax 先例同路)
+      if (bal.provider === 'aliyun-token-plan') {
+        return {
+          ok: false,
+          provider: bal.provider,
+          webUrl: 'https://bailian.console.aliyun.com/cn-beijing/subscription/token-plan',
+          message: '阿里百炼 Token Plan 的 Credits 用量请到网页控制台查看(订阅制无余额 API)',
+        };
+      }
+      return { ok: false, message: '当前端点不支持余额查询' };
+    }
 
     // 根据 authScheme 构造 Authorization / 自定义 header
     const buildAuth = (key: string): Record<string, string> => {

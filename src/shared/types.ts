@@ -275,8 +275,8 @@ export type BalanceSnapshot = {
   url: string;
   apiKey: string;
   authScheme: 'bearer' | 'raw' | 'x-api-key';
-  /** provider 标签:MiniMax / zhipu-coding-plan / zhipu-open,给 UI/日志识别用。 */
-  provider: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';
+  /** provider 标签:MiniMax / zhipu-coding-plan / zhipu-open / aliyun-token-plan,给 UI/日志识别用。 */
+  provider: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'aliyun-token-plan' | 'custom';
 };
 
 export type AppSettings = {
@@ -993,7 +993,7 @@ export interface KinetAPI {
     left?: string;
     gift?: string;
     message?: string;
-    provider?: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';  // 失败/成功都透传,前端决定 UI 路径
+    provider?: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'aliyun-token-plan' | 'custom';  // 失败/成功都透传,前端决定 UI 路径
     webUrl?: string;                       // provider=minimax 时,token_type_mismatch 引导用户去网页控制台看余额
   }>;
   listSkills(): Promise<SkillInfo[]>;

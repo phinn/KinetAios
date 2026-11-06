@@ -10,6 +10,7 @@
 |---|---|
 | Provider 协议 | `OpenAI 兼容` / `Anthropic` 二选一。决定请求走 `/chat/completions` 还是 `/v1/messages` |
 | Base URL | 端点根。预设按钮:GLM 智谱 / DeepSeek / OrcaRouter / OpenAI / Anthropic 一键填 |
+| **阿里百炼 Token Plan 预设(4.0.8+)** | 预设「阿里百炼 Token Plan (订阅制)」一键填 Anthropic 兼容端点(`token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`)+ 模型 `auto`(官方智能路由:opus=qwen3.8-max / sonnet=qwen3.8-flash / haiku=qwen3.6-flash)。Credits 订阅制:夜间 22:00-08:00 qwen3.8 系 4 折;余额查询自动跳转网页控制台(无余额 API);协议须选 `Anthropic` |
 | Model | 默认模型。例 `glm-4.6` / `claude-sonnet-4-6` / `gpt-4o`。每会话可独立改 |
 | API Key | safeStorage 加密存(macOS Keychain / Windows DPAPI)。明文不进 settings.json |
 | **测试连接** | 发一个最小请求验证。**保存前必测** |

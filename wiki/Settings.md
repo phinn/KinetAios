@@ -10,6 +10,7 @@ Top-right **⚙** in the main window. Two-column layout: vertical tab nav on the
 |---|---|
 | Provider protocol | `OpenAI-compatible` / `Anthropic`. Determines whether requests go to `/chat/completions` or `/v1/messages` |
 | Base URL | Endpoint root. Preset buttons: GLM Zhipu / DeepSeek / OrcaRouter / OpenAI / Anthropic |
+| **Alibaba Bailian Token Plan preset** (4.0.8+) | Preset "Alibaba Bailian Token Plan (subscription)" one-click fills the Anthropic-compatible endpoint (`token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic`) + model `auto` (official smart routing: opus=qwen3.8-max / sonnet=qwen3.8-flash / haiku=qwen3.6-flash). Credits-based subscription: qwen3.8 models cost 40% between 22:00-08:00; balance query links to the web console (no balance API); protocol must be `Anthropic` |
 | Model | Default model. e.g. `glm-4.6` / `claude-sonnet-4-6` / `gpt-4o`. Can be overridden per session |
 | API Key | Encrypted via safeStorage (macOS Keychain / Windows DPAPI). Plaintext never goes into settings.json |
 | **Test connection** | Sends a minimal request to verify. **Always test before saving** |

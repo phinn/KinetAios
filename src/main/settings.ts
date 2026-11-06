@@ -248,10 +248,16 @@ export function balanceSnapshot(profileId?: string | null): BalanceSnapshot {
   }
 
   // 2) 推断模式:按 baseURL 关键字路由
+  //    - 阿里百炼 Token Plan(host 含 token-plan.*.aliyuncs.com):订阅制 Credits,无 sk- key 余额 API → 返回空 url,handler 引导网页控制台
   //    - MiniMax 系列(/minimax/i):固定走 api.minimaxi.com/v1/account/balance,Auth Bearer
   //    - 智谱 Coding Plan(baseURL 含 /coding 或 /anthropic):走 open.bigmodel.cn 或 api.z.ai 的 quota 端点,Auth 裸 token
   //    - 智谱开放平台:走 baseURL/balance,Auth Bearer
   //    - 其他:返回空 url,handler 会回退到"不支持"提示
+  // ⚠️ Token Plan 判定必须前置:其 base URL 以 /apps/anthropic 结尾,会误命中下方智谱 /anthropic 分支。
+  //    真实 host 是 token-plan.<region>.maas.aliyuncs.com(maas 三段),中段用 [a-z0-9.-]+ 通配。
+  if (/token-plan\.[a-z0-9.-]+\.aliyuncs\.com/i.test(baseURL)) {
+    return { url: '', apiKey: mainKey, authScheme: 'bearer', provider: 'aliyun-token-plan' };
+  }
   if (/minimax/i.test(baseURL)) {
     const host = baseURL.toLowerCase().includes('api.minimax.chat')
       ? 'https://api.minimaxi.com'
