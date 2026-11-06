@@ -399,7 +399,7 @@ const notifyLastAt = new Map<string, number>();
 import { emitTeamEvent } from './team-events';
 import { deps } from './ipc/ctx';
 import { register as registerIpcModules } from './ipc/register';
-import { createSplash, dismissSplash, pluginSplashSnap, builtinSplashHtml } from './splash';
+import { createSplash, dismissSplash, pluginSplashSnap, builtinSplashHtml, DASHBOARD_W, DASHBOARD_H } from './splash';
 export { emitTeamEvent };
 
 // ── P1 加固: 窗口导航防护(window-open / 跳转拦截面)──
@@ -437,8 +437,9 @@ function hardenWindowNav(win: BrowserWindow): void {
 
 function createDashboard(): BrowserWindow {
   const win = new BrowserWindow({
-    width: 1100,
-    height: 740,
+    width: DASHBOARD_W,
+    height: DASHBOARD_H,
+    center: true, // 与 splash 同位(常量单一来源见 splash.ts):淡出时主窗原地接上
     minWidth: 760,
     minHeight: 480,
     show: false, // 首屏渲染完成再显示:消除白屏裸奔,并由 splash 交棒(ready-to-show)

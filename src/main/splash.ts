@@ -31,9 +31,17 @@ let splashShownAt = 0;
 let alarm: ReturnType<typeof setTimeout> | null = null;
 
 /** 创建并显示启动动画窗(选 'none' 时跳过)。Create & show the splash window (skipped when 'none'). */
-// 尺寸统一一处:420×260(内置两款按此设计;插件款自适应 letterbox 居中)
+// 内置款与主窗同尺寸同位置(居中):淡出时主窗原地接上,零跳变感。
+// 尺寸单一来源在此(main.ts createDashboard 引用同一常量);插件款维持小窗。
+export const DASHBOARD_W = 1100;
+export const DASHBOARD_H = 740;
 const SPLASH_W = 420;
 const SPLASH_H = 260;
+
+function splashWindowSize(kind: string): { width: number; height: number } {
+  if (kind === 'default' || kind === 'orbit') return { width: DASHBOARD_W, height: DASHBOARD_H };
+  return { width: SPLASH_W, height: SPLASH_H };
+}
 
 // ── 主题联动:开场动画跟随「设置 → 主题」──────────────────────────────
 // 此前两款内置动画写死紫蓝配色(#7c5cff/#409cff),与主窗主题(金色/极光/
@@ -95,8 +103,7 @@ export function createSplash(): void {
   if (!html) return; // 未知类型/插件读不到 → 无动画直接进主窗(fail-open)
 
   splashWin = new BrowserWindow({
-    width: SPLASH_W,
-    height: SPLASH_H,
+    ...splashWindowSize(kind),
     frame: false,
     resizable: false,
     movable: true,
@@ -179,8 +186,7 @@ export function splashOptions(): Array<{ value: string; label: string; kind: 'bu
 export function splashPreview(kind: string): void {
   if (splashWin && !splashWin.isDestroyed()) splashWin.close();
   const w = new BrowserWindow({
-    width: SPLASH_W,
-    height: SPLASH_H,
+    ...splashWindowSize(String(kind)),
     frame: false,
     resizable: false,
     movable: true,
@@ -235,9 +241,9 @@ function nebulaHtml(brand: string, p: SplashPalette): string {
   /* 星云:三层径向渐变交错呼吸(配色跟随主题 accent) */
   .nebula{position:absolute;inset:0;filter:blur(2px)}
   .nebula i{position:absolute;border-radius:50%;mix-blend-mode:${p.blend}}
-  .nebula i:nth-child(1){width:220px;height:220px;left:20%;top:10%;background:radial-gradient(circle,${p.b1},transparent 70%);animation:breathe 2.4s ease-in-out infinite}
-  .nebula i:nth-child(2){width:180px;height:180px;right:16%;top:30%;background:radial-gradient(circle,${p.b2},transparent 70%);animation:breathe 2.4s ease-in-out .6s infinite}
-  .nebula i:nth-child(3){width:150px;height:150px;left:34%;bottom:8%;background:radial-gradient(circle,${p.b3},transparent 70%);animation:breathe 2.4s ease-in-out 1.2s infinite}
+  .nebula i:nth-child(1){width:clamp(240px,26vmax,560px);height:clamp(240px,26vmax,560px);left:20%;top:10%;background:radial-gradient(circle,${p.b1},transparent 70%);animation:breathe 2.4s ease-in-out infinite}
+  .nebula i:nth-child(2){width:clamp(200px,22vmax,480px);height:clamp(200px,22vmax,480px);right:16%;top:30%;background:radial-gradient(circle,${p.b2},transparent 70%);animation:breathe 2.4s ease-in-out .6s infinite}
+  .nebula i:nth-child(3){width:clamp(160px,18vmax,400px);height:clamp(160px,18vmax,400px);left:34%;bottom:8%;background:radial-gradient(circle,${p.b3},transparent 70%);animation:breathe 2.4s ease-in-out 1.2s infinite}
   @keyframes breathe{0%,100%{transform:scale(.92);opacity:.6}50%{transform:scale(1.08);opacity:1}}
   /* 核心光点 */
   .core{position:relative;width:56px;height:56px;border-radius:16px;
