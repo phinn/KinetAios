@@ -11,13 +11,13 @@
   --text: #ebebef;
   --text-dim: #9696a0;
   --text-faint: #65656f;
-  --accent: #e8b339;
+  --accent: #d9a840; /* 2026-11-06 降饱和一档:#e8b339 大面积 primary 刺眼 */
   --accent-dim: #6b5320;
   --accent-glow: color-mix(in srgb, var(--accent) 15%, transparent);
   --accent-fg: #18181c;
   --ok: #4ec27a;
   --err: #e2614c;
-  --run: #e8b339;
+  --run: #d9a840;
   --code-bg: #0f0f12;
   --bg-2: var(--bg-side);
   --danger: var(--err);
@@ -58,6 +58,32 @@
   --surface-chip-focus:        rgba(255,255,255,.12);
   --surface-chip-soft:         rgba(255,255,255,.06);
   --surface-chip-soft-hover:   rgba(255,255,255,.12);
+
+  /* ═══ 组件级主题 Token(变量表)═══
+     高频主题覆盖类别收敛于此:历史上每新增主题要手写几百行
+     [data-theme] 逐条覆盖(scrollbar / .chat-head / .sb-foot / #sidebar
+     / .answer .ic / .tok-* 代码高亮),现在主题块只需对下面的变量填表。
+     默认值 = 当前 dark 主题的实际计算值,禁止在主题块外写死同类值。 */
+  /* 面板线条:.chat-head 底边 / .sb-foot 顶边 / #sidebar 右边 */
+  --chat-head-line: var(--border);
+  --sb-foot-line:   var(--border-soft);
+  --sidebar-line:   var(--border);
+  /* 滚动条 thumb(渐变/bevel 特化样式仍在主题块内做装饰例外) */
+  --sb-thumb:       color-mix(in srgb, var(--text-faint) 35%, transparent);
+  --sb-thumb-hover: color-mix(in srgb, var(--text-dim) 60%, transparent);
+  /* 内联代码 .answer .ic */
+  --ic-bg:     var(--code-bg);
+  --ic-border: var(--border-soft);
+  --ic-fg:     inherit;
+
+  /* ── 代码语法高亮 .tok-*(VS Code Dark+ 微调)── */
+  --tok-keyword:   #c586c0;  --tok-string:    #ce9178;  --tok-comment:  #6a9955;
+  --tok-number:    #b5cea8;  --tok-function:  #dcdcaa;  --tok-builtin:  #4ec9b0;
+  --tok-decorator: #dcdcaa;  --tok-tag:       #569cd6;  --tok-attr:     #9cdcfe;
+  --tok-variable:  #9cdcfe;  --tok-property:  #9cdcfe;  --tok-selector: #d7ba7d;
+  --tok-atrule:    #c586c0;  --tok-header:    #569cd6;  --tok-list:     #6a9955;
+  --tok-class:     inherit;  --tok-codeblock: #ce9178;  --tok-inlinecode: #ce9178;
+  --tok-key:       #9cdcfe;  --tok-link:      #3794ff;
 
   /* ═══ Apple Design Motion Tokens ═══
      统一 easing/duration 变量,全站引用。
@@ -137,9 +163,8 @@
   --shadow-focus: 0 0 0 3px rgba(184,130,0,0.12);
   --glass-hi: rgba(0,0,0,0.03);
   --glass-border: rgba(0,0,0,0.06);
-}
-/* Light: chat-head / chip / input 表面 — 白底,显著柔玻璃,深色边框 */
-[data-theme="light"] {
+
+  /* ── 表面 token:白底,显著柔玻璃,深色边框 ── */
   --surface-header: rgba(255,255,255,.72);
   --surface-input:  rgba(255,255,255,.72);
   --surface-chip:        rgba(0,0,0,.06);
@@ -148,11 +173,19 @@
   --surface-chip-soft-hover:   rgba(0,0,0,.10);
   --surface-pane:   var(--bg-side);   /* 浅色:实色,保持清晰分层 */
   --surface-pane-footer: transparent;
+
+  /* ── 面板线条 ── */
+  --chat-head-line: rgba(0,0,0,.08);
+
+  /* ── 代码高亮(VS Code Light)── */
+  --tok-keyword:   #af00db;  --tok-string:    #a31515;  --tok-comment:  #008000;
+  --tok-number:    #098658;  --tok-function:  #795e26;  --tok-builtin:  #267f99;
+  --tok-decorator: #795e26;  --tok-tag:       #800000;  --tok-attr:     #ff0000;
+  --tok-variable:  #001080;  --tok-property:  #001080;  --tok-selector: #800000;
+  --tok-atrule:    #af00db;  --tok-header:    #0000ff;  --tok-codeblock: #a31515;
+  --tok-inlinecode: #a31515; --tok-key:       #0451a5;  --tok-link:     #0000ee;
 }
-[data-theme="light"] .chat-head {
-  border-bottom-color: rgba(0,0,0,.08);
-}
-[data-theme="light"] #input { /* 容器只做布局,视觉在 composer-card */ }
+/* #input 容器只做布局,视觉在 composer-card(浅色无需额外覆盖) */
 
 /* ═══════════════════════════════════════════════════════════════════════
    Aurora 极光主题 — 深空底色 + 渐变极光光晕 + 微妙毛玻璃质感
@@ -191,6 +224,29 @@
   --shadow-xl: 0 24px 64px rgba(0,0,0,0.60), 0 8px 24px rgba(0,0,0,0.40);
   --shadow-accent: 0 4px 20px rgba(196,167,255,0.30);
   --shadow-focus: 0 0 0 3px rgba(196,167,255,0.16);
+
+  /* ── 表面 token:深空半透明面板 ── */
+  --surface-header: rgba(16,18,28,.72);
+  --surface-input:  rgba(16,18,28,.62);
+  --surface-pane:   rgba(20,22,34,.68);
+  --surface-pane-footer: transparent;
+
+  /* ── 面板线条 ── */
+  --chat-head-line: rgba(37,40,57,.6);
+  --sidebar-line:   rgba(37,40,57,.6);
+  --sb-foot-line:   rgba(37,40,57,.6);
+
+  /* ── 滚动条:极光色 ── */
+  --sb-thumb:       var(--accent-dim);
+  --sb-thumb-hover: var(--aurora-1);
+
+  /* ── 代码高亮(极光暗色:紫/青/绿系)── */
+  --tok-keyword:   #c4a7ff;  --tok-string:    #7eeab5;  --tok-comment:  #5a5e78;
+  --tok-number:    #74c5ff;  --tok-function:  #e8eaf2;  --tok-builtin:  #74c5ff;
+  --tok-decorator: #c4a7ff;  --tok-tag:       #c4a7ff;  --tok-attr:     #7eeab5;
+  --tok-variable:  #e8eaf2;  --tok-property:  #74c5ff;  --tok-selector: #c4a7ff;
+  --tok-atrule:    #c4a7ff;  --tok-header:    #74c5ff;  --tok-codeblock: #7eeab5;
+  --tok-inlinecode: #7eeab5; --tok-key:       #74c5ff;  --tok-link:     #74c5ff;
 }
 /* Aurora: body 极光背景动画 — 两团缓慢漂移的径向渐变模拟极光带 */
 [data-theme="aurora"] body {
@@ -262,7 +318,6 @@
   background: var(--aurora-1);
 }
 /* Aurora: dot 状态指示灯用极光绿 */
-[data-theme="aurora"] .dot.ready { background: var(--aurora-2); box-shadow: 0 0 8px rgba(126,234,181,.4); }
 [data-theme="aurora"] .dot.running { background: var(--aurora-1); box-shadow: 0 0 8px rgba(196,167,255,.4); }
 /* Aurora: 选中态 tab/会话用极光色 */
 [data-theme="aurora"] .cht.active,
@@ -291,91 +346,55 @@
   border-color: var(--border);
   transition: border-color var(--dur-normal) var(--ease-out), box-shadow var(--dur-normal) var(--ease-out);
 }
-/* Aurora 代码高亮 — 极光暗色配色(紫/青/绿系,跟主题色协调) */
-[data-theme="aurora"] .tok-keyword   { color: #c4a7ff; }   /* 极光紫 */
-[data-theme="aurora"] .tok-string    { color: #7eeab5; }   /* 极光绿 */
-[data-theme="aurora"] .tok-comment   { color: #5a5e78; font-style: italic; }
-[data-theme="aurora"] .tok-number    { color: #74c5ff; }   /* 冰川蓝 */
-[data-theme="aurora"] .tok-function  { color: #e8eaf2; }   /* 近白 */
-[data-theme="aurora"] .tok-builtin   { color: #74c5ff; }
-[data-theme="aurora"] .tok-decorator { color: #c4a7ff; }
-[data-theme="aurora"] .tok-tag       { color: #c4a7ff; }
-[data-theme="aurora"] .tok-attr      { color: #7eeab5; }
-[data-theme="aurora"] .tok-variable  { color: #e8eaf2; }
-[data-theme="aurora"] .tok-property  { color: #74c5ff; }
-[data-theme="aurora"] .tok-selector  { color: #c4a7ff; }
-[data-theme="aurora"] .tok-atrule    { color: #c4a7ff; }
-[data-theme="aurora"] .tok-header    { color: #74c5ff; font-weight: 700; }
-[data-theme="aurora"] .tok-codeblock { color: #7eeab5; }
-[data-theme="aurora"] .tok-inlinecode{ color: #7eeab5; }
-[data-theme="aurora"] .tok-key       { color: #74c5ff; }
-[data-theme="aurora"] .tok-link      { color: #74c5ff; text-decoration: underline; }
-/* Aurora: 环境胶囊 — 深空半透明,透出极光底色 */
-[data-theme="aurora"] .ch-env {
+/* Aurora: 环境胶囊 / composer 工具钮 — 深空半透明 chip,透出极光底色
+   (--surface-chip 组只能在组件上覆盖:tok-row/approval-pill 等也消费该组变量) */
+[data-theme="aurora"] .ch-env,
+[data-theme="aurora"] .composer-bar .tool {
   --surface-chip:        rgba(22,24,36,.55);
   --surface-chip-focus:  rgba(28,31,46,.75);
   --surface-chip-soft:   rgba(22,24,36,.55);
   --surface-chip-soft-hover: rgba(28,31,46,.75);
 }
-/* aurora: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
-[data-theme="aurora"] .composer-bar .tool {
-  --surface-chip: rgba(22,24,36,.55);
-  --surface-chip-focus: rgba(28,31,46,.75);
-  --surface-chip-soft: rgba(22,24,36,.55);
-  --surface-chip-soft-hover: rgba(28,31,46,.75);
-}
+/* aurora: composer 工具钮平权化(无框无底,hover 浮现主题 chip)—— 表面值已并入上表 */
 
-/* serene: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
+/* Serene: 环境胶囊 / composer 工具钮 — 暖白毛玻璃 chip,透出米色底
+   (--surface-chip 组只能在组件上覆盖:tok-row/approval-pill 等也消费该组变量)
+   (.chat-head / #input / #sidebar / .sb-foot / .files-panel-bar 的表面与
+    线条已上提至根块变量表) */
+[data-theme="serene"] .ch-env,
 [data-theme="serene"] .composer-bar .tool {
-  --surface-chip: rgba(255,255,255,.60);
-  --surface-chip-focus: rgba(255,255,255,.78);
-  --surface-chip-soft: rgba(255,255,255,.60);
+  --surface-chip:        rgba(255,255,255,.60);
+  --surface-chip-focus:  rgba(255,255,255,.78);
+  --surface-chip-soft:   rgba(255,255,255,.60);
   --surface-chip-soft-hover: rgba(255,255,255,.78);
 }
-
-/* tahoe: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
-[data-theme="tahoe"] .composer-bar .tool {
-  --surface-chip: rgba(255,255,255,0.55);
-  --surface-chip-focus: rgba(255,255,255,0.72);
-  --surface-chip-soft: rgba(255,255,255,0.55);
-  --surface-chip-soft-hover: rgba(255,255,255,0.72);
-}
-
-/* sierra: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
-[data-theme="sierra"] .composer-bar .tool {
-  --surface-chip: rgba(255,250,242,0.55);
-  --surface-chip-focus: rgba(255,248,240,0.72);
-  --surface-chip-soft: rgba(255,250,242,0.55);
-  --surface-chip-soft-hover: rgba(255,248,240,0.72);
-}
-
-[data-theme="aurora"] .chat-head {
-  --surface-header: rgba(16,18,28,.72);
-  border-bottom-color: rgba(37,40,57,.6);
-}
-[data-theme="aurora"] #input {
-  --surface-input: rgba(16,18,28,.62);
-  /* 框线/内高光剥除:容器只做布局,视觉在 composer-card */
-}
-[data-theme="aurora"] #sidebar {
-  --surface-pane: rgba(20,22,34,.68);
+[data-theme="serene"] #sidebar {
+  /* 装饰例外:侧栏轻毛玻璃 */
   backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
   -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
-  border-right-color: rgba(37,40,57,.6);
+}
+[data-theme="serene"] .sb-foot {
+  /* 装饰例外:底部内高光 */
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.50);
+}
+/* tahoe: composer 工具钮平权化(无框无底,hover 浮现主题 chip)—— 表面值已并入 .ch-env 联合规则 */
+
+/* sierra: composer 工具钮平权化(无框无底,hover 浮现主题 chip)—— 表面值已并入 .ch-env 联合规则 */
+
+/* aurora: .chat-head / #input 表面与线条已入根块变量表(--surface-header/
+   --surface-input/--chat-head-line);.files-panel-bar / .sb-foot 同理。 */
+[data-theme="aurora"] #sidebar {
+  /* 装饰例外:侧栏毛玻璃,透出极光底色(表面 token 见根块) */
+  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
+  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
 }
 [data-theme="aurora"] .sb-foot {
-  border-top-color: rgba(37,40,57,.6);
-  --surface-pane-footer: transparent;
+  /* 装饰例外:底部内高光 */
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.05);
-}
-[data-theme="aurora"] .files-panel-bar {
-  --surface-pane-footer: transparent;
 }
 [data-theme="aurora"] input:hover,
 [data-theme="aurora"] textarea:hover,
-[data-theme="aurora"] select:hover {
-  border-color: var(--accent-dim);
-}
+[data-theme="aurora"] select:hover { border-color: var(--accent-dim); }
 
 /* ═══════════════════════════════════════════════════════════════════════
    Serene 雅致主题 — 暖灰米底 + 玫瑰金强调 + 柔和投影 + 轻毛玻璃
@@ -414,6 +433,29 @@
   --shadow-accent: 0 4px 16px rgba(183,110,121,0.20);
   --shadow-focus: 0 0 0 3px rgba(183,110,121,0.12);
   --glass-border: rgba(139,119,99,0.08);
+
+  /* ── 表面 token:暖白毛玻璃,透出米色底 ── */
+  --surface-header: rgba(255,255,255,.45);
+  --surface-input:  rgba(255,255,255,.42);
+  --surface-pane:   rgba(255,255,255,.50);
+  --surface-pane-footer: transparent;
+
+  /* ── 面板线条 ── */
+  --chat-head-line: rgba(176,148,120,.30);
+  --sidebar-line:   rgba(176,148,120,.30);
+  --sb-foot-line:   rgba(176,148,120,.30);
+
+  /* ── 滚动条:玫瑰金 ── */
+  --sb-thumb:       rgba(183,110,121,.25);
+  --sb-thumb-hover: rgba(183,110,121,.4);
+
+  /* ── 代码高亮(复用 light 的 VS Code Light 浅色配色)── */
+  --tok-keyword:   #af00db;  --tok-string:    #a31515;  --tok-comment:  #008000;
+  --tok-number:    #098658;  --tok-function:  #795e26;  --tok-builtin:  #267f99;
+  --tok-decorator: #795e26;  --tok-tag:       #800000;  --tok-attr:     #ff0000;
+  --tok-variable:  #001080;  --tok-property:  #001080;  --tok-selector: #800000;
+  --tok-atrule:    #af00db;  --tok-header:    #0000ff;  --tok-codeblock: #a31515;
+  --tok-inlinecode: #a31515; --tok-key:       #0451a5;  --tok-link:     #0000ee;
 }
 /* Serene: body 暖色径向渐变背景 — 微妙的暖光从顶部洒下 */
 [data-theme="serene"] body {
@@ -474,15 +516,8 @@
 }
 /* Serene: 用户气泡 */
 /* Serene: 用户气泡 — 回落 base 中性 chip(v4.0.4 定调,同 tahoe/sierra) */
-/* Serene: 滚动条 */
-[data-theme="serene"] ::-webkit-scrollbar-thumb {
-  background: rgba(183,110,121,.25);
-}
-[data-theme="serene"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(183,110,121,.4);
-}
+/* Serene: 滚动条(玫瑰金)— 值已入根块 --sb-thumb / --sb-thumb-hover */
 /* Serene: 状态指示点 */
-[data-theme="serene"] .dot.ready { background: var(--ok); }
 [data-theme="serene"] .dot.running { background: var(--accent); }
 /* Serene: 活跃 tab 玫瑰金下划线 */
 [data-theme="serene"] .cht.active,
@@ -507,35 +542,6 @@
 [data-theme="serene"] textarea:hover,
 [data-theme="serene"] select:hover {
   border-color: var(--accent-dim);
-}
-/* Serene: 环境胶囊 — 暖白毛玻璃,透出米色底 */
-[data-theme="serene"] .ch-env {
-  --surface-chip:        rgba(255,255,255,.60);
-  --surface-chip-focus:  rgba(255,255,255,.78);
-  --surface-chip-soft:   rgba(255,255,255,.60);
-  --surface-chip-soft-hover: rgba(255,255,255,.78);
-}
-[data-theme="serene"] .chat-head {
-  --surface-header: rgba(255,255,255,.45);
-  border-bottom-color: rgba(176,148,120,.30);
-}
-[data-theme="serene"] #input {
-  --surface-input: rgba(255,255,255,.42);
-  /* 框线/内高光剥除:容器只做布局 */
-}
-[data-theme="serene"] #sidebar {
-  --surface-pane: rgba(255,255,255,.50);
-  backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 18px)) saturate(1.37);
-  border-right-color: rgba(176,148,120,.30);
-}
-[data-theme="serene"] .sb-foot {
-  border-top-color: rgba(176,148,120,.30);
-  --surface-pane-footer: transparent;
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.50);
-}
-[data-theme="serene"] .files-panel-bar {
-  --surface-pane-footer: transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -595,6 +601,33 @@
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  /* ── 表面 token:亮色半透明白雾玻璃,透出底色渐变 ── */
+  --surface-header: rgba(245,250,255,0.55);
+  --surface-input:  rgba(245,250,255,0.55);
+  --surface-pane:   rgba(245,250,255,0.50);
+  --surface-pane-footer: transparent;
+
+  /* ── 面板线条 ── */
+  --chat-head-line: rgba(176,200,224,0.45);
+  --sidebar-line:   rgba(176,200,224,0.45);
+  --sb-foot-line:   rgba(176,200,224,0.45);
+
+  /* ── 内联代码:系统蓝低饱和底 ── */
+  --ic-bg:     rgba(10,132,255,0.08);
+  --ic-border: rgba(10,132,255,0.15);
+  --ic-fg:     var(--accent);
+
+  /* ── 代码高亮(Apple Xcode Light)── */
+  --tok-keyword:   #ad3da4;            --tok-string:    #d12f1b;
+  --tok-comment:   var(--text-faint);  --tok-number:    #272ad8;
+  --tok-function:  #3900a0;            --tok-class:     #703daa;
+  --tok-tag:       #ad3da4;            --tok-attr:      #3900a0;
+  --tok-variable:  var(--text);        --tok-property:  #3900a0;
+  --tok-selector:  #3900a0;            --tok-atrule:    #ad3da4;
+  --tok-header:    #703daa;            --tok-codeblock: var(--text);
+  --tok-inlinecode: var(--accent);     --tok-key:       #ad3da4;
+  --tok-link:      var(--accent);
 }
 /* Tahoe: 亮色渐变背景 — 模拟 macOS Tahoe 26 浅色动态壁纸(精致版)
    多色相高饱和:深蓝/品红/青/紫/淡黄,玻璃组件透出这些色彩。
@@ -731,22 +764,13 @@
 [data-theme="tahoe"] select:hover {
   border-color: var(--text-faint);
 }
-/* Tahoe: 用户气泡 — systemBlue 精致液态(iMessage 亮色版)
-   三段渐变 + 顶部高光带 + 边缘冷色描边 */
 /* Tahoe: 用户气泡 — 回落 base 中性 chip(v4.0.4 定调:不抢正文视觉,强调色留给头像);
-   旧「液态玻璃」三重发光+白字已废弃,与中性化方向自相矛盾 */
+   旧「液态玻璃」三重发光+白字已废弃,与中性化方向自相矛盾。
+   (回落值与 base .msg.user .bubble 完全一致,无需重复声明) */
 /* Tahoe: AI 气泡 — 半透明白雾玻璃(精致版)
    多层 blur + 顶部高光 + 边光描边 */
-/* Tahoe: 用户气泡 — 中性 chip(玻璃雾面,深字),对齐全局去发光方向;强调色只留给头像/主按钮 */
-[data-theme="tahoe"] .msg.user .bubble {
-  background: var(--bg-elev);
-  color: var(--text);
-  border: 1px solid var(--border-soft);
-  box-shadow: var(--shadow-sm);
-}
 /* Tahoe: 滚动条 — 回落全局中性 thumb;旧蓝紫渐变 hover 已废弃(俗气主源) */
 /* Tahoe: 状态点用系统色 */
-[data-theme="tahoe"] .dot.ready { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.3); }
 [data-theme="tahoe"] .dot.running { background: var(--accent); box-shadow: 0 0 8px rgba(10,132,255,.3); }
 /* Tahoe: active tab — systemBlue 下划线 */
 [data-theme="tahoe"] .cht.active,
@@ -799,16 +823,7 @@
     inset 0 1px 0 rgba(255,255,255,0.65),
     var(--shadow-xs);
 }
-/* Tahoe: code 内联代码 — 系统蓝低饱和底 */
-[data-theme="tahoe"] .answer .ic {
-  background: rgba(10,132,255,0.08);
-  border-color: rgba(10,132,255,0.15);
-  color: var(--accent);
-}
-[data-theme="tahoe"] .answer .code {
-  background: var(--code-bg);
-  border-color: var(--border-soft);
-}
+/* Tahoe: 内联代码 — 系统蓝低饱和底(值已入根块 --ic-* 变量表;.answer .code 回落 base) */
 
 /* Tahoe: composer 输入区 — 液态玻璃精致版 */
 /* tahoe: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
@@ -830,35 +845,33 @@
   background: var(--accent);
   box-shadow: 0 0 6px rgba(10,132,255,0.45);
 }
-/* Tahoe: 环境胶囊 / composer 工具 — 液态玻璃材质,透出底色渐变 */
-[data-theme="tahoe"] .ch-env {
+/* Tahoe: 环境胶囊 / composer 工具 — 液态玻璃材质,透出底色渐变
+   (--surface-chip 组只能在组件上覆盖:tok-row/approval-pill 等也消费该组变量)
+   (.chat-head / #input / #sidebar / .sb-foot / .files-panel-bar 的表面与
+    线条已上提至根块变量表) */
+[data-theme="tahoe"] .ch-env,
+[data-theme="tahoe"] .composer-bar .tool {
+  --surface-chip:        rgba(255,255,255,0.55);
   --surface-chip-focus:  rgba(255,255,255,0.72);
   --surface-chip-soft:   rgba(255,255,255,0.55);
   --surface-chip-soft-hover: rgba(255,255,255,0.72);
 }
 [data-theme="tahoe"] .chat-head {
-  --surface-header: rgba(245,250,255,0.55);
-  border-bottom-color: rgba(176,200,224,0.45);
+  /* 装饰例外:顶部白色高光带 */
   box-shadow: 0 1px 0 rgba(255,255,255,0.35);
 }
-[data-theme="tahoe"] #input {
-  --surface-input: rgba(245,250,255,0.55);
-  /* 顶栏渐变/框线/内高光剥除:容器只做布局 */
-}
 [data-theme="tahoe"] #sidebar {
-  --surface-pane: rgba(245,250,255,0.50);
+  /* 装饰例外:侧栏强毛玻璃 + 右侧内高光 */
   backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
   -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
+  /* 级联保留:上方玻璃规则(647)的 border-right 简写(0.50)特异性相同但
+     位置靠前,此处后置 color 覆盖为 0.45 — 与重构前最终计算值一致 */
   border-right-color: rgba(176,200,224,0.45);
   box-shadow: inset -1px 0 0 rgba(255,255,255,0.35);
 }
 [data-theme="tahoe"] .sb-foot {
-  border-top-color: rgba(176,200,224,0.45);
-  --surface-pane-footer: transparent;
+  /* 装饰例外:底部内高光 */
   box-shadow: inset 0 1px 0 rgba(255,255,255,0.40);
-}
-[data-theme="tahoe"] .files-panel-bar {
-  --surface-pane-footer: transparent;
 }
 
 #head-status { color: var(--text-dim); font-size: var(--fs-xl); margin-left: 6px; }
@@ -878,8 +891,8 @@ html, body { height: 100%; margin: 0; }
    webview 内的网页自带滚动条不动(那是页面作者决定的)。 */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: color-mix(in srgb, var(--text-faint) 35%, transparent); border-radius: var(--r-sm); border: 2px solid transparent; background-clip: content-box; }
-::-webkit-scrollbar-thumb:hover { background: color-mix(in srgb, var(--text-dim) 60%, transparent); background-clip: content-box; border: 2px solid transparent; }
+::-webkit-scrollbar-thumb { background: var(--sb-thumb); border-radius: var(--r-sm); border: 2px solid transparent; background-clip: content-box; }
+::-webkit-scrollbar-thumb:hover { background: var(--sb-thumb-hover); background-clip: content-box; border: 2px solid transparent; }
 ::-webkit-scrollbar-corner { background: transparent; }
 /* 选中文字 accent 色 / Text selection in accent color */
 ::selection { background: color-mix(in srgb, var(--accent) 30%, transparent); color: var(--text); }
@@ -961,7 +974,7 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 #sidebar {
   width: 256px; flex-shrink: 0;
   background: var(--surface-pane, var(--bg-side));
-  border-right: 1px solid var(--border);
+  border-right: 1px solid var(--sidebar-line);
   display: flex; flex-direction: column;
   position: relative;
 }
@@ -1342,7 +1355,7 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 @keyframes dot-running-pulse { 0%,100%{opacity:.35;transform:scale(1)} 50%{opacity:.1;transform:scale(1.6)} }
 /* sb-foot — 底栏:左侧计数 + 右侧工具按钮(分两组用 sep 分隔) */
 .sb-foot {
-  padding: 4px 8px; border-top: 1px solid var(--border-soft);
+  padding: 4px 8px; border-top: 1px solid var(--sb-foot-line);
   font-size: var(--fs-sm); color: var(--text-faint);
   display: flex; align-items: center; gap: 2px;
   background: transparent;
@@ -1354,6 +1367,14 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 .sb-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 48px 20px; cursor: default; text-align: center; }
 .sb-empty-icon { color: var(--text-faint); opacity: 0.4; }
 .sb-empty-text { font-size: var(--fs-md); color: var(--text-faint); line-height: 1.5; max-width: 180px; }
+/* 真空态引导:主 CTA + 快捷入口(复用既有面板按钮,零新逻辑) */
+.sb-empty-rich { padding: 56px 18px; gap: 12px; animation: turn-fade-in 0.25s var(--ease-out) both; }
+.sb-empty-cta { all: unset; cursor: pointer; font-size: var(--fs-md); font-weight: 600; color: var(--accent-fg); background: var(--accent); padding: 7px 18px; border-radius: var(--r-full, 999px); box-shadow: var(--shadow-accent); transition: transform var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out); }
+.sb-empty-cta:hover { filter: brightness(1.06); transform: translateY(-1px); }
+.sb-empty-cta:active { transform: scale(0.97); }
+.sb-empty-quick { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; }
+.sb-empty-quick-item { all: unset; cursor: pointer; font-size: var(--fs-sm); color: var(--text-dim); border: 1px solid var(--border-soft); border-radius: var(--r-full, 999px); padding: 4px 10px; transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+.sb-empty-quick-item:hover { color: var(--text); border-color: var(--border); background: var(--bg-elev); }
 .sb-mode { padding: 4px 5px; line-height: 1; border-radius: var(--r-sm); color: var(--text-faint); transition: background var(--dur-fast) var(--ease-out), color var(--dur-fast) var(--ease-out); display: flex; align-items: center; justify-content: center; }
 .sb-mode:hover { color: var(--text); background: rgba(255,255,255,0.06); }
 .sb-mode.active { color: var(--accent); }
@@ -1530,7 +1551,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 /* chat header — 标题行 + 配置行,视觉分组清晰。
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/
 .chat-head {
-  padding: 5px 20px 4px; border-bottom: 1px solid var(--border);
+  padding: 4px 20px 3px; border-bottom: 1px solid var(--chat-head-line);
   display: flex; flex-direction: column; gap: 2px; flex-shrink: 0;
   background: var(--surface-header, var(--bg-side));
   backdrop-filter: blur(var(--glass-blur, 16px)) saturate(1.4);
@@ -1539,7 +1560,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .ch-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
 
 /* ── 标题行 ── */
-.ch-title { padding-bottom: 3px; }
+.ch-title { padding-bottom: 2px; }
 .ch-id { display: inline-flex; align-items: center; gap: 6px; min-width: 0; flex: 1; }
 .ch-title .t { font-weight: 600; font-size: 1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
 .ch-title .stat { font-size: var(--fs-md); color: var(--text-dim); white-space: nowrap; }
@@ -2279,9 +2300,8 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .msg.ai { gap: 12px; }
 /* 用户消息:中性 chip(对齐 WB)— 不抢正文视觉,强调色只留给头像;
    假渐变(两色标同值)+ accent 描边 = 脏便签感,已废弃 */
-.msg.user .bubble { max-width: 78%; padding: 9px 13px; border-radius: var(--r-xl); border-top-right-radius: 5px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; animation: bubble-pop 0.2s var(--ease-out) both; }
+.msg.user .bubble { max-width: 78%; padding: 9px 13px; font-size: var(--fs-t2); border-radius: var(--r-xl); border-top-right-radius: 5px; white-space: pre-line; word-break: break-word; background: var(--bg-elev); border: 1px solid var(--border-soft); box-shadow: var(--shadow-sm); user-select: text; animation: turn-fade-in 0.15s var(--ease-out) both; }
 
-@keyframes bubble-pop { from { opacity: 0; transform: scale(0.96) translateX(4px); } to { opacity: 1; transform: scale(1) translateX(0); } }
 /* 用户气泡 inline markdown 元素样式 / User bubble inline markdown elements */
 .msg.user .bubble .ic { font-family: ui-monospace, "Cascadia Code", monospace; background: rgba(255,255,255,.1); border: 1px solid var(--border-soft); padding: 1px 5px; border-radius: var(--r-sm); font-size: 1rem; }
 .msg.user .bubble a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
@@ -2291,7 +2311,7 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .msg .ai-body .answer { margin-top: 0; }
 /* AI 步骤区:空时隐藏(margin 由 .steps 统一控制,不再覆盖) */
 .msg.ai .ai-body .steps:empty { display: none; }
-.answer { margin-top: 0; user-select: text; }
+.answer { margin-top: 0; user-select: text; font-size: var(--fs-t2); line-height: 1.6; }
 .answer p, .answer h1, .answer h2, .answer h3, .answer h4, .answer h5, .answer h6,
 .answer ul, .answer ol, .answer li, .answer blockquote, .answer strong, .answer em,
 .answer a, .answer span, .answer code, .answer pre { user-select: text; }
@@ -2327,7 +2347,7 @@ h1, h2, h3, h4, .modal-card h3, .gb-title, .rules-title, .preview-title, .team-t
 .answer .task-done { text-decoration: line-through; color: var(--text-faint); }
 .answer del { color: var(--text-faint); }
 .answer .ic, .answer .code { font-family: ui-monospace, "Cascadia Code", monospace; background: var(--code-bg); border-radius: var(--r-md); }
-.answer .ic { padding: 1px 6px; font-size: 1rem; border: 1px solid var(--border-soft); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
+.answer .ic { padding: 1px 6px; font-size: 1rem; background: var(--ic-bg); border: 1px solid var(--ic-border); color: var(--ic-fg); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.06); }
 /* 折叠批次引用 chip:模型复述 AgentLoop 折叠行时弱化显示,不与正文争夺注意力 */
 /* Muted chip for echoed folded-batch markers — keep them visually secondary to prose */
 .answer .fold-chip { display: inline-block; padding: 1px 7px; font-size: 0.85em; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); background: var(--code-bg); border: 1px dashed var(--border-soft); border-radius: 999px; opacity: .8; }
@@ -2895,6 +2915,8 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   animation: cm-pop var(--dur-fast, 0.15s) var(--ease-out, ease-out);
 }
 .composer-more-menu[hidden] { display: none; }
+/* 分区标签:对齐侧栏 ⋯ 菜单的分组语言(截图/能力/会话增强) */
+.cm-sep-label { font-size: var(--fs-2xs); font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-faint); padding: 7px 10px 3px; user-select: none; pointer-events: none; }
 @keyframes cm-pop {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: none; }
@@ -3791,86 +3813,35 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 
 /* ═══ Token 颜色 / Token colors ═══════════════════════════════════════════════ */
-/* 深色主题:参考 VS Code Dark+ 微调，与品牌色协调 */
-.tok-keyword   { color: #c586c0; }          /* 紫粉 */
-.tok-string    { color: #ce9178; }          /* 橙棕 */
-.tok-comment   { color: #6a9955; font-style: italic; } /* 绿 */
-.tok-number    { color: #b5cea8; }          /* 浅绿 */
-.tok-function  { color: #dcdcaa; }          /* 黄 */
-.tok-builtin   { color: #4ec9b0; }          /* 青绿 */
-.tok-decorator { color: #dcdcaa; }          /* 黄 */
-.tok-tag       { color: #569cd6; }          /* 蓝 */
-.tok-attr      { color: #9cdcfe; }          /* 浅蓝 */
-.tok-variable  { color: #9cdcfe; }          /* 浅蓝 */
-.tok-property  { color: #9cdcfe; }          /* 浅蓝 */
-.tok-selector  { color: #d7ba7d; }          /* 金棕 */
-.tok-atrule    { color: #c586c0; }          /* 紫粉 */
-.tok-header    { color: #569cd6; font-weight: 700; }
-.tok-list      { color: #6a9955; }
-.tok-codeblock { color: #ce9178; background: rgba(255,255,255,.03); display: block; }
-.tok-inlinecode{ color: #ce9178; background: rgba(255,255,255,.05); padding: 0 3px; border-radius: var(--r-xs); }
+/* 深色主题:参考 VS Code Dark+ 微调，与品牌色协调。
+   颜色全部走 :root 的 --tok-* 变量表,各主题只需覆盖变量,不再逐条重写规则。 */
+.tok-keyword   { color: var(--tok-keyword); }          /* 紫粉 */
+.tok-string    { color: var(--tok-string); }           /* 橙棕 */
+.tok-comment   { color: var(--tok-comment); font-style: italic; } /* 绿 */
+.tok-number    { color: var(--tok-number); }           /* 浅绿 */
+.tok-function  { color: var(--tok-function); }         /* 黄 */
+.tok-builtin   { color: var(--tok-builtin); }          /* 青绿 */
+.tok-decorator { color: var(--tok-decorator); }        /* 黄 */
+.tok-tag       { color: var(--tok-tag); }              /* 蓝 */
+.tok-attr      { color: var(--tok-attr); }             /* 浅蓝 */
+.tok-variable  { color: var(--tok-variable); }         /* 浅蓝 */
+.tok-property  { color: var(--tok-property); }         /* 浅蓝 */
+.tok-selector  { color: var(--tok-selector); }         /* 金棕 */
+.tok-atrule    { color: var(--tok-atrule); }           /* 紫粉 */
+.tok-header    { color: var(--tok-header); font-weight: 700; }
+.tok-list      { color: var(--tok-list); }
+.tok-class     { color: var(--tok-class); }
+.tok-codeblock { color: var(--tok-codeblock); background: rgba(255,255,255,.03); display: block; }
+.tok-inlinecode{ color: var(--tok-inlinecode); background: rgba(255,255,255,.05); padding: 0 3px; border-radius: var(--r-xs); }
 .tok-bold      { color: var(--text); font-weight: 700; }
 .tok-italic    { color: var(--text-dim); font-style: italic; }
-.tok-link      { color: #3794ff; text-decoration: underline; }
-.tok-key       { color: #9cdcfe; }          /* JSON/YAML key */
+.tok-link      { color: var(--tok-link); text-decoration: underline; }
+.tok-key       { color: var(--tok-key); }          /* JSON/YAML key */
 
-/* ── 淡色主题 / Light theme tokens ── */
-[data-theme="light"] .tok-keyword   { color: #af00db; }
-[data-theme="light"] .tok-string    { color: #a31515; }
-[data-theme="light"] .tok-comment   { color: #008000; }
-[data-theme="light"] .tok-number    { color: #098658; }
-[data-theme="light"] .tok-function  { color: #795e26; }
-[data-theme="light"] .tok-builtin   { color: #267f99; }
-[data-theme="light"] .tok-decorator { color: #795e26; }
-[data-theme="light"] .tok-tag       { color: #800000; }
-[data-theme="light"] .tok-attr      { color: #ff0000; }
-[data-theme="light"] .tok-variable  { color: #001080; }
-[data-theme="light"] .tok-property  { color: #001080; }
-[data-theme="light"] .tok-selector  { color: #800000; }
-[data-theme="light"] .tok-atrule    { color: #af00db; }
-[data-theme="light"] .tok-header    { color: #0000ff; }
-[data-theme="light"] .tok-codeblock { color: #a31515; }
-[data-theme="light"] .tok-inlinecode{ color: #a31515; }
-[data-theme="light"] .tok-key       { color: #0451a5; }
-[data-theme="light"] .tok-link      { color: #0000ee; }
-/* Serene 复用 light 的浅色代码配色 — 避免多维护一套 */
-[data-theme="serene"] .tok-keyword   { color: #af00db; }
-[data-theme="serene"] .tok-string    { color: #a31515; }
-[data-theme="serene"] .tok-comment   { color: #008000; }
-[data-theme="serene"] .tok-number    { color: #098658; }
-[data-theme="serene"] .tok-function  { color: #795e26; }
-[data-theme="serene"] .tok-builtin   { color: #267f99; }
-[data-theme="serene"] .tok-decorator { color: #795e26; }
-[data-theme="serene"] .tok-tag       { color: #800000; }
-[data-theme="serene"] .tok-attr      { color: #ff0000; }
-[data-theme="serene"] .tok-variable  { color: #001080; }
-[data-theme="serene"] .tok-property  { color: #001080; }
-[data-theme="serene"] .tok-selector  { color: #800000; }
-[data-theme="serene"] .tok-atrule    { color: #af00db; }
-[data-theme="serene"] .tok-header    { color: #0000ff; }
-[data-theme="serene"] .tok-codeblock { color: #a31515; }
-[data-theme="serene"] .tok-inlinecode{ color: #a31515; }
-[data-theme="serene"] .tok-key       { color: #0451a5; }
-[data-theme="serene"] .tok-link      { color: #0000ee; }
+/* ── 淡色主题 / Light theme tokens — 已并入 [data-theme="light"] 根块的 --tok-* 表 ── */
+/* serene 复用 light 的浅色代码配色 — 已并入 [data-theme="serene"] 根块的 --tok-* 表 */
 
-/* Tahoe 代码高亮 — Apple Xcode Light 配色 */
-[data-theme="tahoe"] .tok-keyword   { color: #ad3da4; }
-[data-theme="tahoe"] .tok-string    { color: #d12f1b; }
-[data-theme="tahoe"] .tok-comment   { color: var(--text-faint); }
-[data-theme="tahoe"] .tok-number    { color: #272ad8; }
-[data-theme="tahoe"] .tok-function  { color: #3900a0; }
-[data-theme="tahoe"] .tok-class     { color: #703daa; }
-[data-theme="tahoe"] .tok-tag       { color: #ad3da4; }
-[data-theme="tahoe"] .tok-attr      { color: #3900a0; }
-[data-theme="tahoe"] .tok-variable  { color: var(--text); }
-[data-theme="tahoe"] .tok-property  { color: #3900a0; }
-[data-theme="tahoe"] .tok-selector  { color: #3900a0; }
-[data-theme="tahoe"] .tok-atrule    { color: #ad3da4; }
-[data-theme="tahoe"] .tok-header    { color: #703daa; }
-[data-theme="tahoe"] .tok-codeblock { color: var(--text); }
-[data-theme="tahoe"] .tok-inlinecode{ color: var(--accent); }
-[data-theme="tahoe"] .tok-key       { color: #ad3da4; }
-[data-theme="tahoe"] .tok-link      { color: var(--accent); }
+/* Tahoe 代码高亮 — Apple Xcode Light 配色(已并入根块 --tok-* 表) */
 
 /* ═══════════════════════════════════════════════════════════════════════
    Sierra 主题 — 暖色调液态玻璃 / Warm Liquid Glass
@@ -3928,6 +3899,33 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   --radius-sm: 8px;
   --radius-md: 10px;
   --radius-lg: 14px;
+
+  /* ── 表面 token:暖白雾玻璃,透出金色底色渐变 ── */
+  --surface-header: rgba(255,250,242,0.55);
+  --surface-input:  rgba(255,250,242,0.40);
+  --surface-pane:   rgba(255,250,242,0.50);
+  --surface-pane-footer: transparent;
+
+  /* ── 面板线条 ── */
+  --chat-head-line: rgba(232,212,190,0.50);
+  --sidebar-line:   rgba(232,212,190,0.50);
+  --sb-foot-line:   rgba(232,212,190,0.50);
+
+  /* ── 内联代码:橙色低饱和底 ── */
+  --ic-bg:     rgba(255,159,10,0.08);
+  --ic-border: rgba(255,159,10,0.15);
+  --ic-fg:     var(--accent);
+
+  /* ── 代码高亮(Xcode Light 暖色变体)── */
+  --tok-keyword:   #ad3da4;            --tok-string:    #c0381b;
+  --tok-comment:   #8a6a00;            --tok-number:    #9a6700;
+  --tok-function:  #8a5a00;            --tok-class:     #703daa;
+  --tok-tag:       #ad3da4;            --tok-attr:      #8a5a00;
+  --tok-variable:  var(--text);        --tok-property:  #8a5a00;
+  --tok-selector:  #8a5a00;            --tok-atrule:    #ad3da4;
+  --tok-header:    #703daa;            --tok-codeblock: var(--text);
+  --tok-inlinecode: var(--accent);     --tok-key:       #ad3da4;
+  --tok-link:      var(--accent);
 }
 /* Sierra: 暖色渐变背景 — 模拟日落金色光晕(精致版:多色相 + 高饱和)
    大面积柔和暖色块(橙/粉/金/珊瑚/桃),玻璃组件透出这些色彩。 */
@@ -4089,7 +4087,6 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   border: 2px solid transparent;
 }
 /* Sierra: 状态点用系统色 */
-[data-theme="sierra"] .dot.ready { background: var(--ok); box-shadow: 0 0 8px rgba(48,209,88,.3); }
 [data-theme="sierra"] .dot.running { background: var(--accent); box-shadow: 0 0 8px rgba(255,159,10,.3); }
 /* Sierra: active tab — systemOrange 下划线 */
 [data-theme="sierra"] .cht.active,
@@ -4142,16 +4139,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
     inset 0 1px 0 rgba(255,255,255,0.55),
     var(--shadow-xs);
 }
-/* Sierra: 内联代码 — 橙色低饱和底 */
-[data-theme="sierra"] .answer .ic {
-  background: rgba(255,159,10,0.08);
-  border-color: rgba(255,159,10,0.15);
-  color: var(--accent);
-}
-[data-theme="sierra"] .answer .code {
-  background: var(--code-bg);
-  border-color: var(--border-soft);
-}
+/* Sierra: 内联代码 — 橙色低饱和底(值已入根块 --ic-* 变量表;.answer .code 回落 base) */
 
 /* Sierra: composer 输入区 — 液态玻璃精致版 */
 /* sierra: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
@@ -4173,56 +4161,33 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   background: var(--accent);
   box-shadow: 0 0 6px rgba(255,159,10,0.40);
 }
-/* Sierra: 环境胶囊 / composer 工具 — 暖白毛玻璃,透出金色底色渐变 */
-[data-theme="sierra"] .ch-env {
+/* Sierra: 环境胶囊 / composer 工具 — 暖白毛玻璃,透出金色底色渐变
+   (--surface-chip 组只能在组件上覆盖:tok-row/approval-pill 等也消费该组变量)
+   (.chat-head / #input / #sidebar / .sb-foot / .files-panel-bar 的表面与
+    线条已上提至根块变量表) */
+[data-theme="sierra"] .ch-env,
+[data-theme="sierra"] .composer-bar .tool {
   --surface-chip:        rgba(255,250,242,0.55);
   --surface-chip-focus:  rgba(255,248,240,0.72);
   --surface-chip-soft:   rgba(255,250,242,0.55);
   --surface-chip-soft-hover: rgba(255,248,240,0.72);
 }
 [data-theme="sierra"] .chat-head {
-  --surface-header: rgba(255,250,242,0.55);
-  border-bottom-color: rgba(232,212,190,0.50);
+  /* 装饰例外:顶部暖色高光带 */
   box-shadow: 0 1px 0 rgba(255,240,210,0.35);
 }
-[data-theme="sierra"] #input {
-  --surface-input: rgba(255,250,242,0.40);
-  /* 框线/内高光剥除:容器只做布局 */
-}
 [data-theme="sierra"] #sidebar {
-  --surface-pane: rgba(255,250,242,0.50);
+  /* 装饰例外:侧栏强毛玻璃 + 右侧内高光 */
   backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
   -webkit-backdrop-filter: blur(var(--glass-blur, 20px)) saturate(1.5);
-  border-right-color: rgba(232,212,190,0.50);
   box-shadow: inset -1px 0 0 rgba(255,255,255,0.35);
 }
 [data-theme="sierra"] .sb-foot {
-  border-top-color: rgba(232,212,190,0.50);
-  --surface-pane-footer: transparent;
+  /* 装饰例外:底部内高光 */
   box-shadow: inset 0 1px 0 rgba(255,240,210,0.45);
 }
-[data-theme="sierra"] .files-panel-bar {
-  --surface-pane-footer: transparent;
-}
 
-/* Sierra 代码高亮 — Xcode Light 暖色变体(关键词紫色→棕红色,统一暖调) */
-[data-theme="sierra"] .tok-keyword   { color: #ad3da4; }
-[data-theme="sierra"] .tok-string    { color: #c0381b; }
-[data-theme="sierra"] .tok-comment   { color: #8a6a00; font-style: italic; }
-[data-theme="sierra"] .tok-number    { color: #9a6700; }
-[data-theme="sierra"] .tok-function  { color: #8a5a00; }
-[data-theme="sierra"] .tok-class     { color: #703daa; }
-[data-theme="sierra"] .tok-tag       { color: #ad3da4; }
-[data-theme="sierra"] .tok-attr      { color: #8a5a00; }
-[data-theme="sierra"] .tok-variable  { color: var(--text); }
-[data-theme="sierra"] .tok-property  { color: #8a5a00; }
-[data-theme="sierra"] .tok-selector  { color: #8a5a00; }
-[data-theme="sierra"] .tok-atrule    { color: #ad3da4; }
-[data-theme="sierra"] .tok-header    { color: #703daa; }
-[data-theme="sierra"] .tok-codeblock { color: var(--text); }
-[data-theme="sierra"] .tok-inlinecode{ color: var(--accent); }
-[data-theme="sierra"] .tok-key       { color: #ad3da4; }
-[data-theme="sierra"] .tok-link      { color: var(--accent); }
+/* Sierra 代码高亮 — Xcode Light 暖色变体(已并入根块 --tok-* 表) */
 
 /* ═══════════════════════════════════════════════════════════════════════
    Craft 主题 — Minecraft 方块世界像素风 / Block World Pixel Theme
@@ -4273,6 +4238,22 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   --radius-sm: 0px;
   --radius-md: 0px;
   --radius-lg: 0px;
+
+  /* ── 内联代码:煤炭块 ── */
+  --ic-bg:     #1e1e1e;
+  --ic-border: #333;
+  --ic-fg:     var(--accent);
+
+  /* ── 代码高亮(Minecraft 命令块配色)── */
+  --tok-keyword:   #5db340;            --tok-string:    #d4af37;
+  --tok-comment:   #555;               --tok-number:    #3ab5a0;
+  --tok-function:  #e0e0e0;            --tok-class:     #3ab5a0;
+  --tok-tag:       #b83b3b;            --tok-attr:      #d4af37;
+  --tok-variable:  var(--text);        --tok-property:  #a0a0a0;
+  --tok-selector:  #b83b3b;            --tok-atrule:    #5db340;
+  --tok-header:    #d4af37;            --tok-codeblock: var(--text);
+  --tok-inlinecode: var(--accent);     --tok-key:       #3ab5a0;
+  --tok-link:      #3ab5a0;
 }
 /* Craft: 石砖纹理背景 — 用 repeating-linear-gradient 模拟石砖砖缝
    横线 = 水平砖缝,竖线交替偏移 = 错位砖缝(模拟石砖纹理) */
@@ -4505,7 +4486,6 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 /* Craft: 状态点 — 方块化(不圆!) */
 [data-theme="craft"] .dot.ready {
-  background: var(--ok);
   box-shadow: 0 0 0 2px #1a1a1a, inset 1px 1px 0 #6fd456;
 }
 [data-theme="craft"] .dot.running {
@@ -4632,12 +4612,9 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   border-bottom-color: #666;
   box-shadow: none;
 }
-/* Craft: 内联代码 — 煤炭块 */
+/* Craft: 内联代码 — 煤炭块(bg/border/fg 已入根块 --ic-* 变量表;圆角为像素例外) */
 [data-theme="craft"] .answer .ic {
-  background: #1e1e1e;
-  border: 1px solid #333;
   border-radius: 0;
-  color: var(--accent);
 }
 [data-theme="craft"] .answer .code {
   background: var(--code-bg);
@@ -4704,24 +4681,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   box-shadow: 0 3px 0 #0e0e0e;
 }
 
-/* Craft 代码高亮 — Minecraft 命令块配色(深底+亮色字) */
-[data-theme="craft"] .tok-keyword   { color: #5db340; }    /* 草绿 */
-[data-theme="craft"] .tok-string    { color: #d4af37; }    /* 金锭黄 */
-[data-theme="craft"] .tok-comment   { color: #555; font-style: italic; }
-[data-theme="craft"] .tok-number    { color: #3ab5a0; }    /* 钻石青 */
-[data-theme="craft"] .tok-function  { color: #e0e0e0; }
-[data-theme="craft"] .tok-class     { color: #3ab5a0; }
-[data-theme="craft"] .tok-tag       { color: #b83b3b; }    /* 红石红 */
-[data-theme="craft"] .tok-attr      { color: #d4af37; }
-[data-theme="craft"] .tok-variable  { color: var(--text); }
-[data-theme="craft"] .tok-property  { color: #a0a0a0; }
-[data-theme="craft"] .tok-selector  { color: #b83b3b; }
-[data-theme="craft"] .tok-atrule    { color: #5db340; }
-[data-theme="craft"] .tok-header    { color: #d4af37; }
-[data-theme="craft"] .tok-codeblock { color: var(--text); }
-[data-theme="craft"] .tok-inlinecode{ color: var(--accent); }
-[data-theme="craft"] .tok-key       { color: #3ab5a0; }
-[data-theme="craft"] .tok-link      { color: #3ab5a0; text-decoration: underline; }
+/* Craft 代码高亮 — Minecraft 命令块配色(已并入根块 --tok-* 表) */
 
 /* ═══════════════════════════════════════════════════════════════════════
    SEED 高达主题 — ZAFT 军事风:暗色金属底 + 强袭高达三色 + HUD 光辉
@@ -4779,6 +4739,30 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   --shadow-xl: 0 20px 56px rgba(0,0,0,0.65), 0 8px 20px rgba(0,0,0,0.45);
   --shadow-accent: 0 0 16px rgba(127,204,25,0.25), 0 0 2px rgba(127,204,25,0.30);
   --shadow-focus: 0 0 0 2px rgba(127,204,25,0.20), 0 0 12px rgba(127,204,25,0.10);
+
+  /* ── 面板线条:钛合金金属线 ── */
+  --sidebar-line: var(--seed-metal);
+  --sb-foot-line: var(--seed-metal);
+
+  /* ── 滚动条:seed 绿 ── */
+  --sb-thumb:       rgba(127,204,25,0.15);
+  --sb-thumb-hover: rgba(127,204,25,0.30);
+
+  /* ── 内联代码:seed 绿低饱和底 ── */
+  --ic-bg:     rgba(127,204,25,0.08);
+  --ic-border: rgba(127,204,25,0.15);
+  --ic-fg:     var(--accent);
+
+  /* ── 代码高亮(ZAFT 舰桥配色)── */
+  --tok-keyword:   #4a9fea;            --tok-string:    #f5d020;
+  --tok-comment:   #4a5060;            --tok-number:    #d4404a;
+  --tok-function:  #7fcc19;            --tok-class:     #f5d020;
+  --tok-tag:       #d4404a;            --tok-attr:      #f5d020;
+  --tok-variable:  var(--text);        --tok-property:  #8a90a0;
+  --tok-selector:  #d4404a;            --tok-atrule:    #4a9fea;
+  --tok-header:    #f5d020;            --tok-codeblock: var(--text);
+  --tok-inlinecode: var(--accent);     --tok-key:       #7fcc19;
+  --tok-link:      #4a9fea;
 }
 
 /* SEED: 全局 HUD 扫描线覆盖 / HUD scanline overlay */
@@ -4797,10 +4781,10 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   opacity: 0.5;
 }
 
-/* SEED: 侧边栏 — 军事深色 + 右侧绿光辉线 / Military sidebar + green glow line */
+/* SEED: 侧边栏 — 军事深色 + 右侧绿光辉线 / Military sidebar + green glow line
+   (右边线已入根块 --sidebar-line: var(--seed-metal)) */
 [data-theme="seed"] #sidebar {
   background: var(--bg-side);
-  border-right: 1px solid var(--seed-metal);
   position: relative;
 }
 [data-theme="seed"] #sidebar::after {
@@ -4888,20 +4872,9 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   color: var(--text);
 }
 
-/* SEED: 滚动条 — ZAFT 绿暗色 / Scrollbar green-tinted */
-[data-theme="seed"] ::-webkit-scrollbar-thumb {
-  background: rgba(127,204,25,0.15);
-  border-color: transparent;
-}
-[data-theme="seed"] ::-webkit-scrollbar-thumb:hover {
-  background: rgba(127,204,25,0.30);
-}
+/* SEED: 滚动条 — ZAFT 绿暗色(值已入根块 --sb-thumb / --sb-thumb-hover) */
 
 /* SEED: 状态点 — ZAFT 军事色 / Status dots military */
-[data-theme="seed"] .dot.ready {
-  background: var(--seed-green);
-  box-shadow: 0 0 8px rgba(127,204,25,0.35);
-}
 [data-theme="seed"] .dot.running {
   background: var(--seed-yellow);
   box-shadow: 0 0 8px rgba(245,208,32,0.40);
@@ -4949,35 +4922,13 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   color: var(--accent);
 }
 
-/* SEED: 内联代码 — 绿底暗色 / Inline code */
-[data-theme="seed"] .answer .ic {
-  background: rgba(127,204,25,0.08);
-  border-color: rgba(127,204,25,0.15);
-  color: var(--accent);
-}
+/* SEED: 内联代码 — 绿底暗色(bg/border/fg 已入根块 --ic-* 变量表) */
 [data-theme="seed"] .answer .code {
   background: var(--code-bg);
   border: 1px solid var(--seed-metal);
 }
 
-/* SEED: 代码语法高亮 — 高达三色配色 / Syntax highlight Gundam tricolor */
-[data-theme="seed"] .tok-keyword   { color: #4a9fea; }    /* 联邦蓝 / EA blue */
-[data-theme="seed"] .tok-string    { color: #f5d020; }    /* 高达黄 / Gundam yellow */
-[data-theme="seed"] .tok-comment   { color: #4a5060; font-style: italic; }
-[data-theme="seed"] .tok-number    { color: #d4404a; }    /* 强袭红 / Strike red */
-[data-theme="seed"] .tok-function  { color: #7fcc19; }    /* ZAFT 绿 / ZAFT green */
-[data-theme="seed"] .tok-class     { color: #f5d020; }
-[data-theme="seed"] .tok-tag       { color: #d4404a; }
-[data-theme="seed"] .tok-attr      { color: #f5d020; }
-[data-theme="seed"] .tok-variable  { color: var(--text); }
-[data-theme="seed"] .tok-property  { color: #8a90a0; }
-[data-theme="seed"] .tok-selector  { color: #d4404a; }
-[data-theme="seed"] .tok-atrule    { color: #4a9fea; }
-[data-theme="seed"] .tok-header    { color: #f5d020; }
-[data-theme="seed"] .tok-codeblock { color: var(--text); }
-[data-theme="seed"] .tok-inlinecode{ color: var(--accent); }
-[data-theme="seed"] .tok-key       { color: #7fcc19; }
-[data-theme="seed"] .tok-link      { color: #4a9fea; text-decoration: underline; }
+/* SEED: 代码语法高亮 — 高达三色配色(已并入根块 --tok-* 表) */
 
 /* SEED: 发送按钮停止态 — 强袭红 / Send stop = Strike red */
 [data-theme="seed"] .send.stop {
@@ -5091,15 +5042,13 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
-/* SEED: sidebar — 金属面板,不用玻璃 */
+/* SEED: sidebar — 金属面板,不用玻璃(金属边线已入根块 --sidebar-line) */
 [data-theme="seed"] #sidebar {
   background: var(--bg-side);
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
-  border-right: 1px solid var(--seed-metal);
 }
 [data-theme="seed"] .sb-foot {
-  border-top-color: var(--seed-metal);
   background: var(--bg-side);
   box-shadow: 0 -1px 0 rgba(127,204,25,0.04);
 }
