@@ -200,6 +200,10 @@ const api: KinetAPI = {
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
   // viz-card 拍帧导出 PNG(离屏窗口 capturePage)
   vizCapture: (html: string, width: number, height: number) => ipcRenderer.invoke('viz-capture', html, width, height),
+  // 启动动画: 选项/加载器 HTML/预览(主进程直接开一个 splash 窗播一遍)
+  splashOptions: () => ipcRenderer.invoke('splash-options'),
+  splashLoaderHtml: (kind: string) => ipcRenderer.invoke('splash-loader', kind),
+  splashPreview: (kind: string) => ipcRenderer.invoke('splash-preview', kind),
   // Visual Inspector:向 webview guest 注入采集脚本(白名单 action,不接受任意脚本)
   webviewInspect: (guestInstanceId: number, action: string, params?: Record<string, unknown>) => ipcRenderer.invoke('webview-inspect', guestInstanceId, action, params),
   // ── 替身画像(Persona)──

@@ -49,6 +49,9 @@ export interface PluginManifest {
   panel?: string; // HTML 文件路径(相对插件目录)
   panelTitle?: string; // panel 在侧栏菜单中显示的标题
   panelIcon?: string; // panel 在侧栏菜单中的 SVG 图标文件路径
+  // v4 新增: 启动动画贡献点 —— 声明一份完整 HTML 文档作为可选启动画面。
+  // 用户在 设置→外观→启动动画 中选用;加载走 splash 窗 sandbox iframe,与 panel 同级信任。
+  splash?: string; // HTML 文件路径(相对插件目录)
   // v3 新增: 引擎贡献点 —— 声明一个外部 CLI agent, 注册为 `plugin:<name>` 引擎,
   // 复用 CliEngineAdapter 的 spawn/解析/终态契约/退出兜底骨架(Plugin SDK v3)。
   // 贡献引擎的插件, 其 manifest.engines 字段不再表示"作用范围"而是被忽略(引擎本身即入口)。
@@ -112,6 +115,7 @@ export interface LoadedPlugin {
   slashCommands: SkillInfo[]; // v2 新增
   systemPromptText?: string; // v2 新增: 已读入的 prompt 文本
   panelHtml?: string; // v2.1 新增: 已读入的 panel HTML
+  splashHtml?: string; // v4 新增: 已读入的启动动画 HTML
   error?: string;
 }
 
@@ -426,6 +430,18 @@ export function loadPlugins(): LoadedPlugin[] {
         }
       }
 
+      // 3.6 Splash HTML(v4 新增 — 启动动画贡献点):读入整份文档,由 main 的 splash 窗加载。
+      // 纯展示文本,与 panel 同级信任(用户显式安装的插件);路径逃逸 resolvePluginFile 已挡。
+      let splashHtml: string | undefined;
+      if (manifest.splash) {
+        try {
+          const sp = resolvePluginFile(dir, manifest.splash);
+          splashHtml = sp ? fs.readFileSync(sp, 'utf8') : undefined;
+        } catch {
+          /* 读不了 → 跳过 */
+        }
+      }
+
       // 4. Hooks(v2 新增 — 仅 onActivate)
       if (manifest.hooks) {
         try {
@@ -448,7 +464,7 @@ export function loadPlugins(): LoadedPlugin[] {
         }
       }
 
-      out.push({ manifest, dir, tools, slashCommands, systemPromptText, panelHtml });
+      out.push({ manifest, dir, tools, slashCommands, systemPromptText, panelHtml, splashHtml });
     } catch (e) {
       out.push({
         manifest: { name: path.basename(dir), version: '0' },
@@ -466,7 +482,7 @@ export function loadPlugins(): LoadedPlugin[] {
 // ── 导出: 工具 ──────────────────────────────────────────────
 
 // 辅助: 判断插件是否被禁用(读 settings.disabledPlugins)。 — Helper: is plugin disabled?
-function isPluginEnabled(name: string): boolean {
+export function isPluginEnabled(name: string): boolean {
   try {
     const disabled = getSettings().disabledPlugins ?? [];
     return !disabled.includes(name);

@@ -333,6 +333,8 @@ export type AppSettings = {
   // gitee/github 皆可(就是个 git remote,凭证走系统 git credential);
   // 同步内容:lessons.md + facts.ndjson + blocks.json(对话原文不出本地,隐私分级 L2)。
   memorySync: { remote: string; branch: string; autoSyncMinutes: number };
+  // 启动动画: none=关 / default|orbit=内置款 / plugin:<name>=插件贡献。showMs=内置动画最短展示时长。
+  splash: { kind: string; showMs: number };
   // ── 语音实时输入(Web Speech API)── 开启后语音按钮切到实时模式:
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
@@ -1189,6 +1191,10 @@ export interface KinetAPI {
   openExternal(url: string): Promise<{ ok: boolean; error?: string }>;
   // ── viz-card 拍帧导出:main 开离屏窗口渲染卡片 HTML → capturePage → PNG dataUrl ──
   vizCapture(html: string, width: number, height: number): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
+  // ── 启动动画: 选项列表(内置款+插件贡献) / 加载器 HTML(sandbox iframe 用) / 立即预览 ──
+  splashOptions(): Promise<Array<{ kind: string; label: string }>>;
+  splashLoaderHtml(kind: string): Promise<string>;
+  splashPreview(kind: string): Promise<void>;
   // ── Visual Inspector:向 webview 注入 inspect 脚本,执行后返回元素信息 ──
   // 安全:白名单 action 模式,不接受任意脚本字符串 / Security: whitelist action, no arbitrary script string.
   // renderer 传 webview 的 guestInstanceId + action 名 + 结构化参数 → main 组装脚本 → executeJavaScript。

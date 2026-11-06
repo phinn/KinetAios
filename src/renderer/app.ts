@@ -6412,7 +6412,7 @@ async function showSettings() {
         </select></div>
       </div>
       <div class="s-section">
-        <h3>${tr('settings.appIcon')}</h3>
+      <h3>${tr('settings.appIcon')}</h3>
         <div class="field-desc">${tr('settings.appIcon.desc')}</div>
         <div class="icon-picker" id="s-icon-picker">
           ${[
@@ -6431,6 +6431,17 @@ async function showSettings() {
               <span>${opt.label}</span>
             </label>`).join('')}
         </div>
+      </div>
+      <div class="s-section">
+        <h3>${tr('settings.splash')}</h3>
+        <div class="field-desc">${tr('settings.splash.desc')}</div>
+        <div class="field"><label>${tr('settings.splash.kind')}</label><select id="s-splash-kind">
+          ${splashOptionTags(s.splash?.kind || 'default')}
+        </select></div>
+        <div class="field"><label>${tr('settings.splash.ms')}</label>
+          <input type="number" id="s-splash-ms" min="600" max="6000" step="100" value="${s.splash?.showMs ?? 1400}" style="width:110px">
+        </div>
+        <div class="field-desc">${tr('settings.splash.ms.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
@@ -6832,6 +6843,20 @@ async function showSettings() {
       document.getElementById('s-font-scale')!.onchange = () => applyFontScale(readSettingsForm().fontScale);
   // icon 选择器:点击即时切换(热生效,不等保存)
   const iconPicker = document.getElementById('s-icon-picker');
+  // ── 启动动画:选择器切换 → 主进程弹独立预览小窗(原尺寸 3s 真动画)+ 即时落盘 ──
+  const splashSel = document.getElementById('s-splash-kind') as HTMLSelectElement | null;
+  const splashMs = document.getElementById('s-splash-ms') as HTMLInputElement | null;
+  if (splashSel) {
+    splashSel.onchange = async () => {
+      void api.splashPreview(splashSel.value); // fire-and-forget:预览窗由主进程 3.2s 自动关
+      try {
+        const cur = await api.getSettings();
+        const ms = Math.max(600, Math.min(6000, Number(splashMs?.value) || 1400));
+        await api.saveSettings({ ...cur, splash: { kind: splashSel.value, showMs: ms } });
+      } catch { /* 保存失败不阻断预览 */ }
+    };
+    if (splashMs) splashMs.onchange = splashSel.onchange; // 时长改动同样即时落盘
+  }
   if (iconPicker) {
     // 异步加载 icon 缩略图(兼容打包后 resources/build/ 路径)
     iconPicker.querySelectorAll('img[data-icon-file]').forEach((img) => {
@@ -6852,6 +6877,7 @@ async function showSettings() {
       };
     });
   }
+  // ── 启动动画:预览 + 选择器联动 ── Splash: live preview follows the kind selector.
   // 版本号填充 / Fill version label.
   api.getBrand().then((b) => { const el = document.getElementById('s-version'); if (el) el.textContent = `v${b.version}`; });
   const apply = () => {
@@ -7968,6 +7994,11 @@ function readSettingsForm(): AppSettings {
       remote: (document.getElementById('s-memsync-remote') as HTMLInputElement)?.value.trim() ?? '',
       branch: (document.getElementById('s-memsync-branch') as HTMLInputElement)?.value.trim() || 'main',
       autoSyncMinutes: Math.max(0, parseInt((document.getElementById('s-memsync-auto') as HTMLInputElement)?.value ?? '0', 10) || 0),
+    },
+    // 启动动画:选择器(s-splash-kind)+ 最短时长(s-splash-ms);不在表单场景透传既有值。
+    splash: {
+      kind: (document.getElementById('s-splash-kind') as HTMLSelectElement)?.value ?? current?.splash?.kind ?? 'default',
+      showMs: Math.max(0, Math.min(8000, parseInt((document.getElementById('s-splash-ms') as HTMLInputElement)?.value ?? '', 10) || current?.splash?.showMs || 1400)),
     },
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
@@ -10497,6 +10528,10 @@ function rebuildPluginPanelMenu(): void {
 
 async function loadPluginPanels(): Promise<void> {
   try {
+    // splash 贡献名单先行(设置面板 option 列表要用;独立接口,面板加载失败不影响)
+    api.splashOptions().then((r) => {
+      (window as any).__pluginSplashNames = r.map((i) => i.kind.replace(/^plugin:/, ''));
+    }).catch(() => { /* 忽略:内置款始终可用 */ });
     const res = await api.pluginPanels();
     if (!res.ok || !res.items) return;
     pluginPanelRegistry = res.items;
@@ -11484,6 +11519,21 @@ const REASONING_TAIL_LIMIT = 6_000;
 // Viz-card mount: after an innerHTML swap the placeholder <div class="viz-frame">
 // needs a live sandboxed <iframe> re-attached (innerHTML assignment destroys the
 // previous one). Height auto-fits content; streaming-safe (cheap to re-run).
+// 启动动画选择器的 <option> 列表:内置两款 + 已装插件各一项(插件名走 splash-options 快照注入的全局)。
+function splashOptionTags(current: string): string {
+  const builtin = [
+    { value: 'default', label: 'Nebula · 星云脉冲' },
+    { value: 'orbit', label: 'Orbit · 轨道环' },
+  ];
+  const plug: string[] = (window as any).__pluginSplashNames ?? [];
+  const opts = [
+    `<option value="none" ${current === 'none' ? 'selected' : ''}>${tr('settings.splash.none')}</option>`,
+    ...builtin.map((b) => `<option value="${b.value}" ${current === b.value ? 'selected' : ''}>${b.label}</option>`),
+    ...plug.map((n) => `<option value="plugin:${n}" ${current === `plugin:${n}` ? 'selected' : ''}>${tr('settings.splash.plugin')} · ${n}</option>`),
+  ];
+  return opts.join('');
+}
+
 function mountVizFrames(root: ParentNode): void {
   // 契约:markdown.ts 的 renderVizCard 发 iframe.viz-frame[data-viz-src="vizcard://N"],
   // 真实源码在兄弟 <details.viz-src> 的 <code> 里(HTML 转义)。这里读出 → blob URL → 喂 iframe。

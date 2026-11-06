@@ -399,6 +399,7 @@ const notifyLastAt = new Map<string, number>();
 import { emitTeamEvent } from './team-events';
 import { deps } from './ipc/ctx';
 import { register as registerIpcModules } from './ipc/register';
+import { createSplash, dismissSplash, pluginSplashSnap, builtinSplashHtml } from './splash';
 export { emitTeamEvent };
 
 // ── P1 加固: 窗口导航防护(window-open / 跳转拦截面)──
@@ -440,6 +441,7 @@ function createDashboard(): BrowserWindow {
     height: 740,
     minWidth: 760,
     minHeight: 480,
+    show: false, // 首屏渲染完成再显示:消除白屏裸奔,并由 splash 交棒(ready-to-show)
     backgroundColor: '#1b1b1f',
     title: getBrand().productName,
     icon: appIcon(), // dev 模式下显示在任务栏/标题栏(打包后由 .exe 内嵌的 ico 接管)
@@ -452,6 +454,12 @@ function createDashboard(): BrowserWindow {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'renderer', 'index.html'));
+  // 首屏就绪交棒:主窗 ready-to-show → 先关 splash(淡出) → 再 show 主窗,一帧都不白屏。
+  // First-paint handoff: on ready-to-show dismiss the splash, then reveal the dashboard.
+  win.once('ready-to-show', () => {
+    dismissSplash('dashboard-ready');
+    if (!win.isVisible()) win.show();
+  });
   hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
   // 关窗置空:closeBehavior=minimize/tray 时 dashboard 关了但 app 不退,
   // 悬挂的 destroyed 引用会被 second-instance 等路径直接调 isMinimized() 抛 "Object has been destroyed"。
@@ -1026,6 +1034,7 @@ function showDashboard(): void {
   if (dashboardWin.isMinimized()) dashboardWin.restore();
   dashboardWin.show();
   dashboardWin.focus();
+  dismissSplash(); // 主窗真的可见了才收 splash(含淡出;未启用时为空操作)
 }
 
 function showMemoryGraph(): void {
@@ -1491,6 +1500,9 @@ if (!gotLock) {
         });
       }
     }
+    // 启动动画先出(读设置:kind=none 则跳过;内置款在 splash.ts,插件款走贡献点)。
+    // Splash first: frameless mini window; skipped when settings.splash.kind === 'none'.
+    createSplash();
     dashboardWin = createDashboard();
     tray = createTray();
     // KINET_METRICS=1 启动即开用量看板(e2e/截图验证用,平时无感)。
