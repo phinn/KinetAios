@@ -35,6 +35,7 @@ import * as store from './store';
 import {
   baseSystemPrompt,
   cwdAnchorSection,
+  providerEconomicsSection,
   personaSection,
   sourceHintSection,
   loadProjectRules,
@@ -444,6 +445,7 @@ export class DirectV2Engine implements Engine {
     // has no load_skill, so the catalog would instruct it to call a nonexistent tool.
     const systemPrompt =
       baseSystemPrompt +
+      providerEconomicsSection(snap) +
       cwdAnchorSection(conv) +
       V2_SYSTEM_SUFFIX +
       personaSection(conv) +

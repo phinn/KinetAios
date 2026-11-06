@@ -4,6 +4,7 @@ import { assert, test, run } from './harness';
 import {
   swapBaseUrlForProtocol,
   isProtoBaseMismatch,
+  detectProvider,
   ALIYUN_TOKEN_PLAN_ANTHROPIC,
   ALIYUN_TOKEN_PLAN_OPENAI,
 } from '../../src/shared/providerEndpoints';
@@ -69,6 +70,25 @@ test('isProtoBaseMismatch:paas/v4 配 anthropic = 错配;各家正确组合 = �
   assert.equal(isProtoBaseMismatch(ALIYUN_TOKEN_PLAN_ANTHROPIC, 'anthropic'), false);
   assert.equal(isProtoBaseMismatch(ALIYUN_TOKEN_PLAN_OPENAI, 'openai'), false);
   assert.equal(isProtoBaseMismatch('https://api.deepseek.com', 'openai'), false);
+});
+
+// ── detectProvider:provider 推断(经济段分流/余额路由共用)──
+test('detectProvider:阿里 Token Plan(host 通配任意 region)识别', () => {
+  assert.equal(detectProvider('https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic'), 'aliyun-token-plan');
+  assert.equal(detectProvider('https://token-plan.cn-beijing.maas.aliyuncs.com/compatible-mode/v1'), 'aliyun-token-plan');
+  assert.equal(detectProvider('https://token-plan.us-east-1.maas.aliyuncs.com/apps/anthropic'), 'aliyun-token-plan');
+});
+
+test('detectProvider:智谱(bigmodel.cn / 国际站 z.ai)识别', () => {
+  assert.equal(detectProvider('https://open.bigmodel.cn/api/paas/v4'), 'zhipu');
+  assert.equal(detectProvider('https://open.bigmodel.cn/api/anthropic'), 'zhipu');
+  assert.equal(detectProvider('https://api.z.ai/api/paas/v4'), 'zhipu');
+});
+
+test('detectProvider:其它(DeepSeek/Ollama/空)落 generic', () => {
+  assert.equal(detectProvider('https://api.deepseek.com'), 'generic');
+  assert.equal(detectProvider('http://localhost:11434/v1'), 'generic');
+  assert.equal(detectProvider(''), 'generic');
 });
 
 void run();

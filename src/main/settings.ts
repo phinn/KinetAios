@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app, safeStorage } from 'electron';
 import type { AppSettings, ConfigSnapshot, EmbedSnapshot, EngineKind, BalanceSnapshot } from '../shared/types';
+import { detectProvider } from '../shared/providerEndpoints';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
 const DEFAULTS: AppSettings = {
@@ -204,6 +205,7 @@ export function snapshot(profileId?: string | null): ConfigSnapshot {
       apiKey: profile.apiKey,
       apiProtocol: profile.apiProtocol,
       reasoning: profile.reasoning,
+      provider: detectProvider(profile.baseURL),
     };
   }
   return {
@@ -212,6 +214,7 @@ export function snapshot(profileId?: string | null): ConfigSnapshot {
     apiKey: s.apiKey,
     apiProtocol: s.apiProtocol,
     reasoning: s.reasoning,
+    provider: detectProvider(s.baseURL),
   };
 }
 

@@ -1,6 +1,7 @@
 // Shared types + pure state logic. Imported by main (CJS) and renderer (bundled).
 // Type-only and pure-function — no Node- or DOM-only APIs in here.
 import type { Lang } from './i18n';
+import type { ProviderKind } from './providerEndpoints';
 
 // 版本更新检查结构(main/updater.ts 产出,KinetAPI 引用)
 import type { UpdateInfo } from './version';
@@ -452,6 +453,7 @@ export type ConfigSnapshot = {
   apiKey: string; // '' = none
   apiProtocol: APIProtocol;
   reasoning: ReasoningEffort;
+  provider?: ProviderKind; // 从 baseURL 派生(可选,旧构造点不传 = 'generic')。system prompt 分流/余额路由用。
 };
 
 // Embedding 接口快照 —— embed() 用这个,字段解析优先于主 ConfigSnapshot。

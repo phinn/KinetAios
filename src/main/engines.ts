@@ -24,6 +24,7 @@ import { getBrand } from './brand';
 import { pluginSystemPrompts, pluginEngines, type PluginEngineSpec } from './plugins';
 import { pullSteer, setKillHook, triggerKill, clearKillHook, steerText } from './steer';
 import { codemodeTool, codemodePromptSection } from './codemode';
+import { detectProvider } from '../shared/providerEndpoints';
 
 // P2-fix: 系统提示平台自适应 — 此前硬编码"Windows 电脑""shell 走 cmd.exe",
 // macOS 构建下系统提示词是错的。
@@ -141,6 +142,40 @@ export function personaSection(conv?: Conversation): string {
 // 只影响 shell 初始目录,不参与任何语义约束。这里把 cwd 写进 systemPrompt 并给出硬规则。
 // cwd anchor injection: pin the conversation's working dir into the system prompt so the
 // model cannot drift into a sibling project's context (see 2026-09-08 KinetTask incident).
+
+// ── Provider 经济学分流段(2026-11-06)──
+// 同一个 system prompt 对智谱 Coding Plan 和阿里 Token Plan 是错的:两家计费语义相反。
+// - 智谱:5h/周窗口额度,订阅期内调用次数不直接扣钱 → 优化目标是「窗口内多做事」,忌断链重做;
+//   缓存命中系数 1.72 vs 全价 6.9(≈1/4),保持前缀稳定价值大;非高峰时段半价。
+// - 阿里 Token Plan:Credits≈现金,每个 token 真实扣费 → 优化目标是「少烧 token」;
+//   工具结果复述/逐条轮询/reasoning 拉高都是真金白银;显式缓存创建 125% 命中 10%,前缀稳定同样关键。
+// (系数来源:两家官方文档 2026-11 核对;写进 prompt 的只是行为纪律,不硬编码系数给模型。)
+// Provider economics: per-provider system prompt section. Zhipu Coding Plan = subscription
+// window (optimize for throughput, avoid broken chains); Aliyun Token Plan = pay-per-Credits
+// (optimize for token frugality). Generic providers get nothing.
+export function providerEconomicsSection(snap: import('../shared/types').ConfigSnapshot): string {
+  if (snap.provider === 'aliyun-token-plan') {
+    return `
+
+【Credits 纪律(当前 Provider:阿里百炼 Token Plan,按 token 实扣费)】本通道按 Credits≈token 计费,你烧的每个 token 都是真金白银:
+1. 一次把事做完:先想清楚再动手,拒绝"试错式"连续重做;工具调用失败 2 次同一目标必须换路径。
+2. 复述即浪费:不要把工具返回的大段内容抄进你的回答;结论化、引用路径+行号即可。
+3. 探查链能合就合:同轮并行发多个只读 tool_calls;批量循环探查优先用 codemode 脚本折叠成一次调用。
+4. 输出克己:回答直击要点,不写"经过分析/接下来我将"之类的仪式性铺垫;长报告先问是否要落盘文件。
+5. 系统提示词/工具 Schema/历史都计入计费:非必要不 @ 长历史,能靠锚点(recall_fact)拿关键数据就不要全文回捞。`;
+  }
+  if (snap.provider === 'zhipu') {
+    return `
+
+【窗口额度策略(当前 Provider:智谱 Coding Plan,5h/周窗口订阅制)】本通道按 5 小时窗口配额计费,窗口内调用不直接扣钱,但额度用尽要等下一个周期:
+1. 窗口是稀缺资源:优先把长任务一口气做完;**严禁断链**——中途放弃的半成品等于白烧窗口,重做从零计费。开工前先建 todo 清单锚定范围。
+2. 缓存即额度:保持 systemPrompt/工具集/早期历史前缀稳定(命中缓存≈1/4 积分),不要中途换引擎或大改工具配置打穿缓存。
+3. 探查照样合批:同轮并行发多个只读 tool_calls、codemode 折叠循环探查 —— 不是为省钱,是为省窗口内的轮次,把额度留给真正要干的事。
+4. 窗口将尽时(用户提示或 5h 配额告警):收敛当前任务到可交付状态再停,留下明确的「已完成/待续」分界,下个窗口无缝续做。`;
+  }
+  return ''; // generic: 无特判,不加段(DeepSeek/Ollama 等按量计费,已有合批纪律足够)
+}
+
 export function cwdAnchorSection(conv?: Conversation): string {
   const cwd = conv?.cwd?.trim();
   if (!cwd) return '';
@@ -572,7 +607,10 @@ function skillCatalogSection(): string {
       // ⚡ cache 冻结分区(2026-10-16):前缀必须是「跨轮字节级稳定」的大块,动态项全部后置。
       // pluginSystemPrompts 依赖当前 prompt(关键词命中翻转会让其后所有内容 cache miss),
       // 所以挪到 codemodePromptSection(嵌套工具签名大段)之后,让 codemode 段保持前缀稳定。
-      systemPrompt: baseSystemPrompt + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
+      // ⚡ cache 冻结分区:providerEconomicsSection 只依赖 snap.provider(换 provider 时整个
+      // 前缀必然已变,放最前不影响其它分区的稳定性);pluginSystemPrompts 依赖当前 prompt
+      // (关键词命中翻转会让其后所有内容 cache miss),所以挪到 codemodePromptSection 之后。
+      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

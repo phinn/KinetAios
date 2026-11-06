@@ -52,3 +52,16 @@ export function isProtoBaseMismatch(base: string, proto: 'openai' | 'anthropic')
   // 当前 URL 能被「切换到 proto」映射走 ⇔ base 本身是另一协议的专属形态 ⇔ 与 proto 错配
   return swapBaseUrlForProtocol(base, proto) !== null;
 }
+
+/**
+ * 从 baseURL 推断 provider 类型(纯函数,主进程 system prompt 分流 + 余额路由共用)。
+ * Detect provider from baseURL — drives per-provider prompt economics & balance routing.
+ * 匹配不到 → 'generic'(无特判,走默认行为)。
+ */
+export type ProviderKind = 'zhipu' | 'aliyun-token-plan' | 'generic';
+export function detectProvider(baseURL: string): ProviderKind {
+  const b = (baseURL || '').toLowerCase();
+  if (/token-plan\.[a-z0-9.-]+\.aliyuncs\.com/.test(b)) return 'aliyun-token-plan';
+  if (/bigmodel\.cn|z\.ai/.test(b)) return 'zhipu';
+  return 'generic';
+}
