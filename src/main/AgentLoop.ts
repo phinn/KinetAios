@@ -256,8 +256,10 @@ export interface RunOpts {
 // 瞬时错误判定:限流/超时/网络/5xx 可重试;4xx 参数/鉴权类与 noKey 不重试。
 // (2026-09:此前任何非 context-too-long 错误一律立即 error 退出,长任务一次 429 就中断。)
 const TRANSIENT_HTTP_CODES = new Set([408, 409, 425, 429, 500, 502, 503, 504, 529, 524]);
+// 「速率限制」必须显式列(2026-11:MiniMax [1302]「您的账户已达到速率限制」只有中文措辞,
+// 修前裸 Error 路径不命中英文正则 → 判 other → 不重试不 failover 直接停机)。
 const TRANSIENT_RE =
-  /(rate.?limit|too many requests|timeout|timed.?out|econn(reset|refused|aborted)|socket hang up|network|fetch failed|bad gateway|service unavailable|service unavailable|internal server error|overloaded|temporarily unavailable)/i;
+  /(rate.?limit|too many requests|速率限制|timeout|timed.?out|econn(reset|refused|aborted)|socket hang up|network|fetch failed|bad gateway|service unavailable|service unavailable|internal server error|overloaded|temporarily unavailable)/i;
 export function isTransientError(e: unknown): boolean {
   const err = e as { kind?: string; code?: number; detail?: string; message?: string };
   if (err?.kind === 'noKey') return false;
@@ -267,6 +269,18 @@ export function isTransientError(e: unknown): boolean {
   }
   const text = `${err?.detail ?? ''} ${err?.message ?? ''}`;
   return TRANSIENT_RE.test(text);
+}
+
+// 内容安全审查 400 判定:MiniMax [1301](中文话术)+ OpenAI 系 content_filter 措辞。
+// 这类错误退避重试无用(内容不会变),唯一出路是回灌让模型改写措辞。
+// / Content-filter 400: retrying verbatim is pointless — the payload must be rephrased.
+const CONTENT_FILTER_RE =
+  /(\[?1301\]?)|内容安全|敏感内容|content.?filter|content.?policy|content.?moderation|flagged as violat/i;
+export function isContentFilterError(e: unknown): boolean {
+  const err = e as { code?: number; detail?: string; message?: string };
+  if (err?.code !== 400) return false; // 只处理 400(审查拦截都是 400;403 是模型权限,走 failover)
+  const text = `${err?.detail ?? ''} ${err?.message ?? ''}`;
+  return CONTENT_FILTER_RE.test(text);
 }
 
 // 可中止的退避:sleep 期间 abort 触发立即 resolve(下一轮 streamComplete 会抛 AbortError 走 abort 路径)。
@@ -380,6 +394,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let retriedNuclear = false;
   let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
+  let censoredRetries = 0; // 内容安全审查 400([1301] 类)自愈计数(最多 1 次)
   // 假设升级 nudge(2026-10 KinetVM 三连败复盘):同一轮里多个工具结果连续 error
   // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
   // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
@@ -494,6 +509,25 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
           onEvent({ type: 'error', kind: 'contextTooLong', message: '上下文长度超出模型窗口:即使裁剪到最小集仍然超长。请减少记忆块大小或更换更大窗口的模型。' });
           return dropTransient(messages);
         }
+      }
+      // 内容安全审查 400(如 MiniMax [1301])自愈:回灌提示让模型改写措辞续跑,
+      // 而不是整 turn 报错停机(历史实锤:[1301] 会打断跑了几十轮的长任务)。
+      // 仅自愈 1 次:还命中说明是真实内容问题,向上抛走既有错误链。
+      // / Content-filter 400 (e.g. MiniMax [1301]): reinject a nudge so the model
+      // rephrases and continues, instead of killing the whole long-running turn.
+      if (isContentFilterError(e)) {
+        if (censoredRetries >= 1) throw e; // 已自愈过一次还命中 → 真内容问题
+        censoredRetries++;
+        const note = e instanceof Error ? e.message : String(e);
+        messages.push({
+          role: 'user',
+          // _transient:不写回 directHistory(与空回复推促同款,免得历史里积"假用户消息")
+          content: `[系统] 上一个回复被 provider 内容安全审查拦截(${note.slice(0, 120)})。请改写措辞避开敏感表达后,继续原任务。`,
+          _transient: true,
+        } as ChatMsg & { _transient?: boolean });
+        onEvent({ type: 'status', text: '⚠️ 触发 provider 内容安全审查,已让模型改写措辞重试' });
+        i--; // 抵消 for 的 i++,重试本轮
+        continue;
       }
       // 瞬时错误(限流/网络/5xx):退避后重试,而非一次 429 就把整个长任务中断。
       // (2026-09:修前任何非 context-too-long 错误一律立即 error 退出 → std/fast/deep 节点
