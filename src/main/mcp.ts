@@ -11,7 +11,7 @@ import https from 'node:https';
 import type { Tool } from './tools';
 import { getBrand } from './brand';
 
-type McpSource = 'claude' | 'codex' | 'desktop' | 'remote';
+type McpSource = 'app' | 'claude' | 'codex' | 'desktop' | 'remote';
 type McpServerConfig = {
   name: string;
   source: McpSource;
@@ -481,6 +481,43 @@ class McpRegistry {
   private connecting: Promise<void> | null = null;
   // 额外的远程 server 配置(来自 settings.remoteMcpServers,运行时可动态增减)。
   private extraConfigs: McpServerConfig[] = [];
+  // 用户禁用的 server 名(settings.disabledMcpServers):连接保留,仅在工具收集/快照时过滤,
+  // 重新启用零成本(不用重连)。Enabled-state set: servers stay connected, filtered at collection.
+  private disabled = new Set<string>();
+  // 应用自有 server 配置(settings.mcpServers,面板内增删)—— 一等公民,同名优先于外部扫描。
+  private appConfigs: McpServerConfig[] = [];
+  // 是否扫描外部配置(claude/desktop/codex,settings.mcpExternalScan,默认开)。
+  private externalScan = true;
+
+  setDisabled(names: string[]): void {
+    this.disabled = new Set(names);
+  }
+
+  // 应用自有 server 列表(设置面板增删的),同名时优先级高于外部扫描结果。
+  setAppServers(list: Array<{ name: string; type?: string; command: string; args?: string[]; env?: Record<string, string>; token?: string }>): void {
+    this.appConfigs = (list ?? [])
+      .filter((s) => s?.name?.trim() && s?.command?.trim())
+      .map((s) => ({
+        name: s.name.trim(),
+        source: 'app' as McpSource,
+        type: s.type === 'sse' ? ('sse' as const) : ('stdio' as const),
+        command: s.command.trim(),
+        args: Array.isArray(s.args) ? s.args.map(String) : [],
+        env: s.env ?? {},
+        token: s.token ?? '',
+      }));
+  }
+
+  setExternalScan(on: boolean): void {
+    this.externalScan = on;
+  }
+
+  // 用户配置变化(mcpServers / mcpExternalScan)→ 重建发现型连接(remote 节点不动)。
+  async applyUserConfig(list: Parameters<McpRegistry['setAppServers']>[0], extScan: boolean): Promise<void> {
+    this.setAppServers(list);
+    this.setExternalScan(extScan);
+    await this.rescan();
+  }
 
   // 设置/更新远程 SSE server 列表(从 settings.remoteMcpServers 加载)。每次调用会重建连接。
   setRemoteServers(servers: Array<{ name: string; url: string; token?: string }>): void {
@@ -504,7 +541,7 @@ class McpRegistry {
   connectAll(forceRemote = false): Promise<void> {
     if (this.connecting && !forceRemote) return this.connecting;
     this.connecting = (async () => {
-      const configs = forceRemote ? this.extraConfigs : [...discoverServers(), ...this.extraConfigs];
+      const configs = forceRemote ? this.extraConfigs : this.mergeDiscovered();
       const made: McpClient[] = configs.map((cfg) => {
         if (cfg.type === 'sse') return new SseClient(cfg);
         return new StdioClient(cfg);
@@ -532,6 +569,7 @@ class McpRegistry {
     const out: Tool[] = [];
     for (const c of this.clients) {
       if (!c.alive) continue; // 失效(进程死且放弃重连)→ 不暴露工具
+      if (this.disabled.has(c.cfg.name)) continue; // 用户禁用 → 不进模型工具集(连接保留,随时可开)
       for (const t of c.tools) {
         out.push({
           name: `mcp__${c.cfg.name}__${t.name}`,
@@ -544,9 +582,34 @@ class McpRegistry {
     return out;
   }
 
-  // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性)。source 保留 'remote' 标识远程节点。
-  snapshot(): Array<{ source: string; name: string; tools: string[] }> {
-    return this.clients.filter((c) => c.alive).map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name) }));
+  // 给 UI 列出已连服务 + 工具名(mcp 按钮弹菜单用 —— 可见性+启停管理)。source 保留 'remote' 标识远程节点。
+  snapshot(): Array<{ source: string; name: string; tools: string[]; enabled: boolean }> {
+    return this.clients
+      .filter((c) => c.alive)
+      .map((c) => ({ source: c.cfg.source, name: c.cfg.name, tools: c.tools.map((t) => t.name), enabled: !this.disabled.has(c.cfg.name) }));
+  }
+
+  // 重新扫描:断开所有「发现型」server(claude/desktop/codex)并重连,remote 节点不动。
+  // 用于 MCP 管理面板「重新扫描」按钮(改了 ~/.claude.json 后不用重启应用)。
+  async rescan(): Promise<void> {
+    this.clients = this.clients.filter((c) => {
+      if (c.cfg.source !== 'remote') {
+        c.dispose();
+        return false;
+      }
+      return true;
+    });
+    this.connecting = null;
+    await this.connectAll();
+  }
+
+  // 合并发现结果:应用自有(settings.mcpServers)优先 → 外部扫描(claude/desktop/codex,可关)同名让位。
+  private mergeDiscovered(): McpServerConfig[] {
+    const external = this.externalScan ? discoverServers() : [];
+    const seen = new Set<string>();
+    return [...this.appConfigs, ...external]
+      .filter((s) => !seen.has(s.name) && seen.add(s.name))
+      .concat(this.extraConfigs); // remote 节点独立命名空间,保持追加
   }
 
   // 给 Town UI 用的远程节点信息(等连接完成后返回最新状态) / Remote node info for Town UI

@@ -3006,6 +3006,8 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 
 /* MCP 服务面板(mcp 按钮弹出) */
 .mcp-menu { position: absolute; left: 16px; bottom: 100%; margin-bottom: 6px; width: 320px; max-width: calc(100vw - 48px); background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: var(--r-xl); box-shadow: var(--shadow-lg); max-height: 340px; overflow-y: auto; z-index: 41; padding: 8px; }
+/* 设置页 MCP tab 里的管理面板(共用 renderMcpManager):卡片化、更宽 */
+.mcp-manager { max-width: 640px; background: var(--bg-elev); border: 1px solid var(--border-soft); border-radius: var(--r-lg); box-shadow: var(--shadow-sm); padding: 12px 14px; max-height: 520px; overflow-y: auto; }
 .mcp-srv { padding: 7px 4px; border-bottom: 1px solid var(--border); }
 .mcp-srv:last-child { border-bottom: none; }
 .mcp-srv-name { font-size: var(--fs-xl); font-weight: 600; }
@@ -3013,6 +3015,30 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .mcp-tools { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
 .mcp-tool { font-size: var(--fs-sm); font-family: ui-monospace, "Cascadia Code", monospace; background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 1px 5px; color: var(--text-dim); }
 .mcp-empty { padding: 10px 6px; font-size: var(--fs-xl); color: var(--text-faint); line-height: 1.6; }
+/* 管理面板:头部(标题+重新扫描)与服务行(名称+启停开关) */
+.mcp-head { display: flex; align-items: center; justify-content: space-between; padding: 2px 4px 8px; border-bottom: 1px solid var(--border); font-size: var(--fs-xl); font-weight: 600; color: var(--text-dim); }
+.mcp-rescan { background: var(--surface-chip-soft, rgba(255,255,255,.06)); border: 1px solid var(--border-soft, var(--border)); color: var(--text-dim); font-size: var(--fs-md); padding: 3px 10px; border-radius: var(--r-xl); cursor: pointer; transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
+.mcp-rescan:hover { color: var(--text); border-color: var(--accent-dim); }
+.mcp-rescan:disabled { opacity: .5; cursor: wait; }
+.mcp-srv-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.mcp-srv.off .mcp-srv-name { color: var(--text-faint); }
+.mcp-srv.off .mcp-src { opacity: .5; }
+.mcp-off-note { font-size: var(--fs-md); color: var(--text-faint); font-style: normal; }
+/* 管理面板:头部按钮组 / 自有服务删除 / 添加表单 / 外部扫描开关行 */
+.mcp-head-actions { display: inline-flex; gap: 6px; }
+.mcp-del { background: none; border: none; color: var(--text-faint); font-size: var(--fs-xl); line-height: 1; padding: 0 2px 0 6px; cursor: pointer; }
+.mcp-del:hover { color: var(--err); }
+.mcp-form { display: flex; flex-direction: column; gap: 6px; padding: 8px 4px; border-bottom: 1px solid var(--border); }
+.mcp-form[hidden] { display: none; }
+.mcp-form input, .mcp-form select, .mcp-form textarea { background: var(--bg-input); border: 1px solid var(--border); border-radius: var(--r-md); color: var(--text); font-size: var(--fs-md); padding: 5px 8px; box-sizing: border-box; width: 100%; }
+.mcp-form textarea { resize: vertical; font-family: ui-monospace, "Cascadia Code", monospace; }
+.mcp-form input:focus, .mcp-form select:focus, .mcp-form textarea:focus { border-color: var(--accent-dim); outline: none; }
+.mcf-row { display: flex; gap: 6px; }
+.mcf-row select { width: 110px; flex-shrink: 0; }
+.mcf-actions { display: flex; gap: 6px; justify-content: flex-end; }
+.mcp-err { color: var(--err); font-size: var(--fs-md); }
+.mcp-srv.ext-row { border-bottom: none; padding-top: 8px; }
+.mcp-ext-lbl { font-size: var(--fs-md); color: var(--text-dim); }
 
 /* (原 .empty 冲突规则已合并至 L1756) */
 

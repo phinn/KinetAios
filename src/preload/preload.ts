@@ -50,6 +50,7 @@ const api: KinetAPI = {
   readSkillSource: (name: string) => ipcRenderer.invoke('read-skill-source', name),
   saveSkillSource: (name: string, content: string) => ipcRenderer.invoke('save-skill-source', name, content),
   listMcp: () => ipcRenderer.invoke('list-mcp'),
+  mcpRescan: () => ipcRenderer.invoke('mcp-rescan'),
   startMcpServer: (port, token) => ipcRenderer.invoke('start-mcp-server', port, token),
   stopMcpServer: () => ipcRenderer.invoke('stop-mcp-server'),
   mcpServerStatus: () => ipcRenderer.invoke('mcp-server-status'),

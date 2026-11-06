@@ -1481,7 +1481,10 @@ if (!gotLock) {
     startCronScheduler();
     createIpcDeps();
     registerIpcModules();
-    // 从 settings 加载远程 MCP server 配置(多机协作),再连所有 server(stdio + remote SSE)。
+    // 从 settings 加载 MCP 配置:禁用列表 → 自有 server → 外部扫描开关,再连所有 server。
+    mcp.setDisabled(getSettings().disabledMcpServers ?? []); // 先同步禁用列表再连接,避免首轮把禁用 server 的工具带出去
+    mcp.setAppServers(getSettings().mcpServers ?? []);
+    mcp.setExternalScan(getSettings().mcpExternalScan !== false);
     mcp.setRemoteServers(getSettings().remoteMcpServers ?? []);
     mcp.connectAll(); // 后台连 MCP server(不阻塞首屏;Direct 引擎首轮会等 ≤2s)
     // 如果 settings 里开启了本机 MCP Server,自动启动。

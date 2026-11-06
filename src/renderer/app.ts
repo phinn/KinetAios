@@ -1411,6 +1411,126 @@ function dismissConfirmDialog(): void {
 }
 
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
+// ── MCP 管理面板(composer 弹层与设置页 MCP tab 共用)──
+// 自有配置存 settings.mcpServers(一等公民);外部扫描(claude/desktop/codex)可整体关闭。
+// 开关只改 settings.disabledMcpServers(连接保留、工具收集时过滤),重新启用零成本。
+async function saveSettingsMut(mut: (s: AppSettings) => void): Promise<void> {
+  const s = await api.getSettings();
+  mut(s);
+  await api.saveSettings(s);
+}
+// 解析表单输入:args 支持 JSON 数组或空白分隔;env 支持 KEY=VALUE 逐行。
+let mcpServersCache: NonNullable<AppSettings['mcpServers']> = []; // 当前自有列表(表单查重用),renderMcpManager 时刷新
+function parseMcpForm(container: HTMLElement): NonNullable<AppSettings['mcpServers']>[number] | string {
+  const q = <T extends HTMLElement>(sel: string): T => container.querySelector<T>(sel)!;
+  const name = q<HTMLInputElement>('.mcf-name').value.trim();
+  const type = q<HTMLSelectElement>('.mcf-type').value as 'stdio' | 'sse';
+  const command = q<HTMLInputElement>('.mcf-cmd').value.trim();
+  if (!name || !command) return tr('mcp.errRequired');
+  if (mcpServersCache.some((x) => x.name === name)) return tr('mcp.errDup');
+  const argsRaw = q<HTMLInputElement>('.mcf-args').value.trim();
+  let args: string[] = [];
+  if (argsRaw) {
+    try { args = JSON.parse(argsRaw.startsWith('[') ? argsRaw : `[${argsRaw}]`).map(String); }
+    catch { args = argsRaw.split(/\s+/); }
+  }
+  const env: Record<string, string> = {};
+  q<HTMLTextAreaElement>('.mcf-env').value.split(/\r?\n/).forEach((line) => {
+    const i = line.indexOf('=');
+    if (i > 0) env[line.slice(0, i).trim()] = line.slice(i + 1).trim();
+  });
+  const token = q<HTMLInputElement>('.mcf-token').value.trim();
+  return { name, type, command, ...(args.length ? { args } : {}), ...(Object.keys(env).length ? { env } : {}), ...(token ? { token } : {}) };
+}
+async function renderMcpManager(container: HTMLElement): Promise<void> {
+  const [list, settings] = await Promise.all([api.listMcp(), api.getSettings()]);
+  mcpServersCache = settings.mcpServers ?? [];
+  const form = `
+    <div class="mcp-form mcp-add-form" hidden>
+      <input class="mcf-name" placeholder="${esc(tr('mcp.name'))}" />
+      <div class="mcf-row">
+        <select class="mcf-type"><option value="stdio">stdio</option><option value="sse">http/sse</option></select>
+        <input class="mcf-cmd" placeholder="${esc(tr('mcp.cmd'))}" />
+      </div>
+      <input class="mcf-args" placeholder="${esc(tr('mcp.args'))}" />
+      <textarea class="mcf-env" rows="2" placeholder="${esc(tr('mcp.env'))}"></textarea>
+      <input class="mcf-token" placeholder="${esc(tr('mcp.token'))}" />
+      <div class="mcp-err mcf-err" hidden></div>
+      <div class="mcf-actions">
+        <button class="mcp-rescan mcf-save">${esc(tr('mcp.save'))}</button>
+        <button class="mcp-rescan mcf-cancel">${esc(tr('mcp.cancel'))}</button>
+      </div>
+    </div>`;
+  // 头部/表单/外部扫描行始终渲染(列表为空时也要能「添加服务」);列表区按内容切换。
+  container.innerHTML =
+    `<div class="mcp-head"><span>${esc(tr('mcp.title'))}</span><span class="mcp-head-actions"><button class="mcp-rescan mcp-add-btn">+ ${esc(tr('mcp.add'))}</button><button class="mcp-rescan mcp-rescan-now">${esc(tr('mcp.rescan'))}</button></span></div>` +
+    form +
+    (list.length
+      ? list.map((srv) => `<div class="mcp-srv${srv.enabled ? '' : ' off'}"><div class="mcp-srv-row"><div class="mcp-srv-name">${ICON.plug} ${esc(srv.name)}<span class="mcp-src">${esc(srv.source)}</span>${
+          srv.source === 'app' ? `<button class="mcp-del" data-mcp-del="${esc(srv.name)}" title="${esc(tr('mcp.delete'))}">×</button>` : ''
+        }</div><label class="switch"><input type="checkbox" data-mcp-srv="${esc(srv.name)}" ${srv.enabled ? 'checked' : ''}/><span class="track"><span class="thumb"></span></span></label></div><div class="mcp-tools">${
+          srv.enabled
+            ? (srv.tools.length ? srv.tools.map((tool) => `<span class="mcp-tool">${esc(tool)}</span>`).join('') : '<i>' + esc(tr('mcp.noTools')) + '</i>')
+            : `<i class="mcp-off-note">${esc(tr('mcp.disabled'))}</i>`
+        }</div></div>`).join('')
+      : '<div class="mcp-empty">' + tr('mcp.empty') + '</div>') +
+    `<div class="mcp-srv ext-row"><div class="mcp-srv-row"><span class="mcp-ext-lbl">${esc(tr('mcp.extScan'))}</span><label class="switch"><input type="checkbox" class="mcp-ext-scan" ${settings.mcpExternalScan !== false ? 'checked' : ''}/><span class="track"><span class="thumb"></span></span></label></div></div>`;
+  // 重新扫描:重连发现型 server(main 侧返回新快照)→ 重渲染面板
+  container.querySelector<HTMLButtonElement>('.mcp-rescan-now')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    (e.currentTarget as HTMLButtonElement).disabled = true;
+    await api.mcpRescan();
+    await renderMcpManager(container);
+  });
+  // 添加/删除自有 server:改 settings.mcpServers → save-settings(main 重建连接)
+  container.querySelector<HTMLButtonElement>('.mcp-add-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const f = container.querySelector<HTMLElement>('.mcp-add-form')!;
+    f.hidden = !f.hidden;
+    (e.currentTarget as HTMLButtonElement).disabled = !f.hidden;
+    if (!f.hidden) container.querySelector<HTMLInputElement>('.mcf-name')?.focus();
+  });
+  container.querySelector('.mcf-cancel')?.addEventListener('click', () => { void renderMcpManager(container); });
+  container.querySelector('.mcf-save')?.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const parsed = parseMcpForm(container);
+    if (typeof parsed === 'string') {
+      const err = container.querySelector<HTMLElement>('.mcf-err')!;
+      err.textContent = parsed;
+      err.hidden = false;
+      return;
+    }
+    await saveSettingsMut((st) => { st.mcpServers = [...(st.mcpServers ?? []), parsed]; });
+    await renderMcpManager(container);
+  });
+  container.querySelectorAll<HTMLButtonElement>('button[data-mcp-del]').forEach((btn) => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const name = btn.dataset.mcpDel!;
+      await saveSettingsMut((st) => { st.mcpServers = (st.mcpServers ?? []).filter((x) => x.name !== name); });
+      await renderMcpManager(container);
+    });
+  });
+  // 外部扫描开关:整体启停 claude/desktop/codex 来源
+  container.querySelector<HTMLInputElement>('.mcp-ext-scan')?.addEventListener('change', async (e) => {
+    await saveSettingsMut((st) => { st.mcpExternalScan = (e.currentTarget as HTMLInputElement).checked; });
+    await renderMcpManager(container);
+  });
+  // 启停开关:更新 settings.disabledMcpServers → save-settings(main 侧同步注册表)
+  container.querySelectorAll<HTMLInputElement>('input[data-mcp-srv]').forEach((input) => {
+    input.onchange = async () => {
+      await saveSettingsMut((st) => {
+        const name = input.dataset.mcpSrv!;
+        const cur = new Set(st.disabledMcpServers ?? []);
+        if (input.checked) cur.delete(name);
+        else cur.add(name);
+        st.disabledMcpServers = [...cur];
+      });
+      await renderMcpManager(container);
+    };
+  });
+}
+
 async function renameConv(id: string) {
   const c = convs.get(id);
   if (!c) return;
@@ -6331,6 +6451,7 @@ async function showSettings() {
         <button class="s-tab active" data-stab="model">${tr('settings.tab.model')}</button>
         <button class="s-tab" data-stab="appearance">${tr('settings.tab.appearance')}</button>
         <button class="s-tab" data-stab="engine">${tr('settings.tab.engine')}</button>
+        <button class="s-tab" data-stab="mcp">${tr('settings.tab.mcp')}</button>
         <button class="s-tab" data-stab="advanced">${tr('settings.tab.advanced')}</button>
         <button class="s-tab" data-stab="security">${tr('settings.tab.security')}</button>
         <button class="s-tab" data-stab="messaging">${tr('settings.tab.messaging')}</button>
@@ -6657,15 +6778,21 @@ async function showSettings() {
         <div class="s-section">
           <h3>${tr('settings.skills.title')}</h3>
           <div class="field-desc">${tr('settings.skills.desc')}</div>
-          <div class="field" style="display:flex;flex-direction:column;align-items:stretch;gap:10px">
-            <div class="s-plugin-toolbar">
-              <input type="text" id="s-skill-search" class="s-plugin-search" placeholder="${tr('settings.skills.searchPh')}" />
-            </div>
-            <span class="test-msg" id="s-skills-msg"></span>
-            <div id="s-skills" class="s-plugin-list"></div>
+          <div class="s-plugin-toolbar" style="margin-top:12px">
+            <input type="text" id="s-skill-search" class="s-plugin-search" placeholder="${tr('settings.skills.searchPh')}" />
           </div>
+          <span class="test-msg" id="s-skills-msg"></span>
+          <div id="s-skills" class="s-plugin-list"></div>
         </div>
       </div><!-- /skills panel -->
+
+      <div class="s-tab-panel" data-panel="mcp" style="display:none">
+      <div class="s-section">
+        <h3>${ICON.plug} ${tr('settings.tab.mcp')}</h3>
+        <div class="field-desc">${tr('settings.mcp.desc')}</div>
+        <div id="s-mcp-manager" class="mcp-manager"></div>
+      </div>
+      </div><!-- /mcp panel -->
 
       <div class="s-tab-panel" data-panel="mesh" style="display:none">
       <div class="s-section">
@@ -6902,6 +7029,8 @@ async function showSettings() {
       });
     };
   });
+  // ── MCP tab:管理面板(与 composer 弹层共用 renderMcpManager)──
+  void renderMcpManager(document.getElementById('s-mcp-manager')!);
 
   // ── Token 随机生成 ──
   document.getElementById('s-mcp-gentoken')!.onclick = () => {
@@ -7936,6 +8065,7 @@ function initSkillsTab(): void {
   document.getElementById('s-skill-search')!.oninput = (e) => {
     renderList((e.target as HTMLInputElement).value);
   };
+
 
   void api.listSkills().then((all) => {
     cache = all;
@@ -9519,19 +9649,19 @@ function openPathExternal(path: string): void {
     void openSlash('');
   };
 
-  // MCP 按钮(已移入 composer-more-menu):弹已连服务 + 工具列表(可见性)。点外面关闭。
+  // MCP 按钮(已移入 composer-more-menu):管理面板(与设置页 MCP tab 共用 renderMcpManager)。
+  const renderMcpMenu = (): Promise<void> => {
+    const menu = document.getElementById('mcp-menu');
+    return menu ? renderMcpManager(menu) : Promise.resolve();
+  };
   document.getElementById('cm-mcp')!.onclick = async (e) => {
     e.stopPropagation();
     closeComposerMore();
     const menu = document.getElementById('mcp-menu')!;
     if (!menu.hidden) { menu.hidden = true; return; }
-    const list = await api.listMcp();
-    menu.innerHTML = list.length
-      ? list.map((s) => `<div class="mcp-srv"><div class="mcp-srv-name">${ICON.plug} ${esc(s.name)}<span class="mcp-src">${s.source}</span></div><div class="mcp-tools">${
-          s.tools.length ? s.tools.map((tool) => `<span class="mcp-tool">${esc(tool)}</span>`).join('') : '<i>' + esc(tr('mcp.noTools')) + '</i>'
-        }</div></div>`).join('')
-      : '<div class="mcp-empty">' + tr('mcp.empty') + '</div>';
+    menu.innerHTML = `<div class="mcp-empty">${esc(tr('mcp.loading'))}</div>`; // 先占位再异步拉列表,避免闪"未连接"
     menu.hidden = false;
+    await renderMcpMenu();
   };
   document.addEventListener('click', (e) => {
     const menu = document.getElementById('mcp-menu')!;

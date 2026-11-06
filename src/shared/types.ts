@@ -327,6 +327,12 @@ export type AppSettings = {
   remoteMcpServers: Array<{ name: string; url: string; token?: string }>;
   // ── 插件管理:被禁用的插件 name 列表(空 = 全部启用) ──
   disabledPlugins: string[];
+  // ── MCP 管理:被禁用的外部 server name 列表(空 = 全部启用;连接保留,仅工具收集时过滤)──
+  disabledMcpServers?: string[];
+  // ── MCP 管理:应用自有 server 配置(面板内增删,一等公民;同名优先于外部扫描)──
+  mcpServers?: Array<{ name: string; type?: 'stdio' | 'sse'; command: string; args?: string[]; env?: Record<string, string>; token?: string }>;
+  // ── MCP 管理:是否扫描外部配置 ~/.claude.json / Claude Desktop / ~/.codex(默认开)──
+  mcpExternalScan?: boolean;
   // ── 插件引擎设置(v3.1):用户在插件卡片填的占位符值 { pluginName: { key: value } } ──
   // 引擎注册时对 bin/args/cwdFlags/systemFlag 做 {key} 插值;{cwd} 保留给运行时。
   pluginSettings: Record<string, Record<string, string>>;
@@ -1002,7 +1008,8 @@ export interface KinetAPI {
   // 技能面板:读源文件全文 / 保存(插件与 builtin 只读)。— Skills panel: read full source / save.
   readSkillSource(name: string): Promise<{ source: SkillInfo['source']; type: SkillType; dir: string; file: string; content: string } | null>;
   saveSkillSource(name: string, content: string): Promise<{ ok: true; file: string } | { ok: false; error: string }>;
-  listMcp(): Promise<Array<{ source: string; name: string; tools: string[] }>>;
+  listMcp(): Promise<Array<{ source: string; name: string; tools: string[]; enabled: boolean }>>;
+  mcpRescan(): Promise<Array<{ source: string; name: string; tools: string[]; enabled: boolean }>>;
   // ── 多机协作:本机 MCP Server 启停 + 状态 ──
   startMcpServer(port: number, token: string): Promise<{ ok: boolean; error?: string }>;
   stopMcpServer(): Promise<{ ok: boolean }>;

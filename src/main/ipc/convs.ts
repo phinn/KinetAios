@@ -114,6 +114,15 @@ export function register(): void {
     if (JSON.stringify(old.remoteMcpServers ?? []) !== JSON.stringify(s.remoteMcpServers ?? [])) {
       mcp.setRemoteServers(s.remoteMcpServers ?? []);
     }
+    // MCP 管理:禁用列表变化 → 同步到注册表(连接保留,仅过滤工具收集)。
+    if (JSON.stringify(old.disabledMcpServers ?? []) !== JSON.stringify(s.disabledMcpServers ?? [])) {
+      mcp.setDisabled(s.disabledMcpServers ?? []);
+    }
+    // MCP 管理:自有 server 列表 / 外部扫描开关变化 → 重建发现型连接(remote 不动)。
+    if (JSON.stringify(old.mcpServers ?? []) !== JSON.stringify(s.mcpServers ?? [])
+        || !!old.mcpExternalScan !== !!s.mcpExternalScan) {
+      void mcp.applyUserConfig(s.mcpServers ?? [], s.mcpExternalScan !== false);
+    }
     // 本机 MCP Server:enabled 变化 → 启停。空 token 时拒绝启动(mcp-server.start 会 reject)。
     if (s.localMcpServer?.enabled && !localMcpServer.isRunning()) {
       if (!s.localMcpServer.token?.trim()) {
@@ -190,6 +199,11 @@ export function register(): void {
     return '';
   });
   ipcMain.handle('list-mcp', () => mcp.snapshot());
+  // MCP 管理面板「重新扫描」:重连发现型 server 后直接返回新快照(一次往返刷新 UI)。
+  ipcMain.handle('mcp-rescan', async () => {
+    await mcp.rescan();
+    return mcp.snapshot();
+  });
   // skill 列表(~/.kinetaios + ~/.claude + ~/.codex + plugins)。曾丢失导致
   // renderer invoke reject → slash 菜单/skill 按钮无响应。
   // / Skill listing — losing this handler broke the slash menu & skill button.
