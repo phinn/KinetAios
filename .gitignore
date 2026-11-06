@@ -26,3 +26,5 @@ reports/
 
 # runtime lessons store (agent 写,勿入库)
 .kinet-lessons.json
+.trae-html-share-packages/
+ka_head_ocr.png

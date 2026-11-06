@@ -1,0 +1,12 @@
+import WebSocket from 'ws';
+import fs from 'fs';
+const TID = process.argv[2];
+const ws = new WebSocket(`ws://127.0.0.1:9225/devtools/page/${TID}`);
+let msgId = 0; const pending = new Map();
+ws.on('message', d => { const x = JSON.parse(d); if (x.id && pending.has(x.id)) { pending.get(x.id)(x); pending.delete(x.id); } });
+await new Promise(res => ws.on('open', res));
+const cdp = (m,p) => new Promise((res,rej) => { const i=++msgId; pending.set(i,d=>d.error?rej(new Error(JSON.stringify(d.error))):res(d.result)); ws.send(JSON.stringify({id:i,method:m,params:p})); });
+const shot = await cdp('Page.captureScreenshot', {format: 'png'});
+fs.writeFileSync('/tmp/ka_head_now.png', Buffer.from(shot.data, 'base64'));
+console.log('saved');
+ws.close(); process.exit(0);
