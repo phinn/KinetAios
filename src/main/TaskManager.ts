@@ -406,6 +406,11 @@ export class TaskManager {
         const lang = getSettings().lang;
         if (!turn.answer) { turn.error = t(lang, 'tmgr.cancelled'); turn.errorKind = 'cancelled'; }
         else conv.statusNote = t(lang, 'tmgr.stopped');
+        // 无正文的纯取消 = turn 无产出的硬终止:上一轮遗留的「📨 steer 已接收 / 已排队」
+        // 等过程性 note 不能带进 ready 态 —— cancel 不走 applyAndPersist 的终态清理,
+        // 这里必须自己清,否则侧栏 sb-live 行挂旧提示直到下次发送(2026-11-06 排查实锤)。
+        // 有正文分支的「已停止」本身就是终态提示,保留。
+        if (!turn.answer) conv.statusNote = null;
         // 同 applyAndPersist 的终态覆盖:取消标记必须落 turns 缓存,否则重启后
         // 「已停止 + ⏵ 断点续跑」按钮消失(UI 判据 t.error && t.done,缓存里为空)。
         // errorKind 是 UI 样式判据(cancelled 不给「重试」),事件流补不回,只能靠这里。
