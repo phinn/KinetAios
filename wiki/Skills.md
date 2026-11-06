@@ -58,6 +58,10 @@ A skill's body is only injected on the turn the user invokes `/skill-name`. Not 
 
 Aggregates every skill/command/agent from all sources (Claude Code / Codex / built-in / plugins) into one searchable panel. User-level skills are **editable in-app** (opens the source file in an editor modal); plugin and built-in skills are read-only. Changes take effect immediately — no restart.
 
+## Skills marketplace (Settings → Skills, v4.0.9+)
+
+Embedded catalog of the official [anthropics/skills](https://github.com/anthropics/skills) repo: fetches the repo tree, lists every directory containing a `SKILL.md` (frontmatter `description` shown inline), searchable by name/description, one-click install into `~/.kinetaios/skills`. All network access lives in the main process (zero network surface in the renderer); concurrency-limited fetching with a 10-minute in-memory cache. After install the skill cache is invalidated immediately — the `/` menu and engine injection pick it up without a restart.
+
 ## Adding a new skill
 
 Add a directory in Claude Code's or Codex's standard location:

@@ -58,6 +58,10 @@ skill 的 body 只在用户**这一轮**调用 `/skill-name` 时注入。下一�
 
 把所有来源(Claude Code / Codex / 内置 / 插件)的 skill/command/agent 聚合到一个可搜索的面板。用户级技能可在 app 里**直接编辑**(弹窗编辑器打开源文件);插件与内置技能只读。保存即时生效 —— 不用重启。
 
+## 技能市场(设置 → 技能,4.0.9+)
+
+内嵌 [anthropics/skills](https://github.com/anthropics/skills) 官方库目录:拉取仓库树,列出所有含 `SKILL.md` 的目录(内联展示 frontmatter 的 `description`),按名称/描述搜索,一键安装到 `~/.kinetaios/skills`。全部网络访问在主进程(渲染层零网络面);并发受限抓取 + 10 分钟内存缓存。安装后技能缓存即时失效 —— `/` 菜单与引擎注入不用重启即可用。
+
 ## 加新 skill
 
 在 Claude Code 或 Codex 的标准位置加目录:

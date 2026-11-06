@@ -122,12 +122,11 @@ Why:
 
 `src/main/mcp.ts`.
 
-### Auto-discovery
+### Auto-discovery (v4.0.9+)
 
-On startup, scans:
-- `~/.claude.json` (Claude Desktop config)
-- `~/.codex/config.toml` (Codex config)
-- Claude Code's plugin config
+On startup, connects, in priority order (app-owned wins on name conflicts):
+- **App-owned servers** — `settings.mcpServers`, managed in the panel (add/edit/remove, stdio or SSE/remote)
+- **External scans** — `~/.claude.json` (Claude Desktop), `~/.codex/config.toml`, Claude Code's plugin config; the whole external scan can be turned off (`settings.mcpExternalScan`)
 
 Extracts all stdio MCP service configs (`command` + `args` + `env`), spins up a client for each.
 
@@ -143,9 +142,9 @@ Extracts all stdio MCP service configs (`command` + `args` + `env`), spins up a 
 
 If a stdio subprocess dies → auto-restart + re-`tools/list`. Available again on the next turn.
 
-### 🔌 button
+### 🔌 button + manager panel (v4.0.9+)
 
-Main window's **🔌 MCP** button: lists connected services + each one's exposed tools. **Read-only display** — you can't edit configs here (edit `~/.claude.json` / `~/.codex/config.toml`, restart the app).
+Main window's **🔌 MCP** button and the settings **MCP tab** share the same manager UI: per-server enable/disable (the connection stays alive — only tool collection is filtered, so re-enabling is instant, no reconnect), add/edit/remove app-owned servers (name, stdio/SSE, command, args, env, Bearer token for remote), toggle external scanning, and a one-click **rescan** that reconnects discovery-type servers and returns the fresh snapshot in one IPC round-trip. Disabled servers live in `settings.disabledMcpServers`.
 
 ## Tool result truncation
 

@@ -122,12 +122,11 @@ interface Tool {
 
 `src/main/mcp.ts`。
 
-### 自动发现
+### 自动发现(4.0.9+)
 
-启动时扫:
-- `~/.claude.json`(Claude Desktop 配置)
-- `~/.codex/config.toml`(Codex 配置)
-- Claude Code 的 plugin 配置
+启动时按优先级接入(同名时自有配置优先):
+- **应用自有 server** — 存 `settings.mcpServers`,面板内增删改(stdio 或 SSE/远程)
+- **外部扫描** — `~/.claude.json`(Claude Desktop)、`~/.codex/config.toml`、Claude Code 的 plugin 配置;外部扫描可整体关闭(`settings.mcpExternalScan`)
 
 提取所有 stdio MCP 服务配置(`command` + `args` + `env`),给每个起一个 client。
 
@@ -143,9 +142,9 @@ interface Tool {
 
 stdio 子进程挂了 → 自动重启 + 重新 `tools/list`。下一个 turn 又能用。
 
-### 🔌 按钮
+### 🔌 按钮 + 管理面板(4.0.9+)
 
-主窗口底部 **🔌 MCP** 按钮点开:列出当前连接的 MCP 服务 + 每个服务暴露的工具。**只读展示**,不能在这里改配置(改 `~/.claude.json` / `~/.codex/config.toml`,重启 app)。
+主窗口底部 **🔌 MCP** 按钮与设置页 **MCP tab** 共用同一套管理 UI:每个服务可单独停用/启用(连接保留,只在工具收集时过滤,重新启用零成本免重连);增删改自有 server(名称、stdio/SSE、命令、参数、env、远程 Bearer token);外部扫描整体开关;一键**重新扫描**重连全部发现型 server,一次 IPC 往返直接返回新快照。停用列表存 `settings.disabledMcpServers`。
 
 ## 工具结果截断
 
