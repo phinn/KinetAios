@@ -7182,6 +7182,21 @@ async function showSettings() {
     editingProfileId = pf?.id ?? null;
     const modal = document.getElementById('profile-editor-modal')!;
     (document.getElementById('pe-title') as HTMLElement).textContent = pf ? tr('settings.profile.editTitle', { name: pf.name }) : tr('settings.profile.addTitle');
+    // 预设下拉:每次打开重渲染(跟语言);编辑已有配置时按 baseURL 反推 presetId 回显,匹配不到落 custom
+    const presetSel = document.getElementById('pe-preset') as HTMLSelectElement;
+    presetSel.innerHTML = PRESETS.map((p) => `<option value="${p.id}">${tr(p.labelKey)}</option>`).join('');
+    const matched = pf ? PRESETS.find((p) => p.id !== 'custom' && p.baseURL === pf.baseURL) : undefined;
+    presetSel.value = matched ? matched.id : 'custom';
+    presetSel.onchange = () => {
+      const preset = PRESETS.find((p) => p.id === presetSel.value);
+      if (preset && preset.id !== 'custom') {
+        (document.getElementById('pe-base') as HTMLInputElement).value = preset.baseURL;
+        (document.getElementById('pe-model') as HTMLInputElement).value = preset.model;
+        (document.getElementById('pe-proto') as HTMLSelectElement).value = preset.proto;
+        (document.getElementById('pe-pin') as HTMLInputElement).value = String(preset.pin);
+        (document.getElementById('pe-pout') as HTMLInputElement).value = String(preset.pout);
+      }
+    };
     (document.getElementById('pe-name') as HTMLInputElement).value = pf?.name ?? '';
     (document.getElementById('pe-key') as HTMLInputElement).value = pf?.apiKey ?? '';
     (document.getElementById('pe-base') as HTMLInputElement).value = pf?.baseURL ?? '';
