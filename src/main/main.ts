@@ -292,16 +292,26 @@ function sendConversationNow(conv: Conversation): void {
       payload = { ...payload, turns: last ? [last] : [], turnsLoaded: false };
     }
   }
-  safeSend(dashboardWin, 'conversation', payload);
-  safeSend(quickWin, 'conversation', payload);
-  safeSend(arenaWin, 'conversation', payload);
+  // P1 广播裁剪(2026-11-06):不可见窗口跳过全量 conversation 广播(MB 级 structured clone)。
+  // - dashboard: 唯一常驻隐藏路径(closeBehavior=minimize),isMinimized 期间跳过,
+  //   restore/show 钩子(revealDashboardSyncAll,createDashboard 内挂)全量补发,状态零丢失;
+  // - quick: toggleQuick 开→show / 关→destroy,不存在「隐藏存活」态,isVisible 为假即无人在看;
+  // - arena: renderer(arena.ts)从不监听 conversation/agent-event(无任何 api.on* 消费点),
+  //   发=纯 structured clone 浪费,直接不發;conversation-removed 体量极小仍三窗全发。
+  const vis = (w: BrowserWindow | null): boolean =>
+    !!w && !w.isDestroyed() && w.isVisible() && !w.isMinimized();
+  if (vis(dashboardWin)) safeSend(dashboardWin, 'conversation', payload);
+  if (vis(quickWin)) safeSend(quickWin, 'conversation', payload);
 }
 
 const emitter: TaskManagerEmitter = {
   emitEvent(convId, ev: AgentEvent) {
     safeSend(dashboardWin, 'agent-event', { convId, ev });
-    safeSend(quickWin, 'agent-event', { convId, ev });
-    safeSend(arenaWin, 'agent-event', { convId, ev });
+    // P1: arena 渲染层从不监听 agent-event(arena.ts 零消费点),不發。
+    // quick 开→show/关→destroy,无隐藏存活态:不可见即无人在看,跳过。
+    if (quickWin && !quickWin.isDestroyed() && quickWin.isVisible() && !quickWin.isMinimized()) {
+      safeSend(quickWin, 'agent-event', { convId, ev });
+    }
   },
   // Broadcast slimming: see IPC_TURNS_CHAR_LIMIT above.
   // ── 运行态广播合并(2026-10-21 界面卡死事故)──
@@ -462,6 +472,15 @@ function createDashboard(): BrowserWindow {
     if (!win.isVisible()) win.show();
   });
   hardenWindowNav(win); // P1: window.open/导航拦截(外链转系统浏览器)
+  // 广播裁剪的补偿钩子:dashboard 被裁掉的广播(MB 级全量)在恢复可见时补发。
+  // restore=从最小化恢复;show=从托盘/minimize 关闭路径重新显示。全量同步后状态零缺失。
+  // Sync on re-reveal: broadcasts were skipped while hidden — replay all convs now.
+  const revealDashboardSyncAll = (): void => {
+    if (!taskManager) return; // 启动早期(1026 行才 new)钩子可能先触发
+    for (const c of taskManager.list()) sendConversationNow(c);
+  };
+  win.on('restore', revealDashboardSyncAll);
+  win.on('show', revealDashboardSyncAll);
   // 关窗置空:closeBehavior=minimize/tray 时 dashboard 关了但 app 不退,
   // 悬挂的 destroyed 引用会被 second-instance 等路径直接调 isMinimized() 抛 "Object has been destroyed"。
   win.on('closed', () => { dashboardWin = null; });
