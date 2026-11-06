@@ -1317,7 +1317,6 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 .ca-btn[data-act="ctx"]:hover { color: var(--accent); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
 #conv-list .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; }
-#conv-list > li:hover .title, #conv-list .title:hover { padding-right: 56px; }
 #conv-list .meta { font-size: var(--fs-sm); color: var(--text-faint); display: flex; gap: 6px; align-items: center; }
 #conv-list > li:not(.sb-proj):hover .sb-task-time { opacity: 0; }
 #conv-list .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 4px 0 16px;
@@ -1439,6 +1438,8 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 /* 标题行:标题 + 轮数/时间同一行(flat 模式);状态行 sb-live 独占第二行(2026-11-06 遮挡修复) */
 #conv-list > li:not(.sb-proj) .title-row { display: flex; align-items: center; gap: 7px; min-width: 0; width: 100%; }
 #conv-list > li:not(.sb-proj) .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; flex: 1; min-width: 0; }
+/* hover 预留:三钮工具组 ≈86px(含渐变过渡带),标题提前让位不伸到底(遮挡修复,两分支通用) */
+#conv-list > li:not(.sb-proj):hover .title, .sb-proj-tasks li:hover .title { padding-right: 84px; }
 #conv-list > li:not(.sb-proj) .sb-task-cwd { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #conv-list > li:not(.sb-proj) .sb-task-meta { display: flex; gap: 5px; align-items: center; flex-shrink: 0; }
 #conv-list > li:not(.sb-proj) .sb-task-time { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; flex-shrink: 0; }
@@ -1541,7 +1542,6 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .dot.eng-codex { background: #10a37f; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
 .sb-proj-tasks li .title { font-size: var(--fs-lg); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; }
-#conv-list > li:hover .title, #conv-list .title:hover { padding-right: 56px; }
 .sb-proj-tasks li:hover .sb-task-time { opacity: 0; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 4px 0 16px;
   opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
