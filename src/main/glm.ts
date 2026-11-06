@@ -80,10 +80,19 @@ export class GLMError extends Error {
 }
 
 // 读 HTTP 错误响应里的可读信息(400 时点明原因 —— max_tokens 过大 / reasoning 不支持 / 模型 id 错 等)。
+// 兼容三种格式:OpenAI 标准 {error:{message}}、通用 {message}、MiniMax 原生
+// {base_resp:{status_code,status_msg}}(历史实测:1302 限流/1210 图片/1301 内容安全都走这个,
+// 修前 stringify 兜底吐整坨 JSON,报错不可读)。
+// / Read readable info from an HTTP error body. Understands OpenAI {error:{message}},
+// generic {message} and MiniMax-native {base_resp:{status_code,status_msg}}.
 async function readErr(resp: Response): Promise<string> {
   try {
     const j = await resp.json() as Record<string, any>;
     const err = j?.error as Record<string, unknown> | undefined;
+    const base = j?.base_resp as Record<string, unknown> | undefined; // MiniMax 原生错误壳
+    if (base && (base.status_msg || base.status_code !== undefined)) {
+      return `[${base.status_code}]${base.status_msg ? ` ${String(base.status_msg)}` : ''}`;
+    }
     return (err?.message as string) || (j?.message as string) || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
   } catch {
     try {
@@ -99,9 +108,31 @@ async function readErr(resp: Response): Promise<string> {
 const RETRYABLE_STATUS = new Set([429, 500, 502, 503, 529]);
 const MAX_RETRY = 3;
 
+// 账户级 RPM 限流退避:1s/2s/4s 的秒级三连发对 MiniMax [1302] 这类账户限流是火上浇油
+// (2026-09~10 历史错误池:20+ 次秒级退避烧尽后整 turn 报错)。这类限流窗口是分钟级,
+// 用长曲线 2s/8s/30s,并优先尊重 Retry-After 响应头(服务端明确给了等待时间就照办)。
+// Account-level rate limit backoff: short bursts only make [1302]-style throttling worse;
+// use a long curve (2s/8s/30s) and honor Retry-When present.
+function accountLimitBackoffMs(attempt: number, retryAfter: string | null): number {
+  if (retryAfter) {
+    const s = Number(retryAfter);
+    if (Number.isFinite(s) && s > 0 && s <= 300) return s * 1000; // 5 分钟内的建议照办,离谱值忽略
+  }
+  const curve = [2_000, 8_000, 30_000];
+  const base = curve[Math.min(attempt, curve.length - 1)];
+  return Math.round(base * (0.85 + Math.random() * 0.3)); // ±15% jitter
+}
+
 function backoffMs(attempt: number): number {
   const base = 1000 * 2 ** attempt; // 1s / 2s / 4s
   return Math.min(base * (0.75 + Math.random() * 0.5), 30_000); // ±25% jitter(主进程 Math.random 可用)
+}
+
+// 429 detail 是否账户级限流特征(非瞬时突发):MiniMax [1302] 中文话术 / 英文 rate limit 措辞。
+// 命中即走 accountLimitBackoffMs 长退避;纯突发限流仍用普通曲线。
+function isAccountRateLimit(code: number, detail: string): boolean {
+  if (code !== 429) return false;
+  return /1302|速率限制|rate.?limit|too many requests/i.test(detail);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
@@ -173,7 +204,11 @@ async function fetchUntil200(
       }
       const detail = await readErr(resp);
       if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
-        await sleep(backoffMs(attempt), signal);
+        // 账户级限流(429+[1302] 特征)用分钟级长退避,并优先服务端 Retry-After
+        const wait = isAccountRateLimit(resp.status, detail)
+          ? accountLimitBackoffMs(attempt, resp.headers?.get('retry-after'))
+          : backoffMs(attempt);
+        await sleep(wait, signal);
         continue;
       }
       throw new GLMError('http', resp.status, detail, GLMError.classifyText(resp.status, detail));
@@ -448,7 +483,23 @@ class OpenAICompatibleProvider implements Provider {
           if (cached > 0) cacheRead = cached;
         }
         const delta = obj.choices?.[0]?.delta;
-        if (!delta) continue;
+        if (!delta) {
+          // 流内错误帧显式抛错,不再 catch 静默吞掉(修前:{"error":...} 或 MiniMax
+          // {base_resp:{status_code:1302,...}} 帧落进 catch{continue},流空转收尾,
+          // 靠"空回复兜底"绕路,报错面目全非)。OpenAI 流内错误帧无 choices;
+          // MiniMax 200 状态码下也用 base_resp 帧报错(不抛 HTTP 4xx)。
+          // / In-stream error frames must surface, not vanish into catch{continue}.
+          const st = obj.error?.status ?? obj.error?.code;
+          const emsg = obj.error?.message ?? obj.error?.msg;
+          const bresp = obj.base_resp;
+          if (obj.error || (bresp && Number(bresp.status_code) >= 1000 && Number(bresp.status_code) !== 0)) {
+            const text = bresp
+              ? `[${bresp.status_code}] ${bresp.status_msg ?? ''}`.trim()
+              : (typeof emsg === 'string' && emsg) || JSON.stringify(obj.error).slice(0, 200);
+            throw new GLMError('http', Number(st) || (bresp ? 429 : 500), text, GLMError.classifyText(Number(st) || (bresp ? 429 : 500), text));
+          }
+          continue;
+        }
         // 思维链增量(GLM-4.6+/DeepSeek-R1 等):reasoning_content 先于 content 到达。
         if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
           reasoning += delta.reasoning_content;
@@ -471,7 +522,10 @@ class OpenAICompatibleProvider implements Provider {
             calls.set(idx, entry);
           }
         }
-      } catch {
+      } catch (e) {
+        // 我们自己抛的 GLMError(流内错误帧)要继续向上传播,进 AgentLoop 的重试/failover 链;
+        // 只有真正的 JSON 解析噪声(半帧/心跳/非 JSON)才吞掉继续。
+        if (e instanceof GLMError) throw e;
         continue;
       }
     }
