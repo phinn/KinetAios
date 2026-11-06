@@ -10589,10 +10589,17 @@ function showPluginPanel(name: string): void {
       iframe.style.border = 'none';
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads');
       iframe.srcdoc = panel.html;
+      viewEl.appendChild(iframe);
       // 收编窗口身份:bridge 只信任这个 WeakSet 里的 contentWindow(防 viz 卡伪造 plugin: 前缀)
       // Register window identity: bridge trusts only contentWindows in this WeakSet (viz cards can't forge the prefix)
+      // 关键:sandbox iframe 未插入 DOM 前 contentWindow=null,必须 appendChild 之后再收编(顺序反了桥全死:
+      // getTheme/promoList 静默无回包 → 面板深色兜底+空列表)。load 后再补一次(幂等)防时序缝隙。
+      // Critical: a sandboxed iframe has no browsing context before insertion, so contentWindow is null —
+      // register AFTER appendChild (wrong order killed the whole bridge). Re-register on load (idempotent).
       if (iframe.contentWindow) pluginBridgeWindows.add(iframe.contentWindow);
-      viewEl.appendChild(iframe);
+      iframe.addEventListener('load', () => {
+        if (iframe.contentWindow) pluginBridgeWindows.add(iframe.contentWindow);
+      });
     }
   }
 
