@@ -2722,10 +2722,24 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 与阅读列同步 */
   display: flex; flex-direction: column; gap: 2px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-normal) var(--ease-out);
 }
-#input:focus-within #composer-card { border-color: var(--accent-dim); }
+/* hover:边框微亮(先于 focus 的渐进反馈) */
+#composer-card:hover { border-color: var(--border); }
+/* focus:accent 边框 + 同色柔光圈(替代旧的通栏光带),阴影同步抬升一档 */
+#input:focus-within #composer-card {
+  border-color: var(--accent-dim);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.36), 0 2px 8px rgba(0,0,0,0.18),
+              0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
 #queue-row { max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 排队行跟卡片对齐 */ }
-#input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none; }
+/* 输入文字区:14px 正文级字号(长时间输入更舒适)、accent 光标、高度平滑生长 */
+#input textarea {
+  resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none;
+  background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none;
+  font-size: var(--fs-t2); line-height: 1.55; caret-color: var(--accent);
+  transition: height 0.15s var(--ease-out);
+}
 #input textarea::placeholder { color: var(--text-faint); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
@@ -2767,9 +2781,16 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .composer-bar .tool:active { transform: scale(0.92); }
 .composer-bar .tool .lbl { display: none; }
 .composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: var(--fs-md); padding: 3px 8px; border-radius: var(--r-xl); font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; font-variant-numeric: tabular-nums; }
-.composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; }
+/* 子模型:空值时幽灵化(无边框无底色只剩占位字),聚焦或有值才升回真 pill —— 消除"空框突兀"观感 */
+/* Sub-model: ghosted when empty (borderless/text only), becomes a real pill on focus or when set */
+.composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; width: 84px; transition: border-color .15s, background .15s, width .15s; }
+.composer-bar #submodel-input:not(:focus):placeholder-shown { border-color: transparent; background: transparent; width: 64px; color: var(--text-faint, var(--text-dim)); }
+.composer-bar #submodel-input:not(:focus):placeholder-shown:hover { border-color: var(--border); background: var(--surface-input, transparent); color: var(--text-dim); }
 /* 上下文模式选择器:hifi 时强调色高亮,提醒用户在烧 token */
 .composer-bar #ctx-mode-select { min-width: 80px; max-width: 110px; }
+/* 右区节奏:发送孤圆与左侧 pill 群之间留出气口,避免贴死 */
+/* Right-zone rhythm: breathing gap between the lone send orb and the pill cluster */
+.composer-bar .send { margin-left: 6px; }
 .composer-bar #ctx-mode-select.hifi { color: var(--accent); border-color: var(--accent-dim); }
 .composer-bar .bar-spacer { flex: 1 1 auto; }
 /* ── 余额按钮 + 气泡(Balance button + popover, 对齐 model-pill 视觉)── */
