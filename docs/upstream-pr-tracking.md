@@ -122,3 +122,9 @@
 2. **deepseek-ai/awesome-deepseek-integration**:查重发现 #739 早在 9-18 已投(五语言行+docs/kinetaios/README.md+logo);本轮险情=PUT 覆盖旧分支丢内容,已从旧 head 7623ffcb 捞回 7 文件;**铁律:fork/PUT 前先 search author:phinn 查历史 PR**;官方仓停滞(最后 merge 2-23)低速跟
 3. 判死记录:awesome-mcp-clients 6.6k⭐(近20 closed 0 merged)、Awesome-MCP-ZH(已收录 185 行无需再投)、ACC(已有 #3473 在投,一次一条铁律)
 4. 挂盯:sindresorhus/awesome-electron(≥100★ 门槛);OpenClaw 394k⭐ 生态仓(awesome-openclaw 系未成形列表,观察)
+
+### 2026-11-06 wave-5(生态帖+判死一批)
+1. **musistudio/claude-code-router discussion #1948**(38k⭐, 11-06 发):Show-and-tell,角度=spawn 原生 claude CLI→CCR settings.json 零改动生效;GraphQL createDiscussion(REST 无此通道);讨论区死寂(唯一旧 s&t 帖 0 评论)但 38k 基数占位零成本
+2. 判死:EndoTheDev/Awesome-Ollama(29 open 黑洞+批量关不 merge,无 issue 流)、ComposioHQ/awesome-claude-skills 78.8k 及同型 skills 列表(纯 skill 分类无 clients 段不 fit)、hesamsheikh/awesome-openclaw-usecases 31.6k(未验证 OpenClaw 集成,口径纪律:不投未实测的)
+3. 人工项:gitee token 过期(401)——GVP/开源指北推荐位需用户续 token 后提表单;中文线补充
+4. 查重纪律再次生效:CCR phinn 零历史✓、Ollama phinn 零历史✓(先查后投,deepseek #739 教训)
