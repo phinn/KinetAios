@@ -9380,6 +9380,16 @@ function openPathExternal(path: string): void {
         }
         return;
       }
+      if (runConv?.status === 'running' && draft && (attachments.length || imageAttachments.length)) {
+        // running + 附件:排队通道只走纯文本(enqueueMessage 仅存 text)。
+        // 修前:文本被清、附件 chip 残留且静默丢弃 —— 用户视角即「发送后输入框没清干净」。
+        // 现在:发文本入队,附件 chip 保留可补发;toast 说明,不静默吃数据。
+        clearComposerDraft(runConv.id);
+        recordSendHistory(draft);
+        enqueueMessage(runConv.id, draft);
+        uxToast.warn(tr('queue.attachmentsKept'));
+        return;
+      }
       void send();
     }
     // Escape 清空输入框(slash menu 已关闭时) / Escape clears composer when slash menu is closed
