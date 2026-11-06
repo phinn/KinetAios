@@ -152,9 +152,7 @@
 [data-theme="light"] .chat-head {
   border-bottom-color: rgba(0,0,0,.08);
 }
-[data-theme="light"] #input {
-  border-top-color: rgba(0,0,0,.08);
-}
+[data-theme="light"] #input { /* 容器只做布局,视觉在 composer-card */ }
 
 /* ═══════════════════════════════════════════════════════════════════════
    Aurora 极光主题 — 深空底色 + 渐变极光光晕 + 微妙毛玻璃质感
@@ -358,8 +356,7 @@
 }
 [data-theme="aurora"] #input {
   --surface-input: rgba(16,18,28,.62);
-  border-top-color: rgba(37,40,57,.6);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  /* 框线/内高光剥除:容器只做布局,视觉在 composer-card */
 }
 [data-theme="aurora"] #sidebar {
   --surface-pane: rgba(20,22,34,.68);
@@ -526,8 +523,7 @@
 }
 [data-theme="serene"] #input {
   --surface-input: rgba(255,255,255,.42);
-  border-top-color: rgba(176,148,120,.30);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+  /* 框线/内高光剥除:容器只做布局 */
 }
 [data-theme="serene"] #sidebar {
   --surface-pane: rgba(255,255,255,.50);
@@ -817,23 +813,19 @@
 }
 
 /* Tahoe: composer 输入区 — 液态玻璃精致版 */
+/* tahoe: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
 [data-theme="tahoe"] #composer {
-  background: rgba(255,255,255,0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid rgba(255,255,255,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.60),
-    inset 0 -1px 0 rgba(180,210,255,0.12),
-    0 2px 8px rgba(10,40,80,0.06);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
 }
 [data-theme="tahoe"] #composer:focus {
-  background: rgba(255,255,255,0.75);
-  border-color: var(--accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.70),
-    0 0 0 4px rgba(10,132,255,0.18),
-    0 4px 16px rgba(10,132,255,0.10);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 /* Tahoe: typing 指示器 — systemBlue 脉冲 */
 [data-theme="tahoe"] .typing i {
@@ -858,9 +850,7 @@
 }
 [data-theme="tahoe"] #input {
   --surface-input: rgba(245,250,255,0.55);
-  border-top-color: rgba(176,200,224,0.45);
-  background-image: linear-gradient(180deg, rgba(255,255,255,0.25), transparent 35%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+  /* 顶栏渐变/框线/内高光剥除:容器只做布局 */
 }
 [data-theme="tahoe"] #sidebar {
   --surface-pane: rgba(245,250,255,0.50);
@@ -4159,23 +4149,19 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 
 /* Sierra: composer 输入区 — 液态玻璃精致版 */
+/* sierra: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
 [data-theme="sierra"] #composer {
-  background: rgba(255,250,242,0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid rgba(255,255,255,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    inset 0 -1px 0 rgba(232,180,120,0.10),
-    0 2px 8px rgba(120,80,40,0.06);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
 }
 [data-theme="sierra"] #composer:focus {
-  background: rgba(255,250,242,0.75);
-  border-color: var(--accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.65),
-    0 0 0 4px rgba(255,159,10,0.18),
-    0 4px 16px rgba(255,159,10,0.10);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 /* Sierra: typing 指示器 — systemOrange 脉冲 */
 [data-theme="sierra"] .typing i {
@@ -4200,8 +4186,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 [data-theme="sierra"] #input {
   --surface-input: rgba(255,250,242,0.40);
-  border-top-color: rgba(232,212,190,0.50);
-  box-shadow: inset 0 1px 0 rgba(255,240,210,0.45);
+  /* 框线/内高光剥除:容器只做布局 */
 }
 [data-theme="sierra"] #sidebar {
   --surface-pane: rgba(255,250,242,0.50);
@@ -5098,9 +5083,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 
 /* SEED: 输入框区 — 金属面板 / Input area metal panel */
 [data-theme="seed"] #input {
-  background: var(--bg-side);
-  border-top: 1px solid var(--seed-metal);
-  box-shadow: 0 -1px 0 rgba(127,204,25,0.04);
+  /* 底/顶框剥除:容器只做布局(backdrop-filter none 保留,禁毛玻璃) */
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -5143,13 +5126,15 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 
 /* SEED: composer — HUD 输入框 / Composer = HUD input */
+/* seed: textarea 金属框剥离(composer-card 是唯一容器) */
 [data-theme="seed"] #composer {
-  background: var(--bg-input);
-  border: 1px solid var(--seed-metal);
+  background: transparent;
+  border: none;
 }
 [data-theme="seed"] #composer:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(127,204,25,0.20), 0 0 12px rgba(127,204,25,0.06);
+  border: none;
+  box-shadow: none;
+  outline: none;
 }
 
 /* SEED: composer-bar — 金属控制台 / Composer bar = metal console */
