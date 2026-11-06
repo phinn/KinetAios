@@ -16,6 +16,9 @@ import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clea
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
+// tool/call 事件存证 result 上限(2026-11-06:4000→50000,与 read_file 工具输出上限对齐,
+// 使「全文见事件日志」成立;导出回填、FTS 建索引都吃这里)。Event-side result cap.
+const EVENT_RESULT_CAP = 50_000;
 
 export interface TaskManagerEmitter {
   emitEvent(convId: string, ev: AgentEvent): void;
@@ -1182,7 +1185,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           type: 'tool/call',
           name: ev.name,
           args: ev.args,
-          result: ev.result.length > 4_000 ? ev.result.slice(0, 4_000) + '…[截断,全文见 turns 快照]' : ev.result,
+          // 事件层存证上限:50000(对齐 read_file 工具输出上限)。此前 4000 与 turns 持久层
+          // 双重截断,「全文见事件日志」的注记名不副实(2026-11-06 导出盲区修复)。
+          // Event-side cap: 50k, aligned with the read_file tool cap — single source of full text.
+          result: ev.result.length > EVENT_RESULT_CAP ? ev.result.slice(0, EVENT_RESULT_CAP) + `…[事件存证截断,原长 ${ev.result.length.toLocaleString()} 字符]` : ev.result,
           durationMs: ev.durationMs,
           outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
         });

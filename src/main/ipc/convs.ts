@@ -245,6 +245,36 @@ export function register(): void {
     try {
       const conv = deps.taskManager().hydrate(convId); // 导出需要全部 turns,懒加载
       if (!conv) return { ok: false, error: t(getSettings().lang, 'common.convNotFound') };
+      // P2 导出全文盲区修复(2026-11-06):hydrate 读 turns 表,steps[].result 在持久层被
+      // RESULT_PERSIST_CAP(4000 留头 2000)截断,md/html/json 导出全带截断版。
+      // 全文在 conv_events(事件层 cap 50000,2026-11-06 起)。此处对带截断注记的 result
+      // 按「turn 内 tool 步骤序号对齐」从事件 tool/call 捞全文回填;老会话事件被 90 天
+      // prune 或事件本身截断 → 保留现值降级导出,不炸不空转。
+      // Export refill: turns table holds truncated results; conv_events holds fuller ones.
+      {
+        const turnIds = new Set(conv.turns.map((tu) => tu.id));
+        const TRUNC_MARK = '…[已截断,略去';
+        const byTurnFull = new Map<string, string[]>(); // turnId → 按序 tool/call result 全文
+        for (const e of loadEvents(convId)) {
+          if (!turnIds.has(e.turnId) || e.data.type !== 'tool/call') continue;
+          const arr = byTurnFull.get(e.turnId) ?? [];
+          arr.push(e.data.result);
+          byTurnFull.set(e.turnId, arr);
+        }
+        for (const tu of conv.turns) {
+          const fulls = byTurnFull.get(tu.id);
+          if (!fulls) continue;
+          let i = 0; // turns.steps 与事件 tool/call 同序(rebuildTurnsFromEvents 同一映射)
+          for (const st of tu.steps ?? []) {
+            // pending/interrupted 步骤只有 start 无结果 → 事件流没有对应 tool/call,不消耗序号
+            if (st.pending || st.interrupted) continue;
+            const full = fulls[i++];
+            if (st.result?.includes(TRUNC_MARK) && full && !full.includes(TRUNC_MARK) && full.length > st.result.length) {
+              st.result = full;
+            }
+          }
+        }
+      }
       const brand = getBrand();
       let content = '';
       let ext = '';

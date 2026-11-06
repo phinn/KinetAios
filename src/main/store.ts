@@ -526,8 +526,13 @@ export function saveTurn(convId: string, t: Turn): void {
   // (头部大会话单 turn 250KB),且与 conv_events tool/call 双份存全文。result 从不进 LLM
   // 上下文(directHistory 才是;AgentLoop 重放也只取 prompt+answer)→ 截断零影响 agent,
   // 全文回查走 conv_events。>RESULT_PERSIST_CAP 截断,留头 + 长度注记。内存态不动。
+  // 2026-11-06 修正:conv_events 侧原也截 4000(TaskManager tool/call),「全文见事件日志」
+  // 名不副实 — 两层都截 → 导出/回查拿到的是双重截断版。事件层 cap 提到 50000(对齐
+  // read_file 工具输出上限,存的是工具层已截断的完整结果),本层 4000 保持,导出经
+  // convs.ts export-conversation 从事件按 turn+startId 回填全文。
   // Persist-side result truncation: 55% of the 942MB turns table is step results, which
-  // never enter LLM context (directHistory holds that). Full text remains in conv_events.
+  // never enter LLM context (directHistory holds that). Full text remains in conv_events
+  // (event-side cap raised to 50k to make that claim true; export refills from there).
   const hasFatResults = t.steps?.some((s) => (s.result?.length ?? 0) > RESULT_PERSIST_CAP) ?? false;
   const slim: Turn = hasImages || hasFatResults
     ? {
