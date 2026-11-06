@@ -1303,7 +1303,8 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 .ca-btn:hover { color: var(--text); }
 .ca-btn[data-act="ctx"]:hover { color: var(--accent); }
 .ca-btn[data-act="delete"]:hover { color: var(--err); }
-#conv-list .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 56px; }
+#conv-list .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; }
+#conv-list > li:hover .title, #conv-list .title:hover { padding-right: 56px; }
 #conv-list .meta { font-size: var(--fs-sm); color: var(--text-faint); display: flex; gap: 6px; align-items: center; }
 #conv-list > li:not(.sb-proj):hover .sb-task-time { opacity: 0; }
 #conv-list .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 4px 0 16px;
@@ -1414,7 +1415,8 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
 #conv-list > li:not(.sb-proj).active { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
 #conv-list > li:not(.sb-proj).active .title { color: var(--accent); font-weight: 600; }
 #conv-list > li:not(.sb-proj) .title-wrap { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; align-items: flex-start; }
-#conv-list > li:not(.sb-proj) .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 56px; }
+#conv-list > li:not(.sb-proj) .title { font-size: var(--fs-lg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; }
+#conv-list > li:hover .title, #conv-list .title:hover { padding-right: 56px; }
 #conv-list > li:not(.sb-proj) .sb-task-cwd { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #conv-list > li:not(.sb-proj) .sb-task-meta { display: flex; gap: 5px; align-items: center; width: 100%; }
 #conv-list > li:not(.sb-proj) .sb-task-time { font-size: var(--fs-sm2); color: var(--text-faint); white-space: nowrap; margin-left: auto; flex-shrink: 0; }
@@ -1499,6 +1501,14 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .sb-proj-tasks li.active .title { color: var(--accent); font-weight: 600; }
 /* 引擎色小圆点 */
 /* 引擎点配色 — 值必须与 src/renderer/engine-colors.ts 的 ENGINE_COLORS 表一致(CSS 无法 import TS,人工镜像) */
+/* 非运行态引擎点降饱和半透明:eng-* 与 .dot.ready 同权重(0,2,0)且声明在后,常亮绿点让整列看起来像"全在跑"。
+ * 弱化后引擎色仅作区分线索;running/waiting/retrying/error 态(下方 .dot.eng-* 组合)恢复满色。 */
+.dot.ready.eng-direct { background: color-mix(in srgb, #c4a7ff 45%, transparent); }
+.dot.ready.eng-directV2 { background: color-mix(in srgb, #8ab4ff 45%, transparent); }
+.dot.ready.eng-directV3 { background: color-mix(in srgb, #7eeab5 45%, transparent); }
+.dot.ready.eng-directV4 { background: color-mix(in srgb, #f5c86b 45%, transparent); }
+.dot.ready.eng-claudeCode { background: color-mix(in srgb, #d97757 45%, transparent); }
+.dot.ready.eng-codex { background: color-mix(in srgb, #10a37f 45%, transparent); }
 .dot.eng-direct { background: #c4a7ff; }
 .dot.eng-directV2 { background: #8ab4ff; }
 .dot.eng-directV3 { background: #7eeab5; }
@@ -1506,7 +1516,8 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .dot.eng-claudeCode { background: #d97757; }
 .dot.eng-codex { background: #10a37f; }
 @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
-.sb-proj-tasks li .title { font-size: var(--fs-lg); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 56px; }
+.sb-proj-tasks li .title { font-size: var(--fs-lg); flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left; padding-right: 8px; }
+#conv-list > li:hover .title, #conv-list .title:hover { padding-right: 56px; }
 .sb-proj-tasks li:hover .sb-task-time { opacity: 0; }
 .sb-proj-tasks li .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 4px 0 16px;
   opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
