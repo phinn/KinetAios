@@ -725,6 +725,13 @@ const ZH_CN: Dict = {
   'settings.townStyle': '小镇风格',
   'settings.appIcon': '应用图标',
   'settings.appIcon.desc': '选择应用图标,点击即时生效。',
+  'settings.splash.kind': '启动动画',
+  'settings.splash.desc': '启动时的过场动画;可选内置款式或插件提供的皮肤。',
+  'settings.splash.none': '关闭',
+  'settings.splash.plugin': '插件',
+  'settings.splash.preview': '预览(播放一轮自动停止)',
+  'settings.splash.ms': '最短展示时长 (ms)',
+  'settings.splash.ms.desc': '主窗就绪前动画至少播这么久;设太长会拖慢进入速度。',
   'settings.fontScale': '字号大小',
   'settings.townStyle.classic': '经典(等距小屋)',
   'settings.townStyle.minecraft': '我的世界(方块建筑)',
@@ -1071,6 +1078,7 @@ const ZH_CN: Dict = {
   'preset.glm': 'GLM 智谱',
   'preset.glm-anthropic': 'GLM 智谱 (Anthropic 协议)',
   'preset.qwen': '阿里通义 (DashScope)',
+  'preset.aliyun-token-plan': '阿里百炼 Token Plan (订阅制)',
   'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
   'preset.orcarouter': 'OrcaRouter (多模型路由)',
   'preset.custom': '自定义',
@@ -1415,6 +1423,7 @@ const ZH_CN: Dict = {
   'viz.downloaded': '已下载 {name}',
   'viz.imgSaved': '图片已保存',
   'viz.imgFailed': '图片导出失败: {msg}',
+  'viz.collapse': '收起代码',
 };
 
 const EN: Dict = {
@@ -2123,6 +2132,13 @@ const EN: Dict = {
   'settings.townStyle': 'Town Style',
   'settings.appIcon': 'App Icon',
   'settings.appIcon.desc': 'Choose the app icon. Changes instantly on click.',
+  'settings.splash.kind': 'Splash animation',
+  'settings.splash.desc': 'Startup transition animation; pick a built-in style or a plugin-provided skin.',
+  'settings.splash.none': 'Off',
+  'settings.splash.plugin': 'Plugin',
+  'settings.splash.preview': 'Preview (plays once and stops)',
+  'settings.splash.ms': 'Minimum display time (ms)',
+  'settings.splash.ms.desc': 'The animation plays at least this long before the main window is ready; setting it too high slows startup.',
   'settings.fontScale': 'Font Size',
   'settings.townStyle.classic': 'Classic (Isometric)',
   'settings.townStyle.minecraft': 'Minecraft (Blocky)',
@@ -2469,6 +2485,7 @@ const EN: Dict = {
   'preset.glm': 'GLM (Zhipu)',
   'preset.glm-anthropic': 'GLM (Zhipu, Anthropic API)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
+  'preset.aliyun-token-plan': 'Alibaba Bailian Token Plan (subscription)',
   'preset.ollama': 'Local Ollama (llama3.2 / qwen2.5 etc.)',
   'preset.orcarouter': 'OrcaRouter (multi-model routing)',
   'preset.custom': 'Custom',
@@ -2812,6 +2829,7 @@ const EN: Dict = {
   'viz.downloaded': 'Downloaded {name}',
   'viz.imgSaved': 'Image saved',
   'viz.imgFailed': 'Image export failed: {msg}',
+  'viz.collapse': 'Collapse code',
 };
 
 const ZH_TW: Dict = {
@@ -3515,6 +3533,13 @@ const ZH_TW: Dict = {
   'settings.townStyle': '小鎮風格',
   'settings.appIcon': '應用圖標',
   'settings.appIcon.desc': '選擇應用圖標，點擊即時生效。',
+  'settings.splash.kind': '啟動動畫',
+  'settings.splash.desc': '啟動時的過場動畫;可選內置款式或插件提供的皮膚。',
+  'settings.splash.none': '關閉',
+  'settings.splash.plugin': '插件',
+  'settings.splash.preview': '預覽(播放一輪自動停止)',
+  'settings.splash.ms': '最短展示時長 (ms)',
+  'settings.splash.ms.desc': '主窗就緒前動畫至少播這麼久;設太長會拖慢進入速度。',
   'settings.fontScale': '字號大小',
   'settings.townStyle.classic': '經典(等距小屋)',
   'settings.townStyle.minecraft': '我的世界(方塊建築)',
@@ -3856,6 +3881,7 @@ const ZH_TW: Dict = {
   'preset.glm': 'GLM 智譜',
   'preset.glm-anthropic': 'GLM 智譜 (Anthropic 協議)',
   'preset.qwen': '阿里通義 (DashScope)',
+  'preset.aliyun-token-plan': '阿里百鍊 Token Plan (訂閱制)',
   'preset.ollama': '本地 Ollama (llama3.2 / qwen2.5 等)',
   'preset.orcarouter': 'OrcaRouter (多模型路由)',
   'preset.custom': '自訂',
@@ -4204,6 +4230,7 @@ const ZH_TW: Dict = {
   'viz.downloaded': '已下載 {name}',
   'viz.imgSaved': '圖片已儲存',
   'viz.imgFailed': '圖片匯出失敗: {msg}',
+  'viz.collapse': '收合程式碼',
 };
 
 const JA: Dict = {
@@ -4927,6 +4954,13 @@ const JA: Dict = {
   'settings.townStyle': 'タウンスタイル',
   'settings.appIcon': 'アプリアイコン',
   'settings.appIcon.desc': 'アプリアイコンを選択。クリックで即時反映されます。',
+  'settings.splash.kind': 'スプラッシュアニメ',
+  'settings.splash.desc': '起動時のトランジション。内蔵スタイルまたはプラグイン提供のスキンを選択できます。',
+  'settings.splash.none': 'オフ',
+  'settings.splash.plugin': 'プラグイン',
+  'settings.splash.preview': 'プレビュー(1回再生して停止)',
+  'settings.splash.ms': '最短表示時間 (ms)',
+  'settings.splash.ms.desc': 'メインウィンドウの準備ができるまで最低限この時間だけ再生します。長すぎると起動が遅くなります。',
   'settings.fontScale': 'フォントサイズ',
   'settings.townStyle.classic': 'クラシック(等角小屋)',
   'settings.townStyle.minecraft': 'マインクラフト(ブロック)',
@@ -5269,6 +5303,7 @@ const JA: Dict = {
   'preset.glm': 'GLM (Zhipu)',
   'preset.glm-anthropic': 'GLM (Zhipu, Anthropic API)',
   'preset.qwen': 'Alibaba Qwen (DashScope)',
+  'preset.aliyun-token-plan': 'Alibaba Bailian Token Plan (サブスク)',
   'preset.ollama': 'ローカル Ollama (llama3.2 / qwen2.5 等)',
   'preset.orcarouter': 'OrcaRouter (マルチモデルルーティング)',
   'preset.custom': 'カスタム',
@@ -5597,6 +5632,7 @@ const JA: Dict = {
   'viz.downloaded': '{name} をダウンロードしました',
   'viz.imgSaved': '画像を保存しました',
   'viz.imgFailed': '画像のエクスポートに失敗: {msg}',
+  'viz.collapse': 'コードを折りたたむ',
 };
 
 export const STRINGS: Record<Lang, Dict> = {

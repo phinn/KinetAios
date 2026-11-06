@@ -23,7 +23,7 @@
   "version": "1.0.0",
   "engine": {
     "bin": "my-agent",                    // CLI 名,从 PATH + 常见安装目录解析
-    "protocol": "plain",                  // ndjson | jsonl-claude | jsonl-codex | plain(默认)
+    "protocol": "plain",                  // ndjson | jsonl-claude | jsonl-codex | jsonl-gemini | plain(默认)
     "args": ["--no-color"],               // argv 前缀,prompt 之前
     "cwdFlags": ["-C", "{cwd}"],          // {cwd} 占位符 = 会话工作目录
     "inject": "prompt",                   // prompt(默认)| system
@@ -40,6 +40,7 @@
 | `ndjson` | 每行一个 JSON 对象:`{"type":"token","text":..}`、`{"type":"tool",...}`、`{"type":"cost",...}`、`{"type":"done"}`、`{"type":"error","message":..}` | 自己写的 CLI |
 | `jsonl-claude` | 兼容 `claude -p --output-format stream-json` | claude 协议的 agent |
 | `jsonl-codex` | 兼容 `codex exec --json` | codex 协议的 agent |
+| `jsonl-gemini` | 兼容 `gemini --output-format json` | gemini 协议的 agent |
 | `plain` | 整段 stdout 当答案文本 | 普通 CLI(git、ripgrep 包装等) |
 
 ### 会话续接
@@ -63,6 +64,19 @@
 ## 内置示例
 
 仓库 `plugins/examples/git-agent/` 把裸 `git` 包装成引擎(`plain` 协议,`-C {cwd}` 工作目录)。它是全链路的参考实现:manifest → 引擎注册表 → 下拉 → plain 协议 token 流。
+
+## 官方 CLI 插件引擎(v4.0.7+)
+
+两个零代码声明式插件引擎已随仓库分发,装上 CLI 即可在引擎下拉里直接用:
+
+| 插件 | `bin` | 协议 | 说明 |
+|---|---|---|---|
+| `gemini-cli` | `gemini` | `jsonl-gemini` | 托管 google-gemini/gemini-cli 会话,支持 resume |
+| `claude-code-router` | `ccr` | `jsonl-claude` | 把 claude-code-router 当引擎托管,支持 `--resume` 续跑 |
+
+两者都是纯 `plugin.json`(零 JS 代码):manifest 声明 `engine` 字段 → 引擎注册表登记 → 出现在引擎下拉 → 复用同一套 `CliEngineAdapter` 骨架(跨平台 spawn、`.cmd` shim 处理、PATH 补全、会话恢复)。
+
+> ⚠️ **gemini 启动陷阱**:`gemini -p <prompt>` 会与 stdin 冲突。正解是**不传 `-p`**,改为 spawn 时挂 stdin pipe —— headless 模式自动触发,发完 prompt 必须 `end()` 关闭 stdin,否则进程挂死不返回。
 
 ## 相关
 

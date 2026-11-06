@@ -229,7 +229,15 @@ function renderVizCard(src: string, idx: number): string {
     `<button class="ghost viz-btn" data-viz-copy>${copyIcon}<span data-i18n="viz.copyCode">复制代码</span></button>` +
     `<button class="ghost viz-btn" data-viz-view>${codeIcon}<span data-i18n="viz.viewCode">查看代码</span></button>` +
     `</div></div>` +
-    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts allow-same-origin" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
+    // ⚠️ sandbox 绝不能加 allow-same-origin:blob: URL 与宿主同源,
+    // allow-scripts + allow-same-origin 同时开启等于取消沙箱 —— 内层脚本可访问
+    // parent.document 逃逸到宿主 renderer,进而拿到 window.kinet 的 shell 等能力。
+    // 内层量自身 document.body 尺寸不需要同源(脚本就在文档内跑),保持 allow-scripts 即可。
+    // ⚠️ NEVER add allow-same-origin: blob: shares the host origin, so
+    // allow-scripts + allow-same-origin cancels the sandbox (inner script could
+    // reach parent.document → window.kinet → shell). Measuring the inner
+    // document's own body needs no same-origin grant.
+    `<div class="viz-frame-wrap"><iframe class="viz-frame" sandbox="allow-scripts" data-viz-src="${blobUrl}" src="about:blank" title="visualization"></iframe>` +
     `<div class="viz-frame-msg" hidden></div></div>` +
     `<details class="viz-src"><summary data-i18n="viz.src">源码</summary>` +
     `<div class="code-block"><span class="code-lang">html</span><button class="code-copy ghost" data-code-copy>${COPY_ICON}</button>` +

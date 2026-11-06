@@ -20,6 +20,7 @@ import { skillCatalogText } from '../skills';
 import {
   baseSystemPrompt,
   cwdAnchorSection,
+  providerEconomicsSection,
   personaSection,
   sourceHintSection,
   loadProjectRules,
@@ -89,6 +90,7 @@ export class DirectV4Engine implements Engine {
 
     const systemPrompt =
       baseSystemPrompt +
+      providerEconomicsSection(snap) +
       cwdAnchorSection(conv) +
       V4_SYSTEM_SUFFIX +
       personaSection(conv) +

@@ -152,9 +152,7 @@
 [data-theme="light"] .chat-head {
   border-bottom-color: rgba(0,0,0,.08);
 }
-[data-theme="light"] #input {
-  border-top-color: rgba(0,0,0,.08);
-}
+[data-theme="light"] #input { /* 容器只做布局,视觉在 composer-card */ }
 
 /* ═══════════════════════════════════════════════════════════════════════
    Aurora 极光主题 — 深空底色 + 渐变极光光晕 + 微妙毛玻璃质感
@@ -313,22 +311,51 @@
 [data-theme="aurora"] .tok-key       { color: #74c5ff; }
 [data-theme="aurora"] .tok-link      { color: #74c5ff; text-decoration: underline; }
 /* Aurora: 环境胶囊 — 深空半透明,透出极光底色 */
-[data-theme="aurora"] .ch-env,
-[data-theme="aurora"] .composer-bar .tool {
+[data-theme="aurora"] .ch-env {
   --surface-chip:        rgba(22,24,36,.55);
   --surface-chip-focus:  rgba(28,31,46,.75);
   --surface-chip-soft:   rgba(22,24,36,.55);
   --surface-chip-soft-hover: rgba(28,31,46,.75);
-  border-color: rgba(37,40,57,.6);
 }
+/* aurora: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
+[data-theme="aurora"] .composer-bar .tool {
+  --surface-chip: rgba(22,24,36,.55);
+  --surface-chip-focus: rgba(28,31,46,.75);
+  --surface-chip-soft: rgba(22,24,36,.55);
+  --surface-chip-soft-hover: rgba(28,31,46,.75);
+}
+
+/* serene: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
+[data-theme="serene"] .composer-bar .tool {
+  --surface-chip: rgba(255,255,255,.60);
+  --surface-chip-focus: rgba(255,255,255,.78);
+  --surface-chip-soft: rgba(255,255,255,.60);
+  --surface-chip-soft-hover: rgba(255,255,255,.78);
+}
+
+/* tahoe: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
+[data-theme="tahoe"] .composer-bar .tool {
+  --surface-chip: rgba(255,255,255,0.55);
+  --surface-chip-focus: rgba(255,255,255,0.72);
+  --surface-chip-soft: rgba(255,255,255,0.55);
+  --surface-chip-soft-hover: rgba(255,255,255,0.72);
+}
+
+/* sierra: composer 工具钮平权化(无框无底,hover 浮现主题 chip) */
+[data-theme="sierra"] .composer-bar .tool {
+  --surface-chip: rgba(255,250,242,0.55);
+  --surface-chip-focus: rgba(255,248,240,0.72);
+  --surface-chip-soft: rgba(255,250,242,0.55);
+  --surface-chip-soft-hover: rgba(255,248,240,0.72);
+}
+
 [data-theme="aurora"] .chat-head {
   --surface-header: rgba(16,18,28,.72);
   border-bottom-color: rgba(37,40,57,.6);
 }
 [data-theme="aurora"] #input {
   --surface-input: rgba(16,18,28,.62);
-  border-top-color: rgba(37,40,57,.6);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.05);
+  /* 框线/内高光剥除:容器只做布局,视觉在 composer-card */
 }
 [data-theme="aurora"] #sidebar {
   --surface-pane: rgba(20,22,34,.68);
@@ -482,13 +509,11 @@
   border-color: var(--accent-dim);
 }
 /* Serene: 环境胶囊 — 暖白毛玻璃,透出米色底 */
-[data-theme="serene"] .ch-env,
-[data-theme="serene"] .composer-bar .tool {
+[data-theme="serene"] .ch-env {
   --surface-chip:        rgba(255,255,255,.60);
   --surface-chip-focus:  rgba(255,255,255,.78);
   --surface-chip-soft:   rgba(255,255,255,.60);
   --surface-chip-soft-hover: rgba(255,255,255,.78);
-  border-color: rgba(176,148,120,.30);
 }
 [data-theme="serene"] .chat-head {
   --surface-header: rgba(255,255,255,.45);
@@ -496,8 +521,7 @@
 }
 [data-theme="serene"] #input {
   --surface-input: rgba(255,255,255,.42);
-  border-top-color: rgba(176,148,120,.30);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+  /* 框线/内高光剥除:容器只做布局 */
 }
 [data-theme="serene"] #sidebar {
   --surface-pane: rgba(255,255,255,.50);
@@ -787,23 +811,19 @@
 }
 
 /* Tahoe: composer 输入区 — 液态玻璃精致版 */
+/* tahoe: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
 [data-theme="tahoe"] #composer {
-  background: rgba(255,255,255,0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid rgba(255,255,255,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.60),
-    inset 0 -1px 0 rgba(180,210,255,0.12),
-    0 2px 8px rgba(10,40,80,0.06);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
 }
 [data-theme="tahoe"] #composer:focus {
-  background: rgba(255,255,255,0.75);
-  border-color: var(--accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.70),
-    0 0 0 4px rgba(10,132,255,0.18),
-    0 4px 16px rgba(10,132,255,0.10);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 /* Tahoe: typing 指示器 — systemBlue 脉冲 */
 [data-theme="tahoe"] .typing i {
@@ -811,16 +831,10 @@
   box-shadow: 0 0 6px rgba(10,132,255,0.45);
 }
 /* Tahoe: 环境胶囊 / composer 工具 — 液态玻璃材质,透出底色渐变 */
-[data-theme="tahoe"] .ch-env,
-[data-theme="tahoe"] .composer-bar .tool {
-  --surface-chip:        rgba(255,255,255,0.55);
+[data-theme="tahoe"] .ch-env {
   --surface-chip-focus:  rgba(255,255,255,0.72);
   --surface-chip-soft:   rgba(255,255,255,0.55);
   --surface-chip-soft-hover: rgba(255,255,255,0.72);
-  border-color: rgba(176,200,224,0.45);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.50),
-    var(--shadow-xs);
 }
 [data-theme="tahoe"] .chat-head {
   --surface-header: rgba(245,250,255,0.55);
@@ -829,9 +843,7 @@
 }
 [data-theme="tahoe"] #input {
   --surface-input: rgba(245,250,255,0.55);
-  border-top-color: rgba(176,200,224,0.45);
-  background-image: linear-gradient(180deg, rgba(255,255,255,0.25), transparent 35%);
-  box-shadow: inset 0 1px 0 rgba(255,255,255,0.45);
+  /* 顶栏渐变/框线/内高光剥除:容器只做布局 */
 }
 [data-theme="tahoe"] #sidebar {
   --surface-pane: rgba(245,250,255,0.50);
@@ -1533,11 +1545,9 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
    cwd 默认收窄只露尾部路径;focus 时展开占满剩余空间,blur 回缩。*/
 .ch-env {
   display: inline-flex; align-items: center; gap: 0;
-  background: var(--surface-chip, rgba(255,255,255,.06));
-  backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
-  -webkit-backdrop-filter: blur(var(--glass-blur, 12px)) saturate(1.4);
-  border: 1px solid var(--border-soft, var(--border)); border-radius: var(--r-lg);
-  box-shadow: var(--shadow-xs);
+  background: transparent;
+  border: none;
+  box-shadow: none;
   padding: 2px 4px 2px 8px;
   flex: 0 1 auto; min-width: 0; max-width: 75%;
   transition: max-width var(--dur, 0.3s) var(--ease-out),
@@ -1548,12 +1558,11 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 /* focus-within:整个胶囊不限宽度 + 边框微亮 + 表面略浓 */
 .ch-env:focus-within {
   max-width: 100%;
-  border-color: var(--accent-dim, rgba(10,132,255,.3));
   background: var(--surface-chip-focus, rgba(255,255,255,.12));
-  box-shadow: var(--shadow-focus, var(--shadow-xs));
+  border-radius: var(--r-lg);
 }
 .ch-env select { all: unset; font-size: var(--fs-lg); font-weight: 500; color: var(--text); cursor: pointer; padding: 3px 6px; border-radius: var(--r-sm); white-space: nowrap; flex-shrink: 0; }
-.ch-env select:hover { background: var(--bg-input); }
+.ch-env select:hover { background: var(--surface-chip-soft, var(--bg-input)); }
 .ch-env-sep { width: 1px; height: 14px; background: var(--border); flex-shrink: 0; margin: 0 4px; }
 /* cwd:默认中等宽度露尾部路径;focus 时展开到至少 320px */
 .ch-env .cwd {
@@ -2722,10 +2731,24 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
   max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 与阅读列同步 */
   display: flex; flex-direction: column; gap: 2px;
   backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  transition: border-color var(--dur-fast) var(--ease-out), box-shadow var(--dur-normal) var(--ease-out);
 }
-#input:focus-within #composer-card { border-color: var(--accent-dim); }
+/* hover:边框微亮(先于 focus 的渐进反馈) */
+#composer-card:hover { border-color: var(--border); }
+/* focus:accent 边框 + 同色柔光圈(替代旧的通栏光带),阴影同步抬升一档 */
+#input:focus-within #composer-card {
+  border-color: var(--accent-dim);
+  box-shadow: 0 10px 32px rgba(0,0,0,0.36), 0 2px 8px rgba(0,0,0,0.18),
+              0 0 0 3px color-mix(in srgb, var(--accent) 12%, transparent);
+}
 #queue-row { max-width: var(--read-col, 1360px); width: 100%; margin: 0 auto; /* 排队行跟卡片对齐 */ }
-#input textarea { resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none; background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none; }
+/* 输入文字区:14px 正文级字号(长时间输入更舒适)、accent 光标、高度平滑生长 */
+#input textarea {
+  resize: none; width: 100%; min-height: 44px; max-height: 240px; border: none;
+  background: transparent; color: var(--text); padding: 10px 14px 6px; box-sizing: border-box; box-shadow: none;
+  font-size: var(--fs-t2); line-height: 1.55; caret-color: var(--accent);
+  transition: height 0.15s var(--ease-out);
+}
 #input textarea::placeholder { color: var(--text-faint); }
 /* 有附件时 textarea 进一步压缩,补偿 attach-row 高度,确保 composer-bar 不被推出可视区 */
 /* When attach-row has content, shrink textarea to keep composer-bar visible */
@@ -2738,21 +2761,23 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 .approval-pill {
   display: inline-flex; align-items: center; gap: 5px;
   height: 24px; padding: 0 9px; border-radius: var(--r-xl);
-  background: var(--surface-chip-soft, rgba(255,255,255,.06));
-  border: 1px solid var(--border-soft, var(--border));
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--text-dim); font-size: var(--fs-md); cursor: pointer;
-  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out);
+  transition: color var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out);
   flex-shrink: 0;
 }
-.approval-pill:hover { color: var(--text); border-color: var(--border); }
+/* 平权化:状态点本身就是状态语义,常框去掉,hover 浮现 chip 底 */
+/* Flat by default: the status dot carries the semantics; chip surface on hover */
+.approval-pill:hover { color: var(--text); border-color: transparent; background: var(--surface-chip-soft, rgba(255,255,255,.06)); }
 .approval-pill .ap-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-faint); transition: background var(--dur-fast) var(--ease-out); }
 .approval-pill[data-mode='always'] .ap-dot { background: #e8a13a; box-shadow: 0 0 5px rgba(232,161,58,.5); }  /* 每次确认=琥珀 */
 .approval-pill[data-mode='never']  .ap-dot { background: #4cb782; box-shadow: 0 0 5px rgba(76,183,130,.5); }  /* 自动放行=绿 */
 /* 工具胶囊:纯图标,紧凑排列 */
 .composer-bar .tool {
   position: relative; /* 供 listening::after 麦克风脉冲环定位 / anchor for listening::after mic pulse ring */
-  background: var(--surface-chip-soft, rgba(255,255,255,.06));
-  border: 1px solid var(--border-soft, var(--border));
+  background: transparent;
+  border: 1px solid transparent;
   color: var(--text-dim); padding: 4px; border-radius: var(--r-xl); font-size: var(--fs-xl);
   width: 28px; height: 28px;
   display: inline-flex; align-items: center; justify-content: center;
@@ -2760,16 +2785,27 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
               border-color var(--dur-fast) var(--ease-out),
               background var(--dur-fast) var(--ease-out);
 }
+/* 平权化:图标钮默认无框无底(消除三连小方框的框线噪音),hover 才浮现 chip */
+/* Flat by default: icon buttons lose the boxed look; chip surface appears on hover only */
 .composer-bar .tool:hover {
-  color: var(--text); border-color: var(--accent-dim);
-  background: var(--surface-chip-soft-hover, rgba(255,255,255,.10));
+  color: var(--text); border-color: transparent;
+  background: var(--surface-chip-soft, rgba(255,255,255,.10));
 }
 .composer-bar .tool:active { transform: scale(0.92); }
 .composer-bar .tool .lbl { display: none; }
-.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: var(--fs-md); padding: 3px 8px; border-radius: var(--r-xl); font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; font-variant-numeric: tabular-nums; }
-.composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; }
+.composer-bar .model-pill { flex: 0 1 auto; min-width: 80px; max-width: 160px; font-size: var(--fs-md); padding: 3px 8px; border-radius: var(--r-xl); border-color: transparent; background: transparent; font-family: ui-monospace, "Cascadia Code", monospace; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; height: 24px; line-height: 18px; font-variant-numeric: tabular-nums; transition: border-color var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); }
+/* 平权化:model/ctx 两个 pill 默认无框,hover 浮现 chip,与右区幽灵化节奏统一 */
+.composer-bar .model-pill:hover { border-color: var(--border); background: var(--surface-input, transparent); }
+/* 子模型:空值时幽灵化(无边框无底色只剩占位字),聚焦或有值才升回真 pill —— 消除"空框突兀"观感 */
+/* Sub-model: ghosted when empty (borderless/text only), becomes a real pill on focus or when set */
+.composer-bar #submodel-input { display: inline-block !important; max-width: 120px; min-width: 70px; width: 84px; transition: border-color .15s, background .15s, width .15s; }
+.composer-bar #submodel-input:not(:focus):placeholder-shown { border-color: transparent; background: transparent; width: 64px; color: var(--text-faint, var(--text-dim)); }
+.composer-bar #submodel-input:not(:focus):placeholder-shown:hover { border-color: var(--border); background: var(--surface-input, transparent); color: var(--text-dim); }
 /* 上下文模式选择器:hifi 时强调色高亮,提醒用户在烧 token */
 .composer-bar #ctx-mode-select { min-width: 80px; max-width: 110px; }
+/* 右区节奏:发送孤圆与左侧 pill 群之间留出气口,避免贴死 */
+/* Right-zone rhythm: breathing gap between the lone send orb and the pill cluster */
+.composer-bar .send { margin-left: 6px; }
 .composer-bar #ctx-mode-select.hifi { color: var(--accent); border-color: var(--accent-dim); }
 .composer-bar .bar-spacer { flex: 1 1 auto; }
 /* ── 余额按钮 + 气泡(Balance button + popover, 对齐 model-pill 视觉)── */
@@ -2811,14 +2847,18 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 }
 .bubble:hover .bubble-copy { opacity: 0.6; }
 .bubble-copy:hover { opacity: 1 !important; }
-.composer-bar .send { flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out); box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 25%, transparent); }
+.composer-bar .send { flex-shrink: 0; width: 30px; height: 30px; padding: 0; border-radius: 50%; border: none; display: inline-flex; align-items: center; justify-content: center; transition: transform var(--dur-fast) var(--ease-out), box-shadow var(--dur-fast) var(--ease-out), background var(--dur-fast) var(--ease-out), filter var(--dur-fast) var(--ease-out); box-shadow: none !important; }
+/* 主题 button.primary 变体(tahoe 等)给发送钮上框/内高光,统一压掉:纯 accent 圆,无边线无阴影 */
+.composer-bar .send.primary, [data-theme] .composer-bar button.send.primary { border: none; box-shadow: none !important; text-shadow: none; }
+/* 去描边后 hover 用提亮代替变色(primary 渐变底不可覆盖) */
+.composer-bar .send:hover { filter: brightness(1.12); }
 .composer-bar .send:active { transform: scale(0.92); }
 .composer-bar .send svg { transition: transform var(--dur-fast) var(--ease-out); }
 .composer-bar .send:hover svg { transform: translateX(1px) rotate(-5deg); }
 .composer-bar .send:disabled { opacity: 0.5; pointer-events: none; }
 .composer-bar .send.loading svg { animation: send-spin 0.8s linear infinite; }
 @keyframes send-spin { from { transform: rotate(0); } to { transform: rotate(360deg); } }
-.composer-bar .send.stop { background: var(--bg-elev-2); color: var(--text-dim); border-color: var(--border); }
+.composer-bar .send.stop { background: color-mix(in srgb, var(--err) 12%, transparent); color: var(--err); border-color: transparent; }
 .composer-bar .send.stop:hover { color: var(--err); border-color: var(--err); background: color-mix(in srgb, var(--err) 10%, transparent); }
 
 /* composer-more-menu — 低频工具(skill/mcp/voice-chat/persona)弹出菜单。
@@ -4099,23 +4139,19 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 
 /* Sierra: composer 输入区 — 液态玻璃精致版 */
+/* sierra: textarea 不再自带玻璃衣(composer-card 是唯一容器,2026-11 平权化) */
 [data-theme="sierra"] #composer {
-  background: rgba(255,250,242,0.55);
-  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
-  border: 1px solid rgba(255,255,255,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.55),
-    inset 0 -1px 0 rgba(232,180,120,0.10),
-    0 2px 8px rgba(120,80,40,0.06);
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  border: none;
+  box-shadow: none;
 }
 [data-theme="sierra"] #composer:focus {
-  background: rgba(255,250,242,0.75);
-  border-color: var(--accent);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.65),
-    0 0 0 4px rgba(255,159,10,0.18),
-    0 4px 16px rgba(255,159,10,0.10);
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+  outline: none;
 }
 /* Sierra: typing 指示器 — systemOrange 脉冲 */
 [data-theme="sierra"] .typing i {
@@ -4123,16 +4159,11 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
   box-shadow: 0 0 6px rgba(255,159,10,0.40);
 }
 /* Sierra: 环境胶囊 / composer 工具 — 暖白毛玻璃,透出金色底色渐变 */
-[data-theme="sierra"] .ch-env,
-[data-theme="sierra"] .composer-bar .tool {
+[data-theme="sierra"] .ch-env {
   --surface-chip:        rgba(255,250,242,0.55);
   --surface-chip-focus:  rgba(255,248,240,0.72);
   --surface-chip-soft:   rgba(255,250,242,0.55);
   --surface-chip-soft-hover: rgba(255,248,240,0.72);
-  border-color: rgba(232,212,190,0.50);
-  box-shadow:
-    inset 0 1px 0 rgba(255,255,255,0.50),
-    var(--shadow-xs);
 }
 [data-theme="sierra"] .chat-head {
   --surface-header: rgba(255,250,242,0.55);
@@ -4141,8 +4172,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 [data-theme="sierra"] #input {
   --surface-input: rgba(255,250,242,0.40);
-  border-top-color: rgba(232,212,190,0.50);
-  box-shadow: inset 0 1px 0 rgba(255,240,210,0.45);
+  /* 框线/内高光剥除:容器只做布局 */
 }
 [data-theme="sierra"] #sidebar {
   --surface-pane: rgba(255,250,242,0.50);
@@ -4479,8 +4509,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 [data-theme="craft"] .cht.active {
   border-bottom-color: var(--accent);
 }
-/* Craft: 环境胶囊 / composer 工具 — 方块面板 3D bevel,不透明 */
-[data-theme="craft"] .ch-env,
+/* Craft: composer 工具钮 — 方块面板 3D bevel,不透明(环境胶囊已平权化,不再上框) */
 [data-theme="craft"] .composer-bar .tool {
   --surface-chip:        var(--bg-elev);
   --surface-chip-focus:  var(--bg-input);
@@ -5039,9 +5068,7 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 
 /* SEED: 输入框区 — 金属面板 / Input area metal panel */
 [data-theme="seed"] #input {
-  background: var(--bg-side);
-  border-top: 1px solid var(--seed-metal);
-  box-shadow: 0 -1px 0 rgba(127,204,25,0.04);
+  /* 底/顶框剥除:容器只做布局(backdrop-filter none 保留,禁毛玻璃) */
   backdrop-filter: none;
   -webkit-backdrop-filter: none;
 }
@@ -5084,13 +5111,15 @@ button.sm { padding: 3px 8px; font-size: var(--fs-md); }
 }
 
 /* SEED: composer — HUD 输入框 / Composer = HUD input */
+/* seed: textarea 金属框剥离(composer-card 是唯一容器) */
 [data-theme="seed"] #composer {
-  background: var(--bg-input);
-  border: 1px solid var(--seed-metal);
+  background: transparent;
+  border: none;
 }
 [data-theme="seed"] #composer:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 1px rgba(127,204,25,0.20), 0 0 12px rgba(127,204,25,0.06);
+  border: none;
+  box-shadow: none;
+  outline: none;
 }
 
 /* SEED: composer-bar — 金属控制台 / Composer bar = metal console */

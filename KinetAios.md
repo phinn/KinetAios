@@ -20,7 +20,7 @@ npm run pack         # build + electron-builder --win --dir  → release/win-unp
 npm run dist         # build + electron-builder --win        → release/KinetAios Setup <ver>.exe (NSIS)
 ```
 
-**There is no test framework in this repo.** Verification = `npm run typecheck` plus launching the app (`npm start`) and driving the affected flow. Don't invent a test script.
+**Verification = `npm run typecheck` + `npm test`** (15 test files under `scripts/test/`, bundled via esbuild and run in node; `npm start` launches the app to drive the affected flow by hand). Don't invent a *new* test framework — add tests to the existing runner.
 
 ### Platform caveat (important)
 

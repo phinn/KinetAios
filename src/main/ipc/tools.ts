@@ -1,6 +1,7 @@
 import { app as __app } from 'electron';
 import __path from 'node:path';
 import { getBrand } from '../brand'; // ⚠️ 必须在这组 import 里:编译成 CJS 后 require 按声明顺序排放,
+import { splashOptions, splashLoaderHtml, splashPreview } from '../splash';
 import { app, BrowserWindow, clipboard, desktopCapturer, dialog, globalShortcut, ipcMain, Menu, nativeImage, Notification, session, shell, Tray, webContents } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
@@ -168,6 +169,37 @@ export function register(): void {
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── viz-card 拍帧导出 PNG ── renderer 传卡片 HTML + 尺寸,main 开离屏窗口渲染 → capturePage → base64。
+  // (renderer 内 SVG foreignObject 通路实测不可行:img 上下文对 foreignObject 渲染不可靠)
+  // Render viz-card HTML in an offscreen BrowserWindow, capturePage → PNG base64.
+
+  // ── 启动动画:设置面板选项/加载器 HTML/立即预览 ── Splash options/loader/preview. 
+  ipcMain.handle('splash-options', () => splashOptions());
+  ipcMain.handle('splash-loader', (_e, kind: string) => splashLoaderHtml(String(kind ?? 'default')));
+  ipcMain.handle('splash-preview', (_e, kind: string) => { splashPreview(String(kind ?? 'default')); });
+
+  ipcMain.handle('viz-capture', async (_e, html: string, width: number, height: number) => {
+    const W = Math.max(200, Math.min(2400, Math.round(width) || 600));
+    const H = Math.max(100, Math.min(4000, Math.round(height) || 400));
+    let win: BrowserWindow | null = null;
+    try {
+      win = new BrowserWindow({
+        show: false, x: 0, y: 0, width: W, height: H, useContentSize: true,
+        webPreferences: { offscreen: true } // 不上屏,防抢焦点/闪窗
+      });
+      await win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(html));
+      // 等渲染稳定:两帧 + 短延时(字体/布局落位)
+      await new Promise(r => setTimeout(r, 120));
+      const img = await win.webContents.capturePage();
+      const buf = img.toPNG();
+      return { ok: true, dataUrl: 'data:image/png;base64,' + buf.toString('base64') };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    } finally {
+      win?.destroy();
     }
   });
 

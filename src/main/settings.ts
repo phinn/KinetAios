@@ -3,6 +3,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import { app, safeStorage } from 'electron';
 import type { AppSettings, ConfigSnapshot, EmbedSnapshot, EngineKind, BalanceSnapshot } from '../shared/types';
+import { detectProvider } from '../shared/providerEndpoints';
 
 // Defaults match the macOS app: GLM 智谱 openai-compatible endpoint.
 const DEFAULTS: AppSettings = {
@@ -46,6 +47,7 @@ const DEFAULTS: AppSettings = {
   disabledPlugins: [], // 被禁用的插件 name 列表(空 = 全部启用)
   pluginSettings: {},  // v3.1: 插件引擎设置用户值 { pluginName: { key: value } }
   memorySync: { remote: '', branch: 'main', autoSyncMinutes: 0 }, // 记忆 Git 仓库同步:remote 空 = 未启用
+  splash: { kind: 'default', showMs: 1600 }, // 启动动画:默认星云款;none=关闭
   voiceAutoSend: false,
   autoLoadSkills: false, // 自动加载 Skills 默认关(用户显式打开才注入目录 + 注册 load_skill 工具)
   compactMeta: false, // 紧凑模式默认关:hover 才显示 turn 元信息行(耗时/token/费用),默认常驻
@@ -203,6 +205,7 @@ export function snapshot(profileId?: string | null): ConfigSnapshot {
       apiKey: profile.apiKey,
       apiProtocol: profile.apiProtocol,
       reasoning: profile.reasoning,
+      provider: detectProvider(profile.baseURL),
     };
   }
   return {
@@ -211,6 +214,7 @@ export function snapshot(profileId?: string | null): ConfigSnapshot {
     apiKey: s.apiKey,
     apiProtocol: s.apiProtocol,
     reasoning: s.reasoning,
+    provider: detectProvider(s.baseURL),
   };
 }
 
@@ -247,10 +251,16 @@ export function balanceSnapshot(profileId?: string | null): BalanceSnapshot {
   }
 
   // 2) 推断模式:按 baseURL 关键字路由
+  //    - 阿里百炼 Token Plan(host 含 token-plan.*.aliyuncs.com):订阅制 Credits,无 sk- key 余额 API → 返回空 url,handler 引导网页控制台
   //    - MiniMax 系列(/minimax/i):固定走 api.minimaxi.com/v1/account/balance,Auth Bearer
   //    - 智谱 Coding Plan(baseURL 含 /coding 或 /anthropic):走 open.bigmodel.cn 或 api.z.ai 的 quota 端点,Auth 裸 token
   //    - 智谱开放平台:走 baseURL/balance,Auth Bearer
   //    - 其他:返回空 url,handler 会回退到"不支持"提示
+  // ⚠️ Token Plan 判定必须前置:其 base URL 以 /apps/anthropic 结尾,会误命中下方智谱 /anthropic 分支。
+  //    真实 host 是 token-plan.<region>.maas.aliyuncs.com(maas 三段),中段用 [a-z0-9.-]+ 通配。
+  if (/token-plan\.[a-z0-9.-]+\.aliyuncs\.com/i.test(baseURL)) {
+    return { url: '', apiKey: mainKey, authScheme: 'bearer', provider: 'aliyun-token-plan' };
+  }
   if (/minimax/i.test(baseURL)) {
     const host = baseURL.toLowerCase().includes('api.minimax.chat')
       ? 'https://api.minimaxi.com'

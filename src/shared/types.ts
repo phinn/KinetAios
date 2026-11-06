@@ -1,6 +1,7 @@
 // Shared types + pure state logic. Imported by main (CJS) and renderer (bundled).
 // Type-only and pure-function — no Node- or DOM-only APIs in here.
 import type { Lang } from './i18n';
+import type { ProviderKind } from './providerEndpoints';
 
 // 版本更新检查结构(main/updater.ts 产出,KinetAPI 引用)
 import type { UpdateInfo } from './version';
@@ -275,8 +276,8 @@ export type BalanceSnapshot = {
   url: string;
   apiKey: string;
   authScheme: 'bearer' | 'raw' | 'x-api-key';
-  /** provider 标签:MiniMax / zhipu-coding-plan / zhipu-open,给 UI/日志识别用。 */
-  provider: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';
+  /** provider 标签:MiniMax / zhipu-coding-plan / zhipu-open / aliyun-token-plan,给 UI/日志识别用。 */
+  provider: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'aliyun-token-plan' | 'custom';
 };
 
 export type AppSettings = {
@@ -333,6 +334,8 @@ export type AppSettings = {
   // gitee/github 皆可(就是个 git remote,凭证走系统 git credential);
   // 同步内容:lessons.md + facts.ndjson + blocks.json(对话原文不出本地,隐私分级 L2)。
   memorySync: { remote: string; branch: string; autoSyncMinutes: number };
+  // 启动动画: none=关 / default|orbit=内置款 / plugin:<name>=插件贡献。showMs=内置动画最短展示时长。
+  splash: { kind: string; showMs: number };
   // ── 语音实时输入(Web Speech API)── 开启后语音按钮切到实时模式:
   // 说话时实时显示文字(VAD 检测静音后自动发送,无需手动点"发送")。
   // 默认关闭 — 走旧的 MediaRecorder 录音 → 转写 → 填入 composer 模式。
@@ -450,6 +453,7 @@ export type ConfigSnapshot = {
   apiKey: string; // '' = none
   apiProtocol: APIProtocol;
   reasoning: ReasoningEffort;
+  provider?: ProviderKind; // 从 baseURL 派生(可选,旧构造点不传 = 'generic')。system prompt 分流/余额路由用。
 };
 
 // Embedding 接口快照 —— embed() 用这个,字段解析优先于主 ConfigSnapshot。
@@ -991,7 +995,7 @@ export interface KinetAPI {
     left?: string;
     gift?: string;
     message?: string;
-    provider?: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'custom';  // 失败/成功都透传,前端决定 UI 路径
+    provider?: 'minimax' | 'zhipu-coding-plan' | 'zhipu-open' | 'aliyun-token-plan' | 'custom';  // 失败/成功都透传,前端决定 UI 路径
     webUrl?: string;                       // provider=minimax 时,token_type_mismatch 引导用户去网页控制台看余额
   }>;
   listSkills(): Promise<SkillInfo[]>;
@@ -1187,6 +1191,12 @@ export interface KinetAPI {
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
   clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
   openExternal(url: string): Promise<{ ok: boolean; error?: string }>;
+  // ── viz-card 拍帧导出:main 开离屏窗口渲染卡片 HTML → capturePage → PNG dataUrl ──
+  vizCapture(html: string, width: number, height: number): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
+  // ── 启动动画: 选项列表(内置款+插件贡献) / 加载器 HTML(sandbox iframe 用) / 立即预览 ──
+  splashOptions(): Promise<Array<{ kind: string; label: string }>>;
+  splashLoaderHtml(kind: string): Promise<string>;
+  splashPreview(kind: string): Promise<void>;
   // ── Visual Inspector:向 webview 注入 inspect 脚本,执行后返回元素信息 ──
   // 安全:白名单 action 模式,不接受任意脚本字符串 / Security: whitelist action, no arbitrary script string.
   // renderer 传 webview 的 guestInstanceId + action 名 + 结构化参数 → main 组装脚本 → executeJavaScript。

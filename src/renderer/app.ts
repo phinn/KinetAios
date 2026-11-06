@@ -3,6 +3,7 @@
 import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
+import { swapBaseUrlForProtocol } from '../shared/providerEndpoints';
 import { engineColor } from './engine-colors';
 import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
@@ -6412,7 +6413,7 @@ async function showSettings() {
         </select></div>
       </div>
       <div class="s-section">
-        <h3>${tr('settings.appIcon')}</h3>
+      <h3>${tr('settings.appIcon')}</h3>
         <div class="field-desc">${tr('settings.appIcon.desc')}</div>
         <div class="icon-picker" id="s-icon-picker">
           ${[
@@ -6431,6 +6432,17 @@ async function showSettings() {
               <span>${opt.label}</span>
             </label>`).join('')}
         </div>
+      </div>
+      <div class="s-section">
+        <h3>${tr('settings.splash')}</h3>
+        <div class="field-desc">${tr('settings.splash.desc')}</div>
+        <div class="field"><label>${tr('settings.splash.kind')}</label><select id="s-splash-kind">
+          ${splashOptionTags(s.splash?.kind || 'default')}
+        </select></div>
+        <div class="field"><label>${tr('settings.splash.ms')}</label>
+          <input type="number" id="s-splash-ms" min="600" max="6000" step="100" value="${s.splash?.showMs ?? 1400}" style="width:110px">
+        </div>
+        <div class="field-desc">${tr('settings.splash.ms.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.window')}</h3>
@@ -6832,6 +6844,20 @@ async function showSettings() {
       document.getElementById('s-font-scale')!.onchange = () => applyFontScale(readSettingsForm().fontScale);
   // icon 选择器:点击即时切换(热生效,不等保存)
   const iconPicker = document.getElementById('s-icon-picker');
+  // ── 启动动画:选择器切换 → 主进程弹独立预览小窗(原尺寸 3s 真动画)+ 即时落盘 ──
+  const splashSel = document.getElementById('s-splash-kind') as HTMLSelectElement | null;
+  const splashMs = document.getElementById('s-splash-ms') as HTMLInputElement | null;
+  if (splashSel) {
+    splashSel.onchange = async () => {
+      void api.splashPreview(splashSel.value); // fire-and-forget:预览窗由主进程 3.2s 自动关
+      try {
+        const cur = await api.getSettings();
+        const ms = Math.max(600, Math.min(6000, Number(splashMs?.value) || 1400));
+        await api.saveSettings({ ...cur, splash: { kind: splashSel.value, showMs: ms } });
+      } catch { /* 保存失败不阻断预览 */ }
+    };
+    if (splashMs) splashMs.onchange = splashSel.onchange; // 时长改动同样即时落盘
+  }
   if (iconPicker) {
     // 异步加载 icon 缩略图(兼容打包后 resources/build/ 路径)
     iconPicker.querySelectorAll('img[data-icon-file]').forEach((img) => {
@@ -6852,6 +6878,7 @@ async function showSettings() {
       };
     });
   }
+  // ── 启动动画:预览 + 选择器联动 ── Splash: live preview follows the kind selector.
   // 版本号填充 / Fill version label.
   api.getBrand().then((b) => { const el = document.getElementById('s-version'); if (el) el.textContent = `v${b.version}`; });
   const apply = () => {
@@ -7020,17 +7047,12 @@ async function showSettings() {
     }, 0);
   }
 
-  // 协议切换时自动联动 Base URL —— 智谱 OpenAI ↔ Anthropic 地址不同
+  // 协议切换时自动联动 Base URL —— 共享映射(src/shared/providerEndpoints.ts,测试覆盖)
   document.getElementById('s-proto')!.onchange = () => {
     const baseEl = document.getElementById('s-base') as HTMLInputElement;
-    const proto = (document.getElementById('s-proto') as HTMLSelectElement).value;
-    const cur = baseEl.value.trim();
-    // 智谱:OpenAI 用 /api/paas/v4,Anthropic 用 /api/anthropic
-    if (proto === 'anthropic' && cur.includes('open.bigmodel.cn/api/paas/v4')) {
-      baseEl.value = 'https://open.bigmodel.cn/api/anthropic';
-    } else if (proto === 'openai' && cur.includes('open.bigmodel.cn/api/anthropic')) {
-      baseEl.value = 'https://open.bigmodel.cn/api/paas/v4';
-    }
+    const proto = (document.getElementById('s-proto') as HTMLSelectElement).value as 'openai' | 'anthropic';
+    const next = swapBaseUrlForProtocol(baseEl.value, proto);
+    if (next) baseEl.value = next;
   };
 
   // ── 多机协作:MCP Server 控制按钮 ──
@@ -7156,6 +7178,28 @@ async function showSettings() {
     editingProfileId = pf?.id ?? null;
     const modal = document.getElementById('profile-editor-modal')!;
     (document.getElementById('pe-title') as HTMLElement).textContent = pf ? tr('settings.profile.editTitle', { name: pf.name }) : tr('settings.profile.addTitle');
+    // 预设下拉:每次打开重渲染(跟语言);编辑已有配置时按 baseURL 反推 presetId 回显,匹配不到落 custom
+    const presetSel = document.getElementById('pe-preset') as HTMLSelectElement;
+    presetSel.innerHTML = PRESETS.map((p) => `<option value="${p.id}">${tr(p.labelKey)}</option>`).join('');
+    const matched = pf ? PRESETS.find((p) => p.id !== 'custom' && p.baseURL === pf.baseURL) : undefined;
+    presetSel.value = matched ? matched.id : 'custom';
+    presetSel.onchange = () => {
+      const preset = PRESETS.find((p) => p.id === presetSel.value);
+      if (preset && preset.id !== 'custom') {
+        (document.getElementById('pe-base') as HTMLInputElement).value = preset.baseURL;
+        (document.getElementById('pe-model') as HTMLInputElement).value = preset.model;
+        (document.getElementById('pe-proto') as HTMLSelectElement).value = preset.proto;
+        (document.getElementById('pe-pin') as HTMLInputElement).value = String(preset.pin);
+        (document.getElementById('pe-pout') as HTMLInputElement).value = String(preset.pout);
+      }
+    };
+    // 协议切换联动 base URL(与主表单同规,共享 providerEndpoints 映射)
+    document.getElementById('pe-proto')!.onchange = () => {
+      const baseEl = document.getElementById('pe-base') as HTMLInputElement;
+      const proto = (document.getElementById('pe-proto') as HTMLSelectElement).value as 'openai' | 'anthropic';
+      const next = swapBaseUrlForProtocol(baseEl.value, proto);
+      if (next) baseEl.value = next;
+    };
     (document.getElementById('pe-name') as HTMLInputElement).value = pf?.name ?? '';
     (document.getElementById('pe-key') as HTMLInputElement).value = pf?.apiKey ?? '';
     (document.getElementById('pe-base') as HTMLInputElement).value = pf?.baseURL ?? '';
@@ -7968,6 +8012,11 @@ function readSettingsForm(): AppSettings {
       remote: (document.getElementById('s-memsync-remote') as HTMLInputElement)?.value.trim() ?? '',
       branch: (document.getElementById('s-memsync-branch') as HTMLInputElement)?.value.trim() || 'main',
       autoSyncMinutes: Math.max(0, parseInt((document.getElementById('s-memsync-auto') as HTMLInputElement)?.value ?? '0', 10) || 0),
+    },
+    // 启动动画:选择器(s-splash-kind)+ 最短时长(s-splash-ms);不在表单场景透传既有值。
+    splash: {
+      kind: (document.getElementById('s-splash-kind') as HTMLSelectElement)?.value ?? current?.splash?.kind ?? 'default',
+      showMs: Math.max(0, Math.min(8000, parseInt((document.getElementById('s-splash-ms') as HTMLInputElement)?.value ?? '', 10) || current?.splash?.showMs || 1400)),
     },
     modelProfiles: profileCache,
     activeProfileId: null, // 不从表单读(由聊天界面切换时写),保持 null
@@ -10497,6 +10546,10 @@ function rebuildPluginPanelMenu(): void {
 
 async function loadPluginPanels(): Promise<void> {
   try {
+    // splash 贡献名单先行(设置面板 option 列表要用;独立接口,面板加载失败不影响)
+    api.splashOptions().then((r) => {
+      (window as any).__pluginSplashNames = r.map((i) => i.kind.replace(/^plugin:/, ''));
+    }).catch(() => { /* 忽略:内置款始终可用 */ });
     const res = await api.pluginPanels();
     if (!res.ok || !res.items) return;
     pluginPanelRegistry = res.items;
@@ -10540,6 +10593,16 @@ function showPluginPanel(name: string): void {
       iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-popups allow-forms allow-modals allow-downloads');
       iframe.srcdoc = panel.html;
       viewEl.appendChild(iframe);
+      // 收编窗口身份:bridge 只信任这个 WeakSet 里的 contentWindow(防 viz 卡伪造 plugin: 前缀)
+      // Register window identity: bridge trusts only contentWindows in this WeakSet (viz cards can't forge the prefix)
+      // 关键:sandbox iframe 未插入 DOM 前 contentWindow=null,必须 appendChild 之后再收编(顺序反了桥全死:
+      // getTheme/promoList 静默无回包 → 面板深色兜底+空列表)。load 后再补一次(幂等)防时序缝隙。
+      // Critical: a sandboxed iframe has no browsing context before insertion, so contentWindow is null —
+      // register AFTER appendChild (wrong order killed the whole bridge). Re-register on load (idempotent).
+      if (iframe.contentWindow) pluginBridgeWindows.add(iframe.contentWindow);
+      iframe.addEventListener('load', () => {
+        if (iframe.contentWindow) pluginBridgeWindows.add(iframe.contentWindow);
+      });
     }
   }
 
@@ -10575,16 +10638,29 @@ function getThemeCssVars(): Record<string, string> {
 
 // 监听 iframe postMessage — 桥接到真实 KinetAPI
 // Listen for iframe postMessage — bridge to real KinetAPI
+// 身份校验:只信任「已挂载插件面板 iframe 的 contentWindow」,按窗口引用而非消息里的 source 字符串。
+// Identity check: trust only contentWindow refs of mounted plugin-panel iframes — NOT the message's source string.
+// 背景:viz-card 内层是模型生成的任意 HTML,可把 source 伪造成 'plugin:x';按字符串前缀放行等于
+// 任意 HTML 可读会话列表/promo 数据/代发消息。2026-11-05 审计发现并修复。
+// viz inner docs are model-generated HTML that can fake source:'plugin:x'; prefix matching
+// would let any HTML read conversations/promo data or send messages. Fixed 2026-11-05.
+const pluginBridgeWindows = new WeakSet<Window>();
+// 插件面板 iframe 挂载时登记窗口引用(called from showPluginPanel)
+function registerPluginBridgeWindow(w: Window): void {
+  pluginBridgeWindows.add(w);
+}
+
 window.addEventListener('message', async (ev: MessageEvent) => {
   const data = ev.data;
   if (!data || typeof data !== 'object') return;
-  // 只处理 plugin bridge 消息 (source 以 'plugin:' 前缀或已知插件名标识)
-  // Only handle plugin bridge messages — accept any source that looks like a plugin
-  const knownSources = ['brainstorm', 'math-practice', 'low-altitude', 'office-suite', 'echo', 'serial-comm', 'arduino-dev', 'platformio-dev', 'nestjs-dev', 'hw-diag', 'logic-analyzer', 'sensor-lookup', 'modbus-dev', 'ota-dev', 'ble-dev', 'mqtt-dev'];
-  if (!knownSources.includes(data.source) && !data.source?.startsWith('plugin:')) return;
+  // 只处理 plugin bridge 消息:source 字段仍须 plugin:* 格式,但真校验在窗口引用
+  // Only handle plugin bridge messages — source field must still look like plugin:*, but the
+  // real check is the contentWindow identity below.
+  if (typeof data.source !== 'string' || !data.source.startsWith('plugin:')) return;
+  const source = ev.source as (Window | null);
+  if (!source || !pluginBridgeWindows.has(source)) return;
 
   const { id, method, args } = data;
-  const source = ev.source as (Window | null);
   const replyOrigin = ev.origin; // 锁定来源 origin, 避免 '*' / Lock origin for security
   try {
     let result: unknown;
@@ -11468,6 +11544,21 @@ const REASONING_TAIL_LIMIT = 6_000;
 // Viz-card mount: after an innerHTML swap the placeholder <div class="viz-frame">
 // needs a live sandboxed <iframe> re-attached (innerHTML assignment destroys the
 // previous one). Height auto-fits content; streaming-safe (cheap to re-run).
+// 启动动画选择器的 <option> 列表:内置两款 + 已装插件各一项(插件名走 splash-options 快照注入的全局)。
+function splashOptionTags(current: string): string {
+  const builtin = [
+    { value: 'default', label: 'Nebula · 星云脉冲' },
+    { value: 'orbit', label: 'Orbit · 轨道环' },
+  ];
+  const plug: string[] = (window as any).__pluginSplashNames ?? [];
+  const opts = [
+    `<option value="none" ${current === 'none' ? 'selected' : ''}>${tr('settings.splash.none')}</option>`,
+    ...builtin.map((b) => `<option value="${b.value}" ${current === b.value ? 'selected' : ''}>${b.label}</option>`),
+    ...plug.map((n) => `<option value="plugin:${n}" ${current === `plugin:${n}` ? 'selected' : ''}>${tr('settings.splash.plugin')} · ${n}</option>`),
+  ];
+  return opts.join('');
+}
+
 function mountVizFrames(root: ParentNode): void {
   // 契约:markdown.ts 的 renderVizCard 发 iframe.viz-frame[data-viz-src="vizcard://N"],
   // 真实源码在兄弟 <details.viz-src> 的 <code> 里(HTML 转义)。这里读出 → blob URL → 喂 iframe。
@@ -11549,32 +11640,39 @@ function mountVizFrames(root: ParentNode): void {
     };
     const dlImgBtn = card.querySelector<HTMLButtonElement>('[data-viz-dlimg]');
     if (dlImgBtn) dlImgBtn.onclick = () => {
-      // 拍帧通路:内层文档缩放到 2x 后 canvas 转 PNG 下载。
-      // Snapshot path: render inner doc into an offscreen <img> (blob URL is same-origin
-      // readable thanks to allow-same-origin), draw at 2x, export PNG.
-      try {
-        const img = new Image();
-        img.onload = () => {
-          try {
-            const scale = 2;
-            const cv = document.createElement('canvas');
-            cv.width = Math.max(img.naturalWidth, iframe.clientWidth || 600) * scale;
-            cv.height = Math.max(img.naturalHeight, iframe.clientHeight || 200) * scale;
-            const ctx = cv.getContext('2d');
-            if (!ctx) throw new Error('canvas 2d unavailable');
-            ctx.fillStyle = '#ffffff'; // 内层无背景时避免透明底
-            ctx.fillRect(0, 0, cv.width, cv.height);
-            ctx.drawImage(img, 0, 0, cv.width, cv.height);
-            const a = document.createElement('a');
-            a.href = cv.toDataURL('image/png');
-            a.download = fileBase.replace(/\.html$/, '.png');
-            a.click();
-            uxToast.ok(tr('viz.imgSaved'));
-          } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
-        };
-        img.onerror = () => uxToast.err(tr('viz.imgFailed', { msg: 'image load failed' }));
-        img.src = iframe.src; // blob: URL,同源可读(allow-same-origin)
-      } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+      // 拍帧通路:离屏 BrowserWindow 渲染同一份 HTML → capturePage → PNG。
+      // (SVG foreignObject 方案实测不可行:整份 HTML 文档塞进 <img> 上下文
+      //  是非法 XML 且 Chromium 对 img 内 foreignObject 支持不可靠;旧
+      //  img.src = iframe.src 更是必挂 —— blob 里是 HTML 文档。)
+      // Snapshot path: an offscreen BrowserWindow renders the same HTML,
+      // then capturePage → PNG. (SVG foreignObject failed in practice;
+      // the old `img.src = iframe.src` never worked — the blob holds an
+      // HTML document, not an image.)
+      const src = iframe.dataset.vizSource || html; // 卡片自带的原始源码
+      const W = Math.max(80, Math.min(1200, iframe.clientWidth || 600));
+      const H = Math.max(80, Math.min(2400, iframe.clientHeight || 200));
+      void (async () => {
+        try {
+          dlImgBtn.disabled = true;
+          const res = await window.kinet!.vizCapture(src, W, H);
+          if (!res.ok || !res.dataUrl) throw new Error(res.error || 'capture failed');
+          // blob 包装下载:data: URL 顶层导航会被 Chromium 直接拦(实测),
+          // a[download] + blob: 与 HTML 下载按钮同通路。
+          // Wrap in a blob for download: top-level data: navigation is
+          // blocked by Chromium; a[download] + blob: matches the HTML button.
+          const a = document.createElement('a');
+          const b64 = res.dataUrl.split(',')[1] || '';
+          const raw = atob(b64);
+          const bin = new Uint8Array(raw.length);
+          for (let i = 0; i < raw.length; i++) bin[i] = raw.charCodeAt(i);
+          a.href = URL.createObjectURL(new Blob([bin], { type: 'image/png' }));
+          a.download = fileBase.replace(/\.html$/, '.png');
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+          uxToast.ok(tr('viz.imgSaved'));
+        } catch (e) { uxToast.err(tr('viz.imgFailed', { msg: (e as Error)?.message ?? String(e) })); }
+        finally { dlImgBtn.disabled = false; }
+      })();
     };
     const copyBtn = card.querySelector<HTMLButtonElement>('[data-viz-copy]');
     if (copyBtn) copyBtn.onclick = () => void copyText(html, copyBtn);
@@ -12439,6 +12537,9 @@ const PRESETS = [
   { id: 'glm', labelKey: 'preset.glm', baseURL: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-5.2', proto: 'openai', pin: 0.07, pout: 0.21 },  { id: 'deepseek', labelKey: 'preset.deepseek', baseURL: 'https://api.deepseek.com', model: 'deepseek-chat', proto: 'openai', pin: 0.27, pout: 1.1 },
   { id: 'orcarouter', labelKey: 'preset.orcarouter', baseURL: 'https://api.orcarouter.ai/v1', model: 'orcarouter/auto', proto: 'openai', pin: 0, pout: 0 },
   { id: 'qwen', labelKey: 'preset.qwen', baseURL: 'https://dashscope.aliyuncs.com/compatible-mode/v1', model: 'qwen-max', proto: 'openai', pin: 0.29, pout: 0.86 },
+  // 阿里百炼 Token Plan(订阅制 Credits):Anthropic 兼容端点,官方推荐 model=auto 智能路由(opus=qwen3.8-max/sonnet=qwen3.8-flash/haiku=qwen3.6-flash)。
+  // 价格不填(按套餐计费非按量);夜间 22:00-08:00 qwen3.8 系 Credits 4 折。
+  { id: 'aliyun-token-plan', labelKey: 'preset.aliyun-token-plan', baseURL: 'https://token-plan.cn-beijing.maas.aliyuncs.com/apps/anthropic', model: 'auto', proto: 'anthropic', pin: 0, pout: 0 },
   { id: 'ollama', labelKey: 'preset.ollama', baseURL: 'http://localhost:11434/v1', model: 'llama3.2', proto: 'openai', pin: 0, pout: 0 },
   { id: 'custom', labelKey: 'preset.custom', baseURL: '', model: '', proto: 'openai', pin: 0, pout: 0 },
 ];
