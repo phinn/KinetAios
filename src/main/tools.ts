@@ -1424,28 +1424,35 @@ const SKIP_DIRS = new Set(['node_modules', '.git', 'dist', 'release', 'build', '
 
 // 递归列出文件(限深度 + 跳过依赖/构建目录),返回绝对路径。
 async function walkFiles(root: string, limit: number): Promise<string[]> {
+  // 2026-11-06 修复:原 DFS 遇 limit 即停,根目录散文件会把配额吃完、还没进子目录 →
+  // 大仓库下 glob 假性「无匹配」(实测本仓 500 上限被根级散文件耗尽,src/ 全部漏掉)。
+  // 改为:目录优先全量遍历(BFS 队列),收满 limit 时只在「文件」层面截断,目录层永不截断。
   const out: string[] = [];
-  async function rec(dir: string, depth: number): Promise<void> {
-    if (out.length >= limit || depth > 8) return;
+  const queue: Array<{ dir: string; depth: number }> = [{ dir: root, depth: 0 }];
+  while (queue.length > 0 && out.length < limit) {
+    const { dir, depth } = queue.shift()!;
+    if (depth > 8) continue;
     let ents: fs.Dirent[];
     try {
       ents = await fs.promises.readdir(dir, { withFileTypes: true });
     } catch {
-      return;
+      continue;
     }
+    // 先收本层文件,子目录排到队尾 —— 保证浅层目录的文件先于深层目录被收集
+    const subdirs: string[] = [];
     for (const ent of ents) {
       if (ent.name === '.DS_Store' || ent.name === 'Thumbs.db') continue;
       const full = path.join(dir, ent.name);
       if (ent.isDirectory()) {
-        if (SKIP_DIRS.has(ent.name)) continue;
-        await rec(full, depth + 1);
+        if (!SKIP_DIRS.has(ent.name)) subdirs.push(full);
       } else if (ent.isFile()) {
-        out.push(full);
-        if (out.length >= limit) return;
+        if (out.length < limit) out.push(full);
       }
     }
+    if (out.length < limit) {
+      for (const d of subdirs) queue.push({ dir: d, depth: depth + 1 });
+    }
   }
-  await rec(root, 0);
   return out;
 }
 
@@ -1547,7 +1554,7 @@ const glob: Tool = {
   async run(args, ctx) {
     const pat = String(args.pattern ?? '');
     const re = globToRegex(pat);
-    const files = await walkFiles(ctx.cwd, 500);
+    const files = await walkFiles(ctx.cwd, 8000);
     const matched = files.map((f) => path.relative(ctx.cwd, f)).filter((rel) => re.test(rel)).slice(0, 200);
     if (!matched.length) return `无匹配「${pat}」`;
     return matched.join('\n');
