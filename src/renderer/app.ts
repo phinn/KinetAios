@@ -11994,7 +11994,7 @@ function mountVizFrames(root: ParentNode): void {
     const fid = `viz-${Math.random().toString(36).slice(2, 10)}`;
     iframe.dataset.vizId = fid;
     // textContent 永不为 null(DOM 属性),失败只可能是空 code → 空文档,不抛错
-    const html = decodeHTMLEntities(code.textContent || '');
+    let html = decodeHTMLEntities(code.textContent || '');
     // 内层首个 h1-h3 提为卡片标题;没有则保留 i18n 默认「可视化卡片」
     // Promote the first inner h1-h3 to the card title; fallback stays i18n default.
     const titleEl = card.querySelector<HTMLElement>('[data-viz-title]');
@@ -12038,8 +12038,21 @@ function mountVizFrames(root: ParentNode): void {
     // ② 全树 scrub 仅含 vh/svh/dvh/lvh 的 height 声明(内联 style + CSSOM 规则,
     //    authored 值可判 vh;量完同步还原 —— 同一 JS task 内无重绘,无闪烁)。
     //    不动 px 固定高(图表 canvas 容器等),100vh 正反馈源被精确切除。
-    const boot = `(function(){function r(){var b=document.body;if(!b)return;var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var de=document.documentElement;var quirks=!!(de&&de.compatMode==='BackCompat');var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=quirks?b.offsetHeight:Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
     // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
+    // ⚠️ quirks mode 撑高(2026-11-07 截图「卡片下面一大片白」第二根因):
+    //   碎片卡(<div…> 无 DOCTYPE/无 <html>)进 blob → BackCompat。
+    //   quirks 下 body.scrollHeight=视口高 → 上报 741 → 宿主 clamp 720,
+    //   内容仅 ~280 → 下半全白。统一给碎片包标准壳,全部卡片走 standards。
+    //   (模型写 <html>… 不带 DOCTYPE 的文档卡同样 quirks → boot 里有
+    //   compatMode 兜底量化,双保险。)
+    // Quirks-mode inflation (2nd root cause of the blank-bottom card):
+    // fragment cards enter BackCompat where body.scrollHeight == viewport
+    // height → reported 741 → clamped 720 while content is ~280. Wrap
+    // fragments in a standards shell so every card renders in standards mode.
+    if (!/<html[\s>]/i.test(html)) {
+      html = `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="margin:0">${html}</body></html>`;
+    }
     const fed = /<\/head>/i.test(html)
       ? html.replace(/<\/head>/i, `<script>${boot}</script></head>`)
       : `<script>${boot}</script>` + html;
