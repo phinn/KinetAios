@@ -12016,10 +12016,29 @@ function mountVizFrames(root: ParentNode): void {
     // 由内层脚本 postMessage({type:'viz-height',id,h}) 上报。
     // 只量 body 系高度:documentElement.scrollHeight 在内容不满屏时=视口高,
     // 宿主写回后再触发 resize → 正反馈死循环(每次 +8 直到上限)。
+    // ⚠️ 100vh 正反馈(2026-11-07 用户截图「卡片下面一大片空白」):
+    //   模型生成的卡片 HTML 常带 body{min-height:100vh} 或顶层 wrapper 100vh。
+    //   body 被拉到当前 iframe 视口高 → 上报值随宿主写回逐轮 +8,一路顶到
+    //   宿主 720px 上限 → 真实内容上方一大段空白被封进卡片。
+    //   修法:量高前临时中和「撑满视口」类样式(根/body 的 height/min-height
+    //   内联置 auto + 子树所有 vh 单位改写),量完立刻恢复,上报真实内容高。
     // Height auto-fit: the injected boot reports body height via postMessage.
     // NEVER use documentElement.scrollHeight — it equals viewport height when
     // content is shorter, causing a +8px feedback loop until the 720 cap.
-    const boot = `(function(){function r(){var b=document.body;if(!b)return;var h=Math.max(b.offsetHeight,b.scrollHeight);var prev=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prev;parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    // 100vh feedback: model-generated cards often carry body{min-height:100vh};
+    // body then stretches to the CURRENT iframe viewport → reported height grows
+    // +8px per round-trip until the host cap → huge blank area inside the card.
+    // Fix: inject a temporary <style> that forces natural heights everywhere
+    // (!important beats inline styles too), measure, then remove it — the doc
+    // returns to its authored look while we report the true content height.
+    // (Per-element getComputedStyle detection is unreliable: Chrome resolves
+    // min-height:100vh to used px, so /vh/ tests never match. el.style /
+    // CSSOM getPropertyValue instead return the AUTHORED text "100vh".)
+    // 策略 / Strategy: ① root override(html/body 强制自然高,永安全);
+    // ② 全树 scrub 仅含 vh/svh/dvh/lvh 的 height 声明(内联 style + CSSOM 规则,
+    //    authored 值可判 vh;量完同步还原 —— 同一 JS task 内无重绘,无闪烁)。
+    //    不动 px 固定高(图表 canvas 容器等),100vh 正反馈源被精确切除。
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
     // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
     const fed = /<\/head>/i.test(html)
       ? html.replace(/<\/head>/i, `<script>${boot}</script></head>`)
