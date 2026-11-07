@@ -513,6 +513,10 @@ const ZH_CN: Dict = {
   'snap.noCwd': '未选中会话 — 选一个会话再开快照面板',
 
   'cron.open': '定时任务',
+  'ask.other': '其他',
+  'ask.otherPh': '请输入你的想法…',
+  'ask.submit': '提交',
+  'ask.multiHint': '可多选',
   'cron.title': '定时任务',
   'cron.new': '＋ 新任务',
   'cron.empty': '还没有定时任务。点「＋ 新任务」加一个,cron 表达式匹配时自动起会话。',
@@ -1952,6 +1956,10 @@ const EN: Dict = {
   'snap.noCwd': 'No conversation selected — pick one first',
 
   'cron.open': 'Scheduled tasks',
+  'ask.other': 'Other',
+  'ask.otherPh': 'Type your own answer…',
+  'ask.submit': 'Submit',
+  'ask.multiHint': 'multi-select',
   'cron.title': 'Scheduled tasks',
   'cron.new': '＋ New task',
   'cron.empty': 'No scheduled tasks yet. Click ＋ New task — a fresh conversation opens whenever the cron expression matches.',
@@ -3385,6 +3393,10 @@ const ZH_TW: Dict = {
   'snap.noCwd': '未選中會話 — 選一個會話再開快照面板',
 
   'cron.open': '定時任務',
+  'ask.other': '其他',
+  'ask.otherPh': '請輸入你的想法…',
+  'ask.submit': '提交',
+  'ask.multiHint': '可多選',
   'cron.title': '定時任務',
   'cron.new': '＋ 新任務',
   'cron.empty': '還沒有定時任務。點「＋ 新任務」加一個,cron 表達式匹配時自動起會話。',
@@ -4823,6 +4835,10 @@ const JA: Dict = {
   'snap.noCwd': '会話未選択 — 先に会話を選んでください',
 
   'cron.open': 'スケジュールタスク',
+  'ask.other': 'その他',
+  'ask.otherPh': '自由入力…',
+  'ask.submit': '送信',
+  'ask.multiHint': '複数選択可',
   'cron.title': 'スケジュールタスク',
   'cron.new': '＋ 新規タスク',
   'cron.empty': 'スケジュールタスク未登録。［＋ 新規タスク］で追加 — cron 式に一致すると自動で会話を起動します。',

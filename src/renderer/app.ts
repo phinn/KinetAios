@@ -1444,22 +1444,17 @@ function showAskCard(req: {
   document.getElementById('ask-question')!.textContent = req.question;
   const list = document.getElementById('ask-options')!;
   const multi = !!req.multiSelect;
-  const counter = document.getElementById('ask-counter')!;
+  // 多选计数条:复用「其他」行上方的轻量提示,HTML 不再放独立 counter 节点
+  // (旧 ask-counter/ask-counter-wrap 节点已删,引用会抛 null 导致整卡不渲染)。
+  const otherInput = document.getElementById('ask-other-input') as HTMLInputElement;
   list.innerHTML = '';
+  otherInput.value = '';
   const boxes: HTMLInputElement[] = [];
-  const counters = counter.parentElement!;
-  counter.textContent = multi ? tr('ask.multiHint') : '';
-  counters.style.display = multi ? '' : 'none';
-
-  // 选项行:单选=radio,多选=checkbox;点整行切换。「其他」输入框在列表末尾。
-  // Option rows: radio vs checkbox, whole row clickable; the "Other" input sits at the end.
-  const optClick = (row: HTMLElement, input: HTMLInputElement) => {
-    if (!multi) {
-      for (const b of boxes) if (b !== input) b.checked = false;
-    }
-    input.checked = true;
-    if (multi) updateCounter();
-    else { (document.getElementById('ask-other-input') as HTMLInputElement).value = ''; }
+  // 单选=radio,多选=checkbox;整行可点。单选互斥;多选计数;选项与「其他」互斥(输入非空=选其他)。
+  // radio vs checkbox by mode; row-click toggles. Options and "Other" text are mutually exclusive.
+  const submitBtn = document.getElementById('ask-submit') as HTMLButtonElement | null;
+  const updateCounter = () => {
+    if (submitBtn) submitBtn.classList.toggle('multi-ready', boxes.some((b) => b.checked));
   };
   for (let i = 0; i < req.options.length; i++) {
     const o = req.options[i];
@@ -1474,37 +1469,42 @@ function showAskCard(req: {
     const b = document.createElement('b');
     b.textContent = o.label;
     lab.appendChild(b);
-    if (o.description) lab.appendChild(document.createTextNode(' ' + o.description));
+    if (o.description) { const d = document.createElement('span'); d.textContent = o.description; lab.appendChild(d); }
     row.appendChild(input); row.appendChild(lab);
-    row.onclick = () => { optClick(row, input); };
+    row.onclick = (e) => {
+      if ((e.target as HTMLElement).tagName === 'INPUT') { if (input.checked) { syncOther(); } return; }
+      if (!multi) for (const x of boxes) x.checked = false;
+      input.checked = !input.checked;
+      if (!multi && !input.checked) input.checked = true; // 单选行点击必选中(点已选项不取消)
+      syncOther(); // 选选项 → 清「其他」输入
+      if (multi) updateCounter();
+    };
     list.appendChild(row);
     boxes.push(input);
   }
-  const updateCounter = () => {
-    const n = boxes.filter((b) => b.checked).length;
-    counter.textContent = tr('ask.selected', { n: String(n) });
+  // 「其他」:输入非空即视为填写了自由答案;聚焦输入清掉所有选项。
+  // "Other": non-empty text = free-form answer; focusing it clears all option checks.
+  const syncOther = () => {
+    if (otherInput.value.trim() || document.activeElement === otherInput) {
+      for (const x of boxes) x.checked = false;
+      if (multi) updateCounter();
+    }
   };
-  // 选「其他」时清掉所有勾选(互斥:自由输入优先);反之勾选清空其他文本。
-  const otherInput = document.getElementById('ask-other-input') as HTMLInputElement;
-  otherInput.value = '';
-  const otherRow = document.getElementById('ask-other-row')!;
-  const otherBox = document.getElementById('ask-other-box') as HTMLInputElement;
-  otherBox.checked = false;
-  otherRow.onclick = (e) => {
-    if ((e.target as HTMLElement).tagName !== 'INPUT') otherBox.checked = true;
-    if (otherBox.checked) { for (const b of boxes) b.checked = false; if (multi) updateCounter(); otherInput.focus(); }
-    else otherInput.value = '';
+  otherInput.oninput = () => {
+    if (otherInput.value.trim()) { for (const x of boxes) x.checked = false; if (multi) updateCounter(); }
+    const c = document.getElementById('ask-other-count')!;
+    c.textContent = `${otherInput.value.length}/500`;
   };
-  otherInput.oninput = () => { if (otherInput.value && !otherBox.checked) otherBox.checked = true; };
 
   const submit = document.getElementById('ask-submit')!;
   const cancel = document.getElementById('ask-cancel')!;
+  const closeBtn = document.getElementById('ask-close');
   modal.classList.add('show');
-  (document.getElementById('ask-counter-wrap') as HTMLElement).style.display = multi ? '' : 'none';
   askFocusRestore = trapFocus(modal);
 
   const finish = (answer: string) => {
     submit.onclick = null; cancel.onclick = null; document.onkeydown = null;
+    if (closeBtn) closeBtn.onclick = null;
     activeAskDone = null;
     modal.classList.remove('show');
     if (askFocusRestore) { askFocusRestore(); askFocusRestore = null; }
@@ -1513,32 +1513,30 @@ function showAskCard(req: {
 
   activeAskDone = finish;
 
+  // 聚合答案:其他输入非空 → 自由文本;否则已选项 label(多选 ; 连接)。
+  // Aggregate: non-empty "Other" wins; otherwise chosen labels joined by ';'.
   const gather = (): string | null => {
-    if (otherBox.checked && otherInput.value.trim()) return otherInput.value.trim();
+    const otherTxt = otherInput.value.trim();
+    if (otherTxt) return otherTxt;
     const chosen = boxes.filter((b) => b.checked);
     if (chosen.length === 0) return null; // 没选也没填 → 提交无效
-    const labels = chosen.map((b) => req.options[Number(b.id.split('-').pop())].label);
-    if (otherBox.checked) labels.push(tr('ask.other') + ': ' + otherInput.value.trim());
-    return labels.join(';');
+    return chosen.map((b) => req.options[Number(b.id.split('-').pop())].label).join(';');
   };
   submit.onclick = () => {
     const a = gather();
-    if (a === null) { otherInput.focus(); return; }
-    activeAskDone?.(a); // 走统一 finish 通道
+    if (a === null) { (boxes[0]?.closest('.ask-opt') as HTMLElement)?.click(); return; }
+    finish(a);
   };
-  cancel.onclick = () => activeAskDone?.('__cancelled__');
+  cancel.onclick = () => finish('__cancelled__');
+  if (closeBtn) closeBtn.onclick = () => finish('__cancelled__');
   document.onkeydown = (e) => {
-    if (e.key === 'Escape') { activeAskDone?.('__cancelled__'); }
-    else if (e.key === 'Enter' && !e.shiftKey && document.activeElement !== otherInput) { submit.click(); }
+    if (e.key === 'Escape') finish('__cancelled__');
+    else if (e.key === 'Enter' && !e.shiftKey && document.activeElement !== otherInput) submit.click();
   };
   if (!multi) { /* 单选默认不预选任何项,逼用户显式拍板 */ }
-  else updateCounter();
 }
-/** Esc 兜底取消决策卡(全局 Esc 链路联动) */
-function dismissAskCard(): void {
-  if (askFocusRestore) { askFocusRestore(); askFocusRestore = null; }
-  if (activeAskDone) { activeAskDone('__cancelled__'); }
-}
+/** Esc 兜底取消决策卡:showAskCard 的 document.onkeydown 已覆盖 Escape,
+ * 这里不再单独挂全局链,避免与卡片内 handler 双触发 finish。 */
 
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
 // ── MCP 管理面板(composer 弹层与设置页 MCP tab 共用)──

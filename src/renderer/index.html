@@ -431,6 +431,26 @@
     </div>
   </div>
 
+  <!-- ask_user 决策卡片:agent 需要用户拍板时弹出。单选/多选 + 「其他」自由输入 -->
+  <div id="ask-modal" role="dialog" aria-modal="true">
+    <div class="modal-card ask-card">
+      <div class="ask-head">
+        <h3 id="ask-question"></h3>
+        <button id="ask-close" aria-label="✕">✕</button>
+      </div>
+      <div id="ask-options"></div>
+      <div class="ask-other" id="ask-other-row">
+        <label id="ask-other-label" data-i18n="ask.other">其他</label>
+        <input id="ask-other-input" type="text" data-i18n-placeholder="ask.otherPh" maxlength="500" />
+        <span id="ask-other-count">0/500</span>
+      </div>
+      <div class="actions">
+        <button id="ask-cancel" data-i18n="common.cancel">取消</button>
+        <button class="primary" id="ask-submit" data-i18n="ask.submit">提交</button>
+      </div>
+    </div>
+  </div>
+
   <!-- 技能源文件查看/编辑器(设置页「技能」面板弹出;只读/可编辑双态)-->
   <div id="skill-editor-modal" role="dialog" aria-modal="true" aria-label="技能源文件">
     <div class="modal-card cm-card">
