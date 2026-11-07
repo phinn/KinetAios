@@ -261,6 +261,10 @@ const api: KinetAPI = {
     ipcRenderer.on('ask-request', (_e: IpcRendererEvent, req) => cb(req));
   },
   askResponse: (id, answer) => { ipcRenderer.send('ask-response', { id, answer }); },
+  onAskDismiss: (cb) => {
+    ipcRenderer.removeAllListeners('ask-dismiss');
+    ipcRenderer.on('ask-dismiss', (_e: IpcRendererEvent, msg) => cb(msg));
+  },
   onPrivacyRequest: (cb) => {
     ipcRenderer.removeAllListeners('privacy-request');
     ipcRenderer.on('privacy-request', (_e: IpcRendererEvent, req) => cb(req));

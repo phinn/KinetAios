@@ -256,17 +256,23 @@ function requestAsk(payload: {
   if (!win || win.isDestroyed()) return Promise.reject(new Error('dashboard window unavailable'));
   const id = `a${process.pid}_${askSeq++}`;
   win.webContents.send('ask-request', { id, ...payload, multiSelect: !!payload.multiSelect });
+  // 超时/中止解脱时统一走这里:删 resolver + 通知 renderer 关卡(防卡片残留锁焦点)
+  // (不在此处 clearTimeout:timer 声明在下方 Promise 内;超时路径 timer 已到期,abort 路径自行清)
+  const dismissAsk = (why: string) => {
+    if (!pendingAsks.has(id)) return;
+    pendingAsks.delete(id);
+    safeSend(dashboardWin, 'ask-dismiss', { id, why });
+  };
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       if (pendingAsks.has(id)) {
-        pendingAsks.delete(id);
+        dismissAsk('timeout');
         reject(new Error('timeout'));
       }
     }, ASK_TIMEOUT_MS);
     const onAbort = () => {
       if (pendingAsks.has(id)) {
-        pendingAsks.delete(id);
-        clearTimeout(timer);
+        dismissAsk('aborted');
         reject(new Error('aborted'));
       }
     };

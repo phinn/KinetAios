@@ -600,6 +600,11 @@ function applyI18nDOM(): void {
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd, (req as { rulesNote?: string }).rulesNote));
   api.onAskRequest((req) => showAskCard(req));
+  // main 侧超时(10min)/中止解脱:同步关卡,防卡片残留锁焦点+提交空打。
+  // 只关卡不回执(resolver 已被 main 删);id 匹配防误关新弹的卡。
+  api.onAskDismiss(({ id }) => {
+    if (activeAskId && id === activeAskId && activeAskDone) activeAskDone('__dismissed__', true);
+  });
   // 隐私闸弹窗:独立通道,用 showConfirmDialog(无「不再询问」checkbox),拒绝/超时都回 deny
   api.onPrivacyRequest(async (req) => {
     const approved = await showConfirmDialog(tr('settings.privacy.title'), req.msg, { okLabel: tr('privacy.allow') });
@@ -1431,8 +1436,9 @@ function dismissConfirmDialog(): void {
 // ── ask_user 决策卡(agent 需要用户拍板时弹出;单选/多选 + 「其他」自由输入)──
 // 与 confirm-modal 同级形态:静态 HTML + JS 控显隐,Promise 回传聚合答案字符串。
 // The ask_user decision card: static HTML + JS toggling, resolves to the aggregated answer.
-let activeAskDone: ((answer: string) => void) | null = null;
+let activeAskDone: ((answer: string, silent?: boolean) => void) | null = null;
 let askFocusRestore: (() => void) | null = null;
+let activeAskId: string | null = null; // 当前卡对应 main 侧 request id(dismiss 精确匹配)
 
 function showAskCard(req: {
   id: string;
@@ -1441,6 +1447,7 @@ function showAskCard(req: {
   multiSelect?: boolean;
 }): void {
   const modal = document.getElementById('ask-modal')!;
+  activeAskId = req.id;
   document.getElementById('ask-question')!.textContent = req.question;
   const list = document.getElementById('ask-options')!;
   const multi = !!req.multiSelect;
@@ -1502,13 +1509,15 @@ function showAskCard(req: {
   modal.classList.add('show');
   askFocusRestore = trapFocus(modal);
 
-  const finish = (answer: string) => {
+  const finish = (answer: string, silent = false) => {
     submit.onclick = null; cancel.onclick = null; document.onkeydown = null;
     if (closeBtn) closeBtn.onclick = null;
     activeAskDone = null;
+    activeAskId = null;
     modal.classList.remove('show');
     if (askFocusRestore) { askFocusRestore(); askFocusRestore = null; }
-    api.askResponse(req.id, answer);
+    // silent: main 侧超时/中止已删 resolver,回发无对象可收,只关卡不回执
+    if (!silent) api.askResponse(req.id, answer);
   };
 
   activeAskDone = finish;

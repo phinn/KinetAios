@@ -1272,6 +1272,8 @@ export interface KinetAPI {
   // ask_user 决策卡:agent 需要用户拍板时 main 推卡片,renderer 回选中项
   onAskRequest(cb: (req: { id: string; question: string; options: { label: string; description?: string }[]; multiSelect: boolean }) => void): void;
   askResponse(id: string, answer: string): void;
+  /** main 侧超时/中止解脱决策卡时通知 renderer 同步关卡(防卡片残留锁焦点) */
+  onAskDismiss(cb: (msg: { id: string }) => void): void;
   // 隐私闸独立弹窗:与 shell confirm 分离,不受「不再询问」/approval 短路影响。
   onPrivacyRequest(cb: (req: { id: string; msg: string }) => void): void;
   onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;
