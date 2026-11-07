@@ -956,8 +956,8 @@ export interface PromoItem {
 // metrics is free-form per channel; numbers are snapshots updated via import or quick-edit.
 export interface RevenueItem {
   id: string; // 稳定 id(asc 固定为 'asc';其它 rv-<rand>),删除/导入去重按此定位
-  name: string; // 展示名,如 "App Store Connect" / "Fiverr"
-  kind: 'asc' | 'xianyu' | 'payhip' | 'fiverr' | 'fl' | 'manual'; // 渠道类型(渲染分支用)
+  name: string; // 展示名(自由命名,如 "App Store Connect" / "直销页")
+  kind: 'asc' | 'manual'; // 渠道类型:asc=App Store Connect(导入 JSON 渲染 per-app 明细);manual=任意人工快照渠道(metrics 自由 KV)
   url?: string; // 渠道后台链接(可点开)
   metrics?: Record<string, unknown>; // 指标快照:usd/cny/views/orders/leads/apps[]… 每渠道自由定义
   note?: string; // 备注:定价、渠道背景、核对口径
