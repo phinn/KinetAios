@@ -712,13 +712,26 @@
 [data-theme="tahoe"] #ctx-inspector-modal,
 [data-theme="tahoe"] #skill-editor-modal,
 [data-theme="tahoe"] #profile-editor-modal,
+[data-theme="tahoe"] #ask-modal,
+[data-theme="tahoe"] #confirm-modal,
 [data-theme="tahoe"] .modal-overlay {
   background: rgba(200,220,240,0.45);
   backdrop-filter: blur(8px);
   -webkit-backdrop-filter: blur(8px);
 }
 /* Tahoe: 记忆面板容器 — 更深模糊让玻璃效果更明显 */
-[data-theme="tahoe"] .mm-card {
+/* Tahoe: ask_user 决策卡 — 选项行/其他输入同步玻璃化(实底 #e8f0fa 与液态玻璃主题割裂) */
+[data-theme="tahoe"] .ask-opt,
+[data-theme="tahoe"] #ask-other-input {
+  background: rgba(255,255,255,0.42);
+  backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+  border: 1px solid rgba(255,255,255,0.45);
+}
+[data-theme="tahoe"] .ask-opt:has(input:checked) {
+  background: rgba(255,255,255,0.72);
+  border-color: color-mix(in srgb, var(--accent) 55%, rgba(255,255,255,0.6));
+}[data-theme="tahoe"] .mm-card {
   backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
   -webkit-backdrop-filter: blur(var(--glass-blur-lg)) saturate(var(--glass-saturate)) brightness(var(--glass-bright));
 }
@@ -3343,16 +3356,18 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 
 /* ═══ ask_user 决策卡(agent 需要用户拍板时的结构化选项卡)═══ */
 #ask-modal { z-index: 70; } /* 高于 confirm/privacy 弹窗:决策卡是 agent 当前置顶诉求 */
-.ask-card { width: 520px; max-width: 92vw; }
+/* ── ask_user 决策卡(对标 Claude Code AskUserQuestion)── */
+.ask-card { width: 640px; max-width: 92vw; max-height: 80vh; display: flex; flex-direction: column; }
 .ask-head { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 10px; }
-#ask-question { font-size: var(--fs-2xl); font-weight: 600; line-height: 1.5; user-select: text; }
-#ask-options { display: flex; flex-direction: column; gap: 6px; max-height: 46vh; overflow: auto; }
-.ask-opt { display: flex; align-items: flex-start; gap: 9px; padding: 9px 12px; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: var(--r-lg); cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast); }
+#ask-question { font-size: var(--fs-lg); font-weight: 600; line-height: 1.5; margin: 0 0 12px; user-select: text; flex: 1; }
+#ask-options { display: flex; flex-direction: column; gap: 8px; overflow: auto; min-height: 0; }
+.ask-opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: var(--r-lg); cursor: pointer; transition: border-color var(--dur-fast), background var(--dur-fast); }
 .ask-opt:hover { border-color: color-mix(in srgb, var(--accent) 45%, transparent); }
-.ask-opt input { margin-top: 2px; accent-color: var(--accent); }
-.ask-opt label { cursor: pointer; font-size: var(--fs-xl); line-height: 1.55; color: var(--text); user-select: none; }
-.ask-opt label b { font-weight: 600; }
 .ask-opt:has(input:checked) { border-color: color-mix(in srgb, var(--accent) 60%, transparent); background: color-mix(in srgb, var(--accent) 8%, var(--bg-input)); }
+.ask-opt input { flex: none; width: auto; margin: 3px 0 0; accent-color: var(--accent); } /* 豁免全局 input width:100% —— 否则 radio 占满整行把 label 挤成竖排一字条 */
+.ask-opt label { flex: 1; min-width: 0; cursor: pointer; font-size: var(--fs-xl); line-height: 1.55; color: var(--text); user-select: none; }
+.ask-opt label b { display: block; font-weight: 600; }
+.ask-opt label span { display: block; color: var(--text-dim); font-size: var(--fs-md); line-height: 1.5; margin-top: 2px; }
 .ask-other { margin-top: 10px; display: flex; align-items: center; gap: 8px; }
 .ask-other label { font-size: var(--fs-lg); color: var(--text-dim); white-space: nowrap; }
 #ask-other-input { flex: 1; background: var(--bg-input); border: 1px solid var(--border-soft); border-radius: var(--r-lg); color: var(--text); font-size: var(--fs-xl); padding: 7px 10px; outline: none; }
@@ -3361,23 +3376,8 @@ mark.chat-hit.chat-cur { background: var(--accent); color: var(--bg, #fff); box-
 #ask-modal .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 #ask-modal .btn-primary { background: var(--accent); color: #fff; border: none; }
 #ask-modal .btn-primary:hover { background: color-mix(in srgb, var(--accent) 85%, #000); }
-
-/* ask_user 决策卡:选项列表 + 其他自由输入(对标 Claude Code AskUserQuestion) */
-#ask-modal .ask-card { width: 640px; max-height: 80vh; display: flex; flex-direction: column; }
-#ask-question { font-size: var(--fs-lg); font-weight: 600; line-height: 1.5; margin: 0 0 12px; user-select: text; }
-.ask-opt-list { display: flex; flex-direction: column; gap: 8px; overflow: auto; min-height: 0; }
-.ask-opt { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-soft); border-radius: var(--r-lg); cursor: pointer; background: transparent; text-align: left; font: inherit; color: inherit; transition: background var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out); }
-.ask-opt:hover { background: var(--bg-elev-2); }
-.ask-opt.sel { border-color: color-mix(in srgb, var(--accent) 55%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-.ask-opt input { margin-top: 3px; accent-color: var(--accent); flex: none; }
-.ask-opt-main { min-width: 0; }
-.ask-opt-label { font-weight: 600; font-size: var(--fs-xl); line-height: 1.4; }
-.ask-opt-desc { color: var(--text-dim); font-size: var(--fs-md); line-height: 1.5; margin-top: 2px; }
-.ask-other-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-soft); }
-.ask-other-label { font-size: var(--fs-xl); font-weight: 600; flex: none; }
-#ask-other-input { flex: 1; min-width: 0; background: var(--bg-elev-2); border: 1px solid var(--border-soft); border-radius: var(--r-md); padding: 8px 10px; font: inherit; font-size: var(--fs-xl); color: var(--text); }
-#ask-other-input:focus { outline: none; border-color: color-mix(in srgb, var(--accent) 55%, transparent); }
-.ask-count { color: var(--text-faint); font-size: var(--fs-md); flex: none; }
+/* 多选模式下有选中项 → 提交钮强化提示(配合 app.ts 的 multi-ready toggle) */
+#ask-modal #ask-submit.multi-ready { box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent); }
 
 /* quick window */
 body.quick { display: flex; flex-direction: column; height: 100vh; padding: 10px; gap: 8px; }
