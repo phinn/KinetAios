@@ -3269,7 +3269,7 @@ function refreshCronInMemory(): void {
   // eslint-disable-next-line @typescript-eslint/no-var-requires
   const { setCronTasks } = require('./cron') as typeof import('./cron');
   const rows = store.listCronTasks();
-  setCronTasks(rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+  setCronTasks(rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, model: r.model ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
 }
 
 const cronList: Tool = {

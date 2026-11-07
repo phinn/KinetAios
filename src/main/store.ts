@@ -61,7 +61,7 @@ export function initStore(): void {
       id TEXT PRIMARY KEY, subject TEXT, predicate TEXT, object TEXT,
       conversation_id TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS cron_tasks(
-      id TEXT PRIMARY KEY, cron TEXT, prompt TEXT, cwd TEXT,
+      id TEXT PRIMARY KEY, cron TEXT, prompt TEXT, cwd TEXT, model TEXT,
       enabled INTEGER DEFAULT 1, last_run INTEGER, created_at INTEGER);
     CREATE TABLE IF NOT EXISTS memory_embeddings(
       memory_id TEXT PRIMARY KEY, vec BLOB, model TEXT, created_at REAL);
@@ -169,6 +169,10 @@ export function initStore(): void {
   // cron_tasks.conv_id: bind each task to one persistent channel (reused on every fire).
   if (!hasColumn('cron_tasks', 'conv_id'))
     db.exec(`ALTER TABLE cron_tasks ADD COLUMN conv_id TEXT;`);
+  // cron_tasks 加 model 列:任务级模型配置档 ID(ModelProfile.id),NULL = 跟随全局默认。
+  // cron_tasks.model: per-task model profile id; NULL = follow the global default.
+  if (!hasColumn('cron_tasks', 'model'))
+    db.exec(`ALTER TABLE cron_tasks ADD COLUMN model TEXT;`);
   // memories 加 conversation_id(nullable:历史行 + 全局导入的都为 NULL,意为「来源频道未知/全局」)。
   if (!hasColumn('memories', 'conversation_id'))
     db.exec(`ALTER TABLE memories ADD COLUMN conversation_id TEXT;`);
@@ -1575,6 +1579,9 @@ export interface CronRow {
   cron: string;
   prompt: string;
   cwd: string | null;
+  // 任务级模型:ModelProfile id,null = 跟随全局默认(每次触发钉到该 profile)。
+  // Per-task model: ModelProfile id; null = follow global default (pinned each fire).
+  model: string | null;
   enabled: boolean;
   lastRun: number | null;
   createdAt: number;
@@ -1585,31 +1592,33 @@ export interface CronRow {
   convId: string | null;
 }
 export function listCronTasks(): CronRow[] {
-  const rows = db.prepare('SELECT id, cron, prompt, cwd, enabled, last_run, created_at, conv_id FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
-    id: string; cron: string; prompt: string; cwd: string | null; enabled: number; last_run: number | null; created_at: number; conv_id: string | null;
+  const rows = db.prepare('SELECT id, cron, prompt, cwd, model, enabled, last_run, created_at, conv_id FROM cron_tasks ORDER BY created_at DESC;').all() as Array<{
+    id: string; cron: string; prompt: string; cwd: string | null; model: string | null; enabled: number; last_run: number | null; created_at: number; conv_id: string | null;
   }>;
-  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at, convId: r.conv_id }));
+  return rows.map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd, model: r.model, enabled: !!r.enabled, lastRun: r.last_run, createdAt: r.created_at, convId: r.conv_id }));
 }
 // 更新定时任务绑定的会话 id(dispatcher 建/换频道时调用)。
 // Update the bound conversation id (called by the dispatcher when creating/rebinding).
 export function setCronConvId(id: string, convId: string | null): void {
   db.prepare('UPDATE cron_tasks SET conv_id=? WHERE id=?;').run(convId, id);
 }
-export function addCronTask(t: { id: string; cron: string; prompt: string; cwd?: string }): void {
-  db.prepare('INSERT INTO cron_tasks(id, cron, prompt, cwd, enabled, created_at) VALUES(?,?,?,?,1,?);')
-    .run(t.id, t.cron, t.prompt, t.cwd ?? null, Date.now());
+export function addCronTask(t: { id: string; cron: string; prompt: string; cwd?: string; model?: string | null }): void {
+  db.prepare('INSERT INTO cron_tasks(id, cron, prompt, cwd, model, enabled, created_at) VALUES(?,?,?,?,?,1,?);')
+    .run(t.id, t.cron, t.prompt, t.cwd ?? null, t.model ?? null, Date.now());
 }
-export function updateCronTask(id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }): void {
-  const cur = db.prepare('SELECT * FROM cron_tasks WHERE id=?;').get(id) as { cron: string; prompt: string; cwd: string | null; enabled: number } | undefined;
+export function updateCronTask(id: string, patch: { cron?: string; prompt?: string; cwd?: string; model?: string | null; enabled?: boolean }): void {
+  const cur = db.prepare('SELECT * FROM cron_tasks WHERE id=?;').get(id) as { cron: string; prompt: string; cwd: string | null; model: string | null; enabled: number } | undefined;
   if (!cur) return;
   const next = {
     cron: patch.cron ?? cur.cron,
     prompt: patch.prompt ?? cur.prompt,
     cwd: patch.cwd !== undefined ? (patch.cwd || null) : cur.cwd,
+    // model 允许显式置 null(切回跟随全局默认),所以判 undefined 而非 falsy。
+    model: patch.model !== undefined ? (patch.model || null) : cur.model,
     enabled: patch.enabled !== undefined ? (patch.enabled ? 1 : 0) : cur.enabled,
   };
-  db.prepare('UPDATE cron_tasks SET cron=?, prompt=?, cwd=?, enabled=? WHERE id=?;')
-    .run(next.cron, next.prompt, next.cwd, next.enabled, id);
+  db.prepare('UPDATE cron_tasks SET cron=?, prompt=?, cwd=?, model=?, enabled=? WHERE id=?;')
+    .run(next.cron, next.prompt, next.cwd, next.model, next.enabled, id);
 }
 export function deleteCronTask(id: string): void {
   db.prepare('DELETE FROM cron_tasks WHERE id=?;').run(id);

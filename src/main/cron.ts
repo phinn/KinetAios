@@ -8,6 +8,7 @@ export interface CronTask {
   cron: string;          // 5 字段
   prompt: string;        // 任务描述
   cwd?: string;          // 工作目录(可选)
+  model?: string | null; // 模型配置档 ID(ModelProfile.id),空 = 跟随全局默认
   enabled: boolean;
   lastRun?: number;      // ms timestamp
   createdAt: number;
@@ -122,8 +123,14 @@ export function stopCronScheduler(): void {
 }
 
 // 提供给 store/UI:验证 cron 字符串
-export function validateCron(expr: string): { ok: boolean; error?: string } {
-  return parseCron(expr);
+export function validateCron(expr: string): { ok: true } | { ok: false; error: string } {
+  // IPC 返回值必须可结构化克隆:parseCron 成功形态带 match 闭包,跨 IPC 必炸
+  // 「An object could not be cloned」—— UI 保存合法表达式恒失败(2026-11-07 QA 实锤)。
+  // 校验只需布尔结果,闭包留给进程内调度器用。
+  // / IPC results must be structured-cloneable: parseCron's success shape carries a
+  // match closure which cannot cross IPC; validation only needs the boolean verdict.
+  const r = parseCron(expr);
+  return r.ok ? { ok: true } : r;
 }
 
 // 进程退出兜底:不必显式 stop,Electron 退出会清。

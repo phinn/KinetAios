@@ -703,26 +703,26 @@ export function register(): void {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
-  ipcMain.handle('cron-add', (_e, t: { id: string; cron: string; prompt: string; cwd?: string }) => {
+  ipcMain.handle('cron-add', (_e, t: { id: string; cron: string; prompt: string; cwd?: string; model?: string | null }) => {
     const v = validateCron(t.cron);
     if (!v.ok) return { ok: false, error: v.error };
     try {
       addCronTask(t);
       // 拉一遍内存态,跟 store 同步。
-      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, model: r.model ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }
   });
-  ipcMain.handle('cron-update', (_e, id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }) => {
+  ipcMain.handle('cron-update', (_e, id: string, patch: { cron?: string; prompt?: string; cwd?: string; model?: string | null; enabled?: boolean }) => {
     if (patch.cron) {
       const v = validateCron(patch.cron);
       if (!v.ok) return { ok: false, error: v.error };
     }
     try {
       updateCronTask(id, patch);
-      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, model: r.model ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
@@ -731,7 +731,7 @@ export function register(): void {
   ipcMain.handle('cron-delete', (_e, id: string) => {
     try {
       deleteCronTask(id);
-      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
+      setCronTasks(listCronTasks().map((r) => ({ id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, model: r.model ?? undefined, enabled: r.enabled, lastRun: r.lastRun ?? undefined, createdAt: r.createdAt })));
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };

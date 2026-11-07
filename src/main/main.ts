@@ -1454,7 +1454,7 @@ if (!gotLock) {
     for (const c of taskManager.list()) if (c.cwd) ensureWatcher(c.cwd);
     // 定时任务:从 store 装载 → 启动每分钟 tick 的调度器。
     setCronTasks(listCronTasks().map((r) => ({
-      id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, enabled: r.enabled,
+      id: r.id, cron: r.cron, prompt: r.prompt, cwd: r.cwd ?? undefined, model: r.model ?? undefined, enabled: r.enabled,
       lastRun: r.lastRun ?? undefined, createdAt: r.createdAt,
     })));
     // dispatcher:同一定时任务固定复用一个频道(cron_tasks.conv_id 持久化),不再每次触发
@@ -1491,6 +1491,11 @@ if (!gotLock) {
           convId = taskManager.newConversation(wantCwd).id;
           setCronConvId(task.id, convId);
         }
+        // 任务级模型:有 profile 则钉住该频道用此模型(含老频道改绑,每轮触发都校准);
+        // 空则跟随全局默认(切回 null 让会话恢复默认)。
+        // Per-task model: pin the channel to this profile on every fire (recalibrates
+        // older channels too); empty → follow the global default (back to null).
+        taskManager.setConvProfile(convId, task.model || null);
         taskManager.send(convId, task.prompt);
         touchCronLastRun(task.id, Date.now());
       } catch (e) {

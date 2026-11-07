@@ -1094,9 +1094,9 @@ export interface KinetAPI {
   // Panel 插件获得一个独立的全屏视图 (像 workbench / town 一样), 由插件自己管理 UI。
   pluginPanels(): Promise<{ ok: boolean; items?: Array<{ name: string; title: string; icon?: string; html: string }>; error?: string }>;
   // Cron 定时任务:每分钟 tick,匹配的自动起会话发 prompt。
-  cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
-  cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string }): Promise<{ ok: boolean; error?: string }>;
-  cronUpdate(id: string, patch: { cron?: string; prompt?: string; cwd?: string; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
+  cronList(): Promise<{ ok: boolean; items?: Array<{ id: string; cron: string; prompt: string; cwd: string | null; model: string | null; enabled: boolean; lastRun: number | null; createdAt: number }>; error?: string }>;
+  cronAdd(t: { id: string; cron: string; prompt: string; cwd?: string; model?: string | null }): Promise<{ ok: boolean; error?: string }>;
+  cronUpdate(id: string, patch: { cron?: string; prompt?: string; cwd?: string; model?: string | null; enabled?: boolean }): Promise<{ ok: boolean; error?: string }>;
   cronDelete(id: string): Promise<{ ok: boolean; error?: string }>;
   cronValidate(expr: string): Promise<{ ok: boolean; error?: string }>;
   // Watch 模式:<cwd>/.kinet-watch.json 配置 glob + prompt,自动触发会话。
