@@ -366,6 +366,15 @@ export function register(): void {
     }
   });
 
+  // ask_user 决策卡回执:renderer 提交/取消后唤醒阻塞中的 agent(与 confirm-response 同构)
+  ipcMain.on('ask-response', (_e, { id, answer }: { id: string; answer: string }) => {
+    const resolve = deps.pendingAsks.get(id);
+    if (resolve) {
+      resolve(answer);
+      deps.pendingAsks.delete(id);
+    }
+  });
+
   // P2: 撤销 Computer Use 会话级授权(设置页/状态条入口;传 convId 撤单会话,不传撤全部)。
   ipcMain.handle('revoke-cu-approval', (_e, convId?: string) => {
     const { revokeComputerUseApproval } = require('../tools') as typeof import('../tools');

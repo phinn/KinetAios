@@ -14,6 +14,7 @@ export interface IpcDeps {
   voiceChatRef(): VoiceChat | null;
   setVoiceChatRef(v: VoiceChat | null): void;
   pendingConfirms: Map<string, (approved: boolean) => void>;
+  pendingAsks: Map<string, (answer: string) => void>;
   pendingPrivacyConfirms: Map<string, { fn: (approved: boolean) => void; timer: NodeJS.Timeout }>;
   confirm(cmd: string): Promise<boolean>;
   drainConfirms(): void;

@@ -1234,6 +1234,7 @@ function createIpcDeps(): void {
   deps.voiceChatRef = () => voiceChatRef;
   deps.setVoiceChatRef = (v: VoiceChat | null) => { voiceChatRef = v; };
   deps.pendingConfirms = pendingConfirms;
+  deps.pendingAsks = pendingAsks;
   deps.pendingPrivacyConfirms = pendingPrivacyConfirms;
   deps.confirm = confirm;
   deps.drainConfirms = drainConfirms;
