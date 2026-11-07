@@ -6194,9 +6194,11 @@ function empty(text: string, sub?: string, icon?: string): HTMLElement {
 //    - 'pin'     : 切会话恢复 → 用记忆的 scrollTop 复位一次性消费
 //    谁该滚、谁不该滚,只看这一个变量,不再有 7 个 flag 互相打架。
 //    One source of truth. No flag soup.
-// 2. userAtBottom 只由 scroll 事件维护(scroll 事件是唯一能区分
+// 2. userAtBottom 主要由 scroll 事件维护(scroll 事件是唯一能区分
 //    「程序设置 scrollTop」与「内容增长导致 dist 变化」的信号,
 //    在 scroll 回调里读 layout 是被动且准确的)。
+//    唯一例外:向上滚轮不等 scroll 事件、直接置 hold(见 wheel 监听处)
+//    —— 流式期间程序每帧贴底,等 scroll 事件永远抢不过 rAF。
 // 3. 底部阈值统一 BOTTOM_EPS,不再 100/120 混用。
 // 4. content-visibility: auto 的屏外 turn 永远是 160px 占位(读 scrollHeight
 //    不会让 Chromium 布局它们),贴底前必须剥离视口下方 turn 的 cv 强制真实布局,
@@ -6205,6 +6207,10 @@ function empty(text: string, sub?: string, icon?: string): HTMLElement {
 //    不允许锚点跨渲染残留(历史 bug 根源之一)。
 
 const BOTTOM_EPS = 120;
+
+/** 上一帧 scrollTop(方向判定用):向上滚动 = 明确离开底部意图。
+ *  程序滚动分支同样更新,避免切会话/贴底后残留陈旧值误判方向。 */
+let lastScrollTop = 0;
 
 /** 视口状态:'follow' 跟随底部 | 'hold' 冻结(看历史/已取消) | 'pin' 一次性恢复记忆位置 */
 let viewMode: 'follow' | 'hold' | 'pin' = 'follow';
@@ -6242,6 +6248,20 @@ function syncAtBottomFlag(): void {
 /** 真实用户交互(滚轮/键盘/拖滚动条/点按钮)→ 解除硬冻结。 */
 function userUnfreeze(): void {
   scrollFrozen = false;
+}
+
+/** 向上滚动意图:流式期间程序每帧贴底,scroll 事件(或被 programmaticScroll
+ *  吞掉、或几何上仍近底部)永远判不出用户想上翻 —— 必须在输入事件里同步置 hold,
+ *  并作废已排队的贴底 rAF,否则表现为「滚不上去 + 视口上下抖」。
+ *  Upward wheel intent must flip to hold synchronously at the input event:
+ *  during streaming the per-frame stick rAF wins every race against the
+ *  scroll event (which is either swallowed by programmaticScroll or still
+ *  geometrically near bottom), producing scroll-lock + vertical jitter. */
+function wheelScrollUpIntent(): void {
+  scrollFrozen = false;
+  userAtBottom = false;
+  if (viewMode === 'follow') viewMode = 'hold';
+  scrollDownScheduled = false; // 作废已排队/在途的贴底帧
 }
 
 function turnsEl(): HTMLElement | null {
@@ -6459,10 +6479,21 @@ function initScrollBottomBtn(): void {
     // 高度抖动会让 dist 临时越界,误判 hold 后 scrollDown 跳过 → 视口卡住乱跳。
     // / Programmatic scrolls bypass state transitions: scrollHeight jitter
     // under content-visibility would otherwise flip follow→hold mid-stream.
-    if (programmaticScroll > 0) { update(); return; }
+    if (programmaticScroll > 0) { lastScrollTop = turns.scrollTop; update(); return; }
     const dist = turns.scrollHeight - turns.scrollTop - turns.clientHeight;
-    userAtBottom = dist < BOTTOM_EPS;
-    if (!scrollFrozen) viewMode = userAtBottom ? 'follow' : 'hold';
+    // 向上滚动(.scrollTop 变小)是明确的离开底部意图:无视几何死区,直接 hold。
+    // 流式贴底每帧把 scrollTop 拉到底,仅靠 dist<BOTTOM_EPS 判定会让小幅上滚
+    // 落在 120px 死区内被弹回 —— 这是「上下抖动」的另一半根因。
+    // An upward scrollTop delta is an explicit leave-bottom intent: honor it
+    // regardless of the geometric epsilon, otherwise a small upward flick
+    // lands inside the 120px dead zone and snaps right back (jitter).
+    if (turns.scrollTop < lastScrollTop - 1) {
+      wheelScrollUpIntent();
+    } else {
+      userAtBottom = dist < BOTTOM_EPS;
+      if (!scrollFrozen) viewMode = userAtBottom ? 'follow' : 'hold';
+    }
+    lastScrollTop = turns.scrollTop;
     // 硬冻结中即便几何到底也不升级 follow(取消后的惯性滚动不许拽回)
     update();
   };
@@ -6472,6 +6503,21 @@ function initScrollBottomBtn(): void {
   // Real user scrolling (wheel / trackpad / keys / scrollbar drag) unfreezes.
   // Programmatic scrollTop also fires scroll events — hence wheel/keydown/pointer only.
   turns.addEventListener('wheel', userUnfreeze, { passive: true });
+  // ⚠️ 流式贴底竞态:程序每帧 rAF 贴底,scroll 事件(被 programmaticScroll 吞掉
+  //  或几何上仍近底)永远判不出「用户想上翻」。wheel 上滑必须在输入事件同步置
+  //  hold 并作废已排队的贴底帧 —— 否则滚轮被程序滚动逐帧吃掉,滚不上去 + 抖动。
+  //  向下的 wheel 交给 scroll 事件几何判定(贴底跟随语义不变)。
+  //  Trackpad wheel deltas are fractional — accumulate until |sum| crosses 1
+  //  before deciding direction, so slow two-finger drags still register.
+  let wheelVertAccum = 0;
+  turns.addEventListener('wheel', (e) => {
+    wheelVertAccum += e.deltaY;
+    if (Math.abs(wheelVertAccum) < 1) return; // 小于 1px 的垂直分量不判向,继续累积
+    const up = wheelVertAccum < 0;
+    wheelVertAccum = 0;
+    if (!up) return; // 向下滚不抢状态机,交给 scroll 事件
+    wheelScrollUpIntent();
+  }, { passive: true });
   turns.addEventListener('keydown', userUnfreeze);
   turns.addEventListener('pointerdown', userUnfreeze);
 
