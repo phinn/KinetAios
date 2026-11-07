@@ -128,3 +128,10 @@
 2. 判死:EndoTheDev/Awesome-Ollama(29 open 黑洞+批量关不 merge,无 issue 流)、ComposioHQ/awesome-claude-skills 78.8k 及同型 skills 列表(纯 skill 分类无 clients 段不 fit)、hesamsheikh/awesome-openclaw-usecases 31.6k(未验证 OpenClaw 集成,口径纪律:不投未实测的)
 3. 人工项:gitee token 过期(401)——GVP/开源指北推荐位需用户续 token 后提表单;中文线补充
 4. 查重纪律再次生效:CCR phinn 零历史✓、Ollama phinn 零历史✓(先查后投,deepseek #739 教训)
+
+### 2026-11-07 全量核查(转化+拒因归档)
+**转化 2**:mcp.so #4373 已收录(/servers/kinetaios);chinese-independent-developer #1736 已收 19 App 全量进主版面(11-03)
+**被拒 2(带出路)**:①awesome-llm-apps #1286——拒因=列表只收 established 外链项目;**维护者明确给出重投门:`advanced_llm_apps/` 下自包含可运行示例驱动 KinetAios**(对口形状=KinetAios MCP server 示例,先进仓 plugins/ 再投,示例仓链接进 README);②scoop Extras #19258——星数墙 ≥100★/50fork;出路=社区 bucket 或自建 phinn/scoop-bucket(`scoop bucket add phinn https://github.com/phinn/scoop-bucket`),建仓时照 Extras manifest 范式(已验证的双层解压写法可复用)
+**判死 1**:sindresorhus/awesome-electron——先例 KDE Connect PR #21732 因「100+ stars」被拒,与 Extras 同星数墙;近 8 PR 0 merged;挂盯撤销(100★ 解锁条款作废,判死不等涨星)
+**仍 open 值班**:ACC #3473(validation-passed 标签✓,待 maintainer 人审)、CCR #1948(0评论0赞,死寂符合预期)、deepseek #739、#4267 awesome-mac、#90 ai-guide、#13062 ruanyf、#4242 HelloGitHub、pay-once ×6、#915 toolkit、#102/#8 教程库、#179 chatgpt-zh
+**当前漏斗**:曝光在飞 15 条;星数墙类(extras/electron/Homebrew)全部转入「bucket 自建/暂缓」而非死等涨星
