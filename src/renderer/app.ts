@@ -599,6 +599,7 @@ function applyI18nDOM(): void {
     }
   });
   api.onConfirmRequest((req) => showConfirm(req.id, req.cmd, (req as { rulesNote?: string }).rulesNote));
+  api.onAskRequest((req) => showAskCard(req));
   // 隐私闸弹窗:独立通道,用 showConfirmDialog(无「不再询问」checkbox),拒绝/超时都回 deny
   api.onPrivacyRequest(async (req) => {
     const approved = await showConfirmDialog(tr('settings.privacy.title'), req.msg, { okLabel: tr('privacy.allow') });
@@ -1425,6 +1426,118 @@ function showConfirmDialog(title: string, body: string, opts?: { okLabel?: strin
 function dismissConfirmDialog(): void {
   if (confirmDialogFocusRestore) { confirmDialogFocusRestore(); confirmDialogFocusRestore = null; }
   activeConfirmDone?.(false);
+}
+
+// ── ask_user 决策卡(agent 需要用户拍板时弹出;单选/多选 + 「其他」自由输入)──
+// 与 confirm-modal 同级形态:静态 HTML + JS 控显隐,Promise 回传聚合答案字符串。
+// The ask_user decision card: static HTML + JS toggling, resolves to the aggregated answer.
+let activeAskDone: ((answer: string) => void) | null = null;
+let askFocusRestore: (() => void) | null = null;
+
+function showAskCard(req: {
+  id: string;
+  question: string;
+  options: { label: string; description?: string }[];
+  multiSelect?: boolean;
+}): void {
+  const modal = document.getElementById('ask-modal')!;
+  document.getElementById('ask-question')!.textContent = req.question;
+  const list = document.getElementById('ask-options')!;
+  const multi = !!req.multiSelect;
+  const counter = document.getElementById('ask-counter')!;
+  list.innerHTML = '';
+  const boxes: HTMLInputElement[] = [];
+  const counters = counter.parentElement!;
+  counter.textContent = multi ? tr('ask.multiHint') : '';
+  counters.style.display = multi ? '' : 'none';
+
+  // 选项行:单选=radio,多选=checkbox;点整行切换。「其他」输入框在列表末尾。
+  // Option rows: radio vs checkbox, whole row clickable; the "Other" input sits at the end.
+  const optClick = (row: HTMLElement, input: HTMLInputElement) => {
+    if (!multi) {
+      for (const b of boxes) if (b !== input) b.checked = false;
+    }
+    input.checked = true;
+    if (multi) updateCounter();
+    else { (document.getElementById('ask-other-input') as HTMLInputElement).value = ''; }
+  };
+  for (let i = 0; i < req.options.length; i++) {
+    const o = req.options[i];
+    const row = document.createElement('div');
+    row.className = 'ask-opt';
+    const input = document.createElement('input');
+    input.type = multi ? 'checkbox' : 'radio';
+    input.name = 'ask-opt';
+    input.id = `ask-opt-${i}`;
+    const lab = document.createElement('label');
+    lab.htmlFor = `ask-opt-${i}`;
+    const b = document.createElement('b');
+    b.textContent = o.label;
+    lab.appendChild(b);
+    if (o.description) lab.appendChild(document.createTextNode(' ' + o.description));
+    row.appendChild(input); row.appendChild(lab);
+    row.onclick = () => { optClick(row, input); };
+    list.appendChild(row);
+    boxes.push(input);
+  }
+  const updateCounter = () => {
+    const n = boxes.filter((b) => b.checked).length;
+    counter.textContent = tr('ask.selected', { n: String(n) });
+  };
+  // 选「其他」时清掉所有勾选(互斥:自由输入优先);反之勾选清空其他文本。
+  const otherInput = document.getElementById('ask-other-input') as HTMLInputElement;
+  otherInput.value = '';
+  const otherRow = document.getElementById('ask-other-row')!;
+  const otherBox = document.getElementById('ask-other-box') as HTMLInputElement;
+  otherBox.checked = false;
+  otherRow.onclick = (e) => {
+    if ((e.target as HTMLElement).tagName !== 'INPUT') otherBox.checked = true;
+    if (otherBox.checked) { for (const b of boxes) b.checked = false; if (multi) updateCounter(); otherInput.focus(); }
+    else otherInput.value = '';
+  };
+  otherInput.oninput = () => { if (otherInput.value && !otherBox.checked) otherBox.checked = true; };
+
+  const submit = document.getElementById('ask-submit')!;
+  const cancel = document.getElementById('ask-cancel')!;
+  modal.classList.add('show');
+  (document.getElementById('ask-counter-wrap') as HTMLElement).style.display = multi ? '' : 'none';
+  askFocusRestore = trapFocus(modal);
+
+  const finish = (answer: string) => {
+    submit.onclick = null; cancel.onclick = null; document.onkeydown = null;
+    activeAskDone = null;
+    modal.classList.remove('show');
+    if (askFocusRestore) { askFocusRestore(); askFocusRestore = null; }
+    api.askResponse(req.id, answer);
+  };
+
+  activeAskDone = finish;
+
+  const gather = (): string | null => {
+    if (otherBox.checked && otherInput.value.trim()) return otherInput.value.trim();
+    const chosen = boxes.filter((b) => b.checked);
+    if (chosen.length === 0) return null; // 没选也没填 → 提交无效
+    const labels = chosen.map((b) => req.options[Number(b.id.split('-').pop())].label);
+    if (otherBox.checked) labels.push(tr('ask.other') + ': ' + otherInput.value.trim());
+    return labels.join(';');
+  };
+  submit.onclick = () => {
+    const a = gather();
+    if (a === null) { otherInput.focus(); return; }
+    activeAskDone?.(a); // 走统一 finish 通道
+  };
+  cancel.onclick = () => activeAskDone?.('__cancelled__');
+  document.onkeydown = (e) => {
+    if (e.key === 'Escape') { activeAskDone?.('__cancelled__'); }
+    else if (e.key === 'Enter' && !e.shiftKey && document.activeElement !== otherInput) { submit.click(); }
+  };
+  if (!multi) { /* 单选默认不预选任何项,逼用户显式拍板 */ }
+  else updateCounter();
+}
+/** Esc 兜底取消决策卡(全局 Esc 链路联动) */
+function dismissAskCard(): void {
+  if (askFocusRestore) { askFocusRestore(); askFocusRestore = null; }
+  if (activeAskDone) { activeAskDone('__cancelled__'); }
 }
 
 // 侧栏会话改名 / 删除(✎/🗑 按钮)。
@@ -10930,6 +11043,25 @@ window.addEventListener('message', async (ev: MessageEvent) => {
         break;
       case 'promoExport':
         result = await api.promoExport();
+        break;
+      // ── 收入渠道追踪(marketing-kit 面板)──
+      case 'revenueList':
+        result = await api.revenueList();
+        break;
+      case 'revenueAdd':
+        result = await api.revenueAdd(args[0]);
+        break;
+      case 'revenueUpdate':
+        result = await api.revenueUpdate(args[0], args[1]);
+        break;
+      case 'revenueRemove':
+        result = await api.revenueRemove(args[0]);
+        break;
+      case 'revenueImport':
+        result = await api.revenueImport(args[0]);
+        break;
+      case 'revenueExport':
+        result = await api.revenueExport();
         break;
       default:
         source?.postMessage({ target: data.source, id, error: `Unknown method: ${method}` }, replyOrigin);

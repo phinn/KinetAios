@@ -142,6 +142,7 @@
     <button class="mk-tab" data-tab="research">调研工作台</button>
     <button class="mk-tab" data-tab="checklist">发布清单</button>
     <button class="mk-tab" data-tab="promo">推广追踪</button>
+    <button class="mk-tab" data-tab="revenue">收入追踪</button>
   </div>
 
   <div id="mk-root">
@@ -225,6 +226,40 @@
             <input id="mk-promo-f-next" placeholder="下次行动 YYYY-MM-DD(可选)">
             <input id="mk-promo-f-note" placeholder="备注(可选)" style="grid-column:1/3">
             <button class="mk-btn" id="mk-promo-add" style="grid-column:1/3">添加</button>
+          </div>
+        </details>
+      </div>
+    </div>
+
+    <!-- ═══ Tab 5: 收入追踪(revenue dashboard — 渠道收入快照) ═══ -->
+    <div class="mk-page" id="mk-page-revenue">
+      <div class="mk-card">
+        <h3>💰 收入追踪</h3>
+        <div class="mk-hint">各变现渠道收入快照:App Store Connect 用 asc_to_panel.py 产出后导入;闲鱼/Payhip/Fiverr 等手动巡检「改数」。<b>快照式,无自动刷新</b>;metrics KV 每渠道自由定义。数据存 userData/revenue-items.json,导入=整体替换。</div>
+        <div style="display:flex;gap:8px;align-items:center;margin:8px 0;flex-wrap:wrap">
+          <button class="mk-btn" id="mk-rev-import" title="选择导出的 revenue JSON(含 asc_to_panel.py 快照),整体替换当前条目">📥 导入</button>
+          <button class="mk-btn" id="mk-rev-export" title="全部条目导出为 JSON 文件(个人数据,自行备份)">📤 导出</button>
+          <input type="file" id="mk-rev-file" accept=".json,application/json" style="display:none">
+          <span id="mk-rev-meta" style="font-size:11px;color:var(--text-faint)"></span>
+        </div>
+        <div id="mk-rev-summary" style="display:flex;gap:6px;flex-wrap:wrap;margin:6px 0"></div>
+        <div id="mk-rev-rows" style="margin-top:6px"></div>
+        <details style="margin-top:10px">
+          <summary style="cursor:pointer;font-size:12px;color:var(--text-dim)">➕ 添加收入渠道</summary>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:8px">
+            <input id="mk-rev-f-name" placeholder="渠道名,如 Fiverr / 闲鱼·品5 跨境自动化">
+            <select id="mk-rev-f-kind">
+              <option value="manual">手动渠道</option>
+              <option value="xianyu">闲鱼</option>
+              <option value="payhip">Payhip</option>
+              <option value="fiverr">Fiverr</option>
+              <option value="fl">Freelancer</option>
+              <option value="asc">App Store Connect</option>
+            </select>
+            <input id="mk-rev-f-url" placeholder="后台链接(可选)" style="grid-column:1/3">
+            <input id="mk-rev-f-metrics" placeholder='初始指标 JSON(可选),如 {"views":0,"usd":0}' style="grid-column:1/3">
+            <input id="mk-rev-f-note" placeholder="备注(定价/口径)" style="grid-column:1/3">
+            <button class="mk-btn" id="mk-rev-add" style="grid-column:1/3">添加</button>
           </div>
         </details>
       </div>
@@ -587,6 +622,141 @@
     reader.readAsText(f);
   };
   loadPromo();
+
+  // ═══ Tab 5: 收入追踪 ═══
+  var revItems = [];
+
+  // USD 折算:usd 直取;cny 按固定汇率(仅汇总口径,明细不动)
+  var CNY_FX = 7.2;
+  function revUsd(it) {
+    var m = it.metrics || {};
+    var usd = Number(m.usd || 0);
+    if (m.cny != null) usd += Number(m.cny) / CNY_FX;
+    // ASC per-app 汇总
+    if (Array.isArray(m.apps)) for (var i = 0; i < m.apps.length; i++) usd += Number(m.apps[i].usd || 0);
+    return usd;
+  }
+  // 状态灯:有收入🟢 / 有流量无收入🟡 / 零流量⚪
+  function revLight(it) {
+    var m = it.metrics || {};
+    var usd = revUsd(it);
+    if (usd > 0) return ['🟢', '有收入'];
+    var traffic = Number(m.views || 0) + Number(m.impressions || 0) + Number(m.clicks || 0) + Number(m.leads || 0) + Number(m.paid || 0) + Number(m.orders || 0);
+    return traffic > 0 ? ['🟡', '有流量无收入'] : ['⚪', '零流量'];
+  }
+  function renderRevenue() {
+    var total = 0, earning = 0, latest = '';
+    revItems.forEach(function(it) {
+      var u = revUsd(it);
+      total += u;
+      if (u > 0) earning++;
+      if (it.checkedAt && it.checkedAt > latest) latest = it.checkedAt;
+    });
+    $('mk-rev-summary').innerHTML =
+      '<span class="mk-chip" style="font-weight:600">总净收入 $' + total.toFixed(2) + '</span>' +
+      '<span class="mk-chip">出单渠道 ' + earning + '/' + revItems.length + '</span>' +
+      (latest ? '<span class="mk-chip">快照 ' + latest.slice(0, 10) + '</span>' : '');
+    var sorted = revItems.slice().sort(function(a, b) { return revUsd(b) - revUsd(a); }); // 收入降序,死渠道沉底
+    $('mk-rev-rows').innerHTML = sorted.map(function(it) {
+      var m = it.metrics || {};
+      var light = revLight(it);
+      var main;
+      if (it.kind === 'asc') {
+        var apps = Array.isArray(m.apps) ? m.apps : [];
+        main = '<b>$' + Number(m.usd || 0).toFixed(2) + '</b> · ' + Number(m.paid || 0) + ' 单';
+        if (apps.length) {
+          main += '<div style="font-size:11px;color:var(--text-dim);margin-top:2px">' + apps.map(function(a) {
+            return (a.name || '?') + ' $' + Number(a.usd || 0).toFixed(2) + '×' + Number(a.paid || 0);
+          }).join(' · ') + '</div>';
+        }
+      } else {
+        // 通用渠道:有啥显示啥(views/orders/leads/cny/usd)
+        var parts = [];
+        if (m.views != null) parts.push('浏览 ' + m.views);
+        if (m.impressions != null) parts.push('曝光 ' + m.impressions);
+        if (m.leads != null) parts.push('询盘 ' + m.leads);
+        if (m.orders != null) parts.push('订单 ' + m.orders);
+        if (m.cny != null) parts.push('¥' + Number(m.cny).toFixed(2));
+        if (m.usd != null) parts.push('$' + Number(m.usd).toFixed(2));
+        main = parts.length ? parts.join(' · ') : '<span style="color:var(--text-faint)">无数据</span>';
+      }
+      var urlHtml = it.url ? ' <a href="' + esc(it.url) + '" style="font-size:11px">↗</a>' : '';
+      var noteHtml = it.note ? '<div style="font-size:11px;color:var(--text-faint);margin-top:2px">' + esc(it.note) + '</div>' : '';
+      var checkedHtml = it.checkedAt ? '<span style="font-size:11px;color:var(--text-faint)">' + it.checkedAt.slice(0, 10) + '</span>' : '';
+      return '<div class="mk-rev-row" data-id="' + esc(it.id) + '" style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border,#333)">' +
+        '<span title="' + light[1] + '">' + light[0] + '</span>' +
+        '<span style="min-width:120px">' + esc(it.name) + urlHtml + '</span>' +
+        '<span style="flex:1">' + main + '</span>' +
+        checkedHtml +
+        '<button class="mk-btn mk-rev-edit" data-id="' + esc(it.id) + '" style="padding:2px 8px;font-size:11px">改数</button>' +
+      '</div>' + noteHtml;
+    }).join('') || '<div style="color:var(--text-faint);font-size:12px">暂无条目 —— 导入 asc_to_panel.py 产出的 JSON,或手动添加渠道</div>';
+    // 改数弹窗(用 metrics 的 JSON 快速编辑)
+    document.querySelectorAll('.mk-rev-edit').forEach(function(btn) {
+      btn.onclick = function() {
+        var it = revItems.filter(function(x) { return x.id === btn.dataset.id; })[0];
+        if (!it) return;
+        var cur = JSON.stringify(it.metrics || {}, null, 2);
+        var next = prompt('更新 ' + it.name + ' 的指标 JSON(直接改数字):', cur);
+        if (next == null) return;
+        try {
+          var parsed = JSON.parse(next);
+          hostCall('revenueUpdate', [it.id, { metrics: parsed }]).then(function(r) {
+            if (r && r.ok) { it.metrics = parsed; it.checkedAt = new Date().toISOString(); renderRevenue(); }
+            else alert('更新失败: ' + (r && r.error || '未知'));
+          }).catch(function(e) { alert('更新失败: ' + e); });
+        } catch (e) { alert('JSON 解析失败: ' + e.message); }
+      };
+    });
+  }
+  function loadRevenue() {
+    hostCall('revenueList', []).then(function(items) {
+      revItems = items || [];
+      renderRevenue();
+      $('mk-rev-meta').textContent = revItems.length ? revItems.length + ' 条渠道' : '';
+    }).catch(function(e) { setMsg('revenue 加载失败: ' + e, 'err'); });
+  }
+  $('mk-rev-import').onclick = function() { $('mk-rev-file').click(); };
+  $('mk-rev-file').onchange = function() {
+    var f = this.files && this.files[0];
+    this.value = '';
+    if (!f) return;
+    var reader = new FileReader();
+    reader.onload = function() {
+      if (!confirm('导入将整体替换当前 ' + revItems.length + ' 条收入渠道,继续?')) return;
+      hostCall('revenueImport', [String(reader.result)]).then(function(r) {
+        if (r && r.ok && r.items) { revItems = r.items; renderRevenue(); $('mk-rev-meta').textContent = '已导入 ' + r.items.length + ' 条'; }
+        else alert('导入失败: ' + (r && r.error || '未知'));
+      }).catch(function(e) { alert('导入失败: ' + e); });
+    };
+    reader.onerror = function() { alert('读文件失败'); };
+    reader.readAsText(f);
+  };
+  $('mk-rev-export').onclick = function() {
+    hostCall('revenueExport', []).then(function(json) {
+      var blob = new Blob([json], { type: 'application/json' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'revenue-items-' + new Date().toISOString().slice(0, 10) + '.json';
+      document.body.appendChild(a); a.click();
+      setTimeout(function() { URL.revokeObjectURL(a.href); a.remove(); }, 800);
+      $('mk-rev-meta').textContent = '已导出 ' + revItems.length + ' 条';
+    }).catch(function(e) { alert('导出失败: ' + e); });
+  };
+  $('mk-rev-add').onclick = function() {
+    var name = $('mk-rev-f-name').value.trim();
+    var kind = $('mk-rev-f-kind').value;
+    var url = $('mk-rev-f-url').value.trim();
+    var note = $('mk-rev-f-note').value.trim();
+    if (!name) { alert('名称必填'); return; }
+    hostCall('revenueAdd', [{ name: name, kind: kind, url: url || undefined, note: note || undefined }]).then(function(r) {
+      if (r && r.ok && r.item) {
+        revItems.push(r.item); renderRevenue();
+        $('mk-rev-f-name').value = ''; $('mk-rev-f-url').value = ''; $('mk-rev-f-note').value = '';
+      } else alert('添加失败: ' + (r && r.error || '未知'));
+    }).catch(function(e) { alert('添加失败: ' + e); });
+  };
+  loadRevenue();
 
   // 拉主题变量(宿主注入)
   hostCall('getTheme', []).then(function(vars) {

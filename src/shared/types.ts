@@ -950,6 +950,21 @@ export interface PromoItem {
   error?: string; // 最近一次刷新失败原因(网络/限流)
 }
 
+// ── 收入渠道追踪(revenue dashboard)──
+// Revenue tracking item: one income source (App Store Connect / freelance platform / digital goods).
+// metrics 为自由 KV(每渠道指标不同),快照式手动更新(asc → asc_to_panel.py 产出,其余渠道人工巡检)。
+// metrics is free-form per channel; numbers are snapshots updated via import or quick-edit.
+export interface RevenueItem {
+  id: string; // 稳定 id(asc 固定为 'asc';其它 rv-<rand>),删除/导入去重按此定位
+  name: string; // 展示名,如 "App Store Connect" / "Fiverr"
+  kind: 'asc' | 'xianyu' | 'payhip' | 'fiverr' | 'fl' | 'manual'; // 渠道类型(渲染分支用)
+  url?: string; // 渠道后台链接(可点开)
+  metrics?: Record<string, unknown>; // 指标快照:usd/cny/views/orders/leads/apps[]… 每渠道自由定义
+  note?: string; // 备注:定价、渠道背景、核对口径
+  addedAt: string; // ISO 添加时间
+  checkedAt?: string; // 最近一次改数/导入时间(汇总卡「快照日期」)
+}
+
 // The API the preload exposes to the renderer via contextBridge (window.kinet).
 export interface KinetAPI {
   getConversations(): Promise<Conversation[]>;
@@ -1050,6 +1065,19 @@ export interface KinetAPI {
   promoImport(payload: string | PromoItem[]): Promise<{ ok: boolean; items?: PromoItem[]; error?: string }>;
   /** 导出全部条目为 JSON 字符串(个人数据,仓库不携带) */
   promoExport(): Promise<{ ok: boolean; json?: string; error?: string }>;
+  // ── 收入渠道追踪(revenue dashboard;见 main/ipc/revenue.ts)──
+  /** 列出全部收入条目((userData)/revenue-items.json;仓库不带种子,数据经 revenueImport 导入) */
+  revenueList(): Promise<RevenueItem[]>;
+  /** 动态添加收入条目(name+kind 必填,metrics 可选) */
+  revenueAdd(input: { name: string; kind: RevenueItem['kind']; metrics?: Record<string, unknown>; note?: string; url?: string }): Promise<{ ok: boolean; item?: RevenueItem; error?: string }>;
+  /** 快捷改数:整体替换某条 metrics(面板「改数」弹层用) */
+  revenueUpdate(id: string, metrics: Record<string, unknown>): Promise<{ ok: boolean; item?: RevenueItem; error?: string }>;
+  /** 删除收入条目 */
+  revenueRemove(id: string): Promise<{ ok: boolean }>;
+  /** 导入条目 JSON(整体替换;格式=revenueExport 原样,asc_to_panel.py 产出可直接导入) */
+  revenueImport(payload: string | RevenueItem[]): Promise<{ ok: boolean; items?: RevenueItem[]; error?: string }>;
+  /** 导出全部条目为 JSON 字符串(个人数据,仓库不携带) */
+  revenueExport(): Promise<{ ok: boolean; json?: string; error?: string }>;
   // ── 版本更新检查(GitHub Releases;见 main/updater.ts)──
   /** 检查更新:force=true 强制走网络;false 时 24h 内吃本地缓存。错误放返回值的 error 字段,不抛异常 */
   checkUpdate(force?: boolean): Promise<UpdateInfo>;
@@ -1241,6 +1269,9 @@ export interface KinetAPI {
   // 系统通知点击 → 主进程要求聚焦并切换到对应会话(notifyOnDone 链路)
   onFocusConversation(cb: (convId: string) => void): void;
   onConfirmRequest(cb: (req: { id: string; cmd: string; rulesNote?: string }) => void): void;
+  // ask_user 决策卡:agent 需要用户拍板时 main 推卡片,renderer 回选中项
+  onAskRequest(cb: (req: { id: string; question: string; options: { label: string; description?: string }[]; multiSelect: boolean }) => void): void;
+  askResponse(id: string, answer: string): void;
   // 隐私闸独立弹窗:与 shell confirm 分离,不受「不再询问」/approval 短路影响。
   onPrivacyRequest(cb: (req: { id: string; msg: string }) => void): void;
   onRemoteAgentEvent(cb: (ev: RemoteAgentEvent) => void): void;

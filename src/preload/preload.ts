@@ -81,6 +81,13 @@ const api: KinetAPI = {
   promoRemove: (id) => ipcRenderer.invoke('promo-remove', id),
   promoImport: (payload) => ipcRenderer.invoke('promo-import', payload),
   promoExport: () => ipcRenderer.invoke('promo-export'),
+  // ── 收入渠道追踪 ──
+  revenueList: () => ipcRenderer.invoke('revenue-list'),
+  revenueAdd: (input) => ipcRenderer.invoke('revenue-add', input),
+  revenueUpdate: (id, metrics) => ipcRenderer.invoke('revenue-update', id, metrics),
+  revenueRemove: (id) => ipcRenderer.invoke('revenue-remove', id),
+  revenueImport: (payload) => ipcRenderer.invoke('revenue-import', payload),
+  revenueExport: () => ipcRenderer.invoke('revenue-export'),
   // ── 版本更新检查 ──
   checkUpdate: (force?: boolean) => ipcRenderer.invoke('check-update', force),
   getAppVersion: () => ipcRenderer.invoke('app-version'),
@@ -249,6 +256,11 @@ const api: KinetAPI = {
     ipcRenderer.removeAllListeners('confirm-request');
     ipcRenderer.on('confirm-request', (_e: IpcRendererEvent, req) => cb(req));
   },
+  onAskRequest: (cb) => {
+    ipcRenderer.removeAllListeners('ask-request');
+    ipcRenderer.on('ask-request', (_e: IpcRendererEvent, req) => cb(req));
+  },
+  askResponse: (id, answer) => { ipcRenderer.send('ask-response', { id, answer }); },
   onPrivacyRequest: (cb) => {
     ipcRenderer.removeAllListeners('privacy-request');
     ipcRenderer.on('privacy-request', (_e: IpcRendererEvent, req) => cb(req));
