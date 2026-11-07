@@ -21,6 +21,7 @@ The Direct engines (V1–V5) share **40+ built-in tools** and auto-connect to MC
 | `git_diff` | read-only | Read git diff (args: `file`, `ref`, `cached`). **No confirmation** |
 | `dispatch_agent` | write | Dispatch a read-only sub-agent (own context, optional engine) |
 | `todo_write` | write | Shared task checklist, rendered live as checklist cards in the chat |
+| `ask_user` | write | Pop a decision card when the agent needs the user to decide (2-6 options with descriptions, multi-select, free-text "Other"); blocks until the user answers |
 
 ### Memory blocks
 | Tool | Purpose |
