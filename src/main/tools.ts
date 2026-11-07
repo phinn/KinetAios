@@ -184,6 +184,14 @@ export type SpawnScopeConfig =
 export interface ToolCtx {
   cwd: string;
   confirm: (cmd: string) => Promise<boolean>;
+  // ask_user 决策卡回调:agent 需要用户拍板时弹出结构化选项卡,阻塞等用户答案。
+  // / ask_user callback: pops the structured decision card and blocks until the user answers.
+  ask?: (a: {
+    question: string;
+    options: { label: string; description?: string }[];
+    multiSelect?: boolean;
+    signal?: AbortSignal;
+  }) => Promise<string>;
   // DedupeGuard:turn 级工具调用去重状态(runAgentLoop 生命周期内创建/持有,跨 turn 不复用)。
   // key = toolName + 规范化参数;value = { count, lastResult }。由 AgentLoop 内部读写,引擎/工具不碰。
   // 离线调用(烟囱/工具直跑)可不传 → 守卫关闭。
@@ -1049,6 +1057,66 @@ const webSearch: Tool = {
     }
 
     return `搜索「${q}」失败:所有搜索引擎均不可用(${failed.join(';')})。可能是网络限制,尝试用 web_fetch 直接抓取已知 URL。`;
+  },
+};
+
+// ask_user:决策卡工具 —— agent 遇到「需要用户拍板」的分叉点时弹出结构化选项卡,
+// 用户点选(单选/多选)或走「其他」自由输入,答案作为工具结果回灌 ReAct 循环。
+// 只在 ctx.ask 存在时注册(Direct 全家桶有,沙箱 CLI 无)。取消/关窗 → 抛「用户未回答」。
+// / ask_user: the decision-card tool. Registered only when ctx.ask exists (Direct family;
+// sandboxed CLIs don't get it). Cancel/close resolves to an explicit "not answered" string.
+const askUser: Tool = {
+  name: 'ask_user',
+  readOnly: true,
+  description:
+    '需要用户决策时使用:把候选方案做成结构化决策卡片弹出(单选或多选),用户点选或自由输入后答案返回给你。' +
+    '适用于:方案分叉(A/B 取舍)、破坏性操作前确认口径、需求歧义无法自行推断。' +
+    '不要用于可以自己查证的事实问题;选项 2-6 个,每个带一句话利弊说明。',
+  parameters: {
+    type: 'object',
+    properties: {
+      question: { type: 'string', description: '要用户拍板的问题,一句话说清背景和决策点' },
+      options: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string', description: '选项短标题(加粗显示)' },
+            description: { type: 'string', description: '一句话说明该选项的含义/代价/收益' },
+          },
+          required: ['label'],
+        },
+        description: '候选选项,2-6 个;用户还可以选「其他」自由输入',
+      },
+      multiSelect: { type: 'boolean', description: 'true=可多选(如「勾选要保留的模块」);缺省=单选' },
+    },
+    required: ['question', 'options'],
+  },
+  async run(args, ctx) {
+    const a = args as { question?: string; options?: unknown; multiSelect?: boolean };
+    const question = typeof a.question === 'string' ? a.question.trim() : '';
+    if (!question) return '错误:question 不能为空。';
+    // 逐项归一化:label 必须非空字符串,description 可选;直接挡掉嵌套错误形状
+    // / Per-item normalization: label must be a non-empty string, description optional.
+    const rawOpts = Array.isArray(a.options) ? a.options : [];
+    const options: { label: string; description?: string }[] = [];
+    for (const o of rawOpts) {
+      const oo = (o && typeof o === 'object' ? o : {}) as { label?: unknown; description?: unknown };
+      const label = typeof oo.label === 'string' ? oo.label.trim() : '';
+      if (!label) continue;
+      const description = typeof oo.description === 'string' && oo.description.trim() ? oo.description.trim() : undefined;
+      options.push({ label, description });
+    }
+    if (options.length < 2) return '错误:options 至少需要 2 个有效选项(label 非空)。';
+    if (!ctx.ask) return '错误:当前环境不支持向用户提问(ask 通道未接入)。';
+    try {
+      const answer = await ctx.ask({ question, options, multiSelect: a.multiSelect === true });
+      // 空答案 = 用户没给任何输入就提交了 → 明确告知,让模型改走文字追问或自行决断
+      return answer || '用户没有给出答案(可能直接提交了空表单)。请基于现有信息自行决断,或换一种问法。';
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      return `用户未回答(取消/超时:${msg})。不要干等 —— 基于已有上下文选择最稳妥的方案继续,并在后续答复中说明你的假设。`;
+    }
   },
 };
 
@@ -3354,7 +3422,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

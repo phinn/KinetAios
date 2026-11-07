@@ -25,6 +25,8 @@ export interface TaskManagerEmitter {
   emitConversation(conv: Conversation): void;
   emitRemoved(convId: string): void;
   confirm(cmd: string): Promise<boolean>;
+  // ask_user 决策卡回调(main 的 ask 桥);可缺省(feilv/测试环境无 UI)
+  ask?(a: { question: string; options: { label: string; description?: string }[]; multiSelect?: boolean; signal?: AbortSignal }): Promise<string>;
   // 任务完成通知钩子:turn 真正结束(done/error)且非用户主动取消时调用。
   // 由 main.ts 实现系统通知(最小化/失焦时才发)。TaskManager 不关心窗口状态。
   notifyDone(conv: Conversation, kind: 'done' | 'error', wasCancelled: boolean): void;
@@ -53,7 +55,7 @@ export class TaskManager {
   private engines: Map<EngineKind, Engine>;
 
   constructor(private emit: TaskManagerEmitter) {
-    this.engines = buildEngines(emit.confirm);
+    this.engines = buildEngines(emit.confirm, emit.ask);
   }
 
   // 插件引擎热注册(Plugin SDK v3):plugin-reload / install / uninstall / toggle 后
@@ -62,7 +64,7 @@ export class TaskManager {
   // Hot-reregister plugin engines after plugin cache invalidation. In-flight runs
   // keep their old engine reference; new sends dispatch through the fresh table.
   rebuildEngines(): void {
-    this.engines = buildEngines(this.emit.confirm);
+    this.engines = buildEngines(this.emit.confirm, this.emit.ask);
   }
 
   load(): void {

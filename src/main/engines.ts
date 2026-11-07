@@ -394,7 +394,7 @@ export function loadContextBlock(cwd: string): string {
 // Direct = the built-in ReAct loop (AgentLoop) talking to the GLM/OpenAI/Anthropic provider.
 class DirectEngine implements Engine {
   readonly name = 'direct' as const;
-  constructor(private confirm: (cmd: string) => Promise<boolean>) {}
+  constructor(private confirm: (cmd: string) => Promise<boolean>, private ask?: ToolCtx['ask']) {}
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     // Per-conversation model (Direct only). If the conversation has a profileId, use that profile's
@@ -411,6 +411,7 @@ class DirectEngine implements Engine {
     const ctx: ToolCtx = {
       cwd: conv.cwd,
       confirm: this.confirm,
+      ask: this.ask,
       dedupe: dedupeState,
       signal,
       convId: conv.id,
@@ -1347,11 +1348,11 @@ import { DirectV3Engine } from './V3';
 import { DirectV4Engine } from './V4';
 import { DirectV5Engine } from './V5';
 
-export function buildEngines(confirm: (cmd: string) => Promise<boolean>): Map<EngineKind, Engine> {
+export function buildEngines(confirm: (cmd: string) => Promise<boolean>, ask?: ToolCtx['ask']): Map<EngineKind, Engine> {
   const engines = new Map<EngineKind, Engine>([
-    ['direct', new DirectEngine(confirm)],
-    ['directV2', new DirectV2Engine(confirm)],
-    ['directV3', new DirectV3Engine(confirm)],
+    ['direct', new DirectEngine(confirm, ask)],
+    ['directV2', new DirectV2Engine(confirm, ask)],
+    ['directV3', new DirectV3Engine(confirm, ask)],
   ]);
   // V4(Legis)插件化:与 claude-code/codex 同模式 —— 引擎实现内置(V4Engine),
   // plugins/legis-engine/plugin.json 提供开关。默认关闭(实验引擎),开启后解锁。

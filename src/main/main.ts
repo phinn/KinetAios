@@ -238,6 +238,54 @@ function drainConfirms(): void {
 // Track which windows have a dead render frame to stop spamming events into the void.
 const deadFrames = new WeakSet<BrowserWindow>();
 
+// ── ask_user 决策卡桥(main 请求 dashboard 弹结构化选项卡,用户点选/输入后回传)──
+// 与 confirm 桥同模式;答案聚合为一句人类可读文本回灌 agent。
+// / ask_user bridge: same pattern as confirm; the answer is folded into one
+// human-readable line and fed back to the agent as the tool result.
+const pendingAsks = new Map<string, (answer: string) => void>();
+let askSeq = 0;
+const ASK_TIMEOUT_MS = 600_000; // 决策卡等 10 分钟:比 confirm 长 —— 用户可能要去查资料再拍板
+
+function requestAsk(payload: {
+  question: string;
+  options: { label: string; description?: string }[];
+  multiSelect?: boolean;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const win = dashboardWin;
+  if (!win || win.isDestroyed()) return Promise.reject(new Error('dashboard window unavailable'));
+  const id = `a${process.pid}_${askSeq++}`;
+  win.webContents.send('ask-request', { id, ...payload, multiSelect: !!payload.multiSelect });
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (pendingAsks.has(id)) {
+        pendingAsks.delete(id);
+        reject(new Error('timeout'));
+      }
+    }, ASK_TIMEOUT_MS);
+    const onAbort = () => {
+      if (pendingAsks.has(id)) {
+        pendingAsks.delete(id);
+        clearTimeout(timer);
+        reject(new Error('aborted'));
+      }
+    };
+    payload.signal?.addEventListener('abort', onAbort, { once: true });
+    pendingAsks.set(id, (answer) => {
+      clearTimeout(timer);
+      payload.signal?.removeEventListener('abort', onAbort);
+      pendingAsks.delete(id);
+      resolve(answer);
+    });
+  });
+}
+
+// dashboard 刷新/会话删除时,把挂着的决策卡全部按「用户未回答」解脱
+function drainAsks(): void {
+  for (const fn of pendingAsks.values()) fn('__drained__');
+  pendingAsks.clear();
+}
+
 function safeSend(win: BrowserWindow | null, channel: string, data: unknown): void {
   if (!win || win.isDestroyed()) return;
   if (deadFrames.has(win)) return; // render frame 已销毁,不再发送 / frame already gone
@@ -350,6 +398,7 @@ const emitter: TaskManagerEmitter = {
     safeSend(arenaWin, 'conversation-removed', convId);
   },
   confirm,
+  ask: requestAsk,
   // ── 任务完成通知(设置开关 notifyOnDone,默认关)──
   // 最小化/失焦时:系统通知(点击恢复窗口)+ 任务栏闪烁 + macOS dock bounce。
   // 30s 合并窗口:同一频道短时间多次完成只通知一次(防轰炸)。
@@ -579,7 +628,7 @@ function createDashboard(): BrowserWindow {
 
   // 窗口刷新/导航前 drain:confirm modal 开着时用户按 F5,Promise 会永久挂起。
   // Drain before navigation (F5 / URL change) — pending confirms would hang forever.
-  win.webContents.on('did-start-navigation', () => drainConfirms());
+  win.webContents.on('did-start-navigation', () => { drainConfirms(); drainAsks(); });
 
   return win;
 }

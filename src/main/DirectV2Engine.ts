@@ -200,7 +200,7 @@ export class DirectV2Engine implements Engine {
   // fingerprint = `${msgs.length}:${最后一条消息 content 的简单 hash}`
   // P0-fix: 改为 Map<convId, fingerprint>,避免并发会话共享实例时 fingerprint 串扰。
   private lastCompactFingerprints = new Map<string, string>();
-  constructor(private confirm: (cmd: string) => Promise<boolean>) {}
+  constructor(private confirm: (cmd: string) => Promise<boolean>, private ask?: ToolCtx['ask']) {}
 
   releaseConv(convId: string): void {
     this.lastCompactFingerprints.delete(convId); // P1: 会话删除即释放,不再等下次 run 重置
@@ -1283,6 +1283,7 @@ ${failedDetail || '  (无)'}
     return {
       cwd: conv.cwd,
       confirm: this.confirm,
+      ask: this.ask, // ask_user 决策卡(仅主 agent ctx;子 agent readOnly ctx 不给)
       dedupe: dedupeState,
       signal,
       convId: conv.id,

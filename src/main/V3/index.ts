@@ -63,9 +63,9 @@ function terminalGate(onEvent: (e: AgentEvent) => void): (e: AgentEvent) => void
 }
 
 export class DirectV3Engine implements Engine {
-  readonly name = 'directV3' as const;
+  constructor(private confirm: (cmd: string) => Promise<boolean>, private ask?: ToolCtx['ask']) {}
 
-  constructor(private confirm: (cmd: string) => Promise<boolean>) {}
+  readonly name = 'directV3' as const;
 
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
@@ -106,6 +106,7 @@ export class DirectV3Engine implements Engine {
     const ctx: ToolCtx = {
       cwd: conv.cwd,
       confirm: this.confirm,
+      ask: this.ask, // ask_user 决策卡(与 V2 对齐)
       signal,
       convId: conv.id,
       // 当前轮 id:dag-executor 层间压缩的 spill 存证要用(V3 执行器内部拿不到 conv.turns)。
