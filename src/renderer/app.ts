@@ -12804,7 +12804,7 @@ async function renderCronList(): Promise<void> {
           <span class="cron-toggle">${t.enabled ? SVGI_SET.checkCircle() : SVGI_SET.xCircle()}</span>
         </div>
         <div class="cron-prompt">${esc(t.prompt.slice(0, 200))}${t.prompt.length > 200 ? '…' : ''}</div>
-        <div class="cron-meta">${esc(t.cwd ?? tr('cron.noCwd'))} · ${esc(tr('cron.lastRun'))}: ${esc(last)}</div>
+        <div class="cron-meta">${esc(t.cwd ?? tr('cron.noCwd'))} · ${esc(t.model ? (profileCache.find((p: any) => p.id === t.model)?.name ?? t.model) : tr('cron.modelDefault'))} · ${esc(tr('cron.lastRun'))}: ${esc(last)}</div>
         <div class="mm-actions">
           <button class="ghost cron-edit">${esc(tr('cron.edit'))}</button>
           <button class="ghost cron-toggle-btn">${t.enabled ? esc(tr('cron.pause')) : esc(tr('cron.enable'))}</button>
@@ -12846,12 +12846,22 @@ function editCronItem(id: string | null): void {
     <label>${esc(tr('cron.cronLabel'))} <input id="ce-cron" value="${id ? '' : esc(cur!.cron)}" placeholder="分 时 日 月 周 (如 0 9 * * 1 = 每周一 9 点)"/></label>
     <label>${esc(tr('cron.promptLabel'))} <textarea id="ce-prompt" rows="3" placeholder="要自动执行的任务描述…"></textarea></label>
     <label>${esc(tr('cron.cwdLabel'))} <input id="ce-cwd" value="${id ? '' : esc(cur!.cwd)}" placeholder="(可选)工作目录"/></label>
+    <label>${esc(tr('cron.modelLabel'))} <select id="ce-model"></select></label>
     <div class="cron-edit-actions">
       <button class="ghost" id="ce-cancel">${esc(tr('common.cancel'))}</button>
       <button class="primary" id="ce-save">${esc(tr('common.ok'))}</button>
     </div>
   `;
   overlay.querySelector('.modal-card')!.appendChild(card);
+  // 模型下拉:全局配置档(modelProfiles)枚举,首项=跟随全局默认(value 空)。
+  // Model dropdown: enumerate global modelProfiles; first option = follow global default.
+  const modelSel = document.getElementById('ce-model') as HTMLSelectElement;
+  const fillModelOptions = (picked: string | null) => {
+    modelSel.innerHTML =
+      `<option value="">${esc(tr('cron.modelDefault'))}</option>` +
+      profileCache.map((p: any) => `<option value="${esc(p.id)}">${esc(p.name)} (${esc(p.model)})</option>`).join('');
+    modelSel.value = picked ?? '';
+  };
   // 编辑模式:异步拉详情回填
   if (id) {
     api.cronList().then((r) => {
@@ -12860,20 +12870,24 @@ function editCronItem(id: string | null): void {
       (document.getElementById('ce-cron') as HTMLInputElement).value = item.cron;
       (document.getElementById('ce-prompt') as HTMLTextAreaElement).value = item.prompt;
       (document.getElementById('ce-cwd') as HTMLInputElement).value = item.cwd ?? '';
+      fillModelOptions(item.model);
     });
+  } else {
+    fillModelOptions(null);
   }
   document.getElementById('ce-cancel')!.onclick = () => card.remove();
   document.getElementById('ce-save')!.onclick = async () => {
     const cron = (document.getElementById('ce-cron') as HTMLInputElement).value.trim();
     const prompt = (document.getElementById('ce-prompt') as HTMLTextAreaElement).value.trim();
     const cwd = (document.getElementById('ce-cwd') as HTMLInputElement).value.trim();
+    const model = modelSel.value || null;
     if (!cron || !prompt) return;
     const v = await api.cronValidate(cron);
     if (!v.ok) { uxToast.err(v.error ?? tr('toast.error')); return; }
     if (id) {
-      await api.cronUpdate(id, { cron, prompt, cwd: cwd || undefined });
+      await api.cronUpdate(id, { cron, prompt, cwd: cwd || undefined, model });
     } else {
-      await api.cronAdd({ id: crypto.randomUUID(), cron, prompt, cwd: cwd || undefined });
+      await api.cronAdd({ id: crypto.randomUUID(), cron, prompt, cwd: cwd || undefined, model });
     }
     card.remove();
     renderCronList();
