@@ -144,3 +144,9 @@
 - gemini-cli show-and-tell #30151 确认 11-05 已发(1👍0💬 与同批持平),不重投
 **判死 4**:mcphub.io(站挂了 DEPLOYMENT_DISABLED)、pulsemcp(Cloudflare 挡自动化,人工)、ECC 299k(纯产品仓无收录位)、shanraisshan/claude-code-best-practice 68k(AGENT COLLECTIONS 只收 subagent 库;STARTUPS 段=官方功能替代对照表非收录位)
 **执行级新机会(非 PR,按价值排序)**:①自建 phinn/scoop-bucket(manifest 照 Extras #19258 审过的双层解压范式,`scoop bucket add phinn` 通路解锁,~30min);②advanced_llm_apps/ 自包含示例驱动 KinetAios(#1286 重投门,维护者亲口路条,143.9k⭐生态门票);③ACC #3473 进 validation-passed 人审队列等转化
+
+### 2026-11-08 双执行落地(bucket + #1286 重投)
+**① phinn/scoop-bucket 上线** — bucket/kinetaios.json v4.2.0(hash=exe 实算 f0daacb8…,NSIS 内层 app-64.7z 双层解压范式=Extras #19258 审过的写法)+README;Windows 通路解锁:`scoop bucket add phinn https://github.com/phinn/scoop-bucket && scoop install kinetaios`;autoupdate 挂 GitHub Releases。后续发版 checklist 加一条:发 tag 后 `scoop checkup`/手动 checkver 刷 manifest(或让 autoupdate 自己咬)。源文件 documents/scoop-bucket-src/。
+**② awesome-llm-apps 重投 PR #1293** — advanced_llm_apps/kinetaios_mcp_agent/(README 51行+kinetaios_agent.py 93行纯 requests MCP client+env+gitignore)+根 README advanced 段插行(Ripple 后);新分支 add-kinetaios-agent 基于当日 main,PR body 明确回指 #1286 拒因;本仓源 documents/advanced_llm_apps_kinetaios/(c7a9bb1)。示例协议口径:POST /mcp、initialize→tools/list→tools/call run_agent、Bearer token、server 10min cap、run_agent{prompt,maxTurns}、SSE/JSON 双 content-type 兼容。
+**网络坑(复用)**:github.com 下载域 shell curl 直连 000,须 `-x http://127.0.0.1:10808`(api.github.com 直连正常);大文件 8 段并行 Range 83MB≈2min。
+**盯防**:#1293 两周窗口(11-22);bucket star 不追,入口可用性优先。
