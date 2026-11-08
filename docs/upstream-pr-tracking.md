@@ -135,3 +135,12 @@
 **判死 1**:sindresorhus/awesome-electron——先例 KDE Connect PR #21732 因「100+ stars」被拒,与 Extras 同星数墙;近 8 PR 0 merged;挂盯撤销(100★ 解锁条款作废,判死不等涨星)
 **仍 open 值班**:ACC #3473(validation-passed 标签✓,待 maintainer 人审)、CCR #1948(0评论0赞,死寂符合预期)、deepseek #739、#4267 awesome-mac、#90 ai-guide、#13062 ruanyf、#4242 HelloGitHub、pay-once ×6、#915 toolkit、#102/#8 教程库、#179 chatgpt-zh
 **当前漏斗**:曝光在飞 15 条;星数墙类(extras/electron/Homebrew)全部转入「bucket 自建/暂缓」而非死等涨星
+
+### 2026-11-08 第二轮扫描(列表仓维度扫竭确认)
+**零成本已做**:repo topics 汰换——dashboard/openai 撤下,electron+gemini-cli 换入(topics/electron 聚合页大流量;jsonl-gemini 引擎对口;electron/electron-apps 判死≠topic 页失效)
+**核实 3**:
+- glama.ai 已自动收录 /mcp/servers/phinn/kinetaios(117k 目录在册,badge SVG 200);⚠️风险记:9月自称 score A,11-08 快照=Not graded quality/B maintenance——punkpeye #14667 merge 时若 badge 校验踩空,重跑 glama 评测即可
+- punkpeye/awesome-mcp-servers #14667:6 评论全链路达标(Glama listed+claimed+badge+rebase+10-28 follow-up),纯等 merge,不再 follow(已够频)
+- gemini-cli show-and-tell #30151 确认 11-05 已发(1👍0💬 与同批持平),不重投
+**判死 4**:mcphub.io(站挂了 DEPLOYMENT_DISABLED)、pulsemcp(Cloudflare 挡自动化,人工)、ECC 299k(纯产品仓无收录位)、shanraisshan/claude-code-best-practice 68k(AGENT COLLECTIONS 只收 subagent 库;STARTUPS 段=官方功能替代对照表非收录位)
+**执行级新机会(非 PR,按价值排序)**:①自建 phinn/scoop-bucket(manifest 照 Extras #19258 审过的双层解压范式,`scoop bucket add phinn` 通路解锁,~30min);②advanced_llm_apps/ 自包含示例驱动 KinetAios(#1286 重投门,维护者亲口路条,143.9k⭐生态门票);③ACC #3473 进 validation-passed 人审队列等转化
