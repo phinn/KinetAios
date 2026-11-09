@@ -409,6 +409,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
   let censoredRetries = 0; // 内容安全审查 400([1301] 类)自愈计数(最多 1 次)
   let imgStripRetries = 0; // 图片模态 400(纯文本模型拒图)剥图降级计数(最多 1 次)
+  let textOnlyModel = false; // 模型拒图已实锤 → 截图只走文字回执不进上下文(见 runToolBatch)
   // 假设升级 nudge(2026-10 KinetVM 三连败复盘):同一轮里多个工具结果连续 error
   // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
   // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
@@ -548,6 +549,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       // 每回合最多一次,防历史里反复截图+反复剥图死循环。
       if (isImageModalityError(e) && imgStripRetries < 1) {
         imgStripRetries++;
+        textOnlyModel = true; // 运行时学习:此后本回合所有截图只走文字回执,防连环 400
         let stripped = 0;
         for (const m of messages) {
           if (!Array.isArray(m.content)) continue;
@@ -640,7 +642,9 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
     }
 
     // 工具执行:同轮里只读工具(readOnly)并发,写工具串行。结果按原序回填(tool_call_id 配对)。
-    const batchResults = await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000);
+    // textOnly:该模型已被实测拒收图片(图片模态 400 自愈后置位)→ 截图不再进上下文,
+    // 只给文字回执(路径+md5),agent 可 read_file 查图。防"下回合再截→再 400"死循环。
+    const batchResults = await runToolBatch(completion.toolCalls, curTools, ctx, signal, onEvent, opts.policy?.truncateThreshold ?? 8000, textOnlyModel);
     messages.push(...batchResults);
     // 轮间分隔:中间轮(content + tool_calls)的过渡叙述与下一轮正文之间补空行,防止多轮 content
     // 无缝首尾相连糊成一坨(2026-10-30 用户截图实锤)。只在下轮前发一次,done 轮不吃(保尾格式)。
@@ -1720,6 +1724,10 @@ async function runToolBatch(
   onEvent: (e: AgentEvent) => void,
   // 截断阈值:从策略包取(覆盖硬编码 8K)。hifi 模式 truncateThreshold 已翻倍到 12K。
   truncateThreshold = 8000,
+  // 纯文本模型运行时学习标志:isImageModalityError 命中后置位(见 catch 分支)。
+  // 置位后截图结果不再组装 image_url content part,只留文字回执 —— "防"代"治",
+  // 彻底终结"自愈 1 次→下回合新截图→再 400→计数耗尽→回合死"的连环死循环。
+  textOnlyModel = false,
 ): Promise<ChatMsg[]> {
   const results: ChatMsg[] = [];
   // (2026-10-30)不再发「执行 X」status:tool_start 卡片(spinner+工具名+计时)已承接全部表达,
@@ -1755,9 +1763,10 @@ async function runToolBatch(
           const shot = parseScreenshotResult(result);
           // 工具输出溢出落盘: 发给模型前截断,全文先落盘,模型可 grep_tool_output 回捞(见 tool-spill.ts)
           const spillFile = shot ? null : spillToolOutput(ctx.convId ?? '', c.name, result);
-          const forModel0 = shot ? result : truncateForModel(result, truncateThreshold);
+          // textOnlyModel:base64 不能给模型(拒图)→ forModel 只留文字回执,截断走 textPart
+          const forModel0 = shot ? (textOnlyModel ? truncateForModel(`${shot.textPart}\n[当前模型为纯文本模态:图片未随请求发送,截图文件已保存,可用 read_file 读取路径/md5]`, truncateThreshold) : result) : truncateForModel(result, truncateThreshold);
           const forModel = spillFile ? `${forModel0}\n\n[工具输出全文 ${result.length} 字符已落盘: ${spillFile}。被截断丢失的中段可用 grep_tool_output(pattern=…, file=此路径) 回捞]` : forModel0;
-          const uiResult = shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT);
+          const uiResult = shot ? (textOnlyModel ? '📷 截屏成功 (当前模型纯文本,图片已落盘,回执文字已交给模型)' : '📷 截屏成功 (图片已发送给模型)') : truncateForModel(result, STEP_RESULT_UI_LIMIT);
           // images: 截图 base64 随事件下发(仅内存/广播;saveTurn 持久化时剥离)
           onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, outcome, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
 
@@ -1768,8 +1777,9 @@ async function runToolBatch(
       for (const { c, result } of outs) {
         // screenshot 工具返回 __IMAGE_BASE64__: 标记 → 转为多模态 tool 消息(文本+图片)。
         // 超限降级(b64 为空)→ 当普通文本走截断路径。
+        // textOnlyModel(模型拒图已实锤):不带 image_url,只发文字回执(含落盘路径+md5)。
         const shot = parseScreenshotResult(result);
-        if (shot && shot.b64) {
+        if (shot && shot.b64 && !textOnlyModel) {
           results.push({
             role: 'tool',
             tool_call_id: c.id,
@@ -1779,7 +1789,7 @@ async function runToolBatch(
             ],
           });
         } else if (shot) {
-          results.push({ role: 'tool', tool_call_id: c.id, content: truncateForModel(shot.textPart || 'Screenshot captured.', truncateThreshold) });
+          results.push({ role: 'tool', tool_call_id: c.id, content: truncateForModel(textOnlyModel ? `${shot.textPart}\n[当前模型为纯文本模态:图片未随请求发送,截图文件已保存,可用 read_file 读取路径/md5]` : shot.textPart || 'Screenshot captured.', truncateThreshold) });
         } else {
           results.push({ role: 'tool', tool_call_id: c.id, content: result });
         }
@@ -1791,9 +1801,10 @@ async function runToolBatch(
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
       const shot = parseScreenshotResult(result);
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? '📷 截屏成功 (图片已发送给模型)' : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, outcome: toolOutcomeOf(result), startId: call.id, images: shot ? [shot.b64] : undefined });
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? (textOnlyModel ? '📷 截屏成功 (当前模型纯文本,图片已落盘,回执文字已交给模型)' : '📷 截屏成功 (图片已发送给模型)') : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, outcome: toolOutcomeOf(result), startId: call.id, images: shot ? [shot.b64] : undefined });
       // 截图工具(只读,但防御性处理)—— 超限降级(b64 空)当文本
-      if (shot && shot.b64) {
+      // textOnlyModel:不带 image_url,只发文字回执(含落盘路径+md5),防连环 400
+      if (shot && shot.b64 && !textOnlyModel) {
         results.push({
           role: 'tool',
           tool_call_id: call.id,
@@ -1803,7 +1814,7 @@ async function runToolBatch(
           ],
         });
       } else if (shot) {
-        results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(shot.textPart || 'Screenshot captured.', truncateThreshold) });
+        results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(textOnlyModel ? `${shot.textPart}\n[当前模型为纯文本模态:图片未随请求发送,截图文件已保存,可用 read_file 读取路径/md5]` : shot.textPart || 'Screenshot captured.', truncateThreshold) });
       } else {
         results.push({ role: 'tool', tool_call_id: call.id, content: truncateForModel(result, truncateThreshold) });
       }
