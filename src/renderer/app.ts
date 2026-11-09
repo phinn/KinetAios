@@ -8277,6 +8277,7 @@ function initSkillsTab(): void {
   const marketFetchBtn = document.getElementById('s-market-fetch') as HTMLButtonElement;
   type MarketItem = Awaited<ReturnType<typeof api.listMarketSkills>>['items'][number];
   let marketItems: MarketItem[] = [];
+  let marketFetchAttempted = false; // 是否已成功拉取过一次(用于区分「无匹配」与「未拉取」)
   const renderMarket = (): void => {
     if (!marketItems.length) {
       marketEl.innerHTML = `<div class="s-plugin-empty">${tr('settings.skills.marketEmpty')}</div>`;
@@ -8321,6 +8322,11 @@ function initSkillsTab(): void {
     else marketMsg.textContent = '';
     // force(安装后刷新)时 listMarketSkills 走缓存拿全量,再本地过滤,保持 installed 标签更新
     marketItems = force ? r.items.filter((m) => !q.trim() || m.name.toLowerCase().includes(q.trim().toLowerCase()) || m.description.toLowerCase().includes(q.trim().toLowerCase())) : r.items;
+    // 拉取成功但过滤后 0 条:显示「无匹配」,与「还没拉取」的初始提示(marketEmpty)区分开
+    if (!r.error && marketItems.length === 0 && (q.trim() || marketFetchAttempted)) {
+      marketMsg.textContent = tr('settings.skills.marketNoRes');
+    }
+    marketFetchAttempted = true;
     renderMarket();
   };
   marketFetchBtn.onclick = () => { void fetchMarket(marketSearch.value); };

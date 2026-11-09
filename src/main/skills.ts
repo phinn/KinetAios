@@ -343,6 +343,34 @@ async function ghFetch(url: string): Promise<Response> {
   return res;
 }
 
+// 踩坑(2026-11-09):Electron main 的 fetch 走 Chromium net 栈 + 系统代理,
+// api.github.com 可达,但 raw.githubusercontent.com 在部分代理网络下黑洞 20s 超时
+// → 拉取层静默丢条目(市场缺技能/空列表的根因)。node 的 undici fetch 不读系统代理,
+// 所以「node 直跑正常、Electron 里复现」——排查同类问题先分叉这两个 runtime。
+// 解法:blobs API(同 api.github.com 域,base64 编码)优先,raw 直链只作回落。
+// / Pitfall: Electron main fetch uses Chromium net stack + system proxy; raw.githubusercontent.com
+// may be black-holed while api.github.com is reachable. Prefer same-domain blobs API, raw as fallback.
+async function ghFetchText(blobsUrl: string, rawPath?: string): Promise<string> {
+  try {
+    const res = await ghFetch(blobsUrl);
+    const j = JSON.parse(await res.text()) as { encoding?: string; content?: string };
+    if (j.encoding === 'base64' && typeof j.content === 'string') {
+      return Buffer.from(j.content.replace(/\n/g, ''), 'base64').toString('utf8');
+    }
+    // 某些代理会把 Accept 头改写导致返回纯文本 → 直接当文本用
+    if (typeof j.content === 'string') return j.content;
+    throw new Error('unexpected blobs payload');
+  } catch (e) {
+    if (!rawPath) throw e;
+    const res2 = await fetch(`https://raw.githubusercontent.com/${rawPath}`, {
+      headers: { 'User-Agent': 'KinetAios' },
+      signal: AbortSignal.timeout(10000),
+    });
+    if (!res2.ok) throw e;
+    return await res2.text();
+  }
+}
+
 /** 简单并发池(保序返回)。— Minimal concurrency-limited map. */
 async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -356,33 +384,50 @@ async function pool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>
 /** 解析 SKILL.md frontmatter 的 name/description。— Parse frontmatter name/description. */
 function parseMarketFrontmatter(md: string): { name?: string; description?: string } {
   const fm = md.match(/^---\n([\s\S]*?)\n---/)?.[1] ?? '';
+  // 踩过:官方库部分技能(如 academy-guide)的 description 用 YAML `>` 折叠块多行书写,
+  // 旧单行正则只抓到 ">" → 搜索主字段废了 + UI 描述列显示一个尖括号。
+  // / Some skills use YAML folded (`>`) multiline descriptions; parse those too.
+  const fold = fm.match(/^description:\s*[>|][+-]?\n((?:[ \t]+.*\n?)+)/m);
+  if (fold) {
+    const desc = fold[1].split('\n').map((l) => l.trim()).filter(Boolean).join(' ');
+    const name = fm.match(/^name:\s*(.+)$/m)?.[1]?.trim().replace(/^["']|["']$/g, '');
+    return { name, description: desc };
+  }
   const pick = (key: string): string | undefined =>
     fm.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1]?.trim().replace(/^["']|["']$/g, '');
   return { name: pick('name'), description: pick('description') };
 }
 
 let marketCache: { at: number; items: Array<Omit<MarketSkill, 'installed'>> } | null = null;
+// 部分拉取失败提示(单次拉取周期内有效;全量失败走 catch 的 error,不在这里)
+let lastMarketPartial: string | null = null;
 
 export async function listMarketSkills(query = ''): Promise<{ items: MarketSkill[]; error?: string }> {
   try {
     if (!marketCache || Date.now() - marketCache.at > MARKET_CACHE_MS) {
       const tree = await (await ghFetch(`https://api.github.com/repos/${MARKET_REPO}/git/trees/${MARKET_BRANCH}?recursive=1`)).json() as {
-        tree?: Array<{ path: string; type: string }>;
+        tree?: Array<{ path: string; type: string; sha?: string }>;
       };
       // 每个含 SKILL.md 的一级/任意目录 = 一个技能;排除隐藏目录与嵌套 example。
       const skillDirs = (tree.tree ?? [])
         .filter((e) => e.type === 'blob' && e.path.endsWith('/SKILL.md')
           && !e.path.split('/').some((seg) => seg.startsWith('.') || seg === 'node_modules'))
-        .map((e) => e.path.slice(0, -'/SKILL.md'.length));
-      const raws = await pool(skillDirs, 6, async (dir) => {
+        .map((e) => ({ dir: e.path.slice(0, -'/SKILL.md'.length), sha: e.sha ?? '' }));
+      let failCount = 0;
+      const blobText = (sha: string, dir: string) => ghFetchText(`https://api.github.com/repos/${MARKET_REPO}/git/blobs/${sha}`, `${MARKET_REPO}/${MARKET_BRANCH}/${dir}/SKILL.md`);
+      const raws = await pool(skillDirs, 6, async ({ dir, sha }) => {
         try {
-          const md = await (await ghFetch(`https://raw.githubusercontent.com/${MARKET_REPO}/${MARKET_BRANCH}/${encodeURIComponent(dir)}/SKILL.md`)).text();
+          const md = await blobText(sha, dir);
           const fm = parseMarketFrontmatter(md);
           const name = fm.name || dir.split('/').pop()!;
           return { name, path: dir, description: (fm.description ?? '').replace(/\s+/g, ' ').slice(0, 200) } as Omit<MarketSkill, 'installed'>;
-        } catch { return null; }
+        } catch { failCount++; return null; }
       });
       marketCache = { at: Date.now(), items: raws.filter((x): x is Omit<MarketSkill, 'installed'> => !!x) };
+      if (failCount > 0) {
+        // 部分失败不再静默:错误字段带回 UI 显示(用户能立刻知道列表残缺,而不是当成"就这么多技能")
+        lastMarketPartial = `${failCount} 个技能元数据拉取失败(代理网络可达性),列表可能不完整 — ${failCount} skill(s) failed to fetch metadata, list may be incomplete`;
+      } else lastMarketPartial = null;
     }
     const q = query.trim().toLowerCase();
     // installed 每次现算(不进缓存):装完立刻反映,不用等缓存过期。
@@ -391,7 +436,7 @@ export async function listMarketSkills(query = ''): Promise<{ items: MarketSkill
     const items = q
       ? all.filter((s) => s.name.toLowerCase().includes(q) || s.description.toLowerCase().includes(q))
       : all;
-    return { items };
+    return { items, error: lastMarketPartial ?? undefined };
   } catch (e) {
     return { items: (marketCache?.items ?? []).map((m) => ({ ...m, installed: false })), error: e instanceof Error ? e.message : String(e) };
   }
@@ -407,19 +452,25 @@ export async function installMarketSkill(dirPath: string): Promise<{ ok: true; f
     }
     const name = clean.split('/').pop()!;
     const tree = await (await ghFetch(`https://api.github.com/repos/${MARKET_REPO}/git/trees/${MARKET_BRANCH}?recursive=1`)).json() as {
-      tree?: Array<{ path: string; type: string }>;
+      tree?: Array<{ path: string; type: string; sha?: string }>;
     };
     const files = (tree.tree ?? []).filter((e) => e.type === 'blob' && (e.path === `${clean}/SKILL.md` || e.path.startsWith(`${clean}/`)));
     if (!files.length) return { ok: false, error: `skill not found in ${MARKET_REPO}: ${clean}` };
     const destRoot = path.join(os.homedir(), '.kinetaios', 'skills', name);
     let written = 0;
     let mainFile = '';
+    // 与列表拉取同一坑:raw 域名在代理网络下黑洞。树接口给了每个 blob 的 sha,
+    // 安装文件也走 api.github.com blobs API(ghFetchText 含 raw 回落)。
+    const shaByPath = new Map((tree.tree ?? []).filter((e) => e.type === 'blob').map((e) => [e.path, e.sha ?? '']));
     for (const f of files) {
       const rel = f.path.slice(clean.length + 1);
       const dest = path.join(destRoot, ...rel.split('/'));
       if (!dest.startsWith(destRoot)) return { ok: false, error: `illegal relpath: ${rel}` };
       fs.mkdirSync(path.dirname(dest), { recursive: true });
-      const body = await (await ghFetch(`https://raw.githubusercontent.com/${MARKET_REPO}/${MARKET_BRANCH}/${f.path.split('/').map(encodeURIComponent).join('/')}`)).text();
+      // blobs 优先(sha 从树拿);无 sha 时直接 raw(极老文件树无 sha 字段的兜底)
+      const body = shaByPath.get(f.path)
+        ? await ghFetchText(`https://api.github.com/repos/${MARKET_REPO}/git/blobs/${shaByPath.get(f.path)}`, `${MARKET_REPO}/${MARKET_BRANCH}/${f.path}`)
+        : await ghFetchText(`https://raw.githubusercontent.com/${MARKET_REPO}/${MARKET_BRANCH}/${f.path.split('/').map(encodeURIComponent).join('/')}`);
       fs.writeFileSync(dest, body, 'utf8');
       written++;
       if (rel === 'SKILL.md') mainFile = dest;
