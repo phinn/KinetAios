@@ -168,3 +168,28 @@
 **解法**:projects=6 旗舰(Aios/M5Chat/Task/Brief/Soul/Fit),bio 写"22 apps",website=phinn.github.io/kinetapp(全景页承载其余 16+3)。
 PR#6:github.com/indiedeveloper-org/awesome-indie-developers/pull/6,本地先跑 node validate.mjs 过校验再投。comment 已留:22 口径+validator 上限说明。
 **同坑复发记录**:shell heredoc 写 python 又翻车 2 次(一处是我上一轮刚记的教训没长记性)——**python 一律先 write_file 落盘再 python3 执行,永不写 heredoc**。
+
+### 2026-11-09 winget PR #475205 校验失败定位与修复(ManifestType 错位)
+**症状**:PR #475205 带标签 `Manifest-Validation-Error` + `Needs-Author-Feedback`;`mergeable_state=blocked`;commit statuses count=0(Azure 未跑出 status)。
+**你给的那条链接**(issuecomment-6731616730)= policy bot 的**空徽章**(无实质内容),真正的诊断在下一条 `github-actions[bot]`(03:45:19),它明确标注 "Experimental automated suggestion - please verify before acting"。
+**根因(winget-cli 源码 + 上游实例交叉验证)**:`YamlParser.cpp` 强制「No duplicate locales across manifests」+ 文件名↔ManifestType 强绑定。我们三件 manifest 的 ManifestType 全部错位:
+  - `<Id>.yaml` 写了 `ManifestType: defaultLocale`(应 version)
+  - `<Id>.locale.en-US.yaml` 写了 `ManifestType: locale` 且 PackageLocale=en-US(应 defaultLocale)→ 与 defaultLocale 重复
+  - ⇒ IncompleteMultiFileManifest / DuplicateMultiFileManifestLocale / bot 报的 "Filename mismatch"
+**权威基线**:①上游 `microsoft/winget-pkgs` 的 Microsoft.PowerToys / Microsoft.WindowsTerminal 目录结构;②旧 4.0.3 基线(commit 9975fda571e5 的 parent,bdf6b91c4 是删除 4.0.3 的 commit)—— 旧版 `<Id>.yaml` 就是 `ManifestType: version` + `DefaultLocale: en-US`,且旧 PR #463867 于 2026-10-28 已 `Azure-Pipeline-Passed`。**说明是我重写 4.2.0 时把结构改坏了(回归),旧结构本来就是对的**。
+**修复**:version/defaultLocale/installer 三件按上游结构重写;version 文件只留 PackageIdentifier/PackageVersion/DefaultLocale;去硬编码 ProductCode(NSIS 用 ARP 匹配);InstallerSha256=F0DAACB8…DC30(实算)。
+**本地验证(winget-cli 官方推荐 `winget validate`,但 macOS 无 winget)**:拉 winget-cli `schemas/JSON/manifests/v1.10.0/` 三份 JSON Schema + pip install jsonschema,再复刻跨文件规则 → ALL PASS。
+**上传方式**:Contents API 逐文件 PUT(带 sha 更新),**不删任何文件**——删文件会让 PR diff 清零触发 bot 自动关闭(旧 PR 就是这么死的)。
+**当前**:3 文件 diff 保持(+/56-0),`Manifest-Validation-Error`+`Needs-Author-Feedback` 标签已自动清除,剩 `Needs-CLA`(CLA check=success,标签滞后)+`Validation-Guide`;Azure 动态装机验证待跑(1-3h)。
+
+### 2026-11-09 winget PR #475205 三轮修复(最终态:1.28.0 + 恢复 ProductCode)
+**你给的链接**(issuecomment-6731616730)= policy bot 的**空徽章**,无实质内容;真诊断在下一条 `github-actions[bot]`(03:45:19),且它自标 "Experimental automated suggestion - please verify before acting"。
+**三轮根因**:
+1. **ManifestType 错位 + locale 重复** → `IncompleteMultiFileManifest` / `DuplicateMultiFileManifestLocale` / bot 报 "Filename mismatch"。正解:`<Id>.yaml`=version、`<Id>.locale.en-US.yaml`=defaultLocale、`<Id>.installer.yaml`=installer。**上轮(我)是回归**——旧 4.0.3 基线本来就是对的(commit 9975fda571e5 的 parent,bdf6b91c4 是删除 4.0.3 的 commit),旧 PR #463867 于 2026-10-28 10:47 已 `Azure-Pipeline-Passed`。
+2. **ManifestVersion 1.10.0 过时** → PR template 明确要求 1.28 schema;上游 2026-11-09 当天合并的新包全部 `ManifestVersion: 1.28.0`。已升级三件到 1.28.0。
+3. **摘掉 ProductCode 是错误决策** → 已恢复 `f65d9359-0830-527e-8b7c-f7153f15e828`(+ `AppsAndFeaturesEntries`)。来源已闭环:electron-builder `NsisTarget.js` 常量 `ELECTRON_BUILDER_NS_UUID = UUID.parse("50e065bc-3134-11e6-9bab-38c9862bdaf3")`,`UUID.v5(appId='com.kinet.kinetaios', NS)` 本地算出与 4.0.3 已验证值完全一致 → appId 不变则各版本 GUID 相同。
+** InstallerSha256 实算**:`F0DAACB8980B5857C4C4ED5EC240110318FE01D680AE5D395DBCDB2CBE50DC30`(走 api.github.com release asset API 下载 87,533,113 字节实算;raw.githubusercontent.com 被代理黑洞)。
+**上传方式**:Contents API 逐文件 PUT(带 sha 更新),**不删任何文件**——删文件会让 PR diff 清零触发 bot 自动关闭(旧 PR 就是这么死的)。
+**本地验证**:winget-cli v1.28.0 JSON Schema(3 份)+ 复刻跨文件规则 → ALL PASS。脚本沉淀在 `/tmp/wg_v28.py`(临时,规范已写进 `docs/winget-manifest-guide.md`)。
+**PR 现状**:3 文件 diff 保持(+/63-0),已发 2 条作者评论说明根因与修复;等 Azure 动态装机验证(1-3h)。
+**旧 PR #463867 死因归档**:10-28 09:33 Validation-Shell-Execute 失败 → 10-28 10:01 修 installer → 10-28 10:47 Azure-Pipeline-Passed ✅ → 11-09 03:31 我删 4.0.3 文件 → Unexpected-File → 03:32 PR 被关闭。教训:修 PR 不删文件。
