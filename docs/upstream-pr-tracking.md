@@ -160,3 +160,11 @@
 - PR body+评论均回指 #463867 说明修复差异
 **盯防**:validation 结果(动态装机,常 1-3 小时-1 天)+ moderator 审核队列;若再挂,看 bot 评论的具体 fail 原因(这次修的是「install failed」,若出新错型再对症)
 **操作坑(复用)**:①winget-pkgs 树对象 API 大 base_tree 玄学 422,别用分步 tree/commit API,用 Contents API 逐文件 PUT 或本地 git;②fork master 先 merge-upstream 再动手,否则删旧文件会把 PR diff 掏空引来自动关闭;③shell 里写 python heredoc 连续翻车两次(括号/引号转义),一律先落盘再执行
+
+### 2026-11-09 awesome-indie-developers 投递 PR #6(海外 CID 对标)
+仓:indiedeveloper-org/awesome-indie-developers(3★,2026-10 新建,JSON profile 制收录)。
+**22 App 口径**:19 在架(README §Kinet family 权威)+3 在途(KinetAgent/MagicWindow/Dock,ASC 无记录,链接挂 kinetapp 家族页)。
+**关键约束(踩坑后实测)**:validate.mjs 规定 `projects` **上限 6 个**(CONTRIBUTING.md 文字说"no fixed limit"是过时文档——代码为准)。22 全塞物理不可能。
+**解法**:projects=6 旗舰(Aios/M5Chat/Task/Brief/Soul/Fit),bio 写"22 apps",website=phinn.github.io/kinetapp(全景页承载其余 16+3)。
+PR#6:github.com/indiedeveloper-org/awesome-indie-developers/pull/6,本地先跑 node validate.mjs 过校验再投。comment 已留:22 口径+validator 上限说明。
+**同坑复发记录**:shell heredoc 写 python 又翻车 2 次(一处是我上一轮刚记的教训没长记性)——**python 一律先 write_file 落盘再 python3 执行,永不写 heredoc**。
