@@ -19,8 +19,17 @@ export function renderMarkdown(src: string): string {
   if (!src) return '';
 
   // 1) Pull fenced code blocks out so block/inline rules never touch their content.
+  // ── fence 提取:逐行状态机(CommonMark 语义)──
+  // 旧实现用非贪婪正则 /```(\w*)\n([\s\S]*?)```/,会被「内容里出现的任何 ```」提前闭合:
+  // LLM 退化双写 fence(```html\n```html\n<div…\n```\n```)时,第一块被切空、整个 HTML
+  // 掉到正文被 esc 成转义文本(2026-11-09 用户截图)。CommonMark 正确语义:
+  // 带 info string 的开 fence 只被「行首裸 ``` (后跟空白/行尾)」闭合;``` 后面
+  // 跟非空白正文(如 ```html)视为内容行。逐行状态机天然处理嵌套/双写/未闭合。
+  // Fence extraction: line-by-line state machine (CommonMark semantics) — an
+  // opening fence WITH an info string is only closed by a bare ``` (followed by
+  // whitespace/EOL); "```html" inside the body is content, not a closer.
   const blocks: string[] = [];
-  let text = src.replace(/```(\w*)\n([\s\S]*?)```/g, (_m, lang, code) => {
+  const emitBlock = (lang: string, code: string): string => {
     const i = blocks.length;
     const langLabel = lang ? `<span class="code-lang">${esc(lang)}</span>` : '';
     // 行号:每行包 span.cl,CSS counter 显示行号(>12 行才显示,短代码块不加噪)
@@ -31,18 +40,69 @@ export function renderMarkdown(src: string): string {
     // Viz card: a ```html fence holding a full-enough document renders as a live
     // sandboxed iframe with the source tucked into a <details>; falls back to a
     // normal highlighted code block for fragments.
-    if (typeof lang === 'string' && lang.toLowerCase() === 'html' && isVizCardDoc(raw)) {
-      blocks.push(renderVizCard(raw, blocks.length));
-      return `\x00${blocks.length - 1}\x00`;
+    if (lang.toLowerCase() === 'html') {
+      // 双写开栏退化清理:body 顶部残留的内层 fence 行(```html)剔除后再嗅探/渲染,
+      // 否则卡片 iframe 顶部会显示字面量 ```html(2026-11-09 双写退化实测)。
+      // Strip stray inner fence lines left by double-open degradation before
+      // sniffing/rendering, or the card shows a literal ```html on top.
+      const doc = raw.replace(/^(?: {0,3}(?:`{3,}|~{3,})[^\n]*\n)+/, '');
+      if (isVizCardDoc(doc)) {
+        blocks.push(renderVizCard(doc, blocks.length));
+        return `\x00${blocks.length - 1}\x00`;
+      }
     }
-    const hi = raw.length > HIGHLIGHT_MAX_CHARS ? esc(raw) : highlightCode(raw, typeof lang === 'string' ? lang : '');
+    const hi = raw.length > HIGHLIGHT_MAX_CHARS ? esc(raw) : highlightCode(raw, lang);
     const numbered = lineCount > 12
       ? hi.split('\n').map((l: string) => `<span class="cl">${l}</span>`).join('\n')
       : hi;
     // 复制按钮随块发射(含流式新增块);点击由 #turns 上的事件委托统一处理。
     blocks.push(`<div class="code-block">${langLabel}<button class="code-copy ghost" data-code-copy>${COPY_ICON}</button><pre class="code${lineCount > 12 ? ' has-ln' : ''}"><code>${numbered}</code></pre></div>`);
     return `\x00${i}\x00`;
-  });
+  };
+
+  // 开 fence:行首 3+ 个 ` 或 ~(缩进 ≤3 空格),后跟 info string。
+  // Opening fence: 3+ backticks/tildes at line start (≤3 spaces indent) + info string.
+  const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})\s*(\S*)/;
+  // 闭合 fence:同字符 ≥ 开 fence 长度的裸 fence(其后只允许空白)。CommonMark §4.5。
+  // Closing fence: same char, at least as long, nothing but whitespace after it.
+  const isFenceClose = (line: string, ch: string, len: number): boolean => {
+    const m = line.match(/^ {0,3}(`{3,}|~{3,})\s*$/);
+    return !!m && m[1][0] === ch && m[1].length >= len;
+  };
+
+  let text = '';
+  {
+    const lines = src.split('\n');
+    let i = 0;
+    while (i < lines.length) {
+      const open = lines[i].match(FENCE_OPEN);
+      if (!open) { text += (i ? '\n' : '') + lines[i]; i++; continue; }
+      // info string 里不能再含 `(CommonMark);首词作为语言标签。
+      const ch = open[1][0], len = open[1].length;
+      let lang = open[2] || '';
+      if (lang.includes('`')) { text += (i ? '\n' : '') + lines[i]; i++; continue; }
+      lang = lang.split(/\s/)[0].toLowerCase();
+      // 收集 body 直到合法闭合;未闭合(流式中途)则吃到串尾。
+      // Collect body until a legal close; unclosed (mid-stream) runs to end.
+      const body: string[] = [];
+      i++;
+      while (i < lines.length && !isFenceClose(lines[i], ch, len)) { body.push(lines[i]); i++; }
+      if (i < lines.length) i++; // skip the closing fence line
+      // 双写闭合退化:紧邻的多余裸 fence 行(```\n```)是残渣,跳过 ——
+      // 否则被当成新的裸开栏,把后续正文整段吞进代码块。只吞「紧邻连续」裸行;
+      // 隔空行的裸 fence 属正常开栏,不受影响。
+      // Double-close degradation: immediately-adjacent extra bare fence lines
+      // are debris — skip them so a phantom bare-open can't swallow the prose
+      // below into one giant code block.
+      while (i < lines.length && /^ {0,3}(?:`{3,}|~{3,})\s*$/.test(lines[i])) i++;
+      // 占位符补 '\n' 独占一行:相邻两块(中间无空行)否则粘连成一行,
+      // 单占位符行匹配 /^\x00\d+\x00$/ 失败 → 掉进 <p> 产生非法嵌套。
+      // Placeholder owns its whole line: adjacent blocks would otherwise glue
+      // into one line and fall through to a <p> (invalid nesting).
+      text += '\x00' + blocks.length + '\x00\n';
+      emitBlock(lang, body.join('\n'));
+    }
+  }
 
   text = esc(text); // escape everything that remains (\x00 placeholders survive — esc ignores them)
   const lines = text.split('\n');
