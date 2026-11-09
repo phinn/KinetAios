@@ -193,3 +193,9 @@ PR#6:github.com/indiedeveloper-org/awesome-indie-developers/pull/6,本地先跑 
 **本地验证**:winget-cli v1.28.0 JSON Schema(3 份)+ 复刻跨文件规则 → ALL PASS。脚本沉淀在 `/tmp/wg_v28.py`(临时,规范已写进 `docs/winget-manifest-guide.md`)。
 **PR 现状**:3 文件 diff 保持(+/63-0),已发 2 条作者评论说明根因与修复;等 Azure 动态装机验证(1-3h)。
 **旧 PR #463867 死因归档**:10-28 09:33 Validation-Shell-Execute 失败 → 10-28 10:01 修 installer → 10-28 10:47 Azure-Pipeline-Passed ✅ → 11-09 03:31 我删 4.0.3 文件 → Unexpected-File → 03:32 PR 被关闭。教训:修 PR 不删文件。
+
+### 2026-11-09 13:26 · 4.2.0 动态验证通过 ✅ 转入 moderator 人审
+- 本轮 head `b37135f4605f`(12:37 推送:三文件结构修复 + ManifestVersion 1.28.0 + ProductCode 恢复)→ 12:41 打 `New-Package` 启动 Azure 流水线 → **13:20:54 `Azure-Pipeline-Passed` + 13:20:55 `Validation-Completed`**,全程 44 分钟;label 事件时间线已核验,结果落在本轮 head(非旧残留)。GitHub Actions 侧全部 workflow 为 skipped(仅 bot 诊断类,验证本体在 Azure)。
+- `license/cla` check = success(CLA 已过,Needs-CLA 标签为残留);mergeable: true(无冲突)。
+- 13:21 policy bot:「check-in policies require a moderator to approve」→ mergeable_state=blocked **仅剩 moderator 人审闸门**,非验证问题。参照:旧 4.0.3 Passed 后挂 12 天未合,周期数天~数周属正常。
+- 处置:`cron_winget_475205` 从每半小时降频为**每周一 09:00 周检**(脚本固化到 `scripts/winget_pr_snapshot.py`,含 VERDICT 判定);PR merged 后记合并时间并删除任务。
