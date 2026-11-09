@@ -2,6 +2,36 @@
 // Verbatim port of Swift GLMProvider.swift. Node global fetch + a web ReadableStream reader.
 import type { ChatMsg, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
 import { getSettings, snapshot } from './settings';
+import { app } from 'electron';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+
+// HTTP 错误原始体落盘:非 2xx 响应的 raw body 存 userData/http-errors/<ts>-<status>-<host>.txt。
+// readErr 只解出「可读 message」,下家服务商换新格式还会裸 400(detail 空);落盘原始体
+// = 终结「报错面目全非」这一整类事故,排查时可直接看文件。失败静默(增强不能阻断主流程)。
+// / Persist raw HTTP error bodies for forensics; best-effort, never blocks the throw.
+let httpErrSeq = 0;
+function spillHttpError(resp: Response, raw: string): string | null {
+  try {
+    const base = process.env.KINET_HTTP_ERR_DIR || path.join(app.getPath('userData'), 'http-errors');
+    fs.mkdirSync(base, { recursive: true });
+    httpErrSeq = (httpErrSeq + 1) % 10000; // 同毫秒撞名防护(spillSeq 同款)
+    let host = 'unknown';
+    try { host = new URL(resp.url).host.replace(/[^a-z0-9.-]/gi, '_'); } catch { /* keep unknown */ }
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const file = path.join(base, `${ts}-${httpErrSeq}-${resp.status}-${host}.txt`);
+    const head = [`# ${resp.status} ${resp.statusText} ${resp.url}`, `# content-type: ${resp.headers?.get('content-type') ?? '(none)'}`, `# at: ${new Date().toISOString()}`, ''].join('\n');
+    fs.writeFileSync(file, head + raw.slice(0, 200_000)); // 200KB 上限:错误体再大也没分析价值
+    // 防膨胀:目录只留最近 50 份(错误体不是用户资产,与 spills 同滚动策略)
+    const files = fs.readdirSync(base).filter((f) => f.endsWith('.txt')).sort();
+    while (files.length > 50) {
+      try { fs.unlinkSync(path.join(base, files.shift()!)); } catch { /* 竞态忽略 */ }
+    }
+    return file;
+  } catch {
+    return null;
+  }
+}
 
 // Sanitize orphan surrogates from strings before JSON serialization.
 // Node JSON.stringify turns lone surrogates (e.g. \uD83D from a truncated emoji) into literal
@@ -85,12 +115,24 @@ export class GLMError extends Error {
 // 修前 stringify 兜底吐整坨 JSON,报错不可读)。
 // / Read readable info from an HTTP error body. Understands OpenAI {error:{message}},
 // generic {message} and MiniMax-native {base_resp:{status_code,status_msg}}.
-async function readErr(resp: Response): Promise<string> {
+// raw body 顺带交回(调用方落盘用);detail 为可读 message。raw 读失败 → ''。
+// / Returns {detail, raw} — caller persists raw for forensics.
+async function readErrRaw(resp: Response): Promise<{ detail: string; raw: string }> {
   try {
     // 一次性读 text 再手动解析:body 只能消费一次,先 json() 炸掉后 text() 拿到的是空串
     // (踩过:阿里 anthropic 兼容端点流式 400 的 body 是 SSE 形态 event:error\ndata:{...},
     //  content-type 还是 text/event-stream,json() 必炸 → 旧实现 detail 恒空,用户只看到裸 400)。
     const raw = await resp.text();
+    const detail = readErrText(raw);
+    return { detail, raw };
+  } catch {
+    return { detail: '', raw: '' };
+  }
+}
+
+// 纯解析:raw → 可读 message。SSE / JSON / MiniMax base_resp 三形态通吃。
+function readErrText(raw: string): string {
+  try {
     // SSE 错误体:逐行找 data: 前缀,解析出内层 JSON
     if (raw.includes('event:') || raw.includes('data:')) {
       for (const line of raw.split('\n')) {
@@ -112,7 +154,7 @@ async function readErr(resp: Response): Promise<string> {
     }
     return (err?.message as string) || (j?.message as string) || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
   } catch {
-    return ''; // raw 已在 try 里读过;解析失败且非 SSE 形态 → 无 detail 可给
+    return ''; // 非 JSON、非 SSE → 无 detail 可给(raw 仍会落盘)
   }
 }
 
@@ -215,7 +257,12 @@ async function fetchUntil200(
           dispose: () => { disposeBridge?.(); },
         };
       }
-      const detail = await readErr(resp);
+      // raw 原始体落盘 + detail 提取:服务商换怪格式 readErr 提不出 message 时(裸 400 事故),
+      // 文件里永远有原文。detail 尾部带文件路径,UI 报错即可见。
+      const { detail: detail0, raw: rawBody } = await readErrRaw(resp);
+      let detail = detail0;
+      const spilled = spillHttpError(resp, rawBody);
+      if (spilled) detail = `${detail}${detail ? ' ' : ''}(raw 已存: ${spilled})`;
       if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
         // 账户级限流(429+[1302] 特征)用分钟级长退避,并优先服务端 Retry-After
         const wait = isAccountRateLimit(resp.status, detail)
