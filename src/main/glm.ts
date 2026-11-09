@@ -989,6 +989,13 @@ class AnthropicProvider implements Provider {
       }
       const type = obj.type as string | undefined;
       if (!type) continue;
+      // 流内 error 事件:官方协议在 200 后仍可中途发 event:error(overloaded/上游 4xx 中转),
+      // 不接就静默空转收尾、报"空回复"面目全非(与 OpenAI 流内 error 帧 2026-11-06 修复同款缺口)。
+      // / In-stream error events must surface — same gap as the OpenAI-path fix.
+      if (type === 'error') {
+        const text = (obj.error?.message as string) || JSON.stringify(obj).slice(0, 200);
+        throw new GLMError('http', Number(obj.error?.status ?? obj.error?.code) || 500, text, GLMError.classifyText(Number(obj.error?.status ?? obj.error?.code) || 500, text));
+      }
       if (type === 'message_start') {
         // input_tokens 不含缓存;cache_read(读,~10% 价)/ cache_creation(写,~125% 价)单列。
         // tokensIn 仍为总注入口径(三者之和),cache 拆分单列供精确计价与明细展示。
