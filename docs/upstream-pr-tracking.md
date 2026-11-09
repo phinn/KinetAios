@@ -150,3 +150,13 @@
 **② awesome-llm-apps 重投 PR #1293** — advanced_llm_apps/kinetaios_mcp_agent/(README 51行+kinetaios_agent.py 93行纯 requests MCP client+env+gitignore)+根 README advanced 段插行(Ripple 后);新分支 add-kinetaios-agent 基于当日 main,PR body 明确回指 #1286 拒因;本仓源 documents/advanced_llm_apps_kinetaios/(c7a9bb1)。示例协议口径:POST /mcp、initialize→tools/list→tools/call run_agent、Bearer token、server 10min cap、run_agent{prompt,maxTurns}、SSE/JSON 双 content-type 兼容。
 **网络坑(复用)**:github.com 下载域 shell curl 直连 000,须 `-x http://127.0.0.1:10808`(api.github.com 直连正常);大文件 8 段并行 Range 83MB≈2min。
 **盯防**:#1293 两周窗口(11-22);bucket star 不追,入口可用性优先。
+
+### 2026-11-09 winget 修复 + 重投 #475205
+**旧 PR #463867 已死**(closed 03:32:29,非超时——是我按修复方案删掉 PR 分支上 4.0.3 三件后 diff 清零,被 winget 策略 bot 连带关闭;教训:**修 PR 别动 PR 所在分支的旧文件,新版本该开新分支/新 PR**)
+**新 PR #475205 已开**:microsoft/winget-pkgs#475205,head=phinn:master(与上游同步后净增 4.2.0 三件,+74 行),mergeable=True,validation pending(动态装机跑中)。要点:
+- 4.0.3→4.2.0,InstallerUrl 指向 v4.2.0 Setup.exe,Sha256=F0DAACB8980B5857C4C4ED5EC240110318FE01D680AE5D395DBCDB2CBE50DC30(实算)
+- **摘掉硬编码 ProductCode**(4.0.3 版带 ARP GUID,旧 PR 动态验证失败嫌疑源之一;新版让 ARP 匹配走数据驱动)
+- locale 补 ReleaseNotes/ReleaseNotesUrl(指向 v4.2.0 tag)
+- PR body+评论均回指 #463867 说明修复差异
+**盯防**:validation 结果(动态装机,常 1-3 小时-1 天)+ moderator 审核队列;若再挂,看 bot 评论的具体 fail 原因(这次修的是「install failed」,若出新错型再对症)
+**操作坑(复用)**:①winget-pkgs 树对象 API 大 base_tree 玄学 422,别用分步 tree/commit API,用 Contents API 逐文件 PUT 或本地 git;②fork master 先 merge-upstream 再动手,否则删旧文件会把 PR diff 掏空引来自动关闭;③shell 里写 python heredoc 连续翻车两次(括号/引号转义),一律先落盘再执行
