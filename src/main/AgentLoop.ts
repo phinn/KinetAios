@@ -271,6 +271,19 @@ export function isTransientError(e: unknown): boolean {
   return TRANSIENT_RE.test(text);
 }
 
+// 图片模态 400 判定:纯文本模型(如阿里 Token Plan glm-5.3)拒收 image part,措辞各家趋同
+// ("only supports text modality"/"does not support image"/"not support image input")。
+// 这类 400 退避无用、failover 无解 —— 唯一出路是把请求里的图剥掉降级续跑(截图文字回执仍在历史,信息不丢)。
+// / Image-modality 400: text-only models reject image parts; strip images and degrade gracefully.
+const IMAGE_MODALITY_RE =
+  /only supports text modality|does not support image|not support image|image input|多模态|不支持图片|不支持图像/i;
+export function isImageModalityError(e: unknown): boolean {
+  const err = e as { code?: number; detail?: string; message?: string };
+  if (err?.code !== 400) return false;
+  const text = `${err?.detail ?? ''} ${err?.message ?? ''}`;
+  return IMAGE_MODALITY_RE.test(text);
+}
+
 // 内容安全审查 400 判定:MiniMax [1301](中文话术)+ OpenAI 系 content_filter 措辞。
 // 这类错误退避重试无用(内容不会变),唯一出路是回灌让模型改写措辞。
 // / Content-filter 400: retrying verbatim is pointless — the payload must be rephrased.
@@ -395,6 +408,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   let emptyRetries = 0; // 空 completion(纯 reasoning 零输出)推促计数(最多 MAX_EMPTY_RETRIES 次)
   let transientRetries = 0; // 瞬时 API 错误(限流/网络/5xx)退避重试计数
   let censoredRetries = 0; // 内容安全审查 400([1301] 类)自愈计数(最多 1 次)
+  let imgStripRetries = 0; // 图片模态 400(纯文本模型拒图)剥图降级计数(最多 1 次)
   // 假设升级 nudge(2026-10 KinetVM 三连败复盘):同一轮里多个工具结果连续 error
   // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
   // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
@@ -528,6 +542,29 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         onEvent({ type: 'status', text: '⚠️ 触发 provider 内容安全审查,已让模型改写措辞重试' });
         i--; // 抵消 for 的 i++,重试本轮
         continue;
+      }
+      // 图片模态 400:纯文本模型拒收 image part → 剥掉请求里的图降级重试一次(截图已落盘
+      // userData/shots/,文字回执仍在 tool result;剥图只丢像素,agent 可继续任务)。
+      // 每回合最多一次,防历史里反复截图+反复剥图死循环。
+      if (isImageModalityError(e) && imgStripRetries < 1) {
+        imgStripRetries++;
+        let stripped = 0;
+        for (const m of messages) {
+          if (!Array.isArray(m.content)) continue;
+          const before = m.content.length;
+          const kept = m.content.filter((p) => p.type !== 'image_url');
+          if (kept.length < before) {
+            // 图换成文本占位,保留"此处曾有一张截图"的上下文线索
+            kept.push({ type: 'text', text: '[图片已移除:当前模型为纯文本模态,截图文件已保存到本地 shots 目录]' });
+            m.content = kept;
+            stripped += before - kept.length + 1;
+          }
+        }
+        if (stripped > 0) {
+          onEvent({ type: 'status', text: `⚠️ 当前模型不支持图片输入(${errMsg(e).slice(0, 60)})——已剥除 ${stripped} 张图降级重试,截图文件已落盘可继续用 read_file 看路径` });
+          i--; // 抵消 for 的 i++,重试本轮
+          continue;
+        }
       }
       // 瞬时错误(限流/网络/5xx):退避后重试,而非一次 429 就把整个长任务中断。
       // (2026-09:修前任何非 context-too-long 错误一律立即 error 退出 → std/fast/deep 节点

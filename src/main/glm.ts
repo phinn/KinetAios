@@ -87,7 +87,24 @@ export class GLMError extends Error {
 // generic {message} and MiniMax-native {base_resp:{status_code,status_msg}}.
 async function readErr(resp: Response): Promise<string> {
   try {
-    const j = await resp.json() as Record<string, any>;
+    // 一次性读 text 再手动解析:body 只能消费一次,先 json() 炸掉后 text() 拿到的是空串
+    // (踩过:阿里 anthropic 兼容端点流式 400 的 body 是 SSE 形态 event:error\ndata:{...},
+    //  content-type 还是 text/event-stream,json() 必炸 → 旧实现 detail 恒空,用户只看到裸 400)。
+    const raw = await resp.text();
+    // SSE 错误体:逐行找 data: 前缀,解析出内层 JSON
+    if (raw.includes('event:') || raw.includes('data:')) {
+      for (const line of raw.split('\n')) {
+        const t = line.trim();
+        if (t.startsWith('data:')) {
+          try {
+            const j = JSON.parse(t.slice(5).trim()) as Record<string, any>;
+            const msg = (j?.message as string) || (j?.error?.message as string);
+            if (msg) return `${j?.code ? `[${j.code}] ` : ''}${msg}`;
+          } catch { /* 下一行 */ }
+        }
+      }
+    }
+    const j = JSON.parse(raw) as Record<string, any>;
     const err = j?.error as Record<string, unknown> | undefined;
     const base = j?.base_resp as Record<string, unknown> | undefined; // MiniMax 原生错误壳
     if (base && (base.status_msg || base.status_code !== undefined)) {
@@ -95,11 +112,7 @@ async function readErr(resp: Response): Promise<string> {
     }
     return (err?.message as string) || (j?.message as string) || (typeof j === 'string' ? j : JSON.stringify(j).slice(0, 300));
   } catch {
-    try {
-      return (await resp.text()).slice(0, 300);
-    } catch {
-      return '';
-    }
+    return ''; // raw 已在 try 里读过;解析失败且非 SSE 形态 → 无 detail 可给
   }
 }
 
