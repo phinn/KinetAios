@@ -70,14 +70,34 @@ function trackConvOpen(id: string | null): void {
   }
   localStorage.setItem(FREQ_KEY, JSON.stringify(m));
 }
-// 常用区容器:li.sb-freq(标题行 + ul 挂载点;li 内必须套 ul,li>li 非法会被浏览器解析器重排)。
-// / Frequent-block container li (label + inner ul; li>li is invalid HTML and gets re-parented).
+// 常用区容器:与项目组(sb-proj)同款文件夹结构 —— head(chevron+图标+名+计数) + tasks ul,
+// 永远置顶(renderSidebar 尾部 prepend);li 内必须套 ul,li>li 非法会被浏览器解析器重排。
+// 折叠态持久化 localStorage('sb-freq-collapsed'),重启保持;折叠只收条目,head 常驻。
+// / Frequent-block container: same folder UI as project groups; always pinned to top.
 function ensureFreqSep(ul: HTMLElement): HTMLElement {
   let li = ul.querySelector('li.sb-freq') as HTMLElement | null;
   if (!li) {
     li = document.createElement('li');
     li.className = 'sb-freq';
-    li.innerHTML = `<div class="sb-freq-head"><span class="sb-freq-label">${esc(tr('sidebar.frequent'))}</span><span class="sb-freq-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11L9.5 22 19 10h-6.5z"/></svg></span></div><ul class="sb-freq-items"></ul>`;
+    const folded = localStorage.getItem('sb-freq-collapsed') === '1';
+    const head = document.createElement('div');
+    head.className = 'sb-proj-head sb-freq-head';
+    head.innerHTML =
+      `<span class="sb-chevron${folded ? ' collapsed' : ''}"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span>` +
+      `<span class="sb-pico">${ICON.bolt}</span>` +
+      `<span class="sb-pname">${esc(tr('sidebar.frequent'))}</span>` +
+      `<span class="sb-fcount sb-pcount">0</span>`;
+    head.onclick = () => {
+      const now = !li!.classList.contains('freq-folded');
+      li!.classList.toggle('freq-folded', now);
+      localStorage.setItem('sb-freq-collapsed', now ? '1' : '0');
+      head.querySelector('.sb-chevron')?.classList.toggle('collapsed', now);
+      (li!.querySelector('.sb-freq-tasks') as HTMLElement | null)?.classList.toggle('collapsed', now);
+    };
+    li.appendChild(head);
+    const tasksUl = document.createElement('ul');
+    tasksUl.className = 'sb-proj-tasks sb-freq-tasks' + (folded ? ' collapsed' : '');
+    li.appendChild(tasksUl);
   }
   return li;
 }
@@ -783,8 +803,26 @@ function scheduleSidebarRender(): void {
 
 function refreshSidebarLi(convId: string): void {
   const c = convs.get(convId);
-  if (!c) return;  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]`);
-  if (!li) { scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
+  if (!c) return;
+  // 主列表 li:排除「最近常用」条目(sb-freq-item 同带 data-cid 且因区块置顶会先命中,
+  // 旧写法把增量刷新静默吞掉,主列表那条收不到 sb-live/statusNote 更新)
+  const li = document.querySelector(`#conv-list li[data-cid="${convId}"]:not(.sb-freq-item)`);
+  // freq 条目也就地同步第二行状态+dot(与主列表双份显示;不存在则跳过)
+  const freqItem = document.querySelector(`#conv-list li.sb-freq-item[data-cid="${convId}"]`);
+  if (freqItem) {
+    const fdot = freqItem.querySelector('.dot');
+    if (fdot) fdot.className = `dot ${dotState(c, convId)}${c.engine ? ` eng-${c.engine}` : ''}`;
+    freqItem.classList.toggle('running', c.status === 'running');
+    const fname = freqItem.querySelector('.sb-freq-name');
+    if (fname) fname.textContent = c.customTitle || (c.firstPrompt?.slice(0, 26)) || tr('head.newConv');
+    const flive = freqItem.querySelector('.sb-live');
+    if (flive) {
+      const fliveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
+      flive.textContent = fliveText;
+      flive.classList.toggle('hidden', !fliveText);
+    }
+  }
+  if (!li) { if (!freqItem) scheduleSidebarRender(); return; } // 不在 DOM(分组头懒挂/筛选中)→ 合并兜底全量
   // cwd 换组(cwd 回填/变更)→ 增量更新不会跨组移动 li,走合并的全量重渲
   const projLi = li.closest('li.sb-proj') as HTMLElement | null;
   if (projLi && (projLi.dataset.cwd ?? '') !== (c.cwd || '')) { scheduleSidebarRender(); return; }
@@ -1149,14 +1187,17 @@ function renderSidebar() {
   if (!showFreq || freqIds.length === 0) {
     freqLi.remove(); // 条件不满足:整个区块摘除,不留空壳
   } else {
-    const mount = freqLi.querySelector('ul.sb-freq-items')!;
+    const mount = freqLi.querySelector('ul.sb-freq-tasks')!;
     mount.querySelectorAll('li.sb-freq-item').forEach((n) => n.remove());
     for (const id of freqIds) {
       const c = convs.get(id)!;
       const item = document.createElement('li');
-      item.className = 'sb-freq-item';
+      item.className = `sb-freq-item${c.status === 'running' ? ' running' : ''}`;
       item.dataset.cid = id;
-      item.innerHTML = `<span class="dot ${dotState(c, id)}"></span><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>`;
+      // 第二行实时状态(与主列表 taskLi 同构):运行中显示 statusNote/「运行中」,
+      // 空闲不渲染该行。title-wrap 包裹保证 sb-live 宽度跟随文本列。
+      const liveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
+      item.innerHTML = `<span class="dot ${dotState(c, id)}${c.engine ? ` eng-${c.engine}` : ''}"></span><span class="title-wrap"><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span>`;
       item.onclick = () => {
         hideConvTip();
         if (selectedId === id) return;
@@ -1168,6 +1209,9 @@ function renderSidebar() {
       };
       mount.appendChild(item);
     }
+    // 计数徽标(head 常驻,折叠也可见);置顶:区块永远在列表最顶,项目组之上。
+    const badge = freqLi.querySelector('.sb-fcount');
+    if (badge) badge.textContent = String(freqIds.length);
     ul.prepend(freqLi);
   }
   // 清理:本帧未渲染但仍挂在 DOM 上的任务 li(被删会话/cwd 换组后旧组残留)与消失的项目组。
