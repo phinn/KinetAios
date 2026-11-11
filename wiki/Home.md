@@ -1,5 +1,7 @@
 > 🌐 Language: **English** | [中文](Home.zh-CN.md)
 
+> ⭐ If KinetAios is useful to you, [give it a Star](https://github.com/phinn/KinetAios/stargazers) — it's how solo open source gets discovered.
+
 # KinetAios Wiki
 
 Welcome to the KinetAios wiki. This is the **feature manual** — for users who already installed the app and want to dig into how each feature works.

@@ -315,3 +315,7 @@ KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一�
 [KinetFlashFind](https://apps.apple.com/cn/app/id6808698046) 全盘文件一秒到手 · [KinetMinutes](https://apps.apple.com/cn/app/id6813593104) 开完会纪要即有 · [KinetMorning](https://apps.apple.com/cn/app/id6779978181) 一声平安远程可见 · [KinetElf](https://apps.apple.com/cn/app/id6807457522) 会长大的口袋精灵 · [KinetStudy](https://apps.apple.com/cn/app/id6797004663) 错题有人管 · [KinetMagicDisk](https://apps.apple.com/cn/app/id6813423397) 谁占磁盘一眼看见 · [Clasp Focus](https://apps.apple.com/cn/app/id6820942179) 合上盖子就开始 · [DriftDesk](https://apps.apple.com/cn/app/id6817377455) 菜单栏声音角落 · [DuoFolio](https://apps.apple.com/cn/app/id6823855712) 为折叠而生的书 · [FurChart](https://apps.apple.com/cn/app/id6817339084) 毛孩子病历不翻抽屉 · [KinetRain](https://apps.apple.com/cn/app/id6814033986) 想下雨就下雨 · [M5Chat](https://apps.apple.com/cn/app/id6820196518) 口袋里的多引擎 AI · [Promptside](https://apps.apple.com/cn/app/id6820624868) 一个人就是整个剧组 · [KinetMemory](https://apps.apple.com/cn/app/id6815923723) 间隔复习该忘的才忘
 
 *KinetAgent(手机遥控电脑 Agent)、KinetMagicWindow、KinetDock 开发中 —— 完整路线图见[家族页](https://phinn.github.io/kinetapp/index.html)。*
+
+---
+
+> ⭐ **一键之劳,大不一样:** 如果 KinetAios 帮你省了时间,[给个 Star](https://github.com/phinn/KinetAios/stargazers) —— 独立开发的开源项目就靠 Star 被更多人看见。

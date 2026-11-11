@@ -1,5 +1,7 @@
 > 🌐 Language: **English** | [中文](Voice-Chat.zh-CN.md)
 
+> ⭐ If KinetAios is useful to you, [give it a Star](https://github.com/phinn/KinetAios/stargazers) — it's how solo open source gets discovered.
+
 # Realtime Voice Chat
 
 Realtime bidirectional voice conversation powered by the Volcengine (Doubao) realtime voice model. Speak naturally — the AI listens, transcribes, responds with natural TTS, and can trigger Agent tool execution in parallel.

@@ -1,5 +1,7 @@
 > 🌐 Language: [English](Voice-Chat.md) | **中文**
 
+> ⭐ 如果 KinetAios 对你有用,[给个 Star](https://github.com/phinn/KinetAios/stargazers) —— 独立开源就靠它被更多人看见。
+
 # 实时语音对话
 
 基于火山引擎(豆包)实时语音大模型的双向语音对话。自然说话——AI 听、转写、用自然 TTS 回复,同时可触发 Agent 工具执行。

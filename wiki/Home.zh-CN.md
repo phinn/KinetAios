@@ -1,5 +1,7 @@
 > 🌐 Language: [English](Home.md) | **中文**
 
+> ⭐ 如果 KinetAios 对你有用,[给个 Star](https://github.com/phinn/KinetAios/stargazers) —— 独立开源就靠它被更多人看见。
+
 # KinetAios Wiki
 
 欢迎来到 KinetAios wiki。这是**功能手册** —— 给已安装 app、想深入了解各功能怎么运作的用户。

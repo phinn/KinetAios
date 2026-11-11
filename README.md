@@ -321,6 +321,10 @@ KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.h
 
 *KinetAgent (drive your Mac's Claude Code from iPhone), KinetMagicWindow and KinetDock are in development — full roadmap on the [family page](https://phinn.github.io/kinetapp/index.html).*
 
+---
+
+> ⭐ **One click, big difference:** if KinetAios saved you time, [give it a Star](https://github.com/phinn/KinetAios/stargazers) — stars are how solo-built open source gets found.
+
 ## License
 
 [GPL-3.0](LICENSE)
