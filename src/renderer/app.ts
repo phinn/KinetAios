@@ -815,6 +815,13 @@ function refreshSidebarLi(convId: string): void {
     freqItem.classList.toggle('running', c.status === 'running');
     const fname = freqItem.querySelector('.sb-freq-name');
     if (fname) fname.textContent = c.customTitle || (c.firstPrompt?.slice(0, 26)) || tr('head.newConv');
+    // 项目标签同步(改名/cwd 变更后增量刷新也要跟上;无 cwd=未分类时隐藏)
+    const ftag = freqItem.querySelector('.sb-proj-tag');
+    if (ftag) {
+      const proj = projName(c.cwd || '');
+      ftag.textContent = proj;
+      ftag.classList.toggle('hidden', proj === tr('wb.ungrouped'));
+    }
     const flive = freqItem.querySelector('.sb-live');
     if (flive) {
       const fliveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
@@ -1197,7 +1204,10 @@ function renderSidebar() {
       // 第二行实时状态(与主列表 taskLi 同构):运行中显示 statusNote/「运行中」,
       // 空闲不渲染该行。title-wrap 包裹保证 sb-live 宽度跟随文本列。
       const liveText = c.status === 'running' ? (c.statusNote || tr('sidebar.working')) : '';
-      item.innerHTML = `<span class="dot ${dotState(c, id)}${c.engine ? ` eng-${c.engine}` : ''}"></span><span class="title-wrap"><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span>`;
+      // 第一行 = 频道名 + 项目标签(弱色右缀;「未分类」不渲染,免噪音)
+      const proj = projName(c.cwd || '');
+      const tagHtml = proj === tr('wb.ungrouped') ? '' : `<span class="sb-proj-tag">${esc(proj)}</span>`;
+      item.innerHTML = `<span class="dot ${dotState(c, id)}${c.engine ? ` eng-${c.engine}` : ''}"></span><span class="title-wrap"><span class="sb-name-row"><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>${tagHtml}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span>`;
       item.onclick = () => {
         hideConvTip();
         if (selectedId === id) return;

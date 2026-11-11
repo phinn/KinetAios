@@ -6981,6 +6981,13 @@ li.sb-freq .sb-proj-tasks li { padding-top: 3px; padding-bottom: 3px; }
 /* 两行结构:第一行频道名,第二行实时状态(.sb-live,同主列表);title-wrap 占满 dot 右侧文本列 */
 li.sb-freq .sb-proj-tasks li .title-wrap { flex: 1; min-width: 0; display: block; }
 li.sb-freq .sb-proj-tasks li .sb-live { font-size: var(--fs-2xs); margin-top: 1px; }
+/* 第一行 = 频道名 + 项目标签(弱色右缀,同命令面板「标题 · 项目」口径;未分类不显示) */
+li.sb-freq .sb-name-row { display: flex; gap: 6px; min-width: 0; align-items: baseline; }
+li.sb-freq .sb-proj-tag {
+  flex: none; max-width: 45%; font-size: var(--fs-2xs); color: var(--text-faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+li.sb-freq .sb-proj-tasks li.active .sb-proj-tag { color: var(--text-dim); }
 li.sb-freq .sb-freq-name {
   display: block; flex: 1; min-width: 0; font-size: var(--fs-sm); color: var(--text-dim);
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
