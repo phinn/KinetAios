@@ -332,8 +332,6 @@ KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.h
   <a href="https://apps.apple.com/app/6820624868"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d9/f6/b7/d9f6b71f-1e9b-7117-ea84-1a555ad740a9/AppIcon-0-0-1x_U007epad-0-1-85-220.png/120x120bb.jpg" width="44" alt="Promptside" title="Promptside"></a>
 </p>
 
-**[Browse the whole catalog →](https://phinn.github.io/kinetapp/index.html)** — tasks, notes, focus, memory, foldable dual-screen. KinetAios is the open-source member of the family; the [macOS App Store version](https://apps.apple.com/app/id6809450051) is the same engine, packaged native.
-
 **Flagships**
 
 - **[KinetAios on the Mac App Store](https://apps.apple.com/app/id6809450051)** — same agent, one-click install ($12.99); the open-source build in this repo is free
@@ -341,10 +339,6 @@ KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.h
 - **[KinetBrief](https://apps.apple.com/app/id6782778566)** — AI briefing / meeting notes — make today count
 - **[KinetFit](https://apps.apple.com/app/id6773755689)** — health companion — wake the body up first
 - **[KinetSoul](https://apps.apple.com/app/id6780600464)** — AI journal — give your feelings a way out
-
-**Also on the App Store**
-
-[KinetFlashFind](https://apps.apple.com/app/id6808698046) — every file, in under a second · [KinetMinutes](https://apps.apple.com/app/id6813593104) — notes ready when you leave the room · [KinetMorning](https://apps.apple.com/app/id6779978181) — daily check-in, visible from afar · [KinetElf](https://apps.apple.com/app/id6807457522) — a pocket elf that grows on you · [KinetStudy](https://apps.apple.com/app/id6797004663) — mistakes kept, parents not guessing · [KinetMagicDisk](https://apps.apple.com/app/id6813423397) — see who's eating your disk · [Clasp Focus](https://apps.apple.com/app/id6820942179) — close the lid and it begins · [DriftDesk](https://apps.apple.com/app/id6817377455) — a corner of calm in the menu bar · [DuoFolio](https://apps.apple.com/app/id6823855712) — a book built for the fold · [FurChart](https://apps.apple.com/app/id6817339084) — pet records, never in a drawer · [KinetRain](https://apps.apple.com/app/id6814033986) — rain on demand · [M5Chat](https://apps.apple.com/app/id6820196518) — multi-engine AI in your pocket · [Promptside](https://apps.apple.com/app/id6820624868) — one person is the whole crew · [KinetMemory](https://apps.apple.com/app/id6815923723) — spaced repetition, forgetting on schedule
 
 *KinetAgent (drive your Mac's Claude Code from iPhone), KinetMagicWindow and KinetDock are in development — full roadmap on the [family page](https://phinn.github.io/kinetapp/index.html).*
 

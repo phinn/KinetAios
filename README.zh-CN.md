@@ -327,8 +327,6 @@ KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一�
   <a href="https://apps.apple.com/app/6820624868"><img src="https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d9/f6/b7/d9f6b71f-1e9b-7117-ea84-1a555ad740a9/AppIcon-0-0-1x_U007epad-0-1-85-220.png/120x120bb.jpg" width="44" alt="Promptside" title="Promptside"></a>
 </p>
 
-**[浏览全部 22 个应用 →](https://phinn.github.io/kinetapp/index.html)** —— 任务、笔记、专注、记忆、折叠双屏。KinetAios 是家族里的开源成员;[Mac App Store 版](https://apps.apple.com/cn/app/id6809450051)同源引擎的原生打包。
-
 **旗舰**
 
 - **[KinetAios Mac App Store 版](https://apps.apple.com/cn/app/id6809450051)** —— 同一个 Agent,一键安装(¥68);本仓库开源版永久免费
@@ -336,10 +334,6 @@ KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一�
 - **[KinetBrief](https://apps.apple.com/cn/app/id6782778566)** —— AI 会议纪要 —— 今日开会没白开
 - **[KinetFit](https://apps.apple.com/cn/app/id6773755689)** —— 健康管理 —— 先把身体打开
 - **[KinetSoul](https://apps.apple.com/cn/app/id6780600464)** —— AI 心理日记 —— 给情绪一个出口
-
-**同样在 App Store**
-
-[KinetFlashFind](https://apps.apple.com/cn/app/id6808698046) 全盘文件一秒到手 · [KinetMinutes](https://apps.apple.com/cn/app/id6813593104) 开完会纪要即有 · [KinetMorning](https://apps.apple.com/cn/app/id6779978181) 一声平安远程可见 · [KinetElf](https://apps.apple.com/cn/app/id6807457522) 会长大的口袋精灵 · [KinetStudy](https://apps.apple.com/cn/app/id6797004663) 错题有人管 · [KinetMagicDisk](https://apps.apple.com/cn/app/id6813423397) 谁占磁盘一眼看见 · [Clasp Focus](https://apps.apple.com/cn/app/id6820942179) 合上盖子就开始 · [DriftDesk](https://apps.apple.com/cn/app/id6817377455) 菜单栏声音角落 · [DuoFolio](https://apps.apple.com/cn/app/id6823855712) 为折叠而生的书 · [FurChart](https://apps.apple.com/cn/app/id6817339084) 毛孩子病历不翻抽屉 · [KinetRain](https://apps.apple.com/cn/app/id6814033986) 想下雨就下雨 · [M5Chat](https://apps.apple.com/cn/app/id6820196518) 口袋里的多引擎 AI · [Promptside](https://apps.apple.com/cn/app/id6820624868) 一个人就是整个剧组 · [KinetMemory](https://apps.apple.com/cn/app/id6815923723) 间隔复习该忘的才忘
 
 *KinetAgent(手机遥控电脑 Agent)、KinetMagicWindow、KinetDock 开发中 —— 完整路线图见[家族页](https://phinn.github.io/kinetapp/index.html)。*
 
