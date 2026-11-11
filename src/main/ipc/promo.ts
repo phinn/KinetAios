@@ -86,7 +86,7 @@ function getGhToken(): Promise<string | null> {
 }
 
 // ── 单条刷新 ── Refresh one item ──
-async function fetchText(url: string, headers: Record<string, string> = {}, ms = 12000): Promise<{ status: number; body: string }> {
+async function fetchText(url: string, headers: Record<string, string> = {}, ms = 8000): Promise<{ status: number; body: string }> {
   const res = await fetch(url, { headers, signal: AbortSignal.timeout(ms), redirect: 'follow' });
   const body = await res.text();
   return { status: res.status, body };
@@ -153,14 +153,16 @@ async function refreshOne(it: PromoItem): Promise<void> {
       return;
     }
     // url:目录站存活检查(HEAD 405 时降级 GET)
+    // 2026-11-11 收紧:46 条全量×(12s+15s)÷6 并发,慢站把队列挤爆 → 面板 hostCall 30s 超时先死。
+    // 单条预算 HEAD 6s + GET 兜底 8s,最坏总时长压进面板 180s 上限。
     try {
       let st = 0;
       try {
-        const r = await fetch(it.url, { method: 'HEAD', signal: AbortSignal.timeout(12000), redirect: 'follow' });
+        const r = await fetch(it.url, { method: 'HEAD', signal: AbortSignal.timeout(6000), redirect: 'follow' });
         st = r.status;
       } catch { st = 0; }
       if (st === 405 || st === 403 || st === 0) {
-        const r2 = await fetchText(it.url, {}, 15000);
+        const r2 = await fetchText(it.url, {}, 8000);
         st = r2.status;
       }
       it.status = st >= 200 && st < 400 ? 'live' : `http-${st}`;

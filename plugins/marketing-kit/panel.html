@@ -269,12 +269,13 @@
   // ═══ 宿主通信层 — postMessage bridge (同 brainstorm 模式) ═══
   var reqId = 0;
   var pending = {};
-  function hostCall(method, args) {
+  function hostCall(method, args, timeoutMs) {
     var id = ++reqId;
     return new Promise(function(resolve, reject) {
+      // 默认 30s;慢调用(promoRefresh 全量扫描可达分钟级)按调用传入更长预算
       var timer = setTimeout(function() {
         if (pending[id]) { delete pending[id]; reject('hostCall timeout: ' + method); }
-      }, 30000);
+      }, timeoutMs || 30000);
       pending[id] = {
         resolve: function(v) { clearTimeout(timer); resolve(v); },
         reject: function(e) { clearTimeout(timer); reject(e); }
@@ -562,7 +563,8 @@
     var btn = this, meta = $('mk-promo-meta');
     btn.disabled = true; meta.textContent = '刷新中…(逐条查 API,约几秒)';
     var t0 = Date.now();
-    hostCall('promoRefresh', []).then(function(r) {
+    // 全量扫描 46 条×(HEAD 6s+GET 8s)÷6 并发,慢站挤队列最坏可达分钟级 → 单独给 180s 预算
+    hostCall('promoRefresh', [], 180000).then(function(r) {
       btn.disabled = false;
       if (r && r.items) {
         promoItems = r.items;
