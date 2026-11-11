@@ -9,7 +9,26 @@ import os from 'node:os';
 import path from 'node:path';
 import { app } from 'electron';
 
-export type Brand = { productName: string; homeDir: string; version: string; icon?: string };
+// 家族导流(2026-11-11):familyUrl 缺省 = About 页不显示家族行(白标/定制版静默);
+// 配了才显示,familyLabel 可选副标(中英随 settings.lang 切换)。
+// Family promo (2026-11-11): absent familyUrl = no family row in About
+// (white-label builds stay silent); it only shows when configured.
+export type Brand = {
+  productName: string; homeDir: string; version: string; icon?: string;
+  familyHidden?: boolean; // true=隐藏 About 家族行(白标版用);缺省 false=显示 / hide family row
+  familyUrl?: string; // 家族页链接,缺省 kinetapp / family page URL
+  familyLabel?: string; // 家族行文案(英) / tagline (en)
+  familyLabelZh?: string; // 家族行文案(中) / tagline (zh)
+};
+
+// 家族行缺省值(2026-11-11):缺省显示——开源版是家族导流入口,白标版显式 familyHidden:true 关闭。
+// / Family row defaults: shown BY DEFAULT (OSS build = family entry point);
+// white-label builds opt out with familyHidden:true.
+const FAMILY_DEFAULT = {
+  url: 'https://phinn.github.io/kinetapp/index.html',
+  label: 'Part of the Kinet family — 22 apps, all live',
+  labelZh: 'Kinet 家族成员 —— 22 个应用,全部在架',
+};
 
 // 版本号从 package.json 读,不硬编码 / Version from package.json, never hardcode.
 import pkg from '../../package.json';
@@ -37,6 +56,10 @@ export function getBrand(): Brand {
     const raw = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'brand.json'), 'utf8')) as Partial<Brand>;
     if (raw.productName) { b = { ...b, productName: raw.productName }; src = `内嵌 dist/brand.json (${__dirname}/../brand.json)`; }
     if (raw.icon) b = { ...b, icon: raw.icon };
+    if (raw.familyHidden !== undefined) b = { ...b, familyHidden: raw.familyHidden };
+    if (raw.familyUrl) b = { ...b, familyUrl: raw.familyUrl };
+    if (raw.familyLabel) b = { ...b, familyLabel: raw.familyLabel };
+    if (raw.familyLabelZh) b = { ...b, familyLabelZh: raw.familyLabelZh };
   } catch {
     /* 文件缺失/损坏 → 用默认 */
   }
@@ -46,11 +69,22 @@ export function getBrand(): Brand {
     if (raw.productName) { b = { ...b, productName: raw.productName }; src = `外置覆盖 ${brandOverridePath()} ← 优先级最高,改名请改这个或删掉它`; }
     // icon 允许显式清空:"" → 清掉内嵌值,回落 settings.appIcon
     b = { ...b, ...(raw.icon !== undefined ? { icon: raw.icon || undefined } : {}) };
+    if (raw.familyHidden !== undefined) b = { ...b, familyHidden: raw.familyHidden };
+    if (raw.familyUrl !== undefined) b = { ...b, familyUrl: raw.familyUrl || undefined };
+    if (raw.familyLabel !== undefined) b = { ...b, familyLabel: raw.familyLabel || undefined };
+    if (raw.familyLabelZh !== undefined) b = { ...b, familyLabelZh: raw.familyLabelZh || undefined };
   } catch {
     /* 无外部文件 → 用内嵌 */
   }
+  // 家族行缺省填充:hidden 才不填,renderer 只看 familyHidden
+  // / Fill family defaults unless hidden; renderer only checks familyHidden.
+  if (!b.familyHidden) {
+    b.familyUrl = b.familyUrl || FAMILY_DEFAULT.url;
+    b.familyLabel = b.familyLabel || FAMILY_DEFAULT.label;
+    b.familyLabelZh = b.familyLabelZh || FAMILY_DEFAULT.labelZh;
+  }
   // 启动打一行来源:排查"改了 brand.json 不生效"类问题(外置文件静默覆盖是惯犯)
-  console.log(`[brand] productName=${b.productName} 来源: ${src}`);
+  console.log(`[brand] productName=${b.productName} family=${b.familyHidden ? 'hidden' : b.familyUrl} 来源: ${src}`);
   cache = b;
   return b;
 }

@@ -80,7 +80,7 @@ FTS5 virtual table `history` powers `recall_memory`; `conversations` + `turns` (
 打任何 release tag（`vX.Y.Z`）之前，逐项执行：
 
 1. **版本号三处同步** — `package.json` + `package-lock.json`（两处 version）+ `README.md` / `README.zh-CN.md` 的 current 版本
-2. **Release note 必须中英双语** — `.releasenotes/rn-<ver>.md`：中文正文 → `---` → `**English**` → 英文正文 → `---` → Full Changelog（格式参照 rn-3.4.0）
+2. **Release note 必须中英双语** — `.releasenotes/rn-<ver>.md`：中文正文 → `---` → `**English**` → 英文正文 → `---` → Full Changelog（格式参照 rn-3.4.0）；正文末尾必带**家族脚注**一行（"Part of the Kinet family — 22 apps" + https://phinn.github.io/kinetapp/index.html，中英段各一次，文案基准见 brand.json familyLabel）— pre-tag-check 会查
 3. **回查前 3 版** — `for v in ...; do grep -c '^\*\*English\*\*' .releasenotes/rn-<v>.md; done` 必须全 ≥1，发现漏的直接补
 4. **wiki 中英同步** — 新功能章节写进 `wiki/*.md` 时，同名 `.zh-CN.md` 必须同步（反之亦然）
 5. **`npm run typecheck`** 通过

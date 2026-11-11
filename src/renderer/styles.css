@@ -1221,6 +1221,17 @@ body.resizing #sidebar { transition: none; } /* 拖拽中禁宽度过渡,跟手 
   font-variant-numeric: tabular-nums;
 }
 #sidebar.collapsed .sb-brand { display: none; }
+/* 家族行 — brand.json 配置驱动,弱化小字不抢侧栏注意力 */
+.sb-family {
+  display: flex; align-items: center; gap: 5px;
+  margin: 0 10px 4px; padding: 2px 0;
+  font-size: var(--fs-xs); opacity: 0.32; text-decoration: none;
+  color: var(--text-dim); white-space: nowrap; overflow: hidden;
+}
+.sb-family svg { flex-shrink: 0; }
+.sb-family span { overflow: hidden; text-overflow: ellipsis; }
+.sb-family:hover { opacity: 0.85; color: var(--accent); }
+#sidebar.collapsed .sb-family { display: none; }
 
 /* sb-topbar — 搜索框 + 新建按钮 */
 .sb-topbar {
@@ -6951,6 +6962,37 @@ select:focus-visible {
 .sb-time-sep .sb-bucket-chev { margin-left: auto; display: flex; color: var(--text-faint); opacity: 0.6; transition: transform var(--dur-fast) var(--ease-out); }
 .sb-time-sep .sb-bucket-chev.collapsed { transform: rotate(-90deg); }
 .sb-time-sep:hover { color: var(--text-dim); }
+
+/* ═══ 侧栏「最近常用」区块 / Sidebar frequent channels block ═══ */
+/* 容器 li:无 data-cid → keyed 清理不碰;条件不满足时整块 remove。
+   注意 #conv-list > li(tahoe 等)是 flex row,这里必须显式改回 column。 */
+#conv-list li.sb-freq { display: flex; flex-direction: column; padding: 0; margin: 0; cursor: default; background: transparent; }
+#conv-list > li.sb-freq:hover { background: transparent; }
+#conv-list li.sb-freq.active { background: transparent; box-shadow: none; }
+.sb-freq-head {
+  display: flex; align-items: center; gap: 4px;
+  padding: 12px 12px 4px; font-size: var(--fs-xs); font-weight: 600;
+  letter-spacing: 0.05em; color: var(--text-faint);
+  user-select: none; cursor: default;
+}
+.sb-freq-ico { margin-left: auto; display: flex; color: var(--text-faint); opacity: 0.55; }
+.sb-freq-items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+/* 条目:单行紧凑(圆点 + 标题),风格对齐项目组内任务条,但更轻 */
+#conv-list li.sb-freq-item {
+  padding: 5px 12px 5px 20px; cursor: pointer; list-style: none;
+  display: flex; align-items: center; gap: 7px; position: relative;
+  border-radius: 6px; margin: 0 2px;
+}
+#conv-list li.sb-freq-item:hover { background: rgba(255,255,255,0.04); }
+#conv-list li.sb-freq-item.active { background: color-mix(in srgb, var(--accent) 10%, transparent); box-shadow: inset 2px 0 0 var(--accent); }
+.sb-freq-item .sb-freq-name {
+  flex: 1; min-width: 0; font-size: var(--fs-lg); color: var(--text-dim);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; text-align: left;
+}
+.sb-freq-item:hover .sb-freq-name { color: var(--text); }
+.sb-freq-item.active .sb-freq-name { color: var(--accent); font-weight: 600; }
+/* 折叠侧栏(图标栏)不显示常用区:宽度不够,只留图标语义 */
+#sidebar.collapsed li.sb-freq { display: none; }
 /* 置顶徽标:标题行内 📌(常驻可见) */
 .pin-mark { font-size: var(--fs-2xs); opacity: 0.8; margin-right: 4px; flex: none; }
 .streaming-status .ss-meta { margin-left: 10px; color: var(--text-faint); font-size: var(--fs-xs); font-variant-numeric: tabular-nums; }

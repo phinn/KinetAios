@@ -1046,7 +1046,10 @@ export interface KinetAPI {
   /** 图片预览:绝对路径(或相对 cwd)→ base64 data URL。扩展白名单 + 20MB 上限 */
   mediaRead(abs: string, cwd?: string): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   fileWrite(abs: string, content: string): Promise<{ ok: boolean; error?: string }>;
-  getBrand(): Promise<{ productName: string; homeDir: string; version: string }>;
+  getBrand(): Promise<{
+    productName: string; homeDir: string; version: string;
+    familyHidden?: boolean; familyUrl?: string; familyLabel?: string; familyLabelZh?: string;
+  }>;
   quickSubmit(text: string): Promise<string>;
   openDashboard(): Promise<void>;
   openFiles(cwd?: string): Promise<void>;

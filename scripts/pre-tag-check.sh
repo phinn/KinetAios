@@ -26,6 +26,8 @@ else
   head -1 "$RN" | grep -q "发布日期" && ok "中文正文在头部" || bad "rn 头部不是中文正文"
   grep -q '^\*\*English\*\*' "$RN" && ok "EN 段存在" || bad "漏 **English** 段!"
   grep -q "Full Changelog" "$RN" && ok "Full Changelog 链接" || bad "缺 Full Changelog"
+  # 家族脚注(2026-11-11): 每次 release 是 watcher+聚合站的免费广播位,必带家族行
+  grep -q "Kinet family\|Kinet 家族" "$RN" && ok "家族脚注" || bad "缺家族脚注(Kinet family/家族行,文案见 brand.json familyLabel)"
 fi
 
 # 3. 回查: 本仓库全部历史 rn 都必须有 EN 段(防旧账复发)

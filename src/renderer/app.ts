@@ -43,6 +43,44 @@ let collapsedBuckets = new Set<string>(JSON.parse(localStorage.getItem('sb-bucke
 // 默认按最近活动排序(用户最关心最近活跃的频道)。持久化到 localStorage。
 let sortByRecent = localStorage.getItem('sb-sort-recent') !== '0';
 let searchQuery = ''; // 侧栏搜索关键词(过滤会话标题) / Sidebar search filter
+// 最近常用频道:{ convId → { n: 打开次数, t: 最近打开时间(ms) } },localStorage 持久化。
+// 埋点在 showChat(所有切换路径的唯一汇聚点),同会话 60s 内重复切换不重复计数。
+// / Frequent channels: { convId → { n: open count, t: last open ts } }, recorded in showChat.
+if (typeof window !== 'undefined') {
+  // 调试/测试句柄:控制台可查埋点与强制重渲(生产无副作用,零 UI 暴露)
+  (window as any).__freqDebug = { load: loadFreqMap, rerender: () => renderSidebar() };
+}
+const FREQ_KEY = 'sb-freq-convs';
+const FREQ_MAX = 30; // 只留 top30,防 localStorage 无限膨胀 / Keep top 30 only
+function loadFreqMap(): Record<string, { n: number; t: number }> {
+  try { return JSON.parse(localStorage.getItem(FREQ_KEY) || '{}'); } catch { return {}; }
+}
+function trackConvOpen(id: string | null): void {
+  if (!id) return;
+  const m = loadFreqMap();
+  const now = Date.now();
+  const e = m[id];
+  if (e && now - e.t < 60_000) { e.t = now; return; } // 60s 去重:同会话连续操作只算一次
+  m[id] = { n: (e?.n ?? 0) + 1, t: now };
+  // 超上限:按次数+时间淘汰最冷的
+  const ids = Object.keys(m);
+  if (ids.length > FREQ_MAX) {
+    ids.sort((a, b) => (m[b].n - m[a].n) || (m[b].t - m[a].t));
+    for (const k of ids.slice(FREQ_MAX)) delete m[k];
+  }
+  localStorage.setItem(FREQ_KEY, JSON.stringify(m));
+}
+// 常用区容器:li.sb-freq(标题行 + ul 挂载点;li 内必须套 ul,li>li 非法会被浏览器解析器重排)。
+// / Frequent-block container li (label + inner ul; li>li is invalid HTML and gets re-parented).
+function ensureFreqSep(ul: HTMLElement): HTMLElement {
+  let li = ul.querySelector('li.sb-freq') as HTMLElement | null;
+  if (!li) {
+    li = document.createElement('li');
+    li.className = 'sb-freq';
+    li.innerHTML = `<div class="sb-freq-head"><span class="sb-freq-label">${esc(tr('sidebar.frequent'))}</span><span class="sb-freq-ico" aria-hidden="true"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 2L4.5 13.5H11L9.5 22 19 10h-6.5z"/></svg></span></div><ul class="sb-freq-items"></ul>`;
+  }
+  return li;
+}
 let unreadCount = 0; // 滚到底部按钮上的未读消息计数 / Unread count badge on scroll-bottom button
 // 后台会话完成标记:A 会话干活时 B 完成 → 侧栏 B 行加小圆点,切换/查看后清除。
 // (未读 badge 只管当前会话的滚离底部;这是给"同时跑多个会话"的场景。)
@@ -390,6 +428,16 @@ function applyI18nDOM(): void {
     void api.getAppVersion().then((v) => {
       const verEl = document.getElementById('brand-ver');
       if (verEl) { verEl.textContent = 'v' + v; verEl.removeAttribute('hidden'); }
+    }).catch(() => {});
+    // 家族行:brand.familyHidden=true(main 已不填缺省)→ 保持 hidden;否则填链接+文案
+    // / Family row: hidden stays hidden when familyHidden=true (main skips defaults).
+    void api.getBrand().then((b) => {
+      const fam = document.getElementById('sb-family') as HTMLAnchorElement | null;
+      if (!fam || !b.familyUrl) return;
+      fam.href = b.familyUrl;
+      fam.removeAttribute('hidden');
+      const lbl = document.getElementById('sb-family-label');
+      if (lbl) lbl.textContent = (lang.startsWith('zh') ? (b.familyLabelZh || b.familyLabel) : (b.familyLabel || b.familyLabelZh)) || '';
     }).catch(() => {});
     applyI18nDOM();
 
@@ -1085,6 +1133,43 @@ function renderSidebar() {
       if (projLi.dataset.cwd) syncProjRunningHint(projLi.dataset.cwd);
     });
   }
+  // ── 最近常用区块:列表最顶(top5,排除当前频道)──
+  // 显示条件:总会话 >8 且有记录,搜索/运行中筛选时隐藏(避免和过滤结果打架)。
+  // 注意:不放 keyed 池的 li(DOM 节点只有一个父,挪走会让主列表缺席;cloneNode 又丢监听器),
+  // 自建轻量快捷条目,点击走 selectChat 正规路径。 / Frequent-channels block, lightweight clones.
+  const freqLi = ensureFreqSep(ul);
+  const showFreq = !searchQuery && !runningOnly && order.length > 8;
+  const freqIds = showFreq
+    ? Object.entries(loadFreqMap())
+        .filter(([id]) => convs.has(id) && id !== selectedId)
+        .sort((a, b) => (b[1].n - a[1].n) || (b[1].t - a[1].t))
+        .slice(0, 5)
+        .map(([id]) => id)
+    : [];
+  if (!showFreq || freqIds.length === 0) {
+    freqLi.remove(); // 条件不满足:整个区块摘除,不留空壳
+  } else {
+    const mount = freqLi.querySelector('ul.sb-freq-items')!;
+    mount.querySelectorAll('li.sb-freq-item').forEach((n) => n.remove());
+    for (const id of freqIds) {
+      const c = convs.get(id)!;
+      const item = document.createElement('li');
+      item.className = 'sb-freq-item';
+      item.dataset.cid = id;
+      item.innerHTML = `<span class="dot ${dotState(c, id)}"></span><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>`;
+      item.onclick = () => {
+        hideConvTip();
+        if (selectedId === id) return;
+        document.querySelectorAll('#conv-list li.active').forEach((el) => el.classList.remove('active'));
+        item.classList.add('active');
+        selectedId = id;
+        showChat();
+        renderSidebar(); // 重排主列表 active 态 + 刷新常用区(排除新当前频道)
+      };
+      mount.appendChild(item);
+    }
+    ul.prepend(freqLi);
+  }
   // 清理:本帧未渲染但仍挂在 DOM 上的任务 li(被删会话/cwd 换组后旧组残留)与消失的项目组。
   taskPool.forEach((li, cid) => { if (!renderedCids.has(cid)) li.remove(); });
   projPool.forEach((li) => li.remove());
@@ -1681,7 +1766,11 @@ async function deleteConv(id: string) {
   const name = c.customTitle || c.firstPrompt?.slice(0, 40) || c.turns[0]?.prompt?.slice(0, 40) || tr('prompt.deleteFallback');
   // v3.6.3:原生 window.confirm → 应用内确认弹窗(风格统一,Esc/backdrop 可取消)
   const ok = await showConfirmDialog(tr('prompt.delTitle'), tr('prompt.deleteConfirm', { name }), { okLabel: tr('prompt.delOk') });
-  if (ok) await api.deleteConversation(id);
+  if (ok) {
+    const m = loadFreqMap();
+    if (m[id]) { delete m[id]; localStorage.setItem(FREQ_KEY, JSON.stringify(m)); } // 常用区同步清,防死条目
+    await api.deleteConversation(id);
+  }
 }
 
 // ---------- main pane ----------
@@ -7480,6 +7569,11 @@ async function showSettings() {
     applyFontScale(ns.fontScale ?? 100);
     applyCompactMeta(ns.compactMeta === true);
     applyI18nDOM();
+    // 家族行文案跟随语言(zh 用 familyLabelZh,其余用 familyLabel)
+    void api.getBrand().then((b) => {
+      const lbl = document.getElementById('sb-family-label');
+      if (lbl && b.familyUrl) lbl.textContent = (lang.startsWith('zh') ? (b.familyLabelZh || b.familyLabel) : (b.familyLabel || b.familyLabelZh)) || '';
+    }).catch(() => {});
     renderSidebar();
     renderMain();
     showSettings(); // 重开设置面板,让所有 label/option 跟随新语言
@@ -10758,6 +10852,7 @@ function showChat() {
   // 草稿跟随:切频道前保存旧频道草稿。所有切换路径(town/搜索/右键/侧栏)都经过 showChat。
   // Draft follows conversation: every switch path goes through showChat.
   if (draftPrevId !== selectedId) {
+    trackConvOpen(selectedId); // 常用度埋点:真实切换才计数(reload 等同 id 重渲不进这里)
     saveDraft(draftPrevId);
     restoreDraft(selectedId);
     // 切频道总是跳到最新消息底部(不做滚动位置记忆)。

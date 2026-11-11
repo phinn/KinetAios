@@ -32,6 +32,10 @@
 - **Decision card rendering collapse** — the global `input{width:100%}` hit the radio, filling the whole row and crushing the label into an 11px vertical sliver with invisible text and 170px row height; radios are exempted back to `width:auto` inline layout; dead rule blocks that didn't match the real DOM were removed
 - **Decision card lingering after timeout/abort, locking focus** — after the main side released the resolver on the 10-minute timeout or an abort, the renderer card stayed on screen holding focus (trapFocus) and further submits did nothing; a new `ask-dismiss` channel closes the card in sync, opening a new card auto-releases the old one, matched precisely by `activeAskId` to avoid closing the wrong card
 
+*KinetAios 是 [Kinet 家族](https://phinn.github.io/kinetapp/index.html)的一员 —— 22 个应用,全部在架。*
+
+*KinetAios is part of the [Kinet family](https://phinn.github.io/kinetapp/index.html) — 22 apps, all live.*
+
 ---
 
 **Full Changelog**: https://github.com/phinn/KinetAios/compare/v4.1.0...v4.2.0
