@@ -343,6 +343,32 @@ export function register(): void {
         return { ok: true, codingPlan: true, level, tiers };
       }
 
+      // ── MiniMax 订阅 Token Plan:解析 model_remains[] → codingPlan tiers(UI 复用智谱渲染) ──
+      // 返回结构(2026-11-14 真机抓包):model_remains[] 每项含 5h 窗口 + weekly 窗口的剩余百分比。
+      // 坑:字段是「剩余」口径,智谱 percentage 是「已用」口径,入 UI 前取反;时间戳毫秒。
+      if (bal.provider === 'minimax-plan') {
+        // 业务码坑:无效/过期 JWT 时 HTTP 恒 200,错误藏在 base_resp.status_code(如 1004)
+        const bresp = j?.base_resp;
+        if (bresp && Number(bresp.status_code) !== 0) {
+          return { ok: false, provider: bal.provider, message: `MiniMax 业务错误 ${bresp.status_code}: ${bresp.status_msg ?? 'unknown'}` };
+        }
+        const remains = j?.model_remains;
+        if (!Array.isArray(remains) || remains.length === 0) {
+          return { ok: false, provider: bal.provider, message: '接口返回无 model_remains 数据' };
+        }
+        const m = remains[0]; // 配额在模型间共享,取第一项
+        const tiers: Array<{ window: string; pct: number; reset?: string }> = [];
+        const ivPct = Number(m?.current_interval_remaining_percent);
+        const wkPct = Number(m?.current_weekly_remaining_percent);
+        if (Number.isFinite(ivPct)) {
+          tiers.push({ window: '5h', pct: Math.max(0, Math.min(100, 100 - ivPct)), reset: m?.end_time ? String(m.end_time) : undefined });
+        }
+        if (Number.isFinite(wkPct)) {
+          tiers.push({ window: 'weekly', pct: Math.max(0, Math.min(100, 100 - wkPct)), reset: m?.weekly_end_time ? String(m.weekly_end_time) : undefined });
+        }
+        return { ok: true, codingPlan: true, tiers };
+      }
+
       // ── 标准余额接口(MiniMax / 智谱开放 / 自定义):data?.{balance,left,gift} 双兜底 ──
       const data = (j as any)?.data ?? j ?? {};
       return {

@@ -265,6 +265,17 @@ export function balanceSnapshot(profileId?: string | null): BalanceSnapshot {
     const host = baseURL.toLowerCase().includes('api.minimax.chat')
       ? 'https://api.minimaxi.com'
       : `https://${new URL(baseURL).host}`;
+    // 订阅 Token Plan(JWT key,eyJ... 开头)→ /v1/token_plan/remains:5h/weekly 窗口用量,语义同智谱 Coding Plan tiers
+    // 按量付费(sk-api- 开头)→ /v1/account/balance:金额余额
+    // 2026-11-14 实测:JWT key 打 /account/balance 返回 401/403,必须按 key 形态分流
+    if (/^ey/i.test(mainKey.trim())) {
+      return {
+        url: `${host}/v1/token_plan/remains`,
+        apiKey: mainKey,
+        authScheme: 'bearer',
+        provider: 'minimax-plan',
+      };
+    }
     return {
       url: `${host}/v1/account/balance`,
       apiKey: mainKey,
