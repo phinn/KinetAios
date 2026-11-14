@@ -5303,7 +5303,7 @@ function paletteSyncSel(): void {
 // 项目/频道多了之后侧栏找会话的第二条路:全量会话直达,不用先滚到搜索框。
 // 三路命中合并:①标题/cwd 前缀→包含打分(内存,零延迟);②FTS 正文命中(防抖 250ms 异步)。
 // 命中正文的结果跳会话后自动打开会话内搜索并带入关键词,直达上下文。
-type JumpItem = { cid: string; title: string; proj: string; ts: number; score: number; via: 'title' | 'body'; snippet?: string };
+type JumpItem = { cid: string; title: string; proj: string; ts: number; score: number; via: 'title' | 'body'; snippet?: string; group?: 'pin' | 'freq' | 'recent' | '' };
 let jumpSel = 0;
 let jumpFiltered: JumpItem[] = [];
 let jumpFtsSeq = 0;          // 防竞态:旧 FTS 响应不得覆盖新结果
@@ -5334,7 +5334,19 @@ function renderJumpList(): void {
   const list = document.getElementById('jump-list')!;
   jumpSel = Math.min(jumpSel, Math.max(0, jumpFiltered.length - 1));
   list.innerHTML = '';
+  // 空查询三段式:插分组头行(不可选中、不可点击)。有查询词时平铺不打断扫视。
+  // / Empty-query mode inserts non-interactive group headers between sections.
+  const groupKey = (g: JumpItem['group']): string => g === 'pin' ? tr('jump.grpPinned') : g === 'freq' ? tr('jump.grpFreq') : '';
+  let lastGroup: string | undefined = undefined;
   jumpFiltered.forEach((it, i) => {
+    if (!qlJump() && it.group && it.group !== lastGroup) {
+      lastGroup = it.group;
+      const head = document.createElement('div');
+      head.className = 'jump-grp-head';
+      const label = it.group === 'recent' ? tr('jump.grpRecent') : groupKey(it.group);
+      head.textContent = it.group === 'pin' ? '📌 ' + label : it.group === 'freq' ? '🔥 ' + label : label;
+      list.appendChild(head);
+    }
     const row = document.createElement('div');
     row.className = 'palette-row jump-row' + (i === jumpSel ? ' sel' : '');
     const label = document.createElement('span');
@@ -5375,17 +5387,33 @@ function jumpFilter(q: string): void {
   const ql = q.trim().toLowerCase();
   const items: JumpItem[] = [];
   if (!ql) {
-    // 空查询 = 最近会话直达(同侧栏 order,即最近活动序)
-    for (const id of order.slice(0, 20)) {
+    // 空查询 = 三段式直达:📌置顶 → 🔥常用(frecency top) → 最近。
+    // 置顶/常用来自侧栏同一套数据源(pinState/frequentChats),口径一致不分裂。
+    // / Empty query = three sections: pinned → frequent → recent, same sources as sidebar.
+    const seen = new Set<string>();
+    const pick = (id: string, group: JumpItem['group']): void => {
+      if (seen.has(id)) return;
       const c = convs.get(id);
-      if (!c) continue;
-      items.push({ cid: id, title: convTitle(c), proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: 0, via: 'title' });
-    }
+      if (!c) return;
+      seen.add(id);
+      items.push({ cid: id, title: convTitle(c), proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: 0, via: 'title', group });
+    };
+    for (const id of order) { const c = convs.get(id); if (c?.pinned) pick(id, 'pin'); }
+    for (const [id, f] of Object.entries(loadFreqMap())) if (convs.has(id)) pick(id, 'freq');
+    for (const id of order.slice(0, 20)) pick(id, 'recent');
   } else {
     for (const [id, c] of convs) {
       const title = convTitle(c);
-      const s = jumpScore(ql, title, projName(c.cwd || ''));
-      if (s > 0) items.push({ cid: id, title, proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: s, via: 'title' });
+      const s0 = jumpScore(ql, title, projName(c.cwd || ''));
+      if (s0 <= 0) continue;
+      // 使用信号加权:置顶 +3,常用(frecency) +2·min(n,5)/5 —— 高频频道打错字也有兜底命中
+      // / Usage signals: pinned +3, frequent +2·min(n,5)/5 — typos still land on hot channels
+      let s = s0;
+      const cPinned = (c as Conversation & { pinned?: boolean }).pinned;
+      if (cPinned) s += 3;
+      const frec = loadFreqMap()[id];
+      if (frec) s += 2 * Math.min(frec.n, 5) / 5;
+      items.push({ cid: id, title, proj: projName(c.cwd || ''), ts: c.updatedAt ?? c.createdAt, score: s, via: 'title' });
     }
     items.sort((a, b) => (b.score - a.score) || ((b.ts) - (a.ts)));
   }
@@ -5394,6 +5422,8 @@ function jumpFilter(q: string): void {
 }
 
 /** FTS 正文命中并入面板(仅补不在标题结果里的会话;seq 防旧响应竞态) */
+function qlJump(): string { return (document.getElementById('jump-input') as HTMLInputElement | null)?.value.trim() || ''; }
+
 function mergeJumpFts(q: string, seq: number, rows: Array<{ role: string; content: string; convId: string | null; convTitle: string | null }>): void {
   if (seq !== jumpFtsSeq || !q.trim()) return;
   const have = new Set(jumpFiltered.map((x) => x.cid));
