@@ -31,7 +31,9 @@
 
 | 仓库 | PR | 投递 | 备注 |
 |---|---|---|---|
-| steven2358/awesome-generative-ai | [#1400](https://github.com/steven2358/awesome-generative-ai/pull/1400) | 2026-09-19 | 30d ~2 merge 低速;0 评论。季度盘点 |
+| [steven2358/awesome-generative-ai](https://github.com/steven2358/awesome-generative-ai) | [#1400](https://github.com/steven2358/awesome-generative-ai/pull/1400) | 2026-09-19 | 30d ~2 merge 低速;0 评论。季度盘点 |
+| 目录站 There's an AI for That | — | — | **2026-11-14 放弃**:实测 `/submit/` 302→`/launch/` 付费页($49 起 Stripe),免费收录通道已关停;备料档案留在 kinetapp/marketing/ |
+| 目录站 AlternativeTo | — | — | **下一步**(免费,用户手动):CF 挡自动化,备料在 KinetAiosWin `PROMOTION_ALTERNATIVE.md` |
 | 0PandaDEV/awesome-windows | [#299](https://github.com/0PandaDEV/awesome-windows/pull/299) | 2026-09-17 | unstable(上游自身 CI),30d 仅 1 merge。季度盘点 |
 | deepseek-ai/awesome-deepseek-integration | [#739](https://github.com/deepseek-ai/awesome-deepseek-integration/pull/739) | 2026-09-18 | 官方仓五语条目+docs 页,0 回复。季度盘点 |
 | deepseek-ai/awesome-deepseek-agent | [#414](https://github.com/deepseek-ai/awesome-deepseek-agent/pull/414) | 2026-09-03 | 最老的 open,0 回复。季度盘点 |
