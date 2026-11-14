@@ -491,6 +491,10 @@
         </div>
         <details style="margin-top:10px">
           <summary style="cursor:pointer;color:var(--text-dim);font-size:0.846rem" data-i18n="settings.profile.balanceHeader">余额查询配置(可选)</summary>
+          <div class="field" style="margin-top:8px"><label data-i18n="settings.profile.balanceMode">余额接口</label><select id="pe-balance-mode">
+            <option value="auto" data-i18n="settings.profile.balanceModeAuto">自动推断(按 Base URL)</option>
+            <option value="minimax-plan" data-i18n="settings.profile.balanceModeMmPlan">MiniMax Token Plan(订阅窗口用量)</option>
+          </select></div>
           <div class="field" style="margin-top:8px"><label data-i18n="settings.profile.balanceUrl">余额 URL</label><input id="pe-balance-url" /></div>
           <div class="field"><label data-i18n="settings.profile.balanceKey">余额 Key</label><div class="key-eye-wrap"><input id="pe-balance-key" type="password" /><span class="key-eye" data-target="pe-balance-key">👁</span></div></div>
           <div class="field"><label data-i18n="settings.profile.balanceAuth">Auth 方式</label><select id="pe-balance-auth">

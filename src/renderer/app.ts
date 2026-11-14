@@ -7720,6 +7720,7 @@ async function showSettings() {
     reasonSel.innerHTML = REASONS_MODAL.map((r) => `<option value="${r}" ${r === (pf?.reasoning ?? 'medium') ? 'selected' : ''}>${r}</option>`).join('');
     (document.getElementById('pe-pin') as HTMLInputElement).value = pf?.priceInPerMTok ?? '';
     (document.getElementById('pe-pout') as HTMLInputElement).value = pf?.priceOutPerMTok ?? '';
+    (document.getElementById('pe-balance-mode') as HTMLSelectElement).value = pf?.balanceMode ?? 'auto';
     (document.getElementById('pe-balance-url') as HTMLInputElement).value = pf?.balanceUrl ?? '';
     (document.getElementById('pe-balance-key') as HTMLInputElement).value = pf?.balanceApiKey ?? '';
     (document.getElementById('pe-balance-auth') as HTMLSelectElement).value = pf?.balanceAuthScheme ?? 'bearer';
@@ -7728,7 +7729,7 @@ async function showSettings() {
     modal.classList.add('show');
     (document.getElementById('pe-name') as HTMLInputElement).focus();
   }
-  function readProfileModal(): { name: string; apiKey: string; baseURL: string; model: string; apiProtocol: 'openai' | 'anthropic'; reasoning: AppSettings['reasoning']; priceInPerMTok: number; priceOutPerMTok: number; balanceUrl: string; balanceApiKey: string; balanceAuthScheme: 'bearer' | 'raw' | 'x-api-key' } {
+  function readProfileModal(): { name: string; apiKey: string; baseURL: string; model: string; apiProtocol: 'openai' | 'anthropic'; reasoning: AppSettings['reasoning']; priceInPerMTok: number; priceOutPerMTok: number; balanceMode: 'auto' | 'minimax-plan'; balanceUrl: string; balanceApiKey: string; balanceAuthScheme: 'bearer' | 'raw' | 'x-api-key' } {
     return {
       name: (document.getElementById('pe-name') as HTMLInputElement).value.trim(),
       apiKey: (document.getElementById('pe-key') as HTMLInputElement).value.trim(),
@@ -7738,6 +7739,7 @@ async function showSettings() {
       reasoning: (document.getElementById('pe-reason') as HTMLSelectElement).value as AppSettings['reasoning'],
       priceInPerMTok: Number((document.getElementById('pe-pin') as HTMLInputElement).value) || 0,
       priceOutPerMTok: Number((document.getElementById('pe-pout') as HTMLInputElement).value) || 0,
+      balanceMode: (document.getElementById('pe-balance-mode') as HTMLSelectElement).value as 'auto' | 'minimax-plan',
       balanceUrl: (document.getElementById('pe-balance-url') as HTMLInputElement).value.trim(),
       balanceApiKey: (document.getElementById('pe-balance-key') as HTMLInputElement).value.trim(),
       balanceAuthScheme: (document.getElementById('pe-balance-auth') as HTMLSelectElement).value as 'bearer' | 'raw' | 'x-api-key',

@@ -836,6 +836,9 @@ const ZH_CN: Dict = {
   'settings.profile.emptyHint2': '暂无配置档。填好上方 API 配置后,在底部输入名称点「添加」。',
   // 余额独立配置(profile 级,覆盖默认按 baseURL 推断)
   'settings.profile.balanceHeader': '余额查询配置(可选)',
+  'settings.profile.balanceMode': '余额接口',
+  'settings.profile.balanceModeAuto': '自动推断(按 Base URL)',
+  'settings.profile.balanceModeMmPlan': 'MiniMax Token Plan(订阅窗口用量)',
   'settings.profile.balanceHint': '留空 = 按 baseURL 自动推断(智谱 / 智谱 Coding Plan / MiniMax)。当余额接口和 chat 接口不在同 host,或需要单独 admin key 时,在这里填。',
   'settings.profile.balanceUrl': '余额 URL',
   'settings.profile.balanceUrlPh': '如 https://api.minimaxi.com/v1/account/balance(留空 = 自动)',
@@ -2284,6 +2287,9 @@ const EN: Dict = {
   'settings.profile.emptyHint2': 'No profiles yet. Configure the API above, enter a name, and click "Add".',
   // Balance query config (profile-level, overrides default baseURL inference)
   'settings.profile.balanceHeader': 'Balance query (optional)',
+  'settings.profile.balanceMode': 'Balance endpoint',
+  'settings.profile.balanceModeAuto': 'Auto (by Base URL)',
+  'settings.profile.balanceModeMmPlan': 'MiniMax Token Plan (subscription usage)',
   'settings.profile.balanceHint': 'Leave empty = auto-infer from baseURL (Zhipu / Zhipu Coding Plan / MiniMax). Fill in when the balance endpoint differs from chat or requires a separate admin key.',
   'settings.profile.balanceUrl': 'Balance URL',
   'settings.profile.balanceUrlPh': 'e.g. https://api.minimaxi.com/v1/account/balance (empty = auto)',
@@ -3722,6 +3728,9 @@ const ZH_TW: Dict = {
   'settings.profile.emptyHint2': '暫無設定檔。填好上方 API 設定後，在底部輸入名稱點「新增」。',
   // 餘額獨立設定(profile 級,覆蓋預設按 baseURL 推斷)
   'settings.profile.balanceHeader': '餘額查詢設定（選填）',
+  'settings.profile.balanceMode': '餘額介面',
+  'settings.profile.balanceModeAuto': '自動推斷（按 Base URL）',
+  'settings.profile.balanceModeMmPlan': 'MiniMax Token Plan（訂閱視窗用量）',
   'settings.profile.balanceHint': '留空 = 按 baseURL 自動推斷（智譜 / 智譜 Coding Plan / MiniMax）。當餘額介面與 chat 介面不在同 host，或需要單獨 admin key 時在此填寫。',
   'settings.profile.balanceUrl': '餘額 URL',
   'settings.profile.balanceUrlPh': '如 https://api.minimaxi.com/v1/account/balance（留空 = 自動）',
@@ -5184,6 +5193,9 @@ const JA: Dict = {
   'settings.profile.emptyHint2': 'プロファイルなし。上の API 設定を入力し、名前を入れて「追加」をクリック',
   // 残高独立設定（プロフィールレベル、baseURL 自動推測を上書き）
   'settings.profile.balanceHeader': '残高照会設定（任意）',
+  'settings.profile.balanceMode': '残高エンドポイント',
+  'settings.profile.balanceModeAuto': '自動判定（Base URL に従う）',
+  'settings.profile.balanceModeMmPlan': 'MiniMax Token Plan（サブスク使用量）',
   'settings.profile.balanceHint': '空欄 = baseURL から自動推測（智譜 / 智譜 Coding Plan / MiniMax）。残高エンドポイントがチャットと異なる、または別 admin key が必要な場合はここで設定。',
   'settings.profile.balanceUrl': '残高 URL',
   'settings.profile.balanceUrlPh': '例: https://api.minimaxi.com/v1/account/balance（空欄 = 自動）',

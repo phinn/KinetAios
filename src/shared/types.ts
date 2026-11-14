@@ -269,6 +269,7 @@ export type ModelProfile = {
   balanceUrl: string;                  // '' = 按 baseURL 自动推断
   balanceApiKey: string;               // '' = 复用主 apiKey
   balanceAuthScheme: 'bearer' | 'raw' | 'x-api-key'; // Auth 头格式:'bearer' = "Bearer <key>";'raw' = "<key>"(裸 token,智谱 quota 模式);'x-api-key' = 走 x-api-key header
+  balanceMode?: 'auto' | 'minimax-plan'; // 余额接口模式:'auto' = 按 baseURL/key 自动推断;'minimax-plan' = 强制走 MiniMax 订阅 /v1/token_plan/remains(5h/weekly 窗口)。2026-11-15:MiniMax 订阅 key 也是 sk- 形态,无法按 key 前缀区分订阅/按量,必须显式选。
 };
 
 /** 余额查询快照:profile 显式配置 > baseURL 自动推断。 */
