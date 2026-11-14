@@ -977,12 +977,16 @@ export function searchMemoryTriples(q: string, limit = 10, restrictConvId?: stri
 // = 6000 万对 × 重建 → 主进程分钟级纯 JS 忙转,UI 卡死(每 5 次 done 自动触发一次)。
 // 修法:① 每条记忆只归一化/分词一次;② Jaccard ≤ min/max,尺寸比预过滤跳过绝大多数对;
 // ③ async + 定期 setImmediate 让事件循环喘气,跑着的时候 UI 不冻结。
-// / Was O(n²) pairs × per-pair re-tokenize → minutes-long main-thread stall. Precompute
-// tokens once, size-ratio prefilter (Jaccard ≤ min/max), yield to the event loop.
-export async function dedupMemories(threshold = 0.65): Promise<number> {
+// ⚠️ 二次事故(2026-11-11):预过滤只降了单对成本,平方复杂度没变——记忆涨到 4.5 万条
+// (fact 3.6 万)后,~7.8 亿对在每次 idle reflection 烧回分钟级满负荷 CPU(实测 83% × 2min,
+// 主进程 IPC 排队 = 输入框顿挫)。修法:cap 只取最新 N 条参与配对(cap²/2 ≈ 450 万对,
+// 亚秒级);cap 外的老记忆交给 decayMemories / pruneLowImportanceMemories 自然 GC。
+// / 2nd incident (2026-11-11): prefilter cut per-pair cost, not the quadratic — at 45K
+// memories the full scan burned ~2min @83% CPU again. Cap the working set to newest N.
+export async function dedupMemories(threshold = 0.65, cap = 3000): Promise<number> {
   // 2026-09 修复(保留新值):修前 ASC 排序 → 相似对删后者留最旧,用户改偏好后旧记忆永远存活。
   // 改 DESC(最新在前):i 是更新者,相似对删 b(更旧)→ 记忆系统偏向最新信息。
-  const all = db.prepare('SELECT id, content, created_at FROM memories WHERE kind IS NULL OR kind != \'rule\' ORDER BY created_at DESC;').all() as Array<{
+  const all = db.prepare(`SELECT id, content, created_at FROM memories WHERE kind IS NULL OR kind != 'rule' ORDER BY created_at DESC LIMIT ?;`).all(cap) as Array<{
     id: string; content: string; created_at: number;
   }>;
 
