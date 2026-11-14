@@ -56,6 +56,9 @@ export function initStore(): void {
       data TEXT,
       ts REAL NOT NULL);
     CREATE INDEX IF NOT EXISTS idx_events_conv ON conv_events(conv_id, seq);
+    -- pruneOldConvEvents 按 ts 范围 DELETE(90 天保留):无此索引时每 5 次 done 全表扫 60 万+行。
+    -- Range index for the 90-day prune DELETE (else a full-table scan every 5th done).
+    CREATE INDEX IF NOT EXISTS idx_events_ts ON conv_events(ts);
     CREATE TABLE IF NOT EXISTS memories(id TEXT PRIMARY KEY, content TEXT, created_at REAL);
     CREATE TABLE IF NOT EXISTS memory_triples(
       id TEXT PRIMARY KEY, subject TEXT, predicate TEXT, object TEXT,
