@@ -444,7 +444,7 @@ function pageHtml(token: string, L: Record<string, string>): string {
   .btn:disabled { opacity: .5; }
   .composer { position: fixed; bottom: 0; left: 0; right: 0; background: #161b22; border-top: 1px solid #21262d; padding: 10px 14px; display: none; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .composer.show { display: flex; }
-  .composer textarea { flex: 1; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; font: inherit; resize: none; height: 44px; }
+  .composer textarea { flex: 1; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; font: inherit; resize: none; min-height: 44px; }
   .empty { text-align: center; color: #8b949e; padding: 48px 0; white-space: pre-line; }
   .sec-title { color: #8b949e; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 12px 4px 6px; }
   .msg { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
@@ -479,6 +479,8 @@ let searchMode = false;
 let searchTimer = null;
 let timer = null;
 let pollFast = false;  // 发送后 12s 内用 1.5s 快节拍,之后回落(接住 ack/首 token)
+let followBottom = true; // 详情页滚动跟随:发消息/新进入=true,用户上滑阅读=false
+let sending = false;   // 发送在途标记(防连点/防 Enter 重发)
 const collapsed = new Set(); // 折叠的项目组
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
@@ -528,7 +530,7 @@ function renderProjects() {
       const badge = c.status === 'running'
         ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>'
         : '<span class="badge">' + esc(c.engine) + '</span>';
-      html += '<div class="conv" data-id="' + c.id + '">' +
+      html += '<div class="conv" data-id="' + esc(c.id) + '">' +
         '<div class="row1"><div class="title">' + esc(c.title) + '</div>' + badge + '</div>' +
         (c.preview ? '<div class="preview">' + esc(c.preview) + '</div>' : '') +
         '<div class="meta">' + c.turnCount + ' · ' + fmtTs(c.updatedAt) + '</div>' +
@@ -571,6 +573,7 @@ async function openConv(id) {
   document.getElementById('composer').classList.add('show');
   const el = document.getElementById('list');
   el.innerHTML = '<div class="empty"><span class="spin"></span>' + esc(L.loadTurns) + '</div>';
+  el.dataset.dkey = ''; el.dataset.dn = '-1'; // 强制下次全量(切会话)
   await refreshDetail();
   window.scrollTo(0, document.body.scrollHeight);
 }
@@ -584,6 +587,10 @@ async function refreshDetail() {
   } catch (e) { /* keep */ }
 }
 
+// ── 详情页渐进更新(替代无条件 innerHTML 全量重建)──
+// 痛点:轮询 2.5s 全量重绘 → 答案流式生成时页面跳动/选中文本被清/动画重置。
+// 策略:turn 数量没变 → 只重绘「最后一条」(流式中的那条);数量变了才全量重建。
+// 滚动:仅当用户本来就在底部(或刚发消息)才自动跟随到底,阅读中途不拽人。
 function renderDetail(turns, c) {
   if (!openId) return;
   const el = document.getElementById('list');
@@ -591,27 +598,73 @@ function renderDetail(turns, c) {
     '<span class="badge" title="' + esc(c.cwd || '') + '">' + esc(c.project || '') + '</span>' +
     (c.status === 'running' ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>' +
       '<button class="btn" data-cancel="1">' + esc(L.cancel) + '</button>' : '') + '</div></div>' : '';
-  if (!turns.length) { el.innerHTML = head + '<div class="empty">' + esc(L.noTurns) + '</div>'; return; }
-  el.innerHTML = head + turns.map((t) =>
-    '<div class="turn">' +
-      '<div class="q">🧑 ' + esc(t.prompt) + '</div>' +
-      stepsHtml(t.steps) +
-      (t.answer ? '<div class="a' + (t.done ? '' : ' running') + '">' + esc(t.answer) + '</div>' : (t.done ? '' : '<div class="a running"></div>')) +
-      (t.error ? '<div class="err">⚠ ' + esc(t.error) + '</div>' : '') +
-    '</div>'
-  ).join('');
-  const stop = el.querySelector('[data-cancel]');
-  if (stop) stop.onclick = () => api('/api/cancel', { convId: openId }).then(() => refresh());
+  const atBottom = window.innerHeight + window.scrollY >= document.body.offsetHeight - 80;
+  // 渐进路径:同一会话、turn 数量一致 → 只更新最后一条 turn 的 DOM(保滚动/选中/动画)。
+  const key = 'd:' + openId;
+  const last = turns[turns.length - 1];
+  if (el.dataset.dkey === key && el.dataset.dn == String(turns.length) && el.querySelector('.turn')) {
+    const nodes = el.querySelectorAll('.turn');
+    const lastNode = nodes[nodes.length - 1];
+    if (lastNode) {
+      // 记录展开状态(用户点开的 .step.open 索引),替换后恢复——不然 2.5s 后又被截断收起。
+      const openIdx = Array.from(lastNode.querySelectorAll('.step.open')).map((n) => Array.from(lastNode.querySelectorAll('.step')).indexOf(n));
+      const tmp = document.createElement('div');
+      tmp.innerHTML = turnHtml(last);
+      const fresh = tmp.firstElementChild;
+      if (fresh && lastNode.innerHTML !== fresh.innerHTML) {
+        if (openIdx.length) fresh.querySelectorAll('.step').forEach((n, i) => { if (openIdx.includes(i)) n.classList.add('open'); });
+        lastNode.replaceWith(fresh);
+      }
+    }
+    syncCancelBtn();
+    if (atBottom || followBottom) window.scrollTo(0, document.body.scrollHeight);
+    return;
+  }
+  // 全量路径:首次进入 / 切会话 / turn 增减。
+  followBottom = true; // 新进入默认跟随
+  if (!turns.length) { el.dataset.dkey = key; el.dataset.dn = '0'; el.innerHTML = head + '<div class="empty">' + esc(L.noTurns) + '</div>'; syncCancelBtn(); return; }
+  el.dataset.dkey = key; el.dataset.dn = String(turns.length);
+  el.innerHTML = head + turns.map(turnHtml).join('');
+  syncCancelBtn();
+  if (atBottom || followBottom) window.scrollTo(0, document.body.scrollHeight);
+}
+function turnHtml(t) {
+  return '<div class="turn">' +
+    '<div class="q">🧑 ' + esc(t.prompt) + '</div>' +
+    stepsHtml(t.steps) +
+    (t.answer ? '<div class="a' + (t.done ? '' : ' running') + '">' + esc(t.answer) + '</div>' : (t.done ? '' : '<div class="a running"></div>')) +
+    (t.error ? '<div class="err">⚠ ' + esc(t.error) + '</div>' : '') +
+  '</div>';
+}
+// 停止按钮只挂在 head 里;渐进路径下 head 不重建,单独同步其显隐。
+function syncCancelBtn() {
+  const el = document.getElementById('list');
+  const c = convs.find((x) => x.id === openId);
+  const want = !!(c && c.status === 'running');
+  let btn = el.querySelector('[data-cancel]');
+  if (want && !btn) {
+    // head 是第一个 .conv 节点;往其 row1 里补按钮。
+    const row1 = el.querySelector('.conv .row1');
+    if (row1) {
+      btn = document.createElement('button');
+      btn.className = 'btn'; btn.dataset.cancel = '1'; btn.textContent = L.cancel;
+      row1.appendChild(btn);
+    }
+  } else if (!want && btn) btn.remove();
+  btn = el.querySelector('[data-cancel]');
+  if (btn) btn.onclick = () => api('/api/cancel', { convId: openId }).then(() => refresh());
 }
 
-// 工具轨迹行:✓/⏳/✗ + 工具名 + 结果摘要(等宽小字)。无轨迹返回空串。
+// 工具轨迹行:✓/⏳/✗ + 工具名 + 结果摘要(等宽小字)。
+// 结果超 ~90 字时截断,点按行展开/收起完整结果(手机上长 JSON/日志靠它看全)。
 function stepsHtml(steps) {
   if (!steps || !steps.length) return '';
   return '<div class="steps">' + steps.map((s) => {
     const cls = s.pending ? 'run' : (s.outcome === 'error' ? 'bad' : 'ok');
     const ms = s.durationMs ? '<span class="ms">' + (s.durationMs > 999 ? (s.durationMs / 1000).toFixed(1) + 's' : s.durationMs + 'ms') + '</span>' : '';
-    return '<div class="step ' + cls + '"><b>' + esc(s.name) + '</b>' + ms +
-      (s.result ? '<br>' + esc(s.result) : '') + '</div>';
+    let body = '';
+    if (s.result) body = '<br><span class="sr">' + esc(s.result) + '</span>';
+    return '<div class="step ' + cls + '"><b>' + esc(s.name) + '</b>' + ms + body + '</div>';
   }).join('') + '</div>';
 }
 
@@ -683,7 +736,6 @@ document.getElementById('input').addEventListener('keydown', (e) => {
 // 乐观气泡:发送瞬间在详情底部插一条 prompt turn(done=false),
 // 下一次 refreshDetail 会用真实 turn 覆盖 innerHTML —— 若主进程把消息 park 进
 // goal 修正队列,真实 ack turn 会接替乐观气泡,语义自然收敛。
-let optTurn = null;
 function renderOptimistic(text) {
   if (!openId) return;
   const el = document.getElementById('list');
@@ -701,14 +753,18 @@ function clearOptimistic() { const n = document.getElementById('opt'); if (n) n.
 async function doSend() {
   const inp = document.getElementById('input');
   const text = inp.value.trim();
-  if (!text) return;
+  if (!text || sending) return; // sending:防连点重复发(重复 /api/send 会让 goal 会话 park 两条修正)
   if (!openId) {
     const j = await api('/api/new', {}).catch(() => null);
     if (!j) return;
     openId = j.convId;
     document.getElementById('composer').classList.add('show');
   }
+  sending = true;
+  const btn = document.getElementById('send');
+  btn.disabled = true;
   inp.value = '';
+  followBottom = true;
   renderOptimistic(text);
   try {
     await api('/api/send', { convId: openId, text });
@@ -722,6 +778,8 @@ async function doSend() {
     inp.value = text;
     alert('error: ' + e.message);
   }
+  sending = false;
+  btn.disabled = false;
   await refresh();
 }
 
