@@ -428,6 +428,7 @@ function pageHtml(token: string, L: Record<string, string>): string {
   .turn .a { color: #e6edf3; font-size: 14px; white-space: pre-wrap; word-break: break-word; }
   .steps { margin: 2px 0 6px; display: flex; flex-direction: column; gap: 3px; }
   .step { font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; color: #8b949e; background: #0d1117; border: 1px solid #21262d; border-radius: 7px; padding: 4px 8px; word-break: break-all; }
+  .step.foldable { cursor: pointer; }
   .step b { color: #a5b1bd; font-weight: 600; }
   .step .ms { color: #6e7681; margin-left: 6px; }
   .step.run { border-color: #1f4a7a; animation: pulse 1.2s ease-in-out infinite; }
@@ -440,11 +441,12 @@ function pageHtml(token: string, L: Record<string, string>): string {
   .turn .err { color: #f85149; font-size: 13px; margin-top: 4px; }
   @keyframes blink { 50% { opacity: 0; } }
   .btn { background: #21262d; color: #e6edf3; border: 1px solid #30363d; border-radius: 8px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+  .btn.stop { padding: 2px 10px; font-size: 11px; border-radius: 99px; flex: none; }
   .btn.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
   .btn:disabled { opacity: .5; }
   .composer { position: fixed; bottom: 0; left: 0; right: 0; background: #161b22; border-top: 1px solid #21262d; padding: 10px 14px; display: none; gap: 8px; padding-bottom: calc(10px + env(safe-area-inset-bottom)); }
   .composer.show { display: flex; }
-  .composer textarea { flex: 1; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; font: inherit; resize: none; min-height: 44px; }
+  .composer textarea { flex: 1; background: #0d1117; color: #e6edf3; border: 1px solid #30363d; border-radius: 10px; padding: 10px 12px; font: inherit; resize: none; min-height: 44px; max-height: 132px; line-height: 1.4; }
   .empty { text-align: center; color: #8b949e; padding: 48px 0; white-space: pre-line; }
   .sec-title { color: #8b949e; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; padding: 12px 4px 6px; }
   .msg { background: #161b22; border: 1px solid #21262d; border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; cursor: pointer; }
@@ -485,9 +487,18 @@ const collapsed = new Set(); // 折叠的项目组
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s == null ? '' : String(s); return d.innerHTML; }
 function fmtTs(ts) {
-  const d = new Date(ts);
-  const p = (n) => String(n).padStart(2, '0');
-  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+  // 相对时间优先(列表扫一眼分清「刚发生」还是「几天前」),超 7 天退回绝对日期。
+  const diff0 = Date.now() - ts;
+  let diff = diff0 < 0 ? 0 : diff0;
+  const m = Math.floor(diff / 60000);
+  if (m < 1) return 'now';
+  if (m < 60) return m + 'm';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h';
+  const d = Math.floor(h / 24);
+  if (d < 7) return d + 'd';
+  const t = new Date(ts);
+  return (t.getMonth() + 1) + '/' + t.getDate();
 }
 
 async function api(path, body) {
@@ -528,7 +539,8 @@ function renderProjects() {
       '</div><div class="conv-list">';
     for (const c of list) {
       const badge = c.status === 'running'
-        ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>'
+        ? '<span class="badge running"><span class="spin"></span>' + esc(c.statusNote || L.running) + '</span>' +
+          '<button class="btn stop" data-stop="' + esc(c.id) + '">' + esc(L.cancel) + '</button>'
         : '<span class="badge">' + esc(c.engine) + '</span>';
       html += '<div class="conv" data-id="' + esc(c.id) + '">' +
         '<div class="row1"><div class="title">' + esc(c.title) + '</div>' + badge + '</div>' +
@@ -557,6 +569,13 @@ function renderProjects() {
         await refresh();
         openConv(j.convId);
       } catch (e) { alert('error: ' + e.message); }
+    };
+  });
+  el.querySelectorAll('[data-stop]').forEach((n) => {
+    // 列表卡上的「停止」:直接停,不进详情(事件冒泡会被 conv.onclick 打开,先挡)。
+    n.onclick = (ev) => {
+      ev.stopPropagation();
+      api('/api/cancel', { convId: n.dataset.stop }).then(() => refresh()).catch((e) => alert('error: ' + e.message));
     };
   });
   el.querySelectorAll('.conv').forEach((n) => {
@@ -663,8 +682,12 @@ function stepsHtml(steps) {
     const cls = s.pending ? 'run' : (s.outcome === 'error' ? 'bad' : 'ok');
     const ms = s.durationMs ? '<span class="ms">' + (s.durationMs > 999 ? (s.durationMs / 1000).toFixed(1) + 's' : s.durationMs + 'ms') + '</span>' : '';
     let body = '';
-    if (s.result) body = '<br><span class="sr">' + esc(s.result) + '</span>';
-    return '<div class="step ' + cls + '"><b>' + esc(s.name) + '</b>' + ms + body + '</div>';
+    if (s.result) {
+      const cut = s.result.length > 90;
+      body = '<br><span class="sr">' + esc(cut ? s.result.slice(0, 90) + '…' : s.result) + '</span>' +
+        (cut ? '<span class="sx" style="display:none">' + esc(s.result) + '</span>' : '');
+    }
+    return '<div class="step ' + cls + (s.result && s.result.length > 90 ? ' foldable' : '') + '"><b>' + esc(s.name) + '</b>' + ms + body + '</div>';
   }).join('') + '</div>';
 }
 
@@ -731,6 +754,20 @@ document.getElementById('input').addEventListener('keydown', (e) => {
   // 手机软键盘没有 Ctrl/Cmd:Enter 直发,换行靠 textarea 自带「换行」键之外的场景。
   // 桌面习惯(⌘+Enter)保留兼容;Shift+Enter 换行。
   if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); doSend(); }
+});
+// textarea 自适应高度:1-3 行随内容长高(上限 132px ≈ 6 行),清空回落。
+function autoGrow(ta) { ta.style.height = 'auto'; ta.style.height = Math.min(ta.scrollHeight, 132) + 'px'; }
+document.getElementById('input').addEventListener('input', () => autoGrow(document.getElementById('input')));
+
+// 工具轨迹行点按展开/收起(委托绑一次,增量替换 DOM 也无需重挂)。
+document.getElementById('list').addEventListener('click', (e) => {
+  const step = e.target.closest('.step.foldable');
+  if (!step) return;
+  const sr = step.querySelector('.sr'), sx = step.querySelector('.sx');
+  if (!sr || !sx) return;
+  const open = step.classList.toggle('open');
+  sr.style.display = open ? 'none' : '';
+  sx.style.display = open ? '' : 'none';
 });
 
 // 乐观气泡:发送瞬间在详情底部插一条 prompt turn(done=false),
