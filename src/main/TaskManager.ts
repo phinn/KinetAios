@@ -10,6 +10,7 @@ import { t } from '../shared/i18n';
 import { currentProvider, embed, GLMError, supervisorComplete } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
+import { distillSkill } from './skill-distill';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
 import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
@@ -1128,6 +1129,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       this.extractMemories(t, prompt, conv.id, signal).catch(() => {});
       // P2: 异步提取会话摘要(episodic memory),不阻塞主流程
       this.extractEpisodicMemory(conv, signal).catch(() => {});
+      // P0-2: 技能自沉淀 —— 异步判定+蒸馏成功任务为可复用 skill,失败静默(best-effort)
+      this.maybeDistillSkill(conv, prompt, t, signal).catch(() => {});
       // P3: 异步执行记忆 GC(idle reflection),每 5 次 done 触发一次
       this.doneCounter++;
       if (this.doneCounter % 5 === 0) {
@@ -1428,6 +1431,51 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   // 输出两部分:facts(原有,自由文本记忆)+ triples(Phase 4 新增,主谓宾三元组,Memory Graph 用)。
   // 同会话 extraction 串行化(防止并发提取产生重复 fact/triple)
   private extractionLocks = new Map<string, Promise<void>>();
+  /**
+   * P0-2 技能自沉淀:turn 成功完成后,LLM 判定是否值得蒸馏成可复用 skill。
+   * 复用记忆提取同款 provider 快照与 abort 链;静默失败(绝不影响主流程)。
+   * 设置开关 distillAutoEnabled(默认开);跨引擎失败路径(canceled/error)不蒸馏。
+   */
+  private async maybeDistillSkill(conv: Conversation, prompt: string, turn: Conversation['turns'][number], parentSignal: AbortSignal): Promise<void> {
+    const s = getSettings();
+    if (s.distillAutoEnabled === false) return;
+    if (!turn.answer || turn.answer.length < 200) return; // 短回答不值得蒸馏
+    // 工具摘要:折叠 TaskStep(name + 一句话参数/结果),防 prompt 膨胀
+    const steps = turn.steps ?? [];
+    if (steps.length < 3) return; // 纯问答/1-2 步小任务不蒸馏
+    const toolDigest = steps
+      .slice(0, 30)
+      .map((st) => `- ${st.name}: ${(st.args || '').slice(0, 120)} → ${(st.result || '').slice(0, 100).replace(/\n/g, ' ')}`)
+      .join('\n');
+    // 独立 AC 挂在父信号上:父取消则中止;本方法在 .catch(()=>{}) 异步链里,不阻塞收尾
+    const ac = new AbortController();
+    const onAbort = () => ac.abort();
+    parentSignal.addEventListener('abort', onAbort, { once: true });
+    try {
+      const r = await distillSkill({
+        userMessage: prompt,
+        assistantAnswer: turn.answer,
+        toolDigest,
+        llm: {
+          complete: async (sys, usr, sig) => {
+            const comp = await supervisorComplete(
+              [{ role: 'system', content: sys }, { role: 'user', content: usr }],
+              conv.profileId ?? null,
+              sig,
+            );
+            return comp.content;
+          },
+        },
+        signal: ac.signal,
+      });
+      if (r.distilled) {
+        this.emit.emitEvent(conv.id, { type: 'status', text: `✨ 已沉淀技能「${r.name}」→ ~/.kinetaios/skills/distilled/(下次同类任务 slash 菜单可用)` });
+      }
+    } finally {
+      parentSignal.removeEventListener('abort', onAbort);
+    }
+  }
+
   private async extractMemories(turn: Conversation['turns'][number], prompt: string, convId: string, parentSignal: AbortSignal): Promise<void> {
     if (!turn.answer || turn.answer.length <= 15) return;
     // 串行化:等同一会话的上一次 extraction 完成

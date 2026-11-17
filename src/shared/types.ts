@@ -372,6 +372,8 @@ export type AppSettings = {
   // ── 隐私闸(数据出网敏感检测)── 开启后 read_file/shell 结果在进入对话(→随 API 出网)
   // 前过敏感检测(密钥正则+高熵+敏感文件名),命中走 confirm 弹窗,用户放行才发。默认关。
   privacyGateEnabled: boolean;
+  /** P0-2 技能自沉淀:turn 成功后自动判定是否蒸馏成可复用 skill(默认开) */
+  distillAutoEnabled?: boolean;
   // ── Goal 监工模式(Supervisor ↔ Worker)── 替身画像当监工,逐轮验收 Worker 产物并
   // 提出新要求;配 failover 模型链支持过夜长跑(额度尽/5h 上限自动切下一个模型)。
   goalSupervisorEnabled: boolean;   // true = Supervisor 验收制(需 persona 非空);false = 旧自检模式
