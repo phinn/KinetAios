@@ -196,6 +196,12 @@ PR#6:github.com/indiedeveloper-org/awesome-indie-developers/pull/6,本地先跑 
 **PR 现状**:3 文件 diff 保持(+/63-0),已发 2 条作者评论说明根因与修复;等 Azure 动态装机验证(1-3h)。
 **旧 PR #463867 死因归档**:10-28 09:33 Validation-Shell-Execute 失败 → 10-28 10:01 修 installer → 10-28 10:47 Azure-Pipeline-Passed ✅ → 11-09 03:31 我删 4.0.3 文件 → Unexpected-File → 03:32 PR 被关闭。教训:修 PR 不删文件。
 
+### 2026-11-17 全量扫描(51 PR:external merged 3 + open 30 + closed 18)
+- **#1293 awesome-llm-apps 判死终局**:11-11 08:18 维护者亲口关闭,**scope 不合、非代码质量**("thin client for one desktop product, all agent logic lives inside KinetAios;entries need to teach a technique a reader can reuse"),且明言协议实现已对照我们 `src/main/mcp-server.ts` v4.2.0 源码核验吻合。#1286→#1293 两轮终判死,**11-22 盯防窗口提前销账,不再重投**(重投只会加深负面记录)。
+- **ACC #3473 勘误:是 issue 不是 PR**([Resource]: KinetAios,`resource-submission`+`validation-passed` 双标签,11-05 bot 验证后零动静),该仓收录走 Resource 提案机制,`pr_all.py` 的 PR search 扫不到,后续盘点需单独查。
+- winget #475205 仍 PASSED_WAITING_MODERATOR(head b37135f 未动,周一 09:00 cron 周检中);#14667 mcp-servers 纯等 merge;其余 open 沉默期一律不 follow。
+- 通路结论固化:51 个 PR 仅 3 个 external merged,站外收录无一带来可归因流量——与「站外冷渠道无流量,收录≠点击」教训一致,不再新投收录 PR。
+
 ### 2026-11-09 13:26 · 4.2.0 动态验证通过 ✅ 转入 moderator 人审
 - 本轮 head `b37135f4605f`(12:37 推送:三文件结构修复 + ManifestVersion 1.28.0 + ProductCode 恢复)→ 12:41 打 `New-Package` 启动 Azure 流水线 → **13:20:54 `Azure-Pipeline-Passed` + 13:20:55 `Validation-Completed`**,全程 44 分钟;label 事件时间线已核验,结果落在本轮 head(非旧残留)。GitHub Actions 侧全部 workflow 为 skipped(仅 bot 诊断类,验证本体在 Azure)。
 - `license/cla` check = success(CLA 已过,Needs-CLA 标签为残留);mergeable: true(无冲突)。
