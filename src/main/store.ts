@@ -1841,7 +1841,7 @@ export function turnTokens5h(): Window5hStat {
     `SELECT ts, conv_id, engine, tokens_in, tokens_out, cache_read, cache_creation, amount
      FROM cost_log WHERE ts >= ? ORDER BY ts ASC;`,
   ).all(since) as Array<{ ts: number; conv_id: string; engine: string; tokens_in: number; tokens_out: number; cache_read: number; cache_creation: number; amount: number }>;
-  const turns: TurnTokenRow[] = rows.map((r) => ({
+  const mapped: TurnTokenRow[] = rows.map((r) => ({
     ts: r.ts,
     input: (r.tokens_in ?? 0) + (r.cache_read ?? 0) + (r.cache_creation ?? 0), // 真实发出去的 input(含缓存部分)
     cache: r.cache_read ?? 0,
@@ -1850,13 +1850,13 @@ export function turnTokens5h(): Window5hStat {
     title: convTitleFromTurns(r.conv_id),
     engine: r.engine,
     model: dbModelOf(r.conv_id),
-  })).sort((a, b) => b.input - a.input).slice(0, 20); // 按 input 降序,前 20 足够定位肥 turn
+  }));
   return {
-    turns,
-    totalIn: turns.reduce((s, t) => s + t.input, 0),
-    totalCache: turns.reduce((s, t) => s + t.cache, 0),
-    totalOut: turns.reduce((s, t) => s + t.output, 0),
-    totalCost: turns.reduce((s, t) => s + t.cost, 0),
+    turns: mapped.sort((a, b) => b.input - a.input).slice(0, 20), // 排行只取 top20;汇总按全量,概览口径不缩水
+    totalIn: mapped.reduce((s, t) => s + t.input, 0),
+    totalCache: mapped.reduce((s, t) => s + t.cache, 0),
+    totalOut: mapped.reduce((s, t) => s + t.output, 0),
+    totalCost: mapped.reduce((s, t) => s + t.cost, 0),
   };
 }
 
