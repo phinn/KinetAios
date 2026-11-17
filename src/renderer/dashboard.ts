@@ -7,6 +7,7 @@ import type { AgentEvent, Conversation, EngineKind, KinetAPI } from '../shared/t
 import { t, engineLabel, type Lang } from '../shared/i18n';
 import { ENGINE_COLORS } from './engine-colors';
 import { renderWindow } from './dashboard-window';
+import { renderTeamBoard } from './dashboard-team';
 
 declare global { interface Window { kinet: KinetAPI } }
 
@@ -361,6 +362,7 @@ async function loadUsageStats(): Promise<void> {
     renderTrendChart(u);
     renderRankings(u);
     renderWindow({ api, tr, esc }); // 5h 窗口消耗解剖(turn 粒度 + quota 百分比)
+    renderTeamBoard({ api, tr, esc }); // 团队看板(活跃团队×成员状态×黑板)
   } catch {
     // 静默失败(首次启动无 cost_log)
   }

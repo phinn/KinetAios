@@ -6,6 +6,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { ChatMsg, Conversation, EngineKind, Turn } from '../shared/types';
 import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind, type ConvEvent } from '../shared/types';
+import { getBoard as getBoardExternal } from './blackboard'; // 团队看板读黑板 stats/notes(黑板不依赖本模块,无环)
 
 let db: Database.Database;
 
@@ -1466,10 +1467,52 @@ export function listTeamsForConv(convId: string): Array<{ team_id: string; membe
   ).all(`conv:${convId}%`) as Array<{ team_id: string; member_count: number; updated_at: number }>;
 }
 
+function convTitleFromTurns(convId: string): string {
+  const t = db.prepare(`SELECT data FROM turns WHERE conv_id=? ORDER BY created_at ASC LIMIT 1;`).get(convId) as { data: string } | undefined;
+  if (!t) return '—';
+  try { return (JSON.parse(t.data)?.prompt || '').slice(0, 40) || '—'; } catch { return '—'; }
+}
+
 /** 从 team_id 解析出 conv_id("conv:<convId>:team:<ts>" → "<convId>") */
 export function convIdFromTeamId(teamId: string): string | null {
   const m = teamId.match(/^conv:(.+):team:[^:]+$/);
   return m ? m[1] : null;
+}
+
+// ── 团队看板数据源(活跃团队聚合:成员状态+黑板统计,给 dashboard 直接渲染)──
+// Team board data source: aggregate active teams (member status + blackboard stats).
+export interface TeamBoardTeam {
+  teamId: string;
+  convId: string;
+  title: string;
+  updatedAt: number;
+  members: Array<{ name: string; role: string; status: string; lastMessage: string | null; lastResult: string | null; updatedAt: number }>;
+  board: { notes: number; cachedFiles: number; cacheHits: number } | null; // null = 黑板已关(team_close 后仍留存的行)
+  recentNotes: Array<{ from: string; kind: string; title: string; ts: number }>;
+}
+export function teamBoardData(limit = 6): { teams: TeamBoardTeam[] } {
+  const rows = db.prepare(
+    `SELECT team_id, COUNT(*) as member_count, MAX(updated_at) as updated_at
+     FROM team_members GROUP BY team_id ORDER BY MAX(updated_at) DESC LIMIT ?;`,
+  ).all(limit) as Array<{ team_id: string; member_count: number; updated_at: number }>;
+  const teams: TeamBoardTeam[] = rows.map((r) => {
+    const members = listTeamMembers(r.team_id);
+    const board = getBoardExternal(r.team_id);
+    const convId = convIdFromTeamId(r.team_id) ?? '';
+    return {
+      teamId: r.team_id,
+      convId,
+      title: convId ? convTitleFromTurns(convId) : '—',
+      updatedAt: r.updated_at * 1000,
+      members: members.map((m) => ({
+        name: m.name, role: m.role, status: m.status,
+        lastMessage: m.last_message, lastResult: m.last_result, updatedAt: m.updated_at * 1000,
+      })),
+      board: board ? board.stats() : null,
+      recentNotes: board ? board.listNotes().slice(-6).reverse().map((n) => ({ from: n.from, kind: n.kind, title: n.title, ts: n.ts })) : [],
+    };
+  });
+  return { teams };
 }
 
 // MARK: V2 逐步持久化(P2-1)
@@ -1822,11 +1865,7 @@ function dbModelOf(convId: string): string {
   return '—';
 }
 // 会话标题回退:首条 turn 的 prompt 截断(与 nexus 列表口径一致)。
-function convTitleFromTurns(convId: string): string {
-  const t = db.prepare(`SELECT data FROM turns WHERE conv_id=? ORDER BY created_at ASC LIMIT 1;`).get(convId) as { data: string } | undefined;
-  if (!t) return '—';
-  try { return (JSON.parse(t.data)?.prompt || '').slice(0, 40) || '—'; } catch { return '—'; }
-}
+/** 从 team_id 解析出 conv_id("conv:<convId>:team:<ts>" → "<convId>") */
 
 // ── 5h 窗口消耗解剖(turn 粒度,聚合好给 dashboard 直接渲染)──
 // Token 诊断视图数据源:最近 5h 每个 turn 的 input/cache/output/费用 + 汇总。

@@ -10,6 +10,7 @@ import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, turnTokens5h, setMemoryEmbedding, loadEvents, rulesMatching } from '../store';
 import { quotaWindowState } from '../quota';
+import { teamBoardData } from '../store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from '../store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from '../store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from '../store';
@@ -338,6 +339,10 @@ export function register(): void {
   });
   ipcMain.handle('quota-window-state', () => {
     return quotaWindowState();
+  });
+  // 团队看板:活跃团队聚合(成员状态+黑板 stats)
+  ipcMain.handle('team-board', () => {
+    return teamBoardData();
   });
 
   // ── 会话交接:导出会话状态 ──

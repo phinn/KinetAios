@@ -195,6 +195,8 @@ const api: KinetAPI = {
   usageStats: (rangeDays: number) => ipcRenderer.invoke('usage-stats', rangeDays),
   turnTokens5h: () => ipcRenderer.invoke('turn-tokens-5h'),
   quotaWindowState: () => ipcRenderer.invoke('quota-window-state'),
+  // 团队看板
+  teamBoard: () => ipcRenderer.invoke('team-board'),
   // 记忆图谱窗口
   openMemoryGraph: () => ipcRenderer.invoke('open-memory-graph'),
   // 远程 Agent 直播状态

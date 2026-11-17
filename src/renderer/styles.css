@@ -7056,6 +7056,29 @@ body.meta-compact .ai-meta-left:has(+ .ai-meta-actions:hover) { opacity: 1; }
 .u-win-cache { font-style: normal; font-size: var(--fs-xs); color: var(--text-faint); margin-left: 4px; }
 .u-win-note { font-size: var(--fs-md); color: var(--text-faint); line-height: 1.5; }
 .u-win-empty { color: var(--text-faint); font-size: var(--fs-md); padding: 8px 0; }
+
+/* ── 团队看板:活跃团队 × 成员状态 × 黑板沉淀 ── */
+.tb-grid { display: flex; flex-direction: column; gap: 10px; }
+.tb-card { border: 1px solid var(--border); border-radius: var(--r-lg, 10px); padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
+.tb-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.tb-title { font-weight: 600; font-size: var(--fs-md); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-ago { font-size: var(--fs-xs); color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tb-members { display: flex; flex-direction: column; gap: 3px; }
+.tb-member { display: grid; grid-template-columns: 10px 90px 64px 1fr; align-items: center; gap: 8px; font-size: var(--fs-md); min-width: 0; }
+.tb-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.tb-dot.tb-run { background: #4c9ffe; box-shadow: 0 0 6px #4c9ffe88; animation: tb-pulse 1.2s ease-in-out infinite; }
+.tb-dot.tb-done { background: #4ec27a; }
+.tb-dot.tb-fail { background: var(--run, #e5484d); }
+.tb-dot.tb-idle { background: var(--text-faint); }
+@keyframes tb-pulse { 0%,100% { opacity: 1; } 50% { opacity: .4; } }
+.tb-mname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tb-mstat { font-size: var(--fs-xs); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.tb-mbrief { font-size: var(--fs-xs); color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.tb-boardline { font-size: var(--fs-xs); color: var(--text-dim); }
+.tb-notes { display: flex; flex-direction: column; gap: 2px; border-top: 1px dashed var(--border); padding-top: 6px; }
+.tb-note { display: grid; grid-template-columns: 20px 1fr auto; gap: 6px; align-items: center; font-size: var(--fs-xs); min-width: 0; }
+.tb-ntitle { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.tb-nfrom { color: var(--text-faint); white-space: nowrap; }
 .u-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 12px 14px; min-width: 0; }
 .u-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .u-card-label { font-size: var(--fs-md); color: var(--text-dim); }

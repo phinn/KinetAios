@@ -89,6 +89,22 @@ export type EngineContextPolicy = {
   dagConcurrency?: number;
   /** sub-agent 接收 history 的默认范围(给 dispatch_agent 的默认 scope.mode)。 */
   subAgentScope: 'none' | 'last_n_turns' | 'summary_only' | 'full_history';
+  /**
+   * turn 内工具结果折叠的触发线(估算 token)。缺省 80K(历史常量 FOLD_TRIGGER_TOKENS)。
+   * 上下文估超此值 → 折叠旧工具结果。仅影响喂给模型的视图,原始历史不动。
+   */
+  foldTriggerTokens?: number;
+  /**
+   * 折叠回落的目视线(估算 token)。设了才启用**滞后折叠**:破触发线时一次折到目标线以下,
+   * 之后边界冻结直到再次破线。
+   *
+   * 为什么需要:折叠改写的是消息数组中段,自动前缀缓存从改写点往后全部失效。
+   * 「每步只多折一条」= 每步推一次边界 = 每步重算一次中后段。2026-11 全库审计实测:
+   * 22.7% 的调用落在「部分失效」桶,单周 71M 输入 token 按全价重算(占全部未命中量 42%),
+   * 未命中调用的前序上下文 p50 = 81K,正好压在 80K 触发线上。
+   * 滞后折叠把「每步一次失效」摊成「每 N 步一次」。缺省 0 = 旧行为(逐条推进)。
+   */
+  foldTargetTokens?: number;
 };
 
 // 插件引擎无静态策略(不进 Direct 家族 history 管理),回落 direct 兜底。
@@ -105,6 +121,10 @@ export const ENGINE_POLICIES: Record<BuiltinEngineKind, EngineContextPolicy> = {
     stepSummaryMaxChars: 0,
     stepResultMaxChars: 0,
     subAgentScope: 'none',
+    // 滞后折叠(2026-11 缓存审计):80K 破线 → 一次折到 40K,之后约 8 步不动边界。
+    // 旧行为是「每步多折一条」,让上下文死钉在 80K 且每步重算 20K 中后段。
+    foldTriggerTokens: 80_000,
+    foldTargetTokens: 40_000,
   },
   // v2 DirectV2:Plan-Verify 多步累积。这里的值仅作 fallback —— 实际预算由
   // resolveEnginePolicy 根据 v2ModelWindow * v2BudgetRatio 动态计算(见下方)。
@@ -230,6 +250,9 @@ export function resolveEnginePolicy(
       trimBudget: Math.max(base.trimBudget * 2, hifiFloor),
       interStepCompactBudget: Math.max(base.interStepCompactBudget * 2, hifiFloor),
       truncateThreshold: base.truncateThreshold * 2,
+      // 折叠线跟着涨:hifi 要留住更多原文,触发线与目标线同步翻倍(比例不变 → 滞后行为一致)
+      ...(base.foldTriggerTokens ? { foldTriggerTokens: base.foldTriggerTokens * 2 } : {}),
+      ...(base.foldTargetTokens ? { foldTargetTokens: base.foldTargetTokens * 2 } : {}),
     };
   }
   return base;
@@ -1222,6 +1245,8 @@ export interface KinetAPI {
   // quotaWindowState = 智谱 Coding Plan 实时百分比 + 距重置分钟(null = 非 coding-plan)。
   turnTokens5h(): Promise<{ turns: Array<{ ts: number; input: number; cache: number; output: number; cost: number; title: string; engine: string; model: string }>; totalIn: number; totalCache: number; totalOut: number; totalCost: number }>;
   quotaWindowState(): Promise<{ usedPct: number | null; minsLeft: number | null }>;
+  // ── 团队看板:活跃团队聚合(成员状态/最近结果/黑板统计+最新 notes)──
+  teamBoard(): Promise<{ teams: Array<{ teamId: string; convId: string; title: string; updatedAt: number; members: Array<{ name: string; role: string; status: string; lastMessage: string | null; lastResult: string | null; updatedAt: number }>; board: { notes: number; cachedFiles: number; cacheHits: number } | null; recentNotes: Array<{ from: string; kind: string; title: string; ts: number }> }> }>;
   // ── 记忆图谱窗口 ──
   openMemoryGraph(): Promise<boolean>;
   // ── 上下文考古:读取会话事件流(conv_events,append-only 事实源)──
