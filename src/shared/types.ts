@@ -38,7 +38,7 @@ export type EngineKind = BuiltinEngineKind | `plugin:${string}`;
 // Job 是引擎无关的后台执行单元:提交后立即可继续对话,完成/失败/取消状态经 IPC 通知。
 // Job is an engine-agnostic background execution unit; the session stays usable after submit.
 export type JobStatus = 'queued' | 'running' | 'paused' | 'done' | 'failed' | 'killed';
-export type JobKind = 'v3-deep' | 'v4-legis' | 'dispatch';
+export type JobKind = 'v3-deep' | 'v4-legis' | 'dispatch' | 'workflow';
 // renderer 可见的 Job 摘要(payload/checkpoint 不出主进程,体积大且无展示价值)
 export interface JobInfo {
   id: string;

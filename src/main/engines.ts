@@ -435,6 +435,7 @@ class DirectEngine implements Engine {
           cwd: conv.cwd,
           confirm: this.confirm,
           convId: conv.id,
+          teamId, // 黑板:成员读工具注入 + 结论自动沉淀
           crossProjectMemory: conv.crossProjectMemory === true, // 透传给 team member 的 recall(默认关)
           onTeamEvent: (memberName: string, ev: import('../shared/types').TeamEvent) => {
             emitTeamEvent(teamId, ev);

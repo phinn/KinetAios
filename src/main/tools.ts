@@ -64,6 +64,7 @@ import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
 import { checkAgentPolicy } from './agent-policy';
 import { compactHistory } from './AgentLoop';
+import { closeBoard, ensureBoard, getBoard } from './blackboard';
 
 // Sanitize error messages before returning to the LLM — strip absolute paths and stack traces
 // that could leak system info. The LLM only needs the gist (permission denied / not found / etc.).
@@ -183,6 +184,10 @@ export type SpawnScopeConfig =
 
 export interface ToolCtx {
   cwd: string;
+  /** 成员名(team/workflow 成员运行时注入;用于黑板缓存归属标注) */
+  memberName?: string;
+  /** 所属团队 id(team/workflow 成员运行时注入;驱动黑板读工具注入与探查缓存) */
+  teamId?: string;
   confirm: (cmd: string) => Promise<boolean>;
   // ask_user 决策卡回调:agent 需要用户拍板时弹出结构化选项卡,阻塞等用户答案。
   // / ask_user callback: pops the structured decision card and blocks until the user answers.
@@ -689,6 +694,38 @@ function guessEncoding(buf: Buffer): string {
   return 'gb18030';
 }
 
+/** 黑板读工具工厂:kinet_bb_read — list(黑板摘要)/ read(按序号取正文)/ stats(缓存命中) */
+export function buildBlackboardReadTool(teamId: string): Tool {
+  return {
+    name: 'kinet_bb_read',
+    readOnly: true,
+    description:
+      '读取本团队共享黑板。action=list 返回黑板摘要(成员结论/中间产出/已缓存文件,含序号);action=read 按序号取一条完整正文;action=stats 看探查缓存命中统计。多 member 协作时先 list 再按需 read,避免重复探查。',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['list', 'read', 'stats'], description: 'list=摘要; read=取正文; stats=缓存统计' },
+        index: { type: 'number', description: 'read 模式必填:黑板条目序号(list 输出里的 [N])' },
+      },
+      required: [],
+    },
+    async run(args) {
+      const board = getBoard(teamId);
+      if (!board) return '(黑板不存在:该 team 未启用共享黑板)';
+      const action = (args.action as string) || 'list';
+      if (action === 'read') {
+        const n = board.readNote(Number(args.index ?? -1));
+        return n ? `📝 [${args.index}] ${n.title} (by ${n.from})\n${n.body}` : `(无此序号 ${args.index})`;
+      }
+      if (action === 'stats') {
+        const s = board.stats();
+        return `黑板: ${s.notes} 条; 缓存文件 ${s.cachedFiles} 个; 缓存命中 ${s.cacheHits} 次(命中=省了一次重复读)`;
+      }
+      return board.renderDigest();
+    },
+  } as Tool;
+}
+
 const readFile: Tool = {
   name: 'read_file',
   readOnly: true,
@@ -712,6 +749,13 @@ const readFile: Tool = {
     }
     const startLine = args.start_line ? Math.max(1, Math.floor(Number(args.start_line))) : 1;
     const endLine = args.end_line ? Math.max(1, Math.floor(Number(args.end_line))) : undefined;
+    // 团队黑板探查缓存:全文读 + 在团队上下文里 → 先查缓存(mtime 未变直接复用,省一次重复读)
+    const fullRead = startLine === 1 && endLine === undefined;
+    const board = (fullRead && ctx.teamId) ? getBoard(ctx.teamId) : undefined;
+    if (board) {
+      const hit = board.getCachedRead(p);
+      if (hit) return `${hit.content}\n\n[黑板缓存命中:此文件已由 ${hit.by} 读过,内容一致,勿重复读]`;
+    }
     try {
       const stat = fs.statSync(p);
       // 防止 read_file 大文件(PDF/图片等二进制)把主进程读 OOM —— 之前没限制是崩溃主因。
@@ -725,6 +769,8 @@ const readFile: Tool = {
       // 编码检测:BOM → ASCII → UTF-8 校验 → 启发式(GBK/Big5/Shift_JIS)。
       // Windows 上大量文件是 GBK 编码,直接 toString('utf8') 会产生乱码。
       const body = decodeBuffer(buf);
+      // 全文读 → 回填黑板缓存(其他 member 再读同文件直接命中)
+      if (fullRead && board && body.length <= 200_000) board.putCache(p, body, ctx.memberName || 'member');
 
       // 按行范围读取(如果指定了 start_line / end_line)。
       const lines = body.split('\n');
@@ -2210,9 +2256,11 @@ const spawnTeam: Tool = {
         updated_at: now,
       });
     }
+    ensureBoard(teamId); // 预建共享黑板(team_id 键;成员结论自动沉淀,读侧 kinet_bb_read)
     return JSON.stringify({
       team_id: teamId,
       members: members.map((m) => ({ name: m.name, role: m.role })),
+      blackboard: 'enabled(共享黑板已开:各成员结论会自动沉淀,读侧用 kinet_bb_read list/read)',
     });
   },
 };
@@ -2293,7 +2341,8 @@ const teamClose: Tool = {
     const teamId = String(args.team_id ?? '').trim();
     if (!teamId) return '缺少 team_id';
     const n = store.deleteTeam(teamId);
-    return `已关闭 team ${teamId}(删除 ${n} 个 member)`;
+    closeBoard(teamId); // 黑板随团队关闭清理(P1-6:防注册表泄漏)
+    return `已关闭 team ${teamId}(删除 ${n} 个 member,黑板已清)`;
   },
 };
 
@@ -3445,9 +3494,12 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 
 // 子 agent 用的只读工具集 —— 不含 dispatch_agent(防无限递归)、不含 shell/write/edit(子 agent 只读)。
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
-export function readOnlyTools(): Tool[] {
+export function readOnlyTools(bbCtx?: { teamId?: string }): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  return [readFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  const tools = [readFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  // 团队黑板:member 可读共享工作区(notes/artifacts + 已缓存文件)。写侧由 host 自动落黑板。
+  if (bbCtx?.teamId) tools.push(buildBlackboardReadTool(bbCtx.teamId));
+  return tools;
 }
 
 // 沙箱检查:返回 string = 拦截(reason),返回 null = 放行。

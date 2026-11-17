@@ -20,6 +20,7 @@ import { runAgentLoop } from './AgentLoop';
 import type { AgentEvent } from '../shared/types';
 import * as store from './store';
 import { readOnlyTools } from './tools';
+import { getBoard, ensureBoard } from './blackboard';
 import { SUBAGENT_PROMPT, SUBAGENT_TIMEOUT_MS } from './engines';
 
 const TEAM_TIMEOUT_MS = SUBAGENT_TIMEOUT_MS; // 单次 member 回答超时(与 dispatch_agent 对齐,8min)
@@ -47,6 +48,8 @@ export interface MemberRunOpts {
   convId: string;
   /** 跨项目记忆开关(会话级,false = member 的 recall 只看本会话) */
   crossProjectMemory?: boolean;
+  /** 团队黑板 team_id(设置后 member 工具集附 kinet_bb_read,system prompt 注入黑板摘要) */
+  teamId?: string;
   /** Team 事件回调(发射到 renderer) */
   onTeamEvent?: (memberName: string, ev: TeamEvent) => void;
 }
@@ -103,14 +106,16 @@ export async function runMember(opts: {
     }
   };
 
+  const teamId = opts.runOpts.teamId;
+  const tools = readOnlyTools({ teamId }); // 黑板读工具在 readOnlyTools 内按 teamId 注入(无全局态)
   const out = await runAgentLoop({
     provider,
-    tools: readOnlyTools(),
-    systemPrompt: SUBAGENT_PROMPT, // 复用 sub-agent 系统提示(只读工具 + 文本汇报)
+    tools,
+    systemPrompt: SUBAGENT_PROMPT + (teamId ? `\n\n${getBoard(teamId)?.renderDigest() ?? ''}\n(黑板会在其他成员产出后更新,需要时用 kinet_bb_read 刷新)` : ''),
     snapshot: snap,
     userInput: memberPrompt,
     history,
-    ctx: { cwd, confirm, convId, crossProjectMemory: opts.runOpts.crossProjectMemory },
+    ctx: { cwd, confirm, convId, crossProjectMemory: opts.runOpts.crossProjectMemory, memberName: member.name, teamId },
     signal: ac.signal,
     // maxTurns 不传 → AgentLoop 读用户全局设置(0 = 无限),与主 agent 行为一致
     onEvent: wrappedOnEvent,
@@ -124,6 +129,9 @@ export async function runMember(opts: {
     .map((m) => m.content)
     .join('\n')
     .trim();
+
+  // 成功结论自动沉淀黑板(后续 member 可从 system prompt 摘要/kinet_bb_read 直接取,不再重复探查)
+  depositToBoard({ teamId: opts.runOpts.teamId, from: member.name, role: member.role, answer });
 
   // 返回值记 real token 口径(上面 wrappedOnEvent 聚合的 API 真实用量,含缓存拆分),
   // 不再用 content.length 字符数冒充。history 侧折叠防无界膨胀:
@@ -142,6 +150,14 @@ export async function runMember(opts: {
     }
   }
   return { newHistory: out, answer, tokensIn, tokensOut, cacheRead, usd: memberUsd };
+}
+
+/** member 成功回答后自动沉淀黑板(去重在 writeNote 内;失败/空回答不落) */
+export function depositToBoard(opts: { teamId?: string; from: string; role: string; answer: string }): void {
+  if (!opts.teamId || !opts.answer.trim() || opts.answer.startsWith('错误:')) return;
+  try {
+    ensureBoard(opts.teamId).writeNote(opts.from, `${opts.role || opts.from} 结论`, opts.answer.slice(0, 6000), 'artifact');
+  } catch { /* 黑板失败不拖垮主流程 */ }
 }
 
 /**
