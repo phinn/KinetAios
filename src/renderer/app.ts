@@ -6997,6 +6997,14 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.searchEngine.desc')}</div>
       </div>
       <div class="s-section">
+        <h3>${tr('settings.sec.tuning')}</h3>
+        <div class="field-desc">${tr('settings.tuning.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-fold-hysteresis" ${s.foldHysteresisEnabled !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-fold-hysteresis">${tr('settings.foldHysteresis')}</label></div>
+        <div class="field-desc">${tr('settings.foldHysteresis.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-codemode-nudge" ${s.codemodeNudgeEnabled !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-codemode-nudge">${tr('settings.codemodeNudge')}</label></div>
+        <div class="field-desc">${tr('settings.codemodeNudge.desc')}</div>
+      </div>
+      <div class="s-section">
         <h3>${tr('settings.sec.v2engine')}</h3>
         <div class="field"><label>${tr('settings.hifiBudget')}</label><div class="row"><input id="s-hifi-budget" type="number" min="10000" max="1000000" step="10000" value="${s.hifiContextBudget ?? 200000}" style="max-width:120px" /><span style="color:var(--text-faint);font-size:11px;align-self:center;white-space:nowrap">tokens</span></div></div>
         <div class="field-desc">${tr('settings.hifiBudget.desc')}</div>
@@ -8598,6 +8606,9 @@ function readSettingsForm(): AppSettings {
     // Goal 监工参数(goal tab):链缓存由 renderGoalChain 的增删维护,保存时写回。
     goalSupervisorEnabled: Boolean((document.getElementById('s-goal-supervisor') as HTMLInputElement)?.checked),
     privacyGateEnabled: Boolean((document.getElementById('s-privacy-gate') as HTMLInputElement)?.checked),
+    // 上下文/编排开关:元素不存在时按「开」处理(默认值),避免缺 DOM 时被静默关掉。
+    foldHysteresisEnabled: (document.getElementById('s-fold-hysteresis') as HTMLInputElement)?.checked ?? true,
+    codemodeNudgeEnabled: (document.getElementById('s-codemode-nudge') as HTMLInputElement)?.checked ?? true,
     goalSupervisorModel: ((document.getElementById('s-goal-sup-model') as HTMLSelectElement)?.value ?? ''),
     goalProfileChain: goalChainCache,
     goalMaxIterations: Number((document.getElementById('s-goal-maxiter') as HTMLInputElement)?.value) || 20,

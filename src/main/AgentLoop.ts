@@ -6,6 +6,8 @@ import { toolDef, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
 import { pullSteer, steerMessage } from './steer';
+// shell 命令的只读判定(与 main.ts 的 confirm 白名单同源)—— 用来识别「探查」调用
+import { isReadOnlyCommand } from './shell-readonly';
 import fs from 'node:fs';
 import path from 'node:path';
 import { app } from 'electron';
@@ -322,6 +324,26 @@ function warnIfProtectedOverBudget(messages: ChatMsg[], budget: number, proto: s
   }
 }
 
+/**
+ * 一次工具调用算不算「探查」(只读地收集信息,理论上可被一段脚本批量替代)。
+ * - readOnly 工具:直接算;
+ * - shell:看命令白名单 —— shell 没标 readOnly(它确实能写),但它占 68.5% 的调用量,
+ *   不判它这套引导在真实场景基本不会触发;白名单只认 ls/grep/cat/git status 这类,
+ *   写命令(rm/mv/重定向/命令替换)一律不算;
+ * - 其它写类工具(write_file/edit_file):不算 —— 它们各要一次人工确认,本来就该逐条做。
+ */
+function isExplorationCall(tc: { name: string; arguments: string }, tools: readonly Tool[]): boolean {
+  const t = tools.find((x) => x.name === tc.name);
+  if (t?.readOnly) return true;
+  if (tc.name !== 'shell') return false;
+  try {
+    const args = JSON.parse(tc.arguments || '{}') as { command?: string };
+    return isReadOnlyCommand(String(args.command ?? ''));
+  } catch {
+    return false;
+  }
+}
+
 export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   const { provider, tools, systemPrompt, memoryBlock, snapshot, userInput, history, ctx, signal, onEvent } = opts;
   // DedupeGuard 状态:turn 级,由 loop 自己初始化(调用方无需关心;传入已有 dedupe 时复用 —— V2 executor
@@ -344,7 +366,16 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   // 折叠光标(2026-11 缓存审计):turn 内折叠边界只前进不后退 —— 只有破触发线才补折,
   // 其余步沿用同一份折叠视图 → 前缀字节级稳定。见 foldOldToolResults 的滞后说明。
   const foldCursor = newFoldCursor();
-  const foldOpts = { trigger: opts.policy?.foldTriggerTokens, target: opts.policy?.foldTargetTokens, cursor: foldCursor };
+  // 开关:settings.foldHysteresisEnabled(默认开)。关掉时 target 传 0 —— foldOldToolResults
+  // 里 target<=0 表示「不设目标线、可折区内全部折掉」,正是 2026-11 之前的行为:边界随新消息
+  // 逐步前移,每步改一次前缀中段。开关是给现场留的退路(上下文反复顶满/模型抱怨看不到历史时
+  // 先关它,不必回滚代码),代价是输入 token 回到审计前的水平。
+  const foldHysteresis = getSettings().foldHysteresisEnabled !== false;
+  const foldOpts = {
+    trigger: opts.policy?.foldTriggerTokens,
+    target: foldHysteresis ? opts.policy?.foldTargetTokens : 0,
+    cursor: foldCursor,
+  };
   // maxTurns 解析(修复:用户设置曾被 V3 硬编码完全无视):
   // - settings.maxTurns 是全局天花板;opts.maxTurns(内部路径上限,如 fast=5/std=20)只在比它更紧时生效。
   // - 用户设 0 = 无限 → 标准路径不限轮;但 deep 节点的内部保险丝(8 轮/段)仍须生效,
@@ -418,6 +449,16 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   // (操作层反复失败)时,推模型升级假设层级(操作层→介质层→协议层),
   // 而不是在同一层换姿势再试 1900 次。_transient:只推一次、不写回 directHistory。
   let nudgedHypothesis = false;
+  // ── codemode 引导(2026-11)──
+  // 实测:工具调用里 codemode 只占 1.5%,而 shell 独占 66%,平均每轮 50.3 次往返。
+  // 不是能力不够(codemode 一直在工具表里),是模型默认走"一条一条发 tool_calls"的路径,
+  // 每条约一次完整往返、每条结果全量进上下文。纯靠 systemPrompt 说"可以批量"无效 ——
+  // 这里做确定性引导:本轮只读探查累计到阈值仍未用 codemode 就注入提示(不看模型自觉)。
+  // 上限 2 次(3 次 / 6 次各一次),避免把上下文变成唠叨现场;开关见 settings.codemodeNudgeEnabled。
+  const codemodeNudgeOn = opts.policy?.codemodeNudge ?? (getSettings().codemodeNudgeEnabled !== false);
+  let readonlyCalls = 0;   // 本轮累计只读工具调用数(写工具/确认弹窗不算"探查")
+  let codemodeUsed = false; // 本轮是否已用过 codemode
+  let codemodeNudges = 0;   // 已注入次数(上限 2)
   // 🔄 relay 接力(2026-10-16 P1):长任务跑满轮数上限 ≠ 任务完成。此前直接 wrapUp 总结,
   // 断点信息全靠模型从折叠历史里捞(935 步 turn 的教训)。现在耗尽时先看 relay 余额:
   // 有余量 → 注入断点续跑指令扩容继续;用完 → 走原 wrapUp。仅当上限来自「用户天花板」时接力
@@ -673,6 +714,30 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
         messages.push({
           role: 'user',
           content: '[系统] 连续多个工具调用失败。请停止在同一层面换姿势重试,先升级假设:当前假设处于哪一层(操作层/介质层/协议层)?用一次只读探查直接验证更底层的假设(例如:文件/介质真的存在且可读吗?依赖的服务/设备真的在预期状态吗?),再决定下一步。',
+          _transient: true,
+        });
+      }
+    }
+    // ── codemode 引导:本轮只读探查够多却还在逐条发 → 推一次"改用脚本一次跑完" ──
+    // 注入时机与 _transient 语义同上面的假设升级 nudge:① 在 tool results 之后(assistant→tool→user
+    // 对两种协议都合法)② 只影响本轮 in-flight 上下文,不写回 directHistory。
+    // 判据只看「只读工具」:写工具要人工确认,批量并行会被逐条弹窗,本来就该串行做。
+    if (codemodeNudgeOn && !signal.aborted) {
+      for (const tc of completion.toolCalls) {
+        if (tc.name === 'codemode') { codemodeUsed = true; continue; }
+        if (isExplorationCall(tc, curTools)) readonlyCalls++;
+      }
+      // 阈值:第 1 次在 3 个只读调用后推"剩下的改用脚本",第 2 次在 6 个后推更强硬的。
+      const need = codemodeNudges === 0 ? 3 : 6;
+      if (!codemodeUsed && codemodeNudges < 2 && readonlyCalls >= need) {
+        codemodeNudges++;
+        const strong = codemodeNudges >= 2;
+        onEvent({ type: 'status', text: `🧩 本轮已 ${readonlyCalls} 次单独探查,已注入 codemode 编排提示` });
+        messages.push({
+          role: 'user',
+          content: strong
+            ? `[系统] 本轮已 ${readonlyCalls} 次单独探查,仍未使用 codemode。接下来只要还要连续看 ≥2 个文件/目录/网页,必须用 codemode 一次跑完:循环 + 过滤 + 只 return 摘要字段,不要再一条一条发 tool_calls(每次都是一轮完整往返,且结果全量留在上下文里)。写操作(shell/write_file/edit_file)仍单独调用,不要塞进脚本并行。`
+            : `[系统] 本轮已 ${readonlyCalls} 次单独探查,每次都是一轮完整往返、结果全量进上下文。剩余环节若要读/搜/查 ≥2 个目标,改用 codemode 一次写完:\n  const a = await tools.read_file({path:"x"});\n  const b = await tools.shell({command:"ls y"});\n  return {a: a.slice(0,800), b: b.slice(0,400)};\n中间结果不进上下文,只有 return 的值回来。单个工具单次调用仍直接调,不要为了形式套壳。`,
           _transient: true,
         });
       }

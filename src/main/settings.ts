@@ -60,6 +60,8 @@ const DEFAULTS: AppSettings = {
   persona: '', // 替身画像:分析历史对话生成的用户风格描述(空 = 未生成)
   distillAutoEnabled: true, // P0-2 技能自沉淀:turn 成功后自动蒸馏 skill(默认开,可关)
   privacyGateEnabled: false, // 隐私闸:默认关。开启后 read_file/shell 出网前过敏感检测+confirm
+  foldHysteresisEnabled: true, // V1 滞后折叠:开 = 一次折到目标线后冻结边界(省重读);关 = 旧「每步推一条」行为
+  codemodeNudgeEnabled: true, // codemode 主动引导:开 = 提示词数量阈值 + 轮内探查 3 次后注入引导;关 = 旧行为
   // Goal 监工模式默认值:Supervisor 默认关(旧自检模式),failover 链空 = 不接力。
   goalSupervisorEnabled: false,
   goalSupervisorModel: '', // 空 = 跟随会话当前模型

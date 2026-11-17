@@ -20,6 +20,8 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import type { Tool, ToolCtx } from './tools';
+// 引导文案受 settings.codemodeNudgeEnabled 控制(关掉 → 回落旧文案)。settings 不反向依赖本模块,无环。
+import { getSettings } from './settings';
 
 // ── 类型(与 pi-codemode 解耦的本地最小形状,避免 CJS 侧顶层 type import 编译问题)──
 interface CodemodeCallLog { name: string; status: string; durationMs: number }
@@ -109,16 +111,36 @@ let declCache: { key: string; text: string } | null = null;
 /** 给 system prompt 的 codemode 指南 + 嵌套工具声明(供 v2 引擎拼 prompt)。 */
 export function codemodePromptSection(tools: readonly Tool[]): string {
   kickWarm(tools);
-  const names = tools.filter((t) => t.name !== 'codemode').map((t) => t.name);
+  // 开关 settings.codemodeNudgeEnabled:关掉时回落到「只介绍工具、不引导」的旧文案。
+  // 旧文案里那句「3~5 个同构只读调用直接同轮并行即可」实测是把使用率按到 1.5% 的主因
+  // (它把 codemode 定位成"超过 5 个才用"的例外工具),所以默认换成按数量判定的正向规则。
+  const guided = getSettings().codemodeNudgeEnabled !== false;
+  const decision = guided
+    ? `**什么时候用它(按数量判定,不要凭感觉)**:
+- 要读/搜/查 **≥3 个目标**(文件、目录、网页、符号、条目)→ 一次脚本跑完,只 return 摘要
+- 同一种工具在同一轮里要调 **≥3 次** → 同上
+- 预计单次结果 **>8KB**(长文件、大目录、搜索结果页)→ 进脚本里过滤,只 return 需要的字段
+- 要循环到条件满足,或要把 N 条结果汇总/统计 → 只能写脚本
+
+**什么时候不要用**:单个工具单次调用(直接调更便宜);写操作(shell/write_file/edit_file)必须逐个调 —— 它们各要一次人工确认,塞进脚本并行只会被批量拒绝。
+
+例(要同时看 3 个文件 + 找一处定义,一次调用完成,中间结果不进上下文):
+\`\`\`js
+const files = ["src/a.ts", "src/b.ts", "src/c.ts"];
+const heads = await Promise.allSettled(files.map((p) => tools.read_file({ path: p })));
+const hit = await tools.shell({ command: "grep -rn 'resolveEnginePolicy' src | head -20" });
+return { heads: heads.map((h, i) => [files[i], String(h.value ?? h.reason).slice(0, 600)]), hit: String(hit).slice(0, 800) };
+\`\`\``
+    : `适用:批量打标/分类 N 个条目、链式调用(搜→读→提炼)、\`await Promise.allSettled([...])\` 并行、
+把大输出过滤成小摘要、循环调用直到条件满足。单次调用一个工具时**不要**用 codemode(直接调更便宜)。
+与「探查合批」的分工:3~5 个同构只读调用直接同轮并行发 tool_calls 即可;超过 5 个、需要循环/条件/汇总的大批量才用本工具。`;
   const head = `
 # codemode —— 代码编排工具(批量/并行/过滤大输出,中间结果不占上下文)
 
 写一段 JavaScript(异步函数体,顶层 await/return 可用),在沙箱里通过 \`tools.<工具名>(参数)\` 调用其它工具。
 嵌套工具调用的**全部中间结果不进对话上下文** —— 只有脚本 return 的值会返回给你。
 
-适用:批量打标/分类 N 个条目、链式调用(搜→读→提炼)、\`await Promise.allSettled([...])\` 并行、
-把大输出过滤成小摘要、循环调用直到条件满足。单次调用一个工具时**不要**用 codemode(直接调更便宜)。
-与「探查合批」的分工:3~5 个同构只读调用直接同轮并行发 tool_calls 即可;超过 5 个、需要循环/条件/汇总的大批量才用本工具。
+${decision}
 
 规则:
 - 原生 JS,无 require/import/fetch/fs/timer;只读工具照常可用,shell 等写操作的审批弹窗照常触发

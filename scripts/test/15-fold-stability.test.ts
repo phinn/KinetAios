@@ -144,7 +144,18 @@ test('小上下文零感知:未破线不折叠、不产生差异', () => {
   assert.equal(r.view, msgs, '未破线应原样返回同一数组');
 });
 
-run();
+// ─────────────────────────────────────────────────────────────────────────────
+// 开关回归:settings.foldHysteresisEnabled 关掉时 target 传 0,必须精确回到旧行为
+// (可折区内全部折掉、边界随新消息前移)。这是现场出问题时的退路,不能悄悄失效。
+// ─────────────────────────────────────────────────────────────────────────────
+test('开关关闭(target=0)= 旧行为:可折区全折,folded 明显多于滞后模式', () => {
+  const msgs = mkHistory(60);
+  const on = foldOldToolResults(msgs, undefined, { trigger: TRIGGER, target: TARGET });
+  const off = foldOldToolResults(msgs, undefined, { trigger: TRIGGER, target: 0 });
+  const toolCount = msgs.filter((m) => m.role === 'tool').length;
+  assert.equal(off.folded, toolCount - 6, `旧行为应为「除最近 keep 条外全部折叠」:${off.folded} vs ${toolCount - 6}`);
+  assert.ok(off.folded > on.folded, `关掉滞后应折更多:off=${off.folded} on=${on.folded}`);
+});
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 端到端 A/B:同一段 ReAct 轨迹,只切 foldTargetTokens(0 = 旧「每步推一条边界」),
@@ -206,3 +217,5 @@ test('A/B:滞后折叠把前缀改写次数压到旧实现的 1/N', async () => 
     `滞后折叠应显著减少改写:新 ${newRun.rewrites} vs 旧 ${oldRun.rewrites}(共 ${newRun.steps} 步)`,
   );
 });
+
+run();

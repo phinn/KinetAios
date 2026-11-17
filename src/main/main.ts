@@ -23,6 +23,8 @@ import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
 import { initStore, startHistorySlim, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
 import { startMemorySyncAuto } from './memory-sync';
+// 只读命令判定(与 AgentLoop 的 codemode 引导共用一份,见 shell-readonly.ts)
+import { isReadOnlyCommand } from './shell-readonly';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from './store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from './store';
@@ -147,22 +149,9 @@ let confirmSeq = 0;
 // 导致 Direct 引擎的 AgentLoop 卡在 await ctx.confirm() 上 —— 既泄漏 Promise 又锁住会话。
 const CONFIRM_TIMEOUT_MS = 300_000;
 
-// ── 只读命令白名单:整条命令全部命中只读前缀才自动放行 ──
-// 分析/探索任务要跑大量只读命令(ls/grep/git status…),逐条弹窗会把人变成 agent
-// 循环的瓶颈。白名单只认"确定无副作用"的命令;写操作、重定向、命令替换、任何
-// 不在白名单的成员仍然照常弹窗 —— 不改变写安全边界。
-const READONLY_CMD_RE =
-  /^(ls|dir|type|more|cat|head|tail|wc|grep|rg|findstr|file|stat|du|df|which|where|echo|pwd|cd|jq|git (status|log|diff|show|branch|blame|shortlog|describe|ls-files)|pip (list|show)|node --version|python --version|python -V|--version)\b/i;
-
-function isReadOnlyCommand(cmd: string): boolean {
-  const s = cmd.trim();
-  if (!s) return false;
-  // 重定向(写文件)、命令替换(可藏任意命令)→ 一律不算只读
-  if (/[<>`]|\$\(/.test(s)) return false;
-  // 按 shell 逻辑分隔符拆开,要求每一段都命中白名单(防 "ls && del x" 绕过)
-  const parts = s.split(/&&|\|\||&|\||;|\n/).map((p) => p.trim()).filter(Boolean);
-  return parts.length > 0 && parts.every((p) => READONLY_CMD_RE.test(p));
-}
+// ── 只读命令白名单 ──
+// 已提取到 shell-readonly.ts(2026-11):AgentLoop 的 codemode 引导也要用同一份判定,
+// 放在这里会让两个模块各持一份、日后各说各话。
 
 // ── 隐私闸 confirm 实现(main.ts 注入 privacy-gate,避免循环 import)──
 // 独立弹窗通道:privacy-request 事件 + privacy-confirm-response 回执,不走 shell confirm 的

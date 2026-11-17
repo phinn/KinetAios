@@ -95,6 +95,11 @@ export type EngineContextPolicy = {
    */
   foldTriggerTokens?: number;
   /**
+   * codemode 主动引导的覆盖位。undefined(常态)= 读 settings.codemodeNudgeEnabled。
+   * 显式 false 供测试/插件关闭轮内引导(只保留工具本身,模型完全自主)。
+   */
+  codemodeNudge?: boolean;
+  /**
    * 折叠回落的目视线(估算 token)。设了才启用**滞后折叠**:破触发线时一次折到目标线以下,
    * 之后边界冻结直到再次破线。
    *
@@ -397,6 +402,19 @@ export type AppSettings = {
   privacyGateEnabled: boolean;
   /** P0-2 技能自沉淀:turn 成功后自动判定是否蒸馏成可复用 skill(默认开) */
   distillAutoEnabled?: boolean;
+  /**
+   * V1 折叠「滞后模式」开关(默认开)。关 = 回到 2026-11 之前的行为:破触发线后
+   * 每步只多折一条,折叠边界逐步前移。开 = 一次折到目标线以下、边界冻结。
+   * 用途:若滞后折叠在现场出问题(上下文反复顶满、模型抱怨"看不到历史"),
+   * 关掉即恢复旧行为,无需回滚代码。
+   */
+  foldHysteresisEnabled?: boolean;
+  /**
+   * codemode 主动引导开关(默认开)。开 = systemPrompt 里带数量阈值判定规则,
+   * 且一轮内只读探查累计 ≥3 次仍未用 codemode 时注入一次提示。
+   * 关 = 只保留工具本身,模型完全自主决定是否使用(旧行为)。
+   */
+  codemodeNudgeEnabled?: boolean;
   // ── Goal 监工模式(Supervisor ↔ Worker)── 替身画像当监工,逐轮验收 Worker 产物并
   // 提出新要求;配 failover 模型链支持过夜长跑(额度尽/5h 上限自动切下一个模型)。
   goalSupervisorEnabled: boolean;   // true = Supervisor 验收制(需 persona 非空);false = 旧自检模式
