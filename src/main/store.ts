@@ -1828,6 +1828,38 @@ function convTitleFromTurns(convId: string): string {
   try { return (JSON.parse(t.data)?.prompt || '').slice(0, 40) || '—'; } catch { return '—'; }
 }
 
+// ── 5h 窗口消耗解剖(turn 粒度,聚合好给 dashboard 直接渲染)──
+// Token 诊断视图数据源:最近 5h 每个 turn 的 input/cache/output/费用 + 汇总。
+// 诊断口径:input 越肥的 turn 越吃窗口(长会话×工具往返全量重发前缀);
+// cache_read 计费打 1 折但按原始 token 吃窗口 —— 所以显示「cache 占比」而不只是费用。
+// 5h-window per-turn breakdown, pre-aggregated for the dashboard diagnostics view.
+export interface TurnTokenRow { ts: number; input: number; cache: number; output: number; cost: number; title: string; engine: string; model: string }
+export interface Window5hStat { turns: TurnTokenRow[]; totalIn: number; totalCache: number; totalOut: number; totalCost: number }
+export function turnTokens5h(): Window5hStat {
+  const since = Date.now() - 5 * 3600_000;
+  const rows = db.prepare(
+    `SELECT ts, conv_id, engine, tokens_in, tokens_out, cache_read, cache_creation, amount
+     FROM cost_log WHERE ts >= ? ORDER BY ts ASC;`,
+  ).all(since) as Array<{ ts: number; conv_id: string; engine: string; tokens_in: number; tokens_out: number; cache_read: number; cache_creation: number; amount: number }>;
+  const turns: TurnTokenRow[] = rows.map((r) => ({
+    ts: r.ts,
+    input: (r.tokens_in ?? 0) + (r.cache_read ?? 0) + (r.cache_creation ?? 0), // 真实发出去的 input(含缓存部分)
+    cache: r.cache_read ?? 0,
+    output: r.tokens_out ?? 0,
+    cost: r.amount ?? 0,
+    title: convTitleFromTurns(r.conv_id),
+    engine: r.engine,
+    model: dbModelOf(r.conv_id),
+  })).sort((a, b) => b.input - a.input).slice(0, 20); // 按 input 降序,前 20 足够定位肥 turn
+  return {
+    turns,
+    totalIn: turns.reduce((s, t) => s + t.input, 0),
+    totalCache: turns.reduce((s, t) => s + t.cache, 0),
+    totalOut: turns.reduce((s, t) => s + t.output, 0),
+    totalCost: turns.reduce((s, t) => s + t.cost, 0),
+  };
+}
+
 // MARK: cost_log — 每次会话完成时记一笔,用于成本看板趋势图
 export function logCost(convId: string, engine: string, amount: number, tokens: number, tokensIn = 0, tokensOut = 0, cacheRead = 0, cacheCreation = 0): void {
   stmt('INSERT INTO cost_log(id, conv_id, engine, amount, tokens, ts, tokens_in, tokens_out, cache_read, cache_creation) VALUES(?,?,?,?,?,?,?,?,?,?);')

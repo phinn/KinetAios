@@ -1217,6 +1217,11 @@ export interface KinetAPI {
     byProject: Array<{ project: string; tokens: number; cost: number; requests: number }>;
     byConv: Array<{ convId: string; title: string; model: string; tokens: number; cost: number; requests: number }>;
   }>;
+  // ── 5h 窗口消耗解剖(Token 诊断视图)──
+  // 窗口内 turn 粒度 token 明细(input 含 cache,降序 top20)+ 汇总;
+  // quotaWindowState = 智谱 Coding Plan 实时百分比 + 距重置分钟(null = 非 coding-plan)。
+  turnTokens5h(): Promise<{ turns: Array<{ ts: number; input: number; cache: number; output: number; cost: number; title: string; engine: string; model: string }>; totalIn: number; totalCache: number; totalOut: number; totalCost: number }>;
+  quotaWindowState(): Promise<{ usedPct: number | null; minsLeft: number | null }>;
   // ── 记忆图谱窗口 ──
   openMemoryGraph(): Promise<boolean>;
   // ── 上下文考古:读取会话事件流(conv_events,append-only 事实源)──

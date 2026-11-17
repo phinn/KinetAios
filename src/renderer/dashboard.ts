@@ -6,6 +6,7 @@ import { applyEvent } from '../shared/types';
 import type { AgentEvent, Conversation, EngineKind, KinetAPI } from '../shared/types';
 import { t, engineLabel, type Lang } from '../shared/i18n';
 import { ENGINE_COLORS } from './engine-colors';
+import { renderWindow } from './dashboard-window';
 
 declare global { interface Window { kinet: KinetAPI } }
 
@@ -359,6 +360,7 @@ async function loadUsageStats(): Promise<void> {
     renderHeatmap(u);
     renderTrendChart(u);
     renderRankings(u);
+    renderWindow({ api, tr, esc }); // 5h 窗口消耗解剖(turn 粒度 + quota 百分比)
   } catch {
     // 静默失败(首次启动无 cost_log)
   }

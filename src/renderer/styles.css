@@ -7035,6 +7035,27 @@ body.meta-compact .ai-meta-left:has(+ .ai-meta-actions:hover) { opacity: 1; }
 
 /* ═══ 用量看板(对齐 Juejin Usage):KPI 卡/热力图/趋势/排行 ═══ */
 .u-kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+
+/* ── 5h 窗口消耗解剖(Token 诊断视图)── */
+.u-win-wrap { display: flex; flex-direction: column; gap: 10px; }
+.u-win-head { display: flex; align-items: center; gap: 12px; }
+.u-win-pct { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -0.02em; min-width: 64px; }
+.u-win-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+.u-win-track { height: 10px; background: var(--bg-input); border-radius: 999px; overflow: hidden; }
+.u-win-track.big { height: 14px; }
+.u-win-fill { height: 100%; border-radius: 999px; background: #4ec27a; min-width: 2px; transition: width .4s ease; }
+.u-win-sub { font-size: var(--fs-md); color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.u-win-rows { display: flex; flex-direction: column; gap: 4px; }
+.u-win-row { display: grid; grid-template-columns: 52px 1fr auto; align-items: center; gap: 10px; font-size: var(--fs-md); }
+.u-win-row.fat .u-win-time { color: var(--run); font-weight: 600; }
+.u-win-row.fat .u-win-fill { background: var(--run); }
+.u-win-row.fat .u-win-val { color: var(--run); }
+.u-win-time { color: var(--text-faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.u-win-track:not(.big) { height: 8px; }
+.u-win-val { font-variant-numeric: tabular-nums; color: var(--text-dim); white-space: nowrap; }
+.u-win-cache { font-style: normal; font-size: var(--fs-xs); color: var(--text-faint); margin-left: 4px; }
+.u-win-note { font-size: var(--fs-md); color: var(--text-faint); line-height: 1.5; }
+.u-win-empty { color: var(--text-faint); font-size: var(--fs-md); padding: 8px 0; }
 .u-card { background: var(--bg-elev); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 12px 14px; min-width: 0; }
 .u-card-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .u-card-label { font-size: var(--fs-md); color: var(--text-dim); }

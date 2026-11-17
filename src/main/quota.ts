@@ -45,3 +45,22 @@ async function queryOnce(profileId: string | null): Promise<number | null> {
     return null;
   }
 }
+
+// 窗口状态(占比 + 距重置分钟):给 dashboard 窗口消耗视图直接展示。
+// 只在 provider 是 zhipu-coding-plan 时有值;其余 provider 返回 null = 视图显示"不适用"。
+// Window state (used % + minutes to reset) for the dashboard window view; null = N/A.
+export async function quotaWindowState(): Promise<{ usedPct: number | null; minsLeft: number | null }> {
+  // unit=3 是 5h 窗口,period 初值拿不到具体起点 —— 用"上次 percentage 变化的时刻"近似:
+  // 简化口径:窗口起点 = 当前时间对齐到 5h 网格的起点。智谱窗口是滚动 5h(从首查起算),
+  // 精确重置时刻只有服务端知道;这里用网格起点估算剩余时间,误差最多一个 5h 周期。
+  // Simplification: align to the 5h wall-clock grid for minutesLeft (rolling window true
+  // reset time is server-side only); display as estimate.
+  const pct = await codingPlan5hPct(null);
+  // 网格近似:5h 窗口起点按 wall-clock 对齐(0/5/10/15/20 点),剩余分钟 = 5h - 窗口内已过分钟。
+  // Rolling window 的精确重置时刻只有服务端知道,此处为估算,误差最多一个周期。
+  // Grid approximation: window starts at 0/5/10/15/20h wall-clock; minutesLeft = 5h - elapsed.
+  const now = new Date();
+  const hourInWindow = (now.getHours() % 5) * 60 + now.getMinutes();
+  const minsLeft = 5 * 60 - hourInWindow;
+  return { usedPct: pct, minsLeft: pct === null ? null : minsLeft };
+}
