@@ -341,6 +341,10 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   }
   // reactive trim 预算:从策略包取(覆盖硬编码 15K)。hifi 模式策略 trimBudget 已翻倍,不用再读 hifiContextBudget。
   const trimBudget = opts.policy?.trimBudget ?? 15_000;
+  // 折叠光标(2026-11 缓存审计):turn 内折叠边界只前进不后退 —— 只有破触发线才补折,
+  // 其余步沿用同一份折叠视图 → 前缀字节级稳定。见 foldOldToolResults 的滞后说明。
+  const foldCursor = newFoldCursor();
+  const foldOpts = { trigger: opts.policy?.foldTriggerTokens, target: opts.policy?.foldTargetTokens, cursor: foldCursor };
   // maxTurns 解析(修复:用户设置曾被 V3 硬编码完全无视):
   // - settings.maxTurns 是全局天花板;opts.maxTurns(内部路径上限,如 fast=5/std=20)只在比它更紧时生效。
   // - 用户设 0 = 无限 → 标准路径不限轮;但 deep 节点的内部保险丝(8 轮/段)仍须生效,
@@ -476,7 +480,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
       }
       // turn 内折叠:超阈值时折叠旧工具结果为摘要行(仅本次调用的视图,messages 原数组不动)。
       // 对标 Claude Code microcompact — 单 turn 长跑不再 O(N²) 重发全量工具结果。
-      const { view, folded, savedTokens } = foldOldToolResults(messages, snapshot.apiProtocol);
+      const { view, folded, savedTokens } = foldOldToolResults(messages, snapshot.apiProtocol, foldOpts);
       if (folded > 0) {
         onEvent({ type: 'context', action: 'trimmed', beforeTokens: estTokenCount(messages, snapshot.apiProtocol), afterTokens: estTokenCount(view, snapshot.apiProtocol) } as AgentEvent & { type: 'context' });
         onEvent({ type: 'status', text: `♻️ 已折叠 ${folded} 条早期工具结果(省 ~${Math.round(savedTokens / 1000)}K tokens,重调同一工具可取回)` });
@@ -683,7 +687,7 @@ export async function runAgentLoop(opts: RunOpts): Promise<ChatMsg[]> {
   if (!signal.aborted) {
     try {
       onEvent({ type: 'status', text: '⏳ 已达轮数上限,正在收尾总结…' });
-      const { view: wrapUpView } = foldOldToolResults(messages, snapshot.apiProtocol);
+      const { view: wrapUpView } = foldOldToolResults(messages, snapshot.apiProtocol, foldOpts);
       const wrapUp = await provider.streamComplete(
         [...wrapUpView, { role: 'user', content: '[系统] 已达最大工具调用轮数。不要再调用任何工具,立即基于已完成的进展给出最终总结回答。', _transient: true } as typeof messages[number]],
         [], // 无工具 → 模型只能输出文本
@@ -1397,14 +1401,49 @@ function foldStaleImagesOnly(msgs: ChatMsg[]): { view: ChatMsg[]; folded: number
   return { view, folded: stale.size, savedTokens: stale.size * 2700 };
 }
 
-// 折叠视图生成:超阈值时把(除最近 KEEP_RECENT 条外的)旧工具结果替换为摘要行。
+// 折叠视图生成:超触发线时把可折区内的旧工具结果替换为摘要行,并一次性回落到目标线以下。
 // 摘要行格式:「[已折叠 tool_name 目标]」 — 模型知道看过什么、结果去哪了、怎么取回。
-export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: ChatMsg[]; folded: number; savedTokens: number } {
+//
+// ⚡ 缓存稳定性(2026-11 token 审计,14,980 次调用 / 298 turn 实证):
+// 折叠改写的是消息数组中段,而自动前缀缓存从改写点往后全部失效。旧实现「除最近 6 条外
+// 全折」每步只多折一条 → 每步都推一次边界,上下文被钉在触发线上反复重写:
+// 22.7% 的调用落在「部分失效」桶(单周 71M 输入 token 按全价重算,占全部未命中量的 42%),
+// 且未命中调用的前序上下文 p50 = 81K —— 正好压在 80K 触发线上。
+//
+// 现在改为「滞后折叠(hysteresis)」:一旦破线就一次折到 target 以下,并用 cursor 记住已折
+// 集合 —— 此后边界冻结(视图逐字节不变、全部命中缓存),直到再次破线才继续推进。
+// 把「每步一次前缀失效」摊成「每 N 步一次」。cursor 不传时退化为无状态折叠(跨 turn 预算
+// 这类一次性场景,语义与旧版一致)。
+export type FoldCursor = {
+  folded: Set<string>;
+  /** 下一次允许折叠时的视图体积门槛。折完若够不到目标线(上下文里有折不掉的地板:
+   *  系统提示 + keep 保窗 + 未折叠消息),就把门槛抬到「折后体积 + (触发线-目标线)」,
+   *  保证两次折叠之间至少隔着这么一块增长 —— 否则会退化成每步折一次。 */
+  nextTrigger?: number;
+};
+
+export function newFoldCursor(): FoldCursor {
+  return { folded: new Set() };
+}
+
+export function foldOldToolResults(
+  msgs: ChatMsg[],
+  proto?: string,
+  opts?: { trigger?: number; target?: number; keep?: number; cursor?: FoldCursor },
+): { view: ChatMsg[]; folded: number; savedTokens: number } {
+  const trigger = opts?.trigger && opts.trigger > 0 ? opts.trigger : FOLD_TRIGGER_TOKENS;
+  const target = opts?.target && opts.target > 0 ? opts.target : 0;
+  const keep = opts?.keep && opts.keep > 0 ? opts.keep : FOLD_KEEP_RECENT;
+  const cursor = opts?.cursor;
   const total = estTokenCount(msgs, proto);
   // 豁免窗口外的旧截图不做总闸判断 —— computer-use 循环(少量文本+图)可能长期在
-  // 40-60K 徘徊,够不到 80K 总闸,旧图会无限堆积;而旧图看一眼即弃,任何时候收都无信息损失。
+  // 40-60K 徘徊,够不到总闸,旧图会无限堆积;而旧图看一眼即弃,任何时候收都无信息损失。
   const overStaleImages = imageMsgCountOverExempt(msgs) > 0;
-  if (total <= FOLD_TRIGGER_TOKENS && !overStaleImages) return { view: msgs, folded: 0, savedTokens: 0 };
+  const overTrigger = total > trigger;
+  // 未破线且没有已折记录 → 原样返回(小 turn 与大 turn 的冻结期都走这条,视图零变化)
+  if (!overTrigger && !overStaleImages && !(cursor && cursor.folded.size > 0)) {
+    return { view: msgs, folded: 0, savedTokens: 0 };
+  }
   // 收集全部 tool 消息下标(排除 _transient —— 尚未消费;折叠无意义)
   // 含多模态(数组 content):截图消息必须参与折叠,否则长跑会话里图片永不回收。
   const toolIdx: number[] = [];
@@ -1413,95 +1452,143 @@ export function foldOldToolResults(msgs: ChatMsg[], proto?: string): { view: Cha
     if (m.role === 'tool' && !m._transient && m.content != null &&
         (typeof m.content === 'string' ? m.content.length > 0 : m.content.length > 0)) toolIdx.push(k);
   }
-  if (toolIdx.length <= FOLD_KEEP_RECENT) {
-    // 总闸没过、只有旧图超窗:不进全量 foldSet 流程,单独收图(保 text part)。
+  if (toolIdx.length <= keep) {
+    // 总闸没过、只有旧图超窗:不进全量折叠流程,单独收图(保 text part)。
     if (overStaleImages) return foldStaleImagesOnly(msgs);
     return { view: msgs, folded: 0, savedTokens: 0 };
   }
-  const foldSet = new Set(toolIdx.slice(0, toolIdx.length - FOLD_KEEP_RECENT));
+  // 可折区 = 最近 keep 条之外。keep 是硬保窗:本轮刚产生的工具结果绝不在模型读到前被折。
+  const floor = toolIdx.length - keep;
   // 截图豁免:数组 content(多模态截图)里带 image part 的消息,只豁免最近 N 张,
   // 更早的照常折叠 —— 否则 472 张 2560×1440 截图在长跑会话里永不回收(2026-10 实测占 KinetVM 频道 32% input)。
   const imageMsgIdx = toolIdx.filter((k) => Array.isArray(msgs[k].content) &&
     (msgs[k].content as ContentPart[]).some((p) => p.type === 'image_url'));
   const imageExempt = new Set(imageMsgIdx.slice(-FOLD_KEEP_RECENT_IMAGES));
+  const c = coefFor(proto);
+  const tokOf = (m: ChatMsg): number => Math.floor(estMsgChars(m) * c) + 20;
+  // tool_call_id → 调用签名。一次建表取代旧版逐条 msgs.find 的 O(n²)
+  // (长跑 turn 里 n 可达数千,旧版每步折叠都要扫一遍全表)。
+  const callById = new Map<string, { name: string; arguments: string }>();
+  for (const m of msgs) {
+    if (m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+      for (const tc of m.tool_calls) callById.set(tc.id, { name: tc.function.name, arguments: tc.function.arguments });
+    }
+  }
+  // 单条工具消息折叠后的替代消息(摘要行);null = 该条不可折。
+  const foldMsgOf = (k: number): ChatMsg | null => {
+    const m = msgs[k];
+    const tc = m.tool_call_id ? callById.get(m.tool_call_id) : undefined;
+    const tgt = tc ? foldTargetOf(tc.name, tc.arguments) : '';
+    if (typeof m.content === 'string') {
+      const head = m.content.slice(0, 200).replace(/\s+/g, ' ').trim();
+      return { ...m, content: `[已折叠 ${tc?.name ?? 'tool'}${tgt ? ` ${tgt}` : ''}] ${head}${m.content.length > 200 ? '…' : ''}${FOLD_RESUME_HINT}` };
+    }
+    // 多模态截图消息:保留 text part(截图说明/几何信息),image part 换占位文本。
+    // 折叠后 content 退化为纯字符串 —— 协议合法(tool 消息 content 可为 string),图片即被回收。
+    const parts = m.content as ContentPart[];
+    const textPart = parts.filter((p) => p.type === 'text').map((p) => (p as { text: string }).text).join(' ');
+    const head = textPart.slice(0, 80).replace(/\s+/g, ' ').trim();
+    return { ...m, content: `[已折叠 ${tc?.name ?? 'screenshot'}${tgt ? ` ${tgt}` : ''}] ${head}…${FOLD_IMAGE_PLACEHOLDER}` };
+  };
+  // 候选(时间正序 = 从最旧开始)。最近 N 张截图豁免,不进候选。
+  type Cand = { k: number; id: string; folded: ChatMsg; saved: number };
+  const cands: Cand[] = [];
+  for (let n = 0; n < floor; n++) {
+    const k = toolIdx[n];
+    const id = msgs[k].tool_call_id;
+    if (!id || imageExempt.has(k)) continue;
+    const folded = foldMsgOf(k);
+    if (!folded) continue;
+    cands.push({ k, id, folded, saved: Math.max(0, tokOf(msgs[k]) - tokOf(folded)) });
+  }
+  // 滞后决策:先继承 cursor(边界只前进不后退),再在破线时一次性补折到 target 以下。
+  const inherited = cursor?.folded ?? new Set<string>();
+  const planned = new Set<string>();
+  let projected = total;
+  for (const cd of cands) {
+    if (inherited.has(cd.id)) { planned.add(cd.id); projected -= cd.saved; }
+  }
+  let added = 0;
+  // 生长闸必须看「折叠后的视图体积」projected,而不是原始总量 total —— total 是未折叠的
+  // 原数组,折完之后仍然远超触发线,拿它当闸就等于每步都折一次(旧 bug 的等价形式)。
+  // 门槛取 cursor.nextTrigger:正常情况下就是触发线;若上次折叠够不到目标线(地板太高),
+  // 门槛已按「折后体积 + 间隔」抬高 → 仍能保证两次折叠之间有一段稳定的缓存命中期。
+  const gate = cursor?.nextTrigger && cursor.nextTrigger > trigger ? cursor.nextTrigger : trigger;
+  if (projected > gate || overStaleImages) {
+    for (const cd of cands) {
+      if (planned.has(cd.id)) continue;
+      if (target > 0 && projected <= target) break; // 已回到目标线以下 → 边界冻结,后面几步不再动它
+      planned.add(cd.id);
+      projected -= cd.saved;
+      added++;
+    }
+    // 折叠后抬高下一次的门槛(只有真折了才抬,免得空转时把后续折叠永久关掉)。
+    if (cursor && added > 0 && target > 0) {
+      cursor.nextTrigger = Math.max(trigger, projected + (trigger - target));
+    }
+  }
+  if (cursor) for (const cd of cands) if (planned.has(cd.id)) cursor.folded.add(cd.id);
+  // 落到视图:折叠集合(下标 + id 双索引)
+  const foldIdx = new Set<number>();
+  const foldedById = new Map<string, ChatMsg>();
+  for (const cd of cands) {
+    if (!planned.has(cd.id)) continue;
+    foldIdx.add(cd.k);
+    foldedById.set(cd.id, cd.folded);
+  }
+  const toolIdxById = new Map<string, number>();
+  for (const k of toolIdx) {
+    const id = msgs[k].tool_call_id;
+    if (id) toolIdxById.set(id, k);
+  }
   // 相邻 assistant(tool_calls)也一起折叠:folded 结果 + 完整参数原文并存无意义,参数才是大头。
   // 只折叠"全部 tool_calls 都已折叠"的 assistant,且无文本内容(有文本的保留原文)。
   const assistantFullyFolded = new Set<number>();
   for (let k = 0; k < msgs.length; k++) {
     const m = msgs[k];
-    if (m.role === 'assistant' && Array.isArray(m.tool_calls) && m.tool_calls.length > 0 &&
-        !(typeof m.content === 'string' && m.content.trim().length > 0) &&
-        m.tool_calls.every((tc) => msgs.some((x, xi) => x.role === 'tool' && x.tool_call_id === tc.id && foldSet.has(xi) && !imageExempt.has(xi)))) {
-      // 截图豁免的消息:其 assistant 也不能折叠参数(否则 tool_call_id 悬空、模型失去"从哪重截"的线索)
+    if (m.role !== 'assistant' || !Array.isArray(m.tool_calls) || m.tool_calls.length === 0) continue;
+    if (typeof m.content === 'string' && m.content.trim().length > 0) continue;
+    // 截图豁免的消息:其 assistant 也不折参数(否则 tool_call_id 悬空、模型失去"从哪重截"的线索)。
+    // foldIdx 已排除豁免截图 → 这里无需再判。
+    if (m.tool_calls.every((tc) => { const ti = toolIdxById.get(tc.id); return ti != null && foldIdx.has(ti); })) {
       assistantFullyFolded.add(k);
     }
   }
-  const c = coefFor(proto);
-  let saved = 0;
-  // 尾部豁免窗口内的 write_file/edit_file:工具结果必须保留(重试/对照需要),但调用参数
-  // (new_string 动辄 10K+)模型已不需要原文 —— 写过的内容就在文件里,edit 结果也回显了。
-  // 巨型 args 退化为摘要行,tool_call_id 与 id 配对保持协议合法。
+  // 写类工具的参数(new_string 动辄 10K+)模型不再需要原文 —— 内容就在文件里、edit 结果也回显了。
+  // 只裁「折叠边界之前」的(边界单调前进 → 裁一次永久生效)。旧写法裁的是最近那批:
+  // 滑出窗口后又还原成完整参数 → 每步一次反向改写 + 参数回涨,等于自带一个缓存破坏器。
   const TAIL_ARG_PRUNE = ['write_file', 'edit_file'];
-  const tailArgsLimit = toolIdx.length - FOLD_KEEP_RECENT;
+  const pruneBefore = foldIdx.size ? Math.max(...foldIdx) : -1;
   const view = msgs.map((m, k) => {
-    if (k >= tailArgsLimit && m.role === 'assistant' && Array.isArray(m.tool_calls)) {
+    if (k < pruneBefore && m.role === 'assistant' && Array.isArray(m.tool_calls)) {
       let changed = false;
-      let argsSaved = 0;
       const tool_calls = m.tool_calls.map((tc) => {
         if (!TAIL_ARG_PRUNE.includes(tc.function.name)) return tc;
-        const argsLen = tc.function.arguments.length;
-        if (argsLen < 2000) return tc; // 小参数不动,零感知
-        const target = foldTargetOf(tc.function.name, tc.function.arguments) || '(无路径)';
-        const kb = (argsLen / 1024).toFixed(1);
-        argsSaved += argsLen;
+        if (tc.function.arguments.length < 2000) return tc; // 小参数不动,零感知
+        const tgt = foldTargetOf(tc.function.name, tc.function.arguments) || '(无路径)';
+        const kb = (tc.function.arguments.length / 1024).toFixed(1);
         changed = true;
-        return { ...tc, function: { ...tc.function, arguments: JSON.stringify({ _folded: `已写入 ${target}(内容 ${kb}K,原文在文件/结果里)` }) } };
+        return { ...tc, function: { ...tc.function, arguments: JSON.stringify({ _folded: `已写入 ${tgt}(内容 ${kb}K,原文在文件/结果里)` }) } };
       });
-      if (changed) {
-        saved += Math.max(0, Math.floor(argsSaved * c));
-        return { ...m, tool_calls };
-      }
+      if (changed) return { ...m, tool_calls };
     }
-    if (foldSet.has(k) && typeof m.content === 'string') {
-      // 找到对应的 assistant.tool_calls 拿 name/args 生成摘要行
-      const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
-      const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
-      const target = tc ? foldTargetOf(tc.function.name, tc.function.arguments) : '';
-      const head = m.content.slice(0, 200).replace(/\s+/g, ' ').trim();
-      const line = `[已折叠 ${tc?.function.name ?? 'tool'}${target ? ` ${target}` : ''}] ${head}${m.content.length > 200 ? '…' : ''}${FOLD_RESUME_HINT}`;
-      saved += Math.max(0, Math.floor((m.content.length - line.length) * c));
-      return { ...m, content: line };
-    }
-    // 多模态截图消息:保留 text part(截图说明/几何信息),image part 换占位文本。
-    // 折叠后 content 退化为纯字符串 —— 协议合法(tool 消息 content 可为 string),图片即被回收。
-    if (foldSet.has(k) && Array.isArray(m.content) && !imageExempt.has(k)) {
-      const caller = msgs.find((x) => x.role === 'assistant' && Array.isArray(x.tool_calls) && x.tool_calls.some((tc) => tc.id === m.tool_call_id));
-      const tc = caller && Array.isArray(caller.tool_calls) ? caller.tool_calls.find((t2) => t2.id === m.tool_call_id) : undefined;
-      const target = tc ? foldTargetOf(tc.function.name, tc.function.arguments) : '';
-      const parts = m.content as ContentPart[];
-      const textPart = parts.filter((p) => p.type === 'text').map((p) => (p as { text: string }).text).join(' ');
-      const head = textPart.slice(0, 80).replace(/\s+/g, ' ').trim();
-      const line = `[已折叠 ${tc?.function.name ?? 'screenshot'}${target ? ` ${target}` : ''}] ${head}…${FOLD_IMAGE_PLACEHOLDER}`;
-      // saved 按 vision tile 固定值估算(与 estMsgChars 口径一致),不按 base64 字符折算
-      const imgCount = parts.filter((p) => p.type === 'image_url').length;
-      saved += imgCount * 2700 + Math.max(0, Math.floor((textPart.length - line.length) * c));
-      return { ...m, content: line };
+    if (m.role === 'tool' && m.tool_call_id) {
+      const folded = foldedById.get(m.tool_call_id);
+      if (folded) return folded;
     }
     if (assistantFullyFolded.has(k) && Array.isArray(m.tool_calls)) {
       const desc = m.tool_calls.map((t2) => `${t2.function.name}(${foldTargetOf(t2.function.name, t2.function.arguments)})`).join('; ');
-      const line = `[已折叠工具调用批次: ${desc}]`;
-      saved += Math.max(0, Math.floor((JSON.stringify(m.tool_calls).length - line.length) * c));
       // arguments 置 '{}' 真正砍掉参数原文(edit_file 的 new_string 动辄几 KB);
       // id 保留 → 与折叠后 tool 结果的 tool_call_id 配对不破,协议仍合法。信息由 desc 摘要行承载。
       return {
         ...m,
-        content: line,
+        content: `[已折叠工具调用批次: ${desc}]`,
         tool_calls: m.tool_calls.map((t2) => ({ ...t2, function: { ...t2.function, arguments: '{}' } })),
       };
     }
     return m;
   });
-  return { view, folded: foldSet.size, savedTokens: saved };
+  return { view, folded: added, savedTokens: Math.max(0, total - estTokenCount(view, proto)) };
 }
 
 // Drop orphan tool messages (their caller assistant was trimmed away) so the next API call is valid.
