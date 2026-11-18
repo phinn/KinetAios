@@ -3436,7 +3436,14 @@ const loadSkillTool: Tool = {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { loadSkillBody, listSkills } = require('./skills') as typeof import('./skills');
     const body = loadSkillBody(name);
-    if (body != null) return body;
+    if (body != null) {
+      // 使用计数:淘汰判据之一(长期 0 加载 = 死技能)。单条 upsert,不查库。
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-var-requires
+        (require('./store') as typeof import('./store')).recordSkillUse(name);
+      } catch { /* 计数 best-effort */ }
+      return body;
+    }
     const names = listSkills().map((s) => s.name);
     // 全量列出:名字本身短,98 个也就 ~1300 字符,截 40 个反而让模型二次猜错。
     // List all names: they're short (~1300 chars for 98); truncating to 40 invites guess-again loops.

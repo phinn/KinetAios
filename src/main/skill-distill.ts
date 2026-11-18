@@ -16,6 +16,8 @@ export interface DistillResult {
   distilled: boolean;
   /** 写盘的 skill 名(frontmatter name);未蒸馏时为空 */
   name: string;
+  /** 落盘目录名(distilled/<slug>);调用方据此记溯源(skill_origin) */
+  slug: string;
   path: string;
   reason?: string;
 }
@@ -91,10 +93,10 @@ export async function distillSkill(opts: {
   try {
     verdict = parseJsonLoose(await llm.complete(JUDGE_SYSTEM, judgeInput, signal));
   } catch (e) {
-    return { distilled: false, name: '', path: '', reason: `judge 失败: ${(e as Error).message}` };
+    return { distilled: false, name: '', slug: '', path: '', reason: `judge 失败: ${(e as Error).message}` };
   }
   if (!verdict.distill) {
-    return { distilled: false, name: '', path: '', reason: verdict.reason ?? '任务平凡,不值得沉淀' };
+    return { distilled: false, name: '', slug: '', path: '', reason: verdict.reason ?? '任务平凡,不值得沉淀' };
   }
 
   const writeInput =
@@ -103,15 +105,16 @@ export async function distillSkill(opts: {
   try {
     doc = (await llm.complete(WRITE_SYSTEM, writeInput, signal)).trim();
   } catch (e) {
-    return { distilled: false, name: '', path: '', reason: `生成失败: ${(e as Error).message}` };
+    return { distilled: false, name: '', slug: '', path: '', reason: `生成失败: ${(e as Error).message}` };
   }
   const meta = parseSkillMeta(doc);
   if (!meta.name || !meta.description) {
-    return { distilled: false, name: '', path: '', reason: '产出缺少 frontmatter,放弃写入' };
+    return { distilled: false, name: '', slug: '', path: '', reason: '产出缺少 frontmatter,放弃写入' };
   }
 
   const dir = distilledDir();
-  const skillDir = path.join(dir, slugify(meta.name));
+  const slug = slugify(meta.name);
+  const skillDir = path.join(dir, slug);
   fs.mkdirSync(skillDir, { recursive: true });
   const file = path.join(skillDir, 'SKILL.md');
   fs.writeFileSync(file, doc.endsWith('\n') ? doc : `${doc}\n`, 'utf8');
@@ -124,5 +127,5 @@ export async function distillSkill(opts: {
   } catch {
     /* noop */
   }
-  return { distilled: true, name: meta.name, path: file };
+  return { distilled: true, name: meta.name, slug, path: file };
 }

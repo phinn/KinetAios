@@ -10,12 +10,17 @@
 //   node scripts/turn-feedback-report.js              # 近 30 天
 //   node scripts/turn-feedback-report.js --days 7     # 近 7 天
 //   node scripts/turn-feedback-report.js --prune      # 额外列淘汰候选(distilled 目录)
+//   node scripts/turn-feedback-report.js --prune --apply   # 把候选移进 .archive/(不删)
+//   node scripts/turn-feedback-report.js --restore        # 列出已归档
+//   node scripts/turn-feedback-report.js --restore <slug|id>  # 搬回 distilled/
 //
 // 口径:
 // - 评分来源是隐式的:用户下一轮带着不满回来(correction)/ 把同一件事再问一遍(reask)/
 //   引擎报错或用户点停止(error|aborted)。rating=-1 恒负、只升不降。
 // - "技能返工率" = 加载了该技能的 turn 里,有多少最终被记为负。分母是加载轮数。
-// - --prune 只报告不删文件:技能目录在用户 home 下,删之前必须由人确认。
+// - --prune 默认只报告;--apply 才动文件,且只是同一磁盘上 rename 进 .archive/,
+//   一个字节都不删。恢复用 --restore。手写技能(~/.kinetaios/skills/<name>)永不触碰,
+//   只扫 distilled/ 一层。
 const { execFileSync } = require('node:child_process');
 const fs = require('node:fs');
 const os = require('node:os');
@@ -33,6 +38,12 @@ function arg(name, dflt) {
   return i > 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--') ? Number(process.argv[i + 1]) : dflt;
 }
 const flag = (name) => process.argv.includes(`--${name}`);
+// 字符串参数(--restore <slug> / --skills-dir <dir>):下一个 token 不是 -- 开头才算。
+function strArg(name) {
+  const i = process.argv.indexOf(`--${name}`);
+  const v = i > 0 ? process.argv[i + 1] : undefined;
+  return v && !v.startsWith('--') ? v : '';
+}
 
 function q(db, sql) {
   const out = execFileSync('sqlite3', [`file:${db}?mode=ro`, '-separator', '|', sql], {
@@ -121,12 +132,85 @@ if (sorted.length) {
   console.log(`\n  近 ${days} 天没有 load_skill 调用记录。`);
 }
 
-// ── ③ 淘汰候选(只报告,不动文件)──────────────────────────────
-const distilledDir = path.join(os.homedir(), '.kinetaios', 'skills', 'distilled');
+// ── ③ 淘汰动作的落地件:distilled 路径 + 归档/恢复原语 ──────────
+const distilledDir = strArg('skills-dir') || path.join(os.homedir(), '.kinetaios', 'skills', 'distilled');
+const ARCHIVE_DIRNAME = '.archive';
+const ARCHIVE_INDEX = '_index.jsonl';
+const archiveRoot = () => path.join(distilledDir, ARCHIVE_DIRNAME);
+
+/** 归档一个技能目录:同卷 rename + 追加索引行。返回 id;目录不存在返回 ''。 */
+function archiveSkill(slug, name, reasons) {
+  const src = path.join(distilledDir, slug);
+  if (!fs.existsSync(src)) return '';
+  fs.mkdirSync(archiveRoot(), { recursive: true });
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  let id = `${slug}__${stamp}`;
+  let dest = path.join(archiveRoot(), id);
+  for (let i = 1; fs.existsSync(dest); i++) {
+    id = `${slug}__${stamp}-${i}`;
+    dest = path.join(archiveRoot(), id);
+  }
+  fs.renameSync(src, dest);
+  fs.appendFileSync(
+    path.join(archiveRoot(), ARCHIVE_INDEX),
+    `${JSON.stringify({ id, slug, name, reasons, at: Date.now() })}\n`,
+    'utf8',
+  );
+  return id;
+}
+
+function readArchiveIndex() {
+  let text = '';
+  try {
+    text = fs.readFileSync(path.join(archiveRoot(), ARCHIVE_INDEX), 'utf8');
+  } catch {
+    return [];
+  }
+  const out = [];
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t) continue;
+    try {
+      const e = JSON.parse(t);
+      if (e && typeof e.id === 'string') out.push(e);
+    } catch { /* 跳过坏行 */ }
+  }
+  return out.reverse();
+}
+// ── ④ 恢复(--restore)────────────────────────────────────────
+if (flag('restore')) {
+  const target = strArg('restore');
+  const entries = readArchiveIndex();
+  if (!target) {
+    console.log(`\n已归档 ${entries.length} 个(${archiveRoot()})\n`);
+    if (!entries.length) console.log('  空。');
+    for (const e of entries.slice(0, 40)) {
+      console.log(`  ${String(e.id).padEnd(46)}${String(e.name).padEnd(26)}${(e.reasons || []).join(' · ')}`);
+    }
+    console.log('\n  恢复:--restore <slug 或 id>');
+    console.log('');
+    process.exit(0);
+  }
+  const hit = entries.find((e) => e.id === target) || entries.find((e) => e.slug === target);
+  if (!hit) {
+    console.error(`归档里没有:${target}(用 --restore 不带参数看列表)`);
+    process.exit(1);
+  }
+  const src = path.join(archiveRoot(), hit.id);
+  const dest = path.join(distilledDir, hit.slug);
+  if (!fs.existsSync(src)) { console.error(`归档目录已不存在:${src}`); process.exit(1); }
+  if (fs.existsSync(dest)) { console.error(`目标已存在,拒绝覆盖:${dest}`); process.exit(1); }
+  fs.renameSync(src, dest);
+  console.log(`\n已恢复:${hit.slug} → ${dest}\n`);
+  process.exit(0);
+}
+
+// ── ⑤ 淘汰候选(默认只报告;--apply 才移进 .archive/)────────────
 if (flag('prune')) {
   let entries = [];
   try {
-    entries = fs.readdirSync(distilledDir, { withFileTypes: true }).filter((e) => e.isDirectory());
+    entries = fs.readdirSync(distilledDir, { withFileTypes: true })
+      .filter((e) => e.isDirectory() && !e.name.startsWith('.'));
   } catch {
     console.log(`\n  没有蒸馏目录:${distilledDir}`);
   }
@@ -143,8 +227,10 @@ if (flag('prune')) {
       continue;
     }
     // 蒸馏 frontmatter 的 name 才是引擎里的名字;目录名是 slug,可能被 slugify 过。
-    const head = fs.readFileSync(file, 'utf8').slice(0, 400);
-    const name = (head.match(/^name:\s*(.+)$/m) || [])[1]?.trim() || e.name;
+    const raw = fs.readFileSync(file, 'utf8');
+    const name = (raw.slice(0, 400).match(/^name:\s*(.+)$/m) || [])[1]?.trim() || e.name;
+    // 空胎判据看"正文"字节数(去掉 frontmatter),不是文件大小 —— 与 src/main/skill-archive.ts 同口径。
+    bytes = Buffer.byteLength(raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, ''), 'utf8');
     const rec = use.get(name) || use.get(e.name);
     const ageDays = Math.floor((Date.now() - mtime) / 86400_000);
     // 给新技能一个被用到的机会:蒸馏完当天就没人调是正常的(还没遇到同类任务),
@@ -155,7 +241,7 @@ if (flag('prune')) {
       stale.push({ slug: e.name, name, loads: rec?.loads ?? 0, neg: rec?.neg ?? 0, ageDays, bytes, dead, bad });
     }
   }
-  console.log(`\n淘汰候选(${stale.length}/${entries.length} 个,只报告不删除)\n`);
+  console.log(`\n淘汰候选(${stale.length}/${entries.length} 个,${flag('apply') ? '本次会归档' : '只报告'})\n`);
   if (!stale.length) console.log('  没有需要处理的:每个蒸馏技能都被用过,且没有被否。');
   for (const s of stale.sort((a, b) => a.loads - b.loads)) {
     const why = [];
@@ -164,6 +250,20 @@ if (flag('prune')) {
     if (s.bytes < 200) why.push(`正文仅 ${s.bytes}B(疑似空胎)`);
     console.log(`  ${s.slug.padEnd(34)}存 ${String(s.ageDays).padStart(3)} 天  ${why.join(' · ')}`);
   }
-  console.log('\n  处置建议:确认后手工移入 ~/.kinetaios/skills/distilled/.archive/(不要直接删)。');
+  if (flag('apply') && stale.length) {
+    const moved = [];
+    for (const s of stale) {
+      const why = [];
+      if (s.dead) why.push(`近 ${days} 天 0 次加载(已存 ${s.ageDays} 天)`);
+      if (s.bad) why.push(`否定率 ${pct(s.neg, s.loads).toFixed(0)}%`);
+      if (s.bytes < 200) why.push(`正文仅 ${s.bytes}B(疑似空胎)`);
+      const id = archiveSkill(s.slug, s.name, why);
+      if (id) moved.push(id);
+    }
+    console.log(`\n  已归档 ${moved.length}/${stale.length} 个 → ${archiveRoot()}`);
+    console.log('  文件全部保留,恢复:--restore <slug|id>');
+  } else if (stale.length) {
+    console.log('\n  处置:--apply 移入 .archive/(不删除,可 --restore 恢复)。');
+  }
 }
 console.log('');

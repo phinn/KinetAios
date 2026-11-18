@@ -139,6 +139,21 @@ export function initStore(): void {
     --   error/aborted  引擎侧失败或用户点停止(用户没得到结果,不接受)
     -- rating: -1 = 否定/失败;+1 = 显式肯定(UI 点赞入口,当前无)。
     CREATE TABLE IF NOT EXISTS turn_feedback(turn_id TEXT PRIMARY KEY, rating INTEGER, tags TEXT);
+    -- 蒸馏溯源(2026-11-18):每个蒸馏技能记它出自哪一轮。没有这张表,"这个技能到底从
+    -- 哪次任务长出来的"无从考证,也就没法在来源轮次被用户否决时把它降级 —— 50 个技能
+    -- 垒在一起,好坏同权,劣币驱逐良币。
+    -- Provenance: which turn produced this distilled skill. Enables demotion when the
+    -- source turn was rejected by the user.
+    CREATE TABLE IF NOT EXISTS skill_origin(
+      slug TEXT PRIMARY KEY,      -- distilled/<slug> 的目录名
+      name TEXT,                  -- frontmatter name(引擎里的名字)
+      turn_id TEXT, conv_id TEXT, -- 来源轮次 / 会话(旧数据可能为空)
+      created_at REAL);
+    CREATE INDEX IF NOT EXISTS idx_skill_origin_turn ON skill_origin(turn_id);
+    -- 技能加载计数:淘汰的第二类判据(0 次加载 = 死技能)。做成增量计数而不是每次扫
+    -- turns 的 JSON —— 2GB 库上 json_each 一次约 11s,不能放主线程。
+    CREATE TABLE IF NOT EXISTS skill_usage(
+      name TEXT PRIMARY KEY, loads INTEGER DEFAULT 0, last_load_at REAL);
   `);
   // ts 列补迁移:最早的库只有 (turn_id, rating, tags) 三列。
   if (!hasColumn('turn_feedback', 'ts'))
@@ -622,6 +637,81 @@ export function listTurnFeedback(opts: { since?: number; limit?: number } = {}):
     tags: (r.tags ?? '').split(',').map((s) => s.trim()).filter(Boolean),
     ts: r.ts ?? 0,
   }));
+}
+
+// ── skill_origin / skill_usage:蒸馏溯源 + 淘汰依据 ──
+// 只写不删:归档是文件层动作(.archive/),账本保留历史 —— 恢复后溯源仍然存在。
+// Provenance + usage counters. Never deleted: archiving moves files, the ledger stays.
+
+export type SkillOrigin = { slug: string; name: string; turnId: string; convId: string; createdAt: number };
+
+/** 记一个蒸馏技能的来源 turn。同名 slug 覆盖(重新蒸馏同一技能时更新来源)。 */
+export function recordSkillOrigin(o: { slug: string; name?: string; turnId?: string; convId?: string }): void {
+  if (!o.slug || !db) return;
+  stmt(
+    `INSERT INTO skill_origin(slug, name, turn_id, conv_id, created_at) VALUES(?,?,?,?,?)
+     ON CONFLICT(slug) DO UPDATE SET name=excluded.name, turn_id=excluded.turn_id,
+       conv_id=excluded.conv_id, created_at=excluded.created_at;`,
+  ).run(o.slug, o.name ?? o.slug, o.turnId ?? '', o.convId ?? '', Date.now());
+}
+
+export function listSkillOrigins(): SkillOrigin[] {
+  if (!db) return [];
+  const rows = stmt('SELECT slug, name, turn_id, conv_id, created_at FROM skill_origin ORDER BY created_at DESC;').all() as Array<{
+    slug: string; name: string | null; turn_id: string | null; conv_id: string | null; created_at: number | null;
+  }>;
+  return rows.map((r) => ({
+    slug: r.slug,
+    name: r.name || r.slug,
+    turnId: r.turn_id || '',
+    convId: r.conv_id || '',
+    createdAt: r.created_at ?? 0,
+  }));
+}
+
+export function getSkillOrigin(slug: string): SkillOrigin | null {
+  if (!db) return null;
+  const r = stmt('SELECT slug, name, turn_id, conv_id, created_at FROM skill_origin WHERE slug=?;').get(slug) as
+    | { slug: string; name: string | null; turn_id: string | null; conv_id: string | null; created_at: number | null }
+    | undefined;
+  return r ? { slug: r.slug, name: r.name || r.slug, turnId: r.turn_id || '', convId: r.conv_id || '', createdAt: r.created_at ?? 0 } : null;
+}
+
+/** 来源 turn 被用户否决过的蒸馏技能:slug → 否定标签。
+ *  这是"自动降级"的唯一判据 —— 蒸馏自一次返工/报错的任务,步骤大概率是错的。 */
+export function demotedSkillOrigins(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  if (!db) return out;
+  const rows = stmt(
+    `SELECT o.slug AS slug, f.tags AS tags FROM skill_origin o
+     JOIN turn_feedback f ON f.turn_id = o.turn_id
+     WHERE o.turn_id <> '' AND f.rating < 0;`,
+  ).all() as Array<{ slug: string; tags: string | null }>;
+  for (const r of rows) {
+    out.set(r.slug, (r.tags ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  }
+  return out;
+}
+
+/** load_skill 命中一次 → 计数 +1。主线程热路径:单条 upsert,无查询。 */
+export function recordSkillUse(name: string): void {
+  if (!name || !db) return;
+  stmt(
+    `INSERT INTO skill_usage(name, loads, last_load_at) VALUES(?,1,?)
+     ON CONFLICT(name) DO UPDATE SET loads=loads+1, last_load_at=excluded.last_load_at;`,
+  ).run(name.toLowerCase(), Date.now());
+}
+
+export type SkillUsage = { loads: number; lastLoadAt: number };
+
+export function skillUsage(): Map<string, SkillUsage> {
+  const out = new Map<string, SkillUsage>();
+  if (!db) return out;
+  const rows = stmt('SELECT name, loads, last_load_at FROM skill_usage;').all() as Array<{
+    name: string; loads: number | null; last_load_at: number | null;
+  }>;
+  for (const r of rows) out.set(r.name, { loads: r.loads ?? 0, lastLoadAt: r.last_load_at ?? 0 });
+  return out;
 }
 
 // ── conv_events:append-only 事件日志 ──

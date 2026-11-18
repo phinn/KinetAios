@@ -7003,6 +7003,8 @@ async function showSettings() {
         <div class="field-desc">${tr('settings.foldHysteresis.desc')}</div>
         <div class="field-cb"><span class="switch"><input type="checkbox" id="s-codemode-nudge" ${s.codemodeNudgeEnabled !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-codemode-nudge">${tr('settings.codemodeNudge')}</label></div>
         <div class="field-desc">${tr('settings.codemodeNudge.desc')}</div>
+        <div class="field-cb"><span class="switch"><input type="checkbox" id="s-skill-archive" ${s.skillAutoArchiveEnabled !== false ? 'checked' : ''} /><span class="track"><span class="thumb"></span></span></span><label for="s-skill-archive">${tr('settings.skillArchive')}</label></div>
+        <div class="field-desc">${tr('settings.skillArchive.desc')}</div>
       </div>
       <div class="s-section">
         <h3>${tr('settings.sec.v2engine')}</h3>
@@ -8392,7 +8394,7 @@ function initSkillsTab(): void {
             <div class="s-plugin-info" style="flex:1">
               <div class="s-plugin-name">${esc(s.name)} <span class="s-plugin-ver">${esc(tr(s.type === 'command' ? 'settings.skills.type.command' : s.type === 'agent' ? 'settings.skills.type.agent' : 'settings.skills.type.skill'))}</span></div>
               <div class="s-plugin-meta">${esc((s.description ?? '').slice(0, 110))}</div>
-              <div class="s-plugin-tags">${s.category ? `<span class="s-plugin-engine">${esc(tr(catKey as 'settings.skills.cat.other'))}</span>` : ''}</div>
+              <div class="s-plugin-tags">${s.category ? `<span class="s-plugin-engine">${esc(tr(catKey as 'settings.skills.cat.other'))}</span>` : ''}${s.demoted ? `<span class="s-plugin-engine" style="color:var(--danger)" title="${esc((s.demotedTags ?? []).join('/'))}">⚠ ${esc(tr('settings.skills.demoted' as 'settings.skills.empty'))}</span>` : ''}</div>
             </div>
             <div class="s-plugin-actions">
               <button class="s-plugin-reload-btn s-skill-view" data-view="${esc(s.name)}">${ro ? tr('settings.skills.view') : tr('settings.skills.edit')}</button>
@@ -8609,6 +8611,7 @@ function readSettingsForm(): AppSettings {
     // 上下文/编排开关:元素不存在时按「开」处理(默认值),避免缺 DOM 时被静默关掉。
     foldHysteresisEnabled: (document.getElementById('s-fold-hysteresis') as HTMLInputElement)?.checked ?? true,
     codemodeNudgeEnabled: (document.getElementById('s-codemode-nudge') as HTMLInputElement)?.checked ?? true,
+    skillAutoArchiveEnabled: (document.getElementById('s-skill-archive') as HTMLInputElement)?.checked ?? true,
     goalSupervisorModel: ((document.getElementById('s-goal-sup-model') as HTMLSelectElement)?.value ?? ''),
     goalProfileChain: goalChainCache,
     goalMaxIterations: Number((document.getElementById('s-goal-maxiter') as HTMLInputElement)?.value) || 20,

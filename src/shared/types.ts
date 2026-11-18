@@ -415,6 +415,12 @@ export type AppSettings = {
    * 关 = 只保留工具本身,模型完全自主决定是否使用(旧行为)。
    */
   codemodeNudgeEnabled?: boolean;
+  /**
+   * 蒸馏技能自动归档开关(默认开)。开 = 每轮结束后(节流 6h)扫一遍 distilled/,
+   * 把空胎(正文 <200B)、来源轮次被否且从未被加载、存满 14 天 0 加载的技能
+   * 移进 distilled/.archive/(不删除,可恢复)。关 = 只由 report 脚本手动 --apply。
+   */
+  skillAutoArchiveEnabled?: boolean;
   // ── Goal 监工模式(Supervisor ↔ Worker)── 替身画像当监工,逐轮验收 Worker 产物并
   // 提出新要求;配 failover 模型链支持过夜长跑(额度尽/5h 上限自动切下一个模型)。
   goalSupervisorEnabled: boolean;   // true = Supervisor 验收制(需 persona 非空);false = 旧自检模式
@@ -494,6 +500,11 @@ export type SkillInfo = {
   source: 'kinetaios' | 'claude' | 'codex' | 'plugin' | 'builtin';
   type: SkillType;
   category?: string; // 自动推断的分类(marketing/dev/design/review/ops/docs/media/other)
+  /** 蒸馏来源轮次被用户否决 → 降级:列表排尾部、不进目录文本、加载时带警示。
+   *  只对 distilled/ 下的技能可能为 true。— Demoted: distilled from a rejected turn. */
+  demoted?: boolean;
+  /** 降级原因标签(correction / reask / error / aborted)。 */
+  demotedTags?: string[];
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).

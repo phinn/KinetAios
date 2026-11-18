@@ -11,6 +11,7 @@ import { currentProvider, embed, GLMError, supervisorComplete } from './glm';
 import { buildEngines, type Engine, loadRulesBlock, loadContextBlock } from './engines';
 import { loadSkillBody } from './skills';
 import { distillSkill } from './skill-distill';
+import { sweepSkillArchive } from './skill-archive';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
 import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
@@ -52,6 +53,8 @@ export class TaskManager {
   private lastEngine: Record<string, EngineKind> = {};
   // P3: done 事件计数器,用于触发周期性 idle reflection(每 5 次 done 触发一次记忆 GC)
   private doneCounter = 0;
+  // 蒸馏技能归档的节流时间戳(判据里有"存活天数",跑得比一天一次还勤没意义)
+  private lastSkillArchiveAt = 0;
   // P1: turns LRU —— hydrate 过的会话按最近使用排序,超上限逐出回 head 模式
   private turnsLru: string[] = [];
   private engines: Map<EngineKind, Engine>;
@@ -1148,6 +1151,8 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // 这种"被判停的轮次"照蒸不误会直接产出坏技能 —— 函数注释早写了"canceled 不蒸馏",
       // 但实现只判 ev.type==='done',那半句从未生效。与 turn_feedback 的 aborted 硬信号同口径。
       if (!signal.aborted) this.maybeDistillSkill(conv, prompt, t, signal).catch(() => {});
+      // 淘汰:把失效的蒸馏技能移进 .archive/(不删,可恢复)。节流 6h,默认开、可关。
+      this.maybeArchiveSkills(conv);
       // P3: 异步执行记忆 GC(idle reflection),每 5 次 done 触发一次
       this.doneCounter++;
       if (this.doneCounter % 5 === 0) {
@@ -1469,6 +1474,26 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
    * 复用记忆提取同款 provider 快照与 abort 链;静默失败(绝不影响主流程)。
    * 设置开关 distillAutoEnabled(默认开);跨引擎失败路径(canceled/error)不蒸馏。
    */
+  /** 淘汰蒸馏技能:空胎 / 来源被否且从未被用 / 存 14 天 0 加载 → 移进 distilled/.archive/。
+   *  永不删除(归档可 restore),也不可能碰到手写技能 —— 只扫 distilled/ 一层。
+   *  节流 6h:判据里有"存活天数",比这更勤只是白 stat。 */
+  private maybeArchiveSkills(conv: Conversation): void {
+    if (getSettings().skillAutoArchiveEnabled === false) return;
+    const now = Date.now();
+    if (now - this.lastSkillArchiveAt < 6 * 3600_000) return;
+    this.lastSkillArchiveAt = now;
+    try {
+      const { archived } = sweepSkillArchive();
+      if (archived.length > 0) {
+        const names = archived.map((a) => a.name).slice(0, 3).join('、');
+        this.emit.emitEvent(conv.id, {
+          type: 'status',
+          text: `🗄 已归档 ${archived.length} 个失效技能(${names}${archived.length > 3 ? '…' : ''})→ ~/.kinetaios/skills/distilled/.archive/(未删除,可恢复)`,
+        });
+      }
+    } catch { /* 淘汰是 best-effort,失败不影响 turn */ }
+  }
+
   private async maybeDistillSkill(conv: Conversation, prompt: string, turn: Conversation['turns'][number], parentSignal: AbortSignal): Promise<void> {
     const s = getSettings();
     if (s.distillAutoEnabled === false) return;
@@ -1502,6 +1527,12 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         signal: ac.signal,
       });
       if (r.distilled) {
+        // 溯源:记下这个技能出自哪一轮。来源轮次后来被用户否决(返工/报错/中止)时,
+        // skills.ts 会据此把该技能降级 —— 蒸馏自错误过程的打法不该和正确打法同权。
+        // Provenance: remember the source turn so a later rejection can demote this skill.
+        try {
+          store.recordSkillOrigin({ slug: r.slug, name: r.name, turnId: turn.id, convId: conv.id });
+        } catch { /* 账本 best-effort:记不上不影响技能可用 */ }
         this.emit.emitEvent(conv.id, { type: 'status', text: `✨ 已沉淀技能「${r.name}」→ ~/.kinetaios/skills/distilled/(下次同类任务 slash 菜单可用)` });
       }
     } finally {

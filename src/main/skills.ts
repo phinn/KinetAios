@@ -164,6 +164,25 @@ export function invalidateSkills(): void {
   sentinels = [];
 }
 
+/** 蒸馏产物根(distilled/<slug>/SKILL.md)。降级与归档都只作用于这棵树。 */
+export function distilledRoot(): string {
+  return path.join(os.homedir(), '.kinetaios', 'skills', 'distilled');
+}
+
+/** 来源 turn 被用户否决过的蒸馏技能:slug → 否定标签。
+ *  store 未初始化(纯扫描测试 / 首次启动前)→ 空 Map,扫描照常。
+ *  Lazy require:skills.ts 被 skills 面板、load_skill、目录文本三处调用,
+ *  静态 import store 会把 better-sqlite3 拖进每个调用点。 */
+function demotedSlugs(): Map<string, string[]> {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const s = require('./store') as typeof import('./store');
+    return s.demotedSkillOrigins();
+  } catch {
+    return new Map();
+  }
+}
+
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
   const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios' | 'builtin', type: SkillType, body: string, dir: string, file: string): void => {
@@ -201,6 +220,23 @@ function scan(): Map<string, Skill> {
       }
     }
   }
+  // 蒸馏溯源降级(2026-11-18):来源轮次被用户否决过(返工/报错/中止)→ 这个技能是从一次
+  // 失败的执行里提炼出来的,步骤大概率带着当时的错误假设。处置是「降级」而不是删除:
+  // 仍可用(用户显式 /name 或模型指名加载都还能拿到),但排到列表尾部、不进目录文本推荐、
+  // 加载时头部带警示。判据全部来自 skill_origin ⋈ turn_feedback,不改磁盘内容。
+  // Demote (never delete) skills distilled from a rejected turn.
+  const demoted = demotedSlugs();
+  if (demoted.size > 0) {
+    const root = distilledRoot() + path.sep;
+    for (const s of map.values()) {
+      if (!s.file.startsWith(root)) continue;
+      const tags = demoted.get(path.basename(s.dir));
+      if (tags) {
+        s.demoted = true;
+        s.demotedTags = tags;
+      }
+    }
+  }
   return map;
 }
 
@@ -222,9 +258,12 @@ export function skillCatalogText(): string | null {
   const MAX_CHARS = 3800;
   const HEADER = '\n(按需调用 load_skill 加载正文;此列表含全部技能名,部分附简述)\n';
   // 截断优先级:自己的 skill(手写 + 蒸馏)> 外部副本(内置/claude/codex/plugin)。
+  // 降级技能(来源轮次被否)不进目录:它们是负资产,占的是别的技能的可见性预算。
+  const demotedCount = skills.filter((s) => s.demoted).length;
+  const live = skills.filter((s) => !s.demoted);
   const ordered = [
-    ...skills.filter((s) => s.source === 'kinetaios'),
-    ...skills.filter((s) => s.source !== 'kinetaios'),
+    ...live.filter((s) => s.source === 'kinetaios'),
+    ...live.filter((s) => s.source !== 'kinetaios'),
   ];
   // Pass 1:紧凑 name 逗号列。留 160 字符给截断尾注。
   const NAME_BUDGET = MAX_CHARS - HEADER.length - 160;
@@ -238,13 +277,16 @@ export function skillCatalogText(): string | null {
     }
     nameList += piece;
   }
-  const tail = dropped > 0 ? `, …另有 ${dropped} 个未列出(load_skill 传未知名会返回全量清单)` : '';
+  const tailParts: string[] = [];
+  if (dropped > 0) tailParts.push(`…另有 ${dropped} 个未列出(load_skill 传未知名会返回全量清单)`);
+  if (demotedCount > 0) tailParts.push(`${demotedCount} 个技能因来源轮次被否决已降级,未列入`);
+  const tail = tailParts.length > 0 ? `, ${tailParts.join('; ')}` : '';
   // Pass 2:剩余预算内给尽可能多的技能带 desc(逐条 `- name — desc40`)
   const budget = MAX_CHARS - nameList.length - tail.length - HEADER.length;
   const lines: string[] = [];
   let used = 0;
   if (budget > 200) {
-    for (const s of skills) {
+    for (const s of live) {
       const desc = (s.description || '').replace(/\s+/g, ' ').trim().slice(0, 40);
       if (!desc) continue;
       const line = `- ${s.name} — ${desc}`;
@@ -266,7 +308,10 @@ export function listSkills(): SkillInfo[] {
   const builtin: SkillInfo[] = [...ensure().values()].map(
     ({ body: _body, dir: _dir, ...info }) => info,
   );
-  return [...builtin, ...pluginCmds].sort((a, b) => a.name.localeCompare(b.name));
+  // 降级技能排尾部:仍在列表里(用户/模型显式点得到),但不占前排。
+  return [...builtin, ...pluginCmds].sort(
+    (a, b) => Number(!!a.demoted) - Number(!!b.demoted) || a.name.localeCompare(b.name),
+  );
 }
 
 // 安全包装: 插件加载失败不应影响 skills 列表。
@@ -284,7 +329,13 @@ function safePluginSlashCommands(): SkillInfo[] {
 export function loadSkillBody(name: string): string | null {
   const s = ensure().get(name.toLowerCase());
   if (s) {
-    return `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用, 例如执行其下的 scripts/xxx):\n${s.dir}\n\n${s.body}`;
+    const head = `# 此 Skill 的目录(脚本 / 资源请用绝对路径引用, 例如执行其下的 scripts/xxx):\n${s.dir}\n\n`;
+    // 降级警示:技能本身还在(可能对),但它出自一次被否决的执行 —— 模型拿到正文时
+    // 必须知道这一层不可靠,否则会照抄当时的错误结论。
+    const warn = s.demoted
+      ? `# ⚠ 此技能已降级\n它蒸馏自一轮被用户否决的执行(${(s.demotedTags ?? []).join('/') || '未记录原因'})。步骤可作参考,结论与"已验证"之类的断言不可直接采信;与当前任务事实冲突时以实际观察为准。\n\n`
+      : '';
+    return warn + head + s.body;
   }
   // v2: 再查插件贡献的 slash 命令。
   const pluginCmd = safeLoadPluginCommandBody(name);
