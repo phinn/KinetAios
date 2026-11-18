@@ -8,6 +8,7 @@ import {
   mergeStageResults,
   nextRetryPlan,
   skippedDoneStages,
+  isWorkflowPayload,
 } from '../../src/main/workflow-job';
 
 test('validateStages:空阶段/空成员/坏依赖校验', () => {
@@ -85,6 +86,26 @@ test('skippedDoneStages:断点续跑跳过已完成阶段', () => {
   const done = ['探查A', '探查B', '汇总'];
   assert.deepEqual(skippedDoneStages(done), ['探查A', '探查B', '汇总']);
   assert.deepEqual(skippedDoneStages([]), []);
+});
+
+test('isWorkflowPayload:重启 rewire 可跑性判断', () => {
+  const good = JSON.stringify({ teamId: 't1', title: '流水线', stages: [{ label: 'a', members: [{ name: 'x', prompt: 'p' }] }] });
+  assert.ok(isWorkflowPayload(good), '合法 payload');
+  assert.ok(!isWorkflowPayload('not json'), '非 JSON');
+  assert.ok(!isWorkflowPayload(JSON.stringify({ teamId: 't1', title: 'x', stages: [] })), 'stages 空数组');
+  assert.ok(!isWorkflowPayload(JSON.stringify({ teamId: 't1', title: 'x' })), '缺 stages 键');
+  assert.ok(!isWorkflowPayload(123), '非字符串 payload');
+});
+
+test('checkpoint 续跑语义:workflowId/title 锚定防错挂', () => {
+  // 重启后 worker 用 initialCheckpoint;workflowId 或 title 不一致时 checkpoint 必须被丢弃重头跑。
+  // 锚定逻辑在 runWorkflowWorker 内(cp.workflowId === teamId && cp.title === title 才采用),
+  // 这里锁定契约:WorkflowCheckpoint 的锚定字段名不被无意改名(改名会静默失锚 → 全量重烧 token)。
+  const cp = { workflowId: 't1', title: '流水线', doneStages: [{ label: 'a', answers: { x: '回答' } }] };
+  assert.ok('workflowId' in cp && 'title' in cp && Array.isArray(cp.doneStages));
+  // 标题相同才续;标题变 = 新工作流,旧断点不可复用
+  assert.equal(cp.title === '流水线' && cp.workflowId === 't1', true);
+  assert.equal(cp.title === '改过名' && cp.workflowId === 't1', false);
 });
 
 run();

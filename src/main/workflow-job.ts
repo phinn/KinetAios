@@ -13,6 +13,7 @@
 import type { ToolCtx } from './tools';
 import type { WorkflowState } from '../shared/types';
 import type { MemberRunOpts } from './teams';
+import { runMembersParallel } from './teams';
 
 /** workflow 执行所需环境(engines.ts 的 workflowJobFactory 注册/提供) */
 export interface WorkflowJobEnv {
@@ -172,12 +173,21 @@ export function skippedDoneStages(doneLabels: string[]): string[] {
   return doneLabels.slice();
 }
 
-// ── IO 壳:JobManager 提交 / 工厂注册 ──
+// ── IO 壳:JobManager 提交 / 工厂注册 / 断点续跑 ──
 
-/** workflow 执行环境工厂:engines 层注册;resume 时按 convId 重建 runOpts */
-let envFactory: ((convId: string) => WorkflowJobEnv | undefined) | null = null;
-export function setWorkflowJobFactory(fn: (convId: string) => WorkflowJobEnv | undefined): void {
-  envFactory = fn;
+/**
+ * workflow 执行环境注册表:engines 层在 conv run() 时注册(turn 存活期间有效)。
+ * key = convId。旧 conv 的 env 不主动清理(provider/snapshot 轻量引用,进程级量级可忽略);
+ * 真正的重建正确性由 worker 内 signal 覆写保证(job signal 永远盖过注册时的 conv signal)。
+ */
+const envRegistry = new Map<string, WorkflowJobEnv>();
+export function setWorkflowJobFactory(convId: string, env: WorkflowJobEnv | null): void {
+  if (env) envRegistry.set(convId, env);
+  else envRegistry.delete(convId);
+}
+/** 兼容旧签名:按 convId 查环境(engines 注册表) */
+export function getWorkflowEnv(convId: string): WorkflowJobEnv | undefined {
+  return envRegistry.get(convId);
 }
 
 export interface SubmitWorkflowOpts {
@@ -187,18 +197,156 @@ export interface SubmitWorkflowOpts {
   stages: StageDef[];
 }
 
+/** job payload:完整阶段定义持久化(重启后 rewire 重建 worker 全靠它,不能只存 label) */
+export interface WorkflowJobPayload {
+  teamId: string;
+  title: string;
+  stages: StageDef[];
+}
+
+/** hydrate 用:payload 是否含完整 stages(可 rewire 重跑) */
+export function isWorkflowPayload(payload: unknown): boolean {
+  if (typeof payload !== 'string') return false;
+  try {
+    const p = JSON.parse(payload) as WorkflowJobPayload;
+    return typeof p.teamId === 'string' && typeof p.title === 'string' && Array.isArray(p.stages) && p.stages.length > 0;
+  } catch { return false; }
+}
+
+/**
+ * 纯执行体:submit 与 rewire(断点续跑)共用。env 由调用方提供(运行中 conv 直接取注册表,重启后按需重建)。
+ * worker 内 signal 用 job 自己的 AbortController,注册时的 conv signal 会被这里覆写。
+ */
+export async function runWorkflowWorker(
+  payload: WorkflowJobPayload,
+  env: WorkflowJobEnv,
+  jobEnv: { signal: AbortSignal; checkpointSink: (snapshot: unknown) => void; onEvent: (ev: { type: string; [k: string]: unknown }) => void; initialCheckpoint: unknown },
+): Promise<{ result: { text: string }; checkpoint?: unknown }> {
+
+  const { runMembersParallel } = await import('./teams');
+  const opts = { teamId: payload.teamId, title: payload.title };
+  const stages = payload.stages;
+  const runOpts = env.runOpts;
+  const { signal, onEvent, checkpointSink, initialCheckpoint } = jobEnv;
+  const cp = initialCheckpoint as WorkflowCheckpoint | undefined;
+  // 防错挂:checkpoint 与本次提交的 team/title 不一致 → 丢弃旧断点从头跑
+  const done: WorkflowCheckpoint['doneStages'] =
+    cp && cp.workflowId === opts.teamId && cp.title === opts.title ? cp.doneStages.slice() : [];
+
+  // WorkflowState 只做 UI 展示(实时卡);持久化断点独立走 checkpoint 列
+  const state: WorkflowState = {
+    workflowId: opts.teamId, title: opts.title,
+    stages: stages.map((s, i) => ({
+      label: s.label,
+      status: (i < done.length ? 'done' : i === done.length ? 'running' : 'pending') as 'pending' | 'running' | 'done' | 'failed',
+      members: s.members.map((m) => ({ name: m.name, role: '', status: 'pending' as const })),
+    })),
+    activeStage: Math.min(done.length, stages.length - 1),
+    status: 'running',
+    usd: 0,
+  };
+  const emitState = (): void => onEvent({ type: 'workflow', state: JSON.parse(JSON.stringify(state)) });
+  const layers = topoOrder(stages);
+  const answersByLabel = new Map<string, Record<string, string>>();
+  for (const d of done) answersByLabel.set(d.label, d.answers);
+
+  for (const layer of layers) {
+    // 跳过已完成阶段(断点续跑)
+    const todo = layer.filter((l) => !answersByLabel.has(l));
+    if (!todo.length) continue;
+    if (signal.aborted) throw new Error('已取消');
+    for (const label of todo) {
+      const stage = stages.find((s) => s.label === label)!;
+      state.activeStage = stages.findIndex((s) => s.label === label);
+      const stState = state.stages[state.activeStage];
+      stState.status = 'running';
+      emitState();
+      onEvent({ type: 'status', note: `[workflow] 阶段:${stage.label}` });
+
+      // 依赖阶段的产出汇总注入(有显式依赖用依赖的;否则用紧邻上一完成阶段)
+      const depLabels = stage.depends_on?.length
+        ? stage.depends_on
+        : layers[layers.findIndex((l) => l.includes(label)) - 1] ?? [];
+      const prev = new Map<string, string>();
+      for (const dl of depLabels) {
+        for (const [n, a] of Object.entries(answersByLabel.get(dl) ?? {})) prev.set(`${dl}/${n}`, a);
+      }
+
+      // job 信号 → runOpts.signal 桥接(kill job = abort 所有 member)
+      const res = await runMembersParallel({
+        members: stage.members.map((m) => ({
+          team_id: opts.teamId, member_id: m.name, name: m.name, role: '',
+          history: '[]', last_message: null, last_result: null,
+          status: 'idle', created_at: 0, updated_at: 0,
+        })),
+        message: buildStagePrompt(stage.members.map((m) => m.prompt).join('\n---\n'), prev, stage.members),
+        runOpts: { ...runOpts, signal },
+      });
+
+      const answers: Record<string, string> = {};
+      for (const m of stage.members) answers[m.name] = res.get(m.name)?.answer ?? '';
+      // 黑板沉淀已由 runMember 内部 depositToBoard 完成(此处不重复写,防双份 note)
+      const statuses = mergeStageResults(stage.members, new Map(Object.entries(answers)));
+
+      // 阶段内失败成员重试一轮(只重跑失败者;超限放弃整阶段,不中止全局)
+      const failedNames = Object.entries(statuses).filter(([, s]) => s === 'failed').map(([n]) => n);
+      if (failedNames.length) {
+        const plan = nextRetryPlan(statuses, stage.members.map((m) => m.name), 0, 1);
+        if (plan?.length) {
+          onEvent({ type: 'status', note: `[workflow] 阶段「${stage.label}」重试失败成员: ${plan.join(',')}` });
+          const res2 = await runMembersParallel({
+            members: stage.members.filter((m) => plan.includes(m.name)).map((m) => ({
+              team_id: opts.teamId, member_id: m.name, name: m.name, role: '',
+              history: '[]', last_message: null, last_result: null,
+              status: 'idle', created_at: 0, updated_at: 0,
+            })),
+            message: buildStagePrompt(`${stage.members.map((m) => m.prompt).join('\n---\n')}\n\n(上一次执行失败,请重试并力求完成)`, prev, stage.members),
+            runOpts: { ...runOpts, signal },
+          });
+          for (const n of plan) {
+            const a2 = res2.get(n);
+            if (a2?.answer?.trim()) { answers[n] = a2.answer; statuses[n] = 'done'; }
+          }
+        }
+      }
+
+      stState.members = stage.members.map((m) => ({
+        name: m.name, role: '',
+        status: (statuses[m.name] ?? 'failed') as 'done' | 'failed',
+        summary: (answers[m.name] ?? '').slice(0, 300),
+      }));
+      stState.status = Object.values(statuses).every((s) => s === 'done') ? 'done' : 'failed';
+      emitState();
+      answersByLabel.set(label, answers);
+      // 每阶段完成即落 checkpoint(整体覆写;crash 后 resume 跳过已完成阶段)
+      checkpointSink({
+        workflowId: opts.teamId, title: opts.title,
+        doneStages: [...answersByLabel.entries()].map(([l, a]) => ({ label: l, answers: a })),
+      } satisfies WorkflowCheckpoint);
+    }
+  }
+
+  state.status = state.stages.some((s) => s.status === 'failed') ? 'failed' : 'done';
+  emitState();
+  // 汇总输出(与 tools.ts 同步版同格式)
+  const parts: string[] = [`# 工作流「${opts.title}」完成`];
+  for (let i = 0; i < stages.length; i++) {
+    parts.push(`## 阶段 ${i + 1}:${stages[i].label}`);
+    for (const m of stages[i].members) parts.push(`### ${m.name}\n${answersByLabel.get(stages[i].label)?.[m.name] ?? '(无回答)'}\n`);
+  }
+  return { result: { text: parts.join('\n') } };
+}
+
 /**
  * 提交 workflow 后台 job。返回 job id;失败返回错误(调用方回落同步路径)。
  * 断点 = 已完成阶段数组(每阶段整体覆写,与 v3-deep 的 checkpointSink 同模式)。
  */
 export async function submitWorkflowJob(opts: SubmitWorkflowOpts): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   const { jobManager } = await import('./JobManager');
-  const { runMembersParallel } = await import('./teams');
-  const env = envFactory?.(opts.convId);
+  const env = getWorkflowEnv(opts.convId);
   if (!env) return { ok: false, error: 'workflow job 环境未注册(会话可能已关闭)' };
   const v = validateStages(opts.stages, opts.teamId);
   if (v.error) return { ok: false, error: v.error };
-  const runOpts = env.runOpts;
   const stages: StageDef[] = (v as { stages: StageDef[] }).stages;
 
   const submit = jobManager().submit({
@@ -206,116 +354,12 @@ export async function submitWorkflowJob(opts: SubmitWorkflowOpts): Promise<{ ok:
     turnId: null,
     kind: 'workflow',
     title: opts.title,
-    payload: { teamId: opts.teamId, stages: stages.map((s) => s.label) },
-    worker: async ({ signal, onEvent, checkpointSink, initialCheckpoint }) => {
-      const cp = initialCheckpoint as WorkflowCheckpoint | undefined;
-      // 防错挂:checkpoint 与本次提交的 team/title 不一致 → 丢弃旧断点从头跑
-      const done: WorkflowCheckpoint['doneStages'] =
-        cp && cp.workflowId === opts.teamId && cp.title === opts.title ? cp.doneStages.slice() : [];
-
-      // WorkflowState 只做 UI 展示(实时卡);持久化断点独立走 checkpoint 列
-      const state: WorkflowState = {
-        workflowId: opts.teamId, title: opts.title,
-        stages: stages.map((s, i) => ({
-          label: s.label,
-          status: (i < done.length ? 'done' : i === done.length ? 'running' : 'pending') as 'pending' | 'running' | 'done' | 'failed',
-          members: s.members.map((m) => ({ name: m.name, role: '', status: 'pending' as const })),
-        })),
-        activeStage: Math.min(done.length, stages.length - 1),
-        status: 'running',
-        usd: 0,
-      };
-      const emitState = (): void => onEvent({ type: 'workflow', state: JSON.parse(JSON.stringify(state)) });
-      const layers = topoOrder(stages);
-      const answersByLabel = new Map<string, Record<string, string>>();
-      for (const d of done) answersByLabel.set(d.label, d.answers);
-
-      for (const layer of layers) {
-        // 跳过已完成阶段(断点续跑)
-        const todo = layer.filter((l) => !answersByLabel.has(l));
-        if (!todo.length) continue;
-        if (signal.aborted) throw new Error('已取消');
-        for (const label of todo) {
-          const stage = stages.find((s) => s.label === label)!;
-          state.activeStage = stages.findIndex((s) => s.label === label);
-          const stState = state.stages[state.activeStage];
-          stState.status = 'running';
-          emitState();
-          onEvent({ type: 'status', note: `[workflow] 阶段:${stage.label}` });
-
-          // 依赖阶段的产出汇总注入(有显式依赖用依赖的;否则用紧邻上一完成阶段)
-          const depLabels = stage.depends_on?.length
-            ? stage.depends_on
-            : layers[layers.findIndex((l) => l.includes(label)) - 1] ?? [];
-          const prev = new Map<string, string>();
-          for (const dl of depLabels) {
-            for (const [n, a] of Object.entries(answersByLabel.get(dl) ?? {})) prev.set(`${dl}/${n}`, a);
-          }
-
-          // job 信号 → runOpts.signal 桥接(kill job = abort 所有 member)
-          const res = await runMembersParallel({
-            members: stage.members.map((m) => ({
-              team_id: opts.teamId, member_id: m.name, name: m.name, role: '',
-              history: '[]', last_message: null, last_result: null,
-              status: 'idle', created_at: 0, updated_at: 0,
-            })),
-            message: buildStagePrompt(stage.members.map((m) => m.prompt).join('\n---\n'), prev, stage.members),
-            runOpts: { ...runOpts, signal },
-          });
-
-          const answers: Record<string, string> = {};
-          for (const m of stage.members) answers[m.name] = res.get(m.name)?.answer ?? '';
-          // 黑板沉淀已由 runMember 内部 depositToBoard 完成(此处不重复写,防双份 note)
-          const statuses = mergeStageResults(stage.members, new Map(Object.entries(answers)));
-
-          // 阶段内失败成员重试一轮(只重跑失败者;超限放弃整阶段,不中止全局)
-          const failedNames = Object.entries(statuses).filter(([, s]) => s === 'failed').map(([n]) => n);
-          if (failedNames.length) {
-            const plan = nextRetryPlan(statuses, stage.members.map((m) => m.name), 0, 1);
-            if (plan?.length) {
-              onEvent({ type: 'status', note: `[workflow] 阶段「${stage.label}」重试失败成员: ${plan.join(',')}` });
-              const res2 = await runMembersParallel({
-                members: stage.members.filter((m) => plan.includes(m.name)).map((m) => ({
-                  team_id: opts.teamId, member_id: m.name, name: m.name, role: '',
-                  history: '[]', last_message: null, last_result: null,
-                  status: 'idle', created_at: 0, updated_at: 0,
-                })),
-                message: buildStagePrompt(`${stage.members.map((m) => m.prompt).join('\n---\n')}\n\n(上一次执行失败,请重试并力求完成)`, prev, stage.members),
-                runOpts: { ...runOpts, signal },
-              });
-              for (const n of plan) {
-                const a2 = res2.get(n);
-                if (a2?.answer?.trim()) { answers[n] = a2.answer; statuses[n] = 'done'; }
-              }
-            }
-          }
-
-          stState.members = stage.members.map((m) => ({
-            name: m.name, role: '',
-            status: (statuses[m.name] ?? 'failed') as 'done' | 'failed',
-            summary: (answers[m.name] ?? '').slice(0, 300),
-          }));
-          stState.status = Object.values(statuses).every((s) => s === 'done') ? 'done' : 'failed';
-          emitState();
-          answersByLabel.set(label, answers);
-          // 每阶段完成即落 checkpoint(整体覆写;crash 后 resume 跳过已完成阶段)
-          checkpointSink({
-            workflowId: opts.teamId, title: opts.title,
-            doneStages: [...answersByLabel.entries()].map(([l, a]) => ({ label: l, answers: a })),
-          } satisfies WorkflowCheckpoint);
-        }
-      }
-
-      state.status = state.stages.some((s) => s.status === 'failed') ? 'failed' : 'done';
-      emitState();
-      // 汇总输出(与 tools.ts 同步版同格式)
-      const parts: string[] = [`# 工作流「${opts.title}」完成`];
-      for (let i = 0; i < stages.length; i++) {
-        parts.push(`## 阶段 ${i + 1}:${stages[i].label}`);
-        for (const m of stages[i].members) parts.push(`### ${m.name}\n${answersByLabel.get(stages[i].label)?.[m.name] ?? '(无回答)'}\n`);
-      }
-      return { result: { text: parts.join('\n') } };
-    },
+    payload: { teamId: opts.teamId, title: opts.title, stages } satisfies WorkflowJobPayload,
+    worker: (jobEnv) => runWorkflowWorker(
+      { teamId: opts.teamId, title: opts.title, stages },
+      env,
+      jobEnv,
+    ),
   });
   return submit;
 }

@@ -51,6 +51,9 @@ export function register(): void {
     return true;
   });
   ipcMain.handle('job-resume', (_e, id: string) => jobManager().resume(String(id)));
+  // workflow job 重启续跑(rewire:重建执行环境 + 从断点/头部重跑)。
+  // 与 v3-deep 的 resume 不同:worker 闭包随进程消失,须按 convId 从注册表重建。
+  ipcMain.handle('job-resume-workflow', (_e, id: string) => jobManager().resumeWorkflow(String(id)));
   ipcMain.handle('job-dispatch', (_e, opts: { convId: string; engine: 'claudeCode' | 'codex'; prompt: string; cwd: string; timeoutMs?: number }) =>
     jobManager().submitDispatch(opts));
   ipcMain.handle('clear-conversation', (_e, id: string) => deps.taskManager().clearConversation(id));

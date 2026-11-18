@@ -2501,6 +2501,74 @@ const workflowRun: Tool = {
   },
 };
 
+// ── workflow_job:同步 workflow_run 的后台 Job 版(P0-3 收尾)──
+// 与同步版区别:提交即返回 job id(不阻塞 turn),阶段进度经 job-event 实时进 UI,
+// 失败/重启后可从 checkpoint 断点续跑(resumeWorkflow)。适合分钟级以上的长流水线。
+// 后台版直接复用 workflow-job 的校验/拓扑/断点语义;成员执行复用同一 team。
+const workflowJobTool: Tool = {
+  name: 'workflow_job',
+  description:
+    '把多阶段工作流**提交为后台 Job**(workflow_run 的异步版)。立即返回 job id,不阻塞当前对话;\n' +
+    '阶段进度实时推送 UI,app 重启后可从断点续跑。适合长流水线(分钟级以上)。\n' +
+    '短流水线仍用 workflow_run(同步,直接拿结果)。参数结构与 workflow_run 完全一致。',
+  parameters: workflowRun.parameters,
+  async run(args, ctx) {
+    if (!ctx.convId) return '该上下文不支持 workflow job(无 convId)';
+    const teamId = String(args.team_id ?? '').trim();
+    const title = String(args.title ?? '').trim() || '工作流';
+    if (!teamId) return '缺少 team_id';
+    const stageDefs = (args.stages as Array<{ label?: string; members?: Array<{ name?: string; prompt?: string }> }> | undefined) ?? [];
+    if (stageDefs.length === 0) return '缺少 stages';
+    if (stageDefs.length > 7) return '阶段过多(上限 7)';
+    // 校验成员归属(与同步版一致),同时规整成 StageDef 传给后台执行体
+    const roster = store.listTeamMembers(teamId);
+    if (roster.length === 0) return `team 不存在或已关闭: ${teamId}`;
+    const rosterIds = new Set(roster.map((m) => m.member_id));
+    const stages: import('./workflow-job').StageDef[] = [];
+    for (const sd of stageDefs) {
+      const label = String(sd.label ?? '').trim() || '阶段';
+      const ms = sd.members ?? [];
+      if (ms.length === 0) return `阶段「${label}」没有成员`;
+      if (ms.length > 8) return `阶段「${label}」成员过多(上限 8)`;
+      const members: Array<{ name: string; prompt: string }> = [];
+      for (const m of ms) {
+        const name = String(m.name ?? '').trim();
+        const prompt = String(m.prompt ?? '').trim();
+        if (!name || !prompt) return `阶段「${label}」的每个成员必须有 name 和 prompt`;
+        if (!rosterIds.has(name)) return `成员「${name}」不在 team ${teamId} 中`;
+        members.push({ name, prompt });
+      }
+      stages.push({ label, members });
+    }
+    const { submitWorkflowJob } = await import('./workflow-job');
+    const r = await submitWorkflowJob({ convId: ctx.convId, teamId, title, stages });
+    if (!r.ok) return `workflow job 提交失败: ${r.error}`;
+    return `workflow job 已提交(id: ${r.id}),后台执行中。阶段进度会实时推送;完成后用 job_result("${r.id}") 取汇总,失败/重启后用户可在 Job 面板点续跑。`;
+  },
+};
+
+// ── job_result:取后台 job 的结果/状态(agent 查询 workflow_job / dispatch 后台任务)──
+const jobResultTool: Tool = {
+  name: 'job_result',
+  description: '查询后台 Job 的状态与结果(workflow_job / dispatch_agent 后台任务提交后用 id 轮询)。status: queued/running/done/failed/killed/paused;done 时 result 为产出全文。',
+  parameters: {
+    type: 'object',
+    properties: { id: { type: 'string', description: 'job id(workflow_job / job-dispatch 返回)' } },
+    required: ['id'],
+  },
+  async run(args) {
+    const { jobManager } = await import('./JobManager');
+    const info = jobManager().get(String(args.id ?? ''));
+    if (!info) return `job 不存在: ${args.id}`;
+    if (info.status !== 'done') return `status=${info.status}${info.error ? ` error=${info.error}` : ''}`;
+    const row = (await import('./store')).getJob(String(args.id));
+    // JobManager 落库格式:JSON.stringify(worker 返回值) = { result: { text } }(workflow)
+    const parsed = row?.result ? (JSON.parse(row.result) as { result?: { text?: string } | string }) : undefined;
+    const text = typeof parsed?.result === 'string' ? parsed.result : parsed?.result?.text;
+    return `status=done\n\n${text || '(无结果文本)'}`;
+  },
+};
+
 // ── MiniMax 文生视频(H3 模型)──
 // 异步任务:创建 → 轮询 → 返回视频 URL。
 // API Key 从 settings.minimaxApiKey 获取。
@@ -3471,7 +3539,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

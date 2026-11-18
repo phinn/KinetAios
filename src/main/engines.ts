@@ -24,6 +24,7 @@ import { getBrand } from './brand';
 import { pluginSystemPrompts, pluginEngines, type PluginEngineSpec } from './plugins';
 import { pullSteer, setKillHook, triggerKill, clearKillHook, steerText } from './steer';
 import { codemodeTool, codemodePromptSection } from './codemode';
+import { buildWorkflowEnv, setWorkflowJobFactory } from './workflow-job';
 import { detectProvider } from '../shared/providerEndpoints';
 
 // P2-fix: 系统提示平台自适应 — 此前硬编码"Windows 电脑""shell 走 cmd.exe",
@@ -403,6 +404,13 @@ class DirectEngine implements Engine {
     const snap = { ...base, model: conv.model || base.model };
     console.log('[DirectEngine] profileId=%s baseURL=%s model=%s proto=%s', conv.profileId, snap.baseURL, snap.model, snap.apiProtocol);
     const provider = currentProvider(snap);
+    // workflow job 环境注册:后台 workflow job 的断点续跑需要按 convId 重建 provider/snapshot/confirm。
+    // 每次 turn 开始都刷新(模型/设置可能变);signal 不进 env — job worker 用自己的 AbortController。
+    // / Register workflow job env per turn (job resume rebuilds provider/snapshot/confirm by convId).
+    setWorkflowJobFactory(conv.id, buildWorkflowEnv({
+      runOpts: { provider, snap, signal, cwd: conv.cwd, confirm: this.confirm, convId: conv.id, crossProjectMemory: conv.crossProjectMemory === true },
+    }));
+
     // ctx.spawn:dispatch_agent 起子任务 —— 复用 runAgentLoop,独立 history、只读工具、maxTurns 限 8。
     // 子任务事件只转发 cost(也花钱)+ tool(带前缀供 UI 观感),吞掉 token 防刷屏。
     // P1:支持 scope 参数,按需注入 parent history。scope 切片逻辑由 resolveSpawnHistory 集中处理。

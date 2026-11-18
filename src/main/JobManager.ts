@@ -10,6 +10,8 @@
 import { randomUUID } from 'node:crypto';
 import type { JobInfo, JobKind, JobStatus } from '../shared/types';
 import * as store from './store';
+// workflow payload 结构校验(hydrate 判断 restart 后能否 rewire 续跑)
+import { isWorkflowPayload, getWorkflowEnv, runWorkflowWorker, type WorkflowJobPayload } from './workflow-job';
 
 export interface JobEmitter {
   /** job 状态/进度变化 → renderer 刷新(Job 列表 + 会话头指示条) */
@@ -48,9 +50,10 @@ export class JobManager {
   /** 启动 hydrate:崩溃遗留的 running/queued 标 failed(M3 后改 paused 可恢复)。 */
   hydrate(): void {
     // M3: 有 checkpoint 的 v3-deep job → paused(可从断点恢复);其余遗留 → failed。
-    // 无 checkpoint 列的行视为无断点。注意必须在 failOrphanJobs 之前抢救,否则全被标 failed。
+    // workflow job: payload 存完整 stages,重启后可 rewire 重建 worker → 也标 paused。
+    // 注意必须在 failOrphanJobs 之前抢救,否则全被标 failed。
     for (const row of store.listJobRows(undefined, ['running', 'queued'])) {
-      if (row.kind === 'v3-deep' && row.checkpoint) {
+      if ((row.kind === 'v3-deep' && row.checkpoint) || (row.kind === 'workflow' && isWorkflowPayload(row.payload))) {
         store.updateJobFields(row.id, { status: 'paused', error: 'app 重启,可从断点继续' });
       } else {
         store.updateJobFields(row.id, { status: 'failed', error: 'app 重启,后台任务中断(无断点)' });
@@ -143,6 +146,34 @@ export class JobManager {
     this.emitJobInfo(entry.row);
     this.pump();
     return true;
+  }
+
+  /**
+   * workflow job 重启后续跑:paused 行没有内存 worker(闭包随进程消失),
+   * 按 convId 从注册表取 env 重建执行体再入队。checkpoint 有则断点续跑,无则从头。
+   * 返回 false = conv 环境未注册(用户还没在该会话发起过 turn),UI 提示换个时机。
+   */
+  resumeWorkflow(id: string): { ok: boolean; error?: string } {
+    const row = store.getJob(id);
+    if (!row || row.kind !== 'workflow') return { ok: false, error: 'job 不存在或不是 workflow' };
+    if (!['paused', 'failed', 'killed'].includes(row.status)) return { ok: false, error: `当前状态 ${row.status} 不可续跑` };
+    const env = getWorkflowEnv(row.convId);
+    if (!env) return { ok: false, error: '该会话的执行环境未就绪(先在此会话发一条消息,再点续跑)' };
+    let payload: WorkflowJobPayload;
+    try {
+      payload = JSON.parse(row.payload) as WorkflowJobPayload;
+    } catch { return { ok: false, error: 'payload 损坏,无法续跑' }; }
+    const entry: JobEntry = {
+      row: { ...row, status: 'queued', error: null },
+      worker: (jobEnv) => runWorkflowWorker(payload, env, jobEnv),
+      costUSD: row.costUSD,
+    };
+    this.jobs.set(id, entry);
+    store.updateJobFields(id, { status: 'queued', error: null });
+    this.queue.push(id);
+    this.emitJobInfo(entry.row);
+    this.pump();
+    return { ok: true };
   }
 
   // ── M4b: dispatch fan-out —— 长时 CLI 子任务作为后台 job 运行 ──
