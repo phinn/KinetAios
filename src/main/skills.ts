@@ -73,6 +73,12 @@ function roots(): ScanRoot[] {
     // KinetAios 原生目录,先扫 → 同名先到先得时优先于 ~/.claude / ~/.codex。
     // / Native dir scanned first — wins name conflicts over claude/codex.
     { dir: path.join(home, '.kinetaios', 'skills'), source: 'kinetaios', type: 'skill', mode: 'skill-dir' },
+    // 蒸馏产物(P0-2 skill-distill)写在 ~/.kinetaios/skills/distilled/<slug>/SKILL.md,比上面那个根
+    // 多一层;而 scan() 只遍历一层的 <name>/SKILL.md,不递归 → distilled/ 自己没有 SKILL.md 就被当
+    // "非 skill 目录"吞掉,42 个蒸馏技能全部不可见(2026-11-18 实测:175 个已注册 skill 里 0 命中)。
+    // 单独列一个根,排在用户手写 skill 之后:手写同名优先,但优于 ~/.claude / 内置副本。
+    // Distilled skills live one level deeper than the scan loop goes — add them as their own root.
+    { dir: path.join(home, '.kinetaios', 'skills', 'distilled'), source: 'kinetaios', type: 'skill', mode: 'skill-dir' },
     { dir: path.join(home, '.kinetaios', 'commands'), source: 'kinetaios', type: 'command', mode: 'file' },
     { dir: path.join(home, '.kinetaios', 'agents'), source: 'kinetaios', type: 'agent', mode: 'file' },
     { dir: path.join(home, '.claude', 'skills'), source: 'claude', type: 'skill', mode: 'skill-dir' },
@@ -149,6 +155,15 @@ function ensure(): Map<string, Skill> {
   return cache;
 }
 
+/** 强制下次访问时全量重扫。
+ *  覆盖写已有 SKILL.md 不会改变父目录 mtime,mtime 哨兵探不到 —— 程序化写入(技能蒸馏)
+ *  必须显式失效,否则同一名字的更新内容要重启 app 才可见。
+ *  Force a rescan: overwriting an existing SKILL.md does not bump the parent dir mtime. */
+export function invalidateSkills(): void {
+  cache = null;
+  sentinels = [];
+}
+
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
   const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios' | 'builtin', type: SkillType, body: string, dir: string, file: string): void => {
@@ -191,21 +206,41 @@ function scan(): Map<string, Skill> {
 
 // ── Skill 目录文本(自动加载模式用)──
 // 把 name+description 压成轻量索引注入 system prompt;正文仍靠 load_skill 工具按需拉取。
-// ⚠️ v3.6.5 重写(2026-09-14):旧格式 `- name — desc80` 下 2400 预算只装得下 28/98 个技能,
+// ⚠️ v3.6.5 重写(2026-09-14):旧格式 `- name — desc80` 下预算只装得下 28/98 个技能,
 // 字母序填充 → 尾部技能(如 skill-creator 排 88)永远不可见,模型"不知道它存在"自然不调。
-// 新格式降级式:①紧凑 name 全量列表(90 个纯名 ~1400 字符,保证 100% 可见)
-// ②剩余预算内按字母序补 description(前 N 个有 desc,尾部只有名)。
+// 新格式降级式:①紧凑 name 列表(可见性保证)②剩余预算内补 description。
 // 目录的意义是"让模型知道有什么",名字本身高度语义化(skill-creator/create-skill),
 // desc 是锦上添花 —— 可见性优先于描述完整度。
+// ⚠️ 2026-11-18:技能数从 90 涨到 200+(蒸馏产物接入 + 插件),纯名列表本身就要 3300+ 字符。
+// 原来的 2400 预算实际早已被 nameList 突破(175 个 = 2610 字符,desc 一条都挤不进)。
+// 现在:预算提到 3800(nameList 全量可装),并给 nameList 也加硬截断兜底 —— 截断时
+// kinetaios 系(手写 + 蒸馏产出)优先,内置/第三方副本后置;被省略的数目写在尾巴上,
+// 且 load_skill 传未知 name 会回全量清单,不会让模型彻底摸黑。
 export function skillCatalogText(): string | null {
   const skills = listSkills();
   if (skills.length === 0) return null;
-  const MAX_CHARS = 2400;
+  const MAX_CHARS = 3800;
   const HEADER = '\n(按需调用 load_skill 加载正文;此列表含全部技能名,部分附简述)\n';
-  // Pass 1:全部 name 的紧凑逗号列(可见性保证)
-  const nameList = skills.map((s) => s.name).join(', ');
+  // 截断优先级:自己的 skill(手写 + 蒸馏)> 外部副本(内置/claude/codex/plugin)。
+  const ordered = [
+    ...skills.filter((s) => s.source === 'kinetaios'),
+    ...skills.filter((s) => s.source !== 'kinetaios'),
+  ];
+  // Pass 1:紧凑 name 逗号列。留 160 字符给截断尾注。
+  const NAME_BUDGET = MAX_CHARS - HEADER.length - 160;
+  let nameList = '';
+  let dropped = 0;
+  for (const s of ordered) {
+    const piece = nameList ? `, ${s.name}` : s.name;
+    if (nameList.length + piece.length > NAME_BUDGET) {
+      dropped++;
+      continue;
+    }
+    nameList += piece;
+  }
+  const tail = dropped > 0 ? `, …另有 ${dropped} 个未列出(load_skill 传未知名会返回全量清单)` : '';
   // Pass 2:剩余预算内给尽可能多的技能带 desc(逐条 `- name — desc40`)
-  const budget = MAX_CHARS - nameList.length - HEADER.length;
+  const budget = MAX_CHARS - nameList.length - tail.length - HEADER.length;
   const lines: string[] = [];
   let used = 0;
   if (budget > 200) {
@@ -219,7 +254,7 @@ export function skillCatalogText(): string | null {
     }
   }
   const detail = lines.length > 0 ? `\n\n前几项简介:\n${lines.join('\n')}` : '';
-  return HEADER.trimStart() + nameList + detail + '\n';
+  return HEADER.trimStart() + nameList + tail + detail + '\n';
 }
 
 export function listSkills(): SkillInfo[] {

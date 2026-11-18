@@ -115,5 +115,14 @@ export async function distillSkill(opts: {
   fs.mkdirSync(skillDir, { recursive: true });
   const file = path.join(skillDir, 'SKILL.md');
   fs.writeFileSync(file, doc.endsWith('\n') ? doc : `${doc}\n`, 'utf8');
+  // 让 skills.ts 的扫描缓存立刻失效:新建子目录会改 distilled 的 mtime 哨兵能探到,
+  // 但同名覆盖写不动父目录 mtime —— 不显式失效会读到旧正文,得等重启。
+  // 静默失败:缓存失效只是时效优化,不影响落盘正确性(单测环境可能没有这条依赖链)。
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    (require('./skills') as typeof import('./skills')).invalidateSkills();
+  } catch {
+    /* noop */
+  }
   return { distilled: true, name: meta.name, path: file };
 }
