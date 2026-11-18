@@ -14,6 +14,7 @@ import { distillSkill } from './skill-distill';
 import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
 import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
+import { CORRECTION_RE, isReask } from './turn-signal';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -557,6 +558,8 @@ export class TaskManager {
     // 里同时出现,就给哪个规则 strikes+1 进热区。best-effort,不阻塞主链路。
     // 用户是"补充新约束"而非纠正时,提取层会把新约束落成新规则,双通道互补。
     try { this.detectCorrectionAndStrike(prompt, conv); } catch { /* 记忆闭环不阻塞发消息 */ }
+    // P0 隐式反馈:同一次话术解析,顺手给「上一轮」记账(仪表失败绝不阻塞发消息)。
+    try { this.gradeLastTurn(prompt, conv); } catch { /* 仪表 best-effort */ }
 
     // Validate cwd up front — a bad path makes the spawn ENOENT and the CLI engines only surface
     // an opaque "未返回结果". Fail fast with a clear message instead.
@@ -1123,6 +1126,17 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         conv.ctxTokens = estTokenCount(conv.directHistory);
       }
       this.emit.notifyDone(conv, ev.type === 'done' ? 'done' : 'error', signal.aborted);
+      // P0 隐式反馈的硬信号:引擎报错 / 用户点停止 = 用户没拿到结果,这轮就是否定。
+      // 与下一轮话术信号(gradeLastTurn)互不排斥,同 turn 取更负的 rating、tags 合并。
+      {
+        const cur = conv.turns[conv.turns.length - 1];
+        const tags: string[] = [];
+        if (ev.type === 'error') tags.push('error');
+        if (signal.aborted) tags.push('aborted');
+        if (cur && tags.length) {
+          try { store.recordTurnFeedback(cur.id, -1, tags); } catch { /* 仪表 best-effort */ }
+        }
+      }
     }
     const t = conv.turns[conv.turns.length - 1];
     if (ev.type === 'done' && t?.answer) {
@@ -1130,7 +1144,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // P2: 异步提取会话摘要(episodic memory),不阻塞主流程
       this.extractEpisodicMemory(conv, signal).catch(() => {});
       // P0-2: 技能自沉淀 —— 异步判定+蒸馏成功任务为可复用 skill,失败静默(best-effort)
-      this.maybeDistillSkill(conv, prompt, t, signal).catch(() => {});
+      // signal.aborted 的 done 必须排除:用户点停止后不少引擎仍会补发一个 done(带已有 output),
+      // 这种"被判停的轮次"照蒸不误会直接产出坏技能 —— 函数注释早写了"canceled 不蒸馏",
+      // 但实现只判 ev.type==='done',那半句从未生效。与 turn_feedback 的 aborted 硬信号同口径。
+      if (!signal.aborted) this.maybeDistillSkill(conv, prompt, t, signal).catch(() => {});
       // P3: 异步执行记忆 GC(idle reflection),每 5 次 done 触发一次
       this.doneCounter++;
       if (this.doneCounter % 5 === 0) {
@@ -1410,7 +1427,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   // 信号 = 纠正话术特征(你还/你又/我说过/说了多少遍/还是错/不是让你/别再/怎么又/为啥又/又犯)。
   // 归因 = 规则触发词与「本次纠正 + 上一轮助手回答」同时命中(避免任何含 push 的消息都误伤 push 规则)。
   private detectCorrectionAndStrike(prompt: string, conv: Conversation): void {
-    if (!/你还|你又|我说过|说了多少遍|还是错|还是报|不是让你|别再|怎么又|为啥又|又犯|又忘|不遵守|没遵守/.test(prompt)) return;
+    if (!CORRECTION_RE.test(prompt)) return;
     // 归因规则(2026-09-22 收紧):触发词必须出现在【用户本次纠正话术】里。
     // 修前 haystack = prompt + lastAnswer,跨轮错位场景必误伤:第 N 轮用户"问"怎么 push
     // (回答含 push 字样),第 N+1 轮用户为无关的 CSS bug 发火「怎么又错」→ push 规则被
@@ -1424,6 +1441,22 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         store.strikeRule(r.id);
       }
     }
+  }
+
+  // ── 隐式反馈:给「上一轮」定级(能力进化的样本端)──────────────────
+  // turn 自己收尾时只知道"跑完了没有",不知道"用户认不认"。真能判的是用户下一条消息:
+  // 带着不满回来 = 上一轮被否;把差不多的话再问一遍 = 上一轮等于白干。
+  // 两个信号都免费、零打扰。与 detectCorrectionAndStrike 互补 —— 那边给「哪条规则」记 strike,
+  // 这边给「哪一轮」记账;只有后者能拿去淘汰技能 / 选基因(前者只服务规则热区)。
+  private gradeLastTurn(prompt: string, conv: Conversation): void {
+    const prev = conv.turns[conv.turns.length - 1];
+    // 只评「已交付」的轮次:没 answer 的是空转或还在跑,给它记负分是冤案。
+    if (!prev || !prev.done || !prev.answer) return;
+    const tags: string[] = [];
+    if (CORRECTION_RE.test(prompt)) tags.push('correction');
+    if (isReask(prompt, prev.prompt)) tags.push('reask');
+    if (!tags.length) return;
+    store.recordTurnFeedback(prev.id, -1, tags);
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).

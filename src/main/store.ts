@@ -131,7 +131,18 @@ export function initStore(): void {
     -- 旁表 O(1) 查,旧数据无映射 → 搜索命中但无"所属会话"链接(可接受降级)。
     -- / rowid → conv_id side map for FTS history; replaces the 50× full-table LIKE scan.
     CREATE TABLE IF NOT EXISTS history_conv(id INTEGER PRIMARY KEY, conv_id TEXT);
+    -- P0 隐式反馈仪表(2026-11-18):turn_feedback 早就有表有字段,但代码里零引用 ——
+    -- 从来没写过一个字节。"哪个 turn 被用户否掉"是能力进化唯一免费的真信号
+    -- (技能淘汰 / 基因选择 / 私有基准集全靠它),这里由 TaskManager 落账:
+    --   correction/tags 用户下一轮带着不满回来(「你又/我说过/还是错」)
+    --   reask          用户把差不多的话再问一遍(上一轮等于白干)
+    --   error/aborted  引擎侧失败或用户点停止(用户没得到结果,不接受)
+    -- rating: -1 = 否定/失败;+1 = 显式肯定(UI 点赞入口,当前无)。
+    CREATE TABLE IF NOT EXISTS turn_feedback(turn_id TEXT PRIMARY KEY, rating INTEGER, tags TEXT);
   `);
+  // ts 列补迁移:最早的库只有 (turn_id, rating, tags) 三列。
+  if (!hasColumn('turn_feedback', 'ts'))
+    db.exec(`ALTER TABLE turn_feedback ADD COLUMN ts REAL;`);
   for (const [col, def] of [
     ['custom_title', 'TEXT'],
     ['direct_history', 'TEXT'],
@@ -569,6 +580,48 @@ export function saveTurn(convId: string, t: Turn): void {
     // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
     touchConversation(convId);
   })();
+}
+
+// ── turn_feedback:隐式成败标签(能力进化的唯一免费真信号)──
+// 不打断用户、不弹窗:从「用户下一轮怎么说话」和「这一轮自己怎么收场」里读。
+// Implicit feedback: derived from the user's next message and how the turn itself ended.
+
+/** 记一条 turn 反馈。同一 turn 多次触发 → rating 取更负、tags 合并去重。
+ *  先被「重问」再被「纠正」是同一个不满的两种说法,不该互相覆盖成更轻的那条;
+ *  负分只升不降:用户一旦返工过,这轮就已经不可信。 */
+export function recordTurnFeedback(turnId: string, rating: number, tags: string[]): void {
+  if (!turnId) return;
+  const prev = stmt('SELECT rating, tags FROM turn_feedback WHERE turn_id=?;').get(turnId) as
+    | { rating: number | null; tags: string | null }
+    | undefined;
+  const merged = new Set((prev?.tags ?? '').split(',').map((s) => s.trim()).filter(Boolean));
+  for (const tag of tags) {
+    const v = tag.trim();
+    if (v) merged.add(v);
+  }
+  const next = prev?.rating == null ? rating : Math.min(prev.rating, rating);
+  stmt(
+    `INSERT INTO turn_feedback(turn_id, rating, tags, ts) VALUES(?,?,?,?)
+     ON CONFLICT(turn_id) DO UPDATE SET rating=excluded.rating, tags=excluded.tags, ts=excluded.ts;`,
+  ).run(turnId, next, [...merged].join(','), Date.now());
+}
+
+export type TurnFeedback = { turnId: string; rating: number; tags: string[]; ts: number };
+
+/** 按时间倒序列出反馈。since 是毫秒时间戳(0 = 全部),limit 上限 5000。 */
+export function listTurnFeedback(opts: { since?: number; limit?: number } = {}): TurnFeedback[] {
+  const since = opts.since ?? 0;
+  const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000));
+  const rows = stmt(
+    `SELECT turn_id, rating, tags, ts FROM turn_feedback
+     WHERE COALESCE(ts, 0) >= ? ORDER BY COALESCE(ts, 0) DESC LIMIT ?;`,
+  ).all(since, limit) as Array<{ turn_id: string; rating: number | null; tags: string | null; ts: number | null }>;
+  return rows.map((r) => ({
+    turnId: r.turn_id,
+    rating: r.rating ?? 0,
+    tags: (r.tags ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    ts: r.ts ?? 0,
+  }));
 }
 
 // ── conv_events:append-only 事件日志 ──
