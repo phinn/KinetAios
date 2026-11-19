@@ -2911,11 +2911,11 @@ const screenshot: Tool = {
 
 const screenshot_window: Tool = {
   name: 'screenshot_window',
-  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。',
+  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。注意:找不到窗口时不会让你瞎猜,会直接返回当前可截窗口的标题清单,照着清单里的标题原样重试即可。',
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: '窗口标题关键字(≥3 字符,唯一性越强越好,如 "App Store Connect")' },
+      title: { type: 'string', description: '窗口标题关键字(子串匹配,越长越准;两字短名也可,但要求唯一命中,如 "预览")' },
     },
     required: ['title'],
   },

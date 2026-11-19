@@ -81,7 +81,7 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 
 【Computer Use 计机使用】你可以截屏、点击鼠标、输入键盘,直接操控用户的电脑界面。
 - **screenshot()** 截取当前屏幕,你会看到截图(图片),坐标基于截图分辨率
-- **screenshot_window(title)** 按标题关键字截取指定窗口的内容——不要求窗口在前台,被遮挡/在后台也能拍,画面零切换
+- **screenshot_window(title)** 按标题关键字截取指定窗口的内容——不要求窗口在前台,被遮挡/在后台也能拍,画面零切换。**标题猜错时不要反复换词**:工具失败会直接返回"当前可截窗口"的标题清单,照清单里的标题原样重试一次即可;两字短名(如"预览")在唯一命中时同样可用。
 - **mouse_click(x, y, button?, double_click?)** 点击指定坐标
 - **mouse_scroll(x, y, clicks)** 滚动滚轮(正=上,负=下)
 - **mouse_drag(from_x, from_y, to_x, to_y)** 拖拽

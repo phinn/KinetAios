@@ -184,6 +184,27 @@ export async function withSelfHidden<T>(hideSelf: boolean, fn: () => Promise<T>)
 // / Window-scoped capture: window mode composites the window's own backing store, so
 // background/occluded windows capture fine (probe-verified). Lets the agent launch a window
 // and screenshot its content without ever bringing it to front.
+// 可截窗口清单:失败时把候选集直接交给模型,而不是让它继续猜标题。
+// 同名窗口(同一 app 多开)只列一次 —— 模型要的是"有哪些名字可以填",不是窗口实例数。
+// / Candidate list for the model: the old code only appended 12 raw names, so the model kept
+// guessing titles ("预览"/"设置") that its own anti-misfire rule then rejected. Listing the
+// deduped, captureable titles up front turns two failed rounds into one.
+function formatWindowCandidates(sources: Electron.DesktopCapturerSource[], limit = 24): string {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const s of sources) {
+    if (s.thumbnail.isEmpty()) continue;
+    const n = (s.name ?? '').trim();
+    if (!n || seen.has(n)) continue;
+    seen.add(n);
+    names.push(n);
+  }
+  if (!names.length) return '（无可截窗口:可能全部最小化了,或未授予「屏幕录制」权限）';
+  const shown = names.slice(0, limit);
+  const more = names.length > shown.length ? ` …等共 ${names.length} 个` : '';
+  return shown.map((n) => `「${n}」`).join(' ') + more;
+}
+
 export async function captureWindowByName(
   nameSubstr: string,
   opts?: { minHeight?: number },
@@ -194,20 +215,51 @@ export async function captureWindowByName(
       thumbnailSize: { width: 1920, height: 1200 },
     });
     const q = nameSubstr.trim().toLowerCase();
-    // 精确匹配优先,再退前缀/子串;太短的查询(≤2 字符)容易误中,直接拒绝。
-    if (q.length <= 2) return { ok: false, error: `窗口名查询「${nameSubstr}」太短,容易误中,请用更长且唯一的关键字` };
-    const ranked = sources
-      .filter((s) => !s.thumbnail.isEmpty())
-      .filter((s) => s.name.toLowerCase().includes(q))
-      .sort((a, b) => {
-        const ae = a.name.toLowerCase() === q ? 0 : a.name.toLowerCase().startsWith(q) ? 1 : 2;
-        const be = b.name.toLowerCase() === q ? 0 : b.name.toLowerCase().startsWith(q) ? 1 : 2;
-        return ae - be;
-      });
-    if (!ranked.length) {
-      const names = sources.filter((s) => !s.thumbnail.isEmpty()).slice(0, 12).map((s) => s.name);
-      return { ok: false, error: `未找到标题含「${nameSubstr}」的窗口。当前可见窗口:${names.join(' | ')}` };
+    const usable = sources.filter((s) => !s.thumbnail.isEmpty() && (s.name ?? '').trim());
+    if (!q) {
+      return { ok: false, error: `请提供窗口标题关键字。当前可截窗口:${formatWindowCandidates(usable)}\n→ 从上面挑一个标题,原样作为 title 重试。` };
     }
+    const matched = usable.filter((s) => s.name.toLowerCase().includes(q));
+    let distinctNames = [...new Set(matched.map((s) => s.name.trim()))];
+    // 二段回退:整串没命中时,拿最长词元再试一次。真实失败里 224/249 都是"整串没命中" ——
+    // 模型写的标题常带后缀或语序不同(「Chrome 浏览器」vs 实际「Google Chrome」),
+    // 这类差异不该让整轮作废。只在唯一命中时采信,绝不"猜一个":多个候选照样报错列清单。
+    // / Second pass: if the whole string misses, retry with its longest token. 224 of the 249
+    // observed failures were whole-string misses caused by suffix/word-order differences.
+    // Only a UNIQUE token hit is trusted; several candidates still go back as a list.
+    let fuzzyToken = '';
+    if (!matched.length) {
+      const tokens = q.split(/[\s\-_—·|,，。/\\()（）[\]【】"'“”]+/).filter((t) => t.length >= 3);
+      const longest = tokens.sort((a, b) => b.length - a.length)[0] ?? '';
+      if (longest) {
+        const fuzzy = usable.filter((s) => s.name.toLowerCase().includes(longest));
+        const fuzzyNames = [...new Set(fuzzy.map((s) => s.name.trim()))];
+        if (fuzzyNames.length === 1) {
+          matched.push(fuzzy[0]);
+          distinctNames = fuzzyNames;
+          fuzzyToken = longest;
+        }
+      }
+    }
+    if (!matched.length) {
+      return { ok: false, error: `未找到标题含「${nameSubstr}」的窗口。当前可截窗口:${formatWindowCandidates(usable)}\n→ 从上面挑一个标题,原样作为 title 重试(取更长的一段更准)。` };
+    }
+    // 短名(≤2 字符)不再一律拒绝:只有唯一命中时并无误中风险,拦掉它纯属自伤 ——
+    // 主窗口标题常就是「预览」「设置」这种两字名,旧逻辑让模型永远截不到、只能反复换词重试。
+    // 命中多个才要求补充关键字;但若其中一个与查询精确同名(「访达」vs「访达 - 下载」),
+    // 精确同名本身就是最强消歧证据,直接采信。
+    // / Short queries are only rejected when ambiguous: a unique match is unambiguous, and
+    // two-character titles ("预览","设置") are exactly what the old guard made unreachable.
+    // An exact-name hit ("访达" vs "访达 - 下载") settles the ambiguity on its own.
+    const hasExact = distinctNames.some((n) => n.toLowerCase() === q);
+    if (q.length <= 2 && distinctNames.length > 1 && !hasExact) {
+      return { ok: false, error: `「${nameSubstr}」太短,命中 ${distinctNames.length} 个窗口:${distinctNames.map((n) => `「${n}」`).join(' ')}\n→ 用更长且能区分的关键字重试。` };
+    }
+    const ranked = matched.sort((a, b) => {
+      const ae = a.name.toLowerCase() === q ? 0 : a.name.toLowerCase().startsWith(q) ? 1 : 2;
+      const be = b.name.toLowerCase() === q ? 0 : b.name.toLowerCase().startsWith(q) ? 1 : 2;
+      return ae - be;
+    });
     const src = ranked[0];
     const size = src.thumbnail.getSize();
     if (size.height < (opts?.minHeight ?? 0)) return { ok: false, error: `窗口「${src.name}」内容过小(${size.width}×${size.height}),可能未渲染完成` };
@@ -216,13 +268,16 @@ export async function captureWindowByName(
     // ⚠️ mac 上 resolveWindowBounds 走 CGWindowList:无「屏幕录制」权限时窗口名/位置
     // 全拿不到(桌面Capturer 拍得到缩略图但拿不到标题,同样会被 title 过滤卡住)。
     // 失败时给出权限指引,别让模型在"截图成功但定位失败"里打转。
-    const bounds = await resolveWindowBounds(nameSubstr);
+    // 模糊回退命中时必须用真实标题去换算坐标/绑宿主 —— 原查询已证明匹配不到该窗口。
+    // On a fuzzy hit, resolve geometry/host by the REAL title: the query proved unmatchable.
+    const resolveTitle = fuzzyToken ? src.name : nameSubstr;
+    const bounds = await resolveWindowBounds(resolveTitle);
     // 方案B:同时解析窗口宿主(hwnd/pid),后续后台动作直投该窗口 —— 不再整屏
     // hit-test,agent 操作后台窗口时与用户前台操作物理互不干扰。
     // Plan B: also resolve the owning hwnd/pid so background actions go straight to
     // this window instead of a whole-screen hit-test — agent works a background
     // window while the user keeps the foreground.
-    const host = bounds ? await resolveWindowHost(nameSubstr) : null;
+    const host = bounds ? await resolveWindowHost(resolveTitle) : null;
     setCaptureGeometry({
       imgW: size.width,
       imgH: size.height,
@@ -255,7 +310,14 @@ export async function captureWindowByName(
       contentMd5: fp,
       note: (bounds
         ? `坐标系:窗口「${src.name}」局部像素(已自动换算到屏幕坐标,原点 ${bounds.x},${bounds.y})`
-        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算,也不会绑定后台投递。若反复出现,检查系统设置 → 隐私与安全性 → 屏幕录制 是否已授权 KinetAios。可改用全屏 screenshot 截图后再用其坐标点击。`),
+        : `⚠️ 未能定位窗口「${src.name}」在屏幕上的位置,点击坐标无法自动换算,也不会绑定后台投递。若反复出现,检查系统设置 → 隐私与安全性 → 屏幕录制 是否已授权 KinetAios。可改用全屏 screenshot 截图后再用其坐标点击。`)
+        // 多命中时明示"选了哪个、还有哪些",避免模型以为截对了其实截的是兄弟窗口。
+        + (fuzzyToken
+          ? `\nℹ️ 标题「${nameSubstr}」未精确命中,已按关键字「${fuzzyToken}」匹配到唯一窗口「${src.name}」。若这不是你要的窗口,请用完整标题重试。`
+          : '')
+        + (distinctNames.length > 1
+          ? `\nℹ️ 「${nameSubstr}」命中 ${distinctNames.length} 个窗口(${distinctNames.map((n) => `「${n}」`).join(' ')}),已取最佳匹配「${src.name}」;若截错,用更长标题重试。`
+          : ''),
     };
   } catch (e) {
     return { ok: false, error: (e as Error)?.message ?? String(e) };
