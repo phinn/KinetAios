@@ -498,6 +498,12 @@ export async function browserClick(selector: string, mode: 'auto' | 'dom' = 'aut
     // 先剥透明遮罩再点;两轮都命中不了就明说,让上层换 dom 模式或换 selector。
     // Auto mode: CDP real-coordinate click with a pre-click hit-test — if a mask
     // intercepts, strip transparent masks once; if still blocked, say so explicitly.
+    // 先分"元素根本不存在"和"存在但被挡":旧实现把两者都算 hitTest 失败,统一报"被拦截",
+    // 模型于是换 mode=dom 再试一遍仍然失败 —— 诊断错了,补救必然也错。
+    // / Distinguish "missing" from "blocked": the old code reported both as an intercepted click.
+    if (!(await evalInPage<boolean>(s, `!!document.querySelector(${JSON.stringify(selector)})`))) {
+      return await missingElementReport(s, selector);
+    }
     if (!(await hitTestOk(s, selector))) {
       const removed = await stripTransparentMasks(s);
       if (removed > 0) {
@@ -513,6 +519,63 @@ export async function browserClick(selector: string, mode: 'auto' | 'dom' = 'aut
     await realClick(s, selector);
     return `✅ 已点击 ${selector}`;
   } finally { await s.close(); }
+}
+
+// selector 不存在时的候选回吐:从页面里找"最像的"几个可点元素,直接给出可复制的 selector。
+// 为什么值得做:模型拿到的 selector 往往是自己拼的(id 猜错、nth-of-type 数错),失败后它
+// 没有别的依据,只能再猜一次;把真实存在的候选摆出来,它一次就能改对。
+// / Enumerate near-miss clickables so a wrong selector is corrected in one shot instead of guessed twice.
+async function missingElementReport(s: CdpSession, selector: string): Promise<string> {
+  const token = selector
+    .replace(/^[#.]/, '')
+    .split(/[\s>+~[\]=.:#"']/)
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3)
+    .sort((a, b) => b.length - a.length)[0] ?? '';
+  let cands: string[] = [];
+  try {
+    cands = await evalInPage<string[]>(s, `(function(){
+      var q = ${JSON.stringify(token.toLowerCase())};
+      function sel(el){
+        if (el.id) return '#' + CSS.escape(el.id);
+        var dt = el.getAttribute('data-testid');
+        if (dt) return '[data-testid="' + dt + '"]';
+        var aria = el.getAttribute('aria-label');
+        if (aria) return el.tagName.toLowerCase() + '[aria-label="' + aria.replace(/"/g, '') + '"]';
+        var cls = (typeof el.className === 'string') ? (el.className.trim().split(/\\s+/)[0] || '') : '';
+        var tag = el.tagName.toLowerCase();
+        if (cls) return tag + '.' + CSS.escape(cls);
+        var idx = Array.prototype.indexOf.call(document.getElementsByTagName(tag), el) + 1;
+        return tag + ':nth-of-type(' + idx + ')';
+      }
+      function label(el){
+        var cls = typeof el.className === 'string' ? el.className : '';
+        return [el.id, el.getAttribute('name'), el.getAttribute('aria-label'),
+                el.getAttribute('data-testid'), (el.textContent || '').trim().slice(0, 30), cls]
+               .filter(Boolean).join(' ').toLowerCase();
+      }
+      var all = document.querySelectorAll('a,button,input,select,textarea,summary,[role="button"],[onclick],[data-testid]');
+      var out = [];
+      for (var i = 0; i < all.length; i++) {
+        var el = all[i];
+        var r = el.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        if (q && label(el).indexOf(q) < 0) continue;
+        out.push(sel(el) + '  —  ' + (label(el).slice(0, 46) || el.tagName.toLowerCase()));
+        if (out.length >= 6) break;
+      }
+      return out;
+    })()`);
+  } catch { /* 页面可能已跳走,退回纯文本报告 */ }
+  if (!cands?.length) {
+    return `❌ 元素不存在: ${selector}\n页面上找不到可点元素(可能是空白页/弹层未加载/选择器写错)。先用 browser_snapshot 看当前页面结构,不要继续猜。`;
+  }
+  return (
+    `❌ 元素不存在: ${selector}\n` +
+    `页面上最接近的可点元素(可直接复制 selector):\n` +
+    cands.map((c) => `   ${c}`).join('\n') +
+    `\n→ 从上面挑一个原样用;要看完整结构用 browser_snapshot。`
+  );
 }
 
 // DOM 合成点击(tippy 类浮层的独木桥):CDP Input 事件对 tippy 弹层无效(实测),

@@ -6,6 +6,8 @@ import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
 import { grepToolOutput } from './tool-spill';
+import { waitFor, formatWaitResult, type WaitKind, type WaitSpec } from './wait-for';
+import { formatPathMiss } from './did-you-mean';
 import crypto from 'node:crypto';
 
 // 原子写:同目录 tmp 文件 + rename 替换。直接 writeFileSync 覆盖在写一半崩溃/断电时会留下
@@ -272,7 +274,25 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000, sig
       { cwd: cwd || undefined, timeout: timeoutMs, maxBuffer: 10 * 1024 * 1024, encoding: 'utf8' },
       (err, stdout, stderr) => {
         if (err && err.killed) {
-          resolve(`[超时(${Math.round(timeoutMs / 1000)}s),已终止。]\n`);
+          // 超时不再"清空重来":旧实现只回一句 [超时,已终止],把已跑出来的 stdout/stderr 全扔了 ——
+          // 模型看不到命令跑到哪一步,只能原样重跑,近30天 DedupeGuard 因此拦下 589 次重复调用。
+          // 现在回吐尾部输出(往往已含构建结论/报错),并直接给三条下一步,把"重跑"引出死循环。
+          // / Keep the partial output: the old branch threw away everything the command had already
+          // printed, so the model could only re-run it verbatim (589 DedupeGuard hits in 30 days).
+          const secs = Math.round(timeoutMs / 1000);
+          const partial = ((stdout || '') + (stderr || '')).trim();
+          const tail = partial.length > 6000 ? partial.slice(-6000) : partial;
+          resolve(
+            `[⏳ 超时 ${secs}s,已终止 —— 命令未执行完]\n` +
+            (tail
+              ? `超时前已产生的输出(尾部 ${tail.length.toLocaleString()} 字符,结论可能已在这里):\n${tail}\n`
+              : '超时前没有任何输出。\n') +
+            `[exit timeout]\n` +
+            `下一步(⚠️ 不要用完全相同的参数重跑):\n` +
+            `1) 若在等外部进程/构建/服务就绪 → 用 wait_for(until=log_match|port_open|process_exit),不要 sleep;\n` +
+            `2) 若确实是长任务 → shell 后台跑(nohup <cmd> > /tmp/run.log 2>&1 &),再用 wait_for(until=log_match, target=/tmp/run.log) 盯日志;\n` +
+            `3) 若上面的输出已经说明任务完成,直接采信,不必重跑。`,
+          );
           return;
         }
         // Windows 下即使 chcp 65001,某些程序仍输出 GBK(如 dir、ipconfig)。
@@ -404,7 +424,82 @@ const shell: Tool = {
     // 隐私闸:shell 输出同样会进对话 → 出网。开启时检测命中走 confirm(拒绝则不出网)。
     const blocked = await privacyGate(trimmed);
     if (blocked) return blocked;
-    return trimmed;
+    // 裸 sleep 提示:近30天有 2287 次「命令就是 sleep N」、合计 40 小时盲等。不拦命令(有时
+    // 只是对齐动画节奏),只在结果尾部点一句 —— 模型下次看到就会改用 wait_for。
+    // / Nudge, not block: pure `sleep N` accounted for 40h of blind waiting in 30 days.
+    const bare = /^\s*sleep\s+([\d.]+)\s*;?\s*$/.exec(finalCmd);
+    return bare
+      ? `${trimmed}\nℹ️ 这是裸 sleep ${bare[1]}s 盲等。若要等外部进程/服务/构建就绪,用 wait_for(until=port_open|log_match|process_exit|file_exists),条件一满足就返回,不必把时间睡满。`
+      : trimmed;
+  },
+};
+
+// ── wait_for:条件等待,替代裸 sleep 盲等 ──
+// 真实数据:近30天 shell 里「命令就是 sleep N」2287 次 / 40.1 小时,含 sleep 的脚本 6747 次 /
+// 67.2 小时(sleep 175 这类还会直接撞上 120s 工具超时)。模型没有"等条件"的原语,只能睡满固定
+// 时长再醒来问一次 —— 睡短了要多轮,睡长了纯浪费,还可能超时失败。
+// 本工具把"等固定时间"换成"等条件成立":命中即返回并带回证据(日志行/端口/进程状态),超时也
+// 带回最后观察,模型不用再补一次 tail/ps 才知道发生了什么。
+// / Replace fixed sleeps with condition polling: return on hit with evidence, or on timeout with
+// the last observation — so the next decision is informed instead of blind.
+const WAIT_KINDS = ['port_open', 'log_match', 'file_exists', 'file_absent', 'file_stable', 'process_exit', 'command_ok'];
+const WAIT_DEFAULT_POLL: Record<string, number> = {
+  port_open: 0.5, log_match: 1.5, file_exists: 1, file_absent: 1, file_stable: 0.8, process_exit: 2, command_ok: 3,
+};
+
+const waitForTool: Tool = {
+  name: 'wait_for',
+  description:
+    '等待某个条件成立再继续(替代 shell sleep 盲等)。命中立即返回,并带回证据(匹配到的日志行/端口握手/文件大小);超时也带回"最后看到了什么",以便判断是延长、换思路还是本来就没起来。'
+    + '典型:等构建出结论(until=log_match, pattern="BUILD SUCCEEDED|error:")、等服务可连(until=port_open, target="127.0.0.1:3000")、等进程退出(until=process_exit, target=xcodebuild)、等导出文件写完(until=file_stable)。'
+    + '⚠️ 不要用 shell "sleep N" 来等待 —— 那会把固定时长睡满,且 N 大于工具超时会直接失败。',
+  parameters: {
+    type: 'object',
+    properties: {
+      until: {
+        type: 'string',
+        enum: WAIT_KINDS,
+        description: '条件类型:port_open(TCP 可连接) / log_match(日志出现匹配行) / file_exists / file_absent / file_stable(大小与时间戳不再变化=写完) / process_exit(进程已退出) / command_ok(自定义命令退出码 0,需用户确认)',
+      },
+      target: {
+        type: 'string',
+        description: 'port_open → "host:port" 或 "3000";log_match/file_* → 文件路径;process_exit → 进程名关键字(如 xcodebuild);command_ok → 要反复执行的探测命令',
+      },
+      pattern: { type: 'string', description: 'log_match 用的正则(大小写不敏感),如 "BUILD SUCCEEDED|error:"' },
+      timeout_s: { type: 'number', description: '最长等待秒数,默认 120,上限 900' },
+      poll_s: { type: 'number', description: '轮询间隔秒,默认按类型 0.5~3;一般不用填' },
+    },
+    required: ['until', 'target'],
+  },
+  readOnly: true,
+  async run(args, ctx) {
+    const kind = String(args.until ?? '') as WaitKind;
+    const target = String(args.target ?? '').trim();
+    const timeoutMs = Math.min(900_000, Math.max(1_000, Number(args.timeout_s ?? 120) * 1000));
+    const pollMs = Math.max(200, Number(args.poll_s ?? WAIT_DEFAULT_POLL[kind] ?? 1.5) * 1000);
+    let runCommand: WaitSpec['runCommand'];
+    if (kind === 'command_ok') {
+      // 自定义条件会反复执行命令 → 与 shell 同级别把关:自杀守卫 + 用户确认(一次)。
+      const kill = hostKillViolation(target);
+      if (kill) return `🚫 已拦截 — ${kill}`;
+      const ok = await ctx.confirm(`wait_for 会反复执行这条探测命令,直到它退出码为 0:\n${target}`);
+      if (!ok) return `❌ 用户拒绝执行探测命令: ${target}`;
+      runCommand = async (cmd: string) => {
+        const out = await shellExec(cmd, ctx.cwd, 15_000, ctx.signal);
+        const m = /\[exit (\d+|timeout)\]\s*$/m.exec(out);
+        return { ok: m?.[1] === '0', out };
+      };
+    }
+    const spec: WaitSpec = {
+      kind,
+      target,
+      pattern: args.pattern ? String(args.pattern) : undefined,
+      timeoutMs,
+      pollMs,
+      runCommand,
+      signal: ctx.signal,
+    };
+    return formatWaitResult(spec, await waitFor(spec));
   },
 };
 
@@ -810,8 +905,11 @@ const readFile: Tool = {
       const blockedT = await privacyGate(t, p);
       if (blockedT) return blockedT;
       return t;
-    } catch {
-      return `读不到: ${p}`;
+    } catch (e) {
+      // 裸"读不到: /path"是死路:模型只知道猜错,不知道错在哪 → 下一轮往往再猜一次。
+      // 回吐同目录最接近的文件(含大小写变体),让它一次改对。
+      const code = (e as NodeJS.ErrnoException)?.code;
+      return `读不到: ${p}${code ? ` (${code})` : ''}${formatPathMiss(p)}`;
     }
   },
 };
@@ -3546,7 +3644,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

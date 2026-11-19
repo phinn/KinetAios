@@ -38,6 +38,38 @@ function tmpWrite(ext, content) {
   return { path: p, cleanup: () => { try { fs.unlinkSync(p); } catch (_) { /* noop */ } } };
 }
 
+// 文件不存在时回吐同目录最接近的几个文件名(2026-11-19)。
+// ocr_image 近 7 天失败率 26.8%,逐条看几乎全是"文件不存在" —— 模型在猜路径。
+// 插件不能 import 主进程的 did-you-mean,这里放一个 10 行的前缀相似版(够用且零依赖)。
+function nearestPaths(missing, limit = 4) {
+  try {
+    const dir = path.dirname(missing);
+    if (!fs.existsSync(dir)) return [];
+    const base = path.basename(missing).toLowerCase();
+    const score = (n) => {
+      const a = n.toLowerCase();
+      let i = 0;
+      while (i < a.length && i < base.length && a[i] === base[i]) i++;
+      return i / Math.max(a.length, base.length, 1);
+    };
+    return fs.readdirSync(dir)
+      .filter((n) => !n.startsWith('.'))
+      .map((n) => ({ n, s: score(n) }))
+      .filter((x) => x.s > 0.35)
+      .sort((x, y) => y.s - x.s)
+      .slice(0, limit)
+      .map((x) => path.join(dir, x.n));
+  } catch (_) { return []; }
+}
+
+// 统一的"文件不存在"回吐:本插件有 8 个工具各自裸报一句「文件不存在」,全是死路。
+function missFile(input, abs) {
+  const near = nearestPaths(abs);
+  return `❌ 文件不存在: ${input}` + (near.length
+    ? `\n💡 同目录最接近的文件:\n${near.map((p) => `   ${p}`).join('\n')}\n   → 直接复制上面的完整路径重试,不要再猜。`
+    : `\n💡 目录 ${path.dirname(abs)} 下没有相近文件。先确认路径(如 shell: ls "${path.dirname(abs)}")。`);
+}
+
 // 转义 PowerShell 单引号字符串内嵌的单引号 (' → '')。
 function psQuote(s) {
   return String(s).replace(/'/g, "''");
@@ -272,7 +304,7 @@ module.exports = {
         const cwd = ctx?.cwd ?? process.cwd();
         const input = path.resolve(cwd, args.input);
         const output = path.resolve(cwd, args.output);
-        if (!fs.existsSync(input)) return `❌ 输入文件不存在: ${args.input}`;
+        if (!fs.existsSync(input)) return missFile(args.input, input);
         const tmplFlag = args.template ? ` --template=${shellQuote(path.resolve(cwd, args.template))}` : '';
         const out = await execAsync(`pandoc ${shellQuote(input)} -o ${shellQuote(output)}${tmplFlag}`, cwd, 120000);
         return out.startsWith('❌')
@@ -298,7 +330,7 @@ module.exports = {
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const input = path.resolve(cwd, args.input);
-        if (!fs.existsSync(input)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(input)) return missFile(args.input, input);
         const md = fs.readFileSync(input, 'utf8');
         const output = args.output ? path.resolve(cwd, args.output) : input.replace(/\.md$/i, '.html');
 
@@ -374,7 +406,7 @@ ${html}
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const fp = path.resolve(cwd, args.input);
-        if (!fs.existsSync(fp)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(fp)) return missFile(args.input, fp);
         let text = fs.readFileSync(fp, 'utf8');
         let lines = text.split('\n');
 
@@ -524,7 +556,7 @@ ${html}
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const fp = path.resolve(cwd, args.input);
-        if (!fs.existsSync(fp)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(fp)) return missFile(args.input, fp);
         const fmt = args.format === 'plain' ? 'plain' : 'markdown';
         const out = await execAsync(`pandoc ${shellQuote(fp)} -t ${fmt}`, cwd, 60000);
         return out.startsWith('❌')
@@ -550,7 +582,7 @@ ${html}
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const fp = path.resolve(cwd, args.input);
-        if (!fs.existsSync(fp)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(fp)) return missFile(args.input, fp);
         const maxR = args.max_rows || 50;
         // 路径和 sheet 名通过 argv 传递, 避免 Python 字符串转义问题
         const py = [
@@ -646,7 +678,7 @@ ${html}
         const cwd = ctx?.cwd ?? process.cwd();
         const inPath = path.resolve(cwd, args.input);
         const outPath = path.resolve(cwd, args.output);
-        if (!fs.existsSync(inPath)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(inPath)) return missFile(args.input, inPath);
         const py = [
           'import openpyxl, csv, sys',
           'wb = openpyxl.load_workbook(sys.argv[1])',
@@ -682,7 +714,7 @@ ${html}
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const fp = path.resolve(cwd, args.input);
-        if (!fs.existsSync(fp)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(fp)) return missFile(args.input, fp);
         const pageFlag = (args.page_start && args.page_end)
           ? ` -f ${Number(args.page_start)} -l ${Number(args.page_end)}`
           : (args.page_start ? ` -f ${Number(args.page_start)}` : '');
@@ -751,7 +783,7 @@ ${html}
       async run(args, ctx) {
         const cwd = ctx?.cwd ?? process.cwd();
         const fp = path.resolve(cwd, args.input);
-        if (!fs.existsSync(fp)) return `❌ 文件不存在: ${args.input}`;
+        if (!fs.existsSync(fp)) return missFile(args.input, fp);
         const lang = args.lang || 'chi_sim+eng';
         const out = await execAsync(`tesseract ${shellQuote(fp)} stdout -l ${lang}`, cwd, 120000);
         return out.startsWith('❌')
