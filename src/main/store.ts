@@ -144,6 +144,10 @@ export function initStore(): void {
     --   error/aborted  引擎侧失败或用户点停止(用户没得到结果,不接受)
     -- rating: -1 = 否定/失败;+1 = 显式肯定(UI 点赞入口,当前无)。
     CREATE TABLE IF NOT EXISTS turn_feedback(turn_id TEXT PRIMARY KEY, rating INTEGER, tags TEXT);
+    -- 一次性后台迁移的完成标记(2026-11-19)。放独立小表而不是塞进 settings:
+    -- 这类标记由数据体量决定(跑完 8766 轮才可以置位),和用户配置无关。
+    -- Flags for one-shot background backfills (resumable across restarts).
+    CREATE TABLE IF NOT EXISTS app_meta(key TEXT PRIMARY KEY, value TEXT);
     -- 蒸馏溯源(2026-11-18):每个蒸馏技能记它出自哪一轮。没有这张表,"这个技能到底从
     -- 哪次任务长出来的"无从考证,也就没法在来源轮次被用户否决时把它降级 —— 50 个技能
     -- 垒在一起,好坏同权,劣币驱逐良币。
@@ -647,7 +651,7 @@ export function saveTurn(convId: string, t: Turn): void {
 /** 记一条 turn 反馈。同一 turn 多次触发 → rating 取更负、tags 合并去重。
  *  先被「重问」再被「纠正」是同一个不满的两种说法,不该互相覆盖成更轻的那条;
  *  负分只升不降:用户一旦返工过,这轮就已经不可信。 */
-export function recordTurnFeedback(turnId: string, rating: number, tags: string[]): void {
+export function recordTurnFeedback(turnId: string, rating: number, tags: string[], atMs?: number): void {
   if (!turnId) return;
   const prev = stmt('SELECT rating, tags FROM turn_feedback WHERE turn_id=?;').get(turnId) as
     | { rating: number | null; tags: string | null }
@@ -661,10 +665,65 @@ export function recordTurnFeedback(turnId: string, rating: number, tags: string[
   stmt(
     `INSERT INTO turn_feedback(turn_id, rating, tags, ts) VALUES(?,?,?,?)
      ON CONFLICT(turn_id) DO UPDATE SET rating=excluded.rating, tags=excluded.tags, ts=excluded.ts;`,
-  ).run(turnId, next, [...merged].join(','), Date.now());
+  ).run(turnId, next, [...merged].join(','), atMs ?? Date.now());
 }
 
 export type TurnFeedback = { turnId: string; rating: number; tags: string[]; ts: number };
+
+/** 一次性后台迁移的完成标记(如历史 feedback 回填)。存 app_meta,重复启动不再跑。
+ *  / One-shot migration flags. Keep them out of schema migrations so a partial run can resume. */
+export function getMeta(key: string): string | null {
+  if (!db) return null;
+  try {
+    const row = db.prepare('SELECT value FROM app_meta WHERE key=?;').get(key) as { value: string } | undefined;
+    return row?.value ?? null;
+  } catch { return null; }
+}
+
+export function setMeta(key: string, value: string): void {
+  if (!db) return;
+  try {
+    db.prepare('INSERT INTO app_meta(key, value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value;')
+      .run(key, value);
+  } catch { /* 迁移标记写失败不影响主流程 */ }
+}
+
+export type BackfillTurnRow = {
+  rowid: number; id: string; convId: string; ts: number;
+  prompt: string; error: string | null; done: boolean | null;
+};
+
+/** 回填用分页读:只取判定需要的字段,不把 1.2GB 的 steps 拽进内存。
+ *  按 rowid 游标翻页,每页由调用方 setTimeout 让出事件循环(8766 行全量 JSON 解析不能一口气做)。 */
+/** turns 当前最大 rowid。回填先取一个快照上界,只补历史、不追新写入的行 ——
+ *  否则用户边聊边回填,WHERE rowid > ? 会一直追着新轮次跑,永远收不了尾。
+ *  / Upper bound snapshot for the backfill so it never chases newly written turns. */
+export function maxTurnRowid(): number {
+  if (!db) return 0;
+  const row = db.prepare('SELECT COALESCE(MAX(rowid),0) AS m FROM turns;').get() as { m: number } | undefined;
+  return Number(row?.m ?? 0);
+}
+
+export function turnsForBackfill(afterRowid: number, limit: number): BackfillTurnRow[] {
+  if (!db) return [];
+  const rows = db.prepare(
+    `SELECT rowid AS rid, id, conv_id,
+            CAST(COALESCE(json_extract(data,'$.ts'), created_at, 0) AS REAL) AS ts,
+            COALESCE(json_extract(data,'$.prompt'), '') AS prompt,
+            json_extract(data,'$.error') AS err,
+            json_extract(data,'$.done') AS done
+       FROM turns WHERE rowid > ? ORDER BY rowid LIMIT ?;`,
+  ).all(afterRowid, limit) as Array<{ rid: number; id: string; conv_id: string; ts: number; prompt: string; err: string | null; done: number | null }>;
+  return rows.map((r) => ({
+    rowid: r.rid,
+    id: r.id,
+    convId: r.conv_id,
+    ts: Number(r.ts) || 0,
+    prompt: String(r.prompt ?? ''),
+    error: r.err ? String(r.err) : null,
+    done: r.done === null || r.done === undefined ? null : Boolean(r.done),
+  }));
+}
 
 /** 按时间倒序列出反馈。since 是毫秒时间戳(0 = 全部),limit 上限 5000。 */
 export function listTurnFeedback(opts: { since?: number; limit?: number } = {}): TurnFeedback[] {
