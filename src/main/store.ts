@@ -47,7 +47,12 @@ export function initStore(): void {
     CREATE VIRTUAL TABLE IF NOT EXISTS history USING fts5(role, content);
     CREATE TABLE IF NOT EXISTS conversations(
       id TEXT PRIMARY KEY, engine TEXT, cwd TEXT, created_at REAL);
-    CREATE TABLE IF NOT EXISTS turns(id TEXT PRIMARY KEY, conv_id TEXT, data TEXT, created_at REAL);
+    -- cost/tokens_in/tokens_out 是 data 的聚合冗余列(2026-11-19):启动时若走
+    -- SUM(json_extract(data,'$.costUSD')) 要解析全表(1.2GB / 8737 行,实测 11.4s)。
+    -- 由 saveTurn 同事务从 turn 对象直写,读时 SUM 数值列 → 毫秒级。见下方回填迁移。
+    CREATE TABLE IF NOT EXISTS turns(
+      id TEXT PRIMARY KEY, conv_id TEXT, data TEXT, created_at REAL,
+      cost REAL DEFAULT 0, tokens_in INTEGER DEFAULT 0, tokens_out INTEGER DEFAULT 0);
     CREATE INDEX IF NOT EXISTS turns_conv ON turns(conv_id);
     CREATE TABLE IF NOT EXISTS conv_events(
       seq INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -227,6 +232,37 @@ export function initStore(): void {
   // NULL = 全局教训(任何项目可注入)。不进检索式召回池 —— 教训靠 cwd 匹配的常驻注入。
   if (!hasColumn('memories', 'scope_cwd'))
     db.exec(`ALTER TABLE memories ADD COLUMN scope_cwd TEXT;`);
+  // turns 聚合冗余列(2026-11-19 启动体检):loadConversations 的侧栏聚合原先对全表
+  // SUM(json_extract(data,'$.costUSD')) —— 8737 行 / 均值 122KB 的 JSON 全部 C 侧解析,
+  // 在本机 3GB 库上实测 11.38s,且是冷启动同步执行(期间所有 IPC 排不上队)。
+  // 列由 saveTurn 在同一条 INSERT 里从 turn 对象直写,与 data 同事务落库 ——
+  // 这不是"增量维护"(那种才会漂移),data 与列永远同生共死。
+  const backfillTurnAgg = !hasColumn('turns', 'cost');
+  for (const [col, def] of [
+    ['cost', 'REAL DEFAULT 0'],
+    ['tokens_in', 'INTEGER DEFAULT 0'],
+    ['tokens_out', 'INTEGER DEFAULT 0'],
+  ] as const) {
+    assertDdlIdent(col, 'column'); assertDdlIdent(def, 'type');
+    if (!hasColumn('turns', col)) db.exec(`ALTER TABLE turns ADD COLUMN ${col} ${def};`);
+  }
+  // 存量回填:仅列刚建时跑一次(单条 UPDATE 原子)。老行不填 → 侧栏成本/ token 显示 0。
+  // 代价:本机 8737 行 / 1.2GB 实测 ~33s(读 JSON + 重写整行)。一次性,之后永久走索引。
+  // One-shot backfill (atomic single statement) when the columns are freshly added.
+  if (backfillTurnAgg) {
+    const rows = (db.prepare('SELECT COUNT(*) AS n FROM turns;').get() as { n: number }).n;
+    if (rows > 0) console.log(`[store] 首次迁移:为 ${rows} 条 turn 回填 cost/tokens 聚合列(库越大越久,一次性)…`);
+    db.exec(`UPDATE turns SET
+      cost       = COALESCE(json_extract(data,'$.costUSD'),0),
+      tokens_in  = COALESCE(json_extract(data,'$.tokensIn'),0),
+      tokens_out = COALESCE(json_extract(data,'$.tokensOut'),0);`);
+    if (rows > 0) console.log('[store] 回填完成');
+  }
+  // 覆盖索引:光有冗余列不够 —— SUM 仍要扫全表的行页(行存,读一列也要载入整行 122KB),
+  // 实测只从 11.38s 降到 6.08s。加上本索引后聚合只扫 500KB 索引 → 6ms(实测)。
+  // 必须建在回填之后:否则 8737 次索引维护白做一遍。
+  // Covering index: the aggregation reads only this 500KB index instead of 1.2GB of rows.
+  db.exec(`CREATE INDEX IF NOT EXISTS idx_turns_agg ON turns(conv_id, cost, tokens_in, tokens_out);`);
   // P0: 初始化 Memory Blocks 默认值
   initMemoryBlocks();
 }
@@ -382,9 +418,14 @@ export function importTurnsLine(line: string): boolean {
   if (!r.id || !r.data || !r.conv_id) return false;
   const exists = db.prepare('SELECT 1 FROM turns WHERE id = ?;').get(r.id);
   if (exists) return false;
+  // 聚合列一并解析:导入路径不走 saveTurn,漏填会让侧栏成本/ token 长期少算。
+  let meta: { prompt?: string; answer?: string; costUSD?: number; tokensIn?: number; tokensOut?: number } = {};
+  try {
+    meta = JSON.parse(r.data) as typeof meta;
+  } catch { /* 坏 turn JSON:落 NULL 聚合列,内容照样入表 */ }
   db.transaction(() => {
-    db.prepare('INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?);')
-      .run(r.id, r.conv_id, r.data, r.created_at ?? 0);
+    db.prepare('INSERT INTO turns(id, conv_id, data, created_at, cost, tokens_in, tokens_out) VALUES(?,?,?,?,?,?,?);')
+      .run(r.id, r.conv_id, r.data, r.created_at ?? 0, meta.costUSD ?? 0, meta.tokensIn ?? 0, meta.tokensOut ?? 0);
     // FTS 回填:坏 turn JSON 单条跳过不炸整批
     try {
       const t = JSON.parse(r.data!) as { prompt?: string; answer?: string };
@@ -587,11 +628,13 @@ export function saveTurn(convId: string, t: Turn): void {
       }
     : t;
   // 事务包裹:turn UPSERT + 活动时间戳同生共死。
+  // cost/tokens 列与 data 同一条 INSERT 落库 —— 侧栏聚合靠它们,漏写就会和 data 漂移。
   db.transaction(() => {
     stmt(
-      `INSERT INTO turns(id, conv_id, data, created_at) VALUES(?,?,?,?)
-       ON CONFLICT(id) DO UPDATE SET data=excluded.data;`,
-    ).run(t.id, convId, JSON.stringify(slim), t.ts);
+      `INSERT INTO turns(id, conv_id, data, created_at, cost, tokens_in, tokens_out) VALUES(?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET data=excluded.data, cost=excluded.cost,
+         tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out;`,
+    ).run(t.id, convId, JSON.stringify(slim), t.ts, t.costUSD ?? 0, t.tokensIn ?? 0, t.tokensOut ?? 0);
     // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
     touchConversation(convId);
   })();
@@ -928,17 +971,17 @@ export function loadConversations(): Conversation[] {
     .all() as ConvRow[];
   // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
   // Aggregate turn meta (count/cost/tokens) in one SQL pass — never load turn bodies here.
-  // ponytail: json_extract 全表 C 侧解析,实测 160MB turns = 743ms,仅启动跑一次(侧栏刷新
-  // 走内存 list(),不走这里)。若库涨到数秒级,升级为 conv 级 rollup 列(turns 是流式
-  // UPSERT,增量维护会漂移,别省这一步)。direct_history 同理全库仅 5.8MB,不值得懒加载。
+  // 2026-11-19: 改读 saveTurn 冗余列(SUM 数值列),不再 json_extract 全表 —— 后者在本机
+  // 1.2GB turns 上实测 11.38s,慢到把冷启动卡住;现在同口径查询是毫秒级。
+  // Reads the denormalized columns written by saveTurn instead of parsing every turn body.
   const metaRows = db
     .prepare(
       `SELECT conv_id,
               COUNT(*) AS n,
-              SUM(COALESCE(json_extract(data,'$.costUSD'),0)) AS cost,
-              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)+COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens,
-              SUM(COALESCE(json_extract(data,'$.tokensIn'),0)) AS tokens_in,
-              SUM(COALESCE(json_extract(data,'$.tokensOut'),0)) AS tokens_out
+              SUM(cost) AS cost,
+              SUM(tokens_in + tokens_out) AS tokens,
+              SUM(tokens_in) AS tokens_in,
+              SUM(tokens_out) AS tokens_out
        FROM turns GROUP BY conv_id;`,
     )
     .all() as Array<{ conv_id: string; n: number; cost: number | null; tokens: number | null; tokens_in: number | null; tokens_out: number | null }>;
@@ -1554,9 +1597,10 @@ export function factsAsBlock(convId: string): string {
 }
 
 // conv_events 保留策略(2026-09):事件日志此前只增不减(spill dropped 全文/工具结果),
-// history.db 曾到 433MB。默认保留 90 天;goal/* 事件永不清理 —— goal 投影是全量从头 fold,
-// 删早期 goal/set 会破坏状态重建。nowMs 可注入(测试)。
-export function pruneOldConvEvents(keepDays = 90, nowMs = Date.now()): number {
+// history.db 曾到 433MB。2026-11-19 由 90 天收紧到 30 天 —— 实测 30-90 天区间 480,145 条 /
+// 321MB,回看概率极低;goal/* 事件永不清理 —— goal 投影是全量从头 fold,删早期 goal/set
+// 会破坏状态重建。nowMs 可注入(测试)。
+export function pruneOldConvEvents(keepDays = 30, nowMs = Date.now()): number {
   const cutoff = nowMs - keepDays * 86400_000;
   const info = stmt("DELETE FROM conv_events WHERE ts < ? AND type NOT LIKE 'goal/%';").run(cutoff);
   return Number(info.changes);

@@ -1210,7 +1210,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         });
         break;
       case 'tool':
-        store.appendMessage('shell', `🔧 ${ev.name}(${ev.args})\n${ev.result}`, conv.id);
+        // 2026-11-19: 工具输出不再进 FTS 全文索引。
+        // 实测库体检:history 表 837MB 里 shell 角色占 406,277 条 / 293MB = 97.6%,
+        // 而用户真正要搜的 user(0.6MB) + assistant(6.6MB) 只占 0.9% —— 搜「上次那个报错」
+        // 全被 🔧 shell(...) 输出淹没。同时 conv_events 的 tool/call 已是全量存证
+        // (50k 上限),FTS 这份纯属第三份冗余拷贝。故只留事件流,不再写 FTS。
+        // Tool output no longer enters the FTS index (it was 97.6% of the 837MB index and
+        // drowned out real conversation text; conv_events already stores it in full).
         store.appendEvent(conv.id, t.id, {
           type: 'tool/call',
           name: ev.name,
@@ -1808,8 +1814,10 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const decayed = store.decayMemories();
     // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
     const lowImportancePruned = store.pruneLowImportanceMemories(2);
-    // 数据治理:conv_events 保留 90 天(goal/* 永不清理,见 store.pruneOldConvEvents)
-    const eventsPruned = store.pruneOldConvEvents(90);
+    // 数据治理:conv_events 保留 30 天(goal/* 永不清理,见 store.pruneOldConvEvents)。
+    // 2026-11-19 由 90 天收紧:实测 30-90 天区间堆了 480,145 条 / 321MB,而 UI 回放
+    // 基本只翻近几天的执行轨迹 —— turns 本身不受影响,老会话照样能打开看问答。
+    const eventsPruned = store.pruneOldConvEvents(30);
     return { deduped, decayed, lowImportancePruned, eventsPruned };
   }
 
