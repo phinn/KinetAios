@@ -17,6 +17,7 @@ const api: KinetAPI = {
   getJob: (id) => ipcRenderer.invoke('job-get', id),
   killJob: (id, reason) => ipcRenderer.invoke('job-kill', id, reason),
   resumeJob: (id) => ipcRenderer.invoke('job-resume', id),
+  resumeWorkflowJob: (id) => ipcRenderer.invoke('job-resume-workflow', id),
   dispatchJob: (opts) => ipcRenderer.invoke('job-dispatch', opts),
   onJobUpdate: (cb) => {
     ipcRenderer.removeAllListeners('job-update');

@@ -1324,6 +1324,8 @@ export interface KinetAPI {
   getJob(id: string): Promise<JobInfo | null>;
   killJob(id: string, reason?: string): Promise<boolean>;
   resumeJob(id: string): Promise<boolean>;
+  // workflow job 重启续跑(rewire:DB 行重建 worker 再入队;失败返回原因给 UI 提示)
+  resumeWorkflowJob(id: string): Promise<{ ok: boolean; error?: string }>;
   dispatchJob(opts: { convId: string; engine: 'claudeCode' | 'codex'; prompt: string; cwd: string; timeoutMs?: number }): Promise<{ ok: true; id: string } | { ok: false; error: string }>;
   onJobUpdate(cb: (info: JobInfo) => void): void;
   onJobEvent(cb: (convId: string, jobId: string, ev: { type: string; [k: string]: unknown }) => void): void;

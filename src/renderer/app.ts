@@ -14252,8 +14252,9 @@ document.getElementById('live-close')!.onclick = () => {
   }
 
   function activeCount(): number {
+    // paused 也算可见后台任务(重启后 workflow job 停在 paused,pill 隐藏=用户不知道有任务在等续跑)
     let n = 0;
-    for (const j of jobs.values()) if (j.status === 'running' || j.status === 'queued') n++;
+    for (const j of jobs.values()) if (j.status === 'running' || j.status === 'queued' || j.status === 'paused') n++;
     return n;
   }
 
@@ -14263,14 +14264,18 @@ document.getElementById('live-close')!.onclick = () => {
     if (!pill) return;
     if (!active) { pill.style.display = 'none'; return; }
     let cost = 0;
-    for (const j of jobs.values()) if (j.status === 'running' || j.status === 'queued') cost += j.costUSD;
-    pill.innerHTML = `<span class="dot"></span> ${active} 个后台任务 · $${cost.toFixed(3)}`;
+    let paused = 0;
+    for (const j of jobs.values()) {
+      if (j.status === 'running' || j.status === 'queued') cost += j.costUSD;
+      if (j.status === 'paused') paused++;
+    }
+    pill.innerHTML = `<span class="dot"></span> ${active} 个后台任务${paused ? ` · ${paused} 个待续跑` : ''} · $${cost.toFixed(3)}`;
     pill.style.display = 'flex';
   }
 
   function renderMenu(): void {
     if (!menu) return;
-    const list = [...jobs.values()].filter((j) => ['running', 'queued', 'done', 'failed', 'killed'].includes(j.status)).slice(0, 20);
+    const list = [...jobs.values()].filter((j) => ['running', 'queued', 'done', 'failed', 'killed', 'paused'].includes(j.status)).slice(0, 20);
     menu.innerHTML = list.length
       ? list.map((j) => `
         <div class="jm-item">
@@ -14285,7 +14290,19 @@ document.getElementById('live-close')!.onclick = () => {
     });
     menu.querySelectorAll<HTMLButtonElement>('.jm-resume').forEach((btn) => {
       btn.style.cssText = 'float:right;border:none;background:none;color:var(--accent,#58a6ff);cursor:pointer;font-size:12px;padding:2px 6px;';
-      btn.onclick = (e) => { e.stopPropagation(); void api.resumeJob(btn.dataset.job!); };
+      btn.onclick = (e) => {
+        e.stopPropagation();
+        const id = btn.dataset.job!;
+        const j = jobs.get(id);
+        // workflow job 重启后无内存 worker,走 rewire 通道;失败把原因写回条目给用户看
+        if (j?.kind === 'workflow') {
+          void api.resumeWorkflowJob(id).then((r) => {
+            if (!r.ok) { j.error = r.error ?? '续跑失败'; renderMenu(); }
+          });
+        } else {
+          void api.resumeJob(id);
+        }
+      };
     });
   }
 
