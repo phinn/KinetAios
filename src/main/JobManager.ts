@@ -49,18 +49,26 @@ export class JobManager {
 
   /** 启动 hydrate:崩溃遗留的 running/queued 标 failed(M3 后改 paused 可恢复)。 */
   hydrate(): void {
-    // M3: 有 checkpoint 的 v3-deep job → paused(可从断点恢复);其余遗留 → failed。
-    // workflow job: payload 存完整 stages,重启后可 rewire 重建 worker → 也标 paused。
+    // M3: 有 checkpoint 的 v3-deep → 理论可断点续跑,但 worker 闭包(provider/输入历史)随进程消失,
+    // 重启后无从重建(不像 workflow 有 payload 完整 stages + env 注册表)→ 标 failed 并讲清楚。
+    // workflow job: payload 存完整 stages,重启后可 rewire 重建 worker → 标 paused。
     // 注意必须在 failOrphanJobs 之前抢救,否则全被标 failed。
     for (const row of store.listJobRows(undefined, ['running', 'queued'])) {
-      if ((row.kind === 'v3-deep' && row.checkpoint) || (row.kind === 'workflow' && isWorkflowPayload(row.payload))) {
+      if (row.kind === 'workflow' && isWorkflowPayload(row.payload)) {
         store.updateJobFields(row.id, { status: 'paused', error: 'app 重启,可从断点继续' });
       } else {
-        store.updateJobFields(row.id, { status: 'failed', error: 'app 重启,后台任务中断(无断点)' });
+        store.updateJobFields(row.id, {
+          status: 'failed',
+          // v3-deep 有断点但闭包没了;其余连断点都没有。文案区分,别让用户误点「继续」。
+          error: row.kind === 'v3-deep'
+            ? 'app 重启中断(断点已存,当前版本重启后暂不支持 deep 续跑,请重发任务)'
+            : 'app 重启,后台任务中断(无断点)',
+        });
       }
     }
     for (const row of store.listJobRows()) {
-      if (row.status === 'done' || row.status === 'failed' || row.status === 'killed') {
+      // paused 必须载入内存:否则重启后 workflow job 在 UI(job-list)里隐形,续跑入口都没了
+      if (['done', 'failed', 'killed', 'paused'].includes(row.status)) {
         this.jobs.set(row.id, { row, costUSD: row.costUSD });
       }
     }
