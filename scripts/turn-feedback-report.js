@@ -226,13 +226,21 @@ if (flag('prune')) {
     } catch {
       continue;
     }
+    // 存活期锚"首次见到",不是文件 mtime(与 src/main/skill-archive.ts 同口径):
+    // 外部覆盖写会刷新文件 mtime,按它算会把空胎的观察期无限重置。
+    // 目录 mtime 只在增删条目时变,取目录/文件时间的早者最稳。
+    let firstSeen = mtime;
+    try {
+      const d = fs.statSync(path.join(distilledDir, e.name));
+      firstSeen = Math.min(mtime, d.birthtimeMs > 0 ? d.birthtimeMs : mtime, d.mtimeMs > 0 ? d.mtimeMs : mtime);
+    } catch { /* 目录读不了 → 退回文件 mtime */ }
     // 蒸馏 frontmatter 的 name 才是引擎里的名字;目录名是 slug,可能被 slugify 过。
     const raw = fs.readFileSync(file, 'utf8');
     const name = (raw.slice(0, 400).match(/^name:\s*(.+)$/m) || [])[1]?.trim() || e.name;
     // 空胎判据看"正文"字节数(去掉 frontmatter),不是文件大小 —— 与 src/main/skill-archive.ts 同口径。
     bytes = Buffer.byteLength(raw.replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, ''), 'utf8');
     const rec = use.get(name) || use.get(e.name);
-    const ageDays = Math.floor((Date.now() - mtime) / 86400_000);
+    const ageDays = Math.floor((Date.now() - firstSeen) / 86400_000);
     // 给新技能一个被用到的机会:蒸馏完当天就没人调是正常的(还没遇到同类任务),
     // 不能当淘汰依据 —— 否则每天新产的技能全部秒变"候选",报告就没内容价值了。
     const dead = (!rec || rec.loads === 0) && ageDays >= MIN_AGE_DAYS;

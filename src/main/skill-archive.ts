@@ -68,8 +68,36 @@ function bodyBytes(md: string): number {
   return Buffer.byteLength(m ? md.slice(m[0].length) : md, 'utf8');
 }
 
+function safeMtime(p: string): number {
+  try {
+    return fs.statSync(p).mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+
+/** 技能"存活"从哪天算 —— 取最早的时间证据,而不是文件 mtime。
+ *  实机教训(2026-11-19):两个空胎的 SKILL.md 被外部覆盖写(内容一字未改,同秒改两个文件),
+ *  存活期按文件 mtime 算 → 观察期每次被重置,死技能永远进不了归档。
+ *  - 有溯源(蒸馏产物):origin.created_at 与文件 mtime 取早。重新蒸馏会刷新 origin,
+ *    所以正常重蒸不受影响;纯覆盖写洗不白老的出生时间。
+ *  - 无溯源(旧产物 / 外部写入):目录 birthtime / 目录 mtime / 文件 mtime 三者取早。
+ *    目录 mtime 只在增删条目时变,是这里唯一稳定的锚。 */
+function firstSeenMs(dir: string, file: string, originAt?: number): number {
+  const fileMtime = safeMtime(file);
+  if (originAt && originAt > 0) return fileMtime > 0 ? Math.min(originAt, fileMtime) : originAt;
+  const dirTimes: number[] = [];
+  try {
+    const st = fs.statSync(dir);
+    if (st.birthtimeMs > 0) dirTimes.push(st.birthtimeMs);
+    if (st.mtimeMs > 0) dirTimes.push(st.mtimeMs);
+  } catch { /* 目录读不了 → 只剩文件时间 */ }
+  const all = [...dirTimes, fileMtime].filter((t) => t > 0);
+  return all.length ? Math.min(...all) : Date.now();
+}
+
 /** 列出 distilled/ 下的技能目录(跳过 .archive 与隐藏目录)。 */
-function listDistilledSkills(): DistilledSkill[] {
+function listDistilledSkills(origins: Map<string, { createdAt: number }>): DistilledSkill[] {
   const root = distilledDir();
   let ents: fs.Dirent[];
   try {
@@ -83,15 +111,15 @@ function listDistilledSkills(): DistilledSkill[] {
     const dir = path.join(root, ent.name);
     const file = path.join(dir, 'SKILL.md');
     try {
-      const st = fs.statSync(file);
       const md = fs.readFileSync(file, 'utf8');
+      const ageDays = Math.floor((Date.now() - firstSeenMs(dir, file, origins.get(ent.name)?.createdAt)) / 86400_000);
       out.push({
         slug: ent.name,
         dir,
         file,
         name: parseFrontmatterName(md, ent.name),
         bodyBytes: bodyBytes(md),
-        ageDays: Math.floor((Date.now() - st.mtimeMs) / 86400_000),
+        ageDays,
       });
     } catch {
       /* 没有 SKILL.md / 读不了 → 不是技能目录 */
@@ -106,7 +134,7 @@ export function findArchiveCandidates(): ArchiveCandidate[] {
   const rejected = demotedSkillOrigins();
   const usage = skillUsage();
   const out: ArchiveCandidate[] = [];
-  for (const s of listDistilledSkills()) {
+  for (const s of listDistilledSkills(origins)) {
     const origin = origins.get(s.slug);
     // 计数按 frontmatter name 记(load_skill 收的是名字,不是目录名)。
     const loads = usage.get((origin?.name ?? s.name).toLowerCase())?.loads ?? 0;

@@ -53,16 +53,29 @@ test('同名冲突:用户手写(~/.kinetaios/skills)优先于蒸馏产物', () =
   assert.ok(src && !src.file.includes('distilled'), `应指向手写目录:${src?.file}`);
 });
 
-test('目录文本包含蒸馏技能名,且总长受预算约束', () => {
-  // 造一批长名字,把 nameList 顶过预算,验证截断兜底与尾巴计数
-  for (let i = 0; i < 60; i++) {
+test('目录分层:自有技能带简介,外部副本仅列名', () => {
+  // 240 个技能时纯名列表就把预算吃干,简介一条都挤不进 —— 模型看到裸名字("打包esp32")
+  // 无从判断该不该加载。改成分层:自有(手写+蒸馏)带简介,外部副本(~/.claude)只列名。
+  writeSkill(path.join(tmpHome, '.claude', 'skills'), 'ext-one', 'probe-ext-one', '外部副本别再展开', '# body');
+  invalidateSkills();
+  const text = skillCatalogText()!;
+  assert.ok(text.includes('自有技能('), `应有自有技能分段:${text.slice(0, 60)}`);
+  assert.ok(/^- probe-alpha — 蒸馏探针 A$/m.test(text), `自有技能应带简介:${text.slice(0, 200)}`);
+  assert.ok(text.includes('外部副本('), '应有外部副本分段');
+  assert.ok(/probe-ext-one/.test(text), '外部副本名应可见');
+  assert.ok(!/probe-ext-one — /.test(text), '外部副本不占简介字符(名字本身够语义化)');
+});
+
+test('目录文本受预算约束,超预算时有截断尾注', () => {
+  // 造一批长名字,把自有技能段落顶过预算,验证"缩简介 → 截断 → 尾注"的降级链
+  for (let i = 0; i < 90; i++) {
     const long = `zz-bulk-${String(i).padStart(2, '0')}-${'x'.repeat(60)}`;
     writeSkill(path.join(KS, 'distilled'), long, long, '批量占位', '# body');
   }
   invalidateSkills();
   const text = skillCatalogText();
   assert.ok(text, '目录文本不应为空');
-  assert.ok(text!.length <= 3900, `目录文本应受预算约束,实际 ${text!.length} 字符`);
+  assert.ok(text!.length <= 5850, `目录文本应受预算约束,实际 ${text!.length} 字符`);
   assert.ok(text!.includes('probe-alpha'), '常规技能名应仍可见');
   assert.ok(text!.includes('另有'), '超预算时应带截断尾注(告诉模型还有多少没列)');
 });

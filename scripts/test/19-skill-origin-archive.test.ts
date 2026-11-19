@@ -42,7 +42,10 @@ function writeSkill(slug: string, name: string, body: string, ageDays = 0): stri
   fs.writeFileSync(file, `---\nname: ${name}\ndescription: ${name} 的说明\n---\n${body}\n`, 'utf8');
   if (ageDays > 0) {
     const t = new Date(Date.now() - ageDays * DAY);
+    // 目录时间也要造:存活期锚"首次见到"(目录 birthtime/mtime + 文件 mtime 取早),
+    // 只动文件的话,无溯源的技能会被判断成刚出生。
     fs.utimesSync(file, t, t);
+    fs.utimesSync(dir, t, t);
   }
   return file;
 }
@@ -161,6 +164,17 @@ test('归档拒绝越界 slug 与覆盖已有目录', () => {
   // junk-old 已归档;再拿一个"目标已存在"的场景验证 restore 不覆盖
   const again = restoreArchived('junk-empty');
   assert.equal(again.ok, false, '目标已存在时恢复必须拒绝而不是覆盖');
+});
+
+test('外部覆盖写不能重置观察期:存活锚"首次见到"而非文件 mtime', () => {
+  // 实机现象(2026-11-19):两个空胎的 SKILL.md 被外部工具同秒覆盖写,内容一字未改,
+  // 文件 mtime 变新 → 按 mtime 算存活的话观察期每次都被重置,空胎永远进不了归档。
+  const file = writeSkill('junk-rewritten', 'junk-rewritten', 'body v2', 2);
+  fs.writeFileSync(file, fs.readFileSync(file, 'utf8'), 'utf8'); // 覆盖写,mtime 变成现在
+  const c = findArchiveCandidates().find((x) => x.slug === 'junk-rewritten');
+  assert.ok(c, '目录已存在 2 天,覆盖写不该让它变回"刚出生"');
+  assert.ok(c!.ageDays >= 2, `存活应仍按目录时间算,实际 ${c!.ageDays} 天`);
+  assert.ok(c!.reasons.some((r) => r.includes('空胎')));
 });
 
 test('skill_usage:重复加载累加,名字大小写归一', () => {

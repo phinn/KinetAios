@@ -247,56 +247,80 @@ function scan(): Map<string, Skill> {
 // 新格式降级式:①紧凑 name 列表(可见性保证)②剩余预算内补 description。
 // 目录的意义是"让模型知道有什么",名字本身高度语义化(skill-creator/create-skill),
 // desc 是锦上添花 —— 可见性优先于描述完整度。
-// ⚠️ 2026-11-18:技能数从 90 涨到 200+(蒸馏产物接入 + 插件),纯名列表本身就要 3300+ 字符。
-// 原来的 2400 预算实际早已被 nameList 突破(175 个 = 2610 字符,desc 一条都挤不进)。
-// 现在:预算提到 3800(nameList 全量可装),并给 nameList 也加硬截断兜底 —— 截断时
-// kinetaios 系(手写 + 蒸馏产出)优先,内置/第三方副本后置;被省略的数目写在尾巴上,
-// 且 load_skill 传未知 name 会回全量清单,不会让模型彻底摸黑。
+// ⚠️ 2026-11-19 分层重写:技能数 240(自家 73 + ~/.claude 副本 161),纯名列表 4043 字符,
+// 3800 预算被名列表吃干 → 简介一条都挤不进,模型看到一串裸名字(打包esp32 这类根本猜不出来)。
+// 分成两段,按"信息的边际价值"分配预算:
+//   ① 自有技能(手写 + 蒸馏):名字是项目黑话,不给简介等于不可用 → `- name — desc22`
+//   ② 外部副本(内置/claude/codex/plugin):名字本身高度语义化(pdf/xlsx/skill-creator),
+//      而且名字很短(均值 13 字符)→ 只列名,同样字符数能覆盖 10 倍数量
+// 预算 5800:固定前缀走 cache 命中($0.029/M),比省的 token 更稀缺的是模型的注意力,
+// 但 5800 已能装下"全部自有带简介 + 几乎全部外部名",再涨只增噪音。
+// 截断时先丢 ~/.claude 副本(最外围),tail 说明还有多少,且 load_skill 传未知名会回全量清单。
 export function skillCatalogText(): string | null {
   const skills = listSkills();
   if (skills.length === 0) return null;
-  const MAX_CHARS = 3800;
-  const HEADER = '\n(按需调用 load_skill 加载正文;此列表含全部技能名,部分附简述)\n';
-  // 截断优先级:自己的 skill(手写 + 蒸馏)> 外部副本(内置/claude/codex/plugin)。
+  const MAX_CHARS = 5800;
+  const HEAD = '(按需调用 load_skill 加载正文;自有技能带简介,外部副本仅列名)\n';
+  const TAIL_RESERVE = 220;
   // 降级技能(来源轮次被否)不进目录:它们是负资产,占的是别的技能的可见性预算。
   const demotedCount = skills.filter((s) => s.demoted).length;
   const live = skills.filter((s) => !s.demoted);
-  const ordered = [
-    ...live.filter((s) => s.source === 'kinetaios'),
-    ...live.filter((s) => s.source !== 'kinetaios'),
+  const own = live.filter((s) => s.source === 'kinetaios');
+  // 外部副本按"离用户核心工作由近到远"排:插件(自己装的)> 内置 > codex > claude(体量最大,先丢)。
+  const ext = [
+    ...live.filter((s) => s.source === 'plugin'),
+    ...live.filter((s) => s.source === 'builtin'),
+    ...live.filter((s) => s.source === 'codex'),
+    ...live.filter((s) => s.source === 'claude'),
   ];
-  // Pass 1:紧凑 name 逗号列。留 160 字符给截断尾注。
-  const NAME_BUDGET = MAX_CHARS - HEADER.length - 160;
+  const ownBudget = MAX_CHARS - HEAD.length - TAIL_RESERVE;
+  const renderOwn = (cap: number): string[] =>
+    own.map((s) => {
+      const desc = cap > 0 ? (s.description || '').replace(/\s+/g, ' ').trim().slice(0, cap) : '';
+      return desc ? `- ${s.name} — ${desc}` : `- ${s.name}`;
+    });
+  // 简介档位 22 → 12 → 0:自有技能涨上来时,宁可缩简介也要保住名字可见性
+  let ownLines: string[] = [];
+  for (const cap of [22, 12, 0]) {
+    ownLines = renderOwn(cap);
+    if (ownLines.join('\n').length <= ownBudget) break;
+  }
+  // 仍超预算 → 截断名单(极少见:自有技能上百且名字都很长)
+  let ownDropped = 0;
+  if (ownLines.join('\n').length > ownBudget) {
+    const kept: string[] = [];
+    let used = 0;
+    for (const line of ownLines) {
+      if (used + line.length + 1 > ownBudget) {
+        ownDropped++;
+        continue;
+      }
+      kept.push(line);
+      used += line.length + 1;
+    }
+    ownLines = kept;
+  }
+  const ownBlock = ownLines.join('\n');
+  // ② 外部:逗号列,吃剩下的预算
+  const extBudget = Math.max(0, MAX_CHARS - HEAD.length - ownBlock.length - (own.length ? 12 : 0) - TAIL_RESERVE);
   let nameList = '';
   let dropped = 0;
-  for (const s of ordered) {
+  for (const s of ext) {
     const piece = nameList ? `, ${s.name}` : s.name;
-    if (nameList.length + piece.length > NAME_BUDGET) {
+    if (nameList.length + piece.length > extBudget) {
       dropped++;
       continue;
     }
     nameList += piece;
   }
   const tailParts: string[] = [];
-  if (dropped > 0) tailParts.push(`…另有 ${dropped} 个未列出(load_skill 传未知名会返回全量清单)`);
+  if (ownDropped > 0) tailParts.push(`…另有 ${ownDropped} 个自有技能未列出(load_skill 传名可取)`);
+  if (dropped > 0) tailParts.push(`…另有 ${dropped} 个外部副本未列出(load_skill 传名可取)`);
   if (demotedCount > 0) tailParts.push(`${demotedCount} 个技能因来源轮次被否决已降级,未列入`);
-  const tail = tailParts.length > 0 ? `, ${tailParts.join('; ')}` : '';
-  // Pass 2:剩余预算内给尽可能多的技能带 desc(逐条 `- name — desc40`)
-  const budget = MAX_CHARS - nameList.length - tail.length - HEADER.length;
-  const lines: string[] = [];
-  let used = 0;
-  if (budget > 200) {
-    for (const s of live) {
-      const desc = (s.description || '').replace(/\s+/g, ' ').trim().slice(0, 40);
-      if (!desc) continue;
-      const line = `- ${s.name} — ${desc}`;
-      if (used + line.length + 1 > budget) break;
-      lines.push(line);
-      used += line.length + 1;
-    }
-  }
-  const detail = lines.length > 0 ? `\n\n前几项简介:\n${lines.join('\n')}` : '';
-  return HEADER.trimStart() + nameList + tail + detail + '\n';
+  const tail = tailParts.length > 0 ? `\n(${tailParts.join('; ')})` : '';
+  const ownSection = own.length ? `\n自有技能(${own.length}):\n${ownBlock}\n` : '';
+  const extSection = ext.length ? `\n外部副本(${ext.length}):\n${nameList}\n` : '';
+  return HEAD + ownSection + extSection + tail + '\n';
 }
 
 export function listSkills(): SkillInfo[] {
