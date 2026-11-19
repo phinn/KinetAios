@@ -44,13 +44,16 @@ export function express(genome: Genome, allTools: readonly Tool[], requiredTools
     tools,
     removedTools,
     protectedTools,
-    // 步数预算(2026-10-13 无限循环事故修法):宿主 maxTurns=0 不再翻译成 Infinity。
-    // 理由:那次 founder(基因 12 步)裸奔 443 步/3.6h 直到人肉取消 —— 「无限」对个体
-    // 没有进化意义,只有烧钱意义。宿主 0 的语义 = 信任基因:预算就是个体自己的
-    // maxSteps 基因(founder 12,由 step_budget 死亡 +4/次 自主进化,上限 MAX_STEPS_MAX)。
-    // 门级护栏 stepBudgetCeil>0 时仍然夹紧(基因只能低于宿主天花板)。
+    // 步数预算(2026-11-19 语义翻转):墙 = 宿主表达,基因预算退出生产。
+    // 历史:2026-10-13 曾定"宿主 0 = 信任基因"(founder 12 裸奔 443 步/3.6h 事故
+    // 的修法);实际后果是用户开无限模式(maxTurns=0)后个体仍死在自己 12 步基因墙,
+    // 长任务根本跑不完(2026-11-19「个体死亡 — 步数超限(12/12)」)。现语义:
+    //   宿主 maxTurns>0 → min(基因, ceil) 门级护栏照旧;
+    //   宿主 maxTurns=0(无限)→ 硬墙 MAX_STEPS_HARD_CAP 兜底,进化自由度移交
+    //   基因其它维度(亲和/断言/本能)。疯跑由机制级熔断(重复×3/上下文折叠)
+    //   兜底,不靠基因墙,也不靠已删除的进度门。
     maxSteps: stepBudgetCeil === 0
-      ? Math.min(genome.routing.maxSteps, MAX_STEPS_HARD_CAP)
+      ? MAX_STEPS_HARD_CAP
       : Math.min(genome.routing.maxSteps, stepBudgetCeil ?? STEP_BUDGET_CEIL),
     instinctPrompt: instinct(genome),
     assertions: genome.assertions,

@@ -54,8 +54,6 @@ export interface BodyPlanOpts {
 const MAX_TOOL_OUTPUT_CHARS = 4000;
 /** 重复动作熔断阈值:连续 N 次完全相同调用判死(step_budget)。 */
 const REPEAT_BREAK_LIMIT = 3;
-/** 进度门:连续 N 步无 final answer → step_budget(防"永远再试一下")。 */
-const PROGRESS_WINDOW = 24;
 /** 上下文预算:messages 总字符超此值 → 折叠最旧的中间工具输出(保 system/首条任务/最近窗口)。 */
 const CONTEXT_BUDGET_CHARS = 60_000;
 /** 折叠后保留的最近消息对数(留足眼前上下文)。 */
@@ -79,21 +77,17 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   const trace: TraceStep[] = [];   // 全程轨迹:每次成功执行的工具调用(成功时沉积为化石)
   let lastActionKey = '';          // 重复动作熔断:连续完全相同 (tool+args) 计数
   let repeatCount = 0;
-  let progressWindow = 0;          // 进度门:无 final answer 的滚动窗口步数
 
-  // maxSteps 有墙(基因值,宿主 maxTurns=0 时=个体基因自主预算)。停止靠墙、
-  // abort 信号、以及下面三个机制级熔断(重复/无进展/上下文超限)。
+  // 步数墙只来自宿主表达(用户 maxTurns 天花板,0 = 无限 → 硬墙兜底)。
+  // 2026-11-19 修法:基因自主预算(founder 12)与"宿主 0 = 信任基因"退出生产 ——
+  // 用户开无限模式就是要跑长任务,墙必须由用户控制;进化自由度移交基因其它维度。
+  // 停止条件:宿主墙 / abort / 重复熔断(同调用×3,409 次 shell 事故的短路兜底)/
+  // 断言 gate / 上下文超限折叠。旧"进度门"(连续 24 步无 final 即死)已删除:
+  // 它从不重置,等价于总长 24 步必死,长任务全体冤死(12/12 事故同源);
+  // 而断言 gate 限重试 1 次、重复熔断盯同调用,"纯空转"路径实际不可达,门=死代码。
   while (steps < body.maxSteps) {
     if (signal?.aborted) return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: 'aborted by signal' };
     steps++;
-    progressWindow++;
-
-    // 进度门:个体连续跑满 PROGRESS_WINDOW 步仍没交过 final answer → 判定进展死亡。
-    // (409 次 shell 的那次事故:个体一直在"再试一下",永远不收口。)
-    if (progressWindow >= PROGRESS_WINDOW && steps < body.maxSteps) {
-      return { success: false, aborted: false, cause: 'step_budget', steps, tokens, lastOutput,
-        detail: `进度门熔断: no final answer within ${PROGRESS_WINDOW}-step window` };
-    }
 
     let comp: Completion;
     // 每步 status:个体思考期间 UI 状态条有心跳(否则长时间 LLM 调用看起来像死了)。
@@ -195,8 +189,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       messages.push({ role: 'user', content: `[tool:${call.name}] ${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}` });
     }
 
-    // 进度门不因"执行了工具"而重置 —— 409 次 shell 的事故里个体每步都在动、
-    // 但永远不收口。窗口只在个体交出 final answer(循环成功退出)时才结束。
+    // 进度门已删(2026-11-19):见循环头部注释。
 
     // ── 上下文折叠(机制级):messages 总字符超预算 → 把最旧的中间工具输出
     // 替换为一行摘要,保 system、首条任务和最近 CONTEXT_KEEP_RECENT 条。

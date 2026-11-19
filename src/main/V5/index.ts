@@ -290,7 +290,7 @@ export class DirectV5Engine implements Engine {
     const causeLabel: Record<string, string> = {
       tool_error: `工具报错(${facts.toolName ?? '未知'})`,
       assertion_fail: `断言拦截(${facts.assertionId ?? '未知'})`,
-      step_budget: `步数超限(${outcome.steps}/${gene.maxSteps})`,
+      step_budget: `步数超限(${outcome.steps} 步,宿主预算)— 设置里调大「最大循环轮数」可放宽`,
       essential_tool_missing: `必需工具被摘除(${facts.missingTool ?? '未知'})`,
       wrong_answer: '产物未通过判定',
     };
