@@ -1207,7 +1207,9 @@ function renderSidebar() {
       // 第一行 = 频道名 + 项目标签(弱色右缀;「未分类」不渲染,免噪音)
       const proj = projName(c.cwd || '');
       const tagHtml = proj === tr('wb.ungrouped') ? '' : `<span class="sb-proj-tag">${esc(proj)}</span>`;
-      item.innerHTML = `<span class="dot ${dotState(c, id)}${c.engine ? ` eng-${c.engine}` : ''}"></span><span class="title-wrap"><span class="sb-name-row"><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>${tagHtml}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span>`;
+      // hover 工具组(与主列表 taskLi 同构):ctx 频道速览 + delete 删除。
+      // freq 条目此前只有 onclick 切换,没有删除入口 —— 用户在常用区点 X 无反应(2026-11-19 反馈)。
+      item.innerHTML = `<span class="dot ${dotState(c, id)}${c.engine ? ` eng-${c.engine}` : ''}"></span><span class="title-wrap"><span class="sb-name-row"><span class="sb-freq-name">${esc(c.customTitle || c.firstPrompt?.slice(0, 26) || tr('head.newConv'))}</span>${tagHtml}</span><span class="sb-live${liveText ? '' : ' hidden'}">${esc(liveText)}</span></span><span class="conv-actions"><button class="ca-btn" data-act="ctx" data-i18n-title="conv.ctx" title="${esc(tr('conv.ctx'))}" aria-label="${esc(tr('conv.ctx'))}">${ICON.list}</button><button class="ca-btn" data-act="rename" data-i18n-title="conv.rename" title="${esc(tr('conv.rename'))}" aria-label="${esc(tr('conv.rename'))}">${ICON.edit}</button><button class="ca-btn" data-act="delete" data-i18n-title="conv.delete" title="${esc(tr('conv.delete'))}" aria-label="${esc(tr('conv.delete'))}">${ICON.del}</button></span>`;
       item.onclick = () => {
         hideConvTip();
         if (selectedId === id) return;
@@ -1217,6 +1219,16 @@ function renderSidebar() {
         showChat();
         renderSidebar(); // 重排主列表 active 态 + 刷新常用区(排除新当前频道)
       };
+      // 与主列表同款直绑:按钮 stopPropagation,避免触发条目切换
+      item.querySelectorAll<HTMLElement>('.ca-btn').forEach((btn) => {
+        btn.onclick = (e) => {
+          e.stopPropagation();
+          hideConvTip();
+          if (btn.dataset.act === 'ctx') void openCtxInspector(id);
+          else if (btn.dataset.act === 'rename') void renameConv(id);
+          else if (btn.dataset.act === 'delete') void deleteConv(id); // deleteConv 内部已同步清理 FREQ_KEY(防死条目)
+        };
+      });
       mount.appendChild(item);
     }
     // 计数徽标(head 常驻,折叠也可见);置顶:区块永远在列表最顶,项目组之上。

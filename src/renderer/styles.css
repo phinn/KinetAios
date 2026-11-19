@@ -1572,6 +1572,14 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
   opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
   background: linear-gradient(to right, transparent, color-mix(in srgb, var(--text) 5%, transparent) 50%); border-radius: 0 var(--r-md) var(--r-md) 0; }
 .sb-proj-tasks li:hover .conv-actions { opacity: 1; pointer-events: auto; }
+/* freq「最近常用」条目工具组(与主列表/项目组同构):hover 显示 ctx+rename+delete。
+   2026-11-19:freq 条目此前无删除入口,用户在常用区点 X 无反应。 */
+.sb-freq-tasks { position: relative; }
+.sb-freq-tasks li.sb-freq-item { position: relative; padding-right: 6px; }
+.sb-freq-tasks li.sb-freq-item .conv-actions { position: absolute; right: 0; top: 0; bottom: 0; display: flex; align-items: center; gap: 0; padding: 0 4px 0 16px;
+  opacity: 0; pointer-events: none; transition: opacity var(--dur-fast) var(--ease-out);
+  background: linear-gradient(to right, transparent, color-mix(in srgb, var(--text) 5%, transparent) 50%); border-radius: 0 var(--r-md) var(--r-md) 0; }
+.sb-freq-tasks li.sb-freq-item:hover .conv-actions { opacity: 1; pointer-events: auto; }
 
 /* chat header — 标题行 + 配置行,视觉分组清晰。
    液态玻璃:半透明显著玻璃面板,透出底层背景渐变。*/
