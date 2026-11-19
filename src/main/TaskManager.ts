@@ -619,6 +619,9 @@ export class TaskManager {
         const body = loadSkillBody(m[1]);
         if (body != null) {
           skillBlock = body;
+          // 使用计数:显式 /name 是 autoLoadSkills 关闭时技能唯一的入口,
+          // 漏记会让淘汰判据把一个天天在用的技能判成"14 天 0 加载"。
+          try { store.recordSkillUse(m[1]); } catch { /* 计数 best-effort */ }
           this.emit.emitEvent(id, { type: 'status', text: t(getSettings().lang, 'tmgr.skillLoaded', { name: m[1] }) });
         }
       }

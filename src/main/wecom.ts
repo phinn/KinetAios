@@ -356,6 +356,8 @@ class WeComBridge {
         if (skillMatch) {
           const body = loadSkillBody(skillMatch[1]);
           if (body != null) {
+            // 使用计数(与 TaskManager 的 /name 注入同口径):企微侧的显式调用也算"用过"。
+            try { store.recordSkillUse(skillMatch[1]); } catch { /* 计数 best-effort */ }
             // 是 skill → 提示用户已加载,然后让消息走 agent。
             // / Is a skill → notify user, then let the message flow to agent.
             const cfg = getSettings().wecomBot;

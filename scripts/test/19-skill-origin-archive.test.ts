@@ -163,4 +163,13 @@ test('归档拒绝越界 slug 与覆盖已有目录', () => {
   assert.equal(again.ok, false, '目标已存在时恢复必须拒绝而不是覆盖');
 });
 
+test('skill_usage:重复加载累加,名字大小写归一', () => {
+  // 淘汰判据只看"被加载过没有",但累加写错会让"用过"变成"没用过"。
+  const before = store.skillUsage().get('fresh-good')?.loads ?? 0;
+  store.recordSkillUse('Fresh-Good');
+  const after = store.skillUsage().get('fresh-good')!;
+  assert.equal(after.loads, before + 1, 'upsert 必须是 +1 而不是覆盖成 1');
+  assert.ok(after.lastLoadAt > 0);
+});
+
 run();

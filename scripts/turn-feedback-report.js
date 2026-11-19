@@ -237,7 +237,10 @@ if (flag('prune')) {
     // 不能当淘汰依据 —— 否则每天新产的技能全部秒变"候选",报告就没内容价值了。
     const dead = (!rec || rec.loads === 0) && ageDays >= MIN_AGE_DAYS;
     const bad = rec && rec.loads >= 3 && pct(rec.neg, rec.loads) >= 50;
-    if (dead || bad || bytes < 200) {
+    // 空胎也给一天观察期(与 src/main/skill-archive.ts 同口径):刚落盘才可能写坏,
+    // 写入当秒就搬走会把正在重试的半成品一起收掉。
+    const empty = bytes < 200 && ageDays >= 1;
+    if (dead || bad || empty) {
       stale.push({ slug: e.name, name, loads: rec?.loads ?? 0, neg: rec?.neg ?? 0, ageDays, bytes, dead, bad });
     }
   }
