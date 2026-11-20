@@ -1300,6 +1300,8 @@ export interface KinetAPI {
   // ── 剪贴板(走主进程 clipboard 模块,绕过 contextIsolation 下 navigator.clipboard 失效问题)──
   clipboardWriteText(text: string): Promise<{ ok: boolean; error?: string }>;
   openExternal(url: string): Promise<{ ok: boolean; error?: string }>;
+  // ── 链接预览:拉取 html/md 链接原文(main 侧 SSRF 防护+512KB/30s/15跳 上限),renderer 渲染 ──
+  fetchText(url: string): Promise<{ ok: boolean; text?: string; error?: string }>;
   // ── viz-card 拍帧导出:main 开离屏窗口渲染卡片 HTML → capturePage → PNG dataUrl ──
   vizCapture(html: string, width: number, height: number): Promise<{ ok: boolean; dataUrl?: string; error?: string }>;
   // ── 启动动画: 选项列表(内置款+插件贡献) / 加载器 HTML(sandbox iframe 用) / 立即预览 ──

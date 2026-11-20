@@ -11,6 +11,7 @@ import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
 import { mountFileDrawer, type FileDrawer } from './file-drawer';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
+import { mountLinkPreview } from './link-preview';
 import { CodeEditor } from './code-editor';
 import { setTownLang, setTownHomeDir, setTownStyle, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
 import { setNexusLang, setNexusCallbacks, renderNexus, refreshNexusNode, nexusOnConversationChanged, stopNexusAnimation } from './nexus';
@@ -14176,6 +14177,9 @@ let liveTokenBuf = '';
 window.kinet.onRemoteAgentEvent((ev) => {
   appendLiveEvent(ev);
 });
+
+// 聊天流链接预览:html/md 链接应用内渲染,不再丢系统浏览器看源码
+mountLinkPreview(document.getElementById('turns')!);
 
 function liveEv(text: string, extraClass = ''): HTMLElement {
   const d = document.createElement('div');

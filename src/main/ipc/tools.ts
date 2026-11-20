@@ -158,7 +158,7 @@ export function register(): void {
   });
 
   // 外链转系统浏览器 — viz-card sandbox iframe 内无法直接 window.open(main 已拦),借道 IPC
-  // Open external URL via system browser — sandboxed viz iframes can't window.open (main intercepts), so route via IPC
+  // Open external URL via system browser — sandboxed iframes can't window.open (main intercepts), so route via IPC
   ipcMain.handle('open-external', (_e, url: string) => {
     try {
       const u = new URL(String(url));
@@ -169,6 +169,89 @@ export function register(): void {
       return { ok: true };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+
+  // ── 链接预览取文:拉 html/md 链接原文供 renderer 渲染 ──
+  // 防护:协议白名单(http/https/file)、仅 GET、私网/元数据主机黑名单且重定向逐跳复检、
+  // 30s 超时、512KB 上限、15 跳重定向。file: 仅限本地读(预览 cwd 产物用)。
+  // SSRF-hardened GET for in-app link previews.
+  const FETCH_TEXT_MAX_BYTES = 512 * 1024;
+  const isBlockedHost = (hostname: string): boolean => {
+    const h = hostname.toLowerCase();
+    if (h === 'localhost' || h.endsWith('.localhost') || h.endsWith('.local') || h.endsWith('.internal')) return true;
+    if (/^\d{1,3}(\.\d{1,3}){3}$/.test(h)) {
+      const p = h.split('.').map(Number);
+      // 0/10/127/169.254(metadata)/172.16-31/192.168/100.64(CGNAT)/192.0.0/198.18/224+/组播保留段
+      if (p[0] === 0 || p[0] === 10 || p[0] === 127) return true;
+      if (p[0] === 169 && p[1] === 254) return true;
+      if (p[0] === 172 && p[1] >= 16 && p[1] <= 31) return true;
+      if (p[0] === 192 && p[1] === 168) return true;
+      if (p[0] === 100 && p[1] >= 64 && p[1] <= 127) return true;
+      if (p[0] >= 224) return true;
+    }
+    // IPv6 loopback/link-local/ULA/唯一内网
+    if (h.includes(':')) {
+      const v6 = h.replace(/^\[|\]$/g, '').toLowerCase();
+      if (v6 === '::1' || v6 === '::' || v6.startsWith('fe80') || v6.startsWith('fc') || v6.startsWith('fd')) return true;
+    }
+    return false;
+  };
+
+  ipcMain.handle('fetch-text', async (_e, rawUrl: string) => {
+    let u: URL;
+    try {
+      u = new URL(String(rawUrl));
+    } catch {
+      return { ok: false, error: 'invalid url' };
+    }
+    if (u.protocol !== 'http:' && u.protocol !== 'https:' && u.protocol !== 'file:') {
+      return { ok: false, error: 'protocol not allowed' };
+    }
+    if (u.protocol !== 'file:' && isBlockedHost(u.hostname)) {
+      return { ok: false, error: 'host not allowed' };
+    }
+    let current: URL = u;
+    try {
+      for (let hop = 0; hop < 15; hop++) {
+        let resp: Response;
+        if (current.protocol === 'file:') {
+          // file: 直接读盘(无重定向语义),fileURLToPath 兼容 Windows /C:/... 形态;限 512KB
+          const { readFile, stat } = await import('node:fs/promises');
+          const { fileURLToPath } = await import('node:url');
+          let fp: string;
+          try { fp = fileURLToPath(current); } catch { return { ok: false, error: 'invalid file url' }; }
+          const st = await stat(fp);
+          if (st.size > FETCH_TEXT_MAX_BYTES) return { ok: false, error: `file too large (${st.size} bytes)` };
+          const buf = await readFile(fp);
+          return { ok: true, text: buf.toString('utf8') };
+        }
+        resp = await fetch(current, {
+          method: 'GET',
+          redirect: 'manual',
+          signal: AbortSignal.timeout(30_000),
+          headers: { Accept: 'text/plain, text/markdown, text/html;q=0.8, */*;q=0.5' },
+        });
+        if (resp.status >= 300 && resp.status < 400) {
+          const loc = resp.headers.get('location');
+          if (!loc) return { ok: false, error: `redirect without location (${resp.status})` };
+          const next = new URL(loc, current);
+          if (next.protocol !== 'http:' && next.protocol !== 'https:') return { ok: false, error: 'redirect to non-http(s)' };
+          if (isBlockedHost(next.hostname)) return { ok: false, error: 'redirect to blocked host' };
+          current = next;
+          continue;
+        }
+        if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
+        const len = Number(resp.headers.get('content-length') || 0);
+        if (len > FETCH_TEXT_MAX_BYTES) return { ok: false, error: `too large (${len} bytes)` };
+        const buf = await resp.arrayBuffer();
+        if (buf.byteLength > FETCH_TEXT_MAX_BYTES) return { ok: false, error: `too large (${buf.byteLength} bytes)` };
+        return { ok: true, text: Buffer.from(buf).toString('utf8') };
+      }
+      return { ok: false, error: 'too many redirects' };
+    } catch (e) {
+      const msg = (e as Error)?.name === 'TimeoutError' ? 'timeout (30s)' : ((e as Error)?.message ?? String(e));
+      return { ok: false, error: msg };
     }
   });
 

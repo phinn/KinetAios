@@ -7219,3 +7219,69 @@ html.anim-paused #sidebar {
 .answer .viz-src > summary:hover { color: var(--text); }
 .answer .viz-src .code-block { margin: 0; border-radius: 0; box-shadow: none; }
 .answer .viz-src .code-block .code-lang { display: none; }
+
+/* ── 链接预览 overlay:html(md 用 webview 直载 / md 同管线渲染)── */
+/* Link preview overlay: in-app html/md preview instead of raw source in a browser. */
+.link-preview-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 2100; /* 高于内容层(≤2000),低于模态(10001+) */
+  background: rgba(0, 0, 0, .55);
+  backdrop-filter: blur(2px);
+}
+.link-preview-overlay.open { display: flex; flex-direction: column; }
+.link-preview-overlay .lp-chrome {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--bg-elev);
+  border-bottom: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+.link-preview-overlay .lp-kind {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .5px;
+  color: var(--text-dim);
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+.link-preview-overlay .lp-url {
+  font-size: 12px;
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 60%;
+  user-select: text;
+}
+.link-preview-overlay .lp-flex { flex: 1; }
+.link-preview-overlay .lp-btn {
+  background: var(--bg-elev-2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1;
+  padding: 5px 9px;
+  cursor: pointer;
+}
+.link-preview-overlay .lp-btn:hover { color: var(--text); border-color: var(--text-faint); }
+.link-preview-overlay .lp-body {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  padding: 0;
+}
+/* md 预览容器:复用聊天流 .answer 全套排版,外加阅读内边距 */
+.link-preview-overlay .lp-md { padding: 20px 28px; max-width: var(--read-col); margin: 0 auto; }
+.link-preview-overlay .lp-loading,
+.link-preview-overlay .lp-error { padding: 40px; color: var(--text-dim); font-size: 14px; }
+.link-preview-overlay .lp-error { color: var(--err, #e5484d); }
+.link-preview-overlay .lp-err-hint { padding: 0 40px; color: var(--text-faint); font-size: 12px; }
+/* webview 模式铺满内容区 */
+.link-preview-overlay .lp-body webview { display: block; width: 100%; height: 100%; }

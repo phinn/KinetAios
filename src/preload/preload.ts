@@ -219,6 +219,8 @@ const api: KinetAPI = {
   // 剪贴板写入(主进程 clipboard 模块,绕过 renderer navigator.clipboard 不可用问题)
   clipboardWriteText: (text: string) => ipcRenderer.invoke('clipboard-write-text', text),
   openExternal: (url: string) => ipcRenderer.invoke('open-external', url),
+  // 链接预览取文(main 侧 SSRF 防护)
+  fetchText: (url: string) => ipcRenderer.invoke('fetch-text', url),
   // viz-card 拍帧导出 PNG(离屏窗口 capturePage)
   vizCapture: (html: string, width: number, height: number) => ipcRenderer.invoke('viz-capture', html, width, height),
   // 启动动画: 选项/加载器 HTML/预览(主进程直接开一个 splash 窗播一遍)
