@@ -1854,9 +1854,34 @@ export async function compactHistory(
 // 全量入库曾让 history.db turns 表膨胀到 298MB。
 const STEP_RESULT_UI_LIMIT = 4000;
 
+// 工具"自报失败"的返回前缀清单:工具用普通字符串报告失败(不抛异常,文案给模型看),
+// 这些分支若不计入 error,会导致三处后果 —— UI 显示成绿色成功、连续失败 nudge 不触发、
+// 复盘统计的成功率虚高。
+// 数据依据(2026-11-20 体检,近 10 天 22,545 次 tool/call):
+//   edit_file「未找到要替换的片段」216 次(占该工具 9.6%)全被记为 ok,其中 97 次 agent
+//   之后没再重试 —— 用户以为改了、文件其实没动(DuoFolio 那次 Swift 快门纪律改动即属此类)。
+//   wecom_send_file / feishu_send_file 的「文件不存在/为空/超 50MB/不支持类型」同理。
+// 判定仍走 startsWith:工具返回的第一句就是这个前缀,不会误伤正文里出现同样字样的结果。
+// / Prefixes by which tools self-report failure as a normal string. Missing them made
+// failures look like successes and silently suppressed the retry nudge.
+const TOOL_FAIL_PREFIXES = [
+  '未找到要替换的片段',
+  '读不到:',
+  '写入失败:',
+  '文件不存在:',
+  '文件为空:',
+  '文件超过 50MB 上限:',
+  '不支持的文件类型:',
+  '拒绝编辑二进制文件:',
+  '拒绝覆盖二进制文件:',
+  '该文件是 UTF-16 编码',
+  '缺少 path',      // 参数缺失兜底(guardToolArgs 已前置拦截,这里覆盖其它入口)
+  '缺少 old_string',
+];
+
 // 工具执行结果三档判定(启发式,基于原始 result 前缀;2026-10 埋点)。
 // 判"业务失败"的信号都是本仓工具约定的固定前缀:execute() 抛错/未知工具/参数坏,
-// 工具内部自报错(❌/超时/[exit N]);⚠️ 参数截断类也是执行失败。
+// 工具内部自报错(❌/超时/[exit N]/TOOL_FAIL_PREFIXES);⚠️ 参数截断类也是执行失败。
 // 其余一律 ok —— 工具把错误当正常业务结果返回时(如 grep 无命中)不算失败。
 // Heuristic over the raw tool result; UI 截断/截图伪装不影响判定(用的是原始 result)。
 export function toolOutcomeOf(result: string): 'ok' | 'error' | 'aborted' {
@@ -1865,9 +1890,11 @@ export function toolOutcomeOf(result: string): 'ok' | 'error' | 'aborted' {
     result.startsWith('工具出错:') ||
     result.startsWith('未知工具:') ||
     result.startsWith('⚠️ 参数') ||
-    result.includes('[超时(') ||
+    result.includes('[超时(') ||   // 旧超时文案(2026-10 之前,无「保留部分输出」)
+    result.includes('⏳ 超时') ||   // 现超时文案:改版后首行是 [now: …] 再跟 ⏳,前缀匹配失效
     /^\[exit \d+\]/.test(result) ||
-    result.startsWith('❌')
+    result.startsWith('❌') ||
+    TOOL_FAIL_PREFIXES.some((p) => result.startsWith(p))
   ) return 'error';
   return 'ok';
 }

@@ -281,6 +281,28 @@ const APP_ALIASES: Record<string, string[]> = {
 };
 const normName = (s: string): string => s.toLowerCase().replace(/[\s\-_·.()（）]+/g, '');
 
+// 只列清单不截图:screenshot_window 省略 title 时的入口。
+// 由来(2026-11-20 体检):该工具近 7 天 79 次调用 39 次失败(49%),逐条看几乎全是模型在
+// 它看不见的命名空间里猜名字 —— 拿截图文件名当窗口标题(_v3_sheet_duoh.png)、拿业务词当标题
+// (「简报」「verify4」)。失败路径本来就会回吐候选清单,但那一轮已经白花了;让它先花一次
+// 廉价调用拿到清单再截,能把"猜→错→重试"压成"看→选"。
+// / List-only entry: the model can pay one cheap call to see the namespace instead of guessing.
+export async function listCapturableWindows(): Promise<string> {
+  try {
+    const sources = await desktopCapturer.getSources({
+      types: ['window'],
+      thumbnailSize: { width: 1920, height: 1200 },
+    });
+    const usable = sources.filter((s) => !s.thumbnail.isEmpty() && (s.name ?? '').trim());
+    const detailCache = await windowDetailProvider();
+    const ownerOf = (title: string): string =>
+      (detailCache ?? []).find((d) => normName(d.name) === normName(title))?.owner ?? '';
+    return formatWindowCandidates(usable, ownerOf);
+  } catch (e) {
+    return `（枚举窗口失败: ${(e as Error)?.message ?? e}）`;
+  }
+}
+
 export async function captureWindowByName(
   nameSubstr: string,
   opts?: { minHeight?: number },

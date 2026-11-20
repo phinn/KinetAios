@@ -328,8 +328,21 @@ const api: KinetAPI = {
 
   // ── 卡死取证心跳 / Freeze-watchdog heartbeat ──
   // renderer 主线程每秒发一次;main 侧停摆 >5s 即抓调用栈(见 main.ts freeze watchdog)。
+  // 心跳带 visibilityState:窗口被遮挡/切到后台时,Chromium 会把 renderer 的定时器节流到
+  // 1 次/分钟(这是省电,不是卡死)。main 侧拿到 hidden 就跳过判定,否则每分钟误报一次,
+  // 而每次误报要跑两个 `sample 3s`(1ms 间隔全核采样),诊断反而成了卡顿源。
+  // 实测 2026-11-20 12:50-13:09 连报 15 次,两个进程的采样主线程都停在 mach_msg(空闲)。
   startHeartbeat: () => {
-    setInterval(() => ipcRenderer.send('renderer-heartbeat'), 1000);
+    setInterval(() => {
+      // preload 的 tsconfig 不含 dom lib(sandbox 下按 node 类型编译),但运行时 preload
+      // 就在渲染进程里、document 一定存在 —— 走 globalThis 取值,不引入 dom 类型。
+      let vis = 'unknown';
+      try {
+        const d = (globalThis as { document?: { visibilityState?: string } }).document;
+        vis = d?.visibilityState ?? 'unknown';
+      } catch { /* 非 DOM 上下文 */ }
+      ipcRenderer.send('renderer-heartbeat', vis);
+    }, 1000);
   },
 };
 

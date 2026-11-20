@@ -1345,8 +1345,17 @@ if (!gotLock) {
     let lastBeat = Date.now();
     let sampling = false;
     let freezeReported = false;
+    // renderer 上报的最后一次 document.visibilityState。窗口被遮挡(occluded)时 isVisible()
+    // 仍是 true,但 Chromium 已把定时器节流到 1 次/分钟 —— 这是省电不是卡死。
+    // 实测 2026-11-20 12:50-13:09 连报 15 次,main 2154/2248、renderer 1930/2202 个样本
+    // 全停在 mach_msg(空闲),两个进程都没忙。旧 preload 不传该参数 → 按 visible 处理。
+    let lastVis = 'visible';
     // 心跳恢复即复位标记:每次卡死episode都有自己的标题行(旧版只写第一次,后续卡死无标题难定位)。
-    ipcMain.on('renderer-heartbeat', () => { lastBeat = Date.now(); freezeReported = false; });
+    ipcMain.on('renderer-heartbeat', (_e, vis?: unknown) => {
+      lastBeat = Date.now();
+      lastVis = typeof vis === 'string' ? vis : 'visible';
+      freezeReported = false;
+    });
     setInterval(() => {
       // 窗口隐藏/最小化/被完全遮挡时,Chromium 会节流 renderer 的定时器(1s 心跳
       // 退化成分钟级)——停摆是节流不是卡死,取证只会抓到空闲栈污染日志(2026-10-22
@@ -1359,15 +1368,22 @@ if (!gotLock) {
         lastBeat = Date.now();
         return;
       }
-      const silent = Date.now() - lastBeat;
-      if (silent < 5000 || sampling) return;
-      if (!freezeReported) {
-        freezeReported = true;
-        try {
-          appendCapped(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
-            `\n===== ${new Date().toISOString()} heartbeat silent ${silent}ms (main pid=${process.pid}) =====\n`, 10 * 1024 * 1024);
-        } catch { /* ignore */ }
+      // isVisible() 只反映"窗口没被隐藏/最小化",盖不住"被别的窗口完全遮挡"——
+      // 那种情况下定时器同样被节流。renderer 自报的 visibilityState 才是准的。
+      // / isVisible() doesn't cover occlusion; trust the renderer's own visibilityState.
+      if (lastVis !== 'visible') {
+        lastBeat = Date.now();
+        return;
       }
+      const silent = Date.now() - lastBeat;
+      // freezeReported 兼作"本 episode 已取证"闸:一次卡死只采一次(两个 sample 各 3s、
+      // 1ms 间隔全核采样,本身开销不小)。持续卡死时重复采样收益极低,却会把诊断变成噪声源。
+      if (silent < 5000 || sampling || freezeReported) return;
+      freezeReported = true;
+      try {
+        appendCapped(require('path').join(app.getPath('userData'), 'freeze-sample.txt'),
+          `\n===== ${new Date().toISOString()} heartbeat silent ${silent}ms (main pid=${process.pid}) =====\n`, 10 * 1024 * 1024);
+      } catch { /* ignore */ }
       if (process.platform !== 'darwin') return;
       sampling = true;
       const { execFile } = require('child_process') as typeof import('child_process');

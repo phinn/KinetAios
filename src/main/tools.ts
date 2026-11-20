@@ -477,12 +477,12 @@ export function gitCrossRepoViolation(cmd: string, convCwd: string): string | nu
 
 const shell: Tool = {
   name: 'shell',
-  description: '在用户电脑上执行 shell 命令(文件操作、git、系统信息等)。执行前会请求用户确认。Windows 上走 cmd.exe,其它系统走 /bin/sh。默认 120 秒超时;已知是长任务(xcodebuild/gradle/全盘 find 等)时传 timeout 显式放宽(上限 900 秒)。',
+  description: '在用户电脑上执行 shell 命令(文件操作、git、系统信息等)。执行前会请求用户确认。Windows 上走 cmd.exe,其它系统走 /bin/sh。默认 120 秒超时。首次跑某个任务、又无法判断它要多久时,直接给 timeout=300(上限 900):多等一分钟的代价,远小于到点被杀后从头重跑。已知的长任务(依赖安装 npm/pip/cargo install、构建 cargo build/gradle/xcodebuild/docker build、全盘 find、日志回放、训练/压缩)必须显式给 timeout。',
   parameters: {
     type: 'object',
     properties: {
       command: { type: 'string', description: '要执行的 shell 命令' },
-      timeout: { type: 'number', description: '超时秒数(默认 120,上限 900)。已知的长任务(构建/全盘扫描/日志回放)显式给值,避免到点被杀后重跑。' },
+      timeout: { type: 'number', description: '超时秒数(默认 120,上限 900)。拿不准就填 300 —— 这是本参数的默认建议值,不要因为"不确定要多久"就省略它。已知长任务(安装/构建/全盘扫描/日志回放)按经验给足。' },
     },
     required: ['command'],
   },
@@ -3089,7 +3089,7 @@ const feishuSendFile: Tool = {
 // ── Computer Use 工具:截屏 / 鼠标 / 键盘 ──
 // Computer Use tools: screenshot + mouse + keyboard via OS-native APIs.
 // 截屏返回 base64 图片(直接放进 assistant 消息的 image_url),LLM 看到屏幕后决策下一步操作。
-import { captureScreenshotWithHide, captureWindowByName, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey, withEffectVerify } from './computer-use';
+import { captureScreenshotWithHide, captureWindowByName, listCapturableWindows, frameFingerprint, mouseClick as doMouseClick, mouseMove as doMouseMove, mouseScroll as doMouseScroll, mouseDrag as doMouseDrag, keyboardType as doKeyboardType, keyboardKey as doKeyboardKey, withEffectVerify } from './computer-use';
 import { browserNavigate, browserSnapshot, browserClick, browserType, browserSelect, browserEval, browserScreenshot, browserTabs, browserUpload, browserCookie, killAgentChrome } from './cdp';
 
 // 截图产物回执(2026-10-15 事故:agent 不知道截图落在哪、两种语言目录是同一张图)。
@@ -3185,17 +3185,22 @@ const screenshot: Tool = {
 
 const screenshot_window: Tool = {
   name: 'screenshot_window',
-  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。title 也接受**应用名**(预览/Chrome/终端 等):标题常是文档名(图片文件名、网页标题),按应用名匹配更稳。注意:找不到窗口时不会让你瞎猜,会直接返回当前可截窗口的「标题(宿主应用)」清单,照着重试即可。',
+  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。\n**不确定窗口叫什么时,先不带 title 调一次(只列清单、不截图),照清单挑一个标题再调第二次** —— 窗口标题往往是文档名(图片文件名、网页标题),靠猜命中的概率很低(实测 49% 失败),多花一次调用比截错/猜错划算。title 也接受**应用名**(预览/Chrome/终端 等):标题是文档名时按应用名更稳。',
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: '窗口标题关键字或应用名(子串匹配,越长越准;两字短名也可,但要求唯一命中,如 "预览")' },
+      title: { type: 'string', description: '窗口标题关键字或应用名(子串匹配,越长越准;两字短名也可,但要求唯一命中,如 "预览")。留空 = 只返回当前可截窗口清单,不截图 —— 不确定窗口名时先留空调一次。' },
     },
-    required: ['title'],
   },
   readOnly: true,
   async run(args: any) {
-    const title = String(args?.title ?? '');
+    const title = String(args?.title ?? '').trim();
+    // 空 title = 只列清单(推荐的第一步),不算失败:回吐「标题(宿主应用)」供模型照抄。
+    // 近 7 天 39/79 次失败全是猜名字猜错 —— 先看再选能把这一轮省掉。
+    if (!title) {
+      const list = await listCapturableWindows();
+      return `🪟 当前可截窗口清单(本次未截图)。把下面任意一个标题原样作为 title 再调一次:\n${list}`;
+    }
     const r = await captureWindowByName(title);
     if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
     let receipt = '';
