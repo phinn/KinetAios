@@ -64,6 +64,15 @@ The primary remote tool. Accepts:
 
 Returns an SSE stream of `AgentEvent`s (`token`, `tool`, `cost`, `status`, `done`, `error`) — same unified event union used internally.
 
+### cwd grant boundary
+
+`cwd` is optional and **must** fall inside the operator-granted roots. Grant roots with the
+`KINET_MCP_CWD` environment variable (path-separator delimited, e.g. `KINET_MCP_CWD=/home/user/project:/home/user/work`):
+
+- The containment check runs **before** the agent is dispatched — a `cwd` outside the granted roots is refused and **nothing executes** (no prompt, no tool calls).
+- With no roots declared, the boundary defaults to the user's home directory.
+- The generic tool fallback rejects a `cwd` argument by the same gate.
+
 ## Other exposed tools
 
 - `list_conversations` — list local sessions

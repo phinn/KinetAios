@@ -44,7 +44,7 @@ Direct 引擎(V1–V5)共享 **40+ 内置工具**,并自动接入系统配置的
 ## `shell` 工具
 
 ```
-shell({ cmd: string, cwd?: string }) → string
+shell({ command: string, cwd?: string, timeout?: number }) → string
 ```
 
 - Windows 走 `cmd.exe /c <cmd>`
@@ -52,6 +52,7 @@ shell({ cmd: string, cwd?: string }) → string
 - 输出合并 stdout + stderr,加 exit code
 - **默认要确认**:renderer 弹 modal 显示命令,用户点确定才执行
 - `approval: 'never'` 直接放行(不弹)
+- `timeout`(可选):秒数,默认 **120**,上限 **900**。已知长任务(装依赖/构建/全盘扫描/日志回放)必须显式给 —— 超时提示会直接给出建议值,不声明是长命令半路被杀的主因
 
 确认桥的细节见 [[Architecture]] 的「Shell-confirm 桥」。
 

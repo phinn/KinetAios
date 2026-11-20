@@ -64,6 +64,14 @@ KinetAios 内置 **MCP (Model Context Protocol) Server** —— 一个 HTTP+SSE 
 
 返回 SSE 流,推送 `AgentEvent`(`token`、`tool`、`cost`、`status`、`done`、`error`)—— 与内部使用的统一事件联合类型一致。
 
+### cwd 授权边界
+
+`cwd` 可选,但**必须**落在运维方授权的根目录内。用 `KINET_MCP_CWD` 环境变量声明授权根(按路径分隔符分隔,如 `KINET_MCP_CWD=/home/user/project:/home/user/work`):
+
+- 包含性校验在 agent 派发**之前**执行 —— `cwd` 越界直接拒绝,**零执行**(不发 prompt、不调任何工具)。
+- 未声明授权根时,边界默认取用户 home 目录。
+- 通用工具回退路径对 `cwd` 参数走同一道闸。
+
 ## 其他暴露的工具
 
 - `list_conversations` —— 列出本地会话

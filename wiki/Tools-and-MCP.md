@@ -44,7 +44,7 @@ The Direct engines (V1–V5) share **40+ built-in tools** and auto-connect to MC
 ## `shell` tool
 
 ```
-shell({ cmd: string, cwd?: string }) → string
+shell({ command: string, cwd?: string, timeout?: number }) → string
 ```
 
 - Windows: `cmd.exe /c <cmd>`
@@ -52,6 +52,7 @@ shell({ cmd: string, cwd?: string }) → string
 - Output merges stdout + stderr, plus exit code
 - **Confirms by default**: renderer shows a modal with the command, only runs on user approval
 - `approval: 'never'` short-circuits (no modal)
+- `timeout` (optional): seconds, default **120**, max **900**. Declare it for known-long commands (dependency installs, builds, full-disk scans, log replays) — the timeout notice now suggests a concrete value, and omitting it is the main cause of a long command being killed mid-way
 
 Confirm bridge details in [[Architecture]] under "Shell-confirm bridge".
 
