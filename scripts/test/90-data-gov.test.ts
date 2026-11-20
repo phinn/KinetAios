@@ -68,24 +68,28 @@ test('spill:dropped 全文落库改为前 20 条×500 字符 + droppedTotal', as
   assert.ok(evt!.dropped![0]!.content!.length <= 502, '每条 content 截 500 字符内');
 });
 
-// ── B1: conv_events 保留策略(goal/* 永不清理)──
+// ── B1: conv_events 分层保留(证据类永久 / 冗余类 7 天)──
 
-test('pruneOldConvEvents:90 天前非 goal 事件删除,goal/* 永不清理', async () => {
+test('pruneOldConvEvents:证据类永久保留,冗余 message 7 天后清', async () => {
   const convId = 'conv-prune';
   store.appendEvent(convId, 't1', { type: 'goal/set', goal: '老目标' });
   store.appendEvent(convId, 't1', { type: 'tool/call', name: 'shell', args: 'x', result: 'y'.repeat(100) });
-  // 模拟时间前进 91 天:cutoff = 模拟now − 90d,先插入的两条都过期
-  const pruned = store.pruneOldConvEvents(90, Date.now() + 91 * DAY);
-  assert.ok(pruned >= 1, '应有旧事件被清');
+  store.appendEvent(convId, 't1', { type: 'compaction/spill', dropped: [], droppedTotal: 0 } as never);
+  store.appendEvent(convId, 't1', { type: 'user/message', text: '与 turns 重复的那份' });
+  // 模拟时间前进 91 天 —— 旧实现(90/30 天一刀切)会把上面全部清掉,包括唯一存证。
+  const pruned = store.pruneOldConvEvents(7, Date.now() + 91 * DAY);
+  assert.ok(pruned >= 1, '应有冗余事件被清');
   const types = store.loadEvents(convId).map((e) => e.data.type);
-  assert.ok(!types.includes('tool/call'), '过期的非 goal 事件应被清');
+  assert.ok(!types.includes('user/message'), '冗余 message 应被清(turns 里有同一份)');
+  assert.ok(types.includes('tool/call'), 'tool/call 是唯一证据,91 天后必须还在');
+  assert.ok(types.includes('compaction/spill'), 'spill 是压缩丢失内容的唯一存档,不得清');
   assert.ok(types.includes('goal/set'), 'goal/* 事件永不清理(投影从头 fold,删了会破坏状态)');
 });
 
-test('pruneOldConvEvents:90 天内的事件存活(prune 返回 0)', async () => {
+test('pruneOldConvEvents:7 天内的冗余 message 存活(prune 返回 0)', async () => {
   const convId = 'conv-prune-fresh';
   store.appendEvent(convId, 't9', { type: 'user/message', text: '新消息' });
-  const pruned = store.pruneOldConvEvents(90, Date.now()); // 真实 now:刚插入的事件远未过期
+  const pruned = store.pruneOldConvEvents(7, Date.now()); // 真实 now:刚插入的事件远未过期
   assert.equal(pruned, 0);
   assert.ok(store.loadEvents(convId).some((e) => e.data.type === 'user/message'));
 });

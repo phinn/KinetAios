@@ -1814,10 +1814,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     const decayed = store.decayMemories();
     // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
     const lowImportancePruned = store.pruneLowImportanceMemories(2);
-    // 数据治理:conv_events 保留 30 天(goal/* 永不清理,见 store.pruneOldConvEvents)。
-    // 2026-11-19 由 90 天收紧:实测 30-90 天区间堆了 480,145 条 / 321MB,而 UI 回放
-    // 基本只翻近几天的执行轨迹 —— turns 本身不受影响,老会话照样能打开看问答。
-    const eventsPruned = store.pruneOldConvEvents(30);
+    // 数据治理:只清冗余事件(user/assistant message —— 与 turns 重复的那份),默认 7 天。
+    // 证据类(tool/call、compaction/spill、goal/*)永久保留,见 store.pruneOldConvEvents。
+    const eventsPruned = store.pruneOldConvEvents();
     return { deduped, decayed, lowImportancePruned, eventsPruned };
   }
 

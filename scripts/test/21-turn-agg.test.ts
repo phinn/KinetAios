@@ -104,13 +104,16 @@ test('聚合走覆盖索引 idx_turns_agg(不是全表扫行页)', () => {
   assert.equal(typeof c.tokensOut, 'number');
 });
 
-test('pruneOldConvEvents 默认保留期是 30 天', () => {
+test('pruneOldConvEvents 默认 7 天,且只清冗余 message 不碰证据类', () => {
   const DAY = 86400_000;
-  store.appendEvent('c-agg', 't-import-1', { type: 'turn/status', text: '探针' });
-  // keepDays 传 undefined → 走默认值。若默认仍是 90,模拟 +31 天时刚插入的事件不会过期。
-  // If the default were still 90, +31d would NOT evict a just-inserted event.
-  const pruned = store.pruneOldConvEvents(undefined as never, Date.now() + 31 * DAY);
-  assert.ok(pruned >= 1, `默认保留期应为 30 天(31 天后应清理),实际清理 ${pruned} 条`);
+  store.appendEvent('c-agg', 't-agg-prune', { type: 'user/message', text: '冗余副本' });
+  store.appendEvent('c-agg', 't-agg-prune', { type: 'turn/status', text: '证据类' });
+  // 第一个参数传 undefined → 走默认值 7 天。+8 天时刚插入的冗余 message 应过期。
+  const pruned = store.pruneOldConvEvents(undefined as never, Date.now() + 8 * DAY);
+  assert.ok(pruned >= 1, `默认保留期应为 7 天(8 天后应清理),实际清理 ${pruned} 条`);
+  const types = store.loadEvents('c-agg').map((e) => e.data.type);
+  assert.ok(!types.includes('user/message'), '冗余 message 应被清');
+  assert.ok(types.includes('turn/status'), 'turn/status 属证据类,永久保留,不得清理');
 });
 
 void tmpHome;

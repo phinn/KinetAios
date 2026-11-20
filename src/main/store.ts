@@ -1655,13 +1655,26 @@ export function factsAsBlock(convId: string): string {
   return facts.map((f) => `- ${f.key}: ${f.value}`).join('\n');
 }
 
-// conv_events 保留策略(2026-09):事件日志此前只增不减(spill dropped 全文/工具结果),
-// history.db 曾到 433MB。2026-11-19 由 90 天收紧到 30 天 —— 实测 30-90 天区间 480,145 条 /
-// 321MB,回看概率极低;goal/* 事件永不清理 —— goal 投影是全量从头 fold,删早期 goal/set
-// 会破坏状态重建。nowMs 可注入(测试)。
-export function pruneOldConvEvents(keepDays = 30, nowMs = Date.now()): number {
-  const cutoff = nowMs - keepDays * 86400_000;
-  const info = stmt("DELETE FROM conv_events WHERE ts < ? AND type NOT LIKE 'goal/%';").run(cutoff);
+// conv_events 保留策略(2026-09 引入,2026-11-20 定型):
+//
+// 事件分成两类, 保留期完全不同 ——
+//   · **证据类(永久保留)**: tool/call(完整参数+返回)、compaction/spill(上下文压缩时被折叠
+//     掉的原文, 全库唯一一份)、goal/*(投影从头 fold, 删早期 goal/set 会破坏状态重建)、
+//     turn/error、team/*。这些删了就再也找不回来, 用户明确要求"历史数据尽量保留"。
+//   · **冗余类(7 天)**: user/message / assistant/message —— 与 turns 里的 prompt/answer
+//     是同一份内容, 这里只是给 UI 回放提供的便捷副本。留 7 天足够覆盖"刚发生的事",
+//     之后一律以 turns 为准。
+//
+// 早先的实现是"90 天一刀切", 会把 compaction/spill 这种唯一存档一起删掉; 换成 30 天后
+// 删得更狠(实测一次清掉 48 万条 / 321MB, 含大量 tool/call 证据)。这里改为按类型分层。
+// nowMs 可注入(测试)。
+export const REDUNDANT_EVENT_TYPES = ['user/message', 'assistant/message'] as const;
+
+export function pruneOldConvEvents(redundantKeepDays = 7, nowMs = Date.now()): number {
+  const cutoff = nowMs - redundantKeepDays * 86400_000;
+  const ph = REDUNDANT_EVENT_TYPES.map(() => '?').join(',');
+  const info = stmt(`DELETE FROM conv_events WHERE ts < ? AND type IN (${ph});`)
+    .run(cutoff, ...REDUNDANT_EVENT_TYPES);
   return Number(info.changes);
 }
 
