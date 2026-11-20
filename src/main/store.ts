@@ -1668,13 +1668,42 @@ export function factsAsBlock(convId: string): string {
 // 早先的实现是"90 天一刀切", 会把 compaction/spill 这种唯一存档一起删掉; 换成 30 天后
 // 删得更狠(实测一次清掉 48 万条 / 321MB, 含大量 tool/call 证据)。这里改为按类型分层。
 // nowMs 可注入(测试)。
+// 判别标准(用户 2026-11-20 定):删掉的必须是「同一信息的重复副本」,不是「唯一的那一份」。
+// 冗余类只放与 turns 表 prompt/answer 同源的两类,其余一律永久。
+// 用白名单 DELETE(type IN ...) 而不是黑名单,保证**新增事件类型默认是保留**,不会被未来的清理逻辑顺手扫掉。
 export const REDUNDANT_EVENT_TYPES = ['user/message', 'assistant/message'] as const;
 
+/** 永久保留:唯一副本,删了不可恢复。这张表是声明,不只是注释 —— pruneOldConvEvents 会真的照它做防御。 */
+export const RETAINED_EVENT_TYPES = [
+  'tool/call', // 完整参数 + 返回的唯一存证(全文只在事件流里)
+  'compaction/spill', // 压缩时折叠掉的原文,全库唯一
+  'turn/meta', // 逐次 LLM 调用的 cost/token 明细 —— UI「Token 明细」浮层的唯一数据源,用户指定保留
+  'turn/status', // 路由决策 / 引擎相位轨迹,复盘「为什么走这条路」的唯一依据,用户指定保留
+  'turn/error',
+  'legis/compile',
+  'context/edit',
+  'goal/set',
+  'goal/clear',
+  'goal/complete',
+  'goal/limit',
+  'goal/supervisor',
+  'goal/failover',
+  'session/started',
+  'team/status',
+  'team/tool',
+  'team/done',
+] as const;
+
 export function pruneOldConvEvents(redundantKeepDays = 7, nowMs = Date.now()): number {
+  // 防御:即使以后有人把唯一副本误塞进 REDUNDANT_EVENT_TYPES,也删不掉。
+  // Defense in depth: a type that is declared retained can never be pruned, whatever the other list says.
+  const retained = new Set<string>(RETAINED_EVENT_TYPES);
+  const victims = REDUNDANT_EVENT_TYPES.filter((t) => !retained.has(t));
+  if (!victims.length) return 0;
   const cutoff = nowMs - redundantKeepDays * 86400_000;
-  const ph = REDUNDANT_EVENT_TYPES.map(() => '?').join(',');
+  const ph = victims.map(() => '?').join(',');
   const info = stmt(`DELETE FROM conv_events WHERE ts < ? AND type IN (${ph});`)
-    .run(cutoff, ...REDUNDANT_EVENT_TYPES);
+    .run(cutoff, ...victims);
   return Number(info.changes);
 }
 
