@@ -207,3 +207,8 @@ PR#6:github.com/indiedeveloper-org/awesome-indie-developers/pull/6,本地先跑 
 - `license/cla` check = success(CLA 已过,Needs-CLA 标签为残留);mergeable: true(无冲突)。
 - 13:21 policy bot:「check-in policies require a moderator to approve」→ mergeable_state=blocked **仅剩 moderator 人审闸门**,非验证问题。参照:旧 4.0.3 Passed 后挂 12 天未合,周期数天~数周属正常。
 - 处置:`cron_winget_475205` 从每半小时降频为**每周一 09:00 周检**(脚本固化到 `scripts/winget_pr_snapshot.py`,含 VERDICT 判定);PR merged 后记合并时间并删除任务。
+
+## hol-guard PR #8135 二次脏 merge 事故(2026-11-20)
+- 现象:GitHub 自动「Update branch」把上游当天 5 commit 以 merge commit(8695f22a)合进 fork main，PR diff 淡入 tests/test_guard_mdm_http_inventory.py +1 行，coverage CI fail——合并树里测试期望 runtime/verified_github_reads.py import managed transport(新API)，但树里源文件是旧版，树内自相矛盾(1 failed, 325 passed)
+- 修法:Git Data API 线性重放——取上游 tip commit+tree，以 base_tree 建含我们 2 blob 的新 tree，建单 parent commit(7809fb6a)，force-push fork main。PR diff 收敛回 2 文件，CI 树自洽
+- 铁律:**fork PR 一旦 GitHub 自动 Update branch，必须重置而非再合并**；每次 force-push 后 24h 内复查 PR files 数，发现 diff 文件数变化立即重放
