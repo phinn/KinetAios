@@ -1,13 +1,21 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"
-        xmlns:xhtml="http://www.w3.org/1999/xhtml">
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
     <loc>https://phinn.github.io/KinetAios/</loc>
-    <lastmod>2026-08-16</lastmod>
+    <lastmod>2026-11-19</lastmod>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
-    <xhtml:link rel="alternate" hreflang="en" href="https://phinn.github.io/KinetAios/"/>
-    <xhtml:link rel="alternate" hreflang="zh-Hans" href="https://phinn.github.io/KinetAios/"/>
-    <xhtml:link rel="alternate" hreflang="x-default" href="https://phinn.github.io/KinetAios/"/>
+  </url>
+  <url>
+    <loc>https://phinn.github.io/KinetAios/privacy.html</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.3</priority>
+  </url>
+  <url>
+    <loc>https://phinn.github.io/KinetAios/enterprise-capability.html</loc>
+    <lastmod>2026-11-19</lastmod>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
   </url>
 </urlset>
