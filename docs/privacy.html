@@ -1,61 +1,310 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-Hans">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>KinetAios 隐私政策 | Privacy Policy</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<!-- ===== SEO META ===== -->
+<title>Privacy Policy — KinetAios | KinetAios 隐私政策 | プライバシーポリシー | 隱私權政策</title>
+<meta name="description" content="KinetAios 隐私政策:本地优先,数据不出设备。KinetAios is local-first: conversations, memory, and API keys stay on your device. KinetAios はローカルファースト:会話・記憶・API キーは端末内に保存されます。">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="https://phinn.github.io/KinetAios/privacy.html">
+<link rel="alternate" hreflang="en" href="https://phinn.github.io/KinetAios/privacy.html?lang=en">
+<link rel="alternate" hreflang="zh-Hans" href="https://phinn.github.io/KinetAios/privacy.html?lang=zh-Hans">
+<link rel="alternate" hreflang="zh-Hant" href="https://phinn.github.io/KinetAios/privacy.html?lang=zh-Hant">
+<link rel="alternate" hreflang="ja" href="https://phinn.github.io/KinetAios/privacy.html?lang=ja">
+<link rel="alternate" hreflang="x-default" href="https://phinn.github.io/KinetAios/privacy.html">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="KinetAios">
+<meta property="og:title" content="KinetAios Privacy Policy">
+<meta property="og:url" content="https://phinn.github.io/KinetAios/privacy.html">
+
 <style>
-  :root { --bg:#0b0e14; --fg:#e6e8ee; --dim:#9aa3b2; --line:#1e2430; --acc:#5b8cff; }
-  * { box-sizing:border-box; margin:0; padding:0; }
-  body { background:var(--bg); color:var(--fg); font:16px/1.75 -apple-system,"PingFang SC","Segoe UI",sans-serif; max-width:820px; margin:0 auto; padding:64px 24px; }
-  h1 { font-size:32px; margin-bottom:8px; }
-  h2 { font-size:20px; margin:40px 0 12px; color:var(--acc); }
-  p, li { color:var(--dim); margin-bottom:12px; }
-  ul { padding-left:24px; margin-bottom:16px; }
-  table { width:100%; border-collapse:collapse; margin:16px 0; font-family:"SF Mono",Menlo,monospace; font-size:14px; }
-  td { border:1px solid var(--line); padding:10px 14px; }
-  td:first-child { color:var(--acc); white-space:nowrap; }
-  .up { margin-top:48px; font-size:13px; color:#5a6373; }
-  a { color:var(--acc); }
+:root{
+  --bg:#0B0F14; --surface:#141B22; --surface2:#1E2731; --line:#2A3540;
+  --text:#E8EEF2; --muted:#8B97A3; --dim:#5A6571;
+  --mint:#00E5B5; --cyan:#00B5E5; --purple:#9B7EFF; --gold:#FFD75F;
+  --grad:linear-gradient(135deg,#00E5B5 0%,#00B5E5 100%);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","PingFang SC","Hiragino Sans",Inter,system-ui,sans-serif;line-height:1.7;-webkit-font-smoothing:antialiased}
+a{color:inherit;text-decoration:none}
+.wrap{max-width:860px;margin:0 auto;padding:0 24px}
+nav{position:sticky;top:0;z-index:50;background:rgba(11,15,20,.82);backdrop-filter:blur(20px);border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:60px}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px}
+.brand .mark{width:28px;height:28px;border-radius:8px;background:var(--grad);display:flex;align-items:center;justify-content:center;color:#0B0F14;font-weight:800;font-size:15px;box-shadow:0 0 16px rgba(0,229,181,.3)}
+.nav-right{display:flex;align-items:center;gap:8px}
+.back-home{font-size:13px;color:var(--muted);padding:7px 14px;border-radius:999px;border:1px solid var(--line);transition:.15s}
+.back-home:hover{color:var(--text);border-color:var(--mint)}
+.lang{display:flex;gap:2px;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:3px}
+.lang button{background:transparent;border:0;color:var(--muted);font-size:12px;padding:5px 10px;border-radius:999px;cursor:pointer;font-family:inherit;transition:.15s}
+.lang button.on{background:var(--grad);color:#0B0F14;font-weight:600}
+.lang button:not(.on):hover{color:var(--text)}
+header{padding:64px 0 40px;border-bottom:1px solid var(--line)}
+.eyebrow{font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--mint);letter-spacing:.12em;text-transform:uppercase;margin-bottom:14px}
+h1{font-size:clamp(28px,4vw,42px);font-weight:700;letter-spacing:-.015em;margin-bottom:12px}
+.meta{font-size:13px;color:var(--dim)}
+main{padding:48px 0 72px}
+h2{font-size:19px;font-weight:650;margin:40px 0 14px;padding-left:14px;border-left:3px solid var(--mint)}
+h2:first-of-type{margin-top:0}
+p,li{font-size:14.5px;color:var(--muted);margin-bottom:10px}
+strong{color:var(--text);font-weight:600}
+ul{padding-left:22px;margin-bottom:8px}
+li{margin-bottom:6px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:22px 24px;margin:18px 0}
+.card h3{font-size:14.5px;font-weight:600;margin-bottom:8px;color:var(--text)}
+.hl{background:rgba(0,229,181,.06);border:1px solid rgba(0,229,181,.25);border-radius:14px;padding:20px 24px;margin:20px 0}
+.hl p{color:var(--text);margin:0}
+.hl .h3{color:var(--mint);font-weight:600;margin-bottom:6px;font-size:14px}
+footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(--dim)}
+footer .in{display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;align-items:center}
+footer a{color:var(--mint)}
+@media(max-width:640px){.nav{height:54px}.back-home{display:none}header{padding:44px 0 28px}}
 </style>
 </head>
 <body>
-<h1>KinetAios 隐私政策</h1>
-<p>生效日期:2026-09-07 · 本政策适用于 KinetAios(macOS / Windows 桌面应用)。</p>
 
-<h2>一句话版本</h2>
-<p>KinetAios 是本地优先(Local-First)应用:<strong>你的所有数据都只存在你自己的电脑里,我们没有任何服务器,不收集、不上传、不追踪。</strong></p>
+<nav>
+  <div class="wrap nav">
+    <a class="brand" href="./index.html"><div class="mark">K</div><span>KinetAios</span></a>
+    <div class="nav-right">
+      <a class="back-home" data-i18n="nav_back" href="./index.html">← 返回官网</a>
+      <div class="lang">
+        <button data-l="zh-Hans" class="on">简</button>
+        <button data-l="zh-Hant">繁</button>
+        <button data-l="en">EN</button>
+        <button data-l="ja">日</button>
+      </div>
+    </div>
+  </div>
+</nav>
 
-<h2>1. 我们收集什么</h2>
-<p>什么都不收集。应用不内嵌任何账号系统、统计 SDK、崩溃上报或广告组件;不存在开发者侧的数据服务器。</p>
+<header>
+  <div class="wrap">
+    <div class="eyebrow">privacy policy</div>
+    <h1 data-i18n="h1"></h1>
+    <p class="meta"><span data-i18n="meta_eff"></span> · <span data-i18n="meta_upd"></span></p>
+  </div>
+</header>
 
-<h2>2. 数据存在哪里</h2>
-<table>
-  <tr><td>API Key</td><td>操作系统钥匙串(macOS Keychain / Windows DPAPI),仅本机</td></tr>
-  <tr><td>对话与记忆</td><td>本机 SQLite 数据库(应用沙盒容器内),仅本机</td></tr>
-  <tr><td>遥测数据</td><td>无</td></tr>
-  <tr><td>上传</td><td>从不(除下述第 3 条)</td></tr>
-</table>
+<main class="wrap">
 
-<h2>3. 唯一的数据出设备场景</h2>
-<p>当你使用 AI 对话功能时,应用会把当前会话上下文发送到<strong>你自己在设置中配置的第三方大模型服务商 API 地址</strong>(如 OpenAI、Anthropic、智谱、本地 ollama 等)。该传输由你发起、指向你指定的服务,受该服务商隐私政策约束;KinetAios 本身不中转、不存储、不查看这些请求。不配置任何 API Key 时,应用不会发出任何网络请求(语音、MCP、更新检查等联网功能同理,均需你主动启用并填写你自己提供的地址)。</p>
+  <div class="hl">
+    <div class="h3" data-i18n="tldr_t"></div>
+    <p data-i18n="tldr_p"></p>
+  </div>
 
-<h2>4. 权限使用</h2>
-<ul>
-  <li><strong>麦克风</strong>:仅当你主动开启语音对话时采集音频做实时识别,不在后台录音。</li>
-  <li><strong>屏幕截图</strong>:仅当你调用截图工具时使用,需系统授权。</li>
-  <li><strong>文件访问</strong>:仅访问你通过系统面板授权的目录,以及应用自身的数据目录。</li>
-</ul>
+  <h2 data-i18n="s1_t"></h2>
+  <p data-i18n="s1_p"></p>
 
-<h2>5. 儿童</h2>
-<p>应用不面向 14 岁以下儿童收集任何信息(事实上我们不收集任何人的信息)。</p>
+  <h2 data-i18n="s2_t"></h2>
+  <p data-i18n="s2_p"></p>
+  <div class="card">
+    <h3 data-i18n="s2_card_t"></h3>
+    <ul>
+      <li data-i18n="s2_l1"></li>
+      <li data-i18n="s2_l2"></li>
+      <li data-i18n="s2_l3"></li>
+      <li data-i18n="s2_l4"></li>
+    </ul>
+  </div>
 
-<h2>6. 政策变更</h2>
-<p>若未来引入任何数据收集,将在此页面显著更新并提高版本号。</p>
+  <h2 data-i18n="s3_t"></h2>
+  <p data-i18n="s3_p"></p>
+  <ul>
+    <li data-i18n="s3_l1"></li>
+    <li data-i18n="s3_l2"></li>
+  </ul>
 
-<h2>7. 联系我们</h2>
-<p>邮箱:<a href="mailto:phinn@kinet.app">phinn@kinet.app</a> · GitHub Issues:<a href="https://github.com/phinn/KinetAios">github.com/phinn/KinetAios</a></p>
+  <h2 data-i18n="s4_t"></h2>
+  <p data-i18n="s4_p"></p>
 
-<p class="up">© 2026 Kinet · <a href="/KinetAios/">返回官网</a></p>
+  <h2 data-i18n="s5_t"></h2>
+  <p data-i18n="s5_p"></p>
+
+  <h2 data-i18n="s6_t"></h2>
+  <p data-i18n="s6_p"></p>
+
+  <h2 data-i18n="s7_t"></h2>
+  <p data-i18n="s7_p"></p>
+
+  <h2 data-i18n="s8_t"></h2>
+  <p data-i18n="s8_p"></p>
+
+  <h2 data-i18n="s9_t"></h2>
+  <p data-i18n="s9_p"></p>
+  <p data-i18n="s9_p2"></p>
+
+</main>
+
+<footer>
+  <div class="wrap in">
+    <div>© 2026 KinetAios · <a href="./index.html" data-i18n="foot_home">官网首页</a></div>
+    <div><a href="mailto:phinn@outlook.com">✉ phinn@outlook.com</a></div>
+  </div>
+</footer>
+
+<script>
+const I18N = {
+"zh-Hans": {
+  nav_back:"← 返回官网",
+  h1:"隐私政策",
+  meta_eff:"生效日期:2026-09-01",
+  meta_upd:"最近更新:2026-09-07",
+  tldr_t:"一句话版本",
+  tldr_p:"KinetAios 是本地优先(Local-First)应用:你的对话、记忆与 API 密钥全部保存在你自己的设备上,我们不运营任何服务器来收集它们。",
+  s1_t:"1. 我们收集什么",
+  s1_p:"我们(开发者)不通过应用收集、上传或出售任何个人信息。应用不内嵌任何统计、广告或追踪 SDK。应用运行产生的所有数据仅保存在你的设备本地。",
+  s2_t:"2. 存储在你设备上的数据",
+  s2_p:"应用会在你的设备本地创建以下数据,你可以随时在应用内删除:",
+  s2_card_t:"本地数据清单",
+  s2_l1:"对话与轮次记录 — 存储于本地 SQLite 数据库;",
+  s2_l2:"跨引擎长期记忆 — 由对话内容自动提炼的事实,存于本地数据库;",
+  s2_l3:"API 密钥 — 存储于操作系统凭据管理器(macOS Keychain / Windows DPAPI),不写入普通文件;",
+  s2_l4:"偏好设置 — 主题、语言、引擎配置等,存于本地配置文件。",
+  s3_t:"3. 数据何时会离开你的设备",
+  s3_p:"应用本身不传输你的数据。仅当你主动使用 AI 功能时,才会把必要内容发送给你自己配置的服务:",
+  s3_l1:"AI 模型请求 — 你配置 API 密钥后,对话内容会发送至对应的模型服务商(如 Anthropic、OpenAI、DeepSeek、智谱等)以生成回复,数据处理受该服务商隐私政策约束;",
+  s3_l2:"网页抓取 — 你指令中要求抓取的 URL 会被直接访问;语音识别、远程控制(飞书/企业微信 Bot)等按需建立连接。",
+  s4_t:"4. 我们如何使用数据",
+  s4_p:"我们无法访问你的任何数据,也不会将其用于任何目的。所有 AI 功能均为你与模型服务商之间的直接交互。",
+  s5_t:"5. 第三方服务",
+  s5_p:"应用调用的第三方 AI 服务由你自行选择并配置密钥。各服务商的隐私政策适用于其对你的数据的处理。开发者与这些服务商之间不存在数据共享协议。",
+  s6_t:"6. 儿童",
+  s6_p:"应用不面向 14 岁以下儿童,我们不会有意收集儿童的个人信息。",
+  s7_t:"7. 你的控制权",
+  s7_p:"你拥有全部控制权:可随时在应用内删除任意会话、轮次与记忆;卸载应用并删除其数据目录即可彻底清除全部本地数据;API 密钥可随时撤销或更换。",
+  s8_t:"8. 政策变更",
+  s8_p:"本政策如有重大变更,将在本页面更新并修改「最近更新」日期。",
+  s9_t:"9. 联系我们",
+  s9_p:"如对本政策有任何疑问,请联系:phinn@outlook.com。",
+  s9_p2:"KinetAios · GPL v3 开源 · Windows & macOS",
+  foot_home:"官网首页"
+},
+"zh-Hant": {
+  nav_back:"← 返回官網",
+  h1:"隱私權政策",
+  meta_eff:"生效日期:2026-09-01",
+  meta_upd:"最近更新:2026-09-07",
+  tldr_t:"一句話版本",
+  tldr_p:"KinetAios 是本地優先(Local-First)應用程式:你的對話、記憶與 API 金鑰全部保存在你自己的裝置上,我們不營運任何伺服器來收集它們。",
+  s1_t:"1. 我們收集什麼",
+  s1_p:"我們(開發者)不透過應用程式收集、上傳或出售任何個人資料。應用程式不內嵌任何統計、廣告或追蹤 SDK。應用程式執行產生的所有資料僅保存在你的裝置本機。",
+  s2_t:"2. 儲存在你裝置上的資料",
+  s2_p:"應用程式會在你的裝置本機建立以下資料,你可以隨時在應用程式內刪除:",
+  s2_card_t:"本機資料清單",
+  s2_l1:"對話與輪次記錄 — 儲存於本機 SQLite 資料庫;",
+  s2_l2:"跨引擎長期記憶 — 由對話內容自動擷取的事實,存於本機資料庫;",
+  s2_l3:"API 金鑰 — 儲存於作業系統憑證管理程式(macOS Keychain / Windows DPAPI),不寫入一般檔案;",
+  s2_l4:"偏好設定 — 主題、語言、引擎組態等,存於本機組態檔。",
+  s3_t:"3. 資料何時會離開你的裝置",
+  s3_p:"應用程式本身不傳輸你的資料。僅當你主動使用 AI 功能時,才會把必要內容傳送給你自己設定的服務:",
+  s3_l1:"AI 模型請求 — 你設定 API 金鑰後,對話內容會傳送至對應的模型服務商(如 Anthropic、OpenAI、DeepSeek、智譜等)以產生回覆,資料處理受該服務商隱私權政策約束;",
+  s3_l2:"網頁擷取 — 你指示中要求擷取的 URL 會被直接存取;語音辨識、遠端控制(飛書/企業微信 Bot)等按需建立連線。",
+  s4_t:"4. 我們如何使用資料",
+  s4_p:"我們無法存取你的任何資料,也不會將其用於任何目的。所有 AI 功能均為你與模型服務商之間的直接互動。",
+  s5_t:"5. 第三方服務",
+  s5_p:"應用程式呼叫的第三方 AI 服務由你自行選擇並設定金鑰。各服務商的隱私權政策適用於其對你的資料的處理。開發者與這些服務商之間不存在資料共享協議。",
+  s6_t:"6. 兒童",
+  s6_p:"應用程式不面向 14 歲以下兒童,我們不會有意收集兒童的個人資料。",
+  s7_t:"7. 你的控制權",
+  s7_p:"你擁有全部控制權:可隨時在應用程式內刪除任意會話、輪次與記憶;解除安裝應用程式並刪除其資料目錄即可徹底清除全部本機資料;API 金鑰可隨時撤銷或更換。",
+  s8_t:"8. 政策變更",
+  s8_p:"本政策如有重大變更,將在本頁面更新並修改「最近更新」日期。",
+  s9_t:"9. 聯絡我們",
+  s9_p:"如對本政策有任何疑問,請聯絡:phinn@outlook.com。",
+  s9_p2:"KinetAios · GPL v3 開放原始碼 · Windows & macOS",
+  foot_home:"官網首頁"
+},
+"en": {
+  nav_back:"← Back to site",
+  h1:"Privacy Policy",
+  meta_eff:"Effective: September 1, 2026",
+  meta_upd:"Last updated: September 7, 2026",
+  tldr_t:"TL;DR",
+  tldr_p:"KinetAios is a local-first app: your conversations, memory, and API keys all stay on your own device. We run no servers that collect them.",
+  s1_t:"1. What we collect",
+  s1_p:"We (the developer) do not collect, upload, or sell any personal information through the app. The app embeds no analytics, ads, or tracking SDKs. All data produced by the app stays on your device.",
+  s2_t:"2. Data stored on your device",
+  s2_p:"The app creates the following data locally on your device. You can delete any of it at any time from within the app:",
+  s2_card_t:"Local data inventory",
+  s2_l1:"Conversations & turns — stored in a local SQLite database;",
+  s2_l2:"Cross-engine long-term memory — facts auto-extracted from conversations, stored locally;",
+  s2_l3:"API keys — stored in the OS credential manager (macOS Keychain / Windows DPAPI), never written to plain files;",
+  s2_l4:"Preferences — theme, language, engine settings, stored in local config files.",
+  s3_t:"3. When data leaves your device",
+  s3_p:"The app itself does not transmit your data. Only when you actively use AI features is necessary content sent to services you configured yourself:",
+  s3_l1:"AI model requests — once you configure an API key, conversation content is sent to the corresponding model provider (e.g. Anthropic, OpenAI, DeepSeek, Zhipu) to generate replies; such processing is governed by that provider's privacy policy;",
+  s3_l2:"Web fetching — URLs you ask the agent to fetch are accessed directly; voice recognition and remote control (Feishu / WeCom bots) connect on demand.",
+  s4_t:"4. How we use data",
+  s4_p:"We have no access to any of your data and use it for no purpose. All AI features are direct interactions between you and your chosen model provider.",
+  s5_t:"5. Third-party services",
+  s5_p:"Third-party AI services are chosen and configured by you. Each provider's privacy policy governs its handling of your data. The developer has no data-sharing agreements with any provider.",
+  s6_t:"6. Children",
+  s6_p:"The app is not directed at children under 14, and we do not knowingly collect personal information from children.",
+  s7_t:"7. Your control",
+  s7_p:"You are in full control: delete any conversation, turn, or memory from within the app at any time; uninstall the app and delete its data directory to wipe all local data completely; revoke or replace API keys whenever you wish.",
+  s8_t:"8. Changes to this policy",
+  s8_p:"If we make material changes to this policy, we will update this page and revise the \"Last updated\" date.",
+  s9_t:"9. Contact us",
+  s9_p:"If you have any questions about this policy, contact: phinn@outlook.com.",
+  s9_p2:"KinetAios · GPL v3 open source · Windows & macOS",
+  foot_home:"Home"
+},
+"ja": {
+  nav_back:"← サイトに戻る",
+  h1:"プライバシーポリシー",
+  meta_eff:"発効日:2026年9月1日",
+  meta_upd:"最終更新:2026年9月7日",
+  tldr_t:"ひとことで",
+  tldr_p:"KinetAios はローカルファースト(Local-First)アプリです。会話・記憶・API キーはすべてあなたの端末内に保存され、当社がそれらを収集するサーバーを運営していません。",
+  s1_t:"1. 収集する情報",
+  s1_p:"当社(開発者)は、アプリを通じて個人情報を収集・送信・販売しません。アプリには統計・広告・トラッキング用の SDK は組み込まれておらず、アプリの利用で生じるすべてのデータは端末内にのみ保存されます。",
+  s2_t:"2. 端末内に保存されるデータ",
+  s2_p:"アプリは以下のデータを端末内に作成します。いずれもアプリ内からいつでも削除できます:",
+  s2_card_t:"ローカルデータ一覧",
+  s2_l1:"会話・ターン履歴 — ローカルの SQLite データベースに保存;",
+  s2_l2:"クロスエンジン長期記憶 — 会話から自動抽出した事実をローカル DB に保存;",
+  s2_l3:"API キー — OS の資格情報管理(macOS Keychain / Windows DPAPI)に保存。平文ファイルには書き込まれません;",
+  s2_l4:"設定 — テーマ・言語・エンジン設定などはローカル設定ファイルに保存。",
+  s3_t:"3. データが端末の外に出る場合",
+  s3_p:"アプリ自体はデータを送信しません。AI 機能を能動的に使用した場合のみ、必要な内容があなた自身が設定したサービスに送られます:",
+  s3_l1:"AI モデルへのリクエスト — API キーを設定すると、会話内容が応答生成のために対応するモデルプロバイダー(Anthropic、OpenAI、DeepSeek、智譜など)に送信されます。処理は各プロバイダーのプライバシーポリシーに従います;",
+  s3_l2:"Web 取得 — 指示した URL には直接アクセスします。音声認識やリモート操作(Feishu/WeCom Bot)も必要時に接続します。",
+  s4_t:"4. データの利用について",
+  s4_p:"当社はあなたのデータに一切アクセスできず、いかなる目的にも利用しません。すべての AI 機能は、あなたとモデルプロバイダーとの直接のやり取りです。",
+  s5_t:"5. 第三者サービス",
+  s5_p:"アプリが呼び出す第三者 AI サービスは、あなた自身が選択・設定します。各プロバイダーのプライバシーポリシーがデータ処理に適用されます。開発者とプロバイダーの間にデータ共有の契約はありません。",
+  s6_t:"6. お子様",
+  s6_p:"本アプリは 14 歳未満のお子様を対象としておらず、児童の個人情報を意図的に収集することはありません。",
+  s7_t:"7. ユーザーの管理権",
+  s7_p:"すべての管理権はあなたにあります。会話・ターン・記憶はアプリ内でいつでも削除でき、アプリのアンインストールとデータフォルダの削除で全ローカルデータを完全に消去できます。API キーもいつでも失効・変更できます。",
+  s8_t:"8. ポリシーの変更",
+  s8_p:"本ポリシーに重要な変更がある場合は、本ページを更新し「最終更新」日付を改訂します。",
+  s9_t:"9. お問い合わせ",
+  s9_p:"本ポリシーに関するご質問は phinn@outlook.com までご連絡ください。",
+  s9_p2:"KinetAios · GPL v3 オープンソース · Windows & macOS",
+  foot_home:"ホーム"
+}
+};
+
+function applyLang(l){
+  const dict = I18N[l]; if(!dict) return;
+  document.querySelectorAll("[data-i18n]").forEach(el => {
+    const k = el.getAttribute("data-i18n");
+    if(dict[k] != null) el.textContent = dict[k];
+  });
+  document.documentElement.lang = l;
+  document.querySelectorAll(".lang button").forEach(b => b.classList.toggle("on", b.dataset.l === l));
+  try{ localStorage.setItem("ka_lang", l); }catch(e){}
+}
+document.querySelectorAll(".lang button").forEach(b => b.addEventListener("click", () => applyLang(b.dataset.l)));
+const urlLang = new URLSearchParams(location.search).get("lang");
+const saved = (()=>{try{return localStorage.getItem("ka_lang")}catch(e){return null}})();
+applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "zh-Hans"));
+</script>
+
 </body>
 </html>
