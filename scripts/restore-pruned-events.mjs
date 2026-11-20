@@ -59,13 +59,23 @@ function fail(msg) {
   process.exit(1);
 }
 
+// app 是否在跑 —— 用「谁打开了这个库」判断,比匹配进程名可靠。
+// 坑:dev 模式下 Electron 的 argv 只是一个 ".",进程名里既没有 KinetAios 也没有库路径,
+// 按进程名匹配必漏(实测漏检)。WAL 模式下 app 运行期一直持有 history.db,用 lsof 一问就知。
 function appRunning() {
   try {
-    const out = execSync('pgrep -fl "Electron .*KinetAios" || true', { encoding: 'utf8' });
-    return out.trim().length > 0;
+    const out = execSync(`lsof -F p ${JSON.stringify(DB)} 2>/dev/null || true`, { encoding: 'utf8' });
+    if (/^p\d+/m.test(out)) return true;
   } catch {
-    return false;
+    /* lsof 不可用则继续兜底 */
   }
+  try {
+    const out = execSync('pgrep -fl "KinetAiosWin" || true', { encoding: 'utf8' });
+    if (out.trim()) return true;
+  } catch {
+    /* ignore */
+  }
+  return false;
 }
 
 function pickBackup() {
@@ -90,12 +100,14 @@ if (!fs.existsSync(DB)) fail(`当前库不存在: ${DB}`);
 const BAK = pickBackup();
 console.log(`当前库: ${DB}  (${mb(fs.statSync(DB).size)})`);
 console.log(`备份  : ${BAK}  (${mb(fs.statSync(BAK).size)})`);
+const running = appRunning();
+console.log(`app   : ${running ? '⚠️ 运行中(执行 --apply 前必须先完全退出)' : '未运行'}`);
 console.log(`模式  : ${APPLY ? '写入(--apply)' : '预演(只读,不改库)'}\n`);
 
+if (APPLY && running) {
+  fail('KinetAios 还在运行(有进程持有 history.db)。请先完全退出 app 再执行 --apply。');
+}
 if (APPLY) {
-  if (appRunning()) {
-    fail('KinetAios 还在运行。请先完全退出 app 再执行 --apply(写到运行中的库会污染 WAL)。');
-  }
   // 写之前留一份现场(不复用旧备份,避免"用脏快照覆盖干净快照")
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 14);
   const snapshot = `${DB}.pre-restore-${stamp}`;
