@@ -1,0 +1,216 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>企业软件开发能力 · ERP / CRM / SAP / OA / Workflow</title>
+<style>
+  :root {
+    --bg: #0b1020;
+    --bg2: #101830;
+    --card: rgba(255,255,255,0.04);
+    --line: rgba(255,255,255,0.09);
+    --txt: #e8eef7;
+    --sub: #9fb0cc;
+    --dim: #6b7c9c;
+    --acc: #5ad4ff;
+    --acc2: #5a8cff;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Helvetica Neue", sans-serif;
+    background:
+      radial-gradient(1200px 700px at 15% -5%, #1b2a4e 0%, rgba(27,42,78,0) 55%),
+      radial-gradient(900px 600px at 95% 110%, #14224a 0%, rgba(20,34,74,0) 60%),
+      var(--bg);
+    color: var(--txt);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 72px 32px 64px; }
+
+  /* ===== hero ===== */
+  .hero { margin-bottom: 56px; }
+  .hero .kicker {
+    display: inline-flex; align-items: center; gap: 10px;
+    font-size: 13px; letter-spacing: 3px; color: var(--acc);
+    text-transform: uppercase; font-weight: 700; margin-bottom: 18px;
+  }
+  .hero .kicker::before { content: ""; width: 28px; height: 2px; background: linear-gradient(90deg, var(--acc), var(--acc2)); }
+  .hero h1 {
+    font-size: 44px; line-height: 1.2; margin: 0 0 14px;
+    font-weight: 800; letter-spacing: -0.5px;
+  }
+  .hero h1 .accent { color: var(--acc); }
+  .hero p.lead { font-size: 18px; color: var(--sub); max-width: 720px; margin: 0; }
+
+  /* ===== systems ===== */
+  h2.section {
+    font-size: 15px; letter-spacing: 2.5px; color: var(--dim);
+    text-transform: uppercase; font-weight: 700;
+    margin: 0 0 22px; display: flex; align-items: center; gap: 12px;
+  }
+  h2.section::after { content: ""; flex: 1; height: 1px; background: var(--line); }
+
+  .grid4 { display: grid; grid-template-columns: repeat(2, 1fr); gap: 18px; margin-bottom: 52px; }
+  @media (max-width: 760px) { .grid4 { grid-template-columns: 1fr; } }
+  .sys {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 26px 26px 22px;
+    transition: border-color .2s;
+  }
+  .sys:hover { border-color: rgba(90,212,255,0.35); }
+  .sys .head { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 10px; }
+  .sys .name { font-size: 22px; font-weight: 800; letter-spacing: 0.5px; }
+  .sys .proj {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 12.5px; color: var(--acc); background: rgba(90,212,255,0.08);
+    border: 1px solid rgba(90,212,255,0.22);
+    padding: 3px 10px; border-radius: 999px;
+  }
+  .sys p { margin: 0; font-size: 15px; color: var(--sub); }
+  .sys p b { color: var(--txt); font-weight: 600; }
+
+  /* SAP strip */
+  .sap {
+    display: flex; align-items: center; gap: 20px;
+    background: linear-gradient(90deg, rgba(90,212,255,0.07), rgba(90,140,255,0.05));
+    border: 1px solid rgba(90,212,255,0.22);
+    border-radius: 16px; padding: 20px 26px; margin-bottom: 52px;
+  }
+  .sap .logo { font-size: 26px; font-weight: 900; color: var(--acc); letter-spacing: 1px; white-space: nowrap; }
+  .sap p { margin: 0; font-size: 15px; color: var(--sub); }
+
+  /* ===== industries ===== */
+  .inds { display: grid; grid-template-columns: repeat(3, 1fr); gap: 18px; margin-bottom: 52px; }
+  @media (max-width: 760px) { .inds { grid-template-columns: 1fr; } }
+  .ind {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 24px;
+  }
+  .ind .ic { font-size: 26px; margin-bottom: 10px; }
+  .ind .tag { font-size: 13px; color: var(--acc); font-weight: 700; letter-spacing: 1.5px; margin-bottom: 4px; }
+  .ind .nm { font-size: 19px; font-weight: 800; margin-bottom: 6px; }
+  .ind p { margin: 0; font-size: 14px; color: var(--sub); }
+
+  /* ===== stack ===== */
+  .stack { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 52px; }
+  .chip {
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 14px; color: var(--txt);
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 999px; padding: 9px 18px;
+  }
+  .chip b { color: var(--acc); font-weight: 700; }
+
+  /* ===== writing ===== */
+  .writing {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 16px; padding: 26px 28px;
+    display: flex; align-items: center; gap: 22px;
+  }
+  .writing .pen { font-size: 28px; }
+  .writing h3 { margin: 0 0 4px; font-size: 17px; }
+  .writing p { margin: 0; font-size: 14.5px; color: var(--sub); }
+
+  footer {
+    margin-top: 56px; padding-top: 22px; border-top: 1px solid var(--line);
+    font-size: 13px; color: var(--dim); display: flex; justify-content: space-between; flex-wrap: wrap; gap: 8px;
+  }
+</style>
+</head>
+<body>
+<div style="position:absolute;top:18px;right:24px;display:flex;gap:14px;font-size:13px;z-index:10">
+  <a href="index.html" style="color:#9fb0cc;text-decoration:none">← KinetAios 官网</a>
+  <a href="enterprise-capability-en.html" style="color:#5ad4ff;text-decoration:none;font-weight:700">English</a>
+</div>
+<div class="wrap">
+
+  <!-- hero -->
+  <section class="hero">
+    <div class="kicker">Enterprise Software</div>
+    <h1>企业软件开发能力<br/><span class="accent">ERP · CRM · SAP · OA · Workflow</span></h1>
+    <p class="lead">七年企业数字化实战:从表单与审批流,到 ERP / CRM 核心系统,再到 SAP 集成与数据交叉分析。做过的系统在制造业、医疗、国际贸易行业真实落地运行。</p>
+  </section>
+
+  <!-- systems -->
+  <h2 class="section">核心系统开发</h2>
+  <div class="grid4">
+    <div class="sys">
+      <div class="head"><span class="name">ERP</span><span class="proj">fis-erp</span></div>
+      <p><b>企业资源计划系统</b>:主数据治理、采购 / 库存 / 财务业务流程、模块化后端架构,并接入 AI 巡检与异常检测能力。</p>
+    </div>
+    <div class="sys">
+      <div class="head"><span class="name">CRM</span><span class="proj">fis-crm</span></div>
+      <p><b>客户关系管理系统</b>:客户与经销商档案、装机 / 停机数据交叉分析、经营驾驶舱与自动化专业报表。</p>
+    </div>
+    <div class="sys">
+      <div class="head"><span class="name">OA</span><span class="proj">fis-oa</span></div>
+      <p><b>办公自动化平台</b>:组织权限、审批流与表单引擎设计,经历从 20 个流程到 300 个流程的规模化实践。</p>
+    </div>
+    <div class="sys">
+      <div class="head"><span class="name">Workflow</span><span class="proj">fis-workflow</span></div>
+      <p><b>工作流引擎</b>:流程建模、节点流转、条件分支与超时处理,支撑 OA / ERP 业务流程统一落地。</p>
+    </div>
+  </div>
+
+  <!-- SAP -->
+  <div class="sap">
+    <div class="logo">SAP</div>
+    <p>SAP 系统开发与集成经验:与企业自建 ERP / CRM 打通主数据与业务单据,支撑集团级系统间的数据一致性。</p>
+  </div>
+
+  <!-- industries -->
+  <h2 class="section">行业与客户</h2>
+  <div class="inds">
+    <div class="ind">
+      <div class="ic">🏭</div>
+      <div class="tag">制造业</div>
+      <div class="nm">台湾仁宝 (Compal)</div>
+      <p>大型制造企业的系统开发与流程数字化实践。</p>
+    </div>
+    <div class="ind">
+      <div class="ic">🩺</div>
+      <div class="tag">医疗</div>
+      <div class="nm">Sysmex 希森美康</div>
+      <p>医疗设备行业 CRM:装机 / 停机数据交叉分析,暗色主题专业报告。</p>
+    </div>
+    <div class="ind">
+      <div class="ic">🌐</div>
+      <div class="tag">国际贸易</div>
+      <div class="nm">Dorel</div>
+      <p>国际贸易企业的业务系统开发与数据化管理。</p>
+    </div>
+  </div>
+
+  <!-- stack -->
+  <h2 class="section">技术栈</h2>
+  <div class="stack">
+    <span class="chip"><b>SAP</b> 集成</span>
+    <span class="chip"><b>NestJS</b> / TypeScript 后端</span>
+    <span class="chip"><b>Node.js</b></span>
+    <span class="chip"><b>ECharts</b> 数据可视化</span>
+    <span class="chip">工作流引擎设计</span>
+    <span class="chip">表单引擎设计</span>
+    <span class="chip">主数据治理</span>
+    <span class="chip">AI 巡检 / 异常检测</span>
+  </div>
+
+  <!-- writing -->
+  <div class="writing">
+    <div class="pen">✍️</div>
+    <div>
+      <h3>《企业数字化与 AI 应用》系列专栏作者</h3>
+      <p>围绕 CRM 落地、BI 仪表盘、OA 表单引擎、主数据治理与"一把手工程"等主题,持续输出一线实战复盘。</p>
+    </div>
+  </div>
+
+  <footer>
+    <span>企业软件开发 · ERP / CRM / SAP / OA / Workflow</span>
+    <span>制造业 · 医疗 · 国际贸易</span>
+  </footer>
+
+</div>
+</body>
+</html>
