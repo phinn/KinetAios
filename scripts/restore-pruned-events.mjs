@@ -59,23 +59,23 @@ function fail(msg) {
   process.exit(1);
 }
 
-// app 是否在跑 —— 用「谁打开了这个库」判断,比匹配进程名可靠。
-// 坑:dev 模式下 Electron 的 argv 只是一个 ".",进程名里既没有 KinetAios 也没有库路径,
-// 按进程名匹配必漏(实测漏检)。WAL 模式下 app 运行期一直持有 history.db,用 lsof 一问就知。
+// app 是否在跑 —— 权威判据是「谁打开了这个库」,不是进程名。
+//   · lsof 无匹配时退出码是 1(不是 0),所以必须看 stdout,不能靠退出码。
+//   · 按进程名匹配会两头出错:dev 模式下 Electron 的 argv 只是一个 "."(漏检);
+//     而残留的 `npm run dev` 终端里带着项目路径(误判成 app 还在跑)。
+//     所以进程名只在 lsof 不可用时兜底,且只匹配 Electron 可执行文件本身。
 function appRunning() {
   try {
-    const out = execSync(`lsof -F p ${JSON.stringify(DB)} 2>/dev/null || true`, { encoding: 'utf8' });
-    if (/^p\d+/m.test(out)) return true;
+    const out = execSync(`lsof -F p ${JSON.stringify(DB)} 2>/dev/null; true`, { encoding: 'utf8' });
+    return /^p\d+/m.test(out);
   } catch {
-    /* lsof 不可用则继续兜底 */
+    try {
+      const out = execSync('pgrep -fl "Electron.app/Contents/MacOS/Electron" || true', { encoding: 'utf8' });
+      return out.trim().length > 0;
+    } catch {
+      return false;
+    }
   }
-  try {
-    const out = execSync('pgrep -fl "KinetAiosWin" || true', { encoding: 'utf8' });
-    if (out.trim()) return true;
-  } catch {
-    /* ignore */
-  }
-  return false;
 }
 
 function pickBackup() {
