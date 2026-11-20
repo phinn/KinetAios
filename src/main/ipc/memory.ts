@@ -8,7 +8,7 @@ import zlib from 'node:zlib';
 import os from 'node:os';
 import { execFile, execFileSync } from 'node:child_process';
 import { promisify } from 'node:util';
-import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from '../store';
+import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, loadEventsTail, loadEventsBefore, countEvents, loadTurnEvents, rulesMatching } from '../store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from '../store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from '../store';
 import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from '../store';
@@ -146,6 +146,34 @@ export function register(): void {
       return loadEvents(convId, afterSeq);
     } catch (e) {
       console.error('[conv-events] failed:', e);
+      return [];
+    }
+  });
+
+  // ── 事件面板分页(2026-11-20):大会话 68,490 条 / 39.7MB,全量拉再建 DOM 会卡死。
+  // 默认只回最近 limit 条 + 总数,「加载更早」再用 beforeSeq 往前翻。
+  ipcMain.handle('conv-events-tail', (_e, convId: string, limit = 800) => {
+    try {
+      return { total: countEvents(convId), rows: loadEventsTail(convId, limit) };
+    } catch (e) {
+      console.error('[conv-events-tail] failed:', e);
+      return { total: 0, rows: [] };
+    }
+  });
+  ipcMain.handle('conv-events-before', (_e, convId: string, beforeSeq: number, limit = 800) => {
+    try {
+      return loadEventsBefore(convId, beforeSeq, limit);
+    } catch (e) {
+      console.error('[conv-events-before] failed:', e);
+      return [];
+    }
+  });
+  // Token 明细浮层:只要某一轮的 cost + tool/call,不再为 3 行数据搬整个会话。
+  ipcMain.handle('conv-turn-events', (_e, convId: string, turnId: string) => {
+    try {
+      return loadTurnEvents(convId, turnId);
+    } catch (e) {
+      console.error('[conv-turn-events] failed:', e);
       return [];
     }
   });

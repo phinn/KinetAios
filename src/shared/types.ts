@@ -1280,6 +1280,12 @@ export interface KinetAPI {
   openMemoryGraph(): Promise<boolean>;
   // ── 上下文考古:读取会话事件流(conv_events,append-only 事实源)──
   convEvents(convId: string, afterSeq?: number): Promise<Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }>>;
+  /** 事件面板分页:尾部 limit 条 + 该会话事件总数(大会话不再全量传输)。 */
+  convEventsTail(convId: string, limit?: number): Promise<{ total: number; rows: Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> }>;
+  /** 「加载更早」:beforeSeq 之前的 limit 条(升序)。 */
+  convEventsBefore(convId: string, beforeSeq: number, limit?: number): Promise<Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }>>;
+  /** Token 明细浮层:只取某一轮的 turn/meta + tool/call。 */
+  convTurnEvents(convId: string, turnId: string): Promise<Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }>>;
   // ── 远程 Agent 直播状态 ──
   remoteAgentStatus(): Promise<{ active: boolean; events: Array<{ type: string; ts: number; text?: string; name?: string; usd?: number; tokens?: number; message?: string; prompt?: string; summary?: string }>; eventCount: number }>;
   // ── 会话交接(多机协作)──

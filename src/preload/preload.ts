@@ -188,6 +188,11 @@ const api: KinetAPI = {
   memoryGraphData: () => ipcRenderer.invoke('memory-graph-data'),
   // 上下文考古:读取会话事件流(conv_events)
   convEvents: (convId, afterSeq?) => ipcRenderer.invoke('conv-events', convId, afterSeq ?? 0),
+  // 事件面板分页:尾部 N 条 + 总数;「加载更早」用 beforeSeq 往前翻
+  convEventsTail: (convId, limit?) => ipcRenderer.invoke('conv-events-tail', convId, limit ?? 800),
+  convEventsBefore: (convId, beforeSeq, limit?) => ipcRenderer.invoke('conv-events-before', convId, beforeSeq, limit ?? 800),
+  // Token 明细浮层:只取某一轮的 turn/meta + tool/call
+  convTurnEvents: (convId, turnId) => ipcRenderer.invoke('conv-turn-events', convId, turnId),
   // 删除记忆三元组
   deleteMemoryTriple: (tripleId: string) => ipcRenderer.invoke('delete-memory-triple', tripleId),
   // Arena 深度统计

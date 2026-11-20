@@ -6270,13 +6270,15 @@ async function toggleTokenBreakdown(convId: string, turnId: string, anchor: HTML
   const body = pop.querySelector('.tok-pop-body') as HTMLElement;
   let rows: ConvEventRow[];
   try {
-    rows = (await api.convEvents(convId)) as ConvEventRow[];
+    // 只取本轮事件(2026-11-20):原来为了显示 3~5 行明细,要把整个会话的事件流搬过 IPC
+    // —— 大会话 68,490 条 / 39.7MB,点一下浮层就卡住。服务端按 turn_id 直接查。
+    rows = (await api.convTurnEvents(convId, turnId)) as ConvEventRow[];
   } catch (e) {
     body.innerHTML = `<div class="mm-empty">${escHtml(String((e as Error)?.message ?? e))}</div>`;
     return;
   }
   // 'sum' 行是 done 时的累计汇总(非真实调用),参与逐条列表会与 llm 行重复相加 → 排除。
-  const metas = rows.filter((rw) => rw.type === 'turn/meta' && rw.turnId === turnId && (rw.data as { source?: string }).source !== 'sum');
+  const metas = rows.filter((rw) => rw.type === 'turn/meta' && (rw.data as { source?: string }).source !== 'sum');
   if (metas.length === 0) {
     // 旧数据:turn/meta 没落过 → 只给聚合数
     body.innerHTML = `<div class="mm-empty">该会话无逐次调用记录(旧版本数据)</div>`;
@@ -13159,6 +13161,9 @@ function evLabel(ev: ConvEventRow['data']): { icon: string; title: string; body:
       return { icon: '·', title: ev.type, body: JSON.stringify(ev).slice(0, 400) };
   }
 }
+/** 事件面板每页条数。大会话有 68,490 条事件,一次性拉全量再建 DOM 会直接卡死(2026-11-20)。 */
+const EVENTS_PAGE = 800;
+
 async function openEventsPanel(): Promise<void> {
   const modal = document.getElementById('events-modal')!;
   modal.classList.add('show');
@@ -13169,29 +13174,62 @@ async function openEventsPanel(): Promise<void> {
     listEl.innerHTML = `<div class="mm-empty">${esc(tr('ev.noConv'))}</div>`;
     return;
   }
-  let rows: ConvEventRow[];
+  const convId = selectedId;
+  let loaded: ConvEventRow[] = [];
+  let total = 0;
+
+  const rowHtml = (r: ConvEventRow): string => {
+    const { icon, title, body } = evLabel({ type: r.type, ...(r.data as object) } as ConvEventRow['data']);
+    const when = new Date(r.ts).toLocaleString();
+    return `<div class="mm-row ev-row" title="seq=${r.seq} · turn=${esc(r.turnId)}">
+      <div class="mm-text"><span class="ev-icon">${icon}</span> <b>${esc(title)}</b> <span class="mm-from">${esc(when)}</span></div>
+      ${body && body !== '—' ? `<div class="ev-body">${esc(body.length > 2000 ? body.slice(0, 2000) + '…' : body)}</div>` : ''}
+    </div>`;
+  };
+
+  const draw = (): void => {
+    const older = total - loaded.length;
+    countEl.textContent = older > 0 ? `${loaded.length} / ${total} events` : `${total} events`;
+    listEl.innerHTML =
+      (older > 0
+        ? `<div class="mm-empty ev-more" id="ev-more" style="cursor:pointer">↑ 加载更早的 ${Math.min(EVENTS_PAGE, older)} 条</div>`
+        : '') + loaded.map(rowHtml).join('');
+    const more = document.getElementById('ev-more');
+    if (!more) return;
+    more.onclick = async (): Promise<void> => {
+      more.textContent = '加载中…';
+      try {
+        const olderRows = (await api.convEventsBefore(convId, loaded[0]?.seq ?? 0, EVENTS_PAGE)) as ConvEventRow[];
+        if (!olderRows.length) {
+          more.remove();
+          return;
+        }
+        // 新的插在前面:记下插入前的高度差,让视口停在用户正看的位置,不跳走。
+        const prevH = listEl.scrollHeight;
+        loaded = [...olderRows, ...loaded];
+        draw();
+        listEl.scrollTop += listEl.scrollHeight - prevH;
+      } catch (e) {
+        more.textContent = `加载失败:${String((e as Error)?.message ?? e)}`;
+      }
+    };
+  };
+
+  listEl.innerHTML = `<div class="mm-empty">加载中…</div>`;
   try {
-    rows = (await api.convEvents(selectedId)) as ConvEventRow[];
+    const r = await api.convEventsTail(convId, EVENTS_PAGE);
+    total = r.total;
+    loaded = r.rows as ConvEventRow[];
   } catch (e) {
     listEl.innerHTML = `<div class="mm-empty">${esc(String((e as Error)?.message ?? e))}</div>`;
     return;
   }
-  if (!rows.length) {
+  if (!total) {
     countEl.textContent = '';
     listEl.innerHTML = `<div class="mm-empty">${esc(tr('ev.empty'))}</div>`;
     return;
   }
-  countEl.textContent = `${rows.length} events`;
-  listEl.innerHTML = rows
-    .map((r) => {
-      const { icon, title, body } = evLabel({ type: r.type, ...(r.data as object) } as ConvEventRow['data']);
-      const when = new Date(r.ts).toLocaleString();
-      return `<div class="mm-row ev-row" title="seq=${r.seq} · turn=${esc(r.turnId)}">
-        <div class="mm-text"><span class="ev-icon">${icon}</span> <b>${esc(title)}</b> <span class="mm-from">${esc(when)}</span></div>
-        ${body && body !== '—' ? `<div class="ev-body">${esc(body.length > 2000 ? body.slice(0, 2000) + '…' : body)}</div>` : ''}
-      </div>`;
-    })
-    .join('');
+  draw();
 }
 
 const PRESETS = [

@@ -189,6 +189,17 @@ export function initStore(): void {
     assertDdlIdent(col, 'column'); assertDdlIdent(def, 'type');
     if (!hasColumn('conversations', col)) db.exec(`ALTER TABLE conversations ADD COLUMN ${col} ${def};`);
   }
+  // conversations.first_prompt 冗余列(2026-11-20):loadConversations 原来对每个会话单独跑
+  // `SELECT json_extract(data,'$.prompt') FROM turns WHERE conv_id=? ORDER BY created_at LIMIT 1`
+  // —— 394 个会话实测 364ms,占启动加载 450ms 的 70%,且每查一次都要读整行 ~150KB 的 JSON。
+  // 侧栏标题只需要首条 prompt 的开头,所以存前 500 字符足够。列刚建时一次性回填。
+  // First-prompt denormalization: removes a 394× N+1 that re-parsed full turn bodies on startup.
+  if (!hasColumn('conversations', 'first_prompt')) {
+    db.exec('ALTER TABLE conversations ADD COLUMN first_prompt TEXT;');
+    db.exec(`UPDATE conversations SET first_prompt = (
+      SELECT substr(json_extract(data,'$.prompt'),1,500) FROM turns
+       WHERE turns.conv_id = conversations.id ORDER BY created_at LIMIT 1);`);
+  }
   // cost_log 加输入/输出拆分列(v3.6.4):旧行默认 0。
   for (const col of ['tokens_in', 'tokens_out'] as const) {
     if (!hasColumn('cost_log', col)) db.exec(`ALTER TABLE cost_log ADD COLUMN ${col} INTEGER DEFAULT 0;`);
@@ -435,6 +446,11 @@ export function importTurnsLine(line: string): boolean {
       const t = JSON.parse(r.data!) as { prompt?: string; answer?: string };
       if (t.prompt) appendMessage('user', t.prompt, r.conv_id!);
       if (t.answer) appendMessage('assistant', t.answer, r.conv_id!);
+      // 首轮 prompt 冗余列:导入路径不走 saveTurn,漏填会让该会话标题在重启后退化。
+      if (t.prompt) {
+        db.prepare(`UPDATE conversations SET first_prompt=? WHERE id=? AND (first_prompt IS NULL OR first_prompt='');`)
+          .run(t.prompt.slice(0, 500), r.conv_id);
+      }
     } catch { /* 跳过坏行 */ }
   })();
   return true;
@@ -534,6 +550,8 @@ type ConvRow = {
   feishu_key: string | null;
   pinned: number | null;
   pinned_at: number | null;
+  /** 首轮 prompt(前 500 字符),侧栏标题兜底用;由 saveTurn/importTurnsLine 维护。 */
+  first_prompt: string | null;
 };
 
 export function saveConversation(c: Conversation): void {
@@ -639,6 +657,12 @@ export function saveTurn(convId: string, t: Turn): void {
        ON CONFLICT(id) DO UPDATE SET data=excluded.data, cost=excluded.cost,
          tokens_in=excluded.tokens_in, tokens_out=excluded.tokens_out;`,
     ).run(t.id, convId, JSON.stringify(slim), t.ts, t.costUSD ?? 0, t.tokensIn ?? 0, t.tokensOut ?? 0);
+    // 首轮 prompt 落到 conversations(侧栏标题兜底),只填一次:WHERE 命中即空写,主键查找 ~μs。
+    // 与上面同事务 —— 漏写会让该会话重启后标题退化成"新会话"。
+    if (t.prompt) {
+      stmt(`UPDATE conversations SET first_prompt=? WHERE id=? AND (first_prompt IS NULL OR first_prompt='');`)
+        .run(t.prompt.slice(0, 500), convId);
+    }
     // 同步更新会话最后活动时间(persist() 也会调 touchConversation,但 saveTurn 单独调用时也覆盖)。
     touchConversation(convId);
   })();
@@ -829,11 +853,13 @@ export function appendEvent(convId: string, turnId: string, ev: ConvEvent): void
   );
 }
 
-export function loadEvents(convId: string, afterSeq = 0): Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> {
-  const rows = stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND seq>? ORDER BY seq;')
-    .all(convId, afterSeq) as Array<{ seq: number; turn_id: string; type: string; data: string; ts: number }>;
-  // 容错:一条脏数据(JSON 损坏)不能炸穿 projectGoal/rebuildTurnsFromEvents/loadTurns 整条链。
-  const out: Array<{ seq: number; turnId: string; type: string; data: ConvEvent; ts: number }> = [];
+/** 事件行(已解析):conv_events 的对外形状。 */
+export type EventRow = { seq: number; turnId: string; type: string; data: ConvEvent; ts: number };
+type RawEventRow = { seq: number; turn_id: string; type: string; data: string; ts: number };
+
+// 容错:一条脏数据(JSON 损坏)不能炸穿 projectGoal/rebuildTurnsFromEvents/loadTurns 整条链。
+function foldEventRows(rows: RawEventRow[]): EventRow[] {
+  const out: EventRow[] = [];
   for (const r of rows) {
     try {
       out.push({ seq: r.seq, turnId: r.turn_id, type: r.type, data: JSON.parse(r.data) as ConvEvent, ts: r.ts });
@@ -842,6 +868,46 @@ export function loadEvents(convId: string, afterSeq = 0): Array<{ seq: number; t
     }
   }
   return out;
+}
+
+export function loadEvents(convId: string, afterSeq = 0): EventRow[] {
+  return foldEventRows(
+    stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND seq>? ORDER BY seq;')
+      .all(convId, afterSeq) as RawEventRow[],
+  );
+}
+
+// ── 事件分页(2026-11-20):补库后最大会话 68,490 条 / 39.7MB,事件面板若一次全量拉
+// 再 rows.map 建 DOM,等于 40MB 跨进程 + 6.8 万个节点,直接卡死。改成尾部 N 条 + 向前翻页。
+// Paged reads for the events panel — large sessions have tens of thousands of rows.
+/** 最近 limit 条(升序返回,便于直接渲染)。 */
+export function loadEventsTail(convId: string, limit = 800): EventRow[] {
+  const rows = stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? ORDER BY seq DESC LIMIT ?;')
+    .all(convId, limit) as RawEventRow[];
+  return foldEventRows(rows.reverse());
+}
+
+/** beforeSeq 之前的最近 limit 条(升序)。配合 loadEventsTail 做「加载更早」。 */
+export function loadEventsBefore(convId: string, beforeSeq: number, limit = 800): EventRow[] {
+  const rows = stmt(
+    'SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND seq<? ORDER BY seq DESC LIMIT ?;',
+  ).all(convId, beforeSeq, limit) as RawEventRow[];
+  return foldEventRows(rows.reverse());
+}
+
+/** 该会话事件总数(分页提示 "已显示 N / 总数")。 */
+export function countEvents(convId: string): number {
+  return Number((stmt('SELECT COUNT(*) AS n FROM conv_events WHERE conv_id=?;').get(convId) as { n: number }).n);
+}
+
+/** 单个 turn 的事件(Token 明细浮层):只回该轮的 cost + 工具调用。
+ *  原来为了显示 3~5 行明细要把整个会话 40MB 事件搬过 IPC 再 filter。 */
+export function loadTurnEvents(convId: string, turnId: string): EventRow[] {
+  const rows = stmt(
+    `SELECT seq, turn_id, type, data, ts FROM conv_events
+      WHERE conv_id=? AND turn_id=? AND type IN ('turn/meta','tool/call') ORDER BY seq;`,
+  ).all(convId, turnId) as RawEventRow[];
+  return foldEventRows(rows);
 }
 
 // ── Goal 投影(参考 deepseek-harness goal 域):goal 状态 = 事件日志的严格 fold,不单独建表。
@@ -923,6 +989,17 @@ function loadTurns(convId: string): Turn[] {
   // 缓存可解析的轮原样保留(它是超集:含 pinned/traj 等不入事件流的字段),
   // 缓存缺失/残废的轮由事件流顶上;事件流覆盖不到的(阶段1之前的本地历史)也保留。
   // Self-heal: event-rebuilt turns only fill holes; parseable cache wins (superset with pinned/traj).
+  //
+  // 2026-11-20:先做一次便宜的「有没有洞」判断 —— 原来无条件重建,等于每次打开会话都把该会话
+  // 全部事件读出来逐条 JSON.parse(最大会话 68,490 条 / 244ms,补库后翻倍),而绝大多数时候
+  // 缓存是完好的,重建结果被 merged 原样丢弃。现在只在真缺洞时才付这个代价。
+  // Cheap hole check first: the rebuild used to run unconditionally and get thrown away by `merged`.
+  const evTurnCount = Number(
+    (stmt('SELECT COUNT(DISTINCT turn_id) AS n FROM conv_events WHERE conv_id=?;').get(convId) as { n: number }).n,
+  );
+  if (evTurnCount === 0) return cached;
+  const hasHole = cached.length < evTurnCount || cached.some((t) => !t.prompt && !t.error && !t.answer);
+  if (!hasHole) return cached;
   const healed = rebuildTurnsFromEvents(convId);
   if (healed.length === 0) return cached;
   // 防丢账:仅按 prompt 非空过滤会把「纯 error 轮」(prompt='')滤掉 → 重启后报错轮消失。
@@ -1025,7 +1102,7 @@ export function loadConvTurns(convId: string): Turn[] {
 export function loadConversations(): Conversation[] {
   const rows = db
     .prepare(
-      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key FROM conversations ORDER BY created_at DESC;',
+      'SELECT id, engine, cwd, created_at, custom_title, direct_history, engine_session_id, model, branch_info, pipeline_id, goal, profile_id, high_fidelity, context_mode, persona_enabled, loop_ralph, updated_at, sub_agent_model, wecom_key, feishu_key, first_prompt FROM conversations ORDER BY created_at DESC;',
     )
     .all() as ConvRow[];
   // turns 元数据一次 SQL 聚合(计数/成本/token),不逐频道拉全文 —— 103MB 级 turns 只取标量。
@@ -1045,9 +1122,6 @@ export function loadConversations(): Conversation[] {
     )
     .all() as Array<{ conv_id: string; n: number; cost: number | null; tokens: number | null; tokens_in: number | null; tokens_out: number | null }>;
   const meta = new Map(metaRows.map((m) => [m.conv_id, m]));
-  const firstPromptStmt = db.prepare(
-    `SELECT json_extract(data,'$.prompt') AS p FROM turns WHERE conv_id=? ORDER BY created_at LIMIT 1;`,
-  );
   return rows.map((r) => {
     let directHistory: ChatMsg[] = [];
     try {
@@ -1056,10 +1130,10 @@ export function loadConversations(): Conversation[] {
     } catch {
       /* leave empty */
     }
+    // 首条 prompt 只取标题所需(侧栏/NEXUS 标题兜底),走 conversations 冗余列,不再回表读 turns。
+    // 旧库未回填(列刚加且该会话无首轮)时给空串,下一次 saveTurn 会补上。
     const m = meta.get(r.id);
-    // 首条 prompt 只取标题所需(侧栏/NEXUS 标题兜底),不加载 turns 本体。
-    // First prompt for sidebar titles only — turn bodies stay unloaded.
-    const firstPrompt = (firstPromptStmt.get(r.id) as { p: string | null } | undefined)?.p ?? '';
+    const firstPrompt = r.first_prompt ?? '';
     // 引擎白名单:内置 5 种直接放行;plugin:<name> 放行(引擎不存在时 send 会报 unknownEngine,
     // 不会崩)。其余未知字符串降级 direct(旧库脏数据防御)。
     // Builtin kinds pass; plugin: ids pass (missing engine surfaces as unknownEngine on send,
