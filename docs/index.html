@@ -1,13 +1,14 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="zh-Hans">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 
 <!-- ===== SEO META ===== -->
-<title>KinetAios — Local-First AI Agent Dashboard | Direct V5 + Claude Code + Codex + DeepSeek Harness</title>
-<meta name="description" content="KinetAios 是本地优先的 AI Agent 工作台。一个窗口同时运行 Direct V1–V5（V3 意图路由 / V4 立法者 / V5 种群进化）、Claude Code、Codex、DeepSeek Harness，支持跨引擎长期记忆与 Git 跨设备同步、30+ 内置工具、21 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。开源 GPL v3，Windows & macOS。">
-<meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, V4 Legis, V5 Phylum, memory sync, MCP, Electron, TypeScript, 飞书Bot, 企微Bot, 多Agent, 跨引擎记忆, 本地 AI, AI 工作台, 开源 AI Agent, KinetAios">
+<title>KinetAios — Local-First AI Agent Dashboard | Direct V3 + Claude Code + Codex + DeepSeek Harness</title>
+<link rel="icon" type="image/png" href="icon.png">
+<meta name="description" content="KinetAios 是 Mac 上的本地优先 AI Agent 工作台。一个窗口同时运行 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 四个引擎家族，支持跨引擎长期记忆、27 个插件、MCP 双向集成、飞书/企微远程控制、多 Agent 团队调度。App Store 可下载。">
+<meta name="keywords" content="AI agent, AI agent dashboard, local-first AI, Claude Code, Codex, ReAct loop, multi-engine AI, MCP, Mac AI 工作台, 飞书Bot, 企微Bot, 多Agent, 跨引擎记忆, 本地 AI, Mac AI Agent, KinetAios">
 <meta name="author" content="Kinet">
 <meta name="robots" content="index, follow">
 <link rel="canonical" href="https://phinn.github.io/KinetAios/">
@@ -23,9 +24,9 @@
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="KinetAios">
 <meta property="og:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta property="og:description" content="Run Direct V1–V5 (intent router / Legis / Phylum), Claude Code, Codex, and DeepSeek Harness — seven engines in one window. Cross-engine long-term memory with Git sync across devices, 30+ tools, 21 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta property="og:description" content="Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families in one window. Cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, multi-agent teams. Open source.">
 <meta property="og:url" content="https://phinn.github.io/KinetAios/">
-<meta property="og:image" content="https://phinn.github.io/KinetAios/og-image.png">
+<meta property="og:image" content="https://phinn.github.io/KinetAios/icon.png">
 <meta property="og:locale" content="zh_CN">
 <meta property="og:locale:alternate" content="en_US">
 <meta property="og:locale:alternate" content="zh_TW">
@@ -34,8 +35,8 @@
 <!-- ===== Twitter Card ===== -->
 <meta name="twitter:card" content="summary_large_image">
 <meta name="twitter:title" content="KinetAios — Local-First AI Agent Dashboard">
-<meta name="twitter:description" content="Seven engines in one window: Direct V1–V5 (Legis, Phylum), Claude Code, Codex, DeepSeek Harness. Cross-engine memory with Git sync, 30+ tools, 21 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
-<meta name="twitter:image" content="https://phinn.github.io/KinetAios/og-image.png">
+<meta name="twitter:description" content="Four engine families in one window: Direct V1/V2/V3, Claude Code, Codex, DeepSeek Harness. Cross-engine memory, 27 plugins, MCP, Feishu/WeChat Bot, multi-agent teams. Open source.">
+<meta name="twitter:image" content="https://phinn.github.io/KinetAios/icon.png">
 
 <!-- ===== JSON-LD 结构化数据 ===== -->
 <script type="application/ld+json">
@@ -43,28 +44,24 @@
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
   "name": "KinetAios",
-  "description": "Local-first multi-engine AI agent dashboard. Run Direct V1–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, and DeepSeek Harness — six engines side-by-side with cross-engine long-term memory + Git device sync, 30+ built-in tools, 21 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
+  "description": "Local-first multi-engine AI agent dashboard. Run Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness — four engine families side-by-side with cross-engine long-term memory, 27 plugins, MCP integration, Feishu/WeChat Bot, and multi-agent team dispatch.",
   "applicationCategory": "DeveloperApplication",
-  "operatingSystem": "Windows 11, macOS",
-  "license": "https://www.gnu.org/licenses/gpl-3.0.html",
+  "operatingSystem": "macOS 13+",
   "offers": {
     "@type": "Offer",
     "price": "0",
     "priceCurrency": "USD"
   },
   "programmingLanguage": "TypeScript",
-  "softwareVersion": "4.0.3",
+  "softwareVersion": "3.2.0",
   "url": "https://phinn.github.io/KinetAios/",
-  "downloadUrl": "https://github.com/phinn/KinetAios/releases",
+  "downloadUrl": "https://apps.apple.com/app/id6809450051",
   "featureList": [
-    "Six engines in one window: Direct V1–V5 + Claude Code + Codex + DeepSeek Harness",
-    "Direct V3 intent router (fast/standard/deep) with DAG-parallel tool execution",
-    "V4 Legis: one-shot intent compilation to an assertion plan graph — LLM woken only on assertion failure",
-    "V5 Phylum: population-based task evolution (candidate solutions compete, winner feeds memory)",
-    "Cross-engine persistent long-term memory (SQLite + FTS5) with Git cross-device sync",
-    "Tool-output spill-to-disk + grep-back recall for long agent runs",
-    "Lessons layer (hindsight: learn vs remember) + goal budget governors",
-    "30+ built-in tools, 21 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
+    "Four engine families: Direct V1/V2/V3 + Claude Code + Codex + DeepSeek Harness",
+    "Direct V3 with intent router (fast/standard/deep) and DAG-parallel tool execution",
+    "Plan-Execute-Verify-Judge 4-layer architecture",
+    "Cross-engine persistent long-term memory (SQLite + FTS5 + semantic recall)",
+    "27 domain plugins (office, IoT, hardware, NestJS, BLE, OTA)",
     "MCP client + server (bidirectional, remote agent control)",
     "Feishu + Enterprise WeChat Bot remote control",
     "Multi-agent teams + sub-agent dispatch",
@@ -189,12 +186,6 @@ h1 .grad{background:var(--grad);-webkit-background-clip:text;background-clip:tex
 .eng-card p{font-size:13px;color:var(--muted);line-height:1.65}
 .eng-card .tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:16px}
 .eng-card .tag{font-size:10px;font-family:ui-monospace,monospace;padding:3px 8px;border-radius:4px;background:var(--surface2);color:var(--dim)}
-/* 统一线性图标(内联 SVG symbol,stroke 跟随文字色) | Unified line icons */
-svg.li{width:1em;height:1em;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;display:block}
-.eng-card .ic{font-size:20px}
-.eng-row .ic{font-size:14px}
-.dag-item .di{font-size:17px}
-.msg .av svg.li{width:14px;height:14px}
 
 /* ===== SCENARIOS ===== */
 .scenes{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
@@ -261,34 +252,15 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 
 /* ===== PRODUCT SUITE ===== */
 .products{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:8px}
-.pcard.soon{opacity:.72}
-.pcard.soon:hover{transform:none;box-shadow:none}
-.pcard .soon-badge{position:absolute;top:14px;right:14px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.08em;padding:3px 9px;border-radius:999px;background:var(--surface2);border:1px solid var(--line);color:var(--muted);z-index:2}
 .pcard{position:relative;border:1px solid var(--line);border-radius:14px;padding:28px 24px;background:var(--surface);overflow:hidden;transition:transform .2s,border-color .2s,box-shadow .2s;text-decoration:none;display:flex;flex-direction:column}
-
-/* ===== SUITE BANNER(全家桶横幅,打通 kinetapp 总推广页)===== */
-.suite-banner{position:relative;display:block;margin-top:24px;border-radius:16px;padding:1px;background:linear-gradient(135deg,rgba(0,229,181,.5),rgba(155,126,255,.5) 45%,rgba(255,154,92,.5));transition:transform .2s,box-shadow .2s}
-.suite-banner:hover{transform:translateY(-2px);box-shadow:0 12px 40px rgba(0,229,181,.10)}
-.suite-banner .sb-grad{position:absolute;inset:1px;border-radius:15px;background:linear-gradient(120deg,rgba(0,229,181,.06),rgba(155,126,255,.06) 50%,rgba(255,154,92,.06));pointer-events:none}
-.suite-banner .sb-body{position:relative;display:flex;justify-content:space-between;align-items:center;gap:28px;padding:26px 30px;flex-wrap:wrap}
-.suite-banner .sb-eyebrow{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.14em;color:var(--muted);margin-bottom:8px}
-.suite-banner h3{font-size:clamp(18px,2.2vw,24px);font-weight:700;letter-spacing:-.01em;margin-bottom:6px;background:linear-gradient(135deg,#E8EEF2,#00E5B5);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
-.suite-banner p{font-size:13px;color:var(--muted);max-width:520px}
-.suite-banner .sb-cta{display:inline-flex;align-items:center;gap:6px;margin-top:14px;font-size:13px;font-weight:600;color:var(--mint)}
-.suite-banner .sb-arrow{transition:transform .2s}
-.suite-banner:hover .sb-arrow{transform:translateX(4px)}
-.suite-banner .sb-timeline{display:flex;flex-direction:column;gap:7px;flex-shrink:0;padding-left:24px;border-left:1px solid var(--line)}
-.suite-banner .sb-row{display:flex;align-items:center;gap:10px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px}
-.suite-banner .sb-t{color:var(--dim);width:20px;text-align:right}
-.suite-banner .sb-dot{width:8px;height:8px;border-radius:50%;background:var(--c);box-shadow:0 0 10px var(--c)}
-.suite-banner .sb-app{color:var(--muted)}
-@media(max-width:760px){.suite-banner .sb-timeline{display:none}}
 .pcard:hover{transform:translateY(-3px);border-color:transparent;box-shadow:0 12px 40px rgba(0,0,0,.4)}
 .pcard::before{content:"";position:absolute;inset:0;padding:1px;border-radius:14px;background:var(--cardGrad);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask-composite:exclude;opacity:0;transition:opacity .2s}
 .pcard:hover::before{opacity:1}
 .pcard .glow{position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;opacity:.08;filter:blur(40px);transition:opacity .2s}
 .pcard:hover .glow{opacity:.18}
 .pcard .pico{width:44px;height:44px;border-radius:12px;display:flex;align-items:center;justify-content:center;font-size:22px;margin-bottom:16px;position:relative;z-index:1}
+.pcard .pico img{width:44px;height:44px;border-radius:12px;display:block;background:var(--surface2)}
+.pcard .price{position:absolute;top:20px;right:20px;font-family:ui-monospace,SFMono-Regular,monospace;font-size:11px;color:var(--dim);background:var(--surface2);padding:3px 8px;border-radius:6px;z-index:1}
 .pcard h4{font-size:18px;font-weight:700;margin-bottom:4px;position:relative;z-index:1}
 .pcard .tag{font-family:ui-monospace,SFMono-Regular,monospace;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-bottom:12px;position:relative;z-index:1}
 .pcard p{font-size:14px;color:var(--muted);margin-bottom:16px;flex:1;position:relative;z-index:1}
@@ -300,7 +272,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
   .mock-body{grid-template-columns:1fr}
   .mock-side,.mock-right{display:none}
   .engines,.scenes{grid-template-columns:1fr 1fr}
-  .products{grid-template-columns:1fr}
+  .products{grid-template-columns:1fr 1fr}
   .priv,.dag-wrap{grid-template-columns:1fr}
   .feats{grid-template-columns:1fr}
   .stats{grid-template-columns:1fr 1fr}
@@ -317,13 +289,15 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
   <div class="wrap nav">
     <div class="brand"><div class="mark">K</div><span>KinetAios</span></div>
     <div class="nav-right">
+      <a class="cta" data-i18n="nav_enterprise" href="enterprise-capability.html" style="font-size:13px;padding:8px 14px;background:rgba(90,212,255,.08);color:var(--acc)">企业服务</a>
+      <a class="cta" id="privacyLink" data-i18n="nav_privacy" href="privacy.html" style="font-size:13px;padding:8px 14px">隐私政策</a>
       <div class="lang">
         <button data-l="zh-Hans" class="on">简</button>
         <button data-l="zh-Hant">繁</button>
         <button data-l="en">EN</button>
         <button data-l="ja">日</button>
       </div>
-      <a class="cta" data-cta data-i18n="dl" href="https://github.com/phinn/KinetAios/releases/latest" target="_blank" rel="noopener">下载</a>
+      <a class="cta" data-cta data-i18n="dl" href="https://apps.apple.com/app/id6809450051" target="_blank" rel="noopener">下载</a>
     </div>
   </div>
 </nav>
@@ -331,11 +305,11 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <!-- ===== HERO ===== -->
 <header class="hero">
   <div class="wrap">
-    <div class="badge"><span class="dot"></span><span data-i18n="badge">Windows & macOS · 多 AI 引擎并发的 AI 总机</span></div>
+    <div class="badge"><span class="dot"></span><span data-i18n="badge">macOS · 多 AI 引擎并发的 AI 总机</span></div>
     <h1 data-i18n-html="h1"></h1>
     <p class="sub" data-i18n="sub"></p>
     <div class="hero-cta">
-      <a class="btn-primary" data-cta href="https://github.com/phinn/KinetAios/releases/latest" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
+      <a class="btn-primary" data-cta href="https://apps.apple.com/app/id6809450051" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
       <button class="btn-ghost" data-i18n="learn">了解更多</button>
     </div>
 
@@ -363,7 +337,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             </div>
           </div>
           <div class="msg ai">
-            <div class="av"><svg class="li"><use href="#i-sparkle"/></svg></div>
+            <div class="av">✦</div>
             <div class="body">
               <div class="name">Direct V2 · 推广文案</div>
               <div class="bubble" data-i18n="m_reply">已经按"客户视角 + 利益点优先"重写,开头一句钩子 + 三个支撑卖点 + CTA。</div>
@@ -371,7 +345,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
             </div>
           </div>
           <div class="msg ai" id="typingMsg" style="display:none">
-            <div class="av"><svg class="li"><use href="#i-terminal"/></svg></div>
+            <div class="av">⌘</div>
             <div class="body">
               <div class="name">Claude Code · 代码重构</div>
               <div class="typing"><span></span><span></span><span></span></div>
@@ -381,37 +355,27 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
         <aside class="mock-right">
           <div class="h" data-i18n="m_engines">引擎</div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-terminal"/></svg></div>
+            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">⌘</div>
             <div class="nm">Claude Code</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-route"/></svg></div>
+            <div class="ic" style="background:rgba(0,229,181,.12);color:var(--mint)">⚡</div>
             <div class="nm">Direct V3</div>
             <div class="st run">running</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-scale"/></svg></div>
-            <div class="nm">Direct V4 Legis</div>
-            <div class="st">idle</div>
-          </div>
-          <div class="eng-row">
-            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-gitbranch"/></svg></div>
-            <div class="nm">Direct V5 Phylum</div>
-            <div class="st">idle</div>
-          </div>
-          <div class="eng-row">
-            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-zap"/></svg></div>
+            <div class="ic" style="background:rgba(0,181,229,.12);color:var(--cyan)">▶</div>
             <div class="nm">Direct V2</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-braces"/></svg></div>
+            <div class="ic" style="background:rgba(155,126,255,.12);color:var(--purple)">{}</div>
             <div class="nm">Codex</div>
             <div class="st">idle</div>
           </div>
           <div class="eng-row">
-            <div class="ic" style="background:rgba(255,215,95,.12);color:var(--gold)"><svg class="li"><use href="#i-zap"/></svg></div>
+            <div class="ic" style="background:rgba(255,215,95,.12);color:var(--gold)">⚡</div>
             <div class="nm">DeepSeek</div>
             <div class="st">idle</div>
           </div>
@@ -433,9 +397,8 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <section style="padding:0;border-bottom:1px solid var(--line)">
   <div class="wrap">
     <div class="stats">
-      <div class="stat"><div class="val">7</div><div class="label" data-i18n="st_eng">AI 引擎</div></div>
-      <div class="stat"><div class="val">30+</div><div class="label" data-i18n="st_tools">内置工具</div></div>
-      <div class="stat"><div class="val">21</div><div class="label" data-i18n="st_plug">内置插件</div></div>
+      <div class="stat"><div class="val">3</div><div class="label" data-i18n="st_eng">AI 引擎</div></div>
+      <div class="stat"><div class="val">10+</div><div class="label" data-i18n="st_tools">内置工具</div></div>
       <div class="stat"><div class="val">4</div><div class="label" data-i18n="st_lang">UI 语言</div></div>
       <div class="stat"><div class="val">0</div><div class="label" data-i18n="st_upload">后端上传</div></div>
     </div>
@@ -448,86 +411,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <div class="h-eyebrow">00 / product suite</div>
     <h2 class="h-title" data-i18n="ps_title"></h2>
     <p class="h-sub" data-i18n="ps_sub"></p>
-    <div class="products">
-      <a class="pcard" href="https://phinn.github.io/kinetapp/" target="_blank" style="--cardGrad:linear-gradient(135deg,#00E5B5,#00B5E5)">
-        <div class="glow" style="background:var(--mint)"></div>
-        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-dumbbell"/></svg></div>
-        <h4>KinetFit</h4>
-        <div class="tag" data-i18n="ps_fit_tag"></div>
-        <p data-i18n="ps_fit_desc"></p>
-        <span class="plink" style="color:var(--mint)"><span data-i18n="ps_learn"></span> →</span>
-      </a>
-      <a class="pcard" href="https://apps.apple.com/app/id6780600464" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#00B5E5)">
-        <div class="glow" style="background:var(--purple)"></div>
-        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-moon"/></svg></div>
-        <h4>KinetSoul</h4>
-        <div class="tag" data-i18n="ps_agt_tag"></div>
-        <p data-i18n="ps_agt_desc"></p>
-        <span class="plink" style="color:var(--purple)"><span data-i18n="ps_learn"></span> →</span>
-      </a>
-      <a class="pcard" href="https://phinn.github.io/kinetbrief/" target="_blank" style="--cardGrad:linear-gradient(135deg,#FF9A5C,#FFD75F)">
-        <div class="glow" style="background:var(--orange)"></div>
-        <div class="pico" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-notebookpen"/></svg></div>
-        <h4>KinetBrief</h4>
-        <div class="tag" data-i18n="ps_brf_tag"></div>
-        <p data-i18n="ps_brf_desc"></p>
-        <span class="plink" style="color:var(--orange)"><span data-i18n="ps_learn"></span> →</span>
-      </a>
-      <a class="pcard" href="https://github.com/phinn/KinetMagicDisk" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#FFD75F,#FF9A5C)">
-        <div class="glow" style="background:var(--gold)"></div>
-        <div class="pico" style="background:rgba(255,215,95,.12);color:var(--gold)"><svg class="li"><use href="#i-sun"/></svg></div>
-        <h4>KinetMagicDisk</h4>
-        <div class="tag" data-i18n="ps_dsk_tag"></div>
-        <p data-i18n="ps_dsk_desc"></p>
-        <span class="plink" style="color:var(--gold)"><span data-i18n="ps_learn"></span> →</span>
-      </a>
-      <a class="pcard" href="https://github.com/phinn/KinetAgent" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,#00E5B5,#9B7EFF)">
-        <div class="glow" style="background:var(--mint)"></div>
-        <div class="pico" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-smartphone"/></svg></div>
-        <h4>KinetAgent</h4>
-        <div class="tag" data-i18n="ps_agt2_tag"></div>
-        <p data-i18n="ps_agt2_desc"></p>
-        <span class="plink" style="color:var(--mint)"><span data-i18n="ps_learn"></span> →</span>
-      </a>
-      <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#00B5E5,#9B7EFF)">
-        <span class="soon-badge" data-i18n="ps_soon"></span>
-        <div class="glow" style="background:var(--cyan)"></div>
-        <div class="pico" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-appwindow"/></svg></div>
-        <h4>KinetMagicWindow</h4>
-        <div class="tag" data-i18n="ps_win_tag"></div>
-        <p data-i18n="ps_win_desc"></p>
-        <span class="plink" style="color:var(--cyan)"><span data-i18n="ps_soon"></span></span>
-      </a>
-      <a class="pcard soon" style="--cardGrad:linear-gradient(135deg,#9B7EFF,#FF9A5C)">
-        <span class="soon-badge" data-i18n="ps_soon"></span>
-        <div class="glow" style="background:var(--purple)"></div>
-        <div class="pico" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-command"/></svg></div>
-        <h4>KinetDock</h4>
-        <div class="tag" data-i18n="ps_dck_tag"></div>
-        <p data-i18n="ps_dck_desc"></p>
-        <span class="plink" style="color:var(--purple)"><span data-i18n="ps_soon"></span></span>
-      </a>
-    </div>
-
-    <!-- Kinet 全家桶横幅:打通总推广页流量 -->
-    <a class="suite-banner" href="https://phinn.github.io/kinetapp/" target="_blank" aria-label="Kinet Suite">
-      <div class="sb-grad" aria-hidden="true"></div>
-      <div class="sb-body">
-        <div class="sb-left">
-          <div class="sb-eyebrow">KINET SUITE · A COMPLETE DAY</div>
-          <h3 data-i18n="sb_title"></h3>
-          <p data-i18n="sb_desc"></p>
-          <div class="sb-cta"><span data-i18n="sb_cta"></span> <span class="sb-arrow">→</span></div>
-        </div>
-        <div class="sb-timeline" aria-hidden="true">
-          <div class="sb-row"><span class="sb-t">06</span><div class="sb-dot" style="--c:#00E5B5"></div><span class="sb-app">Fit</span></div>
-          <div class="sb-row"><span class="sb-t">10</span><div class="sb-dot" style="--c:#9B7EFF"></div><span class="sb-app">Soul</span></div>
-          <div class="sb-row"><span class="sb-t">14</span><div class="sb-dot" style="--c:#FF9A5C"></div><span class="sb-app">Task</span></div>
-          <div class="sb-row"><span class="sb-t">18</span><div class="sb-dot" style="--c:#00B5E5"></div><span class="sb-app">Brief</span></div>
-          <div class="sb-row"><span class="sb-t">22</span><div class="sb-dot" style="--c:#FFD75F"></div><span class="sb-app">+16 more</span></div>
-        </div>
-      </div>
-    </a>
+    <div class="products" id="suiteGrid"><!-- JS 渲染 24 app 卡片(数据见 SUITE_APPS) --></div>
   </div>
 </section>
 
@@ -539,43 +423,31 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
     <p class="h-sub" data-i18n="eng_sub"></p>
     <div class="engines">
       <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-terminal"/></svg></div><h3>Claude Code</h3></div>
+        <div class="top"><div class="ic">⌘</div><h3>Claude Code</h3></div>
         <div class="for">code · tools · mcp</div>
         <p data-i18n="eng_c"></p>
         <div class="tags"><span class="tag">refactor</span><span class="tag">debug</span><span class="tag">test</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-zap"/></svg></div><h3>Direct V2</h3></div>
-        <div class="for">ReAct · the daily driver</div>
-        <p data-i18n="eng_g"></p>
-        <div class="tags"><span class="tag">ReAct</span><span class="tag">context-compaction</span><span class="tag">daily-driver</span></div>
-      </div>
-      <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-route"/></svg></div><h3>Direct V3</h3></div>
-        <div class="for">intent router · auto-dispatch</div>
+        <div class="top"><div class="ic">▶</div><h3>Direct V3</h3></div>
+        <div class="for">DAG parallel · intent router</div>
         <p data-i18n="eng_g3"></p>
-        <div class="tags"><span class="tag">router</span><span class="tag">auto</span><span class="tag">default</span></div>
+        <div class="tags"><span class="tag">fast</span><span class="tag">deep</span><span class="tag">DAG</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-scale"/></svg></div><h3>Direct V4 Legis</h3></div>
-        <div class="for">intent → assertion plan · verify</div>
-        <p data-i18n="eng_g4"></p>
-        <div class="tags"><span class="tag">deterministic</span><span class="tag">assert</span><span class="tag">0-drift</span></div>
+        <div class="top"><div class="ic">▶</div><h3>Direct V2</h3></div>
+        <div class="for">copy · research · chat</div>
+        <p data-i18n="eng_g"></p>
+        <div class="tags"><span class="tag">文案</span><span class="tag">翻译</span><span class="tag">i18n</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-gitbranch"/></svg></div><h3>Direct V5 Phylum</h3></div>
-        <div class="for">population evolution · multi-branch</div>
-        <p data-i18n="eng_g5"></p>
-        <div class="tags"><span class="tag">explore</span><span class="tag">evolve</span><span class="tag">multi-branch</span></div>
-      </div>
-      <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-braces"/></svg></div><h3>Codex</h3></div>
+        <div class="top"><div class="ic">{}</div><h3>Codex</h3></div>
         <div class="for">code · patch · exec</div>
         <p data-i18n="eng_o"></p>
         <div class="tags"><span class="tag">patch</span><span class="tag">exec</span><span class="tag">sandbox</span></div>
       </div>
       <div class="eng-card">
-        <div class="top"><div class="ic"><svg class="li"><use href="#i-zap"/></svg></div><h3>DeepSeek Harness</h3></div>
+        <div class="top"><div class="ic">⚡</div><h3>DeepSeek Harness</h3></div>
         <div class="for">reasoning · long context</div>
         <p data-i18n="eng_d"></p>
         <div class="tags"><span class="tag">reasoning</span><span class="tag">128K</span><span class="tag">dsh</span></div>
@@ -676,19 +548,19 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 
       <div class="dag-list">
         <div class="dag-item">
-          <div class="di" style="background:rgba(0,229,181,.12);color:var(--mint)"><svg class="li"><use href="#i-cog"/></svg></div>
+          <div class="di" style="background:rgba(0,229,181,.12);color:var(--mint)">⚙</div>
           <div><h4 data-i18n="arc_1t">DAG 调度器</h4><p data-i18n="arc_1"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(155,126,255,.12);color:var(--purple)"><svg class="li"><use href="#i-bus"/></svg></div>
+          <div class="di" style="background:rgba(155,126,255,.12);color:var(--purple)">🚌</div>
           <div><h4 data-i18n="arc_2t">ToolBus 工具总线</h4><p data-i18n="arc_2"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(0,181,229,.12);color:var(--cyan)"><svg class="li"><use href="#i-brain"/></svg></div>
+          <div class="di" style="background:rgba(0,181,229,.12);color:var(--cyan)">🧠</div>
           <div><h4 data-i18n="arc_3t">长期记忆</h4><p data-i18n="arc_3"></p></div>
         </div>
         <div class="dag-item">
-          <div class="di" style="background:rgba(255,154,92,.12);color:var(--orange)"><svg class="li"><use href="#i-shield"/></svg></div>
+          <div class="di" style="background:rgba(255,154,92,.12);color:var(--orange)">🛡</div>
           <div><h4 data-i18n="arc_4t">沙箱隔离</h4><p data-i18n="arc_4"></p></div>
         </div>
       </div>
@@ -740,8 +612,6 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <div class="feat"><div class="num">04</div><div><h4 data-i18n="f_4t"></h4><p data-i18n="f_4"></p></div></div>
       <div class="feat"><div class="num">05</div><div><h4 data-i18n="f_5t"></h4><p data-i18n="f_5"></p></div></div>
       <div class="feat"><div class="num">06</div><div><h4 data-i18n="f_6t"></h4><p data-i18n="f_6"></p></div></div>
-      <div class="feat"><div class="num">07</div><div><h4 data-i18n="f_7t"></h4><p data-i18n="f_7"></p></div></div>
-      <div class="feat"><div class="num">08</div><div><h4 data-i18n="f_8t"></h4><p data-i18n="f_8"></p></div></div>
     </div>
   </div>
 </section>
@@ -754,6 +624,7 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
       <div>
         <h2 class="h-title" data-i18n="pr_title"></h2>
         <p class="h-sub" data-i18n="pr_sub"></p>
+        <a class="plink" href="privacy.html" data-i18n="pr_full" style="color:var(--mint);font-size:14px;cursor:pointer">阅读完整隐私政策 →</a>
       </div>
       <div class="priv-card">
 <span class="k">api_key</span>     <span class="arrow">→</span> <span class="v">OS Keychain (DPAPI / Keychain)</span>
@@ -788,17 +659,17 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
   <div class="wrap">
     <h2 data-i18n="fin_h"></h2>
     <p data-i18n="fin_p"></p>
-    <a class="btn-primary" data-cta href="https://github.com/phinn/KinetAios/releases/latest" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
+    <a class="btn-primary" data-cta href="https://apps.apple.com/app/id6809450051" target="_blank" rel="noopener"><span data-i18n="dl">下载试用</span><span>→</span></a>
   </div>
 </section>
 
 <footer>
   <div class="wrap" style="display:flex;justify-content:space-between;flex-wrap:wrap;gap:14px;width:100%;align-items:center">
-    <div>© 2026 KinetAios · <span data-i18n="foot_tag">Windows & macOS 的 AI 总机</span></div>
+    <div>© 2026 KinetAios · <span data-i18n="foot_tag">Mac 的 AI 总机</span></div>
     <div style="display:flex;align-items:center;gap:16px">
-      <a href="https://phinn.github.io/kinetapp/" target="_blank" style="color:var(--muted);font-size:13px;text-decoration:none" onmouseover="this.style.color='var(--mint)'" onmouseout="this.style.color='var(--muted)'" data-i18n="nav_suite">Kinet 全家桶</a>
+      <a href="privacy.html" data-i18n="nav_privacy" style="color:var(--mint);font-size:13px">隐私政策</a>
       <a href="mailto:phinn@outlook.com" style="color:var(--mint);font-size:13px">✉ phinn@outlook.com</a>
-      <span style="color:var(--dim)">Windows 10+ · macOS 13+ · 64-bit</span>
+      <span style="color:var(--dim)">macOS 13+ · Apple Silicon & Intel</span>
     </div>
   </div>
 </footer>
@@ -806,51 +677,30 @@ footer{padding:32px 0;border-top:1px solid var(--line);font-size:12px;color:var(
 <script>
 const I18N = {
   "zh-Hans": {
-    badge:"Windows & macOS · 7 引擎 · 30+ 工具 · 21 插件",
+    badge:"macOS · 多 AI 引擎并发的 AI 总机",
     h1:'你的 Mac 的 <span class="grad">AI 总机</span><br>一个面板,多个 AI 同时干活',
-    sub:"Direct V2–V5(V3 意图路由 / V4 立法者 / V5 种群进化)、Claude Code、Codex、DeepSeek Harness——七个引擎,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四个引擎家族,各自独立运行,状态全可见。写代码、做文案、跑调研,各有专长。",
     dl:"下载试用", learn:"了解更多",
     m_sessions:"会话", m_engines:"引擎",
     m_prompt:"把这份产品文档改成给客户看的推广文案,要直白",
     m_reply:'已经按"客户视角 + 利益点优先"重写,开头一句钩子 + 三个支撑卖点 + CTA。',
     m_tool:"用户偏好:深色商务风、四语言",
-    st_eng:"AI 引擎", st_tools:"内置工具", st_plug:"内置插件", st_lang:"UI 语言", st_upload:"后端上传",
+    st_eng:"AI 引擎", st_tools:"内置工具", st_lang:"UI 语言", st_upload:"后端上传",
     ps_title:"KinetAios 产品系列",
-    ps_sub:"七款产品,覆盖健康管理、AI 工作台、磁盘窗口工具与手机远程操控,各有专长。",
-    ps_fit_tag:"健康 · 健身 · 运动追踪",
-    ps_fit_desc:"智能健康管理中心。追踪健身数据、制定训练计划、记录运动进度,帮你保持最佳状态。",
-    ps_agt_tag:"iOS · 心灵 · 冥想",
-    ps_agt_desc:"KinetSoul 是一款 iOS App,为内心提供宁静空间。冥想引导、情绪记录、心灵成长,陪你找到内在平衡。",
-    ps_brf_tag:"简报 · 摘要 · 信息聚合",
-    ps_brf_desc:"智能信息简报工具。自动聚合新闻、生成摘要、推送关键资讯,让你不漏重要信息。",
-    ps_dsk_tag:"磁盘 · 可视化 · 本地分析",
-    ps_dsk_desc:"把任意文件夹画成可下钻的旭日图,大文件一眼浮出,直接移入废纸篓。完全本地运行,不上传任何文件信息。",
-    ps_agt2_tag:"iOS · 远程 · AI 智能体",
-    ps_agt2_desc:"从手机驱动电脑上的 AI 编程智能体:输出流、工具调用、代码 diff 实时同步。relay 自部署,数据不过第三方。",
-    ps_win_tag:"窗口 · 平铺 · 全局热键",
-    ps_win_desc:"macOS 窗口管理器。全局热键平铺半屏/四象限/多列,布局引擎 2 秒自动纠偏,告别手动拖拽。",
-    ps_dck_tag:"菜单栏 · 收纳 · 零遥测",
-    ps_dck_desc:"菜单栏图标收纳管理器。仅辅助功能一项权限,零网络零遥测,退出即还原、卸载无痕迹。",
-    sb_title:"一个 Kinet,装下完整的一天",
-    sb_desc:"Fit 出汗、Soul 专注、Task 推进、Brief 收拢 —— 20+ 个 App 沿着一天的节奏接力。KinetAios 是其中的 AI 总机。",
-    sb_cta:"进入 Kinet 全家桶",
-    nav_suite:"Kinet 全家桶",
-    ps_soon:"即将上线",
+    ps_sub:"23 款 App,一套 Kinet 家族:AI 工作台、效率、健康、生活与游戏,点卡片直达各产品页。",
     ps_learn:"了解产品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每个引擎一个独立 agent,各自循环、各自状态、各自产出。互不阻塞,你只管下达任务。",
     eng_c:"长代码任务主力。会调工具、改文件、跑命令,从重构到 debug 一条龙。",
-    eng_g3:"意图路由引擎。按查询自动选 fast / standard / deep 三档执行路径,deep 路径把工具调用构建为 DAG 并行执行,多步任务真实加速。",
-    eng_g4:"立法者引擎。意图一次编译为断言计划图,断言失败才唤回 LLM——长任务零漂移,Token 省一个量级。",
-    eng_g5:"种群进化引擎。多变异体并行跑同一任务,择优胜出,策略自我进化。",
-    eng_g:"Plan-Execute-Verify-Judge 四层架构,ReAct 循环 + 上下文压缩。工具并发、子 Agent 派发,Token 消耗低至三分之一。",
+    eng_g3:"最新自研引擎。意图路由器按查询自动选 fast / standard / deep 三档执行路径,deep 路径把工具调用构建为 DAG 并行执行,多步任务真实加速。",
+    eng_g:"自研引擎,Plan-Execute-Verify-Judge 四层架构。工具并发、子 Agent 派发、上下文压缩,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系代码引擎。patch / exec / 沙盒写,任务清晰、产出可控。",
     eng_d:"DeepSeek 推理引擎,擅长长上下文复杂推理任务。spawn dsh CLI,OpenAI 兼容 SSE,自带 token 计费。",
     arc_title:"多 Agent 并发调度",
     arc_sub:"AgentScheduler 做 DAG 拓扑调度,每个 agent 独立循环但共享工具总线和跨引擎记忆。",
     arc_1t:"DAG 调度器", arc_1:"拓扑排序依赖关系,空闲即派任务,阻塞的 agent 不影响其他 agent。",
-    arc_2t:"ToolBus 工具总线", arc_2:"shell / read_file / web_fetch / recall_memory 等 30+ 工具统一注册,所有 agent 共享。",
-    arc_3t:"跨引擎长期记忆", arc_3:"每轮对话后台抽取用户事实入库,切换引擎记忆不丢。FTS5 全文搜索 + 语义向量召回,记忆库支持 Git 跨设备同步。",
+    arc_2t:"ToolBus 工具总线", arc_2:"shell / read_file / web_fetch / recall_memory 等 20+ 工具统一注册,所有 agent 共享。",
+    arc_3t:"跨引擎长期记忆", arc_3:"每轮对话后台抽取用户事实入库,切换引擎记忆不丢。FTS5 全文搜索 + 语义向量召回。",
     arc_4t:"沙箱隔离", arc_4:"每个 agent 的文件操作限制在各自 workspace 内,readOnly / workspaceWrite 权限可控。",
     sc_title:"不止写代码",
     sc_sub:"多引擎分工,从工程师到市场运营,各职业都能找到顺手的工作流。",
@@ -861,65 +711,43 @@ const I18N = {
     ob_title:"看每个 agent 在想什么",
     ob_sub:"状态、步骤、工具调用、产出,全部实时呈现。AI 不再是黑盒。",
     f_1t:"并发多 agent", f_1:"每个会话独立循环,同时跑多个任务,不互相阻塞。",
-    f_2t:"工具调用可观测", f_2:"30+ 内置工具与 21 个插件,每一步都看得见。支持 MCP 双向集成。",
+    f_2t:"工具调用可观测", f_2:"shell / read_file / web_fetch / recall_memory,每一步都看得见。",
     f_3t:"连续会话", f_3:"同一对话多轮追问,新建才开新会话;重启不丢历史。",
     f_4t:"跨引擎 resume", f_4:"扫 Claude / Codex 历史 sessions,选一条续接,任务连贯。",
-    f_5t:"跨引擎长期记忆", f_5:"每轮后台抽用户事实入库,切换引擎不丢记忆。FTS5 + 语义向量双重召回,Git 仓库跨设备同步。",
+    f_5t:"跨引擎长期记忆", f_5:"每轮后台抽用户事实入库,切换引擎不丢记忆。FTS5 + 语义向量双重召回。",
     f_6t:"工作区", f_6:"终端、文件、对话三 tab 绑定 cwd,改完直接在 app 内验证。",
-    f_7t:"Goal 监工 + 预算分级", f_7:"长期目标自动监督:卡住即介入,预算不足按优先级降级,长任务不烂尾。",
-    f_8t:"工具输出落盘回捞", f_8:"超长工具输出自动落盘,按正则回捞中段,上下文不爆、细节数据不丢。",
+    nav_privacy:"隐私政策", pr_full:"阅读完整隐私政策 →", nav_enterprise:"企业服务",
     pr_title:"隐私在你手里",
     pr_sub:"API key 走系统 Keychain,对话存本地 SQLite,不上传任何后台。跨平台 Electron,资源占用低。",
     fq_title:"常见问题",
     q_1:"这跟 Raycast / Alfred 是一回事吗?", a_1:"不一样。Raycast 是启动器,KinetAios 是 AI 总机——多 agent 引擎并发的运行时,重点不是「快速启动 app」而是「让多个 AI 同时帮你干活、状态全可见」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"它们是单引擎。KinetAios 把 Direct V2–V5、Claude Code、Codex、DeepSeek Harness 装进同一面板——七个引擎各自并发跑、状态全可见、跨引擎 resume。V4 立法者 / V5 种群进化这类自研范式,单引擎产品没有对应物。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是单引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 装进同一面板——四个引擎家族,各自并发跑、状态全可见、跨引擎 resume。同时管多个 agent,是单引擎桌面版做不了的。",
     q_3:"数据去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);对话和记忆在本地 SQLite;不上传任何后台。你的引擎、你的 key、你的数据。",
     q_4:"Claude Code / Codex 怎么用?需要自己配?", a_4:"KinetAios 自动发现已装的 claude / codex CLI。没装的话,设置页有引导。Direct 引擎只需 API key。",
     q_5:"支持什么模型?", a_5:"Direct 引擎看你接的 key(默认 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本机 CLI 配置(可走任何它们支持的模型)。引擎 ≠ 模型。",
     fin_h:"把所有 AI 装进一个面板",
     fin_p:"⌘⌥Space 唤出,下达任务,看 agent 干活。",
-    foot_tag:"Windows & macOS 的 AI 总机",
+    foot_tag:"Mac 的 AI 总机",
     foot_contact:"联系我们"
   },
   "zh-Hant": {
-    badge:"Windows & macOS · 7 引擎 · 30+ 工具 · 21 外掛",
+    badge:"macOS · 多 AI 引擎併發的 AI 總機",
     h1:'你的 Mac 的 <span class="grad">AI 總機</span><br>一個面板,多個 AI 同時幹活',
-    sub:"Direct V2–V5(V3 意圖路由 / V4 立法者 / V5 種群進化)、Claude Code、Codex、DeepSeek Harness——七個引擎,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——四個引擎家族,各自獨立運行,狀態全可見。寫程式、做文案、跑調研,各有專長。",
     dl:"下載試用", learn:"了解更多",
     m_sessions:"會話", m_engines:"引擎",
     m_prompt:"把這份產品文件改成給客戶看的推廣文案,要直白",
     m_reply:'已經按「客戶視角 + 利益點優先」重寫,開頭一句鉤子 + 三個支撐賣點 + CTA。',
     m_tool:"使用者偏好:深色商務風、四語言",
-    st_eng:"AI 引擎", st_tools:"內建工具", st_plug:"內建外掛", st_lang:"UI 語言", st_upload:"後端上傳",
+    st_eng:"AI 引擎", st_tools:"內建工具", st_lang:"UI 語言", st_upload:"後端上傳",
     ps_title:"KinetAios 產品系列",
-    ps_sub:"七款產品,覆蓋健康管理、AI 工作台、磁碟視窗工具與手機遠端操控,各有專長。",
-    ps_fit_tag:"健康 · 健身 · 運動追蹤",
-    ps_fit_desc:"智能健康管理中心。追蹤健身數據、制定訓練計畫、記錄運動進度,幫你保持最佳狀態。",
-    ps_agt_tag:"iOS · 心靈 · 冥想",
-    ps_agt_desc:"KinetSoul 是一款 iOS App,為內心提供寧靜空間。冥想引導、情緒記錄、心靈成長,陪你找到內在平衡。",
-    ps_brf_tag:"簡報 · 摘要 · 資訊聚合",
-    ps_brf_desc:"智能資訊簡報工具。自動聚合新聞、生成摘要、推送關鍵資訊,讓你不漏重要消息。",
-    ps_dsk_tag:"磁碟 · 視覺化 · 本機分析",
-    ps_dsk_desc:"把任意資料夾畫成可下鑽的旭日圖,大檔案一眼浮出,直接移入廢紙簍。完全本機執行,不上傳任何檔案資訊。",
-    ps_agt2_tag:"iOS · 遠端 · AI 智慧代理",
-    ps_agt2_desc:"從手機驅動電腦上的 AI 編程智慧代理:輸出串流、工具呼叫、程式碼 diff 即時同步。relay 自行部署,資料不經第三方。",
-    ps_win_tag:"視窗 · 平鋪 · 全域熱鍵",
-    ps_win_desc:"macOS 視窗管理器。全域熱鍵平鋪半屏/四象限/多欄,佈局引擎 2 秒自動矯正,告別手動拖曳。",
-    ps_dck_tag:"選單列 · 收納 · 零遙測",
-    ps_dck_desc:"選單列圖示收納管理器。僅輔助功能一項權限,零網路零遙測,結束即還原、解除安裝無痕跡。",
-    sb_title:"一個 Kinet,裝下完整的一天",
-    sb_desc:"Fit 流汗、Soul 專注、Task 推進、Brief 收攏 —— 20+ 個 App 沿著一天的節奏接力。KinetAios 是其中的 AI 總機。",
-    sb_cta:"進入 Kinet 全家桶",
-    nav_suite:"Kinet 全家桶",
-    ps_soon:"即將上線",
+    ps_sub:"23 款 App,一套 Kinet 家族:AI 工作台、效率、健康、生活與遊戲,點卡片直達各產品頁。",
     ps_learn:"了解產品",
     eng_title:"多 AI 引擎,各跑各的",
     eng_sub:"每個引擎一個獨立 agent,各自循環、各自狀態、各自產出。互不阻塞,你只管下達任務。",
     eng_c:"長程式碼任務主力。會調工具、改檔案、跑命令,從重構到 debug 一條龍。",
-    eng_g3:"意圖路由引擎。按查詢自動選 fast / standard / deep 三檔執行路徑,deep 路徑把工具呼叫建構為 DAG 平行執行,多步任務真實加速。",
-    eng_g4:"立法者引擎。意圖一次編譯為斷言計劃圖,斷言失敗才喚回 LLM——長任務零漂移,Token 省一個量級。",
-    eng_g5:"種群進化引擎。多變異體並行跑同一任務,擇優勝出,策略自我進化。",
-    eng_g:"Plan-Execute-Verify-Judge 四層架構,ReAct 循環 + 上下文壓縮。工具併發、子 Agent 派發,Token 消耗低至三分之一。",
+    eng_g3:"最新自研引擎。意圖路由器按查詢自動選 fast / standard / deep 三檔執行路徑,deep 路徑把工具呼叫建構為 DAG 平行執行,多步任務真實加速。",
+    eng_g:"自研引擎,Plan-Execute-Verify-Judge 四層架構。工具併發、子 Agent 派發、上下文壓縮,Token 消耗低至三分之一。",
     eng_o:"OpenAI 系程式碼引擎。patch / exec / 沙盒寫,任務清晰、產出可控。",
     eng_d:"DeepSeek 推理引擎,擅長長上下文複雜推理任務。spawn dsh CLI,OpenAI 相容 SSE,自帶 token 計費。",
     arc_title:"多 Agent 併發調度",
@@ -937,18 +765,17 @@ const I18N = {
     ob_title:"看每個 agent 在想什麼",
     ob_sub:"狀態、步驟、工具呼叫、產出,全部即時呈現。AI 不再是黑盒。",
     f_1t:"併發多 agent", f_1:"每個會話獨立循環,同時跑多個任務,不互相阻塞。",
-    f_2t:"工具呼叫可觀測", f_2:"shell / read_file / web_fetch / recall_memory 等 30+ 工具,每一步都看得見。",
+    f_2t:"工具呼叫可觀測", f_2:"shell / read_file / web_fetch / recall_memory,每一步都看得見。",
     f_3t:"連續會話", f_3:"同一對話多輪追問,新建才開新會話;重啟不丟歷史。",
     f_4t:"跨引擎 resume", f_4:"掃 Claude / Codex 歷史 sessions,選一條續接,任務連貫。",
-    f_5t:"跨引擎長期記憶", f_5:"每輪後台抽使用者事實入庫,切換引擎不丟記憶。FTS5 + 語意向量雙重召回,記憶庫可 Git 同步跨裝置。",
+    f_5t:"跨引擎長期記憶", f_5:"每輪後台抽使用者事實入庫,切換引擎不丟記憶。FTS5 + 語意向量雙重召回。",
     f_6t:"工作區", f_6:"終端、檔案、對話三 tab 綁定 cwd,改完直接在 app 內驗證。",
-    f_7t:"Goal 監工 + 預算分級", f_7:"長期目標自動監督:卡住即介入,預算不足按優先級降級,長任務不爛尾。",
-    f_8t:"工具輸出落盤回撈", f_8:"超長工具輸出自動落盤,按正則回撈中段,上下文不爆、細節資料不丟。",
+    nav_privacy:"隱私權政策", pr_full:"閱讀完整隱私權政策 →", nav_enterprise:"企業服務",
     pr_title:"隱私在你手裡",
     pr_sub:"API key 走系統 Keychain,對話存本地 SQLite,不上傳任何後台。跨平台 Electron,資源佔用低。",
     fq_title:"常見問題",
     q_1:"這跟 Raycast / Alfred 是一回事嗎?", a_1:"不一樣。Raycast 是啟動器,KinetAios 是 AI 總機——多 agent 引擎併發的執行時,重點不是「快速啟動 app」而是「讓多個 AI 同時幫你幹活、狀態全可見」。可以共存。",
-    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Direct V2–V5(V3 意圖路由 / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness 裝進同一面板——七個引擎併發跑、狀態全可見、跨引擎 resume。同時管多個 agent,是單引擎桌面版做不了的。",
+    q_2:"跟 Cursor / Claude Code 桌面版有何不同?", a_2:"Cursor 和 Claude Code 桌面版都是單引擎。KinetAios 把 Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness 裝進同一面板——四個引擎家族,各自併發跑、狀態全可見、跨引擎 resume。同時管多個 agent,是單引擎桌面版做不了的。",
     q_3:"資料去哪了?", a_3:"API key 在 OS Keychain (DPAPI / Keychain);對話和記憶在本地 SQLite;不上傳任何後台。你的引擎、你的 key、你的資料。",
     q_4:"Claude Code / Codex 怎麼用?需要自己配?", a_4:"KinetAios 自動發現已裝的 claude / codex CLI。沒裝的話,設定頁有引導。Direct 引擎只需 API key。",
     q_5:"支援什麼模型?", a_5:"Direct 引擎看你接的 key(預設 glm-4-plus / glm-4-flash);Claude Code / Codex 看你本機 CLI 配置(可走任何它們支援的模型)。引擎 ≠ 模型。",
@@ -958,43 +785,22 @@ const I18N = {
     foot_contact:"聯絡我們"
   },
   "en": {
-    badge:"Windows & macOS · 7 engines · 30+ tools · 21 plugins",
+    badge:"macOS · Multi-engine AI switchboard",
     h1:'Your Mac\'s <span class="grad">AI Switchboard</span><br>One panel, multiple AIs working at once',
-    sub:"Direct V2–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, DeepSeek Harness — seven engines, each running independently, all status visible. Code, copy, research — each has its strength.",
+    sub:"Direct V1 / V2 / V3, Claude Code, Codex, DeepSeek Harness — four engine families, each running independently, all status visible. Code, copy, research — each engine has its strength.",
     dl:"Download", learn:"Learn more",
     m_sessions:"Sessions", m_engines:"Engines",
     m_prompt:"Turn this product doc into customer-facing marketing copy, keep it punchy",
     m_reply:'Rewritten with "customer angle + benefit-first" approach. Lead hook + 3 supporting points + CTA.',
     m_tool:"User preferences: dark business style, 4 languages",
-    st_eng:"AI Engines", st_tools:"Built-in Tools", st_plug:"Built-in Plugins", st_lang:"UI Languages", st_upload:"Backend Upload",
+    st_eng:"AI Engines", st_tools:"Built-in Tools", st_lang:"UI Languages", st_upload:"Backend Upload",
     ps_title:"KinetAios Product Suite",
-    ps_sub:"Seven products covering health management, AI workbench, disk & window utilities, and phone-based remote control.",
-    ps_fit_tag:"Health · Fitness · Activity Tracking",
-    ps_fit_desc:"Smart health management hub. Track fitness data, build training plans, and log workout progress to stay at your peak.",
-    ps_agt_tag:"iOS · Mind · Meditation",
-    ps_agt_desc:"KinetSoul is an iOS app that creates a tranquil space for your inner world. Guided meditation, mood journaling, and soul growth — find your inner balance.",
-    ps_brf_tag:"Briefing · Summary · News Aggregation",
-    ps_brf_desc:"Intelligent information briefing tool. Auto-aggregates news, generates summaries, and surfaces what matters most.",
-    ps_dsk_tag:"Disk · Visualization · On-device",
-    ps_dsk_desc:"Renders any folder as a drill-down sunburst chart — spot the space hogs at a glance, trash the bloat. Fully on-device, nothing ever uploaded.",
-    ps_agt2_tag:"iOS · Remote · AI Agents",
-    ps_agt2_desc:"Drive AI coding agents on your computer from your phone: live output, tool calls, code diffs in real time. Self-hosted relay, no third party in between.",
-    ps_win_tag:"Windows · Tiling · Hotkeys",
-    ps_win_desc:"macOS window manager. Tile halves/quadrants/columns with global hotkeys; the layout engine self-corrects within 2 seconds. Stop dragging by hand.",
-    ps_dck_tag:"Menu Bar · Declutter · Zero Telemetry",
-    ps_dck_desc:"Menu bar icon manager. One Accessibility permission, zero network, zero telemetry. Quit restores everything; uninstall leaves no trace.",
-    sb_title:"One Kinet for your whole day",
-    sb_desc:"Fit to sweat, Soul to focus, Task to move, Brief to settle — 20+ apps handing off along the rhythm of your day. KinetAios is the AI switchboard among them.",
-    sb_cta:"Explore the Kinet Suite",
-    nav_suite:"Kinet Suite",
-    ps_soon:"Coming soon",
+    ps_sub:"23 apps, one Kinet family — AI workbench, productivity, health, life & games. Tap a card to visit each product.",
     ps_learn:"Learn more",
     eng_title:"Multiple AI engines, each on its own",
     eng_sub:"Each engine runs as an independent agent — own loop, own status, own output. No blocking. You just hand out tasks.",
     eng_c:"Heavy-lift code tasks. Calls tools, edits files, runs commands — refactor to debug in one flow.",
-    eng_g3:"Intent router. Picks fast / standard / deep path per query; the deep path executes tool calls as a DAG with parallel branches — real speedups on multi-step tasks.",
-    eng_g4:"The Legislator. Compiles intent once into an assertion plan graph; the LLM is only re-invoked when an assertion fails — zero drift on long tasks, an order of magnitude fewer tokens.",
-    eng_g5:"Population evolution. Multiple variants race on the same task, the fittest wins — strategies evolve themselves.",
+    eng_g3:"Latest built-in engine. Intent router picks fast / standard / deep path per query; the deep path executes tool calls as a DAG with parallel branches — real speedups on multi-step tasks.",
     eng_g:"Built-in engine with Plan-Execute-Verify-Judge architecture. Concurrent tools, sub-agent dispatch, context compaction — 1/3 token usage.",
     eng_o:"OpenAI-family code engine. Patch / exec / sandbox writes. Clean tasks, controlled output.",
     eng_d:"DeepSeek reasoning engine — long-context complex reasoning. Spawns dsh CLI, OpenAI-compatible SSE, built-in token metering.",
@@ -1013,18 +819,17 @@ const I18N = {
     ob_title:"See what each agent is thinking",
     ob_sub:"Status, steps, tool calls, output — all in real time. AI is no longer a black box.",
     f_1t:"Concurrent agents", f_1:"Each session has its own loop. Run multiple tasks simultaneously without blocking.",
-    f_2t:"Observable tool calls", f_2:"30+ built-in tools and 21 plugins, every step visible. MCP in both directions.",
+    f_2t:"Observable tool calls", f_2:"shell / read_file / web_fetch / recall_memory — every step visible.",
     f_3t:"Continuous sessions", f_3:"Multi-turn follow-ups in the same chat; new chat opens a new session. Restart-safe history.",
     f_4t:"Cross-engine resume", f_4:"Scan Claude / Codex history sessions, pick one to continue. Tasks stay coherent.",
-    f_5t:"Cross-engine memory", f_5:"Background fact extraction each turn. Persists across engine switches. FTS5 + semantic dual recall, Git-synced across devices.",
+    f_5t:"Cross-engine memory", f_5:"Background fact extraction each turn. Persists across engine switches. FTS5 + semantic dual recall.",
     f_6t:"Workspace", f_6:"Terminal, files, chat tabs bound to cwd. Edit and verify within the app.",
-    f_7t:"Goal supervisor + budget tiers", f_7:"Long-running goals supervise themselves: intervene when stuck, degrade by priority when budget runs low. No more half-finished marathons.",
-    f_8t:"Tool output spillover + grep-back", f_8:"Oversized tool outputs spill to disk; grep back the middle by regex. Context stays lean, details stay reachable.",
+    nav_privacy:"Privacy", pr_full:"Read the full Privacy Policy →", nav_enterprise:"Enterprise",
     pr_title:"Privacy in your hands",
     pr_sub:"API keys in OS Keychain (DPAPI / Keychain), conversations in local SQLite, no backend upload. Cross-platform Electron, low footprint.",
     fq_title:"FAQ",
     q_1:"Is this like Raycast / Alfred?", a_1:"No. Raycast is a launcher; KinetAios is an AI switchboard — a multi-agent concurrent runtime. The point isn't 'quick app launch' but 'multiple AIs working for you simultaneously, all visible.' They coexist fine.",
-    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Direct V2–V5 (V3 intent router / V4 Legis / V5 Phylum), Claude Code, Codex, and DeepSeek Harness in one panel — seven engines running concurrently, all-visible, cross-engine resume. Managing multiple agents at once is what single-engine desktops can't do.",
+    q_2:"How is this different from Cursor / Claude Code desktop?", a_2:"Cursor and Claude Code desktop are single-engine. KinetAios puts Direct V1/V2/V3, Claude Code, Codex, and DeepSeek Harness in one panel — four engine families running concurrently, all-visible, cross-engine resume. Managing multiple agents at once is what single-engine desktops can't do.",
     q_3:"Where does my data go?", a_3:"API key in OS Keychain (DPAPI / Keychain); conversations and memory in local SQLite; no backend upload. Your engines, your keys, your data.",
     q_4:"How do Claude Code / Codex work? Do I need to configure them?", a_4:"KinetAios auto-discovers installed claude / codex CLIs. If not installed, settings page has a guide. Direct engine only needs an API key.",
     q_5:"Which models are supported?", a_5:"Direct engine depends on your key (default glm-4-plus / glm-4-flash); Claude Code / Codex follow your local CLI config (any model they support). Engine ≠ model.",
@@ -1034,44 +839,23 @@ const I18N = {
     foot_contact:"Contact"
   },
   "ja": {
-    badge:"Windows & macOS · 7 エンジン · 30+ ツール · 21 プラグイン",
+    badge:"macOS · マルチエンジン AI 総合受付",
     h1:'Mac の <span class="grad">AI 総合受付</span><br>1 パネルで複数 AI が同時に稼働',
-    sub:"Direct V2–V5(V3 意図ルーター / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness——7つのエンジン、それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
+    sub:"Direct V1 / V2 / V3、Claude Code、Codex、DeepSeek Harness——4つのエンジンファミリー、それぞれ独立実行、ステータスはすべて可視。コード、コピー、調査、各エンジンが得意分野を持つ。",
     dl:"ダウンロード", learn:"詳細",
     m_sessions:"セッション", m_engines:"エンジン",
     m_prompt:"この製品ドキュメントを顧客向けの販促コピーに変更。ストレートに",
     m_reply:'「顧客視点 + ベネフィット優先」でリライト。リード文の鉤 + 3つの支え + CTA。',
     m_tool:"ユーザー設定:ダークビジネス風、4言語",
-    st_eng:"AI エンジン", st_tools:"内蔵ツール", st_plug:"内蔵プラグイン", st_lang:"UI 言語", st_upload:"バックエンド送信",
+    st_eng:"AI エンジン", st_tools:"内蔵ツール", st_lang:"UI 言語", st_upload:"バックエンド送信",
     ps_title:"KinetAios 製品ラインナップ",
-    ps_sub:"7つの製品、健康管理、AIワークベンチ、ディスク&ウィンドウユーティリティ、スマホからのリモート操作をカバー。",
-    ps_fit_tag:"健康 · フィットネス · 活動追跡",
-    ps_fit_desc:"スマート健康管理ハブ。フィットネスデータの追跡、トレーニング計画の作成、運動進度の記録でベストコンディションを維持。",
-    ps_agt_tag:"iOS · 心 · 瞑想",
-    ps_agt_desc:"KinetSoul は iOS アプリで、心に静寂の空間を提供します。瞑想ガイド、感情記録、魂の成長、内なるバランスを見つけよう。",
-    ps_brf_tag:"ブリーフィング · 要約 · 情報集約",
-    ps_brf_desc:"インテリジェント情報ブリーフィングツール。ニュース自動集約、要約生成、重要情報の通知。",
-    ps_dsk_tag:"ディスク · 可視化 · ローカル分析",
-    ps_dsk_desc:"任意のフォルダをドリルダウンできるサンバースト図として描画。容量の犯人がひと目でわかり、そのままゴミ箱へ。完全ローカル処理、アップロード一切なし。",
-    ps_agt2_tag:"iOS · リモート · AI エージェント",
-    ps_agt2_desc:"スマホから PC 上の AI コーディングエージェントを操作:出力ストリーム、ツール呼び出し、コード diff をリアルタイム同期。relay はセルフホスト、第三者を経由しません。",
-    ps_win_tag:"ウィンドウ · タイリング · ホットキー",
-    ps_win_desc:"macOS ウィンドウマネージャ。グローバルホットキーで半分/四分割/複数列にタイリング、レイアウトエンジンが 2 秒で自動補正。手動ドラッグはもう卒業。",
-    ps_dck_tag:"メニューバー · 整理 · テレメトリゼロ",
-    ps_dck_desc:"メニューバーアイコン整理マネージャ。アクセシビリティ権限 1 つだけ、ネットワーク・テレメトリゼロ。終了すれば元通り、アンインストールも痕跡なし。",
-    sb_title:"ひとつの Kinet で、一日まるごと",
-    sb_desc:"Fit で汗を流し、Soul で集中し、Task を前進させ、Brief でまとめる —— 20+ のアプリが一日のリズムに沿ってリレー。KinetAios はその中の AI スイッチボード。",
-    sb_cta:"Kinet スイートを見る",
-    nav_suite:"Kinet スイート",
-    ps_soon:"近日公開",
+    ps_sub:"23アプリ、Kinet ファミリー — AIワークベンチ、生産性、ヘルス、ライフ&ゲーム。カードをタップして各製品へ。",
     ps_learn:"製品詳細",
     eng_title:"マルチ AI エンジン、それぞれ独立",
     eng_sub:"各エンジンが独立 agent として稼動。独自ループ、独自ステータス、独自アウトプット。互いにブロックしない。タスクを渡すだけ。",
     eng_c:"長期コードタスクの主力。ツール呼び、ファイル編集、コマンド実行。リファクタから debug まで一気通貫。",
-    eng_g3:"意図ルーターエンジン。クエリごとに fast / standard / deep パスを選択、deep パスはツール呼びを DAG で並行実行。複数ステップタスクに本物の高速化。",
-    eng_g4:"立法者エンジン。意図を一度だけアサーション計画グラフへコンパイル、アサーション失敗時のみ LLM を再呼び出し——長期タスクのドリフトゼロ、Token は一桁削減。",
-    eng_g5:"種族進化エンジン。複数バリアントが同一タスクを並行走査、最適戦略が自己進化。",
-    eng_g:"Plan-Execute-Verify-Judge 4層アーキテクチャ。ツール並行、サブ Agent 派遣、コンテキスト圧縮。Token 消費 3分の1。",
+    eng_g3:"最新の自研エンジン。意図ルーターがクエリごとに fast / standard / deep パスを選択、deep パスはツール呼びを DAG で並行実行。複数ステップタスクに本物の高速化。",
+    eng_g:"自研エンジン、Plan-Execute-Verify-Judge 4層アーキテクチャ。ツール並行、サブ Agent 派遣、コンテキスト圧縮。Token 消費 3分の1。",
     eng_o:"OpenAI 系コードエンジン。patch / exec / サンドボックス書き。タスク明確、アウトプット制御可能。",
     eng_d:"DeepSeek 推論エンジン、長コンテキスト複雑推論が得意。dsh CLI を spawn、OpenAI 互換 SSE、token 計量内蔵。",
     arc_title:"マルチ Agent 並行スケジューリング",
@@ -1089,18 +873,17 @@ const I18N = {
     ob_title:"各 agent の思考を可視化",
     ob_sub:"ステータス、ステップ、ツール呼び、アウトプット。すべてリアルタイム。AI はもう黒箱ではない。",
     f_1t:"並行マルチ agent", f_1:"各セッションが独立ループ。複数タスクを同時実行、互いにブロックしない。",
-    f_2t:"ツール呼び出し可視化", f_2:"30+ 内蔵ツールと 21 プラグイン、全ステップが見える。MCP 双方向対応。",
+    f_2t:"ツール呼び可観測", f_2:"shell / read_file / web_fetch / recall_memory。全ステップが見える。",
     f_3t:"連続セッション", f_3:"同一対話で複数ターン追及。新規時のみ新セッション。再起動で履歴は失われない。",
     f_4t:"クロスエンジン resume", f_4:"Claude / Codex 履歴 sessions をスキャン、継続するものを選択。タスクは一貫。",
-    f_5t:"クロスエンジン長期記憶", f_5:"毎ターン背景で事実抽出。エンジン切替でも記憶は消えない。FTS5 + 意味ベクトル二重召回、Git 同期で端末間共有。",
+    f_5t:"クロスエンジン長期記憶", f_5:"毎ターン背景で事実抽出。エンジン切替でも記憶は消えない。FTS5 + 意味ベクトル双重召回。",
     f_6t:"ワークスペース", f_6:"ターミナル、ファイル、チャットの3 tab が cwd にバインド。編集後 app 内で検証。",
-    f_7t:"Goal 監督 + 予算段階", f_7:"長期ゴールは自動監督:スタックしたら介入、予算不足なら優先度で段階縮小。長期タスクを放置しない。",
-    f_8t:"ツール出力のディスク退避", f_8:"長大なツール出力は自動ディスク退避、正規表現で中間を再取得。コンテキストは軽く、詳細は失われない。",
+    nav_privacy:"プライバシー", pr_full:"プライバシーポリシー全文を読む →", nav_enterprise:"エンタープライズ",
     pr_title:"プライバシーはあなたの手に",
     pr_sub:"API key は OS Keychain (DPAPI / Keychain)、対話はローカル SQLite、バックエンド送信なし。クロスプラットフォーム Electron、低リソース。",
     fq_title:"よくある質問",
     q_1:"Raycast / Alfred と同じですか?", a_1:"違います。Raycast はランチャー、KinetAios は AI 総合受付——マルチ agent エンジンの並行ランタイム。「アプリの高速起動」ではなく「複数 AI が同時に作業、ステータスすべて可視」が目的。共存可能です。",
-    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Direct V2–V5(V3 意図ルーティング / V4 Legis / V5 Phylum)、Claude Code、Codex、DeepSeek Harness を1パネルに収めます——7エンジンが並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理はシングルエンジンにはできない機能です。",
+    q_2:"Cursor / Claude Code デスクトップ版との違いは?", a_2:"Cursor と Claude Code デスクトップ版はシングルエンジン。KinetAios は Direct V1/V2/V3、Claude Code、Codex、DeepSeek Harness を1パネルに収めます——4つのエンジン家族が並行実行、全ステータス可視、クロスエンジン resume。複数 agent の同時管理はシングルエンジンにはできない機能です。",
     q_3:"データはどこへ?", a_3:"API key は OS Keychain (DPAPI / Keychain)、対話と記憶はローカル SQLite、バックエンド送信なし。あなたのエンジン、あなたの key、あなたのデータ。",
     q_4:"Claude Code / Codex の使い方は? 自分で設定?", a_4:"KinetAios がインストール済みの claude / codex CLI を自動検出。未インストールの場合は設定ページにガイド。Direct エンジンは API key のみ。",
     q_5:"対応モデルは?", a_5:"Direct エンジンは鍵次第(デフォルト glm-4-plus / glm-4-flash)、Claude Code / Codex はローカル CLI 設定に従う(対応する任意のモデル)。エンジン ≠ モデル。",
@@ -1112,8 +895,10 @@ const I18N = {
 };
 
 function applyLang(l){
-  if(!I18N[l]) l = "en";
+  if(!I18N[l]) l = "zh-Hans";
   const dict = I18N[l];
+  document.documentElement.lang = l;
+  renderSuite();
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const k = el.getAttribute("data-i18n");
     if(dict[k] != null) el.textContent = dict[k];
@@ -1122,7 +907,6 @@ function applyLang(l){
     const k = el.getAttribute("data-i18n-html");
     if(dict[k] != null) el.innerHTML = dict[k];
   });
-  document.documentElement.lang = l;
   document.querySelectorAll(".lang button").forEach(b => {
     b.classList.toggle("on", b.dataset.l === l);
   });
@@ -1133,9 +917,61 @@ document.querySelectorAll(".lang button").forEach(b => {
   b.addEventListener("click", () => applyLang(b.dataset.l));
 });
 
+/* ===== PRODUCT SUITE 动态渲染(24 app, 数据源同 kinetapp/apps.html) ===== */
+const SUITE_APPS = [
+{id:"6809450051",name:"KinetAios",price:"$12.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/a6/f8/ca/a6f8cab2-4ecf-f366-4190-0fe2eb378ecd/AppIcon.png/512x512bb.png",href:"https://apps.apple.com/us/app/kinetaios-all-in-one-ai-agent/id6809450051",tag:{en:"All-in-one native macOS AI agent workbench: code, research, writing, automation.","zh-Hans":"原生 macOS 一体化 AI Agent 工作台:代码、研究、写作、自动化。","zh-Hant":"原生 macOS 一体化 AI Agent 工作台:代码、研究、寫作、自动化。",ja:"All-in-one native macOS AI agent workbench: code, research, writing, automation."},hook:{en:"One native workbench for every AI job — code, research, writing, data.","zh-Hans":"一个原生工作台包揽所有 AI 活:代码、调研、写作、数据。","zh-Hant":"一个原生工作台包揽所有 AI 活:代码、调研、寫作、數據。",ja:"One native workbench for every AI job — code, research, writing, data."}},
+{id:"6780944289",name:"KinetTask",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/9f/80/50/9f805042-08cc-19a6-66f2-82cd48a28013/AppIcon-0-0-1x_U007emarketing-0-8-0-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/kinettask-private-ai-tasks/id6780944289",tag:{en:"100% on-device AI task manager. Your tasks never leave your phone.","zh-Hans":"100% 端侧 AI 任务管理,数据不出设备。","zh-Hant":"100% 端侧 AI 任務管理,數據不出设备。",ja:"100% on-device AI task manager. Your tasks never leave your phone."},hook:{en:"For to-do lists you\'d never trust to someone else\'s server.","zh-Hans":"适合不想把待办交给别人服务器的你。","zh-Hant":"适合不想把待办交给别人服务器的你。",ja:"For to-do lists you\'d never trust to someone else\'s server."}},
+{id:"6820196518",name:"M5Chat",price:"$9.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/84/3c/a4/843ca420-b9d1-3124-05e2-d223edbe5edc/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/m5chat-ai-chat/id6820196518",tag:{en:"AI chat that runs entirely on your device.","zh-Hans":"完全运行在本机的 AI 对话助手。","zh-Hant":"完全运行在本机的 AI 对话助手。",ja:"AI chat that runs entirely on your device."},hook:{en:"For questions you\'d rather not send to a cloud — chat, translate, summarize, offline.","zh-Hans":"不想上云的提问:翻译、总结、闲聊,断网也能用。","zh-Hant":"不想上云的提问:翻译、总结、闲聊,断网也能用。",ja:"For questions you\'d rather not send to a cloud — chat, translate, summarize, offline."}},
+{id:"6782778566",name:"KinetBrief",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/20/60/77/2060773c-5782-1d87-6188-8deeaf46d870/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://phinn.github.io/kinetbrief/",tag:{en:"Turns a day of meetings into one morning brief.","zh-Hans":"把一天的会议变成一份晨报。","zh-Hant":"把一天的會議变成一份晨报。",ja:"Turns a day of meetings into one morning brief."},hook:{en:"For anyone who sits in meetings all day and still loses track of decisions.","zh-Hans":"适合一天全在开会、转头就忘决策要点的人。","zh-Hant":"适合一天全在开会、转头就忘决策要点的人。",ja:"For anyone who sits in meetings all day and still loses track of decisions."}},
+{id:"6813593104",name:"KinetMinutes",price:"$9.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/b3/18/4b/b3184b68-01f5-d3b2-4d98-110571d19fb5/AppIcon-0-0-85-220-0-5-0-2x.png/512x512bb.png",href:"https://apps.apple.com/us/app/kinetminutes-meeting-notes/id6813593104",tag:{en:"Meetings into structured notes — automatically, privately, on your Mac.","zh-Hans":"会议自动变结构化笔记 —— 私密,全在本机。","zh-Hant":"會議自动变结构化筆記 —— 私密,全在本机。",ja:"Meetings into structured notes — automatically, privately, on your Mac."},hook:{en:"Stop typing minutes. Record, and walk away with action items.","zh-Hans":"别再手写纪要:录音进场,带着行动项离场。","zh-Hant":"别再手写纪要:录音进场,带着行动项离场。",ja:"Stop typing minutes. Record, and walk away with action items."}},
+{id:"6815923723",name:"KinetMemory",price:"$9.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/0b/69/e2/0b69e221-a94e-2641-381d-4ef1bb1a3d9a/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/kinetmemory-flashcards/id6815923723",tag:{en:"Remember for good — FSRS reviews each card right before you forget.","zh-Hans":"学一遍就记住 —— FSRS 在你快忘时安排复习。","zh-Hant":"学一遍就记住 —— FSRS 在你快忘时安排复习。",ja:"Remember for good — FSRS reviews each card right before you forget."},hook:{en:"For med-school lists and vocabulary — review right before you forget.","zh-Hans":"背单词、记考点:在你快忘的那一刻复习。","zh-Hant":"背單詞、记考点:在你快忘的那一刻复习。",ja:"For med-school lists and vocabulary — review right before you forget."}},
+{id:"6797004663",name:"KinetStudy",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/9e/48/e2/9e48e2a7-167d-5395-1b72-38fc2df9dbe5/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/kinetstudy/id6797004663",tag:{en:"AI homework grading for parents — photo in, feedback out.","zh-Hans":"家长版 AI 作业批改 —— 拍照即出反馈。","zh-Hant":"家长版 AI 作业批改 —— 拍照即出反馈。",ja:"AI homework grading for parents — photo in, feedback out."},hook:{en:"Photo the homework, get feedback in seconds — for parents who check it nightly.","zh-Hans":"拍下作业秒出批改反馈——每晚检查作业的家长。","zh-Hant":"拍下作业秒出批改反馈——每晚检查作业的家长。",ja:"Photo the homework, get feedback in seconds — for parents who check it nightly."}},
+{id:"6820942179",name:"Clasp Focus",price:"$4.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/57/0d/80/570d8074-0b01-4ba9-704f-3a2ea8c9db63/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/clasp-focus-focus-timer/id6820942179",tag:{en:"A focus ritual built for folding iPhones.","zh-Hans":"为折叠屏 iPhone 打造的专注仪式。","zh-Hant":"为折叠屏 iPhone 打造的專注仪式。",ja:"A focus ritual built for folding iPhones."},hook:{en:"Fold to focus — a ritual for folding iPhone owners.","zh-Hans":"合上即专注——为折叠 iPhone 用户设计的仪式。","zh-Hant":"合上即專注——为折叠 iPhone 用户设计的仪式。",ja:"Fold to focus — a ritual for folding iPhone owners."}},
+{id:"6814033986",name:"KinetRain",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/2f/d5/30/2fd53008-d664-616a-35ef-25b7a86f94d9/AppIcon.png/512x512bb.png",href:"https://apps.apple.com/us/app/kinetrain-rain-sounds/id6814033986",tag:{en:"Rain on demand. Synthesized live in your menu bar — never a loop.","zh-Hans":"即点即下的雨声 —— 实时合成,永不成循环。","zh-Hant":"即点即下的雨声 —— 實時合成,永不成循环。",ja:"Rain on demand. Synthesized live in your menu bar — never a loop."},hook:{en:"For deep-work sessions that need rain — synthesized live, never a loop.","zh-Hans":"深度工作要下雨:实时合成,永不循环。","zh-Hant":"深度工作要下雨:實時合成,永不循环。",ja:"For deep-work sessions that need rain — synthesized live, never a loop."}},
+{id:"6823855712",name:"DuoFolio",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/e8/42/e9/e842e9c0-739e-2eae-dfbb-05f47ecceb4f/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/duofolio/id6823855712",tag:{en:"Immersive two-page reader built for folding iPhones.","zh-Hans":"为折叠屏打造的沉浸式双页阅读器。","zh-Hant":"为折叠屏打造的沉浸式双页閱讀器。",ja:"Immersive two-page reader built for folding iPhones."},hook:{en:"Turn your folding iPhone into a real book — two pages, zero glare.","zh-Hans":"折叠屏秒变真书:双页阅读,零眩光。","zh-Hant":"折叠屏秒变真书:双页閱讀,零眩光。",ja:"Turn your folding iPhone into a real book — two pages, zero glare."}},
+{id:"6829156684",name:"DuoFrame Desk Calendar",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/19/71/84/197184ae-0ad3-dfb2-b74e-a7783f752217/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/duoframe-desk-calendar/id6829156684",tag:{en:"Your screen as a desk calendar that flips like real paper.","zh-Hans":"把屏幕变成像真纸一样翻页的台历。","zh-Hant":"把屏幕变成像真纸一样翻页的桌曆。",ja:"Your screen as a desk calendar that flips like real paper."},hook:{en:"Your screen becomes a paper desk calendar — for standing desks.","zh-Hans":"屏幕变成纸质台历——站式办公桌的仪式感。","zh-Hant":"屏幕变成纸质桌曆——站式办公桌的仪式感。",ja:"Your screen becomes a paper desk calendar — for standing desks."}},
+{id:"6829637244",name:"DuoComics",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/ff/96/c4/ff96c496-5aa5-3da2-ab8f-08ed03c33904/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/duocomics/id6829637244",tag:{en:"Comic archives opened as two-page spreads on your folding iPhone.","zh-Hans":"漫画档在折叠屏上摊成双页跨页,像翻实体漫画。","zh-Hant":"漫畫档在折叠屏上摊成双页跨页,像翻实体漫畫。",ja:"Comic archives opened as two-page spreads on your folding iPhone."},hook:{en:"CBZ in, spread out — every double-page spread reads like print.","zh-Hans":"CBZ 导入即跨页:双页漫画还原纸感翻阅。","zh-Hant":"CBZ 导入即跨页:双页漫畫还原纸感翻阅。",ja:"CBZ in, spread out — every double-page spread reads like print."}},
+{id:"6834613522",name:"Pagebench",price:"$12.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/bd/22/f5/bd22f588-3793-61ef-66e4-db709de05b02/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/pagebench/id6834613522",tag:{en:"PDF on one screen, your notes on the other — pages stay in step.","zh-Hans":"一块屏读 PDF,另一块屏做笔记,页页同步。","zh-Hant":"一块屏读 PDF,另一块屏做筆記,页页同步。",ja:"PDF on one screen, your notes on the other — pages stay in step."},hook:{en:"Read on one pane, write on the other — every note binds to its page.","zh-Hans":"左边读右边写:每页笔记绑定文档页,翻到哪写到哪。","zh-Hant":"左边读右边写:每页筆記绑定文档页,翻到哪写到哪。",ja:"Read on one pane, write on the other — every note binds to its page."}},
+{id:"6817339084",name:"FurChart",price:"$4.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/53/92/6e/53926e7f-9494-bb08-b393-9dcf8408067a/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/furchart-pet-health-records/id6817339084",tag:{en:"Your pet\'s complete medical history, always at hand.","zh-Hans":"宠物完整健康档案,随手可查。","zh-Hant":"宠物完整健康档案,随手可查。",ja:"Your pet\'s complete medical history, always at hand."},hook:{en:"Every vet visit, vaccine and weight — in your hand at the next appointment.","zh-Hans":"每次就诊、疫苗、体重全在手边——下次看兽医直接翻。","zh-Hant":"每次就诊、疫苗、体重全在手边——下次看兽医直接翻。",ja:"Every vet visit, vaccine and weight — in your hand at the next appointment."}},
+{id:"6779978181",name:"KinetMorning",price:"$2.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/5d/26/0e/5d260e8b-a4f6-171a-5404-35c8b13c535d/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/kinetmorning/id6779978181",tag:{en:"One-tap daily check-in for aging parents. Peace of mind for the family.","zh-Hans":"独居老人的每日一键报平安。","zh-Hant":"獨居老人的每日一鍵報平安。",ja:"One-tap daily check-in for aging parents. Peace of mind for the family."},hook:{en:"One tap from mom says “I\'m up and fine” — peace of mind, long distance.","zh-Hans":"爸妈一键报平安——远方的你安心一整天。","zh-Hant":"爸妈一鍵報平安——远方的你安心一整天。",ja:"One tap from mom says “I\'m up and fine” — peace of mind, long distance."}},
+{id:"6807457522",name:"KinetElf",price:"$3.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/a0/8f/3d/a08f3dad-bb4a-972e-c7ec-819b07391b2f/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://phinn.github.io/KinetElf/",tag:{en:"An AI elf with personality and memory, living on your Dynamic Island.","zh-Hans":"住在灵动岛上的 AI 小精灵,有性格有记忆。","zh-Hant":"住在灵动岛上的 AI 小精灵,有性格有記憶。",ja:"An AI elf with personality and memory, living on your Dynamic Island."},hook:{en:"A tiny AI elf with memory, living in your Dynamic Island.","zh-Hans":"一只有记忆的 AI 小精灵,住在灵动岛里。","zh-Hant":"一只有記憶的 AI 小精灵,住在灵动岛里。",ja:"A tiny AI elf with memory, living in your Dynamic Island."}},
+{id:"6780600464",name:"KinetSoul",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/5d/b7/96/5db7961e-8778-99af-abfc-30c1d119e410/AppIcon-0-0-1x_U007epad-0-8-0-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/kinetsoul-ai-companion/id6780600464",tag:{en:"Talk it out at 2 a.m. — a warm companion that never leaves your phone.","zh-Hans":"深夜两点想找人说说话 —— 温柔的伙伴,永远不离开你的手机。","zh-Hant":"深夜两点想找人说说话 —— 温柔的伙伴,永远不离开你的手机。",ja:"Talk it out at 2 a.m. — a warm companion that never leaves your phone."},hook:{en:"For 2 a.m. thoughts — a warm listener that never leaves your phone.","zh-Hans":"给凌晨两点的念头——一个不离开手机的温暖倾听者。","zh-Hant":"给凌晨两点的念头——一个不离开手机的温暖倾听者。",ja:"For 2 a.m. thoughts — a warm listener that never leaves your phone."}},
+{id:"6773755689",name:"KinetFit",price:"$4.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/28/d9/27/28d927e8-4347-7895-ba1d-6a252cb4bb8f/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/512x512bb.jpg",href:"https://phinn.github.io/kinet/index2.html",tag:{en:"Fast, private workout tracking with measurable progress.","zh-Hans":"快速、私密的健身记录,每次训练都有迹可循。","zh-Hant":"快速、私密的健身記錄,每次训练都有迹可循。",ja:"Fast, private workout tracking with measurable progress."},hook:{en:"Log workouts in three taps — progress you can measure, data you keep.","zh-Hans":"三步记完训练:进步看得见,数据归自己。","zh-Hant":"三步记完训练:进步看得见,數據归自己。",ja:"Log workouts in three taps — progress you can measure, data you keep."}},
+{id:"6808698046",name:"KinetFlashFind",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/d8/ec/b3/d8ecb3d6-d558-fad8-44d4-068419562b58/AppIcon.png/512x512bb.png",href:"https://phinn.github.io/KinetFlashFind/",tag:{en:"Any file on your Mac, found in seconds — no more folder digging.","zh-Hans":"整块磁盘的文件,敲几个字母就到 —— 告别翻文件夹。","zh-Hant":"整块磁盘的檔案,敲几个字母就到 —— 告别翻檔案夹。",ja:"Any file on your Mac, found in seconds — no more folder digging."},hook:{en:"Find any file in seconds — for Macs with 40,000+ documents.","zh-Hans":"几秒找到任何文件——专治四万文档的 Mac。","zh-Hant":"几秒找到任何檔案——专治四万文档的 Mac。",ja:"Find any file in seconds — for Macs with 40,000+ documents."}},
+{id:"6813423397",name:"KinetMagicDisk",price:"$9.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/cc/a1/90/cca19075-0a51-0d6a-037b-3f421ba80089/AppIcon-0-0-85-220-0-5-0-2x.png/512x512bb.png",href:"https://apps.apple.com/us/app/kinetmagicdisk-disk-usage/id6813423397",tag:{en:"See what fills your disk — interactive sunburst map, one-click cleanup.","zh-Hans":"看清磁盘都被什么占满 —— 交互式旭日图,一键清理。","zh-Hant":"看清磁盘都被什么占满 —— 交互式旭日图,一鍵清理。",ja:"See what fills your disk — interactive sunburst map, one-click cleanup."},hook:{en:"See exactly what fills your disk — for “Macintosh HD is full” moments.","zh-Hans":"看清磁盘到底装了什么——专治「Macintosh HD 已满」。","zh-Hant":"看清磁盘到底装了什么——专治「Macintosh HD 已满」。",ja:"See exactly what fills your disk — for “Macintosh HD is full” moments."}},
+{id:"6817377455",name:"DriftDesk",price:"$4.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple211/v4/ab/2d/bd/ab2dbd9c-5b9c-488f-a119-84d6db01e6d3/AppIcon.png/512x512bb.png",href:"https://apps.apple.com/us/app/driftdesk-focus-ambience/id6817377455",tag:{en:"Turns your menu bar into a pocket of calm.","zh-Hans":"把菜单栏变成一方平静角落。","zh-Hant":"把菜单栏变成一方平静角落。",ja:"Turns your menu bar into a pocket of calm."},hook:{en:"A pocket of calm in your menu bar — for anxious desk days.","zh-Hans":"菜单栏里的一方安静——给焦躁的办公日。","zh-Hant":"菜单栏里的一方安静——给焦躁的办公日。",ja:"A pocket of calm in your menu bar — for anxious desk days."}},
+{id:"6831877963",name:"CubeLike",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/12/d2/5d/12d25d31-c372-4dc0-698f-87b2fbc5c287/AppIcon-0-0-1x_U007epad-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/cubelike-chain-burst/id6831877963",tag:{en:"Chain-reaction puzzle on a living cube — one move, sixty reactions.","zh-Hans":"立方体上的连锁反应解谜 —— 一步棋,六十重连锁。","zh-Hant":"立方体上的连锁反应解谜 —— 一步棋,六十重连锁。",ja:"Chain-reaction puzzle on a living cube — one move, sixty reactions."},hook:{en:"Sixty reactions from one move — for puzzle people who think in systems.","zh-Hans":"一步引发六十连锁——喜欢系统性思考的谜题玩家。","zh-Hant":"一步引发六十连锁——喜欢系统性思考的谜题玩家。",ja:"Sixty reactions from one move — for puzzle people who think in systems."}},
+{id:"6826942397",name:"Minebreaker",price:"$6.99",icon:"https://is1-ssl.mzstatic.com/image/thumb/Purple221/v4/fe/07/d1/fe07d123-e339-d1c5-5064-0e109a53bae5/AppIcon-0-0-1x_U007ephone-0-1-85-220.png/512x512bb.jpg",href:"https://apps.apple.com/us/app/minebreaker-game/id6826942397",tag:{en:"Minesweeper, turned into treasure — every tile is a gamble.","zh-Hans":"扫雷变成挖宝 —— 每一格都是一次赌注。","zh-Hant":"扫雷变成挖宝 —— 每一格都是一次赌注。",ja:"Minesweeper, turned into treasure — every tile is a gamble."},hook:{en:"Minesweeper turned treasure hunt — every revealed tile is a bet.","zh-Hans":"扫雷变寻宝:每翻开一格都是一次下注。","zh-Hant":"扫雷变寻宝:每翻开一格都是一次下注。",ja:"Minesweeper turned treasure hunt — every revealed tile is a bet."}}
+];
+const SUITE_GRADS = ["#9B7EFF,#00B5E5","#00E5B5,#00B5E5","#FF9A5C,#FFD75F","#FF6B9B,#9B7EFF","#00B5E5,#FFD75F"];
+function curLang(){
+  return document.documentElement.lang || "zh-Hans";
+}
+function renderSuite(){
+  const grid = document.getElementById("suiteGrid");
+  if(!grid) return;
+  const l = curLang();
+  const key = (l === "zh-Hans" || l === "zh-Hant") ? l : (l === "ja" ? "ja" : "en");
+  grid.innerHTML = SUITE_APPS.map((a, i) => {
+    const g = SUITE_GRADS[i % SUITE_GRADS.length];
+    const tag = a.tag[key] || a.tag.en;
+    const hook = a.hook[key] || a.hook.en;
+    return '<a class="pcard" href="' + a.href + '" target="_blank" rel="noopener" style="--cardGrad:linear-gradient(135deg,' + g + ')">'
+      + '<div class="glow"></div>'
+      + '<div class="pico"><img src="' + a.icon + '" alt="' + a.name + ' app icon" loading="lazy" referrerpolicy="no-referrer"></div>'
+      + '<div class="price">' + a.price + '</div>'
+      + '<h4>' + a.name + '</h4>'
+      + '<div class="tag">' + tag + '</div>'
+      + '<p>' + hook + '</p>'
+      + '<span class="plink"><span data-i18n="ps_learn">了解产品</span> →</span>'
+      + '</a>';
+  }).join("");
+}
+renderSuite();
+
 const urlLang = new URLSearchParams(location.search).get("lang");
 const saved = (()=>{try{return localStorage.getItem("ka_lang")}catch(e){return null}})();
-applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "en"));
+applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "zh-Hans"));
 
 // typing indicator cycle
 (function(){
@@ -1164,29 +1000,5 @@ applyLang(urlLang && I18N[urlLang] ? urlLang : (saved && I18N[saved] ? saved : "
 })();
 </script>
 
-
-<!-- ===== 内联 SVG 图标表(Lucide 24x24, stroke=currentColor) | Inline icon sprite ===== -->
-<svg width="0" height="0" style="position:absolute" aria-hidden="true">
-  <defs>
-    <symbol id="i-terminal" viewBox="0 0 24 24"><polyline points="4 17 10 11 4 5"/><line x1="12" x2="20" y1="19" y2="19"/></symbol>
-    <symbol id="i-route" viewBox="0 0 24 24"><circle cx="6" cy="19" r="3"/><circle cx="18" cy="5" r="3"/><path d="M12 19h4.5a3.5 3.5 0 0 0 0-7h-8a3.5 3.5 0 0 1 0-7H12"/></symbol>
-    <symbol id="i-scale" viewBox="0 0 24 24"><path d="m16 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="m2 16 3-8 3 8c-.87.65-1.92 1-3 1s-2.13-.35-3-1Z"/><path d="M7 21h10"/><path d="M12 3v18"/><path d="M3 7h2c2 0 5-1 7-2 2 1 5 2 7 2h2"/></symbol>
-    <symbol id="i-gitbranch" viewBox="0 0 24 24"><line x1="6" x2="6" y1="3" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
-    <symbol id="i-braces" viewBox="0 0 24 24"><path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/></symbol>
-    <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
-    <symbol id="i-sparkle" viewBox="0 0 24 24"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/></symbol>
-    <symbol id="i-dumbbell" viewBox="0 0 24 24"><path d="m6.5 6.5 11 11"/><path d="m21 21-1-1"/><path d="m3 3 1 1"/><path d="m18 22 4-4"/><path d="m2 6 4-4"/><path d="m3 10 7-7"/><path d="m14 21 7-7"/></symbol>
-    <symbol id="i-moon" viewBox="0 0 24 24"><path d="M12 3a6 6 0 0 0 9 9 9 9 0 1 1-9-9Z"/></symbol>
-    <symbol id="i-notebookpen" viewBox="0 0 24 24"><path d="M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4"/><path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/><path d="M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z"/></symbol>
-    <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2"/><path d="M12 20v2"/><path d="m4.93 4.93 1.41 1.41"/><path d="m17.66 17.66 1.41 1.41"/><path d="M2 12h2"/><path d="M20 12h2"/><path d="m6.34 17.66-1.41 1.41"/><path d="m19.07 4.93-1.41 1.41"/></symbol>
-    <symbol id="i-smartphone" viewBox="0 0 24 24"><rect width="14" height="20" x="5" y="2" rx="2" ry="2"/><path d="M12 18h.01"/></symbol>
-    <symbol id="i-appwindow" viewBox="0 0 24 24"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M10 4v4"/><path d="M2 8h20"/><path d="M6 4v4"/></symbol>
-    <symbol id="i-command" viewBox="0 0 24 24"><path d="M15 6v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3V6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3"/></symbol>
-    <symbol id="i-cog" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
-    <symbol id="i-bus" viewBox="0 0 24 24"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" x2="15.42" y1="13.51" y2="17.49"/><line x1="15.41" x2="8.59" y1="6.51" y2="10.49"/></symbol>
-    <symbol id="i-brain" viewBox="0 0 24 24"><path d="M12 5a3 3 0 1 0-5.997.125 4 4 0 0 0-2.526 5.77 4 4 0 0 0 .556 6.588A4 4 0 1 0 12 18Z"/><path d="M12 5a3 3 0 1 1 5.997.125 4 4 0 0 1 2.526 5.77 4 4 0 0 1-.556 6.588A4 4 0 1 1 12 18Z"/><path d="M15 13a4.5 4.5 0 0 1-3-4 4.5 4.5 0 0 1-3 4"/></symbol>
-    <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
-  </defs>
-</svg>
 </body>
 </html>
