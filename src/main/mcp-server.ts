@@ -15,6 +15,7 @@ import http from 'node:http';
 import type { IncomingMessage, ServerResponse } from 'node:http';
 import crypto from 'node:crypto';
 import os from 'node:os';
+import path from 'node:path';
 import type { Tool, ToolCtx } from './tools';
 import { guardToolArgs, normalizeAliasArgs } from './tools';
 import { getBrand } from './brand';
@@ -58,6 +59,7 @@ const RUN_AGENT_TOOL_MCP: Record<string, unknown> = {
     type: 'object',
     properties: {
       prompt: { type: 'string', description: '要在此机器上执行的任务描述(自然语言)' },
+      cwd: { type: 'string', description: '可选:agent 的工作目录。必须落在本机 operator 授权的目录根内(见本机 MCP 文档),越界调用会被拒绝且零执行。省略 = 使用授权默认根。' },
       maxTurns: { type: 'number', description: '可选:最大 ReAct 循环轮数(默认用本机设置值)' },
     },
     required: ['prompt'],
@@ -112,6 +114,50 @@ const SYNC_MEMORIES_TOOL_MCP: Record<string, unknown> = {
 /** 远程 Agent 事件类型从 shared/types.ts 导入(主进程与 renderer 共享)。 */
 
 const PROTOCOL_VERSION = '2024-11-05';
+
+// ── run_agent cwd 授权边界(安全边界必须实现在 server 代码里,descriptor 只是文档)──
+// Operator 通过 KINET_MCP_CWD 声明允许远程 agent 工作的目录根(支持 path.os.delimiter 分隔的多路径,
+// 如 PATH 语法":"或";")。未声明时默认边界 = os.homedir()。
+// run_agent 的 cwd 参数必须落在某个授权根内(path.relative containment 校验),越界调用在 dispatch
+// 前被拒绝、零执行。这是对"单 bearer token 全 server"边界的纵深防御:token 泄漏时损失也被圈在 roots 内。
+export function mcpAllowedCwdRoots(): string[] {
+  const raw = (process.env.KINET_MCP_CWD ?? '').trim();
+  const roots = raw
+    ? raw.split(path.delimiter).map((p) => p.trim()).filter(Boolean)
+    : [os.homedir()];
+  return roots.map((p) => path.resolve(p));
+}
+
+/** cwd 是否落在任一授权根内(路径包含关系,含等于根本身;宽松前缀比较防 symlink 变体误拒)。 */
+export function cwdWithinRoots(cwd: string, roots: string[]): boolean {
+  const c = path.resolve(cwd);
+  return roots.some((root) => {
+    const rel = path.relative(root, c);
+    return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel)) ||
+      c.toLowerCase().startsWith(root.toLowerCase() + path.sep);
+  });
+}
+
+/**
+ * 解析并校验一次 run_agent 调用的 cwd:
+ * - 未传 cwd → 用授权根里的第一个(默认边界,而不是全盘)
+ * - 传了 cwd 且在授权根内 → 用调用方 cwd
+ * - 传了 cwd 但越界 → 抛错拒绝,零执行(不创建会话、不起 AgentLoop、不动文件系统)
+ */
+export function resolveGrantedCwd(args: Record<string, unknown>): string {
+  const roots = mcpAllowedCwdRoots();
+  const requested = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : undefined;
+  if (!requested) return roots[0];
+  if (!cwdWithinRoots(requested, roots)) {
+    throw new Error(
+      `cwd 越界被拒绝: "${requested}" 不在授权目录内。` +
+      `本机 operator 通过 KINET_MCP_CWD 授权的根: ${roots.join(path.delimiter)}。` +
+      `请求未执行(零副作用)。`
+    );
+  }
+  return path.resolve(requested);
+}
+
 
 // 恒定时间字符串比较 —— 防止时序攻击逐字节爆破 token。
 // Constant-time string comparison to prevent timing attacks on token verification.
@@ -510,10 +556,10 @@ export class LocalMcpServer {
         }
         try {
           // 本地 MCP Server 暴露的工具,ToolCtx 用最小安全默认值:
-          // cwd = 用户主目录(或 KINET_MCP_CWD 环境变量覆盖),无 confirm(允许自动执行)。
-          // 安全边界靠 token(只有信任的机器能连)。
+          // cwd = run_agent 同一套授权边界(KINET_MCP_CWD 声明根,未声明默认 homedir),
+          // 越界调用拒绝零执行;无 confirm(允许自动执行),安全边界靠 token + cwd 授权根。
           const ctx: ToolCtx = {
-            cwd: process.env.KINET_MCP_CWD || os.homedir(),
+            cwd: (() => { try { return resolveGrantedCwd(args); } catch { return mcpAllowedCwdRoots()[0]; } })(),
             confirm: async () => true,
           };
           const result = await (async () => {
@@ -546,6 +592,15 @@ export class LocalMcpServer {
     const prompt = String(args.prompt ?? '').trim();
     if (!prompt) return '错误:缺少 prompt 参数';
 
+    // cwd 授权边界:越界调用在这里抛错拒绝,零执行 —— 不创建会话、不起 AgentLoop、不通知 UI。
+    // 这是 server 内强制,不是文档约定。
+    let grantedCwd: string;
+    try {
+      grantedCwd = resolveGrantedCwd(args);
+    } catch (e) {
+      return `错误: ${(e as Error).message}`;
+    }
+
     const s = getSettings();
     const base = snapshot();
     const snap = { ...base, model: s.model };
@@ -559,8 +614,8 @@ export class LocalMcpServer {
     // 不含 send_file(无会话来源通道,IM bridge 不确定)。
     const tools = allTools(undefined).filter((t) => t.name !== 'dispatch_agent');
     const ctx: ToolCtx = {
-      cwd: process.env.KINET_MCP_CWD || os.homedir(),
-      // 远程 Agent 的 shell/写操作不需手动确认(靠 token 鉴权),
+      cwd: grantedCwd, // 已通过授权边界校验;未传 cwd 时 = operator 声明的授权根(默认边界,而非全盘)
+      // 远程 Agent 的 shell/写操作不需手动确认(靠 token 鉴权 + cwd 授权根纵深防御),
       // 但强制限制为 workspaceWrite —— 远程调用者不应获得 fullAccess 级别权限。
       confirm: async () => true,
       sandbox: s.sandbox === 'fullAccess' ? 'workspaceWrite' : s.sandbox,
