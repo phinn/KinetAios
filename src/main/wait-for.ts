@@ -24,6 +24,36 @@ export type WaitKind =
   | 'process_exit'
   | 'command_ok';
 
+/** 全部合法条件类型(单一来源:工具 schema 的 enum、参数校验、报错文案都取这一份)。 */
+export const WAIT_KINDS: WaitKind[] = [
+  'port_open',
+  'log_match',
+  'file_exists',
+  'file_absent',
+  'file_stable',
+  'process_exit',
+  'command_ok',
+];
+
+/** 从参数反推条件类型 —— 用来兜住"模型忘了写 until"。
+ *
+ *  实测两次失败都是 `{"pattern":"…","target":"…/test.log","timeout_s":300}`,没有 until。
+ *  可意图其实毫无歧义:pattern 只有 log_match 用,target 是文件路径 —— 报错纯属自伤,
+ *  而模型拿到的只是"参数不对",于是重填一次,又一轮往返。
+ *
+ *  只做能唯一确定的推断,不猜:
+ *    · 给了 pattern            → log_match(pattern 是它的专属参数)
+ *    · target 是 host:port/端口 → port_open
+ *  其余(file_exists vs file_absent、process_exit 的进程名)确实二义,保持报错。 */
+export function inferWaitKind(args: Record<string, unknown>): WaitKind | '' {
+  const raw = String(args.until ?? '').trim();
+  if (WAIT_KINDS.includes(raw as WaitKind)) return raw as WaitKind;
+  if (args.pattern) return 'log_match';
+  const t = String(args.target ?? '').trim();
+  if (/^(?:[\w.-]+:)?\d{2,5}$/.test(t)) return 'port_open';
+  return '';
+}
+
 export interface WaitSpec {
   kind: WaitKind;
   target: string;
@@ -191,9 +221,14 @@ export async function waitFor(spec: WaitSpec): Promise<WaitResult> {
   let polls = 0;
   let last = '';
   let prevSig = '';
-  const kindOk = ['port_open', 'log_match', 'file_exists', 'file_absent', 'file_stable', 'process_exit', 'command_ok'].includes(spec.kind);
+  const kindOk = WAIT_KINDS.includes(spec.kind);
   if (!kindOk || !spec.target) {
-    return { ok: false, reason: 'bad_spec', waitedMs: 0, polls: 0, detail: `条件参数不完整(kind=${spec.kind}, target=${spec.target})` };
+    return {
+      ok: false, reason: 'bad_spec', waitedMs: 0, polls: 0,
+      detail: `条件参数不完整(until=${spec.kind || '空'}, target=${spec.target || '空'})`
+        + `\n可用 until:${WAIT_KINDS.join(' / ')}`
+        + `\n→ 其实可以省略 until:给了 pattern 就是 log_match,target 是 host:port 就是 port_open。`,
+    };
   }
   while (Date.now() - start < spec.timeoutMs) {
     if (spec.signal?.aborted) {

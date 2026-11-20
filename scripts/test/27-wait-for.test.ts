@@ -7,7 +7,7 @@ import * as fs from 'node:fs';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { waitFor, probeOnce, formatWaitResult, type WaitSpec } from '../../src/main/wait-for';
+import { waitFor, probeOnce, formatWaitResult, inferWaitKind, type WaitSpec } from '../../src/main/wait-for';
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinet-wait-'));
 const base = (over: Partial<WaitSpec>): WaitSpec => ({
@@ -102,6 +102,30 @@ test('formatWaitResult:命中/超时两种文案都给出可执行下一步', ()
   const to = formatWaitResult(spec, { ok: false, reason: 'timeout', waitedMs: 120000, polls: 60, detail: '还没匹配', context: 'tail...' });
   assert(to.includes('⏳') && to.includes('最后观察'), to);
   assert(to.includes('别再原样重试'), `应阻止无脑重试,实际 ${to}`);
+});
+
+// 实测:两次真实失败都是 {"pattern":"…","target":"…/test.log","timeout_s":300} —— 忘了 until。
+// 意图毫无歧义(pattern 是 log_match 专属参数),报"参数不对"只是白白多一轮往返。
+test('inferWaitKind:省略 until 时按参数推断(真实失败样本)', () => {
+  assert(inferWaitKind({ pattern: 'TEST SUCCEEDED|TEST FAILED|error:', target: '/a/b/test2.log', timeout_s: 300 }) === 'log_match',
+    'pattern+target 应推断为 log_match');
+  assert(inferWaitKind({ target: '127.0.0.1:3000' }) === 'port_open', 'host:port 应推断为 port_open');
+  assert(inferWaitKind({ target: '5173' }) === 'port_open', '纯端口应推断为 port_open');
+});
+
+test('inferWaitKind:显式 until 优先,二义的组合绝不猜', () => {
+  assert(inferWaitKind({ until: 'file_absent', target: '/a/b' }) === 'file_absent', '显式 until 应直通');
+  assert(inferWaitKind({ until: 'log_mach', pattern: 'x', target: '/a/b.log' }) === 'log_match',
+    '非法 until 应回落到推断,而不是当成未知类型');
+  // 没有 pattern、target 是普通路径:file_exists / file_absent / file_stable 三义,不能猜。
+  assert(inferWaitKind({ target: '/a/b/c.txt' }) === '', '二义组合应留空交由报错');
+  assert(inferWaitKind({ target: 'xcodebuild' }) === '', 'process_exit 的进程名不能靠猜');
+});
+
+test('bad_spec 报错要说明"其实可以省略 until",而不是只列可用类型', async () => {
+  const r = await waitFor(base({ kind: '' as never, target: '/tmp/x' }) as WaitSpec);
+  assert(r.reason === 'bad_spec', `应判 bad_spec,实际 ${r.reason}`);
+  assert(r.detail.includes('log_match') && r.detail.includes('省略 until'), `应给出免错写法,实际 ${r.detail}`);
 });
 
 run();

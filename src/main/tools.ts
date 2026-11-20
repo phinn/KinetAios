@@ -6,7 +6,7 @@ import path from 'node:path';
 import { TextDecoder } from 'node:util';
 import dns from 'node:dns/promises';
 import { grepToolOutput } from './tool-spill';
-import { waitFor, formatWaitResult, type WaitKind, type WaitSpec } from './wait-for';
+import { waitFor, formatWaitResult, inferWaitKind, WAIT_KINDS, type WaitKind, type WaitSpec } from './wait-for';
 import { formatPathMiss } from './did-you-mean';
 import crypto from 'node:crypto';
 
@@ -442,7 +442,6 @@ const shell: Tool = {
 // 带回最后观察,模型不用再补一次 tail/ps 才知道发生了什么。
 // / Replace fixed sleeps with condition polling: return on hit with evidence, or on timeout with
 // the last observation — so the next decision is informed instead of blind.
-const WAIT_KINDS = ['port_open', 'log_match', 'file_exists', 'file_absent', 'file_stable', 'process_exit', 'command_ok'];
 const WAIT_DEFAULT_POLL: Record<string, number> = {
   port_open: 0.5, log_match: 1.5, file_exists: 1, file_absent: 1, file_stable: 0.8, process_exit: 2, command_ok: 3,
 };
@@ -459,7 +458,7 @@ const waitForTool: Tool = {
       until: {
         type: 'string',
         enum: WAIT_KINDS,
-        description: '条件类型:port_open(TCP 可连接) / log_match(日志出现匹配行) / file_exists / file_absent / file_stable(大小与时间戳不再变化=写完) / process_exit(进程已退出) / command_ok(自定义命令退出码 0,需用户确认)',
+        description: '条件类型:port_open(TCP 可连接) / log_match(日志出现匹配行) / file_exists / file_absent / file_stable(大小与时间戳不再变化=写完) / process_exit(进程已退出) / command_ok(自定义命令退出码 0,需用户确认)。省略时按参数推断:给了 pattern 即 log_match,target 是 host:port 即 port_open',
       },
       target: {
         type: 'string',
@@ -469,11 +468,13 @@ const waitForTool: Tool = {
       timeout_s: { type: 'number', description: '最长等待秒数,默认 120,上限 900' },
       poll_s: { type: 'number', description: '轮询间隔秒,默认按类型 0.5~3;一般不用填' },
     },
-    required: ['until', 'target'],
+    required: ['target'],
   },
   readOnly: true,
   async run(args, ctx) {
-    const kind = String(args.until ?? '') as WaitKind;
+    // until 可省略:实测模型两次只给了 pattern+target,意图毫无歧义却撞"参数不对"重来一轮。
+    // inferWaitKind 只认能唯一确定的组合,其余照样报错(见 wait-for.ts)。
+    const kind = inferWaitKind(args) as WaitKind;
     const target = String(args.target ?? '').trim();
     const timeoutMs = Math.min(900_000, Math.max(1_000, Number(args.timeout_s ?? 120) * 1000));
     const pollMs = Math.max(200, Number(args.poll_s ?? WAIT_DEFAULT_POLL[kind] ?? 1.5) * 1000);
