@@ -2,7 +2,7 @@
 // Verbatim port of Swift AgentLoop.run. DirectEngine's trim-history logic lives here too.
 import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy, TrajRecord } from '../shared/types';
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
-import { toolDef, type Tool, type ToolCtx } from './tools';
+import { toolDef, guardToolArgs, normalizeAliasArgs, type Tool, type ToolCtx } from './tools';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
 import { pullSteer, steerMessage } from './steer';
@@ -1035,6 +1035,10 @@ async function executeWithParsedArgs(tool: Tool, tc: { name: string; arguments: 
   if (!parsedOk && Object.keys(args).length === 0) {
     return `⚠️ 参数解析失败:模型输出的 JSON 不完整(可能被 max_tokens 截断)。请重试,缩短参数内容。`;
   }
+  // 别名归一 + 必填校验(实现见 tools.ts guardToolArgs:空参/缺参都给可自愈提示)
+  args = normalizeAliasArgs(tc.name, args);
+  const argIssue = guardToolArgs(tool, args);
+  if (argIssue) return argIssue;
   return runToolReal(tool, tc, args, ctx);
 }
 

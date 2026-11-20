@@ -44,14 +44,52 @@ function getOnce(url, timeoutMs, headers) {
   });
 }
 
+// ── 主机级熔断(2026-11-20)──
+// 数据:30 天里 reddit_hot 70 次调用 70 次失败(100%)、market_search 49 次 47 次超时,
+// 合计约 40 分钟全花在"必然失败"的请求上 —— 这两个源在当前网络直接连不通(curl 实测
+// reddit.com / duckduckgo.com 均 http=000,10s 无响应),不是偶发抖动。
+// 旧行为:每次调用都老老实实等满 20s(还可能重试一次),然后回一句"请求超时"。
+// 现在:同一主机连续 2 次失败 → 熔断 10 分钟,期间直接快速失败并指向可用替代品。
+// / Host-level circuit breaker: two consecutive failures take the host out for 10 minutes,
+// so a structurally unreachable source costs seconds instead of 40 minutes.
+const HOST_FAIL = new Map(); // host -> { fails, until }
+const BREAK_AFTER = 2;
+const BREAK_MS = 10 * 60_000;
+function hostOf(url) { try { return new URL(url).host; } catch { return String(url); } }
+function breakerLeftMs(url) {
+  const h = HOST_FAIL.get(hostOf(url));
+  // until===0 表示"计数还没到熔断线",不是"已过期" —— 早期版本在这里直接删表,
+  // 把失败计数清零,熔断永远开不起来(实测 3 次调用 3 次都等满 8s)。
+  if (!h || !h.until) return 0;
+  const left = h.until - Date.now();
+  if (left > 0) return left;
+  HOST_FAIL.delete(hostOf(url));
+  return 0;
+}
+function noteFail(url) {
+  const k = hostOf(url);
+  const cur = HOST_FAIL.get(k) || { fails: 0, until: 0 };
+  cur.fails++;
+  if (cur.fails >= BREAK_AFTER) cur.until = Date.now() + BREAK_MS;
+  HOST_FAIL.set(k, cur);
+}
+function noteOk(url) { HOST_FAIL.delete(hostOf(url)); }
+
 function httpGet(url, timeoutMs = 20000, headers = {}, retries = 1) {
-  const attempt = (left) => getOnce(url, timeoutMs, headers).then((res) => {
+  const left = breakerLeftMs(url);
+  if (left > 0) {
+    return Promise.reject(new Error(
+      `${hostOf(url)} 连续失败已临时熔断(约 ${Math.ceil(left / 60000)} 分钟后自动恢复),本轮别再调这个源`,
+    ));
+  }
+  const attempt = (left2) => getOnce(url, timeoutMs, headers).then((res) => {
     // 429/503 限流: 等待后重试一次, 仍失败返回最后一次响应(调用方自己降级)
-    if ((res.status === 429 || res.status === 503) && left > 0) {
-      return new Promise((r) => setTimeout(r, 1500)).then(() => attempt(left - 1));
+    if ((res.status === 429 || res.status === 503) && left2 > 0) {
+      return new Promise((r) => setTimeout(r, 1500)).then(() => attempt(left2 - 1));
     }
+    if (res.status >= 500) noteFail(url); else noteOk(url);
     return res;
-  });
+  }).catch((e) => { noteFail(url); throw e; });
   return attempt(retries);
 }
 
@@ -85,8 +123,8 @@ const marketSearch = {
     const limit = Math.min(Math.max(args.limit ?? 8, 1), 15);
     const url = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(args.query)}`;
     let res;
-    try { res = await httpGet(url); } catch (e) {
-      return `❌ 搜索请求失败: ${e.message}。可改用 web_search 工具重试。`;
+    try { res = await httpGet(url, 8000); } catch (e) {
+      return `❌ 搜索请求失败(DuckDuckGo): ${e.message}。\n💡 直接用内置 web_search 工具代替(同一需求,走的是另一条通道)。`;
     }
     // 解析 DDG html 结果页: result__a 为标题链接, result__snippet 为摘要
     const out = [];
@@ -194,7 +232,18 @@ const redditHot = {
     const url = args.query
       ? `https://www.reddit.com/r/${encodeURIComponent(sub)}/search.json?q=${encodeURIComponent(args.query)}&restrict_sr=1&sort=${sort}&t=${tRange}&limit=${limit}`
       : `https://www.reddit.com/r/${encodeURIComponent(sub)}/${sort}.json?limit=${limit}`;
-    const res = await httpGet(url);
+    let res;
+    try {
+      res = await httpGet(url, 8000);
+    } catch (e) {
+      // Reddit 在部分网络环境(含中国大陆)直接不可达,curl 实测 10s 无响应。
+      // 不要静默抛异常(旧行为:模型只看到 "工具出错: Error: 请求超时"),给可执行的替代路径。
+      return `❌ Reddit 请求失败: ${e.message}\n`
+        + `💡 该源在当前网络不可达(本地实测连不通)。替代方案:\n`
+        + `   • web_search("site:reddit.com ${args.query || sub} …") —— 搜同一批帖子\n`
+        + `   • hn_search —— 同类社区讨论热度\n`
+        + `   不要再用 reddit_hot 重试,10 分钟内会自动熔断。`;
+    }
     if (res.status === 403 || res.status === 429) return `❌ Reddit 拒绝了请求 (HTTP ${res.status}, 可能被限流)。稍后重试或换社区。`;
     if (res.status === 404) return `❌ 找不到 subreddit「${sub}」,检查拼写。`;
     if (res.status !== 200) return `❌ Reddit 返回 HTTP ${res.status}`;

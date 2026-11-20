@@ -256,6 +256,94 @@ export function toolDef(t: Tool): ToolDef {
   return { type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } };
 }
 
+// ── 必填参数校验 + 参数别名归一化(2026-11-20)──
+// 数据依据:近 30 天 41.8 万条事件里,「工具调用参数完全为空」共 2617 次,其中约 1000 次
+// 是该工具明明有必填字段(shell 695 / browser_eval 159 / edit_file 62 / read_file 28 …),
+// 按模型归因 —— glm-5.3-flash 占 695/699 的 shell 空参,分布在 54 个会话,不是偶发。
+// 旧行为:arguments='' → JSON.parse('' || '{}') → args={} → 落到工具内部
+// `exec('')` 抛 `TypeError [ERR_INVALID_ARG_VALUE]: The argument 'file' cannot be empty`,
+// 模型拿到一条与自己动作无关的 Node 栈信息,只能靠猜重试。
+// 现在:在唯一的执行收口处校验 required,缺参就回一条指明"缺哪个字段、该传什么"的提示,
+// 让模型一轮自愈;顺带把常见同义词(cmd/file_path/href)归一化,少掉一类纯口径失败。
+// / Validate `required` at the execution choke point so an empty-args tool_call returns an
+// actionable message instead of a Node TypeError raised from inside the tool.
+const ARG_ALIASES: Record<string, Record<string, string[]>> = {
+  shell: { command: ['cmd', 'script', 'shell', 'bash', 'commandLine'] },
+  read_file: { path: ['file_path', 'filePath', 'filename', 'file'] },
+  write_file: { path: ['file_path', 'filePath', 'filename', 'file'] },
+  edit_file: { path: ['file_path', 'filePath', 'filename', 'file'] },
+  web_fetch: { url: ['href', 'link', 'uri'] },
+  wait_for: { target: ['path', 'file', 'port', 'pattern_target'] },
+};
+
+export function normalizeAliasArgs(name: string, args: Record<string, unknown>): Record<string, unknown> {
+  const map = ARG_ALIASES[name];
+  if (!map) return args;
+  let out = args;
+  for (const [canonical, aliases] of Object.entries(map)) {
+    const cur = out[canonical];
+    if (cur !== undefined && cur !== null && String(cur).trim() !== '') continue;
+    for (const a of aliases) {
+      const v = out[a];
+      if (v === undefined || v === null || String(v).trim() === '') continue;
+      if (out === args) out = { ...args };
+      out[canonical] = v;
+      break;
+    }
+  }
+  return out;
+}
+
+// 缺参提示:列出字段名 + 该字段的说明(取自 schema),让模型不用回查工具表就能补对。
+function missingRequiredArgs(tool: Tool, args: Record<string, unknown>): string[] {
+  const req = (tool.parameters as { required?: unknown }).required;
+  if (!Array.isArray(req) || !req.length) return [];
+  const miss: string[] = [];
+  for (const k of req) {
+    if (typeof k !== 'string') continue;
+    const v = args[k];
+    if (v === undefined || v === null) miss.push(k);
+    else if (typeof v === 'string' && !v.trim()) miss.push(k);
+  }
+  return miss;
+}
+
+function argHintText(tool: Tool, missing: string[]): string {
+  const props = ((tool.parameters as { properties?: Record<string, { description?: string; type?: string }> }).properties) ?? {};
+  return missing.map((k) => {
+    const p = props[k];
+    const desc = p?.description ? ` — ${p.description}` : '';
+    return `   • ${k} (${p?.type ?? 'string'})${desc}`;
+  }).join('\n');
+}
+
+/**
+ * 执行前的参数闸:返回 null = 放行;返回字符串 = 直接作为工具结果回给模型。
+ * 空参给专项提示(流式丢参),部分缺参逐字段指出。都在工具内部抛异常之前拦下。
+ * 调用方应先用 normalizeAliasArgs() 归一化别名,再调本函数。
+ * / Returns null when the call may proceed, or the message to send back to the model.
+ */
+export function guardToolArgs(tool: Tool, args: Record<string, unknown>): string | null {
+  const missing = missingRequiredArgs(tool, args);
+  if (!missing.length) return null;
+  const got = Object.keys(args);
+  if (!got.length) {
+    const typed = Object.keys(((tool.parameters as { properties?: object }).properties) ?? {}).join(', ');
+    return (
+      `⚠️ 这次调用没有携带任何参数(流式传输丢了 arguments),${tool.name} 需要:${missing.join(', ')}\n` +
+      `  参数说明:\n${argHintText(tool, missing)}\n` +
+      (typed ? `  该工具支持的参数:${typed}\n` : '') +
+      `→ 请重新调用 ${tool.name} 并带上参数。如果本来就不需要参数,说明这个工具选错了。`
+    );
+  }
+  return (
+    `⚠️ ${tool.name} 缺少必填参数:${missing.join(', ')}\n` +
+    `  参数说明:\n${argHintText(tool, missing)}\n` +
+    `  本次只传了:${got.join(', ')}(字段名要和上面一致)\n` +
+    `→ 补齐后重新调用。`
+  );
+}
+
 // Shared shell runner (the shell tool uses it). exec picks the platform shell automatically:
 // process.env.ComSpec (cmd.exe) on Windows, /bin/sh on unix. Raised maxBuffer so big outputs survive.
 // 120s default — 30s killed real work (npm install / builds). Still bounded so a runaway can't hang.
@@ -289,9 +377,10 @@ export function shellExec(command: string, cwd: string, timeoutMs = 120_000, sig
               : '超时前没有任何输出。\n') +
             `[exit timeout]\n` +
             `下一步(⚠️ 不要用完全相同的参数重跑):\n` +
-            `1) 若在等外部进程/构建/服务就绪 → 用 wait_for(until=log_match|port_open|process_exit),不要 sleep;\n` +
-            `2) 若确实是长任务 → shell 后台跑(nohup <cmd> > /tmp/run.log 2>&1 &),再用 wait_for(until=log_match, target=/tmp/run.log) 盯日志;\n` +
-            `3) 若上面的输出已经说明任务完成,直接采信,不必重跑。`,
+            `1) 这条命令确实是长任务 → 原样重发,但加 timeout=${Math.min(900, Math.max(120, secs * 3))}(秒,上限 900);\n` +
+            `2) 若在等外部进程/构建/服务就绪 → 用 wait_for(until=log_match|port_open|process_exit),不要 sleep;\n` +
+            `3) 也可以后台跑(nohup <cmd> > /tmp/run.log 2>&1 &),再用 wait_for(until=log_match, target=/tmp/run.log) 盯日志;\n` +
+            `4) 若上面的输出已经说明任务完成,直接采信,不必重跑。`,
           );
           return;
         }
@@ -388,14 +477,22 @@ export function gitCrossRepoViolation(cmd: string, convCwd: string): string | nu
 
 const shell: Tool = {
   name: 'shell',
-  description: '在用户电脑上执行 shell 命令(文件操作、git、系统信息等)。执行前会请求用户确认。Windows 上走 cmd.exe,其它系统走 /bin/sh。',
+  description: '在用户电脑上执行 shell 命令(文件操作、git、系统信息等)。执行前会请求用户确认。Windows 上走 cmd.exe,其它系统走 /bin/sh。默认 120 秒超时;已知是长任务(xcodebuild/gradle/全盘 find 等)时传 timeout 显式放宽(上限 900 秒)。',
   parameters: {
     type: 'object',
-    properties: { command: { type: 'string', description: '要执行的 shell 命令' } },
+    properties: {
+      command: { type: 'string', description: '要执行的 shell 命令' },
+      timeout: { type: 'number', description: '超时秒数(默认 120,上限 900)。已知的长任务(构建/全盘扫描/日志回放)显式给值,避免到点被杀后重跑。' },
+    },
     required: ['command'],
   },
   async run(args, ctx) {
-    const cmd = (args.command as string) ?? '';
+    // 别名 cmd/script 已在 AgentLoop 归一化;这里兜住直接调用方与异常类型。
+    const raw = (args.command ?? args.cmd) as unknown;
+    const cmd = typeof raw === 'string' ? raw : raw == null ? '' : String(raw);
+    if (!cmd.trim()) {
+      return '⚠️ 缺少 command:shell 需要一条命令字符串。若想读文件用 read_file,看目录用 shell(ls <dir>),搜内容用 grep。';
+    }
     // 宿主自杀守卫:先于 git 守卫和 confirm —— 两次误杀事故(2026-09-14/10-15)的机械闸。
     const killHit = hostKillViolation(cmd);
     if (killHit) return `🚫 已拦截 — ${killHit}`;
@@ -416,7 +513,15 @@ const shell: Tool = {
     // "源码已修但 binary 仍旧"的验证幻觉(2026-10-12 事故:超时杀掉 xcodebuild,agent 拿旧
     // binary 验证数小时)。命中长任务特征 → 600s;其余维持 120s。
     const longTask = /xcodebuild|swift build|gradle|\.gradlew|ninja|cmake --build|burst|boot |等待|restart|reboot|hdiutil|productbuild|xcrun altool/i.test(cmd);
-    const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, longTask ? 600_000 : 120_000, ctx.signal));
+    // 显式 timeout 优先:近 30 天 1027 次超时、28.5 小时纯等待,去重后 921 条不同命令 ——
+    // 不是"重跑同一句",而是大量命令本来就超过 120s(find ~ / grep -r 全盘 / simctl log show),
+    // 模型没有任何办法声明"这条要跑 5 分钟",只能被杀掉再换写法重来。
+    // / An explicit per-call timeout beats pattern-guessing: 1027 timeouts / 28.5h in 30 days
+    // across 921 distinct commands proves these were genuinely long, not retry loops.
+    const reqSec = Number(args.timeout);
+    const explicitMs = Number.isFinite(reqSec) && reqSec > 0 ? Math.min(900, Math.max(1, reqSec)) * 1000 : 0;
+    const budgetMs = explicitMs || (longTask ? 600_000 : 120_000);
+    const out = await guardFocus(finalCmd, () => shellExec(finalCmd, ctx.cwd, budgetMs, ctx.signal));
     // 时间戳头:LLM 手算 epoch 窗口必错(实测 DB 查询查空→误判"没事件"),直接把当前时刻喂给它。
     const stamp = new Date().toISOString().replace('T', ' ').slice(0, 19);
     const header = `[now: ${stamp} | epoch=${Math.floor(Date.now() / 1000)}]\n`;
@@ -998,6 +1103,48 @@ function extractTextFromHTML(html: string): string {
   return s;
 }
 
+// ── web_fetch 结果缓存(2026-11-20)──
+// 数据:近 30 天 1366 次抓取里 86 个 URL 被重复取过,合计 202 次重复(最多 5 次同一页),
+// 平均每次 14.5s → 约 49 分钟在重复拉同一份文档。抓取是纯 GET、无副作用,缓存最安全。
+// TTL 10 分钟(文档页基本不变),最多 40 条、总字符 6MB 上限,超了按最旧淘汰。
+// / GET-only + no side effects → safe to cache. 202 redundant fetches in 30 days.
+const WEB_FETCH_TTL_MS = 10 * 60_000;
+const WEB_FETCH_CACHE_MAX = 40;
+const WEB_FETCH_CACHE_CHARS = 6 * 1024 * 1024;
+const webFetchCache = new Map<string, { text: string; at: number }>();
+let webFetchCacheChars = 0;
+
+function cacheGet(url: string): { text: string; ageMs: number } | null {
+  const hit = webFetchCache.get(url);
+  if (!hit) return null;
+  const age = Date.now() - hit.at;
+  if (age > WEB_FETCH_TTL_MS) {
+    webFetchCache.delete(url);
+    webFetchCacheChars -= hit.text.length;
+    return null;
+  }
+  // 命中即刷新插入序,LRU 语义靠 Map 的插入顺序
+  webFetchCache.delete(url);
+  webFetchCache.set(url, hit);
+  return { text: hit.text, ageMs: age };
+}
+
+function cachePut(url: string, text: string): void {
+  if (!text || text.length > WEB_FETCH_CACHE_CHARS / 4) return; // 单条超 1.5MB 不缓存
+  const old = webFetchCache.get(url);
+  if (old) webFetchCacheChars -= old.text.length;
+  webFetchCache.delete(url);
+  webFetchCache.set(url, { text, at: Date.now() });
+  webFetchCacheChars += text.length;
+  while (webFetchCache.size > WEB_FETCH_CACHE_MAX || webFetchCacheChars > WEB_FETCH_CACHE_CHARS) {
+    const first = webFetchCache.keys().next().value;
+    if (!first) break;
+    const drop = webFetchCache.get(first);
+    webFetchCache.delete(first);
+    webFetchCacheChars -= drop?.text.length ?? 0;
+  }
+}
+
 // 尝试 Jina Reader(大陆可能被墙,15s 超时后静默回退)。
 // 成功返回正文文本,失败返回 null。
 async function tryJinaReader(targetUrl: string): Promise<string | null> {
@@ -1046,11 +1193,21 @@ const webFetch: Tool = {
 
     const timeout = ctx?.signal ?? AbortSignal.timeout(25_000);
 
+    // 缓存命中:同一 URL 10 分钟内只真正抓一次。抓取无副作用,重复抓纯浪费。
+    // 命中时明示"多久前抓的",避免模型拿旧内容当实时数据用。
+    // / Cache hit: same URL within 10 min is not refetched; the note says how old it is.
+    const cacheUrl = url.toString();
+    const cached = cacheGet(cacheUrl);
+    if (cached) {
+      const mins = Math.max(1, Math.round(cached.ageMs / 60_000));
+      return `${cached.text}\n\n[缓存] 该 URL ${mins} 分钟前抓过,内容直接复用(10 分钟内同一 URL 不再请求网络)。`;
+    }
+
     // ── 路径 1: Jina Reader(如果可达,返回干净 Markdown)──
     // P2 隐私:受设置开关控制(第三方 r.jina.ai 会看到目标 URL);关 = 全部走本机直连。
     if (getSettings().jinaReaderFallback !== false) {
       const jinaResult = await tryJinaReader(s);
-      if (jinaResult) return jinaResult;
+      if (jinaResult) { cachePut(cacheUrl, jinaResult); return jinaResult; }
     }
 
     // ── 路径 2: 原生 fetch + 正则去噪 ──
@@ -1084,13 +1241,18 @@ const webFetch: Tool = {
       if (ct.includes('application/json') || ct.includes('text/plain')) {
         const body = raw.length > 500_000 ? raw.slice(0, 500_000) + '\n…[截断]' : raw;
         const trimmed = body.length > 12_000 ? body.slice(0, 12_000) + '\n…[截断]' : body;
-        return `[HTTP ${resp.resp.status}]\n${trimmed}`;
+        const out = `[HTTP ${resp.resp.status}]\n${trimmed}`;
+        if (resp.resp.ok) cachePut(cacheUrl, out);
+        return out;
       }
 
       // HTML → 提取正文
       const extracted = extractTextFromHTML(raw);
       const trimmed = extracted.length > 12_000 ? extracted.slice(0, 12_000) + '\n…[截断]' : extracted;
-      return `[HTTP ${resp.resp.status}]\n${trimmed}`;
+      const out = `[HTTP ${resp.resp.status}]\n${trimmed}`;
+      // 只缓存 2xx:错误页/权限页缓存下来会让后续十分钟都拿到错的结论。
+      if (resp.resp.ok) cachePut(cacheUrl, out);
+      return out;
     } catch (e) {
       return `抓取失败: ${sanitizeError(e)}`;
     }
@@ -2706,10 +2868,18 @@ const videoGen: Tool = {
   async run(args, ctx) {
     const { getSettings } = await import('./settings');
     const settings = getSettings();
-    const apiKey = settings.minimaxApiKey;
+    // trim + 形态检查:实测 6 次调用全部止步于 "login fail: Please carry the API secret
+    // key in the 'Authorization' field" —— 不是没配 key,而是配了不可用的值(带空白/占位符/
+    // 从别处复制的短串)。在发请求前就点明,别让模型以为是网络问题去重试。
+    const apiKey = String(settings.minimaxApiKey ?? '').trim();
 
     if (!apiKey) {
       return '❌ MiniMax API Key 未配置。请在设置 → MiniMax API Key 中填入你的密钥(获取地址: https://platform.minimaxi.com → 账户管理 > 接口密钥)。';
+    }
+    if (/\s/.test(apiKey) || /^(your|xxx|test|demo|-+$)/i.test(apiKey) || apiKey.length < 20) {
+      return `❌ MiniMax API Key 格式不对(当前值:${apiKey.slice(0, 4)}…,长度 ${apiKey.length})。`
+        + 'Minimax 的密钥是一串以 eyJ 开头的长 JWT,不含空格。请到 设置 → MiniMax API Key 重新粘贴完整密钥;'
+        + '这个错误重试工具不会有改善。';
     }
 
     const prompt = String(args.prompt ?? '').trim();
@@ -2743,6 +2913,11 @@ const videoGen: Tool = {
         const errBody = await resp.text().catch(() => '');
         let errMsg = errBody;
         try { errMsg = JSON.parse(errBody)?.error?.message ?? errBody; } catch { /* keep raw */ }
+        // 鉴权类失败单独点明:这类错误换 prompt/重试都没用,只有重新配 key 能解。
+        if (resp.status === 401 || resp.status === 403 || /login fail|api key|unauthor/i.test(errMsg)) {
+          return `❌ MiniMax 鉴权失败 (HTTP ${resp.status}): ${errMsg.slice(0, 200)}\n`
+            + '💡 这是 key 无效或已过期,不是网络/prompt 问题。请到 设置 → MiniMax API Key 重新填入有效密钥后再试;重复调用本工具不会成功。';
+        }
         return `❌ 创建视频任务失败 (HTTP ${resp.status}): ${errMsg.slice(0, 300)}`;
       }
 
@@ -3010,11 +3185,11 @@ const screenshot: Tool = {
 
 const screenshot_window: Tool = {
   name: 'screenshot_window',
-  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。注意:找不到窗口时不会让你瞎猜,会直接返回当前可截窗口的标题清单,照着清单里的标题原样重试即可。',
+  description: '按窗口标题关键字截取指定窗口的内容(不要求该窗口在前台,被遮挡/在后台也能拍,画面零切换)。适合:自己用 shell 启动了一个应用/窗口后,直接截它的内容查看,而不把它带到最前面打扰用户。配合后台启动(如 macOS 的 open -gj、Windows 的 START /B)可实现全程零前台切换。返回 base64 PNG + 窗口内容尺寸 + 落盘路径/MD5。title 也接受**应用名**(预览/Chrome/终端 等):标题常是文档名(图片文件名、网页标题),按应用名匹配更稳。注意:找不到窗口时不会让你瞎猜,会直接返回当前可截窗口的「标题(宿主应用)」清单,照着重试即可。',
   parameters: {
     type: 'object',
     properties: {
-      title: { type: 'string', description: '窗口标题关键字(子串匹配,越长越准;两字短名也可,但要求唯一命中,如 "预览")' },
+      title: { type: 'string', description: '窗口标题关键字或应用名(子串匹配,越长越准;两字短名也可,但要求唯一命中,如 "预览")' },
     },
     required: ['title'],
   },

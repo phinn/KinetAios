@@ -16,6 +16,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import crypto from 'node:crypto';
 import os from 'node:os';
 import type { Tool, ToolCtx } from './tools';
+import { guardToolArgs, normalizeAliasArgs } from './tools';
 import { getBrand } from './brand';
 import { runAgentLoop } from './AgentLoop';
 import { currentProvider, type Provider } from './glm';
@@ -515,7 +516,14 @@ export class LocalMcpServer {
             cwd: process.env.KINET_MCP_CWD || os.homedir(),
             confirm: async () => true,
           };
-          const result = await tool.run(args, ctx);
+          const result = await (async () => {
+            // 与 AgentLoop 同一道参数闸:外部 MCP 客户端漏传必填字段时,
+            // 回一条"缺哪个字段"的提示,而不是让工具内部抛 Node TypeError。
+            const normalized = normalizeAliasArgs(tool.name, args);
+            const issue = guardToolArgs(tool, normalized);
+            if (issue) return issue;
+            return tool.run(normalized, ctx);
+          })();
           return { content: [{ type: 'text', text: result }], isError: false };
         } catch (e) {
           return { content: [{ type: 'text', text: `工具执行失败: ${(e as Error).message}` }], isError: true };

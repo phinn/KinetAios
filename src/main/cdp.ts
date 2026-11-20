@@ -717,17 +717,35 @@ export async function browserSelect(selector: string, value: string, tabId?: str
 }
 
 export async function browserEval(expr: string, tabId?: string, urlSubstr?: string): Promise<string> {
-  const t = await findTarget(tabId, urlSubstr);
-  const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
-  try {
-    const r = await s.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
-    if (r.exceptionDetails) {
-      const d = r.exceptionDetails;
-      return `❌ JS 异常: ${d.exception?.description ?? d.text}`;
-    }
-    const v = r.result?.value;
-    return typeof v === 'string' ? v : JSON.stringify(v, null, 2) ?? String(v);
-  } finally { await s.close(); }
+  // 目标失效重试一次(2026-11-20):近 30 天 browser_eval 9614 次里 363 次报错,
+  // 其中 65 次是 `Inspected target navigated or closed` —— 页面刚好在 eval 前导航,
+  // 旧 target 的 ws 会话直接作废。这类失败重取 target 基本立刻成功,而旧实现一次就放弃,
+  // 模型只能整段脚本重发。只在"目标失效"类错误上重试,**超时不重试**(否则等待翻倍)。
+  // / Retry once on target-invalidated errors only: a navigation between findTarget and
+  // evaluate kills the session, and re-resolving the target normally succeeds immediately.
+  let lastErr: unknown = null;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const t = await findTarget(tabId, urlSubstr);
+    const s = await CdpSession.connect(t.webSocketDebuggerUrl!);
+    try {
+      const r = await s.send('Runtime.evaluate', { expression: expr, returnByValue: true, awaitPromise: true });
+      if (r.exceptionDetails) {
+        const d = r.exceptionDetails;
+        return `❌ JS 异常: ${d.exception?.description ?? d.text}`;
+      }
+      const v = r.result?.value;
+      return typeof v === 'string' ? v : JSON.stringify(v, null, 2) ?? String(v);
+    } catch (e) {
+      lastErr = e;
+      const msg = String((e as Error)?.message ?? e);
+      // 只认"目标已失效";连接超时/求值超时一律不重试 —— 那会把 15s 等待翻倍成 30s。
+      const retriable = !/超时|timeout/i.test(msg)
+        && /navigated|closed|detached|no longer|Inspected target/i.test(msg);
+      if (attempt === 0 && retriable) continue;
+      throw e;
+    } finally { await s.close(); }
+  }
+  throw lastErr;
 }
 
 export async function browserScreenshot(tabId?: string, urlSubstr?: string): Promise<{ ok: boolean; base64?: string; error?: string; note?: string }> {

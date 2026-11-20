@@ -189,7 +189,7 @@ export async function withSelfHidden<T>(hideSelf: boolean, fn: () => Promise<T>)
 // / Candidate list for the model: the old code only appended 12 raw names, so the model kept
 // guessing titles ("预览"/"设置") that its own anti-misfire rule then rejected. Listing the
 // deduped, captureable titles up front turns two failed rounds into one.
-function formatWindowCandidates(sources: Electron.DesktopCapturerSource[], limit = 24): string {
+function formatWindowCandidates(sources: Electron.DesktopCapturerSource[], ownerOf?: (title: string) => string, limit = 24): string {
   const seen = new Set<string>();
   const names: string[] = [];
   for (const s of sources) {
@@ -202,8 +202,84 @@ function formatWindowCandidates(sources: Electron.DesktopCapturerSource[], limit
   if (!names.length) return '（无可截窗口:可能全部最小化了,或未授予「屏幕录制」权限）';
   const shown = names.slice(0, limit);
   const more = names.length > shown.length ? ` …等共 ${names.length} 个` : '';
-  return shown.map((n) => `「${n}」`).join(' ') + more;
+  // 带上宿主应用名:窗口标题常常是**文档名**(预览的标题是图片文件名、Chrome 的标题是网页标题),
+  // 只给标题时模型无法把「我想截的那个 app」对上号 —— 242 次失败里绝大多数是这个原因。
+  // / Annotate with the owning app: a window title is often a document name, so a bare
+  // title list gives the model nothing to map "the app I mean" onto.
+  return shown.map((n) => {
+    const ow = ownerOf?.(n) ?? '';
+    return ow && ow !== n ? `「${n}」(${ow})` : `「${n}」`;
+  }).join(' ') + more;
 }
+
+// macOS 窗口详情(标题 + 宿主应用名)。只在"标题没命中"的失败路径上按需调用一次,
+// 命中路径零额外开销。
+// / Window title + owning app name, fetched only on the miss path.
+type WinDetail = { name: string; owner: string };
+let windowDetailProvider: () => Promise<WinDetail[]> = () => listWindowsDetailed();
+// 测试注入点:窗口枚举要走真实 JXA,单测里换成假数据,避免依赖本机窗口状态。
+// / Test seam: the real lister shells out to JXA; tests swap in a fake.
+export function setWindowDetailProvider(fn: () => Promise<WinDetail[]>): void {
+  windowDetailProvider = fn;
+}
+
+async function listWindowsDetailed(): Promise<WinDetail[]> {
+  if (process.platform !== 'darwin') return [];
+  try {
+    const script = `
+ObjC.import('CoreGraphics');
+ObjC.import('Foundation');
+var out = [];
+var list = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionOnScreenOnly | $.kCGWindowListExcludeDesktopElements, $.kCGNullWindowID));
+for (var i = 0; i < list.count; i++) {
+  var wd = list.objectAtIndex(i);
+  if (Number(ObjC.unwrap(wd.objectForKey('kCGWindowLayer'))) !== 0) continue;
+  var nR = wd.objectForKey('kCGWindowName');
+  var oR = wd.objectForKey('kCGWindowOwnerName');
+  var nm = nR ? String(ObjC.unwrap(nR)) : '';
+  var ow = oR ? String(ObjC.unwrap(oR)) : '';
+  if (!nm && !ow) continue;
+  out.push(ow.replace(/\\t/g, ' ') + '\\t' + nm.replace(/\\t/g, ' '));
+}
+out.join('\\n');
+`.trim();
+    const out = (await osascriptJxa(script, 4000)).trim();
+    return out.split('\n').map((line) => {
+      const [owner, ...rest] = line.split('\t');
+      return { owner: (owner ?? '').trim(), name: rest.join('\t').trim() };
+    }).filter((w) => w.name || w.owner);
+  } catch {
+    return [];
+  }
+}
+
+// 应用名同义词:中英版本叫法不同、系统升级后改名,模型按"我印象里的名字"写必然落空。
+// 只在**唯一命中**时采信,绝不在多个候选里猜一个。
+// 实测失败原句:「Preview」「Quick Look」「Simulator」「DeviceHub」「AiosPulse」。
+// / App-name aliases for localized/renamed apps; only a unique owner hit is trusted.
+const APP_ALIASES: Record<string, string[]> = {
+  simulator: ['device hub', 'devices', '模拟器'],
+  模拟器: ['device hub', 'devices', 'simulator'],
+  preview: ['预览'],
+  'quick look': ['预览'],
+  预览: ['preview', 'quick look'],
+  finder: ['访达'],
+  访达: ['finder'],
+  terminal: ['终端'],
+  终端: ['terminal'],
+  notes: ['备忘录'],
+  备忘录: ['notes'],
+  mail: ['邮件'],
+  outlook: ['邮件'],
+  邮件: ['mail', 'outlook'],
+  'activity monitor': ['活动监视器'],
+  活动监视器: ['activity monitor'],
+  'system information': ['系统信息'],
+  系统信息: ['system information'],
+  'system settings': ['系统设置'],
+  系统设置: ['system settings'],
+};
+const normName = (s: string): string => s.toLowerCase().replace(/[\s\-_·.()（）]+/g, '');
 
 export async function captureWindowByName(
   nameSubstr: string,
@@ -216,8 +292,19 @@ export async function captureWindowByName(
     });
     const q = nameSubstr.trim().toLowerCase();
     const usable = sources.filter((s) => !s.thumbnail.isEmpty() && (s.name ?? '').trim());
+    // 详情只取一次,失败信息与 owner 兜底共用。
+    let detailCache: WinDetail[] | null = null;
+    const details = async (): Promise<WinDetail[]> => {
+      if (!detailCache) detailCache = await windowDetailProvider();
+      return detailCache;
+    };
+    const ownerOf = (title: string): string => {
+      const hit = (detailCache ?? []).find((d) => normName(d.name) === normName(title));
+      return hit?.owner ?? '';
+    };
     if (!q) {
-      return { ok: false, error: `请提供窗口标题关键字。当前可截窗口:${formatWindowCandidates(usable)}\n→ 从上面挑一个标题,原样作为 title 重试。` };
+      await details();
+      return { ok: false, error: `请提供窗口标题关键字。当前可截窗口:${formatWindowCandidates(usable, ownerOf)}\n→ 从上面挑一个标题,原样作为 title 重试。` };
     }
     const matched = usable.filter((s) => s.name.toLowerCase().includes(q));
     let distinctNames = [...new Set(matched.map((s) => s.name.trim()))];
@@ -241,8 +328,45 @@ export async function captureWindowByName(
         }
       }
     }
+    // 三段回退:按**宿主应用名**匹配。窗口标题是文档名时(预览的「xxx.png」、Chrome 的网页标题),
+    // 拿应用名去找标题永远找不到 —— 242 次失败的主因就是模型写应用名、系统给的是文档名。
+    // 应用名先做空格/标点归一(「Device Hub」↔「DeviceHub」),再展开中英别名(Simulator↔Device Hub)。
+    // 仍然只采信唯一命中;同一应用多窗口时报错列出,不替用户选。
+    // / Third pass: match the OWNING APP instead of the title, normalized and alias-expanded.
+    let ownerHit = '';
     if (!matched.length) {
-      return { ok: false, error: `未找到标题含「${nameSubstr}」的窗口。当前可截窗口:${formatWindowCandidates(usable)}\n→ 从上面挑一个标题,原样作为 title 重试(取更长的一段更准)。` };
+      await details();
+      const qn = normName(q);
+      const wants = new Set<string>([qn, ...(APP_ALIASES[q] ?? [])].map(normName).filter(Boolean));
+      const owned = usable.filter((s) => {
+        const ow = normName(ownerOf(s.name));
+        if (!ow) return false;
+        for (const w of wants) {
+          if (!w) continue;
+          if (ow === w) return true;
+          // 双向包含,但反向要求至少 3 字符 —— 否则 1-2 字的应用名(「X」「预览」)
+          // 会把任意包含该字母的宿主全都算进来,变成"猜一个"。
+          if (w.length >= 2 && ow.includes(w)) return true;
+          if (ow.length >= 3 && w.includes(ow)) return true;
+        }
+        return false;
+      });
+      const ownedNames = [...new Set(owned.map((s) => s.name.trim()))];
+      if (ownedNames.length === 1) {
+        matched.push(owned[0]);
+        distinctNames = ownedNames;
+        ownerHit = ownerOf(owned[0].name) || nameSubstr;
+      } else if (ownedNames.length > 1) {
+        return {
+          ok: false,
+          error: `「${nameSubstr}」对应应用「${ownerOf(owned[0].name)}」有 ${ownedNames.length} 个窗口,无法判断要哪个:` +
+            `${ownedNames.map((n) => `「${n}」`).join(' ')}\n→ 直接复制其中一个完整标题作为 title 重试。`,
+        };
+      }
+    }
+    if (!matched.length) {
+      await details();
+      return { ok: false, error: `未找到标题或应用名含「${nameSubstr}」的窗口。当前可截窗口(标题 + 宿主应用):${formatWindowCandidates(usable, ownerOf)}\n→ 从上面挑一个标题原样作为 title 重试;标题是文档名的窗口(如预览里的图片)请按其应用名重试。` };
     }
     // 短名(≤2 字符)不再一律拒绝:只有唯一命中时并无误中风险,拦掉它纯属自伤 ——
     // 主窗口标题常就是「预览」「设置」这种两字名,旧逻辑让模型永远截不到、只能反复换词重试。
@@ -270,7 +394,7 @@ export async function captureWindowByName(
     // 失败时给出权限指引,别让模型在"截图成功但定位失败"里打转。
     // 模糊回退命中时必须用真实标题去换算坐标/绑宿主 —— 原查询已证明匹配不到该窗口。
     // On a fuzzy hit, resolve geometry/host by the REAL title: the query proved unmatchable.
-    const resolveTitle = fuzzyToken ? src.name : nameSubstr;
+    const resolveTitle = (fuzzyToken || ownerHit) ? src.name : nameSubstr;
     const bounds = await resolveWindowBounds(resolveTitle);
     // 方案B:同时解析窗口宿主(hwnd/pid),后续后台动作直投该窗口 —— 不再整屏
     // hit-test,agent 操作后台窗口时与用户前台操作物理互不干扰。
@@ -314,6 +438,9 @@ export async function captureWindowByName(
         // 多命中时明示"选了哪个、还有哪些",避免模型以为截对了其实截的是兄弟窗口。
         + (fuzzyToken
           ? `\nℹ️ 标题「${nameSubstr}」未精确命中,已按关键字「${fuzzyToken}」匹配到唯一窗口「${src.name}」。若这不是你要的窗口,请用完整标题重试。`
+          : '')
+        + (ownerHit
+          ? `\nℹ️ 「${nameSubstr}」是应用名,已匹配到该应用唯一的窗口「${src.name}」。若这不是你要的窗口,请用完整标题重试。`
           : '')
         + (distinctNames.length > 1
           ? `\nℹ️ 「${nameSubstr}」命中 ${distinctNames.length} 个窗口(${distinctNames.map((n) => `「${n}」`).join(' ')}),已取最佳匹配「${src.name}」;若截错,用更长标题重试。`

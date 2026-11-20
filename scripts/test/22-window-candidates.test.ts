@@ -11,7 +11,10 @@
 //   ③ 空名 / 未命中 → 报错时直接带可截窗口清单(去重,同名只列一次)
 import { assert, test, run } from './harness';
 import { desktopCapturer } from 'electron';
-import { captureWindowByName } from '../../src/main/computer-use';
+import { captureWindowByName, setWindowDetailProvider } from '../../src/main/computer-use';
+
+// 窗口枚举走真实 JXA,单测里换成空表:本文件只验标题匹配逻辑,不依赖本机窗口。
+setWindowDetailProvider(async () => []);
 
 type Src = { id: string; name: string; thumbnail: unknown };
 
@@ -83,7 +86,7 @@ test('未命中:报错带候选清单,且同名窗口只列一次', async () => 
   mockWindows(['iPhone Duo 镜像', 'iPhone Duo 镜像', 'Chrome', 'Xcode']);
   const r = await captureWindowByName('DuoPhone');
   assert(!r.ok, '未命中应失败');
-  assert(r.error!.includes('未找到标题含「DuoPhone」的窗口'), `应说明未命中,实际: ${r.error}`);
+  assert(r.error!.includes('未找到标题或应用名含「DuoPhone」的窗口'), `应说明未命中,实际: ${r.error}`);
   const hits = r.error!.split('「iPhone Duo 镜像」').length - 1;
   assert(hits === 1, `同名窗口应去重只列一次,实际出现 ${hits} 次`);
   assert(r.error!.includes('「Chrome」'), `应列出其他候选,实际: ${r.error}`);
@@ -102,7 +105,7 @@ test('整串未命中且词元命中多个:仍报错并列出候选,不猜', asy
   mockWindows(['Google Chrome', 'Chrome Remote Desktop', 'KinetAios']);
   const r = await captureWindowByName('Chrome 浏览器', PROBE);
   assert(!r.ok, '多个词元候选不应猜');
-  assert(r.error!.includes('未找到标题含'), `应回到未命中提示,实际: ${r.error}`);
+  assert(r.error!.includes('未找到标题或应用名含'), `应回到未命中提示,实际: ${r.error}`);
   assert(r.error!.includes('「Chrome Remote Desktop」'), `应列出候选,实际: ${r.error}`);
 });
 
