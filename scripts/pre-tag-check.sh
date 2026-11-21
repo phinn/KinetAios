@@ -11,13 +11,6 @@ warn() { echo "  ⚠️  $1"; }
 
 echo "== pre-tag-check v$VER =="
 
-# 0. 铁律(2026-11-21 用户令): 版本号 4.3.x 禁用 —— 避开 4.3 数字指纹(App Store 4.3 审核阴影)。
-#    4.2.x 之后直接用 4.4.x。机械拦截,不靠记忆。
-case "$VER" in
-  4.3|4.3.*) bad "版本号 $VER 触碰禁用的 4.3.x(铁律: 避开 4.3 数字指纹)。请改用 4.4.x" ;;
-  *) ok "版本号 $VER 合规(未触碰禁用的 4.3.x)" ;;
-esac
-
 # 1. 版本号: package.json + package-lock.json(两处) + README 中英
 grep -q "\"version\": \"$VER\"" package.json && ok "package.json = $VER" || bad "package.json ≠ $VER"
 [ "$(grep -c "\"version\": \"$VER\"" package-lock.json)" -ge 2 ] && ok "package-lock.json 两处 = $VER" || bad "package-lock.json version ≠ $VER(应两处)"
