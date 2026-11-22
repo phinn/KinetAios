@@ -436,6 +436,10 @@ export type AppSettings = {
   voiceChat: VoiceChatConfig;
   // ── MiniMax 文生视频 API Key ── 留空 = 工具调用时提示用户去设置。
   minimaxApiKey: string;
+  // ── 语音转写(ASR)独立配置 ── 语音输入走的 /audio/transcriptions 是 OpenAI 风格端点,
+  // 与主 provider 的 apiProtocol 无关(anthropic 协议端点没有此路径,必 404)。
+  // 留空 = 跟随主 provider(仅 openai 协议主 provider 可用);配置后优先走此配置。
+  asr: { baseURL: string; apiKey: string; model: string };
   // ── web_search 搜索引擎选择 ── 'bing'(默认,大陆直连质量稳) | 'sogou' | 'google'(需科学上网) | 'duckduckgo'。
   // 所选引擎优先,失败自动回退到其余引擎,不影响可用性。
   searchEngine: SearchEngine;

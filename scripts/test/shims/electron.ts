@@ -30,4 +30,18 @@ export const BrowserWindow = class StubBrowserWindow {};
 export const screen = { getPrimaryDisplay: () => ({ size: { width: 0, height: 0 }, workArea: { width: 0, height: 0 } }) };
 export const desktopCapturer = { getSources: async (): Promise<unknown[]> => [] };
 
+// ipc/tools.ts 的 transcribeViaOpenAI 单测需要以下桩(83-transcribe-asr.test.ts):
+// 测试只走纯函数,IPC 注册 / 剪贴板 / 窗口操作均不触达。
+export const ipcMain = { handle: (): void => {}, on: (): void => {} };
+export const clipboard = { writeText: (): void => {}, readText: (): string => '' };
+export const shell = { openExternal: async (): Promise<void> => {} };
+export const webContents = { getAllWebContents: (): unknown[] => [] };
+export const nativeTheme = { shouldUseDarkColors: false };
+export const Menu = { buildFromTemplate: (): unknown => ({}), setApplicationMenu: (): void => {} };
+export const Notification = class StubNotification {};
+export const Tray = class StubTray {};
+export const globalShortcut = { register: (): void => {}, unregister: (): void => {} };
+export const session = { defaultSession: {} };
+export const dialog = { showOpenDialog: async (): Promise<unknown> => null };
+
 export default { app, safeStorage };

@@ -41,6 +41,39 @@ import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation
 import { emitTeamEvent } from '../team-events';
 import { deps } from './ctx';
 
+// ── OpenAI 风格语音转写(纯函数,可单测)──
+// 手拼 multipart/form-data(零依赖)→ POST {baseURL}/audio/transcriptions → { text }。
+// 供 transcribe-audio IPC 与测试共用;HTTP 非 2xx 返回 { ok:false, error:"HTTP <code>: ..." }。
+export async function transcribeViaOpenAI(
+  baseURL: string, apiKey: string, model: string, base64: string, mime: string,
+): Promise<{ ok: boolean; text?: string; error?: string }> {
+  const buf = Buffer.from(base64, 'base64');
+  const ext = mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : 'm4a';
+  const filename = `audio.${ext}`;
+  const boundary = '----KinetAios' + Math.random().toString(36).slice(2);
+  const parts: Buffer[] = [];
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
+  parts.push(buf);
+  parts.push(Buffer.from('\r\n'));
+  parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\n${model}\r\n`));
+  parts.push(Buffer.from(`--${boundary}--\r\n`));
+  const url = baseURL.replace(/\/$/, '') + '/audio/transcriptions';
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Authorization': `Bearer ${apiKey}`,
+      'Content-Type': `multipart/form-data; boundary=${boundary}`,
+    },
+    body: Buffer.concat(parts),
+  });
+  if (!res.ok) {
+    const txt = await res.text();
+    return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+  }
+  const data = await res.json() as { text?: string };
+  return { ok: true, text: data.text ?? '' };
+}
+
 export function register(): void {
   // ── 自定义工具 ──
   ipcMain.handle('custom-tool-list', () => {
@@ -106,42 +139,23 @@ export function register(): void {
   });
 
   // ── 语音转写 ──
-  // renderer 录音(WebM/Opus)→ base64 发来 → 调 OpenAI-compatible /audio/transcriptions
+  // renderer 录音(WebM/Opus)→ base64 发来 → 调 OpenAI 风格 /audio/transcriptions。
+  // 端点解析优先级: asr.baseURL(独立 ASR 配置) > 主 baseURL。
+  // 注意主 baseURL 若是 anthropic 协议端点(如 minimax/anthropic)则没有此路径 —— 404 会带根因返回,
+  // renderer 据此提示用户去配置独立 ASR。
   ipcMain.handle('transcribe-audio', async (_e, base64: string, mime: string) => {
     try {
       const s = getSettings();
-      if (!s.apiKey) return { ok: false, error: 'API key not set' };
-      // base64 → Buffer
-      const buf = Buffer.from(base64, 'base64');
-      const ext = mime.includes('webm') ? 'webm' : mime.includes('ogg') ? 'ogg' : 'm4a';
-      const filename = `audio.${ext}`;
-      // multipart/form-data — 手拼 boundary(零依赖,不引 form-data)
-      const boundary = '----KinetAios' + Math.random().toString(36).slice(2);
-      const parts: Buffer[] = [];
-      // file 字段
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="file"; filename="${filename}"\r\nContent-Type: ${mime}\r\n\r\n`));
-      parts.push(buf);
-      parts.push(Buffer.from('\r\n'));
-      // model 字段
-      parts.push(Buffer.from(`--${boundary}\r\nContent-Disposition: form-data; name="model"\r\n\r\nwhisper-1\r\n`));
-      parts.push(Buffer.from(`--${boundary}--\r\n`));
-      const body = Buffer.concat(parts);
-
-      const url = s.baseURL.replace(/\/$/, '') + '/audio/transcriptions';
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${s.apiKey}`,
-          'Content-Type': `multipart/form-data; boundary=${boundary}`,
-        },
-        body,
-      });
-      if (!res.ok) {
-        const txt = await res.text();
-        return { ok: false, error: `HTTP ${res.status}: ${txt.slice(0, 200)}` };
+      const baseURL = (s.asr?.baseURL || '').trim() || s.baseURL;
+      const apiKey = (s.asr?.apiKey || '').trim() || s.apiKey;
+      const model = (s.asr?.model || '').trim() || 'whisper-1';
+      if (!apiKey) return { ok: false, error: 'API key not set' };
+      const r = await transcribeViaOpenAI(baseURL, apiKey, model, base64, mime);
+      // 404 = 该 provider 没有 ASR 端点(常见: anthropic 协议主 provider),给出可操作根因
+      if (!r.ok && /HTTP 40[44]/.test(r.error ?? '')) {
+        r.error += ` — ${baseURL} 未提供 /audio/transcriptions(主 provider 协议为 ${s.apiProtocol ?? 'openai'}?);请在 设置→语音转写 配置独立 ASR(如智谱 https://open.bigmodel.cn/api/paas/v4 + glm-asr)`;
       }
-      const data = await res.json() as { text?: string };
-      return { ok: true, text: data.text ?? '' };
+      return r;
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

@@ -81,6 +81,7 @@ const DEFAULTS: AppSettings = {
     enable: false,
   },
   minimaxApiKey: '', // MiniMax 文生视频 API Key(留空 = 未配置)
+  asr: { baseURL: '', apiKey: '', model: 'whisper-1' }, // 语音转写独立配置(空 = 跟随主 provider)
   searchEngine: 'bing', // web_search 默认引擎(可切 sogou/google/duckduckgo,失败自动回退)
   jinaReaderFallback: true, // web_fetch 的 Jina Reader 第三方抓取回退,默认开;隐私敏感可关(见 types.ts 注释)
   // 企业微信智能机器人:默认关闭,botId/secret 留空。
@@ -141,6 +142,7 @@ export function getSettings(): AppSettings {
     s.apiKey = decStr(s.apiKey);
     s.embedApiKey = decStr(s.embedApiKey);
     s.minimaxApiKey = decStr(s.minimaxApiKey);
+    if (s.asr) s.asr = { ...s.asr, apiKey: decStr(s.asr.apiKey) };
     if (s.voiceChat) {
       s.voiceChat = { ...s.voiceChat, accessToken: decStr(s.voiceChat.accessToken) };
     }
@@ -175,6 +177,7 @@ export function saveSettings(s: AppSettings): void {
   toWrite.apiKey = encStr(s.apiKey);
   toWrite.embedApiKey = encStr(s.embedApiKey);
   toWrite.minimaxApiKey = encStr(s.minimaxApiKey);
+  if (toWrite.asr) toWrite.asr = { ...toWrite.asr, apiKey: encStr(s.asr?.apiKey ?? '') };
   if (s.voiceChat) {
     toWrite.voiceChat = { ...s.voiceChat, accessToken: encStr(s.voiceChat.accessToken) };
   }

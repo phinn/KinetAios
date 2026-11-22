@@ -7085,6 +7085,16 @@ async function showSettings() {
       </div>
 
       <div class="s-section">
+        <h3>${tr('settings.asr.title')}</h3>
+        <div class="s-hint">
+          ${tr('settings.asr.desc')}
+        </div>
+        <div class="field"><label>${tr('settings.asr.baseURL')}</label><input id="s-asr-baseurl" type="text" value="${esc(s.asr?.baseURL ?? '')}" placeholder="https://open.bigmodel.cn/api/paas/v4" /></div>
+        <div class="field"><label>API Key</label><div class="key-eye-wrap"><input id="s-asr-key" type="password" value="${esc(s.asr?.apiKey ?? '')}" placeholder="${tr('settings.asr.keyPh')}" /><span class="key-eye" data-target="s-asr-key">👁</span></div></div>
+        <div class="field"><label>${tr('settings.asr.model')}</label><input id="s-asr-model" type="text" value="${esc(s.asr?.model ?? 'whisper-1')}" placeholder="glm-asr / whisper-1" /></div>
+      </div>
+
+      <div class="s-section">
         <h3>${tr('settings.persona.title')}</h3>
         <div class="field-desc">
           ${tr('settings.persona.desc', { count: (await api.getConversations()).length })}
@@ -8645,6 +8655,11 @@ function readSettingsForm(): AppSettings {
       enable: (document.getElementById('s-vc-enable') as HTMLInputElement).checked,
     },
     minimaxApiKey: (document.getElementById('s-minimax-key') as HTMLInputElement).value.trim(),
+    asr: {
+      baseURL: (document.getElementById('s-asr-baseurl') as HTMLInputElement).value.trim(),
+      apiKey: (document.getElementById('s-asr-key') as HTMLInputElement).value.trim(),
+      model: (document.getElementById('s-asr-model') as HTMLInputElement).value.trim() || 'whisper-1',
+    },
     wecomBot: {
       enabled: (document.getElementById('s-wecom-enable') as HTMLInputElement).checked,
       botId: (document.getElementById('s-wecom-botid') as HTMLInputElement).value.trim(),
@@ -10216,6 +10231,7 @@ let vadTranscribing = false;         // 正在转写上一段(避免并发)
 const VAD_THRESHOLD = 0.015;          // 音量阈值(0~1, 麦克风灵敏度不同需调)
 const VAD_SPEECH_END_MS = 600;        // 说话→静音多久后截断并发转写
 const VAD_AUTO_SEND_MS = 1500;        // 静音多久后判定全部说完,自动发送
+let vadErrShown = false;              // 转写失败 toast 节流(30s 一次)
 
 function wireVoice(): void {
   const btn = document.getElementById('btn-voice')!;
@@ -10382,6 +10398,12 @@ async function startVAD(): Promise<void> {
                 autosize(composer);
               }
             }
+          } else if (!r.ok && r.error && !vadErrShown) {
+            // 转写失败不再静默 —— 首次失败 toast 一次点明根因(如 provider 无 ASR 端点),
+            // 不打断 VAD 循环(用户可继续说,配置修好后自动恢复出字)。
+            vadErrShown = true;
+            uxToast.err(tr('toast.transcribeErr', { msg: r.error }));
+            setTimeout(() => { vadErrShown = false; }, 30000); // 30s 内只报一次,防刷屏
           }
         } catch { /* 转写失败,静默跳过 */ }
         vadTranscribing = false;

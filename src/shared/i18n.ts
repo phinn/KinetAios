@@ -887,6 +887,8 @@ const ZH_CN: Dict = {
   'settings.minimax.title': 'MiniMax 文生视频',
   'settings.minimax.desc': '配置 MiniMax 开放平台 API Key 后,Agent 可通过 video_gen 工具自主调用 H3 模型生成视频。密钥经系统级加密存储。',
   'settings.minimax.keyPh': 'MiniMax → 账户管理 > 接口密钥',
+  'settings.asr.title': '语音转写(ASR)',
+  'settings.asr.desc': '语音输入的转写端点(OpenAI 风格 /audio/transcriptions)。留空 = 跟随主 provider(仅 OpenAI 协议可用;Anthropic 协议端点无此路径)。智谱示例:https://open.bigmodel.cn/api/paas/v4 + 模型 glm-asr。',
 
   // ── 企业微信智能机器人 ──
   'settings.wecom.title': '企业微信机器人',
@@ -2359,6 +2361,8 @@ const EN: Dict = {
   'settings.minimax.title': 'MiniMax Video Gen',
   'settings.minimax.desc': 'Configure MiniMax API Key. Agent can then call the video_gen tool to generate videos via the H3 model. Key is encrypted at rest.',
   'settings.minimax.keyPh': 'MiniMax → Account > API Keys',
+  'settings.asr.title': 'Speech Transcription (ASR)',
+  'settings.asr.desc': 'Transcription endpoint for voice input (OpenAI-style /audio/transcriptions). Empty = follow the main provider (OpenAI protocol only; Anthropic-protocol endpoints have no such path). Zhipu example: https://open.bigmodel.cn/api/paas/v4 with model glm-asr.',
 
   // ── WeCom AI Bot ──
   'settings.wecom.title': 'WeCom Bot',
@@ -3821,6 +3825,8 @@ const ZH_TW: Dict = {
   'settings.minimax.title': 'MiniMax 文生影片',
   'settings.minimax.desc': '設定 MiniMax 開放平台 API Key 後，Agent 可透過 video_gen 工具自主呼叫 H3 模型生成影片。金鑰經系統級加密儲存。',
   'settings.minimax.keyPh': 'MiniMax → 帳戶管理 > 介面金鑰',
+  'settings.asr.title': '語音轉寫(ASR)',
+  'settings.asr.desc': '語音輸入的轉寫端點(OpenAI 風格 /audio/transcriptions)。留空 = 跟隨主 provider(僅 OpenAI 協議可用；Anthropic 協議端點無此路徑)。智譜示例：https://open.bigmodel.cn/api/paas/v4 + 模型 glm-asr。',
 
   // ── 企業微信智慧機器人 ──
   'settings.wecom.title': '企業微信機器人',
@@ -5307,6 +5313,8 @@ const JA: Dict = {
   'settings.minimax.title': 'MiniMax 動画生成',
   'settings.minimax.desc': 'MiniMax API Key を設定すると、Agent が video_gen ツールで H3 モデルを使って動画を生成できます。キーはシステムレベルで暗号化保存されます。',
   'settings.minimax.keyPh': 'MiniMax → アカウント管理 > API キー',
+  'settings.asr.title': '音声文字起こし(ASR)',
+  'settings.asr.desc': '音声入力の文字起こしエンドポイント(OpenAI形式 /audio/transcriptions)。空 = メインプロバイダに従う(OpenAIプロトコルのみ対応。Anthropicプロトコルにはこのパスがない)。Zhipu例：https://open.bigmodel.cn/api/paas/v4 + モデル glm-asr。',
 
   // ── 企業微信（WeCom）スマートボット ──
   'settings.wecom.title': 'WeCom ボット',
