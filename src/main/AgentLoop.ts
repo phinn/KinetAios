@@ -1886,12 +1886,20 @@ const TOOL_FAIL_PREFIXES = [
 // Heuristic over the raw tool result; UI 截断/截图伪装不影响判定(用的是原始 result)。
 export function toolOutcomeOf(result: string): 'ok' | 'error' | 'aborted' {
   if (result === '[已停止]' || result.startsWith('[已停止]')) return 'aborted';
+  // 超时标记只认结果头部 200 字符:超时文案永远在最前面 —— shell 直接以它起头,
+  // codemode 则包在「✅ 完成。\n[返回值]\n」之后(实测位置 < 60 字符)。
+  // 全文 includes 会误伤「输出内容里引用了这段文案」的成功调用:2026-11-20 17:23 那次
+  // codemode 的返回是一段提交正文,提交信息里提到「⏳ 超时」在第 2096 字符处,
+  // 于是一个 ✅ 完成的调用被判成 error(实测 4000 次调用里 1 次)。
+  // Only scan the head for timeout markers — they are always at the very front; the body
+  // may legitimately quote the wording (commit messages, diff output).
+  const head = result.slice(0, 200);
   if (
     result.startsWith('工具出错:') ||
     result.startsWith('未知工具:') ||
     result.startsWith('⚠️ 参数') ||
-    result.includes('[超时(') ||   // 旧超时文案(2026-10 之前,无「保留部分输出」)
-    result.includes('⏳ 超时') ||   // 现超时文案:改版后首行是 [now: …] 再跟 ⏳,前缀匹配失效
+    head.includes('[超时(') ||   // 旧超时文案(2026-10 之前,无「保留部分输出」)
+    head.includes('⏳ 超时') ||   // 现超时文案:改版后首行是 [now: …] 再跟 ⏳,前缀匹配失效
     /^\[exit \d+\]/.test(result) ||
     result.startsWith('❌') ||
     TOOL_FAIL_PREFIXES.some((p) => result.startsWith(p))

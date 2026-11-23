@@ -994,8 +994,19 @@ function loadTurns(convId: string): Turn[] {
   // 全部事件读出来逐条 JSON.parse(最大会话 68,490 条 / 244ms,补库后翻倍),而绝大多数时候
   // 缓存是完好的,重建结果被 merged 原样丢弃。现在只在真缺洞时才付这个代价。
   // Cheap hole check first: the rebuild used to run unconditionally and get thrown away by `merged`.
+  // 只数「有对话内容」的事件轮(user/message・assistant/message)。
+  // 补库把 9-04 以来的事件全部补回后,有 42 个轮只存在于事件流里(turn/error 33、
+  // turn/status 6、tool/call 3),它们的 turn_id 在 turns 表里从来没有过。按
+  // COUNT(DISTINCT turn_id) 判缺口,这 24 个会话就永远"有洞"——每次打开全量重放事件
+  // (最贵 27,145 条 / 100ms+),换来的只是几张 prompt 为空、连「重试」都点不动的报错卡。
+  // 这两类事件同为 7 天保留,所以 7 天内真丢的轮一定能照出来;更早的轮即使重建也拿不到
+  // 提问原文,检测它没有意义。事件本身永久留在 conv_events,复盘随时可查。
   const evTurnCount = Number(
-    (stmt('SELECT COUNT(DISTINCT turn_id) AS n FROM conv_events WHERE conv_id=?;').get(convId) as { n: number }).n,
+    (stmt(
+      `SELECT COUNT(DISTINCT turn_id) AS n FROM conv_events
+        WHERE conv_id=? AND turn_id<>''
+          AND type IN ('user/message','assistant/message');`,
+    ).get(convId) as { n: number }).n,
   );
   if (evTurnCount === 0) return cached;
   const hasHole = cached.length < evTurnCount || cached.some((t) => !t.prompt && !t.error && !t.answer);
@@ -1008,7 +1019,11 @@ function loadTurns(convId: string): Turn[] {
     cached.filter((t) => t.prompt || t.error || t.answer).map((t) => [t.id, t] as const),
   );
   for (const t of healed) {
-    if (!merged.get(t.id)) merged.set(t.id, t);
+    if (merged.get(t.id)) continue;
+    // 与上面的缺口口径保持一致:事件流重建出来的轮必须有提问或回答才算一轮。
+    // 只有 tool/call、只有 turn/error、只有 turn/status 的孤儿不补(UI 里是空卡)。
+    if (!t.prompt && !t.answer) continue;
+    merged.set(t.id, t);
   }
   return [...merged.values()].sort((a, b) => a.ts - b.ts);
 }

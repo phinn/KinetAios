@@ -65,6 +65,28 @@ test('不误伤:正文中出现"未找到/失败"但不在开头 → ok', () => 
   assert(toolOutcomeOf(r) === 'ok', `startsWith 应只认首句,实际 ${toolOutcomeOf(r)}`);
 });
 
+test('不误伤:正文深处引用「⏳ 超时」文案 → ok(超时标记只扫头部)', () => {
+  // 实测样本(2026-11-20 17:23 的 codemode):返回是一段提交正文,"⏳ 超时"出现在
+  // 第 2096 字符处(总长 3032),而结果首行是「✅ 完成。」。全文 includes 会把它判成 error。
+  const body = 'perf(events): 事件面板分页 / Token 浮层按轮查\n'.repeat(40) +
+    '[⏳ 超时 120s,已终止 —— 命令未执行完]\n' +
+    '上面这段是提交信息里引用的旧文案,不是本次执行状态。';
+  const r = `✅ 完成。\n\n[返回值]\n${body}`;
+  assert(r.indexOf('⏳ 超时') > 200, '样本前提:超时字样必须在 200 字符之后');
+  assert(toolOutcomeOf(r) === 'ok', `引用文案不该判失败,实际 ${toolOutcomeOf(r)}`);
+});
+
+test('不误伤:正文深处引用「[超时(」旧文案 → ok', () => {
+  const r = '✅ 完成。\n\n[返回值]\n' + 'x'.repeat(300) + '\n[超时(120s),已终止。]';
+  assert(toolOutcomeOf(r) === 'ok', `正文引用旧文案不该判失败,实际 ${toolOutcomeOf(r)}`);
+});
+
+test('codemode 内层超时:标记仍在头部窗口内 → error', () => {
+  // codemode 的包装是「✅ 完成。\n\n[返回值]\n」+ 内层输出,超时标记位置实测 < 60 字符。
+  const r = '✅ 完成。\n\n[返回值]\n[now: 2026-10-23 10:54:28 | epoch=1792752868]\n[超时(120s),已终止。]\n\n[嵌套调用] 1 成功 / 0 失败';
+  assert(toolOutcomeOf(r) === 'error', `内层超时应判失败,实际 ${toolOutcomeOf(r)}`);
+});
+
 test('既有判定不回归:工具出错/未知工具/⚠️ 参数/[exit N]/❌/已停止', () => {
   assert(toolOutcomeOf('工具出错: TypeError: x') === 'error');
   assert(toolOutcomeOf('未知工具: foo') === 'error');
