@@ -16,6 +16,7 @@ import { applyPin } from './pin-history';
 import { codingPlan5hPct } from './quota';
 import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
 import { CORRECTION_RE, isReask } from './turn-signal';
+import { attributeTurnFailure } from './turn-attribution';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -1140,6 +1141,17 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         if (ev.type === 'error') tags.push('error');
         if (signal.aborted) tags.push('aborted');
         if (cur && tags.length) {
+          // P2 失败归因:把"这轮被否"细分到工具/规划/模型/上下文/上游,报告侧才能定向排查。
+          // 归因是纯函数,不会抛;包一层 try 只为不污染终态路径。
+          try {
+            const attribution = attributeTurnFailure({
+              errorKind: cur.errorKind,
+              errorMsg: cur.error ?? (ev.type === 'error' ? ev.message : null),
+              steps: cur.steps,
+              aborted: signal.aborted,
+            });
+            tags.push(...attribution.tags);
+          } catch { /* 归因失败不影响记账 */ }
           try { store.recordTurnFeedback(cur.id, -1, tags); } catch { /* 仪表 best-effort */ }
         }
       }
@@ -1470,6 +1482,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     if (CORRECTION_RE.test(prompt)) tags.push('correction');
     if (isReask(prompt, prev.prompt)) tags.push('reask');
     if (!tags.length) return;
+    // P2:交付了但用户不认 —— 归不到具体环节(unmet),别硬猜成 tool/model。
+    // 与 error 路径的归因不冲突:两处都写同一 turn 时 tags 合并、rating 取更负。
+    tags.push(...attributeTurnFailure({ unmet: true }).tags);
     store.recordTurnFeedback(prev.id, -1, tags);
   }
 

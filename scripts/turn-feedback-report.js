@@ -27,6 +27,12 @@ const os = require('node:os');
 const path = require('node:path');
 
 function dbPath() {
+  // --db / KINET_DB:审计隔离库(如 npm run eval --keep 留下的临时 userData),
+  // 否则一律读真实桌面库 —— 避免把评测数据混进真实统计。
+  const i = process.argv.indexOf('--db');
+  if (i > 0 && process.argv[i + 1] && !process.argv[i + 1].startsWith('--')) return path.resolve(process.argv[i + 1]);
+  if (process.env.KINET_DB) return path.resolve(process.env.KINET_DB);
+
   const rel = path.join('KinetAios', 'history.db');
   if (process.platform === 'darwin') return path.join(os.homedir(), 'Library', 'Application Support', rel);
   if (process.platform === 'win32') return path.join(process.env.APPDATA || path.join(os.homedir(), 'AppData', 'Roaming'), rel);
@@ -89,6 +95,35 @@ if (total) {
   const ratingRows = q(db, 'select coalesce(rating,0), count(*) from turn_feedback group by 1 order by 1;');
   console.log(`  rating 分布: ${ratingRows.map(([r, n]) => `${r}×${n}`).join('  ')}`);
   console.log(`  tag 分布: ${[...tagCount.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t}×${n}`).join('  ') || '(空)'}`);
+
+  // ── 失败归因分布(P2)────────────────────────────────────────
+  // fail:<class>[:detail]:class 是"谁的锅",detail 是可定位的细项。
+  // 先按 class 汇总(order by 数量),再列 detail —— 看第一层就知道该往哪查。
+  const failTags = [...tagCount.entries()].filter(([t]) => t.startsWith('fail:'));
+  if (failTags.length) {
+    const byClass = new Map();
+    const byDetail = new Map();
+    for (const [t, n] of failTags) {
+      const parts = t.split(':');
+      const cls = parts[1] || 'unknown';
+      const detail = parts.slice(2).join(':') || '(未细分)';
+      byClass.set(cls, (byClass.get(cls) || 0) + n);
+      byDetail.set(t, n);
+    }
+    const clsTotal = [...byClass.values()].reduce((a, b) => a + b, 0);
+    console.log('\n  失败归因:');
+    for (const [cls, n] of [...byClass.entries()].sort((a, b) => b[1] - a[1])) {
+      const label = {
+        tool: '工具', plan: '规划', env: '上游/网络', context: '上下文',
+        model: '模型', user: '用户停止', unknown: '未归类',
+      }[cls] || cls;
+      console.log(`    ${fmt(n, 4)} (${pct(n, clsTotal).toFixed(0).padStart(3)}%)  ${cls.padEnd(8)} ${label}`);
+    }
+    console.log(`    细项: ${[...byDetail.entries()].sort((a, b) => b[1] - a[1]).map(([t, n]) => `${t}×${n}`).join('  ')}`);
+    if (byClass.has('env')) {
+      console.log('    注:env 类是上游/网络抖动,不应计入能力退化;评估技能/模型时应先剔除。');
+    }
+  }
 }
 
 const byDay = q(db, `

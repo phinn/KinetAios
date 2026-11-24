@@ -1,0 +1,124 @@
+{
+  "$comment": "评测任务集(P0)。每个任务在独立临时工作区跑,验收条件机器可判。新增任务只需加一条,不改代码。",
+  "version": 1,
+  "tasks": [
+    {
+      "id": "write-hello",
+      "title": "创建单个文件",
+      "prompt": "在当前工作目录创建 hello.txt,内容为一行:你好,Kinet。只做这一件事,完成后简短确认。",
+      "checks": [
+        { "type": "fileContains", "path": "hello.txt", "pattern": "你好,Kinet" }
+      ],
+      "timeoutMs": 180000
+    },
+    {
+      "id": "fix-bug",
+      "title": "修一个明确的 bug 并验证",
+      "files": {
+        "sum.js": "function add(a, b) {\n  return a - b; // BUG\n}\nconsole.log(add(2, 3));\n"
+      },
+      "prompt": "当前目录的 sum.js 应该是把两个数相加,但现在结果不对。修好它,然后实际运行一次确认输出是 5。",
+      "checks": [
+        { "type": "command", "cmd": "node sum.js", "expectStdout": "5" }
+      ],
+      "timeoutMs": 240000
+    },
+    {
+      "id": "read-csv-sum",
+      "title": "读数据并计算汇总",
+      "files": {
+        "sales.csv": "month,amount\nJan,300\nFeb,400\nMar,500\n"
+      },
+      "prompt": "读取当前目录的 sales.csv,计算 amount 列总和,把结果数字写进 total.txt(文件里只放数字)。",
+      "checks": [
+        { "type": "fileContains", "path": "total.txt", "pattern": "1200" }
+      ],
+      "timeoutMs": 180000
+    },
+    {
+      "id": "find-token",
+      "title": "跨文件检索定位",
+      "files": {
+        "a.txt": "nothing here\n",
+        "b.txt": "the token is SECRET-42\n",
+        "c.txt": "empty-ish\n"
+      },
+      "prompt": "当前目录有三个 txt 文件,其中一个包含字符串 SECRET-42。找出是哪个文件,把文件名(不含路径)写进 answer.txt。",
+      "checks": [
+        { "type": "fileContains", "path": "answer.txt", "pattern": "b\\.txt" },
+        { "type": "fileNotContains", "path": "answer.txt", "pattern": "a\\.txt" }
+      ],
+      "timeoutMs": 180000
+    },
+    {
+      "id": "json-to-yaml",
+      "title": "格式转换",
+      "files": {
+        "config.json": "{\n  \"name\": \"kinet\",\n  \"version\": \"1\",\n  \"features\": [\"a\", \"b\"]\n}\n"
+      },
+      "prompt": "把当前目录的 config.json 转成 YAML,保存为 config.yaml。不要改动字段含义。",
+      "checks": [
+        { "type": "fileContains", "path": "config.yaml", "pattern": "name:\\s*kinet" },
+        { "type": "fileContains", "path": "config.yaml", "pattern": "version" }
+      ],
+      "timeoutMs": 180000
+    },
+    {
+      "id": "multi-file-scaffold",
+      "title": "多文件脚手架",
+      "prompt": "在当前目录创建如下结构:src/a.js 导出函数 a 返回 1;src/b.js 导出函数 b 返回 2;src/index.js 引入 a 和 b,打印 a()+b() 的结果。",
+      "checks": [
+        { "type": "fileExists", "path": "src/a.js" },
+        { "type": "fileExists", "path": "src/b.js" },
+        { "type": "command", "cmd": "node src/index.js", "expectStdout": "3" }
+      ],
+      "timeoutMs": 300000
+    },
+    {
+      "id": "batch-rename",
+      "title": "批量操作",
+      "prompt": "在当前目录创建 5 个文本文件 note1.txt 到 note5.txt(内容随意),然后把它们全部重命名为 .md 后缀。最后目录里不应再有 .txt 文件。",
+      "checks": [
+        { "type": "globCount", "glob": "note*.md", "min": 5 },
+        { "type": "globCount", "glob": "note*.txt", "max": 0 }
+      ],
+      "timeoutMs": 240000
+    },
+    {
+      "id": "analyze-report",
+      "title": "分析目录并产出报告",
+      "files": {
+        "x.txt": "aaaa\n",
+        "y.txt": "bb\n",
+        "z.txt": "c\n"
+      },
+      "prompt": "当前目录有 x/y/z 三个 txt 文件。统计文件数量,写一份 REPORT.md,其中必须写明共有几个 txt 文件。",
+      "checks": [
+        { "type": "fileContains", "path": "REPORT.md", "pattern": "3" }
+      ],
+      "timeoutMs": 240000
+    },
+    {
+      "id": "no-tool-answer",
+      "title": "纯问答(不该动文件)",
+      "prompt": "用一句话解释什么是幂等性。不要创建或修改任何文件。",
+      "checks": [
+        { "type": "answerContains", "pattern": "幂等" },
+        { "type": "noNewFiles" }
+      ],
+      "timeoutMs": 120000
+    },
+    {
+      "id": "fix-syntax-error",
+      "title": "修复语法错误并运行",
+      "files": {
+        "broken.js": "const nums = [1,2,3;\nconsole.log(nums.length);\n"
+      },
+      "prompt": "当前目录的 broken.js 有语法错误,运行会失败。修复它,并实际运行确认输出 3。",
+      "checks": [
+        { "type": "command", "cmd": "node broken.js", "expectStdout": "3" }
+      ],
+      "timeoutMs": 240000
+    }
+  ]
+}

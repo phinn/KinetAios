@@ -23,6 +23,7 @@
     "postinstall": "electron-rebuild -f -w better-sqlite3",
     "typecheck": "tsc -p tsconfig.main.json --noEmit && tsc -p tsconfig.renderer.json",
     "test": "npm run typecheck && node scripts/run-tests.js",
+    "eval": "node scripts/eval/run.mjs",
     "clean": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\"",
     "start": "electron .",
     "dev": "npm run build && electron .",
