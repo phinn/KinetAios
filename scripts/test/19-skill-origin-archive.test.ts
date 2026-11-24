@@ -186,4 +186,27 @@ test('skill_usage:重复加载累加,名字大小写归一', () => {
   assert.ok(after.lastLoadAt > 0);
 });
 
+test('无溯源的老技能也要参与淘汰(这类目录原本永不归档)', () => {
+  // skill_origin 是 2026-11-19 才加的账本,之前落的 48 个蒸馏目录没有来源记录。
+  // 旧判据 `if (origin && loads===0 && age>=14)` 直接跳过它们 —— 只生不灭。
+  // 2026-11-23 实测:187 个蒸馏目录里 48 个无溯源,全流程至今只归档过 6 条(全是空胎)。
+  writeSkill('junk-no-origin', 'junk-no-origin', `# 步骤\n${'1. 有效步骤 '.repeat(40)}`, 20);
+  const c = findArchiveCandidates().find((x) => x.slug === 'junk-no-origin');
+  assert.ok(c, '无溯源但存 20 天 0 加载,必须进候选');
+  assert.ok(c!.reasons.some((r) => r.includes('0 次加载')), `原因要写明,实际 ${c!.reasons.join('/')}`);
+  // 反向:同样老、同样无溯源,但被加载过 → 不能误伤
+  writeSkill('used-no-origin', 'used-no-origin', `# 步骤\n${'1. 有效步骤 '.repeat(40)}`, 20);
+  store.recordSkillUse('used-no-origin');
+  assert.ok(
+    !findArchiveCandidates().some((x) => x.slug === 'used-no-origin'),
+    '被加载过的老技能不该进候选',
+  );
+  // 归档 = 移动,原文一字不改、可恢复
+  const r = archiveSkill('junk-no-origin', ['测试:无溯源长期未用']);
+  assert.ok(r.ok, `应归档成功:${r.ok ? '' : r.error}`);
+  const back = restoreArchived('junk-no-origin');
+  assert.ok(back.ok, '无溯源技能归档后同样可恢复');
+  invalidateSkills();
+});
+
 run();

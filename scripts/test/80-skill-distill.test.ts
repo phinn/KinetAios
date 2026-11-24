@@ -1,7 +1,18 @@
 // 技能自沉淀(skill-distill)测试 — judge/write 解析 + 落盘 + 幂等命名。
 // Covers: loose JSON parse of judge verdict, frontmatter validation, slug collision, write-to-dir.
+//
+// ⚠️ 必须换临时 HOME:distillSkill 真的往 os.homedir()/.kinetaios/skills/distilled/ 写盘。
+// 本文件早期没隔离,每跑一次就往用户真实技能库塞两个假技能(「打包ESP32」8B、「mac dmg 打包」49B),
+// 随后被真实的归档清扫当成"空胎"收走 —— .archive 里 2026-11-19/20/21 连续三天各两份,
+// 用户还会在对话里看到「🗄 已归档 2 个失效技能」。19-skill-origin-archive 早就这么做了。
 import { assert, test, run } from './harness';
 import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
+
+const tmpHome = fs.mkdtempSync(path.join(os.tmpdir(), 'kinet-distill-'));
+process.env.HOME = tmpHome;
+
 import {
   distilledDir,
   parseSkillMeta,
@@ -10,6 +21,12 @@ import {
 } from '../../src/main/skill-distill';
 
 const okSignal = new AbortController().signal;
+
+// 兜底:任何用例都不该解析到真实家目录。
+assert(
+  distilledDir().startsWith(tmpHome),
+  `蒸馏目录必须落在临时 HOME 内,实际 ${distilledDir()}`,
+);
 
 function fakeLLM(responses: Record<string, string>): DistillLLM {
   return {

@@ -9,7 +9,8 @@
 // 三条判据(全部便宜,主线程可跑):
 //   ① 空胎:正文 < 200B 且存活 ≥1 天 —— 蒸馏截断/占位垃圾,自证无效
 //   ② 来源被否:来源 turn 被用户返工/报错/中止,且此后 0 次加载,存活 ≥7 天
-//   ③ 长期未用:有溯源记录、存活 ≥14 天、0 次加载
+//   ③ 长期未用:存活 ≥14 天、0 次加载(有无溯源都算 —— 无溯源的 48 个目录同样在
+//      distilled/ 下,给它们豁免等于"只生不灭")
 // 只有 distilled/ 下的目录会被动 —— 手写技能永远不进这个流程。
 //
 // 归档 = 同卷 rename 到 distilled/.archive/<slug>__<时间戳>/ + 追加一行 JSON 索引。
@@ -145,7 +146,13 @@ export function findArchiveCandidates(): ArchiveCandidate[] {
     if (origin && rejected.has(s.slug) && loads === 0 && s.ageDays >= MIN_AGE_DAYS_REJECTED) {
       reasons.push(`来源轮次被否决(${(rejected.get(s.slug) ?? []).join('/') || '未记录'}),且从未被加载`);
     }
-    if (origin && loads === 0 && s.ageDays >= MIN_AGE_DAYS_UNUSED) {
+    // 长期未用不要求有溯源:skill_origin 是 2026-11-19 才加的账本,之前落的 48 个目录
+    // 永远没有来源记录 —— 旧条件写成 `origin && loads===0` 等于给它们发了免死金牌。
+    // 实测 2026-11-23:187 个蒸馏目录里 48 个无溯源,全部不会被淘汰,而整个归档流程
+    // 至今只收过 6 条(全是空胎),"只生不灭"就是这么来的。
+    // 无溯源的目录同样在 distilled/ 下(手写技能在上一层),14 天 0 加载即可归档;归档=移动,
+    // 随时 restore,不会丢。
+    if (loads === 0 && s.ageDays >= MIN_AGE_DAYS_UNUSED) {
       reasons.push(`存 ${s.ageDays} 天 0 次加载`);
     }
     if (reasons.length > 0) {
