@@ -12,6 +12,7 @@ import { trapFocus, saveFocus } from './focus-manager';
 import { mountFileDrawer, type FileDrawer } from './file-drawer';
 import { mountFilesPane, type FilesPaneController } from './files-pane';
 import { mountLinkPreview } from './link-preview';
+import { planVizWidth } from './viz-width';
 import { CodeEditor } from './code-editor';
 import { setTownLang, setTownHomeDir, setTownStyle, setTownCallbacks, renderTown, refreshTownVillager, townOnConversationChanged, type TownCallbacks } from './town';
 import { setNexusLang, setNexusCallbacks, renderNexus, refreshNexusNode, nexusOnConversationChanged, stopNexusAnimation } from './nexus';
@@ -12276,7 +12277,15 @@ function mountVizFrames(root: ParentNode): void {
     // ② 全树 scrub 仅含 vh/svh/dvh/lvh 的 height 声明(内联 style + CSSOM 规则,
     //    authored 值可判 vh;量完同步还原 —— 同一 JS task 内无重绘,无闪烁)。
     //    不动 px 固定高(图表 canvas 容器等),100vh 正反馈源被精确切除。
-    const boot = `(function(){function r(){var b=document.body;if(!b)return;var de=document.documentElement;var quirks=!!(de&&de.compatMode==='BackCompat');var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=quirks?b.offsetHeight:Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='fit-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    // ⚠️ 内容宽必须用 width:max-content 量,绝不能是 fit-content(2026-11-24「卡片
+    //   一直不停地变宽」的根因):fit-content = min(max-content, 可用宽),iframe 被
+    //   收窄后流体内容量回来的就是"刚给它的那个宽度",宿主再 +2 写回 → 每轮 +2px
+    //   一路顶到满宽。max-content 与可用宽无关,写回不会让下次测量变大,成不了环。
+    // Measure content width with max-content, NEVER fit-content: fit-content is
+    // min(max-content, available), so a narrowed frame echoes back the width we
+    // just gave it and the host adds +2px every round-trip → card creeps wider
+    // until it fills the row. max-content is viewport-independent ⇒ no loop.
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var de=document.documentElement;var quirks=!!(de&&de.compatMode==='BackCompat');var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=quirks?b.offsetHeight:Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='max-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
     // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
     // ⚠️ quirks mode 撑高(2026-11-07 截图「卡片下面一大片白」第二根因):
     //   碎片卡(<div…> 无 DOCTYPE/无 <html>)进 blob → BackCompat。
@@ -12390,30 +12399,35 @@ if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
         : null;
       if (target) {
         const h = Math.min(Math.max(Math.round(d.h) + 8, 80), 720); // 上限 720 防失控文档
-        target.style.height = `${h}px`;
+        // 只在真变化时写高:同值重写也会触发内层 resize → 内层重新上报,
+        // 白烧一轮 IPC + 布局(高度不会涨,但会一直空转)。
+        // Only write height when it actually changed: rewriting the same value still
+        // fires an inner resize → another report → endless no-op round-trips.
+        if (Math.abs((parseFloat(target.style.height) || 0) - h) >= 1) target.style.height = `${h}px`;
         // 内容宽不足容器 78% → 卡片收敛到内容宽(留白治理,数据由内层实报,不猜类名)
         // Inner content narrower than 78% of container → shrink card to content width.
         if (typeof d.w === 'number' && d.w > 0) {
           const card = target.closest('.viz-card');
           if (card instanceof HTMLElement) {
-            // 基准=父容器宽(恒定)。不能用 card.clientWidth:它被上一次判定改写,
-            // 窄态重判时基准变小 → 不再满足阈值 → 弹宽 → 基准又变大 → 又缩,
-            // 每次写宽都触发内层 resize→上报,形成宽窄振荡闪烁。
-            // Base = parent width (constant). card.clientWidth is rewritten by our own
-            // previous decision — re-judging against the shrunk width flips narrow↔wide
-            // every report (each width write fires inner resize → report → flip).
-            const base = (card.parentElement?.clientWidth ?? card.clientWidth) - 2;
-            const wasNarrow = card.classList.contains('viz-narrow');
-            // 迟滞防抖:进窄 0.78 / 出窄 0.92,内容宽贴阈值时不再来回跳
-            // Hysteresis: enter narrow at 78%, exit at 92% — no flapping near threshold.
-            const isNarrow = wasNarrow ? d.w < base * 0.92 : d.w < base * 0.78;
-            card.classList.toggle('viz-narrow', isNarrow);
-            if (isNarrow) {
-              card.style.width = `${d.w + 18}px`; // iframe(d.w+2) + 卡片横向 padding
-              target.style.width = `${d.w + 2}px`;
-            } else {
-              card.style.width = '';
-              target.style.width = '';
+            // 判定逻辑抽到 viz-width.ts(纯函数,带饱和闸 + 迟滞,可单测)。
+            // 基准=父容器宽(恒定):不能用 card.clientWidth,它被上一次判定改写,
+            // 窄态重判时基准变小 → 不再满足阈值 → 弹宽 → 基准又变大 → 又缩。
+            // Decision lives in viz-width.ts; base = parent width (constant), never
+            // card.clientWidth (rewritten by our own previous decision).
+            const plan = planVizWidth({
+              measuredW: d.w,
+              frameW: target.clientWidth,
+              parentW: card.parentElement?.clientWidth ?? card.clientWidth,
+              wasNarrow: card.classList.contains('viz-narrow'),
+            });
+            card.classList.toggle('viz-narrow', plan.narrow);
+            if (plan.narrow && plan.cardW != null && plan.frameW != null) {
+              // 同值不写:每次写宽都会触发内层 resize(见上)
+              if (Math.abs(card.offsetWidth - plan.cardW) >= 1) card.style.width = `${plan.cardW}px`;
+              if (Math.abs(target.clientWidth - plan.frameW) >= 1) target.style.width = `${plan.frameW}px`;
+            } else if (!plan.narrow) {
+              if (card.style.width) card.style.width = '';
+              if (target.style.width) target.style.width = '';
             }
           }
         }

@@ -7204,7 +7204,10 @@ html.anim-paused #sidebar {
 .answer .viz-card.viz-narrow .viz-head-title { max-width: 40%; }
 .answer .viz-card.viz-narrow .viz-btn span { display: none; }
 .answer .viz-card.viz-narrow .viz-btn { padding: 4px 6px; }
-.answer .viz-card.viz-narrow { max-width: fit-content; }
+/* 窄卡宽度由 JS 按内层实报的内容宽以内联 width 钉住;这里只兜「永不超过父容器」。
+   ⚠️ 不要写 max-width: fit-content —— 它会和 JS 写的内联宽相互夹,卡片被夹窄后
+   内层量回来的宽又变,等于给宽度回路再加一个反馈源。 */
+.answer .viz-card.viz-narrow { max-width: 100%; }
 .answer .viz-card.viz-narrow .viz-frame { width: auto; max-width: 100%; }
 /* fit-content 以内容最宽子元素为准(按钮行),不等于 iframe 收敛宽 → 用 inline width 兜住卡片 */
 /* fit-content sizes to the widest child (button row), not the iframe width → pin via inline width */
