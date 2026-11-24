@@ -284,7 +284,7 @@ export async function resolveSpawnHistory(opts: {
       if (!transcript.trim()) return { historyText: '' };
       // 截断到 10K(子 agent 只需摘要,不需要完整原文)
       const trimmed = transcript.length > 10_000 ? transcript.slice(0, 10_000) + '\n…[截断]' : transcript;
-      const sys = '你是对话摘要器。把下面这段父会话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
+      const sys = '你是对话摘要器。把下面这段父会话压成一段简洁中文摘要,保留:任务目标、关键决策、已确定的结论、重要的文件路径/命令/技术栈、**用户亲自确认或否决过的视觉与格式规格(色值写原值如 #312E82、尺寸、文案原文、参考文件路径)**。丢掉寒暄与一次性细节。直接输出摘要正文,不要标题。';
       const comp = await provider.streamComplete(
         [{ role: 'system', content: sys }, { role: 'user', content: trimmed }],
         [], snap, signal, () => {},
@@ -590,9 +590,9 @@ function skillCatalogSection(): string {
       const { getSettings } = require('./settings') as typeof import('./settings');
       if (!getSettings().autoLoadSkills) return '';
       const { skillCatalogText } = require('./skills') as typeof import('./skills');
-      const catalog = skillCatalogText();
+      const catalog = skillCatalogText(conv.cwd);
       return catalog
-        ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
+        ? `\n\n# 可用 Skills(按需加载)\n⚠️ 动手前先扫一遍下面的名字。任务只要沾得上(素材/截图/首图/视频/上传/审计/推广/发布/蒸馏),\n就先 load_skill 再动手 —— 不许凭印象直接写脚本。名字看不出含义就 load_skill 看一眼,\n一次加载的成本远低于一次返工。\n当任务与下列某项匹配时必须先调用 load_skill:\n${catalog}\n`
         : '';
     }
     // 会话目标(通过 /goal 设置):注入 systemPrompt 顶部,跨轮持续生效,引导整个会话方向。

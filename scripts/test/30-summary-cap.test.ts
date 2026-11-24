@@ -15,11 +15,12 @@ const WRITER_TEXT = '【任务目标】修好了导出功能\n【重要结论】
 const MERGED_TEXT = '【任务目标】合并后的摘要\n【关键决策】决策A/B/C 合并保留';
 
 type Call = { sys: string; user: string };
-function mkProvider(opts: { failMerge?: boolean; capture?: Call[] }): Provider {
+function mkProvider(opts: { failMerge?: boolean; capture?: Call[]; captureAll?: Call[] }): Provider {
   return {
     async streamComplete(messages): Promise<Completion> {
       const sys = typeof messages[0]?.content === 'string' ? messages[0].content : '';
       const user = typeof messages[1]?.content === 'string' ? messages[1].content : '';
+      opts.captureAll?.push({ sys, user });
       if (sys.includes('对话摘要合并器')) {
         opts.capture?.push({ sys, user });
         if (opts.failMerge) throw new Error('merge llm down');
@@ -98,6 +99,48 @@ test('E: compactWithSpill 记录的是最新一条摘要(修前取最旧)', asyn
   const spill = events.find((e) => e.type === 'compaction/spill');
   assert.ok(spill, '应写入 spill 事件');
   assert.equal(spill!.summary, '新摘要内容', '审计摘要应取最新一条(修前取最旧)');
+});
+
+test('F: 带图消息进摘要器时压成 [图片 文件名] —— base64 不许灌进去,后面的规格不许被挤掉', async () => {
+  const captured: Call[] = [];
+  // 真实体积参考:2026-11-24 00:06 那条带图消息在库里是 490,828 字符。
+  const base64 = 'A'.repeat(400_000);
+  const imgMsg: ChatMsg = {
+    role: 'user',
+    content: '用紫色的背景，和英语那种一样\n\n[📷 1 张图片已附加]\n'
+      + `\x00IMAGES[{"name":"screenshot-1795449927078.png","dataUrl":"data:image/png;base64,${base64}"}]\x00`,
+  };
+  const specMsg: ChatMsg = { role: 'user', content: '【规格】紫底 rgb(49,46,130)，两行标题，白框' };
+  const msgs = [imgMsg, specMsg, ...bigMsgs('after', 20)];
+  await compactHistory(msgs, 400, mkProvider({ captureAll: captured }), snap, signal);
+  const writer = captured.find((c) => c.sys.includes('对话摘要器'));
+  assert.ok(writer, '应发生一次摘要调用');
+  assert.ok(
+    writer!.user.includes('[图片 screenshot-1795449927078.png]'),
+    `图片应压成带文件名的占位符,实际开头:${writer!.user.slice(0, 120)}`,
+  );
+  assert.ok(!writer!.user.includes('AAAA'), 'base64 不得进入摘要器(会吃光 transcript 预算)');
+  assert.ok(
+    writer!.user.includes('rgb(49,46,130)'),
+    '图片后面那条规格必须还在 transcript 里(修前会被 40 万字符的 base64 挤到截断区)',
+  );
+  assert.ok(writer!.sys.includes('已验收规格'), '摘要器必须被要求输出【已验收规格】栏');
+});
+
+test('G: 合并摘要时【已验收规格】只增不减(旧摘要里的色值不许被丢掉)', async () => {
+  const captured: Call[] = [];
+  const oldSummaries: ChatMsg[] = [
+    '【任务目标】做 KinetBrief 9 语首图\n【已验收规格】紫底 #312E82,两行标题,白框内截图文字不许被压住',
+    '【关键决策】用模拟器真截图',
+    '【待办事项】补 ja/ko',
+  ].map((t) => ({ role: 'user', content: `[早期对话摘要]\n${t}` }) as ChatMsg);
+  const msgs = [...oldSummaries, ...bigMsgs('head', 8)];
+  await compactHistory(msgs, 500, mkProvider({ capture: captured }), snap, signal);
+  const merge = captured.find((c) => c.sys.includes('对话摘要合并器'));
+  assert.ok(merge, '应触发合并');
+  assert.ok(merge!.sys.includes('已验收规格'), '合并器格式清单必须包含【已验收规格】');
+  assert.ok(merge!.sys.includes('只增不减'), '合并器必须被要求保真规格');
+  assert.ok(merge!.user.includes('#312E82'), '旧摘要里的色值应进入合并输入');
 });
 
 run();

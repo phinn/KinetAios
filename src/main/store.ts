@@ -830,6 +830,35 @@ export function recordSkillUse(name: string): void {
 
 export type SkillUsage = { loads: number; lastLoadAt: number };
 
+/** 蒸馏技能 → 来源会话的 cwd(可能多个)。键同时含 slug 与小写 name。
+ *  用途:技能目录按当前项目加权 —— 在 KinetBrief 干活时,从 KinetBrief 会话蒸馏出来的
+ *  技能优先带简介(2026-11-23 实测:首图那几条正解技能名字都在,但目录里全是裸名字,
+ *  模型扫不出来,于是一整天只 load_skill 了 1 次)。 */
+export function skillOriginCwds(): Map<string, string[]> {
+  const out = new Map<string, string[]>();
+  if (!db) return out;
+  let rows: Array<{ slug: string; name: string | null; cwd: string | null }> = [];
+  try {
+    rows = stmt(
+      `SELECT o.slug AS slug, o.name AS name, c.cwd AS cwd FROM skill_origin o
+       JOIN conversations c ON c.id = o.conv_id
+       WHERE c.cwd IS NOT NULL AND c.cwd <> '';`,
+    ).all() as typeof rows;
+  } catch {
+    return out;
+  }
+  for (const r of rows) {
+    if (!r.cwd) continue;
+    for (const key of [r.slug, r.name].filter(Boolean) as string[]) {
+      const k = String(key).toLowerCase();
+      const list = out.get(k) ?? [];
+      if (!list.includes(r.cwd)) list.push(r.cwd);
+      out.set(k, list);
+    }
+  }
+  return out;
+}
+
 export function skillUsage(): Map<string, SkillUsage> {
   const out = new Map<string, SkillUsage>();
   if (!db) return out;

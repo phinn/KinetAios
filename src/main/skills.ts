@@ -237,6 +237,15 @@ function scan(): Map<string, Skill> {
       }
     }
   }
+  // 标记蒸馏来源:目录文本要按"手写 / 蒸馏已用 / 蒸馏冷启动"三层分配简介预算。
+  // 手写技能是项目黑话(打包esp32、白帧),没简介等于不可用;蒸馏技能 186 个,
+  // 全给简介会把手写技能挤出预算,全不给又退回裸名字 —— 按 loads 分层:
+  // 用过的(有证据)带简介,没被用过只列名(仍可 load_skill 按名取回)。
+  // Tag distilled origin so the catalog can tier description budget by usage.
+  const dRoot = distilledRoot() + path.sep;
+  for (const s of map.values()) {
+    if (s.file.startsWith(dRoot)) s.distilled = true;
+  }
   return map;
 }
 
@@ -256,16 +265,66 @@ function scan(): Map<string, Skill> {
 // 预算 5800:固定前缀走 cache 命中($0.029/M),比省的 token 更稀缺的是模型的注意力,
 // 但 5800 已能装下"全部自有带简介 + 几乎全部外部名",再涨只增噪音。
 // 截断时先丢 ~/.claude 副本(最外围),tail 说明还有多少,且 load_skill 传未知名会回全量清单。
-export function skillCatalogText(): string | null {
+//   ⚠️ 2026-11-24 分层重写(第三次):自有技能涨到 203(手写 ~17 + 蒸馏 186),22 字简介要 9943 字符、
+//   12 字要 7923,预算 5541 —— 两档全超,于是 cap 一路降到 0,**203 个技能全部变成裸名字**。
+//   而注入语写的是"当任务与下列某项**描述**匹配时必须 load_skill":描述已不存在,这句话无法执行。
+//   后果实测(会话 b580efbe,2026-11-23):一整天 700+ 次工具调用只 load_skill 了 1 次,还是在
+//   用户骂完「skill 都有的,也不看看」之后 16 秒;而正解早就躺在库里
+//   (ios-sim-shot-firstimg「禁 HTML mock」/ asc-screenshot-restyle「先量化原版母版」)。
+//   改为按"简介的边际价值"分三层:
+//     ① 手写技能:项目黑话(打包esp32/白帧/铰链),永远带简介
+//     ② 蒸馏技能且 loads>0:被证明用过,带简介(按 loads 降序占前排)
+//     ③ 蒸馏技能且 loads=0:只列名 —— 名字仍可见、仍可 load_skill 按名取回,只是不花简介预算
+export function skillCatalogText(cwd?: string): string | null {
   const skills = listSkills();
   if (skills.length === 0) return null;
   const MAX_CHARS = 5800;
-  const HEAD = '(按需调用 load_skill 加载正文;自有技能带简介,外部副本仅列名)\n';
+  const HEAD = '(按需调用 load_skill 加载正文;手写技能与本项目蒸馏的技能带简介,其余仅列名)\n';
   const TAIL_RESERVE = 220;
   // 降级技能(来源轮次被否)不进目录:它们是负资产,占的是别的技能的可见性预算。
   const demotedCount = skills.filter((s) => s.demoted).length;
   const live = skills.filter((s) => !s.demoted);
   const own = live.filter((s) => s.source === 'kinetaios');
+  // 使用次数:store 未初始化(纯扫描测试/首次启动)时返回空 Map,全部按冷启动处理。
+  const usage = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { skillUsage } = require('./store') as typeof import('./store');
+      return skillUsage();
+    } catch {
+      return new Map<string, { loads: number }>();
+    }
+  })();
+  const loadsOf = (name: string): number => Number(usage.get(name.toLowerCase())?.loads ?? 0);
+  // 按当前项目加权:顺手把"从这个 cwd 的会话里蒸馏出来的技能"也放进带简介那一档。
+  // 这是唯一不需要模型猜的信号 —— 用户在这个目录反复踩过的坑,蒸馏出来的技能就是它的答案。
+  const originCwds = (() => {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { skillOriginCwds } = require('./store') as typeof import('./store');
+      return skillOriginCwds();
+    } catch {
+      return new Map<string, string[]>();
+    }
+  })();
+  const normPath = (p: string): string => p.replace(/\\/g, '/').replace(/\/+$/, '');
+  const cwdNorm = cwd ? normPath(cwd) : '';
+  const fromThisProject = (s: SkillInfo): boolean => {
+    if (!cwdNorm) return false;
+    const list = originCwds.get(s.name.toLowerCase());
+    if (!list || list.length === 0) return false;
+    return list.some((o) => {
+      const oc = normPath(o);
+      return cwdNorm === oc || cwdNorm.startsWith(`${oc}/`) || oc.startsWith(`${cwdNorm}/`);
+    });
+  };
+  const hand = own.filter((s) => !s.distilled);
+  const dist = own.filter((s) => s.distilled);
+  const distLocal = dist.filter(fromThisProject); // 本项目的教训,排最前
+  const distUsed = dist
+    .filter((s) => !distLocal.includes(s) && loadsOf(s.name) > 0)
+    .sort((a, b) => loadsOf(b.name) - loadsOf(a.name));
+  const distCold = dist.filter((s) => !distLocal.includes(s) && loadsOf(s.name) === 0);
   // 外部副本按"离用户核心工作由近到远"排:插件(自己装的)> 内置 > codex > claude(体量最大,先丢)。
   const ext = [
     ...live.filter((s) => s.source === 'plugin'),
@@ -274,35 +333,42 @@ export function skillCatalogText(): string | null {
     ...live.filter((s) => s.source === 'claude'),
   ];
   const ownBudget = MAX_CHARS - HEAD.length - TAIL_RESERVE;
-  const renderOwn = (cap: number): string[] =>
-    own.map((s) => {
-      const desc = cap > 0 ? (s.description || '').replace(/\s+/g, ' ').trim().slice(0, cap) : '';
-      return desc ? `- ${s.name} — ${desc}` : `- ${s.name}`;
-    });
-  // 简介档位 22 → 12 → 0:自有技能涨上来时,宁可缩简介也要保住名字可见性
-  let ownLines: string[] = [];
-  for (const cap of [22, 12, 0]) {
-    ownLines = renderOwn(cap);
-    if (ownLines.join('\n').length <= ownBudget) break;
+  const renderLine = (s: SkillInfo, cap: number): string => {
+    const desc = cap > 0 ? (s.description || '').replace(/\s+/g, ' ').trim().slice(0, cap) : '';
+    return desc ? `- ${s.name} — ${desc}` : `- ${s.name}`;
+  };
+  // ①② 拿简介的那批(手写 + 本项目蒸馏 + 用过的):先定它们,22 → 12 → 6 → 0 逐档降。
+  // 优先级是硬的:宁可把冷启动技能的名字全砍掉,也要保住这批的简介 ——
+  // 手写技能的名字是项目黑话,没简介等于不可用;本项目的技能是"这个目录踩过的坑"。
+  let hotLines: string[] = [];
+  for (const cap of [22, 12, 6, 0]) {
+    hotLines = [...hand, ...distLocal, ...distUsed].map((s) => renderLine(s, cap));
+    if (hotLines.join('\n').length <= ownBudget) break;
   }
-  // 仍超预算 → 截断名单(极少见:自有技能上百且名字都很长)
+  // ③ 冷启动(蒸馏了但从没被 load 过):预算有余就也带薄简介(12→8),没钱就只列名。
+  // 实测 203 个自有技能时这一档拿不到简介 —— 但名字仍全部可见,load_skill 传名可取回。
+  let coldLines: string[] = [];
   let ownDropped = 0;
-  if (ownLines.join('\n').length > ownBudget) {
+  const hotLen = hotLines.join('\n').length + (hotLines.length ? 1 : 0);
+  for (const cap of [12, 8, 0]) {
+    coldLines = distCold.map((s) => renderLine(s, cap));
+    if (hotLen + coldLines.join('\n').length <= ownBudget) break;
+  }
+  if (hotLen + coldLines.join('\n').length > ownBudget) {
+    // 连裸名字都塞不下 → 塞到满为止,尾部注明还有多少个
+    let used = hotLen;
     const kept: string[] = [];
-    let used = 0;
-    for (const line of ownLines) {
-      if (used + line.length + 1 > ownBudget) {
-        ownDropped++;
-        continue;
-      }
+    for (const line of coldLines) {
+      if (used + line.length + 1 > ownBudget) { ownDropped++; continue; }
       kept.push(line);
       used += line.length + 1;
     }
-    ownLines = kept;
+    coldLines = kept;
   }
-  const ownBlock = ownLines.join('\n');
+  const ownBlock = [...hotLines, ...coldLines].join('\n');
+  const ownKept = hotLines.length + coldLines.length;
   // ② 外部:逗号列,吃剩下的预算
-  const extBudget = Math.max(0, MAX_CHARS - HEAD.length - ownBlock.length - (own.length ? 12 : 0) - TAIL_RESERVE);
+  const extBudget = Math.max(0, MAX_CHARS - HEAD.length - ownBlock.length - (ownKept ? 12 : 0) - TAIL_RESERVE);
   let nameList = '';
   let dropped = 0;
   for (const s of ext) {
@@ -314,11 +380,11 @@ export function skillCatalogText(): string | null {
     nameList += piece;
   }
   const tailParts: string[] = [];
-  if (ownDropped > 0) tailParts.push(`…另有 ${ownDropped} 个自有技能未列出(load_skill 传名可取)`);
+  if (ownDropped > 0) tailParts.push(`…另有 ${ownDropped} 个蒸馏技能未列出(load_skill 传名可取)`);
   if (dropped > 0) tailParts.push(`…另有 ${dropped} 个外部副本未列出(load_skill 传名可取)`);
   if (demotedCount > 0) tailParts.push(`${demotedCount} 个技能因来源轮次被否决已降级,未列入`);
   const tail = tailParts.length > 0 ? `\n(${tailParts.join('; ')})` : '';
-  const ownSection = own.length ? `\n自有技能(${own.length}):\n${ownBlock}\n` : '';
+  const ownSection = ownKept ? `\n自有技能(${ownKept}/${own.length}):\n${ownBlock}\n` : '';
   const extSection = ext.length ? `\n外部副本(${ext.length}):\n${nameList}\n` : '';
   return HEAD + ownSection + extSection + tail + '\n';
 }

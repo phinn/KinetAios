@@ -1712,11 +1712,13 @@ async function consolidateSummaries(
     .map((m) => (typeof m.content === 'string' ? m.content.replace(/^\[早期对话摘要\]\n/, '') : ''))
     .filter(Boolean);
   const MERGE_SYS = `你是对话摘要合并器。下面是同一段长期对话的历次结构化摘要和一段新摘要。
-把它们合并成一条结构化中文摘要,保持与输入相同的格式(【任务目标】【关键决策】【已改文件】【执行命令】【重要结论】【待办事项】)。
+把它们合并成一条结构化中文摘要,保持与输入相同的格式(【任务目标】【关键决策】【已验收规格】【已改文件】【执行命令】【重要结论】【待办事项】)。
 规则:
 - 同一事实只保留一条;信息冲突时以新摘要为准
 - 删除已完成或被推翻的待办事项
 - 保留命令、错误信息、技术栈名称的原文
+- 【已验收规格】**只增不减**:旧摘要里出现过的色值/尺寸/文案/文件路径一律带过来,不许因为"新摘要里没提"就删掉;
+  用户否决过的做法(如"蓝底不行")同样保留 —— 这是用户反复纠正才得来的,丢一次就要再错一次
 - 总量不超过 60 行;直接输出,不要标题/前言`;
   const user = [
     ...oldTexts.map((t, i) => `【历次摘要 ${i + 1}】\n${t}`),
@@ -1783,6 +1785,7 @@ export async function compactHistory(
 
 【任务目标】一句话描述用户要完成什么
 【关键决策】列出已确定的技术方案/架构选择(每条一行,最多 5 条)
+【已验收规格】用户亲自确认过或否决过的视觉/格式/内容规格,逐条保真(最多 6 条)
 【已改文件】简述涉及哪些模块(只需语义描述如"AgentLoop.ts 的 compactHistory"或"无",精确路径列表已自动附加)
 【执行命令】列出关键 shell 命令及其结果(成功/失败)
 【重要结论】已完成步骤的核心产出(每条一行,最多 5 条)
@@ -1791,19 +1794,39 @@ export async function compactHistory(
 规则:
 - 丢掉寒暄、一次性细节、中间探查过程(如 ls/cat 输出)
 - 保留命令、错误信息、技术栈名称的原文
-- 每个字段不超过 3 行;没有内容的字段写"无"
-- 不要输出任何标题/前言,直接从【任务目标】开始`;
+- 每个字段不超过 3 行(【已验收规格】除外);没有内容的字段写"无"
+- 不要输出任何标题/前言,直接从【任务目标】开始
+- 【已验收规格】是最高优先级字段,不许概括、不许省略:
+  · 保留颜色值(如 #312E82 / rgb(49,46,130))、尺寸、字体、文案原文、文件路径的**原值**
+  · 用户否决过的做法也要写(如"蓝底被否,要紫底""文字被图压住")
+  · 用户给过参考图([图片 …])的,把该图对应的规格与文件名一并写进来
+  · 禁止把"紫底(49,46,130) + 两行标题 + 白框"降级成"紫色卡片";概括一次,后面就得重猜一次`;
+
+    // 图片消息必须在这里变成一句人话。原实现把非 text 的 part 映射成空串、把 \x00IMAGES[…]\x00
+    // 原样送进去 —— 单张图 base64 就有几十万字符(2026-11-24 00:06 那条 490,828 字符),
+    // 16K 的 transcript 上限被一张图吃光,同批 400 条消息全部落到「…[截断]」里。
+    // 于是"紫底/和英语一样"这类**只存在于图里**的规格一次都没进过摘要,
+    // 每次压缩后 agent 都要从零重猜 —— 用户看到的就是"说几遍还是搞不清楚"。
+    // Images must degrade to readable placeholders, never to raw base64 or empty string.
+    const summarizeSafeText = (m: any): string => {
+      const raw = typeof m.content === 'string'
+        ? m.content
+        : Array.isArray(m.content)
+          ? m.content.map((p: any) => (p?.type === 'text' ? (p.text ?? '') : p?.type === 'image_url' ? '[图片]' : '')).join('')
+          : JSON.stringify(m.tool_calls ?? '');
+      return raw.replace(/\x00IMAGES(\[[\s\S]*?\])\x00/g, (_all: string, json: string) => {
+        const name = /"name"\s*:\s*"([^"]+)"/.exec(json)?.[1];
+        return `[图片${name ? ` ${name}` : ''}]`;
+      });
+    };
 
     const transcript = head
-      .map((m) => {
-        const role = m.role === 'tool' ? '工具结果' : m.role;
-        const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((p) => p.type === 'text' ? p.text : '').join('') : JSON.stringify(m.tool_calls ?? '');
-        return `[${role}] ${text}`;
-      })
+      .map((m) => `[${m.role === 'tool' ? '工具结果' : m.role}] ${summarizeSafeText(m)}`)
       .join('\n');
-    // 截断到 16K 字符(旧版 12K),在行边界截(避免截在消息中间导致摘要 LLM 看到半截)。
-    // 提高到 16K 是因为结构化摘要需要更多原始材料才能准确提取文件路径和命令。
-    const MAX_TRANSCRIPT = 16_000;
+    // 截断到 24K 字符(旧版 12K → 16K → 24K),在行边界截(避免截在消息中间导致摘要 LLM 看到半截)。
+    // 提高是因为结构化摘要需要更多原始材料才能准确提取规格/文件路径/命令;
+    // 图片已在上一步压成 [图片 …],这里 24K 基本全是有效文字。
+    const MAX_TRANSCRIPT = 24_000;
     let trimmed = transcript;
     if (transcript.length > MAX_TRANSCRIPT) {
       const cut = transcript.slice(0, MAX_TRANSCRIPT);

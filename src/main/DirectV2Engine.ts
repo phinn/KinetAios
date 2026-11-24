@@ -113,13 +113,13 @@ Plan 格式:
 // 自动加载 Skills:目录文本(autoLoadSkills 开关控制;executor 可见,planner 剥除)。
 // Skill catalog for auto-load mode (executor sees it; planner strips it — readOnlyTools
 // has no load_skill, so the catalog would instruct it to call a nonexistent tool).
-function skillCatalogSection(): string {
+function skillCatalogSection(cwd?: string): string {
   const { getSettings } = require('./settings') as typeof import('./settings');
   if (!getSettings().autoLoadSkills) return '';
   const { skillCatalogText } = require('./skills') as typeof import('./skills');
-  const catalog = skillCatalogText();
+  const catalog = skillCatalogText(cwd);
   return catalog
-    ? `\n\n# 可用 Skills(按需加载)\n当任务与下列某项描述匹配时,必须先调用 load_skill 工具加载该 skill 再行动:\n${catalog}\n`
+    ? `\n\n# 可用 Skills(按需加载)\n⚠️ 动手前先扫一遍下面的名字。任务只要沾得上(素材/截图/首图/视频/上传/审计/推广/发布/蒸馏),\n就先 load_skill 再动手 —— 不许凭印象直接写脚本。名字看不出含义就 load_skill 看一眼,\n一次加载的成本远低于一次返工。\n当任务与下列某项匹配时必须先调用 load_skill:\n${catalog}\n`
     : '';
 }
 
@@ -435,7 +435,7 @@ export class DirectV2Engine implements Engine {
       : '';
     const skillSection = skillBlock ? `\n\n# 当前 Skill 指令(用户通过 / 调用,请遵循)\n${skillBlock}` : '';
     // 自动加载 Skills:目录进 system(执行阶段可见;executor 走 runAgentLoop 全工具集,可直接调 load_skill)。
-    const skillCatalog = skillCatalogSection();
+    const skillCatalog = skillCatalogSection(conv.cwd);
     const rulesSection = loadProjectRules(conv.cwd);    // 技能目录只拼进 executor 用的 systemPrompt。planner(run() 开头的规划轮,replan 同理)
     // 用的是 systemPrompt + PLANNER_PROMPT,但其工具集是 readOnlyTools()(不含 load_skill)
     // —— 目录里"必须先调用 load_skill"会让 planner 去调一个不存在的工具,得到

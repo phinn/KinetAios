@@ -509,6 +509,9 @@ export type SkillInfo = {
   demoted?: boolean;
   /** 降级原因标签(correction / reask / error / aborted)。 */
   demotedTags?: string[];
+  /** 是否落在 ~/.kinetaios/skills/distilled/ 下(自动蒸馏产物)。
+   *  目录文本按它分层:手写技能永远带简介,蒸馏技能按使用次数决定要不要简介。 */
+  distilled?: boolean;
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).
