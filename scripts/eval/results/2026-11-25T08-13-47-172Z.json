@@ -1,0 +1,49 @@
+{
+  "stamp": "2026-11-25T08-13-47-172Z",
+  "engine": "direct",
+  "model": null,
+  "total": 2,
+  "passed": 2,
+  "rate": 100,
+  "costUSD": 0.1360461,
+  "avgSteps": 2,
+  "avgDurationMs": 7212,
+  "mode": "live",
+  "traceFile": null,
+  "rows": [
+    {
+      "taskId": "fix-bug",
+      "title": "修一个明确的 bug 并验证",
+      "run": 1,
+      "pass": true,
+      "failures": [],
+      "durationMs": 12399,
+      "toolCalls": 4,
+      "toolErrors": 0,
+      "costUSD": 0.08116469999999999,
+      "tokensIn": 90465,
+      "tokensOut": 348,
+      "error": null,
+      "errorKind": null,
+      "answer": "修好了。\n\n- **Bug 根因**:`sum.js` 里 `add()` 用的是减法 `a - b`,所以 `add(2, 3)` 输出 `-1`。\n- **修复**:改为 `return a + b;`(同时去掉了过时的 `// BUG` 注释)。\n- **实际运行验证**:`node sum.js` → 输出 `5`,exit 0。\n\n目录里只有这一个文件,无其他连带问题。",
+      "steps": "read_file glob edit_file shell"
+    },
+    {
+      "taskId": "no-tool-answer",
+      "title": "纯问答(不该动文件)",
+      "run": 1,
+      "pass": true,
+      "failures": [],
+      "durationMs": 2025,
+      "toolCalls": 0,
+      "toolErrors": 0,
+      "costUSD": 0.054881400000000004,
+      "tokensIn": 18194,
+      "tokensOut": 43,
+      "error": null,
+      "errorKind": null,
+      "answer": "幂等性是指:同一个操作执行一次和执行多次,对系统产生的最终效果相同——就像反复按电梯按钮不会多开一扇门,重复调用同一个接口不会多扣一笔款。",
+      "steps": ""
+    }
+  ]
+}

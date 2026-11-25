@@ -1,0 +1,32 @@
+{
+  "stamp": "2026-11-25T08-01-26-474Z",
+  "engine": "direct",
+  "model": null,
+  "total": 1,
+  "passed": 1,
+  "rate": 100,
+  "costUSD": 0.0719439,
+  "avgSteps": 3,
+  "avgDurationMs": 6251,
+  "mode": "live",
+  "traceFile": null,
+  "rows": [
+    {
+      "taskId": "fix-bug",
+      "title": "修一个明确的 bug 并验证",
+      "run": 1,
+      "pass": true,
+      "failures": [],
+      "durationMs": 6251,
+      "toolCalls": 3,
+      "toolErrors": 0,
+      "costUSD": 0.0719439,
+      "tokensIn": 70902,
+      "tokensOut": 196,
+      "error": null,
+      "errorKind": null,
+      "answer": "I'll look at the file first.\n\n修好了。\n\n- 根因:`add()` 里写的是 `return a - b`,做的是减法。\n- 修复:改为 `return a + b`。\n- 实跑 `node sum.js` → 输出 `5`,退出码 0。",
+      "steps": "read_file edit_file shell"
+    }
+  ]
+}
