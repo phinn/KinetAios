@@ -18,6 +18,7 @@ import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
 import { repoMapHint } from './repo-map';
+import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
@@ -604,7 +605,11 @@ function skillCatalogSection(): string {
     // KINET.md(app UI 维护的项目规则)紧跟 loadProjectRules 之后,与 AGENTS.md/CLAUDE.md 并列。
     // 内置工具 + 系统里配置的 MCP 工具(最多等 2s 让连接就绪)。
     // 按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具(2026-09-22 误调教训)。
-    const tools = [...allTools(conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined), ...(await mcp.directTools(2000)), codemodeTool];
+    // 归因→策略:连续失败的工具本轮冷却(不暴露给模型),复盘指令拼进本轮 userInput。
+    const liveTools = [...allTools(conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined), ...(await mcp.directTools(2000))]
+      .filter((t) => !isToolCoolingDown(conv.id, t.name));
+    const tools = [...liveTools, codemodeTool];
+    const failureNote = pullFailureDirective(conv.id);
     // codemode 的嵌套工具表:沙箱脚本可调用的工具 = 本会话全量(审批/沙箱/隐私闸由各工具自身把关)。
     // Nested tools for codemode scripts = this conversation's full tool set (each tool keeps its own gates).
     ctx.nestedTools = tools;
@@ -616,7 +621,7 @@ function skillCatalogSection(): string {
     if (crossCtx) {
       conv.crossEngineContext = null; // 消费一次即可
     }
-    const userInput = [prompt, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
+    const userInput = [prompt, failureNote || null, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
     // 从策略包取 trim/interStepCompact/truncate 阈值,统一收口到 ENGINE_POLICIES。
     // v1 direct 默认轻量;hifi 模式 resolveEnginePolicy 已自动翻倍。
     const policy = resolveEnginePolicy('direct', conv.contextMode, undefined, undefined, getSettings().hifiContextBudget);
@@ -961,7 +966,7 @@ class CliEngineAdapter implements Engine {
     // Cross-engine context: injected when switching to a CLI engine, consumed once.
     const crossCtx = conv.crossEngineContext;
     if (crossCtx) conv.crossEngineContext = null;
-    const prompt = [basePrompt, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
+    const prompt = [basePrompt, pullFailureDirective(conv.id) || null, refBlock || null, crossCtx || null].filter(Boolean).join('\n\n');
     const cwd = conv.cwd;
     const s = getSettings();
     const bin = resolveBin(this.cfg.bin);

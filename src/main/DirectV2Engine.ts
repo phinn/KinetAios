@@ -27,6 +27,7 @@ import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, 
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
 import { repoMapHint } from './repo-map';
+import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { codemodeTool, codemodePromptSection } from './codemode';
 import { getSettings, snapshot } from './settings';
 import { pullSteer, steerMessage } from './steer';
@@ -428,7 +429,10 @@ export class DirectV2Engine implements Engine {
     // 工具集先于 systemPrompt 组装:codemodePromptSection(tools) 要把嵌套工具签名拼进 system。
     // Tool set is built before the prompt so codemodePromptSection(tools) can inline the signatures.
     const channel = conv.feishuKey ? 'feishu' : conv.wecomKey ? 'wecom' : undefined;
-    const tools = [...allTools(channel), ...(await mcp.directTools(2000)), codemodeTool];
+    // 归因→策略:冷却中的工具本轮不暴露(见 failure-policy),避免对着坏工具反复烧轮次。
+    const liveTools = [...allTools(channel), ...(await mcp.directTools(2000))]
+      .filter((t) => !isToolCoolingDown(conv.id, t.name));
+    const tools = [...liveTools, codemodeTool];
 
     // ── 构建 systemPrompt(与 v1 共享 base,追加 v2 能力描述)──
     const goalSection = conv.goal
@@ -477,7 +481,7 @@ export class DirectV2Engine implements Engine {
     // 跨引擎上下文:切到 DirectV2 时注入(首次消费后清除)
     const crossCtx = conv.crossEngineContext;
     if (crossCtx) conv.crossEngineContext = null;
-    const userInput = [prompt, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
+    const userInput = [prompt, pullFailureDirective(conv.id) || null, refSection || null, crossCtx || null].filter(Boolean).join('\n\n');
 
     // ── Phase 1: Planner — 探查 + 规划(只读工具)──
     // Crash recovery: 如果有 resumedPlan,跳过 Planner,直接用恢复的 plan + history 进 Executor。

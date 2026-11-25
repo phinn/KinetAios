@@ -17,6 +17,7 @@ import { codingPlan5hPct } from './quota';
 import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clearCorrection, pullCorrection, peekCorrection, correctionText } from './steer';
 import { CORRECTION_RE, isReask } from './turn-signal';
 import { attributeTurnFailure } from './turn-attribution';
+import { decideFailureResponse, pushFailureDirective, cooldownTool, clearFailureState } from './failure-policy';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -54,6 +55,10 @@ export class TaskManager {
   private lastEngine: Record<string, EngineKind> = {};
   // P3: done 事件计数器,用于触发周期性 idle reflection(每 5 次 done 触发一次记忆 GC)
   private doneCounter = 0;
+  // 归因→策略闭环:每个会话已自动重试上游抖动的次数(done 后清零)
+  private transientRetries = new Map<string, number>();
+  // 已排期的自动重试定时器(cancel / 删除会话时要能撤掉)
+  private pendingRetries = new Map<string, ReturnType<typeof setTimeout>>();
   // 蒸馏技能归档的节流时间戳(判据里有"存活天数",跑得比一天一次还勤没意义)
   private lastSkillArchiveAt = 0;
   // P1: turns LRU —— hydrate 过的会话按最近使用排序,超上限逐出回 head 模式
@@ -339,6 +344,8 @@ export class TaskManager {
     clearSteer(id); // P1: 清理打断缓冲,防 Map 无限累积
     clearCorrection(id); // P1: goal 修正队列一并清(防泄漏到同 id 的新会话)
     clearKillHook(id); // P1: kill hook 同步撤(防泄漏到同 id 的新会话)
+    clearFailureState(id); // 归因策略:复盘指令与工具冷却随会话销毁
+    this.transientRetries.delete(id);
     this.turnsLru = this.turnsLru.filter((x) => x !== id); // P1: LRU 同步移除
     this.ctxEstCache.delete(id); // P1: 估算缓存同步清(防 key 无限累积)
     for (const e of this.engines.values()) e.releaseConv?.(id); // P1: 引擎侧 per-conv 状态(codexStates / V2 fingerprints…)
@@ -394,6 +401,9 @@ export class TaskManager {
     clearSteer(id); // 已 abort,待注入的打断一并清掉
     clearCorrection(id); // 取消 goal 循环时,未消费的修正一并作废(用户语义:全部停)
     clearKillHook(id); // kill hook 同步撤:取消后 triggerKill 不应再杀任何进程
+    // 用户点了停止 → 已排期的自动重试也必须撤销(否则停完 2s 又自己跑起来)。
+    const pending = this.pendingRetries.get(id);
+    if (pending) { clearTimeout(pending); this.pendingRetries.delete(id); }
     const ac = this.aborts.get(id);
     if (ac) {
       ac.abort();
@@ -1087,6 +1097,25 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     }
   }
 
+  // 归因→策略:上游抖动的有限自动重试。延迟后重发同一 prompt,
+  // 但只在新 turn 仍是最新轮、会话空闲时执行 —— 用户中途发消息或手动停止即让重试失效。
+  private scheduleTransientRetry(conv: Conversation, turnId: string, prompt: string, delayMs: number, attempt: number): void {
+    this.transientRetries.set(conv.id, attempt);
+    this.emit.emitEvent(conv.id, { type: 'status', text: `↻ 上游抖动,${Math.round(delayMs / 1000)}s 后自动重试(第 ${attempt} 次)` });
+    const prev = this.pendingRetries.get(conv.id);
+    if (prev) clearTimeout(prev);
+    const timer = setTimeout(() => {
+      this.pendingRetries.delete(conv.id);
+      const c = this.convs.get(conv.id);
+      if (!c || c.status === 'running') return;
+      const last = c.turns[c.turns.length - 1];
+      if (!last || last.id !== turnId) return; // 用户已发新消息 / 会话已推进
+      this.send(conv.id, prompt).catch(() => { /* 重试失败由下一轮 error 路径继续归因 */ });
+    }, delayMs);
+    (timer as { unref?: () => void }).unref?.();
+    this.pendingRetries.set(conv.id, timer);
+  }
+
   // Push a turn that immediately ends in an error (used when we bail before running an engine).
   private failTurn(conv: Conversation, prompt: string, message: string): void {
     conv.turns.push(newTurn(prompt));
@@ -1143,6 +1172,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         if (cur && tags.length) {
           // P2 失败归因:把"这轮被否"细分到工具/规划/模型/上下文/上游,报告侧才能定向排查。
           // 归因是纯函数,不会抛;包一层 try 只为不污染终态路径。
+          let attrTags: string[] = [];
           try {
             const attribution = attributeTurnFailure({
               errorKind: cur.errorKind,
@@ -1150,11 +1180,28 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
               steps: cur.steps,
               aborted: signal.aborted,
             });
+            attrTags = attribution.tags;
             tags.push(...attribution.tags);
           } catch { /* 归因失败不影响记账 */ }
           try { store.recordTurnFeedback(cur.id, -1, tags); } catch { /* 仪表 best-effort */ }
+          // P2 闭环:归因 → 下一轮动作。只应对"引擎报错且非用户取消"的轮次:
+          // 用户主动停不是失败;交付后被否(unmet)也先不自动改策略。
+          if (ev.type === 'error' && !signal.aborted) {
+            try {
+              const decision = decideFailureResponse({
+                tags: attrTags,
+                steps: cur.steps,
+                errorMsg: cur.error ?? ev.message,
+                transientAttempt: this.transientRetries.get(id) ?? 0,
+              });
+              if (decision.directive) pushFailureDirective(id, decision.directive);
+              if (decision.cooldown) cooldownTool(id, decision.cooldown.tool, decision.cooldown.ttlMs);
+              if (decision.retry) this.scheduleTransientRetry(conv, cur.id, prompt, decision.retry.delayMs, decision.retry.attempt);
+            } catch { /* 策略失败不影响主流程 */ }
+          }
         }
       }
+      if (ev.type === 'done') this.transientRetries.delete(id);
     }
     const t = conv.turns[conv.turns.length - 1];
     if (ev.type === 'done' && t?.answer) {
