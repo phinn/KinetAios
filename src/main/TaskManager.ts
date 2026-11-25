@@ -18,6 +18,7 @@ import { pushSteer, clearSteer, clearKillHook, triggerKill, pushCorrection, clea
 import { CORRECTION_RE, isReask } from './turn-signal';
 import { attributeTurnFailure } from './turn-attribution';
 import { decideFailureResponse, pushFailureDirective, cooldownTool, clearFailureState } from './failure-policy';
+import { runMemorySleep } from './memory-sleep';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -1218,7 +1219,7 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
       // P3: 异步执行记忆 GC(idle reflection),每 5 次 done 触发一次
       this.doneCounter++;
       if (this.doneCounter % 5 === 0) {
-        this.runIdleReflection().catch(() => {});
+        this.runIdleReflection(false).catch(() => {});
       }
     }
   }
@@ -1868,18 +1869,19 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     }
   }
 
-  // P3: Idle Reflection — 记忆 GC(合并重复 / 删除低价值 / 更新过时)。
-  // 在会话 done 事件后异步触发,也可以通过设置面板手动触发。
-  // 不用 LLM(成本高 + 慢),用规则:dedupMemories(已有) + decayMemories(已有) + 新增 importance-based prune。
-  async runIdleReflection(): Promise<{ deduped: number; decayed: number; lowImportancePruned: number; eventsPruned: number }> {
-    const deduped = await store.dedupMemories(0.65); // async 让出事件循环,不再卡死主进程
-    const decayed = store.decayMemories();
-    // P1: 删除 importance ≤ 2 且从未被 recall 命中的低价值记忆
-    const lowImportancePruned = store.pruneLowImportanceMemories(2);
-    // 数据治理:只清冗余事件(user/assistant message —— 与 turns 重复的那份),默认 7 天。
-    // 证据类(tool/call、compaction/spill、goal/*)永久保留,见 store.pruneOldConvEvents。
-    const eventsPruned = store.pruneOldConvEvents();
-    return { deduped, decayed, lowImportancePruned, eventsPruned };
+  // P3: Idle Reflection — 记忆睡眠期固化(去重 / 衰减 / 晋升 / 降权 / 清理)。
+  // 具体实现见 memory-sleep.ts;这里保留旧签名给 IPC 与 done 触发(force=false 走 30 分钟节流)。
+  async runIdleReflection(force = false): Promise<{ deduped: number; decayed: number; lowImportancePruned: number; eventsPruned: number; promoted: number; demoted: number; skipped?: string }> {
+    const r = await runMemorySleep({ force });
+    return {
+      deduped: r.deduped,
+      decayed: r.decayed,
+      lowImportancePruned: r.pruned,
+      eventsPruned: r.eventsPruned,
+      promoted: r.promoted,
+      demoted: r.demoted,
+      ...(r.skipped ? { skipped: r.skipped } : {}),
+    };
   }
 
   // ── Pipeline 跨引擎编排 ──

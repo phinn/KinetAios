@@ -1647,6 +1647,12 @@ export function loadMemoryBlock(label: string): MemoryBlock | null {
   return r ? { ...r, readOnly: !!r.readOnly, updatedAt: r.updatedAt * 1000 } : null;
 }
 
+/** 按需创建 block(不进的默认集用这个):已存在则不改配置。 */
+export function ensureMemoryBlock(label: string, charLimit: number, readOnly = false): void {
+  db.prepare('INSERT OR IGNORE INTO memory_blocks(label, value, char_limit, read_only, updated_at) VALUES(?,?,?,?,?);')
+    .run(label, '', charLimit, readOnly ? 1 : 0, Date.now() / 1000);
+}
+
 /** Agent 原地替换 block 内容(类似 Letta core_memory_replace)。 */
 // 2026-09 修复:超 char_limit 时此前静默截尾且返回 true(工具回"✅ 已更新")—— 模型以为存全了。
 // 现返回结构化结果,截断量如实上报,由工具层回执给模型。
@@ -2497,6 +2503,59 @@ export function pruneLowImportanceMemories(threshold = 2): number {
     }
   })();
   return pruned;
+}
+
+// MARK: 睡眠期固化 —— 晋升/降权的候选查询
+// 晋升:importance ≥ 8 且被 recall 命中 ≥ 3 次 → 说明这条事实反复有用,写进常驻 consolidated 块。
+// 降权:从未被 recall(use_count=0)、创建超过 30 天、importance > 1 → importance 减 1(加速自然衰减)。
+// rule 类记忆永不参与(规则走 strike/热区治理,见 decayMemories 注释)。
+
+export interface ImportanceCandidate {
+  id: string;
+  content: string;
+  importance: number;
+  useCount: number;
+}
+
+/** 晋升候选:importance 高且被 recall 反复命中。无 memory_meta 表 → 空(没使用记录就谈不上"反复有用")。 */
+export function loadPromotionCandidates(minImportance = 8, minUses = 3, limit = 20): ImportanceCandidate[] {
+  if (!hasTable('memory_meta')) return [];
+  return db.prepare(
+    `SELECT mem.id AS id, mem.content AS content,
+       COALESCE(mem.importance, 5) AS importance, COALESCE(meta.use_count, 0) AS useCount
+     FROM memories mem JOIN memory_meta meta ON meta.memory_id = mem.id
+     WHERE (mem.kind IS NULL OR mem.kind != 'rule')
+       AND COALESCE(mem.importance, 5) >= ?
+       AND COALESCE(meta.use_count, 0) >= ?
+     ORDER BY importance DESC, useCount DESC, mem.created_at DESC
+     LIMIT ?;`,
+  ).all(minImportance, minUses, limit) as ImportanceCandidate[];
+}
+
+/** 降权候选:长期存在、从未被召回、importance 仍高于 1。 */
+export function loadDemotionCandidates(olderThanSec: number, importanceAbove = 1, limit = 200): Array<{ id: string }> {
+  const hasMeta = hasTable('memory_meta');
+  const metaJoin = hasMeta ? 'LEFT JOIN memory_meta meta ON meta.memory_id = mem.id' : '';
+  const metaCond = hasMeta ? 'AND COALESCE(meta.use_count, 0) = 0' : '';
+  return db.prepare(
+    `SELECT mem.id AS id FROM memories mem ${metaJoin}
+     WHERE (mem.kind IS NULL OR mem.kind != 'rule')
+       AND COALESCE(mem.importance, 5) > ?
+       AND COALESCE(mem.created_at, 0) < ? ${metaCond}
+     ORDER BY mem.created_at ASC
+     LIMIT ?;`,
+  ).all(importanceAbove, olderThanSec, limit) as Array<{ id: string }>;
+}
+
+/** 批量调整 importance(delta 可负),结果夹在 1..10。返回实际改动行数。 */
+export function bumpMemoryImportance(ids: string[], delta: number): number {
+  if (!ids.length) return 0;
+  const stmt = db.prepare('UPDATE memories SET importance = MAX(1, MIN(10, COALESCE(importance, 5) + ?)) WHERE id = ?;');
+  let n = 0;
+  db.transaction(() => {
+    for (const id of ids) n += stmt.run(delta, id).changes;
+  })();
+  return n;
 }
 
 // MARK: conv_refs — 跨会话引用记录 / Cross-conversation references

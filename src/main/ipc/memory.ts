@@ -99,7 +99,8 @@ export function register(): void {
   // ── P3: Idle Reflection(记忆 GC)──
   ipcMain.handle('memory-reflection', async () => {
     try {
-      const result = await deps.taskManager().runIdleReflection();
+      // 手动按钮 = force:跳过 30 分钟节流与忙判定,用户点了就立刻整理。
+      const result = await deps.taskManager().runIdleReflection(true);
       return { ok: true, result };
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };

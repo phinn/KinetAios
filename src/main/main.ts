@@ -24,6 +24,7 @@ import { promisify } from 'node:util';
 import { startTurnFeedbackBackfill } from './turn-backfill';
 import { initStore, startHistorySlim, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching, memoryStoreApi } from './store';
 import { startMemorySyncAuto } from './memory-sync';
+import { startMemorySleep } from './memory-sleep';
 // 只读命令判定(与 AgentLoop 的 codemode 引导共用一份,见 shell-readonly.ts)
 import { isReadOnlyCommand } from './shell-readonly';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from './store';
@@ -1467,6 +1468,10 @@ if (!gotLock) {
     );
     taskManager = new TaskManager(emitter);
     taskManager.load();
+    // 记忆睡眠期固化:空闲后台定时(默认启动 10 分钟后首跑,之后每 6 小时),有 turn 在跑就让路。
+    startMemorySleep({
+      busyProbe: () => taskManager.list().some((c) => c.status === 'running'),
+    });
     // FTS 存量重缩(异步,见 store.startHistorySlim):旧 4K cap 行压到 1200,history_content 曾 567MB。
     startHistorySlim();
     // 历史 turn_feedback 回填(异步,见 turn-backfill.ts):11-18 前的轮次没进过账本,

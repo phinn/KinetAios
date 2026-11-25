@@ -1233,7 +1233,7 @@ export interface KinetAPI {
   // ── P2: Episodic Memory(会话摘要)──
   episodicMemories(limit?: number): Promise<{ ok: boolean; items?: EpisodicMemoryData[]; error?: string }>;
   // ── P3: Idle Reflection(记忆 GC)──
-  memoryReflection(): Promise<{ ok: boolean; result?: { deduped: number; decayed: number; lowImportancePruned: number }; error?: string }>;
+  memoryReflection(): Promise<{ ok: boolean; result?: { deduped: number; decayed: number; lowImportancePruned: number; eventsPruned?: number; promoted?: number; demoted?: number; skipped?: string }; error?: string }>;
   // ── 会话导出 ──
   exportConversation(convId: string, format: ExportFormat): Promise<{ ok: boolean; path?: string; error?: string }>;
   // ── Arena Diff ──
