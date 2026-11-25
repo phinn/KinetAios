@@ -2,6 +2,7 @@
 // Verbatim port of Swift GLMProvider.swift. Node global fetch + a web ReadableStream reader.
 import type { ChatMsg, ConfigSnapshot, EmbedSnapshot } from '../shared/types';
 import { getSettings, snapshot } from './settings';
+import { withTrace } from './trace';
 import { app } from 'electron';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
@@ -290,7 +291,9 @@ export interface Provider {
 }
 
 export function currentProvider(snap: ConfigSnapshot): Provider {
-  return snap.apiProtocol === 'anthropic' ? new AnthropicProvider() : new OpenAICompatibleProvider();
+  const p = snap.apiProtocol === 'anthropic' ? new AnthropicProvider() : new OpenAICompatibleProvider();
+  // 轨迹录制/重放(KINET_TRACE_FILE / KINET_REPLAY_FILE);两者都没设时原样返回,零开销
+  return withTrace(p);
 }
 
 // MARK: embeddings —— OpenAI 兼容 /v1/embeddings。走独立的 EmbedSnapshot(embedBaseURL/embedApiKey/embedModel)。

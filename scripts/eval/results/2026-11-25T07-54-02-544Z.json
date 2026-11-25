@@ -1,0 +1,32 @@
+{
+  "stamp": "2026-11-25T07-54-02-544Z",
+  "engine": "direct",
+  "model": null,
+  "total": 1,
+  "passed": 1,
+  "rate": 100,
+  "costUSD": 0.0606576,
+  "avgSteps": 1,
+  "avgDurationMs": 4432,
+  "mode": "record",
+  "traceFile": "scripts/eval/results/traces/2026-11-25T07-54-02-544Z.jsonl",
+  "rows": [
+    {
+      "taskId": "write-hello",
+      "title": "创建单个文件",
+      "run": 1,
+      "pass": true,
+      "failures": [],
+      "durationMs": 4432,
+      "toolCalls": 1,
+      "toolErrors": 0,
+      "costUSD": 0.0606576,
+      "tokensIn": 34911,
+      "tokensOut": 149,
+      "error": null,
+      "errorKind": null,
+      "answer": "完成:`hello.txt` 已创建,内容为 `你好,Kinet`(13 字节,含结尾换行)。",
+      "steps": "write_file"
+    }
+  ]
+}

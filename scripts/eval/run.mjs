@@ -214,6 +214,25 @@ const dirs = {
 for (const d of Object.values(dirs)) fs.mkdirSync(d, { recursive: true });
 fs.writeFileSync(path.join(dirs.userData, 'settings.json'), JSON.stringify(evalSettings, null, 2), 'utf8');
 
+// ── 轨迹录制 / 重放 ─────────────────────────────────────────
+// --trace=1      把每次模型请求+响应录进 results/traces/<stamp>.jsonl
+// --replay=<f>   用已有轨迹离线重放,不发网络请求(未命中默认报错)
+const traceDir = path.join(__dirname, 'results', 'traces');
+const traceOn = !!args.trace && args.trace !== '0';
+const replayArg = typeof args.replay === 'string' ? args.replay : null;
+let traceFile = null;
+if (traceOn) {
+  fs.mkdirSync(traceDir, { recursive: true });
+  traceFile = path.join(traceDir, `${stamp}.jsonl`);
+}
+const replayFile = replayArg ? path.resolve(replayArg) : null;
+if (replayFile && !fs.existsSync(replayFile)) {
+  console.error(`❌ 轨迹文件不存在: ${replayFile}`);
+  process.exit(1);
+}
+if (traceFile) console.log(`▸ 录制轨迹 → ${path.relative(ROOT, traceFile)}`);
+if (replayFile) console.log(`▸ 离线重放 ← ${path.relative(ROOT, replayFile)}(不发网络请求)`);
+
 // ── 4. 任务与验收 ────────────────────────────────────────────
 const spec = JSON.parse(fs.readFileSync(path.join(__dirname, 'tasks.json'), 'utf8'));
 let tasks = spec.tasks;
@@ -334,7 +353,11 @@ function runOnce(task, runIndex) {
     // HOME 一换就解不开应用里保存的 API key,进程会卡在解密上。
     // 隔离靠 userData(历史库/记忆) + 每任务独立工作区,已经足够;
     // 代价是评测会看到你本机安装的技能(可接受,更接近真实使用环境)。
-    env: { ...process.env },
+    env: {
+      ...process.env,
+      ...(traceFile ? { KINET_TRACE_FILE: traceFile, KINET_TRACE_ROOT: dirs.root } : {}),
+      ...(replayFile ? { KINET_REPLAY_FILE: replayFile, KINET_REPLAY_ROOT: dirs.root } : {}),
+    },
     encoding: 'utf8',
     timeout: timeoutMs + 60000,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -404,6 +427,8 @@ const summary = {
   costUSD: cost,
   avgSteps,
   avgDurationMs: avgDur,
+  mode: replayFile ? 'replay' : traceOn ? 'record' : 'live',
+  traceFile: traceFile ? path.relative(ROOT, traceFile) : null,
   rows,
 };
 
@@ -416,6 +441,7 @@ const md = [
   `# 评测报告 ${stamp}`,
   '',
   `- 引擎: ${engine}${model ? ` / ${model}` : ''}`,
+  `- 模式: ${summary.mode}${replayFile ? `(成本为录制值,非真实花费)` : ''}`,
   `- 通过: **${passed}/${total} (${rate.toFixed(1)}%)**`,
   `- 平均步数: ${avgSteps.toFixed(1)}  平均耗时: ${(avgDur / 1000).toFixed(0)}s  总成本: $${cost.toFixed(4)}`,
   '',

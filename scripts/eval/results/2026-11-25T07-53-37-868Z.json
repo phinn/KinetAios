@@ -1,0 +1,32 @@
+{
+  "stamp": "2026-11-25T07-53-37-868Z",
+  "engine": "direct",
+  "model": null,
+  "total": 1,
+  "passed": 1,
+  "rate": 100,
+  "costUSD": 0.059517600000000004,
+  "avgSteps": 1,
+  "avgDurationMs": 3739,
+  "mode": "record",
+  "traceFile": "scripts/eval/results/traces/2026-11-25T07-53-37-868Z.jsonl",
+  "rows": [
+    {
+      "taskId": "write-hello",
+      "title": "创建单个文件",
+      "run": 1,
+      "pass": true,
+      "failures": [],
+      "durationMs": 3739,
+      "toolCalls": 1,
+      "toolErrors": 0,
+      "costUSD": 0.059517600000000004,
+      "tokensIn": 34919,
+      "tokensOut": 147,
+      "error": null,
+      "errorKind": null,
+      "answer": "已完成:`hello.txt` 已创建,内容为一行 `你好,Kinet`。",
+      "steps": "write_file"
+    }
+  ]
+}
