@@ -1936,6 +1936,37 @@ const glob: Tool = {
   },
 };
 
+// repo_map:一次拿到仓库的「文件 + 顶层符号 + 依赖边」,替代盲目 glob + 逐个 read_file 猜结构。
+const repoMapTool: Tool = {
+  name: 'repo_map',
+  readOnly: true,
+  description:
+    '生成仓库语义地图:递归扫描源码里的顶层符号(函数/类/接口/类型)和文件间相对依赖,一次看清项目结构。'
+    + '探索陌生代码库时先用它,再 grep / read_file 定点深入;只看某目录时传 filter(路径子串)。'
+    + '支持 .ts/.tsx/.js/.py/.go/.rs。',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '仓库根目录(默认当前工作目录)' },
+      filter: { type: 'string', description: '只保留路径包含该子串的文件,如 "src/main" 或 "auth"' },
+      max_chars: { type: 'number', description: '地图最大字符数(默认 3500,上限 12000)' },
+    },
+  },
+  async run(args, ctx) {
+    const root = expandPath(String(args.path ?? ''), ctx.cwd) || ctx.cwd;
+    const filter = typeof args.filter === 'string' && args.filter.trim() ? args.filter.trim() : undefined;
+    const maxChars = Math.max(500, Math.min(12000, Number(args.max_chars) || 3500));
+    try {
+      // 延迟 require:electron 缓存目录只在 main 进程可用,测试环境走内存缓存。
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { repoMapText } = require('./repo-map') as typeof import('./repo-map');
+      return repoMapText(root, { filter, maxChars });
+    } catch (e) {
+      return `repo_map 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 // edit_file:精确替换文件中的一段(比 write_file 安全 —— 只改指定片段,不动其它)。
 const editFile: Tool = {
   name: 'edit_file',
@@ -3825,7 +3856,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -3850,7 +3881,7 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(bbCtx?: { teamId?: string }): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  const tools = [readFile, grep, glob, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  const tools = [readFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
   // 团队黑板:member 可读共享工作区(notes/artifacts + 已缓存文件)。写侧由 host 自动落黑板。
   if (bbCtx?.teamId) tools.push(buildBlackboardReadTool(bbCtx.teamId));
   return tools;

@@ -17,6 +17,7 @@ import { trackFileOpFromToolEvent } from './AgentLoop';
 import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
+import { repoMapHint } from './repo-map';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
 import { mcp } from './mcp';
@@ -628,7 +629,7 @@ function skillCatalogSection(): string {
       // ⚡ cache 冻结分区:providerEconomicsSection 只依赖 snap.provider(换 provider 时整个
       // 前缀必然已变,放最前不影响其它分区的稳定性);pluginSystemPrompts 依赖当前 prompt
       // (关键词命中翻转会让其后所有内容 cache miss),所以挪到 codemodePromptSection 之后。
-      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + repoMapHint(conv.cwd) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

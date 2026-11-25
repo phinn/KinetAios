@@ -26,6 +26,7 @@ import { resolveEnginePolicy } from '../shared/types';
 import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, compactWithSpill, spillToFile } from './AgentLoop';
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
+import { repoMapHint } from './repo-map';
 import { codemodeTool, codemodePromptSection } from './codemode';
 import { getSettings, snapshot } from './settings';
 import { pullSteer, steerMessage } from './steer';
@@ -447,6 +448,7 @@ export class DirectV2Engine implements Engine {
       baseSystemPrompt +
       providerEconomicsSection(snap) +
       cwdAnchorSection(conv) +
+      repoMapHint(conv.cwd) +
       V2_SYSTEM_SUFFIX +
       personaSection(conv) +
       sourceHintSection(conv) +
