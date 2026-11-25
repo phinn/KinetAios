@@ -212,6 +212,43 @@ export class JobManager {
     return submit;
   }
 
+  // ── M5: 分布式派发 —— 任务交给另一台机器执行,结果回传到本机 Job ──
+  // 与 submitDispatch(本机 CLI)平行;远端跑完整 AgentLoop,本机只等文本结果。
+  // 节点身份/在线状态在提交时就校验(离线立即失败,不留一个必然超时的 Job)。
+  async submitRemoteAgent(opts: {
+    convId: string;
+    node: string;
+    prompt: string;
+    cwd?: string;
+    maxTurns?: number;
+  }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+    const { mcp } = await import('./mcp');
+    const { callRemoteAgent, pickNode, remoteJobTitle } = await import('./distributed');
+    const nodes = await mcp.remoteSnapshot(800);
+    const pick = pickNode(nodes, opts.node);
+    if (!pick.ok) return { ok: false, error: pick.error };
+
+    return this.submit({
+      convId: opts.convId,
+      turnId: null,
+      kind: 'remote',
+      title: remoteJobTitle(pick.name, opts.prompt),
+      payload: { node: pick.name, prompt: opts.prompt.slice(0, 2000), cwd: opts.cwd ?? null, maxTurns: opts.maxTurns ?? null },
+      worker: async (env) => {
+        env.onEvent({ type: 'status', text: `→ 已派发到 ${pick.name},等待远端 Agent 返回…` });
+        const text = await callRemoteAgent({
+          node: pick.name,
+          prompt: opts.prompt,
+          cwd: opts.cwd,
+          maxTurns: opts.maxTurns,
+          signal: env.signal,
+        });
+        env.onEvent({ type: 'status', text: `← ${pick.name} 已返回 ${text.length} 字符` });
+        return { result: { text, node: pick.name } };
+      },
+    });
+  }
+
   /** 会话删除时级联清理:kill 未完成 job + 删行。 */
   purgeConv(convId: string): void {
     for (const e of this.jobs.values()) {

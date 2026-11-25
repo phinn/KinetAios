@@ -610,9 +610,9 @@ export class LocalMcpServer {
     const timeoutMs = 5 * 60 * 1000;
     const timer = setTimeout(() => ac.abort(), timeoutMs);
 
-    // 远程 Agent 拥有完整工具(shell/read_file/write_file/...),但不包含 dispatch_agent(防递归)、
-    // 不含 send_file(无会话来源通道,IM bridge 不确定)。
-    const tools = allTools(undefined).filter((t) => t.name !== 'dispatch_agent');
+    // 远程 Agent 拥有完整工具(shell/read_file/write_file/...),但不包含 dispatch_agent / remote_agent
+    // (防递归:A→B→A 的派发链会把两个模型的钱一起烧掉)、不含 send_file。
+    const tools = allTools(undefined).filter((t) => t.name !== 'dispatch_agent' && t.name !== 'remote_agent');
     const ctx: ToolCtx = {
       cwd: grantedCwd, // 已通过授权边界校验;未传 cwd 时 = operator 声明的授权根(默认边界,而非全盘)
       // 远程 Agent 的 shell/写操作不需手动确认(靠 token 鉴权 + cwd 授权根纵深防御),

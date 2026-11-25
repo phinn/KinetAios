@@ -2861,6 +2861,56 @@ const jobResultTool: Tool = {
   },
 };
 
+// remote_agent:把任务派发到另一台机器上的 KinetAios(remote MCP 节点)执行,结果回传。
+// 同步适合分钟级以内;更长的任务用 background=true 落成 Job,不占本机 turn。
+const remoteAgentTool: Tool = {
+  name: 'remote_agent',
+  description:
+    '把一段任务派发到另一台机器上的 KinetAios 执行(远端跑完整 Agent 循环并用它自己的模型/工具),结果回传本机。'
+    + '节点来自「设置 → MCP」里配置的 remote 节点。省略 node 可列出可用节点。'
+    + '分钟级以上任务传 background=true:提交后台 Job,用 job_result 轮询,不阻塞当前对话。',
+  parameters: {
+    type: 'object',
+    properties: {
+      node: { type: 'string', description: '远程节点名(省略则只列出可用节点)' },
+      prompt: { type: 'string', description: '交给远端 Agent 的完整任务描述' },
+      cwd: { type: 'string', description: '远端工作目录(必须落在对方声明的授权根内;省略 = 对方默认根)' },
+      max_turns: { type: 'number', description: '远端 Agent 最大轮次(默认对方设置,上限 50)' },
+      background: { type: 'boolean', description: 'true = 提交后台 Job 立即返回 job_id;默认同步等待结果' },
+    },
+  },
+  async run(args, ctx) {
+    const { mcp } = await import('./mcp');
+    const { pickNode, formatNodeList, callRemoteAgent } = await import('./distributed');
+    const nodes = await mcp.remoteSnapshot(800);
+    const wanted = String(args.node ?? '').trim();
+    if (!wanted) return `可用远程节点: ${formatNodeList(nodes)}`;
+    const pick = pickNode(nodes, wanted);
+    if (!pick.ok) return pick.error;
+
+    const prompt = String(args.prompt ?? '').trim();
+    if (!prompt) return '缺少 prompt 参数(要交给远端执行的任务描述)';
+    const cwd = typeof args.cwd === 'string' && args.cwd.trim() ? args.cwd.trim() : undefined;
+    const maxTurns = Number(args.max_turns) > 0 ? Number(args.max_turns) : undefined;
+
+    if (args.background === true) {
+      if (!ctx.convId) return '后台派发需要会话上下文(convId),当前调用没有;请改为同步模式或从会话内调用。';
+      const { jobManager } = await import('./JobManager');
+      const r = await jobManager().submitRemoteAgent({ convId: ctx.convId, node: pick.name, prompt, cwd, maxTurns });
+      return r.ok
+        ? `已提交后台 Job ${r.id}(节点 ${pick.name})。用 job_result(id=${r.id}) 轮询;完成后结果会自动进入任务列表。`
+        : `提交失败: ${r.error}`;
+    }
+
+    try {
+      const text = await callRemoteAgent({ node: pick.name, prompt, cwd, maxTurns, signal: ctx.signal });
+      return `[远端 ${pick.name}]\n${text || '(远端未返回文本)'}`;
+    } catch (e) {
+      return `远端执行失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 // ── MiniMax 文生视频(H3 模型)──
 // 异步任务:创建 → 轮询 → 返回视频 URL。
 // API Key 从 settings.minimaxApiKey 获取。
@@ -3856,7 +3906,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
