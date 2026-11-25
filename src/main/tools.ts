@@ -2861,6 +2861,43 @@ const jobResultTool: Tool = {
   },
 };
 
+// skill_check:技能依赖装配。用法与加载时一致(cmd/env/file/skill 四类),但把检查结果单独暴露,
+// 让模型在"挑了技能但环境没装"时能先看清缺什么,而不是跑到一半报 command not found。
+const skillCheckTool: Tool = {
+  name: 'skill_check',
+  readOnly: true,
+  description:
+    '检查技能的依赖(requires)是否就绪:命令是否在 PATH、环境变量是否设置、文件/依赖技能是否存在。'
+    + '传 name 查单个技能的详细状态;省略 name 则列出所有缺依赖的技能与安装提示。',
+  parameters: {
+    type: 'object',
+    properties: {
+      name: { type: 'string', description: '技能名(省略 = 列出所有依赖未就绪的技能)' },
+    },
+  },
+  async run(args) {
+    try {
+      // 延迟 require:skills 依赖 electron app 路径,评测/测试环境不应在模块加载期触碰。
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const { skillRequirementIssues, skillRequirementReport } = require('./skills') as typeof import('./skills');
+      const name = String(args.name ?? '').trim();
+      if (name) {
+        const r = skillRequirementReport(name);
+        if (!r) return `没有名为「${name}」的技能。`;
+        if (!r.requires.length) return `技能「${r.name}」没有声明 requires(视为无外部依赖)。`;
+        return r.ok
+          ? `技能「${r.name}」依赖已就绪: ${r.requires.join(', ')}`
+          : `技能「${r.name}」依赖未就绪:\n${r.missing.map((m, i) => `- ${m} → ${r.hints[i] ?? '补齐依赖'}`).join('\n')}`;
+      }
+      const issues = skillRequirementIssues();
+      if (!issues.length) return '所有声明了 requires 的技能依赖均已就绪。';
+      return '以下技能依赖未就绪:\n' + issues.map((i) => `- ${i.name}: ${i.missing.join(', ')}\n  ${i.hints.join('; ')}`).join('\n');
+    } catch (e) {
+      return `skill_check 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
 // remote_agent:把任务派发到另一台机器上的 KinetAios(remote MCP 节点)执行,结果回传。
 // 同步适合分钟级以内;更长的任务用 background=true 落成 Job,不占本机 turn。
 const remoteAgentTool: Tool = {
@@ -3906,7 +3943,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -3931,7 +3968,7 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(bbCtx?: { teamId?: string }): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  const tools = [readFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  const tools = [readFile, grep, glob, repoMapTool, skillCheckTool, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
   // 团队黑板:member 可读共享工作区(notes/artifacts + 已缓存文件)。写侧由 host 自动落黑板。
   if (bbCtx?.teamId) tools.push(buildBlackboardReadTool(bbCtx.teamId));
   return tools;

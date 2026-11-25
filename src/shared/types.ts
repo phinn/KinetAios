@@ -512,6 +512,8 @@ export type SkillInfo = {
   /** 是否落在 ~/.kinetaios/skills/distilled/ 下(自动蒸馏产物)。
    *  目录文本按它分层:手写技能永远带简介,蒸馏技能按使用次数决定要不要简介。 */
   distilled?: boolean;
+  /** 技能依赖(frontmatter requires):cmd:git / env:FOO / file:scripts/x.sh / skill:other。 */
+  requires?: string[];
 };
 
 // Snapshot of endpoint config for one request (mirrors Swift ConfigSnapshot).

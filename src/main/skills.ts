@@ -7,6 +7,7 @@ import path from 'node:path';
 import { app } from 'electron';
 import type { SkillInfo, SkillType } from '../shared/types';
 import { pluginSlashCommands, loadPluginCommandBody } from './plugins';
+import { parseRequires, checkRequirements, formatMissing } from './skill-requires';
 
 type Skill = SkillInfo & { body: string; dir: string; file: string };
 
@@ -114,15 +115,15 @@ function pluginRoots(): ScanRoot[] {
   return out;
 }
 
-// 解析 frontmatter 的 name + description;body = 闭合 --- 后的全部。
-function parseSkill(content: string, fallbackName: string): { name: string; description: string; body: string } {
+// 解析 frontmatter 的 name + description + requires;body = 闭合 --- 后的全部。
+function parseSkill(content: string, fallbackName: string): { name: string; description: string; requires: string[]; body: string } {
   const m = content.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n?([\s\S]*)$/);
-  if (!m) return { name: fallbackName, description: '', body: content };
+  if (!m) return { name: fallbackName, description: '', requires: [], body: content };
   const fm = m[1];
   const body = m[2];
   const line = (key: string): string | undefined => fm.match(new RegExp(`^${key}:\\s*(.+)$`, 'm'))?.[1];
   const clean = (s?: string): string => (s ? s.trim().replace(/^["']|["']$/g, '') : '');
-  return { name: clean(line('name')) || fallbackName, description: clean(line('description')), body };
+  return { name: clean(line('name')) || fallbackName, description: clean(line('description')), requires: parseRequires(fm), body };
 }
 
 let cache: Map<string, Skill> | null = null;
@@ -151,6 +152,7 @@ function ensure(): Map<string, Skill> {
   if (changed || !cache) {
     cache = scan();
     sentinels = now;
+    reqCache = null; // 技能集变了,依赖检查结果同步失效
   }
   return cache;
 }
@@ -185,10 +187,10 @@ function demotedSlugs(): Map<string, string[]> {
 
 function scan(): Map<string, Skill> {
   const map = new Map<string, Skill>();
-  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios' | 'builtin', type: SkillType, body: string, dir: string, file: string): void => {
+  const add = (name: string, description: string, source: 'claude' | 'codex' | 'kinetaios' | 'builtin', type: SkillType, body: string, dir: string, file: string, requires: string[] = []): void => {
     const key = (name || '').toLowerCase();
     if (!key || map.has(key)) return; // 同名先到先得:用户级 > plugin
-    map.set(key, { name, description, source, type, body, dir, file, category: inferCategory(name, description) });
+    map.set(key, { name, description, source, type, body, dir, file, requires, category: inferCategory(name, description) });
   };
   for (const { dir, source, type, mode } of [...roots(), ...pluginRoots()]) {
     let ents: fs.Dirent[];
@@ -202,7 +204,7 @@ function scan(): Map<string, Skill> {
         if (!ent.isFile() || !ent.name.endsWith('.md')) continue;
         try {
           const parsed = parseSkill(fs.readFileSync(path.join(dir, ent.name), 'utf8'), ent.name.replace(/\.md$/, ''));
-          add(parsed.name, parsed.description, source, type, parsed.body, dir, path.join(dir, ent.name));
+          add(parsed.name, parsed.description, source, type, parsed.body, dir, path.join(dir, ent.name), parsed.requires);
         } catch {
           /* 跳过读不了的 */
         }
@@ -213,7 +215,7 @@ function scan(): Map<string, Skill> {
         const skillDir = path.join(dir, ent.name);
         try {
           const parsed = parseSkill(fs.readFileSync(path.join(skillDir, 'SKILL.md'), 'utf8'), ent.name);
-          add(parsed.name, parsed.description, source, type, parsed.body, skillDir, path.join(skillDir, 'SKILL.md'));
+          add(parsed.name, parsed.description, source, type, parsed.body, skillDir, path.join(skillDir, 'SKILL.md'), parsed.requires);
         } catch {
           /* 非 skill 目录(无 SKILL.md)→ 跳过 */
         }
@@ -413,6 +415,44 @@ function safePluginSlashCommands(): SkillInfo[] {
   }
 }
 
+// ── 技能依赖装配(requires)──────────────────────────────────
+// 检查结果缓存 30s:PATH / 环境变量不会秒变,而 listSkills 可能被 UI 轮询。
+export type SkillRequirementIssue = { name: string; dir: string; missing: string[]; hints: string[] };
+let reqCache: { at: number; items: SkillRequirementIssue[] } | null = null;
+const REQ_CACHE_MS = 30_000;
+
+function checkSkillRequires(s: Skill): ReturnType<typeof checkRequirements> {
+  return checkRequirements(s.requires ?? [], {
+    cwd: s.dir,
+    skillExists: (n) => ensure().has(n.toLowerCase()),
+  });
+}
+
+/** 单个技能的依赖详情;技能不存在 → null。 */
+export function skillRequirementReport(name: string): {
+  name: string; dir: string; requires: string[]; ok: boolean; missing: string[]; hints: string[];
+} | null {
+  const s = ensure().get(String(name ?? '').toLowerCase());
+  if (!s) return null;
+  const r = checkSkillRequires(s);
+  return { name: s.name, dir: s.dir, requires: s.requires ?? [], ok: r.ok, missing: r.missing.map((m) => m.raw), hints: r.hints };
+}
+
+/** 所有"声明了 requires 但没就绪"的技能;供 skill_check 工具与设置面板使用。 */
+export function skillRequirementIssues(now = Date.now()): SkillRequirementIssue[] {
+  if (reqCache && now - reqCache.at < REQ_CACHE_MS) return reqCache.items;
+  const items: SkillRequirementIssue[] = [];
+  for (const s of ensure().values()) {
+    if (!s.requires?.length) continue;
+    const r = checkSkillRequires(s);
+    if (!r.ok) items.push({ name: s.name, dir: s.dir, missing: r.missing.map((m) => m.raw), hints: r.hints });
+  }
+  items.sort((a, b) => a.name.localeCompare(b.name));
+  reqCache = { at: now, items };
+  return items;
+}
+
+
 // 返回 body 用于注入;没有该 name 则 null(→ 不是 skill/command/agent 调用)。
 // 开头带上 skill 的绝对目录 —— skill 内的 scripts / 资源用绝对路径引用,否则模型按相对 cwd 找
 // (glob/where 递归)会找不到甚至超时。
@@ -425,7 +465,13 @@ export function loadSkillBody(name: string): string | null {
     const warn = s.demoted
       ? `# ⚠ 此技能已降级\n它蒸馏自一轮被用户否决的执行(${(s.demotedTags ?? []).join('/') || '未记录原因'})。步骤可作参考,结论与"已验证"之类的断言不可直接采信;与当前任务事实冲突时以实际观察为准。\n\n`
       : '';
-    return warn + head + s.body;
+    // 依赖装配:缺什么、怎么补,直接放在正文最前面 —— 模型要么先装,要么明确改走降级路径,
+    // 而不是照着正文跑到一半才发现命令不存在。
+    const dep = s.requires?.length ? checkSkillRequires(s) : null;
+    const depWarn = dep && !dep.ok
+      ? `# ⚠ 技能依赖未就绪\n${dep.missing.map((m) => `- ${m.raw} → ${m.hint}`).join('\n')}\n先按提示安装;若环境不允许安装,改用不依赖它的做法,并在交付时说明原因。\n\n`
+      : '';
+    return warn + depWarn + head + s.body;
   }
   // v2: 再查插件贡献的 slash 命令。
   const pluginCmd = safeLoadPluginCommandBody(name);
