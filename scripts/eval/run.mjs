@@ -86,13 +86,32 @@ if (!real) {
   process.exit(1);
 }
 
+/**
+ * 从 ~/.kinet-eval-key 读明文密钥(一行)。
+ * 为什么不放进仓库/环境变量:避免密钥进 git、进聊天记录;文件权限建议 600。
+ */
+function readKeyFile() {
+  const f = path.join(os.homedir(), '.kinet-eval-key');
+  if (!fs.existsSync(f)) return null;
+  try {
+    const mode = fs.statSync(f).mode & 0o777;
+    if (mode & 0o077) {
+      console.warn(`⚠️  ${f} 权限过宽(${mode.toString(8)}),建议 chmod 600`);
+    }
+    const key = fs.readFileSync(f, 'utf8').trim();
+    return key || null;
+  } catch {
+    return null;
+  }
+}
+
 // ── 凭据解析 ────────────────────────────────────────────────
-// 【红线】评测进程绝不触碰 Keychain。
-// 应用里的密钥是 safeStorage 加密的(@enc:...),解密会访问系统钥匙串;
-// 所以本脚本从不调用任何解密 API,而是把配置里所有 @enc: 值原样抹成空串,
-// 模型凭据只认显式提供的明文:
-//   ① KINET_EVAL_API_KEY=<key>         显式明文密钥(推荐)
-//   ② --profile <本地模型档案名>          localhost 档案不需要密钥(抹空即可)
+// 默认直接沿用你在应用里配好的模型(含 safeStorage 加密的 @enc 密钥):
+// 评测进程以同一个应用身份启动,读的是应用自己那把钥匙,不新建/不修改 Keychain。
+// 覆盖手段(可选):
+//   ① KINET_EVAL_API_KEY=<key> 或 ~/.kinet-eval-key 文件
+//   ② --profile <档案名>   /   --model / --base-url
+// 为了隔离,除 apiKey 外的其它 @enc 凭据(飞书/企微/语音等)一律抹空,避免评测触达外部服务。
 function scrubEncrypted(obj, counter) {
   if (typeof obj === 'string') {
     if (obj.startsWith('@enc:')) { counter.n++; return ''; }
@@ -101,13 +120,15 @@ function scrubEncrypted(obj, counter) {
   if (Array.isArray(obj)) return obj.map((v) => scrubEncrypted(v, counter));
   if (obj && typeof obj === 'object') {
     const out = {};
-    for (const [k, v] of Object.entries(obj)) out[k] = scrubEncrypted(v, counter);
+    for (const [k, v] of Object.entries(obj)) {
+      out[k] = (k === 'apiKey') ? v : scrubEncrypted(v, counter);
+    }
     return out;
   }
   return obj;
 }
 
-const apiKeyOverride = process.env.KINET_EVAL_API_KEY || null;
+const apiKeyOverride = process.env.KINET_EVAL_API_KEY || readKeyFile() || null;
 const baseUrlOverride = typeof args['base-url'] === 'string' ? args['base-url'] : null;
 const profileName = typeof args.profile === 'string' ? args.profile : null;
 
@@ -128,19 +149,43 @@ if (baseUrlOverride) base.baseURL = baseUrlOverride;
 if (model) base.model = model;
 
 const isLocal = /^https?:\/\/(localhost|127\.0\.0\.1)/.test(String(base.baseURL || ''));
-let effectiveKey = apiKeyOverride || (String(base.apiKey || '').startsWith('@enc:') ? '' : base.apiKey) || '';
+const configKey = String(base.apiKey || '');
+const effectiveKey = apiKeyOverride || configKey;
 if (!effectiveKey && !isLocal) {
   console.error(
-    '\n❌ 没有可用的明文密钥。评测不允许解密 Keychain,请二选一:\n'
+    '\n❌ 没找到可用模型。评测会沿用应用里已配置的 default;若还没配,请三选一:\n'
+    + '     在应用「设置 → 模型」里配置并保存\n'
     + '     KINET_EVAL_API_KEY=<你的key> npm run eval\n'
     + '     npm run eval -- --profile <本地模型档案名>     # 例如 ollama\n',
   );
   process.exit(1);
 }
 
-// 评测专用 settings:继承模型配置,但要满足两条硬约束:
-//   ① 所有 @enc: 密文抹掉 —— 加载时就不会触发任何钥匙串访问
-//   ② 关掉会写真实环境的自进化副作用(蒸馏/归档/外部 MCP 扫描)
+// 密钥是密文时,先探针验证一次能否解密(只报长度,不回显密钥)
+if (!apiKeyOverride && configKey.startsWith('@enc:')) {
+  const probeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kinet-probe-'));
+  const probeOut = path.join(probeDir, 'probe.json');
+  const r = spawnSync(electronBinary, [path.join(__dirname, 'runner.cjs'), '--probe-key=1', `--out=${probeOut}`], {
+    cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'], timeout: 60000,
+  });
+  let probe = null;
+  try { probe = JSON.parse(fs.readFileSync(probeOut, 'utf8')); } catch { /* 下面统一报错 */ }
+  try { fs.rmSync(probeDir, { recursive: true, force: true }); } catch { /* ignore */ }
+  if (!probe || !probe.hasKey) {
+    console.error(
+      '\n❌ 无法读取应用里保存的密钥(评测进程解不开这把钥匙)。\n'
+      + '   常见原因:应用从未在本机保存过模型/换了 macOS 用户。\n'
+      + '   解决:在应用里重新保存一次模型配置,或给评测单独提供明文 key:\n'
+      + '     KINET_EVAL_API_KEY=<你的key> npm run eval\n',
+    );
+    if (probe && probe.error) console.error('   探针详情:', String(probe.error).split('\n')[0]);
+    if (r.stderr) { const s = String(r.stderr).trim(); if (s) console.error('   stderr:', s.split('\n').slice(-3).join(' | ')); }
+    process.exit(2);
+  }
+  console.log(`▸ 已读到应用内密钥(长度 ${probe.keyLen}),模型 ${probe.model} @ ${probe.baseURL}`);
+}
+
+// 评测专用 settings:关掉会写真实环境的自进化副作用
 const scrubStats = { n: 0 };
 const evalSettings = scrubEncrypted({
   ...base,
@@ -153,7 +198,7 @@ const evalSettings = scrubEncrypted({
 }, scrubStats);
 evalSettings.apiKey = effectiveKey;
 if (scrubStats.n > 0) {
-  console.log(`▸ 已抹除 ${scrubStats.n} 处加密凭据(@enc:),评测全程不访问 Keychain`);
+  console.log(`▸ 已抹除 ${scrubStats.n} 处无关加密凭据(飞书/企微等),评测不触达外部服务`);
 }
 
 // ── 3. 临时环境 ──────────────────────────────────────────────
@@ -285,7 +330,11 @@ function runOnce(task, runIndex) {
   const started = Date.now();
   const r = spawnSync(electronBinary, childArgs, {
     cwd: ROOT,
-    env: { ...process.env, HOME: dirs.home, USERPROFILE: dirs.home },
+    // 注意:HOME 不能指向临时目录 —— safeStorage 依赖登录钥匙串,
+    // HOME 一换就解不开应用里保存的 API key,进程会卡在解密上。
+    // 隔离靠 userData(历史库/记忆) + 每任务独立工作区,已经足够;
+    // 代价是评测会看到你本机安装的技能(可接受,更接近真实使用环境)。
+    env: { ...process.env },
     encoding: 'utf8',
     timeout: timeoutMs + 60000,
     stdio: ['ignore', 'pipe', 'pipe'],
