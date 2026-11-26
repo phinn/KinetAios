@@ -1,6 +1,6 @@
 {
   "name": "kinetaios-win",
-  "version": "4.2.6",
+  "version": "4.2.7",
   "description": "KinetAios — Local-first multi-engine AI agent dashboard. Run Claude Code, Codex, and DirectV2 ReAct side-by-side. Long-term memory, 27 plugins, MCP integration. Windows & macOS. GPL v3.",
   "keywords": [
     "ai-agent",
@@ -108,6 +108,9 @@
     "electron-builder": "^25.0.0",
     "esbuild": "^0.23.0",
     "typescript": "^5.5.0"
+  },
+  "overrides": {
+    "node-gyp": "^10.3.1"
   },
   "dependencies": {
     "@earendil-works/pi-codemode": "^0.99.1",
