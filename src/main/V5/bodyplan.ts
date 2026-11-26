@@ -11,6 +11,7 @@ import type { Completion } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
 import { GLMError } from '../glm';
 import { type Genome, type DeathCause, type ExpressedBody, cloneGenome } from './phylum-types';
+import { toolTelemetryOf } from '../tool-telemetry';
 import type { TraceStep } from './phylum-types';
 import { checkAssertions } from './express';
 import type { AssertionGene } from './phylum-types';
@@ -142,10 +143,11 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
         const ctx: ToolCtx = { cwd: opts.cwd, confirm: async () => true, signal };
         const t0 = Date.now();
         output = await tool.run(args, ctx);
-        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), durationMs: Date.now() - t0, outcome: 'ok', startId });
+        const tel = toolTelemetryOf(output);
+        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), durationMs: Date.now() - t0, outcome: tel.outcome, errorKind: tel.errorKind, errorSummary: tel.errorSummary, startId });
       } catch (err) {
         const msg = `tool '${call.name}' threw: ${(err as Error).message}`;
-        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: msg, outcome: 'error', startId });
+        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: msg, outcome: 'error', errorKind: 'exception', errorSummary: msg.slice(0, 200), startId });
         return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name,
           detail: msg };
       }

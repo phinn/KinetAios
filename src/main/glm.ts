@@ -191,6 +191,15 @@ function isAccountRateLimit(code: number, detail: string): boolean {
   return /1302|速率限制|rate.?limit|too many requests/i.test(detail);
 }
 
+// 硬额度耗尽(订阅周期/积分)vs 瞬时限流:前者退避到天荒地老也不会恢复,
+// 重试只会把用户晾在那里等 3×(2s/8s/30s)。命中即不重试,直接给出可执行建议。
+// Hard quota exhaustion (billing window / credits) never recovers by waiting.
+const QUOTA_EXHAUSTED_RE =
+  /用量上限|额度已?(用尽|耗尽|不足)|余额不足|积分不足|充值|quota.{0,20}(exceed|exhaust|insufficient)|insufficient.{0,20}(quota|credit|balance)|credit balance|token plan.{0,20}(limit|上限)/i;
+export function isQuotaExhausted(text: string): boolean {
+  return QUOTA_EXHAUSTED_RE.test(text);
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) return reject(new Error('aborted'));
@@ -264,6 +273,11 @@ async function fetchUntil200(
       let detail = detail0;
       const spilled = spillHttpError(resp, rawBody);
       if (spilled) detail = `${detail}${detail ? ' ' : ''}(raw 已存: ${spilled})`;
+      // 429 + 额度类文案 = 硬上限:不重试(重试只会拖 40s+ 仍失败),直接抛给上层报可执行建议。
+      const hardQuota = resp.status === 429 && isQuotaExhausted(detail);
+      if (hardQuota) {
+        throw new GLMError('http', resp.status, `${detail}\n💡 额度/套餐已用尽,重试不会恢复 —— 请升级套餐、购买积分,或在设置里切换到其他模型/profile。`, 'quota');
+      }
       if (RETRYABLE_STATUS.has(resp.status) && attempt < MAX_RETRY && !signal?.aborted) {
         // 账户级限流(429+[1302] 特征)用分钟级长退避,并优先服务端 Retry-After
         const wait = isAccountRateLimit(resp.status, detail)

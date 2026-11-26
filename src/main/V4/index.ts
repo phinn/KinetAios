@@ -131,7 +131,7 @@ export class DirectV4Engine implements Engine {
             signal: subAc.signal,
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
-              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, outcome: e.outcome, errorKind: e.errorKind, errorSummary: e.errorSummary, images: e.images });
             },
           });
           const text = out.filter((m) => m.role === 'assistant' && typeof m.content === 'string').map((m) => (m as { content: string }).content).join('\n').trim();

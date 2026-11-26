@@ -569,7 +569,7 @@ class DirectEngine implements Engine {
               if (e.type === 'cost') onEvent(e);
               // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。
               // Pass sub-agent tool events through as real tool steps so the chat stream can expand args/result.
-              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, outcome: e.outcome, errorKind: e.errorKind, errorSummary: e.errorSummary, images: e.images });
               // 错误转发:此前 error/status/done 全被吞,子任务失败时父 agent 只看到
               // "(子任务无文本输出)",根因被掩埋。error 记下来拼进返回值。
               else if (e.type === 'error') subErrors.push(e.message);

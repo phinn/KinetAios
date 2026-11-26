@@ -1,7 +1,7 @@
 // ReAct loop: model ↔ tools until the model answers without a tool_call, or max turns hit.
 // Verbatim port of Swift AgentLoop.run. DirectEngine's trim-history logic lives here too.
 import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy, TrajRecord } from '../shared/types';
-import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
+import { priceUSD, isQuotaExhausted, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, guardToolArgs, normalizeAliasArgs, type Tool, type ToolCtx } from './tools';
 import { toolTelemetryOf } from './tool-telemetry';
 import { resolveModelRoute } from './model-router';
@@ -267,6 +267,8 @@ const TRANSIENT_RE =
 export function isTransientError(e: unknown): boolean {
   const err = e as { kind?: string; code?: number; detail?: string; message?: string };
   if (err?.kind === 'noKey') return false;
+  // 硬额度耗尽不是瞬时错误:429 但文案是「套餐/积分用尽」→ 重试纯属浪费,直接交给用户换模型。
+  if (err?.code === 429 && isQuotaExhausted(`${err?.detail ?? ''} ${err?.message ?? ''}`)) return false;
   if (typeof err?.code === 'number') {
     if (TRANSIENT_HTTP_CODES.has(err.code)) return true;
     if (err.code >= 400 && err.code < 500) return false; // 4xx 参数/鉴权类不重试(429 已在上组)

@@ -1424,7 +1424,7 @@ ${failedDetail || '  (无)'}
             onEvent: (e) => {
               if (e.type === 'cost') onEvent(e);
               // 子任务 tool 事件透传成主聊天流工具步骤(带 [子任务] 前缀,可展开看 args/result)。与 v1 同款。
-              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, images: e.images });
+              else if (e.type === 'tool') onEvent({ type: 'tool', name: `[子任务] ${e.name}`, args: e.args, result: e.result, durationMs: e.durationMs, outcome: e.outcome, errorKind: e.errorKind, errorSummary: e.errorSummary, images: e.images });
             },
           });
         } finally {
