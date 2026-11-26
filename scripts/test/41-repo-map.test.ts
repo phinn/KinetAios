@@ -5,7 +5,7 @@ import { assert, test, run } from './harness';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { scanRepo, renderRepoMap, repoMapText, repoMapHint } from '../../src/main/repo-map';
+import { scanRepo, renderRepoMap, repoMapText, repoMapHint, findSymbolReferences, renderSymbolLookup } from '../../src/main/repo-map';
 
 function mkRepo(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-map-test-'));
@@ -75,6 +75,49 @@ test('缓存:指纹不变复用,文件变化后重扫', () => {
   const third = scanRepo(root, { cacheDir: dir });
   assert.notEqual(third.fingerprint, first.fingerprint, '文件变化 → 指纹必须变');
   assert.ok(third.files.find((f) => f.path === 'src/b.ts')!.symbols.some((s) => s.name === 'delta'), '新增符号应出现');
+});
+
+test('调用边:只画跨文件的真实调用,声明/注释/属性访问不算', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-map-calls-'));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'x.ts'), [
+    "import { helper } from './y';",
+    'export function useIt() {',
+    '  helper(1);',
+    '  helper(2);',
+    '  // helper(3) 在注释里不算',
+    '  obj.helper(4);',
+    '}',
+    'export function localOnly() {}',
+  ].join('\n'));
+  fs.writeFileSync(path.join(root, 'src', 'y.ts'), 'export function helper(a: number) { return a; }\n');
+  const index = scanRepo(root, { cacheDir: null });
+  const x = index.files.find((f) => f.path === 'src/x.ts')!;
+  assert.deepEqual(x.calls, ['helper'], '跨文件调用应出现;同文件 localOnly 与注释/属性访问不算');
+  const text = renderRepoMap(index, { maxChars: 3500 });
+  assert.ok(text.includes('⇢ 调用 helper'), '渲染要能看到调用边');
+});
+
+test('符号→引用:定义点与引用点分开,注释/字符串不干扰定义', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-map-refs-'));
+  fs.mkdirSync(path.join(root, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'src', 'x.ts'), [
+    "import { helper } from './y';",
+    'export function useIt() {',
+    '  helper(1);',
+    '}',
+  ].join('\n'));
+  fs.writeFileSync(path.join(root, 'src', 'y.ts'), '// helper 只在注释里出现不算定义\nexport function helper(a: number) { return a; }\n');
+  const lookup = findSymbolReferences(root, 'helper', { maxFiles: 100 });
+  assert.deepEqual(lookup.definitions.map((d) => `${d.path}:${d.line}`), ['src/y.ts:2'], '定义只认真正的顶层声明');
+  const refs = lookup.references.map((r) => `${r.path}:${r.line}`);
+  assert.ok(refs.includes('src/x.ts:1'), 'import 算引用');
+  assert.ok(refs.includes('src/x.ts:3'), '调用算引用');
+  assert.ok(!refs.some((r) => r.startsWith('src/y.ts:2')), '定义行不重复算引用');
+  const text = renderSymbolLookup(lookup);
+  assert.ok(text.includes('定义(1)'));
+  assert.ok(text.includes('引用('));
+  assert.ok(renderSymbolLookup({ symbol: 'nope', definitions: [], references: [], scanned: 1, truncated: false }).includes('未找到'));
 });
 
 test('体系提示只在代码仓库里出现', () => {

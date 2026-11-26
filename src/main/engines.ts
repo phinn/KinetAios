@@ -18,6 +18,7 @@ import { currentProvider, priceUSD, type Provider } from './glm';
 import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
 import { repoMapHint } from './repo-map';
+import { VISUAL_VERIFY_HINT } from './visual-verify';
 import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -65,6 +66,11 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 永远不要因为"内容太长"而改用 shell echo/cat/heredoc,或 powershell Set-Content,或 base64 decode
 - 那些 shell/powershell 方式在 JSON+shell 双层转义下几乎必崩
 - 一旦决定要写文件,直接 write_file 一次到位
+
+【诊断自验证】write_file / edit_file 成功后会自动跑一次类型/静态检查(tsc / eslint / pyright / go),结果附在工具返回里:
+- 看到「⚠️ 自动诊断」= 你刚改出了错误,先按清单修掉再继续,不要带着错误往下堆功能
+- 看到「✅ 自动诊断」= 本次改动没引入新问题,可以继续
+- 多处改完想统一复查,或怀疑有跨文件影响时,手动调 diagnostics(path=…)
 
 【进程安全 · 铁律】pkill/kill 用宽泛模式匹配会自杀:
 - 本 app 自己的进程命令行里含 cwd 路径和 userData 目录名(如 "--user-data-dir=.../KinetAios"),
@@ -634,7 +640,7 @@ function skillCatalogSection(): string {
       // ⚡ cache 冻结分区:providerEconomicsSection 只依赖 snap.provider(换 provider 时整个
       // 前缀必然已变,放最前不影响其它分区的稳定性);pluginSystemPrompts 依赖当前 prompt
       // (关键词命中翻转会让其后所有内容 cache miss),所以挪到 codemodePromptSection 之后。
-      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + repoMapHint(conv.cwd) + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + repoMapHint(conv.cwd) + VISUAL_VERIFY_HINT + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,

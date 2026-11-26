@@ -1121,7 +1121,10 @@ export async function supervisorComplete(
   messages: ChatMsg[],
   profileId: string | null,
   signal?: AbortSignal,
+  // 模型覆盖:调用方(如 verify_visual)要把独立调用绑到会话实际使用的模型,而不是全局默认。
+  model?: string,
 ): Promise<Completion> {
-  const snap = snapshot(profileId);
+  const base = snapshot(profileId);
+  const snap = model ? { ...base, model } : base;
   return currentProvider(snap).streamComplete(messages, [], snap, signal ?? AbortSignal.timeout(120_000), () => {});
 }

@@ -541,7 +541,7 @@ export type AgentEvent =
   | { type: 'token'; text: string; channel?: 'reasoning' }
   // outcome: 工具执行结果三档(2026-10 埋点,复盘 Computer Use 失败模式用)。
   // ok=业务成功;error=执行失败(抛错/参数坏/工具报错);aborted=用户中止。旧事件/CLI 引擎不带 → undefined。
-  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[]; outcome?: ToolOutcome }
+  | { type: 'tool'; name: string; args: string; result: string; durationMs?: number; startId?: string; images?: string[]; outcome?: ToolOutcome; errorKind?: ToolErrorKind; errorSummary?: string }
   // 工具开始执行(runToolBatch 执行前发)→ renderer 先挂"运行中"卡片,结果到达后原位替换。
   // startId = 模型的 tool_call_id,与完成事件配对;CLI 引擎/子任务转发没有此事件(降级为旧行为)。
   | { type: 'tool_start'; name: string; args: string; startId: string }
@@ -625,6 +625,22 @@ export type VoiceChatEventPayload =
 // 判定在 AgentLoop.toolOutcomeOf(基于原始 result 前缀启发式);CLI/MCP 引擎不标(undefined)。
 export type ToolOutcome = 'ok' | 'error' | 'aborted';
 
+// 工具错误分类(2026-11 工具级遥测):失败原因可聚合,「哪个工具失败」之外还能回答「为什么失败」。
+// 判定在 tool-telemetry.toolTelemetryOf(基于原始 result 前缀/特征);旧数据/CLI 引擎无此字段。
+export type ToolErrorKind =
+  | 'timeout'        // 执行超时(含保留部分输出)
+  | 'exception'      // 工具抛错(AgentLoop 包成「工具出错:」)
+  | 'unknown_tool'   // 模型调了不存在的工具
+  | 'bad_args'       // 参数缺失/解析失败/输入不合法
+  | 'edit_mismatch'  // edit_file 的 old_string 没匹配上(最容易"以为改好了")
+  | 'not_found'      // 目标文件/资源不存在
+  | 'io'             // 读写失败(磁盘/权限以外的 IO 错误)
+  | 'permission'     // 权限不足(EACCES/EPERM/未授权)
+  | 'unsupported'    // 二进制/编码/大小/类型不支持
+  | 'exit_code'      // shell 退出码非 0
+  | 'reported'       // 工具以 ❌ 自报失败,但无更具体的类
+  | 'other';
+
 export type TaskStep = {
   id: string;
   name: string;
@@ -633,6 +649,8 @@ export type TaskStep = {
   ts: number;
   durationMs?: number; // 工具执行耗时(回放用)
   outcome?: ToolOutcome; // 执行结果三档埋点(复盘失败模式;旧数据/CLI 引擎无此字段)
+  errorKind?: ToolErrorKind; // 失败分类(工具级遥测;仅 outcome='error' 时有值)
+  errorSummary?: string; // 一行失败摘要(便于不看全文也知道为什么失败)
   // ── 工具卡片可视化(DSH 式运行中态)──
   pending?: boolean; // tool_start 已到、tool 结果未到 → 卡片显示 spinner
   interrupted?: boolean; // turn 结束时仍是 pending(出错/取消)→ 卡片标灰不再转圈
@@ -689,7 +707,7 @@ export type Turn = {
 export type ConvEvent =
   | { type: 'user/message'; text: string }
   | { type: 'assistant/message'; text: string }
-  | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number; outcome?: ToolOutcome }
+  | { type: 'tool/call'; name: string; args: string; result: string; durationMs?: number; outcome?: ToolOutcome; errorKind?: ToolErrorKind; errorSummary?: string }
   | { type: 'turn/error'; message: string }
   | { type: 'turn/status'; text: string } // 路由决策/引擎相位存证(路由→LEGIS、立法失败退化等):复盘"为什么走这条路"
   | { type: 'legis/compile'; nodes: number; edges: number; durationMs: number; degraded: boolean; reason?: string } // 立法编译结果存证(2026-10):成功/退化不再黑盒
@@ -1490,12 +1508,14 @@ export function applyEvent(conv: Conversation, ev: AgentEvent): void {
           pending.durationMs = ev.durationMs;
           pending.pending = false;
           if (ev.outcome) pending.outcome = ev.outcome; // 埋点透传(旧引擎无 → 保持 undefined)
+          if (ev.errorKind) pending.errorKind = ev.errorKind;
+          if (ev.errorSummary) pending.errorSummary = ev.errorSummary;
           if (imgs?.length) pending.images = imgs;
           break;
         }
       }
       // 无 startId(CLI 引擎/子任务转发)或配对失败 → 追加(旧行为)
-      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs, outcome: ev.outcome, images: imgs });
+      t.steps.push({ id: rid(), name: ev.name, args: ev.args, result: ev.result, ts: Date.now(), durationMs: ev.durationMs, outcome: ev.outcome, errorKind: ev.errorKind, errorSummary: ev.errorSummary, images: imgs });
       break;
     }
     case 'cost':

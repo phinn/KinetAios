@@ -12,7 +12,14 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 
 export type RepoSymbol = { name: string; kind: string; line: number; exported?: boolean };
-export type RepoFile = { path: string; lang: string; symbols: RepoSymbol[]; deps: string[] };
+export type RepoFile = {
+  path: string;
+  lang: string;
+  symbols: RepoSymbol[];
+  deps: string[];
+  /** 跨文件调用到的符号名(保守近似:只认本仓定义的顶层符号,按出现频次取前 N) */
+  calls?: string[];
+};
 export type RepoIndex = {
   root: string;
   files: RepoFile[];
@@ -165,6 +172,44 @@ function extractSymbols(text: string, lang: string): RepoSymbol[] {
   return syms;
 }
 
+// ── 调用边(保守近似)────────────────────────────────────────
+// 只做「标识符 + (」的文本扫描,再用全局符号表过滤 → 宁可漏(动态调用/别名),不要错。
+// 注释行、声明行、属性访问(.foo() )全部排除;跨文件才画边,同文件内部调用不进地图(信息量低)。
+const CALL_KEYWORDS = new Set([
+  'if', 'for', 'while', 'switch', 'catch', 'return', 'function', 'def', 'func', 'fn', 'class', 'interface', 'type',
+  'const', 'let', 'var', 'typeof', 'instanceof', 'import', 'export', 'require', 'super', 'constructor', 'new', 'await',
+  'async', 'yield', 'throw', 'case', 'do', 'else', 'try', 'with', 'lambda', 'assert', 'match', 'package', 'pub', 'struct',
+]);
+const DECL_BEFORE_RE = /(?:^|[^\w$])(?:function|def|func|fn|class|interface|type|const|let|var|struct|enum|trait|mod)\s*\*?\s*$/;
+const MAX_CALL_CANDIDATES = 400;
+
+/** 提取一个文件里的调用候选(名字 → 次数)。纯文本近似,不解析语法树。 */
+export function extractCallCandidates(text: string, lang: string): Map<string, number> {
+  const out = new Map<string, number>();
+  const lines = text.split('\n');
+  const idCall = /([A-Za-z_$][\w$]*)\s*\(/g;
+  for (const line of lines) {
+    const t = line.trimStart();
+    if (!t || t.startsWith('//') || t.startsWith('#') || t.startsWith('*') || t.startsWith('/*')) continue;
+    idCall.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = idCall.exec(line))) {
+      const name = m[1];
+      if (CALL_KEYWORDS.has(name) || name.length < 2) continue;
+      // 属性访问 .foo( / ?.foo( → 是方法调用,不是顶层符号调用
+      const idx = m.index;
+      let j = idx - 1;
+      while (j >= 0 && (line[j] === ' ' || line[j] === '\t')) j--;
+      if (j >= 0 && (line[j] === '.' || line[j] === '$')) continue;
+      // 声明行:function foo( / const foo = ( 不是"调用"
+      if (DECL_BEFORE_RE.test(line.slice(0, idx))) continue;
+      out.set(name, (out.get(name) ?? 0) + 1);
+      if (out.size > MAX_CALL_CANDIDATES) return out;
+    }
+  }
+  return out;
+}
+
 // ── 依赖边 ──────────────────────────────────────────────────
 
 const TS_IMPORT = /(?:from\s*|require\(\s*|import\(\s*|^\s*import\s+)['"]([^'"]+)['"]/gm;
@@ -257,7 +302,7 @@ function readCache(dir: string | null, root: string, fp: string): RepoIndex | nu
   if (!dir) return null;
   try {
     const j = JSON.parse(fs.readFileSync(cacheFile(dir, root), 'utf8')) as RepoIndex & { v?: number };
-    if (j && j.v === 1 && j.fingerprint === fp && Array.isArray(j.files)) {
+    if (j && j.v === 2 && j.fingerprint === fp && Array.isArray(j.files)) {
       return { root, files: j.files, scanned: j.scanned, truncated: j.truncated, fingerprint: fp };
     }
   } catch { /* 无缓存/坏缓存 → 重扫 */ }
@@ -268,7 +313,7 @@ function writeCache(dir: string | null, index: RepoIndex): void {
   if (!dir) return;
   try {
     fs.mkdirSync(dir, { recursive: true });
-    fs.writeFileSync(cacheFile(dir, index.root), JSON.stringify({ v: 1, ...index }), 'utf8');
+    fs.writeFileSync(cacheFile(dir, index.root), JSON.stringify({ v: 2, ...index }), 'utf8');
   } catch { /* 缓存失败不影响主流程 */ }
 }
 
@@ -291,6 +336,7 @@ export function scanRepo(root: string, opts: ScanOpts = {}): RepoIndex {
 
   const fileSet = new Set(walked.map((f) => f.rel));
   const files: RepoFile[] = [];
+  const candidates = new Map<string, Map<string, number>>();
   for (const f of walked) {
     let text = '';
     try {
@@ -311,6 +357,32 @@ export function scanRepo(root: string, opts: ScanOpts = {}): RepoIndex {
       .map((d) => resolveDep(f.rel, d, f.lang, fileSet))
       .filter((d): d is string => !!d && d !== f.rel))].sort();
     files.push({ path: f.rel, lang: f.lang, symbols, deps });
+    const cand = extractCallCandidates(text, f.lang);
+    if (cand.size) candidates.set(f.rel, cand);
+  }
+
+  // 调用边:全局符号表 → 过滤候选。只保留跨文件调用(同文件内部调用不进地图)。
+  const defs = new Map<string, Set<string>>();
+  for (const f of files) {
+    for (const s of f.symbols) {
+      const set = defs.get(s.name) ?? new Set<string>();
+      set.add(f.path);
+      defs.set(s.name, set);
+    }
+  }
+  for (const f of files) {
+    const cand = candidates.get(f.path);
+    if (!cand) continue;
+    const calls: Array<[string, number]> = [];
+    for (const [name, n] of cand) {
+      const owners = defs.get(name);
+      if (!owners) continue;
+      if (owners.size === 1 && owners.has(f.path)) continue; // 只有自己定义 → 不是跨文件边
+      calls.push([name, n]);
+    }
+    if (calls.length) {
+      f.calls = calls.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, 16).map(([n]) => n);
+    }
   }
 
   const index: RepoIndex = { root: absRoot, files, scanned: files.length, truncated, fingerprint: fp };
@@ -338,7 +410,7 @@ export function renderRepoMap(index: RepoIndex, opts: RenderOpts = {}): string {
 
   const head = [
     `# 仓库地图:${base} — ${files.length} 文件 / ${totalSymbols} 符号${index.truncated ? `(扫描达上限 ${index.scanned}+,结果已截断)` : ''}`,
-    `# 这是索引不是全文:先定位文件与符号,再 read_file 看实现。只看某部分时传 filter(路径子串)。`,
+    `# 这是索引不是全文:先定位文件与符号,再 read_file 看实现。只看某部分时传 filter(路径子串);查"谁用了某符号"传 symbol=符号名(返回定义 + 引用点)。`,
   ];
   let out = head.join('\n');
   let shown = 0;
@@ -349,9 +421,11 @@ export function renderRepoMap(index: RepoIndex, opts: RenderOpts = {}): string {
     const syms = f.symbols.slice(0, 24).map((s) => `${s.kind} ${s.name}`);
     if (f.symbols.length > 24) syms.push(`+${f.symbols.length - 24}`);
     const deps = f.deps.slice(0, 6).map((d) => path.posix.basename(d));
+    const calls = (f.calls ?? []).slice(0, 10);
     const lines = [`${f.path}  (${f.symbols.length})`];
     if (syms.length) lines.push(`  ${syms.join(', ')}`);
     if (deps.length) lines.push(`  ↳ ${deps.join(', ')}${f.deps.length > 6 ? ', …' : ''}`);
+    if (calls.length) lines.push(`  ⇢ 调用 ${calls.join(', ')}${(f.calls?.length ?? 0) > 10 ? ', …' : ''}`);
     const block = '\n' + lines.join('\n');
     if (out.length + block.length > maxChars) { cut = true; break; }
     out += block;
@@ -369,6 +443,93 @@ export function repoMapText(root: string, opts: ScanOpts & RenderOpts = {}): str
   return renderRepoMap(index, { maxChars: opts.maxChars, filter: opts.filter });
 }
 
+// ── 对外:符号 → 引用反查 ────────────────────────────────────
+// grep 只能证明"这个词出现在某行";反查要回答的是"定义在哪、谁在用、用在哪一行"。
+// 实现:复用同一套跳过规则做文件遍历 + 词边界匹配;定义点用符号提取(不受注释/字符串干扰)。
+
+export type SymbolRef = { path: string; line: number; text: string };
+export type SymbolLookup = {
+  symbol: string;
+  definitions: SymbolRef[];
+  references: SymbolRef[];
+  /** 扫描的文件数 */
+  scanned: number;
+  /** 是否因上限截断(引用数或文件数) */
+  truncated: boolean;
+};
+
+export function findSymbolReferences(
+  root: string,
+  symbol: string,
+  opts: { maxRefs?: number; maxFiles?: number; maxFileBytes?: number } = {},
+): SymbolLookup {
+  const absRoot = path.resolve(root);
+  const name = symbol.trim();
+  const maxRefs = Math.max(1, opts.maxRefs ?? 60);
+  const maxBytes = opts.maxFileBytes ?? MAX_FILE_BYTES_DEFAULT;
+  const { files: walked, truncated: walkTrunc } = walk(absRoot, opts.maxFiles ?? MAX_FILES_DEFAULT);
+  const definitions: SymbolRef[] = [];
+  const references: SymbolRef[] = [];
+  let truncated = walkTrunc;
+  if (!name) return { symbol: name, definitions, references, scanned: 0, truncated };
+
+  const wordRe = new RegExp(`(^|[^\\w$])${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}([^\\w$]|$)`, '');
+  for (const f of walked) {
+    if (references.length >= maxRefs) { truncated = true; break; }
+    let text = '';
+    try {
+      const fd = fs.openSync(f.abs, 'r');
+      try {
+        const buf = Buffer.alloc(Math.min(f.size, maxBytes));
+        fs.readSync(fd, buf, 0, buf.length, 0);
+        text = buf.toString('utf8');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      continue;
+    }
+    if (text.includes('\u0000')) continue;
+    const lines = text.split('\n');
+    const defLines = new Set<number>();
+    for (const s of extractSymbols(text, f.lang)) {
+      if (s.name !== name) continue;
+      defLines.add(s.line);
+      definitions.push({ path: f.rel, line: s.line, text: (lines[s.line - 1] ?? '').trim().slice(0, 160) });
+    }
+    for (let i = 0; i < lines.length; i++) {
+      if (references.length >= maxRefs) { truncated = true; break; }
+      if (defLines.has(i + 1)) continue;
+      if (!wordRe.test(lines[i])) continue;
+      references.push({ path: f.rel, line: i + 1, text: lines[i].trim().slice(0, 160) });
+    }
+  }
+  return { symbol: name, definitions, references, scanned: walked.length, truncated };
+}
+
+/** 把反查结果渲染成给模型看的文本。 */
+export function renderSymbolLookup(lookup: SymbolLookup, maxShow = 40): string {
+  const { symbol, definitions, references } = lookup;
+  if (!definitions.length && !references.length) {
+    return `未找到符号「${symbol}」的定义或引用(可能拼写不同,或只在字符串/动态调用里出现)。可先用 grep 搜子串确认拼写。`;
+  }
+  const out: string[] = [`# 符号引用:${symbol}`];
+  if (definitions.length) {
+    out.push(`定义(${definitions.length}):`);
+    for (const d of definitions.slice(0, 10)) out.push(`  ${d.path}:${d.line}  ${d.text}`);
+  } else {
+    out.push('定义:(仓库内未找到顶层声明,可能是外部依赖或类成员)');
+  }
+  if (references.length) {
+    out.push(`引用(${references.length}${lookup.truncated ? '+' : ''}):`);
+    for (const r of references.slice(0, maxShow)) out.push(`  ${r.path}:${r.line}  ${r.text}`);
+    if (references.length > maxShow) out.push(`  …(只显示前 ${maxShow} 条)`);
+  } else {
+    out.push('引用:无(除了定义点,仓库内没有其它引用)');
+  }
+  return out.join('\n');
+}
+
 /**
  * 体系提示里的一句话引导。只有当前目录像代码仓库时才注入,
  * 文本固定(不随文件变化)→ 不会打穿 prompt 缓存。
@@ -383,5 +544,5 @@ export function repoMapHint(cwd: string): string {
     return '';
   }
   if (!isRepo) return '';
-  return '\n\n# 仓库地图\n探索代码前先调用一次 repo_map(文件 + 顶层符号 + 依赖边一次到手),再用 grep / read_file 定点深入;不要一上来盲目 glob。';
+  return '\n\n# 仓库地图\n探索代码前先调用一次 repo_map(文件 + 顶层符号 + 依赖边 + 调用关系一次到手),再用 grep / read_file 定点深入;查"谁在用某函数/类"用 repo_map(symbol="名字") 做定义+引用反查,不要一上来盲目 glob。';
 }

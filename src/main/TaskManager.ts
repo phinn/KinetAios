@@ -1287,6 +1287,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           result: ev.result.length > EVENT_RESULT_CAP ? ev.result.slice(0, EVENT_RESULT_CAP) + `…[事件存证截断,原长 ${ev.result.length.toLocaleString()} 字符]` : ev.result,
           durationMs: ev.durationMs,
           outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
+          // 工具级遥测(2026-11):失败分类 + 一行摘要 —— 「哪个工具失败」之外还能按原因聚合错误率
+          errorKind: ev.errorKind,
+          errorSummary: ev.errorSummary,
         });
         break;
       case 'cost': {

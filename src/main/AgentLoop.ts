@@ -3,6 +3,7 @@
 import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPolicy, TrajRecord } from '../shared/types';
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, guardToolArgs, normalizeAliasArgs, type Tool, type ToolCtx } from './tools';
+import { toolTelemetryOf } from './tool-telemetry';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
 import { pullSteer, steerMessage } from './steer';
@@ -1886,48 +1887,14 @@ const STEP_RESULT_UI_LIMIT = 4000;
 //   wecom_send_file / feishu_send_file 的「文件不存在/为空/超 50MB/不支持类型」同理。
 // 判定仍走 startsWith:工具返回的第一句就是这个前缀,不会误伤正文里出现同样字样的结果。
 // / Prefixes by which tools self-report failure as a normal string. Missing them made
-// failures look like successes and silently suppressed the retry nudge.
-const TOOL_FAIL_PREFIXES = [
-  '未找到要替换的片段',
-  '读不到:',
-  '写入失败:',
-  '文件不存在:',
-  '文件为空:',
-  '文件超过 50MB 上限:',
-  '不支持的文件类型:',
-  '拒绝编辑二进制文件:',
-  '拒绝覆盖二进制文件:',
-  '该文件是 UTF-16 编码',
-  '缺少 path',      // 参数缺失兜底(guardToolArgs 已前置拦截,这里覆盖其它入口)
-  '缺少 old_string',
-];
+// 工具"自报失败"的判定与错误分类统一在 tool-telemetry.ts(ToolErrorKind),
+// 这里不再维护第二张前缀表 —— 曾因两处各判一套导致"失败被记成成功"与"分类漂移"。
 
 // 工具执行结果三档判定(启发式,基于原始 result 前缀;2026-10 埋点)。
-// 判"业务失败"的信号都是本仓工具约定的固定前缀:execute() 抛错/未知工具/参数坏,
-// 工具内部自报错(❌/超时/[exit N]/TOOL_FAIL_PREFIXES);⚠️ 参数截断类也是执行失败。
-// 其余一律 ok —— 工具把错误当正常业务结果返回时(如 grep 无命中)不算失败。
-// Heuristic over the raw tool result; UI 截断/截图伪装不影响判定(用的是原始 result)。
+// 实现已移到 tool-telemetry.ts —— 与错误分类(为什么失败)共用同一张前缀表,避免两处漂移。
+// 保留此导出供测试/旧调用方按成败判定;需要错误分类直接用 toolTelemetryOf。
 export function toolOutcomeOf(result: string): 'ok' | 'error' | 'aborted' {
-  if (result === '[已停止]' || result.startsWith('[已停止]')) return 'aborted';
-  // 超时标记只认结果头部 200 字符:超时文案永远在最前面 —— shell 直接以它起头,
-  // codemode 则包在「✅ 完成。\n[返回值]\n」之后(实测位置 < 60 字符)。
-  // 全文 includes 会误伤「输出内容里引用了这段文案」的成功调用:2026-11-20 17:23 那次
-  // codemode 的返回是一段提交正文,提交信息里提到「⏳ 超时」在第 2096 字符处,
-  // 于是一个 ✅ 完成的调用被判成 error(实测 4000 次调用里 1 次)。
-  // Only scan the head for timeout markers — they are always at the very front; the body
-  // may legitimately quote the wording (commit messages, diff output).
-  const head = result.slice(0, 200);
-  if (
-    result.startsWith('工具出错:') ||
-    result.startsWith('未知工具:') ||
-    result.startsWith('⚠️ 参数') ||
-    head.includes('[超时(') ||   // 旧超时文案(2026-10 之前,无「保留部分输出」)
-    head.includes('⏳ 超时') ||   // 现超时文案:改版后首行是 [now: …] 再跟 ⏳,前缀匹配失效
-    /^\[exit \d+\]/.test(result) ||
-    result.startsWith('❌') ||
-    TOOL_FAIL_PREFIXES.some((p) => result.startsWith(p))
-  ) return 'error';
-  return 'ok';
+  return toolTelemetryOf(result).outcome;
 }
 
 async function runToolBatch(
@@ -1973,7 +1940,7 @@ async function runToolBatch(
           const t0 = Date.now();
           const result = await execute(c, tools, ctx);
           const dur = Date.now() - t0;
-          const outcome = toolOutcomeOf(result); // 埋点:判定基于原始 result,截图伪装/截断不影响
+          const tel = toolTelemetryOf(result); // 埋点:成败 + 错误分类(基于原始 result,截图伪装/截断不影响)
           const shot = parseScreenshotResult(result);
           // 工具输出溢出落盘: 发给模型前截断,全文先落盘,模型可 grep_tool_output 回捞(见 tool-spill.ts)
           const spillFile = shot ? null : spillToolOutput(ctx.convId ?? '', c.name, result);
@@ -1982,7 +1949,7 @@ async function runToolBatch(
           const forModel = spillFile ? `${forModel0}\n\n[工具输出全文 ${result.length} 字符已落盘: ${spillFile}。被截断丢失的中段可用 grep_tool_output(pattern=…, file=此路径) 回捞]` : forModel0;
           const uiResult = shot ? (textOnlyModel ? '📷 截屏成功 (当前模型纯文本,图片已落盘,回执文字已交给模型)' : '📷 截屏成功 (图片已发送给模型)') : truncateForModel(result, STEP_RESULT_UI_LIMIT);
           // images: 截图 base64 随事件下发(仅内存/广播;saveTurn 持久化时剥离)
-          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, outcome, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
+          onEvent({ type: 'tool', name: c.name, args: c.arguments, result: uiResult, durationMs: dur, outcome: tel.outcome, errorKind: tel.errorKind, errorSummary: tel.errorSummary, startId: c.id, images: shot ? [shot.b64] : undefined }); // UI 不显示 base64 原文
 
           // 截图结果不截断(base64 不能被截断,否则图片损坏)→ 走多模态路径
           return { c, result: forModel, dur };
@@ -2015,7 +1982,8 @@ async function runToolBatch(
       const result = signal.aborted ? '[已停止]' : await execute(call, tools, ctx);
       const dur = Date.now() - t0;
       const shot = parseScreenshotResult(result);
-      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? (textOnlyModel ? '📷 截屏成功 (当前模型纯文本,图片已落盘,回执文字已交给模型)' : '📷 截屏成功 (图片已发送给模型)') : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, outcome: toolOutcomeOf(result), startId: call.id, images: shot ? [shot.b64] : undefined });
+      const tel = toolTelemetryOf(result);
+      onEvent({ type: 'tool', name: call.name, args: call.arguments, result: shot ? (textOnlyModel ? '📷 截屏成功 (当前模型纯文本,图片已落盘,回执文字已交给模型)' : '📷 截屏成功 (图片已发送给模型)') : truncateForModel(result, STEP_RESULT_UI_LIMIT), durationMs: dur, outcome: tel.outcome, errorKind: tel.errorKind, errorSummary: tel.errorSummary, startId: call.id, images: shot ? [shot.b64] : undefined });
       // 截图工具(只读,但防御性处理)—— 超限降级(b64 空)当文本
       // textOnlyModel:不带 image_url,只发文字回执(含落盘路径+md5),防连环 400
       if (shot && shot.b64 && !textOnlyModel) {

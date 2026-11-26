@@ -27,6 +27,7 @@ import { runAgentLoop, compactHistory, trimHistoryToTokenBudget, estTokenCount, 
 import { currentProvider, priceUSD } from './glm';
 import { allTools, readOnlyTools, shellExec, enforceBackgroundOpen, guardFocus, type Tool, type ToolCtx } from './tools';
 import { repoMapHint } from './repo-map';
+import { VISUAL_VERIFY_HINT } from './visual-verify';
 import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { codemodeTool, codemodePromptSection } from './codemode';
 import { getSettings, snapshot } from './settings';
@@ -453,6 +454,7 @@ export class DirectV2Engine implements Engine {
       providerEconomicsSection(snap) +
       cwdAnchorSection(conv) +
       repoMapHint(conv.cwd) +
+      VISUAL_VERIFY_HINT +
       V2_SYSTEM_SUFFIX +
       personaSection(conv) +
       sourceHintSection(conv) +

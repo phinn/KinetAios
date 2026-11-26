@@ -1088,7 +1088,7 @@ export function rebuildTurnsFromEvents(convId: string): Turn[] {
         t.done = true;
         break;
       case 'tool/call':
-        t.steps.push({ id: `${e.seq}`, name: e.data.name, args: e.data.args, result: e.data.result, ts: e.ts, durationMs: e.data.durationMs, outcome: e.data.outcome });
+        t.steps.push({ id: `${e.seq}`, name: e.data.name, args: e.data.args, result: e.data.result, ts: e.ts, durationMs: e.data.durationMs, outcome: e.data.outcome, errorKind: e.data.errorKind, errorSummary: e.data.errorSummary });
         break;
       case 'turn/error':
         t.error = e.data.message;
@@ -1266,6 +1266,13 @@ export function loadRecentTurns(limit: number): Array<{ prompt: string; answer: 
 export function getConversationCwd(convId: string): string | null {
   const row = db.prepare('SELECT cwd FROM conversations WHERE id = ?;').get(convId) as { cwd: string } | undefined;
   return row?.cwd ?? null;
+}
+
+// 取会话绑定的模型配置档 + 模型覆盖(工具内发独立 LLM 调用时用:必须跟主对话同一个模型)。
+// 会话不存在返回 null → 调用方回退全局默认配置。
+export function getConversationModelProfile(convId: string): { profileId: string | null; model: string | null } | null {
+  const row = db.prepare('SELECT profile_id, model FROM conversations WHERE id = ?;').get(convId) as { profile_id: string | null; model: string | null } | undefined;
+  return row ? { profileId: row.profile_id ?? null, model: row.model ?? null } : null;
 }
 
 export function loadMemories(convId?: string): Array<{ id: string; content: string; conversation_id: string | null; importance: number; kind: string | null }> {

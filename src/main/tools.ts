@@ -59,6 +59,10 @@ function atomicWrite(p: string, content: string): void {
   atomicWriteRaw(p, Buffer.from(content, 'utf8'));
 }
 import type { Provider, ToolDef } from './glm';
+import { supervisorComplete } from './glm';
+import { buildVisionMessages, formatVisionVerdict, looksLikeVisionUnsupported, parseVisionVerdict } from './visual-verify';
+import { diagnoseAfterEdit, diagnosticsReport } from './diagnostics';
+import { rankGrepHits, type GrepHit } from './search-rank';
 import * as store from './store';
 import { getSettings } from './settings';
 import { privacyGate } from './privacy-gate';
@@ -1062,7 +1066,10 @@ const writeFile: Tool = {
       } else {
         atomicWrite(p, content);
       }
-      return `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
+      // 编译诊断内环:写的是代码就顺手跑一次类型/静态检查,把错误直接回灌(不改变写入结果本身)。
+      const diag = await diagnoseAfterEdit({ cwd: ctx.cwd, file: p });
+      const done = `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
+      return diag ? `${done}\n\n${diag}` : done;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
     }
@@ -1837,7 +1844,7 @@ import { globToRegex } from '../shared/glob';
 const grep: Tool = {
   name: 'grep',
   readOnly: true,
-  description: '在当前工作目录递归搜索文件内容(正则,大小写不敏感),返回「文件:行号: 内容」。自动排除 node_modules/.git/dist 等。需要找代码/字符串在哪时用,比 shell grep 干净。',
+  description: '在当前工作目录递归搜索文件内容(正则,大小写不敏感),返回「文件:行号: 内容」,按相关性排序(源码/精确大小写/词边界优先,同文件最多 8 条)。自动排除 node_modules/.git/dist 等。需要找代码/字符串在哪时用,比 shell grep 干净。',
   parameters: {
     type: 'object',
     properties: {
@@ -1856,7 +1863,8 @@ const grep: Tool = {
     }
     const filter = args.glob ? globToRegex(String(args.glob)) : null;
     const files = await walkFiles(ctx.cwd, 2000);
-    const hits: string[] = [];
+    const candidates: GrepHit[] = [];
+    let capped = false;
     for (const f of files) {
       const rel = path.relative(ctx.cwd, f);
       if (filter && !filter.test(rel) && !filter.test(path.basename(f))) continue;
@@ -1866,17 +1874,19 @@ const grep: Tool = {
         const body = decodeBuffer(buf); // 编码检测:BOM → UTF-8 → GBK/Big5/Shift_JIS 启发式
         for (const [i, line] of body.split('\n').entries()) {
           if (re.test(line)) {
-            hits.push(`${rel}:${i + 1}: ${line.trim().slice(0, 200)}`);
-            if (hits.length >= 200) break;
+            candidates.push({ file: rel, line: i + 1, text: line.trim().slice(0, 200) });
+            if (candidates.length >= 800) { capped = true; break; }
           }
         }
       } catch {
         /* 二进制/无权限 → 跳过 */
       }
-      if (hits.length >= 200) break;
+      if (capped) break;
     }
-    if (!hits.length) return `无匹配「${pattern}」`;
-    const out = `命中 ${hits.length} 条:\n${hits.join('\n')}`;
+    if (!candidates.length) return `无匹配「${pattern}」`;
+    // 相关性重排(大小写精确/词边界/源码目录优先,同文件限 8 条):命中太多时先看最可能的那批。
+    const ranked = rankGrepHits(candidates, pattern, { max: 200, perFile: 8 });
+    const out = `命中 ${candidates.length}${capped ? '+' : ''} 条(按相关性排序):\n${ranked.map((h) => `${h.file}:${h.line}: ${h.text}`).join('\n')}`;
     // 隐私闸:grep 结果含匹配行原文,可能带出 .env/密钥文件内容,出网前过闸。
     const blocked = await privacyGate(out);
     return blocked ?? out;
@@ -1941,8 +1951,9 @@ const repoMapTool: Tool = {
   name: 'repo_map',
   readOnly: true,
   description:
-    '生成仓库语义地图:递归扫描源码里的顶层符号(函数/类/接口/类型)和文件间相对依赖,一次看清项目结构。'
+    '生成仓库语义地图:递归扫描源码里的顶层符号(函数/类/接口/类型)、文件间相对依赖和跨文件调用关系,一次看清项目结构。'
     + '探索陌生代码库时先用它,再 grep / read_file 定点深入;只看某目录时传 filter(路径子串)。'
+    + '传 symbol 则做「符号 → 引用」反查:返回定义位置和所有引用点(比 grep 更准,能排除注释/字符串干扰)。'
     + '支持 .ts/.tsx/.js/.py/.go/.rs。',
   parameters: {
     type: 'object',
@@ -1950,19 +1961,48 @@ const repoMapTool: Tool = {
       path: { type: 'string', description: '仓库根目录(默认当前工作目录)' },
       filter: { type: 'string', description: '只保留路径包含该子串的文件,如 "src/main" 或 "auth"' },
       max_chars: { type: 'number', description: '地图最大字符数(默认 3500,上限 12000)' },
+      symbol: { type: 'string', description: '符号名:传了就做定义 + 引用反查(如 "runToolBatch"),忽略 filter/max_chars' },
     },
   },
   async run(args, ctx) {
     const root = expandPath(String(args.path ?? ''), ctx.cwd) || ctx.cwd;
     const filter = typeof args.filter === 'string' && args.filter.trim() ? args.filter.trim() : undefined;
     const maxChars = Math.max(500, Math.min(12000, Number(args.max_chars) || 3500));
+    const symbol = typeof args.symbol === 'string' ? args.symbol.trim() : '';
     try {
       // 延迟 require:electron 缓存目录只在 main 进程可用,测试环境走内存缓存。
       // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const { repoMapText } = require('./repo-map') as typeof import('./repo-map');
-      return repoMapText(root, { filter, maxChars });
+      const rm = require('./repo-map') as typeof import('./repo-map');
+      if (symbol) return rm.renderSymbolLookup(rm.findSymbolReferences(root, symbol));
+      return rm.repoMapText(root, { filter, maxChars });
     } catch (e) {
       return `repo_map 失败: ${(e as Error)?.message ?? e}`;
+    }
+  },
+};
+
+// diagnostics:按项目类型自动选检查器(tsc / eslint / pyright / py_compile / gopls / go vet)。
+// write_file / edit_file 成功后也会自动跑一次(diagnostics.ts diagnoseAfterEdit),本工具用于手动全量复查。
+const diagnosticsTool: Tool = {
+  name: 'diagnostics',
+  readOnly: true,
+  description:
+    '跑项目的类型检查/静态检查,返回错误清单(文件:行:列 + 消息)。按项目类型自动选工具:'
+    + 'TS/JS → tsc(有 tsconfig)或 eslint(有 eslint 配置);Python → pyright(装了的话)或 python3 语法编译;Go → gopls check 或 go vet。'
+    + 'write_file / edit_file 之后系统已自动跑过一次(结果附在工具返回里),这里用于手动全量复查或改完多处后统一确认。',
+  parameters: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: '要检查的文件或目录(默认当前工作目录)' },
+      max_errors: { type: 'number', description: '最多返回多少条(默认 30,上限 100)' },
+    },
+  },
+  async run(args, ctx) {
+    const target = expandPath(String(args.path ?? ''), ctx.cwd) || ctx.cwd;
+    try {
+      return await diagnosticsReport({ target, cwd: ctx.cwd, maxErrors: Number(args.max_errors) || undefined });
+    } catch (e) {
+      return `诊断执行失败: ${sanitizeError(e)}`;
     }
   },
 };
@@ -2030,7 +2070,10 @@ const editFile: Tool = {
     if (!encoded) return '该文件是 UTF-16 编码,字符串级编辑会破坏它,请用支持编码的编辑器处理。';
     try {
       atomicWriteRaw(p, encoded);
-      return `已替换 ${count} 处 → ${p}`;
+      // 诊断内环:编辑后立刻检查,错误随结果回灌 —— 早一轮发现就少一轮返工。
+      const diag = await diagnoseAfterEdit({ cwd: ctx.cwd, file: p });
+      const done = `已替换 ${count} 处 → ${p}`;
+      return diag ? `${done}\n\n${diag}` : done;
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
     }
@@ -3332,6 +3375,94 @@ const screenshot_window: Tool = {
   },
 };
 
+// ── 视觉验收内环(2026-11)──
+// 截图/读图 → 视觉模型按验收标准判定 → pass / 问题清单 / 修复建议。
+// 存在的意义:模型写完 UI 只能靠"代码看起来对"宣布完成,截图明明在手边却没人看。
+const VISION_IMAGE_MAX_BYTES = 8 * 1024 * 1024;
+function visionImageMime(p: string): string | null {
+  const ext = path.extname(p).toLowerCase();
+  if (ext === '.png') return 'image/png';
+  if (ext === '.jpg' || ext === '.jpeg') return 'image/jpeg';
+  if (ext === '.webp') return 'image/webp';
+  return null;
+}
+
+const verifyVisual: Tool = {
+  name: 'verify_visual',
+  description:
+    '视觉验收:把截图/图片交给视觉模型,按给定验收标准判定「通过 / 不通过」,并给出问题清单与修复建议。' +
+    '用于 UI、网页、图表、桌面界面等视觉产物的交付前自检。图片来源三选一:image_path(已有图片文件,最常用)、' +
+    'window_title(现场截指定窗口,不要求前台)、都不传则截当前屏幕。验收标准必须可观察(如"按钮居中、无文字重叠、无横向滚动条")。',
+  parameters: {
+    type: 'object',
+    properties: {
+      criteria: { type: 'string', description: '验收标准(必填,可观察的条件,多条用分号分隔)' },
+      image_path: { type: 'string', description: '要验收的图片路径(png/jpg/jpeg/webp;相对路径按工作目录解析)' },
+      window_title: { type: 'string', description: '按窗口标题关键字现场截该窗口再验收(与 image_path 二选一)' },
+      context: { type: 'string', description: '补充背景:这是什么页面 / 期望达到的效果(可选)' },
+    },
+    required: ['criteria'],
+  },
+  readOnly: true,
+  async run(args, ctx) {
+    const criteria = String(args?.criteria ?? '').trim();
+    if (!criteria) return '缺少 criteria:请给出可观察的验收标准(如「按钮居中、无文字重叠」)';
+    const imagePath = String(args?.image_path ?? '').trim();
+    const windowTitle = String(args?.window_title ?? '').trim();
+    let dataUrl = '';
+    let sourceDesc = '';
+    if (imagePath) {
+      const p = path.isAbsolute(imagePath) ? imagePath : path.resolve(ctx.cwd || process.cwd(), imagePath);
+      const mime = visionImageMime(p);
+      if (!mime) return `❌ 不支持的图片格式: ${path.extname(p) || '(无扩展名)'}(只支持 png/jpg/jpeg/webp)`;
+      let buf: Buffer;
+      try {
+        const st = fs.statSync(p);
+        if (!st.isFile()) return `❌ 不是文件: ${p}`;
+        if (st.size > VISION_IMAGE_MAX_BYTES) {
+          return `❌ 图片过大(${(st.size / 1024 / 1024).toFixed(1)}MB),上限 8MB。先压缩,或截取要验收的局部区域。`;
+        }
+        buf = fs.readFileSync(p);
+      } catch {
+        return `❌ 文件不存在或读不到: ${p}`;
+      }
+      if (!buf.length) return `❌ 空图片: ${p}`;
+      dataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+      sourceDesc = p;
+    } else if (windowTitle) {
+      const r = await captureWindowByName(windowTitle);
+      if (!r.ok || !r.base64) return `❌ 窗口截取失败: ${r.error}`;
+      dataUrl = `data:image/png;base64,${r.base64}`;
+      sourceDesc = `窗口「${windowTitle}」 ${r.width}×${r.height}`;
+    } else {
+      const r = await captureScreenshotWithHide(false);
+      if (!r.ok || !r.base64) return `❌ 截屏失败: ${r.error}`;
+      dataUrl = `data:image/png;base64,${r.base64}`;
+      sourceDesc = `当前屏幕 ${r.width}×${r.height}`;
+    }
+    let reply = '';
+    try {
+      // 用会话实际绑定的模型做验收(而不是全局默认):验一个模型看不到的 provider 毫无意义。
+      const prof = ctx.convId ? store.getConversationModelProfile(ctx.convId) : null;
+      const out = await supervisorComplete(
+        buildVisionMessages(dataUrl, criteria, args?.context ? String(args.context) : undefined),
+        prof?.profileId ?? null,
+        ctx.signal,
+        prof?.model ?? undefined,
+      );
+      reply = out.content ?? '';
+    } catch (e) {
+      const msg = (e as Error)?.message ?? String(e);
+      if (looksLikeVisionUnsupported(msg)) {
+        return '❌ 当前模型不支持读图,视觉验收需要多模态模型。请先在设置里切换到支持图片的模型再重试。';
+      }
+      return `❌ 视觉验收调用失败: ${sanitizeError(e)}`;
+    }
+    // 判定放第一行:tool-telemetry 按结果前缀判成败(❌ → error),图片来源只是附注。
+    return `${formatVisionVerdict(parseVisionVerdict(reply), criteria)}\n图片来源: ${sourceDesc}`;
+  },
+};
+
 const mouseAction: Tool = {
   name: 'mouse_click',
   description: '在屏幕指定坐标点击鼠标。需要先用 screenshot 截屏查看当前屏幕,确定要点击的位置坐标。坐标基于截图的像素分辨率。',
@@ -3943,7 +4074,7 @@ const cronManage: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, diagnosticsTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, verifyVisual, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
