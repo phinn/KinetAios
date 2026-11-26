@@ -73,22 +73,40 @@ jobs:
           echo "APPLE_TEAM_ID=${{ secrets.APPLE_TEAM_ID }}" >> "$GITHUB_ENV"
           echo "CSC_NAME=${{ secrets.MAC_CSC_NAME }}" >> "$GITHUB_ENV"
 
-      - shell: bash
+      - id: dist
+        shell: bash
         run: |
           set -o pipefail
-          ${{ matrix.run_dist }} 2>&1 | tee dist.log
+          if ${{ matrix.run_dist }} 2>&1 | tee dist.log; then
+            exit 0
+          fi
+          # 非 macOS 没有公证环节,失败就是真失败。
+          if [ -z "$MAC_ARCH" ]; then
+            echo "::error::${{ matrix.run_dist }} 失败"
+            exit 1
+          fi
+          # macOS 上最常见的失败原因是公证凭据失效(401 Invalid credentials),
+          # 此时 electron-builder 会在产出 dmg 之前退出 → 整个 Release 少一个 mac 包。
+          # 兜底:跳过公证重试一次,签名保留,至少保证 dmg 有产出。
+          echo "::warning::首次打包失败,跳过公证重试(SKIP_NOTARIZE=1)"
+          SKIP_NOTARIZE=1 ${{ matrix.run_dist }} 2>&1 | tee -a dist.log
 
       # macOS: 打包后列出 DMG 文件名,便于诊断 electron-builder 输出
       - name: List release dir (macOS)
         if: matrix.mac_arch != ''
         shell: bash
         run: |
+          shopt -s nullglob
           echo "=== release/ contents ==="
-          ls -la release/*.dmg 2>/dev/null || echo "(no dmg found)"
+          dmgs=(release/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then
+            echo "(no dmg found)"
+            exit 0
+          fi
           echo "=== renaming to ensure arch suffix ==="
           # electron-builder 单架构打包时文件名可能不含 -x64/-arm64 后缀
           # 重命名确保文件名带架构标识,避免两个 job 产物同名冲突
-          for f in release/*.dmg; do
+          for f in "${dmgs[@]}"; do
             base=$(basename "$f" .dmg)
             # 已经有 -x64 或 -arm64 后缀 → 跳过
             if [[ "$base" == *-x64 || "$base" == *-arm64 ]]; then
@@ -101,7 +119,7 @@ jobs:
             mv "$f" "$newname"
           done
           echo "=== final release/ ==="
-          ls -la release/*.dmg
+          ls -la release/*.dmg || echo "(none)"
           # 删掉重命名前的原始文件(无 arch 后缀),避免 glob 重复上传到 Release
           for f in release/KinetAios-*.dmg; do
             base=$(basename "$f" .dmg)

@@ -53,6 +53,12 @@ if (arg === 'dir') {
   } else {
     ebArgs = ['--mac', '--x64', '--arm64', '--publish', 'never'];
   }
+  // CI 兜底:公证凭据失效(401)时会让 electron-builder 在生成 dmg 前退出。
+  // 设 SKIP_NOTARIZE=1 重试 → 保留 Developer ID 签名,只跳过公证,仍能产出可安装的 dmg。
+  if (process.env.SKIP_NOTARIZE === '1') {
+    console.log('[pack] SKIP_NOTARIZE=1 → 跳过公证,仅保留代码签名');
+    ebArgs.push('--config.mac.notarize=false');
+  }
 } else {
   ebArgs = [`--${arg}`, '--publish', 'never'];
 }
