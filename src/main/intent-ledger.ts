@@ -12,7 +12,7 @@
 // 判定全部是纯函数(assessEvidence / canComplete),不依赖 Electron,可直接单测。
 import * as store from './store';
 import type { EventRow, IntentEvidenceRow, IntentRow } from './store';
-import type { ConvEvent } from '../shared/types';
+import type { ConvEvent, IntentInfo } from '../shared/types';
 
 export type EvidenceKind = 'diagnostics' | 'test' | 'visual' | 'answer';
 
@@ -224,6 +224,33 @@ export function formatIntentList(intents: IntentRow[]): string {
     const icon = it.status === 'done' ? '✅' : it.status === 'dropped' ? '🗑' : '▫️';
     return `${icon} #${it.id} ${it.title || '(无标题)'} — ${it.contract.slice(0, 80)}${it.contract.length > 80 ? '…' : ''}`;
   }).join('\n');
+}
+
+/**
+ * 渲染层视图:最近 20 个意图 + 证据明细。
+ * 只读:open 意图的 spent 现场按事件流重算,不回写(避免"看一眼就改库")。
+ */
+export function intentViews(convId: string): IntentInfo[] {
+  return store.listIntents(convId, { limit: 20 }).map((it) => {
+    const evidence = store.listIntentEvidence(it.id, 200);
+    const passed = evidence.filter((e) => e.ok).length;
+    const failed = evidence.length - passed;
+    const spent = it.status === 'open' ? store.sumTurnCostSince(it.convId, it.createdAt) : it.spentUSD;
+    return {
+      id: it.id,
+      convId: it.convId,
+      title: it.title,
+      contract: it.contract,
+      status: it.status,
+      budgetUSD: it.budgetUSD,
+      spentUSD: spent,
+      createdAt: it.createdAt,
+      updatedAt: it.updatedAt,
+      passed,
+      failed,
+      evidence: evidence.map((e) => ({ kind: e.kind, ok: e.ok, detail: e.detail, at: e.at })),
+    };
+  });
 }
 
 // 体系提示:固定文本(不随文件/会话变化),不破坏 prompt 缓存。

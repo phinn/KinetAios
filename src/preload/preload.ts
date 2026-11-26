@@ -118,6 +118,7 @@ const api: KinetAPI = {
   snapshotRestore: (cwd, id) => ipcRenderer.invoke('snapshot-restore', cwd, id),
   snapshotDiff: (cwd, id) => ipcRenderer.invoke('snapshot-diff', cwd, id),
   toolUsageStats: (days) => ipcRenderer.invoke('tool-usage-stats', days),
+  convIntents: (convId: string) => ipcRenderer.invoke('conv-intents', convId),
   pluginList: () => ipcRenderer.invoke('plugin-list'),
   pluginReload: () => ipcRenderer.invoke('plugin-reload'),
   pluginInstall: (sourcePath: string) => ipcRenderer.invoke('plugin-install', sourcePath),

@@ -6,7 +6,7 @@ import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shar
 import { swapBaseUrlForProtocol } from '../shared/providerEndpoints';
 import { formatUsageStats } from '../shared/usage-format';
 import { engineColor } from './engine-colors';
-import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
+import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, IntentInfo, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
 import { uxToast } from './ux-toast';
 import { trapFocus, saveFocus } from './focus-manager';
@@ -601,6 +601,8 @@ function applyI18nDOM(): void {
         // round wedged the renderer. Replace only the last turn in place; falls
         // back to renderMain() when no streaming element exists.
         updateLastTurnIncremental();
+        // 回合结束刷新意图账本(完成/证据变化只在这里需要重取)
+        void refreshIntents(convId);
         // 后台会话完成标记:不是当前正在看的会话 → 侧栏加小圆点提示
         if (convId !== selectedId) { bgDoneConvs.add(convId); renderSidebar(); }
         // 消息排队:回合结束自动发出队列里的下一条
@@ -611,6 +613,9 @@ function applyI18nDOM(): void {
         flushQueue(convId);
         // 未读计数:AI 完成回复但用户不在底部 → 累加 badge
         if (!userAtBottom && ev.type === 'done') { unreadCount++; updateBadge(); }
+      } else if (ev.type === 'tool' && (ev.name === 'intent' || ev.name === 'intent_done')) {
+        // 意图在轮中变化:建/改/完成都即时反映到任务条
+        void refreshIntents(convId);
       } else if (ev.type === 'status') {
         // 进度跟随:status 变化(工具开跑/结束)时用户在底部 → 贴底
         if (userAtBottom && convId === selectedId) stickToBottomSoon();
@@ -4375,6 +4380,90 @@ function buildTodoCard(todos: TodoItem[]): HTMLElement {
   det.appendChild(list);
   el.appendChild(det);
   return el;
+}
+
+// ── Intent 账本条(会话级任务卡)──
+// 数据来自主进程 intent-ledger.intentViews(只读);签名不变不重建 DOM,避免轮末闪烁。
+let intentBarSig = '';
+
+async function refreshIntents(convId: string | null): Promise<void> {
+  const bar = document.getElementById('intent-bar');
+  if (!convId) {
+    bar?.classList.add('js-hidden');
+    intentBarSig = '';
+    return;
+  }
+  try {
+    const list = await api.convIntents(convId);
+    if (selectedId !== convId) return; // 请求期间切走了
+    const sig = JSON.stringify(list);
+    if (sig === intentBarSig) return;
+    intentBarSig = sig;
+    renderIntentBar(list);
+  } catch {
+    /* 账本是增强信息,读取失败不影响对话 */
+  }
+}
+
+function renderIntentBar(list: IntentInfo[]): void {
+  const bar = document.getElementById('intent-bar');
+  const text = document.getElementById('intent-text');
+  const count = document.getElementById('intent-count');
+  const listEl = document.getElementById('intent-list');
+  const det = document.getElementById('intent-details') as HTMLDetailsElement | null;
+  if (!bar || !text || !count || !listEl || !det) return;
+  if (!list.length) {
+    bar.classList.add('js-hidden');
+    return;
+  }
+  bar.classList.remove('js-hidden');
+  const open = list.filter((x) => x.status === 'open');
+  const passed = list.reduce((n, x) => n + x.passed, 0);
+  const failed = list.reduce((n, x) => n + x.failed, 0);
+  const head = open[0];
+  text.textContent = head ? head.title : tr(list[0].status === 'done' ? 'intent.done' : 'intent.dropped');
+  text.title = head?.contract ?? '';
+  count.innerHTML = `${open.length ? `${open.length} ${esc(tr('intent.open'))} · ` : ''}${esc(tr('intent.evidence', { n: passed }))}`
+    + (failed ? ` <span class="intent-ev-fail">${sv.xCircle}${failed}</span>` : '');
+  // 展开态尊重用户偏好(与 todo 卡同款 localStorage 语义)。
+  det.open = localStorage.getItem('intent-bar-collapsed') !== '1';
+  det.ontoggle = () => {
+    if (det.open) localStorage.removeItem('intent-bar-collapsed');
+    else localStorage.setItem('intent-bar-collapsed', '1');
+  };
+  listEl.innerHTML = '';
+  for (const it of list.slice(0, 8)) {
+    const item = document.createElement('div');
+    item.className = `intent-item intent-${it.status}`;
+    const row = document.createElement('div');
+    row.className = 'intent-row';
+    const st = document.createElement('span');
+    st.className = 'intent-status';
+    st.innerHTML = it.status === 'done' ? sv.checkCircle : it.status === 'dropped' ? sv.xCircle : sv.clock;
+    const title = document.createElement('span');
+    title.className = 'intent-title';
+    title.textContent = it.title || `#${it.id}`;
+    const meta = document.createElement('span');
+    meta.className = 'intent-meta';
+    meta.textContent = tr('intent.spent', { v: it.spentUSD.toFixed(4) })
+      + (it.budgetUSD > 0 ? ` / $${it.budgetUSD.toFixed(4)}` : '');
+    row.append(st, title, meta);
+    item.appendChild(row);
+    if (it.contract) {
+      const c = document.createElement('div');
+      c.className = 'intent-contract';
+      c.textContent = it.contract;
+      item.appendChild(c);
+    }
+    // 证据只展示最近 4 条,避免长任务把卡片撑高。
+    for (const e of it.evidence.slice(-4)) {
+      const ev = document.createElement('div');
+      ev.className = `intent-ev${e.ok ? '' : ' intent-ev-fail'}`;
+      ev.innerHTML = `${e.ok ? sv.checkCircle : sv.xCircle} <span>[${esc(e.kind)}] ${esc(e.detail)}</span>`;
+      item.appendChild(ev);
+    }
+    listEl.appendChild(item);
+  }
 }
 
 // ── 工作流卡(team 超集):阶段时间轴 + agent 胶囊网格,聊天流内嵌 ──
@@ -11078,6 +11167,8 @@ function showChat() {
   document.getElementById('chat-view')!.classList.add('active');
   syncViewButtons();
   renderMain();
+  // 切会话即刷新意图条(异步,不阻塞首屏)
+  void refreshIntents(selectedId);
   // 切进被折叠分组里的频道 → 临时展开该组并滚动定位,否则"切过去了,侧栏找不到"。
   // sb-forced-open 临时展开,持久折叠态不写回:只是这次替用户打开,清筛选/重渲后按用户折叠态收回。
   // Switched into a channel inside a collapsed group → force-expand (transient,

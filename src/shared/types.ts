@@ -53,6 +53,23 @@ export interface JobInfo {
   updatedAt: number;
 }
 
+// Intent 账本(渲染层卡片):主进程 intent-ledger.intentViews 产出。
+export interface IntentEvidenceInfo { kind: string; ok: boolean; detail: string; at: number }
+export interface IntentInfo {
+  id: string;
+  convId: string;
+  title: string;
+  contract: string;
+  status: 'open' | 'done' | 'dropped';
+  budgetUSD: number;
+  spentUSD: number;
+  createdAt: number;
+  updatedAt: number;
+  passed: number;
+  failed: number;
+  evidence: IntentEvidenceInfo[];
+}
+
 // 插件引擎 id ↔ 插件名。plugin:foo ↔ foo。 / Plugin engine id ↔ plugin name.
 export function pluginEngineName(engine: string): string {
   return engine.startsWith('plugin:') ? engine.slice('plugin:'.length) : engine;
@@ -1225,6 +1242,8 @@ export interface KinetAPI {
   snapshotDiff(cwd: string, id: string): Promise<{ ok: boolean; error?: string; diff?: string; added?: number; removed?: number; truncated?: boolean; absPath?: string; fileMissing?: boolean }>;
   // 使用统计(工具错误率/限流/成本),设置页展示
   toolUsageStats(days?: number): Promise<{ ok: boolean; stats?: UsageStats; error?: string }>;
+  // Intent 账本(意图 + 证据):会话级任务卡数据源。
+  convIntents(convId: string): Promise<IntentInfo[]>;
   // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt / panel。列出 + 重载 + 安装 + 卸载。
   pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string; engine?: { bin?: string; id?: string; label?: string; protocol?: string }; engineError?: string; engineSettings?: Array<{ key: string; label?: string; placeholder?: string; default?: string; secret?: boolean }>; engineSettingsValues?: Record<string, string> }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;

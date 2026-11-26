@@ -168,6 +168,18 @@
             <span id="goal-text" class="goal-text"></span>
             <button class="ghost" id="btn-goal-clear" title="清除目标" data-i18n-title="head.clearGoal">✕</button>
           </div>
+          <!-- Intent 账本:当前会话的目标 / 验收契约 / 证据。数据来自主进程 intent-ledger,只读展示。 -->
+          <div id="intent-bar" class="ch-row ch-intent js-hidden">
+            <details id="intent-details">
+              <summary class="intent-summary">
+                <span class="intent-icon"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg></span>
+                <span class="intent-label" data-i18n="intent.title">意图</span>
+                <span id="intent-text" class="intent-text"></span>
+                <span id="intent-count" class="intent-count"></span>
+              </summary>
+              <div id="intent-list" class="intent-list"></div>
+            </details>
+          </div>
         </div>
         <!-- 对话区 + 文件抽屉宿主:抽屉为 Codex 式浮层,从右滑入悬浮在对话之上 -->
         <div class="chat-split">

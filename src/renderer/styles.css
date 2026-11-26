@@ -2175,6 +2175,28 @@ li.sb-proj.sb-has-running .sb-proj-head .sb-pname::before {
 .ch-goal.goal-active .goal-icon { animation: goal-icon-pulse 2s ease-in-out infinite; }
 @keyframes goal-active-pulse { 0%, 100% { opacity: 0; } 50% { opacity: 0.6; } }
 @keyframes goal-icon-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+/* Intent 账本条:与目标条同排的紧凑卡,展开看验收契约与证据明细 */
+.ch-intent { padding: 0; background: var(--bg-2); border: 1px solid var(--border); border-radius: var(--r-md); font-size: var(--fs-xl); }
+.ch-intent details { width: 100%; }
+.ch-intent .intent-summary { display: flex; align-items: center; gap: 6px; padding: 4px 10px; cursor: pointer; list-style: none; }
+.ch-intent .intent-summary::-webkit-details-marker { display: none; }
+.ch-intent .intent-icon { flex: 0 0 auto; display: inline-flex; color: var(--accent); }
+.ch-intent .intent-label { flex: 0 0 auto; color: var(--text-dim); }
+.ch-intent .intent-text { flex: 1; min-width: 0; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.ch-intent .intent-count { flex: 0 0 auto; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ch-intent .intent-list { border-top: 1px solid var(--border); padding: 4px 10px 6px; max-height: 220px; overflow-y: auto; }
+.ch-intent .intent-item { padding: 5px 0; border-bottom: 1px dashed var(--border); }
+.ch-intent .intent-item:last-child { border-bottom: none; }
+.ch-intent .intent-row { display: flex; align-items: center; gap: 6px; }
+.ch-intent .intent-status { flex: 0 0 auto; display: inline-flex; color: var(--text-dim); }
+.ch-intent .intent-item.intent-open .intent-status { color: var(--accent); }
+.ch-intent .intent-item.intent-done .intent-status { color: var(--ok, #4caf78); }
+.ch-intent .intent-item.intent-dropped .intent-status { color: var(--danger); }
+.ch-intent .intent-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); }
+.ch-intent .intent-meta { flex: 0 0 auto; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.ch-intent .intent-contract { margin-top: 2px; padding-left: 20px; color: var(--text-dim); font-size: var(--fs-md); }
+.ch-intent .intent-ev { margin: 2px 0 0 20px; color: var(--text-dim); font-size: var(--fs-md); }
+.ch-intent .intent-ev-fail { color: var(--danger); }
 .stat { font-size: var(--fs-md); color: var(--text-dim); font-variant-numeric: tabular-nums; }
 
 /* turns — overflow-y: scroll 始终保留滚动条宽度,防止内容高度在临界值时

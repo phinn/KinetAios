@@ -40,11 +40,14 @@ import { getWeComBridge, setTaskManagerForWeCom } from '../wecom';
 import { getFeishuBridge, setTaskManagerForFeishu } from '../feishu';
 import type { AgentEvent, AppSettings, BudgetAlert, ConfigSnapshot, Conversation, ContextMode, CustomTool, EngineKind, GitActionKind, GitActionResult, GitChange, GitCommit, GitDiffResult, GitSnapshot, Pipeline, PromptTemplate, RuleConfig, Turn, ChatMsg, VoiceChatEventPayload } from '../../shared/types';
 import { emitTeamEvent } from '../team-events';
+import { intentViews } from '../intent-ledger';
 import { deps } from './ctx';
 
 export function register(): void {
   // ── 后台 Job IPC ──
   ipcMain.handle('job-list', (_e, convId?: string) => jobManager().list(convId));
+  // Intent 账本(会话任务卡):最近 20 个意图 + 证据明细,只读。
+  ipcMain.handle('conv-intents', (_e, convId: string) => intentViews(String(convId)));
   ipcMain.handle('job-get', (_e, id: string) => jobManager().get(String(id)));
   ipcMain.handle('job-kill', (_e, id: string, reason?: string) => {
     jobManager().kill(String(id), reason ? String(reason) : undefined);

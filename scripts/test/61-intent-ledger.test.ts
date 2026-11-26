@@ -4,8 +4,9 @@
 import { assert, test, run } from './harness';
 import * as store from '../../src/main/store';
 import {
-  assessEvidence, canComplete, recordEvidence, refreshIntentSpend, formatIntent,
+  assessEvidence, canComplete, recordEvidence, refreshIntentSpend, formatIntent, intentViews,
 } from '../../src/main/intent-ledger';
+import { t, LANGS } from '../../src/shared/i18n';
 import type { EventRow } from '../../src/main/store';
 import type { ConvEvent } from '../../src/shared/types';
 
@@ -155,6 +156,30 @@ test('账本落库:建意图 → 记录证据 → 成本归集 → 完成', () =
   store.updateIntent(intent.id, { status: 'done' });
   assert.equal(store.latestOpenIntent(convId), null, 'done 后不再是 open');
   assert.equal(store.listIntents(convId).length, 1);
+});
+
+test('intentViews:证据计数与花费现场计算,只读不回写', () => {
+  const convId = 'conv-intent-view';
+  const it = store.createIntent({ convId, title: '视图', contract: '测试通过', budgetUSD: 2 });
+  store.addIntentEvidence({ intentId: it.id, kind: 'test', ok: true, detail: '通过' });
+  store.addIntentEvidence({ intentId: it.id, kind: 'visual', ok: false, detail: '未通过' });
+  store.appendEvent(convId, 'turn-v', { type: 'turn/meta', costUSD: 0.5, tokensIn: 1, tokensOut: 1 });
+  const views = intentViews(convId);
+  assert.equal(views.length, 1);
+  assert.equal(views[0].passed, 1);
+  assert.equal(views[0].failed, 1);
+  assert.ok(Math.abs(views[0].spentUSD - 0.5) < 1e-9);
+  assert.equal(store.getIntent(it.id)?.spentUSD, 0, '只读视图不能回写 spent_usd');
+});
+
+test('i18n:intent.* 四语言齐全,参数可替换', () => {
+  for (const { id } of LANGS) {
+    for (const key of ['intent.title', 'intent.open', 'intent.done', 'intent.dropped']) {
+      assert.notEqual(t(id, key), key, `${id} 缺少 ${key}`);
+    }
+    assert.ok(t(id, 'intent.evidence', { n: 3 }).includes('3'), `${id} 的 intent.evidence 未替换 {n}`);
+    assert.ok(t(id, 'intent.spent', { v: '0.42' }).includes('0.42'), `${id} 的 intent.spent 未替换 {v}`);
+  }
 });
 
 run();
