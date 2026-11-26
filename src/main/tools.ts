@@ -62,9 +62,13 @@ import type { Provider, ToolDef } from './glm';
 import { supervisorComplete } from './glm';
 import { buildVisionMessages, formatVisionVerdict, looksLikeVisionUnsupported, parseVisionVerdict } from './visual-verify';
 import { diagnoseAfterEdit, diagnosticsReport } from './diagnostics';
+import { fuzzyEdit } from './edit-match';
+import { testAfterEdit } from './auto-test';
+import { autoVisualAfterEdit } from './auto-visual';
+import { resolveModelRoute } from './model-router';
 import { rankGrepHits, type GrepHit } from './search-rank';
 import * as store from './store';
-import { getSettings } from './settings';
+import { getSettings, snapshot } from './settings';
 import { privacyGate } from './privacy-gate';
 import { takeSnapshot } from './snapshots';
 import type { ChatMsg, ConfigSnapshot, SandboxMode } from '../shared/types';
@@ -1066,10 +1070,14 @@ const writeFile: Tool = {
       } else {
         atomicWrite(p, content);
       }
-      // 编译诊断内环:写的是代码就顺手跑一次类型/静态检查,把错误直接回灌(不改变写入结果本身)。
-      const diag = await diagnoseAfterEdit({ cwd: ctx.cwd, file: p });
+      // 自验证三闸并行:类型/静态检查 + 受影响测试 + UI 自动视觉(各自不适用时静默返回空)。
+      const [diag, tests, visual] = await Promise.all([
+        diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
+        testAfterEdit({ cwd: ctx.cwd, file: p }),
+        autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+      ]);
       const done = `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
-      return diag ? `${done}\n\n${diag}` : done;
+      return [done, diag, tests, visual].filter(Boolean).join('\n\n');
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
     }
@@ -2010,12 +2018,12 @@ const diagnosticsTool: Tool = {
 // edit_file:精确替换文件中的一段(比 write_file 安全 —— 只改指定片段,不动其它)。
 const editFile: Tool = {
   name: 'edit_file',
-  description: '把文件里 old_string 那段精确替换为 new_string。old_string 必须与文件完全一致(含缩进/换行)。默认只替换第一处,replace_all=true 替换全部。找不到 old_string 时不改动并报错。改代码首选这个,不要用 write_file 整体覆盖。',
+  description: '把文件里 old_string 那段替换为 new_string。空白/缩进差异会自动归一化(找不到精确匹配时会按行重试),但仍建议带上足够上下文;模糊匹配到多处且无法唯一确定时不会改动。默认只替换第一处,replace_all=true 替换全部。找不到时会给出最接近的片段供复制。改代码首选这个,不要用 write_file 整体覆盖。',
   parameters: {
     type: 'object',
     properties: {
       path: { type: 'string', description: '文件绝对或相对路径' },
-      old_string: { type: 'string', description: '要替换的原文本(必须精确匹配)' },
+      old_string: { type: 'string', description: '要替换的原文本(带 2~3 行上下文更稳;空白差异会自动容错)' },
       new_string: { type: 'string', description: '替换成的新文本' },
       replace_all: { type: 'boolean', description: '是否替换所有匹配处(默认 false,只第一处)' },
     },
@@ -2054,7 +2062,40 @@ const editFile: Tool = {
         newEff = newS.includes('\r') ? newS : newS.replace(/\n/g, '\r\n');
       }
     }
-    if (!body.includes(oldEff)) return `未找到要替换的片段(检查缩进/空格是否完全一致)。文件 ${body.length} 字节,未改动。`;
+    if (!body.includes(oldEff)) {
+      // 精确/CRLF 都失配 → 空白与缩进归一化后再试一次(2026-11:4.4% 的 edit_file 死在这里)。
+      // 归一化后仍多处命中且没开 replace_all → 拒绝执行,让模型补上下文 —— 宁可不改,不能改错位置。
+      const fz = fuzzyEdit(body, oldS, newS, args.replace_all === true);
+      if (fz.kind === 'none') {
+        const hints = fz.suggestions.length
+          ? '\n\n最接近的片段(请直接复制下面原文作为 old_string):\n' + fz.suggestions
+            .map((s) => `  L${s.line} (相似度 ${Math.round(s.score * 100)}%):\n${s.lines.map((l) => `    ${l}`).join('\n')}`)
+            .join('\n')
+          : '\n建议先用 read_file 看实际内容,再复制原文重试。';
+        return `未找到要替换的片段(已尝试空白/缩进归一化)。文件 ${body.length} 字节,未改动。${hints}`;
+      }
+      if (fz.kind === 'ambiguous') {
+        return `未找到要替换的片段:空白归一化后匹配到 ${fz.lines.length} 处(行 ${fz.lines.join(', ')}),无法确定改哪一处,未改动。`
+          + '\n请在 old_string 里多带 2~3 行独特上下文后重试,或用 replace_all=true 明确替换全部。';
+      }
+      let text = fz.text;
+      let count = fz.count;
+      // 写回保真:原文件是 CRLF/BOM 就按原样编码,不产生全文件换行 diff,不丢 BOM。
+      const encodedFuzzy = encodeWithStyle(raw, text);
+      if (!encodedFuzzy) return '该文件是 UTF-16 编码,字符串级编辑会破坏它,请用支持编码的编辑器处理。';
+      try {
+        atomicWriteRaw(p, encodedFuzzy);
+        const [diag, tests, visual] = await Promise.all([
+          diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
+          testAfterEdit({ cwd: ctx.cwd, file: p }),
+          autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+        ]);
+        const done = `已替换 ${count} 处(模糊匹配:空白/缩进归一化${fz.reindented ? ',已重排缩进' : ''};行 ${fz.lines.join(', ')})→ ${p}`;
+        return [done, diag, tests, visual].filter(Boolean).join('\n\n');
+      } catch (e) {
+        return `写入失败: ${sanitizeError(e)}`;
+      }
+    }
     let text: string;
     let count: number;
     if (args.replace_all === true) {
@@ -2070,10 +2111,14 @@ const editFile: Tool = {
     if (!encoded) return '该文件是 UTF-16 编码,字符串级编辑会破坏它,请用支持编码的编辑器处理。';
     try {
       atomicWriteRaw(p, encoded);
-      // 诊断内环:编辑后立刻检查,错误随结果回灌 —— 早一轮发现就少一轮返工。
-      const diag = await diagnoseAfterEdit({ cwd: ctx.cwd, file: p });
+      // 诊断/测试/视觉三闸:错误随结果回灌 —— 早一轮发现就少一轮返工。
+      const [diag, tests, visual] = await Promise.all([
+        diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
+        testAfterEdit({ cwd: ctx.cwd, file: p }),
+        autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+      ]);
       const done = `已替换 ${count} 处 → ${p}`;
-      return diag ? `${done}\n\n${diag}` : done;
+      return [done, diag, tests, visual].filter(Boolean).join('\n\n');
     } catch (e) {
       return `写入失败: ${sanitizeError(e)}`;
     }
@@ -3441,25 +3486,31 @@ const verifyVisual: Tool = {
       sourceDesc = `当前屏幕 ${r.width}×${r.height}`;
     }
     let reply = '';
+    // 视觉属于独立能力档:settings.modelRouting.vision / KINET_MODEL_VISION 可指定专用多模态模型;
+    // 没配置就跟随会话模型(验收要用会话实际在跑的那个模型才可信)。
+    const settings = getSettings();
+    const prof = ctx.convId ? store.getConversationModelProfile(ctx.convId) : null;
+    // 基准模型取该会话 profile 的模型(而不是全局默认):模型和 provider 必须同源。
+    const baseModel = snapshot(prof?.profileId ?? null).model;
+    const route = resolveModelRoute({ capability: 'vision', settings, convModel: prof?.model ?? undefined, baseModel });
     try {
-      // 用会话实际绑定的模型做验收(而不是全局默认):验一个模型看不到的 provider 毫无意义。
-      const prof = ctx.convId ? store.getConversationModelProfile(ctx.convId) : null;
       const out = await supervisorComplete(
         buildVisionMessages(dataUrl, criteria, args?.context ? String(args.context) : undefined),
         prof?.profileId ?? null,
         ctx.signal,
-        prof?.model ?? undefined,
+        route.model || undefined,
       );
       reply = out.content ?? '';
     } catch (e) {
       const msg = (e as Error)?.message ?? String(e);
       if (looksLikeVisionUnsupported(msg)) {
-        return '❌ 当前模型不支持读图,视觉验收需要多模态模型。请先在设置里切换到支持图片的模型再重试。';
+        return `❌ 当前模型(${route.model || '默认'})不支持读图,视觉验收需要多模态模型。`
+          + '可在设置 modelRouting.vision 或环境变量 KINET_MODEL_VISION 指定一个支持图片的模型后重试。';
       }
       return `❌ 视觉验收调用失败: ${sanitizeError(e)}`;
     }
     // 判定放第一行:tool-telemetry 按结果前缀判成败(❌ → error),图片来源只是附注。
-    return `${formatVisionVerdict(parseVisionVerdict(reply), criteria)}\n图片来源: ${sourceDesc}`;
+    return `${formatVisionVerdict(parseVisionVerdict(reply), criteria)}\n图片来源: ${sourceDesc}(模型 ${route.model || '默认'} · ${route.reason})`;
   },
 };
 

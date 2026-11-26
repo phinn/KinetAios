@@ -4,6 +4,7 @@ import type { AgentEvent, ChatMsg, ConfigSnapshot, ContentPart, EngineContextPol
 import { priceUSD, type Completion, type Provider, type ToolDef } from './glm';
 import { toolDef, guardToolArgs, normalizeAliasArgs, type Tool, type ToolCtx } from './tools';
 import { toolTelemetryOf } from './tool-telemetry';
+import { resolveModelRoute } from './model-router';
 import { t } from '../shared/i18n';
 import { getSettings } from './settings';
 import { pullSteer, steerMessage } from './steer';
@@ -1834,16 +1835,19 @@ export async function compactHistory(
       const lastNl = cut.lastIndexOf('\n');
       trimmed = (lastNl > MAX_TRANSCRIPT * 0.5 ? cut.slice(0, lastNl) : cut) + '\n…[截断]';
     }
+    // 摘要属于"便宜优先"的子任务:允许 summarize 路由覆盖(默认仍跟随当前模型)。
+    const sumRoute = resolveModelRoute({ capability: 'summarize', settings: getSettings(), convModel: snap.model, baseModel: snap.model });
+    const sumSnap = sumRoute.model && sumRoute.model !== snap.model ? { ...snap, model: sumRoute.model } : snap;
     const comp = await provider.streamComplete(
       [{ role: 'system', content: sys }, { role: 'user', content: trimmed }],
       [],
-      snap,
+      sumSnap,
       signal,
       () => {},
     );
     // 摘要 LLM 调用的 cost 也要上报(否则长对话压缩成本漏报)
     if (onEvent && (comp.tokensIn > 0 || comp.tokensOut > 0)) {
-      onEvent({ type: 'cost', usd: priceUSD(snap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'compact' });
+      onEvent({ type: 'cost', usd: priceUSD(sumSnap.model, comp.tokensIn, comp.tokensOut), tokens: comp.tokensIn + comp.tokensOut, tokensIn: comp.tokensIn, tokensOut: comp.tokensOut, source: 'compact' });
     }
     const summary = comp.content.trim();
     if (!summary) return [...memoryMsgs, ...pinnedMsgs, ...summaryMsgs, ...tail];

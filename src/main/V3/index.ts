@@ -20,6 +20,7 @@ import { resolveEnginePolicy } from '../../shared/types';
 import { currentProvider, priceUSD, type Provider } from '../glm';
 import { allTools, readOnlyTools, type ToolCtx } from '../tools';
 import { getSettings, snapshot } from '../settings';
+import { withExecRoute } from '../model-router';
 import * as store from '../store';
 import { mcp } from '../mcp';
 import { pluginSystemPrompts } from '../plugins';
@@ -70,7 +71,7 @@ export class DirectV3Engine implements Engine {
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
-    const snap = { ...base, model: conv.model || base.model };
+    const snap = withExecRoute(base, conv.model);
     const provider = currentProvider(snap);
 
     // ── 构建 systemPrompt ──

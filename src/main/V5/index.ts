@@ -17,6 +17,7 @@ import type { AgentEvent, ChatMsg } from '../../shared/types';
 import { currentProvider, type Completion, type Provider, type ToolDef } from '../glm';
 import { allTools, type Tool, type ToolCtx } from '../tools';
 import { getSettings, snapshot } from '../settings';
+import { withExecRoute } from '../model-router';
 import { pluginSystemPrompts } from '../plugins';
 import {
   cwdAnchorSection,
@@ -109,7 +110,7 @@ export class DirectV5Engine implements Engine {
     }
 
     const base = snapshot(conv.profileId);
-    const snap = { ...base, model: conv.model || base.model };
+    const snap = withExecRoute(base, conv.model);
     const provider = currentProvider(snap);
 
     // ── 签名 + 出生调度(与 Universe.runTemplateRound 同语义,单任务内联)──

@@ -31,6 +31,7 @@ import { VISUAL_VERIFY_HINT } from './visual-verify';
 import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { codemodeTool, codemodePromptSection } from './codemode';
 import { getSettings, snapshot } from './settings';
+import { withExecRoute, withPlanRoute } from './model-router';
 import { pullSteer, steerMessage } from './steer';
 import { mcp } from './mcp';
 import { pluginSystemPrompts } from './plugins';
@@ -423,7 +424,8 @@ export class DirectV2Engine implements Engine {
 
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
-    const snap = { ...base, model: conv.model || base.model };
+    const snap = withExecRoute(base, conv.model);
+    const planSnap = withPlanRoute(base, conv.model); // 规划阶段可单独指定模型(默认跟随会话)
     const provider = currentProvider(snap);
 
     // ── 工具集(按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具)──
@@ -509,15 +511,16 @@ export class DirectV2Engine implements Engine {
     // P0-fix: planner 只给内置只读工具 — 此前把全量 MCP 工具混进规划阶段,
     // "规划阶段禁止写操作"只剩 prompt 约束,装了带写能力的 MCP(filesystem 等)
     // 时规划阶段可以真的改系统。执行阶段(下方)仍持有完整工具集。
+    const planProvider = currentProvider(planSnap);
     const plannerTools = readOnlyTools();
     const plannerMessages = await runAgentLoop({
-      provider,
+      provider: planProvider,
       tools: plannerTools,
       // plannerSystem = 去掉技能目录的 systemPrompt:目录教模型调 load_skill,
       // 但 planner 工具集只有只读集 —— 承诺不存在的工具会吃"未知工具"报错。
       systemPrompt: systemPrompt.replace(skillCatalog, '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
-      snapshot: snap,
+      snapshot: planSnap,
       userInput,
       history: conv.directHistory,
       ctx: { ...ctx, sandbox: 'readOnly' }, // planner 强制只读
@@ -711,6 +714,10 @@ export class DirectV2Engine implements Engine {
 
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
+    // 重新规划同样走 plan 能力档(可在设置里单独指定更强的规划模型)。
+    const planSnap = withPlanRoute(snapshot(conv.profileId), conv.model);
+    const planProvider = currentProvider(planSnap);
+
     // P0-1: replan 中也取完整版上限(与主 run 一致)
     const replanPolicy = this.policy(conv);
     const stepFullChars = replanPolicy.stepResultMaxChars || 4000;
@@ -735,14 +742,14 @@ ${failedDetail || '  (无)'}
 请根据失败原因修正方案,重新输出 <plan>。只包含需要做的步骤,不要重复已完成的。`;
 
     const plannerMessages = await runAgentLoop({
-      provider,
+      provider: planProvider,
       tools: readOnlyTools(), // P0-fix: replan 规划同样只读,不带 MCP 工具(同 run() 的 planner)
       // 同 run() 的 planner:去掉技能目录(工具集无 load_skill,目录会教它调不存在的工具)。
       // replan 收到的 systemPrompt 是 run() 传的完整版(含目录),按前缀剥:目录段落固定
       // 以 "\n\n# 可用 Skills(按需加载)" 起、下一个 "\n\n#" 段落止,正则剥除。
       systemPrompt: systemPrompt.replace(/\n\n# 可用 Skills\(按需加载\)[\s\S]*?(?=\n\n# |$)/, '') + '\n\n' + PLANNER_PROMPT,
       memoryBlock,
-      snapshot: snap,
+      snapshot: planSnap,
       userInput: replanInput,
       history: execHistory,
       ctx: { ...ctx, sandbox: 'readOnly' },

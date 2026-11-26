@@ -29,6 +29,7 @@ import { pullSteer, setKillHook, triggerKill, clearKillHook, steerText } from '.
 import { codemodeTool, codemodePromptSection } from './codemode';
 import { buildWorkflowEnv, setWorkflowJobFactory } from './workflow-job';
 import { detectProvider } from '../shared/providerEndpoints';
+import { withExecRoute } from './model-router';
 
 // P2-fix: 系统提示平台自适应 — 此前硬编码"Windows 电脑""shell 走 cmd.exe",
 // macOS 构建下系统提示词是错的。
@@ -67,10 +68,11 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 那些 shell/powershell 方式在 JSON+shell 双层转义下几乎必崩
 - 一旦决定要写文件,直接 write_file 一次到位
 
-【诊断自验证】write_file / edit_file 成功后会自动跑一次类型/静态检查(tsc / eslint / pyright / go),结果附在工具返回里:
-- 看到「⚠️ 自动诊断」= 你刚改出了错误,先按清单修掉再继续,不要带着错误往下堆功能
-- 看到「✅ 自动诊断」= 本次改动没引入新问题,可以继续
-- 多处改完想统一复查,或怀疑有跨文件影响时,手动调 diagnostics(path=…)
+【诊断自验证】write_file / edit_file 成功后会自动跑三道闸,结果附在工具返回里:
+- 类型/静态检查(tsc / eslint / pyright / go)
+- 受影响测试(项目有 vitest/jest/mocha/pytest/go test 时,只跑 import 了该文件或同目录的测试)
+- 自动视觉验收(改的是 tsx/jsx/vue/svelte/css/html 且本地页面开着时,自动截图判定)
+看到「⚠️ 自动诊断 / 自动测试 / 自动视觉」= 你刚改出了错误或渲染问题,先修掉再继续,不要带着错误往下堆功能;看到「✅」= 本次改动没引入新问题。多处改完想统一复查时手动调 diagnostics(path=…)。
 
 【进程安全 · 铁律】pkill/kill 用宽泛模式匹配会自杀:
 - 本 app 自己的进程命令行里含 cwd 路径和 userData 目录名(如 "--user-data-dir=.../KinetAios"),
@@ -417,7 +419,7 @@ class DirectEngine implements Engine {
     // Per-conversation model (Direct only). If the conversation has a profileId, use that profile's
     // config; otherwise fall back to global settings + per-conversation model override.
     const base = snapshot(conv.profileId);
-    const snap = { ...base, model: conv.model || base.model };
+    const snap = withExecRoute(base, conv.model); // 执行阶段模型路由(会话模型 / exec 覆盖 / 默认)
     console.log('[DirectEngine] profileId=%s baseURL=%s model=%s proto=%s', conv.profileId, snap.baseURL, snap.model, snap.apiProtocol);
     const provider = currentProvider(snap);
     // workflow job 环境注册:后台 workflow job 的断点续跑需要按 convId 重建 provider/snapshot/confirm。

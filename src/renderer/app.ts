@@ -6997,6 +6997,13 @@ async function showSettings() {
         </select></div>
         <div class="field"><label>${tr('settings.subAgentModel')}</label><input id="s-subagent-model" type="text" value="${esc(s.subAgentModel ?? '')}" placeholder="${tr('settings.subAgentModelPh')}" /></div>
         <div class="field-desc">${tr('settings.subAgentModel.desc')}</div>
+        <div class="field"><label>${tr('settings.modelRouting')}</label></div>
+        <div class="field-desc">${tr('settings.modelRouting.desc')}</div>
+        <div class="field"><label>${tr('settings.modelRouting.plan')}</label><input id="s-route-plan" type="text" list="s-route-models" value="${esc(s.modelRouting?.plan ?? '')}" placeholder="${tr('settings.modelRoutingPh')}" /></div>
+        <div class="field"><label>${tr('settings.modelRouting.exec')}</label><input id="s-route-exec" type="text" list="s-route-models" value="${esc(s.modelRouting?.exec ?? '')}" placeholder="${tr('settings.modelRoutingPh')}" /></div>
+        <div class="field"><label>${tr('settings.modelRouting.summarize')}</label><input id="s-route-summarize" type="text" list="s-route-models" value="${esc(s.modelRouting?.summarize ?? '')}" placeholder="${tr('settings.modelRoutingPh')}" /></div>
+        <div class="field"><label>${tr('settings.modelRouting.vision')}</label><input id="s-route-vision" type="text" list="s-route-models" value="${esc(s.modelRouting?.vision ?? '')}" placeholder="${tr('settings.modelRoutingPh')}" /></div>
+        <datalist id="s-route-models">${[...new Set([s.model, ...(s.modelProfiles ?? []).map((p) => p.model)].filter((m): m is string => !!m))].map((m) => `<option value="${esc(m)}"></option>`).join('')}</datalist>
         <div class="field"><label>${tr('settings.maxTurns')}</label><input id="s-maxturns" type="number" min="0" max="500" value="${s.maxTurns ?? 0}" style="max-width:100px" /></div>
         <div class="field-desc">${tr('settings.maxTurns.desc')}</div>
         <div class="field"><label>${tr('settings.ollamaParallel')}</label><input id="s-ollama-parallel" type="number" min="1" max="16" value="${s.ollamaParallel ?? 1}" style="max-width:100px" /></div>
@@ -8576,6 +8583,15 @@ function readSettingsForm(): AppSettings {
     computerUseBackground: Boolean((document.getElementById('s-cu-background') as HTMLInputElement)?.checked),
     defaultEngine: (document.getElementById('s-default-engine') as HTMLSelectElement).value as EngineKind,
     subAgentModel: (document.getElementById('s-subagent-model') as HTMLInputElement).value.trim(),
+    // 子任务模型路由:四个能力各自可覆盖,留空 = 跟随会话模型。只写入非空项。
+    modelRouting: (() => {
+      const map: Partial<Record<'plan' | 'exec' | 'summarize' | 'vision', string>> = {};
+      for (const cap of ['plan', 'exec', 'summarize', 'vision'] as const) {
+        const v = (document.getElementById(`s-route-${cap}`) as HTMLInputElement | null)?.value.trim();
+        if (v) map[cap] = v;
+      }
+      return map;
+    })(),
     voiceAutoSend: (document.getElementById('s-voice-auto') as HTMLInputElement).checked,
     autoLoadSkills: (document.getElementById('s-auto-skills') as HTMLInputElement).checked,
     compactMeta: (document.getElementById('s-compact-meta') as HTMLInputElement)?.checked ?? current?.compactMeta === true,

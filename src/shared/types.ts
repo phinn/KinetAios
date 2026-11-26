@@ -322,6 +322,10 @@ export type AppSettings = {
   // installing the CLI, else the engine just errors "找不到 CLI". Direct never needs this.
   defaultEngine: EngineKind; // 新会话默认引擎(direct / directV2 / claudeCode / codex)
   subAgentModel: string;    // 子 agent (dispatch_agent) 默认模型(空 = 跟随主 agent 模型)
+  // 子任务模型路由(空/缺省 = 跟随会话模型)。四类能力可各自指定模型:
+  // plan 规划 / exec 执行 / summarize 摘要 / vision 视觉验收。
+  // 环境变量 KINET_MODEL_{PLAN,EXEC,SUMMARIZE,VISION} 优先级更高(临时实验不用改设置)。
+  modelRouting?: Partial<Record<'plan' | 'exec' | 'summarize' | 'vision', string>>;
   priceInPerMTok: number; // USD per 1M tokens; 0 = use built-in default
   priceOutPerMTok: number;
   presetId: string;

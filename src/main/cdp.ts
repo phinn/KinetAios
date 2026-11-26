@@ -205,6 +205,20 @@ export async function listTabs(): Promise<Array<{ id: string; title: string; url
   return (await listTargets()).map((t) => ({ id: t.id, title: t.title, url: t.url }));
 }
 
+/**
+ * 只看一眼当前已打开的页面,**不启动 Chrome、不创建窗口**。
+ * 自动视觉验收用:没有正在跑的浏览器会话时直接返回空,绝不能因为一次编辑把 Chrome 拉起来。
+ */
+export async function peekTabs(): Promise<Array<{ id: string; title: string; url: string }>> {
+  if (!chromePort) return [];
+  try {
+    const targets = await httpGetJson(`http://127.0.0.1:${chromePort}/json/list`, 1500);
+    return (targets as CdpTarget[]).filter((t) => t.type === 'page').map((t) => ({ id: t.id, title: t.title, url: t.url }));
+  } catch {
+    return [];
+  }
+}
+
 async function findTarget(tabId?: string, urlSubstr?: string): Promise<CdpTarget> {
   const pages = await listTargets();
   if (!pages.length) throw new Error('agent Chrome 中没有打开的页面(意外状态)');
