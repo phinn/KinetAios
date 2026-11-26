@@ -2,10 +2,16 @@
 // A) 证据只从事件流计算,模型自述不算;B) 最后一次通过之后的失败会让完成失败;
 // C) 没改文件的问答用"助手答复"作为可核验产出;D) 账本落库 + 成本归集。
 import { assert, test, run } from './harness';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import * as store from '../../src/main/store';
 import {
-  assessEvidence, canComplete, recordEvidence, refreshIntentSpend, formatIntent, intentViews, INTENT_LEDGER_HINT,
+  assessEvidence, canComplete, evaluateIntentAssertions, recordEvidence, refreshIntentSpend, formatIntent, intentViews, INTENT_LEDGER_HINT,
 } from '../../src/main/intent-ledger';
+import { evaluateChecks, parseAssertions, parseExitCode } from '../../src/main/assertions';
+import { evaluateAcceptance } from '../../src/main/V5/ralph-accept';
+import type { BodyPlanResult } from '../../src/main/V5/bodyplan';
 import { runBodyPlan } from '../../src/main/V5/bodyplan';
 import { GENOME_SCHEMA_VERSION, type Genome } from '../../src/main/V5/phylum-types';
 import type { Tool } from '../../src/main/tools';
@@ -189,6 +195,7 @@ test('INTENT_LEDGER_HINT:固定文本,给出建账与完成口径', () => {
   assert.ok(INTENT_LEDGER_HINT.includes('intent_done'), '必须提示完成要走 intent_done');
   assert.ok(INTENT_LEDGER_HINT.includes('intent(action="start"'), '必须提示先建意图账');
   assert.ok(INTENT_LEDGER_HINT.includes('证据'), '必须说明完成要靠证据');
+  assert.ok(INTENT_LEDGER_HINT.includes('assertions'), '必须提示契约可写成可执行断言');
 });
 
 test('V5 bodyplan:systemSuffix 进个体 system,toolCtx 把 convId/turnId 传给工具', async () => {
@@ -232,6 +239,108 @@ test('V5 bodyplan:systemSuffix 进个体 system,toolCtx 把 convId/turnId 传给
   assert.ok(systemText.includes('意图账本'), '体系提示必须真的进了个体 system');
   assert.equal(seen.convId, 'conv-v5', 'intent_done 依赖 convId,必须透传到工具 ctx');
   assert.equal(seen.turnId, 'turn-9');
+});
+
+function shellRow(command: string, result: string, outcome?: 'ok' | 'error'): EventRow {
+  seqCounter += 1;
+  return {
+    seq: seqCounter, turnId: 't1', type: 'tool/call', ts: 1_000_000 + seqCounter,
+    data: { type: 'tool/call', name: 'shell', args: JSON.stringify({ command }), result, outcome },
+  };
+}
+
+function tmpDir(): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), 'kinet-intent-'));
+}
+
+test('parseExitCode:兼容真实 shell 的 [exit 0] 与实验 runner 的 [exit:0]', () => {
+  assert.equal(parseExitCode('ok\n[exit 0]\n'), 0);
+  assert.equal(parseExitCode('bad\n[exit 1]\n'), 1);
+  assert.equal(parseExitCode('[exit:0]'), 0);
+  assert.equal(parseExitCode('no marker'), undefined);
+});
+
+test('parseAssertions:拒绝未知类型 / 缺字段 / 坏正则 / 超限', () => {
+  assert.equal(parseAssertions([
+    { type: 'file_exists', path: 'dist/x.html' },
+    { type: 'exit_code_eq', value: 0 },
+    { type: 'regex_file_contains', path: 'a.md', pattern: '完成' },
+  ]).ok, true);
+  assert.equal(parseAssertions([{ type: 'nope' }]).ok, false);
+  assert.equal(parseAssertions([{ type: 'file_exists' }]).ok, false);
+  assert.equal(parseAssertions([{ type: 'regex_contains', pattern: '(' }]).ok, false);
+  assert.equal(parseAssertions(Array.from({ length: 7 }, () => ({ type: 'output_not_empty' }))).ok, false);
+  assert.equal(parseAssertions(undefined).ok, true);
+});
+
+test('文件类断言:直接读盘判定,失败给出实际值', () => {
+  const dir = tmpDir();
+  fs.writeFileSync(path.join(dir, 'report.md'), '第一行\n完成:yes\n');
+  const last = { name: 'shell', output: '', exitCode: undefined };
+  const pass = evaluateChecks([
+    { type: 'file_exists', path: 'report.md' },
+    { type: 'regex_file_contains', path: 'report.md', pattern: '完成:yes' },
+    { type: 'file_line_count_gt', path: 'report.md', value: 1 },
+  ], dir, last);
+  assert.equal(pass.pass, true);
+  const fail = evaluateChecks([{ type: 'file_exists', path: 'missing.md' }], dir, last);
+  assert.equal(fail.pass, false);
+  assert.ok(fail.failed[0].actual.includes('不存在'), fail.failed[0].actual);
+});
+
+test('输出类断言:绑定意图生命周期内最后一次 shell', () => {
+  seqCounter = 0;
+  const rows = [
+    shellRow('npm test', 'all good\n[exit 0]\n', 'ok'),
+    shellRow('npm test', '1 failing\n[exit 1]\n', 'error'),
+  ];
+  const bad = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), rows);
+  assert.equal(bad.pass, false);
+  assert.equal(bad.lastShell, 'npm test');
+  assert.equal(bad.failed[0].actual, '退出码 1');
+  assert.equal(evaluateIntentAssertions([{ type: 'regex_contains', pattern: 'all good' }], process.cwd(), [rows[0]]).pass, true);
+  const noShell = evaluateIntentAssertions([{ type: 'output_not_empty' }], process.cwd(), []);
+  assert.equal(noShell.pass, false);
+  assert.equal(noShell.lastShell, null);
+  assert.ok(noShell.failed[0].actual.includes('为空'), noShell.failed[0].actual);
+});
+
+test('canComplete:契约断言未过 → 拒绝,并给出条目与依据', () => {
+  seqCounter = 0;
+  const report = assessEvidence([editOk(), diagPass()]);
+  const base = { status: 'open' as const, contract: 'npm test 全绿', budgetUSD: 0, spentUSD: 0 };
+  const fail = evaluateIntentAssertions(
+    [{ type: 'exit_code_eq', value: 0 }], process.cwd(), [shellRow('npm test', 'x\n[exit 1]\n', 'error')],
+  );
+  const v = canComplete(base, report, fail);
+  assert.equal(v.ok, false);
+  assert.ok(v.reasons.some((r) => r.includes('契约断言未通过') && r.includes('A1')), v.reasons.join(';'));
+  assert.ok(v.reasons.some((r) => r.includes('npm test')), '拒绝文案应回显最后一次 shell 命令');
+  const ok = canComplete(base, report, evaluateIntentAssertions([], process.cwd(), []));
+  assert.equal(ok.ok, true, ok.reasons.join(';'));
+});
+
+test('账本落库:assertions 往返(含清空)', () => {
+  const convId = 'conv-intent-assert';
+  const it = store.createIntent({
+    convId, title: '出报告', contract: 'report.md 存在且含完成标记',
+    assertions: [{ type: 'file_exists', path: 'report.md' }],
+  });
+  const fresh = store.getIntent(it.id)!;
+  assert.equal(fresh.assertions.length, 1);
+  assert.equal((fresh.assertions[0] as { path?: string }).path, 'report.md');
+  assert.ok(formatIntent(fresh, []).includes('断言: 1 条'));
+  store.updateIntent(it.id, { assertions: [] });
+  assert.equal(store.getIntent(it.id)!.assertions.length, 0);
+});
+
+test('evaluateAcceptance:真实 shell 的 [exit 0] 也能过 V5 验收(修前只认 [exit:0])', () => {
+  const r = evaluateAcceptance(
+    { assertions: [{ type: 'exit_code_eq', value: 0 }] },
+    process.cwd(),
+    { lastOutput: 'ok\n[exit 0]\n' } as unknown as BodyPlanResult,
+  );
+  assert.equal(r.pass, true);
 });
 
 run();

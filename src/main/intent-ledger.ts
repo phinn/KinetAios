@@ -13,6 +13,8 @@
 import * as store from './store';
 import type { EventRow, IntentEvidenceRow, IntentRow } from './store';
 import type { ConvEvent, IntentInfo } from '../shared/types';
+import type { AssertionDsl, CheckFailure, LastToolOutput } from './assertions';
+import { describeCheck, evaluateChecks, parseExitCode } from './assertions';
 
 export type EvidenceKind = 'diagnostics' | 'test' | 'visual' | 'answer';
 
@@ -153,13 +155,57 @@ export function assessEvidence(rows: EventRow[]): EvidenceReport {
   };
 }
 
+// ── 契约断言(2026-11)──
+// 证据闸只回答"有没有可核验的通过检查",这里的断言回答"检查的是不是用户要的那件事"。
+// 输出类断言绑定「意图生命周期内最后一次 shell」——与证据闸"最后编辑之后必须有检查"同口径。
+
+export interface IntentAssertionReport {
+  /** 断言条数(0 = 未设置,直接放行) */
+  checks: number;
+  pass: boolean;
+  failed: CheckFailure[];
+  /** 判定所依据的最后一次 shell 命令(预览),拒绝文案里回给模型 */
+  lastShell: string | null;
+}
+
+/** 从事件流取最后一次 shell 输出,逐条判定契约断言。纯函数(read-only 磁盘访问)。 */
+export function evaluateIntentAssertions(
+  assertions: ReadonlyArray<AssertionDsl>,
+  cwd: string,
+  rows: EventRow[],
+): IntentAssertionReport {
+  if (!assertions.length) return { checks: 0, pass: true, failed: [], lastShell: null };
+
+  let last: { output: string; exitCode?: number; command: string | null } | null = null;
+  for (const row of rows) {
+    const ev = row.data as ConvEvent;
+    if (ev.type !== 'tool/call' || ev.name !== 'shell') continue;
+    const output = String(ev.result ?? '');
+    // 事件层可能因 50k 上限截断尾部(丢掉 [exit:N]):outcome 兜底,只在期望 0 时有意义。
+    const exitCode = parseExitCode(output) ?? (ev.outcome === 'ok' ? 0 : undefined);
+    let command: string | null = null;
+    try {
+      const parsed = JSON.parse(String(ev.args ?? '{}')) as { command?: unknown };
+      if (typeof parsed.command === 'string') command = parsed.command;
+    } catch { /* args 非 JSON:只影响文案,不影响判定 */ }
+    last = { output, exitCode, command };
+  }
+
+  const lastTool: LastToolOutput = last
+    ? { name: 'shell', output: last.output, exitCode: last.exitCode }
+    : { name: '', output: '', exitCode: undefined };
+  const verdict = evaluateChecks(assertions, cwd, lastTool);
+  return { checks: assertions.length, pass: verdict.pass, failed: verdict.failed, lastShell: last?.command ?? null };
+}
+
 /**
  * 「完成必须带证据」的判定(纯函数)。report 来自 assessEvidence,
- * 已包含本轮证据;budget 超支也在这里拦。
+ * 已包含本轮证据;budget 超支 / 契约断言未过也在这里拦。
  */
 export function canComplete(
   intent: Pick<IntentRow, 'status' | 'contract' | 'budgetUSD' | 'spentUSD'>,
   report: EvidenceReport,
+  assertions?: Pick<IntentAssertionReport, 'pass' | 'failed' | 'checks' | 'lastShell'>,
 ): { ok: boolean; reasons: string[] } {
   const reasons: string[] = [];
   if (intent.status !== 'open') reasons.push(`意图当前状态是 ${intent.status},不能再次完成。`);
@@ -169,6 +215,13 @@ export function canComplete(
   if (report.hasEdits && !report.items.some((i) => i.ok)) reasons.push('没有任何通过证据(items 里没有 ok=true 的条目)。');
   if (intent.budgetUSD > 0 && intent.spentUSD > intent.budgetUSD) {
     reasons.push(`已花费 $${intent.spentUSD.toFixed(4)} 超出预算 $${intent.budgetUSD.toFixed(4)}。`);
+  }
+  if (assertions && assertions.checks > 0 && !assertions.pass) {
+    const detail = assertions.failed
+      .map((f) => `${f.id}(${f.describe} — 实际: ${f.actual})`)
+      .join('、');
+    const basis = assertions.lastShell ? `(判定基于最后一次 shell: ${assertions.lastShell.slice(0, 120)})` : '(意图生命周期内没有 shell 调用)';
+    reasons.push(`契约断言未通过:${detail}${basis}。先把产物/命令调整到满足断言,再重新调用 intent_done。`);
   }
   return { ok: reasons.length === 0, reasons };
 }
@@ -209,9 +262,15 @@ export function formatIntent(intent: IntentRow, evidence: IntentEvidenceRow[]): 
   const lines = [
     `#${intent.id} [${intent.status}] ${intent.title || '(无标题)'}`,
     `契约: ${intent.contract || '(未设置)'}`,
+  ];
+  if (intent.assertions.length) {
+    const shown = intent.assertions.slice(0, 3).map((a) => describeCheck(a, '')).join('; ');
+    lines.push(`断言: ${intent.assertions.length} 条 — ${shown}${intent.assertions.length > 3 ? ' …' : ''}`);
+  }
+  lines.push(
     `预算: ${intent.budgetUSD > 0 ? `$${intent.budgetUSD.toFixed(4)}` : '未设'} · 已花: $${intent.spentUSD.toFixed(4)}`,
     `证据: ${passed} 条通过${failed ? ` / ${failed} 条失败` : ''}`,
-  ];
+  );
   for (const e of evidence.slice(-8)) {
     lines.push(`  ${e.ok ? '✅' : '⚠️'} [${KIND_LABEL[e.kind as EvidenceKind] ?? e.kind}] ${e.detail}`);
   }
@@ -258,4 +317,6 @@ export const INTENT_LEDGER_HINT =
   '\n\n# 意图账本(交付契约)\n'
   + '开始任何非平凡任务(改代码 / 做页面 / 写文档 / 多步修复)前,先调 intent(action="start", title=一句话目标, contract=可验收的完成定义)。'
   + ' 完成前调 intent_done:它不会相信你的口头结论,而是从本轮事件流核对证据 —— 改过文件就必须有诊断 / 测试 / 视觉验收的通过记录,'
-  + '否则会被拒绝并告诉你还缺什么。被拒绝时补做检查,不要重复调用同一句"已完成"。';
+  + '否则会被拒绝并告诉你还缺什么。被拒绝时补做检查,不要重复调用同一句"已完成"。'
+  + ' 契约能写成可执行断言的就一起传 assertions(如 [{type:"file_exists",path:"dist/x.html"}] / [{type:"exit_code_eq",value:0}]);'
+  + '完成时逐条判定,失败会指出哪条、实际值是什么。';

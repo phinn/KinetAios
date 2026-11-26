@@ -66,7 +66,8 @@ import { fuzzyEdit } from './edit-match';
 import { testAfterEdit } from './auto-test';
 import { autoVisualAfterEdit } from './auto-visual';
 import { resolveModelRoute } from './model-router';
-import { assessEvidence, canComplete, formatIntent, formatIntentList, recordEvidence, refreshIntentSpend } from './intent-ledger';
+import { assessEvidence, canComplete, evaluateIntentAssertions, formatIntent, formatIntentList, recordEvidence, refreshIntentSpend } from './intent-ledger';
+import { ASSERTION_MAX, parseAssertions } from './assertions';
 import { classifyAction, decideTrust, findToolStat, formatTrustReport } from './trust-dial';
 import { formatUsageStats } from '../shared/usage-format';
 import { t } from '../shared/i18n';
@@ -3985,7 +3986,8 @@ const intentTool: Tool = {
   description:
     '维护当前任务的意图账本(目标 + 可验收的完成定义 + 预算)。非平凡任务(改代码 / 做页面 / 写文档 / 多步修复)开始前先 action=start;' +
     '中途目标变化用 action=update;放弃用 action=drop;查看用 action=list / action=show。' +
-    'contract 必须是可观察、可核验的完成条件(例如「npm test 全绿且页面无横向滚动条」),不是愿望。完成时用 intent_done,不要在这里标完成。',
+    'contract 必须是可观察、可核验的完成条件(例如「npm test 全绿且页面无横向滚动条」),不是愿望。' +
+    '能写成机器断言的完成条件放进 assertions(完成时逐条判定)。完成时用 intent_done,不要在这里标完成。',
   parameters: {
     type: 'object',
     properties: {
@@ -3994,6 +3996,26 @@ const intentTool: Tool = {
       title: { type: 'string', description: '一句话目标(start 必填)' },
       contract: { type: 'string', description: '可验收的完成定义(start 必填;写清"什么情况算完成")' },
       budget_usd: { type: 'number', description: '可选成本上限(美元);超支时 intent_done 会拒绝完成' },
+      assertions: {
+        type: 'array',
+        description:
+          `可选的可执行完成断言(AND 语义,最多 ${ASSERTION_MAX} 条),intent_done 时逐条判定。类型:` +
+          'file_exists{path} / regex_file_contains{path,pattern} / file_line_count_gt{path,value}(按 cwd 解析路径);' +
+          'exit_code_eq{value} / regex_contains{pattern} / output_not_empty / line_count_gt{value}(对意图生命周期内最后一次 shell)。',
+        items: {
+          type: 'object',
+          properties: {
+            type: {
+              type: 'string',
+              enum: ['file_exists', 'regex_file_contains', 'file_line_count_gt', 'exit_code_eq', 'regex_contains', 'output_not_empty', 'line_count_gt'],
+            },
+            path: { type: 'string', description: '文件路径(相对 cwd 或绝对路径)' },
+            pattern: { type: 'string', description: '正则表达式' },
+            value: { type: 'number', description: '退出码 / 行数阈值' },
+          },
+          required: ['type'],
+        },
+      },
       note: { type: 'string', description: 'drop 的原因(可选)' },
     },
     required: ['action'],
@@ -4013,11 +4035,14 @@ const intentTool: Tool = {
       if (!title) return '❌ 缺少 title:用一句话写清这次要达成什么。';
       if (contract.length < 4) return '❌ 缺少可验收的 contract:写清"什么情况算完成"(可观察、可核验)。';
       const budgetUSD = Number(args.budget_usd) || 0;
+      const parsed = parseAssertions(args.assertions);
+      if (!parsed.ok) return `❌ assertions 无效:${parsed.error}`;
       const same = store.listIntents(ctx.convId, { statuses: ['open'], limit: 20 })
         .find((it) => it.title === title && it.contract === contract);
       if (same) return `ℹ️ 已存在相同意图 #${same.id}(${same.title}),继续推进;完成时调 intent_done。`;
-      const it = store.createIntent({ convId: ctx.convId, turnId: ctx.turnId, title, contract, budgetUSD });
-      return `✅ 已建立意图 #${it.id}: ${it.title}\n契约: ${it.contract}${it.budgetUSD > 0 ? `\n预算: $${it.budgetUSD.toFixed(4)}` : ''}\n完成时调 intent_done(它会核对本轮的可核验证据)。`;
+      const it = store.createIntent({ convId: ctx.convId, turnId: ctx.turnId, title, contract, budgetUSD, assertions: parsed.assertions });
+      const assertionLine = parsed.assertions.length ? `\n断言: ${parsed.assertions.length} 条(完成时逐条判定)` : '';
+      return `✅ 已建立意图 #${it.id}: ${it.title}\n契约: ${it.contract}${assertionLine}${it.budgetUSD > 0 ? `\n预算: $${it.budgetUSD.toFixed(4)}` : ''}\n完成时调 intent_done(它会核对本轮的可核验证据)。`;
     }
 
     if (action === 'update') {
@@ -4027,7 +4052,12 @@ const intentTool: Tool = {
       if (args.title !== undefined) patch.title = String(args.title).trim();
       if (args.contract !== undefined) patch.contract = String(args.contract).trim();
       if (args.budget_usd !== undefined) patch.budgetUSD = Number(args.budget_usd) || 0;
-      if (!Object.keys(patch).length) return '❌ 没有要更新的字段(title / contract / budget_usd 至少给一个)。';
+      if (args.assertions !== undefined) {
+        const parsed = parseAssertions(args.assertions);
+        if (!parsed.ok) return `❌ assertions 无效:${parsed.error}`;
+        patch.assertions = parsed.assertions;
+      }
+      if (!Object.keys(patch).length) return '❌ 没有要更新的字段(title / contract / budget_usd / assertions 至少给一个)。';
       store.updateIntent(it.id, patch);
       const fresh = store.getIntent(it.id) as store.IntentRow;
       return formatIntent(fresh, store.listIntentEvidence(it.id));
@@ -4088,21 +4118,31 @@ const intentDoneTool: Tool = {
     const spent = refreshIntentSpend(intent.id);
     const fresh = store.getIntent(intent.id);
     if (!fresh) return `❌ 意图 #${intent.id} 已不存在。`;
-    const verdict = canComplete({ ...fresh, spentUSD: spent }, report);
+    // 契约断言:文件类直接读盘,输出类绑定意图生命周期内最后一次 shell。
+    const cwd = store.getConversationCwd(intent.convId) ?? ctx.cwd;
+    const contractChecks = evaluateIntentAssertions(fresh.assertions, cwd, rows);
+    const verdict = canComplete({ ...fresh, spentUSD: spent }, report, contractChecks);
     if (!verdict.ok) {
       const evidenceLines = report.items.length
         ? '\n本轮已有证据:\n' + report.items.map((i) => `  ${i.ok ? '✅' : '⚠️'} [${i.kind}] ${i.detail}`).join('\n')
         : '\n本轮没有任何诊断 / 测试 / 视觉验收证据。';
+      const assertionLines = contractChecks.checks
+        ? '\n契约断言:\n' + (contractChecks.failed.length
+          ? contractChecks.failed.map((f) => `  ❌ ${f.id} ${f.describe} — 实际: ${f.actual}`).join('\n')
+          : '  ✅ 全部通过')
+        : '';
       return `❌ 不能完成意图 #${fresh.id}(${fresh.title}):\n`
         + verdict.reasons.map((r) => `  - ${r}`).join('\n')
         + evidenceLines
+        + assertionLines
         + '\n补做缺失的检查后再次调用 intent_done。';
     }
     store.updateIntent(intent.id, { status: 'done' });
     const note = String(args.note ?? '').trim();
     const passed = report.items.filter((i) => i.ok);
+    const assertionLine = contractChecks.checks ? `\n契约断言: ✅ ${contractChecks.checks} 条全部通过` : '';
     return `✅ 意图 #${fresh.id} 已完成: ${fresh.title}\n`
-      + `契约: ${fresh.contract}\n`
+      + `契约: ${fresh.contract}${assertionLine}\n`
       + `证据(${passed.length} 条):\n` + passed.map((i) => `  ✅ [${i.kind}] ${i.detail}`).join('\n')
       + `\n花费: $${spent.toFixed(4)}${fresh.budgetUSD > 0 ? ` / 预算 $${fresh.budgetUSD.toFixed(4)}` : ''}`
       + (note ? `\n说明: ${note}` : '');

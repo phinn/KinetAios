@@ -7,6 +7,7 @@ import { app } from 'electron';
 import type { ChatMsg, Conversation, EngineKind, Turn, UsageStats } from '../shared/types';
 import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind, type ConvEvent } from '../shared/types';
 import { getBoard as getBoardExternal } from './blackboard'; // 团队看板读黑板 stats/notes(黑板不依赖本模块,无环)
+import { parseStoredAssertions, type AssertionDsl } from './assertions'; // 契约断言(可执行完成定义)
 
 let db: Database.Database;
 
@@ -167,11 +168,13 @@ export function initStore(): void {
     -- 提成独立对象。contract 是可验收的完成定义(不是愿望);status 只有
     -- open/done/dropped 三态,done 必须由 intent_done 的证据闸放行。
     -- The intent ledger: the durable "what was asked / what counts as done / what it cost" object.
+    -- 断言列(2026-11 契约可执行化):JSON 数组,存 AssertionDsl。空 = 只走证据闸。
     CREATE TABLE IF NOT EXISTS intents(
       id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, turn_id TEXT,
       title TEXT NOT NULL DEFAULT '', contract TEXT NOT NULL DEFAULT '',
       status TEXT NOT NULL DEFAULT 'open',
       budget_usd REAL DEFAULT 0, spent_usd REAL DEFAULT 0,
+      assertions TEXT,
       created_at REAL, updated_at REAL);
     CREATE INDEX IF NOT EXISTS idx_intents_conv ON intents(conv_id, created_at);
     -- 证据账本:每条"可核验的事实"(诊断通过/测试通过/视觉通过)落一行。
@@ -182,6 +185,9 @@ export function initStore(): void {
       detail TEXT, at REAL);
     CREATE INDEX IF NOT EXISTS idx_intent_evidence_intent ON intent_evidence(intent_id, at);
   `);
+  // 老库补列:契约断言(2026-11)。hasColumn 先查后 ALTER,重跑不报错。
+  if (!hasColumn('intents', 'assertions'))
+    db.exec(`ALTER TABLE intents ADD COLUMN assertions TEXT;`);
   // ts 列补迁移:最早的库只有 (turn_id, rating, tags) 三列。
   if (!hasColumn('turn_feedback', 'ts'))
     db.exec(`ALTER TABLE turn_feedback ADD COLUMN ts REAL;`);
@@ -2921,6 +2927,8 @@ export interface IntentRow {
   status: IntentStatus;
   budgetUSD: number;
   spentUSD: number;
+  /** 可执行完成断言(空 = 只走证据闸)。 */
+  assertions: AssertionDsl[];
   createdAt: number;
   updatedAt: number;
 }
@@ -2938,6 +2946,7 @@ export interface IntentEvidenceRow {
 type RawIntentRow = {
   id: string; conv_id: string; turn_id: string | null; title: string; contract: string;
   status: string; budget_usd: number | null; spent_usd: number | null;
+  assertions: string | null;
   created_at: number | null; updated_at: number | null;
 };
 type RawIntentEvidenceRow = {
@@ -2956,6 +2965,7 @@ function rowToIntent(r: RawIntentRow): IntentRow {
     status,
     budgetUSD: Number(r.budget_usd) || 0,
     spentUSD: Number(r.spent_usd) || 0,
+    assertions: parseStoredAssertions(r.assertions),
     createdAt: Number(r.created_at) || 0,
     updatedAt: Number(r.updated_at) || 0,
   };
@@ -2979,23 +2989,27 @@ export function createIntent(opts: {
   title: string;
   contract: string;
   budgetUSD?: number;
+  assertions?: AssertionDsl[];
 }): IntentRow {
   const now = Date.now();
   const id = `int_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
-  stmt(`INSERT INTO intents(id, conv_id, turn_id, title, contract, status, budget_usd, spent_usd, created_at, updated_at)
-        VALUES(?,?,?,?,?, 'open', ?, 0, ?, ?);`).run(
+  const budgetUSD = Math.max(0, Number(opts.budgetUSD) || 0);
+  const assertions = opts.assertions ?? [];
+  stmt(`INSERT INTO intents(id, conv_id, turn_id, title, contract, status, budget_usd, spent_usd, assertions, created_at, updated_at)
+        VALUES(?,?,?,?,?, 'open', ?, 0, ?, ?, ?);`).run(
     id,
     opts.convId,
     opts.turnId ?? null,
     opts.title,
     opts.contract,
-    Math.max(0, Number(opts.budgetUSD) || 0),
+    budgetUSD,
+    assertions.length ? JSON.stringify(assertions) : null,
     now,
     now,
   );
   return {
     id, convId: opts.convId, turnId: opts.turnId ?? null, title: opts.title, contract: opts.contract,
-    status: 'open', budgetUSD: Math.max(0, Number(opts.budgetUSD) || 0), spentUSD: 0,
+    status: 'open', budgetUSD, spentUSD: 0, assertions,
     createdAt: now, updatedAt: now,
   };
 }
@@ -3025,8 +3039,8 @@ export function listIntents(convId: string, opts: { statuses?: IntentStatus[]; l
   return rows.map(rowToIntent);
 }
 
-/** 更新意图字段(status/title/contract/budget/spent)。 */
-export function updateIntent(id: string, fields: Partial<Pick<IntentRow, 'title' | 'contract' | 'status' | 'budgetUSD' | 'spentUSD'>>): void {
+/** 更新意图字段(status/title/contract/budget/spent/assertions)。 */
+export function updateIntent(id: string, fields: Partial<Pick<IntentRow, 'title' | 'contract' | 'status' | 'budgetUSD' | 'spentUSD' | 'assertions'>>): void {
   const sets: string[] = ['updated_at = ?'];
   const vals: unknown[] = [Date.now()];
   if (fields.title !== undefined) { sets.push('title = ?'); vals.push(fields.title); }
@@ -3034,6 +3048,10 @@ export function updateIntent(id: string, fields: Partial<Pick<IntentRow, 'title'
   if (fields.status !== undefined) { sets.push('status = ?'); vals.push(fields.status); }
   if (fields.budgetUSD !== undefined) { sets.push('budget_usd = ?'); vals.push(Math.max(0, Number(fields.budgetUSD) || 0)); }
   if (fields.spentUSD !== undefined) { sets.push('spent_usd = ?'); vals.push(Math.max(0, Number(fields.spentUSD) || 0)); }
+  if (fields.assertions !== undefined) {
+    sets.push('assertions = ?');
+    vals.push(fields.assertions.length ? JSON.stringify(fields.assertions) : null);
+  }
   vals.push(id);
   stmt(`UPDATE intents SET ${sets.join(', ')} WHERE id = ?;`).run(...(vals as never[]));
 }
