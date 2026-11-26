@@ -144,23 +144,33 @@ jobs:
           if-no-files-found: warn
 
       # 打 tag 时:把构建产物贴到 GH Release
-      # body 优先取 RELEASE_NOTES.md 里 "## <tag>" 起到下一个 "## " 或文件尾的段落;
-      # 抽不到(如忘写)回落 GH 自动生成,保证 Release 永不为空。
-      # 注意:TAG 必须在 node -e 内声明(bash 声明后 JS 里裸写 TAG.replace 不会被 bash 内插 → ReferenceError)。
-      # / On tag push: attach artifacts. Body extracts the "## <tag>" section
-      # from RELEASE_NOTES.md, falling back to GH-generated notes if absent.
+      # body 取 .releasenotes/rn-<tag>.md(双语正文的单一事实来源,pre-tag-check 校验);
+      # 没有该文件时回退到 RELEASE_NOTES.md 里 "## <tag>" 的段落,再抽不到就回落 GH 自动生成。
+      # 历史问题:此前只读 RELEASE_NOTES.md,而该文件停在 v3.8.0 → v4.2.x Release 页全空。
+      # / On tag push: attach artifacts. Body prefers .releasenotes/rn-<tag>.md,
+      # falling back to the "## <tag>" section of RELEASE_NOTES.md, then GH auto notes.
       - name: Extract release notes body
         if: startsWith(github.ref, 'refs/tags/v')
         shell: bash
+        env:
+          # 用 env 传 tag,避免 bash 内插进 JS 字面量时踩引号/转义问题
+          TAG: ${{ github.ref_name }}
         run: |
+          RN=".releasenotes/rn-${TAG#v}.md"
+          if [ -f "$RN" ]; then
+            cp "$RN" release-body.md
+            echo "body from $RN ($(wc -c < release-body.md | tr -d ' ') bytes)"
+            exit 0
+          fi
+          echo "no $RN, fallback to RELEASE_NOTES.md section"
           node -e "
             const fs = require('fs');
-            const TAG = '${GITHUB_REF_NAME#v}'; // bash 内插为 JS 字符串字面量;此前裸用 TAG 变量 → ReferenceError 炸掉整个 step
+            const VER = process.env.TAG.replace(/^v/, '');
             const md = fs.readFileSync('RELEASE_NOTES.md', 'utf8');
-            const m = md.match(new RegExp('(^|\\\\n)## v' + TAG.replace(/[.*+?^\${}()|[\]\\\\]/g, '\\\\$&') + '(?![0-9])[^\\\\n]*\\\\n([\\\\s\\\\S]*?)(?=\\\\n## |\\\\n*\$)', ''));
+            const m = md.match(new RegExp('(^|\\\\n)## v' + VER.replace(/[.*+?^\${}()|[\]\\\\]/g, '\\\\$&') + '(?![0-9])[^\\\\n]*\\\\n([\\\\s\\\\S]*?)(?=\\\\n## |\\\\n*\$)', ''));
             const body = m ? m[2].trim() : '';
             fs.writeFileSync('release-body.md', body);
-            console.log(body ? 'extracted ' + body.length + ' chars' : 'no section for v' + '${TAG}' + ', fallback to auto notes');
+            console.log(body ? 'extracted ' + body.length + ' chars' : 'no section for v' + VER + ', fallback to auto notes');
           "
       - name: Attach to Release
         if: startsWith(github.ref, 'refs/tags/v')
