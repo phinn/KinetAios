@@ -875,7 +875,7 @@ export function skillUsage(): Map<string, SkillUsage> {
 // 早期按秒查询会得出一个荒谬的"全库一周几十万次"数字。这里统一自己算窗口。
 export function usageStats(days = 7, limit = 12): UsageStats {
   const since = Date.now() - Math.max(1, days) * 86_400_000;
-  const rows = stmt("SELECT type, data FROM conv_events WHERE ts >= ?;").all(since) as Array<{ type: string; data: string }>;
+  const rows = stmt("SELECT type, data FROM conv_events WHERE ts >= ? AND type IN ('tool/call','turn/error','cost');").all(since) as Array<{ type: string; data: string }>;
   const byTool = new Map<string, { calls: number; measured: number; errors: number; kinds: Record<string, number> }>();
   let turnErrors = 0;
   let rateLimited = 0;

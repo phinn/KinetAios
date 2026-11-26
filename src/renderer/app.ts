@@ -7700,7 +7700,7 @@ async function showSettings() {
       if (!out) return;
       out.textContent = '…';
       const r = await api.toolUsageStats(7);
-      out.textContent = r.ok && r.stats ? formatUsageStats(r.stats) : (r.error ?? 'error');
+      out.textContent = r.ok && r.stats ? formatUsageStats(r.stats, tr) : (r.error ?? 'error');
     };
     const btn = document.getElementById('s-usage-refresh');
     if (btn) btn.onclick = () => void refresh();

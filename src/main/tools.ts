@@ -67,6 +67,7 @@ import { testAfterEdit } from './auto-test';
 import { autoVisualAfterEdit } from './auto-visual';
 import { resolveModelRoute } from './model-router';
 import { formatUsageStats } from '../shared/usage-format';
+import { t } from '../shared/i18n';
 import { rankGrepHits, type GrepHit } from './search-rank';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
@@ -4171,7 +4172,9 @@ const usageStatsTool: Tool = {
   async run(args) {
     const days = Math.min(90, Math.max(1, Number(args?.days) || 7));
     const limit = Math.min(30, Math.max(1, Number(args?.limit) || 12));
-    return formatUsageStats(store.usageStats(days, limit));
+    // 文案跟随 UI 语言(与设置面板同一套 i18n),不在数据层硬编码中文。
+    const lang = getSettings().lang;
+    return formatUsageStats(store.usageStats(days, limit), (k, p) => t(lang, k, p));
   },
 };
 
