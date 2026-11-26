@@ -1088,7 +1088,7 @@ const writeFile: Tool = {
       const [diag, tests, visual] = await Promise.all([
         diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
         testAfterEdit({ cwd: ctx.cwd, file: p }),
-        autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+        autoVisualAfterEdit({ cwd: ctx.cwd, file: p, convId: ctx.convId }),
       ]);
       const done = `已写入 ${p} (${Buffer.byteLength(content, 'utf8')} 字节)`;
       return [done, diag, tests, visual].filter(Boolean).join('\n\n');
@@ -2102,7 +2102,7 @@ const editFile: Tool = {
         const [diag, tests, visual] = await Promise.all([
           diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
           testAfterEdit({ cwd: ctx.cwd, file: p }),
-          autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+          autoVisualAfterEdit({ cwd: ctx.cwd, file: p, convId: ctx.convId }),
         ]);
         const done = `已替换 ${count} 处(模糊匹配:空白/缩进归一化${fz.reindented ? ',已重排缩进' : ''};行 ${fz.lines.join(', ')})→ ${p}`;
         return [done, diag, tests, visual].filter(Boolean).join('\n\n');
@@ -2129,7 +2129,7 @@ const editFile: Tool = {
       const [diag, tests, visual] = await Promise.all([
         diagnoseAfterEdit({ cwd: ctx.cwd, file: p }),
         testAfterEdit({ cwd: ctx.cwd, file: p }),
-        autoVisualAfterEdit({ cwd: ctx.cwd, file: p }),
+        autoVisualAfterEdit({ cwd: ctx.cwd, file: p, convId: ctx.convId }),
       ]);
       const done = `已替换 ${count} 处 → ${p}`;
       return [done, diag, tests, visual].filter(Boolean).join('\n\n');

@@ -43,10 +43,11 @@ const lastRun = new Map<string, number>();
  * 编辑后自动视觉验收。返回要拼进工具结果的文本;不适用/没条件 → 空串。
  * 动态 require:cdp/glm/settings 依赖 Electron 运行时,纯函数测试不该被拖进来。
  */
-export async function autoVisualAfterEdit(opts: { cwd: string; file: string }): Promise<string> {
+export async function autoVisualAfterEdit(opts: { cwd: string; file: string; convId?: string }): Promise<string> {
   if (process.env.KINET_NO_AUTOVISUAL === '1') return '';
   if (!isUiFile(opts.file)) return '';
-  const last = lastRun.get(opts.cwd) ?? 0;
+  const throttleKey = `${opts.cwd}|${opts.convId ?? ''}`;
+  const last = lastRun.get(throttleKey) ?? 0;
   if (Date.now() - last < THROTTLE_MS) return '';
   try {
     // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -59,18 +60,29 @@ export async function autoVisualAfterEdit(opts: { cwd: string; file: string }): 
     const shot = await cdp.browserScreenshot(tab.id);
     if (!shot.ok || !shot.base64) return '';
     // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const { getSettings } = require('./settings') as typeof import('./settings');
+    const { getSettings, snapshot } = require('./settings') as typeof import('./settings');
     // eslint-disable-next-line @typescript-eslint/no-var-requires
     const { supervisorComplete } = require('./glm') as typeof import('./glm');
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const store = require('./store') as typeof import('./store');
     const settings = getSettings();
-    const route = resolveModelRoute({ capability: 'vision', settings, convModel: settings.model, baseModel: settings.model });
+    // 用会话实际绑定的模型验收(与 verify_visual 一致):全局默认模型可能不是多模态,
+    // 用错模型会让自动验收静默失效。跨 profile 路由仍优先。
+    const prof = opts.convId ? store.getConversationModelProfile(opts.convId) : null;
+    const activeProfile = prof?.profileId ?? null;
+    const route = resolveModelRoute({
+      capability: 'vision',
+      settings,
+      convModel: prof?.model ?? settings.model,
+      baseModel: snapshot(activeProfile).model,
+    });
     const out = await supervisorComplete(
       buildVisionMessages(`data:image/png;base64,${shot.base64}`, AUTO_VISUAL_CRITERIA),
-      route.profileId ?? null,
+      route.profileId ?? activeProfile,
       AbortSignal.timeout(90_000),
       route.model || undefined,
     );
-    lastRun.set(opts.cwd, Date.now());
+    lastRun.set(throttleKey, Date.now());
     return formatAutoVisual(parseVisionVerdict(out.content ?? ''), tab.url, route.model || '默认模型');
   } catch {
     return ''; // 自动视觉失败绝不拖累编辑
