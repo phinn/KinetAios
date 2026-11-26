@@ -163,6 +163,24 @@ export function initStore(): void {
     -- turns 的 JSON —— 2GB 库上 json_each 一次约 11s,不能放主线程。
     CREATE TABLE IF NOT EXISTS skill_usage(
       name TEXT PRIMARY KEY, loads INTEGER DEFAULT 0, last_load_at REAL);
+    -- Intent 账本(2026-11):把「用户要什么 / 什么算完成 / 花了多少」从聊天记录里
+    -- 提成独立对象。contract 是可验收的完成定义(不是愿望);status 只有
+    -- open/done/dropped 三态,done 必须由 intent_done 的证据闸放行。
+    -- The intent ledger: the durable "what was asked / what counts as done / what it cost" object.
+    CREATE TABLE IF NOT EXISTS intents(
+      id TEXT PRIMARY KEY, conv_id TEXT NOT NULL, turn_id TEXT,
+      title TEXT NOT NULL DEFAULT '', contract TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'open',
+      budget_usd REAL DEFAULT 0, spent_usd REAL DEFAULT 0,
+      created_at REAL, updated_at REAL);
+    CREATE INDEX IF NOT EXISTS idx_intents_conv ON intents(conv_id, created_at);
+    -- 证据账本:每条"可核验的事实"(诊断通过/测试通过/视觉通过)落一行。
+    -- ok=0 也记 —— 失败证据是拒绝完成的理由,不能只存好话。
+    CREATE TABLE IF NOT EXISTS intent_evidence(
+      id TEXT PRIMARY KEY, intent_id TEXT NOT NULL,
+      kind TEXT NOT NULL, ref TEXT, ok INTEGER NOT NULL,
+      detail TEXT, at REAL);
+    CREATE INDEX IF NOT EXISTS idx_intent_evidence_intent ON intent_evidence(intent_id, at);
   `);
   // ts 列补迁移:最早的库只有 (turn_id, rating, tags) 三列。
   if (!hasColumn('turn_feedback', 'ts'))
@@ -929,6 +947,20 @@ export function usageStats(days = 7, limit = 12): UsageStats {
   };
 }
 
+// 某会话自 sinceMs 起的成本合计(Intent 账本的 spent_usd)。
+// 直接 SUM json_extract,不把事件行搬到 JS 里解析 —— 大会话单次几千条 turn/meta。
+export function sumTurnCostSince(convId: string, sinceMs: number): number {
+  try {
+    const row = stmt(
+      `SELECT COALESCE(SUM(CAST(COALESCE(json_extract(data,'$.costUSD'), json_extract(data,'$.usd')) AS REAL)), 0) AS usd
+         FROM conv_events WHERE conv_id=? AND type IN ('turn/meta','cost') AND ts>=?;`,
+    ).get(convId, sinceMs) as { usd: number | null } | undefined;
+    return Number(row?.usd) || 0;
+  } catch {
+    return 0; // 老库无 JSON1 时降级为"不统计",不阻塞完成闸
+  }
+}
+
 // 只增不改:写入点把事件 append 进来,快照(turns)由各写入点照旧维护。
 // 衍生统计/回放/排查全部走这里,不再依赖"快照恰好对得上"的假设。
 export function appendEvent(convId: string, turnId: string, ev: ConvEvent): void {
@@ -995,6 +1027,13 @@ export function loadTurnEvents(convId: string, turnId: string): EventRow[] {
     `SELECT seq, turn_id, type, data, ts FROM conv_events
       WHERE conv_id=? AND turn_id=? AND type IN ('turn/meta','tool/call') ORDER BY seq;`,
   ).all(convId, turnId) as RawEventRow[];
+  return foldEventRows(rows);
+}
+
+/** 某时刻之后的全部事件(Intent 证据闸:覆盖该意图从创建到现在的所有轮次)。 */
+export function loadEventsSince(convId: string, sinceMs: number): EventRow[] {
+  const rows = stmt('SELECT seq, turn_id, type, data, ts FROM conv_events WHERE conv_id=? AND ts>=? ORDER BY seq;')
+    .all(convId, sinceMs) as RawEventRow[];
   return foldEventRows(rows);
 }
 
@@ -2867,4 +2906,157 @@ export function failOrphanJobs(reason: string): void {
 
 export function deleteJobsByConv(convId: string): void {
   stmt('DELETE FROM jobs WHERE conv_id = ?;').run(convId);
+}
+
+// ── Intent 账本(2026-11)──
+// 只存事实行;判定逻辑(证据闸/预算/能否完成)在 intent-ledger.ts 里,纯函数可测。
+export type IntentStatus = 'open' | 'done' | 'dropped';
+
+export interface IntentRow {
+  id: string;
+  convId: string;
+  turnId: string | null;
+  title: string;
+  contract: string;
+  status: IntentStatus;
+  budgetUSD: number;
+  spentUSD: number;
+  createdAt: number;
+  updatedAt: number;
+}
+
+export interface IntentEvidenceRow {
+  id: string;
+  intentId: string;
+  kind: string;
+  ref: string | null;
+  ok: boolean;
+  detail: string;
+  at: number;
+}
+
+type RawIntentRow = {
+  id: string; conv_id: string; turn_id: string | null; title: string; contract: string;
+  status: string; budget_usd: number | null; spent_usd: number | null;
+  created_at: number | null; updated_at: number | null;
+};
+type RawIntentEvidenceRow = {
+  id: string; intent_id: string; kind: string; ref: string | null;
+  ok: number; detail: string | null; at: number | null;
+};
+
+function rowToIntent(r: RawIntentRow): IntentRow {
+  const status = r.status === 'done' || r.status === 'dropped' ? r.status : 'open';
+  return {
+    id: r.id,
+    convId: r.conv_id,
+    turnId: r.turn_id,
+    title: r.title ?? '',
+    contract: r.contract ?? '',
+    status,
+    budgetUSD: Number(r.budget_usd) || 0,
+    spentUSD: Number(r.spent_usd) || 0,
+    createdAt: Number(r.created_at) || 0,
+    updatedAt: Number(r.updated_at) || 0,
+  };
+}
+
+function rowToIntentEvidence(r: RawIntentEvidenceRow): IntentEvidenceRow {
+  return {
+    id: r.id,
+    intentId: r.intent_id,
+    kind: r.kind,
+    ref: r.ref,
+    ok: Number(r.ok) === 1,
+    detail: r.detail ?? '',
+    at: Number(r.at) || 0,
+  };
+}
+
+export function createIntent(opts: {
+  convId: string;
+  turnId?: string | null;
+  title: string;
+  contract: string;
+  budgetUSD?: number;
+}): IntentRow {
+  const now = Date.now();
+  const id = `int_${now.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  stmt(`INSERT INTO intents(id, conv_id, turn_id, title, contract, status, budget_usd, spent_usd, created_at, updated_at)
+        VALUES(?,?,?,?,?, 'open', ?, 0, ?, ?);`).run(
+    id,
+    opts.convId,
+    opts.turnId ?? null,
+    opts.title,
+    opts.contract,
+    Math.max(0, Number(opts.budgetUSD) || 0),
+    now,
+    now,
+  );
+  return {
+    id, convId: opts.convId, turnId: opts.turnId ?? null, title: opts.title, contract: opts.contract,
+    status: 'open', budgetUSD: Math.max(0, Number(opts.budgetUSD) || 0), spentUSD: 0,
+    createdAt: now, updatedAt: now,
+  };
+}
+
+export function getIntent(id: string): IntentRow | null {
+  const r = stmt('SELECT * FROM intents WHERE id = ?;').get(id) as RawIntentRow | undefined;
+  return r ? rowToIntent(r) : null;
+}
+
+/** 该会话最近一个 open 意图(intent_done 不传 id 时的默认识别对象)。 */
+export function latestOpenIntent(convId: string): IntentRow | null {
+  const r = stmt("SELECT * FROM intents WHERE conv_id = ? AND status = 'open' ORDER BY created_at DESC LIMIT 1;")
+    .get(convId) as RawIntentRow | undefined;
+  return r ? rowToIntent(r) : null;
+}
+
+export function listIntents(convId: string, opts: { statuses?: IntentStatus[]; limit?: number } = {}): IntentRow[] {
+  const where = ['conv_id = ?'];
+  const vals: unknown[] = [convId];
+  if (opts.statuses?.length) {
+    where.push(`status IN (${opts.statuses.map(() => '?').join(',')})`);
+    vals.push(...opts.statuses);
+  }
+  vals.push(Math.max(1, Math.min(200, opts.limit ?? 50)));
+  const rows = stmt(`SELECT * FROM intents WHERE ${where.join(' AND ')} ORDER BY created_at DESC LIMIT ?;`)
+    .all(...(vals as never[])) as RawIntentRow[];
+  return rows.map(rowToIntent);
+}
+
+/** 更新意图字段(status/title/contract/budget/spent)。 */
+export function updateIntent(id: string, fields: Partial<Pick<IntentRow, 'title' | 'contract' | 'status' | 'budgetUSD' | 'spentUSD'>>): void {
+  const sets: string[] = ['updated_at = ?'];
+  const vals: unknown[] = [Date.now()];
+  if (fields.title !== undefined) { sets.push('title = ?'); vals.push(fields.title); }
+  if (fields.contract !== undefined) { sets.push('contract = ?'); vals.push(fields.contract); }
+  if (fields.status !== undefined) { sets.push('status = ?'); vals.push(fields.status); }
+  if (fields.budgetUSD !== undefined) { sets.push('budget_usd = ?'); vals.push(Math.max(0, Number(fields.budgetUSD) || 0)); }
+  if (fields.spentUSD !== undefined) { sets.push('spent_usd = ?'); vals.push(Math.max(0, Number(fields.spentUSD) || 0)); }
+  vals.push(id);
+  stmt(`UPDATE intents SET ${sets.join(', ')} WHERE id = ?;`).run(...(vals as never[]));
+}
+
+export function addIntentEvidence(opts: {
+  intentId: string;
+  kind: string;
+  ref?: string | null;
+  ok: boolean;
+  detail?: string;
+  at?: number;
+}): IntentEvidenceRow {
+  const at = opts.at ?? Date.now();
+  const id = `ev_${at.toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  const detail = opts.detail ?? '';
+  stmt('INSERT INTO intent_evidence(id, intent_id, kind, ref, ok, detail, at) VALUES(?,?,?,?,?,?,?);').run(
+    id, opts.intentId, opts.kind, opts.ref ?? null, opts.ok ? 1 : 0, detail.slice(0, 500), at,
+  );
+  return { id, intentId: opts.intentId, kind: opts.kind, ref: opts.ref ?? null, ok: opts.ok, detail, at };
+}
+
+export function listIntentEvidence(intentId: string, limit = 100): IntentEvidenceRow[] {
+  const rows = stmt('SELECT * FROM intent_evidence WHERE intent_id = ? ORDER BY at ASC LIMIT ?;')
+    .all(intentId, Math.max(1, Math.min(1000, limit))) as RawIntentEvidenceRow[];
+  return rows.map(rowToIntentEvidence);
 }

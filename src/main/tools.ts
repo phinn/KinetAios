@@ -66,6 +66,8 @@ import { fuzzyEdit } from './edit-match';
 import { testAfterEdit } from './auto-test';
 import { autoVisualAfterEdit } from './auto-visual';
 import { resolveModelRoute } from './model-router';
+import { assessEvidence, canComplete, formatIntent, formatIntentList, recordEvidence, refreshIntentSpend } from './intent-ledger';
+import { classifyAction, decideTrust, findToolStat, formatTrustReport } from './trust-dial';
 import { formatUsageStats } from '../shared/usage-format';
 import { t } from '../shared/i18n';
 import { rankGrepHits, type GrepHit } from './search-rank';
@@ -3975,6 +3977,175 @@ const axScriptTool: Tool = {
   },
 };
 
+// ── Intent 账本(2026-11)──
+// 把「目标 / 验收契约 / 预算」落成独立对象,完成判定由 intent_done 的证据闸执行。
+// 这两个工具刻意不进 readOnlyTools():子 agent 不拥有主会话的意图。
+const intentTool: Tool = {
+  name: 'intent',
+  description:
+    '维护当前任务的意图账本(目标 + 可验收的完成定义 + 预算)。非平凡任务(改代码 / 做页面 / 写文档 / 多步修复)开始前先 action=start;' +
+    '中途目标变化用 action=update;放弃用 action=drop;查看用 action=list / action=show。' +
+    'contract 必须是可观察、可核验的完成条件(例如「npm test 全绿且页面无横向滚动条」),不是愿望。完成时用 intent_done,不要在这里标完成。',
+  parameters: {
+    type: 'object',
+    properties: {
+      action: { type: 'string', enum: ['start', 'update', 'drop', 'list', 'show'], description: '要执行的操作' },
+      intent_id: { type: 'string', description: '目标意图 ID(update/drop/show 时可省略,默认最近一个 open 意图)' },
+      title: { type: 'string', description: '一句话目标(start 必填)' },
+      contract: { type: 'string', description: '可验收的完成定义(start 必填;写清"什么情况算完成")' },
+      budget_usd: { type: 'number', description: '可选成本上限(美元);超支时 intent_done 会拒绝完成' },
+      note: { type: 'string', description: 'drop 的原因(可选)' },
+    },
+    required: ['action'],
+  },
+  async run(args, ctx) {
+    if (!ctx.convId) return '❌ 该上下文不支持意图账本(无 convId)。';
+    const action = String(args.action ?? 'start');
+    const pick = (): store.IntentRow | null => {
+      const id = String(args.intent_id ?? '').trim();
+      if (id) return store.getIntent(id);
+      return store.latestOpenIntent(ctx.convId as string);
+    };
+
+    if (action === 'start') {
+      const title = String(args.title ?? '').trim();
+      const contract = String(args.contract ?? '').trim();
+      if (!title) return '❌ 缺少 title:用一句话写清这次要达成什么。';
+      if (contract.length < 4) return '❌ 缺少可验收的 contract:写清"什么情况算完成"(可观察、可核验)。';
+      const budgetUSD = Number(args.budget_usd) || 0;
+      const same = store.listIntents(ctx.convId, { statuses: ['open'], limit: 20 })
+        .find((it) => it.title === title && it.contract === contract);
+      if (same) return `ℹ️ 已存在相同意图 #${same.id}(${same.title}),继续推进;完成时调 intent_done。`;
+      const it = store.createIntent({ convId: ctx.convId, turnId: ctx.turnId, title, contract, budgetUSD });
+      return `✅ 已建立意图 #${it.id}: ${it.title}\n契约: ${it.contract}${it.budgetUSD > 0 ? `\n预算: $${it.budgetUSD.toFixed(4)}` : ''}\n完成时调 intent_done(它会核对本轮的可核验证据)。`;
+    }
+
+    if (action === 'update') {
+      const it = pick();
+      if (!it) return '❌ 没有可更新的意图:先用 action=start 建立。';
+      const patch: Parameters<typeof store.updateIntent>[1] = {};
+      if (args.title !== undefined) patch.title = String(args.title).trim();
+      if (args.contract !== undefined) patch.contract = String(args.contract).trim();
+      if (args.budget_usd !== undefined) patch.budgetUSD = Number(args.budget_usd) || 0;
+      if (!Object.keys(patch).length) return '❌ 没有要更新的字段(title / contract / budget_usd 至少给一个)。';
+      store.updateIntent(it.id, patch);
+      const fresh = store.getIntent(it.id) as store.IntentRow;
+      return formatIntent(fresh, store.listIntentEvidence(it.id));
+    }
+
+    if (action === 'drop') {
+      const it = pick();
+      if (!it) return '❌ 没有可放弃的意图。';
+      store.updateIntent(it.id, { status: 'dropped' });
+      const note = String(args.note ?? '').trim();
+      return `🗑 已放弃意图 #${it.id}: ${it.title}${note ? `(原因: ${note})` : ''}`;
+    }
+
+    if (action === 'show') {
+      const it = pick();
+      if (!it) return '❌ 没有匹配的意图。';
+      refreshIntentSpend(it.id);
+      const fresh = store.getIntent(it.id) as store.IntentRow;
+      return formatIntent(fresh, store.listIntentEvidence(it.id));
+    }
+
+    if (action === 'list') {
+      const items = store.listIntents(ctx.convId, { limit: 20 });
+      for (const it of items) if (it.status === 'open') refreshIntentSpend(it.id);
+      const fresh = store.listIntents(ctx.convId, { limit: 20 });
+      return formatIntentList(fresh);
+    }
+
+    return `❌ 未知 action: ${action}(支持 start/update/drop/list/show)。`;
+  },
+};
+
+// 完成必须带证据:证据来自 conv_events,不接受模型自述。
+const intentDoneTool: Tool = {
+  name: 'intent_done',
+  description:
+    '声明意图完成。本工具不相信口头结论:它会从本轮事件流核对证据 —— 改过文件就必须在最后一次编辑之后' +
+    '有通过的诊断 / 测试 / 视觉验收;没有可核验的通过证据会被拒绝,并告诉你还缺什么。被拒绝时补做检查,不要重复调用。',
+  parameters: {
+    type: 'object',
+    properties: {
+      intent_id: { type: 'string', description: '要完成的意图 ID(省略 = 最近一个 open 意图)' },
+      note: { type: 'string', description: '完成说明(可选,不构成证据)' },
+    },
+  },
+  async run(args, ctx) {
+    if (!ctx.convId) return '❌ 该上下文不支持意图账本(无 convId)。';
+    const id = String(args.intent_id ?? '').trim();
+    const intent = id ? store.getIntent(id) : store.latestOpenIntent(ctx.convId);
+    if (!intent || intent.convId !== ctx.convId) {
+      return `❌ 找不到意图${id ? ` #${id}` : ''}:先用 intent action=start 建立,或 action=list 查看现有意图。`;
+    }
+    // 证据覆盖该意图从创建到现在的所有轮次(不是只看当前 turn):
+    // 否则"上一轮改完、这一轮只喊完成"就能绕过闸门。规则仍是:最后一次编辑之后必须有通过证据。
+    const rows = store.loadEventsSince(intent.convId, intent.createdAt);
+    const report = assessEvidence(rows);
+    recordEvidence(intent.id, report);
+    const spent = refreshIntentSpend(intent.id);
+    const fresh = store.getIntent(intent.id);
+    if (!fresh) return `❌ 意图 #${intent.id} 已不存在。`;
+    const verdict = canComplete({ ...fresh, spentUSD: spent }, report);
+    if (!verdict.ok) {
+      const evidenceLines = report.items.length
+        ? '\n本轮已有证据:\n' + report.items.map((i) => `  ${i.ok ? '✅' : '⚠️'} [${i.kind}] ${i.detail}`).join('\n')
+        : '\n本轮没有任何诊断 / 测试 / 视觉验收证据。';
+      return `❌ 不能完成意图 #${fresh.id}(${fresh.title}):\n`
+        + verdict.reasons.map((r) => `  - ${r}`).join('\n')
+        + evidenceLines
+        + '\n补做缺失的检查后再次调用 intent_done。';
+    }
+    store.updateIntent(intent.id, { status: 'done' });
+    const note = String(args.note ?? '').trim();
+    const passed = report.items.filter((i) => i.ok);
+    return `✅ 意图 #${fresh.id} 已完成: ${fresh.title}\n`
+      + `契约: ${fresh.contract}\n`
+      + `证据(${passed.length} 条):\n` + passed.map((i) => `  ✅ [${i.kind}] ${i.detail}`).join('\n')
+      + `\n花费: $${spent.toFixed(4)}${fresh.budgetUSD > 0 ? ` / 预算 $${fresh.budgetUSD.toFixed(4)}` : ''}`
+      + (note ? `\n说明: ${note}` : '');
+  },
+};
+
+// ── Trust Dial 建议(只读)──
+// 只回答"这个动作应该自动放行还是问用户",不改变现有确认策略。
+const trustReportTool: Tool = {
+  name: 'trust_report',
+  description:
+    '查询一个动作的信任分级与建议(只读操作 / 可回滚写 / 不可逆 / 系统级),附近期失败率。' +
+    '这是只读诊断:不改变当前确认策略,也不会自动放行任何写操作。用于向用户解释"为什么这一步需要确认"。',
+  parameters: {
+    type: 'object',
+    properties: {
+      tool: { type: 'string', description: '要评估的工具名(如 shell / write_file / browser_click)' },
+      args: { type: 'string', description: '该工具准备使用的参数(JSON 字符串;shell 需要 command 才能细分)' },
+    },
+    required: ['tool'],
+  },
+  readOnly: true,
+  async run(args) {
+    const tool = String(args.tool ?? '').trim();
+    if (!tool) return '❌ 缺少 tool。';
+    let parsed: Record<string, unknown> = {};
+    const raw = args.args;
+    if (raw && typeof raw === 'object') parsed = raw as Record<string, unknown>;
+    else if (typeof raw === 'string' && raw.trim()) {
+      try {
+        const obj = JSON.parse(raw);
+        if (obj && typeof obj === 'object' && !Array.isArray(obj)) parsed = obj as Record<string, unknown>;
+      } catch {
+        return '❌ args 不是合法 JSON 对象。';
+      }
+    }
+    const profile = classifyAction(tool, parsed);
+    const stat = findToolStat(store.usageStats(30), tool);
+    const verdict = decideTrust(profile, stat);
+    return formatTrustReport(profile, verdict, stat);
+  },
+};
+
 // ── 任务清单卡(DSH 式 todo_write)──
 // 3+ 步任务先建清单、完成一项更新一项;整表替换语义(每次传全量,不是增量)。
 // 只影响会话 UI 状态,不碰文件系统 → readOnly: true(可并发批执行;沙箱只读也放行)。
@@ -4179,7 +4350,7 @@ const usageStatsTool: Tool = {
 };
 
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, diagnosticsTool, usageStatsTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, verifyVisual, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, diagnosticsTool, usageStatsTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, verifyVisual, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, intentTool, intentDoneTool, trustReportTool, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。

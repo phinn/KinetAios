@@ -19,6 +19,7 @@ import * as store from './store';
 import { allTools, readOnlyTools, type SpawnScopeConfig, type ToolCtx, type SubEngine } from './tools';
 import { repoMapHint } from './repo-map';
 import { VISUAL_VERIFY_HINT } from './visual-verify';
+import { INTENT_LEDGER_HINT } from './intent-ledger';
 import { pullFailureDirective, isToolCoolingDown } from './failure-policy';
 import { getSettings, snapshot } from './settings';
 import { t } from '../shared/i18n';
@@ -642,7 +643,7 @@ function skillCatalogSection(): string {
       // ⚡ cache 冻结分区:providerEconomicsSection 只依赖 snap.provider(换 provider 时整个
       // 前缀必然已变,放最前不影响其它分区的稳定性);pluginSystemPrompts 依赖当前 prompt
       // (关键词命中翻转会让其后所有内容 cache miss),所以挪到 codemodePromptSection 之后。
-      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + repoMapHint(conv.cwd) + VISUAL_VERIFY_HINT + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
+      systemPrompt: baseSystemPrompt + providerEconomicsSection(snap) + cwdAnchorSection(conv) + repoMapHint(conv.cwd) + VISUAL_VERIFY_HINT + INTENT_LEDGER_HINT + personaSection(conv) + sourceHintSection(conv) + goalSection + skillSection + skillCatalogSection() + rulesSection + (rulesBlock ?? '') + (contextBlock ?? '') + codemodePromptSection(tools) + pluginSystemPrompts('direct', prompt),
       memoryBlock,
       snapshot: snap,
       userInput,
