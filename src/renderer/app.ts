@@ -2771,10 +2771,22 @@ async function ensureTurnsLoaded(conv: Conversation, token: number): Promise<boo
   }
 }
 
+// 冻结期去重签名:最后一条 turn 的内容指纹。取消后 done/error/tool 残留事件可能连发,
+// 每次全量替换都会重挂 viz iframe / 重解码图片 → 高度回流,表现为界面持续抖动。
+// 内容没变就什么都不做。
+function frozenTurnSig(conv: Conversation, idx: number): string {
+  const t = conv.turns[idx];
+  if (!t) return '';
+  const ans = typeof t.answer === 'string' ? t.answer : '';
+  const steps = ((t.steps ?? []) as Array<{ name?: string; result?: string; outcome?: string }>)
+    .map((s) => `${s.name ?? ''}:${s.outcome ?? ''}:${(s.result ?? '').length}`)
+    .join(',');
+  return `${idx}|${t.done ? 1 : 0}|${t.error ? 1 : 0}|${conv.status}|${ans.length}|${ans.slice(-16)}|${steps}`;
+}
+
 function renderMain() {
   renderToken++;
-  const token = renderToken;
-  const conv = selectedId ? convs.get(selectedId) : undefined;
+  const token = renderToken;  const conv = selectedId ? convs.get(selectedId) : undefined;
   // 切频道时清理流式 buffer + artifact 定时器,避免残留旧频道的文本/误触发 / Clear buffers on switch
   resetStreamRender();
   if (artifactDebounce) { clearTimeout(artifactDebounce); artifactDebounce = null; }
@@ -2798,11 +2810,16 @@ function renderMain() {
     const lastEl = turns.lastElementChild as HTMLElement | null;
     if (lastEl && lastEl.dataset.idx != null && conv.turns.length) {
       const idx = Number(lastEl.dataset.idx);
-      if (conv.turns[idx]) turns.replaceChild(renderTurn(conv, idx), lastEl);
+      const sig = frozenTurnSig(conv, idx);
+      if (conv.turns[idx] && sig !== frozenSig) {
+        turns.replaceChild(renderTurn(conv, idx), lastEl);
+        frozenSig = sig;
+      }
     }
     scrollAnchorTurnIdx = null; // 锚点不许跨冻结残留,否则解冻后 renderMain 拉回旧位置
     return;
   }
+  frozenSig = null; // 解冻/正常渲染:签名作废,下次冻结重新计算
   // 离屏构建再一次性挂载,避免 innerHTML='' 后到新 DOM 创建之间的空白帧(闪屏)。
   // Build off-screen then attach in one pass — avoids a blank frame between clearing and repopulating.
   if (!conv) {
@@ -4765,6 +4782,13 @@ function updateLastTurnIncremental(): void {
   const conv = selectedId ? convs.get(selectedId) : undefined;
   if (!conv || !conv.turns.length) { renderMain(); return; }
   renderHead(conv);
+  // 冻结期:残留 token 不再逐字重建,只有终态(done/error)才走一次(签名去重后的)重建,
+  // 否则取消后每个 token 都重挂尾部 iframe/图片 → 界面持续抖。
+  if (scrollFrozen) {
+    const lastT = conv.turns[conv.turns.length - 1];
+    if (lastT?.done || lastT?.error) renderMain();
+    return;
+  }
   const lastTurnIdx = conv.turns.length - 1;
   // 找到当前 streaming-answer 所在 turn(最近的那个 .turn)
   const ansEl = document.getElementById('streaming-answer');
@@ -6425,6 +6449,9 @@ let userAtBottom = true;
  *  只有 wheel/keydown/pointerdown/发送/切会话等真实交互解冻。
  *  防取消瞬间的惯性滚动/程序滚动把视口拽走。 */
 let scrollFrozen = false;
+/** 冻结期最后一条 turn 的渲染签名:内容没变就不重建。
+ *  重建会重挂 iframe/图片(blob 重载 + 高度回流),取消后残留事件一来一回就是可见抖动。 */
+let frozenSig: string | null = null;
 let scrollRestoredMid = false;
 /** 重渲染锚点:最顶可见 turn 的 idx + 视口顶相对该 turn 顶的偏移。
  *  renderMain 全量重建前捕获,重建后 applyScrollAnchor 消费一次即清零。 */
@@ -12322,7 +12349,7 @@ function mountVizFrames(root: ParentNode): void {
     // min(max-content, available), so a narrowed frame echoes back the width we
     // just gave it and the host adds +2px every round-trip → card creeps wider
     // until it fills the row. max-content is viewport-independent ⇒ no loop.
-    const boot = `(function(){function r(){var b=document.body;if(!b)return;var de=document.documentElement;var quirks=!!(de&&de.compatMode==='BackCompat');var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=quirks?b.offsetHeight:Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='max-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
+    const boot = `(function(){function r(){var b=document.body;if(!b)return;var de=document.documentElement;var quirks=!!(de&&de.compatMode==='BackCompat');var st0=document.createElement('style');st0.textContent='html::-webkit-scrollbar,body::-webkit-scrollbar{width:0!important;height:0!important}html{scrollbar-width:none!important}';if(document.head)document.head.appendChild(st0);var st=document.createElement('style');st.textContent='html,body{height:auto!important;min-height:0!important;max-height:none!important}';document.head.appendChild(st);var touched=[];var rxG=/[\\d.]+(?:svh|dvh|lvh|vh)/g,rxT=/[\\d.]+(?:svh|dvh|lvh|vh)/;function scrub(style){if(!style)return;var props=['min-height','height','max-height'];for(var k=0;k<3;k++){var p=props[k],v=style.getPropertyValue(p);if(v&&rxT.test(v)){touched.push([style,p,style.getPropertyPriority(p),v]);var rep=p==='min-height'?'0px':(p==='max-height'?'none':'auto');style.setProperty(p,v.replace(rxG,rep),style.getPropertyPriority(p));}}}try{var ss=document.styleSheets;for(var i=0;i<ss.length;i++){var rules=null;try{rules=ss[i].cssRules}catch(e){continue}if(!rules)continue;for(var j=0;j<rules.length;j++){var ru=rules[j];if(ru&&ru.style)scrub(ru.style);}}}catch(e){}var all=b.querySelectorAll('*');for(var i2=0;i2<all.length;i2++)scrub(all[i2].style);var h=quirks?b.offsetHeight:Math.max(b.offsetHeight,b.scrollHeight);var prevW=b.style.width;b.style.width='max-content';var w=b.offsetWidth||0;b.style.width=prevW;for(var j2=touched.length-1;j2>=0;j2--){var t=touched[j2];t[0].setProperty(t[1],t[3],t[2]);}st.remove();parent.postMessage({type:'viz-height',id:'${fid}',h:h,w:w},'*')}window.addEventListener('resize',r);if(document.readyState==='complete')r();else document.addEventListener('DOMContentLoaded',r);setTimeout(r,60);setTimeout(r,400);})();`;
     // 把 boot 脚本插到 </head>(无 head 则开头),不打断原文档结构
     // ⚠️ quirks mode 撑高(2026-11-07 截图「卡片下面一大片白」第二根因):
     //   碎片卡(<div…> 无 DOCTYPE/无 <html>)进 blob → BackCompat。
@@ -12438,9 +12465,12 @@ if (!(window as unknown as { __vizMsgBound?: boolean }).__vizMsgBound) {
         const h = Math.min(Math.max(Math.round(d.h) + 8, 80), 720); // 上限 720 防失控文档
         // 只在真变化时写高:同值重写也会触发内层 resize → 内层重新上报,
         // 白烧一轮 IPC + 布局(高度不会涨,但会一直空转)。
+        // 1px 以内视为噪声:滚动条出现/消失会让内容回流 ±1px,写回又触发 resize,
+        // 形成 1px 乒乓 → 取消后界面持续抖动(实测症状)。
         // Only write height when it actually changed: rewriting the same value still
         // fires an inner resize → another report → endless no-op round-trips.
-        if (Math.abs((parseFloat(target.style.height) || 0) - h) >= 1) target.style.height = `${h}px`;
+        // Treat ≤1px as noise: scrollbar appear/disappear reflows text by a line.
+        if (Math.abs((parseFloat(target.style.height) || 0) - h) >= 2) target.style.height = `${h}px`;
         // 内容宽不足容器 78% → 卡片收敛到内容宽(留白治理,数据由内层实报,不猜类名)
         // Inner content narrower than 78% of container → shrink card to content width.
         if (typeof d.w === 'number' && d.w > 0) {
