@@ -38,6 +38,7 @@ import {
   type EngineRunOpts,
 } from '../engines';
 import { runAgentLoop, compactHistory, compactWithSpill } from '../AgentLoop';
+import { INTENT_LEDGER_HINT } from '../intent-ledger';
 
 import { routeTask, isAnalysisTask } from './router';
 import { executeFastPath } from './fast-path';
@@ -94,6 +95,7 @@ export class DirectV3Engine implements Engine {
       cwdAnchorSection(conv) +
       V3_SYSTEM_SUFFIX +
       analysisSection +
+      INTENT_LEDGER_HINT +
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +

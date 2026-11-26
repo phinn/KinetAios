@@ -4,8 +4,11 @@
 import { assert, test, run } from './harness';
 import * as store from '../../src/main/store';
 import {
-  assessEvidence, canComplete, recordEvidence, refreshIntentSpend, formatIntent, intentViews,
+  assessEvidence, canComplete, recordEvidence, refreshIntentSpend, formatIntent, intentViews, INTENT_LEDGER_HINT,
 } from '../../src/main/intent-ledger';
+import { runBodyPlan } from '../../src/main/V5/bodyplan';
+import { GENOME_SCHEMA_VERSION, type Genome } from '../../src/main/V5/phylum-types';
+import type { Tool } from '../../src/main/tools';
 import { t, LANGS } from '../../src/shared/i18n';
 import type { EventRow } from '../../src/main/store';
 import type { ConvEvent } from '../../src/shared/types';
@@ -180,6 +183,55 @@ test('i18n:intent.* 四语言齐全,参数可替换', () => {
     assert.ok(t(id, 'intent.evidence', { n: 3 }).includes('3'), `${id} 的 intent.evidence 未替换 {n}`);
     assert.ok(t(id, 'intent.spent', { v: '0.42' }).includes('0.42'), `${id} 的 intent.spent 未替换 {v}`);
   }
+});
+
+test('INTENT_LEDGER_HINT:固定文本,给出建账与完成口径', () => {
+  assert.ok(INTENT_LEDGER_HINT.includes('intent_done'), '必须提示完成要走 intent_done');
+  assert.ok(INTENT_LEDGER_HINT.includes('intent(action="start"'), '必须提示先建意图账');
+  assert.ok(INTENT_LEDGER_HINT.includes('证据'), '必须说明完成要靠证据');
+});
+
+test('V5 bodyplan:systemSuffix 进个体 system,toolCtx 把 convId/turnId 传给工具', async () => {
+  let systemText = '';
+  const seen: { convId?: string; turnId?: string } = {};
+  const probe: Tool = {
+    name: 'probe',
+    description: 'probe',
+    parameters: { type: 'object', properties: {} },
+    readOnly: true,
+    async run(_args, ctx) {
+      seen.convId = ctx.convId;
+      seen.turnId = ctx.turnId;
+      return 'ok';
+    },
+  };
+  let calls = 0;
+  const chat = async (messages: Array<{ role: string; content: unknown }>) => {
+    systemText = String(messages[0]?.content ?? '');
+    calls += 1;
+    return calls === 1
+      ? { content: '', toolCalls: [{ id: 'c1', name: 'probe', arguments: '{}' }], rawAssistant: { role: 'assistant', content: '' }, tokensIn: 1, tokensOut: 1 }
+      : { content: '完成', toolCalls: [], rawAssistant: { role: 'assistant', content: '完成' }, tokensIn: 1, tokensOut: 1 };
+  };
+  const genome: Genome = {
+    version: GENOME_SCHEMA_VERSION, genomeId: 'g-test', lineage: 'l-test', signature: 's-test',
+    routing: { maxSteps: 3, granularity: 1, successPrior: 0.5 },
+    affinity: {}, assertions: [], generation: 0, bornAt: 1,
+  };
+  const r = await runBodyPlan({
+    task: 'do it',
+    cwd: process.cwd(),
+    body: { tools: [probe], removedTools: [], maxSteps: 3, instinctPrompt: '', assertions: [] },
+    genome,
+    chat,
+    tools: [probe],
+    systemSuffix: INTENT_LEDGER_HINT,
+    toolCtx: { convId: 'conv-v5', turnId: 'turn-9' },
+  });
+  assert.equal(r.success, true, r.detail);
+  assert.ok(systemText.includes('意图账本'), '体系提示必须真的进了个体 system');
+  assert.equal(seen.convId, 'conv-v5', 'intent_done 依赖 convId,必须透传到工具 ctx');
+  assert.equal(seen.turnId, 'turn-9');
 });
 
 run();

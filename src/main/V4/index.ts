@@ -31,6 +31,7 @@ import {
   type EngineRunOpts,
 } from '../engines';
 import { runAgentLoop, compactWithSpill } from '../AgentLoop';
+import { INTENT_LEDGER_HINT } from '../intent-ledger';
 import { routeTask, isAnalysisTask } from '../V3/router';
 import { executeFastPath, executeStdPath } from './paths';
 import { compileLegisPlan } from './legis-compiler';
@@ -94,6 +95,7 @@ export class DirectV4Engine implements Engine {
       providerEconomicsSection(snap) +
       cwdAnchorSection(conv) +
       V4_SYSTEM_SUFFIX +
+      INTENT_LEDGER_HINT +
       personaSection(conv) +
       sourceHintSection(conv) +
       goalSection +

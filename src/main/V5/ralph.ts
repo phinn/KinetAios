@@ -10,7 +10,7 @@
 // or the loop budget blows. Acceptance is deterministic (AssertionDsl), never LLM-judged.
 
 import type { AgentEvent } from '../../shared/types';
-import type { Tool } from '../tools';
+import type { Tool, ToolCtx } from '../tools';
 import type { AssertionGene, AssertionDsl, Genome, ExpressedBody } from './phylum-types';
 import { GENOME_SCHEMA_VERSION } from './phylum-types';
 import { runBodyPlan, type BodyPlanResult, type ChatFn } from './bodyplan';
@@ -34,6 +34,10 @@ export interface RalphOpts {
   tools: readonly Tool[];
   signal?: AbortSignal;
   onEvent?: (e: AgentEvent) => void;
+  /** 透传给每轮 bodyplan 的固定 system 段(意图账本提示)。 */
+  systemSuffix?: string;
+  /** 透传给每轮 bodyplan 的工具上下文(convId/turnId)。 */
+  toolCtx?: Partial<ToolCtx>;
   /** 每轮结束回调(记账/实验观察用):轮次、验收裁决、该轮 bodyplan 产物 */
   onLoop?: (loop: number, verdict: AcceptanceVerdict, result: BodyPlanResult) => void;
 }
@@ -127,6 +131,8 @@ export async function runRalphLoop(opts: RalphOpts): Promise<RalphResult> {
       tools: opts.tools,
       signal: opts.signal,
       onEvent: opts.onEvent,
+      systemSuffix: opts.systemSuffix,
+      toolCtx: opts.toolCtx,
     });
     totalSteps += result.steps;
     totalTokens += result.tokens;

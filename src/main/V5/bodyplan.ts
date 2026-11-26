@@ -50,6 +50,10 @@ export interface BodyPlanOpts {
   tools: readonly Tool[];
   signal?: AbortSignal;
   onEvent?: (e: AgentEvent) => void;
+  /** 固定追加到个体 system 的体系段(如意图账本提示):不进基因、不随进化变化。 */
+  systemSuffix?: string;
+  /** 工具执行上下文(convId/turnId 等身份信息)。confirm 仍走个体语义(默认自动放行)。 */
+  toolCtx?: Partial<ToolCtx>;
 }
 
 const MAX_TOOL_OUTPUT_CHARS = 4000;
@@ -67,7 +71,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
   const toolMap = new Map(tools.map((t) => [t.name, t]));
   const toolDefs: ToolDefLike[] = tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
   const messages: ChatMsg[] = [
-    { role: 'system', content: `你是任务执行者。\n${body.instinctPrompt}` },
+    { role: 'system', content: `你是任务执行者。\n${body.instinctPrompt}${opts.systemSuffix ?? ''}` },
     { role: 'user', content: task },
   ];
 
@@ -140,7 +144,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       const startId = `bp${steps}-${call.name}`;
       onEvent?.({ type: 'tool_start', name: call.name, args: call.arguments ?? '', startId });
       try {
-        const ctx: ToolCtx = { cwd: opts.cwd, confirm: async () => true, signal };
+        const ctx: ToolCtx = { ...opts.toolCtx, cwd: opts.cwd, confirm: opts.toolCtx?.confirm ?? (async () => true), signal };
         const t0 = Date.now();
         output = await tool.run(args, ctx);
         const tel = toolTelemetryOf(output);

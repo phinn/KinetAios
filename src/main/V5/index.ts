@@ -29,6 +29,7 @@ import {
 import { express } from './express';
 import { runBodyPlan } from './bodyplan';
 import { runRalphLoop, type RalphOpts } from './ralph';
+import { INTENT_LEDGER_HINT } from '../intent-ledger';
 import { settleRalph, acceptanceFromPrompt } from './ralph-settle';
 import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
@@ -69,6 +70,10 @@ const REQUIRED_TOOLS: Record<string, string[]> = {
   'translate': [],
   'misc': [],
 };
+
+/** 意图账本工具不受基因亲和过滤:提示里让模型调,注册表里就不能把它摘掉。 */
+const INTENT_TOOLS = ['intent', 'intent_done', 'trust_report'];
+const requiredToolsOf = (templateId: string): string[] => [...(REQUIRED_TOOLS[templateId] ?? []), ...INTENT_TOOLS];
 
 const V5_SYSTEM_SUFFIX = `
 
@@ -179,7 +184,7 @@ export class DirectV5Engine implements Engine {
     // 门级步数护栏跟随宿主 maxTurns 配置(0 = 无限,与 AgentLoop userMax 语义一致);
     // 非 0 时夹紧基因值,无限时基因值就是个体预算(仍受 MAX_STEPS_MAX 进化值域约束)。
     const stepCeil = (getSettings().maxTurns ?? 50) === 0 ? 0 : STEP_BUDGET_CEIL;
-    const removed = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).removedTools;
+    const removed = express(genome, allTools(), requiredToolsOf(templateId), stepCeil).removedTools;
     const genTag = `🧬 v5·${tplLabel} | 个体 ${genome.genomeId} 第 ${genome.generation} 代` +
       (removed.length ? ` | 已摘除: ${removed.join(',')}` : '');
     onEvent({ type: 'status', text: genTag });
@@ -192,23 +197,19 @@ export class DirectV5Engine implements Engine {
       pluginSystemPrompts('directV5', prompt);
 
     // ── 执行(bodyplan 共享循环;工具注册表已被表达过滤)──
-    const tools = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).tools;
-    const ctx: ToolCtx = {
-      cwd: conv.cwd,
-      confirm: this.confirm,
-      signal,
+    const tools = express(genome, allTools(), requiredToolsOf(templateId), stepCeil).tools;
+    // bodyplan 内部自建 ToolCtx(不收完整 ctx):这里只透传身份信息,让 intent_done
+    // 能读本会话事件流;confirm/sandbox 维持个体原有语义(一次性执行、自动放行)。
+    const toolCtx: Partial<ToolCtx> = {
       convId: conv.id,
       turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
       crossProjectMemory: conv.crossProjectMemory === true,
-      sandbox: getSettings().sandbox,
     };
-    // bodyplan 内部自建 ToolCtx(不收外部 ctx)—— 传 cwd/confirm 需经 opts;
-    // 这里 opts.cwd 就是 conv.cwd,confirm 走 this.confirm,与 V4 对齐。
 
     const startedTokens = Date.now();
     let outcome;
     try {
-      const body = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil);
+      const body = express(genome, allTools(), requiredToolsOf(templateId), stepCeil);
       if (converged) {
         body.instinctPrompt = (body.instinctPrompt ? body.instinctPrompt + '\n' : '') +
           `这支支系已有连续成功记录(近窗成功率≥${FOSSIL_DEPOSIT_RATE},trials≥${CONVERGE_MIN_TRIALS})。` +
@@ -223,6 +224,8 @@ export class DirectV5Engine implements Engine {
         tools,
         signal,
         onEvent,
+        systemSuffix: INTENT_LEDGER_HINT,
+        toolCtx,
       });
     } catch (e) {
       onEvent({ type: 'error', message: `v5 引擎出错: ${(e as Error)?.message ?? String(e)}` });
@@ -338,7 +341,7 @@ export class DirectV5Engine implements Engine {
   }): Promise<void> {
     const { conv, prompt, templateId, weight, sig, genome, signal, onEvent, reg } = a;
     const stepCeil = (getSettings().maxTurns ?? 50) === 0 ? 0 : STEP_BUDGET_CEIL;
-    const tools = express(genome, allTools(), REQUIRED_TOOLS[templateId] ?? [], stepCeil).tools;
+    const tools = express(genome, allTools(), requiredToolsOf(templateId), stepCeil).tools;
     const genTag = `🔁🧬 v5·ralph@${templateId}@${weight} | 个体 ${genome.genomeId} 第 ${genome.generation} 代(自迭代拓扑)`;
     onEvent({ type: 'status', text: genTag });
 
@@ -352,6 +355,11 @@ export class DirectV5Engine implements Engine {
       tools,
       signal,
       onEvent,
+      systemSuffix: INTENT_LEDGER_HINT,
+      toolCtx: {
+        convId: conv.id,
+        turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
+      },
     };
     let r;
     try {
