@@ -10,6 +10,7 @@ import {
   assessEvidence, canComplete, evaluateIntentAssertions, recordEvidence, refreshIntentSpend, formatIntent, intentViews, INTENT_LEDGER_HINT,
 } from '../../src/main/intent-ledger';
 import { evaluateChecks, parseAssertions, parseExitCode } from '../../src/main/assertions';
+import { failureDigest } from '../../src/main/lesson-signal';
 import { evaluateAcceptance } from '../../src/main/V5/ralph-accept';
 import type { BodyPlanResult } from '../../src/main/V5/bodyplan';
 import { runBodyPlan } from '../../src/main/V5/bodyplan';
@@ -341,6 +342,44 @@ test('evaluateAcceptance:真实 shell 的 [exit 0] 也能过 V5 验收(修前只
     { lastOutput: 'ok\n[exit 0]\n' } as unknown as BodyPlanResult,
   );
   assert.equal(r.pass, true);
+});
+
+test('化石重放路径:无 assistant 答复也能过证据闸(只认检查证据)', () => {
+  seqCounter = 0;
+  const r = assessEvidence([editOk(), diagPass()]);
+  assert.equal(r.hasEdits, true);
+  assert.equal(r.ok, true, r.reasons.join(';'));
+  const bad = assessEvidence([editOk()]);
+  assert.equal(bad.ok, false, '重放只改了文件、没有检查 → 必须拦住');
+});
+
+test('失败信号:工具遥测按 errorKind 聚合,细节去重,空信号不产出', () => {
+  assert.equal(failureDigest({}), '');
+  assert.equal(failureDigest({ steps: [{ name: 'read_file', result: 'ok', outcome: 'ok' }] }), '');
+  const d = failureDigest({
+    steps: [
+      { name: 'edit_file', result: '编辑失败:old_string 未匹配', outcome: 'error', errorKind: 'edit_mismatch', errorSummary: 'old_string 未匹配' },
+      { name: 'edit_file', result: '编辑失败:old_string 未匹配', outcome: 'error', errorKind: 'edit_mismatch', errorSummary: 'old_string 未匹配' },
+      { name: 'shell', result: 'boom\n[exit 1]', outcome: 'error', errorKind: 'exit_code' },
+      { name: 'read_file', result: 'ok', outcome: 'ok' },
+    ],
+  });
+  assert.ok(d.includes('工具失败 3 次'), d);
+  assert.ok(d.includes('edit_mismatch×2'), d);
+  assert.ok(d.includes('exit_code×1'), d);
+  assert.equal(d.split('edit_file:').length, 2, '重复摘要应去重');
+  assert.ok(d.includes('shell: boom'), d);
+});
+
+test('失败信号:intent_done 被拒原因进入 lesson 输入', () => {
+  const d = failureDigest({
+    steps: [{
+      name: 'intent_done', outcome: 'ok',
+      result: '❌ 不能完成意图 #int_1(修登录):\n  - 本次意图改动了文件,但没有任何可核验的通过证据。\n补做缺失的检查后再次调用 intent_done。',
+    }],
+  });
+  assert.ok(d.includes('intent_done 被拒绝'), d);
+  assert.ok(d.includes('没有任何可核验的通过证据'), d);
 });
 
 run();

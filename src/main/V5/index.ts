@@ -29,7 +29,10 @@ import {
 import { express } from './express';
 import { runBodyPlan } from './bodyplan';
 import { runRalphLoop, type RalphOpts } from './ralph';
-import { INTENT_LEDGER_HINT } from '../intent-ledger';
+import {
+  INTENT_LEDGER_HINT, assessEvidence, canComplete, evaluateIntentAssertions, recordEvidence, refreshIntentSpend,
+} from '../intent-ledger';
+import * as store from '../store';
 import { settleRalph, acceptanceFromPrompt } from './ralph-settle';
 import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, type AttributionFacts } from './registry';
@@ -137,12 +140,39 @@ export class DirectV5Engine implements Engine {
         crossProjectMemory: conv.crossProjectMemory === true, sandbox: getSettings().sandbox,
       };
       const assertions = reg.liveBySignature(sig)[0]?.assertions ?? [];
+      // 证据闸(2026-11):化石重放是零 LLM 路径,也是最容易「不发 intent_done 就交付」的角落。
+      // 谱系越成熟,这条路径占比越高 —— 若不验收,证据闸形同虚设。
+      // 口径与 intent_done 完全一致:事件流证据(assessEvidence)+ 契约断言(读盘 / 最后一次 shell)。
+      // 过了才交付并把意图标 done;不过 = 化石 miss(带原因),降级 LLM 开荒。
+      const openIntent = store.latestOpenIntent(conv.id);
       const r = await replay(tpl, prompt, replayTools, assertions, replayCtx, (i, name, out) => {
         onEvent({ type: 'tool', name, args: '(化石重放)', result: out, outcome: 'ok' });
       });
-      reg.noteReplay(tpl.id, r.hit);
-      if (r.hit && r.output !== undefined) {
-        onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${r.steps} 步,0 LLM 调用)。` });
+      let hit = r.hit;
+      let gateMiss: string | null = null;
+      if (hit && openIntent) {
+        const fresh = store.getIntent(openIntent.id);
+        if (!fresh) {
+          hit = false;
+          gateMiss = `意图 #${openIntent.id} 已不存在`;
+        } else {
+          const rows = store.loadEventsSince(fresh.convId, fresh.createdAt);
+          const report = assessEvidence(rows);
+          recordEvidence(fresh.id, report);
+          const spent = refreshIntentSpend(fresh.id);
+          const cwd = store.getConversationCwd(fresh.convId) ?? conv.cwd;
+          const contract = evaluateIntentAssertions(fresh.assertions, cwd, rows);
+          const verdict = canComplete({ ...fresh, spentUSD: spent }, report, contract);
+          if (verdict.ok) store.updateIntent(fresh.id, { status: 'done' });
+          else {
+            hit = false;
+            gateMiss = `证据闸未过:${verdict.reasons.join('; ')}`.slice(0, 240);
+          }
+        }
+      }
+      reg.noteReplay(tpl.id, hit);
+      if (hit && r.output !== undefined) {
+        onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${r.steps} 步,0 LLM 调用${openIntent ? ',证据闸通过' : ''})。` });
         const answer = r.output.trim() || '(任务完成,无文本产物)';
         conv.directHistory = [
           ...conv.directHistory,
@@ -152,7 +182,7 @@ export class DirectV5Engine implements Engine {
         onEvent({ type: 'done' });
         return;
       }
-      onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${r.miss?.reason ?? '?'}),回退 LLM 开荒。` });
+      onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${gateMiss ?? r.miss?.reason ?? '?'}),回退 LLM 开荒。` });
     }
 
     // 出生:无活体 → 配子克隆 / founder

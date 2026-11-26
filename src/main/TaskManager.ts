@@ -19,6 +19,7 @@ import { CORRECTION_RE, isReask } from './turn-signal';
 import { attributeTurnFailure } from './turn-attribution';
 import { decideFailureResponse, pushFailureDirective, cooldownTool, clearFailureState } from './failure-policy';
 import { runMemorySleep } from './memory-sleep';
+import { failureDigest } from './lesson-signal';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -1635,12 +1636,16 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
   没有 rule 就输出空数组,不要硬凑。
 - "lessons": [{ "text": "≤ 40字陈述句,写清「场景+做法+原因」", "importance": 6-10 }] 数组 —— 踩坑后的技术教训,关于「怎么做这件事会失败/成功」,不是对助手的约束(rule 管那个),也不是用户偏好(fact 管那个)。
   什么时候提取 lesson:修复了报错/调试通了问题/发现了反直觉机制,且下次在同一个仓库大概率再遇到。例:"simctl recordVideo 是 VFR,画面静止不出帧,duration 元数据缩水,验内容用帧数别信 duration" / "Electron spawn .cmd 必须 shell:true 否则 CVE 拦截直接报错" / "patch 旧 appInfo 必 409,新版本要克隆新 appInfo"。
-  同一次踩坑,rule 和 lesson 都提:rule 记「禁止/必须」约束,lesson 记「技术机制为什么」。没有 lesson 就输出空数组,不要硬凑。
+  同一次踩坑,rule 和 lesson 都提:rule 记「禁止/必须」约束,lesson 记「技术机制为什么」。若用户消息里给出「失败信号」,lesson 必须针对这些真实失败写清根因与对策;没有信号不要编造踩坑。没有 lesson 就输出空数组,不要硬凑。
 - "triples": [{ "s": 主语, "p": 谓语, "o": 宾语 }] 三元组,例 {"s":"用户","p":"偏好","o":"Tailwind"} / {"s":"KinetAios","p":"用","o":"better-sqlite3"} / {"s":"项目","p":"构建","o":"npm run dist"}。每段 ≤ 14 字。
 不提取:本次任务的一次性细节(如临时变量名)、纯时间敏感(今天/这次)、单次 bug 的具体修复步骤(除非是通用 pattern)。
 豁免(必须提取,上面"一次性细节"不适用):产物形态决策("X 图=直传不套壳")、用户明确否决的方案("否决了裸图拼接")、路径级产物位置("KinetBrief 素材在 framed_v1 目录")、用户对成品的验收标准("截图必须亮色")。这类正是跨会话最易丢、丢了会重犯的。
 无持久事实就输出 {"facts":[],"project_facts":[],"rules":[],"lessons":[],"triples":[]}。只输出 JSON,不要解释。`;
-    const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`;
+    // 失败信号入抽取:工具遥测(errorKind/摘要)、intent_done 拒绝原因、轮次错误。
+    // 之前 lesson 全靠模型从答复里自由总结,真实失败反而没进管道 → 教训靠编。这里只给事实。
+    const digest = failureDigest({ steps: turn.steps, errorMsg: turn.error, errorKind: turn.errorKind });
+    const user = `用户: ${prompt}\n\n助手: ${turn.answer.slice(0, 2000)}`
+      + (digest ? `\n\n失败信号(工具遥测/验收拒绝,真实发生):\n${digest}` : '');
     const ac = new AbortController();
     // 90s 预算:此调用跑完整 LLM 流式(可能含 429 退避重试),30s 会自我熔断
     // → '[memory] extract failed: aborted' 噪声 + 事实白跑(2026-11-03 事故)。
