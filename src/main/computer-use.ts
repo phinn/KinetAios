@@ -7,6 +7,7 @@
 import { desktopCapturer, screen as electronScreen, BrowserWindow } from 'electron';
 import { exec, execSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { rankWindowCandidates } from './window-match';
 
 // ── Screenshot ── 截屏,返回 base64 PNG + 屏幕尺寸
 export interface ScreenshotResult {
@@ -330,6 +331,16 @@ export async function captureWindowByName(
     }
     const matched = usable.filter((s) => s.name.toLowerCase().includes(q));
     let distinctNames = [...new Set(matched.map((s) => s.name.trim()))];
+    // 0 个可截窗口时,"找不到标题"是误导:通常是屏幕录制权限没给(缩略图全空),
+    // 这时任何标题都截不到。直接指到权限设置,省掉模型反复换关键词。
+    if (!usable.length) {
+      await details();
+      return {
+        ok: false,
+        error: '没有可截取的窗口(所有窗口缩略图为空)。\n'
+          + '最常见原因:屏幕录制权限未授予 → 系统设置 → 隐私与安全性 → 屏幕录制 → 勾选 KinetAios,然后重启应用。',
+      };
+    }
     // 二段回退:整串没命中时,拿最长词元再试一次。真实失败里 224/249 都是"整串没命中" ——
     // 模型写的标题常带后缀或语序不同(「Chrome 浏览器」vs 实际「Google Chrome」),
     // 这类差异不该让整轮作废。只在唯一命中时采信,绝不"猜一个":多个候选照样报错列清单。
@@ -388,7 +399,12 @@ export async function captureWindowByName(
     }
     if (!matched.length) {
       await details();
-      return { ok: false, error: `未找到标题或应用名含「${nameSubstr}」的窗口。当前可截窗口(标题 + 宿主应用):${formatWindowCandidates(usable, ownerOf)}\n→ 从上面挑一个标题原样作为 title 重试;标题是文档名的窗口(如预览里的图片)请按其应用名重试。` };
+      // 按相似度排序后给清单(最接近的排前面并标注),不再额外重复一遍候选行 —— 同名窗口只出现一次。
+      const cands = rankWindowCandidates(nameSubstr, usable.map((s) => ({ name: s.name.trim(), owner: ownerOf(s.name) })));
+      const scoreOf = new Map(cands.map((c) => [c.name, c.score]));
+      const sorted = [...usable].sort((a, b) => (scoreOf.get(b.name.trim()) ?? 0) - (scoreOf.get(a.name.trim()) ?? 0));
+      const best = cands.length ? '最接近的排在最前面,优先选第一个' : '';
+      return { ok: false, error: `未找到标题或应用名含「${nameSubstr}」的窗口。\n当前可截窗口(标题 + 宿主应用${best ? `,${best}` : ''}):${formatWindowCandidates(sorted, ownerOf)}\n→ 从上面挑一个标题原样作为 title 重试;标题是文档名的窗口(如预览里的图片)请按其应用名重试。` };
     }
     // 短名(≤2 字符)不再一律拒绝:只有唯一命中时并无误中风险,拦掉它纯属自伤 ——
     // 主窗口标题常就是「预览」「设置」这种两字名,旧逻辑让模型永远截不到、只能反复换词重试。

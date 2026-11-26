@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists } from './skill-requires';
 
-export type TestRunner = 'vitest' | 'jest' | 'mocha' | 'pytest' | 'go';
+export type TestRunner = 'vitest' | 'jest' | 'mocha' | 'pytest' | 'go' | 'shell';
 
 export interface TestPlan {
   runner: TestRunner;
@@ -120,6 +120,25 @@ function isPyTest(abs: string): boolean {
   return /^(test_.*|.*_test)\.py$/.test(base);
 }
 
+/** 自研 runner(如 node scripts/run-tests.js)无法按文件过滤时,用 KINET_TEST_CMD 自己声明命令。 */
+function shellPlan(root: string, files: string[], label: string): TestPlan | null {
+  const tmpl = (process.env.KINET_TEST_CMD ?? '').trim();
+  if (!tmpl) return null;
+  const quoted = files.map((f) => `"${f.replace(/"/g, '\\"')}"`).join(' ');
+  // {files} 占位符可精确控制位置;没有占位符就追加在命令末尾。
+  const command = tmpl.includes('{files}') ? tmpl.replace(/\{files\}/g, quoted) : `${tmpl} ${quoted}`.trim();
+  const win = process.platform === 'win32';
+  return {
+    runner: 'shell',
+    root,
+    cmd: win ? 'cmd.exe' : '/bin/sh',
+    args: win ? ['/d', '/s', '/c', command] : ['-c', command],
+    files,
+    label: `${label} · ${files.length} 个文件`,
+    timeoutMs: TEST_FAIL_TIMEOUT_MS,
+  };
+}
+
 /** 该文件改动后应该跑哪些测试;判定不了返回 null(静默跳过)。 */
 export function planAffectedTests(file: string, cwd: string, probe: TestProbe = defaultProbe): TestPlan | null {
   const abs = path.resolve(file);
@@ -131,12 +150,14 @@ export function planAffectedTests(file: string, cwd: string, probe: TestProbe = 
   if (ext === '.py') {
     const root = nearestRoot(dir, ['pyproject.toml', 'setup.py', 'setup.cfg', 'requirements.txt'], cwd);
     if (!root) return null;
-    const venvPytest = path.join(root, '.venv', 'bin', 'pytest');
-    const cmd = fs.existsSync(venvPytest) ? venvPytest : probe.which('pytest') ? 'pytest' : null;
-    if (!cmd) return null;
     const tests = testFilesOf(root, isPyTest);
     const files = selectAffected(abs, root, tests, base, (t) => pyImportPattern(base).test(readText(t)));
     if (!files.length) return null;
+    const custom = shellPlan(root, files, '自定义测试');
+    if (custom) return custom;
+    const venvPytest = path.join(root, '.venv', 'bin', 'pytest');
+    const cmd = fs.existsSync(venvPytest) ? venvPytest : probe.which('pytest') ? 'pytest' : null;
+    if (!cmd) return null;
     return { runner: 'pytest', root, cmd, args: [...files], files, label: `pytest · ${files.length} 个文件`, timeoutMs: TEST_FAIL_TIMEOUT_MS };
   }
 
@@ -147,12 +168,19 @@ export function planAffectedTests(file: string, cwd: string, probe: TestProbe = 
     try { hasTest = fs.readdirSync(dir).some((n) => n.endsWith('_test.go')); } catch { /* ignore */ }
     if (!hasTest) return null;
     const rel = path.relative(root, dir).replace(/\\/g, '/');
+    const custom = shellPlan(root, [rel || '.'], '自定义测试');
+    if (custom) return custom;
     return { runner: 'go', root, cmd: 'go', args: ['test', rel ? `./${rel}` : './...'], files: [rel || '.'], label: `go test ./${rel || '...'}`, timeoutMs: TEST_FAIL_TIMEOUT_MS };
   }
 
-  // JS / TS
+  // JS / TS:先算出受影响的测试,再决定用哪个 runner(KINET_TEST_CMD 优先,支持自研 runner)。
   const root = nearestRoot(dir, ['package.json'], cwd);
   if (!root) return null;
+  const tests = testFilesOf(root, isJsTest).filter((t) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(t));
+  const files = selectAffected(abs, root, tests, base, (t) => importPattern(base).test(readText(t)));
+  if (!files.length) return null;
+  const custom = shellPlan(root, files, '自定义测试');
+  if (custom) return custom;
   const runners: Array<{ runner: TestRunner; bin: string }> = [
     { runner: 'vitest', bin: 'vitest' },
     { runner: 'jest', bin: 'jest' },
@@ -160,9 +188,6 @@ export function planAffectedTests(file: string, cwd: string, probe: TestProbe = 
   ];
   const hit = runners.map((r) => ({ ...r, path: localBin(root, r.bin, probe) })).find((r) => r.path);
   if (!hit || !hit.path) return null;
-  const tests = testFilesOf(root, isJsTest).filter((t) => /\.(ts|tsx|js|jsx|mjs|cjs)$/.test(t));
-  const files = selectAffected(abs, root, tests, base, (t) => importPattern(base).test(readText(t)));
-  if (!files.length) return null;
   const args = hit.runner === 'vitest' ? ['run', ...files]
     : hit.runner === 'jest' ? ['--runTestsByPath', ...files, '--silent']
       : [...files];

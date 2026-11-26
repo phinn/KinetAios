@@ -105,6 +105,26 @@ test('失败解析:跨 runner 的常见形态,去 ANSI/耗时/重复', () => {
   assert.ok(parseTestFailures('boom happened', 2).some((x) => x.includes('boom')));
 });
 
+test('KINET_TEST_CMD:自研 runner 也能按受影响文件跑', () => {
+  const prev = process.env.KINET_TEST_CMD;
+  process.env.KINET_TEST_CMD = 'node scripts/run-tests.js --only {files}';
+  try {
+    const root = mkRepo({
+      'package.json': '{}',
+      'src/util.ts': 'export const x = 1;\n',
+      'src/util.test.ts': 'import "./util";\n',
+    });
+    const plan = planAffectedTests(path.join(root, 'src/util.ts'), root, probeStub);
+    assert.ok(plan, '有自定义命令时应能规划');
+    assert.equal(plan!.runner, 'shell');
+    assert.ok(plan!.args.join(' ').includes('src/util.test.ts'), plan!.args.join(' '));
+    assert.ok(plan!.args.join(' ').includes('--only'));
+  } finally {
+    if (prev === undefined) delete process.env.KINET_TEST_CMD;
+    else process.env.KINET_TEST_CMD = prev;
+  }
+});
+
 test('入口:没有可用计划时不 spawn、不产生文本', async () => {
   const root = mkRepo({ 'README.md': '# hi' });
   assert.equal(await testAfterEdit({ cwd: root, file: path.join(root, 'README.md'), probe: probeStub }), '');

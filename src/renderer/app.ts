@@ -4,6 +4,7 @@ import { applyEvent, ENGINE_LABELS, CONTEXT_MODES } from '../shared/types';
 import type { TodoItem } from '../shared/types';
 import { t, engineLabel, setPluginEngineLabels, LANGS, type Lang } from '../shared/i18n';
 import { swapBaseUrlForProtocol } from '../shared/providerEndpoints';
+import { formatUsageStats } from '../shared/usage-format';
 import { engineColor } from './engine-colors';
 import type { ApprovalPolicy, AppSettings, ChatMsg, Conversation, ContextMode, EngineKind, GitSnapshot, KinetAPI, MemorySyncResult, PipelineStage, SkillInfo, TeamInfo, TeamMemberInfo, TeamEvent, MemberStatus, Turn, WorkflowState } from '../shared/types';
 import { renderMarkdown as md, decodeHTMLEntities } from './markdown';
@@ -7375,6 +7376,14 @@ async function showSettings() {
       </div>
       </div><!-- /goal panel -->
 
+        <!-- 使用统计:工具错误率/限流/成本,用来验证"减少返工"是否真的有效 -->
+        <div class="s-sub-panel" style="margin-top:16px">
+          <div class="s-sub-panel-title">${tr('settings.usage.title')}</div>
+          <div class="s-sub-panel-desc">${tr('settings.usage.desc')}</div>
+          <button id="s-usage-refresh" style="margin-top:8px">${tr('settings.usage.refresh')}</button>
+          <pre id="s-usage-out" style="white-space:pre-wrap;font:12px/1.45 ui-monospace,Menlo,monospace;background:rgba(127,127,127,.10);border-radius:8px;padding:10px;margin:8px 0 0;max-height:240px;overflow:auto">${esc(tr('settings.usage.hint'))}</pre>
+        </div>
+
         </div><!-- /s-body -->
       </div><!-- /s-layout -->
 
@@ -7684,8 +7693,20 @@ async function showSettings() {
     msg.style.color = 'var(--muted)';
   };
 
-  document.getElementById('s-save')!.onclick = async () => {
-    const ns = readSettingsForm();
+  // 使用统计:打开设置页就拉一次(本地 SQLite,开销很小),按钮可手动刷新。
+  {
+    const out = document.getElementById('s-usage-out');
+    const refresh = async () => {
+      if (!out) return;
+      out.textContent = '…';
+      const r = await api.toolUsageStats(7);
+      out.textContent = r.ok && r.stats ? formatUsageStats(r.stats) : (r.error ?? 'error');
+    };
+    const btn = document.getElementById('s-usage-refresh');
+    if (btn) btn.onclick = () => void refresh();
+    void refresh();
+  }
+  document.getElementById('s-save')!.onclick = async () => {    const ns = readSettingsForm();
     await api.saveSettings(ns);
     profileCache = ns.modelProfiles || []; // 同步缓存
     lang = ns.lang; // 语言切了 → 刷静态文本 + 重渲(侧栏/主区/设置面板自身)
@@ -13123,6 +13144,7 @@ async function renderSnapshotList(): Promise<void> {
         <div class="mm-text snap-path">${esc(rel)}</div>
         <div class="mm-from">${esc(s.tool)} · ${esc(when)} · ${esc(from)}</div>
         <div class="mm-actions">
+          <button class="ghost snap-preview">${esc(tr('snap.preview'))}</button>
           <button class="ghost snap-restore" data-i18n="snap.restore">${esc(tr('snap.restore'))}</button>
         </div>
       </div>`;
@@ -13130,6 +13152,28 @@ async function renderSnapshotList(): Promise<void> {
     .join('');
   listEl.querySelectorAll<HTMLElement>('.mm-row').forEach((row) => {
     const id = row.dataset.id!;
+    // 预览:展示"回滚会改掉什么"(当前文件 → 快照原文),再决定是否还原。
+    row.querySelector<HTMLElement>('.snap-preview')!.onclick = async () => {
+      const btn = row.querySelector<HTMLElement>('.snap-preview')!;
+      const prev = row.nextElementSibling as HTMLElement | null;
+      if (prev && prev.classList.contains('snap-diff-preview')) {
+        prev.remove();
+        btn.textContent = tr('snap.preview');
+        return;
+      }
+      const d = await api.snapshotDiff(cwd, id);
+      if (!d.ok) {
+        uxToast.err(tr('toast.restoreFailed', { msg: d.error ?? '' }));
+        return;
+      }
+      const pre = document.createElement('pre');
+      pre.className = 'snap-diff-preview';
+      pre.style.cssText = 'white-space:pre-wrap;font:12px/1.45 ui-monospace,Menlo,monospace;background:rgba(127,127,127,.12);border-radius:8px;padding:8px 10px;margin:4px 0 8px;max-height:260px;overflow:auto';
+      const head = d.fileMissing ? `${tr('snap.fileMissing')}\n\n` : '';
+      pre.textContent = `${head}+${d.added ?? 0} -${d.removed ?? 0}${d.truncated ? ' (truncated)' : ''}\n${d.diff || tr('snap.diffEmpty')}`;
+      row.insertAdjacentElement('afterend', pre);
+      btn.textContent = tr('snap.hidePreview');
+    };
     row.querySelector<HTMLElement>('.snap-restore')!.onclick = async () => {
       if (!confirm(tr('snap.restoreConfirm'))) return;
       const res = await api.snapshotRestore(cwd, id);

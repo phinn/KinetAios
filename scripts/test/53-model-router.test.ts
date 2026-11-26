@@ -51,4 +51,20 @@ test('空白字符串不算配置(避免设置里误输入空格就切模型)', 
   });
 });
 
+test('跨 provider:profile/模型 能解析到 profileId;未知 profile 不静默切换', () => {
+  const settings = {
+    modelRouting: { vision: 'Work/glm-4.6v' },
+    modelProfiles: [{ id: 'p1', name: 'Work' }],
+  };
+  const d = resolveModelRoute({ capability: 'vision', settings, convModel: 'conv' });
+  assert.equal(d.model, 'glm-4.6v');
+  assert.equal(d.profileId, 'p1');
+  assert.equal(d.source, 'settings');
+
+  const bad = resolveModelRoute({ capability: 'vision', settings: { modelRouting: { vision: 'Nope/m' }, modelProfiles: [{ id: 'p1', name: 'Work' }] } });
+  assert.equal(bad.model, 'Nope/m');
+  assert.equal(bad.profileId, undefined);
+  assert.ok(bad.reason.includes('未找到 profile'));
+});
+
 run();

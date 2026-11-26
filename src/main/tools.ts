@@ -66,6 +66,7 @@ import { fuzzyEdit } from './edit-match';
 import { testAfterEdit } from './auto-test';
 import { autoVisualAfterEdit } from './auto-visual';
 import { resolveModelRoute } from './model-router';
+import { formatUsageStats } from '../shared/usage-format';
 import { rankGrepHits, type GrepHit } from './search-rank';
 import * as store from './store';
 import { getSettings, snapshot } from './settings';
@@ -938,17 +939,29 @@ export function buildBlackboardReadTool(teamId: string): Tool {
 const readFile: Tool = {
   name: 'read_file',
   readOnly: true,
-  description: '读取本地文件内容(UTF-8 文本)。可选 start_line/end_line 按行范围读取大文件。不传行范围则读全文(上限 50000 字符)。',
+  description: '读取本地文件内容(UTF-8 文本)。可选 start_line/end_line 按行范围读取大文件。不传行范围则读全文(上限 50000 字符)。paths 可一次读多个文件(探查合批,直接省掉多次往返)。',
   parameters: {
     type: 'object',
     properties: {
       path: { type: 'string', description: '文件绝对路径或相对路径' },
+      paths: { type: 'array', items: { type: 'string' }, description: '要一次读取的多个文件(最多 8 个)。传了它就忽略 path;行范围参数对每个文件生效。' },
       start_line: { type: 'number', description: '起始行号(1-based,含)。不传则从头读。' },
       end_line: { type: 'number', description: '结束行号(1-based,含)。不传则读到末尾。' },
     },
-    required: ['path'],
+    required: [],
   },
   async run(args, ctx) {
+    // 多文件合批:模型一次请求多个文件,结果按序拼接,省掉 N-1 次模型往返。
+    const multi = Array.isArray(args.paths) ? (args.paths as unknown[]).map(String).map((s) => s.trim()).filter(Boolean).slice(0, 8) : [];
+    if (multi.length) {
+      const parts: string[] = [];
+      for (const rel of multi) {
+        const one = await readFile.run({ ...args, path: rel, paths: undefined }, ctx);
+        parts.push(`=== ${rel} ===\n${one}`);
+      }
+      return parts.join('\n\n');
+    }
+    if (!args.path) return '缺少 path 或 paths 参数。';
     const p = expandPath((args.path as string) ?? '', ctx.cwd);
     if (!p) return '缺少 path';
     // 沙箱检查:readOnly 模式限制读取范围在 cwd 内(防止 LLM 读 ~/.ssh/id_rsa 等)
@@ -3490,13 +3503,19 @@ const verifyVisual: Tool = {
     // 没配置就跟随会话模型(验收要用会话实际在跑的那个模型才可信)。
     const settings = getSettings();
     const prof = ctx.convId ? store.getConversationModelProfile(ctx.convId) : null;
+    const activeProfile = prof?.profileId ?? null;
     // 基准模型取该会话 profile 的模型(而不是全局默认):模型和 provider 必须同源。
-    const baseModel = snapshot(prof?.profileId ?? null).model;
-    const route = resolveModelRoute({ capability: 'vision', settings, convModel: prof?.model ?? undefined, baseModel });
+    const route = resolveModelRoute({
+      capability: 'vision',
+      settings,
+      convModel: prof?.model ?? undefined,
+      baseModel: snapshot(activeProfile).model,
+    });
+    const routedProfile = route.profileId ?? activeProfile; // 跨 profile 路由:视觉模型可以来自另一个 provider
     try {
       const out = await supervisorComplete(
         buildVisionMessages(dataUrl, criteria, args?.context ? String(args.context) : undefined),
-        prof?.profileId ?? null,
+        routedProfile,
         ctx.signal,
         route.model || undefined,
       );
@@ -3777,7 +3796,16 @@ const browserEvalTool: Tool = {
     try {
       return await browserEval(String(args.expression), args.tab_id ? String(args.tab_id) : undefined, args.url ? String(args.url) : undefined);
     } catch (e) {
-      return `❌ ${(e as Error).message}`;
+      const msg = (e as Error).message ?? String(e);
+      // 结构化失败原因:模型知道"是哪一类错"才能一次改对,而不是反复重试。
+      if (/not connected|target closed|no such target|session closed|no tab/i.test(msg)) {
+        return `❌ browser_eval 失败(页面已关闭或未连接): ${msg}\n→ 先用 browser_navigate 打开页面,或 browser_tabs 确认当前 tab。`;
+      }
+      if (/timed? ?out/i.test(msg)) return `❌ browser_eval 失败(执行超时): ${msg}\n→ 检查表达式是否 await 了不会结束的 Promise。`;
+      if (/SyntaxError|ReferenceError|TypeError|is not a function|undefined is not/i.test(msg)) {
+        return `❌ browser_eval 失败(页面内 JS 错误): ${msg}\n→ 表达式在页面上下文执行,不能引用 Node/主进程变量;先用简单的 document.title 验证连通性。`;
+      }
+      return `❌ browser_eval 失败: ${msg}`;
     }
   },
 };
@@ -3932,7 +3960,11 @@ const axScriptTool: Tool = {
       if (errOut && /not allowed assistive|assistive access|-25211|-1719/i.test(errOut)) {
         return `❌ 辅助功能权限不足: ${errOut}\n→ 系统设置 → 隐私与安全性 → 辅助功能 → 勾选 KinetAios(或其终端宿主)`;
       }
-      if (errOut && /execution error/i.test(errOut)) return `❌ AppleScript 错误: ${errOut}`;
+      if (errOut && /execution error/i.test(errOut)) {
+        return `❌ AppleScript 错误: ${errOut}\n→ 排查顺序:① process 名是否应用名(Safari/Finder/Notes,不是窗口标题)`
+          + ' ② 元素路径是否存在(先 `entire contents of window 1` 探查)'
+          + ' ③ 是否缺自动化权限(系统设置 → 隐私与安全性 → 自动化)';
+      }
       return out ? `✅ ${out}` : '✅ 执行成功(无返回值)';
     } catch (e) {
       const err = e as { message?: string; killed?: boolean };
@@ -4124,8 +4156,27 @@ const cronManage: Tool = {
   },
 };
 
+const usageStatsTool: Tool = {
+  name: 'usage_stats',
+  description: '查看最近 N 天的工具调用/错误率/限流/成本统计(按工具名与错误类型聚合)。用来定位返工热点(例如 edit_file 失败率是否下降、哪个工具最常失败),只看统计不改任何东西。',
+  parameters: {
+    type: 'object',
+    properties: {
+      days: { type: 'number', description: '统计窗口天数,默认 7,最大 90' },
+      limit: { type: 'number', description: '最多列出几个工具,默认 12' },
+    },
+    required: [],
+  },
+  readOnly: true,
+  async run(args) {
+    const days = Math.min(90, Math.max(1, Number(args?.days) || 7));
+    const limit = Math.min(30, Math.max(1, Number(args?.limit) || 12));
+    return formatUsageStats(store.usageStats(days, limit));
+  },
+};
+
 export function builtinTools(): Tool[] {
-  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, diagnosticsTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, verifyVisual, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
+  return [shell, waitForTool, readFile, writeFile, editFile, grep, glob, repoMapTool, diagnosticsTool, usageStatsTool, grepToolOutputTool, webFetch, webSearch, askUser, recallMemory, gitDiff, rememberFact, recallFact, memoryReplace, memoryAppend, lessonManage, dispatchAgent, spawnTeam, teamBroadcast, teamSend, teamClose, workflowRun, workflowJobTool, jobResultTool, skillCheckTool, remoteAgentTool, videoGen, feishuSendFile, wecomSendFile, screenshot, screenshot_window, verifyVisual, mouseAction, mouseScrollTool, mouseDragTool, keyboardTypeTool, keyboardKeyTool, browserNavigateTool, browserSnapshotTool, browserClickTool, browserTypeTool, browserSelectTool, browserEvalTool, browserScreenshotTool, browserUploadTool, browserCookieTool, browserTabsTool, axScriptTool, todoWrite, cronList, cronManage, wecomApprovalList, wecomApprovalDetail];
 }
 
 // 内置工具 + 用户插件(<userData>/plugins/*)贡献的工具。
@@ -4150,7 +4201,7 @@ export function allTools(channel?: 'feishu' | 'wecom'): Tool[] {
 // recall_fact 算只读(读 SQLite),可加;remember_fact 会改 SQLite,所以不放(子 agent 默认不写)。
 export function readOnlyTools(bbCtx?: { teamId?: string }): Tool[] {
   // 子 agent 无会话来源通道 → send_file 类工具一律不给(它们只在对应 IM 频道会话有意义)。
-  const tools = [readFile, grep, glob, repoMapTool, skillCheckTool, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
+  const tools = [readFile, grep, glob, repoMapTool, skillCheckTool, usageStatsTool, grepToolOutputTool, webFetch, webSearch, recallMemory, gitDiff, recallFact];
   // 团队黑板:member 可读共享工作区(notes/artifacts + 已缓存文件)。写侧由 host 自动落黑板。
   if (bbCtx?.teamId) tools.push(buildBlackboardReadTool(bbCtx.teamId));
   return tools;

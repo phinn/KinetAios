@@ -309,6 +309,29 @@ export type BalanceSnapshot = {
   provider: 'minimax' | 'minimax-plan' | 'zhipu-coding-plan' | 'zhipu-open' | 'aliyun-token-plan' | 'custom';
 };
 
+// ── 使用统计(usage_stats 工具 / 设置页共用)──
+export interface ToolUsageRow {
+  name: string;
+  calls: number;
+  /** 有 outcome 的调用数(遥测上线后的口径) */
+  measured: number;
+  errors: number;
+  rate: number;
+  kinds: Record<string, number>;
+}
+
+export interface UsageStats {
+  days: number;
+  turnErrors: number;
+  rateLimited: number;
+  costUSD: number;
+  toolCalls: number;
+  toolCallsMeasured: number;
+  toolErrors: number;
+  toolErrorRate: number;
+  tools: ToolUsageRow[];
+}
+
 export type AppSettings = {
   apiKey: string;
   baseURL: string;
@@ -1198,6 +1221,10 @@ export interface KinetAPI {
   // 快照面板:列出 / 还原(写入前自动快照的文件原文)。
   snapshotList(cwd: string, convId?: string): Promise<{ ok: boolean; items?: Array<{ id: string; convId: string; absPath: string; tool: string; ts: number }>; error?: string }>;
   snapshotRestore(cwd: string, id: string): Promise<{ ok: boolean; error?: string }>;
+  // 预览回滚会改掉什么(unified diff:当前文件 → 快照原文)
+  snapshotDiff(cwd: string, id: string): Promise<{ ok: boolean; error?: string; diff?: string; added?: number; removed?: number; truncated?: boolean; absPath?: string; fileMissing?: boolean }>;
+  // 使用统计(工具错误率/限流/成本),设置页展示
+  toolUsageStats(days?: number): Promise<{ ok: boolean; stats?: UsageStats; error?: string }>;
   // Plugin SDK v2:<userData>/plugins/* 下的扩展, 贡献 tools / slashCommands / systemPrompt / panel。列出 + 重载 + 安装 + 卸载。
   pluginList(): Promise<{ ok: boolean; items?: Array<{ name: string; version: string; description?: string; author?: string; category: string; icon?: string; permissions: string[]; engines: string[]; toolCount: number; slashCommandCount: number; tools: { name: string; description: string }[]; slashCommands: { name: string; description: string }[]; systemPrompt?: string; hasPanel?: boolean; panelTitle?: string; panelIcon?: string; enabled: boolean; error?: string; dir: string; engine?: { bin?: string; id?: string; label?: string; protocol?: string }; engineError?: string; engineSettings?: Array<{ key: string; label?: string; placeholder?: string; default?: string; secret?: boolean }>; engineSettingsValues?: Record<string, string> }>; error?: string }>;
   pluginReload(): Promise<{ ok: boolean; count?: number; error?: string }>;

@@ -3,6 +3,7 @@
 // ponytail: 不做 cascade —— restore 一条不影响其它快照,用户可顺序 restore 多条。
 import fs from 'node:fs';
 import path from 'node:path';
+import { unifiedDiff } from '../shared/diff';
 
 export interface Snapshot {
   id: string;
@@ -112,8 +113,38 @@ export function listSnapshots(cwd: string, convId?: string): SnapshotMeta[] {
   }
 }
 
-export function restoreSnapshot(cwd: string, id: string): { ok: boolean; error?: string } {
+export interface SnapshotDiff {
+  ok: boolean;
+  error?: string;
+  diff?: string;
+  added?: number;
+  removed?: number;
+  truncated?: boolean;
+  absPath?: string;
+  /** 当前文件已不存在(删除了)时 diff 表示"回滚会重新创建它" */
+  fileMissing?: boolean;
+}
+
+/** 预览"回滚会改掉什么":快照原文(前) vs 当前文件(后)。 */
+export function snapshotDiff(cwd: string, id: string): SnapshotDiff {
   try {
+    const snap = JSON.parse(fs.readFileSync(file(cwd, id), 'utf8')) as Snapshot;
+    let current = '';
+    let fileMissing = false;
+    try {
+      current = fs.readFileSync(snap.absPath, 'utf8').replace(/^\ufeff/, '');
+    } catch {
+      fileMissing = true;
+    }
+    const label = path.relative(cwd, snap.absPath) || snap.absPath;
+    const d = unifiedDiff(current, snap.contentBefore, { label });
+    return { ok: true, diff: d.text, added: d.added, removed: d.removed, truncated: d.truncated, absPath: snap.absPath, fileMissing };
+  } catch (e) {
+    return { ok: false, error: String(e) };
+  }
+}
+
+export function restoreSnapshot(cwd: string, id: string): { ok: boolean; error?: string } {  try {
     const snap = JSON.parse(fs.readFileSync(file(cwd, id), 'utf8')) as Snapshot;
     // BOM 保真:快照存的是 decode 后文本(BOM 已剥离);原文件带 BOM 时 restore 要补回,
     // 否则回滚后的文件和改前字节不一致(C 井/PS1 等对 BOM 敏感)。

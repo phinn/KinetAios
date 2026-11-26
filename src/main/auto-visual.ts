@@ -66,7 +66,7 @@ export async function autoVisualAfterEdit(opts: { cwd: string; file: string }): 
     const route = resolveModelRoute({ capability: 'vision', settings, convModel: settings.model, baseModel: settings.model });
     const out = await supervisorComplete(
       buildVisionMessages(`data:image/png;base64,${shot.base64}`, AUTO_VISUAL_CRITERIA),
-      null,
+      route.profileId ?? null,
       AbortSignal.timeout(90_000),
       route.model || undefined,
     );

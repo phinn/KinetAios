@@ -10,6 +10,7 @@
 // - 纯检测 + 纯解析可注入探针(测试不 spawn 真编译器);执行侧用 execFile(argv 直传,不过 shell)。
 // - 任何一步失败(工具没装/项目没配置/超时)→ 静默跳过:自动诊断是增强,不能反过来拖慢编辑。
 import { execFile } from 'node:child_process';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { commandExists } from './skill-requires';
@@ -351,6 +352,19 @@ export async function runPlan(plan: DiagPlan): Promise<{ findings: DiagFinding[]
 // key 含完整命令:同一仓库的多套配置(tsconfig.main / tsconfig.renderer)基线互不污染。
 const baselines = new Map<string, Set<string>>();
 const inflight = new Set<string>();
+// 同一份内容不必重复诊断:文件写完立刻再写一次相同内容(或格式化回写)时直接跳过,
+// 省掉一次几秒的 tsc。内容变了才重新跑。
+const lastHash = new Map<string, string>();
+
+function contentHash(file: string): string {
+  try {
+    const st = fs.statSync(file);
+    if (!st.isFile() || st.size > 4 * 1024 * 1024) return '';
+    return crypto.createHash('sha1').update(fs.readFileSync(file)).digest('hex');
+  } catch {
+    return '';
+  }
+}
 
 function planKey(plan: DiagPlan): string {
   return `${plan.kind}|${plan.root}|${plan.args.join(' ')}`;
@@ -403,12 +417,15 @@ export async function diagnoseAfterEdit(opts: { cwd: string; file: string; probe
   const plan = planDiagnostics(opts.file, opts.cwd, opts.probe ?? defaultProbe);
   if (!plan) return '';
   const key = planKey(plan);
+  const hash = contentHash(plan.file ?? opts.file);
+  if (hash && lastHash.get(key) === hash) return ''; // 内容没变,上次结论仍然有效
   // 同一个项目同时只跑一个检查(并发编辑时后一次直接跳过,避免叠好几份 tsc)。
   if (inflight.has(key)) return '';
   inflight.add(key);
   try {
     const res = await runPlan(plan);
     if (!res) return '';
+    if (hash) lastHash.set(key, hash);
     const previous = baselines.get(key) ?? null;
     const picked = selectFeedback(res.findings, previous, plan.file, plan.root);
     baselines.set(key, new Set(res.findings.map(sigOf)));

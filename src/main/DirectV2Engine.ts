@@ -424,8 +424,8 @@ export class DirectV2Engine implements Engine {
 
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
-    const snap = withExecRoute(base, conv.model);
-    const planSnap = withPlanRoute(base, conv.model); // 规划阶段可单独指定模型(默认跟随会话)
+    const snap = withExecRoute(base, conv.model, conv.profileId);
+    const planSnap = withPlanRoute(base, conv.model, conv.profileId); // 规划阶段可单独指定模型(默认跟随会话)
     const provider = currentProvider(snap);
 
     // ── 工具集(按会话来源通道过滤 send_file:本地频道看不见飞书/企微发送工具)──
@@ -715,7 +715,7 @@ export class DirectV2Engine implements Engine {
     onEvent({ type: 'status', text: `🔄 v2: 重新规划 (${replanCount + 1}/${MAX_REPLANS})...` });
 
     // 重新规划同样走 plan 能力档(可在设置里单独指定更强的规划模型)。
-    const planSnap = withPlanRoute(snapshot(conv.profileId), conv.model);
+    const planSnap = withPlanRoute(snapshot(conv.profileId), conv.model, conv.profileId);
     const planProvider = currentProvider(planSnap);
 
     // P0-1: replan 中也取完整版上限(与主 run 一致)

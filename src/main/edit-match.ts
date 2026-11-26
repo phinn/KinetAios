@@ -83,10 +83,14 @@ export function blockIndent(lines: string[]): string {
 function reindent(newS: string, oldLines: string[], bodyLines: string[]): { text: string; changed: boolean } {
   const oldInd = oldLines.map(indentOf);
   const bodyInd = bodyLines.map(indentOf);
-  const last = Math.max(0, Math.min(oldLines.length, bodyLines.length) - 2); // 末尾通常是闭括号,不用它做基准
-  const out = newS.split('\n').map((line, i) => {
+  const n = oldLines.length;
+  const newLines = newS.split('\n');
+  const newCount = newLines.length;
+  const out = newLines.map((line, i) => {
     if (!line.trim()) return '';
-    const j = Math.min(i, last);
+    // 对齐规则:首尾各让一位 —— 首行对齐首行,末行对齐末行(通常是闭括号,缩进差应为 0);
+    // 中间新增出来的行沿用倒数第二行的缩进差,避免"插一行导致整块缩进被闭括号带偏"。
+    const j = i < n - 1 ? i : (i === newCount - 1 ? n - 1 : Math.max(0, n - 2));
     const oi = oldInd[j] ?? '';
     const ni = bodyInd[j] ?? '';
     if (oi === ni) return line;

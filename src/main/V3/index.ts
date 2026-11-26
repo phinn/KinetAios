@@ -71,7 +71,7 @@ export class DirectV3Engine implements Engine {
   async run({ conv, memoryBlock, rulesBlock, contextBlock, skillBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
     const prompt = conv.turns[conv.turns.length - 1]?.prompt ?? '';
     const base = snapshot(conv.profileId);
-    const snap = withExecRoute(base, conv.model);
+    const snap = withExecRoute(base, conv.model, conv.profileId);
     const provider = currentProvider(snap);
 
     // ── 构建 systemPrompt ──

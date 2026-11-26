@@ -35,6 +35,14 @@ test('模糊匹配:缩进不同也能命中,并把新代码重排到实际缩进
   assert.equal(doBLine, '    doB(9);', '不应保留模型给的 2 空格');
 });
 
+test('两行块:第二行也要按自己的缩进差重排(不能被首行基准带偏)', () => {
+  const body = ['function f() {', '    return 1;', '}'].join('\n');
+  const r = fuzzyEdit(body, 'function f() {\n  return 1;\n}', 'function f() {\n  return 2;\n}');
+  assert.equal(r.kind, 'ok');
+  if (r.kind !== 'ok') return;
+  assert.ok(r.text.includes('    return 2;'), r.text);
+});
+
 test('唯一性:多处模糊命中且未开 replace_all → 拒绝并给出候选行', () => {
   const body = ['x();', 'y();', 'z();', '', 'x();', 'y();', 'z();'].join('\n');
   const r = fuzzyEdit(body, 'x();\n  y();\n  z();', 'w();\n  y();\n  z();', false);

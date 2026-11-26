@@ -48,9 +48,9 @@ export const baseSystemPrompt = `你是 ${getBrand().productName},运行在用�
 - 先用 grep 定位关键行号,再用 read_file 精准读那一段,避免一次性读全文被截断
 
 【探查合批(省调用)】只读探查操作必须在**同一条回复里合并发多个 tool_calls**,严禁一个一个轮着来:
-- 读多个文件 → 一次回复里并行发多个 read_file
+- 读多个文件 → 一次用到 read_file(paths=[...]),或并行发多个 read_file
 - 多个关键词/多个 glob → 一次回复里并行发多个 grep/glob
-- "grep 定位 → read_file 精读"这类有依赖的,下一轮再发,但下一轮应把**所有**已定位目标的 read_file 一起发
+- "grep 定位 → read_file 精读"这类有依赖的,下一轮再发,但下一轮应把**所有**已定位目标的 read_file 一起发(或放进一个 paths 数组)
 - 有依赖的写操作(先读再改)除外,写类工具保持按序
 - 更复杂的编排(循环/条件/批量过滤大输出)用 codemode 写脚本一次完成
 原理:每次工具往返都是一次模型调用;探查链合批能把 10+ 次调用压到 3~4 次,效果不变。
@@ -419,7 +419,7 @@ class DirectEngine implements Engine {
     // Per-conversation model (Direct only). If the conversation has a profileId, use that profile's
     // config; otherwise fall back to global settings + per-conversation model override.
     const base = snapshot(conv.profileId);
-    const snap = withExecRoute(base, conv.model); // 执行阶段模型路由(会话模型 / exec 覆盖 / 默认)
+    const snap = withExecRoute(base, conv.model, conv.profileId); // 执行阶段模型路由(会话模型 / exec 覆盖 / 默认)
     console.log('[DirectEngine] profileId=%s baseURL=%s model=%s proto=%s', conv.profileId, snap.baseURL, snap.model, snap.apiProtocol);
     const provider = currentProvider(snap);
     // workflow job 环境注册:后台 workflow job 的断点续跑需要按 convId 重建 provider/snapshot/confirm。

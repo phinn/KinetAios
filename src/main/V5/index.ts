@@ -110,7 +110,7 @@ export class DirectV5Engine implements Engine {
     }
 
     const base = snapshot(conv.profileId);
-    const snap = withExecRoute(base, conv.model);
+    const snap = withExecRoute(base, conv.model, conv.profileId);
     const provider = currentProvider(snap);
 
     // ── 签名 + 出生调度(与 Universe.runTemplateRound 同语义,单任务内联)──

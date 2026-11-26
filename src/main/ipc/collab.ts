@@ -11,8 +11,8 @@ import { promisify } from 'node:util';
 import { initStore, loadMemories, allMemoryContents, addMemory, updateMemory, deleteMemory, loadMemoryTriples, tripleProvenance, addMemoryTriple, deleteMemoryTriple, loadTaskGraph, saveConversation, saveTurn, searchEnriched, arenaAggregate, usageAggregate, setMemoryEmbedding, loadEvents, rulesMatching } from '../store';
 import { saveCustomTool, loadCustomTools, deleteCustomTool, loadMemoryTimeline, decayMemories, dedupMemories, loadMemoryBlocks, updateMemoryBlock, loadEpisodicMemories, checkpointWal } from '../store';
 import { saveFact, loadFact, listFacts, deleteFact, factsAsBlock } from '../store';
-import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam } from '../store';
-import { listSnapshots, restoreSnapshot } from '../snapshots';
+import { listTeamsForConv, convIdFromTeamId, listTeamMembers, loadTeamMember, upsertTeamMember, deleteTeam, usageStats } from '../store';
+import { listSnapshots, restoreSnapshot, snapshotDiff } from '../snapshots';
 import { registerUpdateIpc } from '../updater';
 import { pluginListSnap, invalidatePluginCache, installPlugin, uninstallPlugin, togglePlugin, pluginPanelsSnap, savePluginEngineSettings } from '../plugins';
 import { setCronTasks, setDispatcher, startCronScheduler, stopCronScheduler, validateCron } from '../cron';
@@ -654,6 +654,20 @@ export function register(): void {
   ipcMain.handle('snapshot-list', (_e, cwd: string, convId?: string) => {
     try {
       return { ok: true, items: listSnapshots(cwd, convId) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('tool-usage-stats', (_e, days?: number) => {
+    try {
+      return { ok: true, stats: usageStats(Math.min(90, Math.max(1, Number(days) || 7)), 12) };
+    } catch (e) {
+      return { ok: false, error: (e as Error)?.message ?? String(e) };
+    }
+  });
+  ipcMain.handle('snapshot-diff', (_e, cwd: string, id: string) => {
+    try {
+      return snapshotDiff(cwd, id);
     } catch (e) {
       return { ok: false, error: (e as Error)?.message ?? String(e) };
     }

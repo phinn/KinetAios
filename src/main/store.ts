@@ -4,7 +4,7 @@
 import Database from 'better-sqlite3';
 import path from 'node:path';
 import { app } from 'electron';
-import type { ChatMsg, Conversation, EngineKind, Turn } from '../shared/types';
+import type { ChatMsg, Conversation, EngineKind, Turn, UsageStats } from '../shared/types';
 import { newTurn, BUILTIN_ENGINE_KINDS, isPluginEngine, type BuiltinEngineKind, type ConvEvent } from '../shared/types';
 import { getBoard as getBoardExternal } from './blackboard'; // 团队看板读黑板 stats/notes(黑板不依赖本模块,无环)
 
@@ -870,6 +870,65 @@ export function skillUsage(): Map<string, SkillUsage> {
 }
 
 // ── conv_events:append-only 事件日志 ──
+// ── 使用统计(近 N 天)──
+// 注意:conv_events.ts 是**毫秒**时间戳(appendEvent 写 Date.now()),
+// 早期按秒查询会得出一个荒谬的"全库一周几十万次"数字。这里统一自己算窗口。
+export function usageStats(days = 7, limit = 12): UsageStats {
+  const since = Date.now() - Math.max(1, days) * 86_400_000;
+  const rows = stmt("SELECT type, data FROM conv_events WHERE ts >= ?;").all(since) as Array<{ type: string; data: string }>;
+  const byTool = new Map<string, { calls: number; measured: number; errors: number; kinds: Record<string, number> }>();
+  let turnErrors = 0;
+  let rateLimited = 0;
+  let costUSD = 0;
+
+  for (const row of rows) {
+    if (row.type === 'turn/error') {
+      turnErrors++;
+      if (/429|rate.?limit|quota/i.test(row.data)) rateLimited++;
+      continue;
+    }
+    if (row.type === 'cost') {
+      try { costUSD += Number(JSON.parse(row.data)?.usd) || 0; } catch { /* 坏行忽略 */ }
+      continue;
+    }
+    if (row.type !== 'tool/call') continue;
+    let data: { name?: string; result?: string; outcome?: string; errorKind?: string } = {};
+    try { data = JSON.parse(row.data) ?? {}; } catch { continue; }
+    const name = data.name || 'unknown';
+    const cur = byTool.get(name) ?? { calls: 0, measured: 0, errors: 0, kinds: {} };
+    cur.calls++;
+    // 老事件没有 outcome:不能当成"成功",否则错误率被稀释。只用有结论的调用做分母。
+    if (data.outcome === 'ok' || data.outcome === 'error') {
+      cur.measured++;
+      if (data.outcome === 'error') {
+        cur.errors++;
+        const kind = data.errorKind || 'unclassified';
+        cur.kinds[kind] = (cur.kinds[kind] ?? 0) + 1;
+      }
+    }
+    byTool.set(name, cur);
+  }
+
+  const tools = [...byTool.entries()]
+    .map(([name, v]) => ({ name, calls: v.calls, measured: v.measured, errors: v.errors, rate: v.measured ? v.errors / v.measured : 0, kinds: v.kinds }))
+    .sort((a, b) => b.errors - a.errors || b.calls - a.calls)
+    .slice(0, limit);
+  const toolCalls = [...byTool.values()].reduce((n, v) => n + v.calls, 0);
+  const toolCallsMeasured = [...byTool.values()].reduce((n, v) => n + v.measured, 0);
+  const toolErrors = [...byTool.values()].reduce((n, v) => n + v.errors, 0);
+  return {
+    days,
+    turnErrors,
+    rateLimited,
+    costUSD,
+    toolCalls,
+    toolCallsMeasured,
+    toolErrors,
+    toolErrorRate: toolCallsMeasured ? toolErrors / toolCallsMeasured : 0,
+    tools,
+  };
+}
+
 // 只增不改:写入点把事件 append 进来,快照(turns)由各写入点照旧维护。
 // 衍生统计/回放/排查全部走这里,不再依赖"快照恰好对得上"的假设。
 export function appendEvent(convId: string, turnId: string, ev: ConvEvent): void {
