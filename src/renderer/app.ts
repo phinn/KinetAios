@@ -2779,6 +2779,10 @@ async function ensureTurnsLoaded(conv: Conversation, token: number): Promise<boo
 // 冻结期去重签名:最后一条 turn 的内容指纹。取消后 done/error/tool 残留事件可能连发,
 // 每次全量替换都会重挂 viz iframe / 重解码图片 → 高度回流,表现为界面持续抖动。
 // 内容没变就什么都不做。
+// C 修复(2026-11-27):签名拼进会话 id —— frozenSig 是模块级变量,冻结期切会话时
+// 若新会话末 turn 指纹恰好相同(常见:同为空 turn),会误判"没变"跳过终态渲染;
+// id 入签后跨会话必然不同,天然失效。Session id is part of the fingerprint:
+// switching conversations during a freeze can no longer alias the stale signature.
 function frozenTurnSig(conv: Conversation, idx: number): string {
   const t = conv.turns[idx];
   if (!t) return '';
@@ -2786,7 +2790,7 @@ function frozenTurnSig(conv: Conversation, idx: number): string {
   const steps = ((t.steps ?? []) as Array<{ name?: string; result?: string; outcome?: string }>)
     .map((s) => `${s.name ?? ''}:${s.outcome ?? ''}:${(s.result ?? '').length}`)
     .join(',');
-  return `${idx}|${t.done ? 1 : 0}|${t.error ? 1 : 0}|${conv.status}|${ans.length}|${ans.slice(-16)}|${steps}`;
+  return `${conv.id}|${idx}|${t.done ? 1 : 0}|${t.error ? 1 : 0}|${conv.status}|${ans.length}|${ans.slice(-16)}|${steps}`;
 }
 
 function renderMain() {
