@@ -181,10 +181,15 @@ export function evaluateIntentAssertions(
     const ev = row.data as ConvEvent;
     if (ev.type !== 'tool/call' || ev.name !== 'shell') continue;
     const output = String(ev.result ?? '');
-    // 事件层可能因 50k 上限截断尾部(丢掉 [exit:N]):outcome 兜底,只在期望 0 时有意义。
-    const exitCode = parseExitCode(output) ?? (ev.outcome === 'ok' ? 0 : undefined);
-    let command: string | null = null;
-    try {
+    // 退出码解析(2026-11-27 收紧):事件层 50k 截断历史上会把尾部 [exit:N] 丢掉,
+    // 旧逻辑用 outcome==='ok' 兜底成 0 —— 截断+outcome ok 的组合会把真实失败判通过。
+    // 现在:截断注记在场且解析不到退出码 = 未知,不兜底(exit_code_eq 判 not-ok,
+    // 宁可让模型重跑命令,不可放水)。未截断的事件 outcome ok 才可信为 0。
+    // Exit-code resolution: only trust outcome='ok' when the event was NOT
+    // truncated — a truncated event without the [exit:N] marker has unknown code.
+    const truncated = output.includes('…[事件存证截断');
+    const exitCode = parseExitCode(output) ?? (ev.outcome === 'ok' && !truncated ? 0 : undefined);
+    let command: string | null = null;    try {
       const parsed = JSON.parse(String(ev.args ?? '{}')) as { command?: unknown };
       if (typeof parsed.command === 'string') command = parsed.command;
     } catch { /* args 非 JSON:只影响文案,不影响判定 */ }

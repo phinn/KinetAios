@@ -261,6 +261,34 @@ test('parseExitCode:兼容真实 shell 的 [exit 0] 与实验 runner 的 [exit:0
   assert.equal(parseExitCode('no marker'), undefined);
 });
 
+test('截断的 shell 输出:解析不到退出码时不按 outcome=ok 兜底成 0(B 修复)', () => {
+  seqCounter = 0;
+  // 50k 截断把尾部 [exit:1] 丢了,outcome 却是 ok —— 旧行为:兜底 0,失败判通过。
+  const truncatedFail = shellRow(
+    'npm test',
+    'ok line\n…[事件存证截断,原长 52,000 字符]',
+    'ok',
+  );
+  const r = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [truncatedFail]);
+  assert.equal(r.pass, false, '截断+无 exit 标记 → 退出码未知,不能兜底 0');
+  assert.ok(r.failed[0].actual.includes('未观测到'), r.failed[0].actual);
+
+  // 新行为(修复后):截断注记在,但 TaskManager 会把 [exit:N] 追加回尾部 → 解析到 1。
+  const truncatedFailRecovered = shellRow(
+    'npm test',
+    'ok line\n…[事件存证截断,原长 52,000 字符]\n[exit 1]',
+    'ok',
+  );
+  const r2 = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [truncatedFailRecovered]);
+  assert.equal(r2.pass, false);
+  assert.equal(r2.failed[0].actual, '退出码 1');
+
+  // 未截断 + outcome ok → 兜底 0 仍然成立(历史行为保留)。
+  const cleanOk = shellRow('echo hi', 'hi', 'ok');
+  const r3 = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [cleanOk]);
+  assert.equal(r3.pass, true, r3.failed[0]?.actual);
+});
+
 test('parseAssertions:拒绝未知类型 / 缺字段 / 坏正则 / 超限', () => {
   assert.equal(parseAssertions([
     { type: 'file_exists', path: 'dist/x.html' },

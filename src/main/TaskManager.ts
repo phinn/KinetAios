@@ -27,6 +27,19 @@ const MAIN_TURNS_LRU_MAX = 8;
 // 使「全文见事件日志」成立;导出回填、FTS 建索引都吃这里)。Event-side result cap.
 const EVENT_RESULT_CAP = 50_000;
 
+/**
+ * 从截断丢弃的尾部回收 [exit:N] 标记(2026-11-27)。shell 结果以
+ * "[exit 0]" / "[exit:N]" 收尾,超限截断会把它丢掉;断言层 parseExitCode
+ * 读不到就按 outcome 兜底(截断路径 outcome 常是 ok),真实失败被判通过。
+ * 这里把退出码追加到截断注记之后,保住「最后 shell 退出码」这个验收锚点。
+ * Recover the trailing [exit:N] marker lost to truncation so downstream
+ * assertions keep seeing the real exit code.
+ */
+function preserveExitMark(fullResult: string): string {
+  const m = /\[exit[:\s]\s*(-?\d+)\]\s*$/.exec(fullResult.trimEnd());
+  return m ? `\n[exit ${m[1]}]` : '';
+}
+
 export interface TaskManagerEmitter {
   emitEvent(convId: string, ev: AgentEvent): void;
   emitConversation(conv: Conversation): void;
@@ -1285,7 +1298,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
           // 事件层存证上限:50000(对齐 read_file 工具输出上限)。此前 4000 与 turns 持久层
           // 双重截断,「全文见事件日志」的注记名不副实(2026-11-06 导出盲区修复)。
           // Event-side cap: 50k, aligned with the read_file tool cap — single source of full text.
-          result: ev.result.length > EVENT_RESULT_CAP ? ev.result.slice(0, EVENT_RESULT_CAP) + `…[事件存证截断,原长 ${ev.result.length.toLocaleString()} 字符]` : ev.result,
+          // 截断时保住尾部 [exit:N] 标记(2026-11-27):shell 输出超限会把结尾的退出码标记
+          // 截掉,下游断言(parseExitCode)读不到真实退出码 → 失败命令被判通过。
+          // Keep the trailing [exit:N] marker when truncating, or the assertion
+          // layer silently reads a failed command as success.
+          result: ev.result.length > EVENT_RESULT_CAP
+            ? ev.result.slice(0, EVENT_RESULT_CAP) + `…[事件存证截断,原长 ${ev.result.length.toLocaleString()} 字符]` + preserveExitMark(ev.result)
+            : ev.result,
           durationMs: ev.durationMs,
           outcome: ev.outcome, // 三档埋点(2026-10):复盘工具/Computer Use 失败模式;CLI 引擎无 → undefined
           // 工具级遥测(2026-11):失败分类 + 一行摘要 —— 「哪个工具失败」之外还能按原因聚合错误率
