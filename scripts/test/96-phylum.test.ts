@@ -12,14 +12,14 @@ import path from 'node:path';
 import {
   type Genome, TOOL_CUTOFF, MUTATION_STEP, CLONE_JITTER, TOOL_AFFINITY_DEFAULT, GRANULARITY_HINT_STEP,
 } from '../../src/main/V5/phylum-types';
-import { GeneRegistry } from '../../src/main/V5/registry';
+import { GeneRegistry, repoKeyOf } from '../../src/main/V5/registry';
 import { express, checkAssertions } from '../../src/main/V5/express';
 import { runBodyPlan, type ChatFn, type ToolDefLike } from '../../src/main/V5/bodyplan';
 import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
 import { HEAVY_FOUNDER_STEPS } from '../../src/main/V5/registry';
 import { scriptChat } from './phylum-mock';
 import { abCompare } from '../../src/main/V5/runner';
-import { runBench } from '../../src/main/V5/bench';
+import { runBench, shouldSwap } from '../../src/main/V5/bench';
 import type { Tool } from '../../src/main/tools';
 import type { AssertionDsl } from '../../src/main/V5/phylum-types';
 
@@ -529,6 +529,94 @@ test('H3 失败注入:重试任务能测出步数预算差异', async () => {
   });
   assertEq(report.summary.find((s) => s.label === 'normal')!.successes, 1);
   assertEq(report.summary.find((s) => s.label === 'tight')!.successes, 0);
+});
+
+test('B6 仓库疤痕 key:子目录归一到 git 根 + 7 天 TTL 过期', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phylum-repo-'));
+  fs.mkdirSync(path.join(dir, '.git'), { recursive: true });
+  fs.mkdirSync(path.join(dir, 'src', 'deep'), { recursive: true });
+  const root = repoKeyOf(dir);
+  assertEq(root, dir, '仓库根应解析为绝对路径');
+  assertEq(repoKeyOf(path.join(dir, 'src', 'deep')), root, '子目录应归一到 git 根(同仓库共享疤痕)');
+
+  const reg = mkRegistry();
+  reg.recordRepoScar(path.join(dir, 'src', 'deep'), { cause: 'tool_error', toolName: 'edit_file', errorKind: 'edit_mismatch' });
+  assert.ok(reg.repoScarOf(path.join(dir, 'src')), '同仓库任意子目录都应读到同一份疤痕');
+  reg.debugSetRepoScarAt(dir, Date.now() - 8 * 24 * 3600_000);
+  assertEq(reg.repoScarOf(dir), null, '超过 7 天 TTL 应惰性过期');
+  fs.rmSync(dir, { recursive: true, force: true });
+});
+
+test('B7 未核验:只记失败样本,不杀死活体(选择压力而非处死)', () => {
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  reg.recordUnverified(g, {
+    taskId: 'x', signature: g.signature, genomeId: g.genomeId, lineage: g.lineage,
+    generation: 0, success: false, aborted: false, cause: 'none', steps: 4, tokens: 10, detail: '',
+  });
+  const f = reg.fitnessOf(g.genomeId);
+  assertEq(f?.trials, 1);
+  assertEq(f?.successes, 0);
+  const lg = reg.ledgerOf(g.lineage);
+  assertEq(lg?.recent?.length, 1);
+  assertEq(lg?.recent?.[0], false, '未核验应作为失败样本进近窗');
+  assertEq(reg.liveBySignature(FSIG).some((x) => x.genomeId === g.genomeId), true, '未核验不杀死活体');
+});
+
+test('B8 用户否决与重放 miss 分离:noteRejection 不动 replayMisses', () => {
+  const reg = mkRegistry();
+  const sig = signatureOfTemplateWeighted('fossil-rej', 'light');
+  const g = reg.spawnFounder('fossil-rej');
+  reg.debugFillLedger(sig, 8, 7);
+  reg.settle({
+    taskId: 'x', signature: g.signature, genomeId: g.genomeId, lineage: g.lineage,
+    generation: 0, success: true, aborted: false, cause: 'none', steps: 2, tokens: 0,
+    detail: 'ok', trace: [{ tool: 'shell', args: { command: 'echo hi' } }],
+  }, g, { cause: 'none' });
+  const tpl = reg.templatesBySignature(sig)[0];
+  assert.ok(tpl);
+  reg.noteRejection(tpl.id);
+  const after = reg.templatesBySignature(sig)[0];
+  assertEq(after.replayMisses, 0, '用户否决不污染重放口碑');
+  assertEq(after.userRejects, 1);
+  reg.noteRejection(tpl.id);
+  assertEq(reg.templatesBySignature(sig).length, 0, '连续 2 次否决退役');
+});
+
+test('H4b 体检换血裁决:成功率优先,打平需步数明显更低,全败不换', () => {
+  assertEq(shouldSwap({ successes: 2, avgSteps: 5 }, { successes: 3, avgSteps: 9 }), true, '成功更多 → 换');
+  assertEq(shouldSwap({ successes: 3, avgSteps: 5 }, { successes: 3, avgSteps: 4 }), true, '同分且步数少 1 → 换');
+  assertEq(shouldSwap({ successes: 3, avgSteps: 5 }, { successes: 3, avgSteps: 4.5 }), false, '步数差距不足 1 → 不换');
+  assertEq(shouldSwap({ successes: 4, avgSteps: 5 }, { successes: 3, avgSteps: 1 }), false, '冠军成功更少 → 不换');
+  assertEq(shouldSwap({ successes: 0, avgSteps: 5 }, { successes: 0, avgSteps: 1 }), false, '全败不换');
+});
+
+test('F10 化石轨迹排除意图工具:intent/intent_done 不进 trace', async () => {
+  const tools = [...ALL_TOOLS, mockTool('intent'), mockTool('intent_done')];
+  const chat = scriptChat([
+    { toolName: 'intent', args: { action: 'start', title: 'x' } },
+    { toolName: 'shell', args: { cmd: 'echo ok' } },
+    { toolName: 'intent_done', args: {} },
+    { content: 'done' },
+  ]);
+  const g = mkRegistry().spawnFounder(SIG);
+  const r = await runBodyPlan({ chat, tools, task: 'x', body: express(g, tools, ['shell']), cwd: '/tmp/phylum-f10' });
+  assertEq(r.success, true);
+  assert.deepEqual(r.trace?.map((s) => s.tool), ['shell'], '意图工具不应进入化石轨迹');
+});
+
+test('H3b 失败注入覆盖 edit_mismatch:edit_file 被摘除 → retry-edit 失败', async () => {
+  const reg = mkRegistry();
+  const good = reg.spawnFounder(SIG);
+  const bad = reg.cloneFrom(good);
+  bad.affinity.edit_file = 0.1; // < TOOL_CUTOFF → 物理不可调
+  const tasks = [{ id: 'retry-edit', prompt: '编辑失配重试', tools: ['read_file', 'edit_file'], failFirst: { tool: 'edit_file', times: 1 } }];
+  const report = await runBench({
+    sides: [{ label: 'good', genome: good }, { label: 'bad', genome: bad }],
+    tasks,
+  });
+  assertEq(report.summary.find((s) => s.label === 'good')!.successes, 1);
+  assertEq(report.summary.find((s) => s.label === 'bad')!.successes, 0);
 });
 
 run();

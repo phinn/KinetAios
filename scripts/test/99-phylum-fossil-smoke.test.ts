@@ -16,7 +16,7 @@ import { GeneRegistry } from '../../src/main/V5/registry';
 import { replay, extractSlots, fillSlot } from '../../src/main/V5/replay';
 import {
   FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS, MAX_FOSSILS_PER_SIGNATURE,
-  type TraceStep,
+  type TraceStep, type TraceTemplate,
 } from '../../src/main/V5/phylum-types';
 import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
 import assert from 'node:assert/strict';
@@ -246,6 +246,41 @@ test('H9 化石成本:口碑同分时步数更少的模板优先', () => {
   // record one replay hit each before asserting (also kills the same-ms flake).
   for (const t of reg.templatesBySignature(sig)) reg.noteReplay(t.id, true);
   assert.equal(reg.templatesBySignature(sig)[0].steps.length, 1, '便宜路线应排前面');
+});
+
+test('H11 重放:工具把错误当字符串返回 → 判 miss(tool_error),不假报成功', async () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h11', 'light');
+  makeSuccess(reg, 'fossil-h11', [{ tool: 'read_file', args: { path: '/tmp/in.txt' } }]);
+  const tpl = reg.templateBySignature(sig)!;
+  const tools: Tool[] = [{
+    name: 'read_file', description: '', parameters: {},
+    async run() { return '读不到:/tmp/in.txt (ENOENT)'; },
+  }];
+  const ctx: ToolCtx = { cwd: '/tmp', confirm: async () => true };
+  const r = await replay(tpl, '读 /tmp/in2.txt 并说明', tools, [], ctx);
+  assert.equal(r.hit, false, '工具错误文本不得被当成命中');
+  assert.equal(r.miss?.reason, 'tool_error', JSON.stringify(r.miss));
+});
+
+test('H12 重放跳过意图工具步(旧模板含 intent 调用也可安全重放)', async () => {
+  const tpl: TraceTemplate = {
+    version: 1, id: 'tpl-x', signature: 's', lineage: 'l',
+    steps: [
+      { tool: 'intent', args: { action: 'start', title: 'x' } },
+      { tool: 'shell', args: { command: 'echo done' } },
+    ],
+    slots: [], taskExample: '', bornAt: 0, replayHits: 0, replayMisses: 0,
+  };
+  const calls: string[] = [];
+  const tools: Tool[] = [
+    { name: 'intent', description: '', parameters: {}, async run() { calls.push('intent'); return 'ok'; } },
+    { name: 'shell', description: '', parameters: {}, async run() { calls.push('shell'); return 'ok\n[exit 0]'; } },
+  ];
+  const ctx: ToolCtx = { cwd: '/tmp', confirm: async () => true };
+  const r = await replay(tpl, 'x', tools, [], ctx);
+  assert.equal(r.hit, true);
+  assert.deepEqual(calls, ['shell'], '意图工具步应被跳过,不执行旧 intent 调用');
 });
 
 run();

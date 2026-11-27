@@ -62,6 +62,38 @@ const RE_VISUAL_OK = /(?:👁 自动视觉验收:通过|✅ 视觉验收通过)/
 const RE_VISUAL_FAIL = /(?:⚠️ 自动视觉验收未通过|❌ 视觉验收未通过)/;
 const RE_EDIT_FAIL = /(?:写入失败|编辑失败|拒绝覆盖|沙箱模式|缺少 path)/;
 
+// 测试命令证据(2026-11):shell 里跑测试套件也算「受影响的测试」证据。
+// 只认**命令本身是 test runner**的调用 —— 不看 cat 日志等任意输出,否则把测试日志读一遍
+// 就能伪造证据(rev 前 read_file 已不可伪造,这里堵住 shell 侧的同类漏洞)。
+const TEST_RUNNER_RE = /(?:^|[\s;&|])(?:(?:npm|pnpm|yarn|bun)\s+(?:run\s+)?test\b|npx\s+(?:vitest|jest)\b|(?:vitest|jest)\b|node\s+scripts\/run-tests(?:\.js)?\b|pytest\b|go\s+test\b|cargo\s+test\b)/i;
+// 通过模式:只有出现这些字样才把 exit 0 当成"测试通过"。空跑/未执行(无输出)不算证据。
+const TEST_PASS_RE = /(?:\b\d+\s+passing\b|\b\d+\s+passed\b|Tests?:\s*\d+\s+passed|\bpassed\b|\bpass\b|全部通过|所有测试通过|✅)/i;
+
+/** 该 shell 命令是否是测试运行器(可链式:只看任一段)。 */
+function isTestRunnerCommand(cmd: string): boolean {
+  return cmd.split(/&&|\|\||;|\|/).some((seg) => TEST_RUNNER_RE.test(seg.trim()));
+}
+
+/** 从一条 shell 事件识别测试证据(仅当命令是 test runner 且退出码已知)。 */
+function shellTestEvidence(ev: Extract<ConvEvent, { type: 'tool/call' }>): { kind: 'test'; ok: boolean; detail: string } | null {
+  let command = '';
+  try {
+    const parsed = JSON.parse(String(ev.args ?? '{}')) as { command?: unknown };
+    if (typeof parsed.command === 'string') command = parsed.command;
+  } catch { return null; }
+  if (!command || !isTestRunnerCommand(command)) return null;
+  const result = String(ev.result ?? '');
+  const truncated = result.includes('…[事件存证截断');
+  const exitCode = parseExitCode(result) ?? (ev.outcome === 'ok' && !truncated ? 0 : undefined);
+  if (exitCode === undefined) return null; // 退出码未知 → 不作证据(宁可重跑,不可放水)
+  const label = command.trim().slice(0, 100);
+  if (exitCode === 0) {
+    if (!TEST_PASS_RE.test(result)) return null;
+    return { kind: 'test', ok: true, detail: `测试命令通过(${label})` };
+  }
+  return { kind: 'test', ok: false, detail: `测试命令失败 exit ${exitCode}(${label})` };
+}
+
 function firstLineMatching(text: string, re: RegExp): string {
   const line = text.split('\n').find((l) => re.test(l));
   return (line ?? '').trim().slice(0, 200);
@@ -111,6 +143,12 @@ export function assessEvidence(rows: EventRow[], currentTurnId?: string): Eviden
     if (EDIT_TOOLS.has(name) && !failed) {
       lastEditSeq = row.seq;
       lastEditTool = name;
+    }
+    // shell 证据只认测试运行器命令(与 read_file 侧同口径,防日志造假)。
+    if (name === 'shell') {
+      const t = shellTestEvidence(ev);
+      if (t) items.push({ ...t, tool: name, seq: row.seq, at: row.ts });
+      continue;
     }
     if (!EDIT_TOOLS.has(name) && !VERIFY_TOOLS.has(name)) continue;
     for (const d of detectEvidence(name, result)) {

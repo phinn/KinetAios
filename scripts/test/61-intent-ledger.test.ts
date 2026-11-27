@@ -489,4 +489,23 @@ test('turn_feedback 读取:V5 追溯选择入口', () => {
   assert.equal(store.getTurnFeedback('turn-fb-missing'), null);
 });
 
+test('shell 测试运行器证据:通过放行 / 失败 blocking / 非测试命令不算(2026-11-27)', () => {
+  seqCounter = 0;
+  // 通过:命令是 npm test + exit 0 + 通过模式 → test ok,证据闸放行
+  const pass = assessEvidence([editOk(), shellRow('npm test', 'Tests: 5 passed\n[exit 0]\n', 'ok')]);
+  assert.equal(pass.hasEdits, true);
+  assert.equal(pass.ok, true, pass.reasons.join(';'));
+  assert.ok(pass.items.some((i) => i.kind === 'test' && i.ok), JSON.stringify(pass.items));
+
+  // 失败:test runner 非零退出 → blocking,拒绝完成
+  const fail = assessEvidence([editOk(), shellRow('npm test', '1 failing\n[exit 1]\n', 'error')]);
+  assert.equal(fail.ok, false);
+  assert.ok(fail.blocking.some((b) => b.kind === 'test'), JSON.stringify(fail.blocking));
+
+  // 非测试命令:cat 日志里的"通过"不算证据(防日志造假)
+  const log = assessEvidence([editOk(), shellRow('cat test.log', 'Tests: 5 passed\n[exit 0]\n', 'ok')]);
+  assert.equal(log.items.some((i) => i.kind === 'test'), false, 'cat 日志不得作为测试证据');
+  assert.equal(log.ok, false);
+});
+
 run();

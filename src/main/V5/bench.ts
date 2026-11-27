@@ -58,6 +58,8 @@ export const BENCH_TASKS: BenchTask[] = [
   { id: 'retry-shell', prompt: '命令偶发失败,重试直到成功', tools: ['shell'], failFirst: { tool: 'shell', times: 1 } },
   { id: 'retry-read', prompt: '读取偶发失败,重试', tools: ['read_file'], failFirst: { tool: 'read_file', times: 2 } },
   { id: 'retry-search-write', prompt: '检索失败后重试再写报告', tools: ['web_search', 'write_file'], failFirst: { tool: 'web_search', times: 2 } },
+  // 编辑失配重试:覆盖 edit_mismatch(先读原文、再编辑;首次 old_string 失配 → 重试成功)。
+  { id: 'retry-edit', prompt: '读文件后编辑,首次失配则重试', tools: ['read_file', 'edit_file'], failFirst: { tool: 'edit_file', times: 1 } },
 ];
 
 /** 评测运行态:按任务注入失败(顺序执行,不需要并发安全)。 */
@@ -87,6 +89,9 @@ export function benchTools(runtime: BenchRuntime = { task: null, calls: new Map(
     tool('shell', 'ok\n[exit 0]'),
     tool('web_search', '搜索结果:相关片段 1/2/3'),
     tool('write_file', '已写入 report.md (128 字节)'),
+    // edit 的失败文本要能被遥测识别为 edit_mismatch(tool-telemetry 的固定前缀),
+    // 才能让生成轨迹把"失配"归类成参数类失败而不是泛泛的 ❌。
+    tool('edit_file', '已编辑 report.md (old→new)', '未找到要替换的片段: old_string 未匹配'),
   ];
 }
 
@@ -117,6 +122,21 @@ function benchChat(task: BenchTask): ChatFn {
     }
     return { content: '完成', toolCalls: [], rawAssistant: { role: 'assistant', content: '完成' }, tokensIn: 5, tokensOut: 2 };
   };
+}
+
+/**
+ * 体检换血裁决(纯函数):冠军必须在成功率上真正超过活体,才算更好;
+ * 成功率打平时,只有每任务平均步数至少少 1(成本明显更低)才值得换血 ——
+ * 否则"换个基因"只是把已验证的活体换成等价品,白白打断定向突变的连续性。
+ * 全败(0 成功)不换:没有成功背书时比较步数没有意义。
+ */
+export function shouldSwap(
+  live: Pick<BenchSummary, 'successes' | 'avgSteps'>,
+  champ: Pick<BenchSummary, 'successes' | 'avgSteps'>,
+): boolean {
+  if (champ.successes !== live.successes) return champ.successes > live.successes;
+  if (champ.successes <= 0) return false;
+  return live.avgSteps - champ.avgSteps >= 1;
 }
 
 /** 跑一轮离线评测:每个基因 × 每个任务一次(不结算、不进账本)。 */

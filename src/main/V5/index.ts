@@ -33,15 +33,22 @@ import {
   INTENT_LEDGER_HINT, assessEvidence, canComplete, evaluateIntentAssertions, recordEvidence, refreshIntentSpend,
 } from '../intent-ledger';
 import * as store from '../store';
-import { settleRalph, acceptanceFromPrompt } from './ralph-settle';
+import { settleRalph, acceptanceFromPrompt, ralphToOutcome } from './ralph-settle';
 import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, isEnvironmentErrorKind, type AttributionFacts } from './registry';
-import { geneSnapshot, type Genome, type RunOutcome, type TraceTemplate, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
+import {
+  geneSnapshot, type Genome, type RunOutcome, type TraceTemplate,
+  STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS, INTENT_TOOL_NAMES,
+} from './phylum-types';
 import { replay, type ReplayResult } from './replay';
-import { runBench } from './bench';
+import { runBench, shouldSwap } from './bench';
+import { toolTelemetryOf } from '../tool-telemetry';
 
 /** 每 N 次结算做一次体检(离线 bench A/B:活体 vs 最佳配子)。 */
 const HEALTH_CHECK_EVERY = 20;
+
+/** 连续未核验达此次数 → 按失败结算。1-2 次只记负样本,"一直不核验"也有选择压力。 */
+const UNVERIFIED_DEATH_STREAK = 3;
 
 // ── 任务模板归一化(v1 签名)────────────────────────────────
 // 生产化第一步:不做 embedding,不拍指纹 —— 用保守的动词+对象规则归一化。
@@ -79,7 +86,7 @@ const REQUIRED_TOOLS: Record<string, string[]> = {
 };
 
 /** 意图账本工具不受基因亲和过滤:提示里让模型调,注册表里就不能把它摘掉。 */
-const INTENT_TOOLS = ['intent', 'intent_done', 'trust_report'];
+const INTENT_TOOLS = [...INTENT_TOOL_NAMES];
 const requiredToolsOf = (templateId: string): string[] => [...(REQUIRED_TOOLS[templateId] ?? []), ...INTENT_TOOLS];
 
 const V5_SYSTEM_SUFFIX = `
@@ -104,6 +111,11 @@ export class DirectV5Engine implements Engine {
   /** 基因库:进程级单例,跨会话共享(全 app 一个种群,不 per-conv 割裂)。 */
   private static registry: GeneRegistry | null = null;
 
+  /** 已就绪的基因库(未初始化返回 null —— 不触发 electron app 依赖,供外部即时否决入口用)。 */
+  static registryIfReady(): GeneRegistry | null {
+    return DirectV5Engine.registry;
+  }
+
   constructor(private confirm: (cmd: string) => Promise<boolean>) {}
 
   /** 进程级基因库(懒加载;落盘 userData/phylum/)。 */
@@ -116,6 +128,9 @@ export class DirectV5Engine implements Engine {
 
   /** 结算计数:每 HEALTH_CHECK_EVERY 次做一次离线体检。 */
   private settleTicks = 0;
+
+  /** 连续未核验次数(genomeId → streak)。1-2 次只记录不结算;3 次按失败结算(给"不核验"一个选择压力)。 */
+  private unverifiedStreak = new Map<string, number>();
 
   /**
    * 体检(离线 A/B):活体 vs 同签名最佳配子各跑一遍 bench。
@@ -132,6 +147,12 @@ export class DirectV5Engine implements Engine {
     const live = reg.liveBySignature(sig)[0];
     const gam = reg.bestGamete(sig);
     if (!live || !gam || gam.genome.genomeId === live.genomeId) return;
+    // 带疤的活体正在执行定向突变(后代是"被教训过的版本"):此时换血会把它未验证的
+    // 修正直接扔掉,退回到同一起点的冠军。跳过换血,只报状态。
+    if (reg.scarOf(live.lineage)) {
+      onEvent({ type: 'status', text: `🩺 v5·${sig}: 活体带疤痕教训(定向突变中),本次跳过换血。` });
+      return;
+    }
     try {
       const report = await runBench({
         cwd,
@@ -140,10 +161,10 @@ export class DirectV5Engine implements Engine {
       const l = report.summary.find((s) => s.label === 'live');
       const c = report.summary.find((s) => s.label === 'champ');
       if (!l || !c) return;
-      if (c.successes > l.successes) {
+      if (shouldSwap(l, c)) {
         reg.retire(live.genomeId);
         reg.cloneFrom(gam.genome);
-        onEvent({ type: 'status', text: `🩺 v5·${sig}: 体检发现活体落后(活体 ${l.successes}/${l.trials} vs 冠军配子 ${c.successes}/${c.trials}),已换血。` });
+        onEvent({ type: 'status', text: `🩺 v5·${sig}: 体检发现活体落后(活体 ${l.successes}/${l.trials} 步均 ${l.avgSteps.toFixed(1)} vs 冠军配子 ${c.successes}/${c.trials} 步均 ${c.avgSteps.toFixed(1)}),已换血。` });
       } else {
         onEvent({ type: 'status', text: `🩺 v5·${sig}: 体检通过(活体 ${l.successes}/${l.trials},冠军配子 ${c.successes}/${c.trials})。` });
       }
@@ -209,7 +230,10 @@ export class DirectV5Engine implements Engine {
       for (const tpl of tpls) {
         if (signal.aborted) break;
         const r = await replay(tpl, prompt, replayTools, assertions, replayCtx, (i, name, out) => {
-          onEvent({ type: 'tool', name, args: '(化石重放)', result: out, outcome: 'ok' });
+          // 不硬编码 outcome:'ok' —— 用与真实工具一致的遥测口径,UI 事件日志不撒谎。
+          const tele = toolTelemetryOf(out);
+          onEvent({ type: 'tool', name, args: '(化石重放)', result: out,
+            outcome: tele.outcome, errorKind: tele.errorKind, errorSummary: tele.errorSummary });
         });
         if (r.hit) { won = { tpl, r }; break; }
         reg.noteReplay(tpl.id, false);
@@ -223,7 +247,11 @@ export class DirectV5Engine implements Engine {
           hit = false;
           gateMiss = `意图 #${openIntent.id} 已不存在`;
         } else {
-          const rows = store.loadEventsSince(fresh.convId, fresh.createdAt);
+          // 重放闸只认本轮事件:loadEventsSince(意图创建时刻)会把旧轮的证据带进来,
+          // 让本轮重放的"没跑检查"被历史通过记录掩盖。turnId 缺失时回退旧口径。
+          const rows = turnId
+            ? store.loadTurnEvents(fresh.convId, turnId)
+            : store.loadEventsSince(fresh.convId, fresh.createdAt);
           // D 修复:answer 只认当前轮;编辑/验证证据仍跨轮(口径与 tools.ts intent_done 一致)。
           const report = assessEvidence(rows, turnId);
           recordEvidence(fresh.id, report);
@@ -391,7 +419,6 @@ export class DirectV5Engine implements Engine {
     // 生产成功语义:bodyplan 自然完成(有工具轨迹的 final answer)= success。
     // 实验路径(Universe)仍由 grader 终裁,这里不改 runner。
     if (outcome.finished && !outcome.aborted) runOutcome.success = outcome.success || (outcome.trace?.length ?? 0) > 0;
-    const facts: AttributionFacts = this.attribute(runOutcome, outcome, templateId, removed);
     // ── 结算(死亡即结算)。provider 挂起=世界停摆不是个体过错,不进结算、不留疤、
     // 不计 aborted 次数,同基因原样留在活体池,窗口重置后点继续即同基因续跑。
     if (outcome.cause === 'provider_suspended') {
@@ -399,20 +426,36 @@ export class DirectV5Engine implements Engine {
       onEvent({ type: 'done' });
       return;
     }
-    // 未核验:不结算(与挂起同语义),但把模型的结果照常交给用户。
-    // 进化层不奖励「宣布完成」——没有证据的一轮既不是成功也不是失败。
+    // 未核验:1-2 次只把结果照常交付 + 记一次负样本(不进配子池/化石);
+    // 连续 3 次则按未核验失败正式结算 —— 否则"永远不跑检查、只宣布完成"没有选择压力。
     if (unverified) {
-      onEvent({ type: 'status', text: `⚠️ v5: 本轮未通过证据闸(${unverified})。结果照常交付;本轮零进化信号(不进配子池/化石)。` });
-      const answer = outcome.lastOutput.trim() || '(任务完成,无文本产物)';
-      conv.directHistory = [
-        ...conv.directHistory,
-        { role: 'user', content: prompt },
-        { role: 'assistant', content: answer },
-      ];
-      onEvent({ type: 'done' });
-      return;
+      const streak = (this.unverifiedStreak.get(genome.genomeId) ?? 0) + 1;
+      this.unverifiedStreak.set(genome.genomeId, streak);
+      if (streak >= UNVERIFIED_DEATH_STREAK) {
+        outcome.success = false;
+        outcome.cause = 'wrong_answer';
+        outcome.detail = `连续 ${streak} 轮未核验:${unverified}`;
+        runOutcome.success = false;
+        runOutcome.cause = 'wrong_answer';
+        runOutcome.detail = outcome.detail;
+        onEvent({ type: 'status', text: `⚠️ v5: 连续 ${streak} 轮未通过证据闸(${unverified}),本轮按未核验失败结算。` });
+        // 落到下方正常结算路径(失败 → 疤痕/替补出生)。
+      } else {
+        reg.recordUnverified(genome, runOutcome);
+        onEvent({ type: 'status', text: `⚠️ v5: 本轮未通过证据闸(${unverified})。结果照常交付;计一次未核验(${streak}/${UNVERIFIED_DEATH_STREAK}),不进配子池/化石。` });
+        const answer = outcome.lastOutput.trim() || '(任务完成,无文本产物)';
+        conv.directHistory = [
+          ...conv.directHistory,
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: answer },
+        ];
+        onEvent({ type: 'done' });
+        return;
+      }
     }
+    const facts: AttributionFacts = this.attribute(runOutcome, outcome, templateId, removed);
     reg.settle(runOutcome, genome, facts);
+    this.unverifiedStreak.delete(genome.genomeId);
     // 追溯映射:成功交付的基因(用户随后否决 → 配子降权/出池)。
     if (outcome.success && turnId) {
       reg.noteTurnGenome(turnId, { genomeId: genome.genomeId, lineage: genome.lineage, signature: sig });
@@ -534,13 +577,34 @@ export class DirectV5Engine implements Engine {
       return;
     }
 
+    const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
+
+    // accepted 也必须过证据闸(与普通路径同语义):改过文件却没有可核验的通过检查 →
+    // 结果照常交付但不结算(零进化信号)。否则 Ralph 的"验收断言过了"会掩盖没有证据的产物。
+    if (r.accepted && turnId) {
+      const rows = store.loadTurnEvents(conv.id, turnId);
+      const report = assessEvidence(rows, turnId);
+      if (report.hasEdits && !report.ok) {
+        const unverified = report.reasons[0] ?? '改动了文件但没有任何可核验的通过证据';
+        reg.recordUnverified(genome, ralphToOutcome(r, conv.id));
+        onEvent({ type: 'status', text: `⚠️ v5·ralph: 本轮未通过证据闸(${unverified})。结果照常交付;本轮零进化信号(不进配子池/化石)。` });
+        const answer = r.last?.lastOutput?.trim() || '(任务完成,无文本产物)';
+        conv.directHistory = [
+          ...conv.directHistory,
+          { role: 'user', content: prompt },
+          { role: 'assistant', content: answer },
+        ];
+        onEvent({ type: 'done' });
+        return;
+      }
+    }
+
     // ── 结算:整条循环 = 一次进化信号(配子/疤痕/替补由 settleRalph 全包)──
     const outcome = settleRalph(reg, r, genome, conv.id, conv.cwd);
 
     if (outcome.aborted) { onEvent({ type: 'done' }); return; }
     await this.runHealthCheck(reg, sig, conv.cwd, onEvent);
     if (r.accepted) {
-      const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
       if (turnId) reg.noteTurnGenome(turnId, { genomeId: genome.genomeId, lineage: genome.lineage, signature: sig });
       const answer = r.last?.lastOutput?.trim() || '(任务完成,无文本产物)';
       onEvent({ type: 'status', text: `✅ v5·ralph: 验收通过(${r.loops} 轮 / ${r.totalSteps} 步)。基因已入配子池。` });
@@ -558,6 +622,17 @@ export class DirectV5Engine implements Engine {
   releaseConv?(convId: string): void {
     void convId; // 基因库是进程级资产,不随会话释放
   }
+}
+
+/**
+ * 追溯否决的即时入口:TaskManager 在用户下一条消息被判为纠正/重问时立即调用,
+ * 不必等下一轮 V5 run 才消费(否则用户纠正后切走/换引擎,这次否决就丢了)。
+ * 注册表未就绪 / 无该轮映射 → no-op(下一轮开头消费仍作兜底)。
+ */
+export function applyV5UserRejection(turnId: string): { applied: boolean; retiredGene: boolean; templateId?: string } {
+  const reg = DirectV5Engine.registryIfReady();
+  if (!reg || !turnId) return { applied: false, retiredGene: false };
+  return reg.applyUserRejection(turnId);
 }
 
 export { runRalphLoop } from './ralph';

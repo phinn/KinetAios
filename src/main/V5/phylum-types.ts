@@ -37,6 +37,7 @@ export type DeathCause =
   | 'fossil_miss'             // 化石重放失败 → 降级开荒(化石不直接删,连续 miss 才退役)
   | 'provider_suspended'      // provider 侧停供(quota 429/5h 窗口/network/auth):世界停了,不是个体的错 → 挂起,零进化信号
   | 'aborted'                 // 用户中止:不算进化信号,fitness 记 abort 不记败
+  | 'retired'                 // 体检换血退役(非任务死亡):只写审计,不参与死因归因
   | 'none';                   // 成功
 
 /** 轨迹步:一次工具调用的最小记录(化石模板的骨架单元,KB 级)。 */
@@ -63,7 +64,14 @@ export interface TraceTemplate {
   /** 重放质量记账:命中/未命中(连续 miss 达 FOSSIL_MISS_RETIRE → 退役) */
   replayHits: number;
   replayMisses: number;
+  /** 用户否决次数(交付被纠正/重问):与重放 miss 分离 —— 模板跑通了但产物不被认可。
+   *  ≥FOSSIL_USER_REJECT_RETIRE 退役;不影响 replayMisses 的重放口碑口径。 */
+  userRejects?: number;
 }
+
+/** 意图账本工具名:它们是审计/闸门,不是任务动作 —— 不进化石轨迹,重放时跳过。
+ *  混进轨迹会让重放执行旧的 intent/intent_done 调用(污染账本且假报成功)。 */
+export const INTENT_TOOL_NAMES = ['intent', 'intent_done', 'trust_report'] as const;
 
 /** 参数槽位:模板里某个参数是任务实例相关的,重放时需从新任务文本抽取。 */
 export interface TraceSlot {
@@ -219,6 +227,9 @@ export interface Gamete {
   /** 用户否决次数(交付后被纠正/重问):≥2 → 该配子出池 */
   rejections?: number;
 }
+
+/** 用户否决导致化石退役的阈值(与重放 miss 的 FOSSIL_MISS_RETIRE 同值但独立计数)。 */
+export const FOSSIL_USER_REJECT_RETIRE = 2;
 
 /** 一次执行的完整记录(实验数据行)。 */
 export interface RunOutcome {

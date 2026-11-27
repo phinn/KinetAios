@@ -14,7 +14,7 @@ import {
   type TraceTemplate, type TraceSlot, type TraceStep,
   AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP, MAX_STEPS_MAX,
   GRANULARITY_HINT_STEP, FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, MAX_FOSSILS_PER_SIGNATURE, CONVERGE_MIN_TRIALS,
-  RECENT_SLICE_CAP,
+  RECENT_SLICE_CAP, FOSSIL_USER_REJECT_RETIRE,
 } from './phylum-types';
 import { extractSlots } from './replay';
 import { signatureOfTemplateWeighted } from './signature';
@@ -38,6 +38,32 @@ export interface AttributionFacts {
 export function isEnvironmentErrorKind(kind?: ToolErrorKind): boolean {
   return kind === 'not_found' || kind === 'permission' || kind === 'unsupported' || kind === 'io';
 }
+
+/** 仓库级疤痕的有效期与容量上限。
+ *  TTL 7 天:仓库结构/依赖会漂移,半年前的参数教训可能已过期,过期疤痕会误导出生先验。
+ *  上限 100:横向遗传是"仓库常识"不是历史档案馆,按最近写入淘汰。 */
+const REPO_SCAR_TTL_MS = 7 * 24 * 3600_000;
+const REPO_SCAR_MAX = 100;
+
+/** 仓库级疤痕 key:向上找 .git(目录或 worktree 的 .git 文件)作为仓库根,
+ *  找不到则回退到解析后的绝对路径。子目录与仓库根共享同一份疤痕,避免同仓库多签名各存一份。 */
+export function repoKeyOf(cwd: string): string {
+  if (!cwd) return '';
+  const abs = path.resolve(cwd);
+  try {
+    let cur = abs;
+    for (let i = 0; i < 40; i++) {
+      if (fs.existsSync(path.join(cur, '.git'))) return cur;
+      const up = path.dirname(cur);
+      if (up === cur) break;
+      cur = up;
+    }
+  } catch { /* 权限等异常 → 读不到 .git,用绝对路径兜底 */ }
+  return abs;
+}
+
+/** 仓库疤痕条目:facts + 写入时间(TTL 惰性过期用)。 */
+interface RepoScarEntry { facts: AttributionFacts; at: number }
 
 /** 交付该轮的基因身份(用于用户否决后的追溯降权)。 */
 export interface TurnGenome {
@@ -77,8 +103,8 @@ export class GeneRegistry {
   /** 疤痕库:lineage → 最近死亡归因(定向突变依据)。随 state.json 持久化 ——
    *  修前在引擎层纯内存:死亡与替补出生之间 app 重启,疤痕丢失,定向突变退化成盲目克隆。 */
   private scars = new Map<string, AttributionFacts>();
-  /** 仓库级疤痕(路径 → 参数类失败):跨签名共享,只收 bad_args/edit_mismatch */
-  private repoScars = new Map<string, AttributionFacts>();
+  /** 仓库级疤痕(仓库 key → 条目):跨签名共享,只收 bad_args/edit_mismatch;带写入时间做 TTL */
+  private repoScars = new Map<string, RepoScarEntry>();
   /** turnId → 交付该轮的基因(用户否决追溯用;随 state.json 持久化) */
   private turnGenomes = new Map<string, TurnGenome>();
   private fossils: FossilRecord[] = [];
@@ -143,7 +169,9 @@ export class GeneRegistry {
       const snap = JSON.parse(fs.readFileSync(f, 'utf8')) as {
         live: Genome[]; fitness: [string, FitnessRecord][];
         ledgers: [string, LineageLedger][]; gametes: [string, Gamete][];
-        scars?: [string, AttributionFacts][]; repoScars?: [string, AttributionFacts][];
+        scars?: [string, AttributionFacts][];
+        /** 旧格式是 [key, facts],新格式 [key, {facts,at}] —— 两种都读(平滑迁移)。 */
+        repoScars?: Array<[string, AttributionFacts | RepoScarEntry]>;
         turnGenomes?: [string, TurnGenome][]; seq?: number;
       };
       for (const g of snap.live) this.live.set(g.genomeId, g);
@@ -151,7 +179,13 @@ export class GeneRegistry {
       for (const [k, v] of snap.ledgers) this.ledgers.set(k, v);
       for (const [k, v] of snap.gametes) this.gametes.set(k, v);
       for (const [k, v] of snap.scars ?? []) this.scars.set(k, v);
-      for (const [k, v] of snap.repoScars ?? []) this.repoScars.set(k, v);
+      for (const [k, v] of snap.repoScars ?? []) {
+        // 兼容旧快照(直接存 facts):补一个当前时间作 at,让 TTL 从迁移时刻起算。
+        const rec = v && typeof v === 'object' && 'facts' in (v as object)
+          ? (v as RepoScarEntry)
+          : { facts: v as AttributionFacts, at: Date.now() };
+        this.repoScars.set(k, rec);
+      }
       for (const [k, v] of snap.turnGenomes ?? []) this.turnGenomes.set(k, v);
       this.seq = snap.seq ?? 0;
     } catch { /* 损坏文件当作空种群:重新 founder,进化层自愈 */ }
@@ -175,12 +209,36 @@ export class GeneRegistry {
     if (!repoKey) return;
     if (facts.cause !== 'tool_error') return;
     if (facts.errorKind !== 'bad_args' && facts.errorKind !== 'edit_mismatch') return;
-    this.repoScars.set(path.resolve(repoKey), facts);
+    const key = repoKeyOf(repoKey);
+    this.pruneRepoScars();
+    this.repoScars.set(key, { facts, at: Date.now() });
     this.saveState();
   }
 
   repoScarOf(repoKey: string): AttributionFacts | null {
-    return repoKey ? this.repoScars.get(path.resolve(repoKey)) ?? null : null;
+    if (!repoKey) return null;
+    const key = repoKeyOf(repoKey);
+    const rec = this.repoScars.get(key);
+    if (!rec) return null;
+    if (Date.now() - rec.at > REPO_SCAR_TTL_MS) { // 惰性过期:读到才清,不额外跑定时器
+      this.repoScars.delete(key);
+      this.saveState();
+      return null;
+    }
+    return rec.facts;
+  }
+
+  /** TTL 过期清理 + 容量淘汰(按 at 最旧先出)。 */
+  private pruneRepoScars(): void {
+    const now = Date.now();
+    for (const [k, v] of this.repoScars) {
+      if (now - v.at > REPO_SCAR_TTL_MS) this.repoScars.delete(k);
+    }
+    if (this.repoScars.size >= REPO_SCAR_MAX) {
+      const overflow = [...this.repoScars.entries()].sort((a, b) => a[1].at - b[1].at);
+      const drop = this.repoScars.size - REPO_SCAR_MAX + 1;
+      for (const [k] of overflow.slice(0, drop)) this.repoScars.delete(k);
+    }
   }
 
   // ── 追溯选择:交付后用户否决(下一轮开头调用)──
@@ -198,14 +256,14 @@ export class GeneRegistry {
 
   /**
    * 用户否决的追溯结算:不否定当轮已发生的事实,只调整未来的繁殖/重放概率。
-   *   - 有化石模板 → 记一次 replay miss(坏路线降口碑,连续 2 次退役);
+   *   - 有化石模板 → 记一次 userReject(与重放 miss 分离:模板跑通了,只是产物不被认可);
    *   - 交付基因仍在配子池 → rejections+1,≥2 出池并留 wrong_answer 疤(后代定向规避)。
    */
   applyUserRejection(turnId: string): { applied: boolean; retiredGene: boolean; templateId?: string } {
     const info = this.turnGenomes.get(turnId);
     if (!info) return { applied: false, retiredGene: false };
     this.turnGenomes.delete(turnId);
-    if (info.templateId) this.noteReplay(info.templateId, false);
+    if (info.templateId) this.noteRejection(info.templateId);
     let retiredGene = false;
     const gam = info.genomeId ? this.gametes.get(info.genomeId) : undefined;
     if (gam) {
@@ -378,6 +436,24 @@ export class GeneRegistry {
     this.saveState(); // 状态快照:重启/挂起续跑不丢账本
   }
 
+  /**
+   * 未核验的一轮(证据闸未过,但引擎决定先交付):不结算、不死、不删活体,
+   * 但把这一轮记进支系近窗作**失败样本** —— 否则"一直不核验"永远没有选择压力,
+   * 进化会偏好那些只会宣布完成、从不跑检查的个体。
+   * 与 aborted 不同:aborted 是用户/世界的中止(零信号),未核验是个体行为(负信号)。
+   */
+  recordUnverified(g: Genome, o: RunOutcome): void {
+    const f = this.fitness.get(g.genomeId) ?? emptyFitness();
+    const lg = this.ensureLedger(g);
+    f.trials++; lg.trials++;
+    f.stepsSum += o.steps; lg.stepsSum += o.steps;
+    if (!lg.recent) lg.recent = [];
+    lg.recent.push(false);
+    if (lg.recent.length > RECENT_SLICE_CAP) lg.recent.splice(0, lg.recent.length - RECENT_SLICE_CAP);
+    this.fitness.set(g.genomeId, f);
+    this.saveState();
+  }
+
   private fossilDetail(o: RunOutcome, facts: AttributionFacts): string {
     const bits = [`steps=${o.steps}`, `cause=${facts.cause}`];
     if (facts.toolName) bits.push(`tool=${facts.toolName}`);
@@ -398,11 +474,18 @@ export class GeneRegistry {
     return [...this.live.values()];
   }
 
-  /** 体检换血:直接把个体移出活体(不记 trial),下次出生由配子接力。 */
+  /** 体检换血:直接把个体移出活体(不记 trial),下次出生由配子接力。
+   *  写一条 fossils 审计(cause='retired'):换血是种群决策,必须可追溯,不能无声无息。 */
   retire(genomeId: string): boolean {
-    const ok = this.live.delete(genomeId);
-    if (ok) this.saveState();
-    return ok;
+    const g = this.live.get(genomeId);
+    if (!g) return false;
+    this.live.delete(genomeId);
+    this.fossils.push({
+      genomeId, lineage: g.lineage, signature: g.signature, generation: g.generation,
+      cause: 'retired', detail: '健康检查 A/B 落后于冠军配子,换血退役', diedAt: Date.now(),
+    });
+    this.saveState();
+    return true;
   }
 
   ledgerOf(lineage: string): LineageLedger | undefined {
@@ -461,6 +544,7 @@ export class GeneRegistry {
         ((isUntried(b) ? 1 : 0) - (isUntried(a) ? 1 : 0))
         || (isUntried(a) && isUntried(b) ? b.bornAt - a.bornAt : 0)
         || replayScore(b) - replayScore(a)
+        || (a.userRejects ?? 0) - (b.userRejects ?? 0) // 被用户否决过的路线降序
         || a.steps.length - b.steps.length
         || b.bornAt - a.bornAt);
   }
@@ -479,6 +563,16 @@ export class GeneRegistry {
       t.replayMisses++;
       if (t.replayMisses >= FOSSIL_MISS_RETIRE) { this.fossilTemplates.delete(id); this.saveTemplates(); return; }
     }
+    this.saveTemplates();
+  }
+
+  /** 用户否决记账(与重放 miss 分离):模板跑通了,但产物被用户拒绝。
+   *  不污染 replayScore(那是"能不能跑通"的口径);累计达 FOSSIL_USER_REJECT_RETIRE 退役。 */
+  noteRejection(id: string): void {
+    const t = this.fossilTemplates.get(id);
+    if (!t) return;
+    t.userRejects = (t.userRejects ?? 0) + 1;
+    if (t.userRejects >= FOSSIL_USER_REJECT_RETIRE) { this.fossilTemplates.delete(id); this.saveTemplates(); return; }
     this.saveTemplates();
   }
 
@@ -514,6 +608,13 @@ export class GeneRegistry {
     }
     this.ledgers.set(`L0-${sig}`, { lineage: `L0-${sig}`, signature: sig, generation: 0,
       trials, successes, costZSum: 0, stepsSum: 0, aborted: 0, bornGenCounter: trials });
+  }
+
+  /** [测试垫片] 把仓库疤痕的写入时间改到过去(TTL 过期测试用;生产不调用)。 */
+  debugSetRepoScarAt(repoKey: string, at: number): void {
+    const key = repoKeyOf(repoKey);
+    const rec = this.repoScars.get(key);
+    if (rec) this.repoScars.set(key, { ...rec, at });
   }
 
   gameteCount(): number { return this.gametes.size; }

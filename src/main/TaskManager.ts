@@ -20,6 +20,7 @@ import { attributeTurnFailure } from './turn-attribution';
 import { decideFailureResponse, pushFailureDirective, cooldownTool, clearFailureState } from './failure-policy';
 import { runMemorySleep } from './memory-sleep';
 import { failureDigest, repeatedFailurePatterns, patternLesson } from './lesson-signal';
+import { applyV5UserRejection } from './V5';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -1557,6 +1558,9 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
     // 与 error 路径的归因不冲突:两处都写同一 turn 时 tags 合并、rating 取更负。
     tags.push(...attributeTurnFailure({ unmet: true }).tags);
     store.recordTurnFeedback(prev.id, -1, tags);
+    // 即时追溯否决:V5 交付的基因/化石立刻降权,不必等下一轮 run 才消费。
+    // 注册表未初始化或无该轮映射 → no-op;下一轮开头的消费仍作兜底。
+    try { applyV5UserRejection(prev.id); } catch { /* 进化层 best-effort,不影响主流程 */ }
   }
 
   // Best-effort: extract durable facts about the user from a finished turn (uses the Direct provider).

@@ -10,7 +10,7 @@ import type { AgentEvent, ChatMsg, ToolErrorKind } from '../../shared/types';
 import type { Completion } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
 import { GLMError } from '../glm';
-import { type Genome, type DeathCause, type ExpressedBody, cloneGenome } from './phylum-types';
+import { type Genome, type DeathCause, type ExpressedBody, cloneGenome, INTENT_TOOL_NAMES } from './phylum-types';
 import { toolTelemetryOf } from '../tool-telemetry';
 import type { TraceStep } from './phylum-types';
 import { checkAssertions } from './express';
@@ -196,7 +196,11 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
 
       // 化石只记成功动作:失败调用(报错/退出码非 0)不进轨迹 ——
       // 否则「先报错、再换参数成功」的轨迹会把报错步骤也沉积进模板,重放时先踩一遍坑。
-      if (telemetry?.outcome !== 'error') trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
+      // 意图账本工具(intent/intent_done/trust_report)不是任务动作:混进轨迹会让重放
+      // 去执行旧的建账/完成调用,污染账本且假报成功 —— 一律不进化石。
+      if (telemetry?.outcome !== 'error' && !(INTENT_TOOL_NAMES as readonly string[]).includes(call.name)) {
+        trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
+      }
       messages.push(assistantToolMsg(call));
       messages.push({ role: 'user', content: `[tool:${call.name}] ${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}` });
     }
