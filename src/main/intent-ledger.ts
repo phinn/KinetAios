@@ -256,13 +256,26 @@ export function canComplete(
   return { ok: reasons.length === 0, reasons };
 }
 
-/** 该意图创建以来的 turn/meta 成本合计(用于 spent_usd)。 */
+/** 该意图时间片内的 turn/meta 成本合计(用于 spent_usd)。
+ *  时间片 = [本意图.createdAt, 同会话更早创建的意图中最新的 createdAt),无更早意图则到 ∞。
+ *  窗口互不重叠 → 多意图并存不双计,预算硬闸不被别的意图烧钱误触发(2026-11-27)。 */
 export function refreshIntentSpend(intentId: string): number {
   const intent = store.getIntent(intentId);
   if (!intent) return 0;
-  const spent = store.sumTurnCostSince(intent.convId, intent.createdAt);
+  const spent = sumTurnCostTimeslice(intent);
   store.updateIntent(intentId, { spentUSD: spent });
   return spent;
+}
+
+/** 意图的时间片成本:窗口 = [本意图.createdAt, 比它晚创建的最早意图.createdAt),最新意图到 ∞。
+ *  语义:新意图建立后,后续烧钱归新意图,旧意图的 spent 定格 —— 互不重叠、总额守恒。 */
+function sumTurnCostTimeslice(intent: IntentRow): number {
+  const next = store
+    .listIntents(intent.convId, { statuses: ['open', 'done', 'dropped'], limit: 200 })
+    .map((it) => it.createdAt)
+    .filter((t) => t > intent.createdAt)
+    .sort((a, b) => a - b)[0];
+  return store.sumTurnCostSince(intent.convId, intent.createdAt, next);
 }
 
 /** 把证据写进账本(失败证据也写 —— 拒绝理由是审计的一部分)。同一证据重复入账会被去重。 */
@@ -324,7 +337,7 @@ export function intentViews(convId: string): IntentInfo[] {
     const evidence = store.listIntentEvidence(it.id, 200);
     const passed = evidence.filter((e) => e.ok).length;
     const failed = evidence.length - passed;
-    const spent = it.status === 'open' ? store.sumTurnCostSince(it.convId, it.createdAt) : it.spentUSD;
+    const spent = it.status === 'open' ? sumTurnCostTimeslice(it) : it.spentUSD;
     return {
       id: it.id,
       convId: it.convId,

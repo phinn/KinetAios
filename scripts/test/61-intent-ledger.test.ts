@@ -168,6 +168,31 @@ test('账本落库:建意图 → 记录证据 → 成本归集 → 完成', () =
   assert.equal(store.listIntents(convId).length, 1);
 });
 
+test('时间片成本:多 open 意图并存,同一 turn 成本不双计,预算硬闸不被误触发(2026-11-27)', async () => {
+  const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+  const convId = 'conv-intent-ts';
+  // 真实时钟 + 每步间隔 5ms,保证三意图 createdAt 严格递增、事件落在正确时间片:
+  // A=[tA,tB) B=[tB,tC) C=[tC,∞)
+  const a = store.createIntent({ convId, title: '意图A', contract: 'a 完成定义' });
+  store.appendEvent(convId, 'turn-a', { type: 'turn/meta', costUSD: 0.1 });
+  await sleep(5);
+  const b = store.createIntent({ convId, title: '意图B', contract: 'b 完成定义' });
+  store.appendEvent(convId, 'turn-b', { type: 'turn/meta', costUSD: 0.2 });
+  await sleep(5);
+  const c = store.createIntent({ convId, title: '意图C', contract: 'c 完成定义' });
+  store.appendEvent(convId, 'turn-c', { type: 'turn/meta', costUSD: 0.4 });
+  assert.ok(Math.abs(refreshIntentSpend(a.id) - 0.1) < 1e-9, `A 应只归第一笔,实得 ${refreshIntentSpend(a.id)}`);
+  assert.ok(Math.abs(refreshIntentSpend(b.id) - 0.2) < 1e-9, `B 只归自己片内 0.2,实得 ${refreshIntentSpend(b.id)}`);
+  assert.ok(Math.abs(refreshIntentSpend(c.id) - 0.4) < 1e-9, `C 只归自己片内 0.4,实得 ${refreshIntentSpend(c.id)}`);
+  // 预算硬闸按时间片口径:C 超自身预算拒;B 未超,不被 A/C 的烧钱顶爆(旧口径 B.spent=0.7)
+  assert.equal(canComplete({ status: 'open', contract: 'c 完成定义', budgetUSD: 0.3, spentUSD: refreshIntentSpend(c.id) }, { ok: true }).ok, false, 'C 超自身预算必须拒');
+  assert.equal(canComplete({ status: 'open', contract: 'b 完成定义', budgetUSD: 0.25, spentUSD: refreshIntentSpend(b.id) }, { ok: true }).ok, true, 'B 未超自身预算,不被别的意图烧钱误拒');
+  // 视图口径同步:intentViews 的 open spent 也是时间片
+  const views = intentViews(convId);
+  const vc = views.find((v) => v.id === c.id)!;
+  assert.ok(Math.abs(vc.spentUSD - 0.4) < 1e-9, `视图 C spent 应 0.4,实得 ${vc.spentUSD}`);
+});
+
 test('intentViews:证据计数与花费现场计算,只读不回写', () => {
   const convId = 'conv-intent-view';
   const it = store.createIntent({ convId, title: '视图', contract: '测试通过', budgetUSD: 2 });

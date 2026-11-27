@@ -968,14 +968,18 @@ export function usageStats(days = 7, limit = 12): UsageStats {
   };
 }
 
-// 某会话自 sinceMs 起的成本合计(Intent 账本的 spent_usd)。
+// 某会话自 sinceMs 起、至 untilMs(不含)止的成本合计(Intent 账本的 spent_usd)。
+// 时间片语义(2026-11-27):传 untilMs 时窗口为 [since, until),多意图并存互不重叠,
+// 同一段成本只归一次 —— 旧口径 [createdAt,∞) 会让 A 意图的花费把 B 的预算硬闸顶爆。
 // 直接 SUM json_extract,不把事件行搬到 JS 里解析 —— 大会话单次几千条 turn/meta。
-export function sumTurnCostSince(convId: string, sinceMs: number): number {
+export function sumTurnCostSince(convId: string, sinceMs: number, untilMs?: number): number {
   try {
-    const row = stmt(
+    const sql =
       `SELECT COALESCE(SUM(CAST(COALESCE(json_extract(data,'$.costUSD'), json_extract(data,'$.usd')) AS REAL)), 0) AS usd
-         FROM conv_events WHERE conv_id=? AND type IN ('turn/meta','cost') AND ts>=?;`,
-    ).get(convId, sinceMs) as { usd: number | null } | undefined;
+         FROM conv_events WHERE conv_id=? AND type IN ('turn/meta','cost') AND ts>=?${untilMs !== undefined ? ' AND ts<?' : ''};`;
+    const row = (untilMs !== undefined
+      ? stmt(sql).get(convId, sinceMs, untilMs)
+      : stmt(sql).get(convId, sinceMs)) as { usd: number | null } | undefined;
     return Number(row?.usd) || 0;
   } catch {
     return 0; // 老库无 JSON1 时降级为"不统计",不阻塞完成闸
