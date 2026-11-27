@@ -505,4 +505,30 @@ test('H2 离线评测任务集:被摘除工具的基因成功率下降', async (
   assertEq(report.winner, 'good');
 });
 
+test('B5 仓库级疤痕:参数类跨签名传递,环境类不传', () => {
+  const reg = mkRegistry();
+  reg.recordRepoScar('/repo-a', { cause: 'tool_error', toolName: 'edit_file', errorKind: 'edit_mismatch' });
+  const seed = reg.repoScarOf('/repo-a');
+  assert.ok(seed);
+  const child = reg.spawnFounder('other-task', 'light', seed);
+  assert.ok(child.routing.granularity > 0.7, '参数类疤痕应抬高粒度');
+  assert.ok(child.scarNote?.includes('old_string'));
+  reg.recordRepoScar('/repo-b', { cause: 'tool_error', toolName: 'read_file', errorKind: 'not_found' });
+  assert.equal(reg.repoScarOf('/repo-b'), null, '环境类不进仓库疤痕');
+});
+
+test('H3 失败注入:重试任务能测出步数预算差异', async () => {
+  const reg = mkRegistry();
+  const normal = reg.spawnFounder(SIG);
+  const tight = reg.spawnFounder(SIG);
+  tight.routing.maxSteps = 1;
+  const tasks = [{ id: 'retry', prompt: '命令偶发失败后重试', tools: ['shell'], failFirst: { tool: 'shell', times: 1 } }];
+  const report = await runBench({
+    sides: [{ label: 'normal', genome: normal }, { label: 'tight', genome: tight }],
+    tasks,
+  });
+  assertEq(report.summary.find((s) => s.label === 'normal')!.successes, 1);
+  assertEq(report.summary.find((s) => s.label === 'tight')!.successes, 0);
+});
+
 run();

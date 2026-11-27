@@ -24,6 +24,8 @@ export interface RalphSettler {
   cloneFrom(parent: Genome): Genome;
   bestGamete(sig: string): { genome: Genome } | undefined;
   liveBySignature(sig: string): Genome[];
+  /** 仓库级疤痕(可选:窄 stub 可不实现) */
+  repoScarOf?(repoKey: string): AttributionFacts | null;
 }
 
 /** Ralph 停机原因 → 死因映射(纯函数,结算与 UI 归因共用)。 */
@@ -88,6 +90,7 @@ export function settleRalph(
   r: RalphResult,
   genome: Genome,
   taskId: string,
+  repoKey?: string,
 ): RunOutcome {
   const outcome = { ...ralphToOutcome(r, taskId), signature: genome.signature, genomeId: genome.genomeId, lineage: genome.lineage, generation: genome.generation };
   // 世界停摆:不结算不留疤(与生产路径同语义,上层本不该走到这,防御性兜住)
@@ -104,7 +107,8 @@ export function settleRalph(
   if (!outcome.aborted && !reg.liveBySignature(genome.signature).length) {
     const gam = reg.bestGamete(genome.signature);
     if (gam) {
-      const inh = reg.scarOf(gam.genome.lineage);
+      // 支系疤痕优先;新签名无支系教训时继承仓库级参数类疤痕(横向遗传)。
+      const inh = reg.scarOf(gam.genome.lineage) ?? (repoKey ? reg.repoScarOf?.(repoKey) ?? null : null);
       if (inh) reg.mutateFrom(gam.genome, inh);
       else reg.cloneFrom(gam.genome);
     }

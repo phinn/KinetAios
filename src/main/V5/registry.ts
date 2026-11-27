@@ -77,6 +77,8 @@ export class GeneRegistry {
   /** 疤痕库:lineage → 最近死亡归因(定向突变依据)。随 state.json 持久化 ——
    *  修前在引擎层纯内存:死亡与替补出生之间 app 重启,疤痕丢失,定向突变退化成盲目克隆。 */
   private scars = new Map<string, AttributionFacts>();
+  /** 仓库级疤痕(路径 → 参数类失败):跨签名共享,只收 bad_args/edit_mismatch */
+  private repoScars = new Map<string, AttributionFacts>();
   /** turnId → 交付该轮的基因(用户否决追溯用;随 state.json 持久化) */
   private turnGenomes = new Map<string, TurnGenome>();
   private fossils: FossilRecord[] = [];
@@ -124,6 +126,7 @@ export class GeneRegistry {
       ledgers: [...this.ledgers.entries()],
       gametes: [...this.gametes.entries()],
       scars: [...this.scars.entries()],
+      repoScars: [...this.repoScars.entries()],
       turnGenomes: [...this.turnGenomes.entries()],
       seq: this.seq,
     };
@@ -140,13 +143,15 @@ export class GeneRegistry {
       const snap = JSON.parse(fs.readFileSync(f, 'utf8')) as {
         live: Genome[]; fitness: [string, FitnessRecord][];
         ledgers: [string, LineageLedger][]; gametes: [string, Gamete][];
-        scars?: [string, AttributionFacts][]; turnGenomes?: [string, TurnGenome][]; seq?: number;
+        scars?: [string, AttributionFacts][]; repoScars?: [string, AttributionFacts][];
+        turnGenomes?: [string, TurnGenome][]; seq?: number;
       };
       for (const g of snap.live) this.live.set(g.genomeId, g);
       for (const [k, v] of snap.fitness) this.fitness.set(k, v);
       for (const [k, v] of snap.ledgers) this.ledgers.set(k, v);
       for (const [k, v] of snap.gametes) this.gametes.set(k, v);
       for (const [k, v] of snap.scars ?? []) this.scars.set(k, v);
+      for (const [k, v] of snap.repoScars ?? []) this.repoScars.set(k, v);
       for (const [k, v] of snap.turnGenomes ?? []) this.turnGenomes.set(k, v);
       this.seq = snap.seq ?? 0;
     } catch { /* 损坏文件当作空种群:重新 founder,进化层自愈 */ }
@@ -161,6 +166,21 @@ export class GeneRegistry {
   /** 取疤痕(替补出生时定突变方向);无痕返回 null。 */
   scarOf(lineage: string): AttributionFacts | null {
     return this.scars.get(lineage) ?? null;
+  }
+
+  // ── 仓库级疤痕(横向遗传:同一仓库的参数类教训跨签名共享)──
+
+  /** 只收参数类失败(bad_args/edit_mismatch):环境类不是基因能改的事,不跨任务传播。 */
+  recordRepoScar(repoKey: string, facts: AttributionFacts): void {
+    if (!repoKey) return;
+    if (facts.cause !== 'tool_error') return;
+    if (facts.errorKind !== 'bad_args' && facts.errorKind !== 'edit_mismatch') return;
+    this.repoScars.set(path.resolve(repoKey), facts);
+    this.saveState();
+  }
+
+  repoScarOf(repoKey: string): AttributionFacts | null {
+    return repoKey ? this.repoScars.get(path.resolve(repoKey)) ?? null : null;
   }
 
   // ── 追溯选择:交付后用户否决(下一轮开头调用)──
@@ -203,8 +223,9 @@ export class GeneRegistry {
   // ── 出生 ──
 
   /** 冷启动:某签名无活体且无可用配子 → 发 founder 基因(中性先验,对照组,不参与进化评价)。
-   *  heavy 池 founder 起步 32 步(2026-10-13 分池修法:重活不靠死 5 次 step_budget 爬预算)。 */
-  spawnFounder(templateId: string, weight: 'heavy' | 'light' = 'light'): Genome {
+   *  heavy 池 founder 起步 32 步(2026-10-13 分池修法:重活不靠死 5 次 step_budget 爬预算)。
+   *  seed = 仓库级疤痕:新签名出生时先继承本仓库的参数类教训(跨签名横向遗传)。 */
+  spawnFounder(templateId: string, weight: 'heavy' | 'light' = 'light', seed?: AttributionFacts | null): Genome {
     const sig = signatureOfTemplateWeighted(templateId, weight);
     const lineage = `L0-${sig}`;
     const g: Genome = {
@@ -214,6 +235,7 @@ export class GeneRegistry {
       assertions: [], // founder 无先天断言:断言只能由人工注入或死因删除产生
       generation: 0, bornAt: Date.now(),
     };
+    if (seed) this.applyParamScar(g, seed);
     this.live.set(g.genomeId, g);
     this.ensureLedger(g);
     this.appendJsonl('born', g);
@@ -238,6 +260,19 @@ export class GeneRegistry {
     return child;
   }
 
+  /** 参数类失败的定向修正(粒度上调 + 文字疤痕);非参数类返回 false 不处理。 */
+  private applyParamScar(g: Genome, facts: AttributionFacts): boolean {
+    if (facts.cause !== 'tool_error') return false;
+    if (facts.errorKind !== 'bad_args' && facts.errorKind !== 'edit_mismatch') return false;
+    g.routing.granularity = clamp(g.routing.granularity + GRANULARITY_HINT_STEP, 0, 1);
+    if (facts.toolName) {
+      g.scarNote = facts.errorKind === 'edit_mismatch'
+        ? `编辑 ${facts.toolName} 的 old_string 曾失配:先读原文再改,不要凭记忆下笔。`
+        : `调用 ${facts.toolName} 曾参数报错:先确认路径/参数形状,再执行。`;
+    }
+    return true;
+  }
+
   /** 定向突变:按死因只扰动对应基因位(死亡归因决定突变位点)。 */
   mutateFrom(parent: Genome, facts: AttributionFacts): Genome {
     const child = structuredClone(parent);
@@ -247,13 +282,9 @@ export class GeneRegistry {
     switch (facts.cause) {
       case 'tool_error': {
         if (facts.toolName) {
-          if (facts.errorKind === 'bad_args' || facts.errorKind === 'edit_mismatch') {
+          if (this.applyParamScar(child, facts)) {
             // 参数类失败:工具本身没坏,是调用方式不对 —— 不降亲和(否则会把有用工具摘掉),
             // 改为把步子拆细 + 留文字疤痕给后代本能提示。
-            child.routing.granularity = clamp(child.routing.granularity + GRANULARITY_HINT_STEP, 0, 1);
-            child.scarNote = facts.errorKind === 'edit_mismatch'
-              ? `编辑 ${facts.toolName} 的 old_string 曾失配:先读原文再改,不要凭记忆下笔。`
-              : `调用 ${facts.toolName} 曾参数报错:先确认路径/参数形状,再执行。`;
           } else if (isEnvironmentErrorKind(facts.errorKind)) {
             // 环境类(目标不存在/权限/不支持/IO):基因改不了世界 → 零惩罚、零疤痕
           } else {
@@ -360,6 +391,18 @@ export class GeneRegistry {
 
   liveBySignature(sig: string): Genome[] {
     return [...this.live.values()].filter((g) => g.signature === sig);
+  }
+
+  /** 全部活体(体检用:不区分签名)。 */
+  liveGenomes(): Genome[] {
+    return [...this.live.values()];
+  }
+
+  /** 体检换血:直接把个体移出活体(不记 trial),下次出生由配子接力。 */
+  retire(genomeId: string): boolean {
+    const ok = this.live.delete(genomeId);
+    if (ok) this.saveState();
+    return ok;
   }
 
   ledgerOf(lineage: string): LineageLedger | undefined {

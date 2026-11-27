@@ -38,6 +38,10 @@ import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
 import { GeneRegistry, isEnvironmentErrorKind, type AttributionFacts } from './registry';
 import { geneSnapshot, type Genome, type RunOutcome, type TraceTemplate, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
 import { replay, type ReplayResult } from './replay';
+import { runBench } from './bench';
+
+/** 每 N 次结算做一次体检(离线 bench A/B:活体 vs 最佳配子)。 */
+const HEALTH_CHECK_EVERY = 20;
 
 // ── 任务模板归一化(v1 签名)────────────────────────────────
 // 生产化第一步:不做 embedding,不拍指纹 —— 用保守的动词+对象规则归一化。
@@ -108,6 +112,42 @@ export class DirectV5Engine implements Engine {
       DirectV5Engine.registry = new GeneRegistry({ dataDir: path.join(app.getPath('userData'), 'phylum') });
     }
     return DirectV5Engine.registry;
+  }
+
+  /** 结算计数:每 HEALTH_CHECK_EVERY 次做一次离线体检。 */
+  private settleTicks = 0;
+
+  /**
+   * 体检(离线 A/B):活体 vs 同签名最佳配子各跑一遍 bench。
+   * 配子胜出 → 活体退场、冠军配子克隆接力(换血);否则保留。
+   * 只在结算后触发,失败不影响本轮交付;bench 全在内存跑,无网络/磁盘写。
+   */
+  private async runHealthCheck(
+    reg: GeneRegistry,
+    sig: string,
+    cwd: string,
+    onEvent: (e: AgentEvent) => void,
+  ): Promise<void> {
+    if (++this.settleTicks % HEALTH_CHECK_EVERY !== 0) return;
+    const live = reg.liveBySignature(sig)[0];
+    const gam = reg.bestGamete(sig);
+    if (!live || !gam || gam.genome.genomeId === live.genomeId) return;
+    try {
+      const report = await runBench({
+        cwd,
+        sides: [{ label: 'live', genome: live }, { label: 'champ', genome: gam.genome }],
+      });
+      const l = report.summary.find((s) => s.label === 'live');
+      const c = report.summary.find((s) => s.label === 'champ');
+      if (!l || !c) return;
+      if (c.successes > l.successes) {
+        reg.retire(live.genomeId);
+        reg.cloneFrom(gam.genome);
+        onEvent({ type: 'status', text: `🩺 v5·${sig}: 体检发现活体落后(活体 ${l.successes}/${l.trials} vs 冠军配子 ${c.successes}/${c.trials}),已换血。` });
+      } else {
+        onEvent({ type: 'status', text: `🩺 v5·${sig}: 体检通过(活体 ${l.successes}/${l.trials},冠军配子 ${c.successes}/${c.trials})。` });
+      }
+    } catch { /* 体检本身失败不影响交付 */ }
   }
 
   async run({ conv, memoryBlock, refBlock, signal, onEvent }: EngineRunOpts): Promise<void> {
@@ -216,11 +256,18 @@ export class DirectV5Engine implements Engine {
       onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${reason}),回退 LLM 开荒。` });
     }
 
-    // 出生:无活体 → 配子克隆 / founder
+    // 出生:无活体 → 配子克隆 / founder。仓库级疤痕先于支系疤痕生效?不——支系更具体,
+    // 但新签名没有支系疤痕,此时继承本仓库的参数类教训(跨签名横向遗传)。
     if (reg.needsFounder(sig)) {
       const gam = reg.bestGamete(sig);
-      if (gam) reg.cloneFrom(gam.genome);
-      else reg.spawnFounder(templateId, weight);
+      const repoScar = reg.repoScarOf(conv.cwd);
+      if (gam) {
+        const inh = reg.scarOf(gam.genome.lineage) ?? repoScar;
+        if (inh) reg.mutateFrom(gam.genome, inh);
+        else reg.cloneFrom(gam.genome);
+      } else {
+        reg.spawnFounder(templateId, weight, repoScar);
+      }
     }
 
     // 公平曝光:取轮转首位活体(单会话单任务;多活体时按出生序轮转)
@@ -374,6 +421,8 @@ export class DirectV5Engine implements Engine {
     // 环境类失败(目标不存在/权限/IO)不是基因能改的事 → 不留疤,后代按克隆+抖动继续探索。
     const envFailure = facts.cause === 'tool_error' && isEnvironmentErrorKind(facts.errorKind);
     if (!outcome.aborted && !outcome.success && !envFailure) reg.recordScar(genome.lineage, facts);
+    // 横向遗传:参数类失败写进仓库级疤痕(新签名出生时继承);环境类/其它类不写。
+    if (!outcome.aborted && !outcome.success) reg.recordRepoScar(conv.cwd, facts);
 
     // ── 替补出生:种群永续。按归因定向突变(疤痕遗传)/无归因则克隆冠军 ──
     if (!outcome.aborted && reg.liveBySignature(sig).length === 0) {
@@ -390,6 +439,7 @@ export class DirectV5Engine implements Engine {
       onEvent({ type: 'done' });
       return;
     }
+    await this.runHealthCheck(reg, sig, conv.cwd, onEvent);
     if (outcome.success) {
       const answer = outcome.lastOutput.trim() || '(任务完成,无文本产物)';
       onEvent({ type: 'status', text: `✅ v5: ${tplLabel} 完成(${outcome.steps} 步)。个体基因已入配子池。` });
@@ -485,9 +535,10 @@ export class DirectV5Engine implements Engine {
     }
 
     // ── 结算:整条循环 = 一次进化信号(配子/疤痕/替补由 settleRalph 全包)──
-    const outcome = settleRalph(reg, r, genome, conv.id);
+    const outcome = settleRalph(reg, r, genome, conv.id, conv.cwd);
 
     if (outcome.aborted) { onEvent({ type: 'done' }); return; }
+    await this.runHealthCheck(reg, sig, conv.cwd, onEvent);
     if (r.accepted) {
       const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
       if (turnId) reg.noteTurnGenome(turnId, { genomeId: genome.genomeId, lineage: genome.lineage, signature: sig });

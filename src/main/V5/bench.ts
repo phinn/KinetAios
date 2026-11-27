@@ -17,6 +17,8 @@ export interface BenchTask {
   prompt: string;
   /** 脚本模型会依次调用的工具(被亲和摘除 → 个体物理不可调 → 失败) */
   tools: string[];
+  /** 失败注入:该工具前 N 次调用返回错误,脚本会重试 —— 测重试/预算/参数修正 */
+  failFirst?: { tool: string; times: number };
 }
 
 export interface BenchSide { label: string; genome: Genome }
@@ -53,15 +55,32 @@ export const BENCH_TASKS: BenchTask[] = [
   { id: 'read-shell', prompt: '读文件后执行命令', tools: ['read_file', 'shell'] },
   { id: 'search-write', prompt: '搜索后写报告', tools: ['web_search', 'write_file'] },
   { id: 'full', prompt: '检索、读文件、执行并写报告', tools: ['web_search', 'read_file', 'shell', 'write_file'] },
+  { id: 'retry-shell', prompt: '命令偶发失败,重试直到成功', tools: ['shell'], failFirst: { tool: 'shell', times: 1 } },
+  { id: 'retry-read', prompt: '读取偶发失败,重试', tools: ['read_file'], failFirst: { tool: 'read_file', times: 2 } },
+  { id: 'retry-search-write', prompt: '检索失败后重试再写报告', tools: ['web_search', 'write_file'], failFirst: { tool: 'web_search', times: 2 } },
 ];
 
+/** 评测运行态:按任务注入失败(顺序执行,不需要并发安全)。 */
+interface BenchRuntime {
+  task: BenchTask | null;
+  calls: Map<string, number>;
+}
+
 /** 确定性 mock 工具:输出稳定,不依赖磁盘/网络,保证同一基因每次跑分一致。 */
-export function benchTools(): Tool[] {
-  const tool = (name: string, text: string): Tool => ({
+export function benchTools(runtime: BenchRuntime = { task: null, calls: new Map() }): Tool[] {
+  const tool = (name: string, okText: string, failText = `❌ ${name} 注入失败`): Tool => ({
     name,
     description: `bench ${name}`,
     parameters: { type: 'object', properties: {} },
-    async run() { return text; },
+    async run() {
+      const task = runtime.task;
+      if (task?.failFirst?.tool === name) {
+        const n = runtime.calls.get(name) ?? 0;
+        runtime.calls.set(name, n + 1);
+        if (n < task.failFirst.times) return failText;
+      }
+      return okText;
+    },
   });
   return [
     tool('read_file', '文件内容:line-1\nline-2'),
@@ -71,12 +90,19 @@ export function benchTools(): Tool[] {
   ];
 }
 
-/** 脚本化模型:依次调用任务工具,最后交 final answer。 */
+/** 脚本化模型:依次调用任务工具(失败注入的工具多调几次 = 重试),最后交 final answer。 */
 function benchChat(task: BenchTask): ChatFn {
+  const seq: string[] = [];
+  for (const name of task.tools) {
+    seq.push(name);
+    if (task.failFirst?.tool === name) {
+      for (let k = 0; k < task.failFirst.times; k++) seq.push(name);
+    }
+  }
   let i = 0;
   return async (): Promise<Completion> => {
-    if (i < task.tools.length) {
-      const name = task.tools[i];
+    if (i < seq.length) {
+      const name = seq[i];
       i++;
       const call: ToolCall = { id: `c-${task.id}-${i}`, name, arguments: '{}' };
       return {
@@ -102,11 +128,15 @@ export async function runBench(opts: {
   chatFactory?: (task: BenchTask) => ChatFn;
 }): Promise<BenchReport> {
   const tasks = opts.tasks ?? BENCH_TASKS;
-  const tools = opts.tools ?? benchTools();
+  const runtime: BenchRuntime = { task: null, calls: new Map() };
+  const tools = opts.tools ?? benchTools(runtime);
   const cwd = opts.cwd ?? '/tmp/phylum-bench';
   const rows: BenchRow[] = [];
   for (const side of opts.sides) {
     for (const task of tasks) {
+      // 失败注入按任务重置计数(顺序执行,复用 runtime 即可)。
+      runtime.task = task;
+      runtime.calls.clear();
       const body = express(side.genome, tools, []);
       const r = await runBodyPlan({
         task: task.prompt,
