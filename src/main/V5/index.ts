@@ -149,7 +149,9 @@ export class DirectV5Engine implements Engine {
     if (!live || !gam || gam.genome.genomeId === live.genomeId) return;
     // 带疤的活体正在执行定向突变(后代是"被教训过的版本"):此时换血会把它未验证的
     // 修正直接扔掉,退回到同一起点的冠军。跳过换血,只报状态。
-    if (reg.scarOf(live.lineage)) {
+    // 判据用**个体自身**的 scarNote(克隆时清除),不是按 lineage 永久保存的
+    // reg.scarOf —— 否则支系只要历史死过一次,往后永远不再换血(判定过宽)。
+    if (live.scarNote) {
       onEvent({ type: 'status', text: `🩺 v5·${sig}: 活体带疤痕教训(定向突变中),本次跳过换血。` });
       return;
     }
