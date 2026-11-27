@@ -14,6 +14,7 @@ import {
   type TraceTemplate, type TraceSlot, type TraceStep,
   AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP, MAX_STEPS_MAX,
   GRANULARITY_HINT_STEP, FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, MAX_FOSSILS_PER_SIGNATURE, CONVERGE_MIN_TRIALS,
+  RECENT_SLICE_CAP,
 } from './phylum-types';
 import { extractSlots } from './replay';
 import { signatureOfTemplateWeighted } from './signature';
@@ -319,13 +320,22 @@ export class GeneRegistry {
     }
     this.fitness.set(g.genomeId, f);
     lg.bornGenCounter++;
+    // 近窗结果序列:FIFO 有界,是化石沉积/收敛判定的"种群当前状态"口径(2026-11-27)。
+    // aborted 不入窗(与 aborted 不计成败同口径)。
+    if (!o.aborted) {
+      if (!lg.recent) lg.recent = [];
+      lg.recent.push(o.success);
+      if (lg.recent.length > RECENT_SLICE_CAP) lg.recent.splice(0, lg.recent.length - RECENT_SLICE_CAP);
+    }
     this.live.delete(g.genomeId); // 死亡:移出活体,尸体火化(轨迹不留)
     if (o.aborted) return; // 中止:不进配子/化石,零进化信号
     if (o.success) {
       this.gametes.set(g.genomeId, { genome: structuredClone(g), recent: { ...f }, diedAt: Date.now() });
-      // 化石沉积:成功 + 带轨迹 + 支系近窗达标(FOSSIL_DEPOSIT_RATE,比繁殖线更高的种群背书)。
+      // 化石沉积:成功 + 带轨迹 + 支系**近窗**达标(FOSSIL_DEPOSIT_RATE,比繁殖线更高的种群背书)。
       // 同签名只保留最新一份(重复任务本质同一生态位;旧模板自动被顶替)。
-      const rate = lg.trials === 0 ? 0 : lg.successes / lg.trials;
+      // 2026-11-27 修正:此前用支系累计成功率——早期失败的支系连赢 15 次成功率才 0.71,
+      // 化石永远沉积不下("墓园终态"设计空转)。改用有界近窗(见 lineageRecentRate)。
+      const rate = this.lineageRecentRate(lg);
       if (o.trace?.length && rate >= FOSSIL_DEPOSIT_RATE) this.depositFossil(o.trace, g, o.detail, lg.trials, rate);
     } else {
       this.fossils.push({
@@ -422,7 +432,22 @@ export class GeneRegistry {
     let lg: LineageLedger | undefined;
     for (const l of this.ledgers.values()) if (l.signature === sig) { lg = l; break; }
     if (!lg || lg.trials < CONVERGE_MIN_TRIALS) return false;
-    return lg.successes / lg.trials >= FOSSIL_DEPOSIT_RATE;
+    return this.lineageRecentRate(lg) >= FOSSIL_DEPOSIT_RATE;
+  }
+
+  /**
+   * 支系近窗成功率(2026-11-27):来自账本上的有界 recent 序列(settle 时 FIFO 维护)。
+   * 旧快照没有 recent 字段 → 回退累计口径(历史数据平滑迁移,不产生断崖);
+   * 回退口径在失败稀释下偏保守,只会少存化石,不会错存。
+   * Lineage recent-window success rate. Falls back to lifetime ratio for old
+   * snapshots without the `recent` field (conservative direction: fewer
+   * deposits, never wrong ones).
+   */
+  private lineageRecentRate(lg: LineageLedger): number {
+    if (lg.recent && lg.recent.length) {
+      return lg.recent.filter(Boolean).length / lg.recent.length;
+    }
+    return lg.trials === 0 ? 0 : lg.successes / lg.trials;
   }
 
   templatesCount(): number { return this.fossilTemplates.size; }

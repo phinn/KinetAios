@@ -144,6 +144,36 @@ test('H6 同签名模板上限:超过上限按口碑淘汰', () => {
   assert.equal(reg.templatesBySignature(sig).length, MAX_FOSSILS_PER_SIGNATURE);
 });
 
+test('H6b 化石沉积用支系近窗而非累计成功率(2026-11-27 G 修复)', () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h6b', 'light');
+  // 场景:早期 6 次失败把累计成功率压到 0.71,之后连赢 ——
+  // 旧口径(累计 16/22=0.727)永远到不了 0.8,化石存不下;近窗口径应当沉积。
+  const founder = reg.spawnFounder('fossil-h6b');
+  for (let i = 0; i < 6; i++) {
+    reg.settle({ success: false, aborted: false, cause: 'assertion_fail', steps: 2, tokens: 0,
+      lastOutput: 'x', trace: undefined, finished: true, detail: '' }, founder, { cause: 'assertion_fail' });
+  }
+  // aborted 不入近窗(与 aborted 不计成败同口径):插 3 次中止,验证不影响窗口
+  for (let i = 0; i < 3; i++) {
+    reg.settle({ success: false, aborted: true, cause: 'timeout', steps: 2, tokens: 0,
+      lastOutput: '', trace: undefined, finished: false, detail: '' }, reg.spawnFounder('fossil-h6b'), { cause: 'timeout' });
+  }
+  // 16 连胜:近窗 20 内 = 6 败滑出 → 16/16... 实际窗口 20 容量 = 4 败 + 16 胜 = 0.8
+  const okTrace = [{ tool: 'shell', args: { command: 'echo deposit' } }] as never;
+  const okOutcome = { success: true, aborted: false, cause: 'none', steps: 3, tokens: 0,
+    lastOutput: 'ok', trace: okTrace, finished: true, detail: 'deposited example' };
+  // 前 15 胜:窗口 4 败+15 胜=0.792 → 不沉积(累计口径此时 15/21=0.714 更低,双重不可达)
+  for (let i = 0; i < 15; i++) reg.settle(okOutcome, reg.spawnFounder('fossil-h6b'), { cause: 'none' });
+  const lgMid = reg.ledgerOf(founder.lineage);
+  assert.ok(lgMid?.recent && lgMid.recent.length === 20, '近窗序列应有界 20');
+  assert.equal(reg.templateBySignature(sig), undefined, '近窗 0.792 < 0.8 → 不沉积');
+  // 第 16 胜:窗口 16 胜+4 败 = 0.8 → 沉积
+  reg.settle(okOutcome, reg.spawnFounder('fossil-h6b'), { cause: 'none' });
+  const tpl = reg.templateBySignature(sig);
+  assert.ok(tpl, '近窗达标后应沉积化石(旧累计口径 16/22=0.727,永远达不到 0.8)');
+});
+
 test('H7 槽位抽取:引号内路径优先(支持空格 / 无扩展名)', () => {
   const slots = extractSlots([{ tool: 'read_file', args: { path: '/old/path.txt' } }]);
   assert.equal(fillSlot('读一下 "src/main/index" 并按要求改', slots[0]), 'src/main/index');

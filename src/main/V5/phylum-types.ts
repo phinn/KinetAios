@@ -119,6 +119,11 @@ export interface LineageLedger extends FitnessRecord {
   generation: number;
   /** 繁殖冷却:出生后必须活满 MIN_AGE_BEFORE_BREED 个个体才可再繁殖 */
   bornGenCounter: number;
+  /** 近窗结果序列(成功=true),FIFO 有界(容量 RECENT_WINDOW_SLICE)。
+   *  2026-11-27 修正:化石沉积/收敛判定此前注释写"近窗"实际用累计成功率 ——
+   *  早期失败的支系连赢 15 次都到不了 0.8,化石永远存不下。改用有界近窗后,
+   *  新账本要攒满窗口才达标(保守),老支系不受历史拖累(可达)。 */
+  recent?: boolean[];
 }
 
 /** 化石层:死因墓志铭(3-5 行摘要),供突变归因参考;不存轨迹。 */
@@ -179,6 +184,10 @@ export const BREED_MIN_TRIALS = 12;
 
 /** 个体死亡后 fitness 合并进支系账本前的最近表现窗口。 */
 export const RECENT_WINDOW = 3;
+
+/** 支系近窗结果序列容量(2026-11-27 新增):存款线 0.8 在 20 容量下容忍 4 次失败;
+ *  与 RECENT_WINDOW(合并记账时的旧窗口常量)无关,勿混淆。 */
+export const RECENT_SLICE_CAP = 20;
 
 // ── 化石层(档②轨迹重放;修正版设计:种群终态是墓园,化石零 token 运行)──
 
