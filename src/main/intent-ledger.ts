@@ -176,31 +176,50 @@ export function evaluateIntentAssertions(
 ): IntentAssertionReport {
   if (!assertions.length) return { checks: 0, pass: true, failed: [], lastShell: null };
 
+  // 绑定策略(2026-11-27 A 修复):不再绑"最后一次 shell"——验收命令通过后,
+  // 模型随手跑的无关 shell(如 ls 报错)会把 exit_code_eq:0 断言翻红。
+  // 改绑"最后一次**退出码为 0** 的 shell"作为验收基准;输出类断言只扫通过命令,
+  // 非零退出的输出不进 regex_contains(避免把报错日志当证据)。
+  // Binding strategy: bind to the LAST SUCCESSFUL (exit 0) shell, not merely the
+  // last one — stray failing commands after acceptance must not veto the gate.
   let last: { output: string; exitCode?: number; command: string | null } | null = null;
   for (const row of rows) {
     const ev = row.data as ConvEvent;
     if (ev.type !== 'tool/call' || ev.name !== 'shell') continue;
     const output = String(ev.result ?? '');
     // 退出码解析(2026-11-27 收紧):事件层 50k 截断历史上会把尾部 [exit:N] 丢掉,
-    // 旧逻辑用 outcome==='ok' 兜底成 0 —— 截断+outcome ok 的组合会把真实失败判通过。
-    // 现在:截断注记在场且解析不到退出码 = 未知,不兜底(exit_code_eq 判 not-ok,
-    // 宁可让模型重跑命令,不可放水)。未截断的事件 outcome ok 才可信为 0。
-    // Exit-code resolution: only trust outcome='ok' when the event was NOT
-    // truncated — a truncated event without the [exit:N] marker has unknown code.
+    // 旧逻辑用 outcome==='ok' fallback 会把真实失败判通过。
+    // 现在:截断注记在场且解析不到退出码 = 未知 → 跳过该事件(不作为验收基准),
+    // 宁可让模型重跑命令,不可放水。未截断且 outcome=ok → 退出码 0。
+    // Exit-code resolution: a truncated event without [exit:N] has unknown code
+    // and is skipped as evidence; only untruncated ok events are trusted as 0.
     const truncated = output.includes('…[事件存证截断');
     const exitCode = parseExitCode(output) ?? (ev.outcome === 'ok' && !truncated ? 0 : undefined);
-    let command: string | null = null;    try {
+    let command: string | null = null;
+    try {
       const parsed = JSON.parse(String(ev.args ?? '{}')) as { command?: unknown };
       if (typeof parsed.command === 'string') command = parsed.command;
     } catch { /* args 非 JSON:只影响文案,不影响判定 */ }
-    last = { output, exitCode, command };
+    // 只把「退出码已知且为 0」的 shell 作为验收基准;非零退出/退出码未知的跳过。
+    if (exitCode === 0) last = { output, exitCode, command };
   }
 
+  // 一个通过 shell 都没有 → 断言无从判定,全部 not-ok(文案说明原因)。
   const lastTool: LastToolOutput = last
     ? { name: 'shell', output: last.output, exitCode: last.exitCode }
     : { name: '', output: '', exitCode: undefined };
   const verdict = evaluateChecks(assertions, cwd, lastTool);
-  return { checks: assertions.length, pass: verdict.pass, failed: verdict.failed, lastShell: last?.command ?? null };
+  if (!last) {
+    return {
+      checks: assertions.length, pass: false,
+      failed: assertions.map((c) => ({
+        id: c.type, actual: '事件流里没有任何退出码为 0 的 shell 命令可作验收基准',
+        describe: describeCheck(c, cwd),
+      })),
+      lastShell: null,
+    };
+  }
+  return { checks: assertions.length, pass: verdict.pass, failed: verdict.failed, lastShell: last.command ?? null };
 }
 
 /**

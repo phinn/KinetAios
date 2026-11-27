@@ -264,6 +264,8 @@ test('parseExitCode:兼容真实 shell 的 [exit 0] 与实验 runner 的 [exit:0
 test('截断的 shell 输出:解析不到退出码时不按 outcome=ok 兜底成 0(B 修复)', () => {
   seqCounter = 0;
   // 50k 截断把尾部 [exit:1] 丢了,outcome 却是 ok —— 旧行为:兜底 0,失败判通过。
+  // 新行为(2026-11-27):截断+无 exit 标记 = 退出码未知 → 该事件不作验收基准;
+  // 没有其它成功 shell → 全部断言 not-ok(宁可重跑,不可放水)。
   const truncatedFail = shellRow(
     'npm test',
     'ok line\n…[事件存证截断,原长 52,000 字符]',
@@ -271,9 +273,10 @@ test('截断的 shell 输出:解析不到退出码时不按 outcome=ok 兜底成
   );
   const r = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [truncatedFail]);
   assert.equal(r.pass, false, '截断+无 exit 标记 → 退出码未知,不能兜底 0');
-  assert.ok(r.failed[0].actual.includes('未观测到'), r.failed[0].actual);
+  assert.ok(r.failed[0].actual.includes('退出码为 0'), r.failed[0].actual);
 
   // 新行为(修复后):截断注记在,但 TaskManager 会把 [exit:N] 追加回尾部 → 解析到 1。
+  // exit 1 非成功命令,不作基准 → 仍 not-ok(A 修复语义)。
   const truncatedFailRecovered = shellRow(
     'npm test',
     'ok line\n…[事件存证截断,原长 52,000 字符]\n[exit 1]',
@@ -281,12 +284,13 @@ test('截断的 shell 输出:解析不到退出码时不按 outcome=ok 兜底成
   );
   const r2 = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [truncatedFailRecovered]);
   assert.equal(r2.pass, false);
-  assert.equal(r2.failed[0].actual, '退出码 1');
+  assert.equal(r2.failed[0].actual, '事件流里没有任何退出码为 0 的 shell 命令可作验收基准');
 
-  // 未截断 + outcome ok → 兜底 0 仍然成立(历史行为保留)。
+  // 未截断 + outcome ok → 兜底 0 仍然成立(历史行为保留),且作验收基准。
   const cleanOk = shellRow('echo hi', 'hi', 'ok');
   const r3 = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [cleanOk]);
   assert.equal(r3.pass, true, r3.failed[0]?.actual);
+  assert.equal(r3.lastShell, 'echo hi');
 });
 
 test('parseAssertions:拒绝未知类型 / 缺字段 / 坏正则 / 超限', () => {
@@ -317,21 +321,27 @@ test('文件类断言:直接读盘判定,失败给出实际值', () => {
   assert.ok(fail.failed[0].actual.includes('不存在'), fail.failed[0].actual);
 });
 
-test('输出类断言:绑定意图生命周期内最后一次 shell', () => {
+test('输出类断言:绑定最后一个退出码为 0 的 shell(2026-11-27 A 修复)', () => {
   seqCounter = 0;
   const rows = [
     shellRow('npm test', 'all good\n[exit 0]\n', 'ok'),
-    shellRow('npm test', '1 failing\n[exit 1]\n', 'error'),
+    // 验收命令通过后模型随手跑的无关失败命令 —— 不应劫持判定(A 修复核心场景)
+    shellRow('ls /nonexistent', 'ls: ...: No such file\n[exit 1]\n', 'error'),
   ];
-  const bad = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), rows);
+  const good = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), rows);
+  assert.equal(good.pass, true, good.failed[0]?.actual);
+  assert.equal(good.lastShell, 'npm test', 'lastShell 应指向最后一个成功命令');
+  assert.equal(evaluateIntentAssertions([{ type: 'regex_contains', pattern: 'all good' }], process.cwd(), rows).pass, true,
+    'regex_contains 扫的是成功命令的输出,无关报错不进来');
+  // 全是失败命令 → 没有可作基准的 shell,断言全 not-ok
+  const bad = evaluateIntentAssertions([{ type: 'exit_code_eq', value: 0 }], process.cwd(), [rows[1]]);
   assert.equal(bad.pass, false);
-  assert.equal(bad.lastShell, 'npm test');
-  assert.equal(bad.failed[0].actual, '退出码 1');
-  assert.equal(evaluateIntentAssertions([{ type: 'regex_contains', pattern: 'all good' }], process.cwd(), [rows[0]]).pass, true);
+  assert.equal(bad.lastShell, null);
+  assert.ok(bad.failed[0].actual.includes('退出码为 0'), bad.failed[0].actual);
+  // 空 rows:同 not-ok
   const noShell = evaluateIntentAssertions([{ type: 'output_not_empty' }], process.cwd(), []);
   assert.equal(noShell.pass, false);
   assert.equal(noShell.lastShell, null);
-  assert.ok(noShell.failed[0].actual.includes('为空'), noShell.failed[0].actual);
 });
 
 test('canComplete:契约断言未过 → 拒绝,并给出条目与依据', () => {
@@ -339,12 +349,14 @@ test('canComplete:契约断言未过 → 拒绝,并给出条目与依据', () =>
   const report = assessEvidence([editOk(), diagPass()]);
   const base = { status: 'open' as const, contract: 'npm test 全绿', budgetUSD: 0, spentUSD: 0 };
   const fail = evaluateIntentAssertions(
-    [{ type: 'exit_code_eq', value: 0 }], process.cwd(), [shellRow('npm test', 'x\n[exit 1]\n', 'error')],
+    [{ type: 'exit_code_eq', value: 0 }], process.cwd(),
+    // A 修复后:exit 1 的 shell 不作基准 → 没有成功 shell → 断言 not-ok,拒绝完成
+    [shellRow('npm test', 'x\n[exit 1]\n', 'error')],
   );
   const v = canComplete(base, report, fail);
   assert.equal(v.ok, false);
-  assert.ok(v.reasons.some((r) => r.includes('契约断言未通过') && r.includes('A1')), v.reasons.join(';'));
-  assert.ok(v.reasons.some((r) => r.includes('npm test')), '拒绝文案应回显最后一次 shell 命令');
+  assert.ok(v.reasons.some((r) => r.includes('契约断言未通过') && r.includes('exit_code_eq')), v.reasons.join(';'));
+  assert.ok(v.reasons.some((r) => r.includes('退出码为 0')), '拒绝文案应说明没有成功 shell 作基准');
   const ok = canComplete(base, report, evaluateIntentAssertions([], process.cwd(), []));
   assert.equal(ok.ok, true, ok.reasons.join(';'));
 });
