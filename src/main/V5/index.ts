@@ -126,6 +126,23 @@ export class DirectV5Engine implements Engine {
     const templateId = templateIdOfPrompt(prompt);
     const weight = weightOfPrompt(prompt);
     const reg = this.reg();
+    const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
+
+    // 追溯选择(2026-11):上一轮交付后用户用「纠正/重问」回来 —— 最真实的适应度信号,
+    // 但轮末结算已经完成。这里补一次降权:配子 rejections+1(≥2 出池),化石记一次 miss。
+    const prevTurn = conv.turns.length >= 2 ? conv.turns[conv.turns.length - 2] : undefined;
+    if (prevTurn?.done) {
+      const fb = store.getTurnFeedback(prevTurn.id);
+      if (fb && fb.rating < 0 && (fb.tags.includes('correction') || fb.tags.includes('reask'))) {
+        const applied = reg.applyUserRejection(prevTurn.id);
+        if (applied.applied) {
+          onEvent({
+            type: 'status',
+            text: `↩️ v5: 上一轮被用户否决(${fb.tags.join(',')}),已对该基因/化石降权${applied.retiredGene ? '(连续否决,配子出池)' : ''}。`,
+          });
+        }
+      }
+    }
     const tplLabel = `${templateId}@${weight}`;
     const sig = signatureOfTemplateWeighted(templateId, weight);
 
@@ -138,7 +155,7 @@ export class DirectV5Engine implements Engine {
       const replayTools = allTools();
       const replayCtx: ToolCtx = {
         cwd: conv.cwd, confirm: this.confirm, signal,
-        convId: conv.id, turnId: conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined,
+        convId: conv.id, turnId,
         crossProjectMemory: conv.crossProjectMemory === true, sandbox: getSettings().sandbox,
       };
       const assertions = reg.liveBySignature(sig)[0]?.assertions ?? [];
@@ -183,6 +200,8 @@ export class DirectV5Engine implements Engine {
       if (won) reg.noteReplay(won.tpl.id, hit);
       if (won && hit && won.r.output !== undefined) {
         onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${won.r.steps} 步,0 LLM 调用${openIntent ? ',证据闸通过' : ''})。` });
+        // 追溯映射:这一轮由哪份化石交付(用户随后否决 → 该模板记 miss)。
+        if (turnId) reg.noteTurnGenome(turnId, { signature: sig, templateId: won.tpl.id });
         const answer = won.r.output.trim() || '(任务完成,无文本产物)';
         conv.directHistory = [
           ...conv.directHistory,
@@ -282,7 +301,6 @@ export class DirectV5Engine implements Engine {
     //   - 有 open 意图且契约断言明确未过 → 明确失败(wrong_answer 疤痕)。
     let unverified: string | null = null;
     if (outcome.success && !outcome.aborted) {
-      const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
       if (turnId) {
         const rows = store.loadTurnEvents(conv.id, turnId);
         const report = assessEvidence(rows);
@@ -346,6 +364,10 @@ export class DirectV5Engine implements Engine {
       return;
     }
     reg.settle(runOutcome, genome, facts);
+    // 追溯映射:成功交付的基因(用户随后否决 → 配子降权/出池)。
+    if (outcome.success && turnId) {
+      reg.noteTurnGenome(turnId, { genomeId: genome.genomeId, lineage: genome.lineage, signature: sig });
+    }
     // 疤痕入库(2026-10 持久化:修前引擎层内存 Map,重启即丢,定向突变退化成盲目克隆)。
     // 环境类失败(目标不存在/权限/IO)不是基因能改的事 → 不留疤,后代按克隆+抖动继续探索。
     const envFailure = facts.cause === 'tool_error' && isEnvironmentErrorKind(facts.errorKind);
@@ -465,6 +487,8 @@ export class DirectV5Engine implements Engine {
 
     if (outcome.aborted) { onEvent({ type: 'done' }); return; }
     if (r.accepted) {
+      const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
+      if (turnId) reg.noteTurnGenome(turnId, { genomeId: genome.genomeId, lineage: genome.lineage, signature: sig });
       const answer = r.last?.lastOutput?.trim() || '(任务完成,无文本产物)';
       onEvent({ type: 'status', text: `✅ v5·ralph: 验收通过(${r.loops} 轮 / ${r.totalSteps} 步)。基因已入配子池。` });
       conv.directHistory = [

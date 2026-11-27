@@ -38,6 +38,20 @@ export function isEnvironmentErrorKind(kind?: ToolErrorKind): boolean {
   return kind === 'not_found' || kind === 'permission' || kind === 'unsupported' || kind === 'io';
 }
 
+/** 交付该轮的基因身份(用于用户否决后的追溯降权)。 */
+export interface TurnGenome {
+  /** 化石重放交付时无基因个体 → 只记模板 */
+  genomeId?: string;
+  lineage?: string;
+  signature: string;
+  /** 若该轮由化石重放交付,记下模板 id(否决时同时给模板记 miss) */
+  templateId?: string;
+  at: number;
+}
+
+/** 追溯映射上限:只保留最近 200 轮(用户否决通常发生在下一轮)。 */
+const TURN_GENOMES_MAX = 200;
+
 export interface RegistryInit {
   /** JSONL 落盘目录;不传 = 纯内存(测试用) */
   dataDir?: string;
@@ -62,6 +76,8 @@ export class GeneRegistry {
   /** 疤痕库:lineage → 最近死亡归因(定向突变依据)。随 state.json 持久化 ——
    *  修前在引擎层纯内存:死亡与替补出生之间 app 重启,疤痕丢失,定向突变退化成盲目克隆。 */
   private scars = new Map<string, AttributionFacts>();
+  /** turnId → 交付该轮的基因(用户否决追溯用;随 state.json 持久化) */
+  private turnGenomes = new Map<string, TurnGenome>();
   private fossils: FossilRecord[] = [];
   /** 可执行化石模板(档②轨迹重放):成功轨迹的槽位化骨架,跨会话持久化 */
   private fossilTemplates = new Map<string, TraceTemplate>();
@@ -107,6 +123,7 @@ export class GeneRegistry {
       ledgers: [...this.ledgers.entries()],
       gametes: [...this.gametes.entries()],
       scars: [...this.scars.entries()],
+      turnGenomes: [...this.turnGenomes.entries()],
       seq: this.seq,
     };
     const f = path.join(this.dataDir, 'state.json');
@@ -122,13 +139,14 @@ export class GeneRegistry {
       const snap = JSON.parse(fs.readFileSync(f, 'utf8')) as {
         live: Genome[]; fitness: [string, FitnessRecord][];
         ledgers: [string, LineageLedger][]; gametes: [string, Gamete][];
-        scars?: [string, AttributionFacts][]; seq?: number;
+        scars?: [string, AttributionFacts][]; turnGenomes?: [string, TurnGenome][]; seq?: number;
       };
       for (const g of snap.live) this.live.set(g.genomeId, g);
       for (const [k, v] of snap.fitness) this.fitness.set(k, v);
       for (const [k, v] of snap.ledgers) this.ledgers.set(k, v);
       for (const [k, v] of snap.gametes) this.gametes.set(k, v);
       for (const [k, v] of snap.scars ?? []) this.scars.set(k, v);
+      for (const [k, v] of snap.turnGenomes ?? []) this.turnGenomes.set(k, v);
       this.seq = snap.seq ?? 0;
     } catch { /* 损坏文件当作空种群:重新 founder,进化层自愈 */ }
   }
@@ -142,6 +160,43 @@ export class GeneRegistry {
   /** 取疤痕(替补出生时定突变方向);无痕返回 null。 */
   scarOf(lineage: string): AttributionFacts | null {
     return this.scars.get(lineage) ?? null;
+  }
+
+  // ── 追溯选择:交付后用户否决(下一轮开头调用)──
+
+  /** 记下这一轮由哪个基因交付(成功交付才需要)。 */
+  noteTurnGenome(turnId: string, info: Omit<TurnGenome, 'at'>): void {
+    if (!turnId) return;
+    this.turnGenomes.set(turnId, { ...info, at: Date.now() });
+    if (this.turnGenomes.size > TURN_GENOMES_MAX) {
+      const oldest = [...this.turnGenomes.entries()].sort((a, b) => a[1].at - b[1].at)[0];
+      if (oldest) this.turnGenomes.delete(oldest[0]);
+    }
+    this.saveState();
+  }
+
+  /**
+   * 用户否决的追溯结算:不否定当轮已发生的事实,只调整未来的繁殖/重放概率。
+   *   - 有化石模板 → 记一次 replay miss(坏路线降口碑,连续 2 次退役);
+   *   - 交付基因仍在配子池 → rejections+1,≥2 出池并留 wrong_answer 疤(后代定向规避)。
+   */
+  applyUserRejection(turnId: string): { applied: boolean; retiredGene: boolean; templateId?: string } {
+    const info = this.turnGenomes.get(turnId);
+    if (!info) return { applied: false, retiredGene: false };
+    this.turnGenomes.delete(turnId);
+    if (info.templateId) this.noteReplay(info.templateId, false);
+    let retiredGene = false;
+    const gam = info.genomeId ? this.gametes.get(info.genomeId) : undefined;
+    if (gam) {
+      gam.rejections = (gam.rejections ?? 0) + 1;
+      if (gam.rejections >= 2) {
+        this.gametes.delete(info.genomeId as string);
+        retiredGene = true;
+        if (info.lineage) this.recordScar(info.lineage, { cause: 'wrong_answer' });
+      }
+    }
+    this.saveState();
+    return { applied: true, retiredGene, templateId: info.templateId };
   }
 
   // ── 出生 ──
@@ -394,15 +449,20 @@ export class GeneRegistry {
     return succ >= 0.7;
   }
 
-  /** 取配子(该签名下质量最好的:近窗成功率优先,同分取最新)。 */
+  /** 取配子(该签名下质量最好的:近窗成功率优先,同分取被否次数少、再取最新)。 */
   bestGamete(sig: string): Gamete | undefined {
     let best: Gamete | undefined;
     for (const g of this.gametes.values()) {
       if (g.genome.signature !== sig) continue;
+      if ((g.rejections ?? 0) >= 2) continue; // 连续被用户否决 → 出池
       if (!best) { best = g; continue; }
       const rate = g.recent.trials === 0 ? 0 : g.recent.successes / g.recent.trials;
       const bestRate = best.recent.trials === 0 ? 0 : best.recent.successes / best.recent.trials;
-      if (rate > bestRate || (rate === bestRate && g.diedAt > best.diedAt)) best = g;
+      const rej = g.rejections ?? 0;
+      const bestRej = best.rejections ?? 0;
+      if (rate > bestRate
+        || (rate === bestRate && rej < bestRej)
+        || (rate === bestRate && rej === bestRej && g.diedAt > best.diedAt)) best = g;
     }
     return best;
   }

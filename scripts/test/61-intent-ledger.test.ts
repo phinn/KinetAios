@@ -397,4 +397,13 @@ test('重复失败模式:同轮同工具同错误 ≥2 次才升级,内容稳定
   assert.ok(text.includes('edit_mismatch') && text.includes('2 次'), text);
 });
 
+test('turn_feedback 读取:V5 追溯选择入口', () => {
+  store.recordTurnFeedback('turn-fb-1', -1, ['reask', 'fail:unknown:unmet']);
+  const fb = store.getTurnFeedback('turn-fb-1');
+  assert.ok(fb);
+  assert.equal(fb!.rating, -1);
+  assert.ok(fb!.tags.includes('reask'));
+  assert.equal(store.getTurnFeedback('turn-fb-missing'), null);
+});
+
 run();

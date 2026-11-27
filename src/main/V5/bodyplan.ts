@@ -142,6 +142,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       catch { return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name, culpritErrorKind: 'bad_args', detail: `bad JSON args for '${call.name}'` }; }
 
       let output: string;
+      let telemetry: ReturnType<typeof toolTelemetryOf> | null = null;
       // tool_start 先挂"运行中"spinner 卡(与 AgentLoop 同协议,startId 配对原位替换)。
       // 没有它,个体思考+执行期间 UI 完全静默 → "状态在动但不知道在干嘛"(2026-10-14 用户反馈)。
       const startId = `bp${steps}-${call.name}`;
@@ -150,8 +151,8 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
         const ctx: ToolCtx = { ...opts.toolCtx, cwd: opts.cwd, confirm: opts.toolCtx?.confirm ?? (async () => true), signal };
         const t0 = Date.now();
         output = await tool.run(args, ctx);
-        const tel = toolTelemetryOf(output);
-        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), durationMs: Date.now() - t0, outcome: tel.outcome, errorKind: tel.errorKind, errorSummary: tel.errorSummary, startId });
+        telemetry = toolTelemetryOf(output);
+        onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: output.slice(0, MAX_TOOL_OUTPUT_CHARS), durationMs: Date.now() - t0, outcome: telemetry.outcome, errorKind: telemetry.errorKind, errorSummary: telemetry.errorSummary, startId });
       } catch (err) {
         const msg = `tool '${call.name}' threw: ${(err as Error).message}`;
         onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: msg, outcome: 'error', errorKind: 'exception', errorSummary: msg.slice(0, 200), startId });
@@ -193,7 +194,9 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
           violatedAssertionId: violated.id, detail: `assertion '${violated.id}' violated after retry on '${call.name}'` };
       }
 
-      trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
+      // 化石只记成功动作:失败调用(报错/退出码非 0)不进轨迹 ——
+      // 否则「先报错、再换参数成功」的轨迹会把报错步骤也沉积进模板,重放时先踩一遍坑。
+      if (telemetry?.outcome !== 'error') trace.push({ tool: call.name, args: safeParseArgs(call.arguments) });
       messages.push(assistantToolMsg(call));
       messages.push({ role: 'user', content: `[tool:${call.name}] ${output.slice(0, MAX_TOOL_OUTPUT_CHARS)}` });
     }

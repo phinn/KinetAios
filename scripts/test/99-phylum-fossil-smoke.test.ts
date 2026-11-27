@@ -9,6 +9,9 @@
 // 全链确定性:mock 工具 + 无 rng 路径,不碰真实模型、不依赖 LLM。
 
 import { test, run } from './harness';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { GeneRegistry } from '../../src/main/V5/registry';
 import { replay, extractSlots, fillSlot } from '../../src/main/V5/replay';
 import {
@@ -146,6 +149,14 @@ test('H7 槽位抽取:引号内路径优先(支持空格 / 无扩展名)', () =>
   assert.equal(fillSlot('读一下 "src/main/index" 并按要求改', slots[0]), 'src/main/index');
   assert.equal(fillSlot("处理 'a b.ts' 文件", slots[0]), 'a b.ts');
   assert.equal(fillSlot('处理 /tmp/new-input.txt', slots[0]), '/tmp/new-input.txt');
+});
+
+test('H8 槽位兜底:任务只给词干时用仓库索引唯一匹配', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'v5-repo-'));
+  fs.mkdirSync(path.join(dir, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(dir, 'src', 'foo-bar.ts'), 'export const x = 1;\n');
+  const slots = extractSlots([{ tool: 'read_file', args: { path: '/old/foo-bar.ts' } }]);
+  assert.equal(fillSlot('改一下 foo-bar 的样式', slots[0], dir), 'src/foo-bar.ts');
 });
 
 run();

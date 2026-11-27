@@ -718,6 +718,21 @@ export function recordTurnFeedback(turnId: string, rating: number, tags: string[
 
 export type TurnFeedback = { turnId: string; rating: number; tags: string[]; ts: number };
 
+/** 读一轮的隐式反馈(V5 追溯选择:下一轮开头判断上一轮是否被用户否决)。 */
+export function getTurnFeedback(turnId: string): TurnFeedback | null {
+  if (!turnId) return null;
+  const r = stmt('SELECT turn_id, rating, tags, ts FROM turn_feedback WHERE turn_id=?;').get(turnId) as
+    | { turn_id: string; rating: number | null; tags: string | null; ts: number }
+    | undefined;
+  if (!r) return null;
+  return {
+    turnId: r.turn_id,
+    rating: r.rating ?? 0,
+    tags: (r.tags ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+    ts: r.ts,
+  };
+}
+
 /** 一次性后台迁移的完成标记(如历史 feedback 回填)。存 app_meta,重复启动不再跑。
  *  / One-shot migration flags. Keep them out of schema migrations so a partial run can resume. */
 export function getMeta(key: string): string | null {

@@ -18,7 +18,9 @@ import { runBodyPlan, type ChatFn, type ToolDefLike } from '../../src/main/V5/bo
 import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
 import { HEAVY_FOUNDER_STEPS } from '../../src/main/V5/registry';
 import { scriptChat } from './phylum-mock';
-import { abCompare } from '../../src/main/V5/runner';import type { Tool } from '../../src/main/tools';
+import { abCompare } from '../../src/main/V5/runner';
+import { runBench } from '../../src/main/V5/bench';
+import type { Tool } from '../../src/main/tools';
 import type { AssertionDsl } from '../../src/main/V5/phylum-types';
 
 const SIG = 'data-clean@v1';
@@ -434,6 +436,59 @@ test('H1 离线 A/B:同一任务比较两个基因,按成功 → 步数裁决', 
   assert.equal(report.rows.length, 2);
   assert.equal(report.rows.every((r) => r.success), true, '两基因都应跑通');
   assert.ok(report.winner === 'parent' || report.winner === 'child', `winner=${report.winner}`);
+});
+
+test('B3 追溯否决:配子 rejections+1,连续 2 次出池并留疤', () => {
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  reg.settle({
+    taskId: 'b3', signature: g.signature, genomeId: g.genomeId, lineage: g.lineage,
+    generation: g.generation, success: true, aborted: false, cause: 'none', steps: 2, tokens: 10, detail: 'ok',
+  }, g, { cause: 'none' });
+  assert.ok(reg.bestGamete(g.signature), '成功结算应留下配子');
+
+  reg.noteTurnGenome('turn-b3-1', { genomeId: g.genomeId, lineage: g.lineage, signature: g.signature });
+  const r1 = reg.applyUserRejection('turn-b3-1');
+  assertEq(r1.applied, true);
+  assertEq(r1.retiredGene, false, '第一次否决只降权');
+  assert.ok(reg.bestGamete(g.signature), '一次否决不应直接出池');
+
+  reg.noteTurnGenome('turn-b3-2', { genomeId: g.genomeId, lineage: g.lineage, signature: g.signature });
+  const r2 = reg.applyUserRejection('turn-b3-2');
+  assertEq(r2.retiredGene, true, '连续两次否决 → 配子出池');
+  assertEq(reg.bestGamete(g.signature), undefined);
+  assert.ok(reg.scarOf(g.lineage), '出池时留下 wrong_answer 疤');
+});
+
+test('F9 化石轨迹只收成功动作:失败调用不进 trace', async () => {
+  let n = 0;
+  const tools = ALL_TOOLS.map((t) => t.name === 'shell'
+    ? { ...t, run: async () => (++n === 1 ? '❌ 命令失败' : 'ok\n[exit 0]') }
+    : t);
+  const chat = scriptChat([
+    { toolName: 'shell', args: { cmd: 'a' } },
+    { toolName: 'shell', args: { cmd: 'b' } },
+    { content: 'done' },
+  ]);
+  const g = mkRegistry().spawnFounder(SIG);
+  const r = await runBodyPlan({ chat, tools, task: 'x', body: express(g, tools, ['shell']), cwd: '/tmp/phylum-f9' });
+  assertEq(r.success, true);
+  assertEq(r.trace?.length, 1, `失败动作不应进化石: ${JSON.stringify(r.trace)}`);
+});
+
+test('H2 离线评测任务集:被摘除工具的基因成功率下降', async () => {
+  const reg = mkRegistry();
+  const good = reg.spawnFounder(SIG);
+  const bad = reg.cloneFrom(good);
+  bad.affinity.shell = 0.1;
+  bad.affinity.web_search = 0.1;
+  const report = await runBench({
+    sides: [{ label: 'good', genome: good }, { label: 'bad', genome: bad }],
+  });
+  const g = report.summary.find((s) => s.label === 'good')!;
+  const b = report.summary.find((s) => s.label === 'bad')!;
+  assert.ok(g.successes > b.successes, `good=${g.successes} bad=${b.successes}`);
+  assertEq(report.winner, 'good');
 });
 
 run();

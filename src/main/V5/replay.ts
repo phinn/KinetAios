@@ -8,6 +8,7 @@
 import type { Tool, ToolCtx } from '../tools';
 import type { TraceStep, TraceTemplate } from './phylum-types';
 import { checkAssertions } from './express';
+import { scanRepo } from '../repo-map';
 
 /** 槽位路径寻址:模板根上的 JSON pointer,如 "steps.0.args.path"。 */
 export function slotRead(tpl: { steps: TraceStep[] }, ptr: string): unknown {
@@ -50,22 +51,45 @@ export function extractSlots(steps: TraceStep[]): TraceTemplate['slots'] {
   return slots;
 }
 
+/** 路径槽位兜底:在仓库索引里找唯一同名文件(零 LLM)。
+ *  只在常规抽取都失败时调用;同名多份 = 不确定,宁可 miss 也不猜。 */
+function resolvePathFromRepo(cwd: string | undefined, hints: string[]): string | undefined {
+  if (!cwd) return undefined;
+  try {
+    const idx = scanRepo(cwd);
+    for (const hint of hints) {
+      const base = (hint.split(/[\\/]/).pop() ?? '').trim().toLowerCase();
+      if (!base || base.length < 3) continue;
+      const hits = idx.files.filter((f) => {
+        const name = (f.path.split('/').pop() ?? '').toLowerCase();
+        const stem = name.replace(/\.[^.]+$/, '');
+        return name === base || (!base.includes('.') && stem === base);
+      });
+      if (hits.length === 1) return hits[0].path;
+    }
+  } catch { /* 索引失败 → 保持 miss,不硬闯 */ }
+  return undefined;
+}
+
 /** 从新任务文本为槽位抽值。返回 undefined = 抽不出(重放方应 miss 回退,不用 fallback 硬闯)。 */
-export function fillSlot(task: string, slot: TraceTemplate['slots'][number]): unknown {
+export function fillSlot(task: string, slot: TraceTemplate['slots'][number], cwd?: string): unknown {
   if (slot.kind === 'url') {
     return task.match(/https?:\/\/\S+/)?.[0];
   }
   if (slot.kind === 'path') {
     // 引号里的路径优先(可含空格/无扩展名):新任务常写成 "src/main/index" 或 'a b.ts'
-    const quoted = [...task.matchAll(/["'`]([^"'`\n]+)["'`]/g)]
-      .map((m) => m[1].trim())
-      .find((v) => /[\\/]/.test(v) || /\.\w{1,8}$/.test(v));
+    const quotedAll = [...task.matchAll(/["'`]([^"'`\n]+)["'`]/g)].map((m) => m[1].trim());
+    const quoted = quotedAll.find((v) => /[\\/]/.test(v) || /\.\w{1,8}$/.test(v));
     if (quoted) return quoted;
     const inTask = task.match(/[\w./~\\-]+\.(ts|js|json|md|csv|xlsx|txt|log|html)/g);
     if (inTask?.length) return inTask[0];
     // 例子文件名尾部出现在任务里 → 复用原路径(同文件场景)
     const tail = String(slot.fallback).split(/[\\/]/).pop() ?? '';
     if (tail && task.toLowerCase().includes(tail.toLowerCase())) return slot.fallback;
+    // 仓库索引兜底:任务只给了文件名/词干、没给扩展名(如「改 foo-bar 的样式」)
+    const words = task.match(/[\w.-]{3,}/g) ?? [];
+    const resolved = resolvePathFromRepo(cwd, [...quotedAll, ...words]);
+    if (resolved) return resolved;
     return undefined;
   }
   // query:任务原文(重放语义 = 把新任务交给同一条已验证的工具链)
@@ -98,7 +122,7 @@ export async function replay(
     // 本模板所有指向这步的槽位填充
     for (const slot of tpl.slots) {
       if (!slot.path.startsWith(`steps.${i}.args.`)) continue;
-      const v = fillSlot(task, slot);
+      const v = fillSlot(task, slot, ctx.cwd);
       if (v === undefined || v === '') {
         return { hit: false, miss: { reason: 'arg_unfilled', detail: `槽位无法从任务文本填充:${slot.path}` }, steps: i };
       }

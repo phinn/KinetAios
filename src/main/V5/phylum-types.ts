@@ -207,6 +207,8 @@ export interface Gamete {
   /** 死时的近窗表现(供配子质量加权,排除近窗全败的老冠军) */
   recent: FitnessRecord;
   diedAt: number;
+  /** 用户否决次数(交付后被纠正/重问):≥2 → 该配子出池 */
+  rejections?: number;
 }
 
 /** 一次执行的完整记录(实验数据行)。 */
