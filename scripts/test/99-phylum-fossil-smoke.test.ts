@@ -159,4 +159,16 @@ test('H8 槽位兜底:任务只给词干时用仓库索引唯一匹配', () => {
   assert.equal(fillSlot('改一下 foo-bar 的样式', slots[0], dir), 'src/foo-bar.ts');
 });
 
+test('H9 化石成本:口碑同分时步数更少的模板优先', () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h9', 'light');
+  makeSuccess(reg, 'fossil-h9', [{ tool: 'read_file', args: { path: '/tmp/a' } }]);
+  makeSuccess(reg, 'fossil-h9', [
+    { tool: 'read_file', args: { path: '/tmp/b' } },
+    { tool: 'shell', args: { command: 'cat /tmp/b' } },
+    { tool: 'shell', args: { command: 'wc /tmp/b' } },
+  ]);
+  assert.equal(reg.templatesBySignature(sig)[0].steps.length, 1, '便宜路线应排前面');
+});
+
 run();

@@ -391,11 +391,13 @@ export class GeneRegistry {
     void trials; void rate; // 语义已并入上方判定,参数留作签名文档
   }
 
-  /** 同签名全部模板,按重放口碑排序;口碑相近时新模板优先(给新路线曝光机会)。 */
+  /** 同签名全部模板,按重放口碑排序;口碑相同 → 步数少(便宜路线)优先;再同 → 新模板优先。 */
   templatesBySignature(sig: string): TraceTemplate[] {
     return [...this.fossilTemplates.values()]
       .filter((t) => t.signature === sig)
-      .sort((a, b) => replayScore(b) - replayScore(a) || b.bornAt - a.bornAt);
+      .sort((a, b) => replayScore(b) - replayScore(a)
+        || a.steps.length - b.steps.length
+        || b.bornAt - a.bornAt);
   }
 
   /** 该签名当前最值得先试的化石(口碑最高)。 */
@@ -449,20 +451,13 @@ export class GeneRegistry {
     return succ >= 0.7;
   }
 
-  /** 取配子(该签名下质量最好的:近窗成功率优先,同分取被否次数少、再取最新)。 */
+  /** 取配子(近窗成功率优先;成功率相同 → 每成功步数少的优先;再同 → 被否次数少、最新)。 */
   bestGamete(sig: string): Gamete | undefined {
     let best: Gamete | undefined;
     for (const g of this.gametes.values()) {
       if (g.genome.signature !== sig) continue;
       if ((g.rejections ?? 0) >= 2) continue; // 连续被用户否决 → 出池
-      if (!best) { best = g; continue; }
-      const rate = g.recent.trials === 0 ? 0 : g.recent.successes / g.recent.trials;
-      const bestRate = best.recent.trials === 0 ? 0 : best.recent.successes / best.recent.trials;
-      const rej = g.rejections ?? 0;
-      const bestRej = best.rejections ?? 0;
-      if (rate > bestRate
-        || (rate === bestRate && rej < bestRej)
-        || (rate === bestRate && rej === bestRej && g.diedAt > best.diedAt)) best = g;
+      if (!best || betterGamete(g, best)) best = g;
     }
     return best;
   }
@@ -510,6 +505,28 @@ export class GeneRegistry {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
+}
+
+const rateOf = (f: FitnessRecord): number => (f.trials === 0 ? 0 : f.successes / f.trials);
+
+/** 每成功一次的平均步数(无成功时退回每试平均)—— 成本只在成功率打平时参与排序。 */
+const costOf = (f: FitnessRecord): number => {
+  const base = f.successes > 0 ? f.successes : f.trials;
+  return base === 0 ? 0 : f.stepsSum / base;
+};
+
+/** 配子质量:成功率高 → 每成功步数少 → 被否次数少 → 更新。 */
+function betterGamete(a: Gamete, b: Gamete): boolean {
+  const ra = rateOf(a.recent);
+  const rb = rateOf(b.recent);
+  if (ra !== rb) return ra > rb;
+  const ca = costOf(a.recent);
+  const cb = costOf(b.recent);
+  if (Math.abs(ca - cb) > 1e-9) return ca < cb;
+  const ja = a.rejections ?? 0;
+  const jb = b.rejections ?? 0;
+  if (ja !== jb) return ja < jb;
+  return a.diedAt > b.diedAt;
 }
 
 /** 化石重放口碑(Laplace 平滑):0/0 的新模板 = 0.5,有命中才升、连续 miss 才降 ——

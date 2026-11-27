@@ -131,6 +131,6 @@ export async function runBench(opts: {
       avgSteps: rs.length ? rs.reduce((s, r) => s + r.steps, 0) / rs.length : 0,
       avgTokens: rs.length ? rs.reduce((s, r) => s + r.tokens, 0) / rs.length : 0,
     };
-  }).sort((a, b) => b.successes - a.successes || a.avgSteps - b.avgSteps);
+  }).sort((a, b) => b.successes - a.successes || a.avgSteps - b.avgSteps || a.avgTokens - b.avgTokens);
   return { rows, summary, winner: summary[0] && summary[0].successes > 0 ? summary[0].label : null };
 }

@@ -460,6 +460,20 @@ test('B3 追溯否决:配子 rejections+1,连续 2 次出池并留疤', () => {
   assert.ok(reg.scarOf(g.lineage), '出池时留下 wrong_answer 疤');
 });
 
+test('B4 成本感知:同等成功率下,每成功步数更少的配子胜出', () => {
+  const reg = mkRegistry();
+  const cheap = reg.spawnFounder(SIG);
+  const pricey = reg.spawnFounder(SIG);
+  const settle = (g: Genome, steps: number) => reg.settle({
+    taskId: 'b4', signature: g.signature, genomeId: g.genomeId, lineage: g.lineage,
+    generation: 0, success: true, aborted: false, cause: 'none',
+    steps, tokens: steps * 100, detail: 'ok',
+  }, g, { cause: 'none' });
+  settle(cheap, 2);
+  settle(pricey, 9);
+  assertEq(reg.bestGamete(cheap.signature)?.genome.genomeId, cheap.genomeId);
+});
+
 test('F9 化石轨迹只收成功动作:失败调用不进 trace', async () => {
   let n = 0;
   const tools = ALL_TOOLS.map((t) => t.name === 'shell'
