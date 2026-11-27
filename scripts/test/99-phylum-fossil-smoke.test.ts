@@ -221,6 +221,13 @@ test('H9 化石成本:口碑同分时步数更少的模板优先', () => {
     { tool: 'shell', args: { command: 'cat /tmp/b' } },
     { tool: 'shell', args: { command: 'wc /tmp/b' } },
   ]);
+  // F 修复(9b17d16)后 untried 模板乐观置顶(H6c 已覆盖该语义),步数决胜只在
+  // 「已试模板口碑同分」时生效 —— 先给两份各记一次 hit 进入同口径,同时消除
+  // 两次沉积跨 Date.now() 毫秒边界时 untried 内 bornAt 降序导致的偶发翻车。
+  // After the F fix, untried templates rank first (covered by H6c); the
+  // steps tiebreak applies to tried templates with equal reputation, so
+  // record one replay hit each before asserting (also kills the same-ms flake).
+  for (const t of reg.templatesBySignature(sig)) reg.noteReplay(t.id, true);
   assert.equal(reg.templatesBySignature(sig)[0].steps.length, 1, '便宜路线应排前面');
 });
 
