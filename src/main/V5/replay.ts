@@ -114,19 +114,26 @@ export async function replay(
   ctx: ToolCtx,
   onStep?: (i: number, name: string, output: string) => void,
 ): Promise<ReplayResult> {
+  // 污染防护(2026-11-27):传入的 tpl 是注册表里的**活引用**,slotWrite 直接写它会把
+  // 新任务参数覆写进化石档案 —— fillSlot 的 fallback(同文件场景复用锚点)随之漂移,
+  // 且 saveTemplates 落盘后污染跨进程永久化。故全程在私有副本上填充,档案不可变。
+  // Mutation guard: the caller passes a live registry object; fill all slots on a
+  // private clone so the fossil archive stays immutable (persistence would
+  // otherwise bake the last task's args into the template forever).
+  const plan = structuredClone(tpl);
   let lastOutput = '';
-  for (let i = 0; i < tpl.steps.length; i++) {
-    const st = tpl.steps[i];
+  for (let i = 0; i < plan.steps.length; i++) {
+    const st = plan.steps[i];
     const tool = tools.find((t) => t.name === st.tool);
     if (!tool) return { hit: false, miss: { reason: 'tool_missing', detail: `化石步 ${i + 1}:工具 ${st.tool} 已不在注册表` }, steps: i };
     // 本模板所有指向这步的槽位填充
-    for (const slot of tpl.slots) {
+    for (const slot of plan.slots) {
       if (!slot.path.startsWith(`steps.${i}.args.`)) continue;
       const v = fillSlot(task, slot, ctx.cwd);
       if (v === undefined || v === '') {
         return { hit: false, miss: { reason: 'arg_unfilled', detail: `槽位无法从任务文本填充:${slot.path}` }, steps: i };
       }
-      slotWrite(tpl, slot.path, v);
+      slotWrite(plan, slot.path, v);
     }
     let args: Record<string, unknown>;
     try { args = st.args; } catch { args = {}; }
@@ -143,5 +150,5 @@ export async function replay(
       return { hit: false, miss: { reason: 'assertion_fail', detail: `断言 ${violated.id} 拦截化石输出`, violatedAssertionId: violated.id }, steps: i };
     }
   }
-  return { hit: true, output: lastOutput, steps: tpl.steps.length };
+  return { hit: true, output: lastOutput, steps: plan.steps.length };
 }

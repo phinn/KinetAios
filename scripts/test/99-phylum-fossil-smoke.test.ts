@@ -212,6 +212,23 @@ test('H8 槽位兜底:任务只给词干时用仓库索引唯一匹配', () => {
   assert.equal(fillSlot('改一下 foo-bar 的样式', slots[0], dir), 'src/foo-bar.ts');
 });
 
+test('H10 重放不改写档案:slotWrite 只落私有副本,注册表模板原样(2026-11-27 污染防护)', async () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h10', 'light');
+  // shell command 是 query kind → fillSlot 返回任务原文,重放必覆写(若无克隆防护)
+  const trace: TraceStep[] = [{ tool: 'shell', args: { command: 'echo ORIGINAL_TASK' } }];
+  makeSuccess(reg, 'fossil-h10', trace);
+  const before = JSON.stringify(reg.templatesBySignature(sig)[0]);
+  const tools: Tool[] = [{
+    name: 'shell', description: '', parameters: {},
+    async run(args: Record<string, unknown>) { return `ran: ${args.command}`; },
+  }];
+  const ctx: ToolCtx = { cwd: '/tmp', confirm: async () => true };
+  const r = await replay(reg.templatesBySignature(sig)[0], 'BRAND_NEW_TASK', tools, [], ctx);
+  assert.ok(r.hit, `query 槽位应可填充(miss=${JSON.stringify(r.miss)})`);
+  assert.equal(JSON.stringify(reg.templatesBySignature(sig)[0]), before, '重放后注册表模板必须原样(档案不可变)');
+});
+
 test('H9 化石成本:口碑同分时步数更少的模板优先', () => {
   const reg = new GeneRegistry({ rng: () => 0.5 });
   const sig = signatureOfTemplateWeighted('fossil-h9', 'light');
