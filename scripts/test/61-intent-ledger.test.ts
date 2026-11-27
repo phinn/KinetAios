@@ -10,7 +10,7 @@ import {
   assessEvidence, canComplete, evaluateIntentAssertions, recordEvidence, refreshIntentSpend, formatIntent, intentViews, INTENT_LEDGER_HINT,
 } from '../../src/main/intent-ledger';
 import { evaluateChecks, parseAssertions, parseExitCode } from '../../src/main/assertions';
-import { failureDigest } from '../../src/main/lesson-signal';
+import { failureDigest, repeatedFailurePatterns, patternLesson } from '../../src/main/lesson-signal';
 import { evaluateAcceptance } from '../../src/main/V5/ralph-accept';
 import type { BodyPlanResult } from '../../src/main/V5/bodyplan';
 import { runBodyPlan } from '../../src/main/V5/bodyplan';
@@ -380,6 +380,21 @@ test('失败信号:intent_done 被拒原因进入 lesson 输入', () => {
   });
   assert.ok(d.includes('intent_done 被拒绝'), d);
   assert.ok(d.includes('没有任何可核验的通过证据'), d);
+});
+
+test('重复失败模式:同轮同工具同错误 ≥2 次才升级,内容稳定可去重', () => {
+  const steps = [
+    { name: 'edit_file', outcome: 'error' as const, errorKind: 'edit_mismatch' as const },
+    { name: 'edit_file', outcome: 'error' as const, errorKind: 'edit_mismatch' as const },
+    { name: 'shell', outcome: 'error' as const, errorKind: 'exit_code' as const },
+    { name: 'read_file', outcome: 'ok' as const },
+  ];
+  const pats = repeatedFailurePatterns(steps);
+  assert.equal(pats.length, 1, '单次失败不升级,只升级重复模式');
+  assert.equal(pats[0].tool, 'edit_file');
+  assert.equal(pats[0].count, 2);
+  const text = patternLesson(pats[0]);
+  assert.ok(text.includes('edit_mismatch') && text.includes('2 次'), text);
 });
 
 run();

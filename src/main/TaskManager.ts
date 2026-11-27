@@ -19,7 +19,7 @@ import { CORRECTION_RE, isReask } from './turn-signal';
 import { attributeTurnFailure } from './turn-attribution';
 import { decideFailureResponse, pushFailureDirective, cooldownTool, clearFailureState } from './failure-policy';
 import { runMemorySleep } from './memory-sleep';
-import { failureDigest } from './lesson-signal';
+import { failureDigest, repeatedFailurePatterns, patternLesson } from './lesson-signal';
 
 // P1: 主进程同时驻留 turns 的会话上限(单 conv turns 可达 25MB,8 个 ≈ 最坏 200MB 封顶)
 const MAIN_TURNS_LRU_MAX = 8;
@@ -1678,6 +1678,13 @@ verdict 判定:产出没有实质进展、方向跑偏、质量达不到这位�
         const convCwd = store.getConversationCwd(convId);
         for (const l of lessons.slice(0, 3)) {
           store.addLesson(l.text, convId, convCwd ?? null, l.importance || 8);
+        }
+      } else {
+        // 重复失败升级(2026-11):模型没提炼出教训时,把同轮重复的失败模式固化成确定性教训。
+        // 只补空位、不覆盖模型输出;内容稳定 + addLesson 精确去重,防记忆污染。
+        const convCwd = store.getConversationCwd(convId);
+        for (const p of repeatedFailurePatterns(turn.steps ?? []).slice(0, 2)) {
+          store.addLesson(patternLesson(p), convId, convCwd ?? null, 7);
         }
       }
 

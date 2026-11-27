@@ -10,7 +10,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  type Genome, TOOL_CUTOFF, MUTATION_STEP, CLONE_JITTER, TOOL_AFFINITY_DEFAULT,
+  type Genome, TOOL_CUTOFF, MUTATION_STEP, CLONE_JITTER, TOOL_AFFINITY_DEFAULT, GRANULARITY_HINT_STEP,
 } from '../../src/main/V5/phylum-types';
 import { GeneRegistry } from '../../src/main/V5/registry';
 import { express, checkAssertions } from '../../src/main/V5/express';
@@ -18,7 +18,7 @@ import { runBodyPlan, type ChatFn, type ToolDefLike } from '../../src/main/V5/bo
 import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
 import { HEAVY_FOUNDER_STEPS } from '../../src/main/V5/registry';
 import { scriptChat } from './phylum-mock';
-import type { Tool } from '../../src/main/tools';
+import { abCompare } from '../../src/main/V5/runner';import type { Tool } from '../../src/main/tools';
 import type { AssertionDsl } from '../../src/main/V5/phylum-types';
 
 const SIG = 'data-clean@v1';
@@ -84,6 +84,26 @@ test('B1b tool_error 二次归因: 累积下降并钳制在 [0,0.95]', () => {
   for (let i = 0; i < 5; i++) g = reg.mutateFrom(g, { cause: 'tool_error', toolName: 'shell' });
   // 0.5 - 5×0.15 = -0.25 → 钳到 0
   assertEq(g.affinity.shell, 0, '五次惩罚后钳到下限 0');
+});
+
+test('B1c 参数类失败(bad_args/edit_mismatch):不惩罚工具亲和,改为拆细 + 文字疤痕', () => {
+  const reg = mkRegistry();
+  const parent = reg.spawnFounder(SIG);
+  const g0 = parent.routing.granularity;
+  const bad = reg.mutateFrom(parent, { cause: 'tool_error', toolName: 'edit_file', errorKind: 'edit_mismatch' });
+  assertEq(bad.affinity.edit_file, undefined, '参数类失败不得写入亲和惩罚');
+  assertEq(Math.abs(bad.routing.granularity - (g0 + GRANULARITY_HINT_STEP)) < 1e-9, true, `granularity=${bad.routing.granularity}`);
+  assert.ok(bad.scarNote?.includes('old_string'), `疤痕应指出具体坑: ${bad.scarNote}`);
+  assert.ok(express(bad, ALL_TOOLS, []).instinctPrompt.includes('疤痕'), '疤痕必须进本能 prompt');
+});
+
+test('B1d 环境类失败(not_found/permission):零基因扰动、零疤痕', () => {
+  const reg = mkRegistry();
+  const parent = reg.spawnFounder(SIG);
+  const child = reg.mutateFrom(parent, { cause: 'tool_error', toolName: 'read_file', errorKind: 'not_found' });
+  assertEq(child.affinity.read_file ?? TOOL_AFFINITY_DEFAULT, TOOL_AFFINITY_DEFAULT);
+  assertEq(child.routing.granularity, parent.routing.granularity);
+  assertEq(child.scarNote, undefined);
 });
 
 test('B2 assertion_fail 归因: 删除被违反的断言(断言基因位只删不增)', () => {
@@ -162,6 +182,31 @@ test('E1 断言 gate: exit_code_eq / output_not_empty / line_count_gt / 坏正�
   assertEq(checkAssertions([A({ type: 'line_count_gt', value: 2 })], { name: 'shell', output: '1\n2\n3' }), null);
   // 坏正则 → 视为违规(死因归因会把这条删掉,防脏断言存活)
   assertEq(checkAssertions([A({ type: 'regex_contains', pattern: '[' })], { name: 'x', output: 'ok' })?.id, 'a');
+});
+
+test('E2 真实 shell 的 [exit 0] 能触发基因断言(修前只认 [exit:0])', async () => {
+  const reg = mkRegistry();
+  const g = reg.spawnFounder(SIG);
+  g.assertions.push(A({ type: 'exit_code_eq', value: 0 }));
+  const tools = ALL_TOOLS.map((t) => t.name === 'shell' ? { ...t, run: async () => 'ok\n[exit 0]\n' } : t);
+  const chat = scriptChat([{ toolName: 'shell', args: { cmd: 'true' } }, { content: 'done' }]);
+  const r = await runBodyPlan({
+    chat, tools, task: 'x', body: express(g, tools, ['shell']), cwd: '/tmp/phylum-test-e2',
+  });
+  assert.equal(r.success, true, `真实 [exit 0] 不应被断言误杀: ${r.detail}`);
+
+  const bad = ALL_TOOLS.map((t) => t.name === 'shell' ? { ...t, run: async () => 'boom\n[exit 1]\n' } : t);
+  const g2 = reg.spawnFounder(SIG);
+  g2.assertions.push(A({ type: 'exit_code_eq', value: 0 }));
+  const chat2 = scriptChat([
+    { toolName: 'shell', args: { cmd: 'false' } },
+    { toolName: 'shell', args: { cmd: 'false' } },
+    { content: 'give up' },
+  ]);
+  const r2 = await runBodyPlan({
+    chat: chat2, tools: bad, task: 'x', body: express(g2, bad, ['shell']), cwd: '/tmp/phylum-test-e2',
+  });
+  assert.equal(r2.cause, 'assertion_fail', `[exit 1] 应被 exit_code_eq 拦住, got ${r2.cause}`);
 });
 
 // ── F/G. bodyplan 全链路(mock chat + 真 bodyplan + 真 registry 结算) ──
@@ -375,6 +420,20 @@ test('F8 步数墙硬上限: 基因 maxSteps=9999 被夹到 200', async () => {
   g.routing.maxSteps = 9999; // 模拟失控进化出的超预算基因
   const body = express(g, ALL_TOOLS, ['shell']); // 缺省 ceil=STEP_BUDGET_CEIL=64
   assert.ok(body.maxSteps <= 200, `硬上限应生效, got ${body.maxSteps}`);
+});
+
+test('H1 离线 A/B:同一任务比较两个基因,按成功 → 步数裁决', async () => {
+  const reg = mkRegistry();
+  const parent = reg.spawnFounder(SIG);
+  const child = reg.cloneFrom(parent);
+  const report = await abCompare({
+    task: '回显 ok', cwd: '/tmp/phylum-ab', tools: ALL_TOOLS, requiredTools: ['shell'],
+    sides: [{ label: 'parent', genome: parent }, { label: 'child', genome: child }],
+    chatFactory: () => scriptChat([{ toolName: 'shell', args: { cmd: 'echo ok' } }, { content: 'done' }]),
+  });
+  assert.equal(report.rows.length, 2);
+  assert.equal(report.rows.every((r) => r.success), true, '两基因都应跑通');
+  assert.ok(report.winner === 'parent' || report.winner === 'child', `winner=${report.winner}`);
 });
 
 run();

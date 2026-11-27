@@ -255,7 +255,8 @@ export class Universe {
     return {
       taskId: `${tpl.id}#v${variant}`, signature: genome.signature,
       genomeId: genome.genomeId, lineage: genome.lineage, generation: genome.generation,
-      success, aborted: r.aborted, cause, steps: r.steps, tokens: r.tokens,
+      success, aborted: r.aborted, cause, culpritErrorKind: r.culpritErrorKind,
+      steps: r.steps, tokens: r.tokens,
       detail: r.detail || g.detail,
       trace: r.trace,
     };
@@ -268,7 +269,7 @@ export class Universe {
       case 'assertion_fail':
         return { cause: o.cause, assertionId: /'([^']+)'/.exec(o.detail)?.[1] };
       case 'tool_error':
-        return { cause: o.cause, toolName: /'([^']+)'/.exec(o.detail)?.[1] };
+        return { cause: o.cause, toolName: /'([^']+)'/.exec(o.detail)?.[1], errorKind: o.culpritErrorKind };
       default:
         return { cause: o.cause };
     }
@@ -293,6 +294,53 @@ function avgScore(rows: RunOutcome[]): number {
   const cn = rows.map((o) => 1 - Math.min(1, o.tokens / 200)); // 粗略类内成本分:仅观测
   const ok = rows.filter((o) => o.success).length / rows.length;
   return 0.6 * ok + 0.4 * (cn.reduce((s, v) => s + v, 0) / cn.length);
+}
+
+// ── 离线 A/B:验证一次突变是否真的更好 ──
+
+export interface AbSide { label: string; genome: Genome }
+export interface AbRow {
+  label: string;
+  success: boolean;
+  cause: DeathCause;
+  steps: number;
+  tokens: number;
+  detail: string;
+}
+export interface AbReport { rows: AbRow[]; winner: string | null }
+
+/**
+ * 同一任务 + 同一确定性模型脚本,比较多个基因(不结算、不进账本)。
+ * 这是「进化是否有效」的离线入口:突变前后各跑一遍,胜者按 成功 → 步数 → 成本 裁决。
+ * 线上真实流量只做验证,不做唯一判据 —— 否则选择压力会被用户任务的偶然性吞掉。
+ */
+export async function abCompare(opts: {
+  task: string;
+  cwd: string;
+  tools: Tool[];
+  requiredTools?: string[];
+  sides: AbSide[];
+  /** 每个基因的模型脚本(可读 body 模拟人格);缺省用默认 mockChat(需 requiredTools 才会调工具) */
+  chatFactory?: (side: { label: string; genome: Genome; body: ExpressedBody }) => ChatFn;
+}): Promise<AbReport> {
+  const rows: AbRow[] = [];
+  for (const side of opts.sides) {
+    const body = express(side.genome, opts.tools, opts.requiredTools ?? []);
+    const chat = opts.chatFactory
+      ? opts.chatFactory({ label: side.label, genome: side.genome, body })
+      : mockChat(seededRng(1), {
+          id: 'ab',
+          render: () => opts.task,
+          grade: () => ({ success: true, detail: '' }),
+          requiredTools: opts.requiredTools ?? [],
+        }, 0);
+    const r = await runBodyPlan({
+      task: opts.task, cwd: opts.cwd, body, genome: side.genome, chat, tools: body.tools,
+    });
+    rows.push({ label: side.label, success: r.success, cause: r.cause, steps: r.steps, tokens: r.tokens, detail: r.detail });
+  }
+  const winners = rows.filter((r) => r.success).sort((a, b) => a.steps - b.steps || a.tokens - b.tokens);
+  return { rows, winner: winners[0]?.label ?? null };
 }
 
 // ── 脚本化 mock 模型:个体"性格"由模板 + rng 决定,死亡/成功路径可精确编排 ──

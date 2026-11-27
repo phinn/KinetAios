@@ -7,6 +7,7 @@
 
 import type { Tool } from '../tools';
 import type { AssertionDsl } from '../assertions';
+import type { ToolErrorKind } from '../../shared/types';
 
 /** 支系 id:同签名下由创始个体分裂出的进化线。 */
 export type LineageId = string;
@@ -93,6 +94,8 @@ export interface Genome {
   affinity: Record<string, number>; // 0..1,缺省 TOOL_AFFINITY_DEFAULT
   /** ③ 断言模板库 */
   assertions: AssertionGene[];
+  /** 出生疤痕(定向突变的文字化):参数类失败留下的避坑提示,进本能 prompt;成功后清除 */
+  scarNote?: string;
   /** 繁殖代数:founder=0 */
   generation: number;
   /** 出生时间(单调时钟毫秒,记账用) */
@@ -144,6 +147,10 @@ export const CLONE_JITTER = 0.03;
 /** 定向突变的单步扰动幅度。0.15:一次突变足以改变工具选择结果,又不至于把基因打碎。 */
 export const MUTATION_STEP = 0.15;
 
+/** 参数类失败(坏参数/编辑失配)的突变幅度:不惩罚工具亲和,改为把步子拆细。
+ *  0.05:两三次同类失败才明显改变执行粒度,单次不破坏已验证路线。 */
+export const GRANULARITY_HINT_STEP = 0.05;
+
 /** 亲和钳制范围。下限 0(全禁),上限 0.95(永远给环境留一点反向证据的空间)。 */
 export const AFFINITY_MIN = 0;
 export const AFFINITY_MAX = 0.95;
@@ -181,6 +188,10 @@ export const FOSSIL_DEPOSIT_RATE = 0.8;
 /** 化石连续重放失败达此数 → 退役(环境漂移:化石是零感知的,错得安静,靠计数器发现)。 */
 export const FOSSIL_MISS_RETIRE = 2;
 
+/** 同签名化石模板上限:3 —— 允许多条路线竞争(旧模板 miss 时自动尝试下一份),
+ *  又不让墓园无界膨胀。3 份足够覆盖"同一任务的不同工具链"。 */
+export const MAX_FOSSILS_PER_SIGNATURE = 3;
+
 /** 收敛判定:支系近窗 trials ≥ 此数且成功率 ≥ FOSSIL_DEPOSIT_RATE → 本能 prompt 冻结路由(档①)。 */
 export const CONVERGE_MIN_TRIALS = 6;
 
@@ -208,6 +219,8 @@ export interface RunOutcome {
   success: boolean;
   aborted: boolean;
   cause: DeathCause;
+  /** cause=tool_error 时的工具错误类型(遥测;归因据此区分参数类/环境类) */
+  culpritErrorKind?: ToolErrorKind;
   steps: number;
   /** 归一化成本(token 计,结算时类内转 z) */
   tokens: number;

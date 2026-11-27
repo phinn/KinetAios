@@ -7,12 +7,13 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
+import type { ToolErrorKind } from '../../shared/types';
 import {
   type FitnessRecord, type FossilRecord, type Gamete, type Genome,
   type LineageLedger, type RunOutcome, type DeathCause,
   type TraceTemplate, type TraceSlot, type TraceStep,
   AFFINITY_PENALTY, ESSENTIAL_RECOVERY, AFFINITY_MIN, AFFINITY_MAX, MUTATION_STEP, MAX_STEPS_MAX,
-  FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS,
+  GRANULARITY_HINT_STEP, FOSSIL_DEPOSIT_RATE, FOSSIL_MISS_RETIRE, MAX_FOSSILS_PER_SIGNATURE, CONVERGE_MIN_TRIALS,
 } from './phylum-types';
 import { extractSlots } from './replay';
 import { signatureOfTemplateWeighted } from './signature';
@@ -22,12 +23,19 @@ export interface AttributionFacts {
   cause: DeathCause;
   /** cause=tool_error:肇事工具名 */
   toolName?: string;
+  /** cause=tool_error:工具错误类型(参数类失败不该惩罚工具亲和) */
+  errorKind?: ToolErrorKind;
   /** cause=assertion_fail:被违反的断言 id */
   assertionId?: string;
   /** cause=essential_tool_missing:被摘除的必需工具名 */
   missingTool?: string;
   /** 本轮被亲和过滤摘除的工具全集(判断 essential_tool_missing 用) */
   removedTools?: string[];
+}
+
+/** 环境类错误:目标不存在/权限/不支持/IO —— 不是基因能改的事,零惩罚、不留疤。 */
+export function isEnvironmentErrorKind(kind?: ToolErrorKind): boolean {
+  return kind === 'not_found' || kind === 'permission' || kind === 'unsupported' || kind === 'io';
 }
 
 export interface RegistryInit {
@@ -163,6 +171,7 @@ export class GeneRegistry {
     child.genomeId = this.nextId('g');
     child.generation = parent.generation + 1;
     child.bornAt = Date.now();
+    delete child.scarNote; // 成功者不留旧疤:疤痕只传一代
     for (const k of Object.keys(child.affinity)) {
       child.affinity[k] = clamp(child.affinity[k] + (this.rng() * 2 - 1) * 0.03, AFFINITY_MIN, AFFINITY_MAX);
     }
@@ -182,8 +191,20 @@ export class GeneRegistry {
     switch (facts.cause) {
       case 'tool_error': {
         if (facts.toolName) {
-          child.affinity[facts.toolName] = clamp(
-            (child.affinity[facts.toolName] ?? 0.5) - AFFINITY_PENALTY, AFFINITY_MIN, AFFINITY_MAX);
+          if (facts.errorKind === 'bad_args' || facts.errorKind === 'edit_mismatch') {
+            // 参数类失败:工具本身没坏,是调用方式不对 —— 不降亲和(否则会把有用工具摘掉),
+            // 改为把步子拆细 + 留文字疤痕给后代本能提示。
+            child.routing.granularity = clamp(child.routing.granularity + GRANULARITY_HINT_STEP, 0, 1);
+            child.scarNote = facts.errorKind === 'edit_mismatch'
+              ? `编辑 ${facts.toolName} 的 old_string 曾失配:先读原文再改,不要凭记忆下笔。`
+              : `调用 ${facts.toolName} 曾参数报错:先确认路径/参数形状,再执行。`;
+          } else if (isEnvironmentErrorKind(facts.errorKind)) {
+            // 环境类(目标不存在/权限/不支持/IO):基因改不了世界 → 零惩罚、零疤痕
+          } else {
+            child.affinity[facts.toolName] = clamp(
+              (child.affinity[facts.toolName] ?? 0.5) - AFFINITY_PENALTY, AFFINITY_MIN, AFFINITY_MAX);
+            child.scarNote = `${facts.toolName} 曾执行失败(${facts.errorKind ?? 'unknown'}):换参数或换等价手段。`;
+          }
         }
         break;
       }
@@ -292,26 +313,39 @@ export class GeneRegistry {
 
   // ── 可执行化石(档②轨迹重放)──
 
-  /** 成功轨迹 → 槽位化模板。参数形状保留,实例相关值进槽位表(重放时按 kind 重抽)。 */
+  /** 成功轨迹 → 槽位化模板。参数形状保留,实例相关值进槽位表(重放时按 kind 重抽)。
+   *  同签名允许多份模板竞争(不同工具路线);完全相同的轨迹不重复沉积。 */
   private depositFossil(trace: TraceStep[], g: Genome, taskExample: string, trials: number, rate: number): void {
+    const steps = structuredClone(trace);
+    const same = this.templatesBySignature(g.signature)
+      .find((t) => JSON.stringify(t.steps) === JSON.stringify(steps));
+    if (same) { same.taskExample = taskExample.slice(0, 2000); this.saveTemplates(); return; }
     const t: TraceTemplate = {
       version: 1, id: this.nextId('tpl'), signature: g.signature, lineage: g.lineage,
-      steps: structuredClone(trace),
-      slots: extractSlots(trace),
+      steps,
+      slots: extractSlots(steps),
       taskExample: taskExample.slice(0, 2000),
       bornAt: Date.now(), replayHits: 0, replayMisses: 0,
     };
-    // 同签名替换:新化石继承旧化石的重放口碑(.hits/-misses),不重置教训
-    const old = this.templateBySignature(g.signature);
-    if (old) { t.replayHits = old.replayHits; t.replayMisses = old.replayMisses; this.fossilTemplates.delete(old.id); }
     this.fossilTemplates.set(t.id, t);
+    // 竞争淘汰:同签名只留重放口碑前 MAX_FOSSILS_PER_SIGNATURE 份(新模板按 bornAt 优先曝光)
+    for (const drop of this.templatesBySignature(g.signature).slice(MAX_FOSSILS_PER_SIGNATURE)) {
+      this.fossilTemplates.delete(drop.id);
+    }
     this.saveTemplates();
     void trials; void rate; // 语义已并入上方判定,参数留作签名文档
   }
 
+  /** 同签名全部模板,按重放口碑排序;口碑相近时新模板优先(给新路线曝光机会)。 */
+  templatesBySignature(sig: string): TraceTemplate[] {
+    return [...this.fossilTemplates.values()]
+      .filter((t) => t.signature === sig)
+      .sort((a, b) => replayScore(b) - replayScore(a) || b.bornAt - a.bornAt);
+  }
+
+  /** 该签名当前最值得先试的化石(口碑最高)。 */
   templateBySignature(sig: string): TraceTemplate | undefined {
-    for (const t of this.fossilTemplates.values()) if (t.signature === sig) return t;
-    return undefined;
+    return this.templatesBySignature(sig)[0];
   }
 
   /** 重放质量记账:hit 归零 miss,miss 累计达 FOSSIL_MISS_RETIRE → 退役(环境漂移检测)。 */
@@ -416,4 +450,10 @@ export class GeneRegistry {
 
 function clamp(v: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, v));
+}
+
+/** 化石重放口碑(Laplace 平滑):0/0 的新模板 = 0.5,有命中才升、连续 miss 才降 ——
+ *  新路线因此有机会被尝试,而不是永远排在老模板后面。 */
+function replayScore(t: TraceTemplate): number {
+  return (t.replayHits + 1) / (t.replayHits + t.replayMisses + 2);
 }

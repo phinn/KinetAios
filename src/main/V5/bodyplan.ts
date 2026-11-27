@@ -6,7 +6,7 @@
 // 断言失败处理(设计预演定的):带失败信息重试 1 次 → 仍失败 → 死(assertion_fail)。
 // 这让断言有修复机会而不只是停机条件;归因仍然精确(死因=违反的那条断言)。
 
-import type { AgentEvent, ChatMsg } from '../../shared/types';
+import type { AgentEvent, ChatMsg, ToolErrorKind } from '../../shared/types';
 import type { Completion } from '../glm';
 import type { Tool, ToolCtx } from '../tools';
 import { GLMError } from '../glm';
@@ -14,6 +14,7 @@ import { type Genome, type DeathCause, type ExpressedBody, cloneGenome } from '.
 import { toolTelemetryOf } from '../tool-telemetry';
 import type { TraceStep } from './phylum-types';
 import { checkAssertions } from './express';
+import { parseExitCode } from '../assertions';
 import type { AssertionGene } from './phylum-types';
 
 export interface BodyPlanResult {
@@ -28,6 +29,8 @@ export interface BodyPlanResult {
   violatedAssertionId?: string;
   /** 归因:肇事工具(cause=tool_error) */
   culpritTool?: string;
+  /** 归因:肇事工具的错误类型(参数类失败不该惩罚工具亲和) */
+  culpritErrorKind?: ToolErrorKind;
   /** 全程工具调用轨迹(成功时被 registry 沉积为化石模板;死亡时只留墓志铭不留轨迹) */
   trace?: TraceStep[];
   /** 自然完成:模型交了 final answer(生产路径的成功语义;实验路径仍由 grader 终裁) */
@@ -136,7 +139,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
       }
       let args: Record<string, unknown>;
       try { args = call.arguments ? JSON.parse(call.arguments) : {}; }
-      catch { return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name, detail: `bad JSON args for '${call.name}'` }; }
+      catch { return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name, culpritErrorKind: 'bad_args', detail: `bad JSON args for '${call.name}'` }; }
 
       let output: string;
       // tool_start 先挂"运行中"spinner 卡(与 AgentLoop 同协议,startId 配对原位替换)。
@@ -153,7 +156,7 @@ export async function runBodyPlan(opts: BodyPlanOpts): Promise<BodyPlanResult> {
         const msg = `tool '${call.name}' threw: ${(err as Error).message}`;
         onEvent?.({ type: 'tool', name: call.name, args: call.arguments ?? '', result: msg, outcome: 'error', errorKind: 'exception', errorSummary: msg.slice(0, 200), startId });
         return { success: false, aborted: false, cause: 'tool_error', steps, tokens, lastOutput, culpritTool: call.name,
-          detail: msg };
+          culpritErrorKind: 'exception', detail: msg };
       }
       if (output.startsWith('[aborted')) {
         return { success: false, aborted: true, cause: 'aborted', steps, tokens, lastOutput, detail: `tool '${call.name}' aborted` };
@@ -231,10 +234,11 @@ function assistantToolMsg(call: { id?: string; name: string; arguments?: string 
   };
 }
 
-/** shell 类工具的输出协议:成功尾行 [exit:N](与 tools.ts shell 工具一致);非 shell 工具返回 undefined。 */
+/** shell 类工具的输出协议:成功尾行 [exit:N] / [exit N](以 tools.ts 为准);非 shell 工具返回 undefined。
+ *  统一走 assertions.parseExitCode:此前只认冒号形式,真实 shell 的 `[exit 0]` 永远解析成 undefined
+ *  → 基因断言 exit_code_eq 在 V5 里从未生效(与 Ralph 验收修过的是同一类)。 */
 function exitCodeOf(output: string): number | undefined {
-  const m = /\[exit:(-?\d+)\]\s*$/.exec(output);
-  return m ? parseInt(m[1], 10) : undefined;
+  return parseExitCode(output);
 }
 
 function assertDescribe(a: AssertionGene): string {

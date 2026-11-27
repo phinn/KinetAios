@@ -56,6 +56,11 @@ export function fillSlot(task: string, slot: TraceTemplate['slots'][number]): un
     return task.match(/https?:\/\/\S+/)?.[0];
   }
   if (slot.kind === 'path') {
+    // 引号里的路径优先(可含空格/无扩展名):新任务常写成 "src/main/index" 或 'a b.ts'
+    const quoted = [...task.matchAll(/["'`]([^"'`\n]+)["'`]/g)]
+      .map((m) => m[1].trim())
+      .find((v) => /[\\/]/.test(v) || /\.\w{1,8}$/.test(v));
+    if (quoted) return quoted;
     const inTask = task.match(/[\w./~\\-]+\.(ts|js|json|md|csv|xlsx|txt|log|html)/g);
     if (inTask?.length) return inTask[0];
     // 例子文件名尾部出现在任务里 → 复用原路径(同文件场景)

@@ -67,6 +67,8 @@ function instinct(g: Genome): string {
   else lines.push('- 这个任务直接干,别过度规划。');
   if (g.routing.successPrior >= 0.7) lines.push('- 你的血脉在同类任务上胜率很高,按直觉走。');
   else if (g.routing.successPrior <= 0.3) lines.push('- 这类任务历史表现不佳,每步都先确认再执行。');
+  // 定向突变的文字化:上一代踩过的具体坑,只传一代(成功后 cloneFrom 会清掉)。
+  if (g.scarNote) lines.push(`- [疤痕] ${g.scarNote}`);
   return lines.length ? `[本能]\n${lines.join('\n')}` : '';
 }
 

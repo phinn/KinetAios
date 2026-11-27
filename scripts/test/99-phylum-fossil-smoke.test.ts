@@ -10,9 +10,9 @@
 
 import { test, run } from './harness';
 import { GeneRegistry } from '../../src/main/V5/registry';
-import { replay } from '../../src/main/V5/replay';
+import { replay, extractSlots, fillSlot } from '../../src/main/V5/replay';
 import {
-  FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS,
+  FOSSIL_MISS_RETIRE, CONVERGE_MIN_TRIALS, MAX_FOSSILS_PER_SIGNATURE,
   type TraceStep,
 } from '../../src/main/V5/phylum-types';
 import { signatureOfTemplateWeighted } from '../../src/main/V5/signature';
@@ -112,6 +112,40 @@ test('H4: 收敛判定 isConverged(档①冻结路由门)', () => {
 
   reg.debugFillLedger(sig, 10, 5);
   assert.equal(reg.isConverged(sig), false, '成功率低于存款线 → 不收敛');
+});
+
+test('H5 化石竞争:同签名多路线并存,连续 miss 只退役该路线', () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h5', 'light');
+  makeSuccess(reg, 'fossil-h5', [{ tool: 'read_file', args: { path: '/tmp/a.txt' } }]);
+  makeSuccess(reg, 'fossil-h5', [{ tool: 'shell', args: { command: 'grep x /tmp/a.txt' } }]);
+  assert.equal(reg.templatesBySignature(sig).length, 2, '两条不同路线应并存竞争');
+  assert.equal(reg.templatesCount(), 2);
+
+  const ranked = reg.templatesBySignature(sig);
+  assert.ok(ranked[0].bornAt >= ranked[1].bornAt, '口碑同分时新模板优先曝光');
+  const first = ranked[0];
+
+  reg.noteReplay(first.id, false);
+  reg.noteReplay(first.id, false);
+  assert.equal(reg.templatesBySignature(sig).length, 1, `连续 ${FOSSIL_MISS_RETIRE} 次 miss 只退役该路线`);
+  assert.notEqual(reg.templatesBySignature(sig)[0].id, first.id, '另一条路线应保留');
+});
+
+test('H6 同签名模板上限:超过上限按口碑淘汰', () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h6', 'light');
+  for (let i = 0; i < 5; i++) {
+    makeSuccess(reg, 'fossil-h6', [{ tool: 'shell', args: { command: `echo ${i}` } }]);
+  }
+  assert.equal(reg.templatesBySignature(sig).length, MAX_FOSSILS_PER_SIGNATURE);
+});
+
+test('H7 槽位抽取:引号内路径优先(支持空格 / 无扩展名)', () => {
+  const slots = extractSlots([{ tool: 'read_file', args: { path: '/old/path.txt' } }]);
+  assert.equal(fillSlot('读一下 "src/main/index" 并按要求改', slots[0]), 'src/main/index');
+  assert.equal(fillSlot("处理 'a b.ts' 文件", slots[0]), 'a b.ts');
+  assert.equal(fillSlot('处理 /tmp/new-input.txt', slots[0]), '/tmp/new-input.txt');
 });
 
 run();

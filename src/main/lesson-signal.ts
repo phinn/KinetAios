@@ -77,3 +77,33 @@ export function failureDigest(input: FailureSignalInput): string {
 
   return lines.join('\n').slice(0, MAX_DIGEST_CHARS);
 }
+
+export interface FailurePattern {
+  tool: string;
+  kind: ToolErrorKind | 'unknown';
+  count: number;
+}
+
+/** 同轮重复失败模式(tool + errorKind),按次数降序。用于把「重复踩同一个坑」升级成确定性教训。 */
+export function repeatedFailurePatterns(
+  steps: ReadonlyArray<Pick<TaskStep, 'name' | 'outcome' | 'errorKind'>>,
+  minCount = 2,
+): FailurePattern[] {
+  const map = new Map<string, FailurePattern>();
+  for (const s of steps) {
+    if (s.outcome !== 'error') continue;
+    const kind = s.errorKind ?? 'unknown';
+    const key = `${s.name}|${kind}`;
+    const cur = map.get(key);
+    if (cur) cur.count++;
+    else map.set(key, { tool: s.name, kind, count: 1 });
+  }
+  return [...map.values()]
+    .filter((p) => p.count >= minCount)
+    .sort((a, b) => b.count - a.count);
+}
+
+/** 重复失败 → 一条内容稳定的高信号教训(addLesson 按内容精确去重,不会刷屏)。 */
+export function patternLesson(p: FailurePattern): string {
+  return `${p.tool} 在同一轮失败 ${p.count} 次(${p.kind});先核对参数/路径再调用,重复同样的调用只会烧预算。`;
+}

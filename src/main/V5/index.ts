@@ -13,7 +13,7 @@
 
 import path from 'node:path';
 import { app } from 'electron';
-import type { AgentEvent, ChatMsg } from '../../shared/types';
+import type { AgentEvent, ChatMsg, ToolErrorKind } from '../../shared/types';
 import { currentProvider, type Completion, type Provider, type ToolDef } from '../glm';
 import { allTools, type Tool, type ToolCtx } from '../tools';
 import { getSettings, snapshot } from '../settings';
@@ -35,9 +35,9 @@ import {
 import * as store from '../store';
 import { settleRalph, acceptanceFromPrompt } from './ralph-settle';
 import { signatureOfTemplateWeighted, weightOfPrompt } from './signature';
-import { GeneRegistry, type AttributionFacts } from './registry';
-import { geneSnapshot, type Genome, type RunOutcome, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
-import { replay } from './replay';
+import { GeneRegistry, isEnvironmentErrorKind, type AttributionFacts } from './registry';
+import { geneSnapshot, type Genome, type RunOutcome, type TraceTemplate, STEP_BUDGET_CEIL, FOSSIL_DEPOSIT_RATE, CONVERGE_MIN_TRIALS } from './phylum-types';
+import { replay, type ReplayResult } from './replay';
 
 // ── 任务模板归一化(v1 签名)────────────────────────────────
 // 生产化第一步:不做 embedding,不拍指纹 —— 用保守的动词+对象规则归一化。
@@ -131,8 +131,10 @@ export class DirectV5Engine implements Engine {
 
     // ── 化石重放优先(修正版设计:种群的理想终态是墓园 —— 化石零 token 跑着,LLM 只在边界外开荒)──
     // 命中 → 零 LLM 交付;失败 → 降级开荒(尸体退回出生调度,不浪费这一轮进化信号)。
-    const tpl = reg.templateBySignature(sig);
-    if (tpl) {
+    // 化石竞争:同签名可有多份模板(不同工具路线/参数风格),按近窗重放口碑排序逐个尝试。
+    // 第一份命中即用;未命中的模板计 miss(连续 miss 退役),让更好的路线自然上位。
+    const tpls = reg.templatesBySignature(sig);
+    if (tpls.length) {
       const replayTools = allTools();
       const replayCtx: ToolCtx = {
         cwd: conv.cwd, confirm: this.confirm, signal,
@@ -145,12 +147,20 @@ export class DirectV5Engine implements Engine {
       // 口径与 intent_done 完全一致:事件流证据(assessEvidence)+ 契约断言(读盘 / 最后一次 shell)。
       // 过了才交付并把意图标 done;不过 = 化石 miss(带原因),降级 LLM 开荒。
       const openIntent = store.latestOpenIntent(conv.id);
-      const r = await replay(tpl, prompt, replayTools, assertions, replayCtx, (i, name, out) => {
-        onEvent({ type: 'tool', name, args: '(化石重放)', result: out, outcome: 'ok' });
-      });
-      let hit = r.hit;
+      const misses: string[] = [];
+      let won: { tpl: TraceTemplate; r: ReplayResult } | null = null;
+      for (const tpl of tpls) {
+        if (signal.aborted) break;
+        const r = await replay(tpl, prompt, replayTools, assertions, replayCtx, (i, name, out) => {
+          onEvent({ type: 'tool', name, args: '(化石重放)', result: out, outcome: 'ok' });
+        });
+        if (r.hit) { won = { tpl, r }; break; }
+        reg.noteReplay(tpl.id, false);
+        misses.push(`${tpl.id}:${r.miss?.reason ?? '?'}`);
+      }
+      let hit = won !== null;
       let gateMiss: string | null = null;
-      if (hit && openIntent) {
+      if (won && openIntent) {
         const fresh = store.getIntent(openIntent.id);
         if (!fresh) {
           hit = false;
@@ -170,10 +180,10 @@ export class DirectV5Engine implements Engine {
           }
         }
       }
-      reg.noteReplay(tpl.id, hit);
-      if (hit && r.output !== undefined) {
-        onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${r.steps} 步,0 LLM 调用${openIntent ? ',证据闸通过' : ''})。` });
-        const answer = r.output.trim() || '(任务完成,无文本产物)';
+      if (won) reg.noteReplay(won.tpl.id, hit);
+      if (won && hit && won.r.output !== undefined) {
+        onEvent({ type: 'status', text: `🦴 v5·${tplLabel} | 化石重放命中(${won.r.steps} 步,0 LLM 调用${openIntent ? ',证据闸通过' : ''})。` });
+        const answer = won.r.output.trim() || '(任务完成,无文本产物)';
         conv.directHistory = [
           ...conv.directHistory,
           { role: 'user', content: prompt },
@@ -182,7 +192,8 @@ export class DirectV5Engine implements Engine {
         onEvent({ type: 'done' });
         return;
       }
-      onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${gateMiss ?? r.miss?.reason ?? '?'}),回退 LLM 开荒。` });
+      const reason = gateMiss ?? (misses.length ? misses.join(' | ') : '?');
+      onEvent({ type: 'status', text: `🦴→🧬 v5·${tplLabel} | 化石重放未命中(${reason}),回退 LLM 开荒。` });
     }
 
     // 出生:无活体 → 配子克隆 / founder
@@ -263,6 +274,36 @@ export class DirectV5Engine implements Engine {
     }
     void startedTokens;
 
+    // ── 结算前的证据闸(2026-11)──
+    // 修前 bodyplan 的成功 = "模型交了 final answer + 调过工具",等于让自述直接进 fitness。
+    // 这里用与 intent_done 相同的口径复核:
+    //   - 改过文件却没有通过的诊断/测试/视觉验收 → 本轮「未核验」:结果照常交付,
+    //     但零进化信号(不进配子池、不沉积化石、不留疤,个体留在活体池);
+    //   - 有 open 意图且契约断言明确未过 → 明确失败(wrong_answer 疤痕)。
+    let unverified: string | null = null;
+    if (outcome.success && !outcome.aborted) {
+      const turnId = conv.turns.length ? conv.turns[conv.turns.length - 1].id : undefined;
+      if (turnId) {
+        const rows = store.loadTurnEvents(conv.id, turnId);
+        const report = assessEvidence(rows);
+        const openIntent = store.latestOpenIntent(conv.id);
+        if (openIntent) {
+          const cwd = store.getConversationCwd(conv.id) ?? conv.cwd;
+          const contract = evaluateIntentAssertions(openIntent.assertions, cwd, rows);
+          if (contract.checks > 0 && !contract.pass) {
+            outcome.success = false;
+            outcome.cause = 'wrong_answer';
+            // finished=false:否则下方「自然完成=success」的兜底会把契约失败重新翻成成功。
+            outcome.finished = false;
+            outcome.detail = `契约断言未过:${contract.failed.map((f) => f.id).join(',') || '?'}`;
+          }
+        }
+        if (outcome.success && report.hasEdits && !report.ok) {
+          unverified = report.reasons[0] ?? '改动了文件但没有任何可核验的通过证据';
+        }
+      }
+    }
+
     // ── 结算(死亡即结算;用户中止 = 无痕)──
     const runOutcome: RunOutcome = {
       taskId: conv.id,
@@ -273,6 +314,7 @@ export class DirectV5Engine implements Engine {
       success: outcome.success,
       aborted: outcome.aborted,
       cause: outcome.cause,
+      culpritErrorKind: outcome.culpritErrorKind,
       steps: outcome.steps,
       tokens: outcome.tokens,
       detail: outcome.detail,
@@ -281,7 +323,7 @@ export class DirectV5Engine implements Engine {
     };
     // 生产成功语义:bodyplan 自然完成(有工具轨迹的 final answer)= success。
     // 实验路径(Universe)仍由 grader 终裁,这里不改 runner。
-    if (outcome.finished && !outcome.aborted) runOutcome.success = outcome.success || outcome.trace!.length > 0;
+    if (outcome.finished && !outcome.aborted) runOutcome.success = outcome.success || (outcome.trace?.length ?? 0) > 0;
     const facts: AttributionFacts = this.attribute(runOutcome, outcome, templateId, removed);
     // ── 结算(死亡即结算)。provider 挂起=世界停摆不是个体过错,不进结算、不留疤、
     // 不计 aborted 次数,同基因原样留在活体池,窗口重置后点继续即同基因续跑。
@@ -290,15 +332,30 @@ export class DirectV5Engine implements Engine {
       onEvent({ type: 'done' });
       return;
     }
+    // 未核验:不结算(与挂起同语义),但把模型的结果照常交给用户。
+    // 进化层不奖励「宣布完成」——没有证据的一轮既不是成功也不是失败。
+    if (unverified) {
+      onEvent({ type: 'status', text: `⚠️ v5: 本轮未通过证据闸(${unverified})。结果照常交付;本轮零进化信号(不进配子池/化石)。` });
+      const answer = outcome.lastOutput.trim() || '(任务完成,无文本产物)';
+      conv.directHistory = [
+        ...conv.directHistory,
+        { role: 'user', content: prompt },
+        { role: 'assistant', content: answer },
+      ];
+      onEvent({ type: 'done' });
+      return;
+    }
     reg.settle(runOutcome, genome, facts);
-    // 疤痕入库(2026-10 持久化:修前引擎层内存 Map,重启即丢,定向突变退化成盲目克隆)
-    if (!outcome.aborted && !outcome.success) reg.recordScar(genome.lineage, facts);
+    // 疤痕入库(2026-10 持久化:修前引擎层内存 Map,重启即丢,定向突变退化成盲目克隆)。
+    // 环境类失败(目标不存在/权限/IO)不是基因能改的事 → 不留疤,后代按克隆+抖动继续探索。
+    const envFailure = facts.cause === 'tool_error' && isEnvironmentErrorKind(facts.errorKind);
+    if (!outcome.aborted && !outcome.success && !envFailure) reg.recordScar(genome.lineage, facts);
 
     // ── 替补出生:种群永续。按归因定向突变(疤痕遗传)/无归因则克隆冠军 ──
     if (!outcome.aborted && reg.liveBySignature(sig).length === 0) {
       const gam = reg.bestGamete(sig);
       if (gam) {
-        const inh = reg.scarOf(gam.genome.lineage);
+        const inh = envFailure ? null : reg.scarOf(gam.genome.lineage);
         if (inh) reg.mutateFrom(gam.genome, inh);
         else reg.cloneFrom(gam.genome);
       }
@@ -334,12 +391,16 @@ export class DirectV5Engine implements Engine {
   /** 死亡归因(与 Universe.attribute 同语义,culpritTool 走结构化字段而非 detail 反解析)。 */
   private attribute(
     o: RunOutcome,
-    raw: { detail: string; culpritTool?: string; violatedAssertionId?: string },
+    raw: { detail: string; culpritTool?: string; culpritErrorKind?: ToolErrorKind; violatedAssertionId?: string },
     templateId: string,
     removedTools: string[],
   ): AttributionFacts {
     if (o.cause === 'tool_error') {
-      return { cause: 'tool_error', toolName: raw.culpritTool ?? /tool '([^']+)'/.exec(raw.detail)?.[1] };
+      return {
+        cause: 'tool_error',
+        toolName: raw.culpritTool ?? /tool '([^']+)'/.exec(raw.detail)?.[1],
+        errorKind: raw.culpritErrorKind,
+      };
     }
     if (o.cause === 'assertion_fail') {
       return { cause: 'assertion_fail', assertionId: raw.violatedAssertionId ?? /'([^']+)'/.exec(raw.detail)?.[1] };
