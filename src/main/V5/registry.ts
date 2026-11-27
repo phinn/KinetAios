@@ -393,19 +393,31 @@ export class GeneRegistry {
       bornAt: Date.now(), replayHits: 0, replayMisses: 0,
     };
     this.fossilTemplates.set(t.id, t);
-    // 竞争淘汰:同签名只留重放口碑前 MAX_FOSSILS_PER_SIGNATURE 份(新模板按 bornAt 优先曝光)
-    for (const drop of this.templatesBySignature(g.signature).slice(MAX_FOSSILS_PER_SIGNATURE)) {
+    // 竞争淘汰:同签名只留前 MAX_FOSSILS_PER_SIGNATURE 份(2026-11-27 F 修复:
+    // 未试过的新模板不参与淘汰 —— 否则新沉积的(Laplace 0.5 垫底)会立刻被砍,
+    // 连一次重放机会都没有;淘汰对象从"口碑最差"改为"口碑最差的已试模板")。
+    const ranked = this.templatesBySignature(g.signature);
+    const tried = ranked.filter((t) => !isUntried(t));
+    const survivors = ranked.filter((t) => isUntried(t));
+    const keepTried = tried.slice(0, Math.max(1, MAX_FOSSILS_PER_SIGNATURE - survivors.length));
+    for (const drop of [...tried.slice(keepTried.length), ...survivors.slice(MAX_FOSSILS_PER_SIGNATURE)]) {
       this.fossilTemplates.delete(drop.id);
     }
     this.saveTemplates();
     void trials; void rate; // 语义已并入上方判定,参数留作签名文档
   }
 
-  /** 同签名全部模板,按重放口碑排序;口碑相同 → 步数少(便宜路线)优先;再同 → 新模板优先。 */
+  /** 同签名全部模板,按重放口碑排序;口碑相同 → 步数少(便宜路线)优先;再同 → 新模板优先。
+   *  2026-11-27 F 修复:从未试过(0 hit 0 miss)的模板乐观排序置顶 —— Laplace 先验 0.5
+   *  会被任何有命中的老模板(>0.5)永久压底,新路线实际永无曝光;置顶保证每份新模板
+   *  至少一次探索机会(最多花一次 miss),试过即回落口碑排序。 */
   templatesBySignature(sig: string): TraceTemplate[] {
     return [...this.fossilTemplates.values()]
       .filter((t) => t.signature === sig)
-      .sort((a, b) => replayScore(b) - replayScore(a)
+      .sort((a, b) =>
+        ((isUntried(b) ? 1 : 0) - (isUntried(a) ? 1 : 0))
+        || (isUntried(a) && isUntried(b) ? b.bornAt - a.bornAt : 0)
+        || replayScore(b) - replayScore(a)
         || a.steps.length - b.steps.length
         || b.bornAt - a.bornAt);
   }
@@ -558,4 +570,9 @@ function betterGamete(a: Gamete, b: Gamete): boolean {
  *  新路线因此有机会被尝试,而不是永远排在老模板后面。 */
 function replayScore(t: TraceTemplate): number {
   return (t.replayHits + 1) / (t.replayHits + t.replayMisses + 2);
+}
+
+/** 从未参与过重放的模板(乐观探索候选)。 */
+function isUntried(t: TraceTemplate): boolean {
+  return t.replayHits === 0 && t.replayMisses === 0;
 }

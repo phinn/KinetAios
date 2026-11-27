@@ -144,6 +144,29 @@ test('H6 同签名模板上限:超过上限按口碑淘汰', () => {
   assert.equal(reg.templatesBySignature(sig).length, MAX_FOSSILS_PER_SIGNATURE);
 });
 
+test('H6c 新化石模板不饿死:untried 乐观置顶 + 沉积淘汰保护(2026-11-27 F 修复)', () => {
+  const reg = new GeneRegistry({ rng: () => 0.5 });
+  const sig = signatureOfTemplateWeighted('fossil-h6c', 'light');
+  // 老模板:命中 1 次(口碑 >0.5)
+  makeSuccess(reg, 'fossil-h6c', [{ tool: 'shell', args: { command: 'echo old' } }]);
+  const oldTpl = reg.templateBySignature(sig)!;
+  reg.noteReplay(oldTpl.id, true);
+  // 新沉积一份模板(0/0,untried)
+  makeSuccess(reg, 'fossil-h6c', [{ tool: 'shell', args: { command: 'echo new-route' } }]);
+  const ranked = reg.templatesBySignature(sig);
+  assert.equal(ranked.length, 2, 'F 修复前:新模板 Laplace 0.5 垫底,且满额时可能被砍');
+  assert.equal(ranked[0].steps[0].args.command, 'echo new-route', 'untried 新模板应乐观置顶(至少一次探索)');
+  // 试一次 miss 后回落口碑排序
+  reg.noteReplay(ranked[0].id, false);
+  const ranked2 = reg.templatesBySignature(sig);
+  assert.equal(ranked2[0].steps[0].args.command, 'echo old', '探索结束回落口碑排序');
+  // 沉积保护:老模板在场时再沉积两份新模板,untried 不被淘汰
+  makeSuccess(reg, 'fossil-h6c', [{ tool: 'shell', args: { command: 'echo route-b' } }]);
+  makeSuccess(reg, 'fossil-h6c', [{ tool: 'shell', args: { command: 'echo route-c' } }]);
+  const after = reg.templatesBySignature(sig);
+  const untriedLeft = after.filter((t) => t.replayHits === 0 && t.replayMisses === 0);
+  assert.ok(untriedLeft.length >= 1, '沉积淘汰应保护 untried 模板(F 修复前新沉积立刻被 slice 砍掉)');
+});
 test('H6b 化石沉积用支系近窗而非累计成功率(2026-11-27 G 修复)', () => {
   const reg = new GeneRegistry({ rng: () => 0.5 });
   const sig = signatureOfTemplateWeighted('fossil-h6b', 'light');
