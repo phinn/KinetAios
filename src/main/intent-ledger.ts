@@ -85,7 +85,7 @@ function detectEvidence(name: string, result: string): Array<{ kind: EvidenceKin
  * 从事件行计算证据报告。rows 应为「该意图生命周期内」的事件(创建到现在),
  * 这样"上一轮改完、这一轮只喊完成"也会被拦住。
  */
-export function assessEvidence(rows: EventRow[]): EvidenceReport {
+export function assessEvidence(rows: EventRow[], currentTurnId?: string): EvidenceReport {
   let lastEditSeq: number | null = null;
   let lastEditTool: string | null = null;
   let lastAnswer: { seq: number; at: number; text: string } | null = null;
@@ -94,6 +94,12 @@ export function assessEvidence(rows: EventRow[]): EvidenceReport {
   for (const row of rows) {
     const ev = row.data as ConvEvent;
     if (ev.type === 'assistant/message') {
+      // D 修复(2026-11-27):answer 证据只认**当前轮**的答复 —— 上一轮遗留的答复
+      // 对本轮 intent_done 无信息量(那一轮已经结束),拿来顶包会凭空放行。
+      // 编辑/验证类证据仍然跨轮(故意设计:防"上一轮改完、这一轮只喊完成"绕闸)。
+      // Answer evidence is current-turn only; edit/verify evidence intentionally
+      // spans turns so post-edit verification can't be bypassed by a later turn.
+      if (currentTurnId && row.turnId !== currentTurnId) continue;
       const text = String(ev.text ?? '');
       if (text.trim()) lastAnswer = { seq: row.seq, at: row.ts, text };
       continue;

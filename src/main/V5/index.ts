@@ -184,7 +184,8 @@ export class DirectV5Engine implements Engine {
           gateMiss = `意图 #${openIntent.id} 已不存在`;
         } else {
           const rows = store.loadEventsSince(fresh.convId, fresh.createdAt);
-          const report = assessEvidence(rows);
+          // D 修复:answer 只认当前轮;编辑/验证证据仍跨轮(口径与 tools.ts intent_done 一致)。
+          const report = assessEvidence(rows, turnId);
           recordEvidence(fresh.id, report);
           const spent = refreshIntentSpend(fresh.id);
           const cwd = store.getConversationCwd(fresh.convId) ?? conv.cwd;
@@ -303,7 +304,8 @@ export class DirectV5Engine implements Engine {
     if (outcome.success && !outcome.aborted) {
       if (turnId) {
         const rows = store.loadTurnEvents(conv.id, turnId);
-        const report = assessEvidence(rows);
+        // D 修复:answer 只认当前轮(loadTurnEvents 本身就是本轮事件,双保险)。
+        const report = assessEvidence(rows, turnId);
         const openIntent = store.latestOpenIntent(conv.id);
         if (openIntent) {
           const cwd = store.getConversationCwd(conv.id) ?? conv.cwd;

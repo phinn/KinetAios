@@ -422,6 +422,24 @@ test('失败信号:intent_done 被拒原因进入 lesson 输入', () => {
   assert.ok(d.includes('没有任何可核验的通过证据'), d);
 });
 
+test('D 修复:answer 证据只认当前轮 —— 上一轮遗留答复不顶包(2026-11-27)', () => {
+  seqCounter = 0;
+  // 轮 A:有答复;轮 B(当前):intent_done,没有新答复。
+  // 旧行为:轮 A 的答复被当成本轮 answer 证据 → 放行;新行为:无当前轮答复 → 不放行。
+  const turnA = 'turn-a';
+  const turnB = 'turn-b';
+  const rows: Array<{ seq: number; turnId: string; type: string; data: unknown; ts: number }> = [
+    { seq: 1, turnId: turnA, type: 'assistant/message', data: { type: 'assistant/message', text: '轮 A 的答复' }, ts: 1 },
+  ];
+  const r = assessEvidence(rows as never, turnB);
+  assert.ok(!r.items.some((i) => i.kind === 'answer'), '其它轮的答复不应进入本轮证据');
+  const rSame = assessEvidence(rows as never, turnA);
+  assert.ok(rSame.items.some((i) => i.kind === 'answer'), '当前轮的答复正常入账');
+  // 不传 turnId(旧路径/旧测试):保持原行为,答复照常入账。
+  const rLegacy = assessEvidence(rows as never);
+  assert.ok(rLegacy.items.some((i) => i.kind === 'answer'));
+});
+
 test('重复失败模式:同轮同工具同错误 ≥2 次才升级,内容稳定可去重', () => {
   const steps = [
     { name: 'edit_file', outcome: 'error' as const, errorKind: 'edit_mismatch' as const },

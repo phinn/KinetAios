@@ -4113,7 +4113,8 @@ const intentDoneTool: Tool = {
     // 证据覆盖该意图从创建到现在的所有轮次(不是只看当前 turn):
     // 否则"上一轮改完、这一轮只喊完成"就能绕过闸门。规则仍是:最后一次编辑之后必须有通过证据。
     const rows = store.loadEventsSince(intent.convId, intent.createdAt);
-    const report = assessEvidence(rows);
+    // D 修复:answer 证据只认当前轮(上一轮遗留答复不顶包);编辑/验证证据仍跨轮。
+    const report = assessEvidence(rows, ctx.turnId);
     recordEvidence(intent.id, report);
     const spent = refreshIntentSpend(intent.id);
     const fresh = store.getIntent(intent.id);
